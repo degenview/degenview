@@ -27,7 +27,7 @@ use crate::ui::{
     kit::{self, source_logo},
 };
 use eframe::egui::{
-    self, Align, Align2, Color32, CursorIcon, FontId, Id, Layout, Margin, Rect, RichText, Sense,
+    self, Align, Color32, CursorIcon, FontId, Id, Layout, Margin, Rect, Response, RichText, Sense,
     Stroke, Ui, Vec2, pos2, vec2,
 };
 use serde::{Deserialize, Serialize};
@@ -47,9 +47,6 @@ const APPLY_DELAY: Duration = Duration::from_millis(350);
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SEARCH_DELAY: Duration = Duration::from_millis(300);
 const CANDLE_LIMIT: u32 = 500;
-const HEADER_PAD: (f32, f32) = (10.0, 8.0);
-/// The market button's artwork, source badge included.
-const HEADER_LOGO: f32 = 26.0;
 
 /// A market the preview can chart: crypto and stock sources only.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -735,7 +732,7 @@ impl PreviewState {
         self.save(RECENTS_KEY, &self.recents);
     }
 
-    fn select_timeframe(&mut self, timeframe: Timeframe) {
+    pub(super) fn select_timeframe(&mut self, timeframe: Timeframe) {
         if timeframe != self.timeframe {
             self.timeframe = timeframe;
             self.set_candles(Vec::new());
@@ -772,118 +769,34 @@ fn inputs_path() -> Option<std::path::PathBuf> {
     crate::store::data_dir().map(|dir| dir.join("script_preview_inputs.json"))
 }
 
-/// The header over the chart; returns the y where the chart area starts.
-pub fn header(ui: &mut Ui, preview: &mut PreviewState, full: Rect) -> f32 {
-    preview.drawn_this_frame = true;
-    let height = 52.0;
-    let rect = Rect::from_min_size(full.min, vec2(full.width(), height));
-    let mut inner = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink2(vec2(HEADER_PAD.0, HEADER_PAD.1)))
-            .layout(Layout::left_to_right(Align::Center)),
-    );
-    market_button(&mut inner, preview);
-    inner.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        ui.add_space(0.0);
-        timeframe_picker(ui, preview);
-    });
-    full.min.y + height
+/// What the toolbar shows of the preview chart: its market, the last price with the change over
+/// what is visible, and the timeframe.
+pub(super) struct Summary {
+    pub title: String,
+    pub price: Option<String>,
+    pub timeframe: Timeframe,
 }
 
-fn market_button(ui: &mut Ui, preview: &mut PreviewState) {
-    let title = preview.market.title();
-    let price = preview.price_line();
-    let title_galley = ui.painter().layout_no_wrap(
-        title.clone(),
-        FontId::proportional(11.0),
-        theme::text_primary(),
-    );
-    let price_width = price.as_ref().map_or(0.0, |(p, pct)| {
-        ui.painter()
-            .layout_no_wrap(
-                format!("{p}  {}", signed_percent(*pct)),
-                FontId::monospace(10.0),
-                theme::text_secondary(),
-            )
-            .size()
-            .x
-    });
-    let source_name = preview.market.source.display_name();
-    let width = HEADER_LOGO
-        + 8.0
-        + title_galley
-            .size()
-            .x
-            .max(price_width)
-            .max(if price.is_none() { 60.0 } else { 0.0 })
-        + 8.0
-        + 10.0;
-    let (rect, response) = ui.allocate_exact_size(vec2(width + 8.0, 34.0), Sense::click());
-    let response = response.on_hover_text("Choose the market to test on");
-    if response.hovered() {
-        ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
-        ui.painter().rect_filled(rect, 6.0, theme::ink(10));
-    }
-    let logo = Rect::from_center_size(
-        pos2(rect.min.x + 4.0 + HEADER_LOGO / 2.0, rect.center().y),
-        Vec2::splat(HEADER_LOGO),
-    );
-    kit::chart_icon(
-        ui,
-        logo,
-        &preview.market.ticker,
-        preview.market.source,
-        true,
-    );
-    let painter = ui.painter();
-    let text_x = logo.max.x + 8.0;
-    painter.galley(
-        pos2(text_x, rect.min.y + 2.0),
-        title_galley.clone(),
-        theme::text_primary(),
-    );
-    icons::paint(
-        painter,
-        Rect::from_center_size(
-            pos2(text_x + title_galley.size().x + 9.0, rect.min.y + 9.0),
-            Vec2::splat(8.0),
-        ),
-        Icon::ChevronUpDown,
-        theme::text_secondary(),
-    );
-    match &price {
-        Some((p, pct)) => {
-            let first =
-                painter.layout_no_wrap(p.clone(), FontId::monospace(10.0), theme::text_secondary());
-            let first_width = first.size().x;
-            painter.galley(
-                pos2(text_x, rect.max.y - 15.0),
-                first,
-                theme::text_secondary(),
-            );
-            painter.text(
-                pos2(text_x + first_width + 6.0, rect.max.y - 15.0),
-                Align2::LEFT_TOP,
-                signed_percent(*pct),
-                FontId::monospace(10.0),
-                if *pct >= 0.0 {
-                    theme::syntax::variable()
-                } else {
-                    theme::syntax::string()
-                },
-            );
-        }
-        None => {
-            painter.text(
-                pos2(text_x, rect.max.y - 15.0),
-                Align2::LEFT_TOP,
-                source_name,
-                FontId::proportional(10.0),
-                theme::text_secondary(),
-            );
-        }
+impl PreviewState {
+    /// The chart is on screen this frame (the toolbar's market and timeframe act on it).
+    pub(super) fn mark_drawn(&mut self) {
+        self.drawn_this_frame = true;
     }
 
+    pub(super) fn summary(&self) -> Summary {
+        Summary {
+            title: self.market.title(),
+            price: self
+                .price_line()
+                .map(|(price, change)| format!("{price}  {}", signed_percent(change))),
+            timeframe: self.timeframe,
+        }
+    }
+}
+
+/// The market picker under the toolbar's market button (`response`): the button toggles it, a press
+/// anywhere else outside the popup dismisses it, and a market picked there is tried at once.
+pub(super) fn market_picker(ui: &mut Ui, preview: &mut PreviewState, response: &Response) {
     // The button toggles; a press anywhere else outside the popup dismisses it (below).
     let toggled_closed = response.clicked() && preview.picker.is_some();
     if toggled_closed {
@@ -893,7 +806,7 @@ fn market_button(ui: &mut Ui, preview: &mut PreviewState) {
         preview.picker = Some(Picker::new(&preview.market));
     }
     if preview.picker.is_some() {
-        let popup = egui::Popup::from_response(&response)
+        let popup = egui::Popup::from_response(response)
             .id(Id::new("script-preview-picker"))
             .open_memory(Some(egui::SetOpenCommand::Bool(true)))
             .anchor(egui::PopupAnchor::ParentRect(response.rect))
@@ -939,56 +852,6 @@ fn market_button(ui: &mut Ui, preview: &mut PreviewState) {
 fn signed_percent(value: f64) -> String {
     let sign = if value >= 0.0 { "+" } else { "−" };
     format!("{sign}{:.2}%", value.abs())
-}
-
-fn timeframe_picker(ui: &mut Ui, preview: &mut PreviewState) {
-    // A segmented control: one rounded track, the selected segment raised.
-    let font = FontId::proportional(11.0);
-    let labels: Vec<&str> = Timeframe::ALL.iter().map(|t| t.label()).collect();
-    let widths: Vec<f32> = labels
-        .iter()
-        .map(|l| {
-            ui.painter()
-                .layout_no_wrap((*l).to_owned(), font.clone(), Color32::WHITE)
-                .size()
-                .x
-                + 20.0
-        })
-        .collect();
-    let total: f32 = widths.iter().sum::<f32>() + 4.0;
-    let (rect, _) = ui.allocate_exact_size(vec2(total, 24.0), Sense::hover());
-    ui.painter().rect_filled(rect, 6.0, theme::quaternary(1.0));
-    let mut x = rect.min.x + 2.0;
-    for (index, timeframe) in Timeframe::ALL.iter().enumerate() {
-        let segment = Rect::from_min_size(pos2(x, rect.min.y + 2.0), vec2(widths[index], 20.0));
-        let response = ui.interact(
-            segment,
-            Id::new(("preview-timeframe", index)),
-            Sense::click(),
-        );
-        let selected = *timeframe == preview.timeframe;
-        if selected {
-            ui.painter()
-                .rect_filled(segment, 5.0, theme::selected_plate());
-        } else if response.hovered() {
-            ui.painter().rect_filled(segment, 5.0, theme::ink(10));
-        }
-        ui.painter().text(
-            segment.center(),
-            Align2::CENTER_CENTER,
-            labels[index],
-            font.clone(),
-            if selected {
-                theme::on_selected_plate()
-            } else {
-                theme::text_primary()
-            },
-        );
-        if response.clicked() {
-            preview.select_timeframe(*timeframe);
-        }
-        x += widths[index];
-    }
 }
 
 // MARK: Chart area

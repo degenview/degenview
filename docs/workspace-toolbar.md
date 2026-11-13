@@ -1,5 +1,26 @@
 # Workspace toolbar
 
+The flat bar is shared by every tab kind. `src/ui/kit/bar/` is the engine: `Button`, `Item`, the
+measuring, `arrange`, painting and `show`, generic over a click action `A` and a popup key `M` (a
+button with `with_menu(key)` gets that key handed to the caller's `popup` callback once it is
+drawn, only while enabled). `kit::bar::HEIGHT` (44) is the height of every tab's bar, on
+`theme::chrome()`; the chart's toolbar, the Portfolio's (`host/portfolio/bar.rs`, see
+[Portfolio page](portfolio-page.md)) and the Pine Studio's (`pine_studio/bar.rs`) differ only in
+their items, so switching tabs never changes the window's chrome. Button ids are scoped by the
+panel's `ui.id()`. Do not draw a tab's top controls with anything else.
+
+**Pine Studio bar.** Left: script list toggle, preview-chart position menu, preview toggle |
+market button (name, then the last price and change as quiet text; opens the market picker,
+`preview::market_picker`) | timeframe row (lit current one). The market and timeframe act on the
+preview chart and are disabled with no open script or a hidden chart. Right: assistant, profiler
+(tinted when it needs attention) and debugger, for an open script. The market and timeframe used to
+sit in a 52 pt strip over the preview chart; that strip is gone.
+
+**View menu (macOS).** Between Edit and Window: Pine Studio and Portfolio
+(`NativeCommand::OpenPineStudio` / `OpenPortfolio`), each opening its one tab or showing the open
+one, like the chart toolbar's two buttons, which stay. Windows and Linux have no menu bar; the
+buttons are their entry.
+
 `src/ui/workspace/toolbar.rs` draws the bar above a tab's charts; `src/workspace/toolbar.rs` builds its
 input and applies what it asks for. It is flat like TradingView's and LuxAlgo's: no capsules, a
 faint tint on hover, hairline separators between groups, small corner radius.

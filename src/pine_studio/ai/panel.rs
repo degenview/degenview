@@ -9,6 +9,7 @@ use super::{Assistant, Entry, Notice, Proposal, ToolStep};
 use crate::pine_studio::editor::diff_view;
 use crate::service::llm::ProviderKind;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::bar;
 use crate::ui::kit::error_notice::{self, ErrorEvent, ErrorNotice};
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::markdown_view;
@@ -96,18 +97,17 @@ pub enum PanelAction {
     DismissNotice,
 }
 
-pub fn panel_button(ui: &mut Ui, panel_open: bool) -> bool {
+/// The toolbar's assistant button: lit while its panel is open.
+pub fn panel_button<A, M>(panel_open: bool, on_click: A) -> bar::Button<A, M> {
     let tip = if panel_open {
         "Hide the assistant"
     } else {
         "Ask an AI assistant to change this script"
     };
-    let color = if panel_open {
-        theme::text_primary()
-    } else {
-        theme::text_secondary()
-    };
-    icons::button(ui, Icon::Sparkles, 28.0, color, tip).clicked()
+    bar::Button::new("ai", tip)
+        .icon(Icon::Sparkles)
+        .active(panel_open)
+        .on_click(on_click)
 }
 
 pub fn show(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, script_name: &str) -> Vec<PanelAction> {

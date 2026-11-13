@@ -7,6 +7,7 @@
 #![allow(dead_code)] // transient: phase-2 pieces (completion, find bar) are not wired yet
 
 pub mod ai;
+mod bar;
 pub mod debug;
 pub mod drawer;
 pub mod editor;
@@ -24,12 +25,11 @@ use crate::model::pine::instance::{PineInstance, StoredInput};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
 use crate::store::SharedStore;
-use crate::ui::icons::{self, Icon};
 use crate::ui::kit::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::shortcut;
 use crate::ui::theme;
 use editor::EditorState;
-use eframe::egui::{self, Align, Id, Layout, Margin, Ui};
+use eframe::egui::{self, Id, Ui};
 use library::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
 use library::registry::LibraryRegistry;
 use library::sidebar::{Group, Rename, RowKey};
@@ -487,14 +487,10 @@ impl PineStudio {
         self.profiler_frame(&ctx);
 
         egui::Panel::top("pine-studio-toolbar")
-            .exact_size(38.0)
+            .exact_size(crate::ui::kit::bar::HEIGHT)
             .resizable(false)
-            .frame(
-                egui::Frame::new()
-                    .fill(theme::chrome())
-                    .inner_margin(Margin::symmetric(10, 5)),
-            )
-            .show(ui, |ui| self.toolbar(ui));
+            .frame(egui::Frame::new().fill(theme::chrome()))
+            .show(ui, |ui| self.show_bar(ui));
 
         self.sync_logs_range();
         egui::CentralPanel::default()
@@ -591,72 +587,6 @@ impl PineStudio {
             self.prefs.save(&self.shared);
             self.saved_prefs = self.prefs.clone();
         }
-    }
-
-    fn toolbar(&mut self, ui: &mut Ui) {
-        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            let tip = shortcut::TOGGLE_SCRIPT_LIST.hint(if self.prefs.sidebar_visible {
-                "Hide the script list"
-            } else {
-                "Show the script list"
-            });
-            if icons::button(ui, Icon::SidebarLeft, 28.0, theme::text_primary(), &tip).clicked() {
-                self.cmds.push(Cmd::ToggleSidebar);
-            }
-            let position_icon = match self.prefs.chart_position {
-                ChartPosition::Left => Icon::RectLeft,
-                ChartPosition::Top => Icon::RectTop,
-                ChartPosition::Bottom => Icon::RectBottom,
-            };
-            let button = icons::button(
-                ui,
-                position_icon,
-                28.0,
-                theme::text_primary(),
-                "Where the preview chart sits next to the code",
-            );
-            egui::Popup::menu(&button).show(|ui| {
-                ui.set_min_width(140.0);
-                for position in ChartPosition::ALL {
-                    let selected = position == self.prefs.chart_position;
-                    let label = if selected {
-                        format!("✓  {}", position.title())
-                    } else {
-                        format!("    {}", position.title())
-                    };
-                    if ui.button(label).clicked() {
-                        self.cmds.push(Cmd::SetChartPosition(position));
-                        ui.close();
-                    }
-                }
-            });
-            let (icon, tip) = if self.prefs.chart_visible {
-                (Icon::ChartLine, "Hide the preview chart")
-            } else {
-                (Icon::ChartLineFlat, "Show the preview chart")
-            };
-            let tip = shortcut::TOGGLE_PREVIEW_CHART.hint(tip);
-            if icons::button(ui, icon, 28.0, theme::text_primary(), &tip).clicked() {
-                self.cmds.push(Cmd::ToggleChart);
-            }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                // Added right to left, so they read AI, profiler, debugger from the left.
-                if self.open.is_some() && debug::panel::panel_button(ui, self.prefs.debug_open) {
-                    self.cmds.push(Cmd::ToggleDebugPanel);
-                }
-                if self.open.is_some() {
-                    let status = self.profiler.status(self.profiler_now.as_ref());
-                    for action in profiler::ui::toolbar(ui, &status) {
-                        self.cmds.push(Cmd::from(action));
-                    }
-                }
-                if self.open.is_some() && ai::panel::panel_button(ui, self.prefs.ai_open) {
-                    self.cmds.push(Cmd::ToggleAiPanel);
-                }
-            });
-        });
     }
 
     fn root(&mut self, ui: &mut Ui) {

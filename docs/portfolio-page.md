@@ -1,12 +1,12 @@
 # Portfolio page
 
-The Portfolio tab: a header (portfolio picker, currency, privacy, import/export), a section bar
+The Portfolio tab: the shared top bar (`host/portfolio/bar.rs`: portfolio picker, currency, privacy, Import or Export, Add Transaction), a section bar
 (Overview, Holdings, Transactions, Statistics) and the page of the selected section. The grid
 cards are a separate surface: see [portfolio cards](portfolio-cards.md).
 
 ## Where things live
 
-- `host/portfolio/mod.rs`: the tab (`PortfolioTab::ui`), the header, the section bar, the centred
+- `host/portfolio/mod.rs`: the tab (`PortfolioTab::ui`), the section bar, the centred
   column (`capped`), and the figures handed to the views.
 - `service/portfolio/quotes.rs`: `PortfolioQuoteFeed`, the valuation the views read.
 - `ui/portfolio/overview.rs`: Overview (hero, key figures, charts, lists) and Statistics.
@@ -57,12 +57,23 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
   holdings. Quantities carry float error, so a remainder within 1e-12 of the position's peak
   quantity counts as zero.
 
+## The bar
+
+`host/portfolio/bar.rs` draws the tab's top bar on the shared flat bar (`ui::kit::bar`, see
+[Workspace toolbar](workspace-toolbar.md)): `kit::bar::HEIGHT` (44) on `theme::chrome()`, the same
+as the chart's toolbar, across the whole window (only the page below is capped at
+`CONTENT_MAX_WIDTH`). Left: the portfolio menu (its name, never dropped when narrow) and the currency
+menu (disabled, with the candle indicator, while a conversion rebuilds the valuation). Right, from the
+edge: the privacy toggle (lit while values are hidden), Add Transaction (its label drops to the icon
+when narrow) and the Import or Export menu; the last two only with a portfolio. With no portfolio at
+all the bar is dropped with the section strip (`shows_header`).
+
 ## Layout
 
-- The host puts the header, the section bar and the page in one column at most
+- The host puts the section bar and the page in one column at most
   `CONTENT_MAX_WIDTH` (1480) wide, centred, so a full-screen window does not stretch rows and
-  tables across the screen. The pages keep `PAGE_MARGIN` (16) inside that column; the header and
-  the section bar are inset by the same amount (`aligned`), so their buttons and tabs share the
+  tables across the screen. The pages keep `PAGE_MARGIN` (16) inside that column; the section bar
+  is inset by the same amount (`aligned`), so its tabs share the
   content's left and right edges at every window width.
 - Overview has two layouts. From `WIDE_MIN` (1000) of content width it puts a `SIDE_WIDTH` (400)
   column beside the main one: value chart over holdings on the left, allocation over the best and

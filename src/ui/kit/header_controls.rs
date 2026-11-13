@@ -1,7 +1,6 @@
-//! The controls in a window's header bar: menu buttons, icon buttons and the prominent action.
-//! They share one height, one corner radius and one set of states, so a row of mixed controls
-//! reads as one family. Empty pages reuse the prominent action and a menu button for their calls
-//! to action, so a pair there matches the header.
+//! The calls to action of an empty page: a menu button and the prominent action. They share one
+//! height, one corner radius and one set of states, so a pair reads as one family. The menus'
+//! rows (`choice`, `action`, `separator`) are also the Portfolio bar's.
 
 use super::loading::LoadingIndicator;
 use crate::ui::accessibility;
@@ -127,26 +126,6 @@ pub fn menu_button(
             items(ui);
         });
     ui.data_mut(|data| data.insert_temp(open_key(id), open));
-    response
-}
-
-/// A square icon button. `on` tints it, for a toggle that is switched on.
-pub fn icon_button(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(HEIGHT), Sense::click());
-    let response = accessibility::label(response, label)
-        .on_hover_text(label)
-        .on_hover_cursor(CursorIcon::PointingHand);
-    paint_quiet(ui, rect, &response, on);
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
-        icon,
-        if on {
-            theme::text_primary()
-        } else {
-            theme::text_secondary()
-        },
-    );
     response
 }
 

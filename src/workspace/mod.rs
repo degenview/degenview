@@ -719,7 +719,7 @@ impl ChartWorkspace {
         ctx.request_repaint_after(Duration::from_millis(250));
 
         let mut actions = egui::Panel::top("workspace_toolbar")
-            .exact_size(ui::workspace::toolbar::HEIGHT)
+            .exact_size(ui::kit::bar::HEIGHT)
             .frame(egui::Frame::new().fill(ui::theme::chrome()))
             .show(ui, |ui| self.show_toolbar(ui, &ctx))
             .inner;

@@ -67,6 +67,8 @@ impl DegenViewApp {
                     self.tab_host.cycle(false);
                 }
                 NativeCommand::OpenSettings => self.open_settings(ctx),
+                NativeCommand::OpenPineStudio => self.open_pine(ctx),
+                NativeCommand::OpenPortfolio => self.open_portfolio(ctx),
                 NativeCommand::OpenDocs => {
                     ctx.open_url(egui::OpenUrl::new_tab(tab_bar::DOCS_URL));
                 }
