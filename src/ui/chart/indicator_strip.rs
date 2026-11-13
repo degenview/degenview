@@ -81,8 +81,22 @@ impl Mark {
     }
 }
 
+/// The strip's items, left to right: the chart's scripts newest first, then the built-in
+/// indicators in their fixed order. A script added now lands at the left and pushes the oldest
+/// chips into the "+N" pill at the right. Built-ins are on/off flags with no record of when they
+/// were applied, so they stay behind the scripts rather than jumping to the left when added.
 fn items(config: &IndicatorConfig, card: &ChartCard) -> Vec<Item> {
-    let mut items: Vec<Item> = BuiltIn::ALL
+    let now = Instant::now();
+    let scripts = card.pine_instances().iter().rev().map(|instance| Item {
+        kind: Kind::Script(instance.id),
+        title: instance.name.clone(),
+        visible: instance.visible,
+        error: card
+            .pine_status(instance.id)
+            .is_some_and(|status| status.error.is_some()),
+        busy: card.pine_busy(instance.id, now),
+    });
+    let built_ins = BuiltIn::ALL
         .into_iter()
         .filter(|kind| kind.applied(config))
         .map(|kind| Item {
@@ -91,21 +105,8 @@ fn items(config: &IndicatorConfig, card: &ChartCard) -> Vec<Item> {
             visible: !kind.hidden(config),
             error: false,
             busy: false,
-        })
-        .collect();
-    let now = Instant::now();
-    items.extend(card.pine_instances().iter().map(|instance| {
-        Item {
-            kind: Kind::Script(instance.id),
-            title: instance.name.clone(),
-            visible: instance.visible,
-            error: card
-                .pine_status(instance.id)
-                .is_some_and(|status| status.error.is_some()),
-            busy: card.pine_busy(instance.id, now),
-        }
-    }));
-    items
+        });
+    scripts.chain(built_ins).collect()
 }
 
 /// Which script's settings popover is up, as (chart id, instance id), so its chip keeps its
@@ -984,9 +985,34 @@ mod tests {
         let script_id = card.add_pine_instance(None, "My script", "plot(close)");
         let items = items(&config, &card);
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0].title, "EMA 20");
-        assert!(!items[0].visible);
-        assert_eq!(items[1].kind, Kind::Script(script_id));
+        assert_eq!(items[0].kind, Kind::Script(script_id));
+        assert_eq!(items[1].title, "EMA 20");
+        assert!(!items[1].visible);
+    }
+
+    #[test]
+    fn the_newest_script_is_leftmost_and_the_oldest_folds_first() {
+        let config = IndicatorConfig {
+            show_ema: true,
+            ..IndicatorConfig::default()
+        };
+        let mut card = ChartCard::default();
+        let scripts: Vec<u64> = (1..=4)
+            .map(|n| card.add_pine_instance(None, &format!("Script {n}"), "plot(close)"))
+            .collect();
+        let kinds: Vec<_> = items(&config, &card).iter().map(|item| item.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                Kind::Script(scripts[3]),
+                Kind::Script(scripts[2]),
+                Kind::Script(scripts[1]),
+                Kind::Script(scripts[0]),
+                Kind::BuiltIn(BuiltIn::Ema),
+            ]
+        );
+        // Only the first VISIBLE_CHIP_LIMIT are drawn; the rest, the oldest, are in the pill.
+        assert_eq!(kinds[VISIBLE_CHIP_LIMIT..].len(), 2);
     }
 
     #[test]
@@ -1265,7 +1291,7 @@ mod tests {
         let kinds: Vec<_> = items(&config, &card).iter().map(|item| item.kind).collect();
         assert_eq!(
             kinds,
-            vec![Kind::BuiltIn(BuiltIn::Ema), Kind::Script(script)]
+            vec![Kind::Script(script), Kind::BuiltIn(BuiltIn::Ema)]
         );
         for width in [600.0, 140.0, 64.0] {
             let used = drawn_width(&config, &card, width);
