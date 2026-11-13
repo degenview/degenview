@@ -21,14 +21,14 @@ const FILL_DEPTH: f32 = 340.0;
 pub const LINE_TOP: f32 = 22.0;
 pub const LINE_RANGE: f32 = 100.0;
 /// Average distance between the line's turning points, in points.
-const CELL: f32 = 34.0;
+const CELL: f32 = 60.0;
 /// How far a turning point may sit from its even spot, in cells: it keeps the rhythm uneven
 /// without ever swapping places with a neighbour.
 const JITTER: f32 = 0.7;
 /// Points per second the line scrolls left.
 const VELOCITY: f64 = 64.0;
 /// How far the slow trend of the vertices wanders over this many of them.
-const TREND_SPAN: f64 = 0.09;
+const TREND_SPAN: f64 = 0.16;
 /// How far a vertex swings above or below the trend: at least this, and up to `TOOTH_EXTRA` more
 /// (squared, so most are small and a few are sharp).
 const TOOTH_MIN: f32 = 0.04;
