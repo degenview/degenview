@@ -37,6 +37,7 @@ do not restyle screens you were not asked to touch, and do not copy their older 
 
 ## Panels, menus, buttons, links and dialogs
 
+- **One top bar per tab.** Every tab kind (chart, Portfolio, Pine Studio) opens with `ui::kit::bar`: 44 pt (`kit::bar::HEIGHT`) on `theme::chrome()`, flat buttons, hairline separators, labels falling back to icons. Build a new tab's controls as items of that bar ([Workspace toolbar](../workspace-toolbar.md)); never a second header style.
 - **Docked panels.** Only egui's separator (`theme::border()`). Never `Frame::stroke` or painted edge lines. `show_separator_line(false)` only when deliberately replacing the separator.
 - **Menus.** `kit::menu_row`, `menu_item`, `menu_heading`, `menu_separator`, `menu_submenu` inside `kit::menu_popup` or `kit::context_popup`, after `kit::menu_scope`. Never bare egui buttons, radios, checkboxes or menu buttons. `ui.close()` for actions that dismiss; toggles keep it open.
 - **Menu sizing.** Fit to the longest row, never wider: `kit::fitted_menu` / `fitted_menu_rows` for button menus, `fitted_context_menu` for right-clicks, `menu_fit` / `menu_fit_rows` inside popups. Helpers measure dynamic menus only while open. Test fixed-width menus against `kit::menu_width_for_rows` (see `menu_widths_fit_their_rows` in `watchlist/sidebar.rs`). Never guess widths with `set_min_width` or `set_width`. Check visually that the longest label ends one row inset from the edge.

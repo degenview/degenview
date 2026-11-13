@@ -6,6 +6,7 @@
 
 #![allow(dead_code)]
 
+mod bar;
 pub mod card;
 pub mod import_flow;
 
@@ -649,15 +650,9 @@ impl PortfolioTab {
         // picker is the way back to an archived portfolio.)
         if shows_header(&snapshot) {
             egui::Panel::top(egui::Id::new(("portfolio-header", self.id)))
-                .exact_size(62.0)
-                .frame(
-                    egui::Frame::new()
-                        .fill(theme::background())
-                        .inner_margin(egui::Margin::symmetric(0, 14)),
-                )
-                .show(ui, |ui| {
-                    aligned(ui, |ui| self.show_header(ui, host, &snapshot))
-                });
+                .exact_size(kit::bar::HEIGHT)
+                .frame(egui::Frame::new().fill(theme::chrome()))
+                .show(ui, |ui| self.show_bar(ui, host, &snapshot));
         }
 
         // With nothing in scope there is nothing to section: the page is one call to action.
@@ -739,191 +734,6 @@ impl PortfolioTab {
 
         self.show_sheets(&ctx, host);
         self.show_error(&ctx, host);
-    }
-
-    fn show_header(
-        &mut self,
-        ui: &mut egui::Ui,
-        host: &mut PortfolioHost,
-        snapshot: &PortfolioLedgerSnapshot,
-    ) {
-        // Converting every transaction to the new reporting currency: the valuation is being
-        // rebuilt from scratch, so the currency can't be changed again until it lands.
-        let scope = portfolio_scope(snapshot);
-        let quote_state = self.quote_feed.state();
-        let converting = snapshot
-            .transactions
-            .iter()
-            .any(|transaction| scope.contains(&transaction.portfolio_id))
-            && quote_state.projection.is_none()
-            && quote_state.is_updating;
-        ui.horizontal_centered(|ui| {
-            ui.spacing_mut().item_spacing.x = 10.0;
-            let selected_name = snapshot
-                .selected_portfolio_id
-                .and_then(|id| {
-                    snapshot
-                        .portfolios
-                        .iter()
-                        .find(|portfolio| portfolio.id == id)
-                })
-                .map_or("All Portfolios", |portfolio| portfolio.name.as_str());
-            let selector_labels: Vec<&str> = [
-                "All Portfolios",
-                "Create Portfolio\u{2026}",
-                "Manage Portfolios\u{2026}",
-            ]
-            .into_iter()
-            .chain(
-                snapshot
-                    .portfolios
-                    .iter()
-                    .filter(|portfolio| !portfolio.is_archived)
-                    .map(|portfolio| portfolio.name.as_str()),
-            )
-            .collect();
-            header_controls::menu_button(
-                ui,
-                egui::Id::new(("portfolio-selector", self.id)),
-                Icon::Briefcase,
-                selected_name,
-                &selector_labels,
-                false,
-                |ui| {
-                    if header_controls::choice(
-                        ui,
-                        "All Portfolios",
-                        snapshot.selected_portfolio_id.is_none(),
-                    ) {
-                        let _ = host.select(None);
-                    }
-                    header_controls::separator(ui);
-                    for portfolio in snapshot
-                        .portfolios
-                        .iter()
-                        .filter(|portfolio| !portfolio.is_archived)
-                    {
-                        if header_controls::choice(
-                            ui,
-                            &portfolio.name,
-                            snapshot.selected_portfolio_id == Some(portfolio.id),
-                        ) {
-                            let _ = host.select(Some(portfolio.id));
-                        }
-                    }
-                    header_controls::separator(ui);
-                    if header_controls::action(ui, Icon::Plus, "Create Portfolio\u{2026}") {
-                        self.create = Some(CreateState::default());
-                    }
-                    if header_controls::action(ui, Icon::Sliders, "Manage Portfolios\u{2026}") {
-                        self.manage = Some(ManageState::default());
-                    }
-                },
-            );
-
-            let chosen_before = self.reporting_currency;
-            let currency_labels: Vec<String> = PORTFOLIO_CURRENCIES
-                .iter()
-                .map(|currency| currency_choice(*currency))
-                .collect();
-            header_controls::menu_button(
-                ui,
-                egui::Id::new(("portfolio-currency", self.id)),
-                Icon::Banknote,
-                self.reporting_currency.code(),
-                &currency_labels,
-                converting,
-                |ui| {
-                    for currency in PORTFOLIO_CURRENCIES {
-                        if header_controls::choice(
-                            ui,
-                            &currency_choice(currency),
-                            currency == chosen_before,
-                        ) {
-                            self.reporting_currency = currency;
-                        }
-                    }
-                },
-            );
-            if self.reporting_currency != chosen_before {
-                host.set_reporting_currency(
-                    snapshot.selected_portfolio_id,
-                    self.reporting_currency,
-                );
-            }
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
-                // Added right to left: with no portfolio the privacy toggle is all that is left.
-                if has_portfolio_scope(snapshot) {
-                    if header_controls::prominent_button(ui, Icon::Plus, "Add Transaction")
-                        .clicked()
-                    {
-                        self.picker = Some(add_transaction_picker());
-                    }
-                    self.show_import_menu(ui, snapshot);
-                }
-                let privacy = header_controls::icon_button(
-                    ui,
-                    if self.privacy {
-                        Icon::EyeSlash
-                    } else {
-                        Icon::Eye
-                    },
-                    if self.privacy {
-                        "Reveal portfolio values"
-                    } else {
-                        "Hide portfolio values"
-                    },
-                    self.privacy,
-                );
-                if privacy.clicked() {
-                    self.privacy = !self.privacy;
-                    host.set_privacy_mode(self.privacy);
-                }
-            });
-        });
-    }
-
-    /// The "Import or Export" menu in the header.
-    fn show_import_menu(&mut self, ui: &mut egui::Ui, snapshot: &PortfolioLedgerSnapshot) {
-        let ctx = ui.ctx().clone();
-        header_controls::menu_button(
-            ui,
-            egui::Id::new(("portfolio-import-export", self.id)),
-            Icon::Exchange,
-            "Import or Export",
-            &IMPORT_EXPORT_ACTIONS,
-            false,
-            |ui| {
-                if header_controls::action(ui, Icon::Download, "Import Transactions\u{2026}") {
-                    self.import.begin_import_csv(&ctx);
-                }
-                if header_controls::action(ui, Icon::Download, "Import from CoinMarketCap\u{2026}")
-                {
-                    self.import
-                        .begin_import_cmc(&ctx, cmc_destination(snapshot));
-                }
-                header_controls::separator(ui);
-                if header_controls::action(ui, Icon::ShareUp, "Export Transactions\u{2026}") {
-                    let text = portfolio::csv::export_transactions(
-                        &snapshot.transactions,
-                        &snapshot.portfolios,
-                    );
-                    self.import.begin_export(
-                        &ctx,
-                        text,
-                        crate::host::portfolio::import_flow::CSV_FILENAME,
-                    );
-                }
-                if header_controls::action(ui, Icon::ShareUp, "Export Current Holdings\u{2026}") {
-                    self.pending_export = Some(PendingExport::Holdings);
-                }
-                if header_controls::action(ui, Icon::ShareUp, "Export Portfolio History\u{2026}") {
-                    self.pending_export = Some(PendingExport::History);
-                }
-            },
-        );
     }
 
     fn show_content(

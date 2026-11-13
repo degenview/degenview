@@ -21,6 +21,7 @@ use crate::pine_studio::drawer::tab_chrome::{
 };
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
+use crate::ui::kit::bar;
 use crate::ui::pine::logs_view::{centered, intro, step};
 use crate::ui::shortcut;
 use crate::ui::theme;
@@ -124,8 +125,7 @@ pub fn describe(status: &Status) -> Description {
 
 /// The toolbar's profiler control: the stopwatch that turns it on and off. It carries the state in
 /// its colour and its tooltip; the words are in the Profile tab.
-pub fn toolbar(ui: &mut Ui, status: &Status) -> Vec<Action> {
-    let mut actions = Vec::new();
+pub fn toolbar_button<A, M>(status: &Status, on_click: A) -> bar::Button<A, M> {
     let on = *status != Status::Off;
     let description = describe(status);
     let tip = if on {
@@ -138,16 +138,17 @@ pub fn toolbar(ui: &mut Ui, status: &Status) -> Vec<Action> {
         shortcut::PROFILER_TOGGLE
             .hint("Turn the profiler on: see which lines of the script take the time")
     };
-    let color = match (on, description.tone) {
-        (false, _) => theme::text_secondary(),
-        (true, Tone::Caution) => Tone::Caution.color(),
-        (true, Tone::Bad) => Tone::Bad.color(),
-        (true, _) => theme::text_primary(),
+    let mut button = bar::Button::new("profiler", tip)
+        .icon(Icon::Gauge)
+        .active(on)
+        .on_click(on_click);
+    button.quiet = !on;
+    button.tint = match (on, description.tone) {
+        (true, Tone::Caution) => Some(Tone::Caution.color()),
+        (true, Tone::Bad) => Some(Tone::Bad.color()),
+        _ => None,
     };
-    if icons::button(ui, Icon::Gauge, 28.0, color, &tip).clicked() {
-        actions.push(Action::Toggle);
-    }
-    actions
+    button
 }
 
 // MARK: The tab
@@ -882,21 +883,20 @@ mod tests {
     }
 
     #[test]
-    fn the_stopwatch_asks_for_nothing_by_itself_and_takes_the_same_room_in_every_state() {
-        let ctx = egui::Context::default();
-        let mut widths = Vec::new();
+    fn the_stopwatch_is_lit_while_the_profiler_is_on_and_always_toggles_it() {
         for status in every_status() {
-            let mut used = 0.0;
-            frame(&ctx, |ui| {
-                assert!(toolbar(ui, &status).is_empty(), "{status:?}");
-                used = ui.min_rect().width();
-            });
-            widths.push(used.round());
+            let on = status != Status::Off;
+            let button = toolbar_button::<u8, ()>(&status, 7);
+            assert_eq!(button.action, Some(7), "{status:?}");
+            assert_eq!(button.active, on, "{status:?}");
+            assert_eq!(button.quiet, !on, "{status:?}");
+            assert!(button.tip.contains("profiler"), "{status:?}");
+            assert_eq!(
+                button.tint.is_some(),
+                on && matches!(describe(&status).tone, Tone::Caution | Tone::Bad),
+                "{status:?}"
+            );
         }
-        assert!(
-            widths.windows(2).all(|pair| pair[0] == pair[1]),
-            "{widths:?}"
-        );
     }
 
     #[test]

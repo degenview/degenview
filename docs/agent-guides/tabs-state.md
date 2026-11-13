@@ -53,6 +53,7 @@
 
 ## Windows and tabs
 
+- Every tab kind's top bar is the shared `ui::kit::bar` (44 pt, `theme::chrome()`); see [Workspace toolbar](../workspace-toolbar.md). macOS's View menu (between Edit and Window) opens the Pine Studio and Portfolio tabs.
 - Tabs are app-owned on every OS; native automatic tabbing off. Each deferred viewport renders one
   `TabWindow` with `ui::window::tab_bar` as title bar. The coordinator window stays hidden.
 - macOS: transparent full-size content, traffic-light `leading_inset` (zero fullscreen).

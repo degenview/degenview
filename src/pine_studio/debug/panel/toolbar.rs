@@ -6,6 +6,7 @@ use crate::pine::debug::DebugCommand;
 use crate::pine_studio::debug::DebugPanel;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
+use crate::ui::kit::bar;
 use crate::ui::shortcut;
 use crate::ui::theme;
 
@@ -25,19 +26,17 @@ fn button(ui: &mut Ui, icon: Icon, color: Color32, enabled: bool, tooltip: &str)
     false
 }
 
-/// The debugger button: shows or hides the panel under the editor.
-pub fn panel_button(ui: &mut Ui, panel_open: bool) -> bool {
+/// The toolbar's debugger button: shows or hides the panel under the editor, lit while it shows.
+pub fn panel_button<A, M>(panel_open: bool, on_click: A) -> bar::Button<A, M> {
     let tip = if panel_open {
         "Hide the debugger"
     } else {
         "Show the debugger: controls, breakpoints, variables, watches"
     };
-    let color = if panel_open {
-        theme::text_primary()
-    } else {
-        theme::text_secondary()
-    };
-    icons::button(ui, Icon::Bug, 28.0, color, tip).clicked()
+    bar::Button::new("debugger", tip)
+        .icon(Icon::Bug)
+        .active(panel_open)
+        .on_click(on_click)
 }
 
 /// The transport buttons and what the session is doing. Returns the commands pressed.

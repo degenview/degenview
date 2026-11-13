@@ -7,6 +7,10 @@ pub enum NativeCommand {
     /// File ▸ New Script, for the focused Pine Studio.
     NewScript,
     OpenSettings,
+    /// View ▸ Pine Studio.
+    OpenPineStudio,
+    /// View ▸ Portfolio.
+    OpenPortfolio,
     /// Help ▸ DegenView Documentation.
     OpenDocs,
     /// Help ▸ DegenView on GitHub.
@@ -167,6 +171,14 @@ mod platform {
         if let Some(ctx) = CONTEXT.get() {
             ctx.request_repaint();
         }
+    }
+
+    extern "C-unwind" fn open_pine_studio(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::OpenPineStudio);
+    }
+
+    extern "C-unwind" fn open_portfolio(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::OpenPortfolio);
     }
 
     extern "C-unwind" fn open_docs(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
@@ -423,6 +435,8 @@ mod platform {
         install_action(delegate_class, sel!(newWindowForTab:), new_window_for_tab);
         install_action(delegate_class, sel!(newScript:), new_script);
         install_action(delegate_class, sel!(openSettings:), open_settings);
+        install_action(delegate_class, sel!(openPineStudio:), open_pine_studio);
+        install_action(delegate_class, sel!(openPortfolio:), open_portfolio);
         install_action(delegate_class, sel!(openDocs:), open_docs);
         install_action(delegate_class, sel!(openGitHub:), open_github);
         install_action(delegate_class, sel!(openCoffee:), open_coffee);
@@ -610,6 +624,21 @@ mod platform {
         }
         edit_item.setSubmenu(Some(&edit_menu));
         menubar.addItem(&edit_item);
+
+        // View: the two tabs that are one per app. Each opens its tab, or shows the one that is
+        // open, as the chart toolbar's buttons do.
+        let view_item = NSMenuItem::new(mtm);
+        let view_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("View"));
+        for (title, selector) in [
+            (ns_string!("Pine Studio"), sel!(openPineStudio:)),
+            (ns_string!("Portfolio"), sel!(openPortfolio:)),
+        ] {
+            let item = menu_item(mtm, title, Some(selector), ns_string!(""));
+            unsafe { item.setTarget(Some(delegate)) };
+            view_menu.addItem(&item);
+        }
+        view_item.setSubmenu(Some(&view_menu));
+        menubar.addItem(&view_item);
 
         let window_item = NSMenuItem::new(mtm);
         let window_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Window"));

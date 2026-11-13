@@ -325,7 +325,7 @@ fn editor_and_debug(
     shared.borrow_mut().0.debug_height = state.length;
 }
 
-/// The preview header, the chart, and the drawer with its tab bar.
+/// The preview chart and the drawer with its tab bar.
 fn preview_pane(
     ui: &mut Ui,
     preview: &mut PreviewState,
@@ -339,8 +339,8 @@ fn preview_pane(
     let full = ui.max_rect();
     ui.painter().rect_filled(full, 0.0, theme::background());
     let bar_rect = super::drawer::bottom_bar::rect(full);
-    let top = super::preview::header(ui, preview, full);
-    let middle = egui::Rect::from_min_max(pos2(full.min.x, top), pos2(full.max.x, bar_rect.min.y));
+    preview.mark_drawn();
+    let middle = egui::Rect::from_min_max(full.min, pos2(full.max.x, bar_rect.min.y));
 
     let (drawer_height, drawer_open, drawer_tab) = {
         let guard = shared.borrow();

@@ -3,6 +3,7 @@
 //! confirmation alerts and empty states.
 
 pub(in crate::ui) mod art;
+pub mod bar;
 pub mod color_picker;
 pub mod date_picker;
 pub mod dialog;
