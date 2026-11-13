@@ -311,10 +311,11 @@ pub(crate) fn bucket_start_ms(epoch_ms: i64, interval_secs: i64) -> i64 {
     crate::format::days_from_civil(target_year, target_month, 1) * 86_400_000
 }
 
-/// Span a prediction-market line chart covers at an interval, in days.
+/// Span a prediction-market line chart covers at an interval, in days. The hourly chart reaches
+/// back a month, as hourly points: two days left it a flat stub on a market older than that.
 pub(crate) fn effective_span_days(interval: &str) -> i64 {
     match interval {
-        "1h" => 2,
+        "1h" => 30,
         "1d" => 60,
         "1w" => 182,
         "1M" => 360,
@@ -327,7 +328,7 @@ pub(crate) fn effective_span_days(interval: &str) -> i64 {
 /// Points a prediction-market line chart draws at an interval.
 pub(crate) fn line_chart_point_count(interval: &str) -> usize {
     match interval {
-        "1h" => 48,
+        "1h" => 360,
         "1d" => 60,
         "1w" => 26,
         "1M" => 12,

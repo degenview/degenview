@@ -12,7 +12,6 @@ use eframe::egui::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Icon {
     SidebarLeft,
-    SidebarRight,
     ChartLine,
     ChartLineFlat,
     ChartUptrend,
@@ -37,7 +36,7 @@ pub enum Icon {
     ChevronUpDown,
     Eye,
     EyeSlash,
-    Curlybraces,
+    AngleBrackets,
     Check,
     CheckCircleFill,
     XmarkOctagonFill,
@@ -430,15 +429,6 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&[p(3.0, 6.0), p(4.0, 6.0)]);
             line(&[p(12.0, 10.0), p(13.0, 10.0)]);
         }
-        Icon::SidebarRight => {
-            painter.rect_stroke(
-                rect_of(p(1.5, 2.5), p(14.5, 13.5)),
-                round(2.5),
-                stroke,
-                StrokeKind::Middle,
-            );
-            line(&[p(10.0, 2.8), p(10.0, 13.2)]);
-        }
         Icon::SidebarLeft => {
             painter.rect_stroke(
                 rect_of(p(1.5, 2.5), p(14.5, 13.5)),
@@ -584,25 +574,9 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 line(&[p(3.0, 13.5), p(13.0, 2.5)]);
             }
         }
-        Icon::Curlybraces => {
-            line(&[
-                p(6.5, 2.5),
-                p(5.2, 3.2),
-                p(5.2, 6.6),
-                p(3.5, 8.0),
-                p(5.2, 9.4),
-                p(5.2, 12.8),
-                p(6.5, 13.5),
-            ]);
-            line(&[
-                p(9.5, 2.5),
-                p(10.8, 3.2),
-                p(10.8, 6.6),
-                p(12.5, 8.0),
-                p(10.8, 9.4),
-                p(10.8, 12.8),
-                p(9.5, 13.5),
-            ]);
+        Icon::AngleBrackets => {
+            line(&[p(6.0, 4.0), p(2.2, 8.0), p(6.0, 12.0)]);
+            line(&[p(10.0, 4.0), p(13.8, 8.0), p(10.0, 12.0)]);
         }
         Icon::Check => line(&[p(3.0, 8.5), p(6.5, 12.0), p(13.0, 4.5)]),
         Icon::CheckCircleFill => {
@@ -2369,7 +2343,6 @@ mod tests {
         use Icon::*;
         let all = [
             SidebarLeft,
-            SidebarRight,
             ChartLine,
             ChartLineFlat,
             ChartUptrend,
@@ -2392,7 +2365,7 @@ mod tests {
             ChevronUpDown,
             Eye,
             EyeSlash,
-            Curlybraces,
+            AngleBrackets,
             Check,
             CheckCircleFill,
             XmarkOctagonFill,

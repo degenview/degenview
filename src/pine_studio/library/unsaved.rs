@@ -95,7 +95,7 @@ fn title(scripts: &[UnsavedScript]) -> String {
 pub fn show(ctx: &egui::Context, prompt: &ExitPrompt) -> Option<UnsavedChoice> {
     let title = title(&prompt.scripts);
     let mut spec = dialog::Dialog::new(
-        Icon::Curlybraces,
+        Icon::AngleBrackets,
         theme::ORANGE,
         &title,
         prompt.reason.consequence(),
@@ -169,7 +169,7 @@ fn row(ui: &mut Ui, script: &UnsavedScript) {
         egui::pos2(rect.left() + 7.0, rect.center().y),
         vec2(14.0, 14.0),
     );
-    icons::paint(painter, glyph, Icon::Curlybraces, theme::ORANGE);
+    icons::paint(painter, glyph, Icon::AngleBrackets, theme::ORANGE);
 
     // The edit's size sits on the right; the name takes what is left and is cut with an ellipsis.
     let mut right = rect.right();

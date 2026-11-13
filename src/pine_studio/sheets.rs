@@ -75,7 +75,7 @@ impl PineStudio {
             sheet::inset(ui, |ui| {
                 sheet::header(
                     ui,
-                    Icon::Curlybraces,
+                    Icon::AngleBrackets,
                     "New Script",
                     "Create a script file in your library.",
                     theme::ACCENT,
@@ -86,7 +86,7 @@ impl PineStudio {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
-                        icons::inline(ui, Icon::Curlybraces, 13.0, theme::text_secondary());
+                        icons::inline(ui, Icon::AngleBrackets, 13.0, theme::text_secondary());
                         let width = ui.available_width();
                         let response = kit::plain_field(
                             ui,

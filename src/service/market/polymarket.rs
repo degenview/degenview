@@ -267,7 +267,11 @@ mod tests {
 
     #[test]
     fn window_matches_span() {
-        assert_eq!(pm_window("1h").0, "1d");
+        assert_eq!(
+            pm_window("1h"),
+            ("1m".to_owned(), 60),
+            "a month of hourly points"
+        );
         assert_eq!(pm_window("1d").0, "max");
         assert_eq!(pm_window("1w").0, "max");
         assert_eq!(pm_window("1M").0, "max");

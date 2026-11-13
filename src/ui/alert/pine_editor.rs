@@ -195,7 +195,7 @@ fn section_title(ui: &mut Ui, title: &str) {
 fn form(ui: &mut Ui, state: &mut PineAlertEditorState, input: &PineAlertEditorInput) -> bool {
     sheet::header(
         ui,
-        Icon::Curlybraces,
+        Icon::AngleBrackets,
         "Create Script Alert",
         &format!("{} · {}", input.chart_title, input.source_name),
         theme::text_primary(),

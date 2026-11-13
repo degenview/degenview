@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn window_uses_period_steps() {
-        assert_eq!(kalshi_window("1h"), (1, 2 * 86_400));
+        assert_eq!(kalshi_window("1h"), (60, 30 * 86_400));
         assert_eq!(kalshi_window("1d"), (60, 60 * 86_400));
         assert_eq!(kalshi_window("1Y"), (1_440, 364 * 86_400));
     }

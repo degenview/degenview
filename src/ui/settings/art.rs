@@ -118,7 +118,7 @@ impl Art<'_> {
         }
     }
 
-    /// Source lines in colour with a gutter and a caret, and the curly braces on a chip.
+    /// Source lines in colour with a gutter and a caret, and the angle brackets on a chip.
     fn pine_studio(&self) {
         let card = self.scene();
         let gutter = card.left() + 15.0;
@@ -169,7 +169,7 @@ impl Art<'_> {
         }
         let chip = Rect::from_center_size(card.right_bottom() + vec2(-3.0, -1.0), vec2(24.0, 15.0));
         self.chip(chip);
-        self.glyph(Icon::Curlybraces, chip.center(), 9.0, Color32::WHITE);
+        self.glyph(Icon::AngleBrackets, chip.center(), 9.0, Color32::WHITE);
     }
 
     /// A run of candles with a price ladder, and a ticker chip hanging off the corner.
@@ -415,7 +415,7 @@ impl Art<'_> {
         let payload =
             Rect::from_center_size(pos2((from.x + to.x) / 2.0, y - 11.0), vec2(20.0, 12.0));
         self.chip(payload);
-        self.glyph(Icon::Curlybraces, payload.center(), 8.0, Color32::WHITE);
+        self.glyph(Icon::AngleBrackets, payload.center(), 8.0, Color32::WHITE);
     }
 
     /// A card in a viewfinder with its copy behind it, and the shutter.
@@ -475,7 +475,7 @@ impl Art<'_> {
         let hub = card.center() - vec2(0.0, 2.0);
         let nodes = [
             (-150.0_f32, Icon::GaugeHigh),
-            (-30.0, Icon::Curlybraces),
+            (-30.0, Icon::AngleBrackets),
             (90.0, Icon::BellBadge),
         ];
         for (degrees, icon) in nodes {
