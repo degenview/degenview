@@ -24,6 +24,7 @@ use crate::pine_studio::drawer;
 use crate::pine_studio::model::{LocalScript, ScriptType};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::sheet;
 use crate::ui::kit::{self, TabItem};
 use crate::ui::pine::script_catalog;
@@ -34,6 +35,11 @@ use eframe::egui::{
     RichText, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
 use std::sync::Arc;
+use std::time::Instant;
+
+/// The candle indicator before a script row's "Evaluating…", and the gap after it.
+const META_INDICATOR: f32 = 12.0;
+const META_GAP: f32 = 5.0;
 
 /// Swift's ideal sheet width.
 const WIDTH: f32 = 760.0;
@@ -837,6 +843,7 @@ fn scripts_page(
     }
 
     // Copy what the rows show out of the chart, so drawing needs no borrow of it.
+    let now = Instant::now();
     let rows: Vec<RowData> = instances
         .iter()
         .enumerate()
@@ -852,7 +859,8 @@ fn scripts_page(
                 failure: status
                     .as_ref()
                     .and_then(|s| s.error.map(|e| e.message.clone())),
-                evaluating: instance.visible && status.is_none(),
+                evaluating: instance.visible
+                    && (status.is_none() || c.card.pine_busy(instance.id, now)),
                 order: instance.visual_order,
                 position,
                 total: instances.len(),
@@ -1382,20 +1390,37 @@ fn instance_row(
     } else {
         theme::text_secondary()
     };
+    // A failure takes the line; otherwise a script still running is marked with the indicator.
+    let working = row.evaluating && !failing;
+    let lead = if working {
+        META_INDICATOR + META_GAP
+    } else {
+        0.0
+    };
     let mut job = egui::text::LayoutJob::simple_singleline(
         meta_text,
         FontId::proportional(kit::size::CAPTION + 0.5),
         meta_color.gamma_multiply(dim),
     );
-    job.wrap.max_width = title_width;
+    job.wrap.max_width = (title_width - lead).max(0.0);
     job.wrap.max_rows = 1;
     let meta = ui.painter().layout_job(job);
     let top = rect.center().y - (title.size().y + 2.0 + meta.size().y) / 2.0;
     let left = badge.max.x + 12.0;
     ui.painter()
         .galley(pos2(left, top), title.clone(), theme::text_primary());
+    let meta_top = top + title.size().y + 2.0;
+    if working {
+        LoadingIndicator::new().size(META_INDICATOR).paint_at(
+            ui,
+            Rect::from_center_size(
+                pos2(left + META_INDICATOR / 2.0, meta_top + meta.size().y / 2.0),
+                Vec2::splat(META_INDICATOR),
+            ),
+        );
+    }
     ui.painter()
-        .galley(pos2(left, top + title.size().y + 2.0), meta, meta_color);
+        .galley(pos2(left + lead, meta_top), meta, meta_color);
 
     response.context_menu(|ui| {
         let label = if row.visible { "Turn Off" } else { "Turn On" };

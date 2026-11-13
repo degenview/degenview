@@ -7,11 +7,13 @@ use crate::model::{EMA_PERIODS, IndicatorConfig};
 use crate::pine_studio::indicators::BundledIndicator;
 use crate::pine_studio::model::LocalScript;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::popover;
 use crate::ui::kit::{self, size};
 use crate::ui::theme;
 use eframe::egui::{self, Color32, FontId, Galley, Rect, Sense, Ui, Vec2, pos2, vec2};
 use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Kind {
@@ -48,6 +50,35 @@ struct Item {
     title: String,
     visible: bool,
     error: bool,
+    /// The script is still running and has been for a while.
+    busy: bool,
+}
+
+/// What a chip says about its script beside the name.
+#[derive(Clone, Copy, PartialEq)]
+enum Mark {
+    /// The last run failed.
+    Warning,
+    /// A slow run is in progress.
+    Busy,
+}
+
+impl Mark {
+    /// The side of the square the mark is drawn in.
+    fn size(self) -> f32 {
+        match self {
+            Self::Warning => 9.0,
+            Self::Busy => 10.0,
+        }
+    }
+
+    fn paint(self, ui: &Ui, center: egui::Pos2) {
+        let rect = Rect::from_center_size(center, Vec2::splat(self.size()));
+        match self {
+            Self::Warning => icons::paint(ui.painter(), rect, Icon::TriangleFill, kit::ORANGE),
+            Self::Busy => LoadingIndicator::new().size(self.size()).paint_at(ui, rect),
+        }
+    }
 }
 
 fn items(config: &IndicatorConfig, card: &ChartCard) -> Vec<Item> {
@@ -59,8 +90,10 @@ fn items(config: &IndicatorConfig, card: &ChartCard) -> Vec<Item> {
             title: kind.chip_title(config),
             visible: !kind.hidden(config),
             error: false,
+            busy: false,
         })
         .collect();
+    let now = Instant::now();
     items.extend(card.pine_instances().iter().map(|instance| {
         Item {
             kind: Kind::Script(instance.id),
@@ -69,6 +102,7 @@ fn items(config: &IndicatorConfig, card: &ChartCard) -> Vec<Item> {
             error: card
                 .pine_status(instance.id)
                 .is_some_and(|status| status.error.is_some()),
+            busy: card.pine_busy(instance.id, now),
         }
     }));
     items
@@ -146,7 +180,24 @@ impl Item {
             title: title.to_owned(),
             visible,
             error: false,
+            busy: false,
         }
+    }
+
+    /// The mark beside the name: a failure outranks a run in progress.
+    fn mark(&self) -> Option<Mark> {
+        if self.error {
+            Some(Mark::Warning)
+        } else if self.busy {
+            Some(Mark::Busy)
+        } else {
+            None
+        }
+    }
+
+    /// The room the mark takes after the name, gap included.
+    fn mark_room(&self) -> f32 {
+        self.mark().map_or(0.0, |mark| SPACING + mark.size())
     }
 
     fn has_settings(&self) -> bool {
@@ -174,11 +225,11 @@ fn name_color(visible: bool) -> Color32 {
     }
 }
 
-/// The resting width of a chip: its name, a warning if it has one, and the capsule padding.
+/// The resting width of a chip: its name, its mark if it has one, and the capsule padding.
 fn resting_width(ui: &Ui, item: &Item) -> f32 {
     CAPSULE_PADDING
         + item.title_galley(ui, Color32::WHITE).size().x
-        + if item.error { SPACING + 9.0 } else { 0.0 }
+        + item.mark_room()
         + REMOVE_ROOM
         + REMOVE_PADDING
 }
@@ -579,14 +630,13 @@ fn list_row(
         theme::with_alpha(theme::text_secondary(), dim.max(0.6)),
     );
     let name_left = tile.right() + 9.0;
-    let warning = if item.error { 9.0 + SPACING } else { 0.0 };
     let name = kit::galley(
         ui,
         &item.title,
         size::BODY - 0.5,
         kit::MEDIUM,
         theme::with_alpha(theme::text_primary(), dim),
-        (text_right - name_left - warning).max(40.0),
+        (text_right - name_left - item.mark_room()).max(40.0),
     );
     let name_width = name.size().x;
     ui.painter().galley(
@@ -594,15 +644,13 @@ fn list_row(
         name,
         theme::text_primary(),
     );
-    if item.error {
-        icons::paint(
-            ui.painter(),
-            Rect::from_center_size(
-                pos2(name_left + name_width + SPACING + 4.5, rect.center().y),
-                Vec2::splat(9.0),
+    if let Some(mark) = item.mark() {
+        mark.paint(
+            ui,
+            pos2(
+                name_left + name_width + SPACING + mark.size() / 2.0,
+                rect.center().y,
             ),
-            Icon::TriangleFill,
-            kit::ORANGE,
         );
     }
 
@@ -661,8 +709,7 @@ fn chip(
     } else {
         0.0
     };
-    let content =
-        name.size().x + if item.error { SPACING + 9.0 } else { 0.0 } + controls_width + REMOVE_ROOM;
+    let content = name.size().x + item.mark_room() + controls_width + REMOVE_ROOM;
     let (rect, body) = ui.allocate_exact_size(
         vec2(CAPSULE_PADDING + content + REMOVE_PADDING, CAPSULE_HEIGHT),
         Sense::click(),
@@ -716,15 +763,10 @@ fn chip(
             .gap(6.0)
             .show(|ui| ema_menu(ui, config, action));
     }
-    if item.error {
+    if let Some(mark) = item.mark() {
         x += SPACING;
-        icons::paint(
-            ui.painter(),
-            Rect::from_center_size(pos2(x + 4.5, rect.center().y), Vec2::splat(9.0)),
-            Icon::TriangleFill,
-            kit::ORANGE,
-        );
-        x += 9.0;
+        mark.paint(ui, pos2(x + mark.size() / 2.0, rect.center().y));
+        x += mark.size();
     }
     if controls {
         x += SPACING;
@@ -1073,6 +1115,18 @@ mod tests {
             assert!(text_pos(&last, wanted).is_some(), "the list shows {wanted}");
         }
         assert_eq!(picked, None, "opening the list changes nothing");
+    }
+
+    #[test]
+    fn a_failure_outranks_a_run_in_progress_and_each_takes_room() {
+        let mut item = Item::bare(Kind::Script(1), "Script", true);
+        assert_eq!(item.mark_room(), 0.0);
+        item.busy = true;
+        assert!(item.mark() == Some(Mark::Busy));
+        assert_eq!(item.mark_room(), SPACING + 10.0);
+        item.error = true;
+        assert!(item.mark() == Some(Mark::Warning));
+        assert_eq!(item.mark_room(), SPACING + 9.0);
     }
 
     #[test]
