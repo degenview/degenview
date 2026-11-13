@@ -119,7 +119,7 @@ Delete and saved-source writes require their own grants.
 - Workspace ids are persisted tab ids. Reject Portfolio/Pine Studio tabs. Timeframe is
   workspace-wide; adding an existing market returns its chart.
 - Indicators use `model::BuiltIn` and `ChartWorkspace::apply_indicator`: one instance per chart,
-  EMA alone takes one of `EMA_PERIODS`, and Volume is invalid on line charts.
+  EMA alone takes one of `EMA_PERIODS`, and any indicator is invalid on a chart that takes none (prediction markets, CoinMarketCap).
 - Alert tools plan on the app thread with `PriceAlertEditorState`, then queue the runtime's
   `Save`/`SetState`/`Delete`. Responses briefly settle to report applied vs queued state. Alert ids
   are strings. Market is immutable; duplicates conflict; paused remains paused; changed conditions

@@ -109,14 +109,6 @@ impl PartialEq for CatalogEntry {
 }
 
 impl CatalogEntry {
-    /// Scripts and strategies keep to market charts; only a native one runs on a line chart.
-    pub fn runs_on_line_charts(&self) -> bool {
-        match &self.key {
-            EntryKey::Native(kind) => kind.supports_line_charts(),
-            _ => false,
-        }
-    }
-
     fn native(kind: BuiltIn) -> Self {
         let (family, summary, description, aliases): (_, _, _, &[&str]) = match kind {
             BuiltIn::Volume => (
@@ -308,14 +300,5 @@ mod tests {
         assert_eq!(EntryKey::parse("bundled:gone"), None);
         assert_eq!(EntryKey::parse("native:gone"), None);
         assert_eq!(EntryKey::parse("nonsense"), None);
-    }
-
-    #[test]
-    fn only_native_entries_run_on_line_charts_and_not_volume() {
-        let found = all(&scripts());
-        for entry in &found {
-            let expected = matches!(&entry.key, EntryKey::Native(kind) if *kind != BuiltIn::Volume);
-            assert_eq!(entry.runs_on_line_charts(), expected, "{}", entry.title);
-        }
     }
 }

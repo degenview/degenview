@@ -1156,10 +1156,7 @@ impl ChartWorkspace {
         };
         self.undo.push(UndoEntry {
             chart_id,
-            before: Snapshot::Indicators {
-                config: chart.indicators,
-                scripts: chart.chart.pine_instances().to_vec(),
-            },
+            before: Snapshot::indicators_of(chart),
         });
         self.redo.clear();
         self.last_restyle = None;

@@ -120,15 +120,13 @@ fn availability_follows_the_chart_and_the_indicator() {
     assert_eq!(availability(macd, Some(&busy)), Availability::AddAnother);
 
     let line = target(DataSource::CoinMarketCap);
-    assert_eq!(availability(rsi, Some(&line)), Availability::Add);
-    assert!(matches!(
-        availability(macd, Some(&line)),
-        Availability::Blocked(_)
-    ));
-    assert!(matches!(
-        availability(volume, Some(&line)),
-        Availability::Blocked(_)
-    ));
+    for entry in [rsi, macd, volume] {
+        assert!(
+            matches!(availability(entry, Some(&line)), Availability::Blocked(_)),
+            "a line chart takes nothing: {}",
+            entry.title
+        );
+    }
     assert!(matches!(availability(rsi, None), Availability::Blocked(_)));
 }
 
@@ -224,6 +222,11 @@ fn nothing_is_added_without_a_chart_or_for_an_indicator_that_cannot_run_there() 
     let mut rig = Rig::new(1100.0);
     rig.target = Some(target(DataSource::CoinMarketCap));
     rig.type_text("macd");
+    assert_eq!(rig.key(Key::Enter, Modifiers::NONE), None);
+
+    let mut rig = Rig::new(1100.0);
+    rig.target = Some(target(DataSource::Polymarket));
+    rig.type_text("rsi");
     assert_eq!(rig.key(Key::Enter, Modifiers::NONE), None);
 }
 

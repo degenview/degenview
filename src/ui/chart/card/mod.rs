@@ -1918,7 +1918,7 @@ impl ChartCard {
             + 31.0;
         let title_block_width = (header_width - reserved).max(96.0);
         let title_content_width = title_block_width - 18.0;
-        let indicator_space = if indicator_strip::has_items(indicators, self, source) {
+        let indicator_space = if indicator_strip::has_items(indicators, self) {
             35.0
         } else {
             0.0
@@ -2023,7 +2023,7 @@ impl ChartCard {
                             // identical ids across charts made one chart's chips light up another's.
                             action.indicator_action = ui
                                 .push_id(("indicator-strip", drag_id), |ui| {
-                                    indicator_strip::show(ui, self, indicators, source, drag_id)
+                                    indicator_strip::show(ui, self, indicators, drag_id)
                                 })
                                 .inner;
                         }

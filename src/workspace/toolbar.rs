@@ -66,6 +66,7 @@ impl ChartWorkspace {
                     chart_types: !chart.source.is_line_chart(),
                     settings: chart.source != DataSource::CoinMarketCap,
                     compare: self.can_compare(chart.id),
+                    indicators: chart.takes_indicators(),
                 }),
             can_undo: !self.undo.is_empty(),
             can_redo: !self.redo.is_empty(),
@@ -104,7 +105,6 @@ impl ChartWorkspace {
                 ToolbarAction::OpenPineStudio => {
                     actions.push(WorkspaceAction::OpenPineScripts);
                 }
-                ToolbarAction::AddChart => self.open_add_picker(),
                 ToolbarAction::SetChartType(chart_type) => {
                     self.set_focused_chart_type(chart_type);
                 }
@@ -117,8 +117,8 @@ impl ChartWorkspace {
                     }
                 }
                 ToolbarAction::SnapshotSettings => self.snapshot.settings_requested = true,
-                ToolbarAction::Undo => self.undo(),
-                ToolbarAction::Redo => self.redo(),
+                ToolbarAction::Undo => self.undo(ctx),
+                ToolbarAction::Redo => self.redo(ctx),
                 ToolbarAction::OpenIndicators => self.indicator_picker.open(),
                 ToolbarAction::CompareSymbol => self.open_compare_picker(),
             }

@@ -70,6 +70,16 @@ pub(super) struct Chart {
     pub(super) card_runtime: Option<CardRuntime>,
 }
 
+/// The market a chart shows, as undo puts it back: what names it and how it is titled, never the
+/// candles, which are fetched again.
+pub(super) struct MarketState {
+    symbol: String,
+    source: DataSource,
+    title: Option<String>,
+    image_url: Option<String>,
+    pm_series: Vec<PmSeries>,
+}
+
 /// What one fetch brought back: the candles the chart reads, and for a multi-choice prediction
 /// market each choice's own history.
 pub(super) struct Fetched {
@@ -148,6 +158,12 @@ impl Chart {
         self.card.is_none()
     }
 
+    /// Whether indicators and scripts can be put on this chart: a market chart whose source has
+    /// a price to study (not a prediction market or a CoinMarketCap gauge).
+    pub(super) fn takes_indicators(&self) -> bool {
+        self.is_market() && self.source.takes_indicators()
+    }
+
     /// The name shown for the chart: an explicit display title, else its provider symbol.
     pub(super) fn display_title(&self) -> String {
         if let Some(card) = &self.card {
@@ -194,10 +210,43 @@ impl Chart {
     }
 
     /// Replaces the market-specific state while preserving this card's presentation settings.
+    /// A market that takes no indicators leaves the chart without the ones it had.
     pub(super) fn replace_market(&mut self, item: &WatchlistInstrument) {
         self.symbol = item.instrument.symbol.clone();
         self.source = item.instrument.source;
         self.apply_watchlist_metadata(item);
+        self.clear_market_data();
+        if !self.source.takes_indicators() {
+            self.indicators = IndicatorConfig::default();
+            self.chart.set_pine_instances(Vec::new());
+        }
+    }
+
+    /// What names this chart's market, to put back when a replacement is undone.
+    pub(super) fn market_state(&self) -> MarketState {
+        MarketState {
+            symbol: self.symbol.clone(),
+            source: self.source,
+            title: self.chart.title().map(str::to_owned),
+            image_url: self.image_url.clone(),
+            pm_series: self.pm_series.clone(),
+        }
+    }
+
+    /// Puts `state` on the chart, dropping the candles of the market it had, and returns what the
+    /// chart showed. The caller reloads the candles.
+    pub(super) fn swap_market(&mut self, state: MarketState) -> MarketState {
+        let current = self.market_state();
+        self.symbol = state.symbol;
+        self.source = state.source;
+        self.chart.set_title(state.title);
+        self.image_url = state.image_url;
+        self.clear_market_data();
+        self.pm_series = state.pm_series;
+        current
+    }
+
+    fn clear_market_data(&mut self) {
         self.chart.set_series(Vec::new());
         self.pm_series.clear();
         self.last_paper_quote = None;
@@ -228,6 +277,11 @@ impl Chart {
         chart.chart.set_visible_candles(saved.candle_count as usize);
         chart.chart.restore_viewport(saved.viewport);
         chart.indicators = saved.indicators;
+        if !chart.source.takes_indicators() {
+            // A layout saved before these charts stopped taking indicators.
+            chart.indicators = IndicatorConfig::default();
+            chart.chart.set_pine_instances(Vec::new());
+        }
         chart.drawings = saved.drawings;
         chart.next_drawing_id = chart
             .drawings

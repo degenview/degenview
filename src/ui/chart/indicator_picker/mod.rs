@@ -78,8 +78,8 @@ pub fn availability(entry: &CatalogEntry, target: Option<&Target>) -> Availabili
     let Some(target) = target else {
         return Availability::Blocked("Open a chart to add indicators to it.");
     };
-    if target.source.is_line_chart() && !entry.runs_on_line_charts() {
-        return Availability::Blocked("Scripts and volume do not run on this chart.");
+    if !target.source.takes_indicators() {
+        return Availability::Blocked("This chart takes no indicators.");
     }
     match &entry.key {
         EntryKey::Native(kind) if kind.applied(&target.config) => Availability::Remove,
@@ -196,9 +196,9 @@ impl IndicatorPicker {
             return None;
         }
         let scripts = script_catalog::scripts(ctx);
-        // Saved scripts only run on market charts, so a line chart lists none.
+        // Saved scripts only run on charts that take indicators, so the others list none.
         let scripts: &[_] = match target {
-            Some(target) if target.source.is_line_chart() => &[],
+            Some(target) if !target.source.takes_indicators() => &[],
             _ => &scripts[..],
         };
         let all = catalog::all(scripts);

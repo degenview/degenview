@@ -274,7 +274,7 @@ impl ChartWorkspace {
             return;
         }
         if let Some(focused) = self.resolved_focused_id() {
-            self.switch_chart(focused, item, ctx);
+            self.replace_chart_market(focused, item, ctx);
             self.announce_market(item);
         } else {
             self.add_chart_from_instrument(item, ctx);

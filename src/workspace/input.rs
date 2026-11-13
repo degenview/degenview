@@ -23,10 +23,10 @@ impl ChartWorkspace {
         let (undo, redo) =
             ui.input(|input| (shortcut::UNDO.peek(input), shortcut::REDO.peek(input)));
         if undo && !typing {
-            self.undo();
+            self.undo(ui.ctx());
         }
         if redo && !typing {
-            self.redo();
+            self.redo(ui.ctx());
         }
         if !typing && ui.input_mut(|input| shortcut::HIDE_DRAWINGS.consume(input)) {
             self.hide_all_drawings = !self.hide_all_drawings;

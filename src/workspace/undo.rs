@@ -1,10 +1,13 @@
-//! Undo and redo of drawing and indicator changes, and how a burst of restyles becomes one step.
+//! Undo and redo of drawing, indicator and market changes, and how a burst of restyles becomes one
+//! step.
 
 use super::ChartWorkspace;
-use super::chart::Chart;
+use super::chart::{Chart, MarketState};
 use super::drawing::is_ruler;
+use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{Drawing, DrawingCommand, IndicatorConfig};
 use crate::ui::{ViewMove, ViewStep};
+use eframe::egui;
 use std::time::{Duration, Instant};
 
 /// A reversible change to one chart: what it held before, so undo can restore it. The stack is
@@ -23,6 +26,8 @@ pub(super) enum Snapshot {
         config: IndicatorConfig,
         scripts: Vec<crate::model::pine::instance::PineInstance>,
     },
+    /// The market the chart showed before it was replaced. Putting it back reloads the candles.
+    Market(MarketState),
     /// The markets compared on the chart, with their looks: configuration only, never candles.
     /// `scale_mode` is set only by the add that switched the axis to Percent and by the removal of
     /// the last market that switched it back to Regular, so undoing either puts the axis back too
@@ -40,6 +45,23 @@ pub(super) enum Snapshot {
 }
 
 impl Snapshot {
+    /// The applied built-in indicators and the scripts `chart` holds now.
+    pub(super) fn indicators_of(chart: &Chart) -> Self {
+        Self::Indicators {
+            config: chart.indicators,
+            scripts: chart.chart.pine_instances().to_vec(),
+        }
+    }
+
+    /// Whether restoring this swaps the chart's market, which needs its candles loaded again.
+    fn changes_market(&self) -> bool {
+        match self {
+            Self::Market(_) => true,
+            Self::All(parts) => parts.iter().any(Self::changes_market),
+            _ => false,
+        }
+    }
+
     /// Whether restoring this changes what a layout stores. A view does not: it is not saved
     /// with a layout, so undoing a zoom leaves the layout as clean as it found it.
     fn changes_layout(&self) -> bool {
@@ -59,14 +81,12 @@ impl Snapshot {
                 Self::Drawings(current.into_iter().filter(|d| !is_ruler(d)).collect())
             }
             Self::Indicators { config, scripts } => {
-                let current = Self::Indicators {
-                    config: chart.indicators,
-                    scripts: chart.chart.pine_instances().to_vec(),
-                };
+                let current = Self::indicators_of(chart);
                 chart.indicators = config;
                 chart.chart.set_pine_instances(scripts);
                 current
             }
+            Self::Market(state) => Self::Market(chart.swap_market(state)),
             Self::Overlays { list, scale_mode } => Self::Overlays {
                 list: std::mem::replace(&mut chart.overlays, list),
                 scale_mode: scale_mode.map(|mode| std::mem::replace(&mut chart.scale_mode, mode)),
@@ -171,18 +191,42 @@ impl ChartWorkspace {
         self.redo.retain(|entry| !gone(entry));
     }
 
-    pub(super) fn undo(&mut self) {
-        self.step_through(true);
+    pub(super) fn undo(&mut self, ctx: &egui::Context) {
+        self.step_through(true, ctx);
     }
 
-    pub(super) fn redo(&mut self) {
-        self.step_through(false);
+    pub(super) fn redo(&mut self, ctx: &egui::Context) {
+        self.step_through(false, ctx);
+    }
+
+    /// Shows `item` on `chart_id` as one undo step: the market it had comes back, with the
+    /// indicators a market that takes none removes. Returns whether the chart changed.
+    pub(super) fn replace_chart_market(
+        &mut self,
+        chart_id: u64,
+        item: &WatchlistInstrument,
+        ctx: &egui::Context,
+    ) -> bool {
+        let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
+            return false;
+        };
+        let before = Snapshot::All(vec![
+            Snapshot::Market(chart.market_state()),
+            Snapshot::indicators_of(chart),
+        ]);
+        if !self.switch_chart(chart_id, item, ctx) {
+            return false;
+        }
+        self.undo.push(UndoEntry { chart_id, before });
+        self.redo.clear();
+        self.last_restyle = None;
+        true
     }
 
     /// One press of Undo (or Redo): the newest step moves from one stack to the other. A view of
     /// bars the chart no longer shows cannot be put back, so it is dropped and the step beneath it
     /// is the one this press takes: a press that did nothing would be worse than skipping.
-    fn step_through(&mut self, undoing: bool) {
+    fn step_through(&mut self, undoing: bool, ctx: &egui::Context) {
         self.last_restyle = None;
         loop {
             let entry = if undoing {
@@ -201,6 +245,7 @@ impl ChartWorkspace {
                 return;
             };
             let layout = entry.before.changes_layout();
+            let reloads = entry.before.changes_market();
             let Some(after) = entry.before.swap_into(chart) else {
                 continue;
             };
@@ -213,6 +258,13 @@ impl ChartWorkspace {
                 self.redo.push(moved);
             } else {
                 self.undo.push(moved);
+            }
+            if reloads {
+                self.market_changed(entry.chart_id, ctx);
+                if let Some(chart) = self.charts.iter().find(|chart| chart.id == entry.chart_id) {
+                    let item = self.favorite_item(chart);
+                    self.announce_market(&item);
+                }
             }
             return;
         }
@@ -294,18 +346,18 @@ mod tests {
         workspace.apply_drawing_commands(chart, vec![DrawingCommand::Remove(1)]);
         assert_eq!(drawing_ids(&workspace, chart), vec![2]);
 
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(drawing_ids(&workspace, chart), vec![1, 2]);
         assert_eq!(
             workspace.charts[0].drawings[0].anchors()[0].time_ms,
             900,
             "the move came back as one step"
         );
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(workspace.charts[0].drawings[0].anchors()[0].time_ms, 100);
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(drawing_ids(&workspace, chart), vec![1]);
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(
             drawing_ids(&workspace, chart),
             vec![1],
@@ -313,13 +365,13 @@ mod tests {
         );
 
         for _ in 0..3 {
-            workspace.redo();
+            workspace.redo(&egui::Context::default());
         }
         assert_eq!(drawing_ids(&workspace, chart), vec![2]);
         // A new edit clears what could be redone.
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(rectangle(3, 0))]);
-        workspace.redo();
+        workspace.redo(&egui::Context::default());
         assert_eq!(drawing_ids(&workspace, chart), vec![1, 2, 3]);
     }
 
@@ -382,7 +434,7 @@ mod tests {
                 .width,
             6.0
         );
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(
             workspace.charts[0].drawings[0]
                 .style()
@@ -439,11 +491,11 @@ mod tests {
         let version = workspace.drawings_version;
         zoomed(&mut workspace, chart, 40, 30.0);
 
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(chart_offset(&workspace, chart), 0.0, "back where it was");
-        workspace.redo();
+        workspace.redo(&egui::Context::default());
         assert_eq!(chart_offset(&workspace, chart), 30.0, "zoomed again");
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(chart_offset(&workspace, chart), 0.0);
         assert_eq!(
             workspace.drawings_version, version,
@@ -459,13 +511,13 @@ mod tests {
         zoomed(&mut workspace, chart, 40, 30.0);
 
         // Undo takes the zoom first, then the removal.
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(chart_offset(&workspace, chart), 0.0);
         assert!(
             drawing_ids(&workspace, chart).is_empty(),
             "the zoom came last"
         );
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(drawing_ids(&workspace, chart), vec![1]);
 
         // Zooming again after an undo drops what could have been redone.
@@ -487,18 +539,18 @@ mod tests {
         assert_eq!(workspace.undo.len(), 2, "Zoom out is a step too");
 
         // Undoing it zooms back in, and Zoom out is offered again.
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(chart_offset(&workspace, chart), 30.0);
         assert!(workspace.charts[0].chart.can_zoom_out());
         // Undoing the zoom itself leaves nothing to zoom out of.
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(chart_offset(&workspace, chart), 0.0);
         assert!(!workspace.charts[0].chart.can_zoom_out());
         // Redo brings both back, history included.
-        workspace.redo();
+        workspace.redo(&egui::Context::default());
         assert_eq!(chart_offset(&workspace, chart), 30.0);
         assert!(workspace.charts[0].chart.can_zoom_out());
-        workspace.redo();
+        workspace.redo(&egui::Context::default());
         assert_eq!(chart_offset(&workspace, chart), 0.0);
         assert!(!workspace.charts[0].chart.can_zoom_out());
     }
@@ -517,7 +569,7 @@ mod tests {
         // Undo every zoom: the history empties as the zooms it lists are undone and stays empty
         // for the ones it had already forgotten.
         for undone in 1..=zooms {
-            workspace.undo();
+            workspace.undo(&egui::Context::default());
             assert_eq!(
                 history(&workspace),
                 cap.saturating_sub(undone),
@@ -533,7 +585,7 @@ mod tests {
 
         // Redo them all: each one offers the view it came from, up to the cap.
         for redone in 1..=zooms {
-            workspace.redo();
+            workspace.redo(&egui::Context::default());
             assert_eq!(
                 history(&workspace),
                 redone.min(cap),
@@ -556,7 +608,7 @@ mod tests {
             .set_chart_type(crate::model::ChartType::Renko);
         let viewport = workspace.charts[0].chart.saved_viewport();
 
-        workspace.undo();
+        workspace.undo(&egui::Context::default());
         assert_eq!(
             workspace.charts[0].chart.saved_viewport(),
             viewport,
@@ -589,5 +641,127 @@ mod tests {
         workspace.forget_views(None);
         assert_eq!(workspace.undo.len(), 1);
         assert!(matches!(workspace.undo[0].before, Snapshot::Drawings(_)));
+    }
+
+    fn replace(
+        workspace: &mut ChartWorkspace,
+        chart: u64,
+        source: crate::model::DataSource,
+        symbol: &str,
+        ctx: &egui::Context,
+    ) -> bool {
+        let item = WatchlistInstrument::from_market(source, symbol, symbol);
+        workspace.replace_chart_market(chart, &item, ctx)
+    }
+
+    fn market(workspace: &ChartWorkspace) -> (crate::model::DataSource, String) {
+        (
+            workspace.charts[0].source,
+            workspace.charts[0].symbol.clone(),
+        )
+    }
+
+    #[test]
+    fn replacing_a_chart_is_one_undo_step_that_brings_back_its_market() {
+        use crate::model::DataSource;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(11);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        workspace.charts[0].indicators.show_rsi = true;
+
+        assert!(replace(
+            &mut workspace,
+            chart,
+            DataSource::Coinbase,
+            "ETH-USD",
+            &ctx
+        ));
+        assert_eq!(market(&workspace), (DataSource::Coinbase, "ETH-USD".into()));
+        assert!(
+            workspace.charts[0].indicators.show_rsi,
+            "a market keeps them"
+        );
+        assert_eq!(workspace.undo.len(), 1);
+
+        workspace.undo(&ctx);
+        assert_eq!(market(&workspace), (DataSource::Binance, "BTCUSDT".into()));
+        assert_eq!(drawing_ids(&workspace, chart), vec![1]);
+        workspace.redo(&ctx);
+        assert_eq!(market(&workspace), (DataSource::Coinbase, "ETH-USD".into()));
+        workspace.undo(&ctx);
+        assert_eq!(market(&workspace), (DataSource::Binance, "BTCUSDT".into()));
+    }
+
+    #[test]
+    fn a_market_that_takes_no_indicators_removes_them_and_undo_brings_them_back() {
+        use crate::model::DataSource;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(12);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.charts[0].indicators.show_rsi = true;
+        workspace.charts[0]
+            .chart
+            .add_pine_instance(None, "Mine", "plot(close)");
+
+        for (source, symbol) in [
+            (DataSource::Polymarket, "some-market"),
+            (DataSource::CoinMarketCap, "fear-greed"),
+        ] {
+            assert!(replace(&mut workspace, chart, source, symbol, &ctx));
+            assert_eq!(workspace.charts[0].indicators, IndicatorConfig::default());
+            assert!(workspace.charts[0].chart.pine_instances().is_empty());
+            assert_eq!(workspace.undo.len(), 1, "one step for both");
+
+            workspace.undo(&ctx);
+            assert_eq!(market(&workspace), (DataSource::Binance, "BTCUSDT".into()));
+            assert!(workspace.charts[0].indicators.show_rsi);
+            assert_eq!(workspace.charts[0].chart.pine_instances().len(), 1);
+            workspace.redo(&ctx);
+            assert!(workspace.charts[0].chart.pine_instances().is_empty());
+            workspace.undo(&ctx);
+        }
+    }
+
+    #[test]
+    fn showing_the_same_market_or_following_a_link_leaves_no_step() {
+        use crate::model::DataSource;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(13);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        assert!(!replace(
+            &mut workspace,
+            chart,
+            DataSource::Binance,
+            "BTCUSDT",
+            &ctx
+        ));
+        assert!(!replace(
+            &mut workspace,
+            999,
+            DataSource::Binance,
+            "ETHUSDT",
+            &ctx
+        ));
+        assert!(workspace.undo.is_empty());
+
+        // Tab Linking moves the market without it being this tab's own edit.
+        let item = WatchlistInstrument::from_market(DataSource::Binance, "ETHUSDT", "ETHUSDT");
+        assert!(workspace.switch_chart(chart, &item, &ctx));
+        assert!(workspace.undo.is_empty());
+    }
+
+    #[test]
+    fn a_new_replacement_ends_the_redo_line() {
+        use crate::model::DataSource;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(14);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        replace(&mut workspace, chart, DataSource::Binance, "ETHUSDT", &ctx);
+        workspace.undo(&ctx);
+        assert_eq!(workspace.redo.len(), 1);
+        replace(&mut workspace, chart, DataSource::Binance, "SOLUSDT", &ctx);
+        assert!(workspace.redo.is_empty());
+        workspace.undo(&ctx);
+        assert_eq!(market(&workspace), (DataSource::Binance, "BTCUSDT".into()));
     }
 }

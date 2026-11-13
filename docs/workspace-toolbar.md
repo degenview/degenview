@@ -9,13 +9,13 @@ faint tint on hover, hairline separators between groups, small corner radius.
 Left to right: symbol (the focused chart's market, opens the [symbol picker](symbol-picker.md)) and a
 ⊕ beside it that compares another market (the same picker in Compare mode as the chart settings'
 Compare page, `open_compare_picker`; disabled where a chart cannot take one) |
-timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators | Replay, Alert | Undo, Redo. Right end, from the edge inwards: Add Chart (opens the symbol picker in Add mode) | watchlist toggle, Pine Studio, Portfolio |
+timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators | Replay, Alert | Undo, Redo. Right end, from the edge inwards: watchlist toggle, Pine Studio, Portfolio |
 snapshot menu, chart settings | layout menu.
 
 - Every button is a `Button` (id, glyph, label, tooltip, enabled, lit, action). `measure` lays the
   labels out, `arrange` places the two runs, `paint_button` draws one. Tests use `arrange`, so the
   geometry they check is the one drawn.
-- Width: when both runs with labels do not fit, labels (Indicators, Add Chart) drop and the
+- Width: when both runs with labels do not fit, the Indicators label drops and the
   icons stay (Replay and Alert are icon only at every width, their tooltips name them); a button without an icon (a timeframe, the layout name) keeps its text. If the runs still
   collide, the right run drops buttons from its left end (the layout menu first). Never overlap. The
   narrowest window is 960 wide and keeps everything but possibly the layout name (the icon-only
@@ -33,12 +33,13 @@ snapshot menu, chart settings | layout menu.
   does the same.
 - **Chart type, Indicators, chart settings** act on the focused market chart
   (`ChartWorkspace::focused_market_chart`). They are disabled with none (empty tab, a portfolio card
-  focused), the chart type for a line-only source, settings for a CoinMarketCap gauge. A card header has
+  focused), the chart type for a line-only source, settings for a CoinMarketCap gauge, Indicators for a
+  prediction market or a gauge (`DataSource::takes_indicators`). A card header has
   no chart-type button and no "+" any more; a card's title still opens its settings.
 - **Replay** moved here from the tool rail (`ChartWorkspace::toggle_replay`); enabled with a market
   chart (CoinMarketCap excepted) or while a replay is open.
 - **Undo / Redo** are the workspace's undo stacks (`undo.rs`), the same as the keyboard shortcut;
-  disabled when the stack is empty.
+  disabled when the stack is empty. They also take back a replaced chart market.
 - **Alert** starts a price alert on the focused chart's market (`create_alert_for_focused_chart`); it
   opens the alert editor, never saves one, and is disabled for a market with no price feed.
 - **Snapshot** (camera, right of chart settings) opens the snapshot menu for the focused chart
