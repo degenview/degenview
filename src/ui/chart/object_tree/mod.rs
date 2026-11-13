@@ -409,7 +409,7 @@ fn row_icon(row: &Row) -> Icon {
             BuiltIn::Rsi => Icon::Waveform,
             BuiltIn::Ema | BuiltIn::Bollinger | BuiltIn::TrendFlips => Icon::ChartUptrend,
         },
-        Key::Indicator(IndicatorKey::Script(_)) => Icon::Curlybraces,
+        Key::Indicator(IndicatorKey::Script(_)) => Icon::AngleBrackets,
         Key::Overlay(_) => Icon::Compare,
         Key::Drawing(_) => row.tool.map_or(Icon::Pencil, tool_icon),
     }

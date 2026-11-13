@@ -356,7 +356,7 @@ fn every_row_leads_with_the_glyph_of_what_it_is() {
             None,
             None
         )),
-        Icon::Curlybraces
+        Icon::AngleBrackets
     );
     let builtin = |indicator| {
         row_icon(&row(

@@ -464,7 +464,7 @@ impl IndicatorPicker {
                 if sidebar_row(
                     ui,
                     width,
-                    Icon::Curlybraces,
+                    Icon::AngleBrackets,
                     "Open Pine Studio",
                     None,
                     false,

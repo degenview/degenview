@@ -91,7 +91,7 @@ impl Tab {
     fn icon(self) -> Icon {
         match self {
             Self::Indicators => Icon::Waveform,
-            Self::Scripts => Icon::Curlybraces,
+            Self::Scripts => Icon::AngleBrackets,
             Self::Appearance => Icon::Palette,
             Self::Canvas => Icon::MacWindow,
             Self::Overlays => Icon::Compare,
@@ -798,7 +798,7 @@ fn scripts_page(
             );
         });
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            if kit::push_button(ui, Some(Icon::Curlybraces), "Pine Studio", true)
+            if kit::push_button(ui, Some(Icon::AngleBrackets), "Pine Studio", true)
                 .on_hover_text("Write, edit and organise scripts")
                 .clicked()
             {
@@ -1042,7 +1042,7 @@ fn empty_state(ui: &mut Ui, action: &mut Option<ChartSettingsAction>) {
                 icons::paint(
                     ui.painter(),
                     Rect::from_center_size(disc.center(), Vec2::splat(20.0)),
-                    Icon::Curlybraces,
+                    Icon::AngleBrackets,
                     theme::text_secondary(),
                 );
                 ui.add_space(12.0);

@@ -425,7 +425,7 @@ impl AlertTab {
             Self::Paused => Icon::PauseCircle,
             Self::All => Icon::List,
             Self::History => Icon::ClockArrow,
-            Self::Scripts => Icon::Curlybraces,
+            Self::Scripts => Icon::AngleBrackets,
         }
     }
 
@@ -436,7 +436,7 @@ impl AlertTab {
             Self::Paused => Icon::PauseCircle,
             Self::All => Icon::Bell,
             Self::History => Icon::ClockArrow,
-            Self::Scripts => Icon::Curlybraces,
+            Self::Scripts => Icon::AngleBrackets,
         }
     }
 }

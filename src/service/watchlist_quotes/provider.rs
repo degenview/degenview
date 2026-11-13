@@ -279,36 +279,53 @@ fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
     parse_alpaca_snapshots(&body, requests)
 }
 
-/// Last price of the past day's series, and its first price as the comparison.
+/// The hourly points a prediction market's quote reads: a month of them, from which the price a
+/// day before the last one is picked.
+const PREDICTION_POINTS: u32 = 720;
+
+/// The price a day before the last point of `series` (oldest first), or the oldest one when the
+/// market has not been traded that long.
+fn day_before(series: &[crate::model::Kline]) -> Option<f64> {
+    const DAY_MS: i64 = 86_400_000;
+    let last = series.last()?;
+    series
+        .iter()
+        .find(|point| point.open_time >= last.open_time - DAY_MS)
+        .map(|point| point.close)
+}
+
+/// Last price of a prediction market's hourly series, and its price a day earlier as the
+/// comparison.
 fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
     let mut outcome = Outcome::default();
     let mut streak = 0;
     for (index, request) in requests.iter().enumerate() {
-        let series = match crate::service::fetch_klines(source, &request.symbol, "1h", 30) {
-            Ok(series) => {
-                streak = 0;
-                series
-            }
-            Err(message) => {
-                streak += 1;
-                let stop = streak >= CONSECUTIVE_FAILURES;
-                let upto = if stop { requests.len() } else { index + 1 };
-                outcome.failed.push((
-                    symbols_of(&requests[index..upto]),
-                    QuoteFailure::Failed(message),
-                ));
-                if stop {
-                    break;
+        let series =
+            match crate::service::fetch_klines(source, &request.symbol, "1h", PREDICTION_POINTS) {
+                Ok(series) => {
+                    streak = 0;
+                    series
                 }
-                continue;
-            }
-        };
-        if let (Some(first), Some(last)) = (series.first(), series.last()) {
+                Err(message) => {
+                    streak += 1;
+                    let stop = streak >= CONSECUTIVE_FAILURES;
+                    let upto = if stop { requests.len() } else { index + 1 };
+                    outcome.failed.push((
+                        symbols_of(&requests[index..upto]),
+                        QuoteFailure::Failed(message),
+                    ));
+                    if stop {
+                        break;
+                    }
+                    continue;
+                }
+            };
+        if let (Some(before), Some(last)) = (day_before(&series), series.last()) {
             outcome.quotes.insert(
                 request.symbol.clone(),
                 SourceQuote {
                     price: last.close,
-                    previous_day_price: Some(first.close),
+                    previous_day_price: Some(before),
                     ..SourceQuote::default()
                 },
             );
@@ -569,6 +586,28 @@ pub fn parse_iso_ms(text: &str) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_prediction_quote_compares_with_the_price_a_day_earlier() {
+        use crate::model::Kline;
+        let point = |hours: i64, price: f64| Kline {
+            open_time: hours * 3_600_000,
+            close_time: hours * 3_600_000,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+            volume: 0.0,
+        };
+        let month: Vec<Kline> = (0..=720).map(|hour| point(hour, hour as f64)).collect();
+        assert_eq!(super::day_before(&month), Some(696.0));
+        // A market younger than a day compares with its first price.
+        assert_eq!(
+            super::day_before(&[point(0, 0.4), point(5, 0.5)]),
+            Some(0.4)
+        );
+        assert_eq!(super::day_before(&[]), None);
+    }
+
     #[test]
     fn only_a_symbol_level_refusal_makes_the_engine_search_for_the_bad_symbol() {
         use super::classify_status as classify;

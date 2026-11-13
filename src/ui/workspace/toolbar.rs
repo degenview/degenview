@@ -1,10 +1,9 @@
 //! The chart window's toolbar, flat like TradingView's and LuxAlgo's: borderless buttons that
 //! tint on hover, hairline separators between groups and labels that fall back to icons when the
-//! window is too narrow for them. Left to right: the symbol of the focused chart, the timeframe,
-//! the chart type, Indicators, Replay and Alert (the last two icon only), Undo and Redo, in
+//! window is too narrow for them. Left to right: the symbol of the focused chart, Indicators, the
+//! timeframe, the chart type, Replay and Alert (the last two icon only), Undo and Redo, in
 //! groups divided by separators. On the right: the layout menu, chart settings, the snapshot menu,
-//! Portfolio, Pine Studio
-//! and the watchlist toggle. The replay bar under it (`replay_bar.rs`) uses the same
+//! Portfolio, Pine Studio and the watchlist toggle. The replay bar under it (`replay_bar.rs`) uses the same
 //! flat style. The symbol, chart type, Indicators and chart settings act on the
 //! focused chart.
 
@@ -413,6 +412,19 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
             .on_click(ToolbarAction::CompareSymbol),
     ));
     items.push(Item::Separator);
+    let indicators_tip = if input.chart.is_some_and(|chart| !chart.indicators) {
+        "Indicators: this chart takes none"
+    } else {
+        "Indicators: add one to the focused chart"
+    };
+    items.push(Item::Button(
+        Button::new("indicators", indicators_tip)
+            .icon(Icon::Waveform)
+            .label("Indicators")
+            .enabled(input.chart.is_some_and(|chart| chart.indicators))
+            .on_click(ToolbarAction::OpenIndicators),
+    ));
+    items.push(Item::Separator);
     for timeframe in Timeframe::ALL {
         let selected = timeframe == input.timeframe;
         let mut button = Button::new(("timeframe", timeframe.label()), timeframe.description());
@@ -436,19 +448,6 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
     type_button.glyph = Some(Glyph::ChartType(chart_type));
     type_button.menu = Some(Menu::ChartType);
     items.push(Item::Button(type_button));
-    items.push(Item::Separator);
-    let indicators_tip = if input.chart.is_some_and(|chart| !chart.indicators) {
-        "Indicators: this chart takes none"
-    } else {
-        "Indicators: add one to the focused chart"
-    };
-    items.push(Item::Button(
-        Button::new("indicators", indicators_tip)
-            .icon(Icon::Waveform)
-            .label("Indicators")
-            .enabled(input.chart.is_some_and(|chart| chart.indicators))
-            .on_click(ToolbarAction::OpenIndicators),
-    ));
     items.push(Item::Separator);
     let mut replay = Button::new(
         "replay",
@@ -534,12 +533,12 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
         ),
         Item::Button(
             Button::new("pine-studio", "Pine Studio")
-                .icon(Icon::Curlybraces)
+                .icon(Icon::AngleBrackets)
                 .on_click(ToolbarAction::OpenPineStudio),
         ),
         Item::Button(
             Button::new("watchlist", watchlist_tip)
-                .icon(Icon::SidebarRight)
+                .icon(Icon::List)
                 .active(input.watchlist_visible)
                 .on_click(ToolbarAction::ToggleWatchlist),
         ),

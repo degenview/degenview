@@ -337,7 +337,7 @@ impl SettingsSection {
     pub(in crate::ui) fn icon(self) -> Icon {
         match self {
             Self::Appearance => Icon::Paintbrush,
-            Self::PineStudio => Icon::Curlybraces,
+            Self::PineStudio => Icon::AngleBrackets,
             Self::Alpaca => Icon::ChartLine,
             Self::Brokers => Icon::ArrowLeftRight,
             Self::CoinMarketCap => Icon::Gauge,

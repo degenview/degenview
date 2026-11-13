@@ -574,7 +574,7 @@ fn list_row(
         Rect::from_center_size(tile.center(), Vec2::splat(12.0)),
         match item.kind {
             Kind::BuiltIn(kind) => kind.icon(),
-            Kind::Script(_) => Icon::Curlybraces,
+            Kind::Script(_) => Icon::AngleBrackets,
         },
         theme::with_alpha(theme::text_secondary(), dim.max(0.6)),
     );

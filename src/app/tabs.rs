@@ -39,7 +39,7 @@ impl TabContent {
         match self {
             Self::Chart(_) => Icon::ChartLine,
             Self::Portfolio(_) => Icon::Briefcase,
-            Self::Pine(_) => Icon::Curlybraces,
+            Self::Pine(_) => Icon::AngleBrackets,
         }
     }
 }

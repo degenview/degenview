@@ -139,7 +139,7 @@ pub fn view(
             kit::empty_state(
                 ui,
                 rect,
-                Icon::Curlybraces,
+                Icon::AngleBrackets,
                 "No Script Alerts",
                 "Apply a script with alert() calls, then create an alert from it.",
             );
@@ -164,9 +164,9 @@ pub fn view(
     }
     if kit::footer_bar(
         ui,
-        Icon::Curlybraces,
+        Icon::AngleBrackets,
         "Script alerts are created from alert() calls in your scripts.",
-        Icon::Curlybraces,
+        Icon::AngleBrackets,
         "Open Pine Studio",
         true,
         "Write and manage the scripts whose alert() calls appear here",
@@ -224,7 +224,7 @@ fn card(ui: &mut egui::Ui, row: &ScriptAlertRow, actions: &mut Vec<AlertCenterAc
     icons::paint(
         ui.painter(),
         Rect::from_center_size(icon.center(), Vec2::splat(15.0)),
-        Icon::Curlybraces,
+        Icon::AngleBrackets,
         kit::ACCENT,
     );
     if let Some(source) = row.source {
