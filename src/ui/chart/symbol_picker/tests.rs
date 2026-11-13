@@ -809,6 +809,47 @@ fn ticked_choices_are_charted_together_led_by_the_first_in_event_order() {
 }
 
 #[test]
+fn one_ticked_choice_gets_its_own_button_and_is_what_return_takes() {
+    let mut rig = predictions_rig();
+    rig.key(Key::Enter, Modifiers::NONE);
+    let item = choice_of(&mut rig, "Cut");
+    rig.picker.tick(&item);
+    assert!(
+        texts(&mut rig).iter().any(|text| text == "Chart 1 choice"),
+        "the footer offers to chart it"
+    );
+    // Return on another choice of the event takes the tick, not the highlighted row.
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    let Some(Output::Replace(result)) = output else {
+        panic!("expected a replace, got {output:?}");
+    };
+    assert_eq!(result.symbol, "Cut");
+    // Unticking it takes the button away again.
+    rig.picker.tick(&item);
+    assert!(
+        texts(&mut rig)
+            .iter()
+            .all(|text| !text.starts_with("Chart ") || text.ends_with("chart"))
+    );
+}
+
+#[test]
+fn a_watchlist_names_the_button_for_ticked_choices_as_an_add() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.open_for_watchlist("Favorites");
+    rig.picker.set_scope(Scope::Predictions);
+    rig.type_text("fed");
+    rig.key(Key::Enter, Modifiers::NONE);
+    for label in ["Cut", "Hold"] {
+        let item = choice_of(&mut rig, label);
+        rig.picker.tick(&item);
+    }
+    assert!(texts(&mut rig).iter().any(|text| text == "Add 2 choices"));
+}
+
+#[test]
 fn ticks_do_not_follow_the_user_to_another_event_or_tab() {
     let mut rig = predictions_rig();
     rig.key(Key::Enter, Modifiers::NONE);

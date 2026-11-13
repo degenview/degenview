@@ -61,7 +61,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     events start folded, one alone starts open. Return, or a click, on a header folds it; on a choice
     it uses that choice. **Ticking** choices (the checkbox, or the header's for all of them) charts
     them together as the lines of one chart: Return on a choice of that event, or the footer's
-    `Chart N choices` button, takes every tick (`event.series`, the first in the event's order leads
+    `Chart N choices` button (shown from the first tick; "Add N choices" in Watchlist mode), takes every tick (`event.series`, the first in the event's order leads
     the chart). Ticks live in one event only, and are dropped on another tab. The empty box lists the
     topic chips (`PREDICTION_TOPICS`, on at most two lines that scroll sideways) and "Trending on Polymarket" (`predictions/trending.rs`, 10 minutes
     fresh, a failure retried after 30 seconds and shown as nothing); Kalshi cannot rank its markets,

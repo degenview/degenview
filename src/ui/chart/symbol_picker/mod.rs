@@ -683,7 +683,7 @@ impl SymbolPicker {
     fn selection(&self, result: &SearchResult) -> SearchResult {
         match &self.ticked {
             Some(ticked)
-                if predictions::ticked_count(Some(ticked)) > 1
+                if predictions::ticked_count(Some(ticked)) >= 1
                     && predictions::event_title(ticked) == predictions::event_title(result) =>
             {
                 ticked.clone()
@@ -1378,10 +1378,10 @@ impl SymbolPicker {
         let together = self
             .ticked
             .as_ref()
-            .filter(|ticked| predictions::ticked_count(Some(ticked)) > 1);
+            .filter(|ticked| predictions::ticked_count(Some(ticked)) >= 1);
         let mut right = area.right() - PADDING;
         if let Some(ticked) = together {
-            let label = format!("Chart {} choices", predictions::ticked_count(Some(ticked)));
+            let label = self.ticked_label(predictions::ticked_count(Some(ticked)));
             let width = kit::galley(
                 ui,
                 &label,
@@ -1467,6 +1467,15 @@ impl SymbolPicker {
             row.add_space(10.0);
         }
         hit
+    }
+
+    /// What the footer's button for `count` ticked choices says.
+    fn ticked_label(&self, count: usize) -> String {
+        let choices = if count == 1 { "choice" } else { "choices" };
+        match self.mode {
+            PickMode::Watchlist => format!("Add {count} {choices}"),
+            _ => format!("Chart {count} {choices}"),
+        }
     }
 
     /// What Return does on the highlighted row, in the footer's words.
