@@ -38,10 +38,11 @@ provider id is `InstrumentId::api_symbol()`.
 
 `backdrop.rs`: a trend line over the top of the page, behind the title, in the colour of a rising market. It is a pure
 function of the clock (smooth value noise over hashed lattice points, two octaves), scrolling left with the
-newest price at the right, so it keeps no state and never repeats. The line wanders in the top 122 pt and the page content
+newest price at the right, so it keeps no state and never repeats. The page starts `PAGE_TOP` (48 pt) down; the line wanders in the 122 pt under that and the page content
 starts below it; the fade fill reaches 340 pt down. The fill is a vertex-coloured mesh, the one gradient on
-this page, asked for as decoration; cards stay flat. While the window is focused it asks for a frame every
-33 ms; unfocused it keeps its last frame and costs nothing. There is no reduced-motion setting in the app yet.
+this page, asked for as decoration; cards stay flat. It asks for a frame every
+33 ms for as long as the page is drawn, focused or not (a window behind another still shows it, and a frame
+every 250 ms made it crawl); the system does not draw a hidden or minimised window, so that costs nothing. There is no reduced-motion setting in the app yet.
 
 ## Checking it
 

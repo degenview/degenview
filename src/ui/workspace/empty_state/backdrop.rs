@@ -65,14 +65,13 @@ fn smoothstep(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
-/// Paints the picture in the top of `area` and, while the window is in front, asks for the next
-/// frame. A background window keeps its last frame and costs nothing.
+/// Paints the picture in the top of `area` and asks for the next frame. It keeps playing while the
+/// window is behind another (the page is still on screen); a window that is hidden or minimised
+/// is not drawn by the system, so it costs nothing then.
 pub fn show(ui: &Ui, area: Rect) {
-    let (time, focused) = ui.input(|input| (input.time, input.viewport().focused.unwrap_or(false)));
+    let time = ui.input(|input| input.time);
     paint(&ui.painter().with_clip_rect(area), area, time);
-    if focused {
-        ui.ctx().request_repaint_after(FRAME);
-    }
+    ui.ctx().request_repaint_after(FRAME);
 }
 
 /// The picture at `time`.
