@@ -29,7 +29,10 @@ const HEADER_ART: f32 = 36.0;
 /// Where the checkbox column starts, shared by headers and choices so the boxes line up.
 const CHECK_LEFT: f32 = PAD + CHEVRON + 8.0;
 /// How far a lone choice's artwork is pushed in to stand where an event's artwork does.
-pub const ART_INDENT: f32 = CHECK_LEFT + CHECKBOX + 10.0 - PAD;
+pub const ART_INDENT: f32 = ART_LEFT - PAD;
+/// Where an event's artwork starts, and where its title (and its choices' labels) start.
+const ART_LEFT: f32 = CHECK_LEFT + CHECKBOX + 10.0;
+const TEXT_LEFT: f32 = ART_LEFT + HEADER_ART + 12.0;
 
 /// An event's header: chevron, checkbox, artwork, title over its summary, and the exchange.
 pub fn event_header(
@@ -79,12 +82,12 @@ pub fn event_header(
     paint_checkbox(ui.painter(), checkbox, head.tick);
 
     let art = Rect::from_center_size(
-        pos2(checkbox.right() + 10.0 + HEADER_ART / 2.0, rect.center().y),
+        pos2(rect.left() + ART_LEFT + HEADER_ART / 2.0, rect.center().y),
         Vec2::splat(HEADER_ART),
     );
     prediction_icon(ui, art, &head.title, head.image_url.as_deref());
     let venue_left = venue_block(ui, rect, content_right(rect), head.source());
-    let text_left = art.right() + 12.0;
+    let text_left = rect.left() + TEXT_LEFT;
     let text_width = (venue_left - 16.0 - text_left).max(40.0);
     let title = kit::galley(
         ui,
@@ -114,8 +117,8 @@ pub fn event_header(
     (response, out)
 }
 
-/// One choice of an open event: checkbox, its label over up to two lines, and its chance. No
-/// artwork: the event's own sits on the header above.
+/// One choice of an open event: its checkbox under the event's artwork, its label over up to two
+/// lines under the event's title, and its chance. It has no artwork of its own.
 pub fn choice(
     ui: &mut Ui,
     result: &SearchResult,
@@ -123,7 +126,7 @@ pub fn choice(
     state: RowState,
     width: f32,
 ) -> (Response, RowOutput) {
-    let text_left = CHECK_LEFT + CHECKBOX + 12.0;
+    let text_left = TEXT_LEFT;
     // Room kept at the right for the chance and the plus.
     let label = text::galley_rows(
         ui,
@@ -138,7 +141,7 @@ pub fn choice(
     let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
     let response = crate::ui::accessibility::label(response, result.symbol.clone());
     let checkbox = Rect::from_center_size(
-        pos2(rect.left() + CHECK_LEFT + CHECKBOX / 2.0, rect.center().y),
+        pos2(rect.left() + ART_LEFT + HEADER_ART / 2.0, rect.center().y),
         Vec2::splat(CHECKBOX),
     );
     let tick = ui
