@@ -13,7 +13,7 @@ content at most 1000 pt in up to five columns.
 | --- | --- |
 | Recent | A list card of every remembered market (`RECENT_LIMIT`, 24): artwork with its data-source badge, symbol, source, week sparkline and, when the row is wide enough, the week's change (share over amount, coloured by direction; share only for prediction markets). The card takes the room left under it less four rows (at least three) and scrolls; only rows in view are drawn and read. "Clear" link under the card, "Remove from Recent" context menu. Not filtered against favorites (they are separate tabs now). |
 | Favorites | Market tiles in sidebar order, at most `ITEM_LIMIT`; when more exist, a last "N more" tile opens the watchlist sidebar. |
-| Suggestions | Ten crypto tiles (Binance, quoted in USDT) and, under a hairline, ten stocks and ETFs (Alpaca), always. Without an Alpaca key a stock tile still adds the chart, which then shows the chart's own no-data state. |
+| Suggestions | Ten crypto tiles (Binance, quoted in USDT) and, under a hairline, ten stocks and ETFs (Alpaca), always. Tiles look like favorites: artwork with the source's logo on its corner and the week's sparkline at the right. Without an Alpaca key a stock tile has no sparkline, and still adds the chart, which then shows the chart's own no-data state. |
 | Layouts | One card per saved layout: name, "N charts · TF", first three tickers. No thumbnail: layouts store no image. |
 
 The tab bar is `kit::icon_tabs`, the same pill track as Add Chart and the asset picker. The page opens

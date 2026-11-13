@@ -235,7 +235,7 @@ fn starters(
                     source,
                     title: ticker,
                     subtitle: Some(name),
-                    badged: false,
+                    badged: true,
                 },
                 frame,
             )

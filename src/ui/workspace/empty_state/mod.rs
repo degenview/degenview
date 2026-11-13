@@ -406,6 +406,21 @@ mod tests {
                 );
             }
         }
+        for (index, ticker) in [
+            "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let slope = if index % 3 == 1 { -0.5 } else { 0.8 };
+            let week: Vec<f32> = (0..7)
+                .map(|day| 50.0 + slope * day as f32 + ((day * 3 + index) % 4) as f32 * 0.6)
+                .collect();
+            trends.insert(
+                InstrumentId::new(DataSource::Alpaca, ticker).key(),
+                Trend::Ready(week),
+            );
+        }
         for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
             for (width, size_name) in [(1100.0, "wide"), (640.0, "narrow")] {
                 for (returning, tab) in [
