@@ -415,7 +415,10 @@ fn preview_pane(
     shared.borrow_mut().0.drawer_height = drawer_state.length;
     *copied_at = copied.into_inner();
 
-    let status = preview.borrow().status_text();
+    let (status, busy) = {
+        let preview = preview.borrow();
+        (preview.status_text(), preview.is_busy())
+    };
     let output = drawer::bar(
         ui,
         bar_rect,
@@ -423,6 +426,7 @@ fn preview_pane(
         drawer_open,
         &input.problems,
         &status,
+        busy,
     );
     if let Some(tab) = output.tab {
         cmds.borrow_mut().push(Cmd::SetDrawerTab(tab));

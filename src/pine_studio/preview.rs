@@ -528,7 +528,7 @@ impl PreviewState {
         let Some(applied) = &self.applied_source else {
             return "No script applied".to_owned();
         };
-        if self.loading && self.candles.is_empty() {
+        if self.evaluating() {
             return "Evaluating…".to_owned();
         }
         let _ = applied;
@@ -542,6 +542,22 @@ impl PreviewState {
             self.title_hint(),
             self.candles.len()
         )
+    }
+
+    /// Whether the applied script has no result to show yet: the candles are still coming, or its
+    /// run has been going on long enough to say so (`ChartCard::pine_busy`).
+    fn evaluating(&self) -> bool {
+        self.applied_source.is_some()
+            && ((self.loading && self.candles.is_empty())
+                || self.card.pine_busy(PREVIEW_INSTANCE, Instant::now()))
+    }
+
+    /// Whether the status bar shows its busy indicator: exactly while it reads "Evaluating…".
+    pub fn is_busy(&self) -> bool {
+        self.script_type != Some(ScriptType::Library)
+            && self.runtime_error().is_none()
+            && !self.compile_failed
+            && self.evaluating()
     }
 
     fn title_hint(&self) -> String {
@@ -1619,6 +1635,27 @@ mod tests {
             preview.applied_source.as_deref(),
             Some(edited.source.as_str())
         );
+    }
+
+    #[test]
+    fn the_status_bar_is_busy_exactly_while_it_reads_evaluating() {
+        let mut preview = state();
+        assert!(!preview.is_busy(), "nothing applied is not busy");
+        preview.script_changed("s1");
+        let good = input("plot(close)", false);
+        preview.source_changed(&good);
+        preview.maybe_apply(&good);
+        preview.loading = true;
+        preview.candles.clear();
+        assert_eq!(preview.status_text(), "Evaluating…");
+        assert!(preview.is_busy());
+        preview.loading = false;
+        assert!(!preview.is_busy());
+        assert_ne!(preview.status_text(), "Evaluating…");
+        // A failure takes the place of the indicator, as on the chart's chip.
+        preview.loading = true;
+        preview.compile_failed = true;
+        assert!(!preview.is_busy());
     }
 
     #[test]

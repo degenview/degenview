@@ -45,6 +45,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::{self, Receiver, Sender},
 };
+use std::time::{Duration, Instant};
 
 /// The least the price axis is wide, for a chart whose labels are short.
 const PRICE_AXIS_WIDTH: f32 = 44.0;
@@ -478,6 +479,17 @@ struct Run {
     /// (`None` until the first styling).
     styled: Arc<VisualOutput>,
     styled_with: Option<HashMap<String, String>>,
+    /// When the run in flight was first requested; `None` while its latest result is in.
+    busy_since: Option<Instant>,
+}
+
+/// How long a run has to take before the chart says so. Live ticks run a script again on every
+/// update, and a quick one must not flash an indicator each time.
+const PINE_BUSY_AFTER: Duration = Duration::from_millis(400);
+
+/// Whether a run requested at `since` is slow enough, at `now`, to show as busy.
+fn is_slow(since: Option<Instant>, now: Instant) -> bool {
+    since.is_some_and(|since| now.saturating_duration_since(since) >= PINE_BUSY_AFTER)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1162,6 +1174,14 @@ impl ChartCard {
             })
     }
 
+    /// Whether the instance's latest run has been going on long enough to show a busy state. A
+    /// hidden instance has no run, so it is never busy.
+    pub fn pine_busy(&self, id: u64, now: Instant) -> bool {
+        self.runs
+            .get(&id)
+            .is_some_and(|run| is_slow(run.busy_since, now))
+    }
+
     // The single-script preview (Pine Studio): one instance, id 0, that keeps its last good
     // output while a newer source fails to run.
 
@@ -1289,6 +1309,7 @@ impl ChartCard {
                         output: shown,
                         error: None,
                         last_valid: previous_valid,
+                        busy_since: None,
                     },
                 );
             }
@@ -1302,6 +1323,7 @@ impl ChartCard {
                     if result.generation != run.generation {
                         continue;
                     }
+                    run.busy_since = None;
                     let output = Arc::new(result.output);
                     let shown = match (&result.error, run.last_valid.clone()) {
                         (None, _) => {
@@ -1338,6 +1360,13 @@ impl ChartCard {
                         visible_range,
                         now_ms,
                     });
+                    run.busy_since.get_or_insert_with(Instant::now);
+                }
+                if let Some(since) = run.busy_since {
+                    // The chip shows the indicator from the first frame past the threshold.
+                    if let Some(left) = PINE_BUSY_AFTER.checked_sub(since.elapsed()) {
+                        ctx.request_repaint_after(left);
+                    }
                 }
                 if run.styled_with.as_ref() != Some(&instance.style_overrides) {
                     run.styled = Arc::new(
@@ -3364,6 +3393,19 @@ mod market_switch_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_run_is_busy_only_once_it_is_slow() {
+        use super::{Duration, Instant, PINE_BUSY_AFTER, is_slow};
+        let start = Instant::now();
+        assert!(!is_slow(None, start + PINE_BUSY_AFTER * 10));
+        assert!(!is_slow(Some(start), start));
+        assert!(!is_slow(
+            Some(start),
+            start + PINE_BUSY_AFTER - Duration::from_millis(1)
+        ));
+        assert!(is_slow(Some(start), start + PINE_BUSY_AFTER));
+    }
+
     #[test]
     fn contained_center_keeps_an_item_inside_the_bounds() {
         use super::contained_center;

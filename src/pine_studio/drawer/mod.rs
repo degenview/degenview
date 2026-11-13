@@ -17,6 +17,7 @@ use crate::pine::runtime::state::AlertEvent;
 use crate::pine::strategy::{StrategyReport, Trade};
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::pine::report::{self, PineReportFormat};
 use crate::ui::{kit, theme};
 use eframe::egui::{
@@ -64,7 +65,12 @@ pub struct BarOutput {
     pub toggle: bool,
 }
 
-/// The bottom bar under the drawer: tabs, the status string, the open/close chevron.
+/// The side of the busy indicator before the status, and the gap after it.
+const STATUS_INDICATOR: f32 = 10.0;
+const STATUS_INDICATOR_GAP: f32 = 5.0;
+
+/// The bottom bar under the drawer: tabs, the status string (with the candle indicator before it
+/// while `busy`), the open/close chevron.
 pub fn bar(
     ui: &mut Ui,
     rect: Rect,
@@ -72,6 +78,7 @@ pub fn bar(
     open: bool,
     problems: &[Diagnostic],
     status: &str,
+    busy: bool,
 ) -> BarOutput {
     let mut output = BarOutput::default();
     bottom_bar::paint(ui, rect);
@@ -195,11 +202,22 @@ pub fn bar(
             theme::text_secondary(),
         );
         // Tail truncation: the string is clipped at the left edge of the chevron.
+        let text_left = status_rect.max.x - galley.size().x.min(status_rect.width());
+        let indicator_left = text_left - STATUS_INDICATOR_GAP - STATUS_INDICATOR;
+        if busy && indicator_left >= status_rect.min.x {
+            LoadingIndicator::new().size(STATUS_INDICATOR).paint_at(
+                ui,
+                Rect::from_center_size(
+                    pos2(
+                        indicator_left + STATUS_INDICATOR / 2.0,
+                        status_rect.center().y,
+                    ),
+                    Vec2::splat(STATUS_INDICATOR),
+                ),
+            );
+        }
         painter.galley(
-            pos2(
-                status_rect.max.x - galley.size().x.min(status_rect.width()),
-                status_rect.center().y - galley.size().y / 2.0,
-            ),
+            pos2(text_left, status_rect.center().y - galley.size().y / 2.0),
             galley,
             theme::text_secondary(),
         );
