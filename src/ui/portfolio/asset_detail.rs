@@ -8,7 +8,7 @@
 
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::{PortfolioAsset, PortfolioHolding, PortfolioTransaction};
-use crate::ui::chart::add::{art, sheet as add_chart_sheet};
+use crate::ui::chart::picker_kit::{art, widgets};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::kit::sheet;
@@ -300,12 +300,12 @@ fn no_position(ui: &mut egui::Ui) {
     );
 }
 
-/// Add Chart's header art, then the asset's ticker as the title and where it comes from under it.
+/// The portfolio header art, then the asset's ticker as the title and where it comes from under it.
 fn header(ui: &mut egui::Ui, input: &AssetDetailInput) {
     let Some(asset) = input.asset else {
         return;
     };
-    add_chart_sheet::header(
+    widgets::header(
         ui,
         art::Scene::Portfolio,
         &format!("{} Transactions", asset.display_ticker()),

@@ -9,10 +9,6 @@ use eframe::egui;
 
 impl ChartWorkspace {
     pub(super) fn handle_keyboard(&mut self, ui: &egui::Ui) {
-        // Undo in the Add Chart search box edits the text, not the charts behind it.
-        if self.add_chart.is_open() {
-            return;
-        }
         // Not under another picker, and not while typing: the field keeps Ctrl+K where it means
         // something else.
         if !self.symbol_picker.is_open()

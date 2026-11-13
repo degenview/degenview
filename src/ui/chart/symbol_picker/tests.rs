@@ -1,5 +1,7 @@
 use super::*;
+use crate::model::portfolio::card::CardKind;
 use crate::model::watchlist::quote::Freshness;
+use crate::service::EventInfo;
 use crate::ui::render_tests::{Screen, gallery_dir};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -42,6 +44,56 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Str
         ]),
         (Coinbase, "eth") => Ok(vec![pair(Coinbase, "ETH-USD", "ETH", "USD")]),
         (Alpaca, _) => Err(service::ALPACA_MISSING_KEY.to_owned()),
+        (DataSource::Polymarket, "fed") => Ok(vec![
+            chance(DataSource::Polymarket, "Fed decision", "Cut", Some(0.2)),
+            chance(DataSource::Polymarket, "Fed decision", "Hold", Some(0.7)),
+            chance(DataSource::Polymarket, "Fed decision", "Hike", Some(0.1)),
+            chance(DataSource::Polymarket, "Rain tomorrow?", "Yes", Some(0.4)),
+        ]),
+        (DataSource::Kalshi, "fed") => Ok(vec![
+            chance(DataSource::Kalshi, "Fed rate", "Above 5%", Some(0.6)),
+            chance(DataSource::Kalshi, "Fed rate", "Below 5%", Some(0.3)),
+        ]),
+        (DataSource::Kalshi, "boom") => Err("Kalshi is down".to_owned()),
+        _ => Ok(Vec::new()),
+    }
+}
+
+/// One choice of a prediction event, as a provider lists it.
+fn chance(source: DataSource, event: &str, label: &str, chance: Option<f64>) -> SearchResult {
+    SearchResult {
+        price: chance,
+        event: Some(EventInfo {
+            title: event.into(),
+            stats: Box::new(if event == "Fed decision" {
+                crate::service::EventStats {
+                    volume: Some(31_625_167),
+                    volume_24h: Some(4_615_988),
+                    liquidity: Some(1_834_558),
+                    open_interest: Some(5_149_829),
+                    ends_at_ms: Some(1_796_000_000_000),
+                    category: None,
+                    about: Some(
+                        "The FED interest rates are defined in this market by the upper bound of the target federal funds range, which the Federal Open Market Committee sets at each of its meetings."
+                            .into(),
+                    ),
+                }
+            } else {
+                crate::service::EventStats::default()
+            }),
+            ..EventInfo::default()
+        }),
+        ..SearchResult::new(source, label, format!("{event}/{label}"))
+    }
+}
+
+fn stub_trending(source: DataSource, _limit: usize) -> Result<Vec<SearchResult>, String> {
+    match source {
+        DataSource::Polymarket => Ok(vec![
+            chance(source, "Election", "Left", Some(0.45)),
+            chance(source, "Election", "Right", Some(0.55)),
+            chance(source, "Bitcoin above 100k?", "Yes", Some(0.62)),
+        ]),
         _ => Ok(Vec::new()),
     }
 }
@@ -65,6 +117,7 @@ fn stub_related(asset: &str) -> Vec<SearchResult> {
 const STUB: Backend = Backend {
     search: stub_search,
     related: stub_related,
+    trending: stub_trending,
 };
 
 fn press(key: Key, modifiers: Modifiers) -> egui::Event {
@@ -96,6 +149,7 @@ struct Rig {
     replacing: Option<String>,
     overlaid: Vec<InstrumentId>,
     can_overlay: bool,
+    cards_on_tab: Vec<PortfolioCard>,
 }
 
 impl Rig {
@@ -121,6 +175,7 @@ impl Rig {
             replacing: Some("ETHUSDT".to_owned()),
             overlaid: Vec::new(),
             can_overlay: false,
+            cards_on_tab: Vec::new(),
         };
         rig.settle();
         rig
@@ -142,6 +197,7 @@ impl Rig {
             replacing: self.replacing.as_deref(),
             overlaid: &self.overlaid,
             can_overlay: self.can_overlay,
+            cards_on_tab: &self.cards_on_tab,
         };
         let output = self.screen.run(events, |ui| {
             if let Some(output) = picker.show(ui.ctx(), &env) {
@@ -188,10 +244,19 @@ impl Rig {
         let listing = self.picker.listing(&ctx);
         self.picker
             .rows(&listing)
-            .results
-            .into_iter()
-            .map(|result| result.symbol)
+            .items
+            .iter()
+            .map(item_name)
             .collect()
+    }
+}
+
+/// What a row is called.
+fn item_name(item: &Item) -> String {
+    match item {
+        Item::Market(result) | Item::Choice(result) => result.symbol.clone(),
+        Item::Event(head) => head.title.clone(),
+        Item::Tile(tile) => tile.title.clone(),
     }
 }
 
@@ -263,7 +328,7 @@ fn return_replaces_with_the_highlighted_market_and_closes() {
     };
     assert_eq!(result.symbol, "BTCUSDC");
     assert!(!rig.picker.is_open());
-    let recents = sheet::load_recents(&rig.store.lock().unwrap());
+    let recents = recents::load_recents(&rig.store.lock().unwrap());
     assert_eq!(recents[0].full_symbol, "BTCUSDC");
 }
 
@@ -369,6 +434,10 @@ fn tab_walks_the_market_tabs_and_each_narrows_the_list() {
     assert_eq!(rig.picker.scope, Scope::Crypto);
     assert!(!rig.names().iter().any(|name| name.contains("Grayscale")));
     rig.key(Key::Tab, Modifiers::NONE);
+    assert_eq!(rig.picker.scope, Scope::Predictions);
+    rig.key(Key::Tab, Modifiers::NONE);
+    assert_eq!(rig.picker.scope, Scope::Dashboards);
+    rig.key(Key::Tab, Modifiers::NONE);
     assert_eq!(rig.picker.scope, Scope::Watchlists);
     rig.key(Key::Tab, Modifiers::NONE);
     assert_eq!(rig.picker.scope, Scope::All);
@@ -467,7 +536,14 @@ fn the_watchlists_tab_lists_each_list_in_order_and_filters_without_searching() {
 #[test]
 fn the_watchlists_tab_is_the_last_tab_and_tab_wraps_to_all() {
     let mut rig = Rig::new(1100.0, "btc");
-    for expected in [Scope::Stocks, Scope::Crypto, Scope::Watchlists, Scope::All] {
+    for expected in [
+        Scope::Stocks,
+        Scope::Crypto,
+        Scope::Predictions,
+        Scope::Dashboards,
+        Scope::Watchlists,
+        Scope::All,
+    ] {
         rig.key(Key::Tab, Modifiers::NONE);
         assert_eq!(rig.picker.scope, expected);
     }
@@ -619,7 +695,7 @@ fn the_highlighted_market_is_the_one_the_workspace_prices() {
 
 #[test]
 fn it_draws_at_every_size_with_and_without_the_detail_panel() {
-    for width in [480.0, 700.0, 780.0, 1100.0] {
+    for width in [480.0, 568.0, 700.0, 780.0, 1100.0] {
         let mut rig = Rig::new(width, "btc");
         rig.quote = Some(quote(76_075.70, 208.12, 0.27, Freshness::Live));
         rig.on_tab = vec![InstrumentId::new(DataSource::Binance, "BTCUSDT")];
@@ -627,6 +703,455 @@ fn it_draws_at_every_size_with_and_without_the_detail_panel() {
         rig.picker.set_scope(Scope::Stocks);
         rig.settle();
     }
+}
+
+/// The text the last frame drew, as the footer and the rows say it.
+fn texts(rig: &mut Rig) -> Vec<String> {
+    let (_, output) = rig.frame_with_output(Vec::new());
+    output
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A picker on the Predictions tab with the stub's answers to "fed" in.
+fn predictions_rig() -> Rig {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.set_scope(Scope::Predictions);
+    rig.type_text("fed");
+    rig
+}
+
+/// The choice rows of the open event called `title`.
+fn choice_of(rig: &mut Rig, label: &str) -> Item {
+    let ctx = rig.screen.ctx.clone();
+    let listing = rig.picker.listing(&ctx);
+    rig.picker
+        .rows(&listing)
+        .items
+        .into_iter()
+        .find(|item| matches!(item, Item::Choice(result) if result.symbol == label))
+        .unwrap_or_else(|| panic!("{label} is listed"))
+}
+
+#[test]
+fn the_predictions_tab_groups_choices_under_their_event_and_folds_them() {
+    let mut rig = predictions_rig();
+    // Providers answer in order; several events start folded, and a lone choice is a market.
+    assert_eq!(rig.names(), ["Fed decision", "Yes", "Fed rate"]);
+    assert!(rig.heads().is_empty(), "answers to a query have no caption");
+    // Return on a header shows its choices, likeliest first, and picks nothing.
+    let output = rig.key(Key::Enter, Modifiers::NONE);
+    assert!(output.is_none(), "{output:?}");
+    assert_eq!(
+        rig.names(),
+        ["Fed decision", "Hold", "Cut", "Hike", "Yes", "Fed rate"]
+    );
+    rig.key(Key::Enter, Modifiers::NONE);
+    assert_eq!(rig.names(), ["Fed decision", "Yes", "Fed rate"]);
+    assert!(rig.picker.is_open());
+}
+
+#[test]
+fn a_venue_narrows_the_predictions_to_one_provider() {
+    let mut rig = predictions_rig();
+    rig.picker.set_venue(Some(DataSource::Kalshi));
+    rig.settle();
+    // One event alone starts open.
+    assert_eq!(rig.names(), ["Fed rate", "Above 5%", "Below 5%"]);
+    rig.picker.set_venue(Some(DataSource::Polymarket));
+    rig.settle();
+    assert_eq!(rig.names(), ["Fed decision", "Yes"]);
+}
+
+#[test]
+fn return_on_a_lone_prediction_choice_uses_it_like_any_market() {
+    let mut rig = predictions_rig();
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    let Some(Output::Replace(result)) = output else {
+        panic!("expected a replace, got {output:?}");
+    };
+    assert_eq!(result.symbol, "Yes");
+    assert_eq!(result.event.expect("event").title, "Rain tomorrow?");
+    // Predictions are never remembered as recent markets.
+    assert!(recents::load_recents(&rig.store.lock().unwrap()).is_empty());
+}
+
+#[test]
+fn ticked_choices_are_charted_together_led_by_the_first_in_event_order() {
+    let mut rig = predictions_rig();
+    rig.key(Key::Enter, Modifiers::NONE);
+    for label in ["Cut", "Hold"] {
+        let item = choice_of(&mut rig, label);
+        rig.picker.tick(&item);
+    }
+    assert_eq!(predictions::ticked_count(rig.picker.ticked.as_ref()), 2);
+    assert!(
+        texts(&mut rig).iter().any(|text| text == "Chart 2 choices"),
+        "the footer offers to chart them"
+    );
+    // Return on a choice of that event takes every tick, not just the row.
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    let Some(Output::Replace(result)) = output else {
+        panic!("expected a replace, got {output:?}");
+    };
+    let series = result.event.expect("event").series;
+    let labels: Vec<&str> = series.iter().map(|choice| choice.label.as_str()).collect();
+    assert_eq!(labels, ["Hold", "Cut"]);
+    assert_eq!(result.symbol, "Hold");
+}
+
+#[test]
+fn one_ticked_choice_gets_its_own_button_and_is_what_return_takes() {
+    let mut rig = predictions_rig();
+    rig.key(Key::Enter, Modifiers::NONE);
+    let item = choice_of(&mut rig, "Cut");
+    rig.picker.tick(&item);
+    assert!(
+        texts(&mut rig).iter().any(|text| text == "Chart 1 choice"),
+        "the footer offers to chart it"
+    );
+    // Return on another choice of the event takes the tick, not the highlighted row.
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    let Some(Output::Replace(result)) = output else {
+        panic!("expected a replace, got {output:?}");
+    };
+    assert_eq!(result.symbol, "Cut");
+    // Unticking it takes the button away again.
+    rig.picker.tick(&item);
+    assert!(
+        texts(&mut rig)
+            .iter()
+            .all(|text| !text.starts_with("Chart ") || text.ends_with("chart"))
+    );
+}
+
+#[test]
+fn a_watchlist_names_the_button_for_ticked_choices_as_an_add() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.open_for_watchlist("Favorites");
+    rig.picker.set_scope(Scope::Predictions);
+    rig.type_text("fed");
+    rig.key(Key::Enter, Modifiers::NONE);
+    for label in ["Cut", "Hold"] {
+        let item = choice_of(&mut rig, label);
+        rig.picker.tick(&item);
+    }
+    assert!(texts(&mut rig).iter().any(|text| text == "Add 2 choices"));
+}
+
+#[test]
+fn ticks_do_not_follow_the_user_to_another_event_or_tab() {
+    let mut rig = predictions_rig();
+    rig.key(Key::Enter, Modifiers::NONE);
+    for label in ["Cut", "Hold"] {
+        let item = choice_of(&mut rig, label);
+        rig.picker.tick(&item);
+    }
+    // Return elsewhere (the lone choice) uses that row alone.
+    for _ in 0..4 {
+        rig.key(Key::ArrowDown, Modifiers::NONE);
+    }
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(
+        matches!(&output, Some(Output::Replace(r)) if r.symbol == "Yes" && r.event.as_ref().is_some_and(|e| e.series.is_empty())),
+        "{output:?}"
+    );
+
+    let mut rig = predictions_rig();
+    rig.key(Key::Enter, Modifiers::NONE);
+    let item = choice_of(&mut rig, "Cut");
+    rig.picker.tick(&item);
+    rig.picker.set_scope(Scope::All);
+    assert!(rig.picker.ticked.is_none());
+}
+
+#[test]
+fn an_empty_predictions_box_lists_the_trending_events() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.set_scope(Scope::Predictions);
+    rig.settle();
+    assert_eq!(rig.heads(), ["Trending on Polymarket"]);
+    assert_eq!(rig.names(), ["Election", "Yes"]);
+    // Kalshi cannot say what is busiest: nothing is listed, and the topics stay.
+    rig.picker.set_venue(Some(DataSource::Kalshi));
+    rig.settle();
+    assert!(rig.names().is_empty());
+    assert!(rig.heads().is_empty());
+    rig.picker.set_venue(None);
+    assert_eq!(rig.names(), ["Election", "Yes"]);
+}
+
+#[test]
+fn a_provider_that_fails_is_named_and_the_others_still_answer() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.set_scope(Scope::Predictions);
+    rig.type_text("boom");
+    let ctx = rig.screen.ctx.clone();
+    let listing = rig.picker.listing(&ctx);
+    assert_eq!(listing.errors.len(), 1);
+    assert_eq!(listing.errors[0].0, DataSource::Kalshi);
+    assert!(rig.names().is_empty());
+}
+
+fn portfolios() -> Vec<Portfolio> {
+    vec![Portfolio::new(1, "Main", 0), Portfolio::new(2, "Alts", 0)]
+}
+
+fn dashboards_rig(with_portfolios: bool) -> Rig {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.set_scope(Scope::Dashboards);
+    assert!(rig.picker.wants_portfolios());
+    if with_portfolios {
+        rig.picker.set_portfolios(portfolios());
+    }
+    rig.settle();
+    rig
+}
+
+#[test]
+fn the_dashboards_tab_lists_the_indices_then_the_portfolio_views() {
+    let mut rig = dashboards_rig(true);
+    let names = rig.names();
+    assert_eq!(names.len(), 8, "{names:?}");
+    assert_eq!(names[0], "Altcoin Season History");
+    assert_eq!(names[4], "Portfolio Value Chart");
+    assert_eq!(rig.heads(), ["Market indices", "Portfolio"]);
+    // Nothing on this tab has a price to fetch.
+    assert!(rig.picker.highlighted().is_none());
+    rig.type_text("allocation");
+    assert_eq!(rig.names(), ["Allocation"]);
+}
+
+#[test]
+fn an_index_replaces_the_chart_like_a_market_and_a_view_adds_a_card() {
+    let mut rig = dashboards_rig(true);
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    let Some(Output::Replace(result)) = output else {
+        panic!("an index replaces, got {output:?}");
+    };
+    assert_eq!(result.source, DataSource::CoinMarketCap);
+    assert_eq!(
+        result.full_symbol,
+        crate::service::market::cmc::CHART_TYPES[0].0
+    );
+    assert!(recents::load_recents(&rig.store.lock().unwrap()).is_empty());
+
+    let mut rig = dashboards_rig(true);
+    for _ in 0..4 {
+        rig.key(Key::ArrowDown, Modifiers::NONE);
+    }
+    assert!(texts(&mut rig).iter().any(|text| text == "Add card"));
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    let Some(Output::AddCard(card)) = output else {
+        panic!("a view adds a card, got {output:?}");
+    };
+    assert_eq!((card.kind, card.portfolio_id), (CardKind::ValueChart, None));
+}
+
+#[test]
+fn the_portfolio_filter_scopes_the_cards() {
+    let mut rig = dashboards_rig(true);
+    rig.picker.set_filter(Filter::Portfolio(Some(2)));
+    for _ in 0..5 {
+        rig.key(Key::ArrowDown, Modifiers::NONE);
+    }
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    let Some(Output::AddCard(card)) = output else {
+        panic!("a view adds a card, got {output:?}");
+    };
+    assert_eq!((card.kind, card.portfolio_id), (CardKind::Value, Some(2)));
+    // The filter is the portfolios', not the exchanges'.
+    let menu = rig.picker.filter_menu().expect("a filter");
+    assert_eq!(menu.label, "Alts");
+    assert!(menu.active);
+}
+
+#[test]
+fn without_a_portfolio_the_tab_offers_the_indices_and_says_where_views_come_from() {
+    let mut rig = dashboards_rig(false);
+    assert_eq!(rig.names().len(), 4);
+    assert_eq!(rig.heads(), ["Market indices"]);
+    let ctx = rig.screen.ctx.clone();
+    let listing = rig.picker.listing(&ctx);
+    assert!(rig.picker.rows(&listing).note.is_some());
+    assert!(rig.picker.filter_menu().is_none(), "nothing to filter by");
+    // A card already on the tab is checked.
+    let mut rig = dashboards_rig(true);
+    rig.cards_on_tab = vec![PortfolioCard::new(CardKind::Allocation, None)];
+    rig.settle();
+    let item = Item::Tile(
+        dashboards::groups(&portfolios(), None, "")
+            .remove(1)
+            .tiles
+            .remove(2),
+    );
+    let state = rig.picker.row_state(
+        0,
+        &item,
+        &Env {
+            on_tab: &[],
+            quote: None,
+            replacing: None,
+            overlaid: &[],
+            can_overlay: false,
+            cards_on_tab: &rig.cards_on_tab,
+        },
+    );
+    assert!(state.on_chart);
+}
+
+#[test]
+fn the_add_mode_adds_a_chart_and_says_so() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.open_add();
+    rig.type_text("btc");
+    assert_eq!(rig.picker.mode(), PickMode::Add);
+    let shown = texts(&mut rig);
+    assert!(shown.iter().any(|text| text == "Add chart"), "{shown:?}");
+    assert!(shown.iter().all(|text| !text.starts_with("Replace")));
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(matches!(output, Some(Output::Add(result)) if result.symbol == "BTCUSDT"));
+    assert!(!rig.picker.is_open());
+}
+
+#[test]
+fn the_watchlist_mode_follows_markets_and_stays_open_for_the_next() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.open_for_watchlist("Favorites");
+    rig.type_text("btc");
+    assert_eq!(rig.picker.mode(), PickMode::Watchlist);
+    let shown = texts(&mut rig);
+    assert!(
+        shown.iter().any(|text| text == "Add to Favorites"),
+        "{shown:?}"
+    );
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(matches!(output, Some(Output::Watchlist(result)) if result.symbol == "BTCUSDT"));
+    assert!(
+        rig.picker.is_open(),
+        "the next market is one keystroke away"
+    );
+    assert!(texts(&mut rig).iter().any(|text| text == "Added BTCUSDT"));
+    // ⇧Return does the same: a watchlist has nothing to replace.
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::SHIFT)]);
+    assert!(matches!(output, Some(Output::Watchlist(_))), "{output:?}");
+    // What a watchlist follows is not a recent chart.
+    assert!(recents::load_recents(&rig.store.lock().unwrap()).is_empty());
+}
+
+#[test]
+fn the_watchlist_mode_adds_views_and_predictions_and_skips_its_own_tab() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.open_for_watchlist("Favorites");
+    let mut seen = vec![rig.picker.scope];
+    for _ in 0..Scope::TABS.len() {
+        rig.key(Key::Tab, Modifiers::NONE);
+        seen.push(rig.picker.scope);
+    }
+    assert!(!seen.contains(&Scope::Watchlists), "{seen:?}");
+    assert!(seen.contains(&Scope::Predictions) && seen.contains(&Scope::Dashboards));
+
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.open_for_watchlist("Favorites");
+    rig.picker.set_scope(Scope::Dashboards);
+    rig.picker.set_portfolios(portfolios());
+    rig.settle();
+    for _ in 0..4 {
+        rig.key(Key::ArrowDown, Modifiers::NONE);
+    }
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(
+        matches!(output, Some(Output::WatchlistCard(_))),
+        "{output:?}"
+    );
+    assert!(rig.picker.is_open());
+
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.open_for_watchlist("Favorites");
+    rig.picker.set_scope(Scope::Predictions);
+    rig.type_text("fed");
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(
+        matches!(&output, Some(Output::Watchlist(r)) if r.symbol == "Yes"),
+        "{output:?}"
+    );
+}
+
+#[test]
+fn comparing_offers_only_the_tabs_whose_markets_can_be_drawn_over_a_chart() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.open_compare();
+    let mut seen = Vec::new();
+    for _ in 0..Scope::TABS.len() {
+        rig.key(Key::Tab, Modifiers::NONE);
+        seen.push(rig.picker.scope);
+    }
+    assert_eq!(
+        seen[..4],
+        [Scope::Stocks, Scope::Crypto, Scope::Watchlists, Scope::All]
+    );
+}
+
+#[test]
+fn the_tab_row_gives_up_room_in_order_and_never_asks_for_more_than_it_has() {
+    // The six tab titles and the "All venues" pull-down, as they measure at 15 and 14 pt.
+    let labels = [16.9, 45.5, 45.6, 74.7, 80.3, 69.3];
+    let filter = Some(161.7);
+    let roomy = TabFit {
+        padding: 28.0,
+        compact: false,
+    };
+    assert_eq!(fit_tabs(&labels, filter, 900.0), roomy);
+    // Tighter tabs go first, then the pull-down reduces to its icon, then the tabs tighten again.
+    assert_eq!(
+        fit_tabs(&labels, filter, 630.0),
+        TabFit {
+            padding: 20.0,
+            compact: false
+        }
+    );
+    assert_eq!(
+        fit_tabs(&labels, filter, 600.0),
+        TabFit {
+            padding: 20.0,
+            compact: true
+        }
+    );
+    assert_eq!(
+        fit_tabs(&labels, filter, 490.0),
+        TabFit {
+            padding: 14.0,
+            compact: true
+        }
+    );
+    assert_eq!(
+        fit_tabs(&labels, filter, 100.0),
+        TabFit {
+            padding: 14.0,
+            compact: true
+        }
+    );
+    // With no pull-down the tabs keep their room longer.
+    assert_eq!(fit_tabs(&labels, None, 520.0), roomy);
+    // The smallest picker (520 wide) still holds every tab and the pull-down's icon.
+    let room = 520.0 - 2.0 * PADDING;
+    let fit = fit_tabs(&labels, filter, room);
+    let used: f32 = labels.iter().map(|label| label + fit.padding).sum::<f32>()
+        + FILTER_GAP
+        + if fit.compact { FILTER_COMPACT } else { 161.7 };
+    assert!(used <= room, "{fit:?} uses {used} of {room}");
 }
 
 /// The picker as pictures. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
@@ -684,4 +1209,92 @@ fn gallery_of_the_symbol_picker() {
     rig.settle();
     let (_, output) = rig.frame_with_output(Vec::new());
     rig.screen.save("symbol-picker-row-menu", output);
+
+    // The other tabs and modes, in both appearances.
+    type Setup = fn(&mut Rig);
+    let scenes: [(&str, f32, Setup); 13] = [
+        ("symbol-picker-predictions", 1100.0, |rig| {
+            rig.picker.set_scope(Scope::Predictions);
+            rig.type_text("fed");
+        }),
+        ("symbol-picker-predictions-open", 1100.0, |rig| {
+            rig.picker.set_scope(Scope::Predictions);
+            rig.type_text("fed");
+            rig.key(Key::Enter, Modifiers::NONE);
+            rig.key(Key::ArrowDown, Modifiers::NONE);
+        }),
+        ("symbol-picker-predictions-ticked", 1100.0, |rig| {
+            rig.picker.set_scope(Scope::Predictions);
+            rig.type_text("fed");
+            rig.key(Key::Enter, Modifiers::NONE);
+            for label in ["Cut", "Hold"] {
+                let item = choice_of(rig, label);
+                rig.picker.tick(&item);
+            }
+            rig.key(Key::ArrowDown, Modifiers::NONE);
+        }),
+        ("symbol-picker-predictions-trending", 1100.0, |rig| {
+            rig.picker.set_scope(Scope::Predictions);
+        }),
+        ("symbol-picker-predictions-none", 1100.0, |rig| {
+            rig.picker.set_scope(Scope::Predictions);
+            rig.type_text("zzzz");
+        }),
+        ("symbol-picker-dashboards", 1100.0, |rig| {
+            rig.picker.set_scope(Scope::Dashboards);
+            rig.picker.set_portfolios(portfolios());
+            rig.key(Key::ArrowDown, Modifiers::NONE);
+            rig.key(Key::ArrowDown, Modifiers::NONE);
+            rig.key(Key::ArrowDown, Modifiers::NONE);
+            rig.key(Key::ArrowDown, Modifiers::NONE);
+            rig.key(Key::ArrowDown, Modifiers::NONE);
+        }),
+        ("symbol-picker-dashboards-none", 1100.0, |rig| {
+            rig.picker.set_scope(Scope::Dashboards);
+        }),
+        ("symbol-picker-narrow-predictions", 568.0, |rig| {
+            rig.picker.set_scope(Scope::Predictions);
+        }),
+        ("symbol-picker-narrow-dashboards", 568.0, |rig| {
+            rig.picker.set_scope(Scope::Dashboards);
+            rig.picker.set_portfolios(portfolios());
+        }),
+        ("symbol-picker-narrow-all", 568.0, |rig| {
+            rig.type_text("btc");
+        }),
+        ("symbol-picker-venue-menu", 1100.0, |rig| {
+            rig.picker.set_scope(Scope::Predictions);
+            rig.picker.set_venue(Some(DataSource::Polymarket));
+            rig.type_text("fed");
+            rig.settle();
+            // The pull-down at the right of the tabs.
+            let button = pos2(960.0, 138.0);
+            rig.frame(vec![egui::Event::PointerMoved(button)]);
+            rig.frame(click_at(button));
+            rig.settle();
+        }),
+        ("symbol-picker-add", 1100.0, |rig| {
+            rig.picker.open_add();
+            rig.type_text("btc");
+        }),
+        ("symbol-picker-watchlist", 1100.0, |rig| {
+            rig.picker.open_for_watchlist("Favorites");
+            rig.type_text("btc");
+            rig.key(Key::Enter, Modifiers::NONE);
+        }),
+    ];
+    for (suffix, appearance) in [
+        ("dark", theme::AppTheme::Dark),
+        ("light", theme::AppTheme::Light),
+    ] {
+        for (name, width, setup) in scenes {
+            let mut rig = Rig::sized(width, 760.0, "");
+            theme::apply(&rig.screen.ctx, appearance);
+            rig.quote = Some(bitcoin.clone());
+            setup(&mut rig);
+            rig.settle();
+            let (_, output) = rig.frame_with_output(Vec::new());
+            rig.screen.save(&format!("{name}-{suffix}"), output);
+        }
+    }
 }

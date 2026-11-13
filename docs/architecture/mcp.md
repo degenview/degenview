@@ -263,7 +263,7 @@ Delete and saved-source writes require their own grants.
   case ignored, two sections with one title are `INVALID_ARGUMENT` until named by id), and one made
   in the same call can be used by the moves and additions after it. Deleting a section removes the
   header only; its markets stay. Symbols are checked with the import rules
-  (`watchlist_text::market_item`), so `BTC/USDT` is refused where the Add Chart sheet would also
+  (`watchlist_text::market_item`), so `BTC/USDT` is refused where the symbol picker would also
   want `BTCUSDT`. Favorites cannot be deleted. `get_watchlist` pages entries (max 500) and, with
   `include_quotes`, needs `markets.read` as well and at most 50 markets per page. Display settings
   (sort, columns, collapsed sections) and flags are not exposed.

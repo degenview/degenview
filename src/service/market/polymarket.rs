@@ -1,7 +1,7 @@
 use crate::model::Kline;
 use crate::service::{
-    EventInfo, MarketSource, SearchResult, downsample, effective_span_days, line_chart_point_count,
-    replace_last_price,
+    EventInfo, EventStats, MarketSource, SearchResult, downsample, effective_span_days,
+    line_chart_point_count, replace_last_price, whole_dollars,
 };
 use serde_json::Value;
 
@@ -160,6 +160,7 @@ fn event_results(event: &Value) -> Vec<SearchResult> {
         .and_then(Value::as_str)
         .unwrap_or_default();
     let event_artwork = artwork(event);
+    let stats = event_stats(event);
     let mut results = Vec::new();
     for market in event
         .get("markets")
@@ -201,12 +202,34 @@ fn event_results(event: &Value) -> Vec<SearchResult> {
                 title: event_title.to_owned(),
                 image_url: artwork(market).or_else(|| event_artwork.clone()),
                 series: Vec::new(),
+                stats: Box::new(stats.clone()),
             }),
             base: None,
             quote: None,
         });
     }
     results
+}
+
+/// What Gamma says about an event: the money traded, when it ends and how it resolves.
+fn event_stats(event: &Value) -> EventStats {
+    let text = |key: &str| {
+        event
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+    };
+    EventStats {
+        volume: whole_dollars(&event["volume"]),
+        volume_24h: whole_dollars(&event["volume24hr"]),
+        liquidity: whole_dollars(&event["liquidity"]),
+        open_interest: whole_dollars(&event["openInterest"]),
+        ends_at_ms: text("endDate").and_then(|date| crate::format::parse_timestamp(&date)),
+        category: None,
+        about: text("description"),
+    }
 }
 
 /// The most-traded live events of the last 24 hours, flattened like search results.
@@ -291,5 +314,32 @@ mod tests {
     fn decodes_string_arrays() {
         let value: Value = serde_json::from_str(r#""[\"Yes\",\"No\"]""#).expect("string");
         assert_eq!(decode_string_array(&value), vec!["Yes", "No"]);
+    }
+
+    #[test]
+    fn an_event_carries_what_gamma_says_about_it() {
+        let event = serde_json::json!({
+            "title": "Fed Decision",
+            "volume": 31625166.69, "volume24hr": "4615987.7", "liquidity": 1834558.05,
+            "openInterest": 5149829.2, "endDate": "2026-12-10T04:59:00Z",
+            "description": "  How the FED decides.  ",
+            "markets": [{"groupItemTitle": "Hold", "clobTokenIds": "[\"11\"]", "bestAsk": 0.5}],
+        });
+        let results = super::event_results(&event);
+        let stats = &results[0].event.as_ref().expect("event").stats;
+        assert_eq!(stats.volume, Some(31_625_167));
+        assert_eq!(stats.volume_24h, Some(4_615_988));
+        assert_eq!(stats.liquidity, Some(1_834_558));
+        assert_eq!(stats.open_interest, Some(5_149_829));
+        assert_eq!(stats.about.as_deref(), Some("How the FED decides."));
+        assert_eq!(
+            stats.ends_at_ms,
+            crate::format::parse_timestamp("2026-12-10 04:59")
+        );
+        // An event that says nothing has nothing.
+        let bare = super::event_results(&serde_json::json!({"markets": [
+            {"groupItemTitle": "Yes", "clobTokenIds": "[\"1\"]"}
+        ]}));
+        assert!(bare[0].event.as_ref().expect("event").stats.is_empty());
     }
 }

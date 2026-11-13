@@ -104,7 +104,7 @@ impl ChartWorkspace {
                 ToolbarAction::OpenPineStudio => {
                     actions.push(WorkspaceAction::OpenPineScripts);
                 }
-                ToolbarAction::AddChart => self.add_chart.open(),
+                ToolbarAction::AddChart => self.open_add_picker(),
                 ToolbarAction::SetChartType(chart_type) => {
                     self.set_focused_chart_type(chart_type);
                 }

@@ -8,7 +8,7 @@
 
 use crate::model::portfolio::editor::{Category, EditorField, Summary, TransactionDraft};
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
-use crate::ui::chart::add::{art, sheet as add_chart_sheet};
+use crate::ui::chart::picker_kit::{art, widgets};
 use crate::ui::icons::Icon;
 use crate::ui::kit::date_picker;
 use crate::ui::kit::sheet;
@@ -378,7 +378,7 @@ fn asset_card(ui: &mut egui::Ui, asset: &crate::model::portfolio::PortfolioAsset
 }
 
 fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
-    add_chart_sheet::header(
+    widgets::header(
         ui,
         art::Scene::Portfolio,
         state.mode.title(),

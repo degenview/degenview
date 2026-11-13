@@ -105,9 +105,43 @@ impl SearchResult {
 pub struct EventInfo {
     pub title: String,
     pub image_url: Option<String>,
-    /// The choices ticked to chart together, set on the pick the Add Chart sheet builds from
+    /// The choices ticked to chart together, set on the pick the symbol picker builds from
     /// them; empty on a search hit.
     pub series: Vec<PmSeries>,
+    /// Boxed: most hits are not events, and a hit is passed around by value.
+    pub stats: Box<EventStats>,
+}
+
+/// What a provider says about an event beyond its choices, as far as it says it. Money is in whole
+/// dollars (Kalshi's contracts settle at $1, so its counts stand for dollars).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct EventStats {
+    /// Traded since the event opened.
+    pub volume: Option<u64>,
+    pub volume_24h: Option<u64>,
+    pub liquidity: Option<u64>,
+    pub open_interest: Option<u64>,
+    /// When the event closes, in epoch milliseconds.
+    pub ends_at_ms: Option<i64>,
+    pub category: Option<String>,
+    /// The provider's own description, usually how the event resolves.
+    pub about: Option<String>,
+}
+
+impl EventStats {
+    /// Whether the provider said anything at all.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// A provider's number (a JSON number or a numeric string) as whole dollars; `None` for anything
+/// that is not a finite, non-negative figure.
+pub(crate) fn whole_dollars(raw: &serde_json::Value) -> Option<u64> {
+    let value = raw
+        .as_f64()
+        .or_else(|| raw.as_str().and_then(|text| text.parse().ok()))?;
+    (value.is_finite() && value >= 0.0).then(|| value.round() as u64)
 }
 
 /// A provider that can serve OHLC candles and, optionally, ticker search.

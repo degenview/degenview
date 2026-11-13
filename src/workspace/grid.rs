@@ -315,8 +315,7 @@ impl ChartWorkspace {
         let style_clipboard = self.style_clipboard;
         let dialog_open = self.drawing_props.is_some()
             || self.confirm_remove_drawings.is_some()
-            || self.content.sheet_open()
-            || self.add_chart.is_open();
+            || self.content.sheet_open();
         let mut drawing_reveal = false;
         let mut drawing_copy = false;
         let mut drawing_alert: Option<(u64, f64)> = None;

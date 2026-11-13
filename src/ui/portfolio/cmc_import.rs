@@ -18,7 +18,7 @@ use crate::ui::portfolio::sheet_parts::{card_background, pill, problem_card, sta
 use crate::ui::portfolio::table::paint_asset_icon;
 use crate::ui::theme;
 use crate::ui::{
-    chart::add::{art, sheet as add_chart_sheet},
+    chart::picker_kit::{art, widgets},
     kit::{self, source_logo},
 };
 use eframe::egui::{
@@ -381,7 +381,7 @@ pub fn show(
         let top = ui.cursor().top();
         ui.add_space(HEADER_PADDING);
         sheet::inset(ui, |ui| {
-            add_chart_sheet::header(
+            widgets::header(
                 ui,
                 art::Scene::CoinMarketCap,
                 "Import from CoinMarketCap",

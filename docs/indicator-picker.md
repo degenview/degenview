@@ -7,7 +7,7 @@ from, the Pine indicators that ship inside the app, and the rules for adding one
 
 The toolbar's **Indicators** pill (right of the timeframe selector, `ToolbarAction::OpenIndicators`)
 opens `ui::chart::indicator_picker`, a modal owned by `ChartWorkspace::indicator_picker` and shown beside
-the Add Chart sheet. It adds to the **focused** chart (`ChartWorkspace::indicator_target` names it;
+the symbol picker. It adds to the **focused** chart (`ChartWorkspace::indicator_target` names it;
 a portfolio card is not a target) through `apply_indicator_action`, so undo is one step.
 
 - **Sidebar**: Yours (Favorites, My scripts, Open Pine Studio), Built-in

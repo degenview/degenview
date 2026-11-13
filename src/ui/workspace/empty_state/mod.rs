@@ -13,7 +13,7 @@ pub use tabs::Tab;
 
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, InstrumentId};
-use crate::ui::chart::add::sheet::RecentMarket;
+use crate::ui::chart::picker_kit::recents::RecentMarket;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
 use crate::ui::theme;
@@ -27,7 +27,7 @@ const HEADER_WIDTH: f32 = 760.0;
 const LAUNCHER_HEIGHT: f32 = 50.0;
 /// How far the title, everything under it and the trend line sit below the top of the page.
 const PAGE_TOP: f32 = 48.0;
-/// Chips shown per tab; the rest stays reachable from the sidebar or Add Chart.
+/// Chips shown per tab; the rest stays reachable from the sidebar or the search.
 pub const ITEM_LIMIT: usize = 8;
 
 /// One saved layout as its card shows it.
@@ -167,12 +167,12 @@ fn centred_line(ui: &mut Ui, text: &str, font: f32, weight: f32, color: Color32)
     );
 }
 
-/// A search box that is really a button: it opens Add Chart, where the typing happens.
+/// A search box that is really a button: it opens the symbol picker, where the typing happens.
 fn launcher(ui: &mut Ui) -> egui::Response {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), LAUNCHER_HEIGHT), Sense::click());
-    let response = crate::ui::accessibility::label(response, "Add Chart")
-        .on_hover_text("Add Chart")
+    let response = crate::ui::accessibility::label(response, "Search markets")
+        .on_hover_text("Search markets")
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
     tiles::surface(ui, rect, rect.height() / 2.0, hovered);

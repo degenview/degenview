@@ -253,14 +253,20 @@ impl ChartWorkspace {
             return;
         }
         if result.source.is_prediction_market() {
-            self.title_prediction(result, ctx);
+            self.title_prediction(outcome.chart_id, result, ctx);
         }
     }
 
-    /// Gives the chart just added for a prediction-market pick its event title and, when several
-    /// choices were ticked, their lines; the choices need a second fetch.
-    fn title_prediction(&mut self, result: &SearchResult, ctx: &egui::Context) {
-        let Some(chart) = self.charts.last_mut() else {
+    /// Gives the chart for a prediction-market pick its event title and, when several choices
+    /// were ticked, their lines; the choices need a second fetch.
+    pub(in crate::workspace) fn title_prediction(
+        &mut self,
+        chart_id: u64,
+        result: &SearchResult,
+        ctx: &egui::Context,
+    ) {
+        let timeframe = self.timeframe;
+        let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) else {
             return;
         };
         let (title, series) = match &result.event {
@@ -269,7 +275,7 @@ impl ChartWorkspace {
             None => (result.symbol.clone(), Vec::new()),
         };
         chart.set_prediction(title, series);
-        chart.fetch(self.timeframe, ctx);
+        chart.fetch(timeframe, ctx);
     }
 
     /// The macOS-style alert behind a header ✕.
@@ -289,7 +295,7 @@ impl ChartWorkspace {
             &crate::ui::kit::Confirm {
                 icon: crate::ui::icons::Icon::Trash,
                 title: &title,
-                message: "The chart leaves this tab. You can add it again from Add Chart.",
+                message: "The chart leaves this tab. You can add it again from the symbol search.",
                 destructive: "Remove",
             },
         );

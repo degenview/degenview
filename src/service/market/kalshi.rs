@@ -1,6 +1,7 @@
 use crate::model::Kline;
 use crate::service::{
-    EventInfo, MarketSource, SearchResult, downsample, effective_span_days, replace_last_price,
+    EventInfo, EventStats, MarketSource, SearchResult, downsample, effective_span_days,
+    replace_last_price, whole_dollars,
 };
 use serde_json::Value;
 use std::sync::{Mutex, OnceLock};
@@ -260,6 +261,7 @@ impl MarketSource for Kalshi {
                     .filter(|market| market.get("status").and_then(Value::as_str) == Some("active"))
                     .collect();
                 let is_single = tradable.len() == 1;
+                let stats = event_stats(&event, &tradable);
 
                 for market in tradable {
                     let Some(market_ticker) = market.get("ticker").and_then(Value::as_str) else {
@@ -289,6 +291,7 @@ impl MarketSource for Kalshi {
                             title: event_title.clone(),
                             image_url: None,
                             series: Vec::new(),
+                            stats: Box::new(stats.clone()),
                         }),
                         base: None,
                         quote: None,
@@ -297,6 +300,34 @@ impl MarketSource for Kalshi {
             }
         }
         Ok(results)
+    }
+}
+
+/// What Kalshi says about an event, summed over its open markets: the contracts traded and held,
+/// and the first close.
+fn event_stats(event: &Value, markets: &[&Value]) -> EventStats {
+    let total = |key: &str| {
+        markets
+            .iter()
+            .filter_map(|market| whole_dollars(&market[key]))
+            .reduce(|sum, each| sum + each)
+    };
+    EventStats {
+        volume: total("volume_fp"),
+        volume_24h: total("volume_24h_fp"),
+        liquidity: None,
+        open_interest: total("open_interest_fp"),
+        ends_at_ms: markets
+            .iter()
+            .filter_map(|market| market.get("close_time").and_then(Value::as_str))
+            .filter_map(crate::format::parse_timestamp)
+            .min(),
+        category: event
+            .get("category")
+            .and_then(Value::as_str)
+            .filter(|category| !category.is_empty())
+            .map(str::to_owned),
+        about: None,
     }
 }
 
@@ -360,5 +391,23 @@ mod tests {
         let ranked = rank_series(&series, "fed", 8);
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].ticker, "KXFEDDEC26");
+    }
+
+    #[test]
+    fn an_events_figures_add_up_over_its_open_markets_and_end_at_the_first_close() {
+        let event = serde_json::json!({"category": "Economics"});
+        let a = serde_json::json!({"volume_fp": "100.5", "volume_24h_fp": "10", "open_interest_fp": "40",
+            "close_time": "2026-12-10T04:59:00Z"});
+        let b = serde_json::json!({"volume_fp": "200", "close_time": "2026-11-30T00:00:00Z"});
+        let stats = event_stats(&event, &[&a, &b]);
+        assert_eq!(stats.volume, Some(301));
+        assert_eq!(stats.volume_24h, Some(10));
+        assert_eq!(stats.open_interest, Some(40));
+        assert_eq!(stats.liquidity, None);
+        assert_eq!(stats.category.as_deref(), Some("Economics"));
+        assert_eq!(
+            stats.ends_at_ms,
+            crate::format::parse_timestamp("2026-11-30 00:00")
+        );
     }
 }

@@ -548,7 +548,7 @@ fn portfolio_gallery_asset_picker() {
                 ("AAPL", "AAPL", DataSource::Alpaca),
                 ("SOL/USDT", "SOLUSDT", DataSource::Binance),
             ] {
-                crate::ui::chart::add::sheet::record_recent(
+                crate::ui::chart::picker_kit::recents::record_recent(
                     &mut recents,
                     &crate::service::SearchResult {
                         symbol: symbol.into(),
@@ -561,7 +561,7 @@ fn portfolio_gallery_asset_picker() {
                     },
                 );
             }
-            crate::ui::chart::add::sheet::store_recents(&store.lock().unwrap(), &recents);
+            crate::ui::chart::picker_kit::recents::store_recents(&store.lock().unwrap(), &recents);
         }
         both_themes(name, vec2(1000.0, 720.0), |ui| {
             show(ui.ctx(), &mut state.borrow_mut(), &store);

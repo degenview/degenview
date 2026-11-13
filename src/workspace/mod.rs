@@ -16,7 +16,6 @@ use crate::store::SharedStore;
 use crate::store::drawing_template::{DrawingPrefs, DrawingTemplateStore};
 use crate::store::watchlist::WatchlistStore;
 use crate::ui::alert::editor::{self, PriceAlertEditorState};
-use crate::ui::chart::add::sheet::{AddChartAction, AddChartSheet};
 use crate::ui::chart::indicator_picker::{self, IndicatorPicker};
 use crate::ui::chart::settings::overlay_popover::OverlaySettingsPopover;
 use crate::ui::chart::settings::{self as chart_settings, ChartSettingsState};
@@ -89,7 +88,7 @@ pub enum WorkspaceAction {
     },
     /// The price-alert sheet's "Add in Settings".
     OpenWebhookSettings,
-    /// Open Settings on the Alpaca page (Add Chart's "Set up Alpaca" notice).
+    /// Open Settings on the Alpaca page (the symbol picker's "Stocks need an Alpaca key" notice).
     OpenAlpacaSettings,
     /// Open Settings on the Brokers page (the live trading panel).
     OpenBrokerSettings,
@@ -171,7 +170,6 @@ pub struct ChartWorkspace {
     /// Each chart's drawings as of the last save or open: the common ancestor when another Mac's
     /// edit to the open layout arrives (`adopt_remote_layout`).
     saved_drawings: HashMap<u64, Vec<Drawing>>,
-    add_chart: AddChartSheet,
     indicator_picker: IndicatorPicker,
     symbol_picker: SymbolPicker,
     add_to_watchlist: Option<EntryId>,
@@ -380,7 +378,6 @@ impl ChartWorkspace {
             next_id: 1,
             watchlist_visible: false,
             baseline: None,
-            add_chart: AddChartSheet::new(store.clone()),
             indicator_picker: IndicatorPicker::new(Some(store.clone())),
             symbol_picker: SymbolPicker::new(store.clone()),
             add_to_watchlist: None,
@@ -719,8 +716,6 @@ impl ChartWorkspace {
         self.tick_content(&ctx);
         self.tick_replay();
 
-        self.add_chart.tick(&ctx);
-
         ctx.request_repaint_after(Duration::from_millis(250));
 
         let mut actions = egui::Panel::top("workspace_toolbar")
@@ -891,64 +886,6 @@ impl ChartWorkspace {
             actions.push(WorkspaceAction::OpenSnapshotSettings);
         }
 
-        if self.add_chart.is_open()
-            && let Some(env) = &self.card_env
-        {
-            self.add_chart.set_portfolios(env.portfolios());
-        }
-        match self.add_chart.show(&ctx) {
-            Some(AddChartAction::AddCard(card)) => {
-                if let Some(list_id) = self
-                    .add_to_watchlist
-                    .filter(|_| self.add_chart.is_watchlist_mode())
-                {
-                    let scope = self
-                        .card_env
-                        .as_ref()
-                        .map_or_else(Vec::new, PortfolioCardEnv::portfolios);
-                    if let Ok(mut store) = self.watchlist.lock() {
-                        let result = store
-                            .add_to_list(
-                                list_id,
-                                WatchlistInstrument::for_card(card, &card.scope_name(&scope)),
-                            )
-                            .map(|_| ());
-                        watchlist::report_watchlist(&mut self.watchlist_error, result);
-                    }
-                } else {
-                    self.add_card(card);
-                }
-            }
-            Some(AddChartAction::Add(result)) => {
-                if let Some(list_id) = self
-                    .add_to_watchlist
-                    .filter(|_| self.add_chart.is_watchlist_mode())
-                {
-                    if let Ok(mut store) = self.watchlist.lock() {
-                        let mut item = WatchlistInstrument::from_market(
-                            result.source,
-                            &result.symbol,
-                            &result.full_symbol,
-                        );
-                        item.image_url = result
-                            .event
-                            .as_ref()
-                            .and_then(|event| event.image_url.clone());
-                        let result = store.add_to_list(list_id, item).map(|_| ());
-                        watchlist::report_watchlist(&mut self.watchlist_error, result);
-                    }
-                } else {
-                    self.add_from_search(&result, &ctx);
-                }
-            }
-            Some(AddChartAction::OpenAlpacaSettings) => {
-                actions.push(WorkspaceAction::OpenAlpacaSettings);
-            }
-            None => {}
-        }
-        if !self.add_chart.is_open() {
-            self.add_to_watchlist = None;
-        }
         actions.extend(self.show_symbol_picker(&ctx));
         if self.indicator_picker.is_open() {
             let target = self.indicator_target();

@@ -22,7 +22,7 @@ use crate::ui::portfolio::transactions::{
 };
 use crate::ui::theme;
 use crate::ui::{
-    chart::add::{art, sheet as add_chart_sheet},
+    chart::picker_kit::{art, widgets},
     kit,
 };
 use eframe::egui::{self, Align2, Color32, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
@@ -181,7 +181,7 @@ pub fn show(
         let top = ui.cursor().top();
         ui.add_space(HEADER_PADDING);
         sheet::inset(ui, |ui| {
-            add_chart_sheet::header(
+            widgets::header(
                 ui,
                 art::Scene::Portfolio,
                 "Import Preview",

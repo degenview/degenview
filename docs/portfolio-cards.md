@@ -11,7 +11,8 @@ scripts, replay or paper trading. The Swift app had the first three; Top Perform
 | Allocation | Donut (top 8 holdings, the rest folded into "Other (n)"), centre total or hovered slice, legend with share bars; hover is linked both ways | none |
 | Top Performers | Holdings ranked by how their market moved, as bars from a shared zero line (gains right, losses left), with percent and amount | 1D 1W 1M 1Y ALL (persisted per card) |
 
-Each card covers one portfolio or all of them (`PortfolioCard::portfolio_id`). Two cards are the
+Cards are added from the symbol picker's Dashboards tab (the pull-down there chooses the portfolio; see
+[Symbol picker](symbol-picker.md)) or from a watchlist. Each card covers one portfolio or all of them (`PortfolioCard::portfolio_id`). Two cards are the
 same card when kind and portfolio match; adding one that exists focuses it. The range is view state.
 
 ## Where things live
