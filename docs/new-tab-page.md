@@ -13,7 +13,7 @@ content at most 1000 pt in up to five columns.
 | --- | --- |
 | Recent | A list card of every remembered market (`RECENT_LIMIT`, 24): artwork with its data-source badge, symbol, source, week sparkline and, when the row is wide enough, the week's change (share over amount, coloured by direction; share only for prediction markets). The card takes the room left under it less four rows (at least three) and scrolls; only rows in view are drawn and read. "Clear" link under the card, "Remove from Recent" context menu. Not filtered against favorites (they are separate tabs now). |
 | Favorites | Market tiles in sidebar order, at most `ITEM_LIMIT`; when more exist, a last "N more" tile opens the watchlist sidebar. |
-| Suggestions | Ten crypto tiles (Binance, quoted in USDT) and, under a hairline, ten stocks and ETFs (Alpaca), always. Without an Alpaca key a stock tile still adds the chart, which then shows the chart's own no-data state. |
+| Suggestions | Ten crypto tiles (Binance, quoted in USDT) and, under a hairline, ten stocks and ETFs (Alpaca), always. Tiles look like favorites: artwork with the source's logo on its corner and the week's sparkline at the right. Without an Alpaca key a stock tile has no sparkline, and still adds the chart, which then shows the chart's own no-data state. |
 | Layouts | One card per saved layout: name, "N charts · TF", first three tickers. No thumbnail: layouts store no image. |
 
 The tab bar is `kit::icon_tabs`, the same pill track as Add Chart and the asset picker. The page opens
@@ -37,11 +37,13 @@ provider id is `InstrumentId::api_symbol()`.
 ## Backdrop
 
 `backdrop.rs`: a trend line over the top of the page, behind the title, in the colour of a rising market. It is a pure
-function of the clock (smooth value noise over hashed lattice points, two octaves), scrolling left with the
-newest price at the right, so it keeps no state and never repeats. The line wanders in the top 122 pt and the page content
+function of the clock (straight segments between hashed vertices, alternating peak and dip around a slowly drifting
+trend, so it zigzags like a price), scrolling left with the
+newest price at the right, over a faint chart grid (five horizontal lines across the strip, vertical ones every 96 pt scrolling with the line, built as vertex-coloured strips so they fade into the page), so it keeps no state and never repeats. The page starts `PAGE_TOP` (48 pt) down; the line wanders in the 122 pt under that and the page content
 starts below it; the fade fill reaches 340 pt down. The fill is a vertex-coloured mesh, the one gradient on
-this page, asked for as decoration; cards stay flat. While the window is focused it asks for a frame every
-33 ms; unfocused it keeps its last frame and costs nothing. There is no reduced-motion setting in the app yet.
+this page, asked for as decoration; cards stay flat. It asks for a frame every
+33 ms for as long as the page is drawn, focused or not (a window behind another still shows it, and a frame
+every 250 ms made it crawl); the system does not draw a hidden or minimised window, so that costs nothing. There is no reduced-motion setting in the app yet.
 
 ## Checking it
 

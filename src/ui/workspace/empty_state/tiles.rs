@@ -160,7 +160,8 @@ fn market_content(
     let room = bounds.right() - left - 10.0;
     let spark_rect = spark.and_then(|size| {
         let width = (room - name_width).clamp(SPARK_MIN, size.x);
-        (room - width >= NAME_MIN).then(|| {
+        // The name keeps its own width, or `NAME_MIN` when it is longer than that.
+        (room - width >= name_width.min(NAME_MIN)).then(|| {
             Rect::from_min_size(
                 pos2(bounds.right() - width, bounds.center().y - size.y / 2.0),
                 vec2(width, size.y),

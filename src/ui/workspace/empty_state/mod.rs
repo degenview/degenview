@@ -25,6 +25,8 @@ const CONTENT_WIDTH: f32 = 1000.0;
 /// Widest the title and search box grow.
 const HEADER_WIDTH: f32 = 760.0;
 const LAUNCHER_HEIGHT: f32 = 50.0;
+/// How far the title, everything under it and the trend line sit below the top of the page.
+const PAGE_TOP: f32 = 48.0;
 /// Chips shown per tab; the rest stays reachable from the sidebar or Add Chart.
 pub const ITEM_LIMIT: usize = 8;
 
@@ -79,7 +81,10 @@ pub struct EmptyStateOutput {
 
 pub fn show(ui: &mut Ui, input: &EmptyStateInput, state: &mut EmptyStateState) -> EmptyStateOutput {
     let area = ui.max_rect();
-    backdrop::show(ui, area);
+    backdrop::show(
+        ui,
+        Rect::from_min_max(pos2(area.left(), area.top() + PAGE_TOP), area.max),
+    );
     let mut frame = tiles::Frame::new(input.trends, area.bottom());
     let mut tab = state.tab.unwrap_or_else(|| tabs::default_tab(input));
     egui::ScrollArea::vertical()
@@ -88,7 +93,9 @@ pub fn show(ui: &mut Ui, input: &EmptyStateInput, state: &mut EmptyStateState) -
         .show(ui, |ui| {
             // Below the trend line, lower in a tall window.
             ui.add_space(
-                (area.height() * 0.12).clamp(backdrop::LINE_TOP + backdrop::LINE_RANGE, 180.0),
+                PAGE_TOP
+                    + (area.height() * 0.12)
+                        .clamp(backdrop::LINE_TOP + backdrop::LINE_RANGE, 180.0),
             );
             centred(ui, (area.width() - 48.0).min(CONTENT_WIDTH), |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -398,6 +405,21 @@ mod tests {
                     Trend::Ready(week.clone()),
                 );
             }
+        }
+        for (index, ticker) in [
+            "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let slope = if index % 3 == 1 { -0.5 } else { 0.8 };
+            let week: Vec<f32> = (0..7)
+                .map(|day| 50.0 + slope * day as f32 + ((day * 3 + index) % 4) as f32 * 0.6)
+                .collect();
+            trends.insert(
+                InstrumentId::new(DataSource::Alpaca, ticker).key(),
+                Trend::Ready(week),
+            );
         }
         for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
             for (width, size_name) in [(1100.0, "wide"), (640.0, "narrow")] {
