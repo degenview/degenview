@@ -25,17 +25,6 @@ pub(crate) fn ghost() -> Color32 {
 }
 
 impl Art<'_> {
-    /// The same painter in another colour.
-    pub(crate) fn tinted(&self, tint: Color32) -> Art<'_> {
-        Art {
-            ui: self.ui,
-            painter: self.painter,
-            tint,
-            centre: self.centre,
-            flat: self.flat,
-        }
-    }
-
     pub(crate) fn disc(&self, centre: Pos2) {
         if self.flat {
             return;

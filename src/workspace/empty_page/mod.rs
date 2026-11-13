@@ -1,11 +1,14 @@
 //! The empty page a tab shows before it has a chart, and the slow reads behind it.
 
+mod trends;
+
+use self::trends::TrendLoader;
 use super::ChartWorkspace;
 use crate::model::DataSource;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::service::SearchResult;
 use crate::ui::chart::add::sheet;
-use crate::ui::workspace::empty_state::{self, EmptyStateAction};
+use crate::ui::workspace::empty_state::{self, EmptyStateAction, EmptyStateState};
 use eframe::egui;
 use std::time::Duration;
 
@@ -20,6 +23,18 @@ pub(super) struct EmptyPageCache {
     /// When the page last drew. A tab behind another in its window is not drawn, so a long gap
     /// means it was just brought to the front (a frame is requested every 250 ms while it shows).
     last_drawn: Option<std::time::Instant>,
+    /// The tab the person picked, until a chart replaces the page.
+    state: EmptyStateState,
+    /// The week of closes behind each tile's sparkline.
+    trends: TrendLoader,
+}
+
+impl EmptyPageCache {
+    /// Forgets the slow reads and the picked tab, so the next visit starts from fresh data.
+    pub(super) fn reset(&mut self) {
+        self.data = None;
+        self.state = EmptyStateState::default();
+    }
 }
 
 /// Longer than the repaint interval, shorter than any deliberate tab switch.
@@ -28,12 +43,11 @@ const EMPTY_PAGE_REVEAL_GAP: Duration = Duration::from_millis(900);
 pub(super) struct EmptyPageData {
     recents: Vec<sheet::RecentMarket>,
     layouts: Vec<empty_state::LayoutSummary>,
-    offers_stocks: bool,
 }
 
 impl ChartWorkspace {
-    /// An empty tab: a search launcher and shortcuts back into favorites, recent markets and
-    /// saved layouts.
+    /// An empty tab: a search launcher and, in tabs, shortcuts back into recent markets,
+    /// favorites and saved layouts, or starting points.
     pub(super) fn show_empty_state(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let focused = ui.input(|input| input.viewport().focused.unwrap_or(false));
@@ -68,27 +82,24 @@ impl ChartWorkspace {
             .into_iter()
             .take(empty_state::ITEM_LIMIT)
             .collect();
-        let kept = empty_state::trim_recents(&page.recents, &favorites);
-        let recents: Vec<sheet::RecentMarket> = kept
-            .iter()
-            .map(|index| page.recents[*index].clone())
-            .collect();
+        let trends = self.empty_page.trends.snapshot();
         let input = empty_state::EmptyStateInput {
             favorites: &favorites,
             hidden_favorites,
-            recents: &recents,
+            recents: &page.recents,
             layouts: &page.layouts,
-            offers_stocks: page.offers_stocks,
+            trends: &trends,
         };
-        let actions = empty_state::show(ui, &input);
-        for action in actions {
+        let output = empty_state::show(ui, &input, &mut self.empty_page.state);
+        self.empty_page.trends.request(&output.wanted, &ctx);
+        for action in output.actions {
             match action {
                 EmptyStateAction::AddChart => self.add_chart.open(),
                 EmptyStateAction::OpenFavorite(index) => {
                     self.add_chart_from_instrument(&favorites[index], &ctx);
                 }
                 EmptyStateAction::OpenRecent(index) => {
-                    self.add_from_search(&recents[index].result(), &ctx);
+                    self.add_from_search(&page.recents[index].result(), &ctx);
                 }
                 EmptyStateAction::OpenLayout(id) => self.request_open_saved_view(id, &ctx),
                 EmptyStateAction::OpenSuggestion(source, symbol, display) => {
@@ -106,7 +117,7 @@ impl ChartWorkspace {
                     );
                 }
                 EmptyStateAction::RemoveRecent(index) => {
-                    page.recents.remove(kept[index]);
+                    page.recents.remove(index);
                     self.store_recents(&page.recents);
                 }
                 EmptyStateAction::ClearRecents => {
@@ -144,11 +155,7 @@ impl ChartWorkspace {
                     .collect(),
             })
             .collect();
-        EmptyPageData {
-            recents,
-            layouts,
-            offers_stocks: crate::service::keychain::api_keys::alpaca_credentials().is_some(),
-        }
+        EmptyPageData { recents, layouts }
     }
 
     fn store_recents(&self, recents: &[sheet::RecentMarket]) {
