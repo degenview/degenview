@@ -1,5 +1,5 @@
 //! Shared drawing for the small scene pictures that head the Settings pages, the Alerts window and
-//! the Add Chart sheet: a card and marks that float over it, on a soft disc in a section colour
+//! the portfolio pickers: a card and marks that float over it, on a soft disc in a section colour
 //! (not on Settings: its pictures set `flat`). Painter code only, so every picture follows the theme.
 
 use crate::ui::icons::{self, Icon};

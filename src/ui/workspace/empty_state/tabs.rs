@@ -279,7 +279,7 @@ mod tests {
     use super::*;
     use crate::model::InstrumentId;
     use crate::model::watchlist::WatchlistInstrument;
-    use crate::ui::chart::add::sheet::RecentMarket;
+    use crate::ui::chart::picker_kit::recents::RecentMarket;
     use crate::ui::workspace::empty_state::LayoutSummary;
     use std::collections::HashMap;
 

@@ -5,7 +5,7 @@ What a chart tab shows before it has a chart: `ui/workspace/empty_state/` draws 
 
 ## Layout
 
-A title, a pill search launcher (a button: it opens Add Chart, where typing happens), a tab bar and
+A title, a pill search launcher (a button: it opens the [symbol picker](symbol-picker.md) in Add mode, where typing happens), a tab bar and
 the selected tab's content. No picture at the top. Title and search are at most 760 pt wide, the tab
 content at most 1000 pt in up to five columns.
 
@@ -16,7 +16,7 @@ content at most 1000 pt in up to five columns.
 | Suggestions | Ten crypto tiles (Binance, quoted in USDT) and, under a hairline, ten stocks and ETFs (Alpaca), always. Tiles look like favorites: artwork with the source's logo on its corner and the week's sparkline at the right. Without an Alpaca key a stock tile has no sparkline, and still adds the chart, which then shows the chart's own no-data state. |
 | Layouts | One card per saved layout: name, "N charts · TF", first three tickers. No thumbnail: layouts store no image. |
 
-The tab bar is `kit::icon_tabs`, the same pill track as Add Chart and the asset picker. The page opens
+The tab bar is `kit::icon_tabs`, the same pill track as the asset picker. The page opens
 on the first of Recent, Favorites, Layouts that has something in it, and on Suggestions for someone
 with nothing. The person's pick lasts until a chart replaces the page (`EmptyPageCache::reset`).
 An empty tab says why, in a note card.

@@ -669,11 +669,7 @@ impl ChartWorkspace {
         // A selected table cell takes the clipboard keys for itself; the chart's draw this frame
         // handles them.
         let cell_selected = crate::ui::take_table_cell_selected(ctx);
-        if self.add_chart.is_open()
-            || self.indicator_picker.is_open()
-            || ctx.egui_wants_keyboard_input()
-            || cell_selected
-        {
+        if self.indicator_picker.is_open() || ctx.egui_wants_keyboard_input() || cell_selected {
             return;
         }
         let (copy, paste) = ui.input(|input| {

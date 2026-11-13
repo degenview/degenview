@@ -5,7 +5,7 @@
 use super::search::{market_kind, trading_kind};
 use crate::model::DataSource;
 use crate::service::SearchResult;
-use crate::ui::chart::add::sheet::result_icon;
+use crate::ui::chart::picker_kit::artwork::result_icon;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::{kit::source_logo, theme};
@@ -13,12 +13,12 @@ use eframe::egui::{self, Id, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 
 pub const ROW_HEIGHT: f32 = 56.0;
 const ICON: f32 = 36.0;
-const PAD: f32 = 12.0;
+pub const PAD: f32 = 12.0;
 const LOGO: f32 = 18.0;
 /// The column at the right edge that holds the check or the plus.
 const MARK: f32 = 28.0;
-const TITLE_SIZE: f32 = 15.0;
-const SUBTITLE_SIZE: f32 = 13.0;
+pub const TITLE_SIZE: f32 = 15.0;
+pub const SUBTITLE_SIZE: f32 = 13.0;
 const VENUE_SIZE: f32 = 14.0;
 
 /// How a row is drawn this frame.
@@ -34,9 +34,23 @@ pub struct RowState {
     pub can_overlay: bool,
     /// The picker is comparing: the check means "already compared", not "already a chart".
     pub comparing: bool,
+    /// The picker is adding to a watchlist: the plus follows the market instead of charting it.
+    pub watchlist: bool,
+    /// How far the artwork is pushed in, so a lone prediction choice lines up with the artwork of
+    /// the events around it.
+    pub indent: f32,
 }
 
 impl RowState {
+    /// What the plus (and the menu's last item) does to the market.
+    fn add_label(self) -> &'static str {
+        if self.watchlist {
+            "Add to watchlist"
+        } else {
+            ADD_LABEL
+        }
+    }
+
     /// What the check at the right edge says.
     fn checked(self) -> bool {
         if self.comparing {
@@ -64,10 +78,23 @@ pub struct RowOutput {
     pub hovered: bool,
     /// The row was right-clicked: its menu is opening, and the row becomes the highlighted one.
     pub opened_menu: bool,
+    /// The row's checkbox was clicked: tick or untick the choice (or every choice of an event).
+    pub tick: bool,
+    /// An event's header was clicked: show or hide its choices.
+    pub fold: bool,
 }
 
 /// What the second line of a row says: the pair (`BTC / USDT`), the company, or the coin.
 pub fn subtitle(result: &SearchResult) -> String {
+    if result.source.is_prediction_market() {
+        return result
+            .event
+            .as_ref()
+            .map(|event| event.title.as_str())
+            .filter(|title| !title.is_empty() && *title != result.symbol)
+            .unwrap_or_default()
+            .to_owned();
+    }
     if let Some(company) = result.company() {
         return company.to_owned();
     }
@@ -75,6 +102,16 @@ pub fn subtitle(result: &SearchResult) -> String {
         (Some(base), Some(quote)) => format!("{base} / {quote}"),
         _ if result.source == DataSource::CoinGecko => title_case(&result.full_symbol),
         _ => String::new(),
+    }
+}
+
+/// The first line of a row: the market's own name. A prediction market's name is a sentence,
+/// which may hold the company separator.
+pub fn name(result: &SearchResult) -> &str {
+    if result.source.is_prediction_market() {
+        &result.symbol
+    } else {
+        result.ticker()
     }
 }
 
@@ -126,13 +163,81 @@ pub fn row(
     if !ui.is_rect_visible(rect) {
         return (response, out);
     }
-    let painter = ui.painter();
-    if state.highlighted {
-        painter.rect_filled(rect, 10.0, theme::selected_tint(false));
-    } else if response.hovered() {
-        painter.rect_filled(rect, 10.0, theme::ink(10));
-    }
+    paint_background(ui, rect, state.highlighted, response.hovered());
+    let content_right = marks(ui, rect, result, state, &mut out);
+    out.pick |= response.clicked() && !out.add && !out.overlay;
 
+    let icon = Rect::from_center_size(
+        pos2(
+            rect.left() + PAD + state.indent + ICON / 2.0,
+            rect.center().y,
+        ),
+        Vec2::splat(ICON),
+    );
+    result_icon(ui, icon, result);
+
+    // A prediction market's chance sits left of the exchange.
+    let mut venue_right = content_right;
+    if result.source.is_prediction_market()
+        && let Some(chance) = result.price
+    {
+        venue_right = chance_label(ui, rect, venue_right, chance) - 14.0;
+    }
+    let logo_left = venue_block(ui, rect, venue_right, result.source);
+
+    // The market, as its exchange names it.
+    let text_left = icon.right() + 12.0;
+    let text_width = (logo_left - 16.0 - text_left).max(40.0);
+    let title = kit::galley(
+        ui,
+        name(result),
+        TITLE_SIZE,
+        SEMIBOLD,
+        theme::text_primary(),
+        text_width,
+    );
+    let sub = subtitle(result);
+    let sub = (!sub.is_empty()).then(|| {
+        kit::galley(
+            ui,
+            &sub,
+            SUBTITLE_SIZE,
+            REGULAR,
+            theme::text_secondary(),
+            text_width,
+        )
+    });
+    let block = title.size().y + sub.as_ref().map_or(0.0, |sub| sub.size().y + 2.0);
+    let top = rect.center().y - block / 2.0;
+    let sub_top = top + title.size().y + 2.0;
+    ui.painter()
+        .galley(pos2(text_left, top), title, theme::text_primary());
+    if let Some(sub) = sub {
+        ui.painter()
+            .galley(pos2(text_left, sub_top), sub, theme::text_secondary());
+    }
+    (response, out)
+}
+
+/// The fill behind the keyboard's row or the pointer's.
+pub fn paint_background(ui: &Ui, rect: Rect, highlighted: bool, hovered: bool) {
+    if highlighted {
+        ui.painter()
+            .rect_filled(rect, 10.0, theme::selected_tint(false));
+    } else if hovered {
+        ui.painter().rect_filled(rect, 10.0, theme::ink(10));
+    }
+}
+
+/// The compare button, the plus and the check at a row's right edge, as `state` shows them.
+/// Returns the x the row's own content must stop short of.
+pub fn marks(
+    ui: &mut Ui,
+    rect: Rect,
+    result: &SearchResult,
+    state: RowState,
+    out: &mut RowOutput,
+) -> f32 {
     let mark = Rect::from_center_size(
         pos2(rect.right() - PAD - MARK / 2.0, rect.center().y),
         Vec2::splat(MARK),
@@ -164,7 +269,7 @@ pub fn row(
     if state.highlighted && !state.checked() {
         let plus = ui.interact(mark, row_id(ui, result, "add"), Sense::click());
         let plus = plus
-            .on_hover_text("Add as a new chart")
+            .on_hover_text(state.add_label())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         let hot = plus.hovered();
         if hot {
@@ -189,24 +294,19 @@ pub fn row(
             theme::UP,
         );
     }
-    out.pick |= response.clicked() && !out.add && !out.overlay;
-
-    let painter = ui.painter();
-    let icon = Rect::from_center_size(
-        pos2(rect.left() + PAD + ICON / 2.0, rect.center().y),
-        Vec2::splat(ICON),
-    );
-    result_icon(ui, icon, result);
-
-    // The exchange: logo and name, with what it lists under the name, right-aligned.
-    let venue_right = if state.can_overlay {
+    if state.can_overlay {
         compare_mark.left() - 10.0
     } else {
         mark.left() - 10.0
-    };
+    }
+}
+
+/// The exchange at the right of a row: its logo and name over what it lists, right-aligned to
+/// `right`. Returns the block's left edge.
+pub fn venue_block(ui: &Ui, rect: Rect, right: f32, source: DataSource) -> f32 {
     let venue = kit::galley(
         ui,
-        result.source.display_name(),
+        source.display_name(),
         VENUE_SIZE,
         MEDIUM,
         theme::text_primary(),
@@ -214,56 +314,43 @@ pub fn row(
     );
     let kind = kit::galley(
         ui,
-        market_kind(result.source),
+        market_kind(source),
         SUBTITLE_SIZE,
         REGULAR,
         theme::text_secondary(),
         150.0,
     );
-    let name_right = venue_right;
-    let name_left = name_right - venue.size().x;
+    let name_left = right - venue.size().x;
     let top = rect.center().y - (venue.size().y + kind.size().y + 2.0) / 2.0;
+    let painter = ui.painter();
     painter.galley(pos2(name_left, top), venue, theme::text_primary());
     painter.galley(
-        pos2(name_right - kind.size().x, top + 2.0 + 17.0),
+        pos2(right - kind.size().x, top + 2.0 + 17.0),
         kind,
         theme::text_secondary(),
     );
-    let logo_rect = Rect::from_min_size(pos2(name_left - 6.0 - LOGO, top - 0.5), Vec2::splat(LOGO));
-    source_logo::paint(ui, result.source, logo_rect);
+    let logo = Rect::from_min_size(pos2(name_left - 6.0 - LOGO, top - 0.5), Vec2::splat(LOGO));
+    source_logo::paint(ui, source, logo);
+    logo.left()
+}
 
-    // The market, as its exchange names it.
-    let text_left = icon.right() + 12.0;
-    let text_width = (logo_rect.left() - 16.0 - text_left).max(40.0);
-    let title = kit::galley(
+/// A prediction market's YES chance, right-aligned to `right`. Returns its left edge.
+pub fn chance_label(ui: &Ui, rect: Rect, right: f32, chance: f64) -> f32 {
+    let galley = kit::digits(
         ui,
-        result.ticker(),
+        &crate::format::headline(chance, true),
         TITLE_SIZE,
         SEMIBOLD,
         theme::text_primary(),
-        text_width,
+        90.0,
     );
-    let sub = subtitle(result);
-    let sub = (!sub.is_empty()).then(|| {
-        kit::galley(
-            ui,
-            &sub,
-            SUBTITLE_SIZE,
-            REGULAR,
-            theme::text_secondary(),
-            text_width,
-        )
-    });
-    let block = title.size().y + sub.as_ref().map_or(0.0, |sub| sub.size().y + 2.0);
-    let top = rect.center().y - block / 2.0;
-    let sub_top = top + title.size().y + 2.0;
-    ui.painter()
-        .galley(pos2(text_left, top), title, theme::text_primary());
-    if let Some(sub) = sub {
-        ui.painter()
-            .galley(pos2(text_left, sub_top), sub, theme::text_secondary());
-    }
-    (response, out)
+    let left = right - galley.size().x;
+    ui.painter().galley(
+        pos2(left, rect.center().y - galley.size().y / 2.0),
+        galley,
+        theme::text_primary(),
+    );
+    left
 }
 
 /// The menu a right-click on a row opens: use the market here, compare it on the chart, or add it
@@ -276,7 +363,7 @@ fn context_menu(
     out: &mut RowOutput,
 ) {
     let replace = replacing
-        .filter(|_| !state.comparing)
+        .filter(|_| !state.comparing && !state.watchlist)
         .map(|current| format!("Replace {current}"));
     let compare = state.offers_overlay().then(|| match replacing {
         Some(current) => format!("Compare with {current}"),
@@ -287,6 +374,12 @@ fn context_menu(
     } else {
         COMPARE_KEY
     };
+    // A watchlist's own Return is the add, so the menu needs no second key for it.
+    let add_key = if state.watchlist {
+        Some(REPLACE_KEY)
+    } else {
+        Some(ADD_KEY)
+    };
     let mut rows: Vec<(&str, Option<&str>)> = Vec::new();
     if let Some(replace) = &replace {
         rows.push((replace, Some(REPLACE_KEY)));
@@ -294,7 +387,7 @@ fn context_menu(
     if let Some(compare) = &compare {
         rows.push((compare, Some(compare_key)));
     }
-    rows.push((ADD_LABEL, Some(ADD_KEY)));
+    rows.push((state.add_label(), add_key));
     kit::fitted_context_menu(ui, response, &rows, |ui| {
         if let Some(replace) = &replace
             && kit::menu_item_with_shortcut(
@@ -322,14 +415,14 @@ fn context_menu(
             out.overlay = true;
             ui.close();
         }
-        if kit::menu_item_with_shortcut(ui, Icon::Plus, ADD_LABEL, Some(ADD_KEY), true, false) {
+        if kit::menu_item_with_shortcut(ui, Icon::Plus, state.add_label(), add_key, true, false) {
             out.add = true;
             ui.close();
         }
     });
 }
 
-fn row_id(ui: &Ui, result: &SearchResult, part: &str) -> Id {
+pub fn row_id(ui: &Ui, result: &SearchResult, part: &str) -> Id {
     ui.id()
         .with((part, result.source as u8, result.full_symbol.as_str()))
 }

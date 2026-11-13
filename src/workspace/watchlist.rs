@@ -95,7 +95,7 @@ impl ChartWorkspace {
                                 .map(|candidate| candidate.name.clone())
                         {
                             self.add_to_watchlist = Some(list_id);
-                            self.add_chart.open_for_watchlist(&name);
+                            self.symbol_picker.open_for_watchlist(&name);
                         }
                     }
                     WatchlistAction::CreateAlert(item) => {

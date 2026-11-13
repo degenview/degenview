@@ -1,6 +1,6 @@
 //! The section switcher (Swift `IconTabBar`, compact): a pill track whose segments hug an icon and a
-//! title, the selected one raised on a darker plate. Used by Add Chart, the asset picker and the
-//! new-tab page.
+//! title, the selected one raised on a darker plate. Used by the asset picker and the new-tab
+//! page.
 
 use super::{MEDIUM, SEMIBOLD, galley};
 use crate::ui::icons::{self, Icon};

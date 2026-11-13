@@ -1,5 +1,6 @@
-//! The picture at the head of the Add Chart sheet: one small scene per tab, and one for adding to
-//! a watchlist, drawn like the Settings pages' pictures (`settings_art`). Painter code only.
+//! The picture at the head of the portfolio's asset picker and the portfolio sheets: one small
+//! scene per kind of market, drawn like the Settings pages' pictures (`settings_art`). Painter
+//! code only.
 
 use crate::ui::icons::Icon;
 use crate::ui::kit::art::{Art, ghost};
@@ -16,18 +17,16 @@ pub enum Scene {
     Predictions,
     CoinMarketCap,
     Portfolio,
-    Watchlist,
 }
 
 impl Scene {
     #[cfg(test)]
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 5] = [
         Self::Crypto,
         Self::Stocks,
         Self::Predictions,
         Self::CoinMarketCap,
         Self::Portfolio,
-        Self::Watchlist,
     ];
 
     fn tint(self) -> Color32 {
@@ -37,7 +36,6 @@ impl Scene {
             Self::Predictions => Color32::from_rgb(191, 90, 242),
             Self::CoinMarketCap => Color32::from_rgb(64, 156, 255),
             Self::Portfolio => Color32::from_rgb(48, 209, 88),
-            Self::Watchlist => Color32::from_rgb(48, 176, 199),
         }
     }
 }
@@ -57,7 +55,6 @@ pub fn paint(ui: &Ui, rect: Rect, scene: Scene) {
         Scene::Predictions => art.predictions(),
         Scene::CoinMarketCap => art.index(),
         Scene::Portfolio => art.portfolio(),
-        Scene::Watchlist => art.watchlist(),
     }
 }
 
@@ -219,43 +216,6 @@ impl Art<'_> {
         self.chip(chip);
         self.glyph(Icon::Briefcase, chip.center(), 10.0, Color32::WHITE);
     }
-
-    /// Markets in a list, and one more being added.
-    fn watchlist(&self) {
-        let card = self.scene();
-        for index in 0..3 {
-            let y = card.top() + 11.0 + index as f32 * 14.0;
-            let color = [kit::GREEN, kit::RED, kit::GREEN][index];
-            self.painter
-                .circle_filled(pos2(card.left() + 11.0, y), 3.8, theme::ink(30));
-            self.line(
-                pos2(card.left() + 19.0, y),
-                [18.0, 14.0, 20.0][index],
-                theme::text_secondary().gamma_multiply(0.8),
-            );
-            let spark = Rect::from_min_size(pos2(card.right() - 20.0, y - 3.5), vec2(13.0, 7.0));
-            let levels: &[f32] = if color == kit::GREEN {
-                &[1.0, 0.7, 0.8, 0.2]
-            } else {
-                &[0.1, 0.5, 0.4, 1.0]
-            };
-            let curve: Vec<Pos2> = levels
-                .iter()
-                .enumerate()
-                .map(|(i, level)| {
-                    pos2(
-                        spark.left() + spark.width() * i as f32 / 3.0,
-                        spark.top() + spark.height() * level,
-                    )
-                })
-                .collect();
-            self.painter
-                .add(Shape::line(curve, Stroke::new(1.5, color)));
-        }
-        let plus = card.right_bottom() + vec2(-2.0, 0.0);
-        self.painter.circle_filled(plus, 9.0, self.tint);
-        self.glyph(Icon::Plus, plus, 10.0, Color32::WHITE);
-    }
 }
 
 #[cfg(test)]
@@ -270,7 +230,7 @@ mod tests {
 
     #[test]
     #[ignore = "writes images for a person to look at"]
-    fn gallery_of_the_add_chart_pictures() {
-        test_support::gallery("add-chart-art", &Scene::ALL, paint);
+    fn gallery_of_the_picker_kit_pictures() {
+        test_support::gallery("picker-kit-art", &Scene::ALL, paint);
     }
 }

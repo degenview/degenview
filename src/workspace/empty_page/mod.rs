@@ -7,7 +7,7 @@ use super::ChartWorkspace;
 use crate::model::DataSource;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::service::SearchResult;
-use crate::ui::chart::add::sheet;
+use crate::ui::chart::picker_kit::recents;
 use crate::ui::workspace::empty_state::{self, EmptyStateAction, EmptyStateState};
 use eframe::egui;
 use std::time::Duration;
@@ -41,7 +41,7 @@ impl EmptyPageCache {
 const EMPTY_PAGE_REVEAL_GAP: Duration = Duration::from_millis(900);
 
 pub(super) struct EmptyPageData {
-    recents: Vec<sheet::RecentMarket>,
+    recents: Vec<recents::RecentMarket>,
     layouts: Vec<empty_state::LayoutSummary>,
 }
 
@@ -94,7 +94,7 @@ impl ChartWorkspace {
         self.empty_page.trends.request(&output.wanted, &ctx);
         for action in output.actions {
             match action {
-                EmptyStateAction::AddChart => self.add_chart.open(),
+                EmptyStateAction::AddChart => self.open_add_picker(),
                 EmptyStateAction::OpenFavorite(index) => {
                     self.add_chart_from_instrument(&favorites[index], &ctx);
                 }
@@ -134,7 +134,7 @@ impl ChartWorkspace {
         let recents = self
             .store
             .lock()
-            .map(|store| sheet::load_recents(&store))
+            .map(|store| recents::load_recents(&store))
             .unwrap_or_default();
         let mut views = self.load_saved_views();
         views.sort_by_key(|view| std::cmp::Reverse(view.created_at_ms));
@@ -158,9 +158,9 @@ impl ChartWorkspace {
         EmptyPageData { recents, layouts }
     }
 
-    fn store_recents(&self, recents: &[sheet::RecentMarket]) {
+    fn store_recents(&self, recents: &[recents::RecentMarket]) {
         if let Ok(store) = self.store.lock() {
-            sheet::store_recents(&store, recents);
+            recents::store_recents(&store, recents);
         }
     }
 }

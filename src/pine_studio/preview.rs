@@ -23,7 +23,7 @@ use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::theme;
 use crate::ui::{ChartCard, DrawingFrame, PREVIEW_INSTANCE, ReplayChartFrame};
 use crate::ui::{
-    chart::add::sheet,
+    chart::picker_kit::results,
     kit::{self, source_logo},
 };
 use eframe::egui::{
@@ -1426,7 +1426,7 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
                             // The keyboard highlight sits under the row's own paint.
                             let slot = ui.painter().add(egui::Shape::Noop);
                             let response =
-                                sheet::result_row(ui, result, current, false, rows_width - 8.0);
+                                results::result_row(ui, result, current, false, rows_width - 8.0);
                             if index == picker.cursor && !current {
                                 ui.painter().set(
                                     slot,

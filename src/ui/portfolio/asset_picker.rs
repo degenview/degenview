@@ -9,10 +9,11 @@
 use crate::model::DataSource;
 use crate::service::SearchResult;
 use crate::store::SharedStore;
-use crate::ui::chart::add::art;
-use crate::ui::chart::add::sheet::{
-    self, CRYPTO_SUGGESTIONS, Chip, PREDICTION_TOPICS, RecentMarket, STOCK_SUGGESTIONS,
+use crate::ui::chart::picker_kit::recents::{self, RecentMarket};
+use crate::ui::chart::picker_kit::suggestions::{
+    self, CRYPTO_SUGGESTIONS, Chip, PREDICTION_TOPICS, STOCK_SUGGESTIONS,
 };
+use crate::ui::chart::picker_kit::{self, art, results, widgets};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use crate::ui::theme;
@@ -54,7 +55,7 @@ impl PickerTab {
         }
     }
 
-    /// The picture at the head of the sheet: the one Add Chart shows for the same section.
+    /// The picture at the head of the sheet: the picture of the same section in the picker kit.
     fn scene(self) -> art::Scene {
         match self {
             Self::Crypto => art::Scene::Crypto,
@@ -96,7 +97,7 @@ pub struct AssetPickerState {
     debounce: Option<Instant>,
     search: SearchFn,
     focus: bool,
-    /// The markets picked before (Add Chart's list); loaded when the sheet first draws.
+    /// The markets picked before (the symbol picker's list); loaded when the sheet first draws.
     recents: Vec<RecentMarket>,
     recents_loaded: bool,
     /// The list changed in the sheet and still has to be saved.
@@ -311,8 +312,8 @@ pub fn empty_note(result: &Result<Vec<SearchResult>, String>) -> Option<String> 
 const FOOTER_HEIGHT: f32 = 60.0;
 const SEARCH_ID: &str = "portfolio_asset_search_field";
 
-/// The sheet is the Add Chart sheet's twin: same size, header, section switcher, search box,
-/// suggestion chips, result list and footer, so the two never drift apart.
+/// A sheet of its own: header art, section switcher, search box, suggestion chips, result list and
+/// footer, built from the pieces in `picker_kit` that the symbol picker shares.
 pub fn show(
     ctx: &egui::Context,
     state: &mut AssetPickerState,
@@ -323,7 +324,7 @@ pub fn show(
         state.recents = store
             .lock()
             .ok()
-            .map(|store| sheet::load_recents(&store))
+            .map(|store| recents::load_recents(&store))
             .unwrap_or_default();
     }
     state.receive();
@@ -335,8 +336,8 @@ pub fn show(
     }
     let screen = ctx.content_rect().size();
     let size = vec2(
-        sheet::SHEET_SIZE.x.min(screen.x - 32.0).max(560.0),
-        sheet::SHEET_SIZE.y.min(screen.y - 32.0).max(440.0),
+        picker_kit::SHEET_SIZE.x.min(screen.x - 32.0).max(560.0),
+        picker_kit::SHEET_SIZE.y.min(screen.y - 32.0).max(440.0),
     );
     let search_id = Id::new(SEARCH_ID);
     let field_focused = ctx.memory(|memory| memory.has_focus(search_id));
@@ -360,7 +361,7 @@ pub fn show(
             ui.set_width(size.x);
             ui.set_height(size.y);
             ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
-            let padding = sheet::PADDING;
+            let padding = picker_kit::PADDING;
             let body = Rect::from_min_size(ui.min_rect().min, vec2(size.x, size.y - FOOTER_HEIGHT))
                 .shrink(padding);
             let mut body_ui = ui.new_child(egui::UiBuilder::new().max_rect(body));
@@ -395,14 +396,14 @@ pub fn show(
         outcome = Some(AssetPickerOutcome::Choose(Box::new(selected)));
     }
     if let Some(AssetPickerOutcome::Choose(result)) = &outcome
-        && sheet::record_recent(&mut state.recents, result)
+        && recents::record_recent(&mut state.recents, result)
     {
         state.recents_dirty = true;
     }
     if std::mem::take(&mut state.recents_dirty)
         && let Ok(store) = store.lock()
     {
-        sheet::store_recents(&store, &state.recents);
+        recents::store_recents(&store, &state.recents);
     }
     outcome
 }
@@ -413,7 +414,7 @@ fn show_body(
     search_id: Id,
     outcome: &mut Option<AssetPickerOutcome>,
 ) {
-    sheet::header(ui, state.tab.scene(), &state.title, &state.subtitle);
+    widgets::header(ui, state.tab.scene(), &state.title, &state.subtitle);
     ui.add_space(16.0);
     let items = PickerTab::ALL.map(|tab| (tab, tab.title(), tab.icon()));
     if let Some(tab) = kit::icon_tabs::icon_tabs(ui, &items, state.tab) {
@@ -433,12 +434,12 @@ fn show_body(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         if state.tab == PickerTab::Predictions
-            && let Some(provider) = sheet::provider_menu(ui, state.provider)
+            && let Some(provider) = widgets::provider_menu(ui, state.provider)
         {
             state.select_provider(provider);
         }
         let searching = state.is_loading() || state.debounce.is_some();
-        let event = sheet::search_box(
+        let event = widgets::search_box(
             ui,
             &mut state.query,
             searching,
@@ -459,7 +460,7 @@ fn show_body(
                 if state
                     .selected
                     .as_ref()
-                    .is_some_and(|selected| sheet::same_market(selected, &first))
+                    .is_some_and(|selected| results::same_market(selected, &first))
                 {
                     *outcome = Some(AssetPickerOutcome::Choose(Box::new(first)));
                 } else {
@@ -477,15 +478,15 @@ fn show_body(
     let searching = state.is_loading() || state.debounce.is_some();
     let sections = state.sections();
     if !sections.is_empty() {
-        if let Some(chosen) = sheet::source_groups(ui, &sections, &mut state.selected) {
+        if let Some(chosen) = results::source_groups(ui, &sections, &mut state.selected) {
             *outcome = Some(AssetPickerOutcome::Choose(Box::new(chosen)));
         }
     } else if !searching && state.has_answer() {
         if let Some(error) = state.first_error() {
-            sheet::no_results(ui, "Search Failed", &error);
+            widgets::no_results(ui, "Search Failed", &error);
         } else {
             let query = state.query.trim().to_owned();
-            sheet::no_results(
+            widgets::no_results(
                 ui,
                 &format!("No Results for “{query}”"),
                 "Check the spelling or try a new search.",
@@ -505,14 +506,14 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
                 PickerTab::Crypto => {
                     let items =
                         CRYPTO_SUGGESTIONS.map(|ticker| Chip::Logo(ticker, DataSource::Binance));
-                    if let Some(index) = sheet::suggestion_grid(ui, "Suggestions", &items) {
+                    if let Some(index) = suggestions::suggestion_grid(ui, "Suggestions", &items) {
                         search = Some(CRYPTO_SUGGESTIONS[index]);
                     }
                 }
                 PickerTab::Stocks => {
                     let items =
                         STOCK_SUGGESTIONS.map(|ticker| Chip::Logo(ticker, DataSource::Alpaca));
-                    if let Some(index) = sheet::suggestion_grid(
+                    if let Some(index) = suggestions::suggestion_grid(
                         ui,
                         "Popular US stocks and ETFs · free IEX feed",
                         &items,
@@ -522,14 +523,16 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
                 }
                 PickerTab::Predictions => {
                     let items = PREDICTION_TOPICS.map(|(title, _, icon)| Chip::Symbol(title, icon));
-                    if let Some(index) = sheet::suggestion_grid(ui, "Popular topics", &items) {
+                    if let Some(index) = suggestions::suggestion_grid(ui, "Popular topics", &items)
+                    {
                         search = Some(PREDICTION_TOPICS[index].1);
                     }
                 }
             }
             if state.tab != PickerTab::Predictions && !state.recents.is_empty() {
                 ui.add_space(16.0);
-                let recents = sheet::recents_card(ui, &mut state.recents, state.selected.as_ref());
+                let recents =
+                    widgets::recents_card(ui, &mut state.recents, state.selected.as_ref());
                 if let Some(result) = recents.commit {
                     *outcome = Some(AssetPickerOutcome::Choose(Box::new(result)));
                 } else if let Some(result) = recents.pick {
@@ -553,17 +556,17 @@ fn show_footer(
 ) {
     ui.spacing_mut().item_spacing.x = 12.0;
     if let Some(selected) = &state.selected {
-        sheet::selected_banner(ui, selected, (ui.available_width() - 200.0).min(380.0));
+        widgets::selected_banner(ui, selected, (ui.available_width() - 200.0).min(380.0));
     }
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 12.0;
         let label = state.action_label.clone();
-        if sheet::sheet_button(ui, &label, true, state.selected.is_some()).clicked()
+        if widgets::sheet_button(ui, &label, true, state.selected.is_some()).clicked()
             && let Some(selected) = state.selected.clone()
         {
             *outcome = Some(AssetPickerOutcome::Choose(Box::new(selected)));
         }
-        if sheet::sheet_button(ui, "Cancel", false, true).clicked() {
+        if widgets::sheet_button(ui, "Cancel", false, true).clicked() {
             *outcome = Some(AssetPickerOutcome::Cancel);
         }
     });
@@ -839,8 +842,8 @@ mod tests {
         let btc = hit(DataSource::Binance, "BTC/USDT", "BTCUSDT");
         state.recents_dirty = false;
         // What the sheet does when a row is chosen.
-        assert!(sheet::record_recent(&mut state.recents, &btc));
-        sheet::store_recents(&store.lock().unwrap(), &state.recents);
+        assert!(recents::record_recent(&mut state.recents, &btc));
+        recents::store_recents(&store.lock().unwrap(), &state.recents);
 
         let mut next = AssetPickerState::new("Add Asset", "", "Continue");
         draw_with(&mut next, &store);
@@ -866,7 +869,7 @@ mod tests {
     #[test]
     fn prediction_markets_are_not_kept_as_recents() {
         let mut recents = Vec::new();
-        assert!(!sheet::record_recent(
+        assert!(!recents::record_recent(
             &mut recents,
             &hit(DataSource::Polymarket, "Fed", "fed")
         ));

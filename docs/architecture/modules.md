@@ -177,7 +177,7 @@ picture test sits beside it (`broker/panel_gallery.rs`). A helper used by severa
 
 | Directory | Holds |
 | --- | --- |
-| `chart/` | The chart card (`card/`), canvas and series rendering, chart menus, scale menu, indicator strip, table view, object tree, session stats, the Add Chart sheet (`add/`), chart settings with templates and overlays (`settings/`), and the symbol and indicator pickers |
+| `chart/` | The chart card (`card/`), canvas and series rendering, chart menus, scale menu, indicator strip, table view, object tree, session stats, chart settings with templates and overlays (`settings/`), the symbol and indicator pickers, and the pieces the symbol picker shares with the portfolio pickers (`picker_kit/`: recents, suggestions, artwork, result rows, search box, header art) |
 | `drawing/` | Drawings: pure geometry (`geometry/`, with `fib`, `line`, `annotation`, `pattern`), the interaction layer (`layer/`), the properties panel (`properties/`), `render`, and the text/note/table content tools (`content/`) |
 | `alert/`, `webhook/`, `mcp/` | Alert center, editors, banner and chart lines; webhook editor, picker and settings; MCP activity and confirmation |
 | `paper/`, `broker/`, `trade/` | Paper trading screens, live trading screens, and what both share (the order sheet and its fields) |

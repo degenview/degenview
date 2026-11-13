@@ -62,7 +62,7 @@ src/model/indicators/mod.rs
 src/ui/chart/card/mod.rs
 src/ui/chart/indicator_strip.rs
 src/ui/chart/settings/mod.rs
-src/ui/chart/add/sheet.rs
+src/ui/chart/symbol_picker/mod.rs
 ```
 
 ### Alerts

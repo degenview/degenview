@@ -1,6 +1,5 @@
 //! The chart card, its canvas, menus, settings and pickers.
 
-pub mod add;
 pub(in crate::ui) mod buttons;
 pub mod canvas;
 pub(in crate::ui) mod card;
@@ -10,6 +9,7 @@ pub mod indicator_picker;
 pub mod indicator_strip;
 pub mod notice;
 pub mod object_tree;
+pub mod picker_kit;
 pub(in crate::ui) mod price_text;
 pub mod scale_menu;
 pub(in crate::ui) mod series;

@@ -44,7 +44,7 @@ impl CardKind {
         }
     }
 
-    /// One line for the Add Chart sheet.
+    /// One line for the symbol picker's Dashboards tab.
     pub fn summary(self) -> &'static str {
         match self {
             Self::ValueChart => "Value over time, from one day to all time",

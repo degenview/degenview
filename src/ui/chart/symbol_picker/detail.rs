@@ -1,13 +1,18 @@
 //! The panel beside the symbol list: the highlighted market's name, its price and change, whether
 //! it is trading, the exchange it is listed on, and the other dollar markets of the same asset.
+//! A prediction market shows its chance instead, and an index or a portfolio view says what it
+//! charts.
 
+use super::dashboards::{Tile, TilePick};
 use super::list::{related_row, subtitle};
 use super::search::{market_kind, trading_kind};
+use super::{Item, predictions};
 use crate::format;
 use crate::model::DataSource;
 use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
 use crate::service::SearchResult;
-use crate::ui::chart::add::sheet::result_icon;
+use crate::ui::chart::picker_kit::artwork::{prediction_icon, result_icon};
+use crate::ui::icons;
 use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::{kit::source_logo, theme};
 use eframe::egui::{
@@ -19,7 +24,7 @@ const ICON: f32 = 64.0;
 
 /// What the panel shows.
 pub struct Detail<'a> {
-    pub result: &'a SearchResult,
+    pub item: &'a Item,
     pub quote: Option<&'a WatchlistQuote>,
     /// Other markets of the asset; `None` while they are being looked up.
     pub related: Option<&'a [SearchResult]>,
@@ -27,9 +32,29 @@ pub struct Detail<'a> {
 
 /// Draws the panel into `area` and returns the related market clicked, if any.
 pub fn show(ui: &mut Ui, area: Rect, detail: &Detail) -> Option<SearchResult> {
+    match detail.item {
+        Item::Market(result) if !result.source.is_prediction_market() => {
+            market(ui, area, result, detail)
+        }
+        Item::Market(result) | Item::Choice(result) => {
+            prediction(ui, area, result, None);
+            None
+        }
+        Item::Event(head) => {
+            prediction(ui, area, &head.lead, Some(head));
+            None
+        }
+        Item::Tile(tile) => {
+            tile_panel(ui, area, tile);
+            None
+        }
+    }
+}
+
+/// A crypto or stock market: price, whether it trades, where, and the same asset elsewhere.
+fn market(ui: &mut Ui, area: Rect, result: &SearchResult, detail: &Detail) -> Option<SearchResult> {
     let mut clicked = None;
     let inner = area.shrink2(vec2(PAD, PAD));
-    let result = detail.result;
 
     let icon = Rect::from_min_size(inner.min, Vec2::splat(ICON));
     result_icon(ui, icon, result);
@@ -111,6 +136,142 @@ pub fn show(ui: &mut Ui, area: Rect, detail: &Detail) -> Option<SearchResult> {
         }
     }
     clicked
+}
+
+/// A prediction market: the event, the chance of the choice, and where it is listed. An event with
+/// several choices shows its likeliest.
+fn prediction(
+    ui: &mut Ui,
+    area: Rect,
+    result: &SearchResult,
+    head: Option<&predictions::EventHead>,
+) {
+    let inner = area.shrink2(vec2(PAD, PAD));
+    let icon = Rect::from_min_size(inner.min, Vec2::splat(ICON));
+    let title = head.map_or_else(
+        || {
+            result
+                .event
+                .as_ref()
+                .map(|event| event.title.as_str())
+                .filter(|title| !title.is_empty())
+                .unwrap_or(&result.symbol)
+        },
+        |head| head.title.as_str(),
+    );
+    let artwork = head.map_or_else(
+        || {
+            result
+                .event
+                .as_ref()
+                .and_then(|event| event.image_url.as_deref())
+        },
+        |head| head.image_url.as_deref(),
+    );
+    prediction_icon(ui, icon, title, artwork);
+    let text_left = icon.right() + 16.0;
+    let width = inner.right() - text_left;
+    let title = crate::ui::chart::picker_kit::text::galley_rows(
+        ui,
+        title,
+        20.0,
+        BOLD,
+        theme::text_primary(),
+        width,
+        3,
+    );
+    let top = icon.center().y - title.size().y.min(ICON) / 2.0;
+    ui.painter().galley(
+        pos2(text_left, top.max(inner.top())),
+        title,
+        theme::text_primary(),
+    );
+
+    let mut y = icon.bottom() + 22.0;
+    if let Some(chance) = result.price {
+        let galley = kit::digits(
+            ui,
+            &format::headline(chance, true),
+            34.0,
+            SEMIBOLD,
+            theme::text_primary(),
+            inner.width(),
+        );
+        let height = galley.size().y;
+        ui.painter()
+            .galley(pos2(inner.left(), y), galley, theme::text_primary());
+        y += height + 4.0;
+        let caption = match head {
+            Some(head) => format!("chance of {} · {} choices", result.symbol, head.choices),
+            None if result.symbol != result.event.as_ref().map_or("", |e| e.title.as_str()) => {
+                format!("chance of {}", result.symbol)
+            }
+            None => "chance".to_owned(),
+        };
+        let galley = kit::galley(
+            ui,
+            &caption,
+            14.0,
+            REGULAR,
+            theme::text_secondary(),
+            inner.width(),
+        );
+        let height = galley.size().y;
+        ui.painter()
+            .galley(pos2(inner.left(), y), galley, theme::text_secondary());
+        y += height + 18.0;
+    }
+    venue_line(ui, pos2(inner.left(), y), result);
+}
+
+/// An index or a portfolio view: what it charts and where it comes from.
+fn tile_panel(ui: &mut Ui, area: Rect, tile: &Tile) {
+    let inner = area.shrink2(vec2(PAD, PAD));
+    let icon = Rect::from_min_size(inner.min + vec2(0.0, 12.0), Vec2::splat(40.0));
+    icons::paint(ui.painter(), icon, tile.icon, theme::text_secondary());
+    let mut y = icon.bottom() + 20.0;
+    let title = kit::galley(
+        ui,
+        &tile.title,
+        24.0,
+        BOLD,
+        theme::text_primary(),
+        inner.width(),
+    );
+    let height = title.size().y;
+    ui.painter()
+        .galley(pos2(inner.left(), y), title, theme::text_primary());
+    y += height + 8.0;
+    let summary = kit::paragraph(
+        ui,
+        &tile.summary,
+        14.0,
+        REGULAR,
+        theme::text_secondary(),
+        inner.width(),
+    );
+    let height = summary.size().y;
+    ui.painter()
+        .galley(pos2(inner.left(), y), summary, theme::text_secondary());
+    y += height + 22.0;
+    match &tile.pick {
+        TilePick::Gauge(result) => {
+            venue_line(ui, pos2(inner.left(), y), result);
+        }
+        TilePick::Card(_) => {
+            let scope = tile.scope.as_deref().unwrap_or_default();
+            let galley = kit::galley(
+                ui,
+                &format!("Portfolio · {scope}"),
+                14.0,
+                REGULAR,
+                theme::text_secondary(),
+                inner.width(),
+            );
+            ui.painter()
+                .galley(pos2(inner.left(), y), galley, theme::text_secondary());
+        }
+    }
 }
 
 /// The last price and its change. Returns the height used.

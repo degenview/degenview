@@ -93,15 +93,15 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
 
 ## Asset picker
 
-The Add Asset, Remap and CoinMarketCap Match sheets share `portfolio_asset_picker`, the Add Chart
-sheet's twin. It opens with Add Chart's header art for the section, and under the suggestion chips
-it shows the same Recent card (`add_chart_sheet::recents_card`) over the same stored list
-(`addTicker.recentMarkets`): a pick in either sheet appears in both. Crypto and stock markets are
+The Add Asset, Remap and CoinMarketCap Match sheets share `portfolio_asset_picker`. It is built
+from the pieces the symbol picker shares (`ui/chart/picker_kit`): the header art for the section, and
+under the suggestion chips the same Recent card (`widgets::recents_card`) over the same stored list
+(`addTicker.recentMarkets`), so a pick here appears in the symbol picker and the other way round. Crypto and stock markets are
 kept; prediction markets and CoinMarketCap indices are not, so the Predictions section has none.
 
 ## Import sheets
 
-Both import sheets open with Add Chart's header art (the CoinMarketCap scene, and the Portfolio
+Both import sheets open with the picker kit's header art (the CoinMarketCap scene, and the Portfolio
 scene for the preview) and use no accent colour: the main button is the neutral Primary footer
 button, a ticker's filled button is the inverse of the sheet (light on dark, dark on light), and
 colour only carries meaning (green ready or matched, orange to match or a warning, red an error).
@@ -127,7 +127,7 @@ exactly as wide as the longest, never narrower than their button.
 
 ## Asset detail
 
-`portfolio_asset_detail`, the sheet a double click on a holding opens. Add Chart's header art with
+`portfolio_asset_detail`, the sheet a double click on a holding opens. The picker kit's header art with
 "BTC Transactions" over "Bitcoin · Binance · Values in USD"; the position as one card of eight
 figures (two rows of four on a hairline grid, each cell reserving the caption line so figures
 line up); and the asset's transactions in the Transactions table's own cells (type tick, date
@@ -136,7 +136,7 @@ zero shows a note in place of the card.
 
 ## Edit Transaction
 
-`portfolio_transaction_editor`: Add Chart's header art with a line that says what the sheet does in
+`portfolio_transaction_editor`: the picker kit's header art with a line that says what the sheet does in
 its mode, a card for the asset (icon, ticker over name, where its prices come from), the type
 tabs, then the fields and the summary card. No accent colour: the main button is the neutral
 Primary one whatever the type, and the quantity is selected on open instead of keeping the
@@ -148,14 +148,14 @@ labels with `fit_menu`.
 
 ## New Portfolio
 
-`portfolio_sheets::show_create`: Add Chart's header art, a name field, and a grid of base-currency
+`portfolio_sheets::show_create`: the picker kit's header art, a name field, and a grid of base-currency
 tiles with no accent colour (the chosen tile is the one in full ink with a check). A name another
 portfolio already has shows a warning and disables Create Portfolio (and Return), since the
 ledger would refuse it; the warning line is reserved, so the sheet never changes height.
 
 ## Manage Portfolios
 
-`portfolio_sheets::show_manage`. The sheet opens with Add Chart's header art and uses no accent
+`portfolio_sheets::show_manage`. The sheet opens with the picker kit's header art and uses no accent
 colour. Each portfolio is a fixed 68 pt card: a grip of dots (drag to reorder, a line shows where
 the row lands), its base currency on a tile, its name (click to rename in place) over what it
 holds, then a green Viewing pill or a grey Archived one, Duplicate and Delete. A rename that

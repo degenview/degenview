@@ -105,7 +105,7 @@ impl SearchResult {
 pub struct EventInfo {
     pub title: String,
     pub image_url: Option<String>,
-    /// The choices ticked to chart together, set on the pick the Add Chart sheet builds from
+    /// The choices ticked to chart together, set on the pick the symbol picker builds from
     /// them; empty on a search hit.
     pub series: Vec<PmSeries>,
 }

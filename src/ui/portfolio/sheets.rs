@@ -9,7 +9,7 @@ use crate::model::portfolio::format::PORTFOLIO_CURRENCIES;
 use crate::model::portfolio::{
     MAX_NAME_LENGTH, Portfolio, PortfolioCurrency, is_duplicate_name, is_valid_name, normalize_name,
 };
-use crate::ui::chart::add::{art, sheet as add_chart_sheet};
+use crate::ui::chart::picker_kit::{art, widgets};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::sheet;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
@@ -102,7 +102,7 @@ pub fn show_create(
     sheet::show(ctx, Id::new("portfolio-create"), 480.0, |ui| {
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
-            add_chart_sheet::header(
+            widgets::header(
                 ui,
                 art::Scene::Portfolio,
                 "New Portfolio",
@@ -439,7 +439,7 @@ pub fn show_manage(
         let top = ui.cursor().top();
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
-            add_chart_sheet::header(
+            widgets::header(
                 ui,
                 art::Scene::Portfolio,
                 "Manage Portfolios",
