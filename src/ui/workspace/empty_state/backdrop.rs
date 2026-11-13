@@ -18,8 +18,8 @@ const FRAME: Duration = Duration::from_millis(33);
 const FILL_DEPTH: f32 = 340.0;
 /// Where the line wanders: this far below the top of the page, in a strip this tall. The page's
 /// title starts below the strip, so no text is crossed by the line.
-pub const LINE_TOP: f32 = 22.0;
-pub const LINE_RANGE: f32 = 100.0;
+pub const LINE_TOP: f32 = 40.0;
+pub const LINE_RANGE: f32 = 82.0;
 /// Average distance between the line's turning points, in points.
 const CELL: f32 = 60.0;
 /// How far a turning point may sit from its even spot, in cells: it keeps the rhythm uneven
