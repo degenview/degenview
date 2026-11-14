@@ -201,7 +201,7 @@ impl ChartWorkspace {
             drawings: &chart.drawings,
             open_notes: &open_notes,
             images: Some(&images),
-            hide_all_drawings: self.hide_all_drawings,
+            hide_all_drawings: self.tools.hides_all(),
             replay_active: replay_ms.is_some(),
             include_trading: options.include_trading,
         };
@@ -1278,14 +1278,14 @@ mod tests {
         let mut rig = rig();
         let index = rig.workspace.chart_index(rig.chart_id).unwrap();
         let candles = rig.workspace.charts[index].candles.clone();
-        let (focused, hidden) = (rig.workspace.focused, rig.workspace.hide_all_drawings);
+        let (focused, hidden) = (rig.workspace.focused, rig.workspace.tools.hides_all());
         for action in [SnapshotAction::CopyImage, SnapshotAction::CopyImage] {
             rig.workspace.begin_snapshot(&rig.ctx, rig.chart_id, action);
             rig.finish();
         }
         assert_eq!(rig.workspace.charts[index].candles, candles);
         assert_eq!(
-            (rig.workspace.focused, rig.workspace.hide_all_drawings),
+            (rig.workspace.focused, rig.workspace.tools.hides_all()),
             (focused, hidden)
         );
     }

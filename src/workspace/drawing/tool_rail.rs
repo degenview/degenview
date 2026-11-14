@@ -16,21 +16,21 @@ impl ChartWorkspace {
         let _ = self.drawing_templates();
         let (has_drawings, all_locked) = self.drawing_lock_state();
         let input = tool_sidebar::ToolSidebarInput {
-            active_tool: self.active_tool,
-            zoom_armed: self.zoom_armed,
+            active_tool: self.tools.active,
+            zoom_armed: self.tools.zoom_armed,
             can_zoom_out: self
                 .focused
                 .and_then(|id| self.charts.iter().find(|chart| chart.id == id))
                 .is_some_and(|chart| chart.chart.can_zoom_out()),
-            group_tool: self.group_tool,
-            line_tool: self.line_tool,
-            note_tool: self.note_tool,
-            pattern_tool: self.pattern_tool,
-            forecast_tool: self.forecast_tool,
-            fib_tool: self.fib_tool,
-            magnet: self.magnet,
-            keep_drawing: self.keep_drawing,
-            hide_all: self.hide_all_drawings,
+            group_tool: self.tools.prefs.group_tool,
+            line_tool: self.tools.prefs.line_tool,
+            note_tool: self.tools.prefs.note_tool,
+            pattern_tool: self.tools.prefs.pattern_tool,
+            forecast_tool: self.tools.prefs.forecast_tool,
+            fib_tool: self.tools.prefs.fib_tool,
+            magnet: self.tools.prefs.magnet,
+            keep_drawing: self.tools.prefs.keep_drawing,
+            hide_all: self.tools.hide_all,
             all_locked,
             has_drawings,
             paper_open: self.trade.is_panel_open(),
@@ -55,15 +55,15 @@ impl ChartWorkspace {
                 ToolSidebarAction::ToggleZoomIn => self.toggle_zoom_in(),
                 ToolSidebarAction::ZoomOut => self.zoom_out_focused(),
                 ToolSidebarAction::Arm(tool) => {
-                    self.active_tool = tool;
+                    self.tools.active = tool;
                     self.remember_group_tool(tool);
                     self.drop_rulers();
                 }
-                ToolSidebarAction::SetMagnet(mode) => self.magnet = mode,
-                ToolSidebarAction::ToggleKeepDrawing => self.keep_drawing = !self.keep_drawing,
-                ToolSidebarAction::ToggleHideAll => {
-                    self.hide_all_drawings = !self.hide_all_drawings
+                ToolSidebarAction::SetMagnet(mode) => self.tools.prefs.magnet = mode,
+                ToolSidebarAction::ToggleKeepDrawing => {
+                    self.tools.prefs.keep_drawing = !self.tools.prefs.keep_drawing
                 }
+                ToolSidebarAction::ToggleHideAll => self.tools.hide_all = !self.tools.hide_all,
                 ToolSidebarAction::ToggleLockAll => {
                     let (_, all_locked) = self.drawing_lock_state();
                     self.set_all_locked(!all_locked);
@@ -82,9 +82,9 @@ impl ChartWorkspace {
     /// Arms the Zoom In mode, or puts it down when it is armed. It takes the pointer from any
     /// drawing tool, as a drawing tool takes it from Zoom In.
     pub(in crate::workspace) fn toggle_zoom_in(&mut self) {
-        self.zoom_armed = !self.zoom_armed;
-        if self.zoom_armed {
-            self.active_tool = Tool::Cursor;
+        self.tools.zoom_armed = !self.tools.zoom_armed;
+        if self.tools.zoom_armed {
+            self.tools.active = Tool::Cursor;
             self.drop_rulers();
         }
     }
@@ -106,9 +106,9 @@ impl ChartWorkspace {
     /// Arms `tool`, or goes back to the crosshair when it is already armed (or is the crosshair).
     pub(in crate::workspace) fn toggle_tool(&mut self, tool: Tool) {
         if tool == Tool::Cursor {
-            self.zoom_armed = false;
+            self.tools.zoom_armed = false;
         }
-        self.active_tool = if self.active_tool == tool || tool == Tool::Cursor {
+        self.tools.active = if self.tools.active == tool || tool == Tool::Cursor {
             Tool::Cursor
         } else {
             tool
@@ -122,17 +122,17 @@ impl ChartWorkspace {
         use crate::model::ToolGroup;
         let group = tool.spec().group;
         if ToolGroup::MENU.contains(&group) {
-            self.group_tool = tool;
+            self.tools.prefs.group_tool = tool;
         } else if ToolGroup::LINE_MENU.contains(&group) {
-            self.line_tool = tool;
+            self.tools.prefs.line_tool = tool;
         } else if ToolGroup::NOTE_MENU.contains(&group) {
-            self.note_tool = tool;
+            self.tools.prefs.note_tool = tool;
         } else if ToolGroup::PATTERN_MENU.contains(&group) {
-            self.pattern_tool = tool;
+            self.tools.prefs.pattern_tool = tool;
         } else if ToolGroup::FORECAST_MENU.contains(&group) {
-            self.forecast_tool = tool;
+            self.tools.prefs.forecast_tool = tool;
         } else if ToolGroup::FIB_MENU.contains(&group) {
-            self.fib_tool = tool;
+            self.tools.prefs.fib_tool = tool;
         }
     }
 }
@@ -146,26 +146,26 @@ mod tests {
     fn zoom_in_and_a_drawing_tool_are_one_choice() {
         let mut workspace = empty_workspace(1);
         workspace.toggle_tool(Tool::TrendLine);
-        assert_eq!(workspace.active_tool, Tool::TrendLine);
+        assert_eq!(workspace.tools.active, Tool::TrendLine);
         // Arming Zoom In takes the pointer from the drawing tool.
         workspace.toggle_zoom_in();
-        assert!(workspace.zoom_armed);
-        assert_eq!(workspace.active_tool, Tool::Cursor);
+        assert!(workspace.tools.zoom_armed);
+        assert_eq!(workspace.tools.active, Tool::Cursor);
         // Arming a drawing tool puts Zoom In down, and so does the crosshair tile.
         workspace.toggle_tool(Tool::Rectangle);
         workspace.toggle_zoom_in();
         workspace.toggle_tool(Tool::Cursor);
-        assert!(!workspace.zoom_armed);
+        assert!(!workspace.tools.zoom_armed);
         // A second click on the tile puts it down.
         workspace.toggle_zoom_in();
         workspace.toggle_zoom_in();
-        assert!(!workspace.zoom_armed);
+        assert!(!workspace.tools.zoom_armed);
     }
 
     #[test]
     fn zoom_out_with_no_focused_chart_does_nothing() {
         let mut workspace = empty_workspace(1);
         workspace.zoom_out_focused();
-        assert!(!workspace.zoom_armed);
+        assert!(!workspace.tools.zoom_armed);
     }
 }

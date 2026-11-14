@@ -201,7 +201,7 @@ fn a_closed_chart_is_refused_with_a_message_and_nothing_changes() {
     let context = rig.open(first, 100.0);
     rig.workspace.charts.retain(|chart| chart.id != first);
     rig.run(context, Command::RemoveDrawings);
-    assert_eq!(rig.workspace.confirm_remove_drawings, None);
+    assert_eq!(rig.workspace.tools.removal_asked(), None);
     let (text, error) = rig.message().expect("a message");
     assert!(error);
     assert!(text.contains("closed"), "{text}");
@@ -475,7 +475,7 @@ fn removing_drawings_asks_first_then_is_one_undo_step() {
     rig.chart_mut(chart).drawings = (1..=4).map(|id| rectangle(id, id as i64 * 100)).collect();
     let context = rig.open(chart, 100.0);
     rig.run(context, Command::RemoveDrawings);
-    assert_eq!(rig.workspace.confirm_remove_drawings, Some(chart));
+    assert_eq!(rig.workspace.tools.removal_asked(), Some(chart));
     assert_eq!(rig.drawing_ids(chart), [1, 2, 3, 4], "nothing yet");
 }
 
@@ -485,7 +485,7 @@ fn paste_adds_new_drawings_at_the_click_as_one_undoable_step() {
     let source = rig.chart("BTCUSDT", 100.0);
     let target = rig.chart("ETHUSDT", 50.0);
     rig.chart_mut(source).drawings = vec![rectangle(1, 1_000), rectangle(2, 2_000)];
-    rig.workspace.selected_drawing = Some((source, vec![1, 2]));
+    rig.workspace.tools.select(source, vec![1, 2]);
     rig.workspace.copy_selection(&rig.ctx);
     assert_eq!(rig.copied().len(), 1);
     assert!(rig.copied()[0].starts_with("degenview-clipboard/v1\n"));
@@ -505,7 +505,10 @@ fn paste_adds_new_drawings_at_the_click_as_one_undoable_step() {
         chart.drawings[1].anchors()[0].time_ms,
         5 * 86_400_000 + 1_000
     );
-    assert_eq!(rig.workspace.selected_drawing, Some((target, pasted)));
+    assert_eq!(
+        rig.workspace.tools.selection().cloned(),
+        Some((target, pasted))
+    );
     assert_eq!(
         rig.workspace.history.steps(),
         1,
@@ -544,7 +547,7 @@ fn a_keyboard_paste_lands_under_the_pointer_of_the_hovered_chart() {
     let source = rig.chart("BTCUSDT", 100.0);
     let target = rig.chart("ETHUSDT", 50.0);
     rig.chart_mut(source).drawings = vec![rectangle(1, 1_000)];
-    rig.workspace.selected_drawing = Some((source, vec![1]));
+    rig.workspace.tools.select(source, vec![1]);
     rig.workspace.copy_selection(&rig.ctx);
     let text = rig.copied().remove(0);
     rig.workspace.note_hover(
@@ -1105,12 +1108,12 @@ fn the_tree_deletes_a_drawing_undoably_and_never_a_locked_one() {
     use crate::model::chart::object_tree::Key as TreeKey;
     use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
-    rig.workspace.selected_drawing = Some((chart, vec![1, 2]));
+    rig.workspace.tools.select(chart, vec![1, 2]);
     rig.workspace
         .apply_tree_action(chart, TreeAction::Delete(TreeKey::Drawing(1)));
     assert_eq!(rig.drawing_ids(chart), [2]);
     assert_eq!(
-        rig.workspace.selected_drawing,
+        rig.workspace.tools.selection().cloned(),
         Some((chart, vec![2])),
         "the deleted drawing leaves the selection"
     );
@@ -1171,10 +1174,13 @@ fn the_tree_opens_the_compare_page_for_a_compared_market_and_leaves_the_drawing_
     use crate::ui::chart::settings::Tab;
     let (mut rig, chart) = tree_rig();
     let id = compared(&mut rig, chart);
-    rig.workspace.selected_drawing = Some((chart, vec![2]));
+    rig.workspace.tools.select(chart, vec![2]);
     rig.workspace
         .apply_tree_action(chart, TreeAction::Select(TreeKey::Overlay(id)));
-    assert_eq!(rig.workspace.selected_drawing, Some((chart, vec![2])));
+    assert_eq!(
+        rig.workspace.tools.selection().cloned(),
+        Some((chart, vec![2]))
+    );
     rig.workspace
         .apply_tree_action(chart, TreeAction::Settings(TreeKey::Overlay(id)));
     assert_eq!(rig.workspace.settings_chart, Some(chart));
@@ -1188,7 +1194,10 @@ fn the_tree_selects_a_drawing_as_the_charts_one_selection() {
     let (mut rig, chart) = tree_rig();
     rig.workspace
         .apply_tree_action(chart, TreeAction::Select(TreeKey::Drawing(2)));
-    assert_eq!(rig.workspace.selected_drawing, Some((chart, vec![2])));
+    assert_eq!(
+        rig.workspace.tools.selection().cloned(),
+        Some((chart, vec![2]))
+    );
 }
 
 #[test]
@@ -1325,7 +1334,7 @@ fn paste_is_greyed_until_drawings_are_copied_then_enabled() {
     assert!(!paste(&rig, &context), "nothing has been copied");
 
     // Copy from the drawing's menu or Cmd+C: either way it is the workspace's copy.
-    rig.workspace.selected_drawing = Some((source, vec![1]));
+    rig.workspace.tools.select(source, vec![1]);
     rig.workspace.copy_selection(&rig.ctx);
     assert!(paste(&rig, &context), "a copy is waiting");
 
@@ -1340,7 +1349,7 @@ fn a_copy_stays_available_to_every_chart_and_tab_sharing_the_context() {
     let mut first = Rig::new();
     let source = first.chart("BTCUSDT", 100.0);
     first.chart_mut(source).drawings = vec![rectangle(1, 1_000)];
-    first.workspace.selected_drawing = Some((source, vec![1]));
+    first.workspace.tools.select(source, vec![1]);
     first.workspace.copy_selection(&first.ctx);
 
     let mut second = Rig::new();
@@ -1467,12 +1476,13 @@ fn a_pasted_link_waits_to_be_placed_in_the_middle_of_the_focused_chart() {
         Some(Content::Link(card)) if card.link.url() == POST_LINK
     ));
     assert!(rig.workspace.content.place_now);
-    assert_eq!(rig.workspace.active_tool, Tool::Post);
+    assert_eq!(rig.workspace.tools.active_tool(), Tool::Post);
     rig.workspace.content.pending = None;
-    rig.workspace.active_tool = Tool::Cursor;
+    rig.workspace.tools.disarm();
     rig.workspace.paste_text(&rig.ctx, TRADINGVIEW_LINK);
     assert!(
-        rig.workspace.content.pending.is_none() && rig.workspace.active_tool == Tool::Cursor,
+        rig.workspace.content.pending.is_none()
+            && rig.workspace.tools.active_tool() == Tool::Cursor,
         "only X links become cards"
     );
     assert!(
@@ -1511,7 +1521,7 @@ fn the_replace_sheet_survives_the_frame_that_follows_while_the_tool_is_the_curso
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
-    rig.workspace.active_tool = Tool::Cursor;
+    rig.workspace.tools.disarm();
     rig.workspace
         .link_requested(&rig.ctx, chart, 1, crate::ui::LinkRequest::Replace);
     assert!(rig.workspace.content.links.sheet.is_some());
@@ -1576,7 +1586,7 @@ fn a_placed_post_card_asks_for_its_preview_without_being_pressed() {
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
-    rig.workspace.selected_drawing = Some((chart, vec![1]));
+    rig.workspace.tools.select(chart, vec![1]);
     rig.workspace.preview_placed_card(&rig.ctx);
     // Not allowed yet: the one-time question comes first, and nothing is contacted.
     assert!(rig.workspace.content.links.consent.is_some());
@@ -1593,12 +1603,12 @@ fn a_card_that_already_has_its_preview_or_is_not_a_card_is_left_alone() {
     }
     rig.chart_mut(chart).drawings = vec![fetched, rectangle(2, 5_000)];
     for ids in [vec![1], vec![2], vec![1, 2], vec![]] {
-        rig.workspace.selected_drawing = Some((chart, ids));
+        rig.workspace.tools.select(chart, ids);
         rig.workspace.preview_placed_card(&rig.ctx);
         assert!(rig.workspace.content.links.consent.is_none());
         assert!(rig.workspace.content.links.inbox.is_none());
     }
-    rig.workspace.selected_drawing = None;
+    rig.workspace.tools.clear_selection();
     rig.workspace.preview_placed_card(&rig.ctx);
     assert!(rig.workspace.content.links.consent.is_none());
 }
@@ -1720,5 +1730,5 @@ fn a_new_link_waits_for_a_click_and_arms_its_tool() {
         Some(Content::Link(_))
     ));
     assert!(!rig.workspace.content.place_now, "a click places it");
-    assert_eq!(rig.workspace.active_tool, Tool::Post);
+    assert_eq!(rig.workspace.tools.active_tool(), Tool::Post);
 }

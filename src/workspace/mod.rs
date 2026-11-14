@@ -7,20 +7,18 @@ use crate::model::tab::link::LinkColor;
 use crate::model::tab::title::{MAX_CUSTOM_TITLE_CHARS, TabChart};
 use crate::model::watchlist::{WatchlistInstrument, now_ms};
 use crate::model::{
-    BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, DrawingStyle,
-    InstrumentId, MagnetMode, Timeframe, Tool,
+    BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, InstrumentId,
+    Timeframe,
 };
 use crate::service::market::live::BinanceLiveFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use crate::store::SharedStore;
-use crate::store::drawing_template::{DrawingPrefs, DrawingTemplateStore};
 use crate::store::watchlist::WatchlistStore;
 use crate::ui::alert::editor;
 use crate::ui::chart::indicator_picker::{self, IndicatorPicker};
 use crate::ui::chart::settings::overlay_popover::OverlaySettingsPopover;
 use crate::ui::chart::settings::{self as chart_settings, ChartSettingsState};
 use crate::ui::chart::symbol_picker::SymbolPicker;
-use crate::ui::drawing::properties::DrawingProperties;
 use crate::ui::paper::chart_trading::PaperOverlayAction;
 use crate::ui::pine::settings_popover::PineSettingsPopover;
 use crate::ui::{self, CrosshairInfo, replay::bar, workspace::tool_sidebar};
@@ -29,6 +27,7 @@ use chart::context::ContextState;
 use chart::snapshot::SnapshotState;
 use chart::{Chart, displayed_candles};
 use drawing::is_lockable;
+use drawing::tools::DrawingTools;
 use eframe::egui;
 use empty_page::EmptyPageCache;
 use layout::session::LayoutSession;
@@ -171,43 +170,12 @@ pub struct ChartWorkspace {
     script_popover: Option<PineSettingsPopover>,
     /// The settings of a compared market, up beside its row on the chart's overlay card.
     overlay_popover: Option<OverlaySettingsPopover>,
-    /// The open properties dialog of a drawing.
-    drawing_props: Option<DrawingProperties>,
-    /// Saved drawing templates, each tool's default style and the strip's remembered options.
-    /// Opened on first use.
-    drawing_templates: Option<DrawingTemplateStore>,
-    /// The strip's options as last saved, to notice a change.
-    saved_prefs: DrawingPrefs,
-    /// The style last copied from a drawing, for Paste style.
-    style_clipboard: Option<(Tool, DrawingStyle)>,
-    /// A chart whose drawings the user asked to remove all of; waiting for the confirmation.
-    confirm_remove_drawings: Option<u64>,
+    /// The armed tool, the strip's options, the selection and the dialogs about drawings.
+    tools: DrawingTools,
     /// The chart a header ✕ asked to remove, awaiting confirmation.
     removing_chart: Option<u64>,
     settings_state: ChartSettingsState,
     crosshair: Option<CrosshairInfo>,
-    active_tool: Tool,
-    /// The Zoom In mode of the tool rail. A mode of its own, never a drawing tool: a drag on a
-    /// plot selects a rectangle to zoom to. Exclusive with `active_tool`; not saved.
-    zoom_armed: bool,
-    /// The selected drawings of one chart: `(chart id, drawing ids)`.
-    selected_drawing: Option<(u64, Vec<u64>)>,
-    /// The tool the strip's grouped brushes, arrows and shapes tile shows: the last one used.
-    group_tool: Tool,
-    line_tool: Tool,
-    note_tool: Tool,
-    /// The tool the chart patterns, Elliott waves and cycles tile shows.
-    pattern_tool: Tool,
-    /// The tool the forecasting, volume and measurement tile shows.
-    forecast_tool: Tool,
-    /// The tool the Fibonacci and Gann tile shows.
-    fib_tool: Tool,
-    /// How drawings snap to the bars' prices (the strip's magnet).
-    magnet: MagnetMode,
-    /// Stay on a drawing tool after a drawing is placed; off returns to the crosshair.
-    keep_drawing: bool,
-    /// Every drawing is hidden (view state only: nothing is changed or saved).
-    hide_all_drawings: bool,
     /// Drawing, indicator, market and view edits as undoable steps.
     history: UndoHistory,
     /// The replay clock, its bar and its date sheet.
@@ -336,26 +304,10 @@ impl ChartWorkspace {
             settings_chart: None,
             script_popover: None,
             overlay_popover: None,
-            drawing_props: None,
-            drawing_templates: None,
-            saved_prefs: DrawingPrefs::default(),
-            style_clipboard: None,
-            confirm_remove_drawings: None,
+            tools: DrawingTools::default(),
             removing_chart: None,
             settings_state: ChartSettingsState::default(),
             crosshair: None,
-            active_tool: Tool::Cursor,
-            zoom_armed: false,
-            selected_drawing: None,
-            group_tool: Tool::Brush,
-            line_tool: Tool::TrendLine,
-            note_tool: Tool::Text,
-            pattern_tool: Tool::XabcdPattern,
-            forecast_tool: Tool::LongPosition,
-            fib_tool: Tool::FibRetracement,
-            magnet: MagnetMode::Off,
-            keep_drawing: true,
-            hide_all_drawings: false,
             history: UndoHistory::default(),
             replay: ReplayState::default(),
             watchlist,

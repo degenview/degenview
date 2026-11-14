@@ -484,7 +484,7 @@ impl ChartWorkspace {
                 self.context.templates_chart = Some(chart_id);
                 self.context.templates.open_reset();
             }
-            Command::RemoveDrawings => self.confirm_remove_drawings = Some(chart_id),
+            Command::RemoveDrawings => self.tools.ask_to_remove_all(chart_id),
             Command::RemoveIndicators => self.context.confirm_remove_indicators = Some(chart_id),
             Command::OpenSettings => {
                 self.settings_state = ChartSettingsState::default();
@@ -680,7 +680,7 @@ impl ChartWorkspace {
     }
 
     pub(in crate::workspace) fn copy_selection(&mut self, ctx: &Context) {
-        let Some((chart_id, ids)) = self.selected_drawing.clone() else {
+        let Some((chart_id, ids)) = self.tools.selection().cloned() else {
             return;
         };
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
@@ -787,8 +787,8 @@ impl ChartWorkspace {
         let commands = drawings.into_iter().map(DrawingCommand::Add).collect();
         self.apply_drawing_commands(chart_id, commands);
         // A paste while drawings are hidden would vanish; show them again.
-        self.hide_all_drawings = false;
-        self.selected_drawing = Some((chart_id, ids));
+        self.tools.reveal_all();
+        self.tools.select(chart_id, ids);
         self.say(
             format!(
                 "Pasted {count} drawing{}.",
@@ -1007,12 +1007,7 @@ impl ChartWorkspace {
             },
             &self.context.tree.filter,
         );
-        let selected: Vec<u64> = self
-            .selected_drawing
-            .as_ref()
-            .filter(|(selected_chart, _)| *selected_chart == chart_id)
-            .map(|(_, ids)| ids.clone())
-            .unwrap_or_default();
+        let selected = self.tools.selected_on(chart_id);
         let actions = tree_view::show(ui, &mut self.context.tree, &title, &rows, &selected);
         for action in actions {
             self.apply_tree_action(chart_id, action);
@@ -1034,7 +1029,7 @@ impl ChartWorkspace {
         match action {
             TreeAction::Close => self.context.tree_chart = None,
             TreeAction::Select(TreeKey::Drawing(id)) => {
-                self.selected_drawing = Some((chart_id, vec![id]));
+                self.tools.select(chart_id, vec![id]);
                 self.focus_chart(chart_id);
             }
             TreeAction::Select(_) => self.focus_chart(chart_id),
@@ -1102,9 +1097,7 @@ impl ChartWorkspace {
             TreeAction::Delete(TreeKey::Drawing(id)) => {
                 if drawing(self, id).is_some_and(|d| !d.locked()) {
                     self.apply_drawing_commands(chart_id, vec![DrawingCommand::Remove(id)]);
-                    if let Some((_, ids)) = &mut self.selected_drawing {
-                        ids.retain(|selected| *selected != id);
-                    }
+                    self.tools.deselect(id);
                 }
             }
             TreeAction::Delete(TreeKey::Indicator(IndicatorKey::BuiltIn(indicator))) => {
