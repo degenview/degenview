@@ -45,10 +45,10 @@ The children are grouped by domain, like `model/` and `ui/`:
 | --- | --- |
 | `model/` | Alerts, charts/canvas/types, drawings, indicators, instruments, layouts, paper/portfolio engines, replay, tabs, watchlists, and webhooks |
 | `pine/` | Lexer → parser → compiler → session, builtins, strategies, alerts, drawings, libraries, `request.*`, and corpus tests |
-| `pine_studio/` | File-backed scripts, editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
+| `pine_studio/` | The script library (registry, names, sidebar), editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
 | `host/` | The stateful seams: one host per feature, bridging engines, stores, workers, and views (one directory per domain, see below) |
 | `service/` | Market providers, HTTP/WebSocket work, updater, caches, images/icons, FX, notifications, files, Keychain, quotes, webhooks, and login-item registration (see the layout below) |
-| `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, and webhook persistence |
+| `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, webhook persistence, and the file-backed script library (`scripts/`) |
 | `ui/` | egui screens, one directory per domain (see `ui/` layout below), plus the shared `kit/`, `theme/` and `icons` |
 | `mcp/` | Loopback HTTP transport, auth, shared permission state, app bridge, tools, and wire types |
 | `sync/` | iCloud Sync: policy (what syncs), records, merge, outbox, id tagging and the CloudKit transport (bridge in `native/swift`); no UI |
@@ -65,13 +65,14 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 
 | Directory | Holds |
 | --- | --- |
-| `alert/`, `webhook/` | Price and Pine alerts (engine, feed, line, messages, notifications) and webhook endpoints and policy |
+| `alert/`, `webhook/` | Price and Pine alerts (engine, feed, line, messages, notifications, the `draft` the sheet and MCP build) and webhook endpoints and policy |
 | `paper/`, `portfolio/`, `watchlist/`, `broker/` | Paper trading, the portfolio ledger and its statistics, watchlists, and the shared live-trading values |
-| `chart/` | One chart: appearance, canvas, viewport, price scale, kind, layout, templates, context menu, linked-chart sync, snapshots, replay, constructed bars (`synthetic/`) |
-| `market/` | Instruments, sources, timeframes, candles, history paging, prediction-market series |
+| `chart/` | One chart: appearance, canvas, viewport, price scale, kind, layout, templates, context menu, linked-chart sync, snapshots, replay (the clock and what an agent asks of it), constructed bars (`synthetic/`) |
+| `market/` | Instruments, sources, timeframes, candles, history paging, prediction-market series, CoinMarketCap chart keys and titles (`cmc`) |
 | `drawings/`, `annotation/`, `pattern/`, `fib/`, `forecast/` | Drawings and their tools: the shared model and styles, text/image/post/table content, patterns and Elliott waves, Fibonacci and Gann, positions and measurers |
-| `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart |
+| `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart, script value types (`script`) and the Pine indicators bundled with the app (`bundled/`) |
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
+| `ids/` | The id space engines mint into (`LEGACY_LIMIT`, `GLOBAL_BASE`); sync tags it in `sync::record::ids` |
 
 Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, `model::ChartType`).
 A new module goes in the matching directory; a new domain gets its own directory and a row here.
@@ -105,14 +106,16 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 beside it: `alert/` (with `runtime`), `broker/`, `editor_theme/`, `mcp/` (with `confirmation`), `paper/`,
 `pine/` (with `chart/`, the runs of a chart's scripts and their workers; `batch`, scripts run once
 each; `subscription`), `portfolio/` (with `card` and `import_flow`), `settings/` (the Settings
-window's controller: it builds the page's input and applies its actions), `snapshot/`, `sync/`,
-`tab/` (`window`, `title`, `link`), `trading/` (the hub), `update/`. Hosts draw nothing: the views
-that sit on them live in `ui/` (`ui::portfolio::tab`, `ui::paper::panel`), and views run nothing:
-the chart card hands its bars to `host::pine::chart` and draws what comes back.
+window's controller: it builds the page's input and applies its actions), `snapshot/`, `sync/` (with
+`scripts`, the script sink over the file store), `tab/` (`window`, `title`, `link`), `trading/` (the
+hub), `update/`. Hosts draw nothing: the views that sit on them live in `ui/` (`ui::portfolio::tab`,
+`ui::paper::panel`), and views run nothing: the chart card hands its bars to `host::pine::chart` and
+draws what comes back.
 
 `store/` has one file per single-table domain store (`alert`, `asset_store`, `drawing_template`,
 `identity`, `paper`, `pine`, `portfolio`, `watchlist`, `webhook`) and a directory once a store has a
-second file: `chart/` (`template/`, `saved_view`), `editor_theme/`, `mcp/` (with `audit`), `sync/`.
+second file: `chart/` (`template/`, `saved_view`), `editor_theme/`, `mcp/` (with `audit`), `sync/`,
+`scripts/` (the user's Pine scripts as `.pine` files with their metadata beside them, not SQLite).
 
 `sync/`:
 
@@ -120,7 +123,7 @@ second file: `chart/` (`template/`, `saved_view`), `editor_theme/`, `mcp/` (with
 | --- | --- |
 | `engine/` | The state machine and what it does: `core`, `initial` merge, `merge`, `outbox`, `apply/`, `account` |
 | `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project`, `validate`, `paper`, `scripts` |
-| `transport/` | The CloudKit boundary: `mod.rs` the trait and events, `native/` (the Swift bridge), `mock` (tests) |
+| `transport/` | The CloudKit boundary: `mod.rs` the trait, its factory, the event sink and events, `native/` (the Swift bridge), `mock` (tests) |
 | `tests/` | End-to-end sync tests, one file per concern |
 
 `mcp/` keeps `mod.rs`, `bridge`, `state`, `types`, `confirm`, `audit`, `tools` (the chart tools and the
@@ -168,9 +171,9 @@ beside the code they exercise.
 | --- | --- |
 | `ai/`, `debug/`, `profiler/` | The assistant, the debugger and the profiler: their state, host, panel, gallery pictures and `studio_tests` |
 | `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites` |
-| `library/` | Where scripts live: `store`, `registry`, `sidebar`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
+| `library/` | The script library around its file store (`store::scripts`): `registry`, `sidebar`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
 | `drawer/` | The drawer under the preview: `problems/`, `logs/`, the intro, `bottom_bar`, `tab_chrome` |
-| root | `mod.rs` (the manager), `model`, `preview`, `inputs`, `workspace`, `sheets`, `indicators/`, `theme_preview/` |
+| root | `mod.rs` (the manager), `preview`, `inputs`, `workspace`, `sheets`, `theme_preview/` |
 
 ## `ui/` layout
 

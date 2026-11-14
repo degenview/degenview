@@ -228,7 +228,7 @@ pub enum McpCommand {
     },
     ControlReplay {
         workspace_id: u64,
-        command: crate::workspace::ReplayCommand,
+        command: crate::model::ReplayCommand,
     },
     ListWatchlists,
     /// One page of a watchlist's entries. Quotes are not read here (the tool waits for them

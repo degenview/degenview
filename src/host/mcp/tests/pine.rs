@@ -201,7 +201,7 @@ fn a_report_carries_the_charts_own_numbers_and_the_context_that_made_them() {
     assert_eq!(context.script_id.as_deref(), Some("script-1"));
     assert_eq!(
         context.source_hash,
-        crate::pine_studio::library::store::hash_source(STRATEGY_SOURCE)
+        crate::store::scripts::hash_source(STRATEGY_SOURCE)
     );
     assert_eq!(
         context.inputs["len"],
@@ -327,7 +327,7 @@ fn applied_instances_report_run_status_and_the_hash_of_their_own_source() {
     assert_eq!(info.script_id.as_deref(), Some("script-1"));
     assert_eq!(
         info.source_hash,
-        crate::pine_studio::library::store::hash_source(STRATEGY_SOURCE)
+        crate::store::scripts::hash_source(STRATEGY_SOURCE)
     );
 
     assert_eq!(applied_info(&view(Some(run(None, None)))).run_status, "ok");

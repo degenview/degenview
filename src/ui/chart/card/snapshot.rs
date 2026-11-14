@@ -149,8 +149,7 @@ impl ChartCard {
             return Err(SnapshotError::Empty);
         }
         let source = input.source;
-        if source == DataSource::CoinMarketCap
-            && crate::service::market::cmc::is_latest(input.symbol)
+        if source == DataSource::CoinMarketCap && crate::model::market::cmc::is_latest(input.symbol)
         {
             return Err(SnapshotError::Unsupported);
         }

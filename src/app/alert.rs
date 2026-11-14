@@ -7,7 +7,6 @@ use crate::model::alert::{
 };
 use crate::service::alert::background_service::BackgroundAlertService;
 use crate::service::alert::macos_notifications::Notifier;
-use crate::ui::alert::editor::PriceAlertEditorState;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -146,7 +145,10 @@ impl DegenViewApp {
         }) || self
             .alert_editor
             .lock()
-            .is_ok_and(|slot| slot.as_ref().is_some_and(PriceAlertEditorState::needs_fx_rates));
+            .is_ok_and(|slot| {
+                slot.as_ref()
+                    .is_some_and(|editor| editor.draft.needs_fx_rates())
+            });
         if needs_fx
             && self.alert_fx_receiver.is_none()
             && self

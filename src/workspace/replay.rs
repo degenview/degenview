@@ -1,50 +1,12 @@
 //! Replay: the bar, its timeline, and starting, stepping and stopping it.
 
 use super::ChartWorkspace;
-use crate::model::{ClockCommand, ReplayInterval, ReplaySpeed, ReplayStatus, ReplayView};
+use crate::model::{
+    ClockCommand, ReplayCommand, ReplayError, ReplayInterval, ReplayStart, ReplayStatus, ReplayView,
+};
 use crate::ui::replay::bar::{self, ReplayBarAction, ReplayBarInput};
 use eframe::egui;
 use std::time::{Duration, Instant};
-
-/// Where an agent starts a replay.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReplayStart {
-    /// The chart's first bar.
-    First,
-    /// The bar at or before this time (epoch milliseconds); earlier than the first bar is the
-    /// first bar.
-    At(i64),
-}
-
-/// What an agent may ask of the replay clock.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReplayCommand {
-    /// Starts (or restarts) the replay on a chart, the focused one when none is named. Paused.
-    Start {
-        chart_id: Option<u64>,
-        at: ReplayStart,
-    },
-    Play,
-    Pause,
-    StepForward(usize),
-    StepBack(usize),
-    /// Back to the chosen start.
-    Restart,
-    /// To the bar at or before this time.
-    Seek(i64),
-    SetSpeed(ReplaySpeed),
-    /// Back to live.
-    Stop,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReplayError {
-    NoSuchChart,
-    /// The chart has no candles yet (it may still be loading).
-    NoCandles,
-    /// There is no replay to act on.
-    NotRunning,
-}
 
 impl ChartWorkspace {
     pub fn replay_view(&self) -> ReplayView {
@@ -265,7 +227,7 @@ impl ChartWorkspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DataSource, InstrumentId};
+    use crate::model::{DataSource, InstrumentId, ReplaySpeed};
     use crate::workspace::test_support::{candle, empty_workspace};
 
     fn rig() -> (ChartWorkspace, u64) {

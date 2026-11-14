@@ -7,6 +7,7 @@ pub mod mock;
 pub mod native;
 
 use super::record::{RecordName, SyncRecord};
+use std::sync::Arc;
 
 /// What went wrong with a cloud operation, as the core needs to react to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,4 +197,20 @@ pub enum TransportEvent {
 /// Implemented by the Swift bridge and by the test cloud. Must not block.
 pub trait SyncTransport {
     fn send(&mut self, command: TransportCommand);
+}
+
+impl SyncTransport for Box<dyn SyncTransport + Send> {
+    fn send(&mut self, command: TransportCommand) {
+        (**self).send(command);
+    }
+}
+
+/// How the worker hears from the native bridge.
+pub type EventSink = Arc<dyn Fn(TransportEvent) + Send + Sync>;
+
+/// Creates the connection to iCloud. The real one wraps CloudKit; builds without it give none.
+pub trait TransportFactory: Send + Sync {
+    /// `Production` or `Development`, or why iCloud cannot work in this build as signed.
+    fn environment(&self) -> Result<String, String>;
+    fn create(&self, events: EventSink) -> Box<dyn SyncTransport + Send>;
 }

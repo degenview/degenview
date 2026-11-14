@@ -5,11 +5,11 @@
 
 use crate::host::pine::batch::{BatchRun, Finished};
 use crate::model::indicators::catalog::{CatalogEntry, EntryKey};
+use crate::model::pine::bundled;
 use crate::model::{BuiltIn, Kline, bollinger, ema, rsi, supertrend_flips};
 use crate::pine::compiler::program::{SymbolInfo, VisualOutput};
 use crate::pine::outputs::{MarkerLocation, PlotStyle};
 use crate::pine::syntax::token::Diagnostic;
-use crate::pine_studio::indicators;
 use crate::ui::pine::geometry::rgba;
 use crate::ui::theme;
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Shape, Stroke, pos2};
@@ -205,7 +205,7 @@ impl Previews {
         if self.runs.is_some() {
             return;
         }
-        let scripts = indicators::ALL
+        let scripts = bundled::ALL
             .iter()
             .map(|indicator| (EntryKey::Bundled(indicator.id), indicator.source.to_owned()))
             .collect();
@@ -429,7 +429,7 @@ mod tests {
 
     #[test]
     fn every_bundled_script_previews_and_agrees_on_its_pane() {
-        for indicator in &indicators::ALL {
+        for indicator in &bundled::ALL {
             let (output, failure) = crate::host::pine::run_script_checked(
                 indicator.source,
                 bars(),

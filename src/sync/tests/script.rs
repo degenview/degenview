@@ -1,8 +1,9 @@
 //! Script sync: two Macs with their own script libraries, plus the real `ScriptStore`.
 
 use super::core::{Mac, mac};
-use crate::pine_studio::library::store::ScriptStore;
-use crate::sync::record::scripts::{ScriptSink, StoreScriptSink};
+use crate::host::sync::scripts::StoreScriptSink;
+use crate::store::scripts::ScriptStore;
+use crate::sync::record::scripts::ScriptSink;
 use crate::sync::transport::mock::MockCloud;
 use std::collections::HashSet;
 

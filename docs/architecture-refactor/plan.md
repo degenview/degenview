@@ -75,21 +75,21 @@ Stacked pull requests, logic changes first and pure moves last.
   - [x] The chart card's worker and run bookkeeping move to `host::pine`; the card asks for a run and
         keeps the latest output.
   - [x] Indicator-picker previews run through the same host.
-- [x] **PR 5: one background-job handle.**
+- [x] **PR 5: one background-job handle.** [#516](https://github.com/degenview/degenview/pull/516)
   - [x] `service::work_queue::Pending<T>` (and `PendingAll<T>`), which repaints on completion.
         `trading::task::Task` stays: venues answer through polling closures (paper at once, brokers
         through the broker crate's own handle), not through one job.
   - [x] UI thread spawns (searches, test connections, uploads, file dialogs) go through it; searches use
         the per-provider lanes; Keychain reads move onto the job.
   - [x] Pine Studio's preview fetch, search and export use it too.
-- [ ] **PR 6: types where they belong.**
-  - [ ] CoinMarketCap chart-type titles move to `model::market`.
-  - [ ] `ReplayCommand`/`ReplayStart` move to `model`.
-  - [ ] A pure `model::alert::draft` serves both the alert editor and MCP.
-  - [ ] `LocalScript`, `ScriptType` and the bundled-indicator type move to `model::pine`.
-  - [ ] Sync id-space constants and the custom-title limit move to `model`.
-  - [ ] `EventSink`/`TransportFactory` move to `sync::transport`; `StoreScriptSink` to `host::sync`.
-  - [ ] The script library's file store moves out of `pine_studio/`.
+- [x] **PR 6: types where they belong.**
+  - [x] CoinMarketCap chart-type titles move to `model::market`.
+  - [x] `ReplayCommand`/`ReplayStart` move to `model`.
+  - [x] A pure `model::alert::draft` serves both the alert editor and MCP.
+  - [x] `LocalScript`, `ScriptType` and the bundled-indicator type move to `model::pine`.
+  - [x] Sync id-space constants and the custom-title limit move to `model`.
+  - [x] `EventSink`/`TransportFactory` move to `sync::transport`; `StoreScriptSink` to `host::sync`.
+  - [x] The script library's file store moves out of `pine_studio/`.
 - [ ] **PR 7: nothing slow in a frame.**
   - [ ] Pine subscriptions are cached by change signal instead of queried per frame.
   - [ ] The MCP connection JSON and the local UTC offset are cached.
@@ -123,7 +123,8 @@ Stacked pull requests, logic changes first and pure moves last.
 
 ### Later (not in this series)
 
-- A workspace split: a small core crate, then the Pine engine on its own (needs PR 6).
+- A workspace split: a small core crate, then the Pine engine on its own (needs PR 6). Before it,
+  `store::scripts` must stop importing `pine_studio::library::{name, registry}`.
 - `Store` as per-domain repositories with a separate read connection.
 - One Pine builtin signature table for the registry, the type checker and the studio.
 - Pine runtime allocations: overload lookups and `ta` windows that allocate on every bar.

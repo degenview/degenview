@@ -9,8 +9,8 @@ use crate::mcp::tools::{
     DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::model::mcp::Permission;
+use crate::model::{ReplayCommand, ReplayStart};
 use crate::model::{ReplaySpeed, ReplayStatus, ReplayView};
-use crate::workspace::{ReplayCommand, ReplayStart};
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;

@@ -3,6 +3,7 @@
 use super::chart::Chart;
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::DataSource;
+use crate::model::alert::draft::Direction;
 use crate::model::alert::{AlertAsset, AlertCurrency};
 use crate::model::watchlist::now_ms;
 use crate::ui::alert::editor::{self, PriceAlertEditorOutcome, PriceAlertEditorState};
@@ -45,7 +46,7 @@ impl ChartWorkspace {
     pub fn alert_editor_needs_fx_rates(&self) -> bool {
         self.alert_editor
             .as_ref()
-            .is_some_and(PriceAlertEditorState::needs_fx_rates)
+            .is_some_and(|editor| editor.draft.needs_fx_rates())
     }
 
     /// Keeps the open sheet's market priced: it asks for the quote for as long as it is open.
@@ -56,13 +57,11 @@ impl ChartWorkspace {
             // A chart point prefills the level and the way to cross it; the user still reviews
             // and saves, so nothing is created here.
             if let Some(price) = request.price {
-                editor.target = AlertCurrency::Usd.plain_price_text(price);
-                editor.direction =
+                editor.draft.target = AlertCurrency::Usd.plain_price_text(price);
+                editor.draft.direction =
                     match crate::model::chart::context::alert_side(price, request.last) {
-                        Some(crate::model::chart::context::AlertSide::Below) => {
-                            editor::Direction::Below
-                        }
-                        _ => editor::Direction::Above,
+                        Some(crate::model::chart::context::AlertSide::Below) => Direction::Below,
+                        _ => Direction::Above,
                     };
             }
             self.alert_editor = Some(editor);
@@ -70,8 +69,11 @@ impl ChartWorkspace {
         let Some(state) = self.alert_editor.as_mut() else {
             return Vec::new();
         };
-        self.quote_coordinator
-            .set_demand(owner, vec![state.asset().instrument.clone()], true);
+        self.quote_coordinator.set_demand(
+            owner,
+            vec![state.draft.asset().instrument.clone()],
+            true,
+        );
         state.feed_from_book(&self.quote_book, &self.alert_fx_rates);
         let endpoints = self
             .store
@@ -84,7 +86,7 @@ impl ChartWorkspace {
             Some(PriceAlertEditorOutcome::Save(alert)) => {
                 actions.push(WorkspaceAction::SavePriceAlert {
                     alert,
-                    baseline: state.current_price(),
+                    baseline: state.draft.current_price(),
                 });
                 finished = true;
             }

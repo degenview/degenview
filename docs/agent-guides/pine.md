@@ -305,7 +305,7 @@ failures with original code; never copy corpus scripts into the repository.
 
 ## iCloud Sync
 
-User scripts sync as files via `sync::record::scripts::ScriptSink` (`StoreScriptSink` over `ScriptStore`).
+User scripts sync as files via `sync::record::scripts::ScriptSink` (`host::sync::scripts::StoreScriptSink` over `store::scripts::ScriptStore`).
 Drafts and revisions never sync; unmodified bundled examples are neither uploaded nor kept over an
 incoming same-name script; text being typed is never overwritten (incoming waits in the sync inbox).
 Two edits to one script keep both; the loser becomes a conflict-copy script. Sync code writes script

@@ -6,39 +6,24 @@
 //! user sees on screen (applying remote data, reading script files) happens in `tick`, on the app
 //! thread, where those owners live.
 
-use crate::pine_studio::library::store::ScriptStore;
+pub mod scripts;
+
+use crate::host::sync::scripts::StoreScriptSink;
 use crate::store::SharedStore;
+use crate::store::scripts::ScriptStore;
 use crate::store::sync::ConflictSummary;
 use crate::sync::engine::account::{self, AccountChoice};
 use crate::sync::engine::apply::{ApplyCtx, ApplyReport, apply_batch};
 use crate::sync::engine::core::{Effect, PauseReason, Phase, RemoteBatch, SyncCore};
 use crate::sync::engine::initial::{JoinMode, JoinSummary, finish_join, summarize};
 use crate::sync::record::policy::Category;
-use crate::sync::record::scripts::{
-    NoScripts, ScriptCache, ScriptSink, StoreScriptSink, scan_scripts,
-};
-use crate::sync::transport::{SyncTransport, TransportEvent};
+use crate::sync::record::scripts::{NoScripts, ScriptCache, ScriptSink, scan_scripts};
+use crate::sync::transport::{EventSink, SyncTransport, TransportEvent, TransportFactory};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
-
-/// How the worker hears from the native bridge.
-pub type EventSink = Arc<dyn Fn(TransportEvent) + Send + Sync>;
-
-/// Creates the connection to iCloud. The real one wraps CloudKit; builds without it give none.
-pub trait TransportFactory: Send + Sync {
-    /// `Production` or `Development`, or why iCloud cannot work in this build as signed.
-    fn environment(&self) -> Result<String, String>;
-    fn create(&self, events: EventSink) -> Box<dyn SyncTransport + Send>;
-}
-
-impl SyncTransport for Box<dyn SyncTransport + Send> {
-    fn send(&mut self, command: crate::sync::transport::TransportCommand) {
-        (**self).send(command);
-    }
-}
 
 /// How often another Mac's changes are looked for even without a push. A fetch with nothing new
 /// is one small request, so this can be short; pushes alone arrive late or not at all.

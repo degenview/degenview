@@ -976,7 +976,7 @@ mod tests {
             },
             McpCommand::ControlReplay {
                 workspace_id: 1,
-                command: crate::workspace::ReplayCommand::Stop,
+                command: crate::model::ReplayCommand::Stop,
             },
             McpCommand::RemoveIndicator {
                 workspace_id: 1,

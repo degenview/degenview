@@ -5,10 +5,10 @@ use super::list::{
     PAD, RowOutput, RowState, SUBTITLE_SIZE, TITLE_SIZE, marks, paint_background, venue_block,
 };
 use crate::model::DataSource;
+use crate::model::market::cmc::CHART_TYPES;
 use crate::model::portfolio::Portfolio;
 use crate::model::portfolio::card::{CardKind, PortfolioCard};
 use crate::service::SearchResult;
-use crate::service::market::cmc::CHART_TYPES;
 use crate::service::market::search_rank::normalize;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};

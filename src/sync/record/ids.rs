@@ -11,12 +11,9 @@
 //! * At or above it (nanosecond-timestamp ids from `new_id()`, and other Macs' tagged ids) an id is
 //!   already unique and syncs unchanged.
 
+use crate::model::ids::{GLOBAL_BASE, LEGACY_LIMIT};
 use serde_json::Value;
 
-/// Counter ids stay far below this: a Mac would need 16 million portfolios or orders.
-pub const LEGACY_LIMIT: u64 = 1 << 24;
-/// Tagged ids live in `[GLOBAL_BASE, GLOBAL_BASE << 1)`, above counters and below nanosecond ids.
-pub const GLOBAL_BASE: u64 = 1 << 55;
 const TAG_BITS: u32 = 31;
 const TAG_MASK: u64 = (1 << TAG_BITS) - 1;
 

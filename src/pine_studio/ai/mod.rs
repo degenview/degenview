@@ -23,7 +23,7 @@ pub(in crate::pine_studio) mod studio_tests;
 pub(in crate::pine_studio) mod tools;
 
 use super::editor::diff::DiffSnapshot;
-use super::model::ScriptId;
+use crate::model::pine::script::ScriptId;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;

@@ -220,7 +220,7 @@ impl DegenViewApp {
     pub fn new(
         creation: &eframe::CreationContext<'_>,
         store: SharedStore,
-        sync_factory: Option<Arc<dyn crate::host::sync::TransportFactory>>,
+        sync_factory: Option<Arc<dyn crate::sync::transport::TransportFactory>>,
     ) -> Self {
         let app_theme = store
             .lock()
@@ -338,7 +338,7 @@ impl DegenViewApp {
             crate::host::sync::SyncHost::new(
                 store.clone(),
                 sync_factory,
-                crate::pine_studio::library::store::ScriptStore::default_location(),
+                crate::store::scripts::ScriptStore::default_location(),
                 backups,
                 // The sync page lives in the Settings window, a viewport of its own: waking only the
                 // root one leaves that page showing stale state until the mouse moves.

@@ -795,7 +795,7 @@ mod tests {
         use crate::host::mcp::chart::indicator_readings;
         use crate::mcp::indicator::{Reading, ReadingRequest};
         use crate::model::{RSI_PERIOD, rsi};
-        use crate::workspace::replay::{ReplayCommand, ReplayStart};
+        use crate::model::{ReplayCommand, ReplayStart};
 
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(7);

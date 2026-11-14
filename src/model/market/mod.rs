@@ -1,5 +1,6 @@
 //! Markets and their data: instruments, sources, timeframes, candles and prediction-market series.
 
+pub mod cmc;
 pub mod history;
 pub(in crate::model) mod instrument;
 pub(in crate::model) mod kline;

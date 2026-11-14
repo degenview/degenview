@@ -487,7 +487,7 @@ fn a_script_that_reads_the_visible_range_is_profiled_over_the_range_on_screen() 
     let feed = rig
         .manager
         .preview
-        .debug_feed(crate::pine_studio::model::now_ms(), false)
+        .debug_feed(crate::model::pine::script::now_ms(), false)
         .expect("a feed");
     let (left, right) = feed.visible_range.expect("a range");
     let inside = feed

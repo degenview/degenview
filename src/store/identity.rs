@@ -202,6 +202,7 @@ impl Store {
 mod tests {
     use super::*;
     use crate::model::DataSource;
+    use crate::model::ids::GLOBAL_BASE;
     use crate::model::paper::engine::PaperTradingEngine;
     use crate::model::paper::{
         PaperCurrency, PaperInstrument, PaperOrderRequest, PaperOrderSide, PaperOrderType,
@@ -212,7 +213,6 @@ mod tests {
         PortfolioSource, PortfolioTransaction, PortfolioTransactionType,
     };
     use crate::store::sync::Load;
-    use crate::sync::record::ids::GLOBAL_BASE;
     use std::collections::HashMap;
 
     fn syncing_store() -> Store {

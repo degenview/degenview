@@ -11,16 +11,14 @@ use crate::mcp::types::{
     PineCompileResult, PineCompileSummary, PineDiagnosticInfo, PineEditResult, PineInputInfo,
     PineInputOption, PineInputsResult, PineScriptInfo, PineScriptSource, PineScriptsResult,
 };
+use crate::model::pine::script::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{
     CompiledProgram, InputDefinition, InputSchema, InputValue, ScriptType as DeclaredType,
 };
 use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, Limits};
 use crate::pine_studio::library::registry::LibraryRegistry;
-use crate::pine_studio::library::store::{
-    COMPILER_VERSION, ScriptStore, ScriptStoreError, hash_source,
-};
-use crate::pine_studio::model::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
+use crate::store::scripts::{COMPILER_VERSION, ScriptStore, ScriptStoreError, hash_source};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
@@ -414,7 +412,7 @@ pub fn update_draft(
         .save_draft(&ScriptDraft {
             script_id: script.id.clone(),
             source: source.to_owned(),
-            modified_at_ms: crate::pine_studio::model::now_ms(),
+            modified_at_ms: crate::model::pine::script::now_ms(),
             based_on_revision_id: script.latest_revision_id.clone(),
         })
         .map_err(store_error)?;

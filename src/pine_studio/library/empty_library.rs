@@ -207,8 +207,8 @@ fn example(ui: &mut Ui, width: f32) {
 #[cfg(test)]
 mod tests {
     use crate::pine_studio::PineStudio;
-    use crate::pine_studio::library::store::ScriptStore;
     use crate::store::Store;
+    use crate::store::scripts::ScriptStore;
     use crate::ui::render_tests::{Screen, gallery_dir};
     use crate::ui::theme::{self, AppTheme};
     use eframe::egui;

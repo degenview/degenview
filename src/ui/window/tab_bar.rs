@@ -813,7 +813,7 @@ impl TabBar<'_> {
                     let edit = ui.add(
                         egui::TextEdit::singleline(&mut state.text)
                             .hint_text("Tab title")
-                            .char_limit(crate::workspace::MAX_CUSTOM_TITLE_CHARS)
+                            .char_limit(crate::model::tab::title::MAX_CUSTOM_TITLE_CHARS)
                             .desired_width(f32::INFINITY),
                     );
                     if !state.focused {

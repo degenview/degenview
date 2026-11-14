@@ -10,10 +10,8 @@ mod bar;
 pub mod debug;
 pub mod drawer;
 pub mod editor;
-pub mod indicators;
 pub mod inputs;
 pub mod library;
-pub mod model;
 mod preview;
 pub mod profiler;
 mod sheets;
@@ -21,10 +19,14 @@ pub mod theme_preview;
 mod workspace;
 
 use crate::model::pine::instance::{PineInstance, StoredInput};
+use crate::model::pine::script::{
+    CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType, now_ms,
+};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
 use crate::service::work_queue::{self, Pending};
 use crate::store::SharedStore;
+use crate::store::scripts::{COMPILER_VERSION, ScriptStore, hash_source};
 use crate::ui::kit::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::shortcut;
 use crate::ui::theme;
@@ -33,10 +35,8 @@ use eframe::egui::{self, Id, Ui};
 use library::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
 use library::registry::LibraryRegistry;
 use library::sidebar::{Group, Rename, RowKey};
-use library::store::{COMPILER_VERSION, ScriptStore, hash_source};
 pub use library::unsaved::{ExitDecision, ExitReason};
 use library::unsaved::{ExitPrompt, UnsavedChoice, UnsavedScript};
-use model::{CompileStatus, LocalScript, ScriptId, ScriptType};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -564,10 +564,10 @@ impl PineStudio {
         if let Some(open) = self.open.as_mut()
             && open.editor.take_draft_due(Instant::now())
         {
-            let draft = model::ScriptDraft {
+            let draft = ScriptDraft {
                 script_id: open.id.clone(),
                 source: open.editor.source.clone(),
-                modified_at_ms: model::now_ms(),
+                modified_at_ms: now_ms(),
                 based_on_revision_id: None,
             };
             self.with_store(|store| store.save_draft(&draft));
@@ -619,7 +619,7 @@ impl PineStudio {
     /// Runs a store operation; a failure becomes the alert.
     fn with_store<T>(
         &mut self,
-        operation: impl FnOnce(&mut ScriptStore) -> Result<T, library::store::ScriptStoreError>,
+        operation: impl FnOnce(&mut ScriptStore) -> Result<T, crate::store::scripts::ScriptStoreError>,
     ) -> Option<T> {
         let store = self.script_store.as_mut()?;
         match operation(store) {
@@ -886,10 +886,10 @@ impl PineStudio {
             return;
         };
         if open.editor.has_pending_draft() && open.editor.is_dirty() {
-            let draft = model::ScriptDraft {
+            let draft = ScriptDraft {
                 script_id: open.id.clone(),
                 source: open.editor.source.clone(),
-                modified_at_ms: model::now_ms(),
+                modified_at_ms: now_ms(),
                 based_on_revision_id: None,
             };
             self.with_store(|store| store.save_draft(&draft));
@@ -1198,7 +1198,7 @@ impl PineStudio {
         }
         let id = open.id.clone();
         // The editor shows what lands on disk: a saved script always ends in a newline.
-        let source = library::store::with_trailing_newline(&open.editor.source);
+        let source = crate::store::scripts::with_trailing_newline(&open.editor.source);
         // What the editor last read from the file. If the file is no longer that, someone else wrote
         // it and this save would overwrite their work.
         let expected = open.editor.saved_source().to_owned();
@@ -1216,7 +1216,7 @@ impl PineStudio {
                 }
                 self.refresh();
             }
-            Some(Err(library::store::ScriptStoreError::ChangedOnDisk)) => {
+            Some(Err(crate::store::scripts::ScriptStoreError::ChangedOnDisk)) => {
                 // Not saved. Look at the file at once, without waiting for it to settle, so the
                 // question appears over the typing.
                 if let Some(open) = self.open.as_mut() {
@@ -1288,7 +1288,7 @@ impl PineStudio {
                 .scripts
                 .iter()
                 .any(|s| s.name.to_lowercase() == clean.to_lowercase())
-                .then(|| library::store::ScriptStoreError::NameConflict.to_string()),
+                .then(|| crate::store::scripts::ScriptStoreError::NameConflict.to_string()),
         }
     }
 }
@@ -1530,10 +1530,10 @@ mod tests {
         let (mut manager, root, first) = edited("exit-drafts");
         // Switching away keeps the edit as a draft (typing leaves one behind after a pause).
         let edited = manager.open.as_ref().unwrap().editor.source.clone();
-        let draft = model::ScriptDraft {
+        let draft = ScriptDraft {
             script_id: first.clone(),
             source: edited,
-            modified_at_ms: model::now_ms(),
+            modified_at_ms: now_ms(),
             based_on_revision_id: None,
         };
         manager.with_store(|store| store.save_draft(&draft));

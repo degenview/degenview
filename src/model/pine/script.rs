@@ -1,4 +1,6 @@
-//! Pine Studio value types, ported from `Model/Script/*.swift`.
+//! A user script as values: its id, type, compile record, draft and revisions, as the script
+//! store keeps them and Pine Studio, charts, sync and MCP read them. Ported from
+//! `Model/Script/*.swift`.
 
 use crate::pine::compiler::program::ScriptType as PineScriptType;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};

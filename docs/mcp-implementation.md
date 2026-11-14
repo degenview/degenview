@@ -101,8 +101,8 @@ src/ui/pine/style_view.rs
 ```text
 src/store/mod.rs
 src/store/pine.rs
-src/pine_studio/library/store.rs
-src/pine_studio/model.rs
+src/store/scripts/mod.rs
+src/model/pine/script.rs
 src/ui/settings/window.rs
 src/ui/settings/card.rs
 src/service/keychain/api_keys.rs
@@ -1106,7 +1106,7 @@ pine::strategy::broker
 Scripts are managed through:
 
 ```text
-pine_studio::library::store::ScriptStore
+store::scripts::ScriptStore
 pine_studio::library::registry::LibraryRegistry
 ```
 

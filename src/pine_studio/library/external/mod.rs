@@ -20,7 +20,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
 
-use super::store::{FileStamp, with_trailing_newline};
+use crate::store::scripts::{FileStamp, with_trailing_newline};
 
 /// How often the open script's file is looked at (a metadata read, not a read of the file).
 pub const FAST_POLL: Duration = Duration::from_millis(400);
@@ -298,11 +298,7 @@ mod tests {
     #[test]
     fn the_folder_is_rescanned_when_the_file_moves_while_settling_or_when_forced() {
         let mut watch = Watch::default();
-        let stamp = |ms, len| {
-            Some(crate::pine_studio::library::store::FileStamp::for_test(
-                ms, len,
-            ))
-        };
+        let stamp = |ms, len| Some(crate::store::scripts::FileStamp::for_test(ms, len));
         // The first look always scans (nothing was known).
         assert!(watch.wants_scan(stamp(1, 10)));
         assert!(!watch.wants_scan(stamp(1, 10)));

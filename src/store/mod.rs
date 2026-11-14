@@ -21,6 +21,7 @@ pub mod mcp;
 pub mod paper;
 pub mod pine;
 pub mod portfolio;
+pub mod scripts;
 pub mod sync;
 pub mod watchlist;
 pub mod webhook;

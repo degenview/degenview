@@ -25,7 +25,7 @@ pub use super::preview::PreviewState;
 /// What the preview pane reads of the open script.
 pub(crate) struct PreviewInput {
     pub name: String,
-    pub script_type: super::model::ScriptType,
+    pub script_type: crate::model::pine::script::ScriptType,
     pub source: String,
     pub diagnostics: Vec<Diagnostic>,
     /// `diagnostics` and the script's runtime failures: what the Problems tab lists and counts.

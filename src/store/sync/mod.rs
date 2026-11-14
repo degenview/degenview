@@ -211,9 +211,8 @@ impl Store {
             return Ok(());
         }
         let (low, high) = (
-            crate::sync::record::ids::GLOBAL_BASE as i64,
-            (crate::sync::record::ids::GLOBAL_BASE | (crate::sync::record::ids::LEGACY_LIMIT - 1))
-                as i64,
+            crate::model::ids::GLOBAL_BASE as i64,
+            (crate::model::ids::GLOBAL_BASE | (crate::model::ids::LEGACY_LIMIT - 1)) as i64,
         );
         for table in ["sync_entity", "sync_outbox", "sync_inbox"] {
             let key = if table == "sync_inbox" {
@@ -2171,8 +2170,8 @@ mod tests {
     fn a_database_that_enabled_sync_before_the_tag_existed_gets_one_when_it_opens() {
         let store = Store::open_in_memory().unwrap();
         store.ensure_sync_state("Mac", "hw").unwrap();
-        let zero_tagged = crate::sync::record::ids::GLOBAL_BASE | 1;
-        let other_macs = crate::sync::record::ids::GLOBAL_BASE | (7 << 24) | 1;
+        let zero_tagged = crate::model::ids::GLOBAL_BASE | 1;
+        let other_macs = crate::model::ids::GLOBAL_BASE | (7 << 24) | 1;
         for (kind, id) in [
             ("paperaccount", zero_tagged),
             ("paperaccount", other_macs),

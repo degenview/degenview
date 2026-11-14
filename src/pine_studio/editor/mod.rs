@@ -18,8 +18,8 @@ pub mod symbols;
 pub mod syntax;
 
 use super::debug::marks::{BreakpointMark, DebugMarks, GutterEvent, MarkKind, StopMark};
-use super::model::CompileStatus;
 use super::profiler::marks::{LineMark, ProfileColumn};
+use crate::model::pine::script::CompileStatus;
 use color_sites::ColorMap;
 use completion::Completion;
 use diff::{ChangeKind, DiffHunk, DiffSnapshot};

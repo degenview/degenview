@@ -942,7 +942,7 @@ fn an_index_replaces_the_chart_like_a_market_and_a_view_adds_a_card() {
     assert_eq!(result.source, DataSource::CoinMarketCap);
     assert_eq!(
         result.full_symbol,
-        crate::service::market::cmc::CHART_TYPES[0].0
+        crate::model::market::cmc::CHART_TYPES[0].0
     );
     assert!(recents::load_recents(&rig.store.lock().unwrap()).is_empty());
 

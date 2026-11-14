@@ -72,7 +72,10 @@ fn ask_with_tools(rig: &mut Rig, mode: Mode, turns: Vec<Result<Scripted, LlmErro
 fn begin_with_tools(rig: &mut Rig, mode: Mode, turns: Vec<Result<Scripted, LlmError>>) {
     assert!(rig.manager.ai.set_mode(mode));
     let base = source(rig);
-    let feed = rig.manager.preview.debug_feed(model::now_ms(), false);
+    let feed = rig
+        .manager
+        .preview
+        .debug_feed(crate::model::pine::script::now_ms(), false);
     let tools = ToolBox::new(mode, &base, diagnostics_of).with_bars(feed);
     let request = ChatRequest {
         tools: tools.specs(),
@@ -960,7 +963,7 @@ fn the_assistant_can_profile_its_draft_on_the_preview_bars_in_ask_mode_too() {
     if rig
         .manager
         .preview
-        .debug_feed(model::now_ms(), false)
+        .debug_feed(crate::model::pine::script::now_ms(), false)
         .is_none()
     {
         // The preview has not loaded bars in this rig; the tool says so instead (covered in ai_profile).

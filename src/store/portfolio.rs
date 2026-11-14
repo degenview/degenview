@@ -319,8 +319,9 @@ mod tests {
 
     // MARK: Sync tracking
 
+    use crate::model::ids::GLOBAL_BASE;
     use crate::store::sync::Load;
-    use crate::sync::record::ids::{GLOBAL_BASE, IdSpace};
+    use crate::sync::record::ids::IdSpace;
     use crate::sync::record::policy::EntityKind;
 
     fn syncing_store() -> Store {
