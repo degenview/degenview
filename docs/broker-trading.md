@@ -22,7 +22,7 @@ price an order trades at) and [iCloud Sync](icloud-sync.md) (nothing here syncs)
   broker is a change to the crate (see its `docs/adding-a-broker.md`), plus enabling its Cargo
   feature here.
 * **No side doors.** Pine scripts, alerts, webhooks and MCP have no path to a broker: a test fails
-  if anything under `mcp/`, `pine/`, `pine_studio/` or the alert and webhook hosts mentions the crate
+  if anything under `mcp/`, `pine/`, `pine_studio/` or the alert and Settings hosts mentions the crate
   or the host. A future automated-trading feature needs its own design and its own permission.
 * **No funds movement.** The app asks for no permission that moves funds, and warns when a key has
   it.

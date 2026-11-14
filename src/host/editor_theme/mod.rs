@@ -374,7 +374,7 @@ impl Default for EditorThemeHost {
     /// A placeholder host with no custom themes and no installed fonts: a field's default, a test's
     /// stand-in. It does **not** publish. Publishing replaces what every editor in the process
     /// draws, so merely constructing a placeholder must never undo the real host's choice. That is
-    /// exactly what happened at launch: `WebhookHost::new`'s `..Self::default()` builds a throwaway
+    /// exactly what happened at launch: `SettingsHost::new`'s `..Self::default()` builds a throwaway
     /// default host for the field it then overwrites, and the throwaway published Automatic over the
     /// saved theme, so the Pine Studio opened Dark although Dracula was selected.
     fn default() -> Self {

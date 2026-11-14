@@ -1,26 +1,22 @@
 //! The portfolio's CSV import and export, end to end: pick a file, parse it, (for CoinMarketCap)
 //! match tickers and fetch historical fee rates, preview, and commit to the ledger — plus saving
 //! exports. All slow work (file dialogs, auto-matching exchanges, FX lookups) runs on worker
-//! threads and reports back over channels; `show` drains them each frame and draws whichever
-//! sheet is open. The pure rules live in `model::portfolio::csv` and the sheets' state types.
+//! threads and reports back over channels; `poll` drains them each frame, and the tab's sheets
+//! (`ui::portfolio::tab`) draw whichever is open. The pure rules live in `model::portfolio::csv`
+//! and the sheets' state types.
 
 use crate::host::portfolio::PortfolioHost;
 use crate::model::portfolio;
 use crate::model::portfolio::csv::{CmcPreview, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
 use crate::model::watchlist::new_id;
-use crate::service::portfolio::asset_auto_mapper::{self, asset_from_search_result};
+use crate::service::portfolio::asset_auto_mapper;
 use crate::service::portfolio::quotes::PortfolioFxRates;
 use crate::service::system::file_dialog;
-use crate::ui::icons::Icon;
-use crate::ui::kit::sheet;
-use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerState};
-use crate::ui::portfolio::cmc_import::{self, CmcImportAction, CmcImportInput, CmcImportState};
-use crate::ui::portfolio::import_preview::{
-    self, ImportPreviewInput, ImportPreviewOutcome, ImportPreviewState,
-};
-use crate::ui::theme;
-use eframe::egui::{self, Align};
+use crate::ui::portfolio::asset_picker::AssetPickerState;
+use crate::ui::portfolio::cmc_import::CmcImportState;
+use crate::ui::portfolio::import_preview::ImportPreviewState;
+use eframe::egui;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
@@ -59,7 +55,7 @@ pub struct CmcFlow {
     /// Fee rates still being fetched.
     fx_inbox: Option<Receiver<FxEvent>>,
     /// The "Match…" picker, with the ticker it answers.
-    picking: Option<(String, AssetPickerState)>,
+    pub picking: Option<(String, AssetPickerState)>,
 }
 
 enum AutoMapEvent {
@@ -356,149 +352,50 @@ impl PortfolioImportFlow {
         self.jobs = remaining;
     }
 
-    /// Drives the flow and draws its open sheet. Returns what happened, if anything.
-    pub fn show(
-        &mut self,
-        ctx: &egui::Context,
-        host: &mut PortfolioHost,
-        utc_offset_secs: i64,
-    ) -> Option<FlowEvent> {
+    /// Drives the flow one frame: turns finished file jobs into previews or notices and applies
+    /// what the CoinMarketCap workers reported. The sheets in `ui::portfolio::tab` draw the result.
+    pub fn poll(&mut self, ctx: &egui::Context, host: &PortfolioHost) {
         self.poll_jobs(ctx, host);
         if !self.jobs.is_empty() || self.cmc.as_ref().is_some_and(CmcFlow::is_busy) {
             ctx.request_repaint_after(std::time::Duration::from_millis(150));
         }
-        self.show_cmc(ctx, host);
-        let event = self.show_preview(ctx, host, utc_offset_secs);
-        self.show_notice(ctx);
-        event
+        if let Some(flow) = &mut self.cmc {
+            flow.poll();
+        }
     }
 
-    fn show_cmc(&mut self, ctx: &egui::Context, host: &PortfolioHost) {
-        let Some(flow) = &mut self.cmc else {
+    /// The CoinMarketCap sheet's Continue: its mapped rows become the import preview.
+    pub fn continue_cmc(&mut self) {
+        let Some(flow) = self.cmc.take() else {
             return;
         };
-        flow.poll();
-        // The "Match…" picker sits on top of the sheet.
-        if let Some((symbol, picker)) = &mut flow.picking {
-            match asset_picker::show(ctx, picker, host.store()) {
-                Some(AssetPickerOutcome::Choose(result)) => {
-                    let symbol = symbol.clone();
-                    flow.state
-                        .set_mapping(&symbol, asset_from_search_result(&result));
-                    flow.picking = None;
-                }
-                Some(AssetPickerOutcome::Cancel) => flow.picking = None,
-                None => {}
-            }
-            return;
-        }
-        let actions = cmc_import::show(
-            ctx,
-            &mut flow.state,
-            &CmcImportInput {
-                preview: &flow.preview,
-                portfolio_currency: flow.currency,
-            },
-        );
-        let _ = host;
-        for action in actions {
-            match action {
-                CmcImportAction::Match(symbol) => {
-                    flow.picking = Some((
-                        symbol.clone(),
-                        AssetPickerState::new(
-                            &format!("Match {symbol}"),
-                            "Pick the market that matches this CoinMarketCap ticker.",
-                            "Use Asset",
-                        ),
-                    ));
-                }
-                CmcImportAction::Continue => {
-                    let mut next = new_id;
-                    let mut mint = Mint {
-                        now_ms: crate::model::watchlist::now_ms(),
-                        next_id: &mut next,
-                    };
-                    let converted = flow
-                        .state
-                        .result(&flow.preview, flow.portfolio_id, &mut mint);
-                    self.cmc = None;
-                    self.csv = Some((converted, ImportPreviewState::default()));
-                    return;
-                }
-                CmcImportAction::Cancel => {
-                    self.cmc = None;
-                    return;
-                }
-            }
-        }
+        let mut next = new_id;
+        let mut mint = Mint {
+            now_ms: crate::model::watchlist::now_ms(),
+            next_id: &mut next,
+        };
+        let converted = flow
+            .state
+            .result(&flow.preview, flow.portfolio_id, &mut mint);
+        self.csv = Some((converted, ImportPreviewState::default()));
     }
 
-    fn show_preview(
-        &mut self,
-        ctx: &egui::Context,
-        host: &mut PortfolioHost,
-        utc_offset_secs: i64,
-    ) -> Option<FlowEvent> {
+    /// The preview's Import: commits its transactions to the ledger. On failure the preview stays
+    /// open with the reason beside the form, and the tab's generic alert is left alone.
+    pub fn commit_preview(&mut self, host: &mut PortfolioHost) -> Option<FlowEvent> {
         let (preview, state) = self.csv.as_mut()?;
-        let outcome = import_preview::show(
-            ctx,
-            state,
-            &ImportPreviewInput {
-                preview,
-                utc_offset_secs,
-            },
-        );
-        match outcome {
-            Some(ImportPreviewOutcome::Import) => {
-                let transactions = preview.transactions.clone();
-                let count = transactions.len();
-                match host.import_transactions(transactions) {
-                    Ok(()) => {
-                        self.csv = None;
-                        return Some(FlowEvent::Imported(count));
-                    }
-                    Err(error) => {
-                        host.clear_error();
-                        state.failed(error.message());
-                    }
-                }
+        let transactions = preview.transactions.clone();
+        let count = transactions.len();
+        match host.import_transactions(transactions) {
+            Ok(()) => {
+                self.csv = None;
+                Some(FlowEvent::Imported(count))
             }
-            Some(ImportPreviewOutcome::Cancel) => self.csv = None,
-            None => {}
-        }
-        None
-    }
-
-    fn show_notice(&mut self, ctx: &egui::Context) {
-        let Some(message) = self.notice.clone() else {
-            return;
-        };
-        sheet::show(ctx, egui::Id::new("portfolio-import-notice"), 380.0, |ui| {
-            ui.add_space(20.0);
-            sheet::inset(ui, |ui| {
-                sheet::header(
-                    ui,
-                    Icon::Triangle,
-                    "Import or Export",
-                    &message,
-                    theme::ORANGE,
-                );
-                ui.add_space(20.0);
-            });
-            ui.separator();
-            sheet::inset(ui, |ui| {
-                ui.add_space(12.0);
-                ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                    if ui.button("OK").clicked() {
-                        self.notice = None;
-                    }
-                });
-                ui.add_space(12.0);
-            });
-        });
-        if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-            self.notice = None;
+            Err(error) => {
+                host.clear_error();
+                state.failed(error.message());
+                None
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::host::paper::{PaperHost, PaperPanel};
+use crate::host::paper::PaperHost;
 use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::model::alert::{AlertCurrency, PriceAlert};
 use crate::model::chart::sync::SyncHub;
@@ -22,6 +22,7 @@ use crate::ui::chart::settings::{self as chart_settings, ChartSettingsState};
 use crate::ui::chart::symbol_picker::SymbolPicker;
 use crate::ui::drawing::properties::DrawingProperties;
 use crate::ui::paper::chart_trading::PaperOverlayAction;
+use crate::ui::paper::panel::PaperPanel;
 use crate::ui::pine::settings_popover::PineSettingsPopover;
 use crate::ui::replay::date_sheet::{self, ReplayDateSheetState};
 use crate::ui::watchlist::sidebar::WatchlistSidebarState;

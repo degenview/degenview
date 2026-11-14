@@ -56,8 +56,8 @@ pub static LINKS: WorkQueue = WorkQueue::new(1);
 /// minutes and must never hold one of the general workers that fetch candles and alert quotes.
 pub static UPDATES: WorkQueue = WorkQueue::new(1);
 
-/// Chart snapshots wait on things that take as long as the user or the network does (a save panel,
-/// an upload), so they never borrow a general worker.
+/// Chart snapshots and file exports wait on things that take as long as the user or the network
+/// does (a save panel, an upload), so they never borrow a general worker.
 pub static SNAPSHOTS: WorkQueue = WorkQueue::new(2);
 
 /// Rate-limited providers get a worker each: a request sleeping until its slot comes (seconds, for

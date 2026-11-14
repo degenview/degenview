@@ -12,12 +12,12 @@ use crate::host::mcp::confirmation::ConfirmationHost;
 use crate::host::paper::PaperHost;
 use crate::host::portfolio::PortfolioHost;
 use crate::host::portfolio::card::PortfolioCardEnv;
+use crate::host::settings::{SettingsHost, SettingsHostAction};
 use crate::host::snapshot::SnapshotHost;
 use crate::host::tab::link::TabLinkHost;
 use crate::host::tab::title::TabTitleHost;
 use crate::host::tab::window::TabWindowHost;
 use crate::host::update::{Phase, UpdateHost, UpdateView};
-use crate::host::webhook::{WebhookHost, WebhookHostAction};
 use crate::model::alert::pine::PineAlertState;
 use crate::model::alert::{
     AlertCurrency, AlertRuntimeCommand, AlertRuntimeCommandPayload, AlertState,
@@ -450,14 +450,14 @@ impl DegenViewApp {
 
     pub(super) fn sync_settings_viewport(&self, ctx: &egui::Context) {
         if !self
-            .webhook_host
+            .settings_host
             .lock()
             .map(|host| host.is_open())
             .unwrap_or(false)
         {
             return;
         }
-        let host = Arc::clone(&self.webhook_host);
+        let host = Arc::clone(&self.settings_host);
         let mcp_host = Arc::clone(&self.mcp_host);
         let alert_host = Arc::clone(&self.alert_host);
         let pine_host = Arc::clone(&self.pine_host);
@@ -542,8 +542,10 @@ impl DegenViewApp {
                     now_ms: now,
                     utc_offset_secs: crate::service::system::timezone::local_utc_offset_secs(now),
                 };
+                let ctx = ui.ctx().clone();
                 let actions = host.show(
-                    ui,
+                    &ctx,
+                    |state, input| window::show(ui, state, input),
                     &store,
                     &notifications,
                     &health,
@@ -560,19 +562,19 @@ impl DegenViewApp {
                 }
                 for action in actions {
                     match action {
-                        WebhookHostAction::Mcp(action) => {
+                        SettingsHostAction::Mcp(action) => {
                             if let Ok(mut mcp) = mcp_host.lock() {
                                 mcp.queue(action);
                             }
                             ui.ctx().request_repaint();
                         }
-                        WebhookHostAction::UpdateNotifications(settings) => {
+                        SettingsHostAction::UpdateNotifications(settings) => {
                             let _ = store.enqueue_alert_command(&AlertRuntimeCommand::new(
                                 AlertRuntimeCommandPayload::UpdateSettings(settings),
                                 now,
                             ));
                         }
-                        WebhookHostAction::QuitForUpdate => {
+                        SettingsHostAction::QuitForUpdate => {
                             // Through the same question as ⌘Q: edited scripts are asked
                             // about before the app goes.
                             if let Ok(mut pending) = app_actions.lock() {
@@ -580,13 +582,13 @@ impl DegenViewApp {
                             }
                             ui.ctx().request_repaint();
                         }
-                        WebhookHostAction::OpenLoginItems => {
+                        SettingsHostAction::OpenLoginItems => {
                             BackgroundAlertService::open_login_items();
                         }
-                        WebhookHostAction::OpenNotificationSettings => {
+                        SettingsHostAction::OpenNotificationSettings => {
                             open_system_settings("com.apple.Notifications-Settings.extension");
                         }
-                        WebhookHostAction::RetryRegistration => {
+                        SettingsHostAction::RetryRegistration => {
                             if let Ok(mut control) = runtime_control.lock() {
                                 control.lease = None;
                                 if let Ok(mut service) = background_service.lock() {
@@ -595,7 +597,7 @@ impl DegenViewApp {
                                 }
                             }
                         }
-                        WebhookHostAction::EndpointDeleted(id) => {
+                        SettingsHostAction::EndpointDeleted(id) => {
                             // Alerts stop pointing at a webhook that no longer exists.
                             for alert in alerts
                                 .iter()
@@ -642,7 +644,7 @@ impl DegenViewApp {
         let alert_host = Arc::clone(&self.alert_host);
         let store = Arc::clone(&self.store);
         let quote_book = self.quote_book.clone();
-        let webhook_host = Arc::clone(&self.webhook_host);
+        let settings_host = Arc::clone(&self.settings_host);
         let alerts_open = Arc::clone(&self.alerts_open);
         let alert_editor = Arc::clone(&self.alert_editor);
         let quote_coordinator = self.quote_coordinator.clone();
@@ -819,7 +821,7 @@ impl DegenViewApp {
                         }
                     }
                     AlertCenterAction::OpenNotificationSettings => {
-                        if let Ok(mut host) = webhook_host.lock() {
+                        if let Ok(mut host) = settings_host.lock() {
                             if host.is_open() {
                                 raise_viewport(ui.ctx(), settings_viewport_id());
                             }
@@ -906,7 +908,7 @@ impl DegenViewApp {
                     }
                     Some(PineAlertWebhooksOutcome::Cancel) => *slot = None,
                     Some(PineAlertWebhooksOutcome::OpenSettings) => {
-                        if let Ok(mut host) = webhook_host.lock() {
+                        if let Ok(mut host) = settings_host.lock() {
                             if host.is_open() {
                                 raise_viewport(ui.ctx(), settings_viewport_id());
                             }
@@ -948,7 +950,7 @@ impl DegenViewApp {
                         }
                         Some(PriceAlertEditorOutcome::Cancel) => finished = true,
                         Some(PriceAlertEditorOutcome::OpenWebhookSettings) => {
-                            if let Ok(mut host) = webhook_host.lock() {
+                            if let Ok(mut host) = settings_host.lock() {
                                 host.open_webhooks();
                             }
                         }
@@ -975,9 +977,9 @@ impl DegenViewApp {
     pub(super) fn open_settings_page(
         &self,
         ctx: &egui::Context,
-        open: impl FnOnce(&mut WebhookHost),
+        open: impl FnOnce(&mut SettingsHost),
     ) {
-        if let Ok(mut host) = self.webhook_host.lock() {
+        if let Ok(mut host) = self.settings_host.lock() {
             let was_open = host.is_open();
             open(&mut host);
             if was_open {

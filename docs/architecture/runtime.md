@@ -44,7 +44,7 @@ cards are non-market charts and must be skipped by market-data paths.
   quotes and cached FX update reporting projections separately.
 - `PaperTradingEngine` produces candidate snapshots. `PaperHost` persists and publishes every
   result, including rejected-order domain errors, and refuses writes after initial-load failure.
-  `PaperPanel` is per-window presentation over the app-wide host.
+  `PaperPanel` (`ui::paper::panel`) is per-window presentation over the app-wide host.
 - `AlertHost` owns the pure crossing engine, persistence commands, and evaluated snapshot. Alert
   editors hold quote demand while open; banners project triggers into every workspace.
 - Drawings store time/price anchors per chart. The interactive layer handles gestures/hit tests and

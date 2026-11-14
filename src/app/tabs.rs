@@ -1,13 +1,13 @@
 use super::AppAction;
 use super::DegenViewApp;
 use super::window::WindowEnv;
-use crate::host::portfolio::PortfolioTab;
 use crate::model::InstrumentId;
 use crate::model::Timeframe;
 use crate::model::tab::windows::WindowId;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::pine_studio::{ExitReason, PineStudio, PineStudioAction};
 use crate::ui::icons::Icon;
+use crate::ui::portfolio::tab::PortfolioTab;
 use crate::workspace::{ChartWorkspace, WorkspaceAction};
 use eframe::egui;
 use std::sync::{Arc, Mutex};

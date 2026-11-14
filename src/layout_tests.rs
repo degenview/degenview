@@ -291,12 +291,7 @@ const DRAWING_SURFACES: &[&str] = &[
 
 /// Files under [`NON_DRAWING_MODULES`] that draw today, each planned to move into `ui/` in
 /// `docs/architecture-refactor/plan.md`. The list only shrinks.
-const KNOWN_DRAWING_DEBT: &[&str] = &[
-    "host/paper/mod.rs",
-    "host/portfolio/bar.rs",
-    "host/portfolio/mod.rs",
-    "host/webhook/mod.rs",
-];
+const KNOWN_DRAWING_DEBT: &[&str] = &[];
 
 #[test]
 fn nothing_outside_the_view_layers_draws() {
