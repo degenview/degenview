@@ -1,19 +1,14 @@
-//! A market's last week drawn small: a line with a soft fade under it, green when the week ended
-//! above where it began. Painter code and one pure mapping, so the shape can be tested.
+//! A market's recent closes drawn small, green when the span ended at or above where it began:
+//! `paint` with a soft fade under the line (the new-tab page's tiles), `paint_trail` as a line that
+//! fades in from the left and ends on a dot (watchlist rows). Painter code and one pure mapping, so
+//! the shape can be tested.
 
 use crate::model::chart::price_format::PriceFormat;
+use crate::model::market::trend::Trend;
 use crate::ui::theme;
+use eframe::egui::epaint::{ColorMode, PathStroke};
 use eframe::egui::{Color32, Mesh, Painter, Pos2, Rect, Shape, Stroke, pos2};
-
-/// What the page knows about a market's last week. A market the page has not heard about yet has
-/// no `Trend` at all (it is still loading).
-#[derive(Clone, Debug, PartialEq)]
-pub enum Trend {
-    /// Daily closes, oldest first.
-    Ready(Vec<f32>),
-    /// The market has no daily history to show.
-    Unavailable,
-}
+use std::sync::Arc;
 
 /// Share of the height kept clear above and below the line, so a stroke never touches the edge.
 const MARGIN: f32 = 0.12;
@@ -21,7 +16,7 @@ const MARGIN: f32 = 0.12;
 const FILL_ALPHA: f32 = 0.26;
 
 /// Where each close sits in `rect`: the lowest on the bottom margin, the highest on the top one.
-/// A flat week runs through the middle.
+/// A flat span runs through the middle.
 pub fn points(closes: &[f32], rect: Rect) -> Vec<Pos2> {
     let (low, high) = closes
         .iter()
@@ -95,21 +90,64 @@ pub fn rising(closes: &[f32]) -> bool {
 pub fn paint(painter: &Painter, rect: Rect, trend: Option<&Trend>) {
     match trend {
         Some(Trend::Ready(closes)) if closes.len() >= 2 => {
-            let color = if rising(closes) {
-                theme::UP
-            } else {
-                theme::DOWN
-            };
+            let color = trend_color(closes);
             let line = points(closes, rect);
             fade_fill(painter, &line, rect.bottom(), color, FILL_ALPHA, |_| 1.0);
             painter.add(Shape::line(line, Stroke::new(1.5, color)));
         }
         Some(_) => {}
-        None => {
-            let y = rect.center().y;
-            painter.hline(rect.x_range(), y, Stroke::new(1.0, theme::ink(22)));
-        }
+        None => paint_loading(painter, rect),
     }
+}
+
+/// How faint the oldest close of a trail is, against the newest at full strength.
+const TRAIL_START_ALPHA: f32 = 0.18;
+/// Radius of the dot on a trail's newest close.
+const TRAIL_DOT_RADIUS: f32 = 2.25;
+
+/// Draws `trend` in `rect` as a line that fades in from the left and ends on a dot at the newest
+/// close, with no fill, for rows too short for `paint`'s fade. Loading and no history look as in
+/// `paint`. The dot is kept inside `rect`.
+pub fn paint_trail(painter: &Painter, rect: Rect, trend: Option<&Trend>) {
+    match trend {
+        Some(Trend::Ready(closes)) if closes.len() >= 2 => {
+            let color = trend_color(closes);
+            let inner = rect.shrink2(eframe::egui::vec2(TRAIL_DOT_RADIUS, 0.0));
+            let line = points(closes, inner);
+            let newest = *line.last().expect("two closes make two points");
+            let fade = ColorMode::UV(Arc::new(move |bounds: Rect, at: Pos2| {
+                let progress = ((at.x - bounds.left()) / bounds.width().max(1.0)).clamp(0.0, 1.0);
+                color.gamma_multiply(TRAIL_START_ALPHA + (1.0 - TRAIL_START_ALPHA) * progress)
+            }));
+            painter.add(Shape::line(
+                line,
+                PathStroke {
+                    color: fade,
+                    ..PathStroke::new(1.4, color)
+                },
+            ));
+            painter.circle_filled(newest, TRAIL_DOT_RADIUS, color);
+        }
+        Some(_) => {}
+        None => paint_loading(painter, rect),
+    }
+}
+
+fn trend_color(closes: &[f32]) -> Color32 {
+    if rising(closes) {
+        theme::UP
+    } else {
+        theme::DOWN
+    }
+}
+
+/// A faint flat line where closes will be, so nothing jumps when they arrive.
+fn paint_loading(painter: &Painter, rect: Rect) {
+    painter.hline(
+        rect.x_range(),
+        rect.center().y,
+        Stroke::new(1.0, theme::ink(22)),
+    );
 }
 
 /// Fills the area between `line` and `bottom` with `color`, strongest at the line (`top_alpha`

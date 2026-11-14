@@ -5,8 +5,8 @@
 //! scroll past at a steady pace), so it keeps no state, never repeats and looks the same in any
 //! two frames at the same time.
 
-use super::sparkline::fade_fill;
 use crate::ui::kit::loading::hash;
+use crate::ui::kit::sparkline::fade_fill;
 use crate::ui::theme;
 use eframe::egui::epaint::PathStroke;
 use eframe::egui::{Color32, Mesh, Painter, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
