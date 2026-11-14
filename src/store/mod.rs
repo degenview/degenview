@@ -480,7 +480,6 @@ impl Store {
         Ok(())
     }
 
-    #[allow(dead_code)] // settings UI (Stage 6) uses this to clear a key
     pub fn remove_setting(&self, key: &str) -> rusqlite::Result<()> {
         self.write_setting(key, None)
     }

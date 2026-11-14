@@ -6,7 +6,6 @@ use crate::model::alert::AlertServiceState;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const AGENT_BUNDLE_ID: &str = "es.nico.degenview.alert-agent";
 
-#[allow(dead_code)] // `Unavailable` is constructed by the non-macOS implementation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeServiceStatus {
     NotRegistered,
@@ -14,6 +13,8 @@ pub enum NativeServiceStatus {
     RequiresApproval,
     NotFound,
     Failed,
+    /// No login item on this platform.
+    #[cfg(any(not(target_os = "macos"), test))]
     Unavailable,
 }
 
@@ -24,6 +25,7 @@ pub fn map_service_status(status: NativeServiceStatus) -> AlertServiceState {
         NativeServiceStatus::RequiresApproval => AlertServiceState::RequiresApproval,
         NativeServiceStatus::NotFound => AlertServiceState::NotFound,
         NativeServiceStatus::Failed => AlertServiceState::Failed,
+        #[cfg(any(not(target_os = "macos"), test))]
         NativeServiceStatus::Unavailable => AlertServiceState::Unavailable,
     }
 }

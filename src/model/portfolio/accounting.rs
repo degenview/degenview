@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Pure weighted-average portfolio accounting, ported from `PortfolioAccountingEngine`.
 //! Static accounting changes only with ledger edits; live valuation is applied
 //! separately so quote ticks never replay transactions.

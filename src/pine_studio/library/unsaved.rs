@@ -10,7 +10,6 @@ use crate::ui::kit::{self, MEDIUM, REGULAR, size};
 use crate::ui::theme;
 use eframe::egui::{self, Align, Color32, Id, Key, Layout, Modifiers, Sense, Stroke, Ui, vec2};
 
-const WIDTH: f32 = 440.0;
 /// Rows listed before the rest fold into "and N more".
 const MAX_ROWS: usize = 5;
 

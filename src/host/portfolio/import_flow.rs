@@ -4,9 +4,6 @@
 //! threads and reports back over channels; `show` drains them each frame and draws whichever
 //! sheet is open. The pure rules live in `model::portfolio::csv` and the sheets' state types.
 
-// Transient: reached through the Portfolio tab's Import or Export menu.
-#![allow(dead_code)]
-
 use crate::host::portfolio::PortfolioHost;
 use crate::model::portfolio;
 use crate::model::portfolio::csv::{CmcPreview, CsvPreview, Mint};
@@ -235,6 +232,7 @@ impl PortfolioImportFlow {
         }
     }
 
+    #[cfg(test)]
     pub fn is_active(&self) -> bool {
         !self.jobs.is_empty() || self.csv.is_some() || self.cmc.is_some()
     }

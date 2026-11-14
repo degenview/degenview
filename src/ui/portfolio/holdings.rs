@@ -4,9 +4,6 @@
 //! that the saved sort has a case for writes it back. Double-click (or Return) opens the
 //! asset's transactions. Pure over `PortfolioHolding`s: the host prices them and persists.
 
-// Transient: the Portfolio window hosts this once the portfolio store is wired.
-#![allow(dead_code)]
-
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::{PortfolioAsset, PortfolioHolding, PortfolioHoldingsSort};
 use crate::ui::accessibility;
@@ -207,10 +204,12 @@ impl Default for HoldingsState {
 }
 
 impl HoldingsState {
+    #[cfg(test)]
     pub fn column(&self) -> HoldingsColumn {
         self.column
     }
 
+    #[cfg(test)]
     pub fn is_ascending(&self) -> bool {
         self.ascending
     }

@@ -1,6 +1,5 @@
 //! Paper-trading storage. `PaperTradingEngine` persists whole snapshots, so each save replaces
 //! the paper tables in one transaction. Ported from `AppDatabase+PaperTrading.swift`.
-#![allow(dead_code)] // transient until the paper trading host wires these
 
 use crate::model::paper::{PaperAccount, PaperTradingSnapshot};
 use crate::store::{Document, Store};

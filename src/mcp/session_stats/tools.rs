@@ -5,7 +5,7 @@
 use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::session_stats::{Query, SessionStatsResult};
 use crate::mcp::tools::{
-    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_id, unexpected,
+    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::model::mcp::Permission;
 use crate::model::session_stats::{Filter, Outcome, Side, WeekdaySet};
@@ -152,7 +152,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<SessionStatsParams>,
     ) -> Result<Json<SessionStatsResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let query = query(&params)?;
         match self

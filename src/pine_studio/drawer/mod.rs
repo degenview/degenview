@@ -26,8 +26,6 @@ use eframe::egui::{
 use std::time::{Duration, Instant};
 use tab_chrome::{self as chrome, BUTTON, card, hairline};
 
-pub const BAR_HEIGHT: f32 = bottom_bar::HEIGHT;
-
 impl DrawerTab {
     pub const ALL: [Self; 5] = [
         Self::Inputs,

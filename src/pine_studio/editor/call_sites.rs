@@ -24,6 +24,7 @@ pub struct CallSite {
 
 impl CallSite {
     /// The row's text: `42  self.forget()`.
+    #[cfg(test)]
     pub fn label(&self) -> String {
         format!("{:>4}  {}", self.line, self.preview)
     }

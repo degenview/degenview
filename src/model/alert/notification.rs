@@ -3,9 +3,6 @@
 //! settings applied, and the delivery state machine (pending → delivered, or failed with
 //! a growing back-off until it is given up on). Pure: the OS call itself is the host's.
 
-// Transient: the alert runtime host wires this when the alert store lands.
-#![allow(dead_code)]
-
 use crate::model::alert::{
     AlertDeliveryRecord, AlertDeliveryState, AlertEventOrigin, AlertNotificationSettings,
     AlertTriggerEvent,

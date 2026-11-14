@@ -7,9 +7,6 @@
 //! ledger (`portfolio::accounting::validate`) stays the authority on what it accepts; this only
 //! warns before saving.
 
-// Transient: the portfolio host opens the editor once it is wired.
-#![allow(dead_code)]
-
 use crate::format::civil_from_days;
 use crate::model::paper::ticket::parse_decimal;
 use crate::model::portfolio::csv::parse_iso8601;
@@ -43,16 +40,6 @@ impl Category {
         Self::Income,
         Self::Other,
     ];
-
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::Buy => "Buy",
-            Self::Sell => "Sell",
-            Self::Transfer => "Transfer",
-            Self::Income => "Income",
-            Self::Other => "Other",
-        }
-    }
 
     pub fn types(self) -> &'static [PortfolioTransactionType] {
         use PortfolioTransactionType::*;
@@ -357,6 +344,7 @@ impl TransactionDraft {
         }
     }
 
+    #[cfg(test)]
     pub fn last_edited(&self) -> PricedField {
         self.last_edited
     }

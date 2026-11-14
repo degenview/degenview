@@ -56,17 +56,6 @@ impl Ty {
         }
     }
 
-    /// The flat kind the older checks read; None for the types they know nothing about.
-    pub fn kind(&self) -> Option<ValueType> {
-        match self {
-            Self::Scalar(kind) => Some(*kind),
-            Self::Array(_) => Some(ValueType::Array),
-            Self::Matrix(_) => Some(ValueType::Matrix),
-            Self::Map(..) => Some(ValueType::Map),
-            Self::Udt(_) | Self::Enum(_) | Self::Any => None,
-        }
-    }
-
     /// Whether a parameter declared `self` takes an argument of type `argument`.
     pub fn accepts(&self, argument: &Self) -> Option<Fit> {
         match (self, argument) {

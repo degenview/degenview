@@ -13,7 +13,7 @@ use crate::mcp::market::{
 };
 use crate::mcp::state::ClientIdentity;
 use crate::mcp::tools::{
-    DegenViewMcp, McpSource, alpaca_configured, client_of, failure, invalid, unexpected,
+    DegenViewMcp, McpSource, alpaca_configured, client_of, failure, invalid, parse_id, unexpected,
 };
 use crate::model::mcp::Permission;
 use crate::model::watchlist::WatchlistInstrument;
@@ -364,9 +364,7 @@ fn list_changes(params: &UpdateWatchlistParams) -> Result<ListChanges, CallToolR
 }
 
 fn parse_watchlist_id(raw: &str) -> Result<u64, CallToolResult> {
-    raw.trim()
-        .parse::<u64>()
-        .map_err(|_| invalid("watchlist_id must be an id returned by degenview_list_watchlists"))
+    parse_id(raw, "watchlist_id", "degenview_list_watchlists")
 }
 
 /// The rows an add would make, one per distinct market (`InstrumentId::key` decides which are the

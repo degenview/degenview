@@ -6,9 +6,6 @@
 //! exactly at its price when the chart zooms or the axis is dragged. Pure views returning actions;
 //! the host applies them to the store.
 
-// Transient: the chart card hosts these once paper trading is wired.
-#![allow(dead_code)]
-
 use crate::model::chart::context::Target;
 use crate::model::paper::format::{self as fmt, pnl_tone};
 use crate::model::paper::ticket::rounded_to_tick;

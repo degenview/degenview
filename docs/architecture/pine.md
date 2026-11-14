@@ -12,7 +12,7 @@ The compiler folds constants, collects inputs, validates structure/types, and li
 `Session` interprets bars; builtin families route to focused pure modules. The strategy broker lives
 inside per-bar state, so realtime rollback restores orders, positions, and trades too.
 
-`host::pine::run_script` runs applied chart instances and returns renderer-neutral output.
+`host::pine::run_script_checked_in_range` runs applied chart instances and returns renderer-neutral output.
 `host::pine::subscription` runs active subscriptions and returns fired `alert()` events.
 `request.*` uses `KlineSecurityDataProvider` with a short REST cache; imports use the Pine
 Studio's `LibraryRegistry`. `request.footprint()` builds a bar's volume footprint from the same

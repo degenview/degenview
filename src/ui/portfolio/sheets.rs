@@ -2,9 +2,6 @@
 //! currency) and "Manage Portfolios" (rename, reorder, duplicate, delete). Pure views over
 //! plain values; the host owns the ledger and applies the actions.
 
-// Transient: the Portfolio window hosts these once the portfolio store is wired.
-#![allow(dead_code)]
-
 use crate::model::portfolio::format::PORTFOLIO_CURRENCIES;
 use crate::model::portfolio::{
     MAX_NAME_LENGTH, Portfolio, PortfolioCurrency, is_duplicate_name, is_valid_name, normalize_name,
@@ -376,29 +373,6 @@ pub struct ManageState {
     drafts: std::collections::HashMap<u64, String>,
     pending_delete: Option<u64>,
     dragging: Option<usize>,
-}
-
-/// "USD · 3 transactions · 2 assets".
-pub fn summary_line(currency: PortfolioCurrency, transactions: usize, assets: usize) -> String {
-    let plural =
-        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-    format!(
-        "{} · {} · {}",
-        currency.code(),
-        plural(transactions, "transaction", "transactions"),
-        plural(assets, "asset", "assets")
-    )
-}
-
-/// The reorder that moves the item at `index` one place up, or `None` at the top.
-pub fn move_up(index: usize) -> Option<(Vec<usize>, usize)> {
-    (index > 0).then(|| (vec![index], index - 1))
-}
-
-/// The reorder that moves the item at `index` one place down, or `None` at the bottom. The
-/// destination is an insertion point in the list as it is now, so it is two past the item.
-pub fn move_down(index: usize, len: usize) -> Option<(Vec<usize>, usize)> {
-    (index + 1 < len).then(|| (vec![index], index + 2))
 }
 
 /// A renamed portfolio's new name, or `None` when the draft is blank (put the old one back)
@@ -943,61 +917,6 @@ mod tests {
             "blank is invalid, not a duplicate"
         );
         assert_eq!(CreateState::default().currency, PortfolioCurrency::Usd);
-    }
-
-    #[test]
-    fn summaries_pluralise_each_count() {
-        assert_eq!(
-            summary_line(PortfolioCurrency::Usd, 1, 1),
-            "USD · 1 transaction · 1 asset"
-        );
-        assert_eq!(
-            summary_line(PortfolioCurrency::Eur, 0, 3),
-            "EUR · 0 transactions · 3 assets"
-        );
-    }
-
-    #[test]
-    fn arrows_reorder_by_insertion_point() {
-        assert_eq!(move_up(0), None);
-        assert_eq!(move_up(2), Some((vec![2], 1)));
-        assert_eq!(move_down(2, 3), None);
-        assert_eq!(
-            move_down(0, 3),
-            Some((vec![0], 2)),
-            "insertion point is past the neighbour"
-        );
-        assert_eq!(move_down(1, 3), Some((vec![1], 3)));
-    }
-
-    /// `PortfolioLedger::reorder`'s rule: `destination` is an insertion point in the list as
-    /// it stands, so removing items above it shifts it down.
-    fn reorder(order: &mut Vec<u64>, from: &[usize], destination: usize) {
-        let moving: Vec<u64> = from.iter().map(|&index| order[index]).collect();
-        let mut descending = from.to_vec();
-        descending.sort_unstable_by(|a, b| b.cmp(a));
-        for index in descending {
-            order.remove(index);
-        }
-        let removed_before = from.iter().filter(|&&index| index < destination).count();
-        let insert_at = destination.saturating_sub(removed_before);
-        order.splice(insert_at..insert_at, moving);
-    }
-
-    #[test]
-    fn the_arrows_move_one_place_under_the_ledgers_reorder_rule() {
-        let mut order = vec![1, 2, 3];
-        let (from, destination) = move_down(0, 3).unwrap();
-        reorder(&mut order, &from, destination);
-        assert_eq!(order, [2, 1, 3]);
-        let mut order = vec![1, 2, 3];
-        let (from, destination) = move_up(2).unwrap();
-        reorder(&mut order, &from, destination);
-        assert_eq!(order, [1, 3, 2]);
-        let mut order = vec![1, 2, 3];
-        let (from, destination) = move_down(1, 3).unwrap();
-        reorder(&mut order, &from, destination);
-        assert_eq!(order, [1, 3, 2]);
     }
 
     #[test]

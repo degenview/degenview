@@ -186,7 +186,6 @@ fn gallery_of_the_panel() {
                                 currency: Some(PaperCurrency::Usd),
                                 position_count: shown_positions.len(),
                                 working_order_count: shown_orders.len(),
-                                show_trading_on_charts: true,
                             };
                             let parts = header::header_parts(&input);
                             let bar = crate::ui::trade::panel_header::sample_bar(

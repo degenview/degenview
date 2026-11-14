@@ -7,9 +7,11 @@
 //! never waits for the UI and the UI never waits for the thread.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+#[cfg(test)]
+use std::sync::Weak;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::sync::{Arc, Weak};
 use std::time::Instant;
 
 use crate::model::Kline;
@@ -101,6 +103,8 @@ pub struct ProfileSession {
     progress: Arc<AtomicU64>,
     total_bars: u64,
     finished: bool,
+    /// Dangles once the session's thread has ended, for tests to watch it end.
+    #[cfg(test)]
     alive: Weak<()>,
 }
 
@@ -118,13 +122,16 @@ impl ProfileSession {
         let progress = Arc::new(AtomicU64::new(0));
         let total_bars = config.bars.len() as u64;
         let (sender, outcome) = mpsc::sync_channel(1);
+        #[cfg(test)]
         let alive = Arc::new(());
+        #[cfg(test)]
         let liveness = Arc::downgrade(&alive);
         let thread_cancel = Arc::clone(&cancel);
         let thread_progress = Arc::clone(&progress);
         std::thread::Builder::new()
             .name("pine-profile".to_owned())
             .spawn(move || {
+                #[cfg(test)]
                 let _alive = alive;
                 let outcome = run(config, thread_cancel, thread_progress);
                 // One message, into a channel with room for it: this never waits. A receiver that
@@ -139,6 +146,7 @@ impl ProfileSession {
             progress,
             total_bars,
             finished: false,
+            #[cfg(test)]
             alive: liveness,
         })
     }
@@ -159,6 +167,7 @@ impl ProfileSession {
     }
 
     /// Whether the outcome has been taken, or can no longer arrive.
+    #[cfg(test)]
     pub fn is_finished(&self) -> bool {
         self.finished
     }
@@ -186,11 +195,13 @@ impl ProfileSession {
     }
 
     /// Whether the session's thread is still running.
+    #[cfg(test)]
     pub fn thread_alive(&self) -> bool {
         self.alive.strong_count() > 0
     }
 
     /// A handle that outlives the session, to watch its thread end.
+    #[cfg(test)]
     pub fn liveness(&self) -> Weak<()> {
         self.alive.clone()
     }

@@ -1486,6 +1486,34 @@ fn bad_arguments_never_reach_the_app() {
 }
 
 #[test]
+fn a_bad_id_names_the_tool_that_lists_good_ones() {
+    let harness = Harness::start(&[("c1", "tok", ALL)]);
+    let url = harness.url();
+    for (arguments, listed_by) in [
+        (
+            json!({"workspace_id": "one", "chart_id": "2"}),
+            "degenview_list_workspaces",
+        ),
+        (
+            json!({"workspace_id": "1", "chart_id": "two"}),
+            "degenview_list_charts",
+        ),
+    ] {
+        let result = call(
+            &url,
+            "tok",
+            "degenview_list_chart_pine_instances",
+            arguments.clone(),
+        );
+        assert_eq!(error_code(&result), "INVALID_ARGUMENT", "{arguments}");
+        let message = result["structuredContent"]["message"]
+            .as_str()
+            .unwrap_or_default();
+        assert!(message.contains(listed_by), "{arguments}: {message}");
+    }
+}
+
+#[test]
 fn every_routed_tool_has_a_permission_and_an_unmapped_name_is_not_run() {
     use crate::mcp::tools::{DegenViewMcp, required_permission};
     let shared = McpShared::new();

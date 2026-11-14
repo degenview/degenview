@@ -286,14 +286,13 @@ mod tests {
 
     const ID: BrokerId = BrokerId::new("coinbase");
 
+    /// The host every test here shares, the mock exchange it talks to, and the hub over it.
+    type Shared = (Arc<BrokerHost>, CoinbaseExchange, Arc<TradingHub>);
+
     /// One mock exchange and one host for every test here (the host is process-wide by design),
     /// so the tests take turns.
-    fn shared() -> (
-        &'static (Arc<BrokerHost>, CoinbaseExchange, Arc<TradingHub>),
-        std::sync::MutexGuard<'static, ()>,
-    ) {
-        static HOST: OnceLock<(Arc<BrokerHost>, CoinbaseExchange, Arc<TradingHub>)> =
-            OnceLock::new();
+    fn shared() -> (&'static Shared, std::sync::MutexGuard<'static, ()>) {
+        static HOST: OnceLock<Shared> = OnceLock::new();
         static TURN: Mutex<()> = Mutex::new(());
         let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
         let pair = HOST.get_or_init(|| {

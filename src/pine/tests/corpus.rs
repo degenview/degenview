@@ -283,7 +283,7 @@ fn run(source: &str, bars: &[Kline], libraries: &dyn LibraryResolver) -> Outcome
         Err(RunError::Script(diagnostic)) => {
             Outcome::new("runtime-error", &[&diagnostic], warnings)
         }
-        Err(RunError::Rejection(_)) => Outcome::ok(warnings),
+        Err(RunError::Rejection) => Outcome::ok(warnings),
     }
 }
 

@@ -3,9 +3,6 @@
 //! `AlertCenterAction`s; the host owns the alert store, the editor sheet and the
 //! "seen" bookkeeping (`UnseenAlerts`).
 
-// Transient: the Alerts window hosts this once the alert store is wired.
-#![allow(dead_code)]
-
 use crate::model::alert::AlertNotificationPermission;
 use crate::model::alert::feed::day_sections;
 use crate::model::alert::{
@@ -50,17 +47,6 @@ impl AlertTab {
             Self::All => "All",
             Self::History => "History",
             Self::Scripts => "Scripts",
-        }
-    }
-
-    fn glyph(self) -> &'static str {
-        match self {
-            Self::Active => "🔔",
-            Self::Triggered => "✔",
-            Self::Paused => "⏸",
-            Self::All => "☰",
-            Self::History => "🕘",
-            Self::Scripts => "{}",
         }
     }
 
@@ -127,14 +113,6 @@ pub struct AlertCenterState {
     pub search: String,
     pending_delete: Option<AlertId>,
     confirming_clear: bool,
-}
-
-impl AlertCenterState {
-    /// Switches to the Scripts tab and clears any search that would hide it.
-    pub fn show_scripts(&mut self) {
-        self.search.clear();
-        self.tab = AlertTab::Scripts;
-    }
 }
 
 // MARK: Pure derivations
@@ -1602,16 +1580,5 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].asset.symbol, "ETH");
         assert_eq!(history_for(&history, "").len(), 3);
-    }
-
-    #[test]
-    fn showing_scripts_clears_a_search_that_would_hide_them() {
-        let mut state = AlertCenterState {
-            search: "btc".into(),
-            ..AlertCenterState::default()
-        };
-        state.show_scripts();
-        assert!(state.search.is_empty());
-        assert_eq!(state.tab, AlertTab::Scripts);
     }
 }

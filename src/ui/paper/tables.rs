@@ -2,13 +2,10 @@
 //! trades and the journal, plus the account metrics strip. Pure views over plain values that
 //! return actions; the host owns the store and the engine.
 
-// Transient: the paper-trading panel hosts these once the host is wired.
-#![allow(dead_code)]
-
-use crate::model::paper::format::{self as fmt, BadgeTone, BufferLevel, PnlTone, pnl_tone};
+use crate::model::paper::format::{self as fmt, BadgeTone, PnlTone, pnl_tone};
 use crate::model::paper::{
-    PaperClosedTrade, PaperCurrency, PaperInstrument, PaperJournalEntry, PaperOrder,
-    PaperOrderEvent, PaperOrderRole, PaperOrderSide, PaperPosition, PaperPositionSide,
+    PaperClosedTrade, PaperCurrency, PaperInstrument, PaperJournalEntry, PaperOrderEvent,
+    PaperOrderSide, PaperPosition, PaperPositionSide,
 };
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
@@ -39,23 +36,6 @@ pub fn position_tint(side: PaperPositionSide) -> Color32 {
         theme::UP
     } else {
         theme::DOWN
-    }
-}
-
-pub fn badge_color(tone: BadgeTone) -> Color32 {
-    match tone {
-        BadgeTone::Good => theme::UP,
-        BadgeTone::Warning => theme::REPLAY,
-        BadgeTone::Bad => theme::DOWN,
-        BadgeTone::Neutral => theme::text_secondary(),
-    }
-}
-
-fn buffer_color(level: BufferLevel, normal: Color32) -> Color32 {
-    match level {
-        BufferLevel::Critical => theme::DOWN,
-        BufferLevel::Thin => theme::REPLAY,
-        BufferLevel::Normal => normal,
     }
 }
 
@@ -477,24 +457,6 @@ pub fn reverse_message(side: PaperPositionSide) -> String {
 
 // MARK: Working orders
 
-/// TP in green, SL in red; entries have no role chip.
-pub fn role_chip(role: PaperOrderRole) -> Option<(&'static str, Color32)> {
-    match role {
-        PaperOrderRole::Entry => None,
-        PaperOrderRole::TakeProfit => Some((role.badge_text(), theme::UP)),
-        PaperOrderRole::StopLoss => Some((role.badge_text(), theme::DOWN)),
-    }
-}
-
-/// "0.5 / 2".
-pub fn filled_over_quantity(order: &PaperOrder) -> String {
-    format!(
-        "{} / {}",
-        fmt::quantity(order.filled_quantity, &order.instrument),
-        fmt::quantity(order.original_quantity, &order.instrument)
-    )
-}
-
 // MARK: Order history
 
 /// Every order event, newest first.
@@ -776,7 +738,7 @@ pub fn footer_note(tab: PaperTab, facts: &FooterFacts) -> String {
 mod tests {
     use super::*;
     use crate::model::DataSource;
-    use crate::model::paper::{PaperOrderEventKind, PaperOrderStatus};
+    use crate::model::paper::{PaperOrder, PaperOrderEventKind, PaperOrderRole, PaperOrderStatus};
 
     fn instrument() -> PaperInstrument {
         let mut instrument = PaperInstrument::chart("BTCUSDT", "Bitcoin", DataSource::Binance);
@@ -834,30 +796,6 @@ mod tests {
             ["Positions", "Orders", "History", "Trades", "Journal"]
         );
         assert_eq!(PaperTab::default(), PaperTab::Positions);
-    }
-
-    #[test]
-    fn working_orders_show_filled_over_quantity_at_the_instruments_precision() {
-        assert_eq!(filled_over_quantity(&order(0.0, 2.0)), "0 / 2");
-        assert_eq!(filled_over_quantity(&order(0.5, 2.0)), "0.5 / 2");
-        assert_eq!(
-            filled_over_quantity(&order(1.2345, 2.0)),
-            "1.234 / 2",
-            "half-even at three places"
-        );
-    }
-
-    #[test]
-    fn only_protective_orders_get_a_role_chip() {
-        assert_eq!(role_chip(PaperOrderRole::Entry), None);
-        assert_eq!(
-            role_chip(PaperOrderRole::TakeProfit),
-            Some(("TP", theme::UP))
-        );
-        assert_eq!(
-            role_chip(PaperOrderRole::StopLoss),
-            Some(("SL", theme::DOWN))
-        );
     }
 
     #[test]
@@ -1008,8 +946,5 @@ mod tests {
         assert_eq!(pnl_color(PnlTone::Flat, flat), flat);
         assert_eq!(side_tint(PaperOrderSide::Buy), theme::UP);
         assert_eq!(position_tint(PaperPositionSide::Short), theme::DOWN);
-        assert_eq!(badge_color(BadgeTone::Good), theme::UP);
-        assert_eq!(buffer_color(BufferLevel::Critical, flat), theme::DOWN);
-        assert_eq!(buffer_color(BufferLevel::Normal, flat), flat);
     }
 }

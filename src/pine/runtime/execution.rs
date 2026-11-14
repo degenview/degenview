@@ -26,8 +26,6 @@ pub struct ExecutionUpdate {
     /// True when the complete history had to be replayed rather than applying an incremental
     /// tick/close. Alert routers use this to avoid notifying for the initial snapshot.
     pub rebuilt: bool,
-    /// False when the snapshot and visible range were identical to the prior update.
-    pub changed: bool,
     /// The `log.*()` messages written during this update; empty unless
     /// [`ExecutionController::with_logs`] was asked for.
     pub logs: LogBatch,
@@ -138,13 +136,6 @@ impl ExecutionController {
         self
     }
 
-    /// Like [`with_profiler`](Self::with_profiler), with a recorder the caller built (a test's, on a
-    /// clock it controls).
-    pub fn with_profile_runtime(mut self, runtime: crate::pine::profile::ProfileRuntime) -> Self {
-        self.session.attach_profiler(runtime);
-        self
-    }
-
     /// Ends profiling and hands over what was measured; `None` if this run was not profiling.
     pub fn finish_profile(
         &mut self,
@@ -174,7 +165,7 @@ impl ExecutionController {
             self.live_open_time.is_some() && bars.last().is_some_and(|bar| is_closed(bar, now_ms));
         if self.bars == bars && self.visible_range == visible_range && !live_bar_has_closed {
             let standing = self.last_error.clone();
-            return self.result(Vec::new(), standing, false, false);
+            return self.result(Vec::new(), standing, false);
         }
         if bars.is_empty() {
             self.bars.clear();
@@ -183,7 +174,7 @@ impl ExecutionController {
             self.session.visible_range = visible_range;
             self.session.reset(None);
             self.last_error = None;
-            return self.result(Vec::new(), None, true, true);
+            return self.result(Vec::new(), None, true);
         }
 
         let must_rebuild = self.bars.is_empty()
@@ -252,7 +243,7 @@ impl ExecutionController {
         } else {
             error = self.last_error.clone();
         }
-        self.result(alerts, error, false, true)
+        self.result(alerts, error, false)
     }
 
     fn rebuild(&mut self, bars: &[Kline], now_ms: i64) -> ExecutionUpdate {
@@ -280,7 +271,7 @@ impl ExecutionController {
         }
         self.bars = bars.to_vec();
         self.last_error = error.clone();
-        self.result(alerts, error, true, true)
+        self.result(alerts, error, true)
     }
 
     fn can_apply_incrementally(&self, next: &[Kline]) -> bool {
@@ -323,14 +314,12 @@ impl ExecutionController {
         alerts: Vec<AlertEvent>,
         error: Option<Diagnostic>,
         rebuilt: bool,
-        changed: bool,
     ) -> ExecutionUpdate {
         ExecutionUpdate {
             output: self.session.output(),
             alerts,
             error,
             rebuilt,
-            changed,
             logs: self.session.logs.take(),
         }
     }
@@ -354,7 +343,7 @@ fn should_execute(session: &Session, phase: BarPhase) -> bool {
 fn script_error(error: RunError) -> Option<Diagnostic> {
     match error {
         RunError::Script(diagnostic) => Some(diagnostic),
-        RunError::Rejection(_) => None,
+        RunError::Rejection => None,
     }
 }
 
@@ -459,7 +448,6 @@ mod tests {
         );
         // The same bars again: nothing runs, and the script is still failing.
         let again = controller.update(&bars, None, AFTER);
-        assert!(!again.changed);
         assert_eq!(
             again.error.as_ref().map(|e| e.message.as_str()),
             Some("boom")

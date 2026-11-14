@@ -4,15 +4,11 @@
 //! with no Keychain a save reports the failure, but the key is still kept for the session so the
 //! assistant works until the app quits.
 
-// Transient: the Pine Studio assistant reads keys through `key` next.
-#![allow(dead_code)]
-
 use crate::service::keychain::api_keys::{KeyBackend, default_backend};
 use crate::service::keychain::webhook_secrets::Scope;
 use crate::service::llm::ProviderKind;
 use crate::service::webhook::delivery::SecretStoreError;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 const SERVICE: &str = "es.nico.degenview.ai";
@@ -35,7 +31,6 @@ struct Cache {
 pub struct AiKeyStore {
     backend: Box<dyn KeyBackend>,
     cache: Mutex<Cache>,
-    revision: AtomicU64,
 }
 
 impl AiKeyStore {
@@ -43,18 +38,12 @@ impl AiKeyStore {
         Self {
             backend,
             cache: Mutex::new(Cache::default()),
-            revision: AtomicU64::new(0),
         }
     }
 
     pub fn shared() -> &'static Self {
         static STORE: OnceLock<AiKeyStore> = OnceLock::new();
         STORE.get_or_init(|| Self::with_backend(default_backend()))
-    }
-
-    /// Bumped on every save or removal.
-    pub fn revision(&self) -> u64 {
-        self.revision.load(Ordering::SeqCst)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Cache> {
@@ -102,7 +91,6 @@ impl AiKeyStore {
         cache.keys.insert(kind, Some(value.to_owned()));
         cache.exists.remove(&kind);
         drop(cache);
-        self.revision.fetch_add(1, Ordering::SeqCst);
         written
     }
 
@@ -113,7 +101,6 @@ impl AiKeyStore {
         cache.keys.insert(kind, None);
         cache.exists.remove(&kind);
         drop(cache);
-        self.revision.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -178,14 +165,12 @@ mod tests {
     }
 
     #[test]
-    fn saving_nothing_removes_the_key_and_bumps_the_revision() {
+    fn saving_nothing_removes_the_key() {
         let store = store();
-        let before = store.revision();
         store.save(ProviderKind::OpenAi, "k").unwrap();
         store.save(ProviderKind::OpenAi, "  ").unwrap();
         assert!(!store.is_configured(ProviderKind::OpenAi));
         assert_eq!(store.key(ProviderKind::OpenAi), None);
-        assert_eq!(store.revision(), before + 2);
     }
 
     #[test]

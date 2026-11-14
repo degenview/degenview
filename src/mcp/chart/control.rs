@@ -4,7 +4,7 @@
 
 use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::tools::{
-    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_id, unexpected,
+    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::mcp::types::ChartInfo;
 use crate::model::mcp::Permission;
@@ -134,7 +134,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<SetTimeframeParams>,
     ) -> Result<Json<TimeframeResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         match self
             .bridge
             .call(
@@ -170,7 +170,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<SetChartTypeParams>,
     ) -> Result<Json<ChartChangeResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let chart_type = chart_type_named(&params.chart_type).ok_or_else(|| {
             invalid(format!(
@@ -215,7 +215,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<RemoveChartParams>,
     ) -> Result<Json<ChartChangeResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         match self
             .bridge

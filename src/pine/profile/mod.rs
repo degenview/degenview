@@ -17,11 +17,9 @@ pub(crate) mod support;
 #[cfg(test)]
 mod tests;
 
-pub use clock::{Clock, MonotonicClock, SteppingClock, resolution_ns};
+#[cfg(test)]
+pub use clock::MonotonicClock;
 pub use recorder::{BarOutcome, ProfileRuntime};
-pub use regions::{Region, RegionKind, RegionTable};
-pub use report::{
-    CallSiteStats, Completeness, Interruption, LineStats, ProfileReport, RegionStats, Summary,
-};
-pub use session::{ProfileConfig, ProfileOutcome, ProfileSession, StartError};
-pub use wait::WaitMeter;
+pub use regions::{RegionKind, RegionTable};
+pub use report::{Completeness, Interruption, LineStats, ProfileReport};
+pub use session::{ProfileConfig, ProfileOutcome, ProfileSession};

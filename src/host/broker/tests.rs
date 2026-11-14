@@ -101,7 +101,6 @@ fn a_key_is_checked_then_saved_then_connected_and_disconnect_removes_it() {
     assert!(secrets.is_configured(ID, PROFILE));
     wait_for("the connection to go live", || is_live(&host));
     assert!(matches!(host.connection(ID), Connection::Running(_)));
-    assert_eq!(host.connected(), vec![ID]);
     assert!(!host.snapshot(ID).unwrap().balances.is_empty());
 
     host.disconnect(ID).wait().expect("removed");

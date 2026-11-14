@@ -6,7 +6,9 @@
 //! waits on the app thread. Nothing is saved, copied or uploaded. A picture over 8 MiB is refused (ask for `1x`).
 
 use crate::mcp::bridge::{McpCommand, McpError, McpReply, REQUEST_TIMEOUT};
-use crate::mcp::tools::{DegenViewMcp, client_of, failure, parse_chart_id, parse_id, unexpected};
+use crate::mcp::tools::{
+    DegenViewMcp, client_of, failure, parse_chart_id, parse_workspace_id, unexpected,
+};
 use crate::model::chart::snapshot::SnapshotScale;
 use crate::model::mcp::Permission;
 use rmcp::handler::server::tool::Extension;
@@ -100,7 +102,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<SnapshotParams>,
     ) -> Result<CallToolResult, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let scale = match params.scale {
             None | Some(ScaleArg::Standard) => SnapshotScale::X1,

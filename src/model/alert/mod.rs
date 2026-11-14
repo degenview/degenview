@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Price-alert domain: conditions, rules, trigger events, runtime health and the
 //! snapshot a store persists. Pure data — evaluation lives in `alert::engine`, saving in
 //! the store. Prices are `f64` (the Swift app used `Decimal`); crossings compare the
@@ -24,17 +23,6 @@ pub enum AlertFrequency {
     #[default]
     Once,
     EveryTime,
-}
-
-impl AlertFrequency {
-    pub const ALL: [Self; 2] = [Self::Once, Self::EveryTime];
-
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::Once => "Once",
-            Self::EveryTime => "Every Time",
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -113,16 +101,6 @@ impl AlertCondition {
         } else {
             price > target
         })
-    }
-
-    pub fn summary(&self) -> String {
-        match self {
-            Self::CrossesAbove { .. } => "Crosses above".to_owned(),
-            Self::CrossesBelow { .. } => "Crosses below".to_owned(),
-            Self::RisesBy { percent, .. } => format!("Rises by {percent}%"),
-            Self::FallsBy { percent, .. } => format!("Falls by {percent}%"),
-            Self::Unsupported { tag } => format!("Unsupported ({tag})"),
-        }
     }
 }
 
@@ -515,23 +493,18 @@ impl MarketQuote {
 pub enum AlertDomainEvent {
     /// A price alert fired: the id of its `AlertTriggerEvent`.
     PriceAlertTriggered { event_id: u64, at_ms: i64 },
-    /// A Pine script alert was delivered: the id of its notification.
-    ScriptAlertTriggered { event_id: u64, at_ms: i64 },
 }
 
 impl AlertDomainEvent {
     pub fn event_id(&self) -> u64 {
         match self {
-            Self::PriceAlertTriggered { event_id, .. }
-            | Self::ScriptAlertTriggered { event_id, .. } => *event_id,
+            Self::PriceAlertTriggered { event_id, .. } => *event_id,
         }
     }
 
     pub fn occurred_at_ms(&self) -> i64 {
         match self {
-            Self::PriceAlertTriggered { at_ms, .. } | Self::ScriptAlertTriggered { at_ms, .. } => {
-                *at_ms
-            }
+            Self::PriceAlertTriggered { at_ms, .. } => *at_ms,
         }
     }
 }
@@ -698,6 +671,7 @@ impl AlertRuntimeCommand {
         }
     }
 
+    #[cfg(test)]
     pub fn with_precondition(mut self, precondition: AlertPrecondition) -> Self {
         self.precondition = Some(precondition);
         self
@@ -843,12 +817,7 @@ mod tests {
             event_id: 4,
             at_ms: 9,
         };
-        let script = AlertDomainEvent::ScriptAlertTriggered {
-            event_id: 5,
-            at_ms: 11,
-        };
         assert_eq!((price.event_id(), price.occurred_at_ms()), (4, 9));
-        assert_eq!((script.event_id(), script.occurred_at_ms()), (5, 11));
     }
 
     #[test]
@@ -887,15 +856,5 @@ mod tests {
         assert_eq!(AlertCurrency::Gbp.format_price(3.14161), "£3.1416");
         assert_eq!(AlertCurrency::Chf.format_price(1_000.0), "CHF 1,000.00");
         assert_eq!(AlertCurrency::Usd.code(), "USD");
-    }
-
-    #[test]
-    fn frequency_titles_match_the_editor() {
-        assert_eq!(AlertFrequency::Once.title(), "Once");
-        assert_eq!(AlertFrequency::EveryTime.title(), "Every Time");
-        assert_eq!(
-            AlertCondition::rises_by(10.0, 1.0).summary(),
-            "Rises by 10%"
-        );
     }
 }

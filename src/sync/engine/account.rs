@@ -4,14 +4,15 @@
 
 use crate::store::Store;
 use crate::store::sync::SyncState;
-use crate::sync::record::sha256_hex;
 use std::path::{Path, PathBuf};
 
 pub const CONTAINER: &str = "iCloud.es.nico.degenview";
 
-/// What a database keeps of an iCloud account: a hash, never the identifier itself.
+/// What a database keeps of an iCloud account: a hash, never the identifier itself. The Swift
+/// bridge computes it (`Codec.hashUser`); this copy pins the format in a test.
+#[cfg(test)]
 pub fn hash_user(container: &str, user_record_name: &str) -> String {
-    sha256_hex(format!("v1|{container}|{user_record_name}").as_bytes())
+    crate::sync::record::sha256_hex(format!("v1|{container}|{user_record_name}").as_bytes())
 }
 
 /// How the user wants to resolve a different account being signed in.

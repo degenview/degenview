@@ -178,7 +178,6 @@ impl PortfolioQuoteFeed {
     }
 
     /// The FX service the feed converts with, for callers that need rates of their own.
-    #[allow(dead_code)] // the portfolio host wires this when it needs its own rates
     pub fn fx_rates(&self) -> Arc<dyn PortfolioFxRates> {
         Arc::clone(&self.inner.fx)
     }

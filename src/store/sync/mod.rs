@@ -2,9 +2,6 @@
 //! (in later stages) the outbox and tombstones. These tables live beside the user's data so a
 //! local write and the intent to upload it commit in one transaction. Older builds ignore them.
 
-// Consumed by the sync core in later stages.
-#![allow(dead_code)]
-
 use super::Store;
 
 mod paper;
@@ -57,7 +54,6 @@ pub struct SyncState {
     pub id_tag: u32,
 }
 
-pub const DEFAULT_ZONE: &str = "DegenViewZone";
 /// The outbox note on an edit that is waiting to be merged with the cloud's newer version.
 pub const OUTBOX_MERGING: &str = "merging with the cloud";
 
@@ -2153,7 +2149,7 @@ mod tests {
         assert_eq!(first.device_id, again.device_id);
         assert_eq!(again.device_name, "Mac A");
         assert_eq!(first.device_id.len(), 32);
-        assert_eq!(first.zone_name, DEFAULT_ZONE);
+        assert_eq!(first.zone_name, "DegenViewZone");
     }
 
     #[test]

@@ -4,8 +4,6 @@
 //! snapshot, and publish it only after SQLite succeeds. A failed initial load permanently blocks
 //! writes for this host instance so corrupt data can never be replaced by an empty snapshot.
 
-#![allow(dead_code)]
-
 mod bar;
 pub mod card;
 pub mod import_flow;

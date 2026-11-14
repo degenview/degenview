@@ -306,6 +306,7 @@ impl Assistant {
     }
 
     /// Starts a request on its own thread. `wake` repaints the UI when text arrives.
+    #[cfg(test)]
     pub fn start(
         &mut self,
         provider: Box<dyn LlmProvider>,

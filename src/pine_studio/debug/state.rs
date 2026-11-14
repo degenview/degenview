@@ -50,10 +50,6 @@ impl ScriptDebugState {
             .find(|stored| !stored.unresolved && stored.spec.line == line)
     }
 
-    pub fn breakpoint(&self, id: u64) -> Option<&StoredBreakpoint> {
-        self.breakpoints.iter().find(|stored| stored.spec.id == id)
-    }
-
     pub fn breakpoint_mut(&mut self, id: u64) -> Option<&mut StoredBreakpoint> {
         self.breakpoints
             .iter_mut()

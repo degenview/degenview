@@ -5,9 +5,6 @@
 //! token is untouched. Rendering finishes before the Content-Type is decided, so a
 //! template that only becomes JSON once its values are in still goes out as JSON.
 
-// Transient: nothing calls this yet; the alert runtime and Settings wire it next.
-#![allow(dead_code)]
-
 use crate::format::civil_from_days;
 use crate::model::alert::AlertTriggerEvent;
 

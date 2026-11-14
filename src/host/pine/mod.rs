@@ -2,8 +2,6 @@
 //! chart `VisualOutput` the renderer consumes. Input resolution and library imports are wired
 //! incrementally; the session itself owns the per-bar state machine.
 
-#![allow(dead_code)] // transient until the chart wires this
-
 pub mod subscription;
 
 use crate::model::chart::synthetic::ticker;
@@ -221,25 +219,11 @@ fn resolve_interval(seconds: f64) -> Option<&'static str> {
         .map(|(_, token)| *token)
 }
 
-/// Compiles `source` and runs it once over every bar (historical phase), returning the chart
-/// output. A script with syntax/type errors yields an empty output plus the program's diagnostics.
-pub fn run_script(source: &str, bars: &[Kline], symbol: &SymbolInfo) -> VisualOutput {
-    run_script_with_inputs(source, bars, symbol, &HashMap::new())
-}
-
-/// `run_script` with the user's input overrides (by input id); anything absent runs at its
-/// default. `import`s resolve against the Pine Studio's library scripts.
-pub fn run_script_with_inputs(
-    source: &str,
-    bars: &[Kline],
-    symbol: &SymbolInfo,
-    inputs: &HashMap<String, InputValue>,
-) -> VisualOutput {
-    run_script_checked(source, bars, symbol, inputs).0
-}
-
-/// `run_script_with_inputs`, also returning the runtime failure that stopped the run early, if
-/// any. The output is whatever the script had drawn up to that bar.
+/// Compiles `source` and runs it once over every bar (historical phase) with the user's input
+/// overrides (by input id; anything absent runs at its default). Returns the chart output and the
+/// runtime failure that stopped the run early, if any: the output is whatever the script had drawn
+/// up to that bar, and empty for a script with syntax/type errors. `import`s resolve against the
+/// Pine Studio's library scripts.
 pub fn run_script_checked(
     source: &str,
     bars: &[Kline],
@@ -288,7 +272,7 @@ pub fn run_script_checked_in_range(
     // known from the first bar on, so `timeframe.*` and `barstate.islast` read correctly.
     let failure = match session.load_history(bars, false, None) {
         Err(RunError::Script(diagnostic)) => Some(diagnostic),
-        Ok(_) | Err(RunError::Rejection(_)) => None,
+        Ok(_) | Err(RunError::Rejection) => None,
     };
     (session.output(), failure)
 }
@@ -296,6 +280,11 @@ pub fn run_script_checked_in_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A run at the script's default inputs.
+    fn run_script(source: &str, bars: &[Kline], symbol: &SymbolInfo) -> VisualOutput {
+        run_script_checked(source, bars, symbol, &HashMap::new()).0
+    }
 
     fn bars() -> Vec<Kline> {
         (0..5)

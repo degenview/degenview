@@ -361,9 +361,7 @@ fn attach_compile(
 }
 
 fn parse_alert_id(raw: &str) -> Result<u64, CallToolResult> {
-    raw.trim()
-        .parse::<u64>()
-        .map_err(|_| invalid("alert_id must be an id returned by degenview_list_price_alerts"))
+    parse_id(raw, "alert_id", "degenview_list_price_alerts")
 }
 
 const SETTLE_POLLS: usize = 20;
@@ -620,15 +618,11 @@ pub struct DeleteDrawingsParams {
 }
 
 pub(super) fn parse_chart_id(raw: &str) -> Result<u64, CallToolResult> {
-    raw.trim()
-        .parse::<u64>()
-        .map_err(|_| invalid("chart_id must be an id returned by degenview_list_charts"))
+    parse_id(raw, "chart_id", "degenview_list_charts")
 }
 
 fn parse_instance_id(raw: &str) -> Result<u64, CallToolResult> {
-    raw.trim().parse::<u64>().map_err(|_| {
-        invalid("instance_id must be an id returned by degenview_list_chart_pine_instances")
-    })
+    parse_id(raw, "instance_id", "degenview_list_chart_pine_instances")
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -670,12 +664,16 @@ pub(super) fn invalid(message: impl Into<String>) -> CallToolResult {
     failure(&McpError::InvalidArgument(message.into()))
 }
 
-pub(super) fn parse_id(raw: &str, what: &str) -> Result<u64, CallToolResult> {
-    raw.trim().parse::<u64>().map_err(|_| {
-        invalid(format!(
-            "{what} must be an id returned by degenview_list_workspaces"
-        ))
-    })
+/// A numeric id an earlier call listed. `what` names the argument and `listed_by` the tool whose
+/// result holds it, so a wrong value says where a right one comes from.
+pub(super) fn parse_id(raw: &str, what: &str, listed_by: &str) -> Result<u64, CallToolResult> {
+    raw.trim()
+        .parse::<u64>()
+        .map_err(|_| invalid(format!("{what} must be an id returned by {listed_by}")))
+}
+
+pub(super) fn parse_workspace_id(raw: &str) -> Result<u64, CallToolResult> {
+    parse_id(raw, "workspace_id", "degenview_list_workspaces")
 }
 
 /// The client the HTTP guard authenticated for this request.
@@ -775,7 +773,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<ListChartsParams>,
     ) -> Result<Json<ChartsResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         match self
             .bridge
             .call(
@@ -828,12 +826,8 @@ impl DegenViewMcp {
         Parameters(params): Parameters<AddIndicatorParams>,
     ) -> Result<Json<AddIndicatorResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
-        let chart_id = params
-            .chart_id
-            .trim()
-            .parse::<u64>()
-            .map_err(|_| invalid("chart_id must be an id returned by degenview_list_charts"))?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
         let ema_period = match params.inputs.and_then(|inputs| inputs.period) {
             None => None,
             Some(period) if params.indicator != McpIndicator::Ema => {
@@ -1392,7 +1386,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<ChartPineParams>,
     ) -> Result<Json<AppliedPineList>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         match self
             .bridge
@@ -1429,7 +1423,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<PineInstanceParams>,
     ) -> Result<Json<AppliedPineDetail>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let instance_id = parse_instance_id(&params.instance_id)?;
         let mut detail = match self
@@ -1477,7 +1471,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<PineInstanceParams>,
     ) -> Result<Json<PineStylesResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let instance_id = parse_instance_id(&params.instance_id)?;
         match self
@@ -1516,7 +1510,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<PineReportParams>,
     ) -> Result<Json<PineReportResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let instance_id = parse_instance_id(&params.instance_id)?;
         let limit = params.trades_limit.unwrap_or(50);
@@ -1608,7 +1602,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<AddChartParams>,
     ) -> Result<Json<AddChartResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let source = params.source.data_source();
         let instrument = validate_market(source, &params.symbol).map_err(invalid)?;
         if source == DataSource::Alpaca && !alpaca_configured().await {
@@ -1651,7 +1645,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<AddPineToChartParams>,
     ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let id = clean_script_id(&params.script_id)?;
         let args = params.inputs.unwrap_or_default();
@@ -1699,7 +1693,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<UpdatePineInstanceParams>,
     ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let instance_id = parse_instance_id(&params.instance_id)?;
         let inputs = params.inputs.filter(|inputs| !inputs.is_empty());
@@ -1744,7 +1738,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<PineInstanceParams>,
     ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let instance_id = parse_instance_id(&params.instance_id)?;
         match self
@@ -1783,7 +1777,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<GetCandlesParams>,
     ) -> Result<Json<CandlesResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let limit = params.limit.map_or(DEFAULT_CANDLES, |limit| limit as usize);
         if !(1..=MAX_CANDLES).contains(&limit) {
@@ -1834,7 +1828,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<ChartPineParams>,
     ) -> Result<Json<DrawingsResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         match self
             .bridge
@@ -1871,7 +1865,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<AddDrawingsParams>,
     ) -> Result<Json<DrawingsChangeResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         if params.drawings.is_empty() || params.drawings.len() > MAX_DRAWINGS_PER_CALL {
             return Err(invalid(format!(
@@ -1928,7 +1922,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<UpdateDrawingParams>,
     ) -> Result<Json<DrawingsChangeResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let drawing_id = parse_drawing_id(&params.drawing_id).map_err(|error| failure(&error))?;
         let patch = StylePatch::check(
@@ -1997,7 +1991,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<DeleteDrawingsParams>,
     ) -> Result<Json<DrawingsChangeResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         if params.drawing_ids.is_empty() || params.drawing_ids.len() > MAX_DELETES_PER_CALL {
             return Err(invalid(format!(

@@ -1,13 +1,10 @@
 //! Presentation of paper-trading values: labels for the enums, the number formats, and the
 //! colour rules. The engine keeps full precision; only what the screens show is rounded here.
 
-// Transient: the paper-trading screens use this once they are hosted.
-#![allow(dead_code)]
-
 use crate::format::civil_from_days;
 use crate::model::paper::{
     PaperCurrency, PaperInstrument, PaperOrderEventKind, PaperOrderRole, PaperOrderSide,
-    PaperOrderStatus, PaperOrderType, PaperPositionSide, PaperTimeInForce,
+    PaperOrderType, PaperPositionSide,
 };
 
 impl PaperOrderSide {
@@ -51,8 +48,6 @@ impl PaperPositionSide {
 }
 
 impl PaperOrderType {
-    pub const ALL: [Self; 4] = [Self::Market, Self::Limit, Self::Stop, Self::StopLimit];
-
     pub fn label(self) -> &'static str {
         match self {
             Self::Market => "Market",
@@ -70,38 +65,9 @@ impl PaperOrderType {
             Self::StopLimit => "STP LMT",
         }
     }
-
-    /// Whether the ticket asks for a limit price.
-    pub fn needs_limit_price(self) -> bool {
-        matches!(self, Self::Limit | Self::StopLimit)
-    }
-
-    /// Whether the ticket asks for a stop price.
-    pub fn needs_stop_price(self) -> bool {
-        matches!(self, Self::Stop | Self::StopLimit)
-    }
-}
-
-impl PaperTimeInForce {
-    pub const ALL: [Self; 2] = [Self::Day, Self::GoodTilCanceled];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Day => "Day",
-            Self::GoodTilCanceled => "Good till canceled",
-        }
-    }
 }
 
 impl PaperOrderRole {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Entry => "Entry",
-            Self::TakeProfit => "Take profit",
-            Self::StopLoss => "Stop loss",
-        }
-    }
-
     pub fn badge_text(self) -> &'static str {
         match self {
             Self::Entry => "ENTRY",
@@ -118,32 +84,6 @@ pub enum BadgeTone {
     Warning,
     Bad,
     Neutral,
-}
-
-impl PaperOrderStatus {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::PendingSubmission => "Pending",
-            Self::Working => "Working",
-            Self::PartiallyFilled => "Partial",
-            Self::Filled => "Filled",
-            Self::PendingCancel => "Cancelling",
-            Self::Canceled => "Canceled",
-            Self::Rejected => "Rejected",
-            Self::Expired => "Expired",
-        }
-    }
-
-    pub fn tone(self) -> BadgeTone {
-        match self {
-            Self::Filled => BadgeTone::Good,
-            Self::PartiallyFilled | Self::PendingCancel => BadgeTone::Warning,
-            Self::Rejected => BadgeTone::Bad,
-            Self::PendingSubmission | Self::Working | Self::Canceled | Self::Expired => {
-                BadgeTone::Neutral
-            }
-        }
-    }
 }
 
 impl PaperOrderEventKind {
@@ -494,42 +434,15 @@ mod tests {
         assert_eq!(PaperPositionSide::Short.badge_text(), "SHORT");
         assert_eq!(PaperOrderType::StopLimit.label(), "Stop Limit");
         assert_eq!(PaperOrderType::StopLimit.badge_text(), "STP LMT");
-        assert_eq!(
-            PaperTimeInForce::GoodTilCanceled.label(),
-            "Good till canceled"
-        );
         assert_eq!(PaperOrderRole::TakeProfit.badge_text(), "TP");
-        assert_eq!(PaperOrderStatus::PendingCancel.label(), "Cancelling");
         assert_eq!(PaperOrderEventKind::PartiallyFilled.label(), "Partial fill");
         assert_eq!(PaperCurrency::Usdc.code(), "USDC");
     }
 
     #[test]
-    fn statuses_and_events_are_toned() {
-        assert_eq!(PaperOrderStatus::Filled.tone(), BadgeTone::Good);
-        assert_eq!(PaperOrderStatus::PartiallyFilled.tone(), BadgeTone::Warning);
-        assert_eq!(PaperOrderStatus::Rejected.tone(), BadgeTone::Bad);
-        assert_eq!(PaperOrderStatus::Working.tone(), BadgeTone::Neutral);
+    fn events_are_toned() {
         assert_eq!(PaperOrderEventKind::Modified.tone(), BadgeTone::Warning);
         assert_eq!(PaperOrderEventKind::Canceled.tone(), BadgeTone::Neutral);
-    }
-
-    #[test]
-    fn the_ticket_asks_for_the_prices_an_order_type_needs() {
-        assert!(
-            !PaperOrderType::Market.needs_limit_price()
-                && !PaperOrderType::Market.needs_stop_price()
-        );
-        assert!(
-            PaperOrderType::Limit.needs_limit_price() && !PaperOrderType::Limit.needs_stop_price()
-        );
-        assert!(
-            !PaperOrderType::Stop.needs_limit_price() && PaperOrderType::Stop.needs_stop_price()
-        );
-        assert!(
-            PaperOrderType::StopLimit.needs_limit_price()
-                && PaperOrderType::StopLimit.needs_stop_price()
-        );
     }
 
     #[test]

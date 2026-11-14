@@ -73,9 +73,8 @@ and is never written to the Scripts folder.
 
 Adding one to a chart makes an ordinary Pine instance (own pane or overlay, inputs, styles,
 visibility, undo, persistence, the MCP Pine tools). Its script id is `builtin:<id>`
-(`indicators::script_id`); `indicators::from_script_id` goes back. The instance stores the source it
-was added with, like every script, so a later release that changes a bundled script does not change
-charts that already have it.
+(`indicators::script_id`). The instance stores the source it was added with, like every script, so
+a later release that changes a bundled script does not change charts that already have it.
 
 Rules for a bundled indicator:
 

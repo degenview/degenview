@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 use super::fast_hash::FastMap;
 use super::operators;
 use super::state::{AlertEvent, RuntimeState};
-use super::support::{ExecutionRejection, LibraryLinkage, RuntimeResult, SecurityDataProvider};
+#[cfg(test)]
+use super::support::RuntimeResult;
+use super::support::{LibraryLinkage, SecurityDataProvider};
 use super::types::{BarFlags, Flow, RuntimeContext, RuntimeFunction};
 use super::user_methods::Supplied;
 use super::value::{RefKind, RuntimeValue};
@@ -55,7 +57,6 @@ const VARIABLE_NAMESPACES: [&str; 8] = [
 ];
 
 pub(crate) const INTERNAL_PREFIX: &str = "\u{0}";
-const ALERT_LIMIT: usize = 200;
 const DEFAULT_MINTICK: f64 = 0.01;
 
 /// What a hooked session carries: a debugger or a profiler, never both. A session without either
@@ -221,7 +222,9 @@ impl<'s> Shadowed<'s> {
 
 #[derive(Debug)]
 pub enum RunError {
-    Rejection(ExecutionRejection),
+    /// `execute` refused a bar that opened before, or is, the one most recently committed. Not a
+    /// script failure: the feed repeated or reordered itself.
+    Rejection,
     Script(Diagnostic),
 }
 
@@ -516,11 +519,13 @@ impl Session {
 
     // MARK: Running
 
+    /// Runs `bars` as history and returns the output. Tests read a whole run through this; the
+    /// app loads history and reads the output separately.
+    #[cfg(test)]
     pub fn evaluate(&mut self, bars: &[Kline]) -> Result<RuntimeResult, RunError> {
         let states = self.load_history(bars, false, None)?;
         Ok(RuntimeResult {
             output: self.output(),
-            diagnostics: Vec::new(),
             bar_states: states,
         })
     }
@@ -678,7 +683,7 @@ impl Session {
         if hooked {
             let outcome = match &result {
                 Ok(_) => crate::pine::profile::BarOutcome::Completed,
-                Err(RunError::Rejection(_)) => crate::pine::profile::BarOutcome::Skipped,
+                Err(RunError::Rejection) => crate::pine::profile::BarOutcome::Skipped,
                 Err(_) => crate::pine::profile::BarOutcome::Cut,
             };
             self.hook_end_bar(outcome, realtime);
@@ -700,16 +705,12 @@ impl Session {
         if let Some(committed_time) = self.last_committed_open_time
             && open_time <= committed_time
         {
-            return Err(RunError::Rejection(if open_time < committed_time {
-                ExecutionRejection::StaleBar
-            } else {
-                ExecutionRejection::DuplicateBar
-            }));
+            return Err(RunError::Rejection);
         }
         if let Some(previous) = self.last_open_time
             && open_time < previous
         {
-            return Err(RunError::Rejection(ExecutionRejection::StaleBar));
+            return Err(RunError::Rejection);
         }
         let is_new = Some(open_time) != self.last_open_time;
         if is_new {
@@ -3409,7 +3410,7 @@ impl Session {
         if self.working.instructions == 1 || self.working.instructions.is_multiple_of(1024) {
             self.check_interruption().map_err(|error| match error {
                 RunError::Script(diagnostic) => diagnostic,
-                RunError::Rejection(_) => unreachable!("interruption is always a diagnostic"),
+                RunError::Rejection => unreachable!("interruption is always a diagnostic"),
             })?;
         }
         if self.working.instructions > self.limits.instructions_per_bar {
@@ -3457,11 +3458,6 @@ impl Session {
             )));
         }
         Ok(())
-    }
-
-    fn allocate(&mut self) -> usize {
-        self.working.next_reference += 1;
-        self.working.next_reference
     }
 }
 

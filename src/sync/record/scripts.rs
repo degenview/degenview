@@ -33,7 +33,6 @@ pub trait ScriptSink {
     fn update(&mut self, id: &str, name: &str, source: &str, favorite: bool) -> Result<(), String>;
     /// Moves the script to the Trash.
     fn delete(&mut self, id: &str) -> Result<(), String>;
-    fn fresh_id(&mut self) -> String;
 }
 
 /// The scripts as the sync thread may send them, refreshed by the scanner on the app thread.
@@ -85,9 +84,6 @@ impl ScriptSink for NoScripts {
     }
     fn delete(&mut self, _: &str) -> Result<(), String> {
         Err("no script library".into())
-    }
-    fn fresh_id(&mut self) -> String {
-        ScriptStore::fresh_id()
     }
 }
 
@@ -163,9 +159,5 @@ impl ScriptSink for StoreScriptSink<'_> {
 
     fn delete(&mut self, id: &str) -> Result<(), String> {
         self.store.delete(id).map_err(|e| e.to_string())
-    }
-
-    fn fresh_id(&mut self) -> String {
-        ScriptStore::fresh_id()
     }
 }

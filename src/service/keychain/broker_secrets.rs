@@ -14,7 +14,6 @@
 //! Implements the broker crate's `SecretStore`, so the crate never decides where a secret lives.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use degenview_brokers::{BrokerId, Credentials, SecretStore, SecretStoreError};
@@ -42,7 +41,6 @@ struct Cache {
 pub struct BrokerSecrets {
     backend: Box<dyn KeyBackend>,
     cache: Mutex<Cache>,
-    revision: AtomicU64,
 }
 
 impl BrokerSecrets {
@@ -50,19 +48,12 @@ impl BrokerSecrets {
         Self {
             backend,
             cache: Mutex::new(Cache::default()),
-            revision: AtomicU64::new(0),
         }
     }
 
     pub fn shared() -> &'static Self {
         static STORE: OnceLock<BrokerSecrets> = OnceLock::new();
         STORE.get_or_init(|| Self::with_backend(default_backend()))
-    }
-
-    /// Bumped on every save or removal.
-    #[allow(dead_code)] // Settings polls it once a page shows saved state.
-    pub fn revision(&self) -> u64 {
-        self.revision.load(Ordering::SeqCst)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Cache> {
@@ -112,7 +103,6 @@ impl SecretStore for BrokerSecrets {
             .insert(key.clone(), Some(credentials.clone()));
         cache.exists.remove(&key);
         drop(cache);
-        self.revision.fetch_add(1, Ordering::SeqCst);
         written
     }
 
@@ -127,7 +117,6 @@ impl SecretStore for BrokerSecrets {
         cache.credentials.insert(key.clone(), None);
         cache.exists.remove(&key);
         drop(cache);
-        self.revision.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
@@ -196,15 +185,6 @@ mod tests {
         assert!(!store.is_configured(BrokerId::new("other"), "default"));
     }
 
-    #[test]
-    fn every_change_moves_the_revision() {
-        let store = store();
-        let start = store.revision();
-        store.save(ID, "default", &credentials()).unwrap();
-        store.delete(ID, "default").unwrap();
-        assert_eq!(store.revision(), start + 2);
-    }
-
     use crate::service::webhook::delivery::SecretStoreError as BackendError;
 
     /// A backend whose removals the system refuses.
@@ -231,12 +211,10 @@ mod tests {
     fn a_removal_the_system_refused_is_an_error_and_forgets_nothing() {
         let store = BrokerSecrets::with_backend(Box::new(Stubborn(MemoryBackend::default())));
         store.save(ID, "default", &credentials()).unwrap();
-        let start = store.revision();
         let error = store.delete(ID, "default").unwrap_err();
         assert!(error.0.contains("-25293"), "{}", error.0);
         assert!(store.is_configured(ID, "default"), "still stored");
         assert!(store.load(ID, "default").unwrap().is_some());
-        assert_eq!(store.revision(), start, "nothing changed");
     }
 
     /// Removing what is not there is not a failure.

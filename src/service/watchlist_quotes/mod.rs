@@ -12,10 +12,12 @@ mod engine;
 mod provider;
 
 pub use book::WatchlistQuoteBook;
-#[allow(unused_imports)]
-pub use engine::{Config, Outcome};
-#[allow(unused_imports)]
-pub use provider::{QuoteFailure, QuoteProvider, QuoteRequest};
+pub use engine::Config;
+#[cfg(test)]
+pub use engine::Outcome;
+pub use provider::QuoteProvider;
+#[cfg(test)]
+pub use provider::{QuoteFailure, QuoteRequest};
 
 use crate::model::InstrumentId;
 use crate::model::alert::AlertProviderHealth;
