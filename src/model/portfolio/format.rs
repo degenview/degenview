@@ -3,9 +3,6 @@
 //! Amounts mask when privacy mode is on; percentages and a position's *share* (allocation,
 //! return) stay readable, matching the Holdings table.
 
-// Transient: the portfolio views and the store wire this up next.
-#![allow(dead_code)]
-
 use crate::model::portfolio::PortfolioCurrency;
 
 /// What an amount is masked with in privacy mode.

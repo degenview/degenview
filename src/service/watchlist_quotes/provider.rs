@@ -306,13 +306,13 @@ fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
                     streak = 0;
                     series
                 }
-                Err(message) => {
+                Err(error) => {
                     streak += 1;
                     let stop = streak >= CONSECUTIVE_FAILURES;
                     let upto = if stop { requests.len() } else { index + 1 };
                     outcome.failed.push((
                         symbols_of(&requests[index..upto]),
-                        QuoteFailure::Failed(message),
+                        QuoteFailure::Failed(error.to_string()),
                     ));
                     if stop {
                         break;

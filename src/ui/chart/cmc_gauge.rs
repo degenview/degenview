@@ -1,7 +1,8 @@
 //! The CoinMarketCap "Latest" charts: the Fear & Greed semicircle gauge and the Altcoin Season
 //! scale, drawn from the cached reading instead of a price series.
 
-use crate::service::market::cmc::{self, LatestReading};
+use crate::model::market::cmc;
+use crate::service::market::cmc::LatestReading;
 use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
 use eframe::egui::{
@@ -98,10 +99,6 @@ fn zone_index(value: f64) -> usize {
 
 fn zone_color(value: f64) -> Color32 {
     ZONES[zone_index(value)].1
-}
-
-fn fade(color: Color32, alpha: u8) -> Color32 {
-    Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
 }
 
 fn fear_greed(ui: &Ui, painter: &Painter, rect: Rect, reading: &LatestReading) {
@@ -243,7 +240,7 @@ fn sentiment_gauge(ui: &Ui, painter: &Painter, rect: Rect, value: f64) {
         let color = if index == active {
             *color
         } else {
-            fade(*color, 70)
+            theme::with_alpha_byte(*color, 70)
         };
         let points: Vec<Pos2> = (0..=24)
             .map(|step| center + Vec2::angled(start + (end - start) * step as f32 / 24.0) * radius)
@@ -394,8 +391,11 @@ fn sparkline(ui: &Ui, painter: &Painter, rect: Rect, history: &[(i64, f64)]) {
     let mut fill = Mesh::default();
     for (index, point) in history.iter().enumerate() {
         let color = zone_color(point.1);
-        fill.colored_vertex(points[index], fade(color, 70));
-        fill.colored_vertex(pos2(points[index].x, plot.max.y), fade(color, 0));
+        fill.colored_vertex(points[index], theme::with_alpha_byte(color, 70));
+        fill.colored_vertex(
+            pos2(points[index].x, plot.max.y),
+            theme::with_alpha_byte(color, 0),
+        );
         if index > 0 {
             let base = (index * 2) as u32;
             fill.add_triangle(base - 2, base - 1, base);
@@ -411,7 +411,7 @@ fn sparkline(ui: &Ui, painter: &Painter, rect: Rect, history: &[(i64, f64)]) {
     }
     let last = points[points.len() - 1];
     let last_color = zone_color(history[history.len() - 1].1);
-    painter.circle_filled(last, 5.0, fade(last_color, 60));
+    painter.circle_filled(last, 5.0, theme::with_alpha_byte(last_color, 60));
     painter.circle_filled(last, 2.5, last_color);
 
     let Some(pointer) = ui.input(|input| input.pointer.hover_pos()) else {

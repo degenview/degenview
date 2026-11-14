@@ -79,8 +79,6 @@ pub struct RuntimeState {
     pub local_history_bar: FastMap<String, i64>,
     /// This bar's value of every `expression[n]` whose base is not a plain name, by history key.
     pub expression_values: FastMap<String, RuntimeValue>,
-    pub calls: FastMap<usize, Vec<RuntimeValue>>,
-    pub call_inputs: FastMap<usize, Vec<RuntimeValue>>,
     /// Complete state for each `ta.*` call site. It belongs to the working state so an
     /// unconfirmed realtime tick is rolled back together with variables and containers.
     pub ta_states: FastMap<usize, ta::State>,

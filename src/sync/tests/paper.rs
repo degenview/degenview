@@ -272,7 +272,7 @@ fn concurrent_changes_to_one_account_keep_both_versions() {
             .collect();
         assert_eq!(copies.len(), 1);
         assert!(
-            copies[0].id >= crate::sync::record::ids::LEGACY_LIMIT,
+            copies[0].id >= crate::model::ids::LEGACY_LIMIT,
             "a fresh id"
         );
         // Each version's order survives, one in the account and one in the copy.
@@ -286,7 +286,7 @@ fn concurrent_changes_to_one_account_keep_both_versions() {
         assert!(
             copy_orders
                 .iter()
-                .all(|o| o.id >= crate::sync::record::ids::LEGACY_LIMIT)
+                .all(|o| o.id >= crate::model::ids::LEGACY_LIMIT)
         );
         assert_eq!(
             mac.store
@@ -414,5 +414,5 @@ fn the_ids_of_a_mirror_never_move_the_local_counter() {
     // B makes an account of its own after the mirror arrived: a small id, not a huge one.
     let mut on_b = host(&b);
     let own = open(&mut on_b, "Mine");
-    assert!(own < crate::sync::record::ids::LEGACY_LIMIT, "minted {own}");
+    assert!(own < crate::model::ids::LEGACY_LIMIT, "minted {own}");
 }

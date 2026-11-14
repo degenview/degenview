@@ -17,7 +17,7 @@ use crate::ui::kit::{
     dialog::{self, Dialog},
     time_text::relative_time,
 };
-use crate::ui::settings::window::{card, divider, row, section, status_badge, status_message};
+use crate::ui::settings::window::{card, row, section, status_message};
 use crate::ui::{kit, settings::card, theme};
 use eframe::egui;
 
@@ -39,9 +39,6 @@ pub fn phase_label(phase: Phase) -> (String, Tone) {
         }
         Phase::Paused(PauseReason::RemoteDataDeleted) => {
             ("Paused: iCloud data was removed", Tone::Warning)
-        }
-        Phase::Paused(PauseReason::NeedsUpdate) => {
-            ("Update DegenView to keep syncing", Tone::Warning)
         }
         Phase::NeedsAttention => ("Needs your attention", Tone::Warning),
         Phase::Error(kind) => return (error_label(kind).to_owned(), Tone::Bad),
@@ -340,14 +337,12 @@ fn delete_section(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
                             } else {
                                 "Delete…"
                             };
-                            if crate::ui::settings::api_keys::destructive_button(ui, label)
-                                .clicked()
-                            {
+                            if kit::destructive_button(ui, label).clicked() {
                                 open = true;
                             }
                         } else {
                             ui.add_enabled_ui(false, |ui| {
-                                crate::ui::settings::api_keys::destructive_button(ui, "Delete…");
+                                kit::destructive_button(ui, "Delete…");
                             });
                         }
                     });
@@ -525,10 +520,12 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             {
                 label = "iCloud isn't set up for this release yet".to_owned();
             }
-            row(ui, "Status", |ui| status_badge(ui, &label, tone));
+            row(ui, "Status", |ui| {
+                kit::status_badge(ui, &label, tone);
+            });
             let last = view.last_send_ms.max(view.last_fetch_ms);
             if let Some(last) = last {
-                divider(ui);
+                kit::divider(ui);
                 row(ui, "Last synced", |ui| {
                     ui.label(kit::text(
                         relative_time(now_ms, last),
@@ -539,7 +536,7 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
                 });
             }
             if view.pending > 0 {
-                divider(ui);
+                kit::divider(ui);
                 row(ui, "Waiting to upload", |ui| {
                     ui.label(kit::text(
                         changes_text(view.pending),
@@ -550,7 +547,7 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
                 });
             }
             if let Some(name) = &view.device_name {
-                divider(ui);
+                kit::divider(ui);
                 row(ui, "This Mac", |ui| {
                     ui.label(kit::text(
                         name,
@@ -561,9 +558,9 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
                 });
             }
             if view.environment.as_deref() == Some("Development") {
-                divider(ui);
+                kit::divider(ui);
                 row(ui, "iCloud environment", |ui| {
-                    status_badge(ui, "Development (test data)", Tone::Warning);
+                    kit::status_badge(ui, "Development (test data)", Tone::Warning);
                 });
             }
         });
@@ -815,7 +812,7 @@ fn conflicts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             card(ui, |ui| {
                 for (index, group) in groups.iter().enumerate() {
                     if index > 0 {
-                        divider(ui);
+                        kit::divider(ui);
                     }
                     if conflict_row(ui, group, now_ms) {
                         sync.act(SyncAction::DismissConflicts(Some(group.kind.clone())));
@@ -877,7 +874,7 @@ fn categories(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
             card(ui, |ui| {
                 for (index, (category, on)) in view.categories.iter().enumerate() {
                     if index > 0 {
-                        divider(ui);
+                        kit::divider(ui);
                     }
                     row(ui, category.title(), |ui| {
                         let mut value = *on;
@@ -909,7 +906,6 @@ mod tests {
             Phase::WaitingForAccount,
             Phase::Paused(PauseReason::AccountChanged),
             Phase::Paused(PauseReason::RemoteDataDeleted),
-            Phase::Paused(PauseReason::NeedsUpdate),
             Phase::NeedsAttention,
             Phase::Error(ErrorKind::Quota),
         ];

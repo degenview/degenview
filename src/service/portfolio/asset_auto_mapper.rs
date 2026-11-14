@@ -3,9 +3,6 @@
 //! market gives a direct, liquid price; then Coinbase; then CoinGecko, whose id is a stable
 //! identity rather than a ticker; DEX pairs last.
 
-// Transient: the portfolio host wires this up for the CoinMarketCap import.
-#![allow(dead_code)]
-
 use crate::model::DataSource;
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency};
 use crate::service::SearchResult;

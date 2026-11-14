@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use super::session::Session;
 use super::state::{RuntimeState, SecuritySite};
-use super::support::{ChartSpan, SecurityDataProvider, SecurityKey};
+use super::support::{ChartSpan, SecurityKey};
 use super::types::{BarFlags, RuntimeContext};
 use super::value::{RefKind, RuntimeValue};
 use crate::model::Kline;
@@ -970,6 +970,7 @@ impl<'a> ReferenceExport<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pine::runtime::support::SecurityDataProvider;
 
     fn bar(open_time: i64, close: f64) -> Kline {
         Kline {

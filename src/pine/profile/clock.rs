@@ -38,11 +38,13 @@ impl Clock for MonotonicClock {
 
 /// A clock that advances by a fixed step on every read. With it, the time a region takes is the
 /// number of clock reads made inside it times the step, which the nesting of regions determines.
+#[cfg(test)]
 pub struct SteppingClock {
     now: u64,
     step: u64,
 }
 
+#[cfg(test)]
 impl SteppingClock {
     pub fn new(step_ns: u64) -> Self {
         Self {
@@ -52,6 +54,7 @@ impl SteppingClock {
     }
 }
 
+#[cfg(test)]
 impl Clock for SteppingClock {
     fn now_ns(&mut self) -> u64 {
         let now = self.now;

@@ -35,8 +35,7 @@ pub(in crate::pine_studio) fn diagnostics_of(script: &str) -> Vec<Diagnostic> {
 }
 
 fn key_available(kind: ProviderKind) -> bool {
-    AiKeyStore::shared().is_configured(kind)
-        || std::env::var(kind.env_var()).is_ok_and(|value| !value.trim().is_empty())
+    AiKeyStore::shared().is_configured(kind) || kind.env_key_present()
 }
 
 impl PineStudio {
@@ -255,7 +254,7 @@ impl PineStudio {
             .iter()
             .map(|script| script.id.clone())
             .collect();
-        let now = crate::pine_studio::model::now_ms();
+        let now = crate::model::pine::script::now_ms();
         if let Ok(store) = self.shared.lock() {
             let mut history = History::load(&store);
             if !known.is_empty() {
@@ -309,7 +308,7 @@ impl PineStudio {
         // touched until the user applies a proposal.
         let feed = self
             .preview
-            .debug_feed(crate::pine_studio::model::now_ms(), theme::is_light());
+            .debug_feed(crate::model::pine::script::now_ms(), theme::is_light());
         let tools = ToolBox::new(mode, &source, diagnostics_of).with_bars(feed);
         let request = ChatRequest {
             model: self.ai.prefs.model(kind),

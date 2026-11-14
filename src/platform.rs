@@ -108,7 +108,6 @@ pub fn reveal_in_file_manager(path: &std::path::Path) {
 
 /// Whether this build can sync with iCloud: the Swift CloudKit bridge is macOS-only and compiled
 /// in only with the `icloud` feature. Settings hides the page otherwise.
-#[allow(dead_code)] // the Settings page consumes this in a later stage
 pub const fn has_icloud_sync() -> bool {
     cfg!(all(target_os = "macos", feature = "icloud"))
 }

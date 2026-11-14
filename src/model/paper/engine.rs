@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Paper-trading execution engine: the order/fill/position state machine over
 //! `PaperTradingSnapshot`. Ported from `PaperTradingEngine.swift`. Quotes arrive
 //! via `process`; the engine itself never touches the network.
@@ -32,7 +31,7 @@ impl PaperTradingEngine {
             .chain(snapshot.closed_trades.iter().map(|trade| trade.id))
             .chain(snapshot.journal.iter().map(|entry| entry.id))
             // Ids at or above the legacy limit belong to records that arrived from another Mac.
-            .filter(|id| *id < crate::sync::record::ids::LEGACY_LIMIT)
+            .filter(|id| *id < crate::model::ids::LEGACY_LIMIT)
             .max()
             .map_or(1, |max| max + 1);
         Self {
@@ -46,6 +45,7 @@ impl PaperTradingEngine {
         &self.snapshot
     }
 
+    #[cfg(test)]
     pub fn into_snapshot(self) -> PaperTradingSnapshot {
         self.snapshot
     }
@@ -98,22 +98,6 @@ impl PaperTradingEngine {
             return Err(PaperTradingError::AccountNotFound);
         }
         self.snapshot.selected_account_id = Some(id);
-        Ok(())
-    }
-
-    pub fn update_settings(
-        &mut self,
-        account_id: u64,
-        settings: PaperAccountSettings,
-    ) -> Result<(), PaperTradingError> {
-        let index = self
-            .account_index(account_id)
-            .ok_or(PaperTradingError::AccountNotFound)?;
-        self.snapshot.accounts[index].settings = settings;
-        self.journal(
-            account_id,
-            "PAPER account settings changed; changes apply prospectively".to_owned(),
-        );
         Ok(())
     }
 
@@ -369,13 +353,15 @@ impl PaperTradingEngine {
         }
     }
 
-    /// Feed a live quote. Only quotes that could have moved an order are persisted.
+    /// `process_except` with no account skipped.
+    #[cfg(test)]
     pub fn process(&mut self, quote: PaperQuote) -> Result<(), PaperTradingError> {
         self.process_except(quote, &HashSet::new())
     }
 
-    /// Like `process`, but never fills the orders of the accounts in `skip`: an account that
-    /// another Mac runs is only shown here, so a working order is not filled twice.
+    /// Feed a live quote. Only quotes that could have moved an order are persisted. The orders of
+    /// the accounts in `skip` are never filled: an account that another Mac runs is only shown
+    /// here, so a working order is not filled twice.
     pub fn process_except(
         &mut self,
         quote: PaperQuote,
@@ -1407,7 +1393,7 @@ mod tests {
     fn counter_ignores_ids_that_arrived_from_another_mac() {
         let (engine, _) = engine_with_account();
         let mut snapshot = engine.snapshot().clone();
-        snapshot.accounts[0].id = crate::sync::record::ids::GLOBAL_BASE | (7 << 24) | 3;
+        snapshot.accounts[0].id = crate::model::ids::GLOBAL_BASE | (7 << 24) | 3;
         let mut engine = PaperTradingEngine::new(snapshot);
         let local = engine
             .create_account(
@@ -1417,10 +1403,7 @@ mod tests {
                 PaperAccountSettings::default(),
             )
             .unwrap();
-        assert!(
-            local < crate::sync::record::ids::LEGACY_LIMIT,
-            "minted {local}"
-        );
+        assert!(local < crate::model::ids::LEGACY_LIMIT, "minted {local}");
     }
 
     #[test]

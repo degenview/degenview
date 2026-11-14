@@ -52,10 +52,6 @@ pub(super) enum TextMode {
     Editing,
 }
 
-fn with_alpha(color: Color32, alpha: u8) -> Color32 {
-    Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
-}
-
 /// A polyline or closed loop in `stroke`, dashed per `dash`.
 fn stroke_path(painter: &Painter, points: &[Pos2], closed: bool, stroke: Stroke, dash: LineDash) {
     if points.len() < 2 {
@@ -86,7 +82,7 @@ pub(super) fn draw_handle(painter: &Painter, spot: &HandleSpot, color: Color32) 
         painter.circle(
             spot.pos,
             radius,
-            with_alpha(theme::surface(), 120),
+            theme::with_alpha_byte(theme::surface(), 120),
             Stroke::new(1.5, color),
         );
     } else {
@@ -476,7 +472,7 @@ pub(super) fn draw_picture(
         );
         return;
     }
-    painter.rect_filled(rect, 4.0, with_alpha(theme::surface(), 200));
+    painter.rect_filled(rect, 4.0, theme::with_alpha_byte(theme::surface(), 200));
     stroke_path(
         painter,
         &[
@@ -533,7 +529,7 @@ pub(super) fn paint(
             painter.rect_stroke(
                 picture.rect,
                 0.0,
-                Stroke::new(1.0, with_alpha(crate::ui::kit::ACCENT, 160)),
+                Stroke::new(1.0, theme::with_alpha_byte(crate::ui::kit::ACCENT, 160)),
                 StrokeKind::Outside,
             );
         } else if emphasis.selected {
@@ -573,7 +569,7 @@ pub(super) fn paint(
             painter.rect_stroke(
                 card.rect,
                 8.0,
-                Stroke::new(1.0, with_alpha(crate::ui::kit::ACCENT, alpha)),
+                Stroke::new(1.0, theme::with_alpha_byte(crate::ui::kit::ACCENT, alpha)),
                 StrokeKind::Outside,
             );
         }
@@ -609,7 +605,8 @@ pub(super) fn paint(
     if let Some(mesh) = &screen.stroke {
         if emphasis.halo
             && let Some(path) = screen.lines.first()
-            && let Some(halo) = geo::stroke_mesh(path, width + 6.0, with_alpha(color, 40), 1.0)
+            && let Some(halo) =
+                geo::stroke_mesh(path, width + 6.0, theme::with_alpha_byte(color, 40), 1.0)
         {
             painter.add(Shape::mesh(halo));
         }
@@ -664,7 +661,7 @@ pub(super) fn paint(
                 painter,
                 frame,
                 true,
-                Stroke::new(1.0, with_alpha(color, 120)),
+                Stroke::new(1.0, theme::with_alpha_byte(color, 120)),
                 LineDash::Solid,
             );
         }
@@ -725,7 +722,7 @@ pub(super) fn paint(
     }
 
     if emphasis.halo {
-        let halo = Stroke::new(width + 5.0, with_alpha(color, 40));
+        let halo = Stroke::new(width + 5.0, theme::with_alpha_byte(color, 40));
         for path in &screen.lines {
             stroke_path(painter, path, false, halo, LineDash::Solid);
         }
@@ -737,7 +734,7 @@ pub(super) fn paint(
                 painter,
                 solid,
                 true,
-                Stroke::new(4.0, with_alpha(color, 40)),
+                Stroke::new(4.0, theme::with_alpha_byte(color, 40)),
                 LineDash::Solid,
             );
         }
@@ -784,7 +781,7 @@ pub(super) fn paint(
         for guide in &screen.guides {
             painter.add(Shape::dashed_line(
                 &[guide[0], guide[1]],
-                Stroke::new(1.0, with_alpha(color, 160)),
+                Stroke::new(1.0, theme::with_alpha_byte(color, 160)),
                 4.0,
                 3.0,
             ));
@@ -943,7 +940,7 @@ fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle, selecte
     let snap = |value: f32| (value * ppp).round() / ppp;
     let plate = series::color(style.stroke.color);
     let ink = series::color(style.text.color);
-    let halo = with_alpha(theme::surface(), 210);
+    let halo = theme::with_alpha_byte(theme::surface(), 210);
     let mut placed: Vec<Rect> = Vec::with_capacity(screen.labels.len());
     for label in screen
         .labels
@@ -996,7 +993,7 @@ fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle, selecte
                 painter.rect(
                     rect,
                     4.0,
-                    with_alpha(theme::surface(), 235),
+                    theme::with_alpha_byte(theme::surface(), 235),
                     Stroke::new(1.0, plate),
                     StrokeKind::Inside,
                 );
@@ -1064,7 +1061,7 @@ fn draw_angle(painter: &Painter, mark: super::shape::AngleMark, color: Color32, 
     if length < 12.0 {
         return;
     }
-    let faint = with_alpha(color, 150);
+    let faint = theme::with_alpha_byte(color, 150);
     // Up on screen is positive, as a rising line reads.
     let degrees = (-delta.y).atan2(delta.x).to_degrees();
     let reference = (length * 0.9).min(160.0).max(length.min(40.0));
@@ -1165,7 +1162,7 @@ fn paint_stroke_frame(painter: &Painter, bounds: Rect, color: Color32, emphasis:
     } else if emphasis.halo {
         painter.add(Shape::line(
             corners.to_vec(),
-            Stroke::new(1.0, with_alpha(color, 90)),
+            Stroke::new(1.0, theme::with_alpha_byte(color, 90)),
         ));
     }
 }
@@ -1182,7 +1179,7 @@ pub(super) fn paint_locked_frame(painter: &Painter, bounds: Rect, color: Color32
     painter.rect_stroke(
         bounds,
         2.0,
-        Stroke::new(1.0, with_alpha(color, 120)),
+        Stroke::new(1.0, theme::with_alpha_byte(color, 120)),
         StrokeKind::Outside,
     );
 }

@@ -140,13 +140,13 @@ scroll position, unsaved text and diagnostics are untouched and nothing is recom
 **Only the app's host publishes, and a placeholder host never does.** `EditorThemeHost::new` publishes (it
 is the host that loaded the saved choice); `EditorThemeHost::default()`, a placeholder for a field's
 default or a test's stand-in, builds the same host but publishes nothing. This matters because publishing
-replaces what every editor in the process draws: `WebhookHost::new` fills the fields it is not given from
+replaces what every editor in the process draws: `SettingsHost::new` fills the fields it is not given from
 `Self::default()`, which builds a throwaway `EditorThemeHost`, and when that throwaway published (as
 `new` did) it put Automatic over the saved theme before the first frame, so the Pine Studio opened Dark
 although Dracula was selected (and Settings, reading the real host, still showed Dracula); picking any
 theme again published from the real host and healed it. Tests hold both halves
 (`a_placeholder_host_never_undoes_the_real_hosts_choice`,
-`host::webhook::tests::building_the_host_leaves_the_editors_theme_alone`). Any new code that builds
+`host::settings::tests::building_the_host_leaves_the_editors_theme_alone`). Any new code that builds
 a host outside `DegenViewApp::new` must use `default()`, never `new()`.
 
 The preview's sample (`pine_studio::theme_preview`) is editable. It is compiled with the real Pine

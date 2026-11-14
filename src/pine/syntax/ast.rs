@@ -294,13 +294,6 @@ impl BinaryOperator {
         )
     }
 
-    pub fn is_arithmetic(self) -> bool {
-        matches!(
-            self,
-            Self::Add | Self::Subtract | Self::Multiply | Self::Divide | Self::Modulo | Self::Power
-        )
-    }
-
     /// Pratt-parser binding powers. `power` is right-associative.
     pub fn binding_power(self) -> (u8, u8) {
         match self {
@@ -431,11 +424,7 @@ pub struct TypeField {
     pub persistent: bool,
 }
 
-impl TypeField {
-    pub fn kind(&self) -> Option<ValueType> {
-        self.type_ref.as_ref().map(|reference| reference.kind)
-    }
-}
+impl TypeField {}
 
 /// One member of a script-defined `enum`: `name [= "title"]`.
 #[derive(Clone, Debug, Eq, PartialEq)]

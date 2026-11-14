@@ -125,7 +125,7 @@ Percent and Indexed to 100. With nothing compared, the page invites the first on
 The add that switches Regular to Percent, and the removal of the last market that switches it back,
 carry the old mode in their step, so undo puts the axis back and redo switches it again; no other step
 touches the mode. A colour dragged in the picker reports every
-frame and is one step (`last_overlay_style`, the 800 ms window drawings use).
+frame and is one step (`UndoHistory::continues_overlay_style`, the 800 ms window drawings use).
 
 The Object tree lists the compared markets too, in a "Compared symbols" section under the symbol, in the
 list's order: an eye (hide or show the line), a trash (remove), and a double-click or Settings… that

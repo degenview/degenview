@@ -5,7 +5,7 @@
 //! 8-digit RRGGBBAA hex string and `width` as an integer. A missing key means "as the script has
 //! it", and a key that matches no output is ignored.
 
-use super::{ColorOutput, DISPLAY_PANE, MarkerKind, PlotOutput, PlotStyle};
+use super::{ColorOutput, DISPLAY_PANE, MarkerKind, PlotStyle};
 use crate::pine::compiler::program::VisualOutput;
 use std::collections::HashMap;
 
@@ -68,10 +68,6 @@ pub struct StyleOverrides {
 impl StyleOverrides {
     pub fn new(raw: HashMap<String, String>) -> Self {
         Self { raw }
-    }
-
-    pub fn raw(&self) -> &HashMap<String, String> {
-        &self.raw
     }
 
     pub fn key(kind: StyleKind, id: usize, attribute: StyleAttribute) -> String {
@@ -498,7 +494,7 @@ fn styled(outputs: Vec<ColorOutput>, kind: StyleKind, style: &StyleOverrides) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::outputs::{DISPLAY_ALL, PlotStyle};
+    use crate::pine::outputs::{DISPLAY_ALL, PlotOutput, PlotStyle};
     use std::collections::HashMap;
 
     fn plot(id: usize, color: u32) -> PlotOutput {

@@ -6,6 +6,7 @@
 //! Fetches run on `service::work_queue` threads and land in the cache, which the UI reads each
 //! frame; a result never arrives over a channel the card has to drain.
 
+use crate::lock::lock;
 use crate::model::Kline;
 use crate::model::portfolio::PortfolioAsset;
 use crate::model::portfolio::card::AssetMove;
@@ -13,7 +14,7 @@ use crate::model::portfolio::history::DAY_MS;
 use crate::service::portfolio::history::{daily_bars, fetch_all, market_symbol};
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 /// A move this old is shown while it is fetched again.
 const FRESH_MS: i64 = 5 * 60 * 1_000;
@@ -83,7 +84,7 @@ impl PerformerFeed {
         let mut result = Moves::default();
         let mut wanted: Vec<(Key, MoveRequest)> = Vec::new();
         {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut state = lock(&self.state);
             for request in requests {
                 let key = key_for(request, now_ms);
                 match state.cache.get(&key) {
@@ -138,7 +139,7 @@ fn refresh(shared: &Mutex<State>, fetcher: &Fetcher, wanted: &[(Key, MoveRequest
         let since_ms = since.get(asset.key.as_str()).copied()?;
         fetcher(asset, since_ms, now_ms)
     });
-    let mut state = shared.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut state = lock(shared);
     for (key, request) in wanted {
         state.in_flight.remove(key);
         state.cache.insert(

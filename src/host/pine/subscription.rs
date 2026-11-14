@@ -2,7 +2,6 @@
 //! persistent [`ExecutionController`] the chart's latest candles, returning the alerts raised by
 //! realtime ticks and closes. Webhook/notification dispatch is the caller's (the app), which
 //! already owns the webhook + notification services.
-#![allow(dead_code)] // transient until the app threads it
 
 use crate::host::pine::KlineSecurityDataProvider;
 use crate::model::Kline;
@@ -44,6 +43,31 @@ pub struct ChartRun {
 }
 
 impl ChartRun {
+    /// What a script alert on a chart drawn with `construction` runs over: the bars it builds
+    /// from `candles` and how they were made, or the candles themselves for a chart of candles.
+    pub fn feed(
+        construction: Option<Construction>,
+        candles: &[Kline],
+        now_ms: i64,
+    ) -> (Vec<Kline>, Self) {
+        let Some(construction) = construction else {
+            return (candles.to_vec(), Self::default());
+        };
+        let bars =
+            crate::model::chart::synthetic::build_with(construction, candles, now_ms).klines();
+        let bar_seconds = candles
+            .last()
+            .map(|last| ((last.close_time - last.open_time + 1) as f64 / 1000.0).round())
+            .filter(|seconds| *seconds > 0.0);
+        (
+            bars,
+            Self {
+                construction: Some(construction),
+                bar_seconds,
+            },
+        )
+    }
+
     fn symbol(&self, symbol_key: &str) -> SymbolInfo {
         SymbolInfo {
             chart: self
@@ -80,6 +104,7 @@ impl PineSubscriptionHost {
         self.subscriptions = store.pine_subscriptions();
     }
 
+    #[cfg(test)]
     pub fn subscriptions(&self) -> &[PineAlertSubscription] {
         &self.subscriptions
     }
@@ -105,7 +130,7 @@ impl PineSubscriptionHost {
                 changed = true;
                 continue;
             };
-            let current_hash = crate::pine_studio::library::store::hash_source(&instance.source);
+            let current_hash = crate::store::scripts::hash_source(&instance.source);
             if subscription.source_hash != current_hash {
                 subscription.state = PineAlertState::ScriptChanged;
                 changed = true;
@@ -125,12 +150,8 @@ impl PineSubscriptionHost {
         }
     }
 
-    /// Feeds `bars` to every active subscription that watches `symbol_key`, returning
-    /// `(subscription, alert)` pairs for the alerts raised by the new realtime tick or close.
-    /// Each subscription owns one persistent controller, so a forming bar is re-evaluated as a
-    /// tick (`freq_all`, `freq_once_per_bar`) and `freq_once_per_bar_close` waits for the real
-    /// close. The first snapshot, and any rebuild after the market, source or inputs changed,
-    /// replays history silently. A subscription without a stored source is skipped.
+    /// [`Self::run_active_on`] for a time-based chart.
+    #[cfg(test)]
     pub fn run_active(
         &mut self,
         chart_id: u64,
@@ -151,8 +172,14 @@ impl PineSubscriptionHost {
         )
     }
 
-    /// [`Self::run_active`] for a chart that may be price-based: `bars` are the bars the chart's
-    /// scripts run over, and `chart` says how they were made.
+    /// Feeds `bars` to every active subscription that watches `symbol_key`, returning
+    /// `(subscription, alert)` pairs for the alerts raised by the new realtime tick or close.
+    /// Each subscription owns one persistent controller, so a forming bar is re-evaluated as a
+    /// tick (`freq_all`, `freq_once_per_bar`) and `freq_once_per_bar_close` waits for the real
+    /// close. The first snapshot, and any rebuild after the market, source or inputs changed,
+    /// replays history silently. A subscription without a stored source is skipped. The chart
+    /// may be price-based: `bars` are the bars the chart's scripts run over, and `chart` says how
+    /// they were made.
     #[allow(clippy::too_many_arguments)]
     pub fn run_active_on(
         &mut self,
@@ -182,7 +209,7 @@ impl PineSubscriptionHost {
                 || !subscription.instance_id.is_some_and(|instance_id| {
                     instances.iter().any(|instance| {
                         instance.id == instance_id
-                            && crate::pine_studio::library::store::hash_source(&instance.source)
+                            && crate::store::scripts::hash_source(&instance.source)
                                 == subscription.source_hash
                     })
                 })
@@ -291,7 +318,7 @@ mod tests {
             inputs: Default::default(),
             symbol_key: "binance:BTCUSDT".into(),
             timeframe: "1h".into(),
-            source_hash: crate::pine_studio::library::store::hash_source(source),
+            source_hash: crate::store::scripts::hash_source(source),
             note: String::new(),
             state: PineAlertState::Active,
             created_at_ms: 0,

@@ -428,7 +428,6 @@ fn finished_profile() -> crate::pine_studio::profiler::Profile {
     let marks = ProfileMarks::build(&report, &source, 1_234_000);
     Profile {
         key: ProfileKey::new("demo", &source, RunIdentity::for_test()),
-        source: source.as_str().into(),
         label: "BTCUSDT \u{b7} 1H".to_owned(),
         report: std::sync::Arc::new(report),
         marks: std::sync::Arc::new(marks),

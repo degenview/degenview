@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::model::Kline;
+use crate::pine::Diagnostic;
 use crate::pine::compiler::program::{ChartTheme, InputValue, SymbolInfo};
 use crate::pine::debug::{
     BarBreak, BarContext, BreakpointState, BreakpointStatus, DebugCommand, DebugConfig, DebugEvent,
@@ -28,7 +29,6 @@ use crate::pine::debug::{
     ValueRef, Variable, VariableGroup, WatchRow, Watched, compile_breakpoints, parse_expression,
 };
 use crate::pine::logs::LogHistory;
-use crate::pine::{Diagnostic, DiagnosticSeverity};
 use crate::store::SharedStore;
 
 use marks::{BreakpointMark, DebugMarks, GutterEvent, MarkKind, StopMark};
@@ -74,7 +74,6 @@ pub struct ConsoleLine {
 /// A change to a breakpoint made in its editor.
 #[derive(Clone, Debug, PartialEq)]
 pub enum BreakpointEdit {
-    Enabled(bool),
     Condition(String),
     Hit(HitRule),
     LogMessage(Option<String>),
@@ -209,9 +208,6 @@ pub struct PanelUi {
     /// The height the variables list scrolls over, as the scroll area measured it last frame.
     pub list_extent: f32,
     pub editor: Option<BreakpointEditor>,
-    /// A line whose breakpoint menu was asked for in the gutter, and where.
-    pub menu_line: Option<usize>,
-    pub copied_at: Option<std::time::Instant>,
 }
 
 impl PanelUi {
@@ -245,8 +241,8 @@ impl PanelUi {
 /// What a request in flight is for.
 #[derive(Debug)]
 enum Pending {
-    Variables { frame: usize },
-    Watches { frame: usize },
+    Variables,
+    Watches,
     Expand { reference: ValueRef },
     Console { index: usize },
 }
@@ -312,8 +308,6 @@ pub struct DebugPanel {
     text: Option<String>,
     statuses: Vec<BreakpointStatus>,
     statuses_key: Option<(u64, u64)>,
-    /// A change to `state` that has not been saved yet.
-    dirty: bool,
     pub ui: PanelUi,
 }
 
@@ -390,7 +384,6 @@ impl DebugPanel {
             text: None,
             statuses: Vec::new(),
             statuses_key: None,
-            dirty: false,
             ui: PanelUi::default(),
         }
     }
@@ -526,13 +519,6 @@ impl DebugPanel {
         hash
     }
 
-    pub fn status_of(&mut self, id: u64) -> Option<BreakpointState> {
-        self.statuses()
-            .iter()
-            .find(|status| status.id == id)
-            .map(|status| status.state.clone())
-    }
-
     // MARK: Session
 
     pub fn state_of_session(&self) -> DebugState {
@@ -546,6 +532,7 @@ impl DebugPanel {
     }
 
     /// A handle that outlives the session, to watch its thread end.
+    #[cfg(test)]
     pub fn liveness(&self) -> Option<std::sync::Weak<()>> {
         self.session.as_ref().map(DebugSession::liveness)
     }
@@ -554,6 +541,7 @@ impl DebugPanel {
         self.session.as_ref().is_some_and(DebugSession::is_paused)
     }
 
+    #[cfg(test)]
     pub fn paused_on_error(&self) -> bool {
         self.session
             .as_ref()
@@ -703,7 +691,7 @@ impl DebugPanel {
                 frame,
                 groups,
             } => {
-                if let Some(Pending::Variables { .. }) = self.pending.remove(&token)
+                if let Some(Pending::Variables) = self.pending.remove(&token)
                     && let Some(shown) = self.shown.as_mut()
                     && shown.frame == frame
                 {
@@ -711,7 +699,7 @@ impl DebugPanel {
                 }
             }
             DebugEvent::Watches { token, frame, rows } => {
-                if let Some(Pending::Watches { .. }) = self.pending.remove(&token)
+                if let Some(Pending::Watches) = self.pending.remove(&token)
                     && let Some(shown) = self.shown.as_mut()
                     && shown.frame == frame
                 {
@@ -924,7 +912,6 @@ impl DebugPanel {
             PanelAction::EditBreakpoint { id, edit } => {
                 if let Some(stored) = self.state.breakpoint_mut(id) {
                     match edit {
-                        BreakpointEdit::Enabled(enabled) => stored.spec.enabled = enabled,
                         BreakpointEdit::Condition(text) => {
                             stored.spec.condition = Some(text).filter(|t| !t.trim().is_empty());
                         }
@@ -1001,7 +988,7 @@ impl DebugPanel {
             && session.is_paused()
             && let Some(token) = session.request_watches(frame)
         {
-            self.pending.insert(token, Pending::Watches { frame });
+            self.pending.insert(token, Pending::Watches);
         }
     }
 
@@ -1019,10 +1006,10 @@ impl DebugPanel {
             return;
         };
         if let Some(token) = session.request_variables(frame) {
-            self.pending.insert(token, Pending::Variables { frame });
+            self.pending.insert(token, Pending::Variables);
         }
         if let Some(token) = session.request_watches(frame) {
-            self.pending.insert(token, Pending::Watches { frame });
+            self.pending.insert(token, Pending::Watches);
         }
     }
 
@@ -1047,23 +1034,6 @@ impl DebugPanel {
                 },
             );
         }
-    }
-
-    /// Asks for the rows of an open row that has not been loaded. Called by the panel while drawing.
-    pub fn ensure_rows(&mut self, reference: &ValueRef) {
-        let missing = self
-            .shown
-            .as_ref()
-            .is_some_and(|shown| !shown.loaded.contains_key(reference));
-        if missing {
-            self.request_rows(reference, 0);
-        }
-    }
-
-    pub fn is_loading(&self, reference: &ValueRef) -> bool {
-        self.shown
-            .as_ref()
-            .is_some_and(|shown| shown.requested.contains(reference))
     }
 
     fn evaluate(&mut self, text: String) {
@@ -1201,12 +1171,6 @@ impl DebugPanel {
             (None, Some(Outcome::Failed(error))) => Some(error),
             _ => None,
         }
-    }
-
-    pub fn has_errors(&self, diagnostics: &[Diagnostic]) -> bool {
-        diagnostics
-            .iter()
-            .any(|d| d.severity == DiagnosticSeverity::Error)
     }
 }
 

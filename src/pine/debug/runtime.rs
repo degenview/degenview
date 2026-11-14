@@ -2,9 +2,9 @@
 //! whether the script stops.
 //!
 //! A session without a debugger pays one `Option::is_some` test where these hooks are called, and
-//! nothing else: the hooks themselves are `#[cold]` functions in `session.rs` that take this value
-//! out of the session for the duration of the call, so the debugger gets `&mut Session` without
-//! any aliasing.
+//! nothing else: the hooks themselves are `#[cold]` functions in `session/hooks.rs` that take this
+//! value out of the session for the duration of the call, so the debugger gets `&mut Session`
+//! without any aliasing.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};

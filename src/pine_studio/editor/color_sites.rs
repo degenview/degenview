@@ -117,12 +117,14 @@ impl ColorMap {
     }
 }
 
-/// Every constant colour in `source`, in order and without overlap.
+/// The sites of [`map`] alone.
+#[cfg(test)]
 pub fn scan(source: &str) -> Vec<ColorSite> {
     map(source).sites
 }
 
-/// [`scan`] with each site's place in the text.
+/// Every constant colour in `source`, in order and without overlap, with each site's place in
+/// the text.
 pub fn map(source: &str) -> ColorMap {
     let chars: Vec<char> = source.chars().collect();
     let mut by_unit: Vec<usize> = Vec::with_capacity(chars.len() + 1);

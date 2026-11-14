@@ -3,13 +3,11 @@
 //! reach a file outside the sandbox. Windows has none yet. Every call blocks until the user
 //! answers, so run them on a worker thread. A cancelled panel is `None`, not an error.
 
-// Transient: the portfolio import/export flow calls these.
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 #[cfg(not(target_os = "linux"))]
 use std::process::Command;
 
+#[cfg(any(not(target_os = "linux"), test))]
 /// A string as an AppleScript literal.
 pub fn applescript_string(text: &str) -> String {
     let mut quoted = String::from("\"");
@@ -25,6 +23,7 @@ pub fn applescript_string(text: &str) -> String {
     quoted
 }
 
+#[cfg(any(not(target_os = "linux"), test))]
 /// "choose file" restricted to uniform type identifiers.
 pub fn open_script(prompt: &str, type_identifiers: &[&str]) -> String {
     let types: Vec<String> = type_identifiers
@@ -38,6 +37,7 @@ pub fn open_script(prompt: &str, type_identifiers: &[&str]) -> String {
     )
 }
 
+#[cfg(any(not(target_os = "linux"), test))]
 /// "choose file name": the user types where to save and what to call it.
 pub fn save_script(prompt: &str, default_name: &str) -> String {
     format!(
@@ -47,6 +47,7 @@ pub fn save_script(prompt: &str, default_name: &str) -> String {
     )
 }
 
+#[cfg(any(not(target_os = "linux"), test))]
 /// "choose folder": the user picks where a set of files goes.
 pub fn folder_script(prompt: &str) -> String {
     format!(
@@ -55,16 +56,20 @@ pub fn folder_script(prompt: &str) -> String {
     )
 }
 
+#[cfg(any(not(target_os = "linux"), test))]
 /// What the script printed, as a path; empty output (a cancel) is None.
 pub fn parse_path(output: &str) -> Option<PathBuf> {
     let trimmed = output.trim_end_matches(['\n', '\r']);
     (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
 }
 
-/// File name extensions the open panels offer, without the dot. The AppleScript panels ask for
-/// the matching uniform type identifiers instead.
+/// File name extensions the portal's open panels offer, without the dot. The AppleScript panels
+/// ask for the matching uniform type identifiers instead.
+#[cfg(any(target_os = "linux", test))]
 const CSV_EXTENSIONS: [&str; 3] = ["csv", "txt", "text"];
+#[cfg(any(target_os = "linux", test))]
 const IMAGE_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
+#[cfg(any(target_os = "linux", test))]
 const JSON_EXTENSIONS: [&str; 1] = ["json"];
 
 #[cfg(target_os = "linux")]

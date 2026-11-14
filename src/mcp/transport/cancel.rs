@@ -9,6 +9,7 @@
 //! What cancelling a call means is the same as for a hang-up: the call's future is dropped, so
 //! work still queued never runs. Work the app has already started keeps its real outcome.
 
+use crate::lock::lock;
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::mcp::transport::{MAX_BODY_BYTES, REQUEST_DEADLINE};
 use axum::body::Body;
@@ -36,9 +37,7 @@ pub struct CallRegistry {
 
 impl CallRegistry {
     fn calls(&self) -> std::sync::MutexGuard<'_, HashMap<Key, Vec<(u64, CancellationToken)>>> {
-        self.calls
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        lock(&self.calls)
     }
 
     /// Records a call as running. Dropping the guard forgets it.

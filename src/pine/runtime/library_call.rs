@@ -225,16 +225,6 @@ impl Session {
     }
 }
 
-/// The library a registry key (`"user/name/1::Type"`) belongs to; nil for the script's own.
-fn library_of(key: &str) -> Option<&str> {
-    key.split_once(SEPARATOR).map(|(path, _)| path)
-}
-
-#[allow(dead_code)] // kept for symmetry with the Swift helper; the session resolves by `linkage`
-fn _separator() -> &'static str {
-    SEPARATOR
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,12 +239,6 @@ mod tests {
         fn source_for_library(&self, path: &str) -> Option<String> {
             self.0.get(path).cloned()
         }
-    }
-
-    #[test]
-    fn library_of_splits_on_the_separator() {
-        assert_eq!(library_of("user/Math/1::Type"), Some("user/Math/1"));
-        assert_eq!(library_of("plain"), None);
     }
 
     #[test]

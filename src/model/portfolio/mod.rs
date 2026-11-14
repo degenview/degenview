@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Portfolio data model: currencies, sources, transaction types, assets, portfolios,
 //! transactions, holdings, snapshots and quotes. Mirrors `PortfolioModels.swift` with
 //! Swift's `Decimal` mapped to `f64`, `UUID` to `u64` and `Date` to epoch milliseconds.
@@ -190,6 +189,7 @@ pub struct Portfolio {
 }
 
 impl Portfolio {
+    #[cfg(test)]
     pub fn new(id: u64, name: impl Into<String>, created_at: i64) -> Self {
         Self {
             id,
@@ -314,13 +314,6 @@ pub struct PortfolioQuote {
     pub timestamp: i64,
 }
 
-/// Which portfolio a UI surfaces.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PortfolioSelection {
-    All,
-    Portfolio(u64),
-}
-
 /// Portfolio validation and accounting failures.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PortfolioError {
@@ -336,7 +329,6 @@ pub enum PortfolioError {
         to: PortfolioCurrency,
     },
     DuplicateExternalTransaction,
-    InvalidCsv(String),
     /// A negative or non-finite price.
     InvalidPrice,
     /// A transaction with no asset to trade.
@@ -361,7 +353,6 @@ impl PortfolioError {
             Self::DuplicateExternalTransaction => {
                 "This imported transaction already exists.".to_owned()
             }
-            Self::InvalidCsv(message) => message.clone(),
             Self::InvalidPrice => "The price cannot be negative.".to_owned(),
             Self::InvalidAsset => "The transaction has no asset.".to_owned(),
         }

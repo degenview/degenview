@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Price-alert evaluation: a state machine over `AlertPersistenceSnapshot`, free of
 //! storage, threads and clocks (callers pass `now_ms`) so every rule is testable.
 //!
@@ -22,8 +21,6 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 const PROCESSED_COMMAND_LIMIT: usize = 1_000;
 /// The most rejected commands remembered, so a sender can still learn why one did nothing.
 const REJECTED_COMMAND_LIMIT: usize = 200;
-/// Catch-up never invents crossings older than this.
-const CATCH_UP_WINDOW_MS: i64 = 86_400_000;
 
 pub struct AlertEngine {
     snapshot: AlertPersistenceSnapshot,
@@ -274,12 +271,8 @@ impl AlertEngine {
         self.touch();
     }
 
-    /// An alert of the same asset, condition, currency and frequency already exists.
-    pub fn is_identical(&self, candidate: &PriceAlert) -> bool {
-        self.find_identical(candidate).is_some()
-    }
-
-    /// That alert, so a caller can hand it back instead of adding a duplicate.
+    /// An alert of the same asset, condition, currency and frequency as `candidate`, so a caller
+    /// can hand it back instead of adding a duplicate.
     pub fn find_identical(&self, candidate: &PriceAlert) -> Option<&PriceAlert> {
         self.snapshot.alerts.iter().find(|alert| {
             alert.id != candidate.id
@@ -379,55 +372,6 @@ impl AlertEngine {
         }
         self.touch();
         events
-    }
-
-    /// Replays ordered quotes after wake or reconnect. A recovery intentionally emits at
-    /// most one event per alert and never invents crossings beyond the 24-hour window.
-    pub fn process_catch_up(
-        &mut self,
-        quotes: &[MarketQuote],
-        now_ms: i64,
-    ) -> Vec<AlertTriggerEvent> {
-        let mut ordered: Vec<&MarketQuote> = quotes
-            .iter()
-            .filter(|quote| now_ms - quote.source_timestamp_ms <= CATCH_UP_WINDOW_MS)
-            .collect();
-        ordered.sort_by_key(|quote| quote.source_timestamp_ms);
-
-        let mut emitted: HashSet<AlertId> = HashSet::new();
-        let mut result = Vec::new();
-        for quote in ordered {
-            let replay = MarketQuote {
-                asset: quote.asset.clone(),
-                price: quote.price,
-                currency: quote.currency,
-                source_timestamp_ms: quote.source_timestamp_ms,
-                received_at_ms: quote.source_timestamp_ms,
-                maximum_age_secs: 86_400.0,
-                fingerprint: quote.fingerprint.clone(),
-                candle: None,
-            };
-            for event in self.process(&replay, None, None) {
-                if !emitted.insert(event.alert_id) {
-                    // A second crossing of the same alert is folded into the first.
-                    self.snapshot
-                        .history
-                        .retain(|existing| existing.id != event.id);
-                    continue;
-                }
-                if let Some(stored) = self
-                    .snapshot
-                    .history
-                    .iter_mut()
-                    .find(|existing| existing.id == event.id)
-                {
-                    stored.origin = AlertEventOrigin::CatchUp;
-                    result.push(stored.clone());
-                }
-            }
-        }
-        self.touch();
-        result
     }
 }
 
@@ -954,47 +898,19 @@ mod tests {
             T0,
         );
         engine.save_alert(alert.clone(), None, T0);
-        assert!(!engine.is_identical(&alert));
+        assert!(!engine.find_identical(&alert).is_some());
         let twin = PriceAlert::new(
             asset("BTCUSDT"),
             AlertCondition::CrossesAbove { target: 100.0 },
             T0,
         );
-        assert!(engine.is_identical(&twin));
+        assert!(engine.find_identical(&twin).is_some());
         let different = PriceAlert::new(
             asset("BTCUSDT"),
             AlertCondition::CrossesAbove { target: 101.0 },
             T0,
         );
-        assert!(!engine.is_identical(&different));
-    }
-
-    #[test]
-    fn catch_up_emits_at_most_one_event_per_alert_inside_24_hours() {
-        let (mut engine, _) = engine_with(
-            AlertCondition::CrossesAbove { target: 100.0 },
-            AlertFrequency::EveryTime,
-        );
-        engine.save_alert(engine.snapshot().alerts[0].clone(), Some(90.0), T0);
-        let now = T0 + 10 * 3_600_000;
-        let quotes = vec![
-            // Out of order, and one older than 24 h (ignored).
-            quote("BTCUSDT", 95.0, now - 3_000_000, "m2"),
-            quote("BTCUSDT", 80.0, now - 90_000_000, "ancient"),
-            quote("BTCUSDT", 101.0, now - 2_000_000, "m3"),
-            quote("BTCUSDT", 90.0, now - 1_500_000, "m4"),
-            quote("BTCUSDT", 102.0, now - 1_000_000, "m5"),
-        ];
-        let events = engine.process_catch_up(&quotes, now);
-        assert_eq!(events.len(), 1, "two crossings are folded into the first");
-        assert_eq!(events[0].origin, AlertEventOrigin::CatchUp);
-        assert_eq!(events[0].observed_value, 101.0);
-        assert_eq!(events[0].candle, None);
-        assert_eq!(engine.snapshot().history.len(), 1);
-        assert_eq!(
-            engine.snapshot().history[0].origin,
-            AlertEventOrigin::CatchUp
-        );
+        assert!(!engine.find_identical(&different).is_some());
     }
 
     #[test]

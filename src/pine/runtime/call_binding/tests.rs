@@ -220,7 +220,7 @@ fn the_workloads_agree_both_ways() {
 /// A quarter of the registry, so the four quarters run in parallel instead of one long loop.
 fn registered_functions_run_the_same_both_ways(quarter: usize) {
     for name in crate::pine::compiler::registry::all_functions()
-        .into_iter()
+        .iter()
         .enumerate()
         .filter(|(index, _)| index % 4 == quarter)
         .map(|(_, name)| name)

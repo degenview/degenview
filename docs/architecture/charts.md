@@ -3,6 +3,14 @@
 See [chart types](../chart-types.md), [chart canvas](../chart-canvas.md), and
 [portfolio cards](../portfolio-cards.md) for feature rules.
 
+## Scripts on a chart
+
+`ChartCard` keeps the chart's `PineInstance`s and draws what they produced; it runs nothing. Each
+frame it hands `host::pine::chart::ChartRuns` the bars it draws (the constructed ones for a
+price-based type), and gets the styled outputs back in draw order; status, failures, logs and the
+busy state are read from the same host. A snapshot reads the last outputs without starting a run.
+Script alerts run over `subscription::ChartRun::feed`, given the card's `construction`.
+
 ## Canvas and templates
 
 ```text

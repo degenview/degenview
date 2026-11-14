@@ -1,11 +1,14 @@
-use crate::mcp::bridge::McpError;
+use crate::host::mcp::{McpTabs, confirmation};
+use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::chart::control::{ChartChangeResult, TimeframeResult};
-use crate::mcp::chart::data;
 use crate::mcp::chart::drawings::{DrawingEdit, NewDrawing};
+use crate::mcp::chart::{ChartCommand, data};
+use crate::mcp::confirm::Summary;
 use crate::mcp::indicator::{IndicatorValuesResult, ReadingMeta, ReadingRequest, indicator_values};
 use crate::mcp::types::{
-    AddChartResult, AddIndicatorResult, CandlesResult, ChartInfo, ChartsResult,
-    DrawingsChangeResult, DrawingsResult, IndicatorsInfo, PineInstanceInfo, WorkspaceInfo,
+    AddChartResult, AddChartStatus, AddIndicatorResult, CandlesResult, ChartInfo, ChartStatus,
+    ChartsResult, DrawingsChangeResult, DrawingsResult, DrawingsStatus, IndicatorStatus,
+    IndicatorsInfo, PineInstanceInfo, WorkspaceInfo,
 };
 use crate::model::watchlist::now_ms;
 use crate::model::{
@@ -15,6 +18,147 @@ use crate::model::{
 use crate::workspace::{
     ChartSummary, ChartTypeError, ChartWorkspace, IndicatorError, IndicatorOutcome, RemoveOutcome,
 };
+use eframe::egui;
+
+/// Runs a chart command on the app thread, on the workspace it names.
+pub fn run(
+    command: ChartCommand,
+    tabs: &impl McpTabs,
+    ctx: &egui::Context,
+) -> Result<McpReply, McpError> {
+    use ChartCommand as C;
+    match command {
+        C::ListWorkspaces => {
+            let mut workspaces = Vec::new();
+            tabs.each_workspace(|workspace, focused| {
+                workspaces.push(workspace_info(workspace, focused));
+            });
+            Ok(McpReply::Workspaces(workspaces))
+        }
+        C::ListCharts { workspace_id } => tabs.with_workspace(workspace_id, |workspace| {
+            Ok(McpReply::Charts(charts_result(workspace)))
+        }),
+        C::AddChart {
+            workspace_id,
+            instrument,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            Ok(McpReply::ChartAdded(add_chart(workspace, &instrument, ctx)))
+        }),
+        C::ApplyIndicator {
+            workspace_id,
+            chart_id,
+            indicator,
+            ema_period,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            apply_indicator(workspace, chart_id, indicator, ema_period)
+                .map(McpReply::IndicatorApplied)
+        }),
+        C::RemoveIndicator {
+            workspace_id,
+            chart_id,
+            indicator,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            remove_indicator(workspace, chart_id, indicator).map(McpReply::IndicatorApplied)
+        }),
+        C::GetIndicatorValues {
+            workspace_id,
+            chart_id,
+            request,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            indicator_readings(workspace, chart_id, &request)
+                .map(|result| McpReply::IndicatorValues(Box::new(result)))
+        }),
+        C::GetSessionStats {
+            workspace_id,
+            chart_id,
+            query,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            session_statistics(workspace, chart_id, &query)
+                .map(|result| McpReply::SessionStats(Box::new(result)))
+        }),
+        C::GetCandles {
+            workspace_id,
+            chart_id,
+            limit,
+            before,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            chart_candles(workspace, chart_id, limit, before)
+                .map(|result| McpReply::Candles(Box::new(result)))
+        }),
+        C::ListDrawings {
+            workspace_id,
+            chart_id,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            chart_drawings(workspace, chart_id).map(|result| McpReply::Drawings(Box::new(result)))
+        }),
+        C::AddDrawings {
+            workspace_id,
+            chart_id,
+            drawings,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            add_drawings(workspace, chart_id, &drawings)
+                .map(|result| McpReply::DrawingsChanged(Box::new(result)))
+        }),
+        C::EditDrawing {
+            workspace_id,
+            chart_id,
+            edit,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            edit_drawing(workspace, chart_id, &edit)
+                .map(|result| McpReply::DrawingsChanged(Box::new(result)))
+        }),
+        C::RemoveDrawings {
+            workspace_id,
+            chart_id,
+            drawing_ids,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            remove_drawings(workspace, chart_id, &drawing_ids)
+                .map(|result| McpReply::DrawingsChanged(Box::new(result)))
+        }),
+        C::SetTimeframe {
+            workspace_id,
+            timeframe,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            Ok(McpReply::Timeframe(set_timeframe(
+                workspace, timeframe, ctx,
+            )))
+        }),
+        C::SetChartType {
+            workspace_id,
+            chart_id,
+            chart_type,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            set_chart_type(workspace, chart_id, chart_type)
+                .map(|result| McpReply::ChartChanged(Box::new(result)))
+        }),
+        C::RemoveChart {
+            workspace_id,
+            chart_id,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            remove_chart(workspace, chart_id).map(|result| McpReply::ChartChanged(Box::new(result)))
+        }),
+    }
+}
+
+/// What a chart command the user is asked about would do (see [`confirmation`]).
+pub fn describe(command: &ChartCommand, tabs: &impl McpTabs) -> Result<Summary, McpError> {
+    match command {
+        ChartCommand::RemoveChart {
+            workspace_id,
+            chart_id,
+        } => tabs.with_workspace(*workspace_id, |workspace| {
+            confirmation::remove_chart(workspace, *chart_id)
+        }),
+        ChartCommand::RemoveDrawings {
+            workspace_id,
+            chart_id,
+            drawing_ids,
+        } => tabs.with_workspace(*workspace_id, |workspace| {
+            confirmation::remove_drawings(workspace, *chart_id, drawing_ids)
+        }),
+        _ => confirmation::plainly(command),
+    }
+}
 
 pub fn source_slug(source: DataSource) -> &'static str {
     match source {
@@ -42,11 +186,11 @@ pub fn workspace_info(workspace: &ChartWorkspace, active: bool) -> WorkspaceInfo
 fn chart_info(workspace: &ChartWorkspace, chart: ChartSummary) -> ChartInfo {
     let indicators = chart.indicators;
     let status = if chart.error.is_some() {
-        "error"
+        ChartStatus::Error
     } else if chart.loading {
-        "loading"
+        ChartStatus::Loading
     } else {
-        "ready"
+        ChartStatus::Ready
     };
     ChartInfo {
         chart_id: chart.id.to_string(),
@@ -70,7 +214,7 @@ fn chart_info(workspace: &ChartWorkspace, chart: ChartSummary) -> ChartInfo {
                 script_name: name,
             })
             .collect(),
-        status: status.to_owned(),
+        status,
         error: chart.error,
         focused: chart.focused,
     }
@@ -103,11 +247,10 @@ pub fn apply_indicator(
             chart_id: chart_id.to_string(),
             indicator: indicator.id().to_owned(),
             status: match outcome {
-                IndicatorOutcome::Added => "added",
-                IndicatorOutcome::Updated => "updated",
-                IndicatorOutcome::AlreadyApplied => "already_applied",
-            }
-            .to_owned(),
+                IndicatorOutcome::Added => IndicatorStatus::Added,
+                IndicatorOutcome::Updated => IndicatorStatus::Updated,
+                IndicatorOutcome::AlreadyApplied => IndicatorStatus::AlreadyApplied,
+            },
             indicators: indicators_info(config),
         }),
         Err(IndicatorError::NoSuchChart) => Err(McpError::NotFound(format!(
@@ -165,11 +308,10 @@ pub fn add_chart(
         ),
         timeframe: workspace.timeframe().label().to_owned(),
         status: if outcome.created {
-            "created"
+            AddChartStatus::Created
         } else {
-            "already_present"
-        }
-        .to_owned(),
+            AddChartStatus::AlreadyPresent
+        },
     }
 }
 
@@ -224,7 +366,7 @@ pub fn chart_drawings(
 fn drawings_changed(
     workspace: &ChartWorkspace,
     chart_id: u64,
-    status: &str,
+    status: DrawingsStatus,
     ids: &[u64],
 ) -> Result<DrawingsChangeResult, McpError> {
     let data = workspace
@@ -233,7 +375,7 @@ fn drawings_changed(
     Ok(DrawingsChangeResult {
         workspace_id: workspace.id().to_string(),
         chart_id: chart_id.to_string(),
-        status: status.to_owned(),
+        status,
         drawing_ids: ids.iter().map(u64::to_string).collect(),
         drawings: data
             .drawings
@@ -262,7 +404,7 @@ pub fn add_drawings(
     let next_free = first_id.saturating_add(ids.len() as u64);
     let commands = drawings.into_iter().map(DrawingCommand::Add).collect();
     workspace.apply_planned_drawings(chart_id, commands, next_free);
-    drawings_changed(workspace, chart_id, "added", &ids)
+    drawings_changed(workspace, chart_id, DrawingsStatus::Added, &ids)
 }
 
 pub fn edit_drawing(
@@ -275,9 +417,9 @@ pub fn edit_drawing(
         .ok_or_else(|| no_chart(workspace, chart_id))?;
     let command = data::plan_edit(data.drawings, data.candles, edit)?;
     let status = if command.is_some() {
-        "updated"
+        DrawingsStatus::Updated
     } else {
-        "unchanged"
+        DrawingsStatus::Unchanged
     };
     if let Some(command) = command {
         workspace.apply_planned_drawings(chart_id, vec![command], 0);
@@ -302,7 +444,7 @@ pub fn remove_drawings(
         })
         .collect();
     workspace.apply_planned_drawings(chart_id, commands, 0);
-    drawings_changed(workspace, chart_id, "removed", &removed)
+    drawings_changed(workspace, chart_id, DrawingsStatus::Removed, &removed)
 }
 
 /// Takes a built-in indicator off a chart through the workspace's own method.
@@ -318,10 +460,9 @@ pub fn remove_indicator(
             chart_id: chart_id.to_string(),
             indicator: indicator.id().to_owned(),
             status: match outcome {
-                RemoveOutcome::Removed => "removed",
-                RemoveOutcome::NotApplied => "not_applied",
-            }
-            .to_owned(),
+                RemoveOutcome::Removed => IndicatorStatus::Removed,
+                RemoveOutcome::NotApplied => IndicatorStatus::NotApplied,
+            },
             indicators: indicators_info(config),
         }),
         Err(_) => Err(no_chart(workspace, chart_id)),

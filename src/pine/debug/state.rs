@@ -42,19 +42,12 @@ pub enum Trigger {
     Errored,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("{from:?} cannot take {trigger:?}")]
 pub struct InvalidTransition {
     pub from: DebugState,
     pub trigger: Trigger,
 }
-
-impl std::fmt::Display for InvalidTransition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} cannot take {:?}", self.from, self.trigger)
-    }
-}
-
-impl std::error::Error for InvalidTransition {}
 
 impl DebugState {
     pub fn on(self, trigger: Trigger) -> Result<Self, InvalidTransition> {

@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use crate::pine::tests::bench::{bars, run_script};
 
-use super::{Completeness, ProfileReport, ProfileRuntime, RegionTable, SteppingClock};
+use super::clock::SteppingClock;
+use super::{Completeness, ProfileReport, ProfileRuntime, RegionTable};
 
 /// The profile of `body` (after an `indicator()` line) over `bar_count` bars on a clock that steps
 /// `step_ns` on every read, so its times are exact.

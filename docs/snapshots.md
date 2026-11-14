@@ -7,7 +7,7 @@ the user turns on in Settings ▸ Snapshots (ImgBB, or a host of their own); Deg
 and nothing is uploaded until a provider is on.
 
 The menu ends with a separator and **Configure Snapshots…**, which opens Settings on the Snapshots
-page (`Pick::Configure` → `WorkspaceAction::OpenSnapshotSettings` → `WebhookHost::open_snapshots`).
+page (`Pick::Configure` → `WorkspaceAction::OpenSnapshotSettings` → `SettingsHost::open_snapshots`).
 It is never disabled: it is where a provider is turned on.
 
 ## Pipeline

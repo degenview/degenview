@@ -184,7 +184,7 @@ claims identity:
   traded at. The report says so (`StrategyReport::chart`, `pine_report::synthetic_fill_notice`).
   TradingView's "standard OHLC fills" option is not implemented. Paper trading never reads the chart
   bars: its reference prices and fills use the market's.
-* **Script alerts** run over the same bars as the chart (`ChartCard::pine_feed`), and a change of
+* **Script alerts** run over the same bars as the chart (`ChartRun::feed` of `ChartCard::construction`), and a change of
   chart type or construction starts them over silently (like a change of source or inputs).
   **Price alerts** are untouched: they watch the market's quotes.
 * **Replay** builds from the candles up to the replay position only; rewinding rebuilds from the

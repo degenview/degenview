@@ -3,7 +3,7 @@
 
 use crate::model::market::trend::{self, Trend};
 use crate::model::{InstrumentId, Timeframe};
-use crate::service;
+use crate::service::{self, ProviderError};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -97,7 +97,7 @@ impl TrendLoader {
     }
 
     /// Records what a read found. A failed refresh keeps the closes already shown.
-    fn finish(&self, key: &str, result: Result<Vec<f32>, String>, now: Instant) {
+    fn finish(&self, key: &str, result: Result<Vec<f32>, ProviderError>, now: Instant) {
         let Ok(mut slots) = self.slots.lock() else {
             return;
         };
@@ -114,7 +114,7 @@ impl TrendLoader {
     }
 
     /// One more candle than the span has days, so a market that trades every day fills it.
-    fn read(&self, instrument: &InstrumentId) -> Result<Vec<f32>, String> {
+    fn read(&self, instrument: &InstrumentId) -> Result<Vec<f32>, ProviderError> {
         service::fetch_klines(
             instrument.source,
             &instrument.api_symbol(),
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(loader.claim(std::slice::from_ref(&btc), later).len(), 1);
         // The old closes stay on screen while the new ones are read, and survive a failed read.
         assert!(loader.snapshot().contains_key(&btc.key()));
-        loader.finish(&btc.key(), Err("offline".into()), later);
+        loader.finish(&btc.key(), Err(ProviderError::other("offline")), later);
         assert_eq!(
             loader.snapshot().get(&btc.key()),
             Some(&Trend::Ready(vec![1.0, 2.0, 3.0]))
@@ -177,7 +177,11 @@ mod tests {
         let market = market("NOPEUSDT");
         let now = Instant::now();
         loader.claim(std::slice::from_ref(&market), now);
-        loader.finish(&market.key(), Err("unknown market".into()), now);
+        loader.finish(
+            &market.key(),
+            Err(ProviderError::other("unknown market")),
+            now,
+        );
         assert_eq!(
             loader.snapshot().get(&market.key()),
             Some(&Trend::Unavailable)

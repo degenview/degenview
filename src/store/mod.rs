@@ -16,11 +16,13 @@ pub mod asset_store;
 pub mod chart;
 pub mod drawing_template;
 pub mod editor_theme;
+mod frame_cache;
 pub mod identity;
 pub mod mcp;
 pub mod paper;
 pub mod pine;
 pub mod portfolio;
+pub mod scripts;
 pub mod sync;
 pub mod watchlist;
 pub mod webhook;
@@ -120,9 +122,9 @@ pub(crate) const DOCUMENT_TABLES: [&str; 14] = [
 
 pub struct Store {
     connection: Connection,
-    /// The saved-layout index the toolbar reads every frame, rebuilt only when the database
-    /// changed (see `Store::layout_index`).
-    layout_index: std::cell::RefCell<Option<chart::saved_view::CachedLayoutIndex>>,
+    /// What the UI reads every frame (the saved-layout index, script alerts, webhook endpoints),
+    /// rebuilt only when the database changed (see `frame_cache`).
+    frame_caches: frame_cache::FrameCaches,
 }
 
 impl Store {
@@ -132,7 +134,7 @@ impl Store {
         connection.pragma_update(None, "journal_mode", "WAL")?;
         let store = Self {
             connection,
-            layout_index: Default::default(),
+            frame_caches: Default::default(),
         };
         store.create_schema()?;
         Ok(store)
@@ -150,7 +152,7 @@ impl Store {
         connection.busy_timeout(Duration::from_secs(5))?;
         let store = Self {
             connection,
-            layout_index: Default::default(),
+            frame_caches: Default::default(),
         };
         store.create_schema()?;
         Ok(store)
@@ -480,7 +482,6 @@ impl Store {
         Ok(())
     }
 
-    #[allow(dead_code)] // settings UI (Stage 6) uses this to clear a key
     pub fn remove_setting(&self, key: &str) -> rusqlite::Result<()> {
         self.write_setting(key, None)
     }

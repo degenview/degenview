@@ -73,10 +73,6 @@ impl BreakpointSpec {
             ..Self::default()
         }
     }
-
-    pub fn is_logpoint(&self) -> bool {
-        self.log_message.is_some()
-    }
 }
 
 /// What became of a breakpoint when it met the program.

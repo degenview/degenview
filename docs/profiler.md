@@ -105,8 +105,8 @@ Relevant areas may include:
     src/model/pine/instance.rs
 
     src/pine_studio/
-    src/pine_studio/model.rs
-    src/pine_studio/library/store.rs
+    src/model/pine/script.rs
+    src/store/scripts/mod.rs
 
     src/ui/pine/report.rs
     src/ui/pine/settings_popover.rs

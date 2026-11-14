@@ -195,10 +195,6 @@ impl ProfileMarks {
             .map(|index| &self.lines[index])
     }
 
-    pub fn lines(&self) -> &[LineMark] {
-        &self.lines
-    }
-
     /// The marks in the one-based line range `first..=last`, for the lines on screen.
     pub fn in_view(&self, first: usize, last: usize) -> &[LineMark] {
         let start = self.lines.partition_point(|mark| mark.line < first);
@@ -207,6 +203,7 @@ impl ProfileMarks {
     }
 
     /// The flamed lines, hottest first is not promised: they are in line order.
+    #[cfg(test)]
     pub fn flames(&self) -> Vec<usize> {
         self.lines
             .iter()

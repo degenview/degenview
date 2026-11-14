@@ -2,9 +2,6 @@
 //! holdings, the value history and the (converted) transactions. Pure value types: no
 //! store, no formatting.
 
-// Transient: the portfolio screens read these once they are hosted.
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 
 use crate::model::portfolio::accounting::ClosedPosition;
@@ -12,13 +9,6 @@ use crate::model::portfolio::{
     PortfolioAsset, PortfolioHolding, PortfolioSnapshot, PortfolioTransaction,
     PortfolioTransactionType,
 };
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Direction {
-    Up,
-    Down,
-    Unchanged,
-}
 
 /// How a value moved between two points.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -35,20 +25,6 @@ impl PortfolioValueChange {
             amount,
             percentage: (from != 0.0).then(|| amount / from),
         }
-    }
-
-    pub fn direction(&self) -> Direction {
-        direction_of(self.amount)
-    }
-}
-
-fn direction_of(value: f64) -> Direction {
-    if value > 0.0 {
-        Direction::Up
-    } else if value < 0.0 {
-        Direction::Down
-    } else {
-        Direction::Unchanged
     }
 }
 
@@ -151,10 +127,6 @@ impl PortfolioPeriodChange {
             profit,
             percentage: (capital > 0.0).then(|| profit / capital),
         })
-    }
-
-    pub fn direction(&self) -> Direction {
-        direction_of(self.profit)
     }
 }
 
@@ -436,21 +408,13 @@ mod tests {
     }
 
     #[test]
-    fn value_changes_report_amount_percent_and_direction() {
+    fn value_changes_report_amount_and_percent() {
         let up = PortfolioValueChange::new(100.0, 110.0);
-        assert_eq!(
-            (up.amount, up.percentage, up.direction()),
-            (10.0, Some(0.1), Direction::Up)
-        );
+        assert_eq!((up.amount, up.percentage), (10.0, Some(0.1)));
         let down = PortfolioValueChange::new(200.0, 150.0);
         assert_eq!(down.percentage, Some(-0.25));
-        assert_eq!(down.direction(), Direction::Down);
         let from_zero = PortfolioValueChange::new(0.0, 5.0);
         assert_eq!(from_zero.percentage, None);
-        assert_eq!(
-            PortfolioValueChange::new(3.0, 3.0).direction(),
-            Direction::Unchanged
-        );
     }
 
     #[test]
@@ -467,7 +431,6 @@ mod tests {
         );
         // Capital in play: the $1,000 at the start plus the $1,000 deposited since.
         assert!((change.percentage.unwrap() - 0.05).abs() < 1e-9);
-        assert_eq!(change.direction(), Direction::Up);
     }
 
     #[test]
@@ -476,7 +439,6 @@ mod tests {
         let change = PortfolioPeriodChange::new(&history, 1_500.0, 500.0).unwrap();
         // P&L went from 1,000 to 1,000: nothing gained or lost despite value falling.
         assert!(change.profit.abs() < 1e-9);
-        assert_eq!(change.direction(), Direction::Unchanged);
         assert_eq!(PortfolioPeriodChange::new(&[], 100.0, 0.0), None);
     }
 

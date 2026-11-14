@@ -4,14 +4,10 @@
 //! painter (`pine_chart_render`) and the tests share it. A port of `PineDrawingGeometry`,
 //! `PineLabelGeometry`, `PineSize+Drawing` and the layout halves of `PineChartLayer`.
 
-// Transient: the chart card hosts the painter once the Pine session produces output.
-#![allow(dead_code)]
-
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    BoxOutput, DISPLAY_PANE, Horizontal, LabelOutput, LabelStyle, LineExtend, LineOutput,
-    LineStyle, MISSING_INDEX, PlotStyle, PolylineOutput, Size, TableCell, TableOutput,
-    TablePosition, TextAlign, Vertical, YLocation, index_is_known,
+    DISPLAY_PANE, Horizontal, LabelStyle, LineExtend, LineStyle, PlotStyle, Size, TableCell,
+    TableOutput, TablePosition, TextAlign, Vertical, YLocation, index_is_known,
 };
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
 
@@ -772,32 +768,12 @@ fn series_values_in_pane(pine: &VisualOutput, candle_count: usize) -> Vec<f64> {
     values
 }
 
-/// Whether a drawing coordinate was given (a missing bar index is `MISSING_INDEX`).
-pub fn bar_is_known(bar: i64) -> bool {
-    bar != MISSING_INDEX
-}
-
-pub fn box_is_drawable(item: &BoxOutput) -> bool {
-    item.is_complete()
-}
-
-pub fn line_is_drawable(item: &LineOutput) -> bool {
-    item.is_complete()
-}
-
-pub fn label_is_drawable(item: &LabelOutput) -> bool {
-    item.is_complete()
-}
-
-pub fn polyline_is_drawable(item: &PolylineOutput) -> bool {
-    item.points.len() > 1
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pine::outputs::{
-        CandleBar, CandleOutput, HorizontalLine, PlotOutput, PolylinePoint,
+        CandleBar, CandleOutput, HorizontalLine, LineOutput, MISSING_INDEX, PlotOutput,
+        PolylineOutput, PolylinePoint,
     };
 
     fn plot(values: Vec<Option<f64>>, style: PlotStyle) -> PlotOutput {
@@ -1362,6 +1338,5 @@ mod tests {
             "the histogram baseline is not an overlay value"
         );
         assert_eq!(overlay_extent(&[], 5), OverlayExtent::default());
-        assert!(bar_is_known(3) && !bar_is_known(MISSING_INDEX));
     }
 }

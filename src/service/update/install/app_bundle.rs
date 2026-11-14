@@ -126,7 +126,8 @@ fn prepare_in(
         if reported.replace(percent) != percent {
             progress(Progress::downloading(received, asset.size));
         }
-    })?;
+    })
+    .map_err(|error| error.to_string())?;
     verify(&bytes, asset)?;
 
     progress(Progress::new(Stage::Unpacking));

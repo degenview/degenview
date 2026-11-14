@@ -10,9 +10,11 @@
 //! against a stop the script has left is ignored, not applied to the next one.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+#[cfg(test)]
+use std::sync::Weak;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
-use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use crate::model::Kline;
@@ -94,25 +96,16 @@ impl DebugConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum StartError {
+    #[error("There are no bars to run the script on yet.")]
     NoBars,
     /// The source does not compile; the diagnostic is the first error.
+    #[error("The script has errors: {}", .0.message)]
     Compile(Diagnostic),
+    #[error("Could not start the debugger: {0}")]
     Thread(String),
 }
-
-impl std::fmt::Display for StartError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NoBars => f.write_str("There are no bars to run the script on yet."),
-            Self::Compile(error) => write!(f, "The script has errors: {}", error.message),
-            Self::Thread(error) => write!(f, "Could not start the debugger: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for StartError {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Outcome {
@@ -225,13 +218,14 @@ pub struct DebugSession {
     requests: SyncSender<Request>,
     control: DebugControl,
     cancel: Arc<AtomicBool>,
-    map: Arc<SourceMap>,
     state: DebugState,
     /// The stop the script is at, while it is at one.
     paused_at: Option<u64>,
     paused_on_error: bool,
     next_token: u64,
     source_hash: u64,
+    /// Dangles once the session's thread has ended, for tests to watch it end.
+    #[cfg(test)]
     alive: Weak<()>,
 }
 
@@ -261,11 +255,13 @@ impl DebugSession {
         let (event_sender, events) = mpsc::sync_channel(EVENT_CAPACITY);
         let (requests, request_receiver) = mpsc::sync_channel(REQUEST_CAPACITY);
 
+        #[cfg(test)]
         let alive = Arc::new(());
+        #[cfg(test)]
         let liveness = Arc::downgrade(&alive);
         let thread = Thread {
             config,
-            map: Arc::clone(&map),
+            map,
             control: control.clone(),
             cancel: Arc::clone(&cancel),
             events: event_sender,
@@ -275,6 +271,7 @@ impl DebugSession {
         let spawned = std::thread::Builder::new()
             .name("pine-debug".to_owned())
             .spawn(move || {
+                #[cfg(test)]
                 let _alive = alive;
                 thread.run();
             });
@@ -289,23 +286,25 @@ impl DebugSession {
             requests,
             control,
             cancel,
-            map,
             state,
             paused_at: None,
             paused_on_error: false,
             next_token: 0,
             source_hash,
+            #[cfg(test)]
             alive: liveness,
         })
     }
 
     /// Whether the session's thread is still running. A closed or finished session's thread ends
     /// within a moment.
+    #[cfg(test)]
     pub fn thread_alive(&self) -> bool {
         self.alive.strong_count() > 0
     }
 
     /// A handle that outlives the session, to watch its thread end.
+    #[cfg(test)]
     pub fn liveness(&self) -> Weak<()> {
         self.alive.clone()
     }
@@ -314,27 +313,13 @@ impl DebugSession {
         self.state
     }
 
+    #[cfg(test)]
     pub fn paused_on_error(&self) -> bool {
         self.paused_on_error
     }
 
-    /// The map of the program this session runs, for resolving lines to statements.
-    pub fn source_map(&self) -> &Arc<SourceMap> {
-        &self.map
-    }
-
-    /// Identifies the source text this session was started from. Editing the script does not
-    /// change the session; compare this to the editor's text to say it is out of date.
-    pub fn source_hash(&self) -> u64 {
-        self.source_hash
-    }
-
     pub fn is_for_source(&self, source: &str) -> bool {
         hash(source) == self.source_hash
-    }
-
-    pub fn control(&self) -> &DebugControl {
-        &self.control
     }
 
     pub fn allows(&self, command: DebugCommand) -> bool {
@@ -503,6 +488,7 @@ impl DebugSession {
     }
 
     /// Waits up to `timeout` for the next event.
+    #[cfg(test)]
     pub fn wait(&mut self, timeout: Duration) -> Option<DebugEvent> {
         let event = self.events.recv_timeout(timeout).ok()?;
         self.apply(&event);

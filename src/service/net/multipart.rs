@@ -1,10 +1,10 @@
 //! A `multipart/form-data` body (RFC 7578), built by hand so no dependency is needed for it.
 //!
-//! Image hosts that are not DegenView's own take their upload as a form: a few text fields and
-//! the file. A provider builds one with [`Form`], and the result is a request body and the
-//! `Content-Type` that names its boundary.
+//! Image hosts that are not DegenView's own take their upload as a form holding the file. A
+//! provider builds one with [`Form`], and the result is a request body and the `Content-Type`
+//! that names its boundary.
 
-/// What a form field's name and a file's name may not hold: they sit inside quotes in a header,
+/// What a form field's name, a file's name and its type may not hold: they sit inside quotes in a header,
 /// so a quote, a line break or a backslash would end or bend it.
 fn header_safe(text: &str) -> String {
     text.chars()
@@ -47,43 +47,21 @@ impl Form {
         }
     }
 
-    fn part_head(&mut self, name: &str, file_name: Option<&str>, content_type: Option<&str>) {
+    /// A file field, its bytes sent as they are.
+    pub fn file(mut self, name: &str, file_name: &str, content_type: &str, bytes: &[u8]) -> Self {
         self.body.extend_from_slice(b"--");
         self.body.extend_from_slice(self.boundary.as_bytes());
         self.body.extend_from_slice(b"\r\n");
         self.body
             .extend_from_slice(b"Content-Disposition: form-data; name=\"");
         self.body.extend_from_slice(header_safe(name).as_bytes());
-        self.body.push(b'"');
-        if let Some(file_name) = file_name {
-            self.body.extend_from_slice(b"; filename=\"");
-            self.body
-                .extend_from_slice(header_safe(file_name).as_bytes());
-            self.body.push(b'"');
-        }
-        self.body.extend_from_slice(b"\r\n");
-        if let Some(content_type) = content_type {
-            self.body.extend_from_slice(b"Content-Type: ");
-            self.body
-                .extend_from_slice(header_safe(content_type).as_bytes());
-            self.body.extend_from_slice(b"\r\n");
-        }
-        self.body.extend_from_slice(b"\r\n");
-    }
-
-    /// A text field. Not every provider's form has one (ImgBB's carries its settings in the
-    /// query), but others (an upload preset, a signature) do.
-    #[allow(dead_code)]
-    pub fn text(mut self, name: &str, value: &str) -> Self {
-        self.part_head(name, None, None);
-        self.body.extend_from_slice(value.as_bytes());
-        self.body.extend_from_slice(b"\r\n");
-        self
-    }
-
-    /// A file field, its bytes sent as they are.
-    pub fn file(mut self, name: &str, file_name: &str, content_type: &str, bytes: &[u8]) -> Self {
-        self.part_head(name, Some(file_name), Some(content_type));
+        self.body.extend_from_slice(b"\"; filename=\"");
+        self.body
+            .extend_from_slice(header_safe(file_name).as_bytes());
+        self.body.extend_from_slice(b"\"\r\nContent-Type: ");
+        self.body
+            .extend_from_slice(header_safe(content_type).as_bytes());
+        self.body.extend_from_slice(b"\r\n\r\n");
         self.body.extend_from_slice(bytes);
         self.body.extend_from_slice(b"\r\n");
         self
@@ -114,7 +92,6 @@ mod tests {
     #[test]
     fn a_form_is_parts_each_behind_the_boundary_and_a_closing_one() {
         let body = form()
-            .text("expiration", "600")
             .file(
                 "image",
                 "snapshot.png",
@@ -123,10 +100,6 @@ mod tests {
             )
             .finish();
         let expected = b"--XYZ\r\n\
-Content-Disposition: form-data; name=\"expiration\"\r\n\
-\r\n\
-600\r\n\
---XYZ\r\n\
 Content-Disposition: form-data; name=\"image\"; filename=\"snapshot.png\"\r\n\
 Content-Type: image/png\r\n\
 \r\n\
@@ -146,9 +119,11 @@ Content-Type: image/png\r\n\
 
     #[test]
     fn a_name_cannot_break_out_of_its_quotes() {
-        let body = form().text("a\"b\r\nX-Evil: 1", "v").finish();
+        let body = form()
+            .file("a\"b\r\nX-Evil: 1", "f.png", "image/png", b"v")
+            .finish();
         let text = String::from_utf8(body).unwrap();
-        assert!(text.contains("name=\"abX-Evil: 1\"\r\n"), "{text}");
+        assert!(text.contains("name=\"abX-Evil: 1\";"), "{text}");
         assert!(!text.contains("a\"b"), "{text}");
         // Exactly one header line was written for the part.
         assert_eq!(text.matches("Content-Disposition").count(), 1);

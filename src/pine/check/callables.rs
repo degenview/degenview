@@ -11,7 +11,6 @@ use std::collections::{HashMap, HashSet};
 
 use super::types::{Fit, Ty, qualifier_fits};
 use crate::pine::syntax::ast::{FunctionKind, Qualifier, Statement};
-use crate::pine::syntax::token::SourceRange;
 
 /// What a worse type fit adds to a rank, which outweighs any difference in qualifier (at most 3).
 const TYPE_STEP: u32 = 10;
@@ -37,7 +36,6 @@ pub struct Callable {
     pub name: String,
     pub kind: FunctionKind,
     pub params: Vec<ParamSig>,
-    pub range: SourceRange,
 }
 
 /// One argument of a call as the checker sees it. For `x.f(a)` the receiver `x` comes first.
@@ -113,7 +111,6 @@ impl Callables {
                         optional: parameter.default_value.is_some(),
                     })
                     .collect(),
-                range: *range,
             });
             table.by_name.entry(name.clone()).or_default().push(id);
             table.by_position.insert(range.start.offset, id);
@@ -246,7 +243,7 @@ impl Callable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::syntax::token::{SourcePosition, ValueType};
+    use crate::pine::syntax::token::ValueType;
 
     fn callable(kind: FunctionKind, params: &[(&str, Option<Ty>, bool)]) -> Callable {
         Callable {
@@ -261,10 +258,6 @@ mod tests {
                     optional: *optional,
                 })
                 .collect(),
-            range: SourceRange {
-                start: SourcePosition::default(),
-                end: SourcePosition::default(),
-            },
         }
     }
 

@@ -4,6 +4,7 @@
 
 use super::ai::Assistant;
 use super::ai::panel::{self as ai_panel, Setup};
+use super::commands::Cmd;
 use super::debug::DebugPanel;
 use super::debug::panel as debug_panel;
 use super::drawer;
@@ -12,11 +13,11 @@ use super::library::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
 use super::profiler::marks::ProfileColumn;
 use super::profiler::ui::{self, TabView};
 use super::profiler::{Profile, Status};
-use super::{Cmd, OpenScript, PineStudio};
+use super::{OpenScript, PineStudio};
 use crate::pine::syntax::token::Diagnostic;
 use crate::ui::kit::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::theme;
-use eframe::egui::{self, Align, Id, RichText, Ui, pos2};
+use eframe::egui::{self, Id, RichText, Ui, pos2};
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 
@@ -25,7 +26,7 @@ pub use super::preview::PreviewState;
 /// What the preview pane reads of the open script.
 pub(crate) struct PreviewInput {
     pub name: String,
-    pub script_type: super::model::ScriptType,
+    pub script_type: crate::model::pine::script::ScriptType,
     pub source: String,
     pub diagnostics: Vec<Diagnostic>,
     /// `diagnostics` and the script's runtime failures: what the Problems tab lists and counts.
@@ -373,7 +374,7 @@ fn preview_pane(
         Id::new("script-preview-drawer"),
         spec,
         &mut drawer_state,
-        |ui| super::preview::chart(ui, &mut preview.borrow_mut(), input, cmds),
+        |ui| super::preview::chart::chart(ui, &mut preview.borrow_mut(), input, cmds),
         |ui| {
             ui.painter()
                 .rect_filled(ui.max_rect(), 0.0, theme::background());
@@ -435,6 +436,3 @@ fn preview_pane(
         cmds.borrow_mut().push(Cmd::ToggleDrawer);
     }
 }
-
-#[allow(dead_code)]
-fn _keep(_: Instant, _: Align) {}

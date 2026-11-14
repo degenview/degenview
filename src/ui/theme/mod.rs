@@ -483,12 +483,12 @@ pub fn well_fill() -> Color32 {
 }
 
 pub fn with_alpha(color: Color32, opacity: f32) -> Color32 {
-    Color32::from_rgba_unmultiplied(
-        color.r(),
-        color.g(),
-        color.b(),
-        (255.0 * opacity.clamp(0.0, 1.0)).round() as u8,
-    )
+    with_alpha_byte(color, (255.0 * opacity.clamp(0.0, 1.0)).round() as u8)
+}
+
+/// [`with_alpha`] with the alpha as a byte (0 to 255), as the chart and drawing layers write it.
+pub fn with_alpha_byte(color: Color32, alpha: u8) -> Color32 {
+    Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
 }
 
 /// The macOS system colours the app uses for code-like values outside the editor: sample code in

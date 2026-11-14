@@ -959,7 +959,6 @@ fn link_imports(
             imports.push(Import {
                 path: declaration.path.clone(),
                 alias: declaration.alias.clone(),
-                range: declaration.range,
                 library: None,
             });
         };
@@ -1036,7 +1035,6 @@ fn link_imports(
         imports.push(Import {
             path: declaration.path.clone(),
             alias: declaration.alias.clone(),
-            range: declaration.range,
             library: Some(Box::new(program)),
         });
     }

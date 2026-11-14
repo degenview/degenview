@@ -76,8 +76,6 @@ fn fingerprint(bytes: &[u8]) -> u64 {
 /// A finished profile with the words made from it.
 pub struct Profile {
     pub key: ProfileKey,
-    /// The text that was profiled: what the line numbers in the profile refer to.
-    pub source: Arc<str>,
     /// The symbol and timeframe it ran on, for the summary.
     pub label: String,
     pub report: Arc<ProfileReport>,
@@ -124,6 +122,7 @@ pub enum Status {
 }
 
 impl Status {
+    #[cfg(test)]
     pub fn is_running(&self) -> bool {
         matches!(self, Self::Running { .. })
     }
@@ -191,6 +190,7 @@ impl Profiler {
         self.on && self.auto && self.run.is_none()
     }
 
+    #[cfg(test)]
     pub fn is_running(&self) -> bool {
         self.run.is_some()
     }
@@ -299,7 +299,6 @@ impl Profiler {
                 let marks = ProfileMarks::build(&report, &run.source, outcome.compile_ns);
                 self.profile = Some(Profile {
                     key: run.key,
-                    source: run.source,
                     label: run.label,
                     report: Arc::new(report),
                     marks: Arc::new(marks),
@@ -317,6 +316,7 @@ impl Profiler {
     }
 
     /// A handle that outlives the run, to watch its thread end.
+    #[cfg(test)]
     pub fn liveness(&self) -> Option<std::sync::Weak<()>> {
         self.run.as_ref().map(|run| run.session.liveness())
     }

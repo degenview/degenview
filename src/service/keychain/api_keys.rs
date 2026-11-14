@@ -5,16 +5,12 @@
 //! Reading a key can raise a Keychain prompt, so `is_configured` asks only for the item's
 //! attributes and the secret is read lazily on the first request that needs it. Under
 //! `keychain::webhook_secrets::is_disabled` (tests, `DEGENVIEW_NO_KEYCHAIN=1`) nothing touches
-//! the Keychain: keys live in memory for the session. Every change bumps `revision()`, which the
-//! provider layer and the Settings pages poll in place of Swift's notifications.
+//! the Keychain: keys live in memory for the session.
 
-// Transient: the Settings pages and the Alpaca / CoinMarketCap services wire these up next.
-#![allow(dead_code)]
-
+use crate::lock::lock;
 use crate::service::keychain::webhook_secrets::{Scope, is_disabled, platform};
 use crate::service::webhook::delivery::SecretStoreError;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 const ALPACA_SERVICE: &str = "es.nico.degenview.alpaca";
@@ -140,7 +136,6 @@ struct AlpacaCache {
 pub struct AlpacaCredentialsStore {
     backend: Box<dyn KeyBackend>,
     cache: Mutex<AlpacaCache>,
-    revision: AtomicU64,
 }
 
 impl AlpacaCredentialsStore {
@@ -148,7 +143,6 @@ impl AlpacaCredentialsStore {
         Self {
             backend,
             cache: Mutex::new(AlpacaCache::default()),
-            revision: AtomicU64::new(0),
         }
     }
 
@@ -158,15 +152,10 @@ impl AlpacaCredentialsStore {
         STORE.get_or_init(|| Self::with_backend(default_backend()))
     }
 
-    /// Bumped on every save; callers that cached a client rebuild it when this changes.
-    pub fn revision(&self) -> u64 {
-        self.revision.load(Ordering::SeqCst)
-    }
-
     /// The saved credentials, or empty ones. The first read may prompt for Keychain access.
     /// A key found only outside the shared group is copied into it, as the Swift app did.
     pub fn credentials(&self) -> AlpacaCredentials {
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         if let Some(credentials) = &cache.credentials {
             return credentials.clone();
         }
@@ -192,7 +181,7 @@ impl AlpacaCredentialsStore {
 
     /// Whether credentials are saved. Reads attributes only, so it never prompts.
     pub fn is_configured(&self) -> bool {
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         if let Some(credentials) = &cache.credentials {
             return credentials.is_configured();
         }
@@ -218,11 +207,10 @@ impl AlpacaCredentialsStore {
             let own = self.backend.delete(ALPACA_OWN, ALPACA_ACCOUNT);
             shared.and(own)?;
         }
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         cache.credentials = Some(normalized);
         cache.exists = None;
         drop(cache);
-        self.revision.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 }
@@ -244,7 +232,6 @@ struct CmcCache {
 pub struct CoinMarketCapKeyStore {
     backend: Box<dyn KeyBackend>,
     cache: Mutex<CmcCache>,
-    revision: AtomicU64,
 }
 
 impl CoinMarketCapKeyStore {
@@ -252,7 +239,6 @@ impl CoinMarketCapKeyStore {
         Self {
             backend,
             cache: Mutex::new(CmcCache::default()),
-            revision: AtomicU64::new(0),
         }
     }
 
@@ -261,13 +247,9 @@ impl CoinMarketCapKeyStore {
         STORE.get_or_init(|| Self::with_backend(default_backend()))
     }
 
-    pub fn revision(&self) -> u64 {
-        self.revision.load(Ordering::SeqCst)
-    }
-
     /// The saved key. The first read may prompt for Keychain access.
     pub fn api_key(&self) -> Option<String> {
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         if !cache.loaded {
             cache.loaded = true;
             cache.key = self
@@ -280,7 +262,7 @@ impl CoinMarketCapKeyStore {
 
     /// Whether a key is saved, without reading it (so without a prompt).
     pub fn is_configured(&self) -> bool {
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         if cache.loaded {
             return cache.key.is_some();
         }
@@ -299,27 +281,25 @@ impl CoinMarketCapKeyStore {
             return self.remove();
         }
         self.backend.write(CMC, CMC_ACCOUNT, value)?;
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         *cache = CmcCache {
             loaded: true,
             key: Some(value.to_owned()),
             exists: None,
         };
         drop(cache);
-        self.revision.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
     pub fn remove(&self) -> Result<(), SecretStoreError> {
         self.backend.delete(CMC, CMC_ACCOUNT)?;
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         *cache = CmcCache {
             loaded: true,
             key: None,
             exists: None,
         };
         drop(cache);
-        self.revision.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 }
@@ -335,6 +315,13 @@ fn non_empty(value: Option<String>) -> Option<String> {
     value
         .map(|text| text.trim().to_owned())
         .filter(|text| !text.is_empty())
+}
+
+/// Whether Alpaca credentials are saved, for anything that only needs to know (a chart picker,
+/// the MCP server). The first answer reads the Keychain item's attributes, never its secret, so
+/// it never prompts; the store keeps it, so asking again costs nothing.
+pub fn alpaca_configured() -> bool {
+    AlpacaCredentialsStore::shared().is_configured()
 }
 
 /// The Alpaca key id and secret to send: what the user saved in Settings, else the environment.
@@ -384,6 +371,7 @@ pub fn cmc_api_key() -> Option<String> {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     /// Shares one `MemoryBackend` between a store and the test, and counts reads.
     struct Shared(Arc<MemoryBackend>, Arc<AtomicU64>);
@@ -431,9 +419,7 @@ mod tests {
         let (store, memory, _) = alpaca();
         assert!(!store.is_configured());
         assert_eq!(store.credentials(), AlpacaCredentials::default());
-        let before = store.revision();
         store.save(&credentials("  PK123 ", " s3cret\n")).unwrap();
-        assert_eq!(store.revision(), before + 1);
         assert_eq!(store.credentials(), credentials("PK123", "s3cret"));
         assert!(store.is_configured());
         // The Swift app wrote `{"keyID":…,"secretKey":…}`; the format must stay readable by it.
@@ -506,12 +492,10 @@ mod tests {
         assert_eq!(store.api_key().as_deref(), Some("abc-123"));
         assert!(store.is_configured());
         assert_eq!(memory.read(CMC, CMC_ACCOUNT).as_deref(), Some("abc-123"));
-        let revision = store.revision();
         store.save("   ").unwrap();
         assert_eq!(store.api_key(), None, "an empty key removes it");
         assert!(!store.is_configured());
         assert!(!memory.exists(CMC, CMC_ACCOUNT));
-        assert_eq!(store.revision(), revision + 1);
     }
 
     #[test]

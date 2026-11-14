@@ -79,7 +79,6 @@ pub fn rounded_corners() -> bool {
 /// (EWMH). Any trouble reaching the server counts as no.
 #[cfg(target_os = "linux")]
 fn x11_compositing() -> bool {
-    use x11rb::connection::Connection;
     use x11rb::protocol::xproto::ConnectionExt;
     let Ok((connection, screen)) = x11rb::connect(None) else {
         return false;

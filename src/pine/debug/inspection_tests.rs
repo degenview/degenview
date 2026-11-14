@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::pine::tests::bench::{self, run_script};
 
+use super::inspect::{InspectError, Page};
 use super::tests::{Probe, bars, runtime_with, with_header};
 use super::*;
 

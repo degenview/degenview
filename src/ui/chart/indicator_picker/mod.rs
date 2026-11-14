@@ -10,8 +10,8 @@ mod sections;
 
 use super::indicator_strip::Action;
 use crate::model::indicators::catalog::{self, CatalogEntry, EntryKey, Family, Origin};
+use crate::model::pine::bundled;
 use crate::model::{DataSource, IndicatorConfig};
-use crate::pine_studio::indicators;
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, SEMIBOLD, size};
@@ -56,7 +56,7 @@ impl Target {
             EntryKey::Bundled(id) => self
                 .on_chart
                 .iter()
-                .any(|script| script == &format!("{}{id}", indicators::SCRIPT_ID_PREFIX)),
+                .any(|script| script == &format!("{}{id}", bundled::SCRIPT_ID_PREFIX)),
             EntryKey::Script(id) => self.on_chart.contains(id),
         }
     }
@@ -94,7 +94,7 @@ pub fn action_for(entry: &CatalogEntry, availability: Availability) -> Option<Ac
         (Availability::Blocked(_), _) => None,
         (Availability::Remove, EntryKey::Native(kind)) => Some(Action::Remove(*kind)),
         (_, EntryKey::Native(kind)) => Some(Action::Add(*kind)),
-        (_, EntryKey::Bundled(id)) => indicators::find(id).map(Action::AddBundled),
+        (_, EntryKey::Bundled(id)) => bundled::find(id).map(Action::AddBundled),
         (_, EntryKey::Script(_)) => entry.script.clone().map(Action::AddScript),
     }
 }

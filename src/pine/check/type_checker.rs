@@ -84,10 +84,6 @@ pub struct TypeChecker {
 }
 
 impl TypeChecker {
-    pub fn check(statements: &[Statement]) -> Vec<Diagnostic> {
-        Self::check_program(statements, false).diagnostics
-    }
-
     /// Checks `statements`; `imports` says the script imports libraries.
     pub fn check_program(statements: &[Statement], imports: bool) -> Checked {
         let enums: HashSet<String> = statements
@@ -1399,7 +1395,7 @@ mod tests {
         let lexed = Lexer::new(source).lex();
         let mut parser = Parser::new(lexed.tokens, crate::pine::Limits::default(), HashSet::new());
         let (statements, _) = parser.parse();
-        TypeChecker::check(&statements)
+        TypeChecker::check_program(&statements, false).diagnostics
     }
 
     #[test]

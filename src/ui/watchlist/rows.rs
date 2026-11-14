@@ -470,23 +470,21 @@ fn paint_logo(
         return;
     }
     let base = icon_base_symbol(item);
-    let source = item.instrument.source;
-    let fallback_url;
-    let url = if let Some(url) = item.image_url.as_deref() {
-        Some(url)
-    } else {
-        fallback_url = crate::service::image::icon::get_url(source, &item.instrument.symbol);
-        fallback_url.as_deref()
-    };
-    if let Some(url) = url {
-        egui::Image::new(url)
-            .fit_to_exact_size(logo.size())
-            .corner_radius(egui::CornerRadius::same((logo.width() / 2.0) as u8))
-            .tint(Color32::WHITE.gamma_multiply(alpha))
-            .paint_at(ui, logo);
+    let tint = Color32::WHITE.gamma_multiply(alpha);
+    if let Some(url) = item.image_url.as_deref() {
+        kit::round_image(ui, logo, url, tint);
         return;
     }
-    crate::service::image::icon::request(source, &item.instrument.symbol);
+    if kit::cached_logo(
+        ui,
+        logo,
+        item.instrument.source,
+        &item.instrument.symbol,
+        None,
+        tint,
+    ) {
+        return;
+    }
     painter.circle_filled(
         logo.center(),
         logo.width() / 2.0,

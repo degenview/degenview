@@ -14,9 +14,9 @@ use crate::service::snapshot::job::{self, Outcome, Retry, SystemBackend};
 use crate::service::snapshot::providers::Destination;
 use crate::service::snapshot::raster;
 use crate::service::{system::timezone, work_queue};
-use crate::ui::SnapshotInput;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
+use crate::ui::{SnapshotError, SnapshotInput};
 use crate::workspace::drawing::content::snapshot_images;
 use crate::workspace::*;
 use eframe::egui::{Context, Id};
@@ -75,6 +75,21 @@ pub(in crate::workspace) struct SnapshotState {
     backend: Option<Arc<dyn job::Backend>>,
     /// The camera menu asked for the Snapshots page of Settings; the app takes it this frame.
     pub(in crate::workspace) settings_requested: bool,
+}
+
+/// Why a chart could not be frozen into a picture.
+#[derive(Debug, thiserror::Error)]
+pub enum CaptureError {
+    #[error("There is no such chart.")]
+    NoChart,
+    /// An agent asked for a chart that is a portfolio card, not a market.
+    #[error("There is no such market chart.")]
+    NoMarketChart,
+    /// The chart has not been laid out on screen yet.
+    #[error("There is no chart to take a picture of yet.")]
+    NotLaidOut,
+    #[error("{}", .0.message())]
+    Scene(SnapshotError),
 }
 
 impl ChartWorkspace {
@@ -168,19 +183,13 @@ impl ChartWorkspace {
         ctx: &Context,
         chart_id: u64,
         options: snapshot::SnapshotOptions,
-    ) -> Result<(raster::Scene, SnapshotDimensions), String> {
-        let index = self
-            .chart_index(chart_id)
-            .ok_or_else(|| "There is no such chart.".to_owned())?;
-        let replay_ms = if self.replay.is_active() {
-            self.replay.current_ms()
-        } else {
-            None
-        };
+    ) -> Result<(raster::Scene, SnapshotDimensions), CaptureError> {
+        let index = self.chart_index(chart_id).ok_or(CaptureError::NoChart)?;
+        let replay_ms = self.replay.cut_ms();
         let chart = &self.charts[index];
         let size = chart.chart.snapshot_size();
         let dimensions = SnapshotDimensions::fit(size.x, size.y, options.scale)
-            .ok_or_else(|| "There is no chart to take a picture of yet.".to_owned())?;
+            .ok_or(CaptureError::NotLaidOut)?;
         let open_notes = chart.chart.open_notes();
         let images = snapshot_images(ctx, &chart.drawings);
         let input = SnapshotInput {
@@ -192,7 +201,7 @@ impl ChartWorkspace {
             drawings: &chart.drawings,
             open_notes: &open_notes,
             images: Some(&images),
-            hide_all_drawings: self.hide_all_drawings,
+            hide_all_drawings: self.tools.hides_all(),
             replay_active: replay_ms.is_some(),
             include_trading: options.include_trading,
         };
@@ -200,7 +209,7 @@ impl ChartWorkspace {
             .chart
             .snapshot_scene(&input, dimensions, ui::theme::surface())
             .map(|scene| (scene, dimensions))
-            .map_err(|error| error.message().to_owned())
+            .map_err(CaptureError::Scene)
     }
 
     /// Starts a picture of chart `chart_id` for an agent: the scene is frozen now, on the UI
@@ -212,12 +221,12 @@ impl ChartWorkspace {
         ctx: &Context,
         chart_id: u64,
         scale: snapshot::SnapshotScale,
-    ) -> Result<(PngReceiver, SnapshotDimensions), String> {
+    ) -> Result<(PngReceiver, SnapshotDimensions), CaptureError> {
         if !self
             .chart_index(chart_id)
             .is_some_and(|index| self.charts[index].is_market())
         {
-            return Err("There is no such market chart.".to_owned());
+            return Err(CaptureError::NoMarketChart);
         }
         let options = snapshot::SnapshotOptions {
             scale,
@@ -250,10 +259,10 @@ impl ChartWorkspace {
         } = request;
         let (scene, _) = match self.capture_scene(ctx, chart_id, options) {
             Ok(captured) => captured,
-            Err(message) => {
+            Err(error) => {
                 // An unknown chart was always silent; the rest is worth saying.
                 if self.chart_index(chart_id).is_some() {
-                    self.say(message, true);
+                    self.say(error.to_string(), true);
                 }
                 return;
             }
@@ -1229,7 +1238,7 @@ mod tests {
             .replay
             .start(cut, "BTCUSDT", times.clone());
         assert!(replaying.workspace.replay.is_active());
-        let before = replaying.workspace.replay.current_ms();
+        let before = replaying.workspace.replay.cut_ms();
         replaying.workspace.begin_snapshot(
             &replaying.ctx,
             replaying.chart_id,
@@ -1237,7 +1246,7 @@ mod tests {
         );
         let replayed = copied(replaying.finish());
         assert_eq!(
-            replaying.workspace.replay.current_ms(),
+            replaying.workspace.replay.cut_ms(),
             before,
             "the replay did not move"
         );
@@ -1269,14 +1278,14 @@ mod tests {
         let mut rig = rig();
         let index = rig.workspace.chart_index(rig.chart_id).unwrap();
         let candles = rig.workspace.charts[index].candles.clone();
-        let (focused, hidden) = (rig.workspace.focused, rig.workspace.hide_all_drawings);
+        let (focused, hidden) = (rig.workspace.focused, rig.workspace.tools.hides_all());
         for action in [SnapshotAction::CopyImage, SnapshotAction::CopyImage] {
             rig.workspace.begin_snapshot(&rig.ctx, rig.chart_id, action);
             rig.finish();
         }
         assert_eq!(rig.workspace.charts[index].candles, candles);
         assert_eq!(
-            (rig.workspace.focused, rig.workspace.hide_all_drawings),
+            (rig.workspace.focused, rig.workspace.tools.hides_all()),
             (focused, hidden)
         );
     }

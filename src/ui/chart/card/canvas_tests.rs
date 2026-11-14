@@ -87,7 +87,7 @@ pub(super) struct Harness {
     pub(super) crosshair: Option<CrosshairInfo>,
     pub(super) indicators: IndicatorConfig,
     pub(super) drawings: Vec<crate::model::Drawing>,
-    pub(super) error: Option<&'static str>,
+    pub(super) error: Option<ProviderError>,
     pub(super) scale_mode: PriceScaleMode,
     pub(super) source: DataSource,
 }
@@ -129,7 +129,7 @@ impl Harness {
             &self.candles,
             self.replay_active,
             self.crosshair,
-            self.error,
+            self.error.as_ref(),
             self.scale_mode,
         );
         let (indicators, drawings) = (&self.indicators, &self.drawings);
@@ -703,9 +703,9 @@ fn the_right_margin_never_changes_the_data_a_script_reads() {
     let candles = series(300);
     let mut card = ChartCard::default();
     card.appearance_mut().canvas.margins.right = 0;
-    let before = run_revision(&candles, None, 0);
+    let before = RunRevision::of(&candles, None, 0);
     card.appearance_mut().canvas.margins.right = 80;
-    assert_eq!(before, run_revision(&candles, None, 0));
+    assert_eq!(before, RunRevision::of(&candles, None, 0));
 }
 
 #[test]
@@ -958,7 +958,7 @@ fn changing_the_canvas_never_rebuilds_the_bars_or_reruns_scripts() {
     harness.card.set_chart_type(ChartType::Renko);
     harness.draw();
     let built = harness.card.constructed.clone().expect("constructed bars");
-    let revision = run_revision(&harness.candles, None, 0);
+    let revision = RunRevision::of(&harness.candles, None, 0);
     let changes: [fn(&mut ChartCanvas); 6] = [
         |canvas| canvas.background.mode = BackgroundMode::Gradient,
         |canvas| canvas.vertical_grid.visible = false,
@@ -973,7 +973,7 @@ fn changing_the_canvas_never_rebuilds_the_bars_or_reruns_scripts() {
         let now = harness.card.constructed.clone().expect("still constructed");
         assert!(Arc::ptr_eq(&built, &now), "the Renko bars were rebuilt");
     }
-    assert_eq!(revision, run_revision(&harness.candles, None, 0));
+    assert_eq!(revision, RunRevision::of(&harness.candles, None, 0));
 }
 
 #[test]
@@ -1559,7 +1559,7 @@ fn every_pane_labels_its_own_scale_with_at_least_two_prices() {
 fn a_failed_load_with_no_candles_shows_only_the_message() {
     let mut harness = Harness::new(ChartCanvas::default());
     harness.candles.clear();
-    harness.error = Some("Binance is down");
+    harness.error = Some(ProviderError::other("Binance is down"));
     let (drawn, pointer) = harness.draw();
     let texts: Vec<&str> = drawn
         .texts
@@ -1588,7 +1588,7 @@ fn no_candles_and_no_error_draws_an_empty_chart_without_panicking() {
 #[test]
 fn a_failed_refresh_keeps_the_last_candles_and_adds_a_warning() {
     let mut harness = Harness::new(ChartCanvas::default());
-    harness.error = Some("timeout");
+    harness.error = Some(ProviderError::other("timeout"));
     let (drawn, pointer) = harness.draw();
     assert!(
         price_labels(&drawn).len() >= 2,

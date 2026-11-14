@@ -9,7 +9,7 @@ use crate::ui::icons::Icon;
 use crate::ui::kit::StepDirection as Direction;
 use crate::ui::settings::card;
 use crate::ui::theme;
-use eframe::egui::{self, Align, Align2, Color32, FontId, Id, Layout, Margin, Ui, vec2};
+use eframe::egui::{self, Align, Color32, FontId, Id, Layout, Margin, Ui, vec2};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -88,15 +88,6 @@ impl InputsStore {
             self.save();
         }
         added
-    }
-
-    /// Drops the values of scripts that no longer exist.
-    pub fn prune(&mut self, keeping: &[String]) {
-        let before = self.entries.len();
-        self.entries.retain(|id, _| keeping.contains(id));
-        if self.entries.len() != before {
-            self.save();
-        }
     }
 
     fn save(&self) {
@@ -959,9 +950,6 @@ fn time_field(ui: &mut Ui, input: &InputDefinition, ms: i64) -> Option<InputValu
     }
     result
 }
-
-#[allow(dead_code)]
-fn _keep(_: Align2, _: FontId) {}
 
 #[cfg(test)]
 mod tests {

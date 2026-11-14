@@ -1,8 +1,97 @@
 //! The data the chart tools return. Serializable and schema-described, free of egui and HTTP,
-//! built from the workspace's own summaries — never a second chart model.
+//! built from the workspace's own summaries — never a second chart model. Also the colour form
+//! every tool takes and gives (`#RRGGBB` or `#RRGGBBAA`).
 
+use crate::mcp::chart::drawings::McpDash;
+use crate::model::chart::kind::Rgba;
 use schemars::JsonSchema;
 use serde::Serialize;
+
+/// A colour argument: `#RRGGBB` (opaque) or `#RRGGBBAA`, the `#` optional. Returns the RGBA bytes
+/// and whether an alpha was given (a drawing's fill without one gets the app's default).
+pub fn parse_color(text: &str) -> Option<(Rgba, bool)> {
+    let text = text.trim();
+    let hex = text.strip_prefix('#').unwrap_or(text);
+    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let byte = |index: usize| u8::from_str_radix(&hex[index..index + 2], 16).ok();
+    match hex.len() {
+        6 => Some(([byte(0)?, byte(2)?, byte(4)?, 255], false)),
+        8 => Some(([byte(0)?, byte(2)?, byte(4)?, byte(6)?], true)),
+        _ => None,
+    }
+}
+
+/// Declares a closed set of words a result field takes, serialized as those words.
+macro_rules! wire_words {
+    ($($(#[$meta:meta])* $name:ident { $($variant:ident),+ $(,)? })*) => {
+        $(
+            $(#[$meta])*
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+            #[serde(rename_all = "snake_case")]
+            pub enum $name {
+                $($variant),+
+            }
+        )*
+    };
+}
+
+wire_words! {
+    /// Whether a chart's candles have arrived.
+    ChartStatus { Loading, Ready, Error }
+    /// Whether a chart was added or the workspace already charted the market.
+    AddChartStatus { Created, AlreadyPresent }
+    /// Where a built-in indicator draws.
+    IndicatorPlacement { Overlay, Pane }
+    /// What a change did to a built-in indicator.
+    IndicatorStatus { Added, Updated, AlreadyApplied, Removed, NotApplied }
+    /// When a price alert fires.
+    AlertConditionKind { CrossesAbove, CrossesBelow, RisesBy, FallsBy, Unsupported }
+    /// Whether a price alert fires once or every time.
+    AlertFrequencyKind { Once, EveryTime }
+    /// Where a price alert stands.
+    AlertStatus { Active, Paused, Triggered, Unsupported }
+    /// What became of a request to create a price alert.
+    CreateAlertStatus { Created, Queued, AlreadyExists }
+    /// What became of a request to edit a price alert.
+    UpdateAlertStatus { Updated, Queued, Unchanged }
+    /// What became of a request to pause, resume or delete a price alert.
+    AlertChangeStatus { Paused, Active, Deleted, AlreadyPaused, AlreadyActive, Queued }
+    /// How a script's last compile went.
+    CompileState { Valid, Warning, Error, NotCompiled }
+    /// What a Pine script is.
+    ScriptKind { Indicator, Strategy, Library }
+    /// Which text of a script: saved, the unsaved draft, or source passed in directly.
+    SourceVersion { Saved, Draft, Inline }
+    /// How bad a diagnostic is.
+    Severity { Error, Warning }
+    /// What part of the compiler a diagnostic comes from.
+    DiagnosticKind { Lexical, Syntax, Semantic, Unsupported, Resource, Runtime, Cancellation }
+    /// How an applied script's last run went.
+    RunStatus { Ok, Error, NotRun }
+    /// What a change did to a script on a chart.
+    InstanceStatus { Added, Updated, Unchanged, Removed }
+    /// How an applied script's source compares with the saved script it came from; `unknown`
+    /// when the library could not be read.
+    ScriptStatus { Unchanged, Changed, Deleted, Unlinked, Unknown }
+    /// Where a strategy report's numbers come from.
+    ReportSource { ChartInstance }
+    /// How a strategy sizes its orders.
+    QuantityKind { Fixed, Cash, PercentOfEquity }
+    /// How a strategy is charged commission.
+    CommissionKind { Percent, CashPerOrder, CashPerContract }
+    /// Which way a trade went.
+    TradeDirection { Long, Short }
+    /// Where a script alert subscription stands.
+    ScriptAlertState { Active, Paused, ScriptChanged, ScriptDeleted }
+    /// Which edit a script edit was.
+    EditAction { UpdateDraft, Save }
+    /// What a script edit did.
+    EditStatus { Updated, Saved, Unchanged }
+    /// What a change did to a chart's drawings.
+    DrawingsStatus { Added, Updated, Unchanged, Removed }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct WorkspaceInfo {
@@ -52,7 +141,7 @@ pub struct ChartInfo {
     pub indicators: IndicatorsInfo,
     pub pine_instances: Vec<PineInstanceInfo>,
     /// `loading`, `ready` or `error`.
-    pub status: String,
+    pub status: ChartStatus,
     pub error: Option<String>,
     pub focused: bool,
 }
@@ -75,7 +164,7 @@ pub struct AddChartResult {
     pub timeframe: String,
     /// `created`, or `already_present` when the workspace already charted this market (that
     /// chart is returned and focused, so a retried request is harmless).
-    pub status: String,
+    pub status: AddChartStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
@@ -95,7 +184,7 @@ pub struct IndicatorSpecInfo {
     pub title: String,
     pub description: String,
     /// `overlay` (drawn on the price pane) or `pane` (a pane of its own).
-    pub placement: String,
+    pub placement: IndicatorPlacement,
     /// Chart types it works on: `candles`, `line`.
     pub chart_types: Vec<String>,
     /// Empty for indicators with fixed settings.
@@ -113,7 +202,7 @@ pub struct AddIndicatorResult {
     pub chart_id: String,
     pub indicator: String,
     /// `added`, `updated` (shown again or EMA period changed) or `already_applied`.
-    pub status: String,
+    pub status: IndicatorStatus,
     /// The chart's indicators after the change.
     pub indicators: IndicatorsInfo,
 }
@@ -127,7 +216,7 @@ pub struct AlertInfo {
     pub source: String,
     pub symbol: String,
     /// `crosses_above`, `crosses_below`, `rises_by`, `falls_by`, or `unsupported`.
-    pub condition: String,
+    pub condition: AlertConditionKind,
     /// The price that triggers it, as a decimal string in `currency`.
     pub target_price: Option<String>,
     /// For `rises_by` / `falls_by`: the percentage, and the price it counts from.
@@ -135,9 +224,9 @@ pub struct AlertInfo {
     pub reference_price: Option<String>,
     pub currency: String,
     /// `once` or `every_time`.
-    pub frequency: String,
+    pub frequency: AlertFrequencyKind,
     /// `active`, `paused`, `triggered` (a once-alert that fired) or `unsupported`.
-    pub status: String,
+    pub status: AlertStatus,
     pub note: String,
     /// Whether the alert posts to webhook endpoints (which are never exposed here).
     pub sends_to_webhooks: bool,
@@ -158,7 +247,7 @@ pub struct AlertsResult {
 pub struct CreateAlertResult {
     /// `created`, `queued` (accepted but not yet visible in the list) or `already_exists`
     /// (an identical alert is returned instead of a duplicate).
-    pub status: String,
+    pub status: CreateAlertStatus,
     pub alert: AlertInfo,
     /// The queued command, so the server can ask whether the runtime refused it. Not part of
     /// the tool's output.
@@ -171,7 +260,7 @@ pub struct CreateAlertResult {
 pub struct UpdateAlertResult {
     /// `updated`, `queued` (accepted but not yet visible in the list) or `unchanged` (the
     /// request matched the alert as it is, so nothing was queued).
-    pub status: String,
+    pub status: UpdateAlertStatus,
     /// The alert as edited.
     pub alert: AlertInfo,
     /// The queued command, so the server can ask whether the runtime refused it. Not part of
@@ -186,13 +275,13 @@ pub struct AlertChangeResult {
     pub alert_id: String,
     /// `paused`, `active`, `deleted`, `already_paused`, `already_active`, or `queued`
     /// (accepted but not yet applied).
-    pub status: String,
+    pub status: AlertChangeStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct PineCompileSummary {
     /// `valid`, `warning`, `error` or `not_compiled`.
-    pub status: String,
+    pub status: CompileState,
     /// Whether that compile was of the script's current saved source (not an older one).
     pub current: bool,
     pub compiled_at: String,
@@ -203,7 +292,7 @@ pub struct PineScriptInfo {
     pub script_id: String,
     pub name: String,
     /// `indicator`, `strategy` or `library`.
-    pub script_type: String,
+    pub script_type: ScriptKind,
     /// Whether unsaved text differing from the saved source is kept for it.
     pub has_draft: bool,
     pub is_favorite: bool,
@@ -223,9 +312,9 @@ pub struct PineScriptsResult {
 pub struct PineScriptSource {
     pub script_id: String,
     pub name: String,
-    pub script_type: String,
+    pub script_type: ScriptKind,
     /// Which text this is: `saved` or `draft`. Never one standing in for the other.
-    pub version: String,
+    pub version: SourceVersion,
     pub source: String,
     /// SHA-256 of `source`: pass it back as the expected revision when editing.
     pub source_hash: String,
@@ -239,11 +328,11 @@ pub struct PineScriptSource {
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct PineDiagnosticInfo {
     /// `error` or `warning`.
-    pub severity: String,
+    pub severity: Severity,
     /// The compiler's own code, e.g. `PINE0002`.
     pub code: String,
     /// `lexical`, `syntax`, `semantic`, `unsupported`, `resource`, `runtime` or `cancellation`.
-    pub category: String,
+    pub category: DiagnosticKind,
     pub message: String,
     /// 1-based position where it starts and ends.
     pub line: usize,
@@ -258,10 +347,10 @@ pub struct PineCompileResult {
     pub success: bool,
     pub script_id: Option<String>,
     /// `saved`, `draft`, or `inline` for source passed in directly.
-    pub version: String,
+    pub version: SourceVersion,
     pub source_hash: String,
     /// What the script declares itself to be: `indicator`, `strategy` or `library`.
-    pub script_type: Option<String>,
+    pub script_type: Option<ScriptKind>,
     pub pine_version: Option<i64>,
     pub title: Option<String>,
     pub error_count: usize,
@@ -298,7 +387,7 @@ pub struct PineInputInfo {
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct PineInputsResult {
     pub script_id: String,
-    pub version: String,
+    pub version: SourceVersion,
     pub source_hash: String,
     /// False when the script has errors; the inputs found before them are still listed.
     pub compiled: bool,
@@ -316,7 +405,7 @@ pub struct AppliedPineInfo {
     pub source_hash: String,
     /// `ok`, `error` (the last run failed) or `not_run` (the chart has not computed it yet:
     /// scripts run only while their chart is drawn).
-    pub run_status: String,
+    pub run_status: RunStatus,
     pub error: Option<PineDiagnosticInfo>,
     /// Known once it has run.
     pub is_strategy: Option<bool>,
@@ -334,7 +423,7 @@ pub struct AppliedPineList {
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct PineInstanceChangeResult {
     /// `added`, `updated`, `unchanged` or `removed`.
-    pub status: String,
+    pub status: InstanceStatus,
     pub instance_id: String,
     /// The scripts on the chart afterwards. A script runs once its chart draws it, so a new or
     /// changed one reads `not_run` until then.
@@ -357,7 +446,7 @@ pub struct AppliedPineDetail {
     pub bar_count: Option<usize>,
     /// How the instance's source compares with its Pine Studio script now: `unchanged`,
     /// `changed`, `deleted`, or `unlinked` (not applied from a saved script).
-    pub script_status: String,
+    pub script_status: ScriptStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
@@ -395,13 +484,13 @@ pub struct PineStylesResult {
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct PineReportContext {
     /// Where the numbers come from: `chart_instance` (the chart's own run).
-    pub kind: String,
+    pub kind: ReportSource,
     pub script_id: Option<String>,
     pub script_name: String,
     /// SHA-256 of the source that produced the report.
     pub source_hash: String,
     /// `unchanged`, `changed`, `deleted` or `unlinked` against the saved script now.
-    pub script_status: String,
+    pub script_status: ScriptStatus,
     pub instrument: String,
     pub timeframe: String,
     pub bar_count: usize,
@@ -431,9 +520,9 @@ pub struct PineReportMetrics {
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct PineStrategySettingsInfo {
     pub initial_capital: f64,
-    pub quantity_type: String,
+    pub quantity_type: QuantityKind,
     pub quantity_value: f64,
-    pub commission_type: String,
+    pub commission_type: CommissionKind,
     pub commission_value: f64,
     pub slippage_ticks: usize,
     pub pyramiding: usize,
@@ -448,7 +537,7 @@ pub struct PineTradeInfo {
     pub entry_id: String,
     pub exit_id: String,
     /// `long` or `short`.
-    pub direction: String,
+    pub direction: TradeDirection,
     pub quantity: f64,
     pub entry_bar: usize,
     pub entry_time: String,
@@ -470,7 +559,7 @@ pub struct PineTradeInfo {
 pub struct PineOpenTradeInfo {
     pub entry_id: String,
     pub entry_comment: String,
-    pub direction: String,
+    pub direction: TradeDirection,
     pub quantity: f64,
     pub entry_bar: usize,
     pub entry_time: String,
@@ -507,7 +596,7 @@ pub struct PineAlertInfo {
     pub instrument: String,
     pub timeframe: String,
     /// `active`, `paused`, `script_changed` or `script_deleted`.
-    pub state: String,
+    pub state: ScriptAlertState,
     pub note: String,
     pub chart_id: String,
     pub instance_id: Option<String>,
@@ -530,9 +619,9 @@ pub struct PineAlertsResult {
 pub struct PineEditResult {
     pub script_id: String,
     /// `update_draft` or `save`.
-    pub action: String,
+    pub action: EditAction,
     /// `updated` (draft written), `saved`, or `unchanged` (nothing needed doing).
-    pub status: String,
+    pub status: EditStatus,
     /// The revision (source hash) that was current before: what the caller's
     /// `expected_revision` matched.
     pub previous_revision: String,
@@ -576,7 +665,11 @@ pub fn indicator_catalog() -> Vec<IndicatorSpecInfo> {
                     "Supertrend ({SUPERTREND_PERIOD} periods, {SUPERTREND_MULTIPLIER}x ATR) marking where the trend flips. Fixed settings."
                 ),
             },
-            placement: if kind.is_overlay() { "overlay" } else { "pane" }.to_owned(),
+            placement: if kind.is_overlay() {
+                IndicatorPlacement::Overlay
+            } else {
+                IndicatorPlacement::Pane
+            },
             chart_types: if kind.supports_line_charts() {
                 vec!["candles".to_owned(), "line".to_owned()]
             } else {
@@ -601,13 +694,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_colour_is_six_or_eight_hex_digits_after_one_optional_hash() {
+        assert_eq!(parse_color("#FF8000"), Some(([255, 128, 0, 255], false)));
+        assert_eq!(parse_color(" ff800080 "), Some(([255, 128, 0, 128], true)));
+        for bad in [
+            "",
+            "#",
+            "#FF80",
+            "#FF80000",
+            "#GG8000",
+            "##FF8000",
+            "#ＦF8000",
+            "red",
+        ] {
+            assert_eq!(parse_color(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
     fn catalog_lists_exactly_the_built_in_indicators() {
         let catalog = indicator_catalog();
         let ids: Vec<_> = catalog.iter().map(|spec| spec.id.as_str()).collect();
         assert_eq!(ids, ["volume", "rsi", "ema", "bollinger", "trend_flips"]);
 
         let ema = catalog.iter().find(|spec| spec.id == "ema").unwrap();
-        assert_eq!(ema.placement, "overlay");
+        assert_eq!(ema.placement, IndicatorPlacement::Overlay);
         assert_eq!(ema.parameters.len(), 1);
         assert_eq!(ema.parameters[0].allowed_values, [9, 20, 50, 100, 200]);
         assert!(
@@ -617,7 +728,7 @@ mod tests {
         );
 
         let volume = catalog.iter().find(|spec| spec.id == "volume").unwrap();
-        assert_eq!(volume.placement, "pane");
+        assert_eq!(volume.placement, IndicatorPlacement::Pane);
         assert_eq!(volume.chart_types, ["candles"]);
         for spec in catalog.iter().filter(|spec| spec.id != "ema") {
             assert!(spec.parameters.is_empty(), "{} has no parameters", spec.id);
@@ -693,7 +804,7 @@ pub struct DrawingStyleInfo {
     pub color: String,
     pub width: f64,
     /// `solid`, `dashed` or `dotted`.
-    pub dash: String,
+    pub dash: McpDash,
     pub extend_left: bool,
     pub extend_right: bool,
     /// `#RRGGBBAA` when the drawing is filled.
@@ -734,7 +845,7 @@ pub struct DrawingsChangeResult {
     pub workspace_id: String,
     pub chart_id: String,
     /// `added`, `updated`, `unchanged` or `removed`.
-    pub status: String,
+    pub status: DrawingsStatus,
     /// The drawings added, changed or removed.
     pub drawing_ids: Vec<String>,
     /// The added or changed drawings as they are now (empty after a removal).

@@ -116,73 +116,10 @@ pub fn assigned_names(statements: &[Statement]) -> std::collections::HashSet<Str
     names
 }
 
-/// A call in the source. `a.b(x)` on a plain variable path is a [`Call`](Expression::Call) named
-/// `"a.b"`; a method called on anything else (`f().b(x)`) is a
-/// [`MethodCall`](Expression::MethodCall) with its receiver, and only has the member name.
-pub enum CallSite<'a> {
-    Plain {
-        name: &'a str,
-        arguments: &'a [super::ast::Argument],
-        range: SourceRange,
-    },
-    Method {
-        receiver: &'a Expression,
-        name: &'a str,
-        arguments: &'a [super::ast::Argument],
-        range: SourceRange,
-    },
-}
-
-/// Visits every call in `statements`, at any depth, of both forms. A check meant to see "every
-/// call" uses this; the functions below see only [`CallSite::Plain`], which is every call whose
-/// callee is a name (builtins, the script's functions, `x.method()` on a variable).
-pub fn for_each_call_site(statements: &[Statement], visit: &mut impl FnMut(CallSite<'_>)) {
-    for statement in statements {
-        for expression in expressions(statement) {
-            for_each_call_site_in_expression(expression, visit);
-        }
-        for block in nested_blocks(statement) {
-            for_each_call_site(block, visit);
-        }
-    }
-}
-
-fn for_each_call_site_in_expression(expression: &Expression, visit: &mut impl FnMut(CallSite<'_>)) {
-    match expression {
-        Expression::Call {
-            name,
-            arguments,
-            range,
-            ..
-        } => visit(CallSite::Plain {
-            name,
-            arguments,
-            range: *range,
-        }),
-        Expression::MethodCall {
-            receiver,
-            name,
-            arguments,
-            range,
-            ..
-        } => visit(CallSite::Method {
-            receiver,
-            name,
-            arguments,
-            range: *range,
-        }),
-        Expression::Statement(statement, _) => {
-            for_each_call_site(std::slice::from_ref(statement.as_ref()), visit);
-        }
-        _ => {}
-    }
-    for child in children(expression) {
-        for_each_call_site_in_expression(child, visit);
-    }
-}
-
-/// Visits every call whose callee is a name, at any depth (see [`CallSite::Plain`]). Not a method
-/// called on a computed receiver: use [`for_each_call_site`] for those.
+/// Visits every call whose callee is a name, at any depth: builtins, the script's functions, and
+/// `a.b(x)` on a plain variable path, which is a [`Call`](Expression::Call) named `"a.b"`. A method
+/// called on anything else (`f().b(x)`) is a [`MethodCall`](Expression::MethodCall) and is not
+/// visited.
 pub fn for_each_call(statements: &[Statement], visit: &mut impl FnMut(&str, SourceRange)) {
     for_each_call_with_args(statements, &mut |name, _, range| visit(name, range));
 }
@@ -192,16 +129,35 @@ pub fn for_each_call_with_args(
     statements: &[Statement],
     visit: &mut impl FnMut(&str, &[super::ast::Argument], SourceRange),
 ) {
-    for_each_call_site(statements, &mut |site| {
-        if let CallSite::Plain {
+    for statement in statements {
+        for expression in expressions(statement) {
+            for_each_call_in_expression(expression, visit);
+        }
+        for block in nested_blocks(statement) {
+            for_each_call_with_args(block, visit);
+        }
+    }
+}
+
+fn for_each_call_in_expression(
+    expression: &Expression,
+    visit: &mut impl FnMut(&str, &[super::ast::Argument], SourceRange),
+) {
+    match expression {
+        Expression::Call {
             name,
             arguments,
             range,
-        } = site
-        {
-            visit(name, arguments, range);
+            ..
+        } => visit(name, arguments, *range),
+        Expression::Statement(statement, _) => {
+            for_each_call_with_args(std::slice::from_ref(statement.as_ref()), visit);
         }
-    });
+        _ => {}
+    }
+    for child in children(expression) {
+        for_each_call_in_expression(child, visit);
+    }
 }
 
 /// Visits every plain or dotted name read in `statements`, at any depth.
@@ -347,14 +303,8 @@ else
     fn every_call_in_every_position_is_visited() {
         let statements = parse(FIXTURE);
         let mut plain = BTreeSet::new();
-        let mut methods = Vec::new();
-        for_each_call_site(&statements, &mut |site| match site {
-            CallSite::Plain { name, .. } => {
-                plain.insert(name.to_owned());
-            }
-            CallSite::Method { name, receiver, .. } => {
-                methods.push((name.to_owned(), matches!(receiver, Expression::Call { .. })));
-            }
+        for_each_call(&statements, &mut |name, _| {
+            plain.insert(name.to_owned());
         });
         for number in 1..=36 {
             assert!(
@@ -364,8 +314,6 @@ else
         }
         assert!(plain.contains("plainobj.method"), "{plain:?}");
         assert!(plain.contains("T.new"), "{plain:?}");
-        // The method on a computed receiver is the only `MethodCall`.
-        assert_eq!(methods, vec![("method".to_owned(), true)]);
     }
 
     #[test]

@@ -49,8 +49,6 @@ enum Step {
     Expression(String),
     /// The values a series took on earlier bars.
     Series,
-    /// `[n]` bars back, within a series.
-    Offset(usize),
     /// An element of an array, a tuple, or a matrix row.
     Element(usize),
     /// A map entry's value, by position in insertion order.
@@ -123,26 +121,17 @@ pub struct Page {
     pub items: Vec<Variable>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum InspectError {
     /// The script has resumed since this reference was made.
+    #[error("The script has moved on.")]
     Stale,
     /// The value is no longer there (the variable left scope, the array shrank).
+    #[error("The value is no longer available.")]
     Gone,
+    #[error("{0}")]
     Failed(String),
 }
-
-impl std::fmt::Display for InspectError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Stale => f.write_str("The script has moved on."),
-            Self::Gone => f.write_str("The value is no longer available."),
-            Self::Failed(message) => f.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for InspectError {}
 
 /// What inspecting needs of the stopped script.
 pub(crate) struct Env<'a> {
@@ -606,9 +595,6 @@ fn resolve(env: &mut Env<'_>, reference: &ValueRef) -> Result<Node, InspectError
                 Step::Variable(name) if !is_compound(&value) => Node::Series(name.clone()),
                 _ => return Err(InspectError::Gone),
             },
-            (Node::Series(name), Step::Offset(back)) => Node::Value(
-                series_value(env, reference.frame, &name, *back).ok_or(InspectError::Gone)?,
-            ),
             (Node::Value(RuntimeValue::Tuple(items)), Step::Element(index)) => {
                 Node::Value(items.get(*index).cloned().ok_or(InspectError::Gone)?)
             }

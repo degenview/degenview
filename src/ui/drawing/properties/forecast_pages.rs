@@ -5,10 +5,8 @@
 //! Every control here is one the drawing honours: nothing is offered that the painter or the
 //! arithmetic ignores.
 
-use super::{
-    DrawingProperties, Icon, Id, Page, Ui, card, color_card, color_well, number_field, picker_row,
-    toggle_row,
-};
+use super::rows::{Page, color_card, color_well, toggle_row};
+use super::{DrawingProperties, Icon, Id, Ui, card, number_field, picker_row};
 use crate::model::chart::kind::PriceSource;
 use crate::model::forecast::style::{
     MAX_ACCOUNT, MAX_BAND_MULTIPLIER, MAX_QTY_PRECISION, MAX_ROW_TICKS, ProfileVolume, RowsLayout,

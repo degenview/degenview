@@ -6,6 +6,7 @@ mod format;
 mod host;
 #[cfg(test)]
 mod layout_tests;
+mod lock;
 mod mcp;
 mod model;
 mod native_bridge;
@@ -23,8 +24,8 @@ use app::DegenViewApp;
 use eframe::egui;
 
 pub use crash_report::install_panic_hook;
-pub use host::sync::{EventSink, TransportFactory};
 pub use sync::transport::native::{CloudKitFactory, NativeApi};
+pub use sync::transport::{EventSink, TransportFactory};
 
 pub fn run_gui() -> Result<(), Box<dyn std::error::Error>> {
     run_gui_with(None)

@@ -42,7 +42,6 @@ pub fn default_notifier() -> Arc<dyn Notifier> {
     }
 }
 
-#[allow(dead_code)]
 pub fn notify_async(
     notifier: Arc<dyn Notifier>,
     content: NotificationContent,

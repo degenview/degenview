@@ -121,15 +121,16 @@ struct Published {
 #[cfg(not(test))]
 mod state {
     use super::Published;
+    use crate::lock::{read, write};
     use std::sync::RwLock;
 
     static PUBLISHED: RwLock<Option<Published>> = RwLock::new(None);
 
     pub fn get() -> Option<Published> {
-        PUBLISHED.read().expect("appearance lock poisoned").clone()
+        read(&PUBLISHED).clone()
     }
     pub fn set(published: Option<Published>) {
-        *PUBLISHED.write().expect("appearance lock poisoned") = published;
+        *write(&PUBLISHED) = published;
     }
 }
 

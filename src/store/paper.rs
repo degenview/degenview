@@ -1,6 +1,5 @@
 //! Paper-trading storage. `PaperTradingEngine` persists whole snapshots, so each save replaces
 //! the paper tables in one transaction. Ported from `AppDatabase+PaperTrading.swift`.
-#![allow(dead_code)] // transient until the paper trading host wires these
 
 use crate::model::paper::{PaperAccount, PaperTradingSnapshot};
 use crate::store::{Document, Store};
@@ -236,9 +235,7 @@ mod tests {
             ids.to_global(accounts[0])
         );
         assert_eq!(bundle["fills"][0]["order_id"], bundle["orders"][0]["id"]);
-        assert!(
-            bundle["orders"][0]["id"].as_u64().unwrap() >= crate::sync::record::ids::GLOBAL_BASE
-        );
+        assert!(bundle["orders"][0]["id"].as_u64().unwrap() >= crate::model::ids::GLOBAL_BASE);
         // The tables keep the small ids.
         assert_eq!(store.paper_trading().unwrap().accounts[0].id, accounts[0]);
     }

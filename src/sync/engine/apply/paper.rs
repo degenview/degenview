@@ -12,6 +12,7 @@ use crate::model::paper::{
     PaperAccount, PaperClosedTrade, PaperFill, PaperJournalEntry, PaperOrder, PaperOrderEvent,
     PaperPosition,
 };
+use crate::sync::engine::SyncError;
 use crate::sync::record::ids::Direction;
 use crate::sync::record::paper::{PAUSED, Parts, map_parts, project, renumber, split_bundle};
 use serde_json::Value;
@@ -32,7 +33,7 @@ fn decodes(parts: &Parts) -> bool {
 }
 
 impl Work<'_> {
-    pub(super) fn apply_paper(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+    pub(super) fn apply_paper(&mut self, record: &RemoteRecord) -> Result<(), SyncError> {
         let kind = EntityKind::PaperAccount;
         let sync_id = record.record.name.id.clone();
         let ids = self.ids;
@@ -164,7 +165,7 @@ impl Work<'_> {
         record: &RemoteRecord,
         mut parts: Parts,
         from_local: bool,
-    ) -> rusqlite::Result<()> {
+    ) -> Result<(), SyncError> {
         let device = if from_local {
             self.ctx.device_name.clone()
         } else {
@@ -202,7 +203,7 @@ impl Work<'_> {
             &copy_id.to_string(),
         )?;
         self.report.tables.insert("paper_account".to_string());
-        self.store.record_conflict(
+        Ok(self.store.record_conflict(
             &ConflictRecord {
                 entity: EntityKind::PaperAccount,
                 sync_id: record.record.name.id.clone(),
@@ -214,10 +215,10 @@ impl Work<'_> {
                 copy_sync_id: Some(copy_sync_id),
             },
             self.ctx.now_ms,
-        )
+        )?)
     }
 
-    pub(super) fn delete_paper(&mut self, name: &RecordName) -> rusqlite::Result<()> {
+    pub(super) fn delete_paper(&mut self, name: &RecordName) -> Result<(), SyncError> {
         let kind = EntityKind::PaperAccount;
         let sync_id = name.id.as_str();
         let ids = self.ids;

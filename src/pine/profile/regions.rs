@@ -24,16 +24,7 @@ pub enum RegionKind {
     Function,
 }
 
-impl RegionKind {
-    pub fn describe(self) -> &'static str {
-        match self {
-            Self::Statement => "Statement",
-            Self::Loop => "Loop",
-            Self::Branch => "Conditional",
-            Self::Function => "Function",
-        }
-    }
-}
+impl RegionKind {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Region {
@@ -153,10 +144,6 @@ impl RegionTable {
         self.regions.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.regions.is_empty()
-    }
-
     pub fn regions(&self) -> &[Region] {
         &self.regions
     }
@@ -193,18 +180,6 @@ impl RegionTable {
             .rev()
             .map(|(_, index)| *index)
             .find(|index| self.regions[*index as usize].end.offset >= offset)
-    }
-
-    /// Whether `ancestor` is `region` or encloses it.
-    pub fn encloses(&self, ancestor: u32, region: u32) -> bool {
-        let mut next = Some(region);
-        while let Some(index) = next {
-            if index == ancestor {
-                return true;
-            }
-            next = self.regions[index as usize].parent;
-        }
-        false
     }
 }
 

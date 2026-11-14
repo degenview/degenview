@@ -2,36 +2,23 @@
 //! it or produce an unusable file is rejected before any disk access. Port of
 //! `ScriptNameValidator.swift`; the messages are the Swift ones verbatim.
 
-use std::fmt;
-
 /// The 255-byte file-name limit minus room for the `.pine` extension.
 pub const MAX_NAME_BYTES: usize = 250;
 pub const FILE_EXTENSION: &str = "pine";
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ScriptNameError {
+    #[error("Enter a name for the script.")]
     Empty,
+    #[error("Script names cannot start with a period.")]
     Hidden,
+    #[error("Script names cannot contain “{0}”.")]
     ForbiddenCharacter(char),
+    #[error("Script names cannot contain control characters.")]
     ControlCharacter,
+    #[error("Script names must be {MAX_NAME_BYTES} bytes or fewer.")]
     TooLong,
 }
-
-impl fmt::Display for ScriptNameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("Enter a name for the script."),
-            Self::Hidden => f.write_str("Script names cannot start with a period."),
-            Self::ForbiddenCharacter(c) => write!(f, "Script names cannot contain “{c}”."),
-            Self::ControlCharacter => {
-                f.write_str("Script names cannot contain control characters.")
-            }
-            Self::TooLong => write!(f, "Script names must be {MAX_NAME_BYTES} bytes or fewer."),
-        }
-    }
-}
-
-impl std::error::Error for ScriptNameError {}
 
 /// The name as it will be stored: trimmed, without a typed `.pine` extension.
 pub fn validate(raw: &str) -> Result<String, ScriptNameError> {

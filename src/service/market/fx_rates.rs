@@ -7,10 +7,8 @@
 //! clock, sleep, BTC spot source and storage directory are all injectable, so the rules (the
 //! seven-day lookback, retries, cache lifetimes) are tested without a network.
 
-// Transient: the portfolio host wires this up for the CMC import and live conversion.
-#![allow(dead_code)]
-
-use crate::format::{civil_from_days, days_from_civil};
+use crate::format::civil_from_days;
+use crate::lock::lock;
 use crate::model::portfolio::PortfolioCurrency;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -103,38 +101,27 @@ pub struct Conversion {
     pub is_cached: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum FxError {
+    #[error(
+        "Exchange rate from {} to {} is unavailable{}.",
+        from.code(),
+        to.code(),
+        date_ms.map(|ms| format!(" for {}", day_key(ms))).unwrap_or_default()
+    )]
     RateUnavailable {
         from: PortfolioCurrency,
         to: PortfolioCurrency,
         date_ms: Option<i64>,
     },
+    #[error("The exchange-rate service answered HTTP {0}.")]
     Http(u16),
+    #[error("Network error: {0}")]
     Network(String),
+    #[error("{0} returned an invalid response.")]
     InvalidResponse(String),
+    #[error("Bitstamp returned no BTC/USD history.")]
     EmptyBitcoinHistory,
-}
-
-impl FxError {
-    pub fn message(&self) -> String {
-        match self {
-            Self::RateUnavailable { from, to, date_ms } => {
-                let suffix = date_ms
-                    .map(|ms| format!(" for {}", day_key(ms)))
-                    .unwrap_or_default();
-                format!(
-                    "Exchange rate from {} to {} is unavailable{suffix}.",
-                    from.code(),
-                    to.code()
-                )
-            }
-            Self::Http(status) => format!("The exchange-rate service answered HTTP {status}."),
-            Self::Network(message) => format!("Network error: {message}"),
-            Self::InvalidResponse(what) => format!("{what} returned an invalid response."),
-            Self::EmptyBitcoinHistory => "Bitstamp returned no BTC/USD history.".to_owned(),
-        }
-    }
 }
 
 // MARK: Pure rules
@@ -149,6 +136,8 @@ pub fn start_of_day(epoch_ms: i64) -> i64 {
     epoch_ms.div_euclid(DAY_MS) * DAY_MS
 }
 
+/// The day `day_key` names, as its first millisecond.
+#[cfg(test)]
 fn parse_day(key: &str) -> Option<i64> {
     let mut parts = key.split('-');
     let (year, month, day) = (
@@ -156,7 +145,7 @@ fn parse_day(key: &str) -> Option<i64> {
         parts.next()?.parse().ok()?,
         parts.next()?.parse().ok()?,
     );
-    Some(days_from_civil(year, month, day) * DAY_MS)
+    Some(crate::format::days_from_civil(year, month, day) * DAY_MS)
 }
 
 fn is_btc_or_usd(currency: PortfolioCurrency) -> bool {
@@ -402,9 +391,7 @@ impl FxRateService {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        lock(&self.state)
     }
 
     // MARK: Public API
@@ -530,12 +517,6 @@ impl FxRateService {
             result.insert(*date, outcome);
         }
         result
-    }
-
-    /// Refreshes the current fiat rates; failures are ignored (the old ones keep serving).
-    pub fn refresh(&self) {
-        let mut state = self.lock();
-        let _ = self.refresh_current_fiat(&mut state);
     }
 
     // MARK: Current
@@ -1051,7 +1032,7 @@ mod tests {
             .on("quotes=EUR", Err(TransportError::Fatal("offline".into())));
         let error = f.service.conversion(Usd, Eur, None).unwrap_err();
         assert_eq!(error, FxError::Network("offline".into()));
-        assert!(error.message().contains("offline"));
+        assert!(error.to_string().contains("offline"));
     }
 
     #[test]
@@ -1147,7 +1128,7 @@ mod tests {
             }
         );
         assert_eq!(
-            error.message(),
+            error.to_string(),
             "Exchange rate from USD to EUR is unavailable for 2024-03-05."
         );
     }

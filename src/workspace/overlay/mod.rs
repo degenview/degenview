@@ -23,7 +23,7 @@ use crate::model::market::history::OlderHistory;
 use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
 use crate::model::overlay::{OverlayId, OverlayList};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
-use crate::service;
+use crate::service::{self, ProviderError};
 use eframe::egui;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -53,7 +53,7 @@ pub(super) trait OverlayBackend: Send + Sync + 'static {
         symbol: &str,
         interval: &str,
         limit: u32,
-    ) -> Result<Vec<Kline>, String>;
+    ) -> Result<Vec<Kline>, ProviderError>;
     /// A page of candles ending before `end_ms`.
     fn page(
         &self,
@@ -61,7 +61,7 @@ pub(super) trait OverlayBackend: Send + Sync + 'static {
         symbol: &str,
         interval: &str,
         end_ms: i64,
-    ) -> Result<Vec<Kline>, String>;
+    ) -> Result<Vec<Kline>, ProviderError>;
 }
 
 struct ServiceBackend;
@@ -77,7 +77,7 @@ impl OverlayBackend for ServiceBackend {
         symbol: &str,
         interval: &str,
         limit: u32,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         service::fetch_klines(source, symbol, interval, limit)
     }
 
@@ -87,7 +87,7 @@ impl OverlayBackend for ServiceBackend {
         symbol: &str,
         interval: &str,
         end_ms: i64,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         service::fetch_klines_range(source, symbol, interval, 0, end_ms, market::history::PAGE)
     }
 }
@@ -115,11 +115,11 @@ struct Series {
     status: OverlayStatus,
     /// Bumped by every request and reload; a queued job whose number is stale does nothing.
     generation: Arc<AtomicU64>,
-    inbox: Option<Receiver<Result<Vec<Kline>, String>>>,
+    inbox: Option<Receiver<Result<Vec<Kline>, ProviderError>>>,
     last_fetch: Option<Instant>,
     retry_at: Option<Instant>,
     older: OlderHistory,
-    older_inbox: Option<Receiver<Result<Vec<Kline>, String>>>,
+    older_inbox: Option<Receiver<Result<Vec<Kline>, ProviderError>>>,
     last_live_open_time: Option<i64>,
 }
 
@@ -583,9 +583,9 @@ fn receive_fetch(series: &mut Series, now: Instant) -> bool {
     let result = match receiver.try_recv() {
         Ok(result) => result,
         Err(mpsc::TryRecvError::Empty) => return false,
-        Err(mpsc::TryRecvError::Disconnected) => {
-            Err("The request stopped before it answered".to_owned())
-        }
+        Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::other(
+            "The request stopped before it answered",
+        )),
     };
     series.inbox = None;
     match result {
@@ -597,8 +597,8 @@ fn receive_fetch(series: &mut Series, now: Instant) -> bool {
             series.status = OverlayStatus::Ready;
             series.retry_at = None;
         }
-        Err(message) => {
-            series.status = OverlayStatus::Error(message.into());
+        Err(error) => {
+            series.status = OverlayStatus::Error(error.to_string().into());
             series.retry_at = Some(now + retry_after(series.instrument.source));
         }
     }
@@ -612,7 +612,9 @@ fn receive_older(series: &mut Series, now: Instant) -> bool {
     let result = match receiver.try_recv() {
         Ok(result) => result,
         Err(mpsc::TryRecvError::Empty) => return false,
-        Err(mpsc::TryRecvError::Disconnected) => Err("Older candles stopped loading".to_owned()),
+        Err(mpsc::TryRecvError::Disconnected) => {
+            Err(ProviderError::other("Older candles stopped loading"))
+        }
     };
     series.older_inbox = None;
     match result {

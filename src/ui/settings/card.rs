@@ -1,6 +1,7 @@
 //! The building blocks of Swift's settings pages: a titled section, a `SettingsCardRow` (icon
 //! badge, title and hint on the left, the control anchored right) and the macOS switch.
 
+use crate::service::llm::report::ErrorReport;
 use crate::ui::icons::Icon;
 use crate::ui::theme;
 use eframe::egui::{self, Align, CursorIcon, Layout, Sense, Ui, Vec2, vec2};
@@ -240,5 +241,42 @@ mod tests {
             control.right() <= whole.right() && whole.height() < 150.0,
             "{control:?} {whole:?}"
         );
+    }
+}
+
+/// A status line's words and whether they report a failure.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StatusMessage {
+    /// What the status says; for a provider's failure, its headline.
+    pub text: String,
+    pub is_error: bool,
+    /// A provider's failure with more to say than its headline (detail, request id).
+    pub report: Option<ErrorReport>,
+}
+
+impl StatusMessage {
+    pub(crate) fn ok(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            is_error: false,
+            report: None,
+        }
+    }
+
+    pub(crate) fn error(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            is_error: true,
+            report: None,
+        }
+    }
+
+    /// A provider's failure: the headline is the text, the rest is kept for a card.
+    pub(crate) fn failure(report: ErrorReport) -> Self {
+        Self {
+            text: report.headline.clone(),
+            is_error: true,
+            report: report.has_more().then_some(report),
+        }
     }
 }

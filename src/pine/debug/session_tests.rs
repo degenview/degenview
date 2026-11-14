@@ -8,6 +8,7 @@ use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::logs::LogHistory;
 use crate::pine::tests::bench;
 
+use super::session::{Rejected, StartError};
 use super::tests::with_header;
 use super::*;
 

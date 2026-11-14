@@ -1,9 +1,6 @@
-//! The in-app alert banner: a capsule at the top of the window when a price alert or a
-//! script alert fires, gone after six seconds or on ✕. One slot per kind, so a newer alert
-//! replaces an older one rather than stacking.
-
-// Transient: the app shell hosts this when the alert runtime is wired.
-#![allow(dead_code)]
+//! The in-app alert banner: a capsule at the top of the window when a price alert fires, gone
+//! after six seconds or on ✕. One slot, so a newer alert replaces an older one rather than
+//! stacking.
 
 use crate::model::alert::notification::banners_enabled;
 use crate::model::alert::{AlertNotificationSettings, AlertTriggerEvent};
@@ -18,8 +15,6 @@ pub const AUTO_DISMISS_MS: i64 = 6_000;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Banner {
     pub id: u64,
-    /// A small first line (a script alert's script and symbol).
-    pub title: Option<String>,
     pub text: String,
     pub shown_at_ms: i64,
 }
@@ -33,7 +28,6 @@ impl Banner {
 #[derive(Default)]
 pub struct AlertBannerState {
     price: Option<Banner>,
-    script: Option<Banner>,
 }
 
 /// "BTC reached $70,000.00".
@@ -46,16 +40,13 @@ pub fn price_banner_text(event: &AlertTriggerEvent) -> String {
 }
 
 impl AlertBannerState {
+    #[cfg(test)]
     pub fn price(&self) -> Option<&Banner> {
         self.price.as_ref()
     }
 
-    pub fn script(&self) -> Option<&Banner> {
-        self.script.as_ref()
-    }
-
     pub fn is_empty(&self) -> bool {
-        self.price.is_none() && self.script.is_none()
+        self.price.is_none()
     }
 
     /// Shows a price alert unless banners are switched off. Returns whether it was shown.
@@ -70,33 +61,7 @@ impl AlertBannerState {
         }
         self.price = Some(Banner {
             id: event.id,
-            title: None,
             text: price_banner_text(event),
-            shown_at_ms: now_ms,
-        });
-        true
-    }
-
-    /// Shows a script alert; an empty message reads "Alert".
-    pub fn show_script(
-        &mut self,
-        id: u64,
-        title: &str,
-        message: &str,
-        settings: &AlertNotificationSettings,
-        now_ms: i64,
-    ) -> bool {
-        if !banners_enabled(settings) {
-            return false;
-        }
-        self.script = Some(Banner {
-            id,
-            title: Some(title.to_owned()),
-            text: if message.is_empty() {
-                "Alert".to_owned()
-            } else {
-                message.to_owned()
-            },
             shown_at_ms: now_ms,
         });
         true
@@ -104,10 +69,6 @@ impl AlertBannerState {
 
     pub fn dismiss_price(&mut self) {
         self.price = None;
-    }
-
-    pub fn dismiss_script(&mut self) {
-        self.script = None;
     }
 
     /// Drops banners that have been up long enough.
@@ -119,50 +80,33 @@ impl AlertBannerState {
         {
             self.price = None;
         }
-        if self
-            .script
-            .as_ref()
-            .is_some_and(|banner| banner.expired(now_ms))
-        {
-            self.script = None;
-        }
     }
 
-    /// Milliseconds until the next banner expires, for scheduling a repaint.
+    /// Milliseconds until the banner expires, for scheduling a repaint.
     pub fn next_expiry_in(&self, now_ms: i64) -> Option<i64> {
-        [self.price.as_ref(), self.script.as_ref()]
-            .into_iter()
-            .flatten()
+        self.price
+            .as_ref()
             .map(|banner| (banner.shown_at_ms + AUTO_DISMISS_MS - now_ms).max(0))
-            .min()
     }
 }
 
-/// Paints whatever banners are up, centred at the top, and expires old ones.
+/// Paints the banner if one is up, centred at the top, and expires an old one.
 pub fn show(ctx: &egui::Context, state: &mut AlertBannerState, now_ms: i64) {
     state.expire(now_ms);
     if state.is_empty() {
         return;
     }
     let mut dismiss_price = false;
-    let mut dismiss_script = false;
     egui::Area::new(Id::new("alert-banners"))
         .order(egui::Order::Foreground)
         .anchor(Align2::CENTER_TOP, Vec2::new(0.0, 8.0))
         .show(ctx, |ui| {
-            ui.spacing_mut().item_spacing.y = 6.0;
             if let Some(banner) = state.price.as_ref() {
-                dismiss_price = capsule(ui, Icon::BellFill, banner);
-            }
-            if let Some(banner) = state.script.as_ref() {
-                dismiss_script = capsule(ui, Icon::BellBadge, banner);
+                dismiss_price = capsule(ui, banner);
             }
         });
     if dismiss_price {
         state.dismiss_price();
-    }
-    if dismiss_script {
-        state.dismiss_script();
     }
     if let Some(ms) = state.next_expiry_in(now_ms) {
         ctx.request_repaint_after(Duration::from_millis(ms.max(50) as u64));
@@ -170,7 +114,7 @@ pub fn show(ctx: &egui::Context, state: &mut AlertBannerState, now_ms: i64) {
 }
 
 /// One capsule; returns whether its close button was clicked.
-fn capsule(ui: &mut egui::Ui, icon: Icon, banner: &Banner) -> bool {
+fn capsule(ui: &mut egui::Ui, banner: &Banner) -> bool {
     let mut dismissed = false;
     egui::Frame::new()
         .fill(theme::pick(
@@ -189,24 +133,13 @@ fn capsule(ui: &mut egui::Ui, icon: Icon, banner: &Banner) -> bool {
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                icons::inline(ui, icon, 14.0, kit::ORANGE);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 1.0;
-                    if let Some(title) = &banner.title {
-                        ui.label(kit::text(
-                            title,
-                            kit::size::CAPTION + 0.5,
-                            kit::REGULAR,
-                            theme::text_secondary(),
-                        ));
-                    }
-                    ui.label(kit::text(
-                        &banner.text,
-                        kit::size::BODY,
-                        kit::REGULAR,
-                        theme::text_primary(),
-                    ));
-                });
+                icons::inline(ui, Icon::BellFill, 14.0, kit::ORANGE);
+                ui.label(kit::text(
+                    &banner.text,
+                    kit::size::BODY,
+                    kit::REGULAR,
+                    theme::text_primary(),
+                ));
                 if icons::button(ui, Icon::Xmark, 18.0, theme::text_secondary(), "Dismiss")
                     .clicked()
                 {
@@ -250,7 +183,6 @@ mod tests {
         assert!(state.show_price(&event(1), &AlertNotificationSettings::default(), 100));
         assert_eq!(state.price().unwrap().text, "BTC reached $70,000.00");
         assert_eq!(state.price().unwrap().id, 1);
-        assert!(state.script().is_none());
     }
 
     #[test]
@@ -281,27 +213,6 @@ mod tests {
     }
 
     #[test]
-    fn price_and_script_banners_have_their_own_slots_and_deadlines() {
-        let settings = AlertNotificationSettings::default();
-        let mut state = AlertBannerState::default();
-        state.show_price(&event(1), &settings, 0);
-        state.show_script(9, "Trend · BTCUSDT 1h", "", &settings, 3_000);
-        assert_eq!(
-            state.script().unwrap().text,
-            "Alert",
-            "an empty message still says something"
-        );
-        assert_eq!(
-            state.script().unwrap().title.as_deref(),
-            Some("Trend · BTCUSDT 1h")
-        );
-        state.expire(6_000);
-        assert!(state.price().is_none() && state.script().is_some());
-        state.dismiss_script();
-        assert!(state.is_empty());
-    }
-
-    #[test]
     fn switched_off_banners_never_show() {
         let off = AlertNotificationSettings {
             in_app_banners_enabled: false,
@@ -314,7 +225,6 @@ mod tests {
         let mut state = AlertBannerState::default();
         for settings in [&off, &master] {
             assert!(!state.show_price(&event(1), settings, 0));
-            assert!(!state.show_script(1, "t", "m", settings, 0));
         }
         assert!(state.is_empty());
         // macOS notifications being off does not hide the in-app banner.
@@ -331,19 +241,8 @@ mod tests {
         let mut state = AlertBannerState::default();
         assert_eq!(state.next_expiry_in(0), None);
         state.show_price(&event(1), &settings, 1_000);
-        state.show_script(2, "t", "m", &settings, 3_000);
         assert_eq!(state.next_expiry_in(2_000), Some(5_000));
         assert_eq!(state.next_expiry_in(6_500), Some(500));
         assert_eq!(state.next_expiry_in(9_500), Some(0), "never negative");
-    }
-
-    #[test]
-    fn dismissing_one_leaves_the_other() {
-        let settings = AlertNotificationSettings::default();
-        let mut state = AlertBannerState::default();
-        state.show_price(&event(1), &settings, 0);
-        state.show_script(2, "t", "m", &settings, 0);
-        state.dismiss_price();
-        assert!(state.price().is_none() && state.script().is_some());
     }
 }

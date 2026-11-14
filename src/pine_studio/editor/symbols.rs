@@ -191,12 +191,6 @@ impl SymbolTable {
         Some(&self.symbols[id])
     }
 
-    /// What the value `name` is at `caret`: `None` when no such variable or parameter is in scope,
-    /// `Some(None)` when there is one whose type is not known.
-    pub fn value_type_at(&self, name: &str, caret: usize) -> Option<Option<&str>> {
-        Some(self.value_at(name, caret)?.type_name.as_deref())
-    }
-
     /// The type of a value path (`self`, `this.items`) at `caret`: `None` when its head is no
     /// variable, parameter or alias, `Some(None)` when its type is not known, and otherwise the type
     /// text, following each field through the types the script declares.

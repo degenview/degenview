@@ -5,7 +5,6 @@ use super::{EventHead, Tick};
 use crate::service::SearchResult;
 use crate::ui::chart::picker_kit::artwork::prediction_icon;
 use crate::ui::chart::picker_kit::suggestions::PREDICTION_TOPICS;
-use crate::ui::chart::picker_kit::text;
 use crate::ui::chart::symbol_picker::list::{
     PAD, RowOutput, RowState, SUBTITLE_SIZE, TITLE_SIZE, chance_label, content_right, marks,
     paint_background, venue_block,
@@ -128,7 +127,7 @@ pub fn choice(
 ) -> (Response, RowOutput) {
     let text_left = TEXT_LEFT;
     // Room kept at the right for the chance and the plus.
-    let label = text::galley_rows(
+    let label = kit::galley_rows(
         ui,
         &result.symbol,
         14.0,

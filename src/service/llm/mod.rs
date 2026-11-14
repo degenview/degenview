@@ -8,9 +8,6 @@
 //! formats are pure (`openai`, `anthropic`) and tested against recorded frames; `HttpProvider` is
 //! the only part that touches the network.
 
-// Transient: the Settings page and the Pine Studio assistant wire these up next.
-#![allow(dead_code)]
-
 pub mod anthropic;
 pub mod openai;
 pub mod prefs;
@@ -68,6 +65,22 @@ impl ProviderKind {
         }
     }
 
+    /// Whether `env_var` holds a key. Read once per process: the app never changes its own
+    /// environment, and the Settings page and the assistant ask every frame.
+    pub fn env_key_present(self) -> bool {
+        static PRESENT: std::sync::OnceLock<[bool; 3]> = std::sync::OnceLock::new();
+        let present = PRESENT.get_or_init(|| {
+            Self::ALL.map(|kind| {
+                std::env::var(kind.env_var()).is_ok_and(|value| !value.trim().is_empty())
+            })
+        });
+        let index = Self::ALL
+            .iter()
+            .position(|kind| *kind == self)
+            .unwrap_or_default();
+        present[index]
+    }
+
     pub fn default_base_url(self) -> &'static str {
         match self {
             Self::OpenAi => "https://api.openai.com/v1",
@@ -88,10 +101,6 @@ impl ProviderKind {
     /// A local server needs no key, so the compatible provider may go without one.
     pub fn needs_key(self) -> bool {
         self != Self::Compatible
-    }
-
-    pub fn from_key(key: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.key() == key)
     }
 }
 
@@ -192,29 +201,45 @@ pub struct Done {
     pub truncated: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum LlmError {
+    #[error("Cancelled")]
     Cancelled,
     /// 401 / 403: the key is wrong, expired, or not allowed to use the model.
+    #[error("The provider rejected the API key: {message}")]
     Auth {
         message: String,
         request_id: Option<String>,
     },
+    #[error("Rate limited: {message}")]
     RateLimited {
         message: String,
         request_id: Option<String>,
     },
+    /// A 200 carrying an error is shown as the provider worded it, without the status.
+    #[error("{}", http_text(*status, message))]
     Http {
         status: u16,
         message: String,
         /// The provider's id for the request, from its response header.
         request_id: Option<String>,
     },
+    #[error("Network error: {0}")]
     Network(String),
     /// The server answered, but not in the format expected.
+    #[error("{0}")]
     Protocol(String),
     /// Nothing was sent: the settings are incomplete.
+    #[error("{0}")]
     Config(String),
+}
+
+fn http_text(status: u16, message: &str) -> String {
+    if status == 200 {
+        message.to_owned()
+    } else {
+        format!("HTTP {status}: {message}")
+    }
 }
 
 impl LlmError {
@@ -262,30 +287,6 @@ impl LlmError {
         }
     }
 }
-
-impl std::fmt::Display for LlmError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Cancelled => f.write_str("Cancelled"),
-            Self::Auth { message, .. } => {
-                write!(f, "The provider rejected the API key: {message}")
-            }
-            Self::RateLimited { message, .. } => write!(f, "Rate limited: {message}"),
-            Self::Http {
-                status: 200,
-                message,
-                ..
-            } => f.write_str(message),
-            Self::Http {
-                status, message, ..
-            } => write!(f, "HTTP {status}: {message}"),
-            Self::Network(message) => write!(f, "Network error: {message}"),
-            Self::Protocol(message) | Self::Config(message) => f.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for LlmError {}
 
 /// Why a turn ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -429,21 +430,8 @@ fn drive<R: std::io::BufRead>(
     Ok((any_text, truncated))
 }
 
-/// Drives a decoder over a stream; shared by every provider.
-pub(crate) fn run_stream<R: std::io::BufRead>(
-    reader: R,
-    mut decoder: impl Decoder,
-    cancel: &AtomicBool,
-    on_text: &mut dyn FnMut(&str),
-) -> Result<Done, LlmError> {
-    let (any_text, truncated) = drive(reader, &mut decoder, cancel, on_text)?;
-    if !any_text {
-        return Err(LlmError::Protocol("The model returned no text.".to_owned()));
-    }
-    Ok(Done { truncated })
-}
-
-/// Like `run_stream`, but a reply made only of tool calls is a reply too.
+/// Drives a decoder over a stream; shared by every provider. A reply made only of tool calls is
+/// a reply too.
 pub(crate) fn run_turn<R: std::io::BufRead>(
     reader: R,
     mut decoder: impl Decoder,
@@ -973,10 +961,10 @@ mod tests {
         assert!(parse_models("nope").is_err());
     }
 
-    fn stream_openai(input: &str) -> (Result<Done, LlmError>, String) {
+    fn stream_openai(input: &str) -> (Result<TurnReply, LlmError>, String) {
         let cancel = AtomicBool::new(false);
         let mut text = String::new();
-        let result = run_stream(
+        let result = run_turn(
             input.as_bytes(),
             openai::OpenAiDecoder::default(),
             &cancel,
@@ -992,7 +980,8 @@ mod tests {
              data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}]}\n\n\
              data: [DONE]\n\n",
         );
-        assert_eq!(result, Ok(Done { truncated: false }));
+        let reply = result.unwrap();
+        assert_eq!((reply.text.as_str(), reply.stop), ("Hello", Stop::End));
         assert_eq!(text, "Hello");
     }
 
@@ -1005,12 +994,6 @@ mod tests {
     }
 
     #[test]
-    fn a_reply_with_no_text_is_an_error() {
-        let (result, _) = stream_openai("data: [DONE]\n\n");
-        assert!(matches!(result, Err(LlmError::Protocol(_))));
-    }
-
-    #[test]
     fn a_whole_anthropic_stream_assembles_the_reply() {
         let input = "event: message_start\ndata: {\"type\":\"message_start\"}\n\n\
              event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}\n\n\
@@ -1018,13 +1001,13 @@ mod tests {
              event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
         let cancel = AtomicBool::new(false);
         let mut text = String::new();
-        let result = run_stream(
+        let result = run_turn(
             input.as_bytes(),
             anthropic::AnthropicDecoder::default(),
             &cancel,
             &mut |piece| text.push_str(piece),
         );
-        assert_eq!(result, Ok(Done { truncated: true }));
+        assert_eq!(result.unwrap().stop, Stop::MaxTokens);
         assert_eq!(text, "Hi");
     }
 
@@ -1034,7 +1017,7 @@ mod tests {
         let mut pieces = 0;
         let input = "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n\
                      data: {\"choices\":[{\"delta\":{\"content\":\"b\"}}]}\n\n";
-        let result = run_stream(
+        let result = run_turn(
             input.as_bytes(),
             openai::OpenAiDecoder::default(),
             &cancel,
@@ -1067,9 +1050,6 @@ mod tests {
         assert_eq!(reply.stop, Stop::ToolUse);
         assert_eq!(reply.calls.len(), 1);
         assert_eq!(reply.calls[0].name, "compile");
-        // The same stream is not a reply for a caller that asked for text only.
-        let (result, _) = stream_openai(ONLY_A_CALL);
-        assert!(matches!(result, Err(LlmError::Protocol(_))));
     }
 
     #[test]
@@ -1330,10 +1310,9 @@ mod tests {
     }
 
     #[test]
-    fn provider_keys_round_trip() {
-        for kind in ProviderKind::ALL {
-            assert_eq!(ProviderKind::from_key(kind.key()), Some(kind));
-        }
-        assert_eq!(ProviderKind::from_key("nope"), None);
+    fn provider_keys_are_unique() {
+        let keys: std::collections::HashSet<_> =
+            ProviderKind::ALL.iter().map(|kind| kind.key()).collect();
+        assert_eq!(keys.len(), ProviderKind::ALL.len());
     }
 }

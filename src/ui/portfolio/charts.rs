@@ -2,9 +2,6 @@
 //! (with its legend) and the portfolio-value line. The geometry and data preparation are
 //! pure functions with tests; the `show_*` functions only paint them.
 
-// Transient: the Portfolio window hosts these once the portfolio store is wired.
-#![allow(dead_code)]
-
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::statistics::PortfolioHistoryRange;
 use crate::model::portfolio::{PortfolioCurrency, PortfolioHolding, PortfolioSnapshot};

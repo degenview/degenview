@@ -6,11 +6,11 @@ use crate::mcp::state::QuoteAccess;
 use crate::model::DataSource;
 use crate::model::mcp::Permission;
 use crate::model::watchlist::quote::SourceQuote;
-use crate::service::SearchResult;
 use crate::service::watchlist_quotes::{
     Config, Outcome, QuoteFailure, QuoteProvider, QuoteRequest, WatchlistQuoteBook,
     WatchlistQuoteCoordinator,
 };
+use crate::service::{ProviderError, SearchResult};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -155,7 +155,7 @@ fn search_returns_the_ids_other_tools_take_and_reports_a_failing_provider() {
                 // Not this provider's: never reported under it.
                 hit(DataSource::Polymarket, "Will BTC...", "0xabc"),
             ]),
-            DataSource::Coinbase => Err("Coinbase is down".into()),
+            DataSource::Coinbase => Err(ProviderError::other("Coinbase is down")),
             _ => Ok(Vec::new()),
         }
     }));
@@ -731,9 +731,9 @@ fn candles_of_any_market_come_from_the_provider_with_no_chart() {
 fn a_provider_failure_and_an_empty_answer_are_reported_not_hidden() {
     let harness = Harness::start(&[("c", "tok", SEARCH)]);
     let url = harness.url();
-    harness
-        .shared
-        .set_candle_fetch(Arc::new(|_, _, _, _| Err("Binance is down".into())));
+    harness.shared.set_candle_fetch(Arc::new(|_, _, _, _| {
+        Err(ProviderError::other("Binance is down"))
+    }));
     let args = json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "1H"});
     let failed = call(&url, "tok", "degenview_get_market_candles", args.clone());
     assert_eq!(error_code(&failed), "APP_UNAVAILABLE");

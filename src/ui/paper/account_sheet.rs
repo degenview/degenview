@@ -3,9 +3,6 @@
 //! account's current settings rather than defaults. A pure view: it returns the chosen values and
 //! the host applies them to the store.
 
-// Transient: the paper-trading host opens this once it is wired.
-#![allow(dead_code)]
-
 use crate::model::paper::format as fmt;
 use crate::model::paper::ticket::{decimal_text, parse_decimal};
 use crate::model::paper::{

@@ -458,6 +458,7 @@ fn active_parameter(names: &[String], call: &CallAt) -> Option<usize> {
 }
 
 /// [`help_with`] for a caller that has no symbol table of the text.
+#[cfg(test)]
 pub fn help(source: &str, caret: usize) -> Option<Help> {
     help_with(source, caret, &symbols::analyze(source))
 }

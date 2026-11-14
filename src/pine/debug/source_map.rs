@@ -284,16 +284,14 @@ impl SourceMap {
         self.index_of(offset).map(|index| &self.executables[index])
     }
 
+    #[cfg(test)]
     pub fn executables(&self) -> &[Executable] {
         &self.executables
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.executables.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.executables.is_empty()
     }
 
     /// Where a breakpoint set on `line` (one-based) goes.
@@ -313,16 +311,6 @@ impl SourceMap {
             .find(|(declared, _)| *declared == line)
             .map_or(NotExecutable::NoCode, |(_, reason)| *reason);
         LineResolution::NotExecutable(reason)
-    }
-
-    /// The nearest line at or after `line` that has code, for "move the breakpoint to the next
-    /// line" offers. `None` past the last statement.
-    pub fn next_executable_line(&self, line: usize) -> Option<usize> {
-        self.executables
-            .iter()
-            .map(|executable| executable.line)
-            .filter(|candidate| *candidate >= line)
-            .min()
     }
 }
 
@@ -411,8 +399,6 @@ mod tests {
             map.resolve_line(99),
             LineResolution::NotExecutable(NotExecutable::NoCode)
         );
-        assert_eq!(map.next_executable_line(3), Some(5));
-        assert_eq!(map.next_executable_line(99), None);
     }
 
     #[test]

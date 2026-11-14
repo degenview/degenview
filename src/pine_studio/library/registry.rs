@@ -6,8 +6,8 @@
 //! TradingView library, a local library has neither, so both are accepted and ignored. The name
 //! is the script's file name, or failing that the title in its `library("…")` declaration.
 
+use crate::model::pine::script::{LocalScript, ScriptType};
 use crate::pine::compiler::LibraryResolver;
-use crate::pine_studio::model::{LocalScript, ScriptType};
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 
@@ -46,16 +46,6 @@ impl LibraryRegistry {
         if let Ok(mut guard) = catalog().write() {
             *guard = next;
         }
-    }
-
-    /// The names a script can import, sorted: each library's file name.
-    pub fn library_names() -> Vec<String> {
-        let mut names: Vec<String> = catalog()
-            .read()
-            .map(|c| c.by_name.keys().cloned().collect())
-            .unwrap_or_default();
-        names.sort();
-        names
     }
 }
 

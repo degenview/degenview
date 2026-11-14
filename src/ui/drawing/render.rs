@@ -318,10 +318,6 @@ pub fn resize_ruler(a: Anchor, b: Anchor, corner: RulerCorner, to: Anchor) -> (A
     (a, b)
 }
 
-fn with_alpha(color: Color32, alpha: u8) -> Color32 {
-    Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
-}
-
 fn draw_handle(painter: &Painter, at: Pos2, color: Color32) {
     painter.circle(at, HANDLE_RADIUS, theme::surface(), Stroke::new(1.5, color));
 }
@@ -342,7 +338,7 @@ pub fn draw_ruler(
         theme::DOWN
     };
     let clipped = painter.with_clip_rect(plot);
-    clipped.rect_filled(rect, 0.0, with_alpha(color, 36));
+    clipped.rect_filled(rect, 0.0, theme::with_alpha_byte(color, 36));
     if dashed_draft {
         let corners = [
             rect.left_top(),

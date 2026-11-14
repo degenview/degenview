@@ -181,7 +181,7 @@ pub fn show(
         _ => None,
     };
     toolbar(ui, state, title, copyable, bar_ms, &mut action);
-    divider(ui);
+    kit::divider(ui);
     egui::ScrollArea::vertical()
         .id_salt("session-stats")
         .auto_shrink([false, false])
@@ -212,11 +212,6 @@ pub fn show(
                 });
         });
     action
-}
-
-fn divider(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(rect, 0.0, kit::hairline());
 }
 
 fn toolbar(

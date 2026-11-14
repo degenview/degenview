@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 pub mod builtins;
 pub mod check;
 pub mod compiler;
@@ -17,9 +14,7 @@ pub mod syntax;
 pub mod tests;
 pub mod time;
 
-pub use check::type_checker::{Inferred, TypeChecker};
-pub use syntax::ast::*;
-pub use syntax::lexer::{LexResult, Lexer};
+pub use syntax::lexer::Lexer;
 pub use syntax::parser::Parser;
 pub use syntax::token::{
     Diagnostic, DiagnosticCategory, DiagnosticSeverity, Limits, SourcePosition, SourceRange, Token,

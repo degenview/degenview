@@ -1,16 +1,73 @@
 //! What the market and watchlist tools return, and the pure parts of building it: search hits,
-//! quotes and watchlists as typed values. Free of egui and HTTP; the app-thread projections that
+//! quotes and watchlists as typed values; and what the watchlist tools hand the app thread
+//! ([`WatchlistCommand`]). Free of egui and HTTP; the app-thread projections that
 //! need the store live in `host::mcp`.
 
 pub mod tools;
 
 use crate::mcp::chart::data::iso;
+use crate::mcp::confirm::{Confirm, Gate};
+use crate::mcp::market::tools::{CREATE_WATCHLIST, DELETE_WATCHLIST, UPDATE_WATCHLIST};
 use crate::model::watchlist::quote::{ChangeBasis, Freshness, VolumeKind, WatchlistQuote};
 use crate::model::watchlist::{Watchlist, WatchlistEntry, WatchlistInstrument};
 use crate::model::{DataSource, InstrumentId};
 use crate::service::SearchResult;
+use crate::store::watchlist::ListChanges;
 use schemars::JsonSchema;
 use serde::Serialize;
+
+/// What the watchlist tools hand the app thread, run in `host::mcp::watchlist`. Search, quotes and
+/// market candles need no app thread.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WatchlistCommand {
+    List,
+    /// One page of a watchlist's entries. Quotes are not read here (the tool waits for them
+    /// off the app thread); the reply names the markets on the page.
+    Get {
+        watchlist_id: u64,
+        offset: usize,
+        limit: usize,
+    },
+    /// A new list, optionally with markets already in it.
+    Create {
+        name: String,
+        markets: Vec<WatchlistInstrument>,
+    },
+    /// Renames a list, edits its sections and adds, removes and moves its markets, all or
+    /// nothing.
+    Update {
+        watchlist_id: u64,
+        changes: Box<ListChanges>,
+    },
+    Delete {
+        watchlist_id: u64,
+    },
+}
+
+impl Confirm for WatchlistCommand {
+    fn gate(&self) -> Gate {
+        match self {
+            // Cannot be undone from here.
+            Self::Delete { .. } => Gate::Ask(DELETE_WATCHLIST),
+            // Changes, but easy to see and to undo in the app.
+            Self::Create { .. } => Gate::AskRemote(CREATE_WATCHLIST),
+            Self::Update { .. } => Gate::AskRemote(UPDATE_WATCHLIST),
+            // Reads.
+            Self::List | Self::Get { .. } => Gate::Free,
+        }
+    }
+
+    fn plain_summary(&self) -> Option<(String, String)> {
+        Some(match self {
+            Self::Create { name, .. } => ("Create a watchlist".to_owned(), name.clone()),
+            Self::Update { watchlist_id, .. } => (
+                "Change a watchlist".to_owned(),
+                format!("watchlist {watchlist_id}"),
+            ),
+            _ => return None,
+        })
+    }
+}
 
 /// Markets one `degenview_get_quotes` call may ask about.
 pub const MAX_QUOTE_MARKETS: usize = 50;

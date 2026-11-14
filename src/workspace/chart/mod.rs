@@ -16,7 +16,7 @@ use crate::model::overlay::OverlayList;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, Drawing, IndicatorConfig, Kline, PmSeries, Timeframe};
-use crate::service;
+use crate::service::{self, ProviderError};
 use crate::ui::{ChartCard, SeriesLine};
 use eframe::egui;
 use std::sync::Arc;
@@ -38,9 +38,9 @@ pub(super) struct Chart {
     pub(super) source: DataSource,
     pub(super) candles: Vec<Kline>,
     pub(super) loading: bool,
-    pub(super) error: Option<String>,
+    pub(super) error: Option<ProviderError>,
     pub(super) last_fetch: Instant,
-    pub(super) inbox: Option<Receiver<Result<Fetched, String>>>,
+    pub(super) inbox: Option<Receiver<Result<Fetched, ProviderError>>>,
     /// What is known of the history behind the oldest candle, and the request for it, if any.
     pub(super) older: OlderHistory,
     pub(super) older_inbox: Option<OlderRequest>,
@@ -89,12 +89,12 @@ pub(super) struct Fetched {
 
 impl Fetched {
     /// The candles come from the first choice that has any; the rest only draw their lines.
-    fn from_choices(histories: Vec<(String, Vec<Kline>)>) -> Result<Self, String> {
+    fn from_choices(histories: Vec<(String, Vec<Kline>)>) -> Result<Self, ProviderError> {
         let candles = histories
             .iter()
             .find(|(_, history)| !history.is_empty())
             .map(|(_, history)| history.clone())
-            .ok_or_else(|| "No price history for these choices".to_owned())?;
+            .ok_or_else(|| ProviderError::other("No price history for these choices"))?;
         Ok(Self {
             candles,
             series: histories,
@@ -405,7 +405,7 @@ impl Chart {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => return,
             Err(mpsc::TryRecvError::Disconnected) => {
-                Err("Older candles stopped loading".to_owned())
+                Err(ProviderError::other("Older candles stopped loading"))
             }
         };
         let current = request.source == self.source
@@ -432,9 +432,9 @@ impl Chart {
         let result = match receiver.try_recv() {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => {
-                Err("Chart fetch stopped before returning data".to_owned())
-            }
+            Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::other(
+                "Chart fetch stopped before returning data",
+            )),
         };
 
         self.loading = false;
@@ -452,7 +452,7 @@ impl Chart {
                 self.error = None;
                 self.last_data_ms = Some(crate::model::watchlist::now_ms());
             }
-            Err(message) => self.error = Some(message),
+            Err(error) => self.error = Some(error),
         }
     }
 }
@@ -460,7 +460,7 @@ impl Chart {
 /// A request for the candles before the oldest one, with what it was asked for: an answer for a
 /// market or timeframe the chart has left is dropped.
 pub(super) struct OlderRequest {
-    receiver: Receiver<Result<Vec<Kline>, String>>,
+    receiver: Receiver<Result<Vec<Kline>, ProviderError>>,
     source: DataSource,
     symbol: String,
     timeframe: Timeframe,
@@ -511,7 +511,7 @@ mod tests {
     }
 
     /// A chart holding `times`, with a request for older candles outstanding that answers `page`.
-    fn chart_awaiting_older(times: &[i64], page: Result<Vec<Kline>, String>) -> Chart {
+    fn chart_awaiting_older(times: &[i64], page: Result<Vec<Kline>, ProviderError>) -> Chart {
         let mut chart = Chart::blank(1, "BTCUSDT", DataSource::Binance);
         chart.candles = times.iter().map(|time| candle(*time, 1.0)).collect();
         let (sender, receiver) = mpsc::channel();
@@ -532,8 +532,10 @@ mod tests {
         let mut dex = Chart::blank(2, "0xpool", DataSource::DexScreener);
         assert_eq!(binance.refresh_after(), REFRESH_INTERVAL);
         assert_eq!(dex.refresh_after(), SLOW_REFRESH_INTERVAL);
-        binance.error = Some("down".into());
-        dex.error = Some("429".into());
+        binance.error = Some(ProviderError::other("down"));
+        dex.error = Some(ProviderError::Network(
+            crate::service::net::http::Error::Status(429),
+        ));
         assert_eq!(binance.refresh_after(), REFRESH_INTERVAL);
         assert_eq!(dex.refresh_after(), SLOW_RETRY_INTERVAL);
     }
@@ -589,7 +591,7 @@ mod tests {
 
     #[test]
     fn a_failed_older_page_is_not_retried_at_once() {
-        let mut chart = chart_awaiting_older(&[10, 11], Err("offline".into()));
+        let mut chart = chart_awaiting_older(&[10, 11], Err(ProviderError::other("offline")));
         chart.receive_older(Timeframe::Hour);
         assert_eq!(open_times(&chart), vec![10, 11]);
         assert!(

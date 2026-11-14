@@ -4,8 +4,6 @@
 //! Mirrors the Swift `SavedView`, with `Decimal`→`f64`/`UUID`→`u64`/`Date`→epoch-ms. Swift's
 //! `tickers` + `tickerConfigs` collapse into one `charts` list (each chart carries its symbol).
 
-#![allow(dead_code)] // transient until the layout controller wires these
-
 use crate::model::{ChartColumn, PersistedChart, Timeframe};
 use serde::{Deserialize, Serialize};
 

@@ -140,7 +140,7 @@ impl ChartWorkspace {
                     page.recents.clear();
                     self.store_recents(&page.recents);
                 }
-                EmptyStateAction::ShowFavorites => self.watchlist_visible = true,
+                EmptyStateAction::ShowFavorites => self.watchlist_pane.set_visible(true),
             }
         }
         self.empty_page.data = Some(page);

@@ -68,11 +68,7 @@ pub struct OpenTrade {
     pub lowest_price: f64,
 }
 
-impl OpenTrade {
-    pub fn id(&self) -> String {
-        format!("{}@{}", self.entry_id, self.entry_bar)
-    }
-}
+impl OpenTrade {}
 
 impl OpenTrade {
     /// The most the trade has been ahead and the most it has been behind (both as positive amounts

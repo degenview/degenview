@@ -161,10 +161,6 @@ impl MockTransport {
         }
     }
 
-    pub fn push(&mut self, event: TransportEvent) {
-        self.events.push_back(event);
-    }
-
     pub fn take_events(&mut self) -> Vec<TransportEvent> {
         self.events.drain(..).collect()
     }
@@ -422,7 +418,6 @@ impl SyncTransport for MockTransport {
     }
 }
 
-#[allow(dead_code)]
 pub fn name_of(kind: crate::sync::record::policy::EntityKind, id: &str) -> String {
     RecordName::new(kind, id).unwrap().render()
 }

@@ -10,7 +10,6 @@ pub mod matrix;
 pub mod misc;
 pub mod number_format;
 pub mod regex_lite;
-pub mod scalar;
 pub mod strings;
 pub mod ta;
 

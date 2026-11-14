@@ -495,26 +495,19 @@ pub enum BindMode {
 }
 
 /// Why an address cannot be offered as an interface to listen on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum BindError {
     /// `0.0.0.0` / `::`: every interface at once, which this server never does.
+    #[error("Pick one interface address, not 0.0.0.0 or ::")]
     Unspecified,
+    #[error("A multicast address cannot be listened on")]
     Multicast,
     /// `255.255.255.255`.
+    #[error("A broadcast address cannot be listened on")]
     Broadcast,
     /// An IPv6 link-local address needs a scope id, which a bare address cannot carry.
+    #[error("IPv6 link-local addresses are not supported")]
     LinkLocalV6,
-}
-
-impl std::fmt::Display for BindError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Unspecified => "Pick one interface address, not 0.0.0.0 or ::",
-            Self::Multicast => "A multicast address cannot be listened on",
-            Self::Broadcast => "A broadcast address cannot be listened on",
-            Self::LinkLocalV6 => "IPv6 link-local addresses are not supported",
-        })
-    }
 }
 
 impl BindMode {

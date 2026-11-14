@@ -5,7 +5,8 @@
 `main` opens `Store`, builds `eframe::NativeOptions`, and starts `DegenViewApp` in a hidden root
 viewport. Each visible deferred viewport renders one `TabWindows` entry: the app-owned tab strip and
 its active `ChartWorkspace`, `PortfolioTab`, or `PineStudio`. `TabWindowHost` owns grouping and
-dragging; `DegenViewApp` owns `TabSlot`s and routes Settings/Alerts window actions to shared hosts.
+dragging; the app's `TabState` owns the `TabSlot`s, and `DegenViewApp` routes Settings/Alerts window
+actions to shared hosts.
 
 `UpdateHost` is app-owned and projected into each window and Settings. It checks after launch and
 every six hours, then exposes availability, byte progress, failure, and restart state.
@@ -15,10 +16,16 @@ every six hours, then exposes availability, byte progress, failure, and restart 
 - UI and state coordination run on the app thread. Only `mcp/` has an async runtime.
 - Blocking replaceable REST jobs use `service::work_queue` and `std::sync::mpsc`. Fetch generations
   discard stale replies.
+- One-answer jobs started from a frame (searches, test connections, file dialogs, uploads) return a
+  `work_queue::Pending<T>` (`PendingAll` for several providers at once) that the frame polls. The job
+  asks for a repaint when it ends. Picker searches go through `start_search` (CoinGecko and
+  GeckoTerminal on their rate-limit lanes, the rest on search workers apart from candle fetches);
+  other provider requests through `start_for`; dialogs and Keychain reads use `SNAPSHOTS`.
 - `BinanceLiveFeed`, `WatchlistQuoteCoordinator`, and Coinbase's ticker socket own reconnecting
   threads and channels. Hidden/occluded workspaces suspend feeds.
-- App-wide state uses `Arc<Mutex<...>>`; per-tab content is `Arc<Mutex<TabContent>>`. Hold the store
-  lock only for short operations. Portfolio/paper compute candidates first, then transact.
+- App-wide state uses `Arc<Mutex<...>>`, held by the app's parts, which hand each window callback
+  one cheap `Clone` handle (see [Modules](modules.md)); per-tab content is `Arc<Mutex<TabContent>>`.
+  Hold the store lock only for short operations. Portfolio/paper compute candidates first, then transact.
 
 ## Market and chart flow
 
@@ -44,7 +51,7 @@ cards are non-market charts and must be skipped by market-data paths.
   quotes and cached FX update reporting projections separately.
 - `PaperTradingEngine` produces candidate snapshots. `PaperHost` persists and publishes every
   result, including rejected-order domain errors, and refuses writes after initial-load failure.
-  `PaperPanel` is per-window presentation over the app-wide host.
+  `PaperPanel` (`ui::paper::panel`) is per-window presentation over the app-wide host.
 - `AlertHost` owns the pure crossing engine, persistence commands, and evaluated snapshot. Alert
   editors hold quote demand while open; banners project triggers into every workspace.
 - Drawings store time/price anchors per chart. The interactive layer handles gestures/hit tests and

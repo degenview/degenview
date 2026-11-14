@@ -3,9 +3,6 @@
 //! host owns and reports `Save` or `Cancel`. All validation lives in `WebhookEditorState`
 //! (and in `webhook::policy`), so the sheet cannot disagree with the store.
 
-// Transient: the Settings window hosts this once the webhook store is wired.
-#![allow(dead_code)]
-
 use crate::model::webhook;
 use crate::model::webhook::policy::{
     MAXIMUM_HEADERS, SECRET_TOKEN, SecretPlacement, WebhookHeaderError, WebhookSecretError,

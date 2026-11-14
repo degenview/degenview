@@ -5,6 +5,7 @@ pub mod chart_trading;
 pub mod form;
 pub mod grid;
 pub mod header;
+pub mod panel;
 #[cfg(test)]
 mod panel_gallery;
 pub mod tables;

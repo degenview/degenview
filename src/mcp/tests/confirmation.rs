@@ -4,6 +4,7 @@
 
 use super::{ALL, Harness, call, error_code};
 use crate::mcp::confirm::PENDING_TTL;
+use crate::mcp::paper::PaperCommand;
 use crate::model::mcp::{McpAuditKind, McpAuditOutcome};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -314,13 +315,18 @@ fn a_dry_run_is_never_asked_about() {
         take_profit: None,
         stop_loss: None,
     });
-    let order = |dry_run| McpCommand::PlacePaperOrder {
-        request: request.clone(),
-        dry_run,
-        request_id: Some("r".into()),
+    let order = |dry_run| {
+        McpCommand::Paper(PaperCommand::PlaceOrder {
+            request: request.clone(),
+            dry_run,
+            request_id: Some("r".into()),
+        })
     };
     assert_eq!(gate(&order(true)), Gate::Free);
-    assert_eq!(gate(&order(false)), Gate::Ask);
+    assert_eq!(
+        gate(&order(false)),
+        Gate::Ask("degenview_place_paper_order")
+    );
 }
 
 mod summaries {

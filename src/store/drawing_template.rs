@@ -7,6 +7,7 @@
 //! writes in one transaction and only then shows the result, and a table that cannot be read is
 //! never written. None of it holds a drawing's coordinates.
 
+use crate::lock::lock;
 use crate::model::chart::template::{TemplateError, TemplateId, new_user_id};
 use crate::model::drawings::template::{DrawingTemplate, TemplateBook};
 use crate::model::watchlist::now_ms;
@@ -187,7 +188,7 @@ impl DrawingTemplateStore {
 
     fn reload(&mut self) {
         let shared = self.store.clone();
-        let store = shared.lock().expect("store lock poisoned");
+        let store = lock(&shared);
         match store.drawing_templates_strict() {
             Ok(templates) => {
                 self.book = TemplateBook::new(templates);
@@ -240,7 +241,7 @@ impl DrawingTemplateStore {
             ));
         }
         let shared = self.store.clone();
-        let store = shared.lock().expect("store lock poisoned");
+        let store = lock(&shared);
         let fresh = match store.drawing_templates_strict() {
             Ok(fresh) => fresh,
             Err(error) => {
@@ -303,7 +304,7 @@ impl DrawingTemplateStore {
             ));
         }
         let shared = self.store.clone();
-        let store = shared.lock().expect("store lock poisoned");
+        let store = lock(&shared);
         let mut defaults = match store.setting_strict::<HashMap<Tool, DrawingStyle>>(DEFAULTS_KEY) {
             Ok(defaults) => defaults.unwrap_or_default(),
             Err(error) => {
@@ -323,20 +324,14 @@ impl DrawingTemplateStore {
 
     /// The strip's remembered options.
     pub fn prefs(&self) -> DrawingPrefs {
-        self.store
-            .lock()
-            .expect("store lock poisoned")
+        lock(&self.store)
             .setting::<DrawingPrefs>(PREFS_KEY)
             .unwrap_or_default()
             .sanitized()
     }
 
     pub fn set_prefs(&self, prefs: &DrawingPrefs) {
-        let _ = self
-            .store
-            .lock()
-            .expect("store lock poisoned")
-            .set_setting(PREFS_KEY, prefs);
+        let _ = lock(&self.store).set_setting(PREFS_KEY, prefs);
     }
 }
 

@@ -7,7 +7,8 @@
 
 use crate::model::pine::logs_view::{LogsPrefs, SourceTarget};
 use crate::pine::logs::LogHistory;
-use crate::pine_studio::{Cmd, PineStudio};
+use crate::pine_studio::PineStudio;
+use crate::pine_studio::commands::Cmd;
 use crate::store::SharedStore;
 use crate::ui::pine::logs_view::{self as view, Feed, LogsAction, LogsState, ScriptEntry};
 use crate::ui::{PREVIEW_INSTANCE, Scrolled};

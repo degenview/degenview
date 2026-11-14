@@ -3,14 +3,13 @@
 //! The data side (`UnsavedScript`, `lines_changed`) is pure; `show` is the sheet. The Pine
 //! Studio owns the state and acts on the choice, so a failed save can keep the window open.
 
-use crate::pine_studio::model::{ScriptId, ScriptType};
+use crate::model::pine::script::{ScriptId, ScriptType};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::dialog;
 use crate::ui::kit::{self, MEDIUM, REGULAR, size};
 use crate::ui::theme;
 use eframe::egui::{self, Align, Color32, Id, Key, Layout, Modifiers, Sense, Stroke, Ui, vec2};
 
-const WIDTH: f32 = 440.0;
 /// Rows listed before the rest fold into "and N more".
 const MAX_ROWS: usize = 5;
 

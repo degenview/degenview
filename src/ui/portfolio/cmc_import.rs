@@ -4,9 +4,6 @@
 //! fetching historical FX rates, the "Match…" asset picker) and feeds results back through the
 //! state's methods.
 
-// Transient: the portfolio host opens this once the importers are wired.
-#![allow(dead_code)]
-
 use crate::model::portfolio::csv::{CmcPreview, CmcRow, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
 use crate::ui::icons::{self, Icon};

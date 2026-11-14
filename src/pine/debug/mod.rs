@@ -33,24 +33,18 @@ mod stress_tests;
 mod tests;
 
 pub use breakpoints::{
-    BreakpointSpec, BreakpointState, BreakpointStatus, CompiledBreakpoint, HitRule, Template,
+    BreakpointSpec, BreakpointState, BreakpointStatus, HitRule, Template,
     compile as compile_breakpoints,
 };
-pub use commands::{DebugCommand, Resume};
-pub use expression::{DebugExpression, ExpressionError, parse as parse_expression};
-pub use frames::{FrameInfo, FrameKind, Location, timeframe_label};
-pub use inspect::{
-    Group, InspectError, PAGE_LIMIT, Page, ValueRef, Variable, VariableGroup, Watched,
-};
-pub use runtime::{
-    BarBreak, BarContext, DebugControl, DebugOptions, DebugRuntime, Debugger, RequestContext, Stop,
-    StopReason, StopView,
-};
-pub use session::{
-    DebugConfig, DebugEvent, DebugSession, Outcome, PausedSnapshot, Rejected, StartError, WatchRow,
-};
-pub use source_map::{
-    DeclarationKind, Executable, LineResolution, NotExecutable, ScopeEntry, SourceMap,
-};
-pub use state::{DebugState, InvalidTransition, Trigger};
-pub use stepping::StepMode;
+pub use commands::DebugCommand;
+#[cfg(test)]
+pub use commands::Resume;
+pub use expression::parse as parse_expression;
+pub use frames::{FrameInfo, FrameKind, timeframe_label};
+pub use inspect::{Group, PAGE_LIMIT, ValueRef, Variable, VariableGroup, Watched};
+pub use runtime::{BarBreak, BarContext, DebugRuntime, StopReason};
+#[cfg(test)]
+pub use runtime::{DebugControl, DebugOptions, Debugger, Stop, StopView};
+pub use session::{DebugConfig, DebugEvent, DebugSession, Outcome, PausedSnapshot, WatchRow};
+pub use source_map::{LineResolution, SourceMap};
+pub use state::DebugState;

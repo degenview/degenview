@@ -5,9 +5,6 @@
 //! charged only for the part of an order that adds exposure, and quantities and prices must sit on
 //! the instrument's increments. The engine stays the authority; this only warns before submitting.
 
-// Transient: the order ticket sheet hosts this once paper trading is wired.
-#![allow(dead_code)]
-
 use crate::model::paper::format::{self as fmt, decimal_places};
 use crate::model::paper::{
     PaperCommissionConfiguration, PaperInstrument, PaperOrderRequest, PaperOrderSide,
@@ -277,19 +274,6 @@ impl TicketDraft {
         draft
     }
 
-    /// A fresh ticket for a pending `kind` order (a limit or a stop) at `price`, rounded to a
-    /// tick. The quantity is the instrument's default; nothing is submitted by opening it.
-    pub fn pending(
-        instrument: PaperInstrument,
-        side: PaperOrderSide,
-        kind: PaperOrderType,
-        price: f64,
-    ) -> Self {
-        let mut draft = Self::opening(instrument, Some(price), side);
-        draft.kind = kind;
-        draft
-    }
-
     // MARK: Parsed values
 
     fn parse(&self, text: &str) -> Option<f64> {
@@ -345,15 +329,6 @@ impl TicketDraft {
         }
     }
 
-    pub fn has_book(&self) -> bool {
-        self.bid.is_some() && self.ask.is_some()
-    }
-
-    pub fn spread(&self) -> Option<f64> {
-        let (bid, ask) = (self.bid?, self.ask?);
-        (ask >= bid).then_some(ask - bid)
-    }
-
     pub fn notional(&self) -> Option<f64> {
         Some(self.quantity()? * self.valuation_price()? * self.instrument.contract_multiplier)
     }
@@ -364,16 +339,6 @@ impl TicketDraft {
         let reduces =
             (existing > 0.0 && !self.side.is_buy()) || (existing < 0.0 && self.side.is_buy());
         if reduces { existing.abs() } else { 0.0 }
-    }
-
-    /// Larger than the open position on the other side: closes it and opens the rest.
-    pub fn flips_position(&self) -> bool {
-        match self.quantity() {
-            Some(quantity) => {
-                self.reducible_quantity() > 0.0 && quantity > self.reducible_quantity()
-            }
-            None => false,
-        }
     }
 
     pub fn required_margin(&self) -> Option<f64> {
@@ -413,8 +378,8 @@ impl TicketDraft {
 
     // MARK: Validation
 
-    /// Fields that hold something wrong. A field left empty is `missing_fields`, not an issue, so
-    /// a fresh ticket does not open covered in red.
+    /// Fields that hold something wrong. A field left empty is not an issue, so a fresh ticket
+    /// does not open covered in red.
     pub fn issues(&self) -> HashMap<TicketField, String> {
         let mut result = HashMap::new();
         if !self.quantity_text.trim().is_empty() {
@@ -458,28 +423,6 @@ impl TicketDraft {
         result
     }
 
-    /// Required fields still empty.
-    pub fn missing_fields(&self) -> Vec<TicketField> {
-        let mut result = Vec::new();
-        if self.quantity_text.trim().is_empty() {
-            result.push(TicketField::Quantity);
-        }
-        if self.uses_limit_price() && self.limit_price_text.trim().is_empty() {
-            result.push(TicketField::LimitPrice);
-        }
-        if self.uses_stop_price() && self.stop_price_text.trim().is_empty() {
-            result.push(TicketField::StopPrice);
-        }
-        result
-    }
-
-    pub fn can_submit(&self) -> bool {
-        self.quantity().is_some()
-            && self.issues().is_empty()
-            && self.missing_fields().is_empty()
-            && !self.exceeds_funds()
-    }
-
     // MARK: Actions
 
     /// The quantity that would use `fraction` (0...1) of the available funds at the valuation
@@ -521,51 +464,6 @@ impl TicketDraft {
             time_in_force: self.time_in_force,
             take_profit: self.take_profit(),
             stop_loss: self.stop_loss(),
-        })
-    }
-
-    // MARK: Words
-
-    /// "Buy 0.5 BTC" once there is a quantity; "Buy BTC" before.
-    pub fn submit_title(&self) -> String {
-        let symbol = base_symbol(&self.instrument);
-        match self.quantity() {
-            Some(quantity) if quantity > 0.0 => format!(
-                "{} {} {symbol}",
-                self.side.label(),
-                fmt::quantity(quantity, &self.instrument)
-            ),
-            _ => format!("{} {symbol}", self.side.label()),
-        }
-    }
-
-    /// How the order changes an open position in the same instrument; None when there is none.
-    pub fn position_note(&self) -> Option<String> {
-        let existing = self.existing_signed_quantity;
-        if existing == 0.0 {
-            return None;
-        }
-        let held = existing.abs();
-        let (direction, opposite) = if existing > 0.0 {
-            ("long", "short")
-        } else {
-            ("short", "long")
-        };
-        let text = |value: f64| fmt::quantity(value, &self.instrument);
-        let Some(quantity) = self.quantity().filter(|quantity| *quantity > 0.0) else {
-            return Some(format!("{} {direction} open", text(held)));
-        };
-        Some(if self.reducible_quantity() == 0.0 {
-            format!("Adds to {direction} {}", text(held))
-        } else if (quantity - held).abs() < f64::EPSILON * held.max(1.0) * 4.0 {
-            format!("Closes {direction} {}", text(held))
-        } else if quantity < held {
-            format!("Reduces {direction} by {}", text(quantity))
-        } else {
-            format!(
-                "Closes {direction}, opens {opposite} {}",
-                text(quantity - held)
-            )
         })
     }
 
@@ -650,7 +548,8 @@ mod tests {
                 (PaperOrderSide::Buy, PaperOrderType::Limit),
                 (PaperOrderSide::Sell, PaperOrderType::Stop),
             ] {
-                let mut draft = TicketDraft::pending(instrument.clone(), side, kind, clicked);
+                let mut draft = TicketDraft::opening(instrument.clone(), Some(clicked), side);
+                draft.kind = kind;
                 draft.quantity_text = "0.5".to_owned();
                 let issues = draft.issues();
                 assert!(
@@ -663,19 +562,12 @@ mod tests {
     }
 
     #[test]
-    fn a_pending_ticket_opens_on_its_side_type_and_tick_rounded_price() {
-        let sell_limit = TicketDraft::pending(
-            btc(),
-            PaperOrderSide::Sell,
-            PaperOrderType::Limit,
-            118_150.994,
-        );
-        assert_eq!(sell_limit.side, PaperOrderSide::Sell);
-        assert_eq!(sell_limit.kind, PaperOrderType::Limit);
-        assert_eq!(sell_limit.limit_price(), Some(118_150.99));
-        let buy_stop =
-            TicketDraft::pending(btc(), PaperOrderSide::Buy, PaperOrderType::Stop, 120.0);
-        assert_eq!(buy_stop.kind, PaperOrderType::Stop);
+    fn an_opening_ticket_starts_on_its_side_at_the_tick_rounded_price() {
+        let sell = TicketDraft::opening(btc(), Some(118_150.994), PaperOrderSide::Sell);
+        assert_eq!(sell.side, PaperOrderSide::Sell);
+        assert_eq!(sell.limit_price(), Some(118_150.99));
+        assert_eq!(sell.stop_price(), Some(118_150.99));
+        let buy_stop = TicketDraft::opening(btc(), Some(120.0), PaperOrderSide::Buy);
         assert_eq!(buy_stop.stop_price(), Some(120.0));
         // Opening is not submitting: the quantity is the instrument's default and nothing else
         // about the draft is decided for the user.
@@ -806,9 +698,6 @@ mod tests {
             Some(100.0),
             "last when there is no book"
         );
-        assert!(!ticket.has_book());
-        assert_eq!(ticket.spread(), None);
-        assert_eq!(draft().spread(), Some(2.0));
     }
 
     #[test]
@@ -840,7 +729,6 @@ mod tests {
         ticket.side = PaperOrderSide::Sell;
         ticket.existing_signed_quantity = 4.0;
         assert_eq!(ticket.reducible_quantity(), 4.0);
-        assert!(ticket.flips_position());
         assert_eq!(ticket.required_margin(), Some(6.0 * 99.0 / 5.0));
         ticket.quantity_text = "3".into();
         assert_eq!(
@@ -848,7 +736,6 @@ mod tests {
             Some(0.0),
             "a pure reduction needs no margin"
         );
-        assert!(!ticket.flips_position());
         ticket.side = PaperOrderSide::Buy;
         assert_eq!(ticket.reducible_quantity(), 0.0, "buying adds to a long");
         ticket.leverage = 0.2;
@@ -876,11 +763,10 @@ mod tests {
     fn running_out_of_funds_blocks_the_ticket_and_names_the_shortfall() {
         let mut ticket = draft();
         ticket.quantity_text = "1".into();
-        assert!(ticket.can_submit());
+        assert!(!ticket.exceeds_funds());
         assert_eq!(ticket.shortfall(), None);
         ticket.available_funds = Some(60.0);
         assert!(ticket.exceeds_funds());
-        assert!(!ticket.can_submit());
         assert_eq!(ticket.shortfall(), Some(41.0));
         ticket.available_funds = None;
         assert!(!ticket.exceeds_funds(), "unknown funds never block");
@@ -890,17 +776,8 @@ mod tests {
     fn an_empty_ticket_is_missing_not_wrong() {
         let mut ticket = draft();
         assert!(ticket.issues().is_empty());
-        assert_eq!(ticket.missing_fields(), vec![TicketField::Quantity]);
-        assert!(!ticket.can_submit());
         ticket.kind = PaperOrderType::StopLimit;
-        assert_eq!(
-            ticket.missing_fields(),
-            vec![
-                TicketField::Quantity,
-                TicketField::LimitPrice,
-                TicketField::StopPrice
-            ]
-        );
+        assert!(ticket.issues().is_empty());
     }
 
     #[test]
@@ -1019,34 +896,5 @@ mod tests {
         );
         ticket.quantity_text.clear();
         assert_eq!(ticket.request(7), None);
-    }
-
-    #[test]
-    fn words_describe_what_the_order_does() {
-        let mut ticket = draft();
-        assert_eq!(ticket.submit_title(), "Buy BTC");
-        ticket.quantity_text = "0.5".into();
-        assert_eq!(ticket.submit_title(), "Buy 0.5 BTC");
-        ticket.side = PaperOrderSide::Sell;
-        assert_eq!(ticket.submit_title(), "Sell 0.5 BTC");
-
-        assert_eq!(ticket.position_note(), None);
-        ticket.existing_signed_quantity = 2.0;
-        ticket.quantity_text.clear();
-        assert_eq!(ticket.position_note().as_deref(), Some("2 long open"));
-        ticket.quantity_text = "0.5".into();
-        assert_eq!(
-            ticket.position_note().as_deref(),
-            Some("Reduces long by 0.5")
-        );
-        ticket.quantity_text = "2".into();
-        assert_eq!(ticket.position_note().as_deref(), Some("Closes long 2"));
-        ticket.quantity_text = "3".into();
-        assert_eq!(
-            ticket.position_note().as_deref(),
-            Some("Closes long, opens short 1")
-        );
-        ticket.side = PaperOrderSide::Buy;
-        assert_eq!(ticket.position_note().as_deref(), Some("Adds to long 2"));
     }
 }

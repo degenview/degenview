@@ -85,11 +85,7 @@ pub struct LogBatch {
     pub dropped: u64,
 }
 
-impl LogBatch {
-    pub fn is_empty(&self) -> bool {
-        !self.reset && self.events.is_empty() && self.dropped == 0
-    }
-}
+impl LogBatch {}
 
 /// Historical messages first, then realtime ones, each in the order they were written: what a
 /// reader shows top to bottom. Both kinds are bounded.
@@ -108,6 +104,7 @@ impl LogBuffer {
         self.events.is_empty()
     }
 
+    #[cfg(test)]
     pub fn historical_len(&self) -> usize {
         self.historical
     }
@@ -360,15 +357,18 @@ impl LogHistory {
         &self.buffer
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.buffer.len()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
 
     /// Messages the limits kept out of this history.
+    #[cfg(test)]
     pub fn dropped(&self) -> u64 {
         self.dropped
     }

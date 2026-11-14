@@ -16,13 +16,13 @@ impl ChartWorkspace {
     /// The venue this tab trades on: the one it chose while that is still enabled, else the one
     /// used last, else none (the sheet then offers the list to choose from).
     fn resolved_venue(&mut self, hub: &TradingHub) -> Option<TradingVenue> {
-        let venue = if hub.is_enabled(self.trading_venue) {
-            Some(self.trading_venue)
+        let venue = if hub.is_enabled(self.trade.venue) {
+            Some(self.trade.venue)
         } else {
             hub.default_venue()
         };
         if let Some(venue) = venue {
-            self.trading_venue = venue;
+            self.trade.venue = venue;
         }
         venue
     }
@@ -35,9 +35,8 @@ impl ChartWorkspace {
         class: Option<OrderClass>,
         price: Option<Decimal>,
     ) {
-        self.trade_sheet_visible = true;
-        self.paper_panel_visible = true;
-        self.trade_sheet.start(side, class, price);
+        self.trade.open_panel();
+        self.trade.sheet.start(side, class, price);
     }
 
     pub(in crate::workspace) fn show_trade_sheet(
@@ -45,7 +44,7 @@ impl ChartWorkspace {
         ui: &mut egui::Ui,
     ) -> Vec<WorkspaceAction> {
         let mut actions = Vec::new();
-        let Some(hub) = self.trading_hub.clone() else {
+        let Some(hub) = self.trade.hub.clone() else {
             return actions;
         };
         let all: Vec<VenueInfo> = hub.infos();
@@ -81,7 +80,7 @@ impl ChartWorkspace {
             confirm_resting,
             replay: self.replay_blocks_trading(),
         };
-        for action in order_sheet::show(ui, &mut self.trade_sheet, &input) {
+        for action in order_sheet::show(ui, &mut self.trade.sheet, &input) {
             self.apply_sheet_action(&hub, &all, action, &mut actions);
         }
         actions
@@ -97,7 +96,7 @@ impl ChartWorkspace {
     ) {
         match action {
             SheetAction::PickVenue(venue) => {
-                self.trading_venue = venue;
+                self.trade.venue = venue;
                 hub.set_last_used(venue);
             }
             SheetAction::AddBroker | SheetAction::OpenSettings => {
@@ -110,13 +109,13 @@ impl ChartWorkspace {
                     .is_some_and(|info| info.needs_no_credentials);
                 if needs_no_key {
                     hub.enable(venue);
-                    self.trading_venue = venue;
+                    self.trade.venue = venue;
                     hub.set_last_used(venue);
                 } else {
                     actions.push(WorkspaceAction::OpenBrokerSettings);
                 }
             }
-            SheetAction::Close => self.trade_sheet_visible = false,
+            SheetAction::Close => self.trade.sheet_visible = false,
         }
     }
 
@@ -128,7 +127,7 @@ impl ChartWorkspace {
         ui: &mut egui::Ui,
         actions: &mut Vec<WorkspaceAction>,
     ) -> Option<(TradingVenue, VenueBar)> {
-        let Some(hub) = self.trading_hub.clone() else {
+        let Some(hub) = self.trade.hub.clone() else {
             return Some((
                 TradingVenue::Paper,
                 VenueBar {
@@ -191,11 +190,11 @@ impl ChartWorkspace {
         actions: &mut Vec<WorkspaceAction>,
     ) {
         match event {
-            PanelEvent::Close => self.paper_panel_visible = false,
+            PanelEvent::Close => self.trade.panel_visible = false,
             PanelEvent::NewOrder => self.start_order(degenview_brokers::Side::Buy, None, None),
             PanelEvent::OpenSettings => actions.push(WorkspaceAction::OpenBrokerSettings),
             PanelEvent::Venue(action) => {
-                let Some(hub) = self.trading_hub.clone() else {
+                let Some(hub) = self.trade.hub.clone() else {
                     return;
                 };
                 let all = hub.infos();
@@ -255,9 +254,9 @@ mod tests {
         std::thread::spawn(move || {
             let mut workspace = empty_workspace(1);
             workspace.set_trading_hub(&hub);
-            workspace.trading_venue = TradingVenue::Paper;
-            workspace.trade_sheet_visible = true;
-            workspace.paper_panel_visible = true;
+            workspace.trade.venue = TradingVenue::Paper;
+            workspace.trade.sheet_visible = true;
+            workspace.trade.panel_visible = true;
             let ctx = egui::Context::default();
             for _ in 0..3 {
                 let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {

@@ -933,29 +933,6 @@ pub fn bracket_match(text: &str, caret: usize) -> Option<(usize, Option<usize>)>
     })
 }
 
-/// The word under `at`, splitting dotted names (`table` in `table.cell`).
-pub fn word_range(text: &str, at: usize) -> Option<Range<usize>> {
-    let chars: Vec<char> = text.chars().collect();
-    let is_word = |c: char| c.is_alphanumeric() || c == '_';
-    let mut index = at.min(chars.len());
-    if index == chars.len() || !is_word(chars[index]) {
-        if index > 0 && is_word(chars[index - 1]) {
-            index -= 1;
-        } else {
-            return None;
-        }
-    }
-    let mut start = index;
-    while start > 0 && is_word(chars[start - 1]) {
-        start -= 1;
-    }
-    let mut end = index;
-    while end < chars.len() && is_word(chars[end]) {
-        end += 1;
-    }
-    Some(start..end)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1094,18 +1071,6 @@ mod tests {
         assert_eq!(b("(a)", 1), None);
         assert_eq!(b("\"()\"", 2), None, "delimiters inside a string are text");
         assert_eq!(b("", 0), None);
-    }
-
-    #[test]
-    fn dotted_names_split_on_double_click() {
-        assert_eq!(word_range("table.cell(", 2), Some(0..5));
-        assert_eq!(word_range("table.cell(", 8), Some(6..10));
-        assert_eq!(
-            word_range("a + b", 1),
-            Some(0..1),
-            "just past a word still picks it"
-        );
-        assert_eq!(word_range("a  b", 2), None);
     }
 
     #[test]

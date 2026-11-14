@@ -368,13 +368,6 @@ pub fn is_unimplemented_function(name: &str) -> bool {
     RESERVED_FUNCTIONS.contains(&name)
 }
 
-/// The direct members of a namespace path (`"ta"`, `"chart.point"`) for editor completion. The
-/// member index is not ported yet, so this always returns nothing — see
-/// `PineSymbolCatalog+Members.swift`.
-pub fn members(_of: &str) -> Vec<String> {
-    Vec::new()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

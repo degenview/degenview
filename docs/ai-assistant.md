@@ -86,7 +86,7 @@ that only chats keeps the default `stream_turn`, which wraps `stream_chat` and n
 - **Arguments** are parsed when the turn ends. Empty means `{}` (a tool with no arguments streams
   nothing); text that is not a JSON object leaves `ToolCall::malformed` set so the caller answers the
   model with an error instead of failing the request.
-- **A turn of calls only is a reply** (`run_turn`); `run_stream` still rejects a reply with no text. A
+- **A turn of calls only is a reply** (`run_turn`); one with neither text nor calls is an error. A
   turn that stopped at the token limit returns `Stop::MaxTokens` and **no calls**: their arguments are
   cut off and cannot be trusted.
 - Anthropic extended thinking is off. With it on, the thinking blocks of a tool turn would have to be

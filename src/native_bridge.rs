@@ -91,7 +91,7 @@ fn new_script_enabled() -> bool {
     NEW_SCRIPT_ENABLED.load(std::sync::atomic::Ordering::Acquire)
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 fn edit_menu() -> EditMenu {
     EditMenu::from_bits(EDIT_MENU.load(std::sync::atomic::Ordering::Acquire))
 }

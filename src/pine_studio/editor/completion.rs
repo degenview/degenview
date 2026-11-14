@@ -5,7 +5,7 @@
 //! time as "unknown function".
 
 use super::edit_ops;
-use super::symbols::{self, SymbolTable};
+use super::symbols::SymbolTable;
 use super::syntax;
 use crate::pine::compiler::symbol_catalog as catalog;
 use crate::pine::{builtins::misc, builtins::ta::extra, compiler::registry};
@@ -219,8 +219,9 @@ fn is_word(c: char) -> bool {
 }
 
 /// [`complete_with`] for a caller that has no symbol table of the text.
+#[cfg(test)]
 pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion> {
-    complete_with(source, caret, explicit, &symbols::analyze(source))
+    complete_with(source, caret, explicit, &super::symbols::analyze(source))
 }
 
 /// What to offer at `caret`, or `None`. It needs two typed letters, a trailing `.`, or an

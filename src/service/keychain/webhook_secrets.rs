@@ -12,8 +12,6 @@
 //! Under `is_disabled` (tests, `DEGENVIEW_NO_KEYCHAIN=1`) values stay in memory: a
 //! rebuilt, re-signed binary would otherwise block on a Keychain access prompt.
 
-#![allow(dead_code)] // Transient: the Settings ▸ Webhooks editor and the alert runtime wire it next.
-
 use crate::model::webhook::EndpointId;
 use crate::service::webhook::delivery::{
     InMemoryWebhookSecretStore, SecretStoreError, WebhookSecretStore,
@@ -33,6 +31,7 @@ const WEBHOOKS: Scope = Scope {
     service: SERVICE,
     shared_group: true,
 };
+#[cfg(any(target_os = "macos", test))]
 const ACCESS_GROUP_SUFFIX: &str = "es.nico.degenview.shared";
 
 /// Whether the Keychain is off-limits to this process.
@@ -45,6 +44,7 @@ pub fn account(endpoint: EndpointId) -> String {
     format!("endpoint-{endpoint}")
 }
 
+#[cfg(any(target_os = "macos", test))]
 /// Picks the shared group out of the process's `keychain-access-groups` entitlement.
 pub fn shared_access_group(groups: &[String]) -> Option<&str> {
     groups

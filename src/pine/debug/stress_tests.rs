@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::tests::bench;
 
+use super::session::Rejected;
 use super::tests::with_header;
 use super::*;
 

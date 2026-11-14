@@ -6,6 +6,7 @@
 //! tab contents (new tab, close with an unsaved-script prompt) is queued as a [`TabRequest`] for
 //! `DegenViewApp::process_commands`.
 
+use crate::lock::lock;
 use crate::model::tab::window_frames::{Frame, FrameMemory, Layout, Sample};
 use crate::model::tab::windows::{TabId, TabWindow, TabWindows, WindowId};
 use crate::ui::window::chrome;
@@ -219,7 +220,7 @@ impl TabWindowHost {
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|error| error.into_inner())
+        lock(&self.state)
     }
 
     pub fn snapshot(&self) -> Vec<(TabWindow, Placement)> {

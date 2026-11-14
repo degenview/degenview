@@ -8,19 +8,18 @@ use crate::service::keychain::ai_keys::{self, AiKeyStore};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{HttpProvider, LlmError, LlmProvider, ProviderKind, validate_base_url};
+use crate::service::work_queue::{self, Pending};
 use crate::ui::icons::Icon;
 use crate::ui::kit::loading::LoadingIndicator;
+use crate::ui::kit::{Autosave, destructive_button, field, open_button};
 use crate::ui::kit::{
     Tone,
     error_notice::{self, ErrorEvent, ErrorNotice},
 };
-use crate::ui::settings::api_keys::{
-    Autosave, StatusMessage, destructive_button, field, open_button,
-};
-use crate::ui::settings::window::{card, section, status_badge, status_message};
+use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::window::{card, section, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
-use std::sync::mpsc::{Receiver, TryRecvError};
 
 /// What the page asks the host to do.
 #[derive(Clone, Debug, PartialEq)]
@@ -44,8 +43,34 @@ pub struct AiSettingsState {
     pub draft: AiPrefs,
     pub key_input: String,
     pub status: Option<StatusMessage>,
-    test: Option<Receiver<Result<usize, ErrorReport>>>,
+    test: Option<Pending<Result<usize, ErrorReport>>>,
     autosave: Autosave,
+}
+
+/// What the Test button needs to build its provider, taken from the page so the saved key can be
+/// read on the worker.
+pub struct TestRequest {
+    kind: ProviderKind,
+    base_url: String,
+    typed: String,
+}
+
+impl TestRequest {
+    /// The provider the Test button talks to: the typed key if there is one, else the saved or
+    /// environment key. Reading the saved key may prompt, so this runs on the worker.
+    pub fn provider(
+        &self,
+        store: &AiKeyStore,
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Box<dyn LlmProvider>, LlmError> {
+        let key = if self.typed.is_empty() {
+            ai_keys::key_with(store, self.kind, env)
+        } else {
+            Some(self.typed.clone())
+        };
+        let provider = HttpProvider::new(self.kind, &self.base_url, key)?;
+        Ok(Box::new(provider))
+    }
 }
 
 impl AiSettingsState {
@@ -95,7 +120,7 @@ impl AiSettingsState {
         let kind = self.kind();
         if store.is_configured(kind) {
             ("API key saved", Tone::Good)
-        } else if std::env::var(kind.env_var()).is_ok_and(|value| !value.trim().is_empty()) {
+        } else if kind.env_key_present() {
             ("Key from environment", Tone::Good)
         } else if kind.needs_key() {
             ("No API key", Tone::Neutral)
@@ -154,59 +179,46 @@ impl AiSettingsState {
         self.status = Some(StatusMessage::ok("Key removed."));
     }
 
-    /// The provider the Test button talks to: the typed key if there is one, else the saved or
-    /// environment key.
-    pub fn provider_for_test(
-        &self,
-        store: &AiKeyStore,
-        env: &dyn Fn(&str) -> Option<String>,
-    ) -> Result<Box<dyn LlmProvider>, LlmError> {
+    /// What the Test button tests: the provider and server of the draft, and the typed key.
+    pub fn test_request(&self) -> TestRequest {
         let kind = self.kind();
-        let typed = self.key_input.trim();
-        let key = if typed.is_empty() {
-            ai_keys::key_with(store, kind, env)
-        } else {
-            Some(typed.to_owned())
-        };
-        let provider = HttpProvider::new(kind, self.draft.base_url(kind), key)?;
-        Ok(Box::new(provider))
+        TestRequest {
+            kind,
+            base_url: self.draft.base_url(kind).to_owned(),
+            typed: self.key_input.trim().to_owned(),
+        }
     }
 
-    /// Lists the key's models off the UI thread; `poll_test` picks up the answer. Listing spends
-    /// no tokens, so it is a free check that the key and the address work.
-    pub fn start_test(&mut self, provider: Result<Box<dyn LlmProvider>, LlmError>) {
+    /// Builds the provider and lists its models on a worker; `poll_test` picks up the answer.
+    /// Listing spends no tokens, so it is a free check that the key and the address work. The
+    /// worker is one that may wait on the user, since building the provider may read the Keychain.
+    pub fn start_test(
+        &mut self,
+        repaint: Option<&egui::Context>,
+        provider: impl FnOnce() -> Result<Box<dyn LlmProvider>, LlmError> + Send + 'static,
+    ) {
         if self.test.is_some() {
             return;
         }
         self.status = None;
-        let provider = match provider {
-            Ok(provider) => provider,
-            Err(error) => {
-                self.status = Some(StatusMessage::failure(error.report()));
-                return;
-            }
-        };
-        let (sender, receiver) = std::sync::mpsc::channel();
-        self.test = Some(receiver);
-        std::thread::spawn(move || {
-            let outcome = provider
-                .list_models()
+        self.test = Some(work_queue::SNAPSHOTS.start(repaint, move || {
+            provider()
+                .and_then(|provider| provider.list_models())
                 .map(|models| models.len())
-                .map_err(|error| error.report());
-            let _ = sender.send(outcome);
-        });
+                .map_err(|error| error.report())
+        }));
     }
 
     pub fn poll_test(&mut self) {
-        let Some(receiver) = &self.test else {
+        let Some(test) = &mut self.test else {
             return;
         };
-        let outcome = match receiver.try_recv() {
-            Ok(outcome) => outcome,
-            Err(TryRecvError::Empty) => return,
-            Err(TryRecvError::Disconnected) => Err(ErrorReport::message(
+        let Some(outcome) = test.poll_or(|| {
+            Err(ErrorReport::message(
                 "The connection test stopped unexpectedly.",
-            )),
+            ))
+        }) else {
+            return;
         };
         self.test = None;
         self.status = Some(match outcome {
@@ -245,7 +257,7 @@ pub fn body(
             .request_repaint_after(std::time::Duration::from_millis(150));
     }
     let (text, tone) = state.badge(store);
-    status_badge(ui, text, tone);
+    kit::status_badge(ui, text, tone);
     ui.add_space(18.0);
     failure_card(ui, state);
 
@@ -312,8 +324,10 @@ pub fn body(
                 } else if kit::sheet_button(ui, "Test Connection", false, state.can_save())
                     .clicked()
                 {
-                    let provider = state.provider_for_test(store, &|name| std::env::var(name).ok());
-                    state.start_test(provider);
+                    let request = state.test_request();
+                    state.start_test(Some(ui.ctx()), move || {
+                        request.provider(store, &|name| std::env::var(name).ok())
+                    });
                 }
                 if let Some((label, url)) = key_page(state.kind()) {
                     open_button(ui, label, url);
@@ -513,15 +527,15 @@ mod tests {
         store.save(ProviderKind::OpenAi, "saved").unwrap();
         let mut state = state();
         // With nothing typed, the saved key is enough to build a provider.
-        assert!(state.provider_for_test(&store, &|_| None).is_ok());
+        assert!(state.test_request().provider(&store, &|_| None).is_ok());
         // With no key anywhere, building one fails before any request.
         let empty = self::store();
         assert!(matches!(
-            state.provider_for_test(&empty, &|_| None),
+            state.test_request().provider(&empty, &|_| None),
             Err(LlmError::Config(_))
         ));
         state.key_input = "typed".to_owned();
-        assert!(state.provider_for_test(&empty, &|_| None).is_ok());
+        assert!(state.test_request().provider(&empty, &|_| None).is_ok());
     }
 
     #[test]
@@ -529,7 +543,7 @@ mod tests {
         let mut state = state();
         let mut mock = MockProvider::replying(vec![]);
         mock.models = Ok(vec!["a".to_owned(), "b".to_owned()]);
-        state.start_test(Ok(Box::new(mock)));
+        state.start_test(None, move || Ok(Box::new(mock)));
         assert!(state.is_testing());
         wait_for_test(&mut state);
         assert_eq!(
@@ -541,7 +555,7 @@ mod tests {
 
         let mut mock = MockProvider::replying(vec![]);
         mock.models = Err(LlmError::auth("bad key"));
-        state.start_test(Ok(Box::new(mock)));
+        state.start_test(None, move || Ok(Box::new(mock)));
         wait_for_test(&mut state);
         let status = state.status.clone().unwrap();
         assert!(status.is_error);
@@ -549,10 +563,10 @@ mod tests {
     }
 
     #[test]
-    fn a_test_with_no_key_says_so_without_starting() {
+    fn a_test_with_no_key_says_so() {
         let mut state = state();
-        state.start_test(Err(LlmError::Config("Add your key.".to_owned())));
-        assert!(!state.is_testing());
+        state.start_test(None, || Err(LlmError::Config("Add your key.".to_owned())));
+        wait_for_test(&mut state);
         assert_eq!(state.status, Some(StatusMessage::error("Add your key.")));
     }
 

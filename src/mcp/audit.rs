@@ -12,6 +12,7 @@
 //! client's request id, and ids from a short list of argument names. Never an argument value, an
 //! error message, a token or a script.
 
+use crate::lock::lock;
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome, McpAuditTarget, Peer};
 use crate::model::watchlist::{new_id, now_ms};
@@ -265,9 +266,7 @@ pub struct AuditQueue {
 
 impl AuditQueue {
     fn inner(&self) -> std::sync::MutexGuard<'_, Inner> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        lock(&self.inner)
     }
 
     pub fn push(&self, entry: McpAuditEntry) {

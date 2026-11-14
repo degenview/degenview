@@ -11,7 +11,7 @@ use crate::pine::outputs::{
 use crate::pine::runtime::state::AlertEvent;
 use crate::pine::strategy::{StrategyReport, StrategySettings};
 use crate::pine::syntax::ast::{Expression, Statement};
-use crate::pine::{Diagnostic, SourceRange, ValueType};
+use crate::pine::{Diagnostic, ValueType};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ScriptType {
@@ -21,15 +21,7 @@ pub enum ScriptType {
     Library,
 }
 
-impl ScriptType {
-    pub fn display_name(self) -> &'static str {
-        match self {
-            Self::Indicator => "Indicator",
-            Self::Strategy => "Strategy",
-            Self::Library => "Library",
-        }
-    }
-}
+impl ScriptType {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum InputValue {
@@ -184,30 +176,6 @@ impl Default for SymbolInfo {
     }
 }
 
-const QUOTES: [&str; 14] = [
-    "FDUSD", "USDT", "USDC", "BUSD", "TUSD", "USD", "EUR", "GBP", "TRY", "JPY", "BRL", "BTC",
-    "ETH", "BNB",
-];
-
-/// The base of an exchange pair ticker: `BTC` from `BTC-USD`, `BTC/USD` and `BTCUSDT`.
-pub fn base_currency_of_pair(ticker: &str) -> Option<String> {
-    let upper = ticker.to_uppercase();
-    if let Some(index) = upper.find(['-', '/', '_']) {
-        let base = &upper[..index];
-        return if base.is_empty() {
-            None
-        } else {
-            Some(base.to_owned())
-        };
-    }
-    for quote in QUOTES {
-        if upper.len() > quote.len() && upper.ends_with(quote) {
-            return Some(upper[..upper.len() - quote.len()].to_owned());
-        }
-    }
-    None
-}
-
 /// `chart.fg_color` / `chart.bg_color`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ChartTheme {
@@ -320,7 +288,6 @@ impl VisualOutput {
 pub struct Import {
     pub path: String,
     pub alias: String,
-    pub range: SourceRange,
     pub library: Option<Box<CompiledProgram>>,
 }
 
@@ -364,14 +331,6 @@ impl CompiledProgram {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn base_currency_splits_pairs() {
-        assert_eq!(base_currency_of_pair("BTCUSDT"), Some("BTC".to_owned()));
-        assert_eq!(base_currency_of_pair("BTC-USD"), Some("BTC".to_owned()));
-        assert_eq!(base_currency_of_pair("BTC/USD"), Some("BTC".to_owned()));
-        assert_eq!(base_currency_of_pair("AAPL"), None);
-    }
 
     #[test]
     fn bar_phase_flags() {

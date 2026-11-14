@@ -16,7 +16,7 @@ use crate::model::editor_theme::{
 use crate::pine_studio::theme_preview::ThemePreview;
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings::pine_studio::{Controls, Dialog, TypographyShown, typography_controls};
-use crate::ui::settings::window::{INSET, card, divider};
+use crate::ui::settings::window::{INSET, card};
 use crate::ui::{kit, theme};
 use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 
@@ -540,7 +540,7 @@ fn group_rows(
         ui.spacing_mut().item_spacing.y = 8.0;
         for (index, key) in keys.iter().enumerate() {
             if index > 0 {
-                divider(ui);
+                kit::divider(ui);
             }
             color_row(ui, host, theme, palette, *key);
         }

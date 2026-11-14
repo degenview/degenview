@@ -1,20 +1,21 @@
 //! What the symbol picker asks the providers, and what it shows of the answers.
 //!
-//! One search asks every provider of the chosen scope at once, each on its own thread, and keeps
-//! each answer under `(query, provider)`. Moving between scopes or venues therefore re-reads what
-//! was already fetched and asks only for what is missing. The answers of the market tabs are merged
-//! by `service::market::search_rank`, so "btc" lists every dollar market for BTC on every exchange
-//! before BTC priced in lira. A prediction market has no pair to rank: its answers stay in
-//! provider order, each provider's own order inside it.
+//! One search asks every provider of the chosen scope at once, each on its provider's workers (so
+//! rate-limited providers keep their lanes), and keeps each answer under `(query, provider)`.
+//! Moving between scopes or venues therefore re-reads what was already fetched and asks only for
+//! what is missing. The answers of the market tabs are merged by `service::market::search_rank`,
+//! so "btc" lists every dollar market for BTC on every exchange before BTC priced in lira. A
+//! prediction market has no pair to rank: its answers stay in provider order, each provider's own
+//! order inside it.
 
 use super::PickMode;
 use crate::model::DataSource;
 use crate::service::market::search_rank::{self, is_dollar_quote};
-use crate::service::{self, SearchResult};
+use crate::service::work_queue::{self, Pending};
+use crate::service::{self, ProviderError, SearchResult};
 use crate::ui::chart::picker_kit::suggestions::{CRYPTO_SUGGESTIONS, STOCK_SUGGESTIONS};
 use eframe::egui;
-use std::collections::{HashMap, HashSet};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 /// How long the box waits after a keystroke before it asks.
@@ -161,16 +162,19 @@ pub fn trading_kind(source: DataSource) -> &'static str {
     }
 }
 
-type Answer = (String, DataSource, Result<Vec<SearchResult>, String>);
+type Answer = Result<Vec<SearchResult>, ProviderError>;
+
+/// What a search that ended without an answer (its worker panicked) shows for its provider.
+const STOPPED: &str = "The search stopped unexpectedly.";
 
 /// Where the answers come from: the providers, or canned ones under test.
 #[derive(Clone, Copy)]
 pub struct Backend {
-    pub search: fn(DataSource, &str) -> Result<Vec<SearchResult>, String>,
+    pub search: fn(DataSource, &str) -> Result<Vec<SearchResult>, ProviderError>,
     /// The other dollar markets of an asset.
     pub related: fn(&str) -> Vec<SearchResult>,
     /// The busiest prediction markets, for the Predictions tab while the box is empty.
-    pub trending: fn(DataSource, usize) -> Result<Vec<SearchResult>, String>,
+    pub trending: fn(DataSource, usize) -> Result<Vec<SearchResult>, ProviderError>,
 }
 
 impl Backend {
@@ -183,10 +187,8 @@ impl Backend {
 
 /// The provider searches under way and finished.
 pub struct SymbolSearch {
-    answers: HashMap<(String, DataSource), Result<Vec<SearchResult>, String>>,
-    pending: HashSet<(String, DataSource)>,
-    sender: Sender<Answer>,
-    inbox: Receiver<Answer>,
+    answers: HashMap<(String, DataSource), Answer>,
+    pending: HashMap<(String, DataSource), Pending<Answer>>,
     /// When the box last changed; the search starts once it has been still for `DEBOUNCE`.
     edited: Option<Instant>,
     related: Related,
@@ -206,17 +208,14 @@ pub struct Listing {
     /// A provider is still answering.
     pub searching: bool,
     /// Why a provider gave nothing, by provider.
-    pub errors: Vec<(DataSource, String)>,
+    pub errors: Vec<(DataSource, ProviderError)>,
 }
 
 impl SymbolSearch {
     pub fn new(backend: Backend) -> Self {
-        let (sender, inbox) = mpsc::channel();
         Self {
             answers: HashMap::new(),
-            pending: HashSet::new(),
-            sender,
-            inbox,
+            pending: HashMap::new(),
             edited: None,
             related: Related::new(backend),
             backend,
@@ -241,10 +240,14 @@ impl SymbolSearch {
         scope: Scope,
         venue: Option<DataSource>,
     ) -> Listing {
-        while let Ok((query, source, answer)) = self.inbox.try_recv() {
-            self.pending.remove(&(query.clone(), source));
-            self.answers.insert((query, source), answer);
-        }
+        let answers = &mut self.answers;
+        self.pending.retain(|slot, search| {
+            let Some(answer) = search.poll_or(|| Err(ProviderError::other(STOPPED))) else {
+                return true;
+            };
+            answers.insert(slot.clone(), answer);
+            false
+        });
         let key = query.trim().to_lowercase();
         let sources: Vec<DataSource> = PROVIDERS
             .into_iter()
@@ -274,7 +277,7 @@ impl SymbolSearch {
             let slot = (key.clone(), *source);
             match self.answers.get(&slot) {
                 Some(Ok(results)) => groups.push(results.clone()),
-                Some(Err(message)) => errors.push((*source, message.clone())),
+                Some(Err(error)) => errors.push((*source, error.clone())),
                 None => searching = true,
             }
         }
@@ -290,22 +293,19 @@ impl SymbolSearch {
         }
     }
 
-    /// Asks each provider that has neither answered nor been asked this query.
+    /// Asks each provider that has neither answered nor been asked this query, on the workers
+    /// of that provider.
     fn start(&mut self, ctx: &egui::Context, key: &str, sources: &[DataSource]) {
         for source in sources {
             let slot = (key.to_owned(), *source);
-            if self.answers.contains_key(&slot) || !self.pending.insert(slot.clone()) {
+            if self.answers.contains_key(&slot) || self.pending.contains_key(&slot) {
                 continue;
             }
-            let sender = self.sender.clone();
-            let repaint = ctx.clone();
             let source = *source;
             let search = self.backend.search;
-            std::thread::spawn(move || {
-                let answer = search(source, &slot.0);
-                let _ = sender.send((slot.0, source, answer));
-                repaint.request_repaint();
-            });
+            let query = slot.0.clone();
+            let job = work_queue::start_search(source, Some(ctx), move || search(source, &query));
+            self.pending.insert(slot, job);
         }
     }
 
@@ -320,15 +320,11 @@ impl SymbolSearch {
     }
 }
 
-/// An asset and the other dollar markets found for it.
-type RelatedAnswer = (String, Vec<SearchResult>);
-
-/// Related markets, fetched on a thread per asset and kept.
+/// Related markets, fetched on a worker per asset and kept.
 struct Related {
     lookup: fn(&str) -> Vec<SearchResult>,
     found: HashMap<String, Vec<SearchResult>>,
-    asking: HashSet<String>,
-    channel: Option<(Sender<RelatedAnswer>, Receiver<RelatedAnswer>)>,
+    asking: HashMap<String, Pending<Vec<SearchResult>>>,
 }
 
 impl Related {
@@ -336,17 +332,20 @@ impl Related {
         Self {
             lookup: backend.related,
             found: HashMap::new(),
-            asking: HashSet::new(),
-            channel: None,
+            asking: HashMap::new(),
         }
     }
 
     fn get(&mut self, ctx: &egui::Context, of: &SearchResult) -> Option<Vec<SearchResult>> {
-        let (_, inbox) = self.channel.get_or_insert_with(mpsc::channel);
-        while let Ok((asset, found)) = inbox.try_recv() {
-            self.asking.remove(&asset);
-            self.found.insert(asset, found);
-        }
+        let found = &mut self.found;
+        self.asking.retain(|asset, lookup| {
+            // A lookup that ended without an answer found nothing.
+            let Some(answer) = lookup.poll_or(Vec::new) else {
+                return true;
+            };
+            found.insert(asset.clone(), answer);
+            false
+        });
         if !PROVIDERS.contains(&of.source) || of.source == DataSource::Alpaca {
             return Some(Vec::new());
         }
@@ -354,15 +353,11 @@ impl Related {
         if let Some(found) = self.found.get(&asset) {
             return Some(found.iter().filter(|hit| !same(hit, of)).cloned().collect());
         }
-        if self.asking.insert(asset.clone()) {
-            let sender = self.channel.as_ref().map(|(sender, _)| sender.clone())?;
-            let repaint = ctx.clone();
+        if !self.asking.contains_key(&asset) {
             let lookup = self.lookup;
-            std::thread::spawn(move || {
-                let found = lookup(&asset);
-                let _ = sender.send((asset, found));
-                repaint.request_repaint();
-            });
+            let of = asset.clone();
+            let job = work_queue::start(Some(ctx), move || lookup(&of));
+            self.asking.insert(asset, job);
         }
         None
     }
@@ -515,7 +510,7 @@ mod tests {
         let mut search = SymbolSearch::default();
         search.answers.insert(
             ("aapl".into(), DataSource::Alpaca),
-            Err("Add your Alpaca API key in Settings".into()),
+            Err(ProviderError::other("Add your Alpaca API key in Settings")),
         );
         let listing = search.listing(&ctx, "aapl", Scope::Stocks, None);
         assert_eq!(listing.errors.len(), 1);

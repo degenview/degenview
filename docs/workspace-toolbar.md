@@ -4,7 +4,7 @@ The flat bar is shared by every tab kind. `src/ui/kit/bar/` is the engine: `Butt
 measuring, `arrange`, painting and `show`, generic over a click action `A` and a popup key `M` (a
 button with `with_menu(key)` gets that key handed to the caller's `popup` callback once it is
 drawn, only while enabled). `kit::bar::HEIGHT` (44) is the height of every tab's bar, on
-`theme::chrome()`; the chart's toolbar, the Portfolio's (`host/portfolio/bar.rs`, see
+`theme::chrome()`; the chart's toolbar, the Portfolio's (`ui/portfolio/tab/bar.rs`, see
 [Portfolio page](portfolio-page.md)) and the Pine Studio's (`pine_studio/bar.rs`) differ only in
 their items, so switching tabs never changes the window's chrome. Button ids are scoped by the
 panel's `ui.id()`. Do not draw a tab's top controls with anything else.
