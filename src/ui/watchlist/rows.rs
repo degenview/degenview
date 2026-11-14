@@ -3,6 +3,7 @@
 //! line up exactly (see `watchlist_style`), and each returns the `Response` the
 //! sidebar uses for clicks, drags and menus.
 
+use crate::model::market::trend::Trend;
 use crate::model::watchlist;
 use crate::model::watchlist::layout::Flags;
 use crate::model::watchlist::quote::{Direction, WatchlistQuote};
@@ -12,9 +13,10 @@ use crate::model::watchlist::{
 };
 use crate::model::{DataSource, InstrumentId};
 use crate::ui::accessibility;
+use crate::ui::kit::{self, size, sparkline};
 use crate::ui::theme;
 use crate::ui::watchlist::style::{
-    self as style, COLUMN_GAP, LEADING_INSET, LOGO_SIZE, ROW_HEIGHT_COMPACT,
+    self as style, CHART_GAP, CHART_WIDTH, COLUMN_GAP, LEADING_INSET, LOGO_GAP, ROW_HEIGHT_COMPACT,
     ROW_HEIGHT_WITH_SUBTITLE, TRAILING_INSET,
 };
 use eframe::egui::{
@@ -22,6 +24,11 @@ use eframe::egui::{
 };
 
 pub type QuoteLookup<'a> = &'a dyn Fn(&InstrumentId) -> Option<WatchlistQuote>;
+
+/// Strength of the hairline between two symbol rows: there to part them, not to be seen.
+const DIVIDER_ALPHA: u8 = 9;
+/// Space above and below a row's sparkline.
+const CHART_VERTICAL_INSET: f32 = 12.0;
 
 /// Text clipped to one line with an ellipsis, so a long name gives way to the values.
 fn fitted(
@@ -171,19 +178,21 @@ pub fn column_header(
     ) {
         clicked = Some(key);
     }
-    let mut x = rect.right() - TRAILING_INSET;
-    for column in display.columns.iter().rev() {
+    let (edges, values_left) = column_edges(display, rect.right() - TRAILING_INSET);
+    for (column, right) in edges {
         if let Some(key) = paint_title(
             ui,
             column.title(),
             column.title(),
             column.sort_key(),
             Align2::RIGHT_CENTER,
-            x,
+            right,
         ) {
             clicked = Some(key);
         }
-        x -= style::column_width(*column) + COLUMN_GAP;
+    }
+    if display.shows_chart {
+        paint_title(ui, "chart", "1M", None, Align2::RIGHT_CENTER, values_left);
     }
     clicked
 }
@@ -194,9 +203,14 @@ pub struct RowStyle<'a> {
     pub display: &'a WatchlistDisplaySettings,
     pub flags: &'a Flags,
     pub quote: QuoteLookup<'a>,
+    /// The market's month of closes; `None` while it loads.
+    pub trend: Option<&'a Trend>,
     pub selected: bool,
     /// The row being dragged is drawn quieter.
     pub dragged: bool,
+    /// A hairline at the top parts this row from the symbol row above. Never drawn while the
+    /// row is lit.
+    pub divider: bool,
 }
 
 pub fn row_height(display: &WatchlistDisplaySettings) -> f32 {
@@ -224,6 +238,7 @@ pub fn instrument_row(ui: &mut egui::Ui, item: &WatchlistInstrument, row: &RowSt
         1.0
     };
     let painter = ui.painter_at(rect);
+    let hovered = response.hovered() && !row.dragged;
 
     if row.selected {
         painter.rect_filled(
@@ -231,20 +246,27 @@ pub fn instrument_row(ui: &mut egui::Ui, item: &WatchlistInstrument, row: &RowSt
             5.0,
             theme::surface_selected(),
         );
-    } else if response.hovered() && !row.dragged {
+    } else if hovered {
         painter.rect_filled(rect.shrink2(Vec2::new(2.0, 1.0)), 5.0, theme::ink(10));
+    } else if row.divider {
+        painter.hline(
+            (rect.left() + LEADING_INSET)..=(rect.right() - TRAILING_INSET),
+            rect.top() + 0.5,
+            Stroke::new(1.0, theme::ink(DIVIDER_ALPHA)),
+        );
     }
     if let Some(flag) = row.flags.get(&item.instrument.key()) {
         style::paint_flag(&painter, rect.left(), rect.center().y, *flag);
     }
 
     // Logo.
+    let logo_size = style::logo_size(row.display);
     let logo = Rect::from_center_size(
         Pos2::new(
-            rect.left() + LEADING_INSET + LOGO_SIZE / 2.0,
+            rect.left() + LEADING_INSET + logo_size / 2.0,
             rect.center().y,
         ),
-        Vec2::splat(LOGO_SIZE),
+        Vec2::splat(logo_size),
     );
     paint_logo(ui, &painter, logo, item, alpha);
 
@@ -255,9 +277,15 @@ pub fn instrument_row(ui: &mut egui::Ui, item: &WatchlistInstrument, row: &RowSt
     let quote = quote.filter(|_| item.card.is_none());
     let direction = watchlist::quote::direction(quote);
     let source = Some(item.instrument.source);
-    let mut x = rect.right() - TRAILING_INSET;
+    let change_color =
+        direction_color(direction, ui.visuals().weak_text_color()).gamma_multiply(alpha);
+    // Two-line rows carry the change under the price, unless it has a column of its own.
+    let change_under_price =
+        row.display.shows_description && !row.display.columns.contains(&WatchlistColumn::Change);
+    let (edges, values_left) = column_edges(row.display, rect.right() - TRAILING_INSET);
     let mut warning = None;
-    for column in row.display.columns.iter().rev() {
+    for (column, right) in edges {
+        let column_width = style::column_width(column);
         let (text, color) = match column {
             WatchlistColumn::Last => {
                 if quote.is_some_and(|quote| quote.last.is_none() && quote.note.is_some()) {
@@ -267,28 +295,40 @@ pub fn instrument_row(ui: &mut egui::Ui, item: &WatchlistInstrument, row: &RowSt
                         Color32::from_rgb(255, 159, 10).gamma_multiply(alpha),
                     )
                 } else {
-                    (
-                        watchlist::quote::last_text(quote, source),
-                        direction_color(direction, ui.visuals().text_color()).gamma_multiply(alpha),
-                    )
+                    let price = watchlist::quote::last_text(quote, source);
+                    if change_under_price {
+                        let price = kit::digits(
+                            ui,
+                            &price,
+                            size::BODY,
+                            kit::MEDIUM,
+                            text_color,
+                            column_width,
+                        );
+                        let change = kit::digits(
+                            ui,
+                            &watchlist::quote::change_text(quote, source),
+                            size::SUBHEADLINE,
+                            kit::REGULAR,
+                            change_color,
+                            column_width,
+                        );
+                        let top = rect.center().y - (price.size().y + change.size().y) / 2.0;
+                        let change_top = top + price.size().y;
+                        painter.galley(Pos2::new(right - price.size().x, top), price, text_color);
+                        painter.galley(
+                            Pos2::new(right - change.size().x, change_top),
+                            change,
+                            change_color,
+                        );
+                        continue;
+                    }
+                    (price, text_color)
                 }
             }
-            WatchlistColumn::Change => (
-                watchlist::quote::change_text(quote, source),
-                direction_color(direction, ui.visuals().weak_text_color()).gamma_multiply(alpha),
-            ),
+            WatchlistColumn::Change => (watchlist::quote::change_text(quote, source), change_color),
             WatchlistColumn::ChangePercent => {
-                let glyph = direction.glyph();
-                let percent = watchlist::quote::percent_text(quote, source);
-                (
-                    if glyph.is_empty() {
-                        percent
-                    } else {
-                        format!("{glyph} {percent}")
-                    },
-                    direction_color(direction, ui.visuals().weak_text_color())
-                        .gamma_multiply(alpha),
-                )
+                (watchlist::quote::percent_text(quote, source), change_color)
             }
             WatchlistColumn::Volume => (watchlist::quote::volume_text(quote), weak),
             WatchlistColumn::Exchange => (item.instrument.source.display_name().to_owned(), weak),
@@ -302,43 +342,50 @@ pub fn instrument_row(ui: &mut egui::Ui, item: &WatchlistInstrument, row: &RowSt
                 weak,
             ),
         };
-        let galley = fitted(
-            &painter,
-            &text,
-            FontId::monospace(12.0),
-            color,
-            style::column_width(*column),
-        );
+        let galley = kit::digits(ui, &text, size::BODY, kit::REGULAR, color, column_width);
         painter.galley(
-            Pos2::new(x - galley.size().x, rect.center().y - galley.size().y / 2.0),
+            Pos2::new(
+                right - galley.size().x,
+                rect.center().y - galley.size().y / 2.0,
+            ),
             galley,
             color,
         );
-        x -= style::column_width(*column) + COLUMN_GAP;
     }
 
-    // Name and subtitle fill what the columns leave.
-    let name_left = logo.right() + 6.0;
-    let name_width = (x - name_left + COLUMN_GAP - 4.0).max(24.0);
-    let name = fitted(
-        &painter,
+    // The month's sparkline sits left of the values; a portfolio card has none.
+    let mut name_right = values_left;
+    if let Some(chart) = chart_rect(row.display, rect, values_left) {
+        if item.card.is_none() {
+            sparkline::paint_trail(&painter.with_clip_rect(rect), chart, row.trend);
+        }
+        name_right = chart.left() - CHART_GAP;
+    }
+
+    // Name and subtitle fill what is left.
+    let name_left = logo.right() + LOGO_GAP;
+    let name_width = (name_right - name_left).max(24.0);
+    let name = kit::galley(
+        ui,
         &item.name,
-        FontId::proportional(13.5),
+        size::BODY + 1.0,
+        kit::SEMIBOLD,
         text_color,
         name_width,
     );
     if row.display.shows_description {
-        let sub = fitted(
-            &painter,
+        let sub = kit::galley(
+            ui,
             &subtitle(item),
-            FontId::proportional(11.0),
+            size::SUBHEADLINE + 0.5,
+            kit::REGULAR,
             weak,
             name_width,
         );
         let total = name.size().y + 1.0 + sub.size().y;
         let top = rect.center().y - total / 2.0;
-        painter.galley(Pos2::new(name_left, top), name.clone(), text_color);
         painter.galley(Pos2::new(name_left, top + name.size().y + 1.0), sub, weak);
+        painter.galley(Pos2::new(name_left, top), name, text_color);
     } else {
         painter.galley(
             Pos2::new(name_left, rect.center().y - name.size().y / 2.0),
@@ -377,6 +424,38 @@ pub fn instrument_row(ui: &mut egui::Ui, item: &WatchlistInstrument, row: &RowSt
     accessibility::label(response, spoken).on_hover_text(hover)
 }
 
+/// Where each value column's text ends, right to left from `right`, and where the space left of
+/// them ends. The column header and every row lay out from this one function.
+fn column_edges(
+    display: &WatchlistDisplaySettings,
+    right: f32,
+) -> (Vec<(WatchlistColumn, f32)>, f32) {
+    let mut x = right;
+    let edges = display
+        .columns
+        .iter()
+        .rev()
+        .map(|column| {
+            let edge = (*column, x);
+            x -= style::column_width(*column) + COLUMN_GAP;
+            edge
+        })
+        .collect();
+    (edges, x)
+}
+
+/// The month's sparkline in `row`, ending where the value columns leave off; `None` when the
+/// list hides it.
+fn chart_rect(display: &WatchlistDisplaySettings, row: Rect, values_left: f32) -> Option<Rect> {
+    display.shows_chart.then(|| {
+        let height = (row.height() - 2.0 * CHART_VERTICAL_INSET).max(8.0);
+        Rect::from_min_max(
+            Pos2::new(values_left - CHART_WIDTH, row.center().y - height / 2.0),
+            Pos2::new(values_left, row.center().y + height / 2.0),
+        )
+    })
+}
+
 /// The coin artwork, or a monogram while it resolves (or when there is none).
 fn paint_logo(
     ui: &egui::Ui,
@@ -410,7 +489,7 @@ fn paint_logo(
     crate::service::image::icon::request(source, &item.instrument.symbol);
     painter.circle_filled(
         logo.center(),
-        LOGO_SIZE / 2.0,
+        logo.width() / 2.0,
         theme::pick(Color32::from_gray(70), Color32::from_gray(222)).gamma_multiply(alpha),
     );
     painter.text(

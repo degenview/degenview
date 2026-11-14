@@ -566,6 +566,13 @@ impl WatchlistStore {
         })
     }
 
+    pub fn set_shows_chart(&mut self, list: EntryId, shows: bool) -> Result<bool, WatchlistError> {
+        self.modify(list, false, |list| {
+            list.display.shows_chart = shows;
+            Ok(())
+        })
+    }
+
     // MARK: Flags
 
     pub fn set_flag(&mut self, instrument: &InstrumentId, flag: Option<WatchlistFlag>) {
@@ -911,6 +918,10 @@ mod tests {
         assert_eq!(store.set_sort(favorites, sort), Ok(false));
         assert_eq!(
             store.set_shows_description(favorites, store.lists()[0].display.shows_description),
+            Ok(false)
+        );
+        assert_eq!(
+            store.set_shows_chart(favorites, store.lists()[0].display.shows_chart),
             Ok(false)
         );
         assert_eq!(store.rename_list(favorites, "Favorites"), Ok(false));

@@ -300,6 +300,9 @@ pub struct WatchlistDisplaySettings {
     pub columns: Vec<WatchlistColumn>,
     pub sort: WatchlistSort,
     pub shows_description: bool,
+    /// The last month of daily closes drawn small beside the values. On for lists saved before
+    /// it existed too.
+    pub shows_chart: bool,
 }
 
 impl Default for WatchlistDisplaySettings {
@@ -308,6 +311,7 @@ impl Default for WatchlistDisplaySettings {
             columns: vec![WatchlistColumn::Last, WatchlistColumn::ChangePercent],
             sort: WatchlistSort::MANUAL,
             shows_description: true,
+            shows_chart: true,
         }
     }
 }
@@ -1429,6 +1433,10 @@ mod tests {
         let minimal: Watchlist = serde_json::from_str(r#"{"id":1,"name":"Old"}"#).unwrap();
         assert!(minimal.entries.is_empty());
         assert_eq!(minimal.display, WatchlistDisplaySettings::default());
+        // A list saved before the chart setting existed shows the chart.
+        let display: WatchlistDisplaySettings =
+            serde_json::from_str(r#"{"columns":["Last"],"shows_description":false}"#).unwrap();
+        assert!(display.shows_chart);
         assert!(!minimal.is_favorites);
     }
 }

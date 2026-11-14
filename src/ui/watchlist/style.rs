@@ -1,6 +1,6 @@
 //! Sizes and colours the watchlist panel shares, so its parts line up by construction.
 
-use crate::model::watchlist::{WatchlistColumn, WatchlistFlag};
+use crate::model::watchlist::{WatchlistColumn, WatchlistDisplaySettings, WatchlistFlag};
 use eframe::egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
 
 /// Where left-aligned content starts, measured from the panel's left edge: asset logos,
@@ -13,11 +13,27 @@ pub const LEADING_INSET: f32 = 8.0;
 pub const TRAILING_INSET: f32 = 12.0;
 /// A flag is drawn from x = 0, touching the panel's left edge, and ends short of the logo.
 pub const FLAG_SIZE: Vec2 = Vec2::new(6.0, 14.0);
-pub const ROW_HEIGHT_WITH_SUBTITLE: f32 = 40.0;
+pub const ROW_HEIGHT_WITH_SUBTITLE: f32 = 46.0;
 pub const ROW_HEIGHT_COMPACT: f32 = 30.0;
-pub const LOGO_SIZE: f32 = 20.0;
+/// The asset logo on a row with a subtitle, and on a compact row.
+pub const LOGO_SIZE: f32 = 26.0;
+pub const LOGO_SIZE_COMPACT: f32 = 20.0;
+/// Space between the logo and the name.
+pub const LOGO_GAP: f32 = 8.0;
 /// Spacing between the value columns.
 pub const COLUMN_GAP: f32 = 6.0;
+/// The month's sparkline, left of the value columns.
+pub const CHART_WIDTH: f32 = 64.0;
+/// Space the name keeps clear before the sparkline.
+pub const CHART_GAP: f32 = 12.0;
+
+pub fn logo_size(display: &WatchlistDisplaySettings) -> f32 {
+    if display.shows_description {
+        LOGO_SIZE
+    } else {
+        LOGO_SIZE_COMPACT
+    }
+}
 
 pub fn column_width(column: WatchlistColumn) -> f32 {
     match column {
@@ -32,17 +48,22 @@ pub fn column_width(column: WatchlistColumn) -> f32 {
 
 /// Width of the symbol block, the part that gives way when the panel narrows, that the
 /// panel needs to keep a name legible.
-#[allow(dead_code)] // the split's minimum width reads these
 pub const MIN_NAME_WIDTH: f32 = 78.0;
 
-/// The narrowest the panel can be and still show every column plus room for a name.
-#[allow(dead_code)] // the split's minimum width reads these
-pub fn minimum_panel_width(columns: &[WatchlistColumn]) -> f32 {
-    let values: f32 = columns
+/// The narrowest the panel can be and still show every column, the chart when it is on, and
+/// room for a name.
+pub fn minimum_panel_width(display: &WatchlistDisplaySettings) -> f32 {
+    let values: f32 = display
+        .columns
         .iter()
         .map(|column| column_width(*column) + COLUMN_GAP)
         .sum();
-    LEADING_INSET + LOGO_SIZE + 6.0 + MIN_NAME_WIDTH + values + TRAILING_INSET
+    let chart = if display.shows_chart {
+        CHART_WIDTH + CHART_GAP
+    } else {
+        0.0
+    };
+    LEADING_INSET + logo_size(display) + LOGO_GAP + MIN_NAME_WIDTH + chart + values + TRAILING_INSET
 }
 
 pub fn flag_color(flag: WatchlistFlag) -> Color32 {
@@ -106,16 +127,23 @@ mod tests {
 
     #[test]
     fn panel_minimum_grows_with_columns() {
-        let two = minimum_panel_width(&[WatchlistColumn::Last, WatchlistColumn::ChangePercent]);
-        let three = minimum_panel_width(&[
-            WatchlistColumn::Last,
-            WatchlistColumn::ChangePercent,
-            WatchlistColumn::Volume,
-        ]);
-        assert!(three > two);
+        let two = WatchlistDisplaySettings::default();
+        let mut three = two.clone();
+        three.set_column(WatchlistColumn::Volume, true);
         assert_eq!(
-            three - two,
+            minimum_panel_width(&three) - minimum_panel_width(&two),
             column_width(WatchlistColumn::Volume) + COLUMN_GAP
+        );
+    }
+
+    #[test]
+    fn panel_minimum_makes_room_for_the_chart() {
+        let with_chart = WatchlistDisplaySettings::default();
+        let mut without = with_chart.clone();
+        without.shows_chart = false;
+        assert_eq!(
+            minimum_panel_width(&with_chart) - minimum_panel_width(&without),
+            CHART_WIDTH + CHART_GAP
         );
     }
 

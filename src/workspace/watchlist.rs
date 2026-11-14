@@ -5,6 +5,7 @@ use super::alerts::AlertRequest;
 use crate::model::InstrumentId;
 use crate::model::alert::AlertAsset;
 use crate::model::watchlist::{WatchlistError, WatchlistInstrument, WatchlistNotice};
+use crate::service::market::trend;
 use crate::ui::watchlist::sidebar::{self, WatchlistAction, WatchlistSidebarInput};
 use eframe::egui;
 use std::sync::{Arc, mpsc};
@@ -40,6 +41,7 @@ impl ChartWorkspace {
             let lists = store.lists();
             let flags = store.flags();
             let quote = |id: &InstrumentId| self.quote_book.get(id);
+            let trends = trend::month().snapshot();
             let focused_market = self
                 .resolved_focused_id()
                 .and_then(|id| self.charts.iter().find(|chart| chart.id == id))
@@ -51,6 +53,7 @@ impl ChartWorkspace {
                 lists,
                 flags,
                 quote: &quote,
+                trends: &trends,
                 focused_market: focused_market.as_ref(),
                 load_failed: store.load_failed(),
                 error: self.watchlist_error.as_ref().or(store_notice.as_ref()),
@@ -63,6 +66,11 @@ impl ChartWorkspace {
             self.id,
             self.watchlist_sidebar.quote_demand().to_vec(),
             true,
+        );
+        let repaint = ctx.clone();
+        trend::month().request(
+            self.watchlist_sidebar.trend_demand(),
+            Arc::new(move || repaint.request_repaint()),
         );
         self.apply_watchlist_actions(actions, ctx);
     }
@@ -191,6 +199,10 @@ impl ChartWorkspace {
                     }
                     WatchlistAction::SetShowsDescription { list, shows } => {
                         let result = store.set_shows_description(list, shows).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
+                    }
+                    WatchlistAction::SetShowsChart { list, shows } => {
+                        let result = store.set_shows_chart(list, shows).map(|_| ());
                         report_watchlist(&mut self.watchlist_error, result);
                     }
                     WatchlistAction::SetFlag { instrument, flag } => {

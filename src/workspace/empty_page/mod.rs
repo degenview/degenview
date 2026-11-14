@@ -1,22 +1,20 @@
 //! The empty page a tab shows before it has a chart, and the slow reads behind it.
 
-mod trends;
-
-use self::trends::TrendLoader;
 use super::ChartWorkspace;
 use crate::model::DataSource;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::service::SearchResult;
+use crate::service::market::trend::TrendLoader;
 use crate::ui::chart::picker_kit::recents;
 use crate::ui::workspace::empty_state::{self, EmptyStateAction, EmptyStateState};
 use eframe::egui;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// The slow inputs of the empty page: the recents setting, every saved layout and whether
 /// Alpaca is configured (a Keychain read). Reloaded when the page first shows and when the
 /// window regains focus, as Swift's `onAppear` and `didBecomeKey` do, so a layout saved in
 /// another tab appears without a read on every repaint.
-#[derive(Default)]
 pub(super) struct EmptyPageCache {
     pub(super) data: Option<EmptyPageData>,
     was_focused: bool,
@@ -27,6 +25,21 @@ pub(super) struct EmptyPageCache {
     state: EmptyStateState,
     /// The week of closes behind each tile's sparkline.
     trends: TrendLoader,
+}
+
+/// Calendar days of closes each tile's sparkline shows.
+const TREND_DAYS: u32 = 7;
+
+impl Default for EmptyPageCache {
+    fn default() -> Self {
+        Self {
+            data: None,
+            was_focused: false,
+            last_drawn: None,
+            state: EmptyStateState::default(),
+            trends: TrendLoader::new(TREND_DAYS),
+        }
+    }
 }
 
 impl EmptyPageCache {
@@ -91,7 +104,10 @@ impl ChartWorkspace {
             trends: &trends,
         };
         let output = empty_state::show(ui, &input, &mut self.empty_page.state);
-        self.empty_page.trends.request(&output.wanted, &ctx);
+        let repaint = ctx.clone();
+        self.empty_page
+            .trends
+            .request(&output.wanted, Arc::new(move || repaint.request_repaint()));
         for action in output.actions {
             match action {
                 EmptyStateAction::AddChart => self.open_add_picker(),
