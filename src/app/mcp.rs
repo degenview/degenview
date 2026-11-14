@@ -1,8 +1,8 @@
 use super::DegenViewApp;
-use super::alert::commit_price_alert_checked;
 use super::now_ms;
 use super::tabs::TabContent;
 use super::window::settings_viewport_id;
+use crate::host::alert::AlertHost;
 use crate::host::mcp;
 use crate::host::mcp::McpHost;
 use crate::host::mcp::confirmation::{self, ConfirmationHost};
@@ -239,7 +239,7 @@ impl DegenViewApp {
     ) -> Result<crate::mcp::confirm::Summary, McpError> {
         match command {
             McpCommand::DeleteAlert { alert_id } => {
-                let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
+                let host = self.lock_alert_host()?;
                 confirmation::delete_alert(&host, *alert_id)
             }
             McpCommand::DeleteWatchlist { watchlist_id } => {
@@ -323,7 +323,7 @@ impl DegenViewApp {
         ctx.request_repaint_of(egui::ViewportId::ROOT);
         ctx.request_repaint_of(settings_viewport_id());
         self.tabs.repaint_windows(ctx);
-        let enabled = self.alert_host.lock().is_ok_and(|host| {
+        let enabled = self.alerts.host().lock().is_ok_and(|host| {
             crate::model::alert::notification::notifications_enabled(host.settings())
         });
         if !enabled {
@@ -371,17 +371,17 @@ impl DegenViewApp {
                     Ok(McpReply::Charts(mcp::chart::charts_result(workspace)))
                 }),
             McpCommand::ListAlerts { only } => {
-                let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
+                let host = self.lock_alert_host()?;
                 Ok(McpReply::Alerts(mcp::alert::list_alerts(&host, only)))
             }
             McpCommand::CreateAlert(request) => {
                 let now = now_ms();
                 let plan = {
-                    let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
+                    let host = self.lock_alert_host()?;
                     mcp::alert::plan_create_alert(
                         &host,
                         &self.quote_book,
-                        &self.alert_fx_rates,
+                        self.alerts.fx_rates(),
                         &request,
                         now,
                     )?
@@ -399,23 +399,23 @@ impl DegenViewApp {
                         let store = self.store.lock().map_err(|_| alerts_unavailable())?;
                         // The same commit the price-alert sheet's Save does, but a save that
                         // never reached the queue is an error here, not a "queued".
-                        let command_id = commit_price_alert_checked(
-                            &store,
-                            &self.notifier,
-                            &self.background_service,
-                            &self.alert_runtime_control,
-                            alert,
-                            baseline,
-                            // Other requests in this frame planned against the same snapshot:
-                            // the runtime decides again (duplicate, cap) when it applies.
-                            Some(AlertPrecondition::Create {
-                                max_alerts: mcp::alert::MAX_ALERTS,
-                            }),
-                            now,
-                        )
-                        .map_err(|_| {
-                            McpError::AppUnavailable("Could not queue the alert".into())
-                        })?;
+                        let command_id = self
+                            .alerts
+                            .registration()
+                            .commit_checked(
+                                &store,
+                                alert,
+                                baseline,
+                                // Other requests in this frame planned against the same snapshot:
+                                // the runtime decides again (duplicate, cap) when it applies.
+                                Some(AlertPrecondition::Create {
+                                    max_alerts: mcp::alert::MAX_ALERTS,
+                                }),
+                                now,
+                            )
+                            .map_err(|_| {
+                                McpError::AppUnavailable("Could not queue the alert".into())
+                            })?;
                         ctx.request_repaint();
                         Ok(McpReply::AlertCreated(CreateAlertResult {
                             status: "queued".into(),
@@ -426,7 +426,7 @@ impl DegenViewApp {
                 }
             }
             McpCommand::AlertCommandOutcome { command_id } => {
-                let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
+                let host = self.lock_alert_host()?;
                 Ok(McpReply::AlertCommand(mcp::alert::alert_command_outcome(
                     &host, command_id,
                 )))
@@ -434,11 +434,11 @@ impl DegenViewApp {
             McpCommand::UpdateAlert(request) => {
                 let now = now_ms();
                 let plan = {
-                    let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
+                    let host = self.lock_alert_host()?;
                     mcp::alert::plan_update_alert(
                         &host,
                         &self.quote_book,
-                        &self.alert_fx_rates,
+                        self.alerts.fx_rates(),
                         &request,
                         now,
                     )?
@@ -474,7 +474,7 @@ impl DegenViewApp {
             }
             McpCommand::SetAlertPaused { alert_id, paused } => {
                 let plan = {
-                    let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
+                    let host = self.lock_alert_host()?;
                     mcp::alert::plan_pause_alert(&host, alert_id, paused)?
                 };
                 let status = match plan {
@@ -500,7 +500,7 @@ impl DegenViewApp {
             }
             McpCommand::DeleteAlert { alert_id } => {
                 let id = {
-                    let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
+                    let host = self.lock_alert_host()?;
                     mcp::alert::plan_delete_alert(&host, alert_id)?
                 };
                 self.queue_alert_command(ctx, AlertRuntimeCommandPayload::Delete(id), None)?;
@@ -877,6 +877,11 @@ impl DegenViewApp {
                 )))
             }),
         }
+    }
+
+    /// The alert host, or the error MCP gives while it cannot be reached.
+    fn lock_alert_host(&self) -> Result<MutexGuard<'_, AlertHost>, McpError> {
+        self.alerts.host().lock().map_err(|_| alerts_unavailable())
     }
 
     /// The stored script alert subscriptions, for checks that must not disturb a live alert.

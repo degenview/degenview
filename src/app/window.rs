@@ -1,6 +1,6 @@
 use super::AppAction;
 use super::DegenViewApp;
-use super::alert::commit_price_alert;
+use super::alert::SharedFxRates;
 use super::mcp::McpQuestions;
 use super::now_ms;
 use super::open_system_settings;
@@ -17,19 +17,11 @@ use crate::host::snapshot::SnapshotHost;
 use crate::host::tab::window::TabWindowHost;
 use crate::host::update::{Phase, UpdateHost, UpdateView};
 use crate::lock::lock;
-use crate::model::alert::pine::PineAlertState;
-use crate::model::alert::{
-    AlertCurrency, AlertRuntimeCommand, AlertRuntimeCommandPayload, AlertState,
-};
+use crate::model::alert::{AlertRuntimeCommand, AlertRuntimeCommandPayload};
 use crate::model::tab::windows::WindowId;
-use crate::model::watchlist::quote::Freshness;
 use crate::native_bridge;
 use crate::service::alert::background_service::BackgroundAlertService;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
-use crate::ui::alert::center::{self, AlertCenterAction, AlertCenterInput, QuoteSummary};
-use crate::ui::alert::editor::{self, PriceAlertEditorOutcome, PriceAlertEditorState};
-use crate::ui::alert::pine_editor::{self, PineAlertWebhooksOutcome, PineAlertWebhooksState};
-use crate::ui::alert::script_list::ScriptAlertRow;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use crate::ui::settings::mcp::McpSettingsInput;
@@ -37,18 +29,11 @@ use crate::ui::settings::window;
 use crate::ui::shortcut;
 use crate::ui::window::tab_bar::{self, TabBar, TabView, WindowChoice};
 use eframe::egui;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-/// Opens a System Settings pane by its extension id, as `x-apple.systempreferences:` links do.
 /// The Settings window's viewport (the same id `sync_settings_viewport` opens it under).
 pub(super) fn settings_viewport_id() -> egui::ViewportId {
     egui::ViewportId::from_hash_of("degenview-settings")
-}
-
-/// The Alerts window's viewport (the same id `sync_alerts_viewport` opens it under).
-pub(super) fn alerts_viewport_id() -> egui::ViewportId {
-    egui::ViewportId::from_hash_of("degenview-alerts")
 }
 
 /// Brings an already-open Settings or Alerts window in front of the tab windows. Asking to open
@@ -80,7 +65,7 @@ pub(super) struct WindowEnv {
     pub(super) paper_host: Arc<Mutex<PaperHost>>,
     pub(super) trading_hub: Arc<crate::host::trading::TradingHub>,
     pub(super) alert_host: Arc<Mutex<AlertHost>>,
-    pub(super) alert_fx_shared: Arc<Mutex<std::collections::HashMap<AlertCurrency, f64>>>,
+    pub(super) alert_fx: SharedFxRates,
     pub(super) app_actions: Arc<Mutex<Vec<AppAction>>>,
     pub(super) session_save_error: SessionSaveError,
     pub(super) updates: UpdateHost,
@@ -328,8 +313,8 @@ impl DegenViewApp {
             card_env: self.card_env.clone(),
             paper_host: Arc::clone(&self.paper),
             trading_hub: Arc::clone(&self.trading_hub),
-            alert_host: Arc::clone(&self.alert_host),
-            alert_fx_shared: Arc::clone(&self.alert_fx_shared),
+            alert_host: Arc::clone(self.alerts.host()),
+            alert_fx: self.alerts.fx_shared().clone(),
             app_actions: Arc::clone(&self.actions),
             session_save_error: self.session.error().clone(),
             updates: self.updates.clone(),
@@ -391,11 +376,10 @@ impl DegenViewApp {
         }
         let host = Arc::clone(&self.settings_host);
         let mcp_host = Arc::clone(self.mcp.host());
-        let alert_host = Arc::clone(&self.alert_host);
+        let alert_host = Arc::clone(self.alerts.host());
         let pine_host = Arc::clone(&self.pine_host);
         let store = Arc::clone(&self.store);
-        let background_service = Arc::clone(&self.background_service);
-        let runtime_control = Arc::clone(&self.alert_runtime_control);
+        let registration = self.alerts.registration().clone();
         let app_actions = Arc::clone(&self.actions);
         let updates = self.updates.clone();
         let sync = self.sync.clone();
@@ -521,13 +505,7 @@ impl DegenViewApp {
                             open_system_settings("com.apple.Notifications-Settings.extension");
                         }
                         SettingsHostAction::RetryRegistration => {
-                            if let Ok(mut control) = runtime_control.lock() {
-                                control.lease = None;
-                                if let Ok(mut service) = background_service.lock() {
-                                    let state = service.retry_registration();
-                                    control.retrying(state, now);
-                                }
-                            }
+                            registration.retry(now);
                         }
                         SettingsHostAction::EndpointDeleted(id) => {
                             // Alerts stop pointing at a webhook that no longer exists.
@@ -564,327 +542,6 @@ impl DegenViewApp {
                             }
                         }
                     }
-                }
-            }
-        });
-    }
-
-    pub(super) fn sync_alerts_viewport(&self, ctx: &egui::Context) {
-        if !self.alerts_open.load(Ordering::Acquire) {
-            return;
-        }
-        let alert_host = Arc::clone(&self.alert_host);
-        let store = Arc::clone(&self.store);
-        let quote_book = self.quote_book.clone();
-        let settings_host = Arc::clone(&self.settings_host);
-        let alerts_open = Arc::clone(&self.alerts_open);
-        let alert_editor = Arc::clone(&self.alert_editor);
-        let quote_coordinator = self.quote_coordinator.clone();
-        let alert_fx_shared = Arc::clone(&self.alert_fx_shared);
-        let alert_center_state = Arc::clone(&self.alert_center_state);
-        let pine_host = Arc::clone(&self.pine_host);
-        let chart_datasets = Arc::clone(&self.chart_datasets);
-        let script_webhooks = Arc::clone(&self.script_webhooks);
-        let app_actions = Arc::clone(&self.actions);
-        let notifier = Arc::clone(&self.notifier);
-        let background_service = Arc::clone(&self.background_service);
-        let runtime_control = Arc::clone(&self.alert_runtime_control);
-        let builder = crate::ui::window::chrome::branded(
-            egui::ViewportBuilder::default()
-                .with_title("Alerts")
-                .with_inner_size([880.0, 600.0])
-                .with_min_inner_size([760.0, 480.0]),
-        );
-        ctx.show_viewport_deferred(alerts_viewport_id(), builder, move |ui, _class| {
-            if ui.input(|input| input.viewport().close_requested()) {
-                alerts_open.store(false, Ordering::Release);
-                if let Ok(store) = store.lock()
-                    && let Ok(mut host) = alert_host.lock()
-                {
-                    host.set_alerts_window_active(false, &store, now_ms());
-                }
-                return;
-            }
-            let store = lock(&store);
-            if let Ok(mut host) = alert_host.lock() {
-                let focused = ui.input(|input| input.viewport().focused.unwrap_or(false));
-                host.set_alerts_window_active(focused, &store, now_ms());
-            }
-            let mut state = lock(&alert_center_state);
-            let script_alerts: Vec<ScriptAlertRow> = {
-                let datasets = chart_datasets
-                    .lock()
-                    .map(|datasets| datasets.clone())
-                    .unwrap_or_default();
-                store
-                    .pine_subscriptions_cached()
-                    .iter()
-                    .map(|subscription| {
-                        let dataset = datasets
-                            .get(&subscription.chart_id)
-                            .map(|(key, timeframe)| (key.as_str(), timeframe.as_str()));
-                        ScriptAlertRow::from_subscription(subscription, dataset)
-                    })
-                    .collect()
-            };
-            let muted = store.muted_alerts_cached();
-            let sync_enabled = store.sync_enabled();
-            let actions = if let Ok(host) = alert_host.lock() {
-                let snapshot = host.snapshot();
-                let input = AlertCenterInput {
-                    load_error: host.load_error(),
-                    alerts: &snapshot.alerts,
-                    history: &snapshot.history,
-                    health: &snapshot.health,
-                    quote: &|key| {
-                        let quote = quote_book.get_by_key(key)?;
-                        Some(QuoteSummary {
-                            price: quote.last?,
-                            currency: AlertCurrency::Usd,
-                            fresh: quote.freshness == Freshness::Live,
-                        })
-                    },
-                    webhook_summary: &|event_id| store.webhook_delivery_summary(event_id),
-                    script_alerts: &script_alerts,
-                    muted: &muted,
-                    sync_enabled,
-                    now_ms: now_ms(),
-                    utc_offset_secs: crate::service::system::timezone::local_utc_offset_secs(
-                        now_ms(),
-                    ),
-                };
-                center::show(ui, &mut state, &input)
-            } else {
-                Vec::new()
-            };
-            for action in actions {
-                match action {
-                    AlertCenterAction::Delete(id) => {
-                        let _ = store.enqueue_alert_command(&AlertRuntimeCommand::new(
-                            AlertRuntimeCommandPayload::Delete(id),
-                            now_ms(),
-                        ));
-                    }
-                    AlertCenterAction::ClearHistory => {
-                        let _ = store.enqueue_alert_command(&AlertRuntimeCommand::new(
-                            AlertRuntimeCommandPayload::ClearHistory,
-                            now_ms(),
-                        ));
-                    }
-                    AlertCenterAction::SetEvaluateHere(id, watch) => {
-                        let key = id.to_string();
-                        let origin = store
-                            .alert_local(&key)
-                            .ok()
-                            .flatten()
-                            .map_or_else(|| "local".to_owned(), |(_, origin)| origin);
-                        let _ = store.set_alert_local(&key, watch, &origin);
-                    }
-                    AlertCenterAction::Toggle(id) => {
-                        if let Ok(host) = alert_host.lock() {
-                            let state = host
-                                .snapshot()
-                                .alerts
-                                .iter()
-                                .find(|alert| alert.id == id)
-                                .map(|alert| match alert.state {
-                                    AlertState::Active => AlertState::Paused,
-                                    _ => AlertState::Active,
-                                });
-                            if let Some(state) = state {
-                                let _ = store.enqueue_alert_command(&AlertRuntimeCommand::new(
-                                    AlertRuntimeCommandPayload::SetState {
-                                        id,
-                                        state,
-                                        baseline: None,
-                                    },
-                                    now_ms(),
-                                ));
-                            }
-                        }
-                    }
-                    AlertCenterAction::PauseScript(id)
-                    | AlertCenterAction::RearmScript(id)
-                    | AlertCenterAction::DeleteScript(id) => {
-                        let mut subscriptions = store.pine_subscriptions();
-                        match action {
-                            AlertCenterAction::DeleteScript(_) => {
-                                subscriptions.retain(|s| s.id != id);
-                            }
-                            AlertCenterAction::PauseScript(_) => {
-                                for s in subscriptions.iter_mut().filter(|s| s.id == id) {
-                                    s.state = PineAlertState::Paused;
-                                }
-                            }
-                            _ => {
-                                for s in subscriptions.iter_mut().filter(|s| s.id == id) {
-                                    s.state = PineAlertState::Active;
-                                }
-                            }
-                        }
-                        let _ = store.replace_pine_subscriptions(&subscriptions);
-                        if let Ok(mut host) = pine_host.lock() {
-                            host.reload(&store);
-                        }
-                    }
-                    AlertCenterAction::EditScriptWebhooks(id) => {
-                        if let Some(subscription) = store
-                            .pine_subscriptions()
-                            .into_iter()
-                            .find(|subscription| subscription.id == id)
-                            && let Ok(mut slot) = script_webhooks.lock()
-                        {
-                            *slot = Some((id, PineAlertWebhooksState::new(&subscription)));
-                        }
-                    }
-                    AlertCenterAction::OpenPineStudio => {
-                        if let Ok(mut pending) = app_actions.lock() {
-                            pending.push(AppAction::OpenPine);
-                        }
-                    }
-                    AlertCenterAction::OpenNotificationSettings => {
-                        if let Ok(mut host) = settings_host.lock() {
-                            if host.is_open() {
-                                raise_viewport(ui.ctx(), settings_viewport_id());
-                            }
-                            host.set_open(true);
-                        }
-                    }
-                    AlertCenterAction::Edit(id) => {
-                        if let Ok(host) = alert_host.lock()
-                            && let Some(alert) =
-                                host.snapshot().alerts.iter().find(|alert| alert.id == id)
-                        {
-                            let editor = PriceAlertEditorState::new(
-                                alert.asset.clone(),
-                                Some(alert.clone()),
-                                Some(alert.currency),
-                            );
-                            if let Ok(mut slot) = alert_editor.lock() {
-                                *slot = Some(editor);
-                            }
-                        }
-                    }
-                    AlertCenterAction::Duplicate(id) => {
-                        // A copy of the rule, saved at once as a new, active alert.
-                        let original = alert_host.lock().ok().and_then(|host| {
-                            host.snapshot()
-                                .alerts
-                                .iter()
-                                .find(|alert| alert.id == id)
-                                .cloned()
-                        });
-                        if let Some(original) = original {
-                            let now = now_ms();
-                            let mut copy = crate::model::alert::PriceAlert::new(
-                                original.asset.clone(),
-                                original.condition.clone(),
-                                now,
-                            );
-                            copy.currency = original.currency;
-                            copy.frequency = original.frequency;
-                            copy.note = original.note.clone();
-                            copy.webhook_endpoint_ids = original.webhook_endpoint_ids.clone();
-                            copy.webhook_message = original.webhook_message.clone();
-                            let baseline = quote_book
-                                .get_by_key(&original.asset.key())
-                                .and_then(|quote| quote.last);
-                            let _ = store.enqueue_alert_command(&AlertRuntimeCommand::new(
-                                AlertRuntimeCommandPayload::Save {
-                                    alert: Box::new(copy),
-                                    baseline,
-                                },
-                                now,
-                            ));
-                        }
-                    }
-                }
-            }
-            // Webhooks… sheet of a script alert.
-            if let Ok(mut slot) = script_webhooks.lock()
-                && let Some((id, sheet)) = slot.as_mut()
-            {
-                let subscriptions = store.pine_subscriptions_cached();
-                let outcome = subscriptions
-                    .iter()
-                    .find(|subscription| subscription.id == *id)
-                    .and_then(|subscription| {
-                        pine_editor::show_webhooks(
-                            ui.ctx(),
-                            sheet,
-                            subscription,
-                            &store.webhook_endpoints_cached(),
-                        )
-                    });
-                let id = *id;
-                match outcome {
-                    Some(PineAlertWebhooksOutcome::Save(ids)) => {
-                        let mut subscriptions = subscriptions.to_vec();
-                        for subscription in subscriptions.iter_mut().filter(|s| s.id == id) {
-                            subscription.webhook_endpoint_ids = ids.clone();
-                        }
-                        let _ = store.replace_pine_subscriptions(&subscriptions);
-                        if let Ok(mut host) = pine_host.lock() {
-                            host.reload(&store);
-                        }
-                        *slot = None;
-                    }
-                    Some(PineAlertWebhooksOutcome::Cancel) => *slot = None,
-                    Some(PineAlertWebhooksOutcome::OpenSettings) => {
-                        if let Ok(mut host) = settings_host.lock() {
-                            if host.is_open() {
-                                raise_viewport(ui.ctx(), settings_viewport_id());
-                            }
-                            host.open_webhooks();
-                        }
-                    }
-                    None => {}
-                }
-            }
-            // Price-alert editor window.
-            if let Ok(mut slot) = alert_editor.lock() {
-                let mut finished = false;
-                if let Some(state) = slot.as_mut() {
-                    let rates = alert_fx_shared
-                        .lock()
-                        .map(|rates| rates.clone())
-                        .unwrap_or_default();
-                    quote_coordinator.set_demand(
-                        editor::ALERTS_WINDOW_QUOTE_OWNER,
-                        vec![state.draft.asset().instrument.clone()],
-                        true,
-                    );
-                    state.feed_from_book(&quote_book, &rates);
-                    let endpoints = store.webhook_endpoints_cached();
-                    let now = now_ms();
-                    match editor::show(ui.ctx(), state, &endpoints, now) {
-                        Some(PriceAlertEditorOutcome::Save(alert)) => {
-                            let baseline = state.draft.current_price();
-                            commit_price_alert(
-                                &store,
-                                &notifier,
-                                &background_service,
-                                &runtime_control,
-                                alert,
-                                baseline,
-                                now,
-                            );
-                            finished = true;
-                        }
-                        Some(PriceAlertEditorOutcome::Cancel) => finished = true,
-                        Some(PriceAlertEditorOutcome::OpenWebhookSettings) => {
-                            if let Ok(mut host) = settings_host.lock() {
-                                host.open_webhooks();
-                            }
-                        }
-                        None => {}
-                    }
-                }
-                if finished {
-                    *slot = None;
-                }
-                if slot.is_none() {
-                    quote_coordinator.release(editor::ALERTS_WINDOW_QUOTE_OWNER);
                 }
             }
         });

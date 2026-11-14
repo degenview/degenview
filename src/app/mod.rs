@@ -7,7 +7,7 @@ mod session;
 mod tabs;
 mod window;
 
-use crate::app::alert::AlertRuntimeControl;
+use crate::app::alert::AlertCoordinator;
 use crate::app::mcp::McpState;
 use crate::app::session::PersistedSpecialTab;
 use crate::app::session::PersistedSpecialTabKind;
@@ -18,7 +18,6 @@ use crate::app::tabs::TabSlot;
 use crate::app::tabs::TabState;
 use crate::app::window::settings_viewport_id;
 use crate::host::alert::AlertHost;
-use crate::host::alert::runtime::AlertRuntimeRunner;
 use crate::host::editor_theme::EditorThemeHost;
 use crate::host::paper::PaperHost;
 use crate::host::pine::subscription::PineSubscriptionHost;
@@ -32,28 +31,21 @@ use crate::host::tab::window::Placement;
 use crate::host::update::UpdateHost;
 use crate::lock::lock;
 use crate::model::Timeframe;
-use crate::model::alert::{AlertCurrency, AlertRuntimeOwner, AlertState};
+use crate::model::alert::AlertState;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::native_bridge;
 use crate::pine_studio::PineStudio;
-use crate::service::alert::background_service::BackgroundAlertService;
 use crate::service::alert::macos_notifications::{self, Notifier};
 use crate::service::market::fx_rates::FxRateService;
 use crate::service::portfolio::quotes::PortfolioQuoteFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use crate::store::SharedStore;
 use crate::store::watchlist::WatchlistStore;
-use crate::ui::alert::banner::{self, AlertBannerState};
-use crate::ui::alert::center::AlertCenterState;
-use crate::ui::alert::editor::PriceAlertEditorState;
-use crate::ui::alert::pine_editor::PineAlertWebhooksState;
 use crate::ui::portfolio::tab::PortfolioTab;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
-use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 fn open_system_settings(pane: &str) {
     let _ = std::process::Command::new("/usr/bin/open")
@@ -138,12 +130,6 @@ pub struct DegenViewApp {
     portfolio_quotes: PortfolioQuoteFeed,
     /// How portfolio cards on chart grids reach the portfolios.
     card_env: PortfolioCardEnv,
-    fx_rates: Arc<FxRateService>,
-    alert_fx_rates: std::collections::HashMap<AlertCurrency, f64>,
-    /// `alert_fx_rates` for the chart windows' and Alerts window's price-alert sheets.
-    alert_fx_shared: Arc<Mutex<std::collections::HashMap<AlertCurrency, f64>>>,
-    alert_fx_receiver: Option<Receiver<std::collections::HashMap<AlertCurrency, f64>>>,
-    alert_fx_refreshed_at: Option<Instant>,
     portfolio: Arc<Mutex<PortfolioHost>>,
     paper: Arc<Mutex<PaperHost>>,
     /// Live broker connections, shared by every window (never reachable from MCP or scripts).
@@ -159,27 +145,15 @@ pub struct DegenViewApp {
     /// The MCP server, the questions its clients raise, and what the app remembers between
     /// their requests.
     mcp: McpState,
-    alert_host: Arc<Mutex<AlertHost>>,
-    alert_runner: AlertRuntimeRunner,
-    alert_runtime_control: Arc<Mutex<AlertRuntimeControl>>,
-    background_service: Arc<Mutex<BackgroundAlertService>>,
+    /// Price and script alerts: the host, the runtime, FX rates, the Alerts window, the banner.
+    alerts: AlertCoordinator,
     pine_host: Arc<Mutex<PineSubscriptionHost>>,
-    alerts_open: Arc<AtomicBool>,
     /// Looks for a newer release on a schedule; the tab bar and Settings ▸ About draw it.
     updates: UpdateHost,
     /// iCloud Sync: applies other Macs' changes and carries out the Settings page's requests.
     sync: crate::host::sync::SyncHost,
     /// The Pine Studio's library as last seen by sync, to notice a save.
     script_signature: u64,
-    alert_editor: Arc<Mutex<Option<PriceAlertEditorState>>>,
-    /// The Alerts window's tab, search and dialogs, kept across frames.
-    alert_center_state: Arc<Mutex<AlertCenterState>>,
-    /// `chart_id → (symbol_key, timeframe)` of every open chart, refreshed each frame for the
-    /// Alerts window's script-alert status.
-    chart_datasets: Arc<Mutex<std::collections::HashMap<u64, (String, String)>>>,
-    /// The Webhooks… sheet open on a script alert, by subscription id.
-    script_webhooks: Arc<Mutex<Option<(u64, PineAlertWebhooksState)>>>,
-    banner: AlertBannerState,
     notifier: Arc<dyn Notifier>,
     actions: Arc<Mutex<Vec<AppAction>>>,
     session: SessionState,
@@ -283,10 +257,10 @@ impl DegenViewApp {
                 },
             )
         };
-        let alert_host = Arc::new(Mutex::new({
+        let alert_host = {
             let store = lock(&store);
             AlertHost::load(&store, now_ms())
-        }));
+        };
         let pine_host = Arc::new(Mutex::new({
             let store = lock(&store);
             PineSubscriptionHost::load(&store)
@@ -310,25 +284,8 @@ impl DegenViewApp {
             )
         };
         let actions = Arc::new(Mutex::new(Vec::new()));
-        let alerts_open = Arc::new(AtomicBool::new(false));
-        let alert_editor = Arc::new(Mutex::new(None));
-        let banner = AlertBannerState::default();
         let notifier = macos_notifications::default_notifier();
-        let runtime_started_at = now_ms();
-        let has_price_alerts = alert_host
-            .lock()
-            .is_ok_and(|host| !host.snapshot().alerts.is_empty());
-        let mut service = BackgroundAlertService::default();
-        let service_state = if has_price_alerts {
-            service.ensure_registered()
-        } else {
-            service.status()
-        };
-        let background_service = Arc::new(Mutex::new(service));
-        let alert_runtime_control = Arc::new(Mutex::new(AlertRuntimeControl::new(
-            service_state,
-            runtime_started_at,
-        )));
+        let alerts = AlertCoordinator::new(alert_host, Arc::clone(&notifier), fx_rates);
 
         let (saved_tabs, saved_next_id) = {
             let store = lock(&store);
@@ -407,11 +364,6 @@ impl DegenViewApp {
             quote_coordinator,
             card_env: PortfolioCardEnv::new(Arc::clone(&portfolio), portfolio_quotes.clone()),
             portfolio_quotes,
-            fx_rates,
-            alert_fx_rates: std::collections::HashMap::new(),
-            alert_fx_shared: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            alert_fx_receiver: None,
-            alert_fx_refreshed_at: None,
             portfolio,
             paper,
             broker_host,
@@ -420,20 +372,11 @@ impl DegenViewApp {
             snapshots,
             editor_themes,
             mcp,
-            alert_host,
-            alert_runner: AlertRuntimeRunner::new(AlertRuntimeOwner::App),
-            alert_runtime_control,
-            background_service,
+            alerts,
             pine_host,
-            alert_center_state: Arc::new(Mutex::new(AlertCenterState::default())),
-            chart_datasets: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            script_webhooks: Arc::new(Mutex::new(None)),
-            alerts_open,
             updates,
             sync,
             script_signature: 0,
-            alert_editor,
-            banner,
             notifier,
             actions,
             session: SessionState::new(),
@@ -482,9 +425,7 @@ impl eframe::App for DegenViewApp {
         if self.session.is_due() {
             self.save_session();
         }
-        let now = now_ms();
-        self.banner.expire(now);
-        banner::show(ctx, &mut self.banner, now);
+        self.alerts.show_banner(ctx, now_ms());
         ctx.request_repaint_after(Duration::from_millis(250));
     }
 
@@ -495,9 +436,7 @@ impl eframe::App for DegenViewApp {
         self.sync_settings_viewport(&ctx);
         self.sync_alerts_viewport(&ctx);
         self.tick_alerts();
-        let now = now_ms();
-        self.banner.expire(now);
-        banner::show(&ctx, &mut self.banner, now);
+        self.alerts.show_banner(&ctx, now_ms());
         if !std::mem::replace(&mut self.root_hidden, true) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }

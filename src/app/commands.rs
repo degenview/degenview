@@ -1,10 +1,7 @@
 use super::AppAction;
 use super::DegenViewApp;
-use super::alert::commit_price_alert;
 use super::now_ms;
 use super::tabs::TabContent;
-use super::window::alerts_viewport_id;
-use super::window::raise_viewport;
 use crate::host::settings::SettingsHost;
 use crate::host::tab::window::TabRequest;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
@@ -16,7 +13,6 @@ use crate::pine_studio::editor::EditAction;
 use crate::store::scripts::hash_source;
 use crate::ui::window::tab_bar;
 use eframe::egui;
-use std::sync::atomic::Ordering;
 
 impl DegenViewApp {
     pub(super) fn process_commands(&mut self, ctx: &egui::Context) {
@@ -134,22 +130,12 @@ impl DegenViewApp {
                 AppAction::OpenSnapshotSettings => {
                     self.open_settings_page(ctx, SettingsHost::open_snapshots);
                 }
-                AppAction::OpenAlerts => {
-                    if self.alerts_open.swap(true, Ordering::AcqRel) {
-                        raise_viewport(ctx, alerts_viewport_id());
-                    }
-                }
+                AppAction::OpenAlerts => self.alerts.open_window(ctx),
                 AppAction::SavePriceAlert { alert, baseline } => {
                     if let Ok(store) = self.store.lock() {
-                        commit_price_alert(
-                            &store,
-                            &self.notifier,
-                            &self.background_service,
-                            &self.alert_runtime_control,
-                            alert,
-                            baseline,
-                            now_ms(),
-                        );
+                        self.alerts
+                            .registration()
+                            .commit(&store, alert, baseline, now_ms());
                     }
                 }
                 AppAction::SetAlertState { id, state } => {

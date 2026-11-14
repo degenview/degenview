@@ -191,9 +191,7 @@ impl DegenViewApp {
                 }
             }
         }
-        if let Ok(mut shared) = self.chart_datasets.lock() {
-            *shared = datasets;
-        }
+        self.alerts.set_chart_datasets(datasets);
         if let Ok(mut host) = self.pine_host.lock() {
             for tab in self.tabs.slots() {
                 if let Ok(content) = tab.content.lock()
@@ -214,10 +212,8 @@ impl DegenViewApp {
                 }
             }
         }
-        if !fired.is_empty()
-            && let Ok(host) = self.alert_host.lock()
-        {
-            host.dispatch_pine(&fired, &store, &self.store, &*self.notifier, now);
+        if !fired.is_empty() {
+            self.alerts.dispatch_pine(&fired, &store, &self.store, now);
         }
     }
 }

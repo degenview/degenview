@@ -92,9 +92,8 @@ pub(super) fn show_tab(
                 workspace.set_unseen_alerts(host.unseen().count());
                 workspace.set_price_alerts(&host.snapshot().alerts);
             }
-            if let Ok(rates) = env.alert_fx_shared.lock() {
-                workspace.set_alert_fx_rates(&rates);
-            }
+            env.alert_fx
+                .with(|rates| workspace.set_alert_fx_rates(rates));
             workspace.set_card_env(&env.card_env);
             workspace.set_trading_hub(&env.trading_hub);
             workspace.set_snapshots(&env.snapshots);
