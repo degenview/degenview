@@ -6,13 +6,14 @@
 //! shows, its filter and its highlighted row live in `WatchlistSidebarState`.
 
 use crate::model::InstrumentId;
+use crate::model::market::trend::Trend;
 use crate::model::watchlist;
 use crate::model::watchlist::layout::{Filter, Flags, Row};
 use crate::model::watchlist::quote::WatchlistQuote;
 use crate::model::watchlist::text::ImportReport;
 use crate::model::watchlist::{
-    EntryId, Watchlist, WatchlistColumn, WatchlistError, WatchlistFlag, WatchlistInstrument,
-    WatchlistNotice, WatchlistSort,
+    EntryId, Watchlist, WatchlistColumn, WatchlistDisplaySettings, WatchlistError, WatchlistFlag,
+    WatchlistInstrument, WatchlistNotice, WatchlistSort,
 };
 use crate::service::work_queue::Pending;
 use crate::ui::icons::{self, Icon};
@@ -23,6 +24,7 @@ use detail::{detail_height, detail_panel};
 use eframe::egui::{self, Align, Id, RichText, Sense, Stroke, Vec2};
 use header::{filter_field, header};
 use modals::modals;
+use std::collections::HashMap;
 
 mod content;
 mod detail;
@@ -116,6 +118,10 @@ pub enum WatchlistAction {
         list: EntryId,
         shows: bool,
     },
+    SetShowsChart {
+        list: EntryId,
+        shows: bool,
+    },
     SetFlag {
         instrument: InstrumentId,
         flag: Option<WatchlistFlag>,
@@ -141,6 +147,8 @@ pub struct WatchlistSidebarInput<'a> {
     pub lists: &'a [Watchlist],
     pub flags: &'a Flags,
     pub quote: &'a dyn Fn(&InstrumentId) -> Option<WatchlistQuote>,
+    /// Each market's last month of closes, by `InstrumentId::key()`, for the row charts.
+    pub trends: &'a HashMap<String, Trend>,
     /// The market the tab's focused chart shows; the matching row is highlighted.
     pub focused_market: Option<&'a InstrumentId>,
     /// The saved lists couldn't be read, so changes are off.
@@ -218,6 +226,8 @@ pub struct WatchlistSidebarState {
     /// Markets of the rows drawn this frame, for the quote feed.
     demand: Vec<InstrumentId>,
     /// The filter box gave up focus this frame, so its Enter must not reach the rows.
+    /// The list drawn this frame shows the month's chart, so `demand` also wants closes.
+    demands_trends: bool,
     filter_blurred: bool,
 }
 
@@ -241,6 +251,7 @@ impl Default for WatchlistSidebarState {
             synced_focus: None,
             synced_list: None,
             demand: Vec::new(),
+            demands_trends: false,
             filter_blurred: false,
         }
     }
@@ -254,12 +265,10 @@ impl WatchlistSidebarState {
     }
 
     pub fn minimum_width(&mut self, lists: &[Watchlist]) -> f32 {
-        let columns = self
-            .resolved(lists)
-            .map(|list| list.display.columns.as_slice());
-        style::minimum_panel_width(
-            columns.unwrap_or(&[WatchlistColumn::Last, WatchlistColumn::ChangePercent]),
-        )
+        match self.resolved(lists) {
+            Some(list) => style::minimum_panel_width(&list.display),
+            None => style::minimum_panel_width(&WatchlistDisplaySettings::default()),
+        }
     }
 
     #[cfg(test)]
@@ -302,6 +311,15 @@ impl WatchlistSidebarState {
     /// a collapsed section, a filtered-out row or a portfolio card.
     pub fn quote_demand(&self) -> &[InstrumentId] {
         &self.demand
+    }
+
+    /// Markets whose month of closes the rows drawn this frame chart; none when the chart is off.
+    pub fn trend_demand(&self) -> &[InstrumentId] {
+        if self.demands_trends {
+            &self.demand
+        } else {
+            &[]
+        }
     }
 
     /// Keeps the highlight on a row that is drawn: a filter, a collapsed section or
@@ -350,6 +368,7 @@ pub fn show(
         }
     }
     state.demand.clear();
+    state.demands_trends = false;
     state.filter_blurred = false;
     let list = state.resolved(input.lists);
 
@@ -382,6 +401,7 @@ pub fn show(
             input.quote,
         );
         state.reconcile_selection(&rows);
+        state.demands_trends = list.display.shows_chart;
         state.demand = rows
             .iter()
             .filter_map(|row| match row {

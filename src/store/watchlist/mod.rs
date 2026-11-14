@@ -567,6 +567,13 @@ impl WatchlistStore {
         })
     }
 
+    pub fn set_shows_chart(&mut self, list: EntryId, shows: bool) -> Result<bool, WatchlistError> {
+        self.modify(list, false, |list| {
+            list.display.shows_chart = shows;
+            Ok(())
+        })
+    }
+
     // MARK: Flags
 
     pub fn set_flag(&mut self, instrument: &InstrumentId, flag: Option<WatchlistFlag>) {

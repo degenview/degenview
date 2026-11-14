@@ -7,6 +7,7 @@ use crate::model::InstrumentId;
 use crate::model::alert::AlertAsset;
 use crate::model::watchlist::text::ImportReport;
 use crate::model::watchlist::{EntryId, WatchlistError, WatchlistInstrument, WatchlistNotice};
+use crate::service::market::trend;
 use crate::service::system::file_dialog;
 use crate::service::work_queue::{self, Pending};
 use crate::ui::watchlist::sidebar::{
@@ -148,6 +149,7 @@ impl ChartWorkspace {
             let lists = store.lists();
             let flags = store.flags();
             let quote = |id: &InstrumentId| self.quote_book.get(id);
+            let trends = trend::month().snapshot();
             let focused_market = self
                 .resolved_focused_id()
                 .and_then(|id| self.charts.iter().find(|chart| chart.id == id))
@@ -159,6 +161,7 @@ impl ChartWorkspace {
                 lists,
                 flags,
                 quote: &quote,
+                trends: &trends,
                 focused_market: focused_market.as_ref(),
                 load_failed: store.load_failed(),
                 error: self
@@ -175,6 +178,11 @@ impl ChartWorkspace {
             self.id,
             self.watchlist_pane.sidebar.quote_demand().to_vec(),
             true,
+        );
+        let repaint = ctx.clone();
+        trend::month().request(
+            self.watchlist_pane.sidebar.trend_demand(),
+            Arc::new(move || repaint.request_repaint()),
         );
         self.apply_watchlist_actions(actions, ctx);
     }
@@ -303,6 +311,10 @@ impl ChartWorkspace {
                     }
                     WatchlistAction::SetShowsDescription { list, shows } => {
                         let result = store.set_shows_description(list, shows).map(|_| ());
+                        report_watchlist(&mut self.watchlist_pane.notice, result);
+                    }
+                    WatchlistAction::SetShowsChart { list, shows } => {
+                        let result = store.set_shows_chart(list, shows).map(|_| ());
                         report_watchlist(&mut self.watchlist_pane.notice, result);
                     }
                     WatchlistAction::SetFlag { instrument, flag } => {

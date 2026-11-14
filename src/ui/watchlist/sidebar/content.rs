@@ -42,6 +42,9 @@ pub(super) fn content(
     let mut rects: Vec<Rect> = Vec::with_capacity(rows.len());
     let mut drop_requested = false;
     let mut drag_started = None;
+    // A hairline parts two symbol rows unless either is lit (selected or hovered), so a lit
+    // row's rounded fill never sits against a line.
+    let mut previous_symbol_unlit = false;
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
@@ -49,6 +52,7 @@ pub(super) fn content(
             ui.spacing_mut().item_spacing.y = 0.0;
             for (index, row) in rows.iter().enumerate() {
                 let dragged = state.drag.as_ref().is_some_and(|drag| drag.index == index);
+                let mut symbol_unlit = false;
                 let response = match row {
                     Row::Section { section, count } => {
                         let response = rows::section_row(ui, section, *count, index == 0, dragged);
@@ -75,14 +79,18 @@ pub(super) fn content(
                         response
                     }
                     Row::Instrument { item, .. } => {
+                        let selected = state.selected_entry == Some(item.id);
                         let style = RowStyle {
                             display: &list.display,
                             flags: input.flags,
                             quote: input.quote,
-                            selected: state.selected_entry == Some(item.id),
+                            trend: input.trends.get(&item.instrument.key()),
+                            selected,
                             dragged,
+                            divider: previous_symbol_unlit,
                         };
                         let response = rows::instrument_row(ui, item, &style);
+                        symbol_unlit = !selected && !response.hovered();
                         let more_rect = Rect::from_center_size(
                             Pos2::new(
                                 response.rect.right() - TRAILING_INSET - 11.0,
@@ -128,6 +136,7 @@ pub(super) fn content(
                     }
                     Row::EmptySection { .. } => rows::empty_section_row(ui),
                 };
+                previous_symbol_unlit = symbol_unlit;
                 rects.push(response.rect);
 
                 if row.entry_id().is_some() {

@@ -376,6 +376,20 @@ fn options_menu(
                         shows: !shows,
                     });
                 }
+                let shows = list.display.shows_chart;
+                let chart = kit::menu_row(
+                    ui,
+                    kit::MenuRow {
+                        checked: shows,
+                        ..kit::MenuRow::new("Show 1M Chart")
+                    },
+                );
+                if chart.clicked() {
+                    actions.push(WatchlistAction::SetShowsChart {
+                        list: list.id,
+                        shows: !shows,
+                    });
+                }
             },
         );
 

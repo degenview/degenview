@@ -28,6 +28,7 @@ mod pill;
 pub mod popover;
 pub mod sheet;
 pub mod source_logo;
+pub mod sparkline;
 pub mod split;
 mod tab_bar;
 mod text;

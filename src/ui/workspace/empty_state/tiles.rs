@@ -1,10 +1,11 @@
 //! The pieces the page's tabs are made of: a grid, a market tile, a list row, a layout card, and
 //! the note a tab shows when it has nothing yet.
 
-use super::sparkline::{self, ChangeText, Trend};
 use super::{EmptyStateAction, LayoutSummary};
+use crate::model::market::trend::Trend;
 use crate::model::{DataSource, InstrumentId};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::sparkline::{self, ChangeText};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::theme;
 use eframe::egui::{self, Id, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};

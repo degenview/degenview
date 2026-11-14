@@ -297,6 +297,10 @@ fn a_change_that_changes_nothing_writes_nothing() {
         store.set_shows_description(favorites, store.lists()[0].display.shows_description),
         Ok(false)
     );
+    assert_eq!(
+        store.set_shows_chart(favorites, store.lists()[0].display.shows_chart),
+        Ok(false)
+    );
     assert_eq!(store.rename_list(favorites, "Favorites"), Ok(false));
     let id = store.lists()[0].instruments().next().unwrap().id;
     assert_eq!(store.move_instruments(favorites, &[id], None), Ok(false));
