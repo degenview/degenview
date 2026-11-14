@@ -43,6 +43,31 @@ pub struct ChartRun {
 }
 
 impl ChartRun {
+    /// What a script alert on a chart drawn with `construction` runs over: the bars it builds
+    /// from `candles` and how they were made, or the candles themselves for a chart of candles.
+    pub fn feed(
+        construction: Option<Construction>,
+        candles: &[Kline],
+        now_ms: i64,
+    ) -> (Vec<Kline>, Self) {
+        let Some(construction) = construction else {
+            return (candles.to_vec(), Self::default());
+        };
+        let bars =
+            crate::model::chart::synthetic::build_with(construction, candles, now_ms).klines();
+        let bar_seconds = candles
+            .last()
+            .map(|last| ((last.close_time - last.open_time + 1) as f64 / 1000.0).round())
+            .filter(|seconds| *seconds > 0.0);
+        (
+            bars,
+            Self {
+                construction: Some(construction),
+                bar_seconds,
+            },
+        )
+    }
+
     fn symbol(&self, symbol_key: &str) -> SymbolInfo {
         SymbolInfo {
             chart: self

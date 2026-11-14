@@ -29,7 +29,7 @@
     (`context.scope`) is never timed.
   - Keep `Σ line time + not attributed = total` exact (tests assert it on a stepping clock).
   - `ProfileKey` (text plus `PreviewState::run_identity`) must cover all a script sees in the preview
-    run; a new chart-run input (`run_revision`, `ChartCard::pine_outputs`) goes into the identity and
+    run; a new chart-run input (`host::pine::chart::ChartRuns::update`, `ChartFrame`) goes into the identity and
     `DebugFeed`.
   - Bench: `tools/pine-bench.sh <base-rev> <head-rev>` (head must be a commit; `profiled_*`
     workloads = recorder cost).

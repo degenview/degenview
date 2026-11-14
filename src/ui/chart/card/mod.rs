@@ -1,5 +1,5 @@
 use crate::format;
-use crate::host::pine::KlineSecurityDataProvider;
+use crate::host::pine::chart::{ChartFrame, ChartRuns, InstanceStatus, PineLogs, RunRevision};
 use crate::model::chart;
 use crate::model::chart::canvas::{PaneSpec, Window};
 use crate::model::chart::kind::{ChartStyle, ChartType, DataClass};
@@ -8,18 +8,15 @@ use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::chart::synthetic::{BarShape, Construction, SyntheticBar, SyntheticSeries};
 use crate::model::chart::viewport::{ChartViewport, PriceRange, SavedViewport};
 use crate::model::paper::PaperOrderSide;
-use crate::model::pine::instance::{PineInstance, StoredInput, VisualOrder};
+use crate::model::pine::instance::{PineInstance, VisualOrder};
 use crate::model::{
     Anchor, BollingerSeries, ChartAppearance, DataSource, IndicatorConfig, IndicatorSeries, Kline,
     PmSeries, PriceFormat, Timeframe,
 };
 use crate::pine::compiler::program::ChartTheme;
 use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
-use crate::pine::logs::{LogBatch, LogHistory};
-use crate::pine::outputs::style_overrides::{StyleOverrides, StyleRow, style_rows};
-use crate::pine::runtime::execution::ExecutionController;
-use crate::pine::syntax::token::{Diagnostic, Limits};
-use crate::pine_studio::library::registry::LibraryRegistry;
+use crate::pine::outputs::style_overrides::StyleRow;
+use crate::pine::syntax::token::Diagnostic;
 use crate::ui::alert::lines;
 use crate::ui::chart::buttons::{self, PaneAction};
 use crate::ui::chart::canvas::{self, CanvasStyle};
@@ -38,14 +35,9 @@ use crate::ui::theme;
 use eframe::egui::{
     self, Align2, Color32, FontId, Pos2, Rect, Response, Sense, Shape, Stroke, StrokeKind, Vec2,
 };
-use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
-    mpsc::{self, Receiver, Sender},
-};
-use std::time::{Duration, Instant};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Instant;
 
 /// The least the price axis is wide, for a chart whose labels are short.
 const PRICE_AXIS_WIDTH: f32 = 44.0;
@@ -62,43 +54,6 @@ fn current_time_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_millis() as i64)
-}
-
-/// Whether a script asks where the chart is scrolled (`chart.left_visible_bar_time` and its
-/// right-hand twin), the only thing about the viewport a run can depend on.
-pub(crate) fn reads_visible_range(source: &str) -> bool {
-    source.contains("visible_bar_time")
-}
-
-/// A hash of every field of every candle: two series with equal fingerprints run a script the same
-/// way. The chart's run revision and the Pine Studio's profiler both identify their data by it.
-pub(crate) fn candles_fingerprint(candles: &[Kline]) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    candles.len().hash(&mut hasher);
-    for candle in candles {
-        candle.open_time.hash(&mut hasher);
-        candle.close_time.hash(&mut hasher);
-        candle.open.to_bits().hash(&mut hasher);
-        candle.high.to_bits().hash(&mut hasher);
-        candle.low.to_bits().hash(&mut hasher);
-        candle.close.to_bits().hash(&mut hasher);
-        candle.volume.to_bits().hash(&mut hasher);
-    }
-    hasher.finish()
-}
-
-/// Whether the last candle has closed by `now_ms`: a forming candle runs a script as a realtime
-/// tick, a closed one as a bar.
-pub(crate) fn last_candle_is_closed(candles: &[Kline], now_ms: i64) -> bool {
-    candles.last().is_some_and(|bar| bar.close_time <= now_ms)
-}
-
-fn run_revision(candles: &[Kline], visible_range: Option<(i64, i64)>, now_ms: i64) -> RunRevision {
-    RunRevision {
-        candles: candles_fingerprint(candles),
-        visible_range,
-        last_is_closed: last_candle_is_closed(candles, now_ms),
-    }
 }
 
 /// The header change uses the same candle window as the plot, including pan and zoom: the price
@@ -368,14 +323,8 @@ pub struct ChartCard {
     /// The preview's input overrides, kept here so they reach an instance made after they were set
     /// (the Pine Studio sets a script's saved inputs before its source arrives).
     preview_inputs: HashMap<String, InputValue>,
-    /// What each instance's last run produced, by instance id.
-    runs: HashMap<u64, Run>,
-    /// Counts the runs this card started, so each gets an epoch of its own: an instance id is
-    /// reused once its script is removed, a run is never.
-    run_epochs: u64,
-    /// The instances whose realtime messages are not kept (the pane's Disable logging). The script
-    /// keeps running; only what it writes from now on is left out.
-    logging_paused: HashSet<u64>,
+    /// The instances' runs: the latest output, failure and logs of each, run in the background.
+    pine: ChartRuns,
     /// What a click on a candle is for while the chart is in "click a candle" mode.
     pick_kind: overlay::PickKind,
     /// The bars a price-based chart type constructed from the candles, kept until the candles or
@@ -450,257 +399,6 @@ struct ConstructedSeries {
 /// The instance the Pine Studio's single-script preview chart runs.
 pub const PREVIEW_INSTANCE: u64 = 0;
 
-/// One instance's last run, cached so the card does not recompile every frame.
-struct Run {
-    source: String,
-    inputs: HashMap<String, StoredInput>,
-    symbol: SymbolInfo,
-    bar_seconds: Option<u64>,
-    /// The chart colours the script ran against; a change of app theme runs it again.
-    theme: ChartTheme,
-    worker: PineWorker,
-    requested: Option<RunRevision>,
-    generation: u64,
-    /// Which run of this card this is; a restart (new source, inputs, symbol) is a new epoch.
-    epoch: u64,
-    /// The `log.*()` messages the run wrote. They belong to the run, not to an output generation:
-    /// a result whose output went stale still carries messages nothing else will deliver.
-    logs: LogHistory,
-    /// Whether `output.overlay` came from a compiled script (or from a previous valid run). Until
-    /// then the default output must not claim a pane: `VisualOutput::default()` is non-overlay.
-    placement_known: bool,
-    output: Arc<VisualOutput>,
-    /// The runtime failure that stopped this run early.
-    error: Option<Diagnostic>,
-    /// The last run that finished without a runtime failure: what stays on screen while a newer
-    /// source fails to run.
-    last_valid: Option<Arc<VisualOutput>>,
-    /// `output` with the instance's style choices applied, and the choices it was made with
-    /// (`None` until the first styling).
-    styled: Arc<VisualOutput>,
-    styled_with: Option<HashMap<String, String>>,
-    /// When the run in flight was first requested; `None` while its latest result is in.
-    busy_since: Option<Instant>,
-}
-
-/// How long a run has to take before the chart says so. Live ticks run a script again on every
-/// update, and a quick one must not flash an indicator each time.
-const PINE_BUSY_AFTER: Duration = Duration::from_millis(400);
-
-/// Whether a run requested at `since` is slow enough, at `now`, to show as busy.
-fn is_slow(since: Option<Instant>, now: Instant) -> bool {
-    since.is_some_and(|since| now.saturating_duration_since(since) >= PINE_BUSY_AFTER)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RunRevision {
-    candles: u64,
-    visible_range: Option<(i64, i64)>,
-    last_is_closed: bool,
-}
-
-struct WorkerRequest {
-    generation: u64,
-    bars: Vec<Kline>,
-    visible_range: Option<(i64, i64)>,
-    now_ms: i64,
-}
-
-struct WorkerResult {
-    generation: u64,
-    output: VisualOutput,
-    error: Option<Diagnostic>,
-    logs: LogBatch,
-    /// The controller compiled the declaration, so `output.overlay` is authoritative even when
-    /// execution stopped with a runtime error.
-    placement_known: bool,
-}
-
-struct WorkerConfig {
-    theme: ChartTheme,
-    source: String,
-    inputs: HashMap<String, InputValue>,
-    symbol: SymbolInfo,
-    /// The length of the chart's bars, when their times cannot say (price-based charts).
-    bar_seconds: Option<f64>,
-}
-
-enum WorkerEngine {
-    Uninitialized(WorkerConfig),
-    Ready(Box<ExecutionController>),
-    Failed(Diagnostic),
-}
-
-struct WorkerState {
-    engine: Option<WorkerEngine>,
-    pending: Option<WorkerRequest>,
-    running: bool,
-    cancelled: bool,
-}
-
-/// Latest-wins background runner. Only one work-queue job touches a controller at a time; updates
-/// arriving while it runs replace the pending snapshot rather than building an unbounded queue.
-struct PineWorker {
-    state: Arc<Mutex<WorkerState>>,
-    results: Receiver<WorkerResult>,
-    result_sender: Sender<WorkerResult>,
-    repaint: egui::Context,
-    cancellation: Arc<AtomicBool>,
-}
-
-impl PineWorker {
-    fn new(
-        source: String,
-        inputs: HashMap<String, InputValue>,
-        symbol: SymbolInfo,
-        theme: ChartTheme,
-        bar_seconds: Option<f64>,
-        repaint: egui::Context,
-    ) -> Self {
-        let (result_sender, results) = mpsc::channel();
-        Self {
-            state: Arc::new(Mutex::new(WorkerState {
-                engine: Some(WorkerEngine::Uninitialized(WorkerConfig {
-                    theme,
-                    source,
-                    inputs,
-                    symbol,
-                    bar_seconds,
-                })),
-                pending: None,
-                running: false,
-                cancelled: false,
-            })),
-            results,
-            result_sender,
-            repaint,
-            cancellation: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    fn request(&self, request: WorkerRequest) {
-        let should_start = {
-            let Ok(mut state) = self.state.lock() else {
-                return;
-            };
-            if state.cancelled {
-                return;
-            }
-            state.pending = Some(request);
-            if state.running {
-                false
-            } else {
-                state.running = true;
-                true
-            }
-        };
-        if !should_start {
-            return;
-        }
-        let state = Arc::clone(&self.state);
-        let sender = self.result_sender.clone();
-        let repaint = self.repaint.clone();
-        let cancellation = Arc::clone(&self.cancellation);
-        crate::service::work_queue::submit(move || {
-            loop {
-                let (request, engine) = {
-                    let Ok(mut state) = state.lock() else {
-                        return;
-                    };
-                    if state.cancelled {
-                        state.running = false;
-                        return;
-                    }
-                    let Some(request) = state.pending.take() else {
-                        state.running = false;
-                        return;
-                    };
-                    let engine = state.engine.take().expect("worker engine");
-                    (request, engine)
-                };
-                let mut engine = match engine {
-                    WorkerEngine::Uninitialized(config) => match ExecutionController::new(
-                        &config.source,
-                        config.inputs,
-                        config.symbol,
-                        request.visible_range,
-                        Limits::default(),
-                        &LibraryRegistry,
-                        Some(Box::new(KlineSecurityDataProvider)),
-                        Some(Arc::clone(&cancellation)),
-                    ) {
-                        Ok(controller) => {
-                            let controller = controller.with_theme(config.theme).with_logs();
-                            WorkerEngine::Ready(Box::new(match config.bar_seconds {
-                                Some(seconds) => controller.with_bar_seconds(seconds),
-                                None => controller,
-                            }))
-                        }
-                        Err(error) => WorkerEngine::Failed(error),
-                    },
-                    engine => engine,
-                };
-                let result = match &mut engine {
-                    WorkerEngine::Ready(controller) => {
-                        let update =
-                            controller.update(&request.bars, request.visible_range, request.now_ms);
-                        WorkerResult {
-                            generation: request.generation,
-                            output: update.output,
-                            error: update.error,
-                            logs: update.logs,
-                            placement_known: true,
-                        }
-                    }
-                    WorkerEngine::Failed(error) => WorkerResult {
-                        generation: request.generation,
-                        output: VisualOutput::default(),
-                        error: Some(error.clone()),
-                        logs: LogBatch::default(),
-                        placement_known: false,
-                    },
-                    WorkerEngine::Uninitialized(_) => unreachable!(),
-                };
-                {
-                    let Ok(mut state) = state.lock() else {
-                        return;
-                    };
-                    state.engine = Some(engine);
-                    if state.cancelled {
-                        state.running = false;
-                        return;
-                    }
-                }
-                let _ = sender.send(result);
-                repaint.request_repaint();
-            }
-        });
-    }
-}
-
-impl Drop for PineWorker {
-    fn drop(&mut self) {
-        self.cancellation.store(true, Ordering::Release);
-        if let Ok(mut state) = self.state.lock() {
-            state.cancelled = true;
-            state.pending = None;
-        }
-    }
-}
-
-/// One run's `log.*()` messages. The epoch tells a restarted run from the one before it, which
-/// the instance id cannot.
-pub struct PineLogs<'a> {
-    pub epoch: u64,
-    pub history: &'a LogHistory,
-}
-
-/// How one instance is doing, for the chart settings' Scripts tab.
-pub struct InstanceStatus<'a> {
-    pub output: &'a VisualOutput,
-    pub error: Option<&'a Diagnostic>,
-}
-
 impl Default for ChartCard {
     fn default() -> Self {
         Self {
@@ -725,9 +423,7 @@ impl Default for ChartCard {
             live: Default::default(),
             instances: Vec::new(),
             preview_inputs: HashMap::new(),
-            runs: HashMap::new(),
-            run_epochs: 0,
-            logging_paused: HashSet::new(),
+            pine: ChartRuns::default(),
             pick_kind: overlay::PickKind::default(),
             constructed: None,
             drawn_type: ChartType::Candles,
@@ -866,36 +562,12 @@ impl ChartCard {
         body::symbol_info(symbol, source, ChartType::Candles)
     }
 
-    /// What a script alert on this chart runs over: the bars of a price-based type, the market's
-    /// candles otherwise, and how the bars were made.
-    pub fn pine_feed(
-        &self,
-        candles: &[Kline],
-        source: DataSource,
-        now_ms: i64,
-    ) -> (Vec<Kline>, crate::host::pine::subscription::ChartRun) {
+    /// How the chart builds its bars for `source`: the construction of a price-based type, `None`
+    /// for one that draws the market's candles. What a script alert on this chart runs over.
+    pub fn construction(&self, source: DataSource) -> Option<Construction> {
         let mut style = self.appearance.style;
         style.chart_type = self.effective_chart_type(source);
-        match Construction::of(&style) {
-            Some(construction) => {
-                let bars = chart::synthetic::build_with(construction, candles, now_ms).klines();
-                let bar_seconds = candles
-                    .last()
-                    .map(|last| ((last.close_time - last.open_time + 1) as f64 / 1000.0).round())
-                    .filter(|seconds| *seconds > 0.0);
-                (
-                    bars,
-                    crate::host::pine::subscription::ChartRun {
-                        construction: Some(construction),
-                        bar_seconds,
-                    },
-                )
-            }
-            None => (
-                candles.to_vec(),
-                crate::host::pine::subscription::ChartRun::default(),
-            ),
-        }
+        Construction::of(&style)
     }
 
     /// The bars `chart_type` constructs from `candles`, or `None` for a type that draws the
@@ -932,7 +604,7 @@ impl ChartCard {
         style.chart_type = chart_type;
         let construction = Construction::of(&style)?;
         let now_ms = current_time_ms();
-        let revision = run_revision(candles, None, now_ms);
+        let revision = RunRevision::of(candles, None, now_ms);
         if let Some(built) = &self.constructed
             && built.construction == construction
             && built.revision == revision
@@ -1060,8 +732,7 @@ impl ChartCard {
     /// Replaces every instance (restoring a saved chart).
     pub fn set_pine_instances(&mut self, instances: Vec<PineInstance>) {
         self.instances = instances;
-        self.runs.clear();
-        self.logging_paused.clear();
+        self.pine.reset();
     }
 
     /// Applies a script to the chart, after the ones already there. Returns the new instance's id.
@@ -1084,8 +755,7 @@ impl ChartCard {
 
     pub fn remove_pine_instance(&mut self, id: u64) {
         self.instances.retain(|instance| instance.id != id);
-        self.runs.remove(&id);
-        self.logging_paused.remove(&id);
+        self.pine.remove(id);
     }
 
     /// Moves an instance to `index` (clamped); draw order follows list order.
@@ -1121,11 +791,7 @@ impl ChartCard {
     /// What the user can restyle in an instance's output, as the script itself draws it. Empty
     /// until the script has run.
     pub fn pine_style_rows(&self, id: u64) -> Vec<StyleRow> {
-        self.runs
-            .get(&id)
-            .filter(|run| run.placement_known)
-            .map(|run| style_rows(&run.output))
-            .unwrap_or_default()
+        self.pine.style_rows(id)
     }
 
     /// Sets an instance's input overrides; its next run uses them.
@@ -1137,49 +803,32 @@ impl ChartCard {
 
     /// The messages an instance's script wrote with `log.*()` in its current run.
     pub fn pine_logs(&self, id: u64) -> Option<PineLogs<'_>> {
-        self.runs.get(&id).map(|run| PineLogs {
-            epoch: run.epoch,
-            history: &run.logs,
-        })
+        self.pine.logs(id)
     }
 
     /// Forgets the messages kept for an instance's run. The run goes on and writes more.
     pub fn clear_pine_logs(&mut self, id: u64) {
-        if let Some(run) = self.runs.get_mut(&id) {
-            run.logs.clear();
-        }
+        self.pine.clear_logs(id);
     }
 
     /// Whether an instance keeps the messages it writes in realtime.
     pub fn pine_logging(&self, id: u64) -> bool {
-        !self.logging_paused.contains(&id)
+        self.pine.logging(id)
     }
 
     /// Turns the keeping of an instance's realtime messages on or off. Messages already kept stay.
     pub fn set_pine_logging(&mut self, id: u64, enabled: bool) {
-        if enabled {
-            self.logging_paused.remove(&id);
-        } else {
-            self.logging_paused.insert(id);
-        }
+        self.pine.set_logging(id, enabled);
     }
 
     pub fn pine_status(&self, id: u64) -> Option<InstanceStatus<'_>> {
-        self.runs
-            .get(&id)
-            .filter(|run| run.placement_known || run.error.is_some())
-            .map(|run| InstanceStatus {
-                output: &run.output,
-                error: run.error.as_ref(),
-            })
+        self.pine.status(id)
     }
 
     /// Whether the instance's latest run has been going on long enough to show a busy state. A
     /// hidden instance has no run, so it is never busy.
     pub fn pine_busy(&self, id: u64, now: Instant) -> bool {
-        self.runs
-            .get(&id)
-            .is_some_and(|run| is_slow(run.busy_since, now))
+        self.pine.busy(id, now)
     }
 
     // The single-script preview (Pine Studio): one instance, id 0, that keeps its last good
@@ -1195,12 +844,12 @@ impl ChartCard {
                         PineInstance::new(PREVIEW_INSTANCE, None, "Preview", &source);
                     instance.set_input_values(&self.preview_inputs);
                     self.instances = vec![instance];
-                    self.runs.clear();
+                    self.pine.stop_all();
                 }
             },
             None => {
                 self.instances.clear();
-                self.runs.clear();
+                self.pine.stop_all();
             }
         }
     }
@@ -1213,173 +862,41 @@ impl ChartCard {
 
     /// The preview run's runtime failure, if it stopped early.
     pub fn pine_error(&self) -> Option<&Diagnostic> {
-        self.runs.get(&PREVIEW_INSTANCE)?.error.as_ref()
+        self.pine.error(PREVIEW_INSTANCE)
     }
 
     /// Whether a preview run has finished cleanly, so a later failure leaves real output up.
     pub fn has_valid_pine_output(&self) -> bool {
-        self.runs
-            .get(&PREVIEW_INSTANCE)
-            .is_some_and(|run| run.last_valid.is_some())
+        self.pine.has_valid_output(PREVIEW_INSTANCE)
     }
 
     /// The preview run's output (strategy report, alerts), for the Report tab.
     pub fn pine_visual(&self) -> Option<&VisualOutput> {
-        self.runs
-            .get(&PREVIEW_INSTANCE)
-            .filter(|run| run.placement_known)
-            .map(|run| &*run.output)
+        self.pine.output(PREVIEW_INSTANCE)
     }
 
-    /// The visible instances' outputs in order. Execution is persistent and backgrounded: an
-    /// intrabar OHLCV change is a realtime tick, a new opening time closes the prior bar, and
-    /// stale worker generations cannot overwrite newer chart state.
+    /// The visible instances' outputs in order, from the runs the host keeps for them: this frame
+    /// hands them the bars it draws, so a run starts again when what the script reads changed.
     fn pine_outputs(
         &mut self,
         ctx: &egui::Context,
         symbol_info: &SymbolInfo,
-        candles: &[Kline],
+        bars: &[Kline],
         bar_seconds: Option<f64>,
-    ) -> Vec<(Arc<VisualOutput>, VisualOrder, u64)> {
-        if self.instances.iter().all(|instance| !instance.visible) {
-            self.runs.clear();
-            return Vec::new();
-        }
-        let visible_range = self.visible_open_range(candles);
-        let now_ms = current_time_ms();
-        // Hashing every candle is the one pass over the whole series a frame makes; a chart with
-        // no script has no use for it.
-        let revision = run_revision(candles, visible_range, now_ms);
-        // What `chart.bg_color` and `chart.fg_color` read: the colours the chart is drawn on.
-        let chart_theme = if theme::is_light() {
-            ChartTheme::LIGHT
-        } else {
-            ChartTheme::DARK
+    ) -> Vec<frame::Placed> {
+        let chart = ChartFrame {
+            bars,
+            symbol: symbol_info,
+            bar_seconds,
+            // What `chart.bg_color` and `chart.fg_color` read: the colours the chart is drawn on.
+            theme: if theme::is_light() {
+                ChartTheme::LIGHT
+            } else {
+                ChartTheme::DARK
+            },
+            visible_range: self.visible_open_range(bars),
         };
-        let visible_ids: HashSet<u64> = self
-            .instances
-            .iter()
-            .filter(|instance| instance.visible)
-            .map(|instance| instance.id)
-            .collect();
-        self.runs.retain(|id, _| visible_ids.contains(id));
-        let mut outputs = Vec::new();
-        for instance in self.instances.iter().filter(|i| i.visible) {
-            let configured = self.runs.get(&instance.id).is_some_and(|run| {
-                run.source == instance.source
-                    && run.inputs == instance.inputs
-                    && run.symbol == *symbol_info
-                    && run.bar_seconds == bar_seconds.map(f64::to_bits)
-                    && run.theme == chart_theme
-            });
-            if !configured {
-                self.run_epochs += 1;
-                let epoch = self.run_epochs;
-                let previous_valid = self
-                    .runs
-                    .remove(&instance.id)
-                    .and_then(|run| run.last_valid.clone());
-                let placement_known = previous_valid.is_some();
-                let shown = previous_valid
-                    .clone()
-                    .unwrap_or_else(|| Arc::new(VisualOutput::default()));
-                self.runs.insert(
-                    instance.id,
-                    Run {
-                        source: instance.source.clone(),
-                        inputs: instance.inputs.clone(),
-                        symbol: symbol_info.clone(),
-                        bar_seconds: bar_seconds.map(f64::to_bits),
-                        theme: chart_theme,
-                        worker: PineWorker::new(
-                            instance.source.clone(),
-                            instance.input_values(),
-                            symbol_info.clone(),
-                            chart_theme,
-                            bar_seconds,
-                            ctx.clone(),
-                        ),
-                        requested: None,
-                        generation: 0,
-                        epoch,
-                        logs: LogHistory::default(),
-                        placement_known,
-                        styled: Arc::clone(&shown),
-                        styled_with: None,
-                        output: shown,
-                        error: None,
-                        last_valid: previous_valid,
-                        busy_since: None,
-                    },
-                );
-            }
-            if let Some(run) = self.runs.get_mut(&instance.id) {
-                while let Ok(result) = run.worker.results.try_recv() {
-                    let mut batch = result.logs;
-                    if self.logging_paused.contains(&instance.id) {
-                        batch.events.retain(|event| !event.realtime);
-                    }
-                    run.logs.apply(batch);
-                    if result.generation != run.generation {
-                        continue;
-                    }
-                    run.busy_since = None;
-                    let output = Arc::new(result.output);
-                    let shown = match (&result.error, run.last_valid.clone()) {
-                        (None, _) => {
-                            run.last_valid = Some(Arc::clone(&output));
-                            Arc::clone(&output)
-                        }
-                        (Some(_), Some(valid)) => valid,
-                        (Some(_), None) => Arc::clone(&output),
-                    };
-                    run.output = shown;
-                    run.error = result.error;
-                    run.placement_known = result.placement_known || run.last_valid.is_some();
-                    run.styled_with = None;
-                }
-                // Only a script that reads the visible range depends on where the chart is
-                // scrolled: for every other one, panning is not a reason to run it again.
-                let (revision, visible_range) = if reads_visible_range(&instance.source) {
-                    (revision, visible_range)
-                } else {
-                    (
-                        RunRevision {
-                            visible_range: None,
-                            ..revision
-                        },
-                        None,
-                    )
-                };
-                if run.requested != Some(revision) {
-                    run.generation = run.generation.wrapping_add(1);
-                    run.requested = Some(revision);
-                    run.worker.request(WorkerRequest {
-                        generation: run.generation,
-                        bars: candles.to_vec(),
-                        visible_range,
-                        now_ms,
-                    });
-                    run.busy_since.get_or_insert_with(Instant::now);
-                }
-                if let Some(since) = run.busy_since {
-                    // The chip shows the indicator from the first frame past the threshold.
-                    if let Some(left) = PINE_BUSY_AFTER.checked_sub(since.elapsed()) {
-                        ctx.request_repaint_after(left);
-                    }
-                }
-                if run.styled_with.as_ref() != Some(&instance.style_overrides) {
-                    run.styled = Arc::new(
-                        StyleOverrides::new(instance.style_overrides.clone()).apply(&run.output),
-                    );
-                    run.styled_with = Some(instance.style_overrides.clone());
-                }
-                if run.placement_known {
-                    outputs.push((Arc::clone(&run.styled), instance.visual_order, instance.id));
-                }
-            }
-        }
-        outputs
+        self.pine.update(ctx, &chart, &self.instances)
     }
 }
 
@@ -3394,19 +2911,6 @@ mod market_switch_tests;
 #[cfg(test)]
 mod tests {
     #[test]
-    fn a_run_is_busy_only_once_it_is_slow() {
-        use super::{Duration, Instant, PINE_BUSY_AFTER, is_slow};
-        let start = Instant::now();
-        assert!(!is_slow(None, start + PINE_BUSY_AFTER * 10));
-        assert!(!is_slow(Some(start), start));
-        assert!(!is_slow(
-            Some(start),
-            start + PINE_BUSY_AFTER - Duration::from_millis(1)
-        ));
-        assert!(is_slow(Some(start), start + PINE_BUSY_AFTER));
-    }
-
-    #[test]
     fn contained_center_keeps_an_item_inside_the_bounds() {
         use super::contained_center;
         assert_eq!(contained_center(50.0, 0.0, 100.0, 20.0), Some(50.0));
@@ -3685,17 +3189,6 @@ mod tests {
         assert_eq!(change_text(Some(67.125), 0.1), "+$67.125 (+0.10%)");
         assert_eq!(change_text(Some(-20.0), -18.18), "-$20.00 (-18.18%)");
         assert_eq!(change_text(None, 0.0), "+0.00%");
-    }
-
-    #[test]
-    fn pine_revision_changes_for_intrabar_values_viewports_and_close_transition() {
-        let first = candle(10.0, 11.0);
-        let mut updated = first.clone();
-        updated.close = 12.0;
-        let base = run_revision(std::slice::from_ref(&first), Some((0, 0)), 0);
-        assert_ne!(base, run_revision(&[updated], Some((0, 0)), 0));
-        assert_ne!(base, run_revision(std::slice::from_ref(&first), None, 0));
-        assert_ne!(base, run_revision(&[first], Some((0, 0)), 1));
     }
 
     fn hourly(closes: &[f64]) -> Vec<Kline> {

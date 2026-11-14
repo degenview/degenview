@@ -30,9 +30,8 @@ pub use chart::card::SnapshotInput;
 pub use chart::card::supports_alerts;
 pub use chart::card::take_table_cell_selected;
 pub use chart::card::{
-    ChartCard, ChartCardAction, CrosshairInfo, PineLogs, Scrolled, SeriesLine, WatchlistMembership,
+    ChartCard, ChartCardAction, CrosshairInfo, Scrolled, SeriesLine, WatchlistMembership,
 };
 pub use chart::card::{ViewMove, ViewStep};
-pub(crate) use chart::card::{candles_fingerprint, last_candle_is_closed, reads_visible_range};
 pub use drawing::layer::{DrawingFrame, LinkRequest};
 pub use replay::overlay::{PickKind, ReplayChartFrame};

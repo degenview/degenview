@@ -67,14 +67,14 @@ Stacked pull requests, logic changes first and pure moves last.
 
 ### Wave 2: layering
 
-- [x] **PR 3: views out of hosts.**
+- [x] **PR 3: views out of hosts.** [#514](https://github.com/degenview/degenview/pull/514)
   - [x] `PortfolioTab` and the portfolio bar and import sheets move to `ui/portfolio/`.
   - [x] `PaperPanel` and its banners move to `ui/paper/`; the export runs on the work queue.
   - [x] `host/webhook` becomes `host/settings`, the Settings-window controller it is.
-- [ ] **PR 4: the Pine worker leaves the chart card.**
-  - [ ] The chart card's worker and run bookkeeping move to `host::pine`; the card asks for a run and
+- [x] **PR 4: the Pine worker leaves the chart card.**
+  - [x] The chart card's worker and run bookkeeping move to `host::pine`; the card asks for a run and
         keeps the latest output.
-  - [ ] Indicator-picker previews run through the same host.
+  - [x] Indicator-picker previews run through the same host.
 - [ ] **PR 5: one background-job handle.**
   - [ ] `trading::task::Task` becomes `service::work_queue::Pending<T>`, which repaints on completion.
   - [ ] UI thread spawns (searches, test connections, uploads, file dialogs) go through it; searches use

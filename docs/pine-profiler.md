@@ -173,7 +173,7 @@ different. Each profile records what the script could see when it ran: its text,
 field of every candle and whether the last one had closed, the symbol, data source and timeframe, the
 theme (`chart.bg_color`), and, for a script that reads it, the visible range (also what the run is
 given, so a branch on `chart.left_visible_bar_time` runs as it does in the preview). It is stale as
-soon as any of them changes. The candle part is `ui::candles_fingerprint`, the one the chart's own
+soon as any of them changes. The candle part is `host::pine::chart::candles_fingerprint`, the one the chart's own
 runs use; the key is made of numbers (`ProfileKey` is `Copy`), so asking for it every frame while
 the profiler is on allocates nothing. The script text is still hashed each frame, one pass over it. The Pine Studio
 has no bar replay; there is no future to expose.

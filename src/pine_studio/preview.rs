@@ -275,7 +275,7 @@ impl PreviewState {
             recents,
             timeframe,
             candles: Vec::new(),
-            candles_fingerprint: crate::ui::candles_fingerprint(&[]),
+            candles_fingerprint: crate::host::pine::chart::candles_fingerprint(&[]),
             loading: false,
             error: None,
             inbox: None,
@@ -377,7 +377,7 @@ impl PreviewState {
 
     /// Replaces the candles, keeping their fingerprint with them.
     fn set_candles(&mut self, candles: Vec<Kline>) {
-        self.candles_fingerprint = crate::ui::candles_fingerprint(&candles);
+        self.candles_fingerprint = crate::host::pine::chart::candles_fingerprint(&candles);
         self.candles = candles;
     }
 
@@ -422,11 +422,11 @@ impl PreviewState {
         self.timeframe.label().hash(&mut market);
         RunIdentity {
             candles: self.candles_fingerprint,
-            last_is_closed: crate::ui::last_candle_is_closed(&self.candles, now_ms),
+            last_is_closed: crate::host::pine::chart::last_candle_is_closed(&self.candles, now_ms),
             market: market.finish(),
             light,
             inputs: inputs_fingerprint(&self.input_values),
-            visible_range: crate::ui::reads_visible_range(source)
+            visible_range: crate::host::pine::chart::reads_visible_range(source)
                 .then(|| self.card.visible_open_range(&self.candles))
                 .flatten(),
         }
@@ -660,7 +660,7 @@ impl PreviewState {
     }
 
     /// The messages the preview's script wrote with `log.*()` in its current run.
-    pub(super) fn logs(&self) -> Option<crate::ui::PineLogs<'_>> {
+    pub(super) fn logs(&self) -> Option<crate::host::pine::chart::PineLogs<'_>> {
         self.card.pine_logs(PREVIEW_INSTANCE)
     }
 

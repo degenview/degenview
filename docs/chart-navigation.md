@@ -220,7 +220,8 @@ never a drawing, never in a template. Not verified in a real window.
 Panning re-projects cached output; indicators are computed over the full series and sliced to the
 window. A Pine script is run again on a pan only if its source reads `chart.left_visible_bar_time`
 or `chart.right_visible_bar_time` (`reads_visible_range`); otherwise the visible range is not part
-of its run revision. A chart with no scripts no longer hashes the series every frame.
+of its run revision. A chart with no scripts no longer hashes the series every frame, and one with
+scripts hashes it only when its bars changed (`host::pine::chart`).
 
 ## Verified and not verified
 
