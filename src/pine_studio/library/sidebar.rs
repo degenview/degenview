@@ -3,7 +3,8 @@
 //! sidebar of `PineStudioView` and its `ScriptRow`.
 
 use crate::model::pine::script::{LocalScript, ScriptId, ScriptType};
-use crate::pine_studio::{Cmd, PineStudio};
+use crate::pine_studio::PineStudio;
+use crate::pine_studio::commands::Cmd;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::shortcut;

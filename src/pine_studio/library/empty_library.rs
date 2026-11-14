@@ -2,7 +2,7 @@
 //! Logs and Profile tabs' introductions (a picture, what the manager is for, three numbered steps,
 //! an example, and the two ways to begin), and the sidebar's short form of the same.
 
-use crate::pine_studio::Cmd;
+use crate::pine_studio::commands::Cmd;
 use crate::ui::icons::Icon;
 use crate::ui::pine::logs_view::{centered, intro, step};
 use crate::ui::{kit, theme};

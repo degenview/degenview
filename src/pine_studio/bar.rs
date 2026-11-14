@@ -4,9 +4,10 @@
 //! which used to sit over it); and at the right end the assistant, profiler and debugger, for an
 //! open script.
 
+use super::commands::Cmd;
 use super::library::prefs::ChartPosition;
 use super::preview;
-use super::{Cmd, PineStudio, ai, debug, profiler};
+use super::{PineStudio, ai, debug, profiler};
 use crate::model::Timeframe;
 use crate::ui::icons::Icon;
 use crate::ui::kit::bar::{self, Button, Item};
@@ -162,7 +163,7 @@ impl PineStudio {
                 BarMenu::ChartPosition => {
                     position_menu(ui, response, state.chart_position, actions);
                 }
-                BarMenu::Market => preview::market_picker(ui, preview, response),
+                BarMenu::Market => preview::market_picker::market_picker(ui, preview, response),
             },
         );
         for action in actions {

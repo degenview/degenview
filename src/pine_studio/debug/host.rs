@@ -12,8 +12,9 @@ use crate::model::pine::script::{CompileStatus, ScriptType};
 use crate::pine::compiler;
 use crate::pine::debug::{DebugCommand, SourceMap};
 use crate::pine::syntax::token::Limits;
+use crate::pine_studio::PineStudio;
+use crate::pine_studio::commands::Cmd;
 use crate::pine_studio::library::registry::LibraryRegistry;
-use crate::pine_studio::{Cmd, PineStudio};
 use crate::ui::shortcut;
 use crate::ui::theme;
 
