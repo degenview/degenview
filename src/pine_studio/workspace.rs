@@ -4,6 +4,7 @@
 
 use super::ai::Assistant;
 use super::ai::panel::{self as ai_panel, Setup};
+use super::commands::Cmd;
 use super::debug::DebugPanel;
 use super::debug::panel as debug_panel;
 use super::drawer;
@@ -12,7 +13,7 @@ use super::library::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
 use super::profiler::marks::ProfileColumn;
 use super::profiler::ui::{self, TabView};
 use super::profiler::{Profile, Status};
-use super::{Cmd, OpenScript, PineStudio};
+use super::{OpenScript, PineStudio};
 use crate::pine::syntax::token::Diagnostic;
 use crate::ui::kit::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::theme;

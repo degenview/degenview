@@ -5,7 +5,7 @@
 //! The preview never raises alerts: it only ever calls `ChartCard::set_pine_source`, which runs
 //! the script for drawing, never the alert path.
 
-use super::Cmd;
+use super::commands::Cmd;
 use super::inputs::{self, InputEdit, InputValues, InputsStore};
 use super::library::registry::LibraryRegistry;
 use super::workspace::PreviewInput;
