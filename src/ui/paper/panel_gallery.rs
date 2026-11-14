@@ -13,7 +13,7 @@ use crate::ui::paper::tables::{
     self, Context, FooterFacts, PaperTab, PositionsInput, PositionsState,
 };
 use crate::ui::render_tests::Screen;
-use crate::ui::theme;
+use crate::ui::{kit, theme};
 use eframe::egui::{self, Vec2};
 
 fn instrument(symbol: &str, name: &str, source: DataSource, tick: f64) -> PaperInstrument {
@@ -72,12 +72,6 @@ fn metrics() -> PaperAccountMetrics {
         available_funds: 9_120.0,
         margin_buffer: 0.9,
     }
-}
-
-fn divider(ui: &mut egui::Ui) {
-    let (line, _) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-    ui.painter().rect_filled(line, 0.0, theme::separator());
 }
 
 #[test]
@@ -206,12 +200,12 @@ fn gallery_of_the_panel() {
                                 },
                                 &mut header_state.tab,
                             );
-                            divider(ui);
+                            kit::panel_divider(ui);
                             crate::ui::trade::stats_strip::show(
                                 ui,
                                 Some(&tables::stats(Some(&metrics()), PaperCurrency::Usd)),
                             );
-                            divider(ui);
+                            kit::panel_divider(ui);
                             match tab {
                                 PaperTab::Orders => {
                                     let rows: Vec<crate::trading::model::OrderRow> = shown_orders

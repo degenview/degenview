@@ -50,16 +50,38 @@ do not restyle screens you were not asked to touch, and do not copy their older 
 No footer bar, Save or Apply under a Settings page. Inputs save as entered; other actions sit in the
 content they act on.
 
-- `settings_api_keys::Autosave` with `field`'s response: `watch(&response, secret)`, then `due(ctx)`
+- `kit::Autosave` with `kit::field`'s response: `watch(&response, secret)`, then `due(ctx)`
   and save. Plain fields save when typing pauses (700 ms) or the field is left; secrets (key, token)
   only on leaving, so half a key is never stored. Choices (switch, segment, picked provider) save at
   once with `touch()`.
 - A value that cannot be saved yet (half a key pair, invalid URL) is not saved; say why inline under
-  the field with `status_message`, never behind a button.
+  the field with `status_message` (its model is `settings::card::StatusMessage`), never behind a
+  button.
 - Test, Remove and similar buttons go in the card of their target, under its fields; "Add ..." under
   the list it adds to. Results/failures: a `status_message` line beside or under them.
 - A secondary view (the Pine theme editor) leaves via its own back button in the header; reset
   actions live in a menu beside the name, not a bar.
+
+## Kit helpers
+
+`ui/kit/` holds one file per widget family; every widget is re-exported from `kit`, so call
+`kit::push_button`, not `kit::button::push_button`. Reach for these before drawing your own:
+
+| Family (file) | Helpers |
+| --- | --- |
+| Text (`text`) | `text`, `galley` (one line, cut mid-word), `galley_words` (cut at a word), `galley_rows` (wrapped, up to n lines), `digits`, `paragraph`, `size::*`, `REGULAR`…`BOLD` |
+| Palette (`palette`) | `Tone`, `primary`, `hairline`, `window`, `control`, `GREEN`/`ORANGE`/`RED`; byte alphas with `theme::with_alpha_byte`, opacities with `theme::with_alpha` |
+| Pills (`pill`) | `status_badge`, `paint_status_badge`, `paint_chip`, `paint_count`, `value_chip` |
+| Market logos (`ticker_icon`) | `ticker_icon`, `chart_icon`, `cached_logo` (the icon cache's logo in a circle, asking for it when missing), `round_image`, `monogram_with`, `source_badge` |
+| Tabs (`tab_bar`) | `tab_bar`, `tab_bar_slim`, `tab_bar_regular` |
+| Menus (`menu/`) | see Menus above, plus `menu_picker` |
+| Buttons (`button`) | `push_button`, `sheet_button`, `footer_button`, `large_button`, `large_prominent_button`, `tinted_button`, `cta_button`, `destructive_sheet_button`, `destructive_button` (red text), `open_button` (opens a URL), `hover_button` |
+| Fields (`field`) | `field` (labelled, with a reveal eye for secrets), `search_field`, `plain_field`, `input_frame`, `field_frame`, `FIELD_HEIGHT`; saving as typed: `Autosave` (`autosave`) |
+| Form controls (`form`) | `switch`, `paint_switch`, `segmented`, `stepper`, `color_well` |
+| Cards (`card`) | `card_frame`, `CARD_RADIUS`, `paint_card_badge`, `paint_well`, `divider` (hairline across), `panel_divider` (a docked panel's separator line) |
+| Pages (`page`) | `empty_state`, `footer_bar`, `notice_card` |
+| Dialogs (`confirm`) | `confirm`, `alert`, `notice` over `kit::dialog` |
+| Times (`time_text`, by path) | `date_text`, `clock_time`, `clock_time_seconds` (a table's hh:mm:ss cell), `relative_time` |
 
 ## Sidebar and page layout
 
@@ -69,9 +91,9 @@ Use the `settings/window.rs` helpers, not hand-built pages:
 | --- | --- |
 | A page with header and scrolling body (no footer) | `page_shell` (header is `page_header`: picture, title, one-line description) |
 | A titled group inside a page | `section` |
-| A card of rows | `card`, separated by `divider`, one row as `row` |
+| A card of rows | `card`, separated by `kit::divider`, one row as `row` |
 | A card for one setting (icon, title, hint, control right) | `settings_card::card` / `card_reserving` |
-| A status pill | `status_badge`; a status line `status_message` |
+| A status pill | `kit::status_badge`; a status line `status_message` |
 
 Sidebar: `SIDEBAR_WIDTH` wide on `theme::background()`, `theme::separator()` its only edge. Rows 30
 points: bare icon, title, `selected_tint` when open, faint tint on hover. Pages must work at the

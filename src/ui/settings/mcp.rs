@@ -14,7 +14,7 @@ use crate::model::mcp::{
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{Tone, time_text::relative_time};
 use crate::ui::mcp::activity::{self, ActivityInput, ActivityState};
-use crate::ui::settings::window::{card, divider, section, status_badge, status_message};
+use crate::ui::settings::window::{card, section, status_message};
 use crate::ui::{
     kit::{self, sheet},
     settings::card,
@@ -558,7 +558,7 @@ fn server_section(
         card(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 10.0;
             row(ui, "Status", |ui| {
-                status_badge(ui, input.status.label(), status_tone(input.status));
+                kit::status_badge(ui, input.status.label(), status_tone(input.status));
             });
             if let McpStatus::Failed(reason) = input.status {
                 ui.add(
@@ -571,15 +571,15 @@ fn server_section(
                     .wrap(),
                 );
             }
-            divider(ui);
+            kit::divider(ui);
             row(ui, "Address", |ui| {
                 secondary(ui, input.settings.bind.address().to_string())
             });
-            divider(ui);
+            kit::divider(ui);
             row(ui, "Port", |ui| {
                 port_control(ui, state, input.settings.port, actions)
             });
-            divider(ui);
+            kit::divider(ui);
             row(ui, "Endpoint", |ui| {
                 let endpoint = input.settings.endpoint();
                 copy_button(
@@ -652,9 +652,9 @@ fn security_section(
         card(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 10.0;
             row(ui, "Authentication", |ui| secondary(ui, "Always required"));
-            divider(ui);
+            kit::divider(ui);
             remote_rows(ui, state, input, actions);
-            divider(ui);
+            kit::divider(ui);
             maximum_row(ui, state, input);
         });
     });
@@ -785,7 +785,7 @@ fn remote_rows(
         ui,
         "Other computers connect over TLS, with a credential that has remote access (set on that client).",
     );
-    divider(ui);
+    kit::divider(ui);
     row(ui, "Interface", |ui| bind_control(ui, state, bind, actions));
     if let Some(error) = &state.bind_error {
         ui.add(
@@ -798,7 +798,7 @@ fn remote_rows(
             .wrap(),
         );
     }
-    divider(ui);
+    kit::divider(ui);
     row(ui, "Certificate", |ui| match input.tls_fingerprint {
         Some(fingerprint) => copy_button(
             ui,
@@ -825,7 +825,7 @@ fn remote_rows(
             "Self-signed for this address. A client must trust exactly this certificate: compare the fingerprint, never click through a warning.",
         );
     }
-    divider(ui);
+    kit::divider(ui);
     limit_row(
         ui,
         state,
@@ -1327,7 +1327,7 @@ fn client_remote_block(
             if !client.remote_allowed {
                 return;
             }
-            divider(ui);
+            kit::divider(ui);
             ui.label(kit::text(
                 "Only from these addresses",
                 kit::size::CAPTION + 0.5,
@@ -1533,7 +1533,7 @@ fn group_card(
             ui.spacing_mut().item_spacing.y = 0.0;
             for (index, permission) in permissions.iter().copied().enumerate() {
                 if index > 0 {
-                    divider(ui);
+                    kit::divider(ui);
                 }
                 permission_row(ui, permission, editing, set, cap, actions);
             }

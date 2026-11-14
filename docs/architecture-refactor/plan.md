@@ -107,17 +107,19 @@ Stacked pull requests, logic changes first and pure moves last.
 - [x] **PR 10: `DegenViewApp` in owned parts.** [#521](https://github.com/degenview/degenview/pull/521)
       An alert coordinator, the tab state, the MCP state and the saved session; windows share each
       part's one handle instead of its fields.
-- [x] **PR 11: MCP routing.**
+- [x] **PR 11: MCP routing.** [#522](https://github.com/degenview/degenview/pull/522)
   - [x] `McpCommand` splits into one sub-enum per domain; each domain's arms run in
         `host/mcp/<domain>.rs` and the app only routes.
   - [x] `mcp/tools.rs` splits by domain; one client extractor, one `parse_id`, one `parse_color`.
 
 ### Wave 4: splits and copies
 
-- [ ] **PR 12: one UI kit.**
-  - [ ] Asset logo, divider, settings fields and buttons, card frames into `ui/kit`; local copies of
-        `with_alpha`, `empty_state`, `time_text` and `galley` deleted.
-  - [ ] `ui/kit/mod.rs` split by widget family.
+- [x] **PR 12: one UI kit.**
+  - [x] Asset logo, divider, settings fields and buttons into `ui/kit`; local copies of
+        `with_alpha`, `time_text`, `galley` and the Settings `status_badge` deleted. The other
+        empty states, chips and card frames stay: each looks different from the kit's (sizes,
+        discs, fills), and folding them in would change pixels.
+  - [x] `ui/kit/mod.rs` split by widget family.
 - [ ] **PR 13: big files split** (move only), inline tests into `tests.rs`.
   - [ ] UI: chart card, watchlist sidebar, Settings ▸ MCP, portfolio overview/statistics, chart
         settings, tab bar, drawing properties.

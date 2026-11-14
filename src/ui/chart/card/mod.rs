@@ -2188,7 +2188,7 @@ impl ChartCard {
                 Pos2::new(x - bar_width / 2.0, pane_bottom - height),
                 Pos2::new(x + bar_width / 2.0, pane_bottom),
             );
-            painter.rect_filled(bar, 0.0, translucent(color, 89));
+            painter.rect_filled(bar, 0.0, theme::with_alpha_byte(color, 89));
         }
     }
 
@@ -2234,7 +2234,7 @@ impl ChartCard {
         // Tint the channel as a strip of quads. One `PathShape` around the whole band is a
         // concave polygon, which egui fills as a fan from its first vertex, so it paints
         // spokes from the far-left point to every other vertex.
-        let tint = translucent(theme::BOLLINGER, 26);
+        let tint = theme::with_alpha_byte(theme::BOLLINGER, 26);
         let mut channel = egui::epaint::Mesh::default();
         for (upper, lower) in upper_points.iter().zip(&lower_points) {
             channel.colored_vertex(*upper, tint);
@@ -2247,7 +2247,7 @@ impl ChartCard {
         }
         painter.add(egui::Shape::mesh(channel));
 
-        let rail = Stroke::new(1.0, translucent(theme::BOLLINGER, 180));
+        let rail = Stroke::new(1.0, theme::with_alpha_byte(theme::BOLLINGER, 180));
         for pair in upper_points.windows(2) {
             painter.line_segment([pair[0], pair[1]], rail);
         }
@@ -2262,7 +2262,7 @@ impl ChartCard {
             if let Some(previous) = previous {
                 painter.add(egui::Shape::dashed_line(
                     &[previous, point],
-                    Stroke::new(1.0, translucent(theme::BOLLINGER, 115)),
+                    Stroke::new(1.0, theme::with_alpha_byte(theme::BOLLINGER, 115)),
                     4.0,
                     3.0,
                 ));
@@ -2858,11 +2858,6 @@ fn paint_ohlc_readout(
         painter.galley(at, galley, color);
     }
     boxed.bottom()
-}
-
-/// A color at the given alpha, premultiplied for egui's blending.
-fn translucent(color: Color32, alpha: u8) -> Color32 {
-    Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
 }
 
 mod bar_marker;

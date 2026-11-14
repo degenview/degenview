@@ -1,10 +1,10 @@
 //! Result rows and the grouped result well the portfolio pickers list markets in.
 
 use super::artwork::result_icon;
-use super::text::{SEMIBOLD, galley, size, text};
 use crate::model::DataSource;
 use crate::service::SearchResult;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::{SEMIBOLD, galley_words, size, text};
 use crate::ui::{kit::source_logo, theme};
 use eframe::egui::{self, Color32, FontId, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
@@ -75,7 +75,7 @@ pub(crate) fn result_row(
         right -= 10.0;
     }
     let left = icon.right() + 10.0;
-    let symbol = galley(
+    let symbol = galley_words(
         ui,
         &result.symbol,
         size::BODY,
@@ -164,7 +164,7 @@ pub(crate) fn source_groups(
 
 /// A compact, deliberately wide capsule for a provider's result count.
 fn result_count_badge(ui: &mut Ui, count: usize) {
-    let label = galley(
+    let label = galley_words(
         ui,
         &count.to_string(),
         size::CAPTION,

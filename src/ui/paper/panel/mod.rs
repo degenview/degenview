@@ -10,6 +10,7 @@ use crate::model::paper::{
 };
 use crate::store::sync::Elsewhere;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit;
 use crate::ui::paper::account_sheet::{
     AccountSheetOutcome, PaperAccountSheetState, show as show_account_sheet,
 };
@@ -234,7 +235,7 @@ impl PaperPanel {
                 }
             }
         }
-        divider(ui);
+        kit::panel_divider(ui);
         self.poll_export();
         self.show_notice(ui);
         if let Some(elsewhere) = account_id.and_then(|id| host.owned_elsewhere(id)) {
@@ -253,7 +254,7 @@ impl PaperPanel {
         } else {
             let strip = crate::trading::paper::stats::stats(metrics.as_ref(), currency);
             stats_strip::show(ui, Some(&strip));
-            divider(ui);
+            kit::panel_divider(ui);
             let context = TableContext {
                 currency,
                 // The offset now, as the portfolio tables use: rows from the other side of a
@@ -647,14 +648,6 @@ impl PaperPanel {
             None => {}
         }
     }
-}
-
-/// A one-pixel hairline across the panel.
-fn divider(ui: &mut egui::Ui) {
-    let (line, _) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-    ui.painter()
-        .rect_filled(line, 0.0, crate::ui::theme::separator());
 }
 
 fn owner_note(ui: &mut egui::Ui, elsewhere: &Elsewhere) {

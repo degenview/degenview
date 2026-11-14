@@ -5,11 +5,11 @@ use super::art;
 use super::artwork::{prediction_icon, result_icon};
 use super::recents::RecentMarket;
 use super::results::{result_row, same_market};
-use super::text::{BOLD, MEDIUM, SEMIBOLD, galley, size, text};
 use crate::model::DataSource;
 use crate::service::SearchResult;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
+use crate::ui::kit::{BOLD, MEDIUM, SEMIBOLD, galley_words, size, text};
 use crate::ui::{kit::source_logo, theme};
 use eframe::egui::{
     self, Color32, FontId, Id, Rect, RichText, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
@@ -119,7 +119,7 @@ pub(crate) fn header(ui: &mut Ui, scene: art::Scene, title: &str, subtitle: &str
 fn paint_header_text(ui: &Ui, row: Rect, left: f32, title: &str, subtitle: &str) {
     let painter = ui.painter();
     let width = row.right() - left;
-    let title = galley(
+    let title = galley_words(
         ui,
         title,
         size::TITLE2 + 1.0,
@@ -127,7 +127,7 @@ fn paint_header_text(ui: &Ui, row: Rect, left: f32, title: &str, subtitle: &str)
         theme::text_primary(),
         width,
     );
-    let subtitle = galley(
+    let subtitle = galley_words(
         ui,
         subtitle,
         size::SUBHEADLINE + 1.0,
@@ -233,7 +233,7 @@ pub(crate) fn search_box(
 
 /// The Polymarket / Kalshi switch, styled like the search box beside it.
 pub(crate) fn provider_menu(ui: &mut Ui, provider: DataSource) -> Option<DataSource> {
-    let name = galley(
+    let name = galley_words(
         ui,
         provider.display_name(),
         size::BODY,
@@ -339,7 +339,7 @@ pub(crate) fn caption_label(ui: &mut Ui, icon: Icon, caption: &str) {
 pub(crate) fn no_results(ui: &mut Ui, title: &str, detail: &str) {
     let rect = ui.available_rect_before_wrap();
     let painter = ui.painter();
-    let title = galley(
+    let title = galley_words(
         ui,
         title,
         15.0,
@@ -347,7 +347,7 @@ pub(crate) fn no_results(ui: &mut Ui, title: &str, detail: &str) {
         theme::text_primary(),
         rect.width() - 40.0,
     );
-    let detail = galley(
+    let detail = galley_words(
         ui,
         detail,
         size::BODY,
@@ -449,7 +449,7 @@ pub(crate) fn sheet_button(
     prominent: bool,
     enabled: bool,
 ) -> egui::Response {
-    let galley = galley(
+    let galley = galley_words(
         ui,
         label,
         size::BODY,

@@ -10,6 +10,7 @@ use eframe::egui;
 use crate::trading::model::{OrderRow, RowStatus, Tone};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone as BadgeTone;
+use crate::ui::kit::time_text::clock_time_seconds;
 use crate::ui::paper::grid::{self as grid, Col, col};
 use crate::ui::paper::tables::empty;
 use crate::ui::{kit, theme};
@@ -67,15 +68,6 @@ pub fn figure(value: Decimal) -> String {
         Some(fraction) => format!("{sign}{grouped}.{fraction}"),
         None => format!("{sign}{grouped}"),
     }
-}
-
-fn time_text(ms: Option<i64>) -> String {
-    let Some(ms) = ms else {
-        return "—".to_owned();
-    };
-    let secs = ms.div_euclid(1000) + crate::service::system::timezone::local_utc_offset_secs(ms);
-    let day = secs.rem_euclid(86_400);
-    format!("{:02}:{:02}:{:02}", day / 3600, day % 3600 / 60, day % 60)
 }
 
 /// The price cell: the limit (or stop), or the word for an order that has none.
@@ -221,7 +213,7 @@ pub fn orders(
                 let RowStatus { label, tone } = &row.status;
                 kit::status_badge(ui, label, badge_tone(*tone));
             }
-            8 => grid::figure(ui, &time_text(row.created_ms), weak),
+            8 => grid::figure(ui, &clock_time_seconds(row.created_ms), weak),
             9 if row.unconfirmed => {
                 let clicked = kit::sheet_button(ui, "Check", false, true)
                     .on_hover_text(

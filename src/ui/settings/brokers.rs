@@ -26,8 +26,9 @@ use crate::host::broker::{BrokerHost, Connection, Operation};
 use crate::host::trading::TradingHub;
 use crate::ui::icons::Icon;
 use crate::ui::kit::Tone;
-use crate::ui::settings::api_keys::{StatusMessage, destructive_button, field};
-use crate::ui::settings::window::{divider, status_message};
+use crate::ui::kit::{destructive_button, field};
+use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::window::status_message;
 use crate::ui::{kit, theme};
 
 /// What the Brokers page remembers between frames.
@@ -266,7 +267,7 @@ fn broker_card(
     }
     if is_open {
         inner.add_space(12.0);
-        divider(inner);
+        kit::divider(inner);
         inner.add_space(14.0);
         inner.spacing_mut().item_spacing.y = 10.0;
         if let Some(detail) = snapshot.as_deref().and_then(status_detail) {
@@ -495,7 +496,7 @@ fn connected_body(
         if let Some(permissions) = permissions {
             for row in permission_rows(&permissions) {
                 if !first {
-                    divider(ui);
+                    kit::divider(ui);
                 }
                 first = false;
                 let (icon, color, word) = match (row.granted, row.warn) {
@@ -563,7 +564,7 @@ fn trading_choices(
         ];
         for (index, (label, value)) in rows.into_iter().enumerate() {
             if index > 0 {
-                divider(ui);
+                kit::divider(ui);
             }
             switch_row(ui, label, value);
         }

@@ -6,7 +6,7 @@ use crate::model::DataSource;
 use crate::model::portfolio::PortfolioAsset;
 use crate::model::portfolio::format::Tone;
 use crate::service;
-use crate::ui::theme;
+use crate::ui::{kit, theme};
 use eframe::egui::{self, Color32, RichText, Sense, Vec2};
 
 pub fn tone_color(tone: Tone) -> Color32 {
@@ -31,46 +31,29 @@ pub fn asset_icon(ui: &mut egui::Ui, asset: &PortfolioAsset, size: f32) {
 /// asset's own market id (a CoinGecko coin id, a DEX pair address, a Binance pair) with its
 /// ticker as the base symbol, like Swift's `iconURL(ticker: marketSymbol, baseSymbol:)`.
 pub fn paint_asset_icon(ui: &egui::Ui, rect: egui::Rect, asset: &PortfolioAsset) {
-    let size = rect.width();
     let ticker = asset.display_ticker();
     let looked_up =
         !asset.source.is_prediction_market() && asset.source != DataSource::CoinMarketCap;
     if looked_up {
         let market = service::portfolio::history::market_symbol(asset);
-        if let Some(url) = service::image::icon::get_url(asset.source, &market) {
-            egui::Image::new(url)
-                .fit_to_exact_size(rect.size())
-                .corner_radius(egui::CornerRadius::same((size / 2.0) as u8))
-                .paint_at(ui, rect);
+        if kit::cached_logo(
+            ui,
+            rect,
+            asset.source,
+            &market,
+            Some(&ticker),
+            Color32::WHITE,
+        ) {
             // A hairline keeps a dark logo (XRP) visible against a dark card.
             ui.painter().circle_stroke(
                 rect.center(),
-                size / 2.0 - 0.5,
+                rect.width() / 2.0 - 0.5,
                 egui::Stroke::new(1.0, theme::ink(34)),
             );
             return;
         }
-        service::image::icon::request_with_base(asset.source, &market, &ticker);
     }
-    let seed = ticker
-        .to_uppercase()
-        .chars()
-        .fold(0u32, |sum, c| sum.wrapping_add((c as u32).wrapping_mul(31)));
-    let fill: Color32 = egui::ecolor::Hsva::new((seed % 360) as f32 / 360.0, 0.55, 0.7, 1.0).into();
-    ui.painter().circle_filled(rect.center(), size / 2.0, fill);
-    let initials: String = ticker
-        .chars()
-        .filter(|c| c.is_alphanumeric())
-        .take(2)
-        .collect::<String>()
-        .to_uppercase();
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        initials,
-        egui::FontId::proportional(size * 0.42),
-        Color32::WHITE,
-    );
+    kit::monogram_with(ui, rect, &ticker, 0.42, None);
 }
 
 /// `noun` is `(singular, plural)`.

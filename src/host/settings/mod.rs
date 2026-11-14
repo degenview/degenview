@@ -13,7 +13,7 @@ use crate::service::llm::prefs::AiPrefs;
 use crate::service::webhook::delivery::{self, Mode, UreqTransport, WebhookSecretStore};
 use crate::service::work_queue::{self, Pending};
 use crate::store::Store;
-use crate::ui::settings::api_keys::StatusMessage;
+use crate::ui::settings::card::StatusMessage;
 use crate::ui::settings::snapshots::SnapshotsAction;
 use crate::ui::settings::storage::StorageAction;
 use crate::ui::settings::window::{SettingsAction, SettingsInput, SettingsState};

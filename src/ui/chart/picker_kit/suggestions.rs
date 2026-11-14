@@ -1,10 +1,10 @@
 //! Quick-fill chips and the starting markets offered before anything is typed.
 
 use super::artwork::ticker_icon;
-use super::text::{MEDIUM, galley, size};
 use super::widgets::{caption_label, card};
 use crate::model::DataSource;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::{MEDIUM, galley_words, size};
 use crate::ui::theme;
 use eframe::egui::{self, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
@@ -81,7 +81,7 @@ fn suggestion_chip(ui: &mut Ui, item: &Chip, width: f32) -> egui::Response {
         Stroke::new(1.0, theme::ink(20)),
         StrokeKind::Inside,
     );
-    let label = galley(
+    let label = galley_words(
         ui,
         title,
         size::SUBHEADLINE + 1.0,

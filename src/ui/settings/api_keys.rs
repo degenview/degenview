@@ -8,50 +8,14 @@ use crate::service::ProviderError;
 use crate::service::keychain::api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore,
 };
-use crate::service::llm::report::ErrorReport;
 use crate::service::work_queue::{self, Pending};
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::Tone;
 use crate::ui::kit::loading::LoadingIndicator;
-use crate::ui::settings::window::{card, section, status_badge, status_message};
+use crate::ui::kit::{Autosave, Tone, destructive_button, field, open_button};
+use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::window::{card, section, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct StatusMessage {
-    /// What the status says; for a provider's failure, its headline.
-    pub text: String,
-    pub is_error: bool,
-    /// A provider's failure with more to say than its headline (detail, request id).
-    pub report: Option<ErrorReport>,
-}
-
-impl StatusMessage {
-    pub(crate) fn ok(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            is_error: false,
-            report: None,
-        }
-    }
-
-    pub(crate) fn error(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            is_error: true,
-            report: None,
-        }
-    }
-
-    /// A provider's failure: the headline is the text, the rest is kept for a card.
-    pub(crate) fn failure(report: ErrorReport) -> Self {
-        Self {
-            text: report.headline.clone(),
-            is_error: true,
-            report: report.has_more().then_some(report),
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct AlpacaForm {
@@ -273,137 +237,6 @@ fn take_test_answer(
 
 // MARK: Views
 
-/// A labelled text field in the app's field style. A secret field hides its text and offers an
-/// eye button to reveal it, so a pasted key can be checked before saving.
-pub(crate) fn field(
-    ui: &mut egui::Ui,
-    title: &str,
-    hint: Option<&str>,
-    prompt: &str,
-    text: &mut String,
-    secret: bool,
-) -> egui::Response {
-    let id = egui::Id::new(("settings-field", title));
-    let revealed_id = id.with("revealed");
-    let mut revealed: bool = ui.data(|data| data.get_temp(revealed_id)).unwrap_or(false);
-    ui.spacing_mut().item_spacing.y = 0.0;
-    ui.label(kit::text(
-        title,
-        kit::size::SUBHEADLINE + 1.0,
-        kit::MEDIUM,
-        theme::text_primary(),
-    ));
-    ui.add_space(6.0);
-    let focused = ui.memory(|memory| memory.has_focus(id));
-    let mut edit = None;
-    kit::input_frame(focused).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.set_height(kit::FIELD_HEIGHT);
-        ui.horizontal_centered(|ui| {
-            let eye = if secret {
-                22.0 + ui.spacing().item_spacing.x
-            } else {
-                0.0
-            };
-            edit = Some(
-                ui.add(
-                    egui::TextEdit::singleline(text)
-                        .id(id)
-                        .frame(egui::Frame::NONE)
-                        .font(egui::FontId::proportional(kit::size::BODY))
-                        .text_color(theme::text_primary())
-                        .hint_text(kit::text(
-                            prompt,
-                            kit::size::BODY,
-                            kit::REGULAR,
-                            theme::text_tertiary(),
-                        ))
-                        .password(secret && !revealed)
-                        .desired_width(ui.available_width() - eye),
-                ),
-            );
-            if secret {
-                let (icon, tip) = if revealed {
-                    (Icon::EyeSlash, format!("Hide {title}"))
-                } else {
-                    (Icon::Eye, format!("Show {title}"))
-                };
-                if icons::button(ui, icon, 22.0, theme::text_secondary(), &tip).clicked() {
-                    revealed = !revealed;
-                    ui.data_mut(|data| data.insert_temp(revealed_id, revealed));
-                }
-            }
-        });
-    });
-    if let Some(hint) = hint {
-        ui.add_space(6.0);
-        ui.label(kit::text(
-            hint,
-            kit::size::CAPTION + 0.5,
-            kit::REGULAR,
-            theme::text_secondary(),
-        ));
-    }
-    edit.expect("the field's text edit ran")
-}
-
-/// Saves what was typed once the typing stops, so a page needs no Save button. A text edit is due
-/// when its field lost focus (Enter included) or the typing paused for [`Autosave::PAUSE`]. A
-/// secret waits for the field to lose focus only: a pause in the middle of a key must not save half
-/// of it.
-#[derive(Default)]
-pub struct Autosave {
-    since: Option<std::time::Instant>,
-    on_blur: bool,
-}
-
-impl Autosave {
-    pub const PAUSE: std::time::Duration = std::time::Duration::from_millis(700);
-
-    /// Notes the field's response: an edit starts (or restarts) the wait.
-    pub fn watch(&mut self, response: &egui::Response, secret: bool) {
-        if response.changed() {
-            self.since = Some(std::time::Instant::now());
-            self.on_blur = secret;
-        }
-        if response.lost_focus() && self.since.is_some() {
-            self.touch();
-        }
-    }
-
-    /// Makes the change due now: a picked provider, a left field.
-    pub fn touch(&mut self) {
-        self.since = Some(std::time::Instant::now() - Self::PAUSE);
-        self.on_blur = false;
-    }
-
-    pub fn is_pending(&self) -> bool {
-        self.since.is_some()
-    }
-
-    /// Whether the change is due to be saved now. True once; asks for a repaint while waiting.
-    pub fn due(&mut self, ctx: &egui::Context) -> bool {
-        let Some(since) = self.since else {
-            return false;
-        };
-        if self.on_blur {
-            return false;
-        }
-        let waited = since.elapsed();
-        if waited >= Self::PAUSE {
-            self.since = None;
-            return true;
-        }
-        ctx.request_repaint_after(Self::PAUSE - waited);
-        false
-    }
-
-    /// Forgets a pending change (the save was refused, or there is nothing to save).
-    pub fn cancel(&mut self) {
-        self.since = None;
-    }
-}
-
 /// A numbered instruction line.
 fn step(ui: &mut egui::Ui, number: usize, text: &str) {
     ui.horizontal(|ui| {
@@ -455,47 +288,6 @@ pub(crate) fn link(ui: &mut egui::Ui, label: &str, url: &str) {
     }
 }
 
-/// A button that opens `url` in the browser, beside the page's other buttons (Get API Key).
-pub(crate) fn open_button(ui: &mut egui::Ui, label: &str, url: &str) {
-    if kit::sheet_button(ui, label, false, true)
-        .on_hover_text(url)
-        .clicked()
-    {
-        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
-    }
-}
-
-/// A destructive button: the regular button with red text.
-pub(crate) fn destructive_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    let galley = kit::galley(
-        ui,
-        label,
-        kit::size::BODY,
-        kit::REGULAR,
-        kit::RED,
-        f32::INFINITY,
-    );
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2((galley.size().x + 32.0).max(76.0), 28.0),
-        egui::Sense::click(),
-    );
-    let response = crate::ui::accessibility::label(response, label);
-    ui.painter().rect_filled(
-        rect,
-        7.0,
-        kit::primary(if response.is_pointer_button_down_on() {
-            0.18
-        } else if response.hovered() {
-            0.14
-        } else {
-            0.1
-        }),
-    );
-    ui.painter()
-        .galley(rect.center() - galley.size() / 2.0, galley, kit::RED);
-    response
-}
-
 pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCredentialsStore) {
     let form = &mut state.alpaca;
     form.load(store);
@@ -505,7 +297,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
             .request_repaint_after(std::time::Duration::from_millis(150));
     }
     let (text, tone) = form.badge();
-    status_badge(ui, text, tone);
+    kit::status_badge(ui, text, tone);
     ui.add_space(18.0);
     section(ui, "API credentials", None, |ui| {
         card(ui, |ui| {
@@ -583,7 +375,7 @@ pub fn coinmarketcap_body(
             .request_repaint_after(std::time::Duration::from_millis(150));
     }
     let (text, tone) = form.badge();
-    status_badge(ui, text, tone);
+    kit::status_badge(ui, text, tone);
     ui.add_space(18.0);
     let (title, hint) = (form.field_title(), form.field_hint());
     section(ui, "API access", None, |ui| {
@@ -750,26 +542,5 @@ mod tests {
         form.start_test(None, || Err(ProviderError::other("Invalid API key")));
         wait_for_test(&mut form);
         assert_eq!(form.status, Some(StatusMessage::error("Invalid API key")));
-    }
-
-    #[test]
-    fn typing_is_saved_after_a_pause_and_a_secret_only_when_its_field_is_left() {
-        let ctx = egui::Context::default();
-        let mut text = Autosave::default();
-        assert!(!text.due(&ctx), "nothing was typed");
-        text.since = Some(std::time::Instant::now());
-        assert!(!text.due(&ctx), "still typing");
-        text.since = Some(std::time::Instant::now() - Autosave::PAUSE);
-        assert!(text.due(&ctx), "the typing paused");
-        assert!(!text.due(&ctx), "due once");
-
-        let mut secret = Autosave {
-            since: Some(std::time::Instant::now() - Autosave::PAUSE * 10),
-            on_blur: true,
-        };
-        assert!(!secret.due(&ctx), "half a key is never saved on a pause");
-        assert!(secret.is_pending());
-        secret.touch();
-        assert!(secret.due(&ctx), "leaving the field saves it");
     }
 }
