@@ -136,6 +136,11 @@ Keeps a hostile change out of a signed release; each rule's reason is in `releas
 - **Dependencies.** `supply-chain.yml` runs `cargo deny` (`deny.toml`: RustSec advisories, yanked
   crates, crates.io only, license allow list, banned TLS stacks) on every PR and weekly. An `ignore`
   needs a reason. Locally: `cargo install cargo-deny --locked && cargo deny check`.
+- **Seven-day cooldown.** `.cargo/config.toml` sets `global-min-publish-age = "7 days"` (Cargo
+  1.100+), matching Dependabot's `cooldown`: resolving skips crate versions newer than a week.
+  `--locked` builds are unaffected. Our own `degenview-brokers` falls under it too, so bumping its pin
+  right after a publish fails to resolve; that update, or an urgent security fix, runs with
+  `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`.
 - **Repository settings** (not settable by workflows): a `release` environment with the signing
   secrets, deploying only from `v*` tags; a ruleset blocking creating/moving `v*` tags except by the
   maintainer; required status checks on `main`; "Require actions to be pinned to a full-length commit
