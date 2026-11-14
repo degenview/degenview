@@ -317,6 +317,13 @@ fn non_empty(value: Option<String>) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
+/// Whether Alpaca credentials are saved, for anything that only needs to know (a chart picker,
+/// the MCP server). The first answer reads the Keychain item's attributes, never its secret, so
+/// it never prompts; the store keeps it, so asking again costs nothing.
+pub fn alpaca_configured() -> bool {
+    AlpacaCredentialsStore::shared().is_configured()
+}
+
 /// The Alpaca key id and secret to send: what the user saved in Settings, else the environment.
 /// Reads the saved secret only when one exists, so a user who never configured it is not prompted.
 pub fn alpaca_credentials_with(

@@ -348,13 +348,12 @@ impl DegenViewMcp {
     }
 }
 
-/// The Keychain read stays off the async worker.
+/// [`api_keys::alpaca_configured`](crate::service::keychain::api_keys::alpaca_configured), asked
+/// off the async worker: its first answer is a Keychain lookup.
 pub(super) async fn alpaca_configured() -> bool {
-    tokio::task::spawn_blocking(|| {
-        crate::service::keychain::api_keys::AlpacaCredentialsStore::shared().is_configured()
-    })
-    .await
-    .unwrap_or(false)
+    tokio::task::spawn_blocking(crate::service::keychain::api_keys::alpaca_configured)
+        .await
+        .unwrap_or(false)
 }
 
 /// Drops the `uint`, `uint8` … `uint64` formats schemars puts on unsigned integers. They are not

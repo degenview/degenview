@@ -18,6 +18,7 @@ use crate::mcp::tools::{
 use crate::mcp::types::{
     PineCompileResult, PineCompileSummary, PineDiagnosticInfo, PineEditResult, PineInputInfo,
     PineInputOption, PineInputsResult, PineScriptInfo, PineScriptSource, PineScriptsResult,
+    parse_color,
 };
 use crate::model::pine::script::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
 use crate::pine::compiler;
@@ -687,19 +688,6 @@ const MAX_INPUT_TEXT_CHARS: usize = 500;
 /// The sources an `input.source` offers, as the Inputs card lists them.
 const SOURCE_NAMES: [&str; 5] = ["open", "high", "low", "close", "volume"];
 
-/// `#RRGGBB` (opaque) or `#RRGGBBAA`, the form `degenview_get_pine_inputs` returns.
-fn parse_color(text: &str) -> Option<u32> {
-    let hex = text.trim().strip_prefix('#').unwrap_or(text.trim());
-    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    match hex.len() {
-        6 => u32::from_str_radix(hex, 16).ok().map(|rgb| rgb << 8 | 0xFF),
-        8 => u32::from_str_radix(hex, 16).ok(),
-        _ => None,
-    }
-}
-
 fn input_value(definition: &InputDefinition, arg: &InputArg) -> Result<InputValue, String> {
     let wrong_type = || format!("expects a {} value", value_type(&definition.default_value));
     let value = match (&definition.default_value, arg) {
@@ -723,7 +711,9 @@ fn input_value(definition: &InputDefinition, arg: &InputArg) -> Result<InputValu
             InputValue::String(text.clone())
         }
         (InputValue::Color(_), InputArg::Text(text)) => InputValue::Color(
-            parse_color(text).ok_or("expects a colour like #RRGGBB or #RRGGBBAA")?,
+            parse_color(text)
+                .map(|(rgba, _)| u32::from_be_bytes(rgba))
+                .ok_or("expects a colour like #RRGGBB or #RRGGBBAA")?,
         ),
         (InputValue::Source(_), InputArg::Text(text)) => {
             let name = text.trim().to_ascii_lowercase();

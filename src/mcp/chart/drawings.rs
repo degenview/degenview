@@ -7,6 +7,7 @@
 
 use crate::format::parse_timestamp;
 use crate::mcp::bridge::McpError;
+use crate::mcp::types::parse_color;
 use crate::model::chart::kind::{LineDash, Rgba};
 use crate::model::drawings::MAX_TEXT_CHARS;
 use crate::model::drawings::style::MAX_STROKE_WIDTH;
@@ -307,20 +308,6 @@ pub struct NewDrawingArg {
 
 fn invalid(message: impl Into<String>) -> McpError {
     McpError::InvalidArgument(message.into())
-}
-
-/// `#RRGGBB` or `#RRGGBBAA` (the `#` is optional), with whether an alpha was given.
-fn parse_color(text: &str) -> Option<(Rgba, bool)> {
-    let hex = text.trim().trim_start_matches('#');
-    if !hex.is_ascii() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    let byte = |index: usize| u8::from_str_radix(&hex[index..index + 2], 16).ok();
-    match hex.len() {
-        6 => Some(([byte(0)?, byte(2)?, byte(4)?, 255], false)),
-        8 => Some(([byte(0)?, byte(2)?, byte(4)?, byte(6)?], true)),
-        _ => None,
-    }
 }
 
 /// The milliseconds in the digits after a decimal point (`5` is 500, `250Z` is 250, `1239` is

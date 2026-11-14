@@ -1,8 +1,26 @@
 //! The data the chart tools return. Serializable and schema-described, free of egui and HTTP,
-//! built from the workspace's own summaries — never a second chart model.
+//! built from the workspace's own summaries — never a second chart model. Also the colour form
+//! every tool takes and gives (`#RRGGBB` or `#RRGGBBAA`).
 
+use crate::model::chart::kind::Rgba;
 use schemars::JsonSchema;
 use serde::Serialize;
+
+/// A colour argument: `#RRGGBB` (opaque) or `#RRGGBBAA`, the `#` optional. Returns the RGBA bytes
+/// and whether an alpha was given (a drawing's fill without one gets the app's default).
+pub fn parse_color(text: &str) -> Option<(Rgba, bool)> {
+    let text = text.trim();
+    let hex = text.strip_prefix('#').unwrap_or(text);
+    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let byte = |index: usize| u8::from_str_radix(&hex[index..index + 2], 16).ok();
+    match hex.len() {
+        6 => Some(([byte(0)?, byte(2)?, byte(4)?, 255], false)),
+        8 => Some(([byte(0)?, byte(2)?, byte(4)?, byte(6)?], true)),
+        _ => None,
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct WorkspaceInfo {
@@ -599,6 +617,24 @@ pub fn indicator_catalog() -> Vec<IndicatorSpecInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_colour_is_six_or_eight_hex_digits_after_one_optional_hash() {
+        assert_eq!(parse_color("#FF8000"), Some(([255, 128, 0, 255], false)));
+        assert_eq!(parse_color(" ff800080 "), Some(([255, 128, 0, 128], true)));
+        for bad in [
+            "",
+            "#",
+            "#FF80",
+            "#FF80000",
+            "#GG8000",
+            "##FF8000",
+            "#ＦF8000",
+            "red",
+        ] {
+            assert_eq!(parse_color(bad), None, "{bad}");
+        }
+    }
 
     #[test]
     fn catalog_lists_exactly_the_built_in_indicators() {
