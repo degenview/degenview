@@ -6,7 +6,6 @@ use crate::lock::lock;
 use crate::mcp::bridge::McpError;
 use crate::pine_studio::PineStudio;
 use eframe::egui;
-use std::sync::atomic::Ordering;
 
 impl DegenViewApp {
     /// The focused tab's Pine Studio, if that is what has the keyboard, for the Edit menu.
@@ -14,8 +13,8 @@ impl DegenViewApp {
         &self,
         f: impl FnOnce(&mut PineStudio) -> R,
     ) -> Option<R> {
-        let focused = self.focused_tab.load(Ordering::Acquire);
-        for tab in &self.tabs {
+        let focused = self.tabs.focused_tab();
+        for tab in self.tabs.slots() {
             let Ok(mut content) = tab.content.lock() else {
                 continue;
             };
@@ -29,25 +28,20 @@ impl DegenViewApp {
     }
 
     pub(super) fn open_pine(&mut self, ctx: &egui::Context) {
-        let existing = self.tabs.iter().find_map(|tab| {
-            let content = tab.content.lock().ok()?;
-            match &*content {
-                TabContent::Pine(pine) => Some(pine.id()),
-                TabContent::Chart(_) | TabContent::Portfolio(_) => None,
-            }
-        });
-        if let Some(id) = existing {
-            self.show_tab(ctx, id);
+        if let Some(id) = self
+            .tabs
+            .find(|content| matches!(content, TabContent::Pine(_)))
+        {
+            self.tabs.show(ctx, id);
             return;
         }
 
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = self.tabs.allocate_id();
         let slot = TabSlot::new(TabContent::Pine(Box::new(PineStudio::new(
             id,
             self.store.clone(),
         ))));
-        self.register(slot, None);
+        self.tabs.register(slot, None);
     }
 
     /// Opens the Pine Studio (the tab there already is, or a new one) on a log message's call.
@@ -57,7 +51,7 @@ impl DegenViewApp {
         target: &crate::model::pine::logs_view::SourceTarget,
     ) {
         self.open_pine(ctx);
-        for tab in &self.tabs {
+        for tab in self.tabs.slots() {
             if let Ok(mut content) = tab.content.lock()
                 && let TabContent::Pine(pine) = &mut *content
             {
@@ -69,7 +63,7 @@ impl DegenViewApp {
 
     /// The first chart tab's focused chart identity, for the Pine integration.
     pub(super) fn focused_pine_target(&self) -> Option<crate::workspace::PineChartTarget> {
-        for tab in &self.tabs {
+        for tab in self.tabs.slots() {
             if let Ok(content) = tab.content.lock()
                 && let TabContent::Chart(workspace) = &*content
             {
@@ -81,7 +75,7 @@ impl DegenViewApp {
 
     /// The text of `id` in a Pine Studio editor that has it open, if any: what the person sees.
     fn open_script_text(&self, id: &str) -> Option<String> {
-        self.tabs.iter().find_map(|tab| {
+        self.tabs.slots().iter().find_map(|tab| {
             let content = tab.content.lock().ok()?;
             match &*content {
                 TabContent::Pine(manager) => manager.open_text(id),
@@ -92,7 +86,7 @@ impl DegenViewApp {
 
     /// How the Pine Studio editor that has `id` open stands against the file on disk.
     fn open_script_disk_state(&self, id: &str) -> Option<crate::pine_studio::OpenDiskState> {
-        self.tabs.iter().find_map(|tab| {
+        self.tabs.slots().iter().find_map(|tab| {
             let content = tab.content.lock().ok()?;
             match &*content {
                 TabContent::Pine(manager) => manager.open_disk_state(id),
@@ -103,7 +97,7 @@ impl DegenViewApp {
 
     /// Asks the editor that has `id` open to look at the file now.
     fn look_at_open_script_disk(&self, id: &str) {
-        for tab in &self.tabs {
+        for tab in self.tabs.slots() {
             if let Ok(mut content) = tab.content.lock()
                 && let TabContent::Pine(manager) = &mut *content
             {
@@ -114,7 +108,7 @@ impl DegenViewApp {
 
     /// Shows an edit in the Pine Studio editor that has `id` open. Returns whether one did.
     fn show_in_open_editor(&self, id: &str, text: &str, saved: bool) -> bool {
-        self.tabs.iter().any(|tab| {
+        self.tabs.slots().iter().any(|tab| {
             tab.content
                 .lock()
                 .is_ok_and(|mut content| match &mut *content {
@@ -134,11 +128,7 @@ impl DegenViewApp {
         expected_revision: &str,
         source: Option<&str>,
     ) -> Result<crate::mcp::types::PineEditResult, McpError> {
-        let shared = self
-            .mcp_host
-            .lock()
-            .map_err(|_| McpError::AppUnavailable("The MCP host is unavailable".into()))?
-            .shared();
+        let shared = self.mcp.shared()?;
         let mut store = shared
             .script_store()
             .ok_or_else(|| McpError::AppUnavailable("The script library is unavailable".into()))?;
@@ -192,7 +182,7 @@ impl DegenViewApp {
         let now = now_ms();
         let mut fired = Vec::new();
         let mut datasets = std::collections::HashMap::new();
-        for tab in &self.tabs {
+        for tab in self.tabs.slots() {
             if let Ok(content) = tab.content.lock()
                 && let TabContent::Chart(workspace) = &*content
             {
@@ -201,11 +191,9 @@ impl DegenViewApp {
                 }
             }
         }
-        if let Ok(mut shared) = self.chart_datasets.lock() {
-            *shared = datasets;
-        }
+        self.alerts.set_chart_datasets(datasets);
         if let Ok(mut host) = self.pine_host.lock() {
-            for tab in &self.tabs {
+            for tab in self.tabs.slots() {
                 if let Ok(content) = tab.content.lock()
                     && let TabContent::Chart(workspace) = &*content
                 {
@@ -224,10 +212,8 @@ impl DegenViewApp {
                 }
             }
         }
-        if !fired.is_empty()
-            && let Ok(host) = self.alert_host.lock()
-        {
-            host.dispatch_pine(&fired, &store, &self.store, &*self.notifier, now);
+        if !fired.is_empty() {
+            self.alerts.dispatch_pine(&fired, &store, &self.store, now);
         }
     }
 }

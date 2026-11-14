@@ -1,10 +1,7 @@
 use super::AppAction;
 use super::DegenViewApp;
-use super::alert::commit_price_alert;
 use super::now_ms;
 use super::tabs::TabContent;
-use super::window::alerts_viewport_id;
-use super::window::raise_viewport;
 use crate::host::settings::SettingsHost;
 use crate::host::tab::window::TabRequest;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
@@ -16,7 +13,6 @@ use crate::pine_studio::editor::EditAction;
 use crate::store::scripts::hash_source;
 use crate::ui::window::tab_bar;
 use eframe::egui;
-use std::sync::atomic::Ordering;
 
 impl DegenViewApp {
     pub(super) fn process_commands(&mut self, ctx: &egui::Context) {
@@ -50,21 +46,21 @@ impl DegenViewApp {
                     ctx.request_repaint();
                 }
                 NativeCommand::NewTab => {
-                    let window = self.tab_host.focused_window();
+                    let window = self.tabs.windows().focused_window();
                     self.add_tab(window);
                 }
                 NativeCommand::CloseTab => {
-                    if let Some(tab) = self.tab_host.focused_tab() {
-                        self.close_tab_request(ctx, tab);
+                    if let Some(tab) = self.tabs.windows().focused_tab() {
+                        self.tabs.request_close(ctx, tab);
                     }
                 }
-                NativeCommand::MoveTabToNewWindow => self.tab_host.detach_active(),
-                NativeCommand::MergeAllWindows => self.tab_host.merge_all(),
+                NativeCommand::MoveTabToNewWindow => self.tabs.windows().detach_active(),
+                NativeCommand::MergeAllWindows => self.tabs.windows().merge_all(),
                 NativeCommand::SelectNextTab => {
-                    self.tab_host.cycle(true);
+                    self.tabs.windows().cycle(true);
                 }
                 NativeCommand::SelectPreviousTab => {
-                    self.tab_host.cycle(false);
+                    self.tabs.windows().cycle(false);
                 }
                 NativeCommand::OpenSettings => self.open_settings(ctx),
                 NativeCommand::OpenPineStudio => self.open_pine(ctx),
@@ -80,10 +76,10 @@ impl DegenViewApp {
                 }
                 NativeCommand::Quit => self.request_quit(ctx),
                 NativeCommand::SaveCurrentLayout => {
-                    let focused = self.focused_tab.load(Ordering::Acquire);
+                    let focused = self.tabs.focused_tab();
                     // File ▸ Save (⌘S) belongs to the focused tab: a chart saves its layout,
                     // the Pine Studio saves the script open in its editor.
-                    for tab in &self.tabs {
+                    for tab in self.tabs.slots() {
                         let Ok(mut content) = tab.content.lock() else {
                             continue;
                         };
@@ -134,22 +130,12 @@ impl DegenViewApp {
                 AppAction::OpenSnapshotSettings => {
                     self.open_settings_page(ctx, SettingsHost::open_snapshots);
                 }
-                AppAction::OpenAlerts => {
-                    if self.alerts_open.swap(true, Ordering::AcqRel) {
-                        raise_viewport(ctx, alerts_viewport_id());
-                    }
-                }
+                AppAction::OpenAlerts => self.alerts.open_window(ctx),
                 AppAction::SavePriceAlert { alert, baseline } => {
                     if let Ok(store) = self.store.lock() {
-                        commit_price_alert(
-                            &store,
-                            &self.notifier,
-                            &self.background_service,
-                            &self.alert_runtime_control,
-                            alert,
-                            baseline,
-                            now_ms(),
-                        );
+                        self.alerts
+                            .registration()
+                            .commit(&store, alert, baseline, now_ms());
                     }
                 }
                 AppAction::SetAlertState { id, state } => {
@@ -191,7 +177,7 @@ impl DegenViewApp {
                     name,
                     source,
                 } => {
-                    for tab in &self.tabs {
+                    for tab in self.tabs.slots() {
                         if let Ok(mut content) = tab.content.lock()
                             && let TabContent::Chart(workspace) = &mut *content
                         {
@@ -242,31 +228,32 @@ impl DegenViewApp {
                 }
             }
         }
-        for request in self.tab_host.take_requests() {
+        for request in self.tabs.windows().take_requests() {
             match request {
                 TabRequest::New(window) => self.add_tab(Some(window)),
-                TabRequest::Close(tab) => self.close_tab_request(ctx, tab),
+                TabRequest::Close(tab) => self.tabs.request_close(ctx, tab),
                 TabRequest::OpenSettings => self.open_settings(ctx),
                 TabRequest::CloseWindow(window) => {
-                    for tab in self.tab_host.tabs_of(window) {
-                        self.close_tab_request(ctx, tab);
+                    for tab in self.tabs.windows().tabs_of(window) {
+                        self.tabs.request_close(ctx, tab);
                     }
                 }
             }
         }
-        self.drop_closed_tabs(ctx);
+        self.tabs.drop_closed(ctx);
     }
 
     pub(super) fn request_quit(&mut self, ctx: &egui::Context) {
-        let asking = self
-            .tabs
-            .iter()
-            .find_map(|tab| match &mut *tab.content.lock().ok()? {
-                TabContent::Pine(pine) => pine.begin_exit(ExitReason::Quit).then(|| pine.id()),
-                _ => None,
-            });
+        let asking =
+            self.tabs
+                .slots()
+                .iter()
+                .find_map(|tab| match &mut *tab.content.lock().ok()? {
+                    TabContent::Pine(pine) => pine.begin_exit(ExitReason::Quit).then(|| pine.id()),
+                    _ => None,
+                });
         match asking {
-            Some(id) => self.show_tab(ctx, id),
+            Some(id) => self.tabs.show(ctx, id),
             None => ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close),
         }
     }
@@ -276,7 +263,7 @@ impl DegenViewApp {
         // A restart for an update was waiting on this quit; the app keeps running, so it must not
         // start the new version when it exits some other time.
         self.updates.disarm_relaunch();
-        for tab in &self.tabs {
+        for tab in self.tabs.slots() {
             if let Ok(mut content) = tab.content.lock()
                 && let TabContent::Pine(pine) = &mut *content
             {

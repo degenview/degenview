@@ -36,7 +36,7 @@ price an order trades at) and [iCloud Sync](icloud-sync.md) (nothing here syncs)
 | Choices about trading | Local-only setting `broker.prefs`. |
 | Connections | `host/broker/mod.rs::BrokerHost`: one per process, shared by every window, **outside the paper-trading lock**. Each connection's runtime runs on its own thread and publishes `Arc` snapshots; the UI never calls the network. Every request for a connection (a new key, the saved key at startup, Disconnect) takes a number, and a start may publish its runtime only if its number is still the broker's current one, so a Disconnect, or a newer key, always has the last word over a start that was still waiting on the Keychain prompt or the store. |
 | Which venues are on | `host/trading/mod.rs::TradingHub` is the **only owner of a venue's lifecycle**: `enable`, `connect(id, credentials)` (save the key, connect, remember the venue as enabled) and `disable` (forget the choice, stop the connection, remove the key). Settings calls these, not `BrokerHost`: disconnecting only the host left a key-less broker (the sandbox) in `trading.enabled`, so it reconnected at the next start. `connect` and `disable` return a polled `Operation` (the answer of the secret store), shown as "Saving the key…" / "Removing the key…". |
-| Redraws | `BrokerHost::revision()` is compared once a frame in `DegenViewApp::tick_tab_quotes`, which repaints every tab window. |
+| Redraws | `BrokerHost::revision()` is compared once a frame in `TabState::tick_quotes`, which repaints every tab window. |
 | Settings | Settings ▸ Brokers (`ui/settings/brokers.rs`): connect (the key is checked with reads only, then saved), permissions, Disconnect. |
 
 ## Connecting
