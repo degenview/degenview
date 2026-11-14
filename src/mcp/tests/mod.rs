@@ -2208,7 +2208,7 @@ fn bad_alert_arguments_never_reach_the_app() {
 
 #[test]
 fn clean_price_text_accepts_only_plain_positive_decimals() {
-    use crate::mcp::tools::clean_price_text;
+    use crate::mcp::alert::tools::clean_price_text;
     for good in ["70000", " 0.00000278 ", "1", "123456.789"] {
         assert_eq!(
             clean_price_text(good).as_deref(),

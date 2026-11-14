@@ -5,6 +5,8 @@
 //! saved, compiled into a record, run, or sent anywhere: a compile here is a pure function of
 //! the source. Paths never leave this module.
 
+pub mod tools;
+
 use crate::format::iso8601;
 use crate::mcp::bridge::McpError;
 use crate::mcp::types::{
