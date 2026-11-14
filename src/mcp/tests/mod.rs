@@ -1543,6 +1543,98 @@ fn every_routed_tool_has_a_permission_and_an_unmapped_name_is_not_run() {
     );
 }
 
+/// Every tool this server routes, with the permission it needs. A change here changes what a
+/// credential can do, so it is made on purpose, never as a side effect of moving code.
+#[test]
+fn the_tool_list_and_its_permissions_are_pinned() {
+    use crate::mcp::tools::{DegenViewMcp, required_permission};
+    const TOOLS: [(&str, &str); 58] = [
+        ("degenview_add_chart", "charts.create"),
+        ("degenview_add_drawings", "drawings.write"),
+        ("degenview_add_indicator", "charts.indicators.write"),
+        (
+            "degenview_add_pine_script_to_chart",
+            "charts.pine_instances.write",
+        ),
+        ("degenview_cancel_paper_orders", "paper.orders.cancel"),
+        ("degenview_close_paper_positions", "paper.positions.close"),
+        ("degenview_compile_pine_script", "pine.diagnostics.read"),
+        ("degenview_control_replay", "charts.replay.write"),
+        ("degenview_create_price_alert", "alerts.create"),
+        ("degenview_create_watchlist", "watchlists.write"),
+        ("degenview_delete_drawings", "drawings.delete"),
+        ("degenview_delete_price_alert", "alerts.delete"),
+        ("degenview_delete_watchlist", "watchlists.delete"),
+        ("degenview_get_candles", "charts.candles.read"),
+        ("degenview_get_chart_snapshot", "charts.snapshot.read"),
+        ("degenview_get_indicator_values", "charts.candles.read"),
+        ("degenview_get_market_candles", "markets.read"),
+        ("degenview_get_paper_account", "paper.read"),
+        ("degenview_get_pine_inputs", "pine.inputs.read"),
+        ("degenview_get_pine_instance", "pine.inputs.read"),
+        ("degenview_get_pine_report", "pine.reports.read"),
+        ("degenview_get_pine_script", "pine.scripts.read"),
+        ("degenview_get_pine_styles", "pine.styles.read"),
+        ("degenview_get_portfolio_holdings", "portfolio.read"),
+        ("degenview_get_quotes", "markets.read"),
+        ("degenview_get_replay", "charts.read"),
+        ("degenview_get_session_stats", "charts.candles.read"),
+        ("degenview_get_watchlist", "watchlists.read"),
+        ("degenview_list_chart_pine_instances", "pine.scripts.list"),
+        ("degenview_list_charts", "charts.read"),
+        ("degenview_list_drawings", "drawings.read"),
+        ("degenview_list_indicators", "charts.read"),
+        ("degenview_list_paper_accounts", "paper.read"),
+        ("degenview_list_paper_fills", "paper.read"),
+        ("degenview_list_paper_trades", "paper.read"),
+        ("degenview_list_pine_alerts", "pine.alerts.read"),
+        ("degenview_list_pine_scripts", "pine.scripts.list"),
+        ("degenview_list_portfolio_transactions", "portfolio.read"),
+        ("degenview_list_portfolios", "portfolio.read"),
+        ("degenview_list_price_alerts", "alerts.read"),
+        ("degenview_list_watchlists", "watchlists.read"),
+        ("degenview_list_workspaces", "charts.read"),
+        ("degenview_modify_paper_order", "paper.orders.place"),
+        ("degenview_pause_price_alert", "alerts.pause"),
+        ("degenview_place_paper_order", "paper.orders.place"),
+        ("degenview_remove_chart", "charts.delete"),
+        ("degenview_remove_indicator", "charts.indicators.write"),
+        (
+            "degenview_remove_pine_instance",
+            "charts.pine_instances.write",
+        ),
+        ("degenview_resume_price_alert", "alerts.pause"),
+        ("degenview_save_pine_script", "pine.scripts.save"),
+        ("degenview_search_symbols", "markets.read"),
+        ("degenview_set_chart_type", "charts.view.write"),
+        ("degenview_set_timeframe", "charts.view.write"),
+        ("degenview_update_drawing", "drawings.write"),
+        (
+            "degenview_update_pine_instance",
+            "charts.pine_instances.write",
+        ),
+        ("degenview_update_pine_script", "pine.scripts.write"),
+        ("degenview_update_price_alert", "alerts.edit"),
+        ("degenview_update_watchlist", "watchlists.write"),
+    ];
+    let shared = McpShared::new();
+    let (bridge, _inbox) = crate::mcp::bridge::channel(shared.clone(), Arc::new(|| {}));
+    let mut routed = DegenViewMcp::new(bridge, shared).routed_tool_names();
+    routed.sort();
+    let found: Vec<(String, &str)> = routed
+        .into_iter()
+        .map(|name| {
+            let permission = required_permission(&name).map_or("none", |p| p.id());
+            (name, permission)
+        })
+        .collect();
+    let expected: Vec<(String, &str)> = TOOLS
+        .iter()
+        .map(|(name, permission)| ((*name).to_owned(), *permission))
+        .collect();
+    assert_eq!(found, expected);
+}
+
 #[test]
 fn permissions_are_enforced_on_every_call_not_just_discovery() {
     let harness = Harness::start(&[
