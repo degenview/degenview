@@ -31,6 +31,7 @@ const WEBHOOKS: Scope = Scope {
     service: SERVICE,
     shared_group: true,
 };
+#[cfg(any(target_os = "macos", test))]
 const ACCESS_GROUP_SUFFIX: &str = "es.nico.degenview.shared";
 
 /// Whether the Keychain is off-limits to this process.
@@ -43,6 +44,7 @@ pub fn account(endpoint: EndpointId) -> String {
     format!("endpoint-{endpoint}")
 }
 
+#[cfg(any(target_os = "macos", test))]
 /// Picks the shared group out of the process's `keychain-access-groups` entitlement.
 pub fn shared_access_group(groups: &[String]) -> Option<&str> {
     groups

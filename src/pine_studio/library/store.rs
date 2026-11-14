@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const COMPILER_VERSION: &str = "pine-local-3";
+#[cfg(target_os = "macos")]
 pub const ID_ATTRIBUTE: &str = "es.nico.degenview.script-id";
 const MAX_REVISIONS: usize = 100;
 

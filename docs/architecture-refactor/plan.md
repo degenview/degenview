@@ -51,17 +51,19 @@ Stacked pull requests, logic changes first and pure moves last.
 
 ### Wave 1: guardrails
 
-- [x] **PR 1: lint hygiene.**
+- [x] **PR 1: lint hygiene.** [#511](https://github.com/degenview/degenview/pull/511)
   - [x] Remove the module-wide `allow(dead_code)`/`allow(unused_imports)` in `pine/`, `pine_studio/`,
         `sync/`, `store/sync/`.
   - [x] Remove the 61 file-level `#![allow(dead_code)]`; delete what is dead, keep a narrow, reasoned
         `#[allow]` only for code that is used on another platform or feature.
   - [x] `parse_id` in `mcp/tools.rs` names the tool that returns the id it parses.
-- [ ] **PR 2: layering guard and CI lints.**
-  - [ ] `layout_tests.rs` checks import direction (`model`/`pine` import no coordinator, UI or I/O;
+- [x] **PR 2: layering guard and CI lints.**
+  - [x] `layout_tests.rs` checks import direction (`model`/`pine` import no coordinator, UI or I/O;
         `service`/`store`/`sync` import no `ui`/`host`/`app`/`workspace`; `ui` imports no `app`), with
-        today's exceptions in an allowlist that later PRs empty.
-  - [ ] CI runs `cargo fmt --check` and `cargo clippy --all-targets --all-features -D warnings`.
+        today's exceptions in an allowlist that later PRs empty. A second test bans drawing types
+        (`egui::Ui`, windows, panels) outside the view layers, with the four host files in its debt
+        list.
+  - [x] CI runs `cargo fmt --check` and `cargo clippy --all-targets --all-features -D warnings`.
 
 ### Wave 2: layering
 

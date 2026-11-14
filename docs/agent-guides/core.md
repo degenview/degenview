@@ -21,6 +21,10 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
 - **Modules, not MVVM.** `model/` pure domain logic; `service/` providers/networking; `ui/` egui rendering; `store/` SQLite; `host/` (one directory per domain) bridges stateful components; `workspace/mod.rs` chart workspaces; `app/` coordinates.
 - **Immediate-mode UI.** Pass state into views; never add observed view models. Render charts with `egui::Painter`, not a chart library.
 - **Background work.** Outside `src/mcp/`, threads and `std::sync::mpsc`, no async runtimes. Shared state `Arc<Mutex<...>>`; keep locks short.
+- **Layering is tested.** `layout_tests.rs` fails when a module imports a layer above it (`model/` and
+  `pine/` import no I/O, coordinator or view; `service/`, `store/`, `sync/` no `host/`, `ui/`, `app/` or
+  `workspace/`) or when anything outside the view layers draws (`egui::Ui`, a window or a panel). Its
+  debt lists only shrink: fix the import instead of adding to them.
 - **Frame performance.** Code reached from `update`/`ui` must never parse JSON, make blocking system calls (XPC, `SMAppService`), or query SQLite beyond cheap change checks. Cache by change signal (e.g. `Store::layout_index`) or run on a thread and poll (e.g. `AlertRuntimeControl::poll_service_status`).
 
 ## Build and Test
@@ -36,7 +40,8 @@ cargo fmt --all -- --check
 
 Finder-launchable app: `./tools/bundle.sh`, then open `target/DegenView.app`. Binary: `degenview`.
 
-- CI runs `cargo test --locked` on macOS and Linux for every PR; no Clippy or format checks.
+- CI runs `cargo test --locked`, `cargo fmt --check` and Clippy with `-D warnings` on macOS and Linux
+  for every PR. Code used on one platform only is `cfg`-gated, not `allow(dead_code)`.
 - Unit tests cover engines, parsing, layout, storage and policy. Manually verify affected UI; outside Pine Studio no complete GUI pass has been done.
 - Tests disable Keychain. Launch dev builds with `DEGENVIEW_NO_KEYCHAIN=1` to avoid signing prompts. The MCP credential seal is always off in debug and ignores this variable in release.
 - Optional cache override: `DEGENVIEW_CACHE_DIR=<scratch-dir>`.

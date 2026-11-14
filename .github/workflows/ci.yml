@@ -73,6 +73,50 @@ jobs:
           ! otool -L target/debug/degenview-alert-agent | grep -q libswift
           otool -L target/debug/degenview | grep -q libswiftCloudKit
 
+  # Formatting and Clippy, warnings as errors, on both desktop platforms the full suite runs on:
+  # code used only on one of them shows as dead on the other. `icloud` needs the Swift bridge and
+  # is left out; the test job builds it on macOS.
+  lint:
+    name: Lint ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            os: macos-latest
+          - name: linux
+            os: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: lint-${{ matrix.name }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libssl-dev pkg-config
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets --features alloc-count,dev-unsealed-mcp,dev-mock-broker -- -D warnings
+
   # The Windows self-updater (`service::update::install::portable_binary`) only runs there, and the full
   # suite has never been run on Windows, so this job runs the update tests and no more. It also
   # proves the whole crate still compiles for Windows, which the release build otherwise finds out.

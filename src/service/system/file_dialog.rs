@@ -7,6 +7,7 @@ use std::path::PathBuf;
 #[cfg(not(target_os = "linux"))]
 use std::process::Command;
 
+#[cfg(any(not(target_os = "linux"), test))]
 /// A string as an AppleScript literal.
 pub fn applescript_string(text: &str) -> String {
     let mut quoted = String::from("\"");
@@ -22,6 +23,7 @@ pub fn applescript_string(text: &str) -> String {
     quoted
 }
 
+#[cfg(any(not(target_os = "linux"), test))]
 /// "choose file" restricted to uniform type identifiers.
 pub fn open_script(prompt: &str, type_identifiers: &[&str]) -> String {
     let types: Vec<String> = type_identifiers
@@ -35,6 +37,7 @@ pub fn open_script(prompt: &str, type_identifiers: &[&str]) -> String {
     )
 }
 
+#[cfg(any(not(target_os = "linux"), test))]
 /// "choose file name": the user types where to save and what to call it.
 pub fn save_script(prompt: &str, default_name: &str) -> String {
     format!(
@@ -44,6 +47,7 @@ pub fn save_script(prompt: &str, default_name: &str) -> String {
     )
 }
 
+#[cfg(any(not(target_os = "linux"), test))]
 /// "choose folder": the user picks where a set of files goes.
 pub fn folder_script(prompt: &str) -> String {
     format!(
@@ -52,6 +56,7 @@ pub fn folder_script(prompt: &str) -> String {
     )
 }
 
+#[cfg(any(not(target_os = "linux"), test))]
 /// What the script printed, as a path; empty output (a cancel) is None.
 pub fn parse_path(output: &str) -> Option<PathBuf> {
     let trimmed = output.trim_end_matches(['\n', '\r']);
