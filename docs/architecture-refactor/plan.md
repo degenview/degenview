@@ -40,7 +40,8 @@ What does not:
    `pine ↔ model` cycle that blocks splitting the engine into its own crate.
 8. **Big mixed files.** 19 files over 2,000 lines; the worst mix concerns (`ui/chart/card`,
    `pine/runtime/session.rs`, `pine_studio/editor`, `store/sync`, `ui/kit`, `ui/watchlist/sidebar.rs`,
-   `ui/settings/mcp.rs`). About 130 files keep inline `mod tests` instead of `tests.rs`.
+   `ui/settings/mcp.rs`). 496 files keep inline `mod tests` instead of `tests.rs`, 95 of them over
+   300 lines.
 9. **Copies.** The asset logo and monogram five times, the start-and-poll background job five times
    (beside `trading::task::Task`), a hairline divider six times, `with_alpha` three times,
    `empty_state` seven times.
@@ -120,12 +121,30 @@ Stacked pull requests, logic changes first and pure moves last.
         empty states, chips and card frames stay: each looks different from the kit's (sizes,
         discs, fills), and folding them in would change pixels.
   - [x] `ui/kit/mod.rs` split by widget family.
-- [ ] **PR 13: big files split** [#524](https://github.com/degenview/degenview/pull/524) (move only), inline tests into `tests.rs`.
+- [x] **PR 13: big files split** [#524](https://github.com/degenview/degenview/pull/524) [#525](https://github.com/degenview/degenview/pull/525) (move only), their inline tests into `tests.rs`.
   - [x] UI: chart card, watchlist sidebar, Settings ▸ MCP, portfolio overview/statistics, chart
         settings, tab bar, drawing properties.
   - [x] Pine: runtime session, outputs/drawings; Pine Studio: editor, studio commands, preview,
         the assistant's inline tests.
-  - [ ] Store and sync: `store/sync`, `sync/engine/apply`; `mcp/pine`.
+  - [x] Store and sync: `store/sync` by table, `sync/engine/apply` by record kind; `mcp/pine`. The
+        long inline tests of `sync/engine/merge`, `sync/record/{project,validate}` and
+        `store/{watchlist,portfolio}` into `tests.rs`.
+
+### Outcome
+
+Measured on 14 November 2026, on the tree before PR 1 (`fef5a750`) and after PR 13:
+
+- `src/`: 896 `.rs` files and 469,463 lines before, 1,059 files and 471,692 lines after (the moves
+  add module headers and imports).
+- Files over 2,000 lines: 19 before, 7 after; not counting test files, 15 before and 3 after
+  (`model/drawings/mod.rs`, `ui/icons.rs`, `ui/pine/chart_render.rs`, none of them on the list).
+- `#![allow(dead_code)]`: 61 before, 0 after.
+- `Result<_, String>` in non-test code (regex `Result<[^;{]*, String>`, inline test modules left
+  out): 346 before, 253 after. Finding 4's "about 290" was counted another way.
+- `ChartWorkspace` fields: 87 before, 39 after. `DegenViewApp` fields: 55 before, 24 after.
+- `KNOWN_LAYERING_DEBT`: 7 entries when PR 2 added it, 0 after. `KNOWN_DRAWING_DEBT`: 4, then 0.
+- `thread::spawn` in `src/ui`: 12 before, 0 after.
+- Inline `mod tests`: 496 files before, 476 after; 95 over 300 lines before, 75 after.
 
 ### Later (not in this series)
 
@@ -134,3 +153,5 @@ Stacked pull requests, logic changes first and pure moves last.
 - `Store` as per-domain repositories with a separate read connection.
 - One Pine builtin signature table for the registry, the type checker and the studio.
 - Pine runtime allocations: overload lookups and `ta` windows that allocate on every bar.
+- The other long inline `mod tests` (75 over 300 lines) into `tests.rs`, and the three files still
+  over 2,000 lines.

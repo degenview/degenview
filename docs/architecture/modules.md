@@ -134,16 +134,20 @@ hub), `update/`. Hosts draw nothing: the views that sit on them live in `ui/` (`
 draws what comes back.
 
 `store/` has one file per single-table domain store (`alert`, `asset_store`, `drawing_template`,
-`identity`, `paper`, `pine`, `portfolio`, `watchlist`, `webhook`) and a directory once a store has a
-second file: `chart/` (`template/`, `saved_view`), `editor_theme/`, `mcp/` (with `audit`), `sync/`,
-`scripts/` (the user's Pine scripts as `.pine` files with their metadata beside them, not SQLite).
+`identity`, `paper`, `pine`, `webhook`) and a directory once a store has a second file (its
+`tests.rs` counts): `chart/` (`template/`, `saved_view`), `editor_theme/`, `mcp/` (with `audit`),
+`portfolio/`, `watchlist/`, `scripts/` (the user's Pine scripts as `.pine` files with their metadata
+beside them, not SQLite) and `sync/`. `sync/` keeps one file per table or concern: `schema`, `state`
+(the identity singleton), `track` (the write hooks), `outbox`, `entity`, `inbox`, `conflicts`,
+`alert`, `paper`, `raw` (remote applies) and `reconcile`, with the queueing primitives they share in
+`mod.rs`.
 
 `sync/`:
 
 | Directory | Holds |
 | --- | --- |
-| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge`, `outbox`, `apply/`, `account` |
-| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project`, `validate`, `paper`, `scripts` |
+| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge/`, `outbox`, `account`, and `apply/` (the batch and dispatch in `mod.rs`, one file per record kind: `simple`, `asset`, `script`, `alert`, `layout`, `drawing`, `paper`, `portfolio`; inbox retries in `retry`) |
+| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project/`, `validate/`, `paper`, `scripts` |
 | `transport/` | The CloudKit boundary: `mod.rs` the trait, its factory, the event sink and events, `native/` (the Swift bridge), `mock` (tests) |
 | `tests/` | End-to-end sync tests, one file per concern |
 
@@ -153,7 +157,8 @@ extractor, the routers put together and the handler that guards them), `replay`,
 `tests/` at its root. Tools are grouped by domain: `alert/`, `chart/` (`control`, `data`, `drawings`),
 `indicator/`, `market/`, `paper/`, `pine/`, `portfolio/`, `session_stats/`, where `mod.rs` holds the
 domain's command enum (what it hands the app thread and whether each command asks first) and its
-pure result types, and `tools.rs` the tool router. `transport/` holds the HTTP surface
+pure result types, and `tools.rs` the tool router (`pine/` also keeps `scripts`, `edit`, `inputs`
+and `apply`, the script views the tools run on a worker). `transport/` holds the HTTP surface
 and what guards it: `auth`, `cancel`, `limits`, `seal`, `tls`, `tls_protect`.
 
 `app/` splits `impl DegenViewApp` by concern, each child adding an `impl` block (like `workspace/`):
