@@ -1,7 +1,7 @@
 use crate::host::paper::PaperHost;
 use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::lock::lock;
-use crate::model::alert::{AlertCurrency, PriceAlert};
+use crate::model::alert::PriceAlert;
 use crate::model::chart::sync::SyncHub;
 use crate::model::tab::link::LinkColor;
 use crate::model::tab::title::{MAX_CUSTOM_TITLE_CHARS, TabChart};
@@ -16,7 +16,7 @@ use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordin
 use crate::store::SharedStore;
 use crate::store::drawing_template::{DrawingPrefs, DrawingTemplateStore};
 use crate::store::watchlist::WatchlistStore;
-use crate::ui::alert::editor::{self, PriceAlertEditorState};
+use crate::ui::alert::editor;
 use crate::ui::chart::indicator_picker::{self, IndicatorPicker};
 use crate::ui::chart::settings::overlay_popover::OverlaySettingsPopover;
 use crate::ui::chart::settings::{self as chart_settings, ChartSettingsState};
@@ -28,7 +28,7 @@ use crate::ui::pine::settings_popover::PineSettingsPopover;
 use crate::ui::watchlist::sidebar::WatchlistSidebarState;
 use crate::ui::workspace::layout_prompts::NamePrompt;
 use crate::ui::{self, CrosshairInfo, replay::bar, workspace::tool_sidebar};
-use alerts::AlertRequest;
+use alerts::AlertUi;
 use chart::context::ContextState;
 use chart::snapshot::SnapshotState;
 use chart::{Chart, displayed_candles};
@@ -172,7 +172,6 @@ pub struct ChartWorkspace {
     indicator_picker: IndicatorPicker,
     symbol_picker: SymbolPicker,
     add_to_watchlist: Option<EntryId>,
-    unseen_alerts: usize,
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
     card_env: Option<PortfolioCardEnv>,
     /// The venues this tab can trade on, handed in by the window each frame.
@@ -241,19 +240,14 @@ pub struct ChartWorkspace {
     /// saved: a tab always starts on paper.
     trading_venue: crate::model::broker::venue::TradingVenue,
     broker_panel: crate::ui::broker::panel::BrokerPanelState,
-    /// A chart's bell (or a watchlist row's menu) asked for a price alert this frame; `ui`
-    /// opens the sheet on it.
-    new_alert_request: Option<AlertRequest>,
     /// The chart menu's state: the open menu, its messages, and the panels it toggles.
     context: ContextState,
     /// The snapshot being made, and what it waits for.
     snapshot: SnapshotState,
     /// The snapshot settings all windows share (set by the app).
     snapshots: Option<crate::host::snapshot::SnapshotHost>,
-    /// The "Create Price Alert" sheet, over this tab's window.
-    alert_editor: Option<PriceAlertEditorState>,
-    /// USD → currency rates for the sheet's currency menu, pushed in by the app.
-    alert_fx_rates: HashMap<AlertCurrency, f64>,
+    /// The bell's count and the price-alert sheet.
+    alerts: AlertUi,
     open_new_tab_request: Option<WatchlistInstrument>,
     /// What the empty page reads from the database and Keychain, loaded once per visit.
     empty_page: EmptyPageCache,
@@ -371,7 +365,6 @@ impl ChartWorkspace {
             indicator_picker: IndicatorPicker::new(Some(store.clone())),
             symbol_picker: SymbolPicker::new(store.clone()),
             add_to_watchlist: None,
-            unseen_alerts: 0,
             card_env: None,
             trading_hub: None,
             live_feed: None,
@@ -413,12 +406,10 @@ impl ChartWorkspace {
             trade_sheet: crate::ui::trade::order_sheet::SheetState::default(),
             trading_venue: crate::model::broker::venue::TradingVenue::default(),
             broker_panel: crate::ui::broker::panel::BrokerPanelState::default(),
-            new_alert_request: None,
             context: ContextState::default(),
             snapshot: SnapshotState::default(),
             snapshots: None,
-            alert_editor: None,
-            alert_fx_rates: HashMap::new(),
+            alerts: AlertUi::default(),
             open_new_tab_request: None,
             empty_page: EmptyPageCache::default(),
             paper_panel: PaperPanel::default(),

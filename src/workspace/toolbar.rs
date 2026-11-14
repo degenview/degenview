@@ -161,7 +161,8 @@ impl ChartWorkspace {
         if let Some(chart) = self.focused_market_chart()
             && crate::ui::supports_alerts(chart.source)
         {
-            self.new_alert_request = Some(AlertRequest::market(Self::alert_asset(chart)));
+            self.alerts
+                .request(AlertRequest::market(Self::alert_asset(chart)));
         }
     }
 
@@ -225,16 +226,19 @@ mod tests {
     fn the_toolbar_alert_starts_an_alert_on_the_focused_market() {
         let mut workspace = empty_workspace(1);
         workspace.create_alert_for_focused_chart();
-        assert!(workspace.new_alert_request.is_none(), "no chart, no alert");
+        assert!(
+            workspace.alerts.take_request().is_none(),
+            "no chart, no alert"
+        );
         let first = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
         let second = chart_with_drawings(&mut workspace, "ETHUSDT", &[]);
         workspace.focused = Some(first);
         workspace.create_alert_for_focused_chart();
-        let request = workspace.new_alert_request.take().expect("a request");
+        let request = workspace.alerts.take_request().expect("a request");
         assert_eq!(request.asset.instrument.symbol, "BTCUSDT");
         workspace.focused = Some(second);
         workspace.create_alert_for_focused_chart();
-        let request = workspace.new_alert_request.take().expect("a request");
+        let request = workspace.alerts.take_request().expect("a request");
         assert_eq!(request.asset.instrument.symbol, "ETHUSDT");
     }
 }

@@ -27,6 +27,7 @@ use crate::ui::chart::object_tree::{self as tree_view, TreeAction, TreeState};
 use crate::ui::chart::session_stats_view::{self, StatsViewState};
 use crate::ui::chart::settings::templates::{self, TemplateState};
 use crate::ui::chart::table_view::{self, TableAction, TableViewState};
+use crate::workspace::alerts::AlertRequest;
 use crate::workspace::overlay::actions::reverts_to_regular;
 use crate::workspace::undo::Snapshot;
 use crate::workspace::*;
@@ -520,11 +521,7 @@ impl ChartWorkspace {
             Command::PineLogs(instance) => self.open_pine_logs(chart_id, Some(instance)),
             Command::EditAlert(id) => {
                 if let Some(alert) = self.context.alerts.iter().find(|alert| alert.id == id) {
-                    self.alert_editor = Some(PriceAlertEditorState::new(
-                        alert.asset.clone(),
-                        Some(alert.clone()),
-                        Some(alert.currency),
-                    ));
+                    self.alerts.edit(alert);
                 }
             }
             Command::ToggleAlert(id) => {
@@ -603,7 +600,7 @@ impl ChartWorkspace {
             return;
         };
         let last = chart.candles.last().map(|candle| candle.close);
-        self.new_alert_request = Some(AlertRequest {
+        self.alerts.request(AlertRequest {
             asset: Self::alert_asset(chart),
             price: Some(price),
             last,
@@ -834,7 +831,7 @@ impl ChartWorkspace {
                 crate::model::alert::line::lines_for(
                     &self.context.alerts,
                     &InstrumentId::new(chart.source, &chart.symbol),
-                    &self.alert_fx_rates,
+                    self.alerts.fx_rates(),
                 )
             } else {
                 Vec::new()
@@ -907,15 +904,7 @@ impl ChartWorkspace {
             .alerts
             .iter()
             .find(|alert| alert.id == moved.id && alert.asset.instrument == market)?;
-        let rate = if alert.currency == AlertCurrency::Usd {
-            Some(1.0)
-        } else {
-            self.alert_fx_rates
-                .get(&alert.currency)
-                .copied()
-                .filter(|rate| *rate > 0.0)
-        };
-        let Some(rate) = rate else {
+        let Some(rate) = self.alerts.usd_rate(alert.currency) else {
             self.say(
                 "The exchange rate for this alert is not available yet.",
                 true,

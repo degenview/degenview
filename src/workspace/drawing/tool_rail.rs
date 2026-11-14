@@ -38,7 +38,7 @@ impl ChartWorkspace {
                 .charts
                 .iter()
                 .any(|chart| chart.is_market() && chart.source != DataSource::CoinMarketCap),
-            unseen_alerts: self.unseen_alerts,
+            unseen_alerts: self.alerts.unseen(),
             sync: self.sync,
             can_link: self.market_charts() > 1,
             unlinkable: self

@@ -236,7 +236,7 @@ fn add_alert_prefills_the_editor_and_creates_nothing() {
             .iter()
             .all(|action| !matches!(action, WorkspaceAction::SavePriceAlert { .. }))
     );
-    let editor = rig.workspace.alert_editor.as_ref().expect("editor open");
+    let editor = rig.workspace.alerts.editor().expect("editor open");
     assert_eq!(editor.draft.target, "118150.99");
     assert_eq!(
         editor.draft.direction,
@@ -255,7 +255,7 @@ fn an_alert_below_the_market_crosses_downward() {
         rig.workspace.show_alert_editor(ui.ctx());
     });
     output.textures_delta.clear();
-    let editor = rig.workspace.alert_editor.as_ref().expect("editor open");
+    let editor = rig.workspace.alerts.editor().expect("editor open");
     assert_eq!(
         editor.draft.direction,
         crate::model::alert::draft::Direction::Below
@@ -276,7 +276,7 @@ fn add_alert_is_refused_for_a_market_without_alerts() {
     rig.chart_mut(id).candles = vec![kline(0, 50.0)];
     let context = rig.open(id, 50.0);
     rig.run(context, Command::AddAlert);
-    assert!(rig.workspace.new_alert_request.is_none());
+    assert!(rig.workspace.alerts.take_request().is_none());
     assert!(rig.message().is_some_and(|(_, error)| error));
 }
 
@@ -385,7 +385,7 @@ fn replay_blocks_alerts_and_orders() {
     let context = rig.open(chart, 120.0);
     rig.run(context.clone(), Command::AddAlert);
     rig.run(context, Command::AddOrder);
-    assert!(rig.workspace.new_alert_request.is_none());
+    assert!(rig.workspace.alerts.take_request().is_none());
     assert!(
         !rig.workspace.trade_sheet_visible,
         "no order starts in a replay"
