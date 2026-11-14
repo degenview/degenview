@@ -296,10 +296,23 @@ fn copy_button(
     text: &str,
     prominent: bool,
 ) {
+    copy_button_with(ui, copied, kind, label, prominent, || text.to_owned());
+}
+
+/// `copy_button` for text that costs something to make (the connection JSON): made only when the
+/// button is clicked, never while it is merely drawn.
+fn copy_button_with(
+    ui: &mut Ui,
+    copied: &mut Option<(Copied, Instant)>,
+    kind: Copied,
+    label: &str,
+    prominent: bool,
+    text: impl FnOnce() -> String,
+) {
     let recent = copied.is_some_and(|(what, at)| what == kind && at.elapsed() < COPIED_FOR);
     let shown = if recent { "Copied" } else { label };
     if kit::sheet_button(ui, shown, prominent && !recent, true).clicked() {
-        ui.ctx().copy_text(text.to_owned());
+        ui.ctx().copy_text(text());
         *copied = Some((kind, Instant::now()));
     }
     if recent {
@@ -986,14 +999,13 @@ fn token_card(
                     token,
                     true,
                 );
-                let details = connection_json(&input.settings.endpoint(), Some(token));
-                copy_button(
+                copy_button_with(
                     ui,
                     &mut state.copied,
                     Copied::Details,
                     "Copy Connection Details",
-                    &details,
                     false,
+                    || connection_json(&input.settings.endpoint(), Some(token)),
                 );
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if kit::sheet_button(ui, "Done", false, true).clicked() {

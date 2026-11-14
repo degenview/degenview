@@ -24,7 +24,6 @@ use crate::model::alert::{
 };
 use crate::model::tab::windows::WindowId;
 use crate::model::watchlist::quote::Freshness;
-use crate::model::webhook::WebhookDeliveryState;
 use crate::native_bridge;
 use crate::service::alert::background_service::BackgroundAlertService;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
@@ -492,7 +491,7 @@ impl DegenViewApp {
                         alert.snapshot().alerts.clone(),
                     )
                 };
-                let subscriptions = store.pine_subscriptions();
+                let subscriptions = store.pine_subscriptions_cached();
                 // How many price and script alerts post to an endpoint, for the delete
                 // confirmation.
                 let reference_count = |id| {
@@ -619,7 +618,7 @@ impl DegenViewApp {
                                 .iter()
                                 .any(|subscription| subscription.webhook_endpoint_ids.contains(&id))
                             {
-                                let mut next = subscriptions.clone();
+                                let mut next = subscriptions.to_vec();
                                 for subscription in &mut next {
                                     subscription
                                         .webhook_endpoint_ids
@@ -687,7 +686,7 @@ impl DegenViewApp {
                     .map(|datasets| datasets.clone())
                     .unwrap_or_default();
                 store
-                    .pine_subscriptions()
+                    .pine_subscriptions_cached()
                     .iter()
                     .map(|subscription| {
                         let dataset = datasets
@@ -697,7 +696,7 @@ impl DegenViewApp {
                     })
                     .collect()
             };
-            let muted = store.muted_alerts();
+            let muted = store.muted_alerts_cached();
             let sync_enabled = store.sync_enabled();
             let actions = if let Ok(host) = alert_host.lock() {
                 let snapshot = host.snapshot();
@@ -714,15 +713,7 @@ impl DegenViewApp {
                             fresh: quote.freshness == Freshness::Live,
                         })
                     },
-                    webhook_summary: &|event_id| {
-                        let rows = store.webhook_deliveries(&[event_id]);
-                        let rows = rows.get(&event_id)?;
-                        let delivered = rows
-                            .iter()
-                            .filter(|row| row.state == WebhookDeliveryState::Delivered)
-                            .count();
-                        Some((delivered, rows.len()))
-                    },
+                    webhook_summary: &|event_id| store.webhook_delivery_summary(event_id),
                     script_alerts: &script_alerts,
                     muted: &muted,
                     sync_enabled,
@@ -882,7 +873,7 @@ impl DegenViewApp {
             if let Ok(mut slot) = script_webhooks.lock()
                 && let Some((id, sheet)) = slot.as_mut()
             {
-                let mut subscriptions = store.pine_subscriptions();
+                let subscriptions = store.pine_subscriptions_cached();
                 let outcome = subscriptions
                     .iter()
                     .find(|subscription| subscription.id == *id)
@@ -891,12 +882,13 @@ impl DegenViewApp {
                             ui.ctx(),
                             sheet,
                             subscription,
-                            &store.webhook_endpoints(),
+                            &store.webhook_endpoints_cached(),
                         )
                     });
                 let id = *id;
                 match outcome {
                     Some(PineAlertWebhooksOutcome::Save(ids)) => {
+                        let mut subscriptions = subscriptions.to_vec();
                         for subscription in subscriptions.iter_mut().filter(|s| s.id == id) {
                             subscription.webhook_endpoint_ids = ids.clone();
                         }
@@ -932,7 +924,7 @@ impl DegenViewApp {
                         true,
                     );
                     state.feed_from_book(&quote_book, &rates);
-                    let endpoints = store.webhook_endpoints();
+                    let endpoints = store.webhook_endpoints_cached();
                     let now = now_ms();
                     match editor::show(ui.ctx(), state, &endpoints, now) {
                         Some(PriceAlertEditorOutcome::Save(alert)) => {

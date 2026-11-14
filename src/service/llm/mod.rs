@@ -65,6 +65,22 @@ impl ProviderKind {
         }
     }
 
+    /// Whether `env_var` holds a key. Read once per process: the app never changes its own
+    /// environment, and the Settings page and the assistant ask every frame.
+    pub fn env_key_present(self) -> bool {
+        static PRESENT: std::sync::OnceLock<[bool; 3]> = std::sync::OnceLock::new();
+        let present = PRESENT.get_or_init(|| {
+            Self::ALL.map(|kind| {
+                std::env::var(kind.env_var()).is_ok_and(|value| !value.trim().is_empty())
+            })
+        });
+        let index = Self::ALL
+            .iter()
+            .position(|kind| *kind == self)
+            .unwrap_or_default();
+        present[index]
+    }
+
     pub fn default_base_url(self) -> &'static str {
         match self {
             Self::OpenAi => "https://api.openai.com/v1",

@@ -82,7 +82,7 @@ Stacked pull requests, logic changes first and pure moves last.
   - [x] UI thread spawns (searches, test connections, uploads, file dialogs) go through it; searches use
         the per-provider lanes; Keychain reads move onto the job.
   - [x] Pine Studio's preview fetch, search and export use it too.
-- [x] **PR 6: types where they belong.**
+- [x] **PR 6: types where they belong.** [#517](https://github.com/degenview/degenview/pull/517)
   - [x] CoinMarketCap chart-type titles move to `model::market`.
   - [x] `ReplayCommand`/`ReplayStart` move to `model`.
   - [x] A pure `model::alert::draft` serves both the alert editor and MCP.
@@ -90,9 +90,9 @@ Stacked pull requests, logic changes first and pure moves last.
   - [x] Sync id-space constants and the custom-title limit move to `model`.
   - [x] `EventSink`/`TransportFactory` move to `sync::transport`; `StoreScriptSink` to `host::sync`.
   - [x] The script library's file store moves out of `pine_studio/`.
-- [ ] **PR 7: nothing slow in a frame.**
-  - [ ] Pine subscriptions are cached by change signal instead of queried per frame.
-  - [ ] The MCP connection JSON and the local UTC offset are cached.
+- [x] **PR 7: nothing slow in a frame.**
+  - [x] Pine subscriptions are cached by change signal instead of queried per frame.
+  - [x] The MCP connection JSON is made only when copied; the local UTC offset is cached.
 
 ### Wave 3: structure
 
