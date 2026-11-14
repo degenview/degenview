@@ -283,7 +283,8 @@ that expects OAuth discovery will not work with it.
   the "ask before high-impact requests" setting does not apply to it (`confirm::needs_approval`). The
   high-impact commands keep their lookups and summaries; the easy-to-undo ones (`Gate::AskRemote`: add a
   chart, create or pause an alert, indicators, applied scripts, drawings, timeframe, chart type, replay,
-  watchlists, a script draft) are described from the command alone (`confirm::remote_summary`). Turning
+  watchlists, a script draft) are described from the command alone (each domain's `Confirm::plain_summary`, through
+  `confirm::remote_summary`). Turning
   the setting off ends only local credentials' open questions. A revoked client counts as remote.
   A request carries the origin it arrived with (`ClientIdentity::remote`, fixed at authentication, via
   `BridgeClient::call(&identity, ..)` and `Request::origin`): a call that came in as remote keeps asking
@@ -600,6 +601,11 @@ src/
 ```
 
 Adapt this to the existing repository.
+
+As built, the tools are grouped by domain rather than by layer: `mcp/<domain>/tools.rs` holds a
+domain's tool router and `mcp/<domain>/mod.rs` its commands to the app thread and its results,
+`host/mcp/<domain>.rs` runs those commands, and `mcp/tools.rs` keeps the names, permissions and the
+guarding handler (see [Routing](architecture/mcp.md#routing)).
 
 Avoid introducing unnecessary modules or abstractions.
 

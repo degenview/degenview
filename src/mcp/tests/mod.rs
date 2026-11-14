@@ -2,14 +2,24 @@
 
 use crate::host::mcp;
 use crate::mcp::McpServer;
+use crate::mcp::alert::AlertCommand;
 use crate::mcp::bridge::{self, McpCommand, McpError, McpReply};
+use crate::mcp::chart::ChartCommand;
+use crate::mcp::market::WatchlistCommand;
+use crate::mcp::paper::PaperCommand;
+use crate::mcp::pine::PineCommand;
+use crate::mcp::portfolio::PortfolioCommand;
+use crate::mcp::replay::ReplayRequest;
+use crate::mcp::snapshot::SnapshotCommand;
 use crate::mcp::state::McpShared;
 use crate::mcp::transport::auth::verifier_hex;
 use crate::mcp::types::{
-    AddChartResult, AddIndicatorResult, AlertChangeResult, AlertInfo, AlertsResult,
+    AddChartResult, AddChartStatus, AddIndicatorResult, AlertChangeResult, AlertChangeStatus,
+    AlertConditionKind, AlertFrequencyKind, AlertInfo, AlertStatus, AlertsResult,
     AppliedPineDetail, AppliedPineInfo, AppliedPineList, ChartsResult, CreateAlertResult,
-    IndicatorsInfo, PineAlertsResult, PineReportResult, PineStylesResult, UpdateAlertResult,
-    WorkspaceInfo,
+    CreateAlertStatus, DrawingsStatus, IndicatorStatus, IndicatorsInfo, InstanceStatus,
+    PineAlertsResult, PineReportResult, PineStylesResult, RunStatus, ScriptStatus,
+    UpdateAlertResult, UpdateAlertStatus, WorkspaceInfo,
 };
 use crate::model::InstrumentId;
 use crate::model::mcp::{McpClient, Permission, PermissionSet};
@@ -134,12 +144,12 @@ impl Default for StubChart {
     }
 }
 
-fn stub_drawings_changed(stub: &Stub, status: &str, ids: &[u64]) -> McpReply {
+fn stub_drawings_changed(stub: &Stub, status: DrawingsStatus, ids: &[u64]) -> McpReply {
     let chart = stub.chart.lock().unwrap();
     McpReply::DrawingsChanged(Box::new(crate::mcp::types::DrawingsChangeResult {
         workspace_id: "1".into(),
         chart_id: "2".into(),
-        status: status.into(),
+        status,
         drawing_ids: ids.iter().map(u64::to_string).collect(),
         drawings: chart
             .drawings
@@ -362,9 +372,9 @@ impl Drop for Harness {
     }
 }
 
-fn instance_changed(status: &str, instance_id: &str) -> McpReply {
+fn instance_changed(status: InstanceStatus, instance_id: &str) -> McpReply {
     McpReply::PineInstanceChanged(Box::new(crate::mcp::types::PineInstanceChangeResult {
-        status: status.into(),
+        status,
         instance_id: instance_id.into(),
         chart: AppliedPineList {
             workspace_id: "1".into(),
@@ -384,18 +394,20 @@ fn stub_app(
     scripts_root: &std::path::Path,
 ) -> Result<McpReply, McpError> {
     match command {
-        McpCommand::ListWorkspaces => Ok(McpReply::Workspaces(vec![WorkspaceInfo {
-            workspace_id: "1".into(),
-            title: "Unnamed".into(),
-            chart_count: 0,
-            active: true,
-            timeframe: "1D".into(),
-        }])),
-        McpCommand::BeginSnapshot {
+        McpCommand::Chart(ChartCommand::ListWorkspaces) => {
+            Ok(McpReply::Workspaces(vec![WorkspaceInfo {
+                workspace_id: "1".into(),
+                title: "Unnamed".into(),
+                chart_count: 0,
+                active: true,
+                timeframe: "1D".into(),
+            }]))
+        }
+        McpCommand::Snapshot(SnapshotCommand::Begin {
             workspace_id,
             chart_id,
             scale,
-        } => {
+        }) => {
             stub_chart_known(workspace_id, chart_id)?;
             stub.draw_calls
                 .lock()
@@ -411,7 +423,7 @@ fn stub_app(
                 },
             ))
         }
-        McpCommand::PollSnapshot { job_id } => {
+        McpCommand::Snapshot(SnapshotCommand::Poll { job_id }) => {
             let mut polls = stub.snapshot_polls.lock().unwrap();
             let Some(seen) = polls.get_mut(&job_id) else {
                 return Err(McpError::NotFound("No such picture job".into()));
@@ -431,7 +443,7 @@ fn stub_app(
                 },
             ))
         }
-        McpCommand::GetReplay { workspace_id } => {
+        McpCommand::Replay(ReplayRequest::Get { workspace_id }) => {
             if workspace_id != 1 {
                 return Err(McpError::NotFound("No such workspace".into()));
             }
@@ -442,10 +454,10 @@ fn stub_app(
                 &engine.view(false),
             )))
         }
-        McpCommand::ControlReplay {
+        McpCommand::Replay(ReplayRequest::Control {
             workspace_id,
             command,
-        } => {
+        }) => {
             use crate::model::{ReplayCommand, ReplayStart};
             if workspace_id != 1 {
                 return Err(McpError::NotFound("No such workspace".into()));
@@ -493,21 +505,21 @@ fn stub_app(
                 &engine.view(false),
             )))
         }
-        McpCommand::ListPortfolios => {
+        McpCommand::Portfolio(PortfolioCommand::List) => {
             let host = stub.portfolio.0.lock().unwrap();
             mcp::portfolio::list_portfolios(&host).map(McpReply::Portfolios)
         }
-        McpCommand::GetPortfolioHoldings { portfolio_id } => {
+        McpCommand::Portfolio(PortfolioCommand::GetHoldings { portfolio_id }) => {
             let host = stub.portfolio.0.lock().unwrap();
             mcp::portfolio::portfolio_holdings_base(&host, portfolio_id, 0)
                 .map(|base| McpReply::PortfolioHoldings(Box::new(base)))
         }
-        McpCommand::ListPortfolioTransactions {
+        McpCommand::Portfolio(PortfolioCommand::ListTransactions {
             portfolio_id,
             asset,
             offset,
             limit,
-        } => {
+        }) => {
             let host = stub.portfolio.0.lock().unwrap();
             mcp::portfolio::portfolio_transactions(
                 &host,
@@ -518,11 +530,11 @@ fn stub_app(
             )
             .map(|result| McpReply::PortfolioTransactions(Box::new(result)))
         }
-        McpCommand::PlacePaperOrder {
+        McpCommand::Paper(PaperCommand::PlaceOrder {
             request,
             dry_run,
             request_id,
-        } => {
+        }) => {
             let mut host = stub.paper.0.lock().unwrap();
             let mut memory = stub.paper.1.lock().unwrap();
             mcp::paper::place_paper_order(
@@ -534,42 +546,42 @@ fn stub_app(
             )
             .map(|result| McpReply::PaperOrder(Box::new(result)))
         }
-        McpCommand::ModifyPaperOrder { order_id, changes } => {
+        McpCommand::Paper(PaperCommand::ModifyOrder { order_id, changes }) => {
             let mut host = stub.paper.0.lock().unwrap();
             mcp::paper::modify_paper_order(&mut host, order_id, changes)
                 .map(|result| McpReply::PaperChange(Box::new(result)))
         }
-        McpCommand::CancelPaperOrders {
+        McpCommand::Paper(PaperCommand::CancelOrders {
             account_id,
             order_ids,
-        } => {
+        }) => {
             let mut host = stub.paper.0.lock().unwrap();
             mcp::paper::cancel_paper_orders(&mut host, account_id, order_ids.as_deref())
                 .map(|result| McpReply::PaperChange(Box::new(result)))
         }
-        McpCommand::ClosePaperPositions {
+        McpCommand::Paper(PaperCommand::ClosePositions {
             account_id,
             instrument_key,
-        } => {
+        }) => {
             let mut host = stub.paper.0.lock().unwrap();
             mcp::paper::close_paper_positions(&mut host, account_id, instrument_key.as_deref())
                 .map(|result| McpReply::PaperChange(Box::new(result)))
         }
-        McpCommand::ListPaperAccounts => {
+        McpCommand::Paper(PaperCommand::ListAccounts) => {
             let host = stub.paper.0.lock().unwrap();
             mcp::paper::list_paper_accounts(&host).map(McpReply::PaperAccounts)
         }
-        McpCommand::GetPaperAccount { account_id } => {
+        McpCommand::Paper(PaperCommand::GetAccount { account_id }) => {
             let host = stub.paper.0.lock().unwrap();
             mcp::paper::get_paper_account(&host, account_id)
                 .map(|detail| McpReply::PaperAccount(Box::new(detail)))
         }
-        McpCommand::ListPaperHistory {
+        McpCommand::Paper(PaperCommand::ListHistory {
             account_id,
             closed_trades,
             offset,
             limit,
-        } => {
+        }) => {
             let host = stub.paper.0.lock().unwrap();
             if closed_trades {
                 mcp::paper::paper_trades(&host, account_id, offset, limit)
@@ -579,46 +591,50 @@ fn stub_app(
                     .map(|result| McpReply::PaperFills(Box::new(result)))
             }
         }
-        McpCommand::ListWatchlists => {
+        McpCommand::Watchlist(WatchlistCommand::List) => {
             let store = stub.watchlists.0.lock().unwrap();
             mcp::watchlist::list_watchlists(&store).map(McpReply::Watchlists)
         }
-        McpCommand::GetWatchlist {
+        McpCommand::Watchlist(WatchlistCommand::Get {
             watchlist_id,
             offset,
             limit,
-        } => {
+        }) => {
             let store = stub.watchlists.0.lock().unwrap();
             mcp::watchlist::get_watchlist(&store, watchlist_id, offset, limit)
                 .map(|page| McpReply::Watchlist(Box::new(page)))
         }
-        McpCommand::CreateWatchlist { name, markets } => {
+        McpCommand::Watchlist(WatchlistCommand::Create { name, markets }) => {
             let mut store = stub.watchlists.0.lock().unwrap();
             mcp::watchlist::create_watchlist(&mut store, &name, markets)
                 .map(|result| McpReply::WatchlistChanged(Box::new(result)))
         }
-        McpCommand::UpdateWatchlist {
+        McpCommand::Watchlist(WatchlistCommand::Update {
             watchlist_id,
             changes,
-        } => {
+        }) => {
             let mut store = stub.watchlists.0.lock().unwrap();
             mcp::watchlist::update_watchlist(&mut store, watchlist_id, *changes)
                 .map(|result| McpReply::WatchlistChanged(Box::new(result)))
         }
-        McpCommand::DeleteWatchlist { watchlist_id } => {
+        McpCommand::Watchlist(WatchlistCommand::Delete { watchlist_id }) => {
             let mut store = stub.watchlists.0.lock().unwrap();
             mcp::watchlist::delete_watchlist(&mut store, watchlist_id)
                 .map(|result| McpReply::WatchlistChanged(Box::new(result)))
         }
-        McpCommand::ListCharts { workspace_id: 1 } => Ok(McpReply::Charts(ChartsResult {
-            workspace_id: "1".into(),
-            charts: Vec::new(),
-        })),
-        McpCommand::ListCharts { .. } => Err(McpError::NotFound("No such workspace".into())),
-        McpCommand::AlertCommandOutcome { .. } => Ok(McpReply::AlertCommand(
-            crate::mcp::bridge::AlertCommandOutcome::Applied,
+        McpCommand::Chart(ChartCommand::ListCharts { workspace_id: 1 }) => {
+            Ok(McpReply::Charts(ChartsResult {
+                workspace_id: "1".into(),
+                charts: Vec::new(),
+            }))
+        }
+        McpCommand::Chart(ChartCommand::ListCharts { .. }) => {
+            Err(McpError::NotFound("No such workspace".into()))
+        }
+        McpCommand::Alert(AlertCommand::CommandOutcome { .. }) => Ok(McpReply::AlertCommand(
+            crate::mcp::alert::AlertCommandOutcome::Applied,
         )),
-        McpCommand::ListAlerts { only } => {
+        McpCommand::Alert(AlertCommand::List { only }) => {
             let alerts = stub.alerts.lock().unwrap();
             let matching: Vec<_> = alerts
                 .iter()
@@ -631,13 +647,13 @@ fn stub_app(
                 alerts: matching,
             }))
         }
-        McpCommand::CreateAlert(request) => {
+        McpCommand::Alert(AlertCommand::Create(request)) => {
             stub.alert_calls.lock().unwrap().push("create".into());
             let mut alerts = stub.alerts.lock().unwrap();
             let condition = if request.crosses_above {
-                "crosses_above"
+                AlertConditionKind::CrossesAbove
             } else {
-                "crosses_below"
+                AlertConditionKind::CrossesBelow
             };
             if let Some(existing) = alerts.iter().find(|alert| {
                 alert.instrument == request.instrument.key()
@@ -645,7 +661,7 @@ fn stub_app(
                     && alert.target_price.as_deref() == Some(request.target_text.as_str())
             }) {
                 return Ok(McpReply::AlertCreated(CreateAlertResult {
-                    status: "already_exists".into(),
+                    status: CreateAlertStatus::AlreadyExists,
                     alert: existing.clone(),
                     command_id: None,
                 }));
@@ -655,13 +671,13 @@ fn stub_app(
                 instrument: request.instrument.key(),
                 source: "binance".into(),
                 symbol: request.instrument.symbol.clone(),
-                condition: condition.into(),
+                condition,
                 target_price: Some(request.target_text.clone()),
                 percent: None,
                 reference_price: None,
                 currency: request.currency.code().into(),
-                frequency: "once".into(),
-                status: "active".into(),
+                frequency: AlertFrequencyKind::Once,
+                status: AlertStatus::Active,
                 note: request.note.clone(),
                 sends_to_webhooks: false,
                 created_at: "2026-10-12T10:00:00Z".into(),
@@ -670,36 +686,36 @@ fn stub_app(
             };
             alerts.push(alert.clone());
             Ok(McpReply::AlertCreated(CreateAlertResult {
-                status: "queued".into(),
+                status: CreateAlertStatus::Queued,
                 alert,
                 command_id: None,
             }))
         }
-        McpCommand::ListChartPine { .. }
-        | McpCommand::GetChartPine { .. }
-        | McpCommand::GetPineStyles { .. }
-        | McpCommand::GetPineReport { .. } => {
+        McpCommand::Pine(PineCommand::ListInstances { .. })
+        | McpCommand::Pine(PineCommand::GetInstance { .. })
+        | McpCommand::Pine(PineCommand::GetStyles { .. })
+        | McpCommand::Pine(PineCommand::GetReport { .. }) => {
             let (workspace_id, chart_id, instance_id, kind) = match &command {
-                McpCommand::ListChartPine {
+                McpCommand::Pine(PineCommand::ListInstances {
                     workspace_id,
                     chart_id,
-                } => (*workspace_id, *chart_id, None, "list"),
-                McpCommand::GetChartPine {
-                    workspace_id,
-                    chart_id,
-                    instance_id,
-                } => (*workspace_id, *chart_id, Some(*instance_id), "detail"),
-                McpCommand::GetPineStyles {
+                }) => (*workspace_id, *chart_id, None, "list"),
+                McpCommand::Pine(PineCommand::GetInstance {
                     workspace_id,
                     chart_id,
                     instance_id,
-                } => (*workspace_id, *chart_id, Some(*instance_id), "styles"),
-                McpCommand::GetPineReport {
+                }) => (*workspace_id, *chart_id, Some(*instance_id), "detail"),
+                McpCommand::Pine(PineCommand::GetStyles {
+                    workspace_id,
+                    chart_id,
+                    instance_id,
+                }) => (*workspace_id, *chart_id, Some(*instance_id), "styles"),
+                McpCommand::Pine(PineCommand::GetReport {
                     workspace_id,
                     chart_id,
                     instance_id,
                     ..
-                } => (*workspace_id, *chart_id, Some(*instance_id), "report"),
+                }) => (*workspace_id, *chart_id, Some(*instance_id), "report"),
                 _ => unreachable!(),
             };
             stub.pine_calls.lock().unwrap().push(kind.into());
@@ -712,38 +728,44 @@ fn stub_app(
                 script_name: "Strat".into(),
                 visible: true,
                 source_hash: "h".repeat(64),
-                run_status: "ok".into(),
+                run_status: RunStatus::Ok,
                 error: None,
                 is_strategy: Some(true),
             };
             Ok(match command {
-                McpCommand::ListChartPine { .. } => McpReply::ChartPine(AppliedPineList {
-                    workspace_id: "1".into(),
-                    chart_id: "2".into(),
-                    instrument: "BINANCE:BTCUSDT".into(),
-                    timeframe: "1D".into(),
-                    instances: vec![info],
-                }),
-                McpCommand::GetChartPine { .. } => McpReply::ChartPineDetail(AppliedPineDetail {
-                    workspace_id: "1".into(),
-                    chart_id: "2".into(),
-                    instrument: "BINANCE:BTCUSDT".into(),
-                    timeframe: "1D".into(),
-                    instance: info,
-                    inputs: Default::default(),
-                    style_overrides: Default::default(),
-                    bar_count: Some(500),
-                    script_status: String::new(),
-                }),
-                McpCommand::GetPineStyles { .. } => McpReply::PineStyles(PineStylesResult {
-                    workspace_id: "1".into(),
-                    chart_id: "2".into(),
-                    instance_id: "1".into(),
-                    available: false,
-                    reason: Some("not run".into()),
-                    rows: Vec::new(),
-                }),
-                McpCommand::GetPineReport { offset, .. } => {
+                McpCommand::Pine(PineCommand::ListInstances { .. }) => {
+                    McpReply::ChartPine(AppliedPineList {
+                        workspace_id: "1".into(),
+                        chart_id: "2".into(),
+                        instrument: "BINANCE:BTCUSDT".into(),
+                        timeframe: "1D".into(),
+                        instances: vec![info],
+                    })
+                }
+                McpCommand::Pine(PineCommand::GetInstance { .. }) => {
+                    McpReply::ChartPineDetail(AppliedPineDetail {
+                        workspace_id: "1".into(),
+                        chart_id: "2".into(),
+                        instrument: "BINANCE:BTCUSDT".into(),
+                        timeframe: "1D".into(),
+                        instance: info,
+                        inputs: Default::default(),
+                        style_overrides: Default::default(),
+                        bar_count: Some(500),
+                        script_status: ScriptStatus::Unknown,
+                    })
+                }
+                McpCommand::Pine(PineCommand::GetStyles { .. }) => {
+                    McpReply::PineStyles(PineStylesResult {
+                        workspace_id: "1".into(),
+                        chart_id: "2".into(),
+                        instance_id: "1".into(),
+                        available: false,
+                        reason: Some("not run".into()),
+                        rows: Vec::new(),
+                    })
+                }
+                McpCommand::Pine(PineCommand::GetReport { offset, .. }) => {
                     McpReply::PineReport(Box::new(PineReportResult {
                         workspace_id: "1".into(),
                         chart_id: "2".into(),
@@ -764,11 +786,11 @@ fn stub_app(
                 _ => unreachable!(),
             })
         }
-        McpCommand::EditPineScript {
+        McpCommand::Pine(PineCommand::EditScript {
             script_id,
             expected_revision,
             source,
-        } => {
+        }) => {
             stub.pine_calls.lock().unwrap().push("edit".into());
             let mut store = script_store_at(scripts_root);
             // The same functions the app runs, with no Pine Studio editor open.
@@ -790,34 +812,40 @@ fn stub_app(
             }?;
             Ok(McpReply::PineEdit(Box::new(result)))
         }
-        McpCommand::AddPineInstance { script, .. } => {
+        McpCommand::Pine(PineCommand::AddInstance { script, .. }) => {
             stub.pine_calls.lock().unwrap().push("add".into());
             stub.applied.lock().unwrap().push(*script);
-            Ok(instance_changed("added", "7"))
+            Ok(instance_changed(InstanceStatus::Added, "7"))
         }
-        McpCommand::UpdatePineInstance {
+        McpCommand::Pine(PineCommand::UpdateInstance {
             instance_id,
             inputs,
             visible,
             ..
-        } => {
+        }) => {
             stub.pine_calls.lock().unwrap().push("update".into());
             stub.instance_updates
                 .lock()
                 .unwrap()
                 .push((inputs, visible));
-            Ok(instance_changed("updated", &instance_id.to_string()))
+            Ok(instance_changed(
+                InstanceStatus::Updated,
+                &instance_id.to_string(),
+            ))
         }
-        McpCommand::RemovePineInstance { instance_id, .. } => {
+        McpCommand::Pine(PineCommand::RemoveInstance { instance_id, .. }) => {
             stub.pine_calls.lock().unwrap().push("remove".into());
-            Ok(instance_changed("removed", &instance_id.to_string()))
+            Ok(instance_changed(
+                InstanceStatus::Removed,
+                &instance_id.to_string(),
+            ))
         }
-        McpCommand::GetCandles {
+        McpCommand::Chart(ChartCommand::GetCandles {
             workspace_id,
             chart_id,
             limit,
             before,
-        } => {
+        }) => {
             stub.draw_calls.lock().unwrap().push("candles".into());
             stub_chart_known(workspace_id, chart_id)?;
             let chart = stub.chart.lock().unwrap();
@@ -835,10 +863,10 @@ fn stub_app(
                 crate::mcp::chart::data::candles_result(&meta, &chart.candles, limit, before),
             )))
         }
-        McpCommand::ListDrawings {
+        McpCommand::Chart(ChartCommand::ListDrawings {
             workspace_id,
             chart_id,
-        } => {
+        }) => {
             stub.draw_calls.lock().unwrap().push("list".into());
             stub_chart_known(workspace_id, chart_id)?;
             let chart = stub.chart.lock().unwrap();
@@ -846,11 +874,11 @@ fn stub_app(
                 crate::mcp::chart::data::drawings_result(workspace_id, chart_id, &chart.drawings),
             )))
         }
-        McpCommand::AddDrawings {
+        McpCommand::Chart(ChartCommand::AddDrawings {
             workspace_id,
             chart_id,
             drawings,
-        } => {
+        }) => {
             stub.draw_calls.lock().unwrap().push("add".into());
             stub_chart_known(workspace_id, chart_id)?;
             let ids = {
@@ -866,13 +894,13 @@ fn stub_app(
                 chart.drawings.extend(planned);
                 ids
             };
-            Ok(stub_drawings_changed(stub, "added", &ids))
+            Ok(stub_drawings_changed(stub, DrawingsStatus::Added, &ids))
         }
-        McpCommand::EditDrawing {
+        McpCommand::Chart(ChartCommand::EditDrawing {
             workspace_id,
             chart_id,
             edit,
-        } => {
+        }) => {
             stub.draw_calls.lock().unwrap().push("edit".into());
             stub_chart_known(workspace_id, chart_id)?;
             let changed = {
@@ -890,15 +918,19 @@ fn stub_app(
             };
             Ok(stub_drawings_changed(
                 stub,
-                if changed { "updated" } else { "unchanged" },
+                if changed {
+                    DrawingsStatus::Updated
+                } else {
+                    DrawingsStatus::Unchanged
+                },
                 &[edit.drawing_id],
             ))
         }
-        McpCommand::RemoveDrawings {
+        McpCommand::Chart(ChartCommand::RemoveDrawings {
             workspace_id,
             chart_id,
             drawing_ids,
-        } => {
+        }) => {
             stub.draw_calls.lock().unwrap().push("remove".into());
             stub_chart_known(workspace_id, chart_id)?;
             let removed: Vec<u64> = {
@@ -914,9 +946,13 @@ fn stub_app(
                 chart.drawings.retain(|d| !removed.contains(&d.id()));
                 removed
             };
-            Ok(stub_drawings_changed(stub, "removed", &removed))
+            Ok(stub_drawings_changed(
+                stub,
+                DrawingsStatus::Removed,
+                &removed,
+            ))
         }
-        McpCommand::ListPineAlerts => {
+        McpCommand::Pine(PineCommand::ListAlerts) => {
             stub.pine_calls.lock().unwrap().push("alerts".into());
             Ok(McpReply::PineAlerts(PineAlertsResult {
                 subscriptions: Vec::new(),
@@ -925,7 +961,7 @@ fn stub_app(
                 recent_events: Vec::new(),
             }))
         }
-        McpCommand::UpdateAlert(request) => {
+        McpCommand::Alert(AlertCommand::Update(request)) => {
             let mut alerts = stub.alerts.lock().unwrap();
             let alert = alerts
                 .iter_mut()
@@ -934,11 +970,10 @@ fn stub_app(
             let before = alert.clone();
             if let Some(above) = request.crosses_above {
                 alert.condition = if above {
-                    "crosses_above"
+                    AlertConditionKind::CrossesAbove
                 } else {
-                    "crosses_below"
-                }
-                .into();
+                    AlertConditionKind::CrossesBelow
+                };
             }
             if let Some(target) = &request.target_text {
                 alert.target_price = Some(target.clone());
@@ -948,36 +983,35 @@ fn stub_app(
             }
             if let Some(frequency) = request.frequency {
                 alert.frequency = match frequency {
-                    crate::model::alert::AlertFrequency::Once => "once",
-                    crate::model::alert::AlertFrequency::EveryTime => "every_time",
-                }
-                .into();
+                    crate::model::alert::AlertFrequency::Once => AlertFrequencyKind::Once,
+                    crate::model::alert::AlertFrequency::EveryTime => AlertFrequencyKind::EveryTime,
+                };
             }
             if let Some(note) = &request.note {
                 alert.note = note.clone();
             }
             let status = if *alert == before {
-                "unchanged"
+                UpdateAlertStatus::Unchanged
             } else {
                 stub.alert_calls.lock().unwrap().push("update".into());
-                "queued"
+                UpdateAlertStatus::Queued
             };
             Ok(McpReply::AlertUpdated(UpdateAlertResult {
-                status: status.into(),
+                status,
                 alert: alert.clone(),
                 command_id: None,
             }))
         }
-        McpCommand::SetAlertPaused { alert_id, paused } => {
+        McpCommand::Alert(AlertCommand::SetPaused { alert_id, paused }) => {
             let mut alerts = stub.alerts.lock().unwrap();
             let alert = alerts
                 .iter_mut()
                 .find(|alert| alert.alert_id == alert_id.to_string())
                 .ok_or_else(|| McpError::NotFound("No such alert".into()))?;
             let (wanted, already) = if paused {
-                ("paused", "already_paused")
+                (AlertStatus::Paused, AlertChangeStatus::AlreadyPaused)
             } else {
-                ("active", "already_active")
+                (AlertStatus::Active, AlertChangeStatus::AlreadyActive)
             };
             let status = if alert.status == wanted {
                 already
@@ -986,15 +1020,15 @@ fn stub_app(
                     .lock()
                     .unwrap()
                     .push(if paused { "pause" } else { "resume" }.into());
-                alert.status = wanted.into();
-                "queued"
+                alert.status = wanted;
+                AlertChangeStatus::Queued
             };
             Ok(McpReply::AlertChanged(AlertChangeResult {
                 alert_id: alert_id.to_string(),
-                status: status.into(),
+                status,
             }))
         }
-        McpCommand::DeleteAlert { alert_id } => {
+        McpCommand::Alert(AlertCommand::Delete { alert_id }) => {
             let mut alerts = stub.alerts.lock().unwrap();
             let before = alerts.len();
             alerts.retain(|alert| alert.alert_id != alert_id.to_string());
@@ -1004,15 +1038,15 @@ fn stub_app(
             stub.alert_calls.lock().unwrap().push("delete".into());
             Ok(McpReply::AlertChanged(AlertChangeResult {
                 alert_id: alert_id.to_string(),
-                status: "queued".into(),
+                status: AlertChangeStatus::Queued,
             }))
         }
-        McpCommand::ApplyIndicator {
+        McpCommand::Chart(ChartCommand::ApplyIndicator {
             workspace_id,
             chart_id,
             indicator,
             ema_period,
-        } => {
+        }) => {
             if workspace_id != 1 || chart_id != 2 {
                 return Err(McpError::NotFound("No such chart".into()));
             }
@@ -1026,7 +1060,7 @@ fn stub_app(
                 workspace_id: "1".into(),
                 chart_id: "2".into(),
                 indicator: indicator.id().to_owned(),
-                status: "added".into(),
+                status: IndicatorStatus::Added,
                 indicators: IndicatorsInfo {
                     volume: false,
                     rsi: false,
@@ -1037,10 +1071,10 @@ fn stub_app(
                 },
             }))
         }
-        McpCommand::SetTimeframe {
+        McpCommand::Chart(ChartCommand::SetTimeframe {
             workspace_id,
             timeframe,
-        } => {
+        }) => {
             if workspace_id != 1 {
                 return Err(McpError::NotFound("No such workspace".into()));
             }
@@ -1058,11 +1092,11 @@ fn stub_app(
                 },
             ))
         }
-        McpCommand::SetChartType {
+        McpCommand::Chart(ChartCommand::SetChartType {
             workspace_id,
             chart_id,
             chart_type,
-        } => {
+        }) => {
             stub_chart_known(workspace_id, chart_id)?;
             stub.draw_calls
                 .lock()
@@ -1078,10 +1112,10 @@ fn stub_app(
                 },
             )))
         }
-        McpCommand::RemoveChart {
+        McpCommand::Chart(ChartCommand::RemoveChart {
             workspace_id,
             chart_id,
-        } => {
+        }) => {
             stub_chart_known(workspace_id, chart_id)?;
             stub.draw_calls.lock().unwrap().push("remove_chart".into());
             Ok(McpReply::ChartChanged(Box::new(
@@ -1094,11 +1128,11 @@ fn stub_app(
                 },
             )))
         }
-        McpCommand::RemoveIndicator {
+        McpCommand::Chart(ChartCommand::RemoveIndicator {
             workspace_id,
             chart_id,
             indicator,
-        } => {
+        }) => {
             stub_chart_known(workspace_id, chart_id)?;
             stub.draw_calls
                 .lock()
@@ -1108,7 +1142,7 @@ fn stub_app(
                 workspace_id: "1".into(),
                 chart_id: "2".into(),
                 indicator: indicator.id().to_owned(),
-                status: "removed".into(),
+                status: IndicatorStatus::Removed,
                 indicators: IndicatorsInfo {
                     volume: false,
                     rsi: false,
@@ -1119,11 +1153,11 @@ fn stub_app(
                 },
             }))
         }
-        McpCommand::GetIndicatorValues {
+        McpCommand::Chart(ChartCommand::GetIndicatorValues {
             workspace_id,
             chart_id,
             request,
-        } => {
+        }) => {
             stub_chart_known(workspace_id, chart_id)?;
             let chart = stub.chart.lock().unwrap();
             let meta = crate::mcp::indicator::ReadingMeta {
@@ -1140,11 +1174,11 @@ fn stub_app(
                 crate::mcp::indicator::indicator_values(&meta, &chart.candles, &request),
             )))
         }
-        McpCommand::GetSessionStats {
+        McpCommand::Chart(ChartCommand::GetSessionStats {
             workspace_id,
             chart_id,
             query,
-        } => {
+        }) => {
             stub_chart_known(workspace_id, chart_id)?;
             let chart = stub.chart.lock().unwrap();
             let meta = crate::mcp::session_stats::Meta {
@@ -1158,10 +1192,10 @@ fn stub_app(
             crate::mcp::session_stats::session_stats(&meta, &chart.candles, &query)
                 .map(|result| McpReply::SessionStats(Box::new(result)))
         }
-        McpCommand::AddChart {
+        McpCommand::Chart(ChartCommand::AddChart {
             workspace_id,
             instrument,
-        } => {
+        }) => {
             if workspace_id != 1 {
                 return Err(McpError::NotFound("No such workspace".into()));
             }
@@ -1177,7 +1211,7 @@ fn stub_app(
                 symbol: instrument.symbol.clone(),
                 display_symbol: instrument.symbol.clone(),
                 timeframe: "1D".into(),
-                status: "created".into(),
+                status: AddChartStatus::Created,
             }))
         }
     }
@@ -1541,6 +1575,98 @@ fn every_routed_tool_has_a_permission_and_an_unmapped_name_is_not_run() {
             .is_some_and(|message| message.contains("Unknown tool")),
         "{body}"
     );
+}
+
+/// Every tool this server routes, with the permission it needs. A change here changes what a
+/// credential can do, so it is made on purpose, never as a side effect of moving code.
+#[test]
+fn the_tool_list_and_its_permissions_are_pinned() {
+    use crate::mcp::tools::{DegenViewMcp, required_permission};
+    const TOOLS: [(&str, &str); 58] = [
+        ("degenview_add_chart", "charts.create"),
+        ("degenview_add_drawings", "drawings.write"),
+        ("degenview_add_indicator", "charts.indicators.write"),
+        (
+            "degenview_add_pine_script_to_chart",
+            "charts.pine_instances.write",
+        ),
+        ("degenview_cancel_paper_orders", "paper.orders.cancel"),
+        ("degenview_close_paper_positions", "paper.positions.close"),
+        ("degenview_compile_pine_script", "pine.diagnostics.read"),
+        ("degenview_control_replay", "charts.replay.write"),
+        ("degenview_create_price_alert", "alerts.create"),
+        ("degenview_create_watchlist", "watchlists.write"),
+        ("degenview_delete_drawings", "drawings.delete"),
+        ("degenview_delete_price_alert", "alerts.delete"),
+        ("degenview_delete_watchlist", "watchlists.delete"),
+        ("degenview_get_candles", "charts.candles.read"),
+        ("degenview_get_chart_snapshot", "charts.snapshot.read"),
+        ("degenview_get_indicator_values", "charts.candles.read"),
+        ("degenview_get_market_candles", "markets.read"),
+        ("degenview_get_paper_account", "paper.read"),
+        ("degenview_get_pine_inputs", "pine.inputs.read"),
+        ("degenview_get_pine_instance", "pine.inputs.read"),
+        ("degenview_get_pine_report", "pine.reports.read"),
+        ("degenview_get_pine_script", "pine.scripts.read"),
+        ("degenview_get_pine_styles", "pine.styles.read"),
+        ("degenview_get_portfolio_holdings", "portfolio.read"),
+        ("degenview_get_quotes", "markets.read"),
+        ("degenview_get_replay", "charts.read"),
+        ("degenview_get_session_stats", "charts.candles.read"),
+        ("degenview_get_watchlist", "watchlists.read"),
+        ("degenview_list_chart_pine_instances", "pine.scripts.list"),
+        ("degenview_list_charts", "charts.read"),
+        ("degenview_list_drawings", "drawings.read"),
+        ("degenview_list_indicators", "charts.read"),
+        ("degenview_list_paper_accounts", "paper.read"),
+        ("degenview_list_paper_fills", "paper.read"),
+        ("degenview_list_paper_trades", "paper.read"),
+        ("degenview_list_pine_alerts", "pine.alerts.read"),
+        ("degenview_list_pine_scripts", "pine.scripts.list"),
+        ("degenview_list_portfolio_transactions", "portfolio.read"),
+        ("degenview_list_portfolios", "portfolio.read"),
+        ("degenview_list_price_alerts", "alerts.read"),
+        ("degenview_list_watchlists", "watchlists.read"),
+        ("degenview_list_workspaces", "charts.read"),
+        ("degenview_modify_paper_order", "paper.orders.place"),
+        ("degenview_pause_price_alert", "alerts.pause"),
+        ("degenview_place_paper_order", "paper.orders.place"),
+        ("degenview_remove_chart", "charts.delete"),
+        ("degenview_remove_indicator", "charts.indicators.write"),
+        (
+            "degenview_remove_pine_instance",
+            "charts.pine_instances.write",
+        ),
+        ("degenview_resume_price_alert", "alerts.pause"),
+        ("degenview_save_pine_script", "pine.scripts.save"),
+        ("degenview_search_symbols", "markets.read"),
+        ("degenview_set_chart_type", "charts.view.write"),
+        ("degenview_set_timeframe", "charts.view.write"),
+        ("degenview_update_drawing", "drawings.write"),
+        (
+            "degenview_update_pine_instance",
+            "charts.pine_instances.write",
+        ),
+        ("degenview_update_pine_script", "pine.scripts.write"),
+        ("degenview_update_price_alert", "alerts.edit"),
+        ("degenview_update_watchlist", "watchlists.write"),
+    ];
+    let shared = McpShared::new();
+    let (bridge, _inbox) = crate::mcp::bridge::channel(shared.clone(), Arc::new(|| {}));
+    let mut routed = DegenViewMcp::new(bridge, shared).routed_tool_names();
+    routed.sort();
+    let found: Vec<(String, &str)> = routed
+        .into_iter()
+        .map(|name| {
+            let permission = required_permission(&name).map_or("none", |p| p.id());
+            (name, permission)
+        })
+        .collect();
+    let expected: Vec<(String, &str)> = TOOLS
+        .iter()
+        .map(|(name, permission)| ((*name).to_owned(), *permission))
+        .collect();
+    assert_eq!(found, expected);
 }
 
 #[test]
@@ -2116,7 +2242,7 @@ fn bad_alert_arguments_never_reach_the_app() {
 
 #[test]
 fn clean_price_text_accepts_only_plain_positive_decimals() {
-    use crate::mcp::tools::clean_price_text;
+    use crate::mcp::alert::tools::clean_price_text;
     for good in ["70000", " 0.00000278 ", "1", "123456.789"] {
         assert_eq!(
             clean_price_text(good).as_deref(),

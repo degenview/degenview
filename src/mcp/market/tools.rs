@@ -5,15 +5,15 @@
 //! (`McpShared::lease_quotes`), released however the call ends. Watchlists are user data, so
 //! they go through the bridge and run on the app thread like every other mutation.
 
-use crate::mcp::bridge::{McpCommand, McpError, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::market::{
     MAX_EDIT_MARKETS, MAX_ENTRY_PAGE, MAX_QUOTE_MARKETS, QuoteInfo, QuotesResult,
-    SearchSourceError, SymbolSearchResult, WatchlistChangeResult, WatchlistDetail,
-    WatchlistsResult, quote_info, source_id, symbol_hit,
+    SearchSourceError, SymbolSearchResult, WatchlistChangeResult, WatchlistCommand,
+    WatchlistDetail, WatchlistsResult, quote_info, source_id, symbol_hit,
 };
 use crate::mcp::state::ClientIdentity;
 use crate::mcp::tools::{
-    DegenViewMcp, McpSource, alpaca_configured, client_of, failure, invalid, parse_id, unexpected,
+    Caller, DegenViewMcp, McpSource, alpaca_configured, failure, invalid, parse_id, unexpected,
 };
 use crate::model::mcp::Permission;
 use crate::model::watchlist::WatchlistInstrument;
@@ -21,7 +21,6 @@ use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
 use crate::model::watchlist::text::market_item;
 use crate::model::{DataSource, InstrumentId};
 use crate::store::watchlist::{ListChanges, Place};
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -479,10 +478,9 @@ impl DegenViewMcp {
     )]
     async fn search_symbols(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<SearchSymbolsParams>,
     ) -> Result<Json<SymbolSearchResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let query = clean_query(&params.query)?;
         let limit = params
             .limit
@@ -572,10 +570,9 @@ impl DegenViewMcp {
     )]
     async fn get_quotes(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<GetQuotesParams>,
     ) -> Result<Json<QuotesResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         if params.markets.is_empty() || params.markets.len() > MAX_QUOTE_MARKETS {
             return Err(invalid(format!(
                 "give between 1 and {MAX_QUOTE_MARKETS} markets"
@@ -602,11 +599,10 @@ impl DegenViewMcp {
     )]
     async fn get_market_candles(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<MarketCandlesParams>,
     ) -> Result<Json<crate::mcp::market::MarketCandlesResult>, CallToolResult> {
         use crate::mcp::chart::data::{CandleMeta, DEFAULT_CANDLES, MAX_CANDLES, candles_result};
-        let client = client_of(&parts)?;
         let limit = params.limit.map_or(DEFAULT_CANDLES, |limit| limit as usize);
         if !(1..=MAX_CANDLES).contains(&limit) {
             return Err(invalid(format!(
@@ -696,15 +692,14 @@ impl DegenViewMcp {
     )]
     async fn list_watchlists(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
     ) -> Result<Json<WatchlistsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         match self
             .bridge
             .call(
                 &client,
                 Permission::WatchlistsRead,
-                McpCommand::ListWatchlists,
+                WatchlistCommand::List,
                 REQUEST_TIMEOUT,
             )
             .await
@@ -727,10 +722,9 @@ impl DegenViewMcp {
     )]
     async fn get_watchlist(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<GetWatchlistParams>,
     ) -> Result<Json<WatchlistDetail>, CallToolResult> {
-        let client = client_of(&parts)?;
         let watchlist_id = parse_watchlist_id(&params.watchlist_id)?;
         let limit = params
             .limit
@@ -753,7 +747,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::WatchlistsRead,
-                McpCommand::GetWatchlist {
+                WatchlistCommand::Get {
                     watchlist_id,
                     offset: params.offset.unwrap_or(0) as usize,
                     limit,
@@ -798,15 +792,14 @@ impl DegenViewMcp {
     )]
     async fn create_watchlist(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<CreateWatchlistParams>,
     ) -> Result<Json<WatchlistChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let markets = resolve_markets(params.markets.as_deref().unwrap_or(&[]))?;
         self.change_watchlist(
             &client,
             Permission::WatchlistsWrite,
-            McpCommand::CreateWatchlist {
+            WatchlistCommand::Create {
                 name: params.name,
                 markets,
             },
@@ -826,16 +819,15 @@ impl DegenViewMcp {
     )]
     async fn update_watchlist(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<UpdateWatchlistParams>,
     ) -> Result<Json<WatchlistChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let watchlist_id = parse_watchlist_id(&params.watchlist_id)?;
         let changes = list_changes(&params)?;
         self.change_watchlist(
             &client,
             Permission::WatchlistsWrite,
-            McpCommand::UpdateWatchlist {
+            WatchlistCommand::Update {
                 watchlist_id,
                 changes: Box::new(changes),
             },
@@ -855,15 +847,14 @@ impl DegenViewMcp {
     )]
     async fn delete_watchlist(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<WatchlistIdParams>,
     ) -> Result<Json<WatchlistChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let watchlist_id = parse_watchlist_id(&params.watchlist_id)?;
         self.change_watchlist(
             &client,
             Permission::WatchlistsDelete,
-            McpCommand::DeleteWatchlist { watchlist_id },
+            WatchlistCommand::Delete { watchlist_id },
         )
         .await
     }
@@ -874,7 +865,7 @@ impl DegenViewMcp {
         &self,
         client: &ClientIdentity,
         permission: Permission,
-        command: McpCommand,
+        command: WatchlistCommand,
     ) -> Result<Json<WatchlistChangeResult>, CallToolResult> {
         match self
             .bridge

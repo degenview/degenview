@@ -1,18 +1,16 @@
 //! Read-only portfolio tools. The ledger is read on the app thread; the prices that value the
 //! holdings come from the app's quote feed on the server's own threads, as for `get_quotes`.
 
-use crate::mcp::bridge::McpError;
-use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::market::tools::quote_wait;
 use crate::mcp::portfolio::{
     DEFAULT_TRANSACTION_PAGE, HoldingsResult, MAX_PRICED_HOLDINGS, MAX_TRANSACTION_PAGE,
-    PortfoliosResult, TransactionsResult, value_holdings,
+    PortfolioCommand, PortfoliosResult, TransactionsResult, value_holdings,
 };
 use crate::mcp::state::ClientIdentity;
-use crate::mcp::tools::{DegenViewMcp, client_of, failure, invalid, parse_id, unexpected};
+use crate::mcp::tools::{Caller, DegenViewMcp, failure, invalid, parse_id, unexpected};
 use crate::model::InstrumentId;
 use crate::model::mcp::Permission;
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -74,15 +72,14 @@ impl DegenViewMcp {
     )]
     async fn list_portfolios(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
     ) -> Result<Json<PortfoliosResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         match self
             .bridge
             .call(
                 &client,
                 Permission::PortfolioRead,
-                McpCommand::ListPortfolios,
+                PortfolioCommand::List,
                 REQUEST_TIMEOUT,
             )
             .await
@@ -105,10 +102,9 @@ impl DegenViewMcp {
     )]
     async fn get_portfolio_holdings(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<HoldingsParams>,
     ) -> Result<Json<HoldingsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let portfolio_id = portfolio_id(params.portfolio_id.as_deref())?;
         let wait = quote_wait(params.wait_seconds)?;
         let priced = params.include_prices.unwrap_or(true);
@@ -117,7 +113,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PortfolioRead,
-                McpCommand::GetPortfolioHoldings { portfolio_id },
+                PortfolioCommand::GetHoldings { portfolio_id },
                 REQUEST_TIMEOUT,
             )
             .await
@@ -172,10 +168,9 @@ impl DegenViewMcp {
     )]
     async fn list_portfolio_transactions(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<TransactionsParams>,
     ) -> Result<Json<TransactionsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let portfolio_id = portfolio_id(params.portfolio_id.as_deref())?;
         let limit = params
             .limit
@@ -195,7 +190,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PortfolioRead,
-                McpCommand::ListPortfolioTransactions {
+                PortfolioCommand::ListTransactions {
                     portfolio_id,
                     asset,
                     offset: params.offset.unwrap_or(0) as usize,

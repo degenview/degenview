@@ -1,13 +1,227 @@
 use super::chart::source_slug;
 use crate::host::alert::AlertHost;
-use crate::mcp::bridge::{AlertCommandOutcome, AlertUpdate, McpError, NewAlert};
-use crate::mcp::types::{AlertInfo, AlertsResult};
+use crate::host::mcp::confirmation;
+use crate::mcp::alert::{AlertCommand, AlertCommandOutcome, AlertUpdate, NewAlert};
+use crate::mcp::bridge::{McpError, McpReply};
+use crate::mcp::confirm::Summary;
+use crate::mcp::types::{
+    AlertChangeResult, AlertChangeStatus, AlertConditionKind, AlertFrequencyKind, AlertInfo,
+    AlertStatus, AlertsResult, CreateAlertResult, CreateAlertStatus, UpdateAlertResult,
+    UpdateAlertStatus,
+};
 use crate::model::alert::draft::{Direction, PriceAlertDraft};
 use crate::model::alert::{
-    AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
+    AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertPrecondition, AlertRuntimeCommand,
+    AlertRuntimeCommandPayload, AlertState, PriceAlert,
 };
+use crate::model::watchlist::now_ms;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
+use crate::store::{SharedStore, Store};
 use crate::workspace::ChartWorkspace;
+use eframe::egui;
+use std::collections::HashMap;
+use std::sync::{Mutex, MutexGuard};
+
+/// The price-alert sheet's Save, as the app runs it for a new alert: it queues the save and, as
+/// the sheet does, asks for notifications and registers the alert service.
+pub trait SaveAlert {
+    /// Returns the queued command's id. An error means nothing was queued and nothing else
+    /// happened. `precondition` is checked by the runtime when it applies the save.
+    fn save_checked(
+        &self,
+        store: &Store,
+        alert: Box<PriceAlert>,
+        baseline: Option<f64>,
+        precondition: Option<AlertPrecondition>,
+        now: i64,
+    ) -> rusqlite::Result<u64>;
+}
+
+/// What the alert commands reach in the app.
+pub struct AlertAccess<'a> {
+    /// The alert host the commands plan against.
+    pub host: &'a Mutex<AlertHost>,
+    /// What the alert sheet prices a draft with.
+    pub quotes: &'a WatchlistQuoteBook,
+    pub fx_rates: &'a HashMap<AlertCurrency, f64>,
+    /// The database whose command queue the alert runtime reads.
+    pub store: &'a SharedStore,
+    pub save: &'a dyn SaveAlert,
+}
+
+impl AlertAccess<'_> {
+    fn host(&self) -> Result<MutexGuard<'_, AlertHost>, McpError> {
+        self.host.lock().map_err(|_| alerts_unavailable())
+    }
+
+    /// Hands a change to the alert runtime through the command queue, as the Alerts window does.
+    /// Returns the command's id, which [`AlertCommand::CommandOutcome`] can be asked about.
+    fn queue(
+        &self,
+        ctx: &egui::Context,
+        payload: AlertRuntimeCommandPayload,
+        precondition: Option<AlertPrecondition>,
+    ) -> Result<u64, McpError> {
+        let mut command = AlertRuntimeCommand::new(payload, now_ms());
+        command.precondition = precondition;
+        let store = self.store.lock().map_err(|_| alerts_unavailable())?;
+        store
+            .enqueue_alert_command(&command)
+            .map_err(|_| McpError::AppUnavailable("Could not queue the alert change".into()))?;
+        ctx.request_repaint();
+        Ok(command.id)
+    }
+}
+
+/// The error MCP gives while price alerts cannot be reached.
+pub(super) fn alerts_unavailable() -> McpError {
+    McpError::AppUnavailable("Price alerts are unavailable right now".into())
+}
+
+/// Runs a price alert command on the app thread.
+pub fn run(
+    command: AlertCommand,
+    alerts: &AlertAccess,
+    ctx: &egui::Context,
+) -> Result<McpReply, McpError> {
+    match command {
+        AlertCommand::List { only } => Ok(McpReply::Alerts(list_alerts(&*alerts.host()?, only))),
+        AlertCommand::Create(request) => create(&request, alerts, ctx),
+        AlertCommand::CommandOutcome { command_id } => Ok(McpReply::AlertCommand(
+            alert_command_outcome(&*alerts.host()?, command_id),
+        )),
+        AlertCommand::Update(request) => update(&request, alerts, ctx),
+        AlertCommand::SetPaused { alert_id, paused } => {
+            let plan = plan_pause_alert(&*alerts.host()?, alert_id, paused)?;
+            let status = match plan {
+                StatePlan::Already if paused => AlertChangeStatus::AlreadyPaused,
+                StatePlan::Already => AlertChangeStatus::AlreadyActive,
+                StatePlan::Change { id, state } => {
+                    alerts.queue(
+                        ctx,
+                        AlertRuntimeCommandPayload::SetState {
+                            id,
+                            state,
+                            baseline: None,
+                        },
+                        None,
+                    )?;
+                    AlertChangeStatus::Queued
+                }
+            };
+            Ok(McpReply::AlertChanged(AlertChangeResult {
+                alert_id: alert_id.to_string(),
+                status,
+            }))
+        }
+        AlertCommand::Delete { alert_id } => {
+            let id = plan_delete_alert(&*alerts.host()?, alert_id)?;
+            alerts.queue(ctx, AlertRuntimeCommandPayload::Delete(id), None)?;
+            Ok(McpReply::AlertChanged(AlertChangeResult {
+                alert_id: id.to_string(),
+                status: AlertChangeStatus::Queued,
+            }))
+        }
+    }
+}
+
+fn create(
+    request: &NewAlert,
+    alerts: &AlertAccess,
+    ctx: &egui::Context,
+) -> Result<McpReply, McpError> {
+    let now = now_ms();
+    let plan = plan_create_alert(
+        &*alerts.host()?,
+        alerts.quotes,
+        alerts.fx_rates,
+        request,
+        now,
+    )?;
+    match plan {
+        CreatePlan::Existing(alert) => Ok(McpReply::AlertCreated(CreateAlertResult {
+            status: CreateAlertStatus::AlreadyExists,
+            alert: *alert,
+            command_id: None,
+        })),
+        CreatePlan::New { alert, baseline } => {
+            let info = alert_info(&alert, None);
+            let store = alerts.store.lock().map_err(|_| alerts_unavailable())?;
+            // The same commit the price-alert sheet's Save does, but a save that never reached
+            // the queue is an error here, not a "queued".
+            let command_id = alerts
+                .save
+                .save_checked(
+                    &store,
+                    alert,
+                    baseline,
+                    // Other requests in this frame planned against the same snapshot: the runtime
+                    // decides again (duplicate, cap) when it applies.
+                    Some(AlertPrecondition::Create {
+                        max_alerts: MAX_ALERTS,
+                    }),
+                    now,
+                )
+                .map_err(|_| McpError::AppUnavailable("Could not queue the alert".into()))?;
+            ctx.request_repaint();
+            Ok(McpReply::AlertCreated(CreateAlertResult {
+                status: CreateAlertStatus::Queued,
+                alert: info,
+                command_id: Some(command_id),
+            }))
+        }
+    }
+}
+
+fn update(
+    request: &AlertUpdate,
+    alerts: &AlertAccess,
+    ctx: &egui::Context,
+) -> Result<McpReply, McpError> {
+    let plan = plan_update_alert(
+        &*alerts.host()?,
+        alerts.quotes,
+        alerts.fx_rates,
+        request,
+        now_ms(),
+    )?;
+    match plan {
+        UpdatePlan::Unchanged(alert) => Ok(McpReply::AlertUpdated(UpdateAlertResult {
+            status: UpdateAlertStatus::Unchanged,
+            alert: *alert,
+            command_id: None,
+        })),
+        UpdatePlan::Change {
+            alert,
+            base,
+            baseline,
+        } => {
+            let info = alert_info(&alert, None);
+            // Planned from a snapshot other requests may also have planned from: the runtime
+            // applies it only to the alert it was planned from.
+            let command_id = alerts.queue(
+                ctx,
+                AlertRuntimeCommandPayload::Save { alert, baseline },
+                Some(AlertPrecondition::Unchanged(base)),
+            )?;
+            Ok(McpReply::AlertUpdated(UpdateAlertResult {
+                status: UpdateAlertStatus::Queued,
+                alert: info,
+                command_id: Some(command_id),
+            }))
+        }
+    }
+}
+
+/// What a price alert command the user is asked about would do (see [`confirmation`]).
+pub fn describe(command: &AlertCommand, alerts: &AlertAccess) -> Result<Summary, McpError> {
+    match command {
+        AlertCommand::Delete { alert_id } => {
+            confirmation::delete_alert(&*alerts.host()?, *alert_id)
+        }
+        _ => confirmation::plainly(command),
+    }
+}
 
 /// Alerts one `degenview_list_price_alerts` call returns.
 pub(super) const ALERT_PAGE: usize = 200;
@@ -27,38 +241,44 @@ pub fn alert_info(alert: &PriceAlert, last_triggered_ms: Option<i64>) -> AlertIn
     let currency = alert.currency;
     let price = decimal;
     let (condition, percent, reference) = match &alert.condition {
-        AlertCondition::CrossesAbove { .. } => ("crosses_above", None, None),
-        AlertCondition::CrossesBelow { .. } => ("crosses_below", None, None),
+        AlertCondition::CrossesAbove { .. } => (AlertConditionKind::CrossesAbove, None, None),
+        AlertCondition::CrossesBelow { .. } => (AlertConditionKind::CrossesBelow, None, None),
         AlertCondition::RisesBy {
             percent, reference, ..
-        } => ("rises_by", Some(decimal(*percent)), Some(price(*reference))),
+        } => (
+            AlertConditionKind::RisesBy,
+            Some(decimal(*percent)),
+            Some(price(*reference)),
+        ),
         AlertCondition::FallsBy {
             percent, reference, ..
-        } => ("falls_by", Some(decimal(*percent)), Some(price(*reference))),
-        AlertCondition::Unsupported { .. } => ("unsupported", None, None),
+        } => (
+            AlertConditionKind::FallsBy,
+            Some(decimal(*percent)),
+            Some(price(*reference)),
+        ),
+        AlertCondition::Unsupported { .. } => (AlertConditionKind::Unsupported, None, None),
     };
     AlertInfo {
         alert_id: alert.id.to_string(),
         instrument: alert.asset.key(),
         source: source_slug(alert.asset.source()).to_owned(),
         symbol: alert.asset.instrument.symbol.clone(),
-        condition: condition.to_owned(),
+        condition,
         target_price: alert.condition.target().map(price),
         percent,
         reference_price: reference,
         currency: currency.code().to_owned(),
         frequency: match alert.frequency {
-            AlertFrequency::Once => "once",
-            AlertFrequency::EveryTime => "every_time",
-        }
-        .to_owned(),
+            AlertFrequency::Once => AlertFrequencyKind::Once,
+            AlertFrequency::EveryTime => AlertFrequencyKind::EveryTime,
+        },
         status: match alert.state {
-            AlertState::Active => "active",
-            AlertState::Paused => "paused",
-            AlertState::Triggered => "triggered",
-            AlertState::Unsupported => "unsupported",
-        }
-        .to_owned(),
+            AlertState::Active => AlertStatus::Active,
+            AlertState::Paused => AlertStatus::Paused,
+            AlertState::Triggered => AlertStatus::Triggered,
+            AlertState::Unsupported => AlertStatus::Unsupported,
+        },
         note: alert.note.clone(),
         sends_to_webhooks: !alert.webhook_endpoint_ids.is_empty(),
         created_at: crate::format::iso8601(alert.created_at_ms),

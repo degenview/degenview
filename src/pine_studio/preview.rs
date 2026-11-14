@@ -16,6 +16,7 @@ use crate::model::{DataSource, IndicatorConfig, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{InputSchema, InputValue, VisualOutput};
 use crate::pine::syntax::token::{DiagnosticSeverity, Limits};
+use crate::service::keychain::api_keys::alpaca_configured;
 use crate::service::work_queue::{self, Pending, PendingAll};
 use crate::service::{self, ProviderError, SearchResult};
 use crate::store::SharedStore;
@@ -992,12 +993,6 @@ pub fn chart(
     {
         preview.fetched_for = None;
     }
-}
-
-fn alpaca_configured() -> bool {
-    crate::service::keychain::api_keys::AlpacaCredentialsStore::shared()
-        .credentials()
-        .is_configured()
 }
 
 fn message(

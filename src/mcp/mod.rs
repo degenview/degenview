@@ -8,6 +8,7 @@
 //! This is the one place with an async runtime. The server owns a single thread running a
 //! current-thread tokio runtime; the rest of the app stays on threads and channels.
 
+pub mod alert;
 pub mod audit;
 pub mod bridge;
 pub mod chart;

@@ -4,6 +4,10 @@
 //! enabled), persists settings and credentials through `store::mcp`, keeps the server's shared
 //! permission snapshot equal to what is on disk, and hands queued tool requests to the app.
 //! Persist first, then publish: a write that fails changes nothing the server can see.
+//!
+//! What a tool's command does on the app thread is in the module of its domain (`chart`, `alert`,
+//! `pine`, `paper`, `portfolio`, `watchlist`, `replay`, `snapshot`): each has a `run` the app hands
+//! the command and the parts of the app it reaches, and a `describe` for the confirmation step.
 
 pub mod alert;
 pub mod chart;
@@ -15,7 +19,7 @@ pub mod replay;
 pub mod snapshot;
 pub mod watchlist;
 
-use crate::mcp::bridge::{self, BridgeClient, BridgeInbox, Request};
+use crate::mcp::bridge::{self, BridgeClient, BridgeInbox, McpError, Request};
 use crate::mcp::state::{McpShared, McpStatus};
 use crate::mcp::transport::auth::{generate_token, verifier_hex};
 use crate::mcp::transport::seal;
@@ -27,10 +31,30 @@ use crate::model::mcp::{
     is_valid_port,
 };
 use crate::model::watchlist::{new_id, now_ms};
+use crate::pine_studio::PineStudio;
 use crate::service::keychain::mcp_seal::{KeyState, SealKey, SealKeyStore};
 use crate::store::SharedStore;
+use crate::workspace::ChartWorkspace;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// The app's open tabs, as the commands MCP clients send reach them. The app implements it over
+/// its tab slots, so a command is handed one chart workspace or Pine Studio, never the tabs.
+pub trait McpTabs {
+    /// Runs `action` on the chart workspace with this id. Portfolio and Pine Studio tabs share
+    /// the id space but are not chart workspaces, and are refused as such.
+    fn with_workspace<R>(
+        &self,
+        workspace_id: u64,
+        action: impl FnOnce(&mut ChartWorkspace) -> Result<R, McpError>,
+    ) -> Result<R, McpError>;
+
+    /// Calls `visit` with every chart workspace, in tab order, and whether it is the focused tab.
+    fn each_workspace(&self, visit: impl FnMut(&ChartWorkspace, bool));
+
+    /// The first answer `find` gives, asking each open Pine Studio in turn.
+    fn find_in_pine_studios<R>(&self, find: impl FnMut(&mut PineStudio) -> Option<R>) -> Option<R>;
+}
 
 /// Whether the credential seal is off. Tests and debug builds run without it: every rebuild
 /// has a new code identity, so the Keychain would ask for the seal key's password on each launch.

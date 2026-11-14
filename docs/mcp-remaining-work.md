@@ -86,7 +86,7 @@ Done (phase 20): see [architecture/mcp.md](architecture/mcp.md). Deletes, saving
 paper orders wait for the user's approval in the app; the setting is on by default.
 
 - Applying a script to a chart, changing its inputs, and the drawing and chart edits are not gated
-  (they are easy to see and undo in the app). Add a command to `confirm::gate` if that changes.
+  (they are easy to see and undo in the app). Change its domain's `Confirm::gate` if that changes.
 - Approval is "Allow once" for the exact call. There is no "allow this client for ten minutes" or
   per-client trust; an agent doing twenty deletes asks twenty times.
 - The question shows in the tab windows and Settings, not in the Alerts window or Pine Studio
@@ -232,7 +232,6 @@ cancellation on disconnect (see [architecture/mcp.md](architecture/mcp.md)). Lef
 
 ## 12. Cleanup
 
-- `mcp/tools.rs` (~1,500 lines) could split per domain the same way (`host/mcp/` already has).
 - Add the 2026-07-28-style `server/discover` check to the integration tests if a client uses it.
 
 ## 13. Spec items still to verify before calling it complete

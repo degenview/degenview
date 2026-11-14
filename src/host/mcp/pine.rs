@@ -1,14 +1,231 @@
 use super::alert::MAX_ALERTS;
-use crate::mcp::bridge::McpError;
-use crate::mcp::pine::{InputArgs, ScriptToApply};
+use super::alert::alerts_unavailable;
+use crate::host::mcp::{McpTabs, confirmation};
+use crate::mcp::bridge::{McpError, McpReply};
+use crate::mcp::confirm::Summary;
+use crate::mcp::pine::{InputArgs, PineCommand, ScriptToApply};
+use crate::mcp::state::McpShared;
 use crate::mcp::types::{
-    AppliedPineDetail, AppliedPineInfo, AppliedPineList, PineAlertInfo, PineAlertsResult,
-    PineInstanceChangeResult, PineOpenTradeInfo, PineReportContext, PineReportMetrics,
-    PineReportResult, PineStrategySettingsInfo, PineStyleOverridesInfo, PineStyleRowInfo,
-    PineStylesResult, PineTradeInfo,
+    AppliedPineDetail, AppliedPineInfo, AppliedPineList, CommissionKind, EditStatus,
+    InstanceStatus, PineAlertInfo, PineAlertsResult, PineEditResult, PineInstanceChangeResult,
+    PineOpenTradeInfo, PineReportContext, PineReportMetrics, PineReportResult,
+    PineStrategySettingsInfo, PineStyleOverridesInfo, PineStyleRowInfo, PineStylesResult,
+    PineTradeInfo, QuantityKind, ReportSource, RunStatus, ScriptAlertState, ScriptStatus,
+    TradeDirection,
 };
 use crate::model::alert::pine::PineAlertSubscription;
+use crate::store::SharedStore;
 use crate::workspace::{ChartWorkspace, PineInstanceView};
+
+/// Runs a Pine command on the app thread: on the chart it names, or on a script and the Pine
+/// Studio editor that has it open. `store` holds the script alert subscriptions a change must not
+/// disturb; `shared` reaches the script library.
+pub fn run(
+    command: PineCommand,
+    tabs: &impl McpTabs,
+    store: &SharedStore,
+    shared: &McpShared,
+) -> Result<McpReply, McpError> {
+    use PineCommand as P;
+    match command {
+        P::ListInstances {
+            workspace_id,
+            chart_id,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            list_chart_pine(workspace, chart_id).map(McpReply::ChartPine)
+        }),
+        P::GetInstance {
+            workspace_id,
+            chart_id,
+            instance_id,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            chart_pine_detail(workspace, chart_id, instance_id).map(McpReply::ChartPineDetail)
+        }),
+        P::GetStyles {
+            workspace_id,
+            chart_id,
+            instance_id,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            pine_styles(workspace, chart_id, instance_id).map(McpReply::PineStyles)
+        }),
+        P::GetReport {
+            workspace_id,
+            chart_id,
+            instance_id,
+            offset,
+            limit,
+            include_equity,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            pine_report(
+                workspace,
+                chart_id,
+                instance_id,
+                offset,
+                limit,
+                include_equity,
+            )
+            .map(|report| McpReply::PineReport(Box::new(report)))
+        }),
+        P::ListAlerts => Ok(McpReply::PineAlerts(pine_alerts(&subscriptions(store)?))),
+        P::AddInstance {
+            workspace_id,
+            chart_id,
+            script,
+            visible,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            add_pine_instance(workspace, chart_id, &script, visible)
+                .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+        }),
+        P::UpdateInstance {
+            workspace_id,
+            chart_id,
+            instance_id,
+            inputs,
+            visible,
+        } => {
+            let alerts = subscriptions(store)?;
+            tabs.with_workspace(workspace_id, |workspace| {
+                update_pine_instance(
+                    workspace,
+                    chart_id,
+                    instance_id,
+                    inputs.as_ref(),
+                    visible,
+                    &alerts,
+                )
+                .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+            })
+        }
+        P::RemoveInstance {
+            workspace_id,
+            chart_id,
+            instance_id,
+        } => {
+            let alerts = subscriptions(store)?;
+            tabs.with_workspace(workspace_id, |workspace| {
+                remove_pine_instance(workspace, chart_id, instance_id, &alerts)
+                    .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+            })
+        }
+        P::EditScript {
+            script_id,
+            expected_revision,
+            source,
+        } => edit_script(
+            tabs,
+            shared,
+            &script_id,
+            &expected_revision,
+            source.as_deref(),
+        )
+        .map(|result| McpReply::PineEdit(Box::new(result))),
+    }
+}
+
+/// What a Pine command the user is asked about would do (see [`confirmation`]).
+pub fn describe(
+    command: &PineCommand,
+    tabs: &impl McpTabs,
+    store: &SharedStore,
+    shared: &McpShared,
+) -> Result<Summary, McpError> {
+    match command {
+        PineCommand::RemoveInstance {
+            workspace_id,
+            chart_id,
+            instance_id,
+        } => {
+            let alerts = subscriptions(store)?;
+            tabs.with_workspace(*workspace_id, |workspace| {
+                confirmation::remove_pine_instance(workspace, *chart_id, *instance_id, &alerts)
+            })
+        }
+        PineCommand::EditScript { script_id, .. } => {
+            let unavailable =
+                || McpError::AppUnavailable("The script library is unavailable".into());
+            let mut library = shared.script_store().ok_or_else(unavailable)?;
+            let script = library
+                .script(script_id)
+                .map_err(|_| unavailable())?
+                .ok_or_else(|| McpError::NotFound(format!("No script {script_id}")))?;
+            Ok(confirmation::save_script(&script.name))
+        }
+        _ => confirmation::plainly(command),
+    }
+}
+
+/// The stored script alert subscriptions, for checks that must not disturb a live alert.
+fn subscriptions(store: &SharedStore) -> Result<Vec<PineAlertSubscription>, McpError> {
+    let store = store.lock().map_err(|_| alerts_unavailable())?;
+    Ok(store.pine_subscriptions())
+}
+
+/// Writes a script edit through `ScriptStore`, checked against the text the Pine Studio shows
+/// (its open editor if there is one), and updates that editor. `source: Some` is a draft edit;
+/// `None` saves the current draft. Runs on the app thread, so no frame can type into the editor
+/// between the check and the write.
+fn edit_script(
+    tabs: &impl McpTabs,
+    shared: &McpShared,
+    id: &str,
+    expected_revision: &str,
+    source: Option<&str>,
+) -> Result<PineEditResult, McpError> {
+    let mut store = shared
+        .script_store()
+        .ok_or_else(|| McpError::AppUnavailable("The script library is unavailable".into()))?;
+    // What the person sees, if an editor has the script open.
+    let live = tabs.find_in_pine_studios(|studio| studio.open_text(id));
+    let mut result = match source {
+        Some(source) => crate::mcp::pine::update_draft(
+            &mut store,
+            id,
+            expected_revision,
+            source,
+            live.as_deref(),
+        )?,
+        None => {
+            let open = tabs.find_in_pine_studios(|studio| studio.open_disk_state(id));
+            let saved = crate::mcp::pine::save_script(
+                &mut store,
+                id,
+                expected_revision,
+                live.as_deref(),
+                open.as_ref(),
+            );
+            if matches!(saved, Err(McpError::Conflict(_))) && open.is_some() {
+                // Same as the editor's own refused Save: raise the file/typing question now.
+                tabs.find_in_pine_studios(|studio| {
+                    studio.look_at_disk_now(id);
+                    None::<()>
+                });
+            }
+            saved?
+        }
+    };
+    if result.status != EditStatus::Unchanged {
+        let (text, saved) = match source {
+            Some(text) => (text.to_owned(), false),
+            None => (
+                store
+                    .script(id)
+                    .ok()
+                    .flatten()
+                    .map(|script| script.source)
+                    .unwrap_or_default(),
+                true,
+            ),
+        };
+        result.applied_to_open_editor = tabs
+            .find_in_pine_studios(|studio| {
+                studio.adopt_external_text(id, &text, saved).then_some(())
+            })
+            .is_some();
+    } else {
+        result.applied_to_open_editor = live.is_some();
+    }
+    Ok(result)
+}
 
 /// Report trades returned per call at most.
 pub const MAX_TRADES_PAGE: usize = 200;
@@ -19,9 +236,13 @@ pub(super) const MAX_EQUITY_POINTS: usize = 200;
 pub(super) fn applied_info(view: &PineInstanceView) -> AppliedPineInfo {
     let instance = &view.instance;
     let (run_status, error, is_strategy) = match &view.run {
-        None => ("not_run", None, None),
+        None => (RunStatus::NotRun, None, None),
         Some(run) => (
-            if run.error.is_some() { "error" } else { "ok" },
+            if run.error.is_some() {
+                RunStatus::Error
+            } else {
+                RunStatus::Ok
+            },
             run.error.as_ref().map(crate::mcp::pine::diagnostic_info),
             Some(run.is_strategy),
         ),
@@ -32,7 +253,7 @@ pub(super) fn applied_info(view: &PineInstanceView) -> AppliedPineInfo {
         script_name: instance.name.clone(),
         visible: instance.visible,
         source_hash: crate::store::scripts::hash_source(&instance.source),
-        run_status: run_status.to_owned(),
+        run_status,
         error,
         is_strategy,
     }
@@ -114,10 +335,10 @@ fn instance_change(
     workspace: &ChartWorkspace,
     chart_id: u64,
     instance_id: u64,
-    status: &str,
+    status: InstanceStatus,
 ) -> Result<PineInstanceChangeResult, McpError> {
     Ok(PineInstanceChangeResult {
-        status: status.to_owned(),
+        status,
         instance_id: instance_id.to_string(),
         chart: list_chart_pine(workspace, chart_id)?,
     })
@@ -145,7 +366,7 @@ pub fn add_pine_instance(
                 workspace.id()
             ))
         })?;
-    instance_change(workspace, chart_id, id, "added")
+    instance_change(workspace, chart_id, id, InstanceStatus::Added)
 }
 
 /// Refuses a change that would retarget or silence a live script alert. The alert host copies an
@@ -210,7 +431,11 @@ pub fn update_pine_instance(
                 "No script instance {instance_id} on chart {chart_id}"
             ))
         })?;
-    let status = if changed { "updated" } else { "unchanged" };
+    let status = if changed {
+        InstanceStatus::Updated
+    } else {
+        InstanceStatus::Unchanged
+    };
     instance_change(workspace, chart_id, instance_id, status)
 }
 
@@ -224,7 +449,7 @@ pub fn remove_pine_instance(
     pine_views(workspace, chart_id, Some(instance_id), false)?;
     guard_armed_alerts(subscriptions, chart_id, instance_id, "removing it")?;
     workspace.remove_pine_instance_from(chart_id, instance_id);
-    instance_change(workspace, chart_id, instance_id, "removed")
+    instance_change(workspace, chart_id, instance_id, InstanceStatus::Removed)
 }
 
 pub(super) fn detail_of(workspace_id: u64, view: &PineInstanceView) -> AppliedPineDetail {
@@ -242,7 +467,7 @@ pub(super) fn detail_of(workspace_id: u64, view: &PineInstanceView) -> AppliedPi
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
         bar_count: view.run.as_ref().map(|run| run.bar_count),
-        script_status: String::new(),
+        script_status: ScriptStatus::Unknown,
     }
 }
 
@@ -310,8 +535,12 @@ fn finite(value: f64) -> Option<f64> {
     value.is_finite().then_some(value)
 }
 
-fn direction(is_long: bool) -> String {
-    if is_long { "long" } else { "short" }.to_owned()
+fn direction(is_long: bool) -> TradeDirection {
+    if is_long {
+        TradeDirection::Long
+    } else {
+        TradeDirection::Short
+    }
 }
 
 /// A strategy report exactly as the chart computed it (the same numbers the Report tab shows),
@@ -390,11 +619,11 @@ pub(super) fn report_of(
         available: true,
         reason: None,
         context: Some(PineReportContext {
-            kind: "chart_instance".into(),
+            kind: ReportSource::ChartInstance,
             script_id: view.instance.script_id.clone(),
             script_name: view.instance.name.clone(),
             source_hash: crate::store::scripts::hash_source(&view.instance.source),
-            script_status: String::new(),
+            script_status: ScriptStatus::Unknown,
             instrument: view.instrument.key(),
             timeframe: view.timeframe.label().to_owned(),
             bar_count: run.bar_count,
@@ -424,18 +653,20 @@ pub(super) fn report_of(
         settings: Some(PineStrategySettingsInfo {
             initial_capital: settings.initial_capital,
             quantity_type: match settings.quantity_type {
-                crate::pine::strategy::QuantityType::Fixed => "fixed",
-                crate::pine::strategy::QuantityType::Cash => "cash",
-                crate::pine::strategy::QuantityType::PercentOfEquity => "percent_of_equity",
-            }
-            .to_owned(),
+                crate::pine::strategy::QuantityType::Fixed => QuantityKind::Fixed,
+                crate::pine::strategy::QuantityType::Cash => QuantityKind::Cash,
+                crate::pine::strategy::QuantityType::PercentOfEquity => {
+                    QuantityKind::PercentOfEquity
+                }
+            },
             quantity_value: settings.quantity_value,
             commission_type: match settings.commission_type {
-                crate::pine::strategy::CommissionType::Percent => "percent",
-                crate::pine::strategy::CommissionType::CashPerOrder => "cash_per_order",
-                crate::pine::strategy::CommissionType::CashPerContract => "cash_per_contract",
-            }
-            .to_owned(),
+                crate::pine::strategy::CommissionType::Percent => CommissionKind::Percent,
+                crate::pine::strategy::CommissionType::CashPerOrder => CommissionKind::CashPerOrder,
+                crate::pine::strategy::CommissionType::CashPerContract => {
+                    CommissionKind::CashPerContract
+                }
+            },
             commission_value: settings.commission_value,
             slippage_ticks: settings.slippage,
             pyramiding: settings.pyramiding,
@@ -508,12 +739,11 @@ pub fn pine_alerts(
                 instrument: subscription.symbol_key.clone(),
                 timeframe: subscription.timeframe.clone(),
                 state: match subscription.state {
-                    PineAlertState::Active => "active",
-                    PineAlertState::Paused => "paused",
-                    PineAlertState::ScriptChanged => "script_changed",
-                    PineAlertState::ScriptDeleted => "script_deleted",
-                }
-                .to_owned(),
+                    PineAlertState::Active => ScriptAlertState::Active,
+                    PineAlertState::Paused => ScriptAlertState::Paused,
+                    PineAlertState::ScriptChanged => ScriptAlertState::ScriptChanged,
+                    PineAlertState::ScriptDeleted => ScriptAlertState::ScriptDeleted,
+                },
                 note: subscription.note.clone(),
                 chart_id: subscription.chart_id.to_string(),
                 instance_id: subscription.instance_id.map(|id| id.to_string()),

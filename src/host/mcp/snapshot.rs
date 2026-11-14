@@ -1,9 +1,42 @@
 use super::chart::no_chart;
-use crate::mcp::bridge::McpError;
-use crate::mcp::snapshot::{SnapshotProgress, SnapshotStarted};
+use crate::host::mcp::{McpTabs, confirmation};
+use crate::mcp::bridge::{McpError, McpReply};
+use crate::mcp::confirm::Summary;
+use crate::mcp::snapshot::{SnapshotCommand, SnapshotProgress, SnapshotStarted};
 use crate::workspace::{CaptureError, ChartWorkspace};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+/// Starts or collects a picture of a chart. `jobs` are the pictures being made between requests.
+pub fn run(
+    command: SnapshotCommand,
+    jobs: &Mutex<SnapshotJobs>,
+    tabs: &impl McpTabs,
+    ctx: &eframe::egui::Context,
+) -> Result<McpReply, McpError> {
+    let mut jobs = jobs
+        .lock()
+        .map_err(|_| McpError::AppUnavailable("Chart pictures are unavailable right now".into()))?;
+    match command {
+        SnapshotCommand::Begin {
+            workspace_id,
+            chart_id,
+            scale,
+        } => {
+            let started = tabs.with_workspace(workspace_id, |workspace| {
+                jobs.begin(workspace, chart_id, scale, ctx)
+            })?;
+            Ok(McpReply::SnapshotStarted(started))
+        }
+        SnapshotCommand::Poll { job_id } => jobs.poll(job_id).map(McpReply::SnapshotProgress),
+    }
+}
+
+/// Pictures are reads and are only described if one ever asks (see [`confirmation`]).
+pub fn describe(command: &SnapshotCommand) -> Result<Summary, McpError> {
+    confirmation::plainly(command)
+}
 
 /// A picture being made for an agent: frozen on the UI thread, drawn on the snapshot worker.
 pub struct SnapshotJob {

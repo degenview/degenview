@@ -2,21 +2,51 @@
 //! bar uses; while it runs every chart in the workspace shows only the past, and the candle and
 //! indicator tools read the same cut-off.
 
-use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
 use crate::mcp::chart::data::iso;
 use crate::mcp::chart::drawings::{TimeArg, parse_time};
+use crate::mcp::confirm::{Confirm, Gate};
 use crate::mcp::tools::{
-    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
+    Caller, DegenViewMcp, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::model::mcp::Permission;
 use crate::model::{ReplayCommand, ReplayStart};
 use crate::model::{ReplaySpeed, ReplayStatus, ReplayView};
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// What the replay tools hand the app thread, run in `host::mcp::replay`. Named apart from
+/// `model::ReplayCommand`, the clock command `Control` carries.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReplayRequest {
+    Get {
+        workspace_id: u64,
+    },
+    Control {
+        workspace_id: u64,
+        command: ReplayCommand,
+    },
+}
+
+impl Confirm for ReplayRequest {
+    fn gate(&self) -> Gate {
+        match self {
+            Self::Get { .. } => Gate::Free,
+            // Changes, but easy to see and to undo in the app.
+            Self::Control { .. } => Gate::AskRemote(CONTROL_REPLAY),
+        }
+    }
+
+    fn plain_summary(&self) -> Option<(String, String)> {
+        match self {
+            Self::Control { .. } => Some(("Control the replay".to_owned(), String::new())),
+            Self::Get { .. } => None,
+        }
+    }
+}
 
 pub const GET_REPLAY: &str = "degenview_get_replay";
 pub const CONTROL_REPLAY: &str = "degenview_control_replay";
@@ -245,17 +275,16 @@ impl DegenViewMcp {
     )]
     async fn get_replay(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<WorkspaceReplayParams>,
     ) -> Result<Json<ReplayResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         match self
             .bridge
             .call(
                 &client,
                 Permission::ChartsRead,
-                McpCommand::GetReplay { workspace_id },
+                ReplayRequest::Get { workspace_id },
                 REQUEST_TIMEOUT,
             )
             .await
@@ -278,10 +307,9 @@ impl DegenViewMcp {
     )]
     async fn control_replay(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<ControlReplayParams>,
     ) -> Result<Json<ReplayResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let command = command_of(&params)?;
         match self
@@ -289,7 +317,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsReplayWrite,
-                McpCommand::ControlReplay {
+                ReplayRequest::Control {
                     workspace_id,
                     command,
                 },

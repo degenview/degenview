@@ -147,15 +147,18 @@ second file: `chart/` (`template/`, `saved_view`), `editor_theme/`, `mcp/` (with
 | `transport/` | The CloudKit boundary: `mod.rs` the trait, its factory, the event sink and events, `native/` (the Swift bridge), `mock` (tests) |
 | `tests/` | End-to-end sync tests, one file per concern |
 
-`mcp/` keeps `mod.rs`, `bridge`, `state`, `types`, `confirm`, `audit`, `tools` (the chart tools and the
-router), `pine`, `replay`, `snapshot` and `tests/` at its root. Tools are grouped by domain: `chart/`
-(`control`, `data`, `drawings`), `indicator/`, `market/`, `paper/`, `portfolio/`, `session_stats/`, where
-`mod.rs` holds the pure result types and `tools.rs` the tool router. `transport/` holds the HTTP surface
+`mcp/` keeps `mod.rs`, `bridge` (the queue and `McpCommand`, one variant per domain), `state`,
+`types` (results and their word enums), `confirm`, `audit`, `tools` (names, permissions, the `Caller`
+extractor, the routers put together and the handler that guards them), `replay`, `snapshot` and
+`tests/` at its root. Tools are grouped by domain: `alert/`, `chart/` (`control`, `data`, `drawings`),
+`indicator/`, `market/`, `paper/`, `pine/`, `portfolio/`, `session_stats/`, where `mod.rs` holds the
+domain's command enum (what it hands the app thread and whether each command asks first) and its
+pure result types, and `tools.rs` the tool router. `transport/` holds the HTTP surface
 and what guards it: `auth`, `cancel`, `limits`, `seal`, `tls`, `tls_protect`.
 
 `app/` splits `impl DegenViewApp` by concern, each child adding an `impl` block (like `workspace/`):
 `tabs` (open, close, show, tab quotes, Tab Linking), `window` (the tab windows and Settings, and their viewports), `commands`
-(native menu commands, quit), `mcp` (the MCP command loop and confirmation), `pine` (Pine Studio and
+(native menu commands, quit), `mcp` (the MCP command loop, which routes each command to its domain, and confirmation), `pine` (Pine Studio and
 scripts), `alert/` (the alert coordinator and the Alerts window), `background` (broker notices,
 editor themes, sync), `session` (the saved session) and `tests`. A helper used by one child stays
 private to it; what two children share is `pub(super)`.
@@ -181,9 +184,11 @@ alert, Pine or Settings host; the registration takes its runtime control before 
 service. Never take one of these locks again while holding it: the frame and every window callback
 run on the main thread, so that deadlocks at once.
 
-`host/mcp/` keeps `McpHost` (listener lifecycle, settings, credentials, activity log) in `mod.rs`. What
-the app thread runs for a tool is grouped by domain like `mcp/`: `chart`, `pine`, `alert`, `paper`,
-`portfolio`, `watchlist`, `replay`, `snapshot`, plus `confirmation`; its tests are in `tests/`.
+`host/mcp/` keeps `McpHost` (listener lifecycle, settings, credentials, activity log) and the
+`McpTabs` view of the app's tabs in `mod.rs`. What the app thread runs for a tool is grouped by domain
+like `mcp/`: `chart`, `pine`, `alert`, `paper`, `portfolio`, `watchlist`, `replay`, `snapshot`, each with
+a `run` for its commands and a `describe` for the confirmation step, plus `confirmation` (the
+questions and the summaries); its tests are in `tests/`.
 
 `trading/` keeps the trait, drafts and previews at its root and one directory per backend family:
 `broker/` (`backend`, `commands`) and `paper/` (`backend`, `stats`).

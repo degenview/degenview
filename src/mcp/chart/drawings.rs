@@ -7,11 +7,12 @@
 
 use crate::format::parse_timestamp;
 use crate::mcp::bridge::McpError;
+use crate::mcp::types::parse_color;
 use crate::model::chart::kind::{LineDash, Rgba};
 use crate::model::drawings::MAX_TEXT_CHARS;
 use crate::model::drawings::style::MAX_STROKE_WIDTH;
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Drawings one `degenview_add_drawings` call may create (one undo step in the app).
 pub const MAX_DRAWINGS_PER_CALL: usize = 25;
@@ -187,7 +188,9 @@ pub enum PriceField {
     Close,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+// A line's dash, as a drawing argument takes it and a listed drawing gives it. Not a doc
+// comment: it would add a description to the input schemas of the drawing tools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum McpDash {
     Solid,
@@ -307,20 +310,6 @@ pub struct NewDrawingArg {
 
 fn invalid(message: impl Into<String>) -> McpError {
     McpError::InvalidArgument(message.into())
-}
-
-/// `#RRGGBB` or `#RRGGBBAA` (the `#` is optional), with whether an alpha was given.
-fn parse_color(text: &str) -> Option<(Rgba, bool)> {
-    let hex = text.trim().trim_start_matches('#');
-    if !hex.is_ascii() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    let byte = |index: usize| u8::from_str_radix(&hex[index..index + 2], 16).ok();
-    match hex.len() {
-        6 => Some(([byte(0)?, byte(2)?, byte(4)?, 255], false)),
-        8 => Some(([byte(0)?, byte(2)?, byte(4)?, byte(6)?], true)),
-        _ => None,
-    }
 }
 
 /// The milliseconds in the digits after a decimal point (`5` is 500, `250Z` is 250, `1239` is
