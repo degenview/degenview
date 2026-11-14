@@ -1,11 +1,8 @@
 use super::chart::no_chart;
-use crate::host::mcp::McpTabs;
-use crate::host::mcp::confirmation;
-use crate::mcp::bridge::McpError;
-use crate::mcp::bridge::McpReply;
+use crate::host::mcp::{McpTabs, confirmation};
+use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::confirm::Summary;
-use crate::mcp::snapshot::SnapshotCommand;
-use crate::mcp::snapshot::{SnapshotProgress, SnapshotStarted};
+use crate::mcp::snapshot::{SnapshotCommand, SnapshotProgress, SnapshotStarted};
 use crate::workspace::{CaptureError, ChartWorkspace};
 use std::sync::Arc;
 use std::sync::Mutex;

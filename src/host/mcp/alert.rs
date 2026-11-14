@@ -1,21 +1,19 @@
 use super::chart::source_slug;
 use crate::host::alert::AlertHost;
 use crate::host::mcp::confirmation;
-use crate::mcp::alert::AlertCommand;
-use crate::mcp::alert::{AlertCommandOutcome, AlertUpdate, NewAlert};
-use crate::mcp::bridge::McpError;
-use crate::mcp::bridge::McpReply;
+use crate::mcp::alert::{AlertCommand, AlertCommandOutcome, AlertUpdate, NewAlert};
+use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::confirm::Summary;
 use crate::mcp::types::{
-    AlertChangeResult, AlertChangeStatus, AlertConditionKind, AlertFrequencyKind, AlertStatus,
-    CreateAlertResult, CreateAlertStatus, UpdateAlertResult, UpdateAlertStatus,
+    AlertChangeResult, AlertChangeStatus, AlertConditionKind, AlertFrequencyKind, AlertInfo,
+    AlertStatus, AlertsResult, CreateAlertResult, CreateAlertStatus, UpdateAlertResult,
+    UpdateAlertStatus,
 };
-use crate::mcp::types::{AlertInfo, AlertsResult};
 use crate::model::alert::draft::{Direction, PriceAlertDraft};
 use crate::model::alert::{
-    AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
+    AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertPrecondition, AlertRuntimeCommand,
+    AlertRuntimeCommandPayload, AlertState, PriceAlert,
 };
-use crate::model::alert::{AlertPrecondition, AlertRuntimeCommand, AlertRuntimeCommandPayload};
 use crate::model::watchlist::now_ms;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::{SharedStore, Store};

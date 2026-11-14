@@ -1,11 +1,10 @@
 use crate::host::mcp::confirmation;
 use crate::host::portfolio::PortfolioHost;
-use crate::mcp::bridge::McpError;
-use crate::mcp::bridge::McpReply;
+use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::confirm::Summary;
-use crate::mcp::portfolio::PortfolioCommand;
 use crate::mcp::portfolio::{
-    self, HoldingBase, HoldingsBase, PortfolioInfo, PortfoliosResult, TransactionsResult,
+    self, HoldingBase, HoldingsBase, PortfolioCommand, PortfolioInfo, PortfoliosResult,
+    TransactionsResult,
 };
 use crate::model::watchlist::now_ms;
 use std::sync::Mutex;

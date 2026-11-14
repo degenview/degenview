@@ -12,10 +12,9 @@ use crate::mcp::paper::tools::{
 };
 use crate::model::paper::{
     PaperAccount, PaperAccountMetrics, PaperClosedTrade, PaperCurrency, PaperFill, PaperOrder,
-    PaperOrderRole, PaperOrderSide, PaperOrderStatus, PaperOrderType, PaperPosition,
-    PaperPositionSide, PaperTimeInForce,
+    PaperOrderChanges, PaperOrderRequest, PaperOrderRole, PaperOrderSide, PaperOrderStatus,
+    PaperOrderType, PaperPosition, PaperPositionSide, PaperTimeInForce,
 };
-use crate::model::paper::{PaperOrderChanges, PaperOrderRequest};
 use schemars::JsonSchema;
 use serde::Serialize;
 

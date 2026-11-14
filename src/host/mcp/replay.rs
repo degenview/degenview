@@ -1,10 +1,7 @@
-use crate::host::mcp::McpTabs;
-use crate::host::mcp::confirmation;
-use crate::mcp::bridge::McpError;
-use crate::mcp::bridge::McpReply;
+use crate::host::mcp::{McpTabs, confirmation};
+use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::confirm::Summary;
-use crate::mcp::replay::ReplayRequest;
-use crate::mcp::replay::{self, ReplayResult};
+use crate::mcp::replay::{self, ReplayRequest, ReplayResult};
 use crate::model::{ReplayCommand, ReplayError};
 use crate::workspace::ChartWorkspace;
 

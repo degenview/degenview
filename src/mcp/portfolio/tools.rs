@@ -1,13 +1,11 @@
 //! Read-only portfolio tools. The ledger is read on the app thread; the prices that value the
 //! holdings come from the app's quote feed on the server's own threads, as for `get_quotes`.
 
-use crate::mcp::bridge::McpError;
-use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::market::tools::quote_wait;
-use crate::mcp::portfolio::PortfolioCommand;
 use crate::mcp::portfolio::{
     DEFAULT_TRANSACTION_PAGE, HoldingsResult, MAX_PRICED_HOLDINGS, MAX_TRANSACTION_PAGE,
-    PortfoliosResult, TransactionsResult, value_holdings,
+    PortfolioCommand, PortfoliosResult, TransactionsResult, value_holdings,
 };
 use crate::mcp::state::ClientIdentity;
 use crate::mcp::tools::{Caller, DegenViewMcp, failure, invalid, parse_id, unexpected};

@@ -10,10 +10,10 @@
 //! repeated after the user approves runs once.
 
 use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
-use crate::mcp::paper::PaperCommand;
 use crate::mcp::paper::{
     DEFAULT_HISTORY_PAGE, MAX_HISTORY_PAGE, PaperAccountDetail, PaperAccountInfo,
-    PaperAccountsResult, PaperChangeResult, PaperFillsResult, PaperOrderResult, PaperTradesResult,
+    PaperAccountsResult, PaperChangeResult, PaperCommand, PaperFillsResult, PaperOrderResult,
+    PaperTradesResult,
 };
 use crate::mcp::state::ClientIdentity;
 use crate::mcp::tools::{Caller, DegenViewMcp, McpSource, failure, invalid, parse_id, unexpected};

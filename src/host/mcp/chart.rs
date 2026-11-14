@@ -1,11 +1,8 @@
-use crate::host::mcp::McpTabs;
-use crate::host::mcp::confirmation;
-use crate::mcp::bridge::McpError;
-use crate::mcp::bridge::McpReply;
-use crate::mcp::chart::ChartCommand;
+use crate::host::mcp::{McpTabs, confirmation};
+use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::chart::control::{ChartChangeResult, TimeframeResult};
-use crate::mcp::chart::data;
 use crate::mcp::chart::drawings::{DrawingEdit, NewDrawing};
+use crate::mcp::chart::{ChartCommand, data};
 use crate::mcp::confirm::Summary;
 use crate::mcp::indicator::{IndicatorValuesResult, ReadingMeta, ReadingRequest, indicator_values};
 use crate::mcp::types::{

@@ -1,12 +1,10 @@
 use crate::host::mcp::confirmation;
 use crate::host::paper::{PaperHost, PaperHostError, owner_text};
-use crate::mcp::bridge::McpError;
-use crate::mcp::bridge::McpReply;
+use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::confirm::Summary;
-use crate::mcp::paper::PaperCommand;
 use crate::mcp::paper::{
     self, PaperAccountDetail, PaperAccountInfo, PaperAccountsResult, PaperChangeResult,
-    PaperFillsResult, PaperOrderResult, PaperTradesResult,
+    PaperCommand, PaperFillsResult, PaperOrderResult, PaperTradesResult,
 };
 use eframe::egui;
 use std::sync::{Mutex, MutexGuard};

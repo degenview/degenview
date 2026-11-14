@@ -6,11 +6,10 @@
 //! they go through the bridge and run on the app thread like every other mutation.
 
 use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
-use crate::mcp::market::WatchlistCommand;
 use crate::mcp::market::{
     MAX_EDIT_MARKETS, MAX_ENTRY_PAGE, MAX_QUOTE_MARKETS, QuoteInfo, QuotesResult,
-    SearchSourceError, SymbolSearchResult, WatchlistChangeResult, WatchlistDetail,
-    WatchlistsResult, quote_info, source_id, symbol_hit,
+    SearchSourceError, SymbolSearchResult, WatchlistChangeResult, WatchlistCommand,
+    WatchlistDetail, WatchlistsResult, quote_info, source_id, symbol_hit,
 };
 use crate::mcp::state::ClientIdentity;
 use crate::mcp::tools::{

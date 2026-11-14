@@ -1,9 +1,9 @@
 use crate::host::mcp::confirmation;
-use crate::mcp::bridge::McpError;
-use crate::mcp::bridge::McpReply;
+use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::confirm::Summary;
-use crate::mcp::market::WatchlistCommand;
-use crate::mcp::market::{self, WatchlistChangeResult, WatchlistPage, WatchlistsResult};
+use crate::mcp::market::{
+    self, WatchlistChangeResult, WatchlistCommand, WatchlistPage, WatchlistsResult,
+};
 use crate::model::InstrumentId;
 use crate::model::watchlist::{Watchlist, WatchlistError, WatchlistInstrument};
 use crate::store::watchlist::{ListChanges, ListEdit, Place, WatchlistStore};
