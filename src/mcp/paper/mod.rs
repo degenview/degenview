@@ -1,18 +1,76 @@
 //! What the paper-trading tools return: accounts with their metrics, positions, working orders,
-//! fills and closed trades, as typed values built from the paper-trading model. Read-only: no
-//! tool here places, changes or cancels an order. Free of egui and HTTP; the app-thread glue that
-//! reads the `PaperHost` is in `host::mcp`.
+//! fills and closed trades, as typed values built from the paper-trading model, and what the tools
+//! hand the app thread ([`PaperCommand`]). Free of egui and HTTP; the app-thread glue that reads
+//! and changes the `PaperHost` is in `host::mcp::paper`.
 
 pub mod tools;
 
 use crate::mcp::chart::data::iso;
+use crate::mcp::confirm::{Confirm, Gate};
+use crate::mcp::paper::tools::{
+    CANCEL_PAPER_ORDERS, CLOSE_PAPER_POSITIONS, MODIFY_PAPER_ORDER, PLACE_PAPER_ORDER,
+};
 use crate::model::paper::{
     PaperAccount, PaperAccountMetrics, PaperClosedTrade, PaperCurrency, PaperFill, PaperOrder,
     PaperOrderRole, PaperOrderSide, PaperOrderStatus, PaperOrderType, PaperPosition,
     PaperPositionSide, PaperTimeInForce,
 };
+use crate::model::paper::{PaperOrderChanges, PaperOrderRequest};
 use schemars::JsonSchema;
 use serde::Serialize;
+
+/// What the paper-trading tools hand the app thread, run in `host::mcp::paper`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PaperCommand {
+    ListAccounts,
+    GetAccount {
+        account_id: u64,
+    },
+    /// Fills (`closed_trades: false`) or closed trades of an account, newest first.
+    ListHistory {
+        account_id: u64,
+        closed_trades: bool,
+        offset: usize,
+        limit: usize,
+    },
+    /// Places a paper order (or only checks it, for a dry run). `request_id` makes a retry
+    /// return the order already placed instead of placing another.
+    PlaceOrder {
+        request: Box<PaperOrderRequest>,
+        dry_run: bool,
+        request_id: Option<String>,
+    },
+    ModifyOrder {
+        order_id: u64,
+        changes: PaperOrderChanges,
+    },
+    /// Cancels the named working orders, or every working order of the account.
+    CancelOrders {
+        account_id: u64,
+        order_ids: Option<Vec<u64>>,
+    },
+    /// Closes one position (by instrument key) or every open position of the account.
+    ClosePositions {
+        account_id: u64,
+        instrument_key: Option<String>,
+    },
+}
+
+impl Confirm for PaperCommand {
+    fn gate(&self) -> Gate {
+        match self {
+            // Simulated money, but the orders are real to the paper account. A dry run only checks.
+            Self::PlaceOrder { dry_run: false, .. } => Gate::Ask(PLACE_PAPER_ORDER),
+            Self::ModifyOrder { .. } => Gate::Ask(MODIFY_PAPER_ORDER),
+            Self::CancelOrders { .. } => Gate::Ask(CANCEL_PAPER_ORDERS),
+            Self::ClosePositions { .. } => Gate::Ask(CLOSE_PAPER_POSITIONS),
+            // Only checks; nothing is placed.
+            Self::PlaceOrder { dry_run: true, .. } => Gate::Free,
+            // Reads.
+            Self::ListAccounts | Self::GetAccount { .. } | Self::ListHistory { .. } => Gate::Free,
+        }
+    }
+}
 
 /// Rows one history page holds at most.
 pub const MAX_HISTORY_PAGE: usize = 200;

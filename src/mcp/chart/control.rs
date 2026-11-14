@@ -2,7 +2,8 @@
 //! a chart. They call the workspace's own methods, the ones behind the toolbar's timeframe
 //! buttons and the chart's type menu and Remove button.
 
-use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
+use crate::mcp::chart::ChartCommand;
 use crate::mcp::tools::{
     Caller, DegenViewMcp, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
 };
@@ -138,7 +139,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsViewWrite,
-                McpCommand::SetTimeframe {
+                ChartCommand::SetTimeframe {
                     workspace_id,
                     timeframe: params.timeframe.timeframe(),
                 },
@@ -181,7 +182,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsViewWrite,
-                McpCommand::SetChartType {
+                ChartCommand::SetChartType {
                     workspace_id,
                     chart_id,
                     chart_type,
@@ -218,7 +219,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsDelete,
-                McpCommand::RemoveChart {
+                ChartCommand::RemoveChart {
                     workspace_id,
                     chart_id,
                 },

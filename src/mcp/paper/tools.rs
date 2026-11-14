@@ -9,7 +9,8 @@
 //! the app (`mcp::confirm`): the first call answers `CONFIRMATION_REQUIRED`, and the same call
 //! repeated after the user approves runs once.
 
-use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
+use crate::mcp::paper::PaperCommand;
 use crate::mcp::paper::{
     DEFAULT_HISTORY_PAGE, MAX_HISTORY_PAGE, PaperAccountDetail, PaperAccountInfo,
     PaperAccountsResult, PaperChangeResult, PaperFillsResult, PaperOrderResult, PaperTradesResult,
@@ -307,7 +308,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperRead,
-                McpCommand::ListPaperAccounts,
+                PaperCommand::ListAccounts,
                 REQUEST_TIMEOUT,
             )
             .await
@@ -339,7 +340,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperRead,
-                McpCommand::GetPaperAccount { account_id },
+                PaperCommand::GetAccount { account_id },
                 REQUEST_TIMEOUT,
             )
             .await
@@ -372,7 +373,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperRead,
-                McpCommand::ListPaperHistory {
+                PaperCommand::ListHistory {
                     account_id,
                     closed_trades: false,
                     offset,
@@ -410,7 +411,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperRead,
-                McpCommand::ListPaperHistory {
+                PaperCommand::ListHistory {
                     account_id,
                     closed_trades: true,
                     offset,
@@ -449,7 +450,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperOrdersPlace,
-                McpCommand::PlacePaperOrder {
+                PaperCommand::PlaceOrder {
                     request: Box::new(request),
                     dry_run: params.dry_run.unwrap_or(false),
                     request_id,
@@ -497,7 +498,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperOrdersPlace,
-                McpCommand::ModifyPaperOrder { order_id, changes },
+                PaperCommand::ModifyOrder { order_id, changes },
                 REQUEST_TIMEOUT,
             )
             .await
@@ -546,7 +547,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperOrdersCancel,
-                McpCommand::CancelPaperOrders {
+                PaperCommand::CancelOrders {
                     account_id,
                     order_ids,
                 },
@@ -605,7 +606,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperPositionsClose,
-                McpCommand::ClosePaperPositions {
+                PaperCommand::ClosePositions {
                     account_id,
                     instrument_key,
                 },

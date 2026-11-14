@@ -1,6 +1,14 @@
 use super::alert::MAX_ALERTS;
+use super::alert::alerts_unavailable;
+use crate::host::mcp::McpTabs;
+use crate::host::mcp::confirmation;
 use crate::mcp::bridge::McpError;
+use crate::mcp::bridge::McpReply;
+use crate::mcp::confirm::Summary;
+use crate::mcp::pine::PineCommand;
 use crate::mcp::pine::{InputArgs, ScriptToApply};
+use crate::mcp::state::McpShared;
+use crate::mcp::types::PineEditResult;
 use crate::mcp::types::{
     AppliedPineDetail, AppliedPineInfo, AppliedPineList, PineAlertInfo, PineAlertsResult,
     PineInstanceChangeResult, PineOpenTradeInfo, PineReportContext, PineReportMetrics,
@@ -8,7 +16,218 @@ use crate::mcp::types::{
     PineStylesResult, PineTradeInfo,
 };
 use crate::model::alert::pine::PineAlertSubscription;
+use crate::store::SharedStore;
 use crate::workspace::{ChartWorkspace, PineInstanceView};
+
+/// Runs a Pine command on the app thread: on the chart it names, or on a script and the Pine
+/// Studio editor that has it open. `store` holds the script alert subscriptions a change must not
+/// disturb; `shared` reaches the script library.
+pub fn run(
+    command: PineCommand,
+    tabs: &impl McpTabs,
+    store: &SharedStore,
+    shared: &McpShared,
+) -> Result<McpReply, McpError> {
+    use PineCommand as P;
+    match command {
+        P::ListInstances {
+            workspace_id,
+            chart_id,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            list_chart_pine(workspace, chart_id).map(McpReply::ChartPine)
+        }),
+        P::GetInstance {
+            workspace_id,
+            chart_id,
+            instance_id,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            chart_pine_detail(workspace, chart_id, instance_id).map(McpReply::ChartPineDetail)
+        }),
+        P::GetStyles {
+            workspace_id,
+            chart_id,
+            instance_id,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            pine_styles(workspace, chart_id, instance_id).map(McpReply::PineStyles)
+        }),
+        P::GetReport {
+            workspace_id,
+            chart_id,
+            instance_id,
+            offset,
+            limit,
+            include_equity,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            pine_report(
+                workspace,
+                chart_id,
+                instance_id,
+                offset,
+                limit,
+                include_equity,
+            )
+            .map(|report| McpReply::PineReport(Box::new(report)))
+        }),
+        P::ListAlerts => Ok(McpReply::PineAlerts(pine_alerts(&subscriptions(store)?))),
+        P::AddInstance {
+            workspace_id,
+            chart_id,
+            script,
+            visible,
+        } => tabs.with_workspace(workspace_id, |workspace| {
+            add_pine_instance(workspace, chart_id, &script, visible)
+                .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+        }),
+        P::UpdateInstance {
+            workspace_id,
+            chart_id,
+            instance_id,
+            inputs,
+            visible,
+        } => {
+            let alerts = subscriptions(store)?;
+            tabs.with_workspace(workspace_id, |workspace| {
+                update_pine_instance(
+                    workspace,
+                    chart_id,
+                    instance_id,
+                    inputs.as_ref(),
+                    visible,
+                    &alerts,
+                )
+                .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+            })
+        }
+        P::RemoveInstance {
+            workspace_id,
+            chart_id,
+            instance_id,
+        } => {
+            let alerts = subscriptions(store)?;
+            tabs.with_workspace(workspace_id, |workspace| {
+                remove_pine_instance(workspace, chart_id, instance_id, &alerts)
+                    .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+            })
+        }
+        P::EditScript {
+            script_id,
+            expected_revision,
+            source,
+        } => edit_script(
+            tabs,
+            shared,
+            &script_id,
+            &expected_revision,
+            source.as_deref(),
+        )
+        .map(|result| McpReply::PineEdit(Box::new(result))),
+    }
+}
+
+/// What a Pine command the user is asked about would do (see [`confirmation`]).
+pub fn describe(
+    command: &PineCommand,
+    tabs: &impl McpTabs,
+    store: &SharedStore,
+    shared: &McpShared,
+) -> Result<Summary, McpError> {
+    match command {
+        PineCommand::RemoveInstance {
+            workspace_id,
+            chart_id,
+            instance_id,
+        } => {
+            let alerts = subscriptions(store)?;
+            tabs.with_workspace(*workspace_id, |workspace| {
+                confirmation::remove_pine_instance(workspace, *chart_id, *instance_id, &alerts)
+            })
+        }
+        PineCommand::EditScript { script_id, .. } => {
+            let unavailable =
+                || McpError::AppUnavailable("The script library is unavailable".into());
+            let mut library = shared.script_store().ok_or_else(unavailable)?;
+            let script = library
+                .script(script_id)
+                .map_err(|_| unavailable())?
+                .ok_or_else(|| McpError::NotFound(format!("No script {script_id}")))?;
+            Ok(confirmation::save_script(&script.name))
+        }
+        _ => confirmation::plainly(command),
+    }
+}
+
+/// The stored script alert subscriptions, for checks that must not disturb a live alert.
+fn subscriptions(store: &SharedStore) -> Result<Vec<PineAlertSubscription>, McpError> {
+    let store = store.lock().map_err(|_| alerts_unavailable())?;
+    Ok(store.pine_subscriptions())
+}
+
+/// Writes a script edit through `ScriptStore`, checked against the text the Pine Studio shows
+/// (its open editor if there is one), and updates that editor. `source: Some` is a draft edit;
+/// `None` saves the current draft. Runs on the app thread, so no frame can type into the editor
+/// between the check and the write.
+fn edit_script(
+    tabs: &impl McpTabs,
+    shared: &McpShared,
+    id: &str,
+    expected_revision: &str,
+    source: Option<&str>,
+) -> Result<PineEditResult, McpError> {
+    let mut store = shared
+        .script_store()
+        .ok_or_else(|| McpError::AppUnavailable("The script library is unavailable".into()))?;
+    // What the person sees, if an editor has the script open.
+    let live = tabs.find_in_pine_studios(|studio| studio.open_text(id));
+    let mut result = match source {
+        Some(source) => crate::mcp::pine::update_draft(
+            &mut store,
+            id,
+            expected_revision,
+            source,
+            live.as_deref(),
+        )?,
+        None => {
+            let open = tabs.find_in_pine_studios(|studio| studio.open_disk_state(id));
+            let saved = crate::mcp::pine::save_script(
+                &mut store,
+                id,
+                expected_revision,
+                live.as_deref(),
+                open.as_ref(),
+            );
+            if matches!(saved, Err(McpError::Conflict(_))) && open.is_some() {
+                // Same as the editor's own refused Save: raise the file/typing question now.
+                tabs.find_in_pine_studios(|studio| {
+                    studio.look_at_disk_now(id);
+                    None::<()>
+                });
+            }
+            saved?
+        }
+    };
+    if result.status != "unchanged" {
+        let (text, saved) = match source {
+            Some(text) => (text.to_owned(), false),
+            None => (
+                store
+                    .script(id)
+                    .ok()
+                    .flatten()
+                    .map(|script| script.source)
+                    .unwrap_or_default(),
+                true,
+            ),
+        };
+        result.applied_to_open_editor = tabs
+            .find_in_pine_studios(|studio| {
+                studio.adopt_external_text(id, &text, saved).then_some(())
+            })
+            .is_some();
+    } else {
+        result.applied_to_open_editor = live.is_some();
+    }
+    Ok(result)
+}
 
 /// Report trades returned per call at most.
 pub const MAX_TRADES_PAGE: usize = 200;

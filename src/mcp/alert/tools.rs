@@ -2,9 +2,8 @@
 //! plan on the app thread with the alert sheet's own rules and hand the change to the alert
 //! runtime, then wait briefly to say what is true now.
 
-use crate::mcp::bridge::{
-    AlertCommandOutcome, AlertUpdate, McpCommand, McpError, McpReply, NewAlert, REQUEST_TIMEOUT,
-};
+use crate::mcp::alert::{AlertCommand, AlertCommandOutcome, AlertUpdate, NewAlert};
+use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::state::ClientIdentity;
 use crate::mcp::tools::{Caller, DegenViewMcp, McpSource, failure, invalid, parse_id, unexpected};
 use crate::mcp::types::{
@@ -176,7 +175,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::AlertsRead,
-                McpCommand::ListAlerts { only: None },
+                AlertCommand::List { only: None },
                 REQUEST_TIMEOUT,
             )
             .await
@@ -226,7 +225,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::AlertsCreate,
-                McpCommand::CreateAlert(Box::new(request)),
+                AlertCommand::Create(Box::new(request)),
                 REQUEST_TIMEOUT,
             )
             .await
@@ -313,7 +312,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::AlertsEdit,
-                McpCommand::UpdateAlert(Box::new(request)),
+                AlertCommand::Update(Box::new(request)),
                 REQUEST_TIMEOUT,
             )
             .await
@@ -408,7 +407,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::AlertsDelete,
-                McpCommand::DeleteAlert { alert_id },
+                AlertCommand::Delete { alert_id },
                 REQUEST_TIMEOUT,
             )
             .await
@@ -455,7 +454,7 @@ impl DegenViewMcp {
                     .call(
                         client,
                         permission,
-                        McpCommand::AlertCommandOutcome { command_id },
+                        AlertCommand::CommandOutcome { command_id },
                         Duration::from_secs(2),
                     )
                     .await;
@@ -472,7 +471,7 @@ impl DegenViewMcp {
                 .call(
                     client,
                     permission,
-                    McpCommand::ListAlerts {
+                    AlertCommand::List {
                         only: Some(alert_id),
                     },
                     Duration::from_secs(2),
@@ -502,7 +501,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::AlertsPause,
-                McpCommand::SetAlertPaused { alert_id, paused },
+                AlertCommand::SetPaused { alert_id, paused },
                 REQUEST_TIMEOUT,
             )
             .await

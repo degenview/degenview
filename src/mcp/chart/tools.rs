@@ -1,7 +1,8 @@
 //! Chart tools: list workspaces and their charts, add a chart, list and apply built-in
 //! indicators, read a chart's candles, and list, add, change and delete its drawings.
 
-use crate::mcp::bridge::{McpCommand, McpError, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::chart::ChartCommand;
 use crate::mcp::chart::data::{DEFAULT_CANDLES, MAX_CANDLES};
 use crate::mcp::chart::drawings::{
     AnchorArg, DrawingEdit, MAX_DELETES_PER_CALL, MAX_DRAWINGS_PER_CALL, McpDash, NewDrawingArg,
@@ -175,7 +176,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsRead,
-                McpCommand::ListWorkspaces,
+                ChartCommand::ListWorkspaces,
                 REQUEST_TIMEOUT,
             )
             .await
@@ -207,7 +208,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsRead,
-                McpCommand::ListCharts { workspace_id },
+                ChartCommand::ListCharts { workspace_id },
                 REQUEST_TIMEOUT,
             )
             .await
@@ -274,7 +275,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsIndicatorsWrite,
-                McpCommand::ApplyIndicator {
+                ChartCommand::ApplyIndicator {
                     workspace_id,
                     chart_id,
                     indicator: params.indicator.built_in(),
@@ -318,7 +319,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsCreate,
-                McpCommand::AddChart {
+                ChartCommand::AddChart {
                     workspace_id,
                     instrument,
                 },
@@ -366,7 +367,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsCandlesRead,
-                McpCommand::GetCandles {
+                ChartCommand::GetCandles {
                     workspace_id,
                     chart_id,
                     limit,
@@ -404,7 +405,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::DrawingsRead,
-                McpCommand::ListDrawings {
+                ChartCommand::ListDrawings {
                     workspace_id,
                     chart_id,
                 },
@@ -459,7 +460,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::DrawingsWrite,
-                McpCommand::AddDrawings {
+                ChartCommand::AddDrawings {
                     workspace_id,
                     chart_id,
                     drawings,
@@ -521,7 +522,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::DrawingsWrite,
-                McpCommand::EditDrawing {
+                ChartCommand::EditDrawing {
                     workspace_id,
                     chart_id,
                     edit: Box::new(DrawingEdit {
@@ -575,7 +576,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::DrawingsDelete,
-                McpCommand::RemoveDrawings {
+                ChartCommand::RemoveDrawings {
                     workspace_id,
                     chart_id,
                     drawing_ids,

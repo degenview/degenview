@@ -1,8 +1,43 @@
+use crate::host::mcp::confirmation;
 use crate::host::portfolio::PortfolioHost;
 use crate::mcp::bridge::McpError;
+use crate::mcp::bridge::McpReply;
+use crate::mcp::confirm::Summary;
+use crate::mcp::portfolio::PortfolioCommand;
 use crate::mcp::portfolio::{
     self, HoldingBase, HoldingsBase, PortfolioInfo, PortfoliosResult, TransactionsResult,
 };
+use crate::model::watchlist::now_ms;
+use std::sync::Mutex;
+
+/// Runs a portfolio read on the app thread.
+pub fn run(
+    command: PortfolioCommand,
+    portfolio: &Mutex<PortfolioHost>,
+) -> Result<McpReply, McpError> {
+    let host = portfolio
+        .lock()
+        .map_err(|_| McpError::AppUnavailable("Portfolios are unavailable right now".into()))?;
+    match command {
+        PortfolioCommand::List => list_portfolios(&host).map(McpReply::Portfolios),
+        PortfolioCommand::GetHoldings { portfolio_id } => {
+            portfolio_holdings_base(&host, portfolio_id, now_ms())
+                .map(|base| McpReply::PortfolioHoldings(Box::new(base)))
+        }
+        PortfolioCommand::ListTransactions {
+            portfolio_id,
+            asset,
+            offset,
+            limit,
+        } => portfolio_transactions(&host, portfolio_id, asset.as_deref(), offset, limit)
+            .map(|result| McpReply::PortfolioTransactions(Box::new(result))),
+    }
+}
+
+/// Portfolio commands are reads and are only described if one ever asks (see [`confirmation`]).
+pub fn describe(command: &PortfolioCommand) -> Result<Summary, McpError> {
+    confirmation::plainly(command)
+}
 
 fn readable_ledger(
     host: &PortfolioHost,

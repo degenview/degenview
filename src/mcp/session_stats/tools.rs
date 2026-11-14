@@ -2,7 +2,8 @@
 //! its sample size and a 95% interval. A read of the chart's own candles, like the indicator
 //! values, so it needs the candles permission and changes nothing.
 
-use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
+use crate::mcp::chart::ChartCommand;
 use crate::mcp::session_stats::{Query, SessionStatsResult};
 use crate::mcp::tools::{
     Caller, DegenViewMcp, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
@@ -158,7 +159,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsCandlesRead,
-                McpCommand::GetSessionStats {
+                ChartCommand::GetSessionStats {
                     workspace_id,
                     chart_id,
                     query,

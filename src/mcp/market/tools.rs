@@ -5,7 +5,8 @@
 //! (`McpShared::lease_quotes`), released however the call ends. Watchlists are user data, so
 //! they go through the bridge and run on the app thread like every other mutation.
 
-use crate::mcp::bridge::{McpCommand, McpError, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::market::WatchlistCommand;
 use crate::mcp::market::{
     MAX_EDIT_MARKETS, MAX_ENTRY_PAGE, MAX_QUOTE_MARKETS, QuoteInfo, QuotesResult,
     SearchSourceError, SymbolSearchResult, WatchlistChangeResult, WatchlistDetail,
@@ -699,7 +700,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::WatchlistsRead,
-                McpCommand::ListWatchlists,
+                WatchlistCommand::List,
                 REQUEST_TIMEOUT,
             )
             .await
@@ -747,7 +748,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::WatchlistsRead,
-                McpCommand::GetWatchlist {
+                WatchlistCommand::Get {
                     watchlist_id,
                     offset: params.offset.unwrap_or(0) as usize,
                     limit,
@@ -799,7 +800,7 @@ impl DegenViewMcp {
         self.change_watchlist(
             &client,
             Permission::WatchlistsWrite,
-            McpCommand::CreateWatchlist {
+            WatchlistCommand::Create {
                 name: params.name,
                 markets,
             },
@@ -827,7 +828,7 @@ impl DegenViewMcp {
         self.change_watchlist(
             &client,
             Permission::WatchlistsWrite,
-            McpCommand::UpdateWatchlist {
+            WatchlistCommand::Update {
                 watchlist_id,
                 changes: Box::new(changes),
             },
@@ -854,7 +855,7 @@ impl DegenViewMcp {
         self.change_watchlist(
             &client,
             Permission::WatchlistsDelete,
-            McpCommand::DeleteWatchlist { watchlist_id },
+            WatchlistCommand::Delete { watchlist_id },
         )
         .await
     }
@@ -865,7 +866,7 @@ impl DegenViewMcp {
         &self,
         client: &ClientIdentity,
         permission: Permission,
-        command: McpCommand,
+        command: WatchlistCommand,
     ) -> Result<Json<WatchlistChangeResult>, CallToolResult> {
         match self
             .bridge

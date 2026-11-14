@@ -3,6 +3,7 @@
 //! price alert to its queue.
 
 use crate::host::alert::runtime::{AlertRuntimeLease, GuiRuntimeDecision, gui_runtime_decision};
+use crate::host::mcp::alert::SaveAlert;
 use crate::lock::lock;
 use crate::model::alert::{
     AlertPrecondition, AlertRuntimeCommand, AlertRuntimeCommandPayload, AlertRuntimeHealth,
@@ -203,5 +204,19 @@ impl AlertRegistration {
     #[cfg(test)]
     pub(super) fn service_state(&self) -> AlertServiceState {
         lock(&self.runtime_control).service_state
+    }
+}
+
+/// The MCP server's alert commands save a new alert the way the sheet does.
+impl SaveAlert for AlertRegistration {
+    fn save_checked(
+        &self,
+        store: &Store,
+        alert: Box<PriceAlert>,
+        baseline: Option<f64>,
+        precondition: Option<AlertPrecondition>,
+        now: i64,
+    ) -> rusqlite::Result<u64> {
+        self.commit_checked(store, alert, baseline, precondition, now)
     }
 }

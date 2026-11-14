@@ -16,7 +16,8 @@ use crate::host::paper::PaperHost;
 use crate::mcp::bridge::{McpCommand, McpError};
 use crate::mcp::chart::data;
 use crate::mcp::confirm::{
-    ConfirmationBook, OpenError, PendingInfo, PendingView, Settled, Settlement, Summary, Verdict,
+    Confirm, ConfirmationBook, OpenError, PendingInfo, PendingView, Settled, Settlement, Summary,
+    Verdict, remote_summary,
 };
 use crate::mcp::state::McpShared;
 use crate::model::alert::AlertId;
@@ -210,6 +211,17 @@ impl ConfirmationHost {
 }
 
 // MARK: Summaries
+//
+// Each domain's `describe` (`host::mcp::chart::describe` and the others) picks the summary for its
+// commands from these, and falls back to `plainly`.
+
+/// A command asked about only of a credential with remote access, described from the command
+/// alone. A command with no description is refused rather than run unasked.
+pub fn plainly(command: &impl Confirm) -> Result<Summary, McpError> {
+    remote_summary(command).ok_or_else(|| {
+        McpError::AppUnavailable("This request cannot be described, so it was not run".into())
+    })
+}
 
 /// "0.5" and "70,000" without trailing zeros.
 fn number(value: f64) -> String {
@@ -486,10 +498,13 @@ pub fn close_positions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::alert::AlertCommand;
+    use crate::mcp::chart::ChartCommand;
+    use crate::mcp::paper::PaperCommand;
     use crate::model::mcp::McpClient;
 
     fn alert_command() -> McpCommand {
-        McpCommand::DeleteAlert { alert_id: 1 }
+        McpCommand::Alert(AlertCommand::Delete { alert_id: 1 })
     }
 
     fn host_with(
@@ -528,10 +543,10 @@ mod tests {
     }
 
     fn cancel_all() -> McpCommand {
-        McpCommand::CancelPaperOrders {
+        McpCommand::Paper(PaperCommand::CancelOrders {
             account_id: 1,
             order_ids: None,
-        }
+        })
     }
 
     fn orders(ids: &[u64]) -> Result<Summary, McpError> {
@@ -636,7 +651,7 @@ mod tests {
             "c1",
             "Claude",
             false,
-            &McpCommand::DeleteAlert { alert_id: 2 },
+            &McpCommand::Alert(AlertCommand::Delete { alert_id: 2 }),
             say,
         );
         assert_eq!(host.lock().unwrap().pending(now).len(), 1);
@@ -723,7 +738,7 @@ mod tests {
     fn free_commands_and_a_switched_off_setting_never_ask() {
         let (host, _) = host_with(&["c1"], true);
         let now = Instant::now();
-        let free = McpCommand::ListWorkspaces;
+        let free = McpCommand::Chart(ChartCommand::ListWorkspaces);
         assert!(
             gate_command(&host, now, "c1", "Claude", false, &free, || panic!(
                 "described"
@@ -765,10 +780,10 @@ mod tests {
         let (host, _) = host_with(&["c1"], true);
         let now = Instant::now();
         for n in 0..crate::mcp::confirm::MAX_PENDING_PER_CLIENT as u64 {
-            let command = McpCommand::DeleteAlert { alert_id: n };
+            let command = McpCommand::Alert(AlertCommand::Delete { alert_id: n });
             assert!(gate_command(&host, now, "c1", "Claude", false, &command, say).is_err());
         }
-        let command = McpCommand::DeleteAlert { alert_id: 999 };
+        let command = McpCommand::Alert(AlertCommand::Delete { alert_id: 999 });
         let error = gate_command(&host, now, "c1", "Claude", false, &command, say).unwrap_err();
         assert!(matches!(error, McpError::ResourceLimit(_)), "{error:?}");
     }
@@ -834,9 +849,11 @@ mod tests {
             shared.global(),
         );
         let now = Instant::now();
-        let change = || McpCommand::SetTimeframe {
-            workspace_id: 1,
-            timeframe: crate::model::Timeframe::Day,
+        let change = || {
+            McpCommand::Chart(ChartCommand::SetTimeframe {
+                workspace_id: 1,
+                timeframe: crate::model::Timeframe::Day,
+            })
         };
         let described = || Ok(Summary::new("Change the timeframe", "Day"));
 
@@ -873,10 +890,10 @@ mod tests {
         // as remote and has been waiting in the queue.
         let (host, _shared) = host_with(&["c1"], true);
         let now = Instant::now();
-        let change = McpCommand::SetTimeframe {
+        let change = McpCommand::Chart(ChartCommand::SetTimeframe {
             workspace_id: 1,
             timeframe: crate::model::Timeframe::Day,
-        };
+        });
         let described = || Ok(Summary::new("Change the timeframe", "Day"));
         assert!(matches!(
             gate_command(&host, now, "c1", "Claude", true, &change, described),

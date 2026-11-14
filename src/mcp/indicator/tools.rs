@@ -2,7 +2,8 @@
 //! built-in indicator off it. Adding one is `degenview_add_indicator`; what a chart has applied
 //! is in `degenview_list_charts`.
 
-use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
+use crate::mcp::chart::ChartCommand;
 use crate::mcp::chart::drawings::{TimeArg, parse_time};
 use crate::mcp::indicator::{
     IndicatorValuesResult, MAX_EMA_PERIOD, MIN_EMA_PERIOD, Reading, ReadingRequest,
@@ -145,7 +146,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsCandlesRead,
-                McpCommand::GetIndicatorValues {
+                ChartCommand::GetIndicatorValues {
                     workspace_id,
                     chart_id,
                     request,
@@ -182,7 +183,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsIndicatorsWrite,
-                McpCommand::RemoveIndicator {
+                ChartCommand::RemoveIndicator {
                     workspace_id,
                     chart_id,
                     indicator: params.indicator.built_in(),

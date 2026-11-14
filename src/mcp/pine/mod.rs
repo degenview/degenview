@@ -1,4 +1,5 @@
-//! Read-only views of the Pine Studio's scripts, built on the worker thread.
+//! Read-only views of the Pine Studio's scripts, built on the worker thread, and what the Pine
+//! tools (`tools`) hand the app thread ([`PineCommand`]).
 //!
 //! These read through `ScriptStore` (the owner of script files) and the real Pine compiler, so
 //! the saved/draft distinction, content hashes and diagnostics are exactly the app's. Nothing is
@@ -9,6 +10,11 @@ pub mod tools;
 
 use crate::format::iso8601;
 use crate::mcp::bridge::McpError;
+use crate::mcp::confirm::{Confirm, Gate};
+use crate::mcp::tools::{
+    ADD_PINE_TO_CHART, REMOVE_PINE_INSTANCE, SAVE_PINE_SCRIPT, UPDATE_PINE_INSTANCE,
+    UPDATE_PINE_SCRIPT,
+};
 use crate::mcp::types::{
     PineCompileResult, PineCompileSummary, PineDiagnosticInfo, PineEditResult, PineInputInfo,
     PineInputOption, PineInputsResult, PineScriptInfo, PineScriptSource, PineScriptsResult,
@@ -24,6 +30,102 @@ use crate::store::scripts::{COMPILER_VERSION, ScriptStore, ScriptStoreError, has
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
+
+/// What the Pine tools hand the app thread, run in `host::mcp::pine`: what a chart's scripts
+/// computed (private to the chart, so only the app thread can read it), and changes to the
+/// scripts on a chart and to a script's text.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PineCommand {
+    ListInstances {
+        workspace_id: u64,
+        chart_id: u64,
+    },
+    GetInstance {
+        workspace_id: u64,
+        chart_id: u64,
+        instance_id: u64,
+    },
+    GetStyles {
+        workspace_id: u64,
+        chart_id: u64,
+        instance_id: u64,
+    },
+    GetReport {
+        workspace_id: u64,
+        chart_id: u64,
+        instance_id: u64,
+        offset: usize,
+        limit: usize,
+        include_equity: bool,
+    },
+    ListAlerts,
+    /// Applies a script (its checked saved text and input overrides) to a chart.
+    AddInstance {
+        workspace_id: u64,
+        chart_id: u64,
+        script: Box<ScriptToApply>,
+        visible: bool,
+    },
+    /// Changes an applied script's inputs (`None` clears that input) and/or visibility.
+    UpdateInstance {
+        workspace_id: u64,
+        chart_id: u64,
+        instance_id: u64,
+        inputs: Option<InputArgs>,
+        visible: Option<bool>,
+    },
+    RemoveInstance {
+        workspace_id: u64,
+        chart_id: u64,
+        instance_id: u64,
+    },
+    /// Edit a script's text. `source: Some` writes it as the draft; `None` saves the current
+    /// draft over the saved source. Either way `expected_revision` must match the working text.
+    EditScript {
+        script_id: String,
+        expected_revision: String,
+        source: Option<String>,
+    },
+}
+
+impl Confirm for PineCommand {
+    fn gate(&self) -> Gate {
+        match self {
+            // Cannot be undone from here.
+            Self::RemoveInstance { .. } => Gate::Ask(REMOVE_PINE_INSTANCE),
+            // Overwrites the saved source. Saving is the step that counts for a local credential.
+            Self::EditScript { source: None, .. } => Gate::Ask(SAVE_PINE_SCRIPT),
+            // Writing a draft changes what is in the editor, and is free for a local credential.
+            Self::EditScript {
+                source: Some(_), ..
+            } => Gate::AskRemote(UPDATE_PINE_SCRIPT),
+            // Changes, but easy to see and to undo in the app.
+            Self::AddInstance { .. } => Gate::AskRemote(ADD_PINE_TO_CHART),
+            Self::UpdateInstance { .. } => Gate::AskRemote(UPDATE_PINE_INSTANCE),
+            // Reads.
+            Self::ListInstances { .. }
+            | Self::GetInstance { .. }
+            | Self::GetStyles { .. }
+            | Self::GetReport { .. }
+            | Self::ListAlerts => Gate::Free,
+        }
+    }
+
+    fn plain_summary(&self) -> Option<(String, String)> {
+        Some(match self {
+            Self::AddInstance { script, .. } => {
+                ("Apply a script to a chart".to_owned(), script.name.clone())
+            }
+            Self::UpdateInstance { .. } => ("Change a script on a chart".to_owned(), String::new()),
+            Self::EditScript {
+                script_id,
+                source: Some(_),
+                ..
+            } => ("Write a script draft".to_owned(), script_id.clone()),
+            _ => return None,
+        })
+    }
+}
 
 /// Source returned or compiled is bounded: past this the script is not served.
 pub const MAX_SOURCE_CHARS: usize = 1_000_000;

@@ -5,7 +5,8 @@
 //! through the bridge, then asks after it every 100 ms until it is ready, so no request ever
 //! waits on the app thread. Nothing is saved, copied or uploaded. A picture over 8 MiB is refused (ask for `1x`).
 
-use crate::mcp::bridge::{McpCommand, McpError, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::confirm::{Confirm, Gate};
 use crate::mcp::tools::{
     Caller, DegenViewMcp, failure, parse_chart_id, parse_workspace_id, unexpected,
 };
@@ -18,6 +19,28 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// What the snapshot tool hands the app thread, run in `host::mcp::snapshot`. The bridge never
+/// waits on a frame, so a picture is started and then polled.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SnapshotCommand {
+    /// Starts a picture of a chart; the answer says which job to ask about.
+    Begin {
+        workspace_id: u64,
+        chart_id: u64,
+        scale: SnapshotScale,
+    },
+    /// Whether the picture a job is making is ready, and takes it if so.
+    Poll { job_id: u64 },
+}
+
+impl Confirm for SnapshotCommand {
+    fn gate(&self) -> Gate {
+        match self {
+            Self::Begin { .. } | Self::Poll { .. } => Gate::Free,
+        }
+    }
+}
 
 pub const GET_CHART_SNAPSHOT: &str = "degenview_get_chart_snapshot";
 
@@ -111,7 +134,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsSnapshotRead,
-                McpCommand::BeginSnapshot {
+                SnapshotCommand::Begin {
                     workspace_id,
                     chart_id,
                     scale,
@@ -132,7 +155,7 @@ impl DegenViewMcp {
                 .call(
                     &client,
                     Permission::ChartsSnapshotRead,
-                    McpCommand::PollSnapshot {
+                    SnapshotCommand::Poll {
                         job_id: started.job_id,
                     },
                     REQUEST_TIMEOUT,

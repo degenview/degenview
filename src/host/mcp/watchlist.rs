@@ -1,8 +1,61 @@
+use crate::host::mcp::confirmation;
 use crate::mcp::bridge::McpError;
+use crate::mcp::bridge::McpReply;
+use crate::mcp::confirm::Summary;
+use crate::mcp::market::WatchlistCommand;
 use crate::mcp::market::{self, WatchlistChangeResult, WatchlistPage, WatchlistsResult};
 use crate::model::InstrumentId;
 use crate::model::watchlist::{Watchlist, WatchlistError, WatchlistInstrument};
 use crate::store::watchlist::{ListChanges, ListEdit, Place, WatchlistStore};
+use eframe::egui;
+use std::sync::{Mutex, MutexGuard};
+
+fn lock(watchlists: &Mutex<WatchlistStore>) -> Result<MutexGuard<'_, WatchlistStore>, McpError> {
+    watchlists
+        .lock()
+        .map_err(|_| McpError::AppUnavailable("Watchlists are unavailable right now".into()))
+}
+
+/// Runs a watchlist command on the app thread, against the store the sidebar uses.
+pub fn run(
+    command: WatchlistCommand,
+    watchlists: &Mutex<WatchlistStore>,
+    ctx: &egui::Context,
+) -> Result<McpReply, McpError> {
+    let mut store = lock(watchlists)?;
+    let changed = match command {
+        WatchlistCommand::List => return list_watchlists(&store).map(McpReply::Watchlists),
+        WatchlistCommand::Get {
+            watchlist_id,
+            offset,
+            limit,
+        } => {
+            return get_watchlist(&store, watchlist_id, offset, limit)
+                .map(|page| McpReply::Watchlist(Box::new(page)));
+        }
+        WatchlistCommand::Create { name, markets } => create_watchlist(&mut store, &name, markets)?,
+        WatchlistCommand::Update {
+            watchlist_id,
+            changes,
+        } => update_watchlist(&mut store, watchlist_id, *changes)?,
+        WatchlistCommand::Delete { watchlist_id } => delete_watchlist(&mut store, watchlist_id)?,
+    };
+    ctx.request_repaint();
+    Ok(McpReply::WatchlistChanged(Box::new(changed)))
+}
+
+/// What a watchlist command the user is asked about would do (see [`confirmation`]).
+pub fn describe(
+    command: &WatchlistCommand,
+    watchlists: &Mutex<WatchlistStore>,
+) -> Result<Summary, McpError> {
+    match command {
+        WatchlistCommand::Delete { watchlist_id } => {
+            confirmation::delete_watchlist(&*lock(watchlists)?, *watchlist_id)
+        }
+        _ => confirmation::plainly(command),
+    }
+}
 
 fn watchlist_error(error: WatchlistError) -> McpError {
     match error {

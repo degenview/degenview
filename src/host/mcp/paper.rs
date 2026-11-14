@@ -1,9 +1,115 @@
+use crate::host::mcp::confirmation;
 use crate::host::paper::{PaperHost, PaperHostError, owner_text};
 use crate::mcp::bridge::McpError;
+use crate::mcp::bridge::McpReply;
+use crate::mcp::confirm::Summary;
+use crate::mcp::paper::PaperCommand;
 use crate::mcp::paper::{
     self, PaperAccountDetail, PaperAccountInfo, PaperAccountsResult, PaperChangeResult,
     PaperFillsResult, PaperOrderResult, PaperTradesResult,
 };
+use eframe::egui;
+use std::sync::{Mutex, MutexGuard};
+
+fn paper_unavailable() -> McpError {
+    McpError::AppUnavailable("Paper trading is unavailable right now".into())
+}
+
+fn lock(paper: &Mutex<PaperHost>) -> Result<MutexGuard<'_, PaperHost>, McpError> {
+    paper.lock().map_err(|_| paper_unavailable())
+}
+
+/// Runs a paper-trading command on the app thread. `orders` remembers the orders placed by
+/// `request_id`, so a retried call places nothing twice.
+pub fn run(
+    command: PaperCommand,
+    paper: &Mutex<PaperHost>,
+    orders: &Mutex<OrderMemory>,
+    ctx: &egui::Context,
+) -> Result<McpReply, McpError> {
+    match command {
+        PaperCommand::ListAccounts => {
+            list_paper_accounts(&*lock(paper)?).map(McpReply::PaperAccounts)
+        }
+        PaperCommand::GetAccount { account_id } => get_paper_account(&*lock(paper)?, account_id)
+            .map(|detail| McpReply::PaperAccount(Box::new(detail))),
+        PaperCommand::ListHistory {
+            account_id,
+            closed_trades,
+            offset,
+            limit,
+        } => {
+            let host = lock(paper)?;
+            if closed_trades {
+                paper_trades(&host, account_id, offset, limit)
+                    .map(|result| McpReply::PaperTrades(Box::new(result)))
+            } else {
+                paper_fills(&host, account_id, offset, limit)
+                    .map(|result| McpReply::PaperFills(Box::new(result)))
+            }
+        }
+        PaperCommand::PlaceOrder {
+            request,
+            dry_run,
+            request_id,
+        } => {
+            let mut host = lock(paper)?;
+            let mut memory = orders.lock().map_err(|_| paper_unavailable())?;
+            let result = place_paper_order(
+                &mut host,
+                &mut memory,
+                *request,
+                dry_run,
+                request_id.as_deref(),
+            )?;
+            ctx.request_repaint();
+            Ok(McpReply::PaperOrder(Box::new(result)))
+        }
+        PaperCommand::ModifyOrder { order_id, changes } => {
+            let result = modify_paper_order(&mut *lock(paper)?, order_id, changes)?;
+            ctx.request_repaint();
+            Ok(McpReply::PaperChange(Box::new(result)))
+        }
+        PaperCommand::CancelOrders {
+            account_id,
+            order_ids,
+        } => {
+            let result = cancel_paper_orders(&mut *lock(paper)?, account_id, order_ids.as_deref())?;
+            ctx.request_repaint();
+            Ok(McpReply::PaperChange(Box::new(result)))
+        }
+        PaperCommand::ClosePositions {
+            account_id,
+            instrument_key,
+        } => {
+            let result =
+                close_paper_positions(&mut *lock(paper)?, account_id, instrument_key.as_deref())?;
+            ctx.request_repaint();
+            Ok(McpReply::PaperChange(Box::new(result)))
+        }
+    }
+}
+
+/// What a paper-trading command the user is asked about would do (see [`confirmation`]).
+pub fn describe(command: &PaperCommand, paper: &Mutex<PaperHost>) -> Result<Summary, McpError> {
+    match command {
+        PaperCommand::PlaceOrder { request, .. } => {
+            confirmation::place_order(&*lock(paper)?, request)
+        }
+        PaperCommand::ModifyOrder { order_id, changes } => {
+            confirmation::modify_order(&*lock(paper)?, *order_id, changes)
+        }
+        PaperCommand::CancelOrders {
+            account_id,
+            order_ids,
+        } => confirmation::cancel_orders(&*lock(paper)?, *account_id, order_ids.as_deref()),
+        PaperCommand::ClosePositions {
+            account_id,
+            instrument_key,
+        } => confirmation::close_positions(&*lock(paper)?, *account_id, instrument_key.as_deref()),
+        _ => confirmation::plainly(command),
+    }
+}
 
 fn paper_account(
     host: &PaperHost,

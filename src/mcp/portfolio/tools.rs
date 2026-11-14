@@ -2,8 +2,9 @@
 //! holdings come from the app's quote feed on the server's own threads, as for `get_quotes`.
 
 use crate::mcp::bridge::McpError;
-use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
 use crate::mcp::market::tools::quote_wait;
+use crate::mcp::portfolio::PortfolioCommand;
 use crate::mcp::portfolio::{
     DEFAULT_TRANSACTION_PAGE, HoldingsResult, MAX_PRICED_HOLDINGS, MAX_TRANSACTION_PAGE,
     PortfoliosResult, TransactionsResult, value_holdings,
@@ -80,7 +81,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PortfolioRead,
-                McpCommand::ListPortfolios,
+                PortfolioCommand::List,
                 REQUEST_TIMEOUT,
             )
             .await
@@ -114,7 +115,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PortfolioRead,
-                McpCommand::GetPortfolioHoldings { portfolio_id },
+                PortfolioCommand::GetHoldings { portfolio_id },
                 REQUEST_TIMEOUT,
             )
             .await
@@ -191,7 +192,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PortfolioRead,
-                McpCommand::ListPortfolioTransactions {
+                PortfolioCommand::ListTransactions {
                     portfolio_id,
                     asset,
                     offset: params.offset.unwrap_or(0) as usize,

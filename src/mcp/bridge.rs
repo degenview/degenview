@@ -6,16 +6,23 @@
 //! client lost the permission in the meantime is answered with an error and never executed — a
 //! timed-out call cannot surprise-mutate later.
 
+use crate::mcp::alert::AlertCommand;
+use crate::mcp::chart::ChartCommand;
+use crate::mcp::confirm::{Confirm, Gate};
+use crate::mcp::market::WatchlistCommand;
+use crate::mcp::paper::PaperCommand;
+use crate::mcp::pine::PineCommand;
+use crate::mcp::portfolio::PortfolioCommand;
+use crate::mcp::replay::ReplayRequest;
+use crate::mcp::snapshot::SnapshotCommand;
 use crate::mcp::state::{ClientIdentity, McpShared, Origin};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertChangeResult, AlertsResult, AppliedPineDetail,
-    AppliedPineList, ChartsResult, CreateAlertResult, PineAlertsResult, PineInstanceChangeResult,
-    PineReportResult, PineStylesResult, UpdateAlertResult, WorkspaceInfo,
+    AppliedPineList, CandlesResult, ChartsResult, CreateAlertResult, DrawingsChangeResult,
+    DrawingsResult, PineAlertsResult, PineInstanceChangeResult, PineReportResult, PineStylesResult,
+    UpdateAlertResult, WorkspaceInfo,
 };
-use crate::mcp::types::{CandlesResult, DrawingsChangeResult, DrawingsResult};
-use crate::model::alert::{AlertCurrency, AlertFrequency, AlertId};
 use crate::model::mcp::Permission;
-use crate::model::{BuiltIn, InstrumentId};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
@@ -29,254 +36,71 @@ pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// Extra patience for a request the app already started: it has run, so its outcome is real.
 const STARTED_GRACE: Duration = Duration::from_secs(5);
 
+/// What a tool asks the app thread to do, by domain. Each domain's commands, and what each says
+/// about the confirmation step ([`Confirm`]), live with that domain's tools in `mcp::<domain>`;
+/// the app runs them in `host::mcp::<domain>`. A new tool in an existing domain adds a variant
+/// there, never here.
 #[derive(Debug, Clone, PartialEq)]
 pub enum McpCommand {
-    ListWorkspaces,
-    ListCharts {
-        workspace_id: u64,
-    },
-    AddChart {
-        workspace_id: u64,
-        instrument: InstrumentId,
-    },
-    /// One alert by id, or the first page of all of them.
-    ListAlerts {
-        only: Option<AlertId>,
-    },
-    CreateAlert(Box<NewAlert>),
-    UpdateAlert(Box<AlertUpdate>),
-    /// What became of an alert command the app queued earlier (see [`AlertCommandOutcome`]).
-    AlertCommandOutcome {
-        command_id: u64,
-    },
-    SetAlertPaused {
-        alert_id: AlertId,
-        paused: bool,
-    },
-    DeleteAlert {
-        alert_id: AlertId,
-    },
-    ApplyIndicator {
-        workspace_id: u64,
-        chart_id: u64,
-        indicator: BuiltIn,
-        ema_period: Option<usize>,
-    },
-    ListChartPine {
-        workspace_id: u64,
-        chart_id: u64,
-    },
-    GetChartPine {
-        workspace_id: u64,
-        chart_id: u64,
-        instance_id: u64,
-    },
-    GetPineStyles {
-        workspace_id: u64,
-        chart_id: u64,
-        instance_id: u64,
-    },
-    GetPineReport {
-        workspace_id: u64,
-        chart_id: u64,
-        instance_id: u64,
-        offset: usize,
-        limit: usize,
-        include_equity: bool,
-    },
-    ListPineAlerts,
-    /// Applies a script (its checked saved text and input overrides) to a chart.
-    AddPineInstance {
-        workspace_id: u64,
-        chart_id: u64,
-        script: Box<crate::mcp::pine::ScriptToApply>,
-        visible: bool,
-    },
-    /// Changes an applied script's inputs (`None` clears that input) and/or visibility.
-    UpdatePineInstance {
-        workspace_id: u64,
-        chart_id: u64,
-        instance_id: u64,
-        inputs: Option<crate::mcp::pine::InputArgs>,
-        visible: Option<bool>,
-    },
-    RemovePineInstance {
-        workspace_id: u64,
-        chart_id: u64,
-        instance_id: u64,
-    },
-    /// The newest `limit` candles of a chart, or those before `before` (epoch ms).
-    GetCandles {
-        workspace_id: u64,
-        chart_id: u64,
-        limit: usize,
-        before: Option<i64>,
-    },
-    ListDrawings {
-        workspace_id: u64,
-        chart_id: u64,
-    },
-    AddDrawings {
-        workspace_id: u64,
-        chart_id: u64,
-        drawings: Vec<crate::mcp::chart::drawings::NewDrawing>,
-    },
-    EditDrawing {
-        workspace_id: u64,
-        chart_id: u64,
-        edit: Box<crate::mcp::chart::drawings::DrawingEdit>,
-    },
-    RemoveDrawings {
-        workspace_id: u64,
-        chart_id: u64,
-        drawing_ids: Vec<u64>,
-    },
-    /// Edit a script's text. `source: Some` writes it as the draft; `None` saves the current
-    /// draft over the saved source. Either way `expected_revision` must match the working text.
-    EditPineScript {
-        script_id: String,
-        expected_revision: String,
-        source: Option<String>,
-    },
-    /// Takes a built-in indicator off a chart.
-    RemoveIndicator {
-        workspace_id: u64,
-        chart_id: u64,
-        indicator: BuiltIn,
-    },
-    /// Built-in indicator readings over a chart's candles.
-    GetIndicatorValues {
-        workspace_id: u64,
-        chart_id: u64,
-        request: crate::mcp::indicator::ReadingRequest,
-    },
-    /// Session statistics over a chart's candles.
-    GetSessionStats {
-        workspace_id: u64,
-        chart_id: u64,
-        query: crate::mcp::session_stats::Query,
-    },
-    /// Moves the whole workspace to another timeframe.
-    SetTimeframe {
-        workspace_id: u64,
-        timeframe: crate::model::Timeframe,
-    },
-    SetChartType {
-        workspace_id: u64,
-        chart_id: u64,
-        chart_type: crate::model::ChartType,
-    },
-    RemoveChart {
-        workspace_id: u64,
-        chart_id: u64,
-    },
-    ListPaperAccounts,
-    GetPaperAccount {
-        account_id: u64,
-    },
-    /// Fills (`closed_trades: false`) or closed trades of an account, newest first.
-    ListPaperHistory {
-        account_id: u64,
-        closed_trades: bool,
-        offset: usize,
-        limit: usize,
-    },
-    /// Places a paper order (or only checks it, for a dry run). `request_id` makes a retry
-    /// return the order already placed instead of placing another.
-    PlacePaperOrder {
-        request: Box<crate::model::paper::PaperOrderRequest>,
-        dry_run: bool,
-        request_id: Option<String>,
-    },
-    ModifyPaperOrder {
-        order_id: u64,
-        changes: crate::model::paper::PaperOrderChanges,
-    },
-    /// Cancels the named working orders, or every working order of the account.
-    CancelPaperOrders {
-        account_id: u64,
-        order_ids: Option<Vec<u64>>,
-    },
-    /// Closes one position (by instrument key) or every open position of the account.
-    ClosePaperPositions {
-        account_id: u64,
-        instrument_key: Option<String>,
-    },
-    ListPortfolios,
-    /// The ledger side of a holdings read: one portfolio, or every unarchived one.
-    GetPortfolioHoldings {
-        portfolio_id: Option<u64>,
-    },
-    ListPortfolioTransactions {
-        portfolio_id: Option<u64>,
-        asset: Option<String>,
-        offset: usize,
-        limit: usize,
-    },
-    /// Starts a picture of a chart; the answer says which job to ask about.
-    BeginSnapshot {
-        workspace_id: u64,
-        chart_id: u64,
-        scale: crate::model::chart::snapshot::SnapshotScale,
-    },
-    /// Whether the picture a job is making is ready, and takes it if so.
-    PollSnapshot {
-        job_id: u64,
-    },
-    GetReplay {
-        workspace_id: u64,
-    },
-    ControlReplay {
-        workspace_id: u64,
-        command: crate::model::ReplayCommand,
-    },
-    ListWatchlists,
-    /// One page of a watchlist's entries. Quotes are not read here (the tool waits for them
-    /// off the app thread); the reply names the markets on the page.
-    GetWatchlist {
-        watchlist_id: u64,
-        offset: usize,
-        limit: usize,
-    },
-    /// A new list, optionally with markets already in it.
-    CreateWatchlist {
-        name: String,
-        markets: Vec<crate::model::watchlist::WatchlistInstrument>,
-    },
-    /// Renames a list, edits its sections and adds, removes and moves its markets, all or
-    /// nothing.
-    UpdateWatchlist {
-        watchlist_id: u64,
-        changes: Box<crate::store::watchlist::ListChanges>,
-    },
-    DeleteWatchlist {
-        watchlist_id: u64,
-    },
+    /// Workspaces, charts, built-in indicators, candles, drawings and chart control.
+    Chart(ChartCommand),
+    Alert(AlertCommand),
+    /// Scripts on charts and script edits.
+    Pine(PineCommand),
+    Paper(PaperCommand),
+    Portfolio(PortfolioCommand),
+    Watchlist(WatchlistCommand),
+    Replay(ReplayRequest),
+    Snapshot(SnapshotCommand),
 }
 
-/// A validated request to create a price alert. The target stays text: the alert editor parses
-/// it the same way it parses what a user types.
-#[derive(Debug, Clone, PartialEq)]
-pub struct NewAlert {
-    pub instrument: InstrumentId,
-    pub crosses_above: bool,
-    pub target_text: String,
-    pub currency: AlertCurrency,
-    pub frequency: AlertFrequency,
-    pub note: String,
+impl McpCommand {
+    /// The domain's own command, as the confirmation step reads it.
+    fn domain(&self) -> &dyn Confirm {
+        match self {
+            Self::Chart(command) => command,
+            Self::Alert(command) => command,
+            Self::Pine(command) => command,
+            Self::Paper(command) => command,
+            Self::Portfolio(command) => command,
+            Self::Watchlist(command) => command,
+            Self::Replay(command) => command,
+            Self::Snapshot(command) => command,
+        }
+    }
 }
 
-/// Changes to an existing price alert; `None` leaves that setting as it is. The market cannot
-/// be changed — that is a different alert.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AlertUpdate {
-    pub alert_id: AlertId,
-    pub crosses_above: Option<bool>,
-    pub target_text: Option<String>,
-    pub currency: Option<AlertCurrency>,
-    pub frequency: Option<AlertFrequency>,
-    pub note: Option<String>,
+impl Confirm for McpCommand {
+    fn gate(&self) -> Gate {
+        self.domain().gate()
+    }
+
+    fn plain_summary(&self) -> Option<(String, String)> {
+        self.domain().plain_summary()
+    }
 }
+
+/// So a tool can hand [`BridgeClient::call`] its domain's command as it is.
+macro_rules! from_domain {
+    ($($variant:ident($command:ty)),* $(,)?) => {
+        $(impl From<$command> for McpCommand {
+            fn from(command: $command) -> Self {
+                Self::$variant(command)
+            }
+        })*
+    };
+}
+
+from_domain!(
+    Chart(ChartCommand),
+    Alert(AlertCommand),
+    Pine(PineCommand),
+    Paper(PaperCommand),
+    Portfolio(PortfolioCommand),
+    Watchlist(WatchlistCommand),
+    Replay(ReplayRequest),
+    Snapshot(SnapshotCommand),
+);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum McpReply {
@@ -288,7 +112,7 @@ pub enum McpReply {
     AlertCreated(CreateAlertResult),
     AlertUpdated(UpdateAlertResult),
     AlertChanged(AlertChangeResult),
-    AlertCommand(AlertCommandOutcome),
+    AlertCommand(crate::mcp::alert::AlertCommandOutcome),
     ChartPine(AppliedPineList),
     ChartPineDetail(AppliedPineDetail),
     PineStyles(PineStylesResult),
@@ -318,37 +142,6 @@ pub enum McpReply {
     Watchlists(crate::mcp::market::WatchlistsResult),
     Watchlist(Box<crate::mcp::market::WatchlistPage>),
     WatchlistChanged(Box<crate::mcp::market::WatchlistChangeResult>),
-}
-
-/// The alert runtime applies queued commands on its own schedule and may refuse one whose
-/// precondition no longer holds. This is the answer for one command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AlertCommandOutcome {
-    /// Not applied yet (or too old to be remembered).
-    Pending,
-    Applied,
-    Rejected(crate::model::alert::AlertRejectReason),
-}
-
-impl AlertCommandOutcome {
-    /// The error a rejected command is reported as.
-    pub fn rejection_error(reason: crate::model::alert::AlertRejectReason) -> McpError {
-        use crate::model::alert::AlertRejectReason as Reason;
-        match reason {
-            Reason::Duplicate => McpError::Conflict(
-                "An identical price alert already exists (another request created it first); nothing was changed. List the alerts and retry".into(),
-            ),
-            Reason::LimitReached => McpError::ResourceLimit(
-                "The price alert limit was reached by other requests first; nothing was created".into(),
-            ),
-            Reason::Missing => McpError::Conflict(
-                "The price alert was deleted before this change could be applied; nothing was changed".into(),
-            ),
-            Reason::Changed => McpError::Conflict(
-                "The price alert was changed by another request or in DegenView before this change could be applied; nothing was changed. Read it again and retry".into(),
-            ),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -526,7 +319,7 @@ impl BridgeClient {
         &self,
         client: &ClientIdentity,
         permission: Permission,
-        command: McpCommand,
+        command: impl Into<McpCommand>,
         timeout: Duration,
     ) -> Reply {
         let (reply, answer) = oneshot::channel();
@@ -536,7 +329,7 @@ impl BridgeClient {
             client_id: client.id.clone(),
             origin: client.origin(),
             permission,
-            command,
+            command: command.into(),
             deadline: Instant::now() + timeout,
             generation: self.shared.generation(),
             state: state.clone(),
@@ -673,7 +466,7 @@ mod tests {
                     .call(
                         &identity("c1"),
                         Permission::ChartsRead,
-                        McpCommand::ListWorkspaces,
+                        McpCommand::Chart(ChartCommand::ListWorkspaces),
                         Duration::from_secs(5),
                     )
                     .await
@@ -689,7 +482,7 @@ mod tests {
         let seen = runs.clone();
         request.run(&shared, move |command, _origin| {
             seen.fetch_add(1, Ordering::SeqCst);
-            assert_eq!(command, McpCommand::ListWorkspaces);
+            assert_eq!(command, McpCommand::Chart(ChartCommand::ListWorkspaces));
             ok_reply(command)
         });
         assert_eq!(call.await.unwrap(), Ok(McpReply::Workspaces(Vec::new())));
@@ -723,7 +516,7 @@ mod tests {
                     .call(
                         &identity,
                         Permission::ChartsRead,
-                        McpCommand::ListWorkspaces,
+                        McpCommand::Chart(ChartCommand::ListWorkspaces),
                         Duration::from_secs(5),
                     )
                     .await
@@ -813,7 +606,7 @@ mod tests {
                     .call(
                         &local,
                         Permission::ChartsRead,
-                        McpCommand::ListWorkspaces,
+                        McpCommand::Chart(ChartCommand::ListWorkspaces),
                         Duration::from_secs(5),
                     )
                     .await
@@ -837,7 +630,7 @@ mod tests {
             .call(
                 &identity("c1"),
                 Permission::ChartsRead,
-                McpCommand::ListWorkspaces,
+                McpCommand::Chart(ChartCommand::ListWorkspaces),
                 Duration::from_millis(30),
             )
             .await;
@@ -856,7 +649,7 @@ mod tests {
                 .call(
                     &identity("c1"),
                     Permission::ChartsRead,
-                    McpCommand::ListWorkspaces,
+                    McpCommand::Chart(ChartCommand::ListWorkspaces),
                     Duration::from_secs(30),
                 )
                 .await
@@ -939,7 +732,7 @@ mod tests {
                     .call(
                         &identity("c1"),
                         Permission::ChartsRead,
-                        McpCommand::ListWorkspaces,
+                        McpCommand::Chart(ChartCommand::ListWorkspaces),
                         Duration::from_secs(5),
                     )
                     .await
@@ -971,7 +764,7 @@ mod tests {
                     .call(
                         &identity("c1"),
                         Permission::ChartsCreate,
-                        McpCommand::ListWorkspaces,
+                        McpCommand::Chart(ChartCommand::ListWorkspaces),
                         Duration::from_secs(5),
                     )
                     .await
@@ -1002,7 +795,7 @@ mod tests {
                     .call(
                         &identity("c1"),
                         Permission::ChartsRead,
-                        McpCommand::ListWorkspaces,
+                        McpCommand::Chart(ChartCommand::ListWorkspaces),
                         Duration::from_millis(200),
                     )
                     .await
@@ -1013,7 +806,7 @@ mod tests {
             .call(
                 &identity("c1"),
                 Permission::ChartsRead,
-                McpCommand::ListWorkspaces,
+                McpCommand::Chart(ChartCommand::ListWorkspaces),
                 Duration::from_millis(200),
             )
             .await;

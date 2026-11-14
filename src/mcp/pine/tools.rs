@@ -2,9 +2,9 @@
 //! change and remove the scripts applied to charts. Script reads and compiles run on a worker
 //! against `ScriptStore`; what a chart has computed is read on the app thread.
 
-use crate::mcp::bridge::{McpCommand, McpError, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::chart::tools::ChartPineParams;
-use crate::mcp::pine::{self, InputArgs, Target, Version};
+use crate::mcp::pine::{self, InputArgs, PineCommand, Target, Version};
 use crate::mcp::state::ClientIdentity;
 use crate::mcp::tools::{
     Caller, DegenViewMcp, failure, invalid, parse_chart_id, parse_id, parse_workspace_id,
@@ -291,7 +291,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PineScriptsWrite,
-                McpCommand::EditPineScript {
+                PineCommand::EditScript {
                     script_id: id.clone(),
                     expected_revision: params.expected_revision,
                     source: Some(params.source),
@@ -344,7 +344,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PineScriptsSave,
-                McpCommand::EditPineScript {
+                PineCommand::EditScript {
                     script_id: id.clone(),
                     expected_revision: params.expected_revision,
                     source: None,
@@ -457,7 +457,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PineScriptsList,
-                McpCommand::ListChartPine {
+                PineCommand::ListInstances {
                     workspace_id,
                     chart_id,
                 },
@@ -494,7 +494,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PineInputsRead,
-                McpCommand::GetChartPine {
+                PineCommand::GetInstance {
                     workspace_id,
                     chart_id,
                     instance_id,
@@ -541,7 +541,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PineStylesRead,
-                McpCommand::GetPineStyles {
+                PineCommand::GetStyles {
                     workspace_id,
                     chart_id,
                     instance_id,
@@ -587,7 +587,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PineReportsRead,
-                McpCommand::GetPineReport {
+                PineCommand::GetReport {
                     workspace_id,
                     chart_id,
                     instance_id,
@@ -635,7 +635,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PineAlertsRead,
-                McpCommand::ListPineAlerts,
+                PineCommand::ListAlerts,
                 REQUEST_TIMEOUT,
             )
             .await
@@ -677,7 +677,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsPineInstancesWrite,
-                McpCommand::AddPineInstance {
+                PineCommand::AddInstance {
                     workspace_id,
                     chart_id,
                     script: Box::new(script),
@@ -720,7 +720,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsPineInstancesWrite,
-                McpCommand::UpdatePineInstance {
+                PineCommand::UpdateInstance {
                     workspace_id,
                     chart_id,
                     instance_id,
@@ -760,7 +760,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsPineInstancesWrite,
-                McpCommand::RemovePineInstance {
+                PineCommand::RemoveInstance {
                     workspace_id,
                     chart_id,
                     instance_id,

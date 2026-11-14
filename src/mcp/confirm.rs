@@ -6,9 +6,9 @@
 //! `CONFIRMATION_REQUIRED` straight away with an id and an expiry, the user approves or declines
 //! in the app, and the agent repeats the exact same call, which then runs once.
 //!
-//! This module is the egui-free half: which commands are gated ([`gate`], an exhaustive match so a
-//! new command cannot be added without deciding), and the [`ConfirmationBook`] of what is waiting
-//! for an answer. An approval is tied to the client and to the exact command, not to a tool name:
+//! This module is the egui-free half: which commands are gated ([`gate`]: each domain's
+//! [`Confirm::gate`], an exhaustive match, so a new command cannot be added without deciding), and
+//! the [`ConfirmationBook`] of what is waiting for an answer. An approval is tied to the client and to the exact command, not to a tool name:
 //! a repeat with any argument changed is a different operation and asks again. An approval is
 //! used up by the call that runs it, and only if what it would do is still what the user was
 //! shown: a summary carries the resolved target (the orders an "all" reaches), and a repeat whose
@@ -37,16 +37,33 @@ pub const MAX_PENDING_TOTAL: usize = 32;
 /// Longest a summary line is kept, so a long name cannot make a dialog unreadable.
 pub const SUMMARY_LIMIT: usize = 140;
 
-/// Whether a command needs the user's approval.
+/// Whether a command needs the user's approval, and the tool whose call it is (for the activity
+/// log) when it may.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Gate {
     /// Runs as soon as the permission allows it.
     Free,
     /// Asks the user first (unless the user turned confirmation off).
-    Ask,
+    Ask(&'static str),
     /// Changes something, but is easy to see and to undo in the app: runs unasked for a local
     /// credential, and asks for one with remote access (see [`needs_approval`]).
-    AskRemote,
+    AskRemote(&'static str),
+}
+
+/// What a domain's commands say about this step. Each domain implements it beside its commands,
+/// with exhaustive matches: a command cannot be added without deciding whether it asks.
+pub trait Confirm {
+    fn gate(&self) -> Gate;
+
+    /// What a command asked about only of a credential with remote access would do, as
+    /// `(action, target)`, from the command alone (see [`remote_summary`]). These changes are easy
+    /// to see and to undo, so the question is a plain description without the lookups the
+    /// high-impact ones do; what it names comes from the command and the script library, not from
+    /// free text the agent chose, except where the agent's own value is the point (an alert's
+    /// price, a list's name). `None` for any other command.
+    fn plain_summary(&self) -> Option<(String, String)> {
+        None
+    }
 }
 
 /// Whether `client_id`'s `command` has to be approved by the user first.
@@ -68,78 +85,14 @@ pub fn needs_approval(
     let remote = remote_origin || shared.is_remote_client(client_id);
     match gate(command) {
         Gate::Free => false,
-        Gate::Ask => remote || shared.require_confirmation(),
-        Gate::AskRemote => remote,
+        Gate::Ask(_) => remote || shared.require_confirmation(),
+        Gate::AskRemote(_) => remote,
     }
 }
 
-/// The decision for every command. An exhaustive match on purpose: adding a command to
-/// `McpCommand` fails to compile here until someone decides whether it needs approval.
+/// The decision for every command, made by its domain ([`Confirm::gate`]).
 pub fn gate(command: &McpCommand) -> Gate {
-    use McpCommand as C;
-    match command {
-        // Cannot be undone from here.
-        C::DeleteAlert { .. }
-        | C::DeleteWatchlist { .. }
-        | C::RemoveDrawings { .. }
-        | C::RemoveChart { .. }
-        | C::RemovePineInstance { .. }
-        // Overwrites the saved source. Saving is the step that counts for a local credential.
-        | C::EditPineScript { source: None, .. }
-        // Simulated money, but the orders are real to the paper account. A dry run only checks.
-        | C::PlacePaperOrder { dry_run: false, .. }
-        | C::ModifyPaperOrder { .. }
-        | C::CancelPaperOrders { .. }
-        | C::ClosePaperPositions { .. } => Gate::Ask,
-
-        // Writing a draft changes what is in the editor, and is free for a local credential.
-        C::EditPineScript { source: Some(_), .. } => Gate::AskRemote,
-        // Only checks; nothing is placed.
-        C::PlacePaperOrder { dry_run: true, .. } => Gate::Free,
-
-        // Reads.
-        C::ListWorkspaces
-        | C::ListCharts { .. }
-        | C::ListAlerts { .. }
-        | C::AlertCommandOutcome { .. }
-        | C::ListChartPine { .. }
-        | C::GetChartPine { .. }
-        | C::GetPineStyles { .. }
-        | C::GetPineReport { .. }
-        | C::ListPineAlerts
-        | C::GetCandles { .. }
-        | C::ListDrawings { .. }
-        | C::GetIndicatorValues { .. }
-        | C::GetSessionStats { .. }
-        | C::ListPaperAccounts
-        | C::GetPaperAccount { .. }
-        | C::ListPaperHistory { .. }
-        | C::ListPortfolios
-        | C::GetPortfolioHoldings { .. }
-        | C::ListPortfolioTransactions { .. }
-        | C::BeginSnapshot { .. }
-        | C::PollSnapshot { .. }
-        | C::GetReplay { .. }
-        | C::ListWatchlists
-        | C::GetWatchlist { .. } => Gate::Free,
-
-        // Changes, but easy to see and to undo in the app.
-        C::AddChart { .. }
-        | C::CreateAlert(_)
-        | C::UpdateAlert(_)
-        | C::SetAlertPaused { .. }
-        | C::ApplyIndicator { .. }
-        | C::RemoveIndicator { .. }
-        | C::AddPineInstance { .. }
-        | C::UpdatePineInstance { .. }
-        | C::AddDrawings { .. }
-        | C::EditDrawing { .. }
-        | C::SetTimeframe { .. }
-        | C::SetChartType { .. }
-        | C::ControlReplay { .. }
-        | C::CreateWatchlist { .. }
-        | C::UpdateWatchlist { .. } => Gate::AskRemote,
-    }
+    command.gate()
 }
 
 /// The tools whose calls can raise a question: what [`tool_of`] can answer. The tests check that
@@ -161,122 +114,16 @@ pub const GATED_TOOLS: [&str; 10] = [
 /// The tool whose call produced a gated command (for the activity log), or `None` for a command
 /// that is not gated.
 pub fn tool_of(command: &McpCommand) -> Option<&'static str> {
-    use McpCommand as C;
-    if gate(command) == Gate::Free {
-        return None;
+    match gate(command) {
+        Gate::Free => None,
+        Gate::Ask(tool) | Gate::AskRemote(tool) => Some(tool),
     }
-    Some(match command {
-        C::DeleteAlert { .. } => "degenview_delete_price_alert",
-        C::DeleteWatchlist { .. } => "degenview_delete_watchlist",
-        C::RemoveDrawings { .. } => "degenview_delete_drawings",
-        C::RemoveChart { .. } => "degenview_remove_chart",
-        C::RemovePineInstance { .. } => "degenview_remove_pine_instance",
-        C::EditPineScript { source: None, .. } => "degenview_save_pine_script",
-        C::PlacePaperOrder { .. } => "degenview_place_paper_order",
-        C::ModifyPaperOrder { .. } => "degenview_modify_paper_order",
-        C::CancelPaperOrders { .. } => "degenview_cancel_paper_orders",
-        C::ClosePaperPositions { .. } => "degenview_close_paper_positions",
-        // Asked only of a credential with remote access (`needs_approval`).
-        C::EditPineScript {
-            source: Some(_), ..
-        } => "degenview_update_pine_script",
-        C::AddChart { .. } => "degenview_add_chart",
-        C::CreateAlert(_) => "degenview_create_price_alert",
-        C::UpdateAlert(_) => "degenview_update_price_alert",
-        C::SetAlertPaused { paused: true, .. } => "degenview_pause_price_alert",
-        C::SetAlertPaused { paused: false, .. } => "degenview_resume_price_alert",
-        C::ApplyIndicator { .. } => "degenview_add_indicator",
-        C::RemoveIndicator { .. } => "degenview_remove_indicator",
-        C::AddPineInstance { .. } => "degenview_add_pine_script_to_chart",
-        C::UpdatePineInstance { .. } => "degenview_update_pine_instance",
-        C::AddDrawings { .. } => "degenview_add_drawings",
-        C::EditDrawing { .. } => "degenview_update_drawing",
-        C::SetTimeframe { .. } => "degenview_set_timeframe",
-        C::SetChartType { .. } => "degenview_set_chart_type",
-        C::ControlReplay { .. } => "degenview_control_replay",
-        C::CreateWatchlist { .. } => "degenview_create_watchlist",
-        C::UpdateWatchlist { .. } => "degenview_update_watchlist",
-        // `gate` says Ask or AskRemote only for the commands above.
-        _ => return None,
-    })
 }
 
 /// What a command that is asked about only for a credential with remote access would do, from
-/// the command alone. These changes are easy to see and to undo, so the question is a plain
-/// description without the lookups the high-impact ones do; what it names comes from the command
-/// and the script library, not from free text the agent chose, except where the agent's own value
-/// is the point (an alert's price, a list's name). `None` for any other command.
-pub fn remote_summary(command: &McpCommand) -> Option<Summary> {
-    use McpCommand as C;
-    let (action, target) = match command {
-        C::AddChart { instrument, .. } => ("Add a chart".to_owned(), instrument.symbol.clone()),
-        C::CreateAlert(alert) => (
-            "Create a price alert".to_owned(),
-            format!(
-                "{} crosses {} {}",
-                alert.instrument.symbol,
-                if alert.crosses_above {
-                    "above"
-                } else {
-                    "below"
-                },
-                alert.target_text
-            ),
-        ),
-        C::UpdateAlert(update) => (
-            "Change a price alert".to_owned(),
-            format!("alert {}", update.alert_id),
-        ),
-        C::SetAlertPaused { alert_id, paused } => (
-            if *paused {
-                "Pause a price alert"
-            } else {
-                "Resume a price alert"
-            }
-            .to_owned(),
-            format!("alert {alert_id}"),
-        ),
-        C::ApplyIndicator { indicator, .. } => (
-            "Add an indicator to a chart".to_owned(),
-            format!("{indicator:?}"),
-        ),
-        C::RemoveIndicator { indicator, .. } => (
-            "Remove an indicator from a chart".to_owned(),
-            format!("{indicator:?}"),
-        ),
-        C::AddPineInstance { script, .. } => {
-            ("Apply a script to a chart".to_owned(), script.name.clone())
-        }
-        C::UpdatePineInstance { .. } => ("Change a script on a chart".to_owned(), String::new()),
-        C::AddDrawings { drawings, .. } => (
-            "Draw on a chart".to_owned(),
-            if drawings.len() == 1 {
-                "1 drawing".to_owned()
-            } else {
-                format!("{} drawings", drawings.len())
-            },
-        ),
-        C::EditDrawing { .. } => ("Change a drawing".to_owned(), String::new()),
-        C::SetTimeframe { timeframe, .. } => {
-            ("Change the timeframe".to_owned(), format!("{timeframe:?}"))
-        }
-        C::SetChartType { chart_type, .. } => (
-            "Change the chart type".to_owned(),
-            format!("{chart_type:?}"),
-        ),
-        C::ControlReplay { .. } => ("Control the replay".to_owned(), String::new()),
-        C::CreateWatchlist { name, .. } => ("Create a watchlist".to_owned(), name.clone()),
-        C::UpdateWatchlist { watchlist_id, .. } => (
-            "Change a watchlist".to_owned(),
-            format!("watchlist {watchlist_id}"),
-        ),
-        C::EditPineScript {
-            script_id,
-            source: Some(_),
-            ..
-        } => ("Write a script draft".to_owned(), script_id.clone()),
-        _ => return None,
-    };
+/// the command alone ([`Confirm::plain_summary`]). `None` for any other command.
+pub fn remote_summary(command: &(impl Confirm + ?Sized)) -> Option<Summary> {
+    let (action, target) = command.plain_summary()?;
     Some(
         Summary::new(action, target)
             .with_note("This credential can be used from another machine, so it asks first."),
@@ -635,9 +482,15 @@ impl ConfirmationBook {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::alert::AlertCommand;
+    use crate::mcp::chart::ChartCommand;
+    use crate::mcp::market::WatchlistCommand;
+    use crate::mcp::paper::PaperCommand;
+    use crate::mcp::pine::PineCommand;
+    use crate::mcp::replay::ReplayRequest;
 
     fn delete(alert_id: u64) -> McpCommand {
-        McpCommand::DeleteAlert { alert_id }
+        McpCommand::Alert(AlertCommand::Delete { alert_id })
     }
 
     fn summary(text: &str) -> Summary {
@@ -906,41 +759,44 @@ mod tests {
     #[test]
     fn gated_commands_are_the_destructive_and_paper_money_ones() {
         let ask = [
-            McpCommand::DeleteAlert { alert_id: 1 },
-            McpCommand::DeleteWatchlist { watchlist_id: 1 },
-            McpCommand::RemoveDrawings {
+            McpCommand::Alert(AlertCommand::Delete { alert_id: 1 }),
+            McpCommand::Watchlist(WatchlistCommand::Delete { watchlist_id: 1 }),
+            McpCommand::Chart(ChartCommand::RemoveDrawings {
                 workspace_id: 1,
                 chart_id: 1,
                 drawing_ids: vec![1],
-            },
-            McpCommand::RemoveChart {
+            }),
+            McpCommand::Chart(ChartCommand::RemoveChart {
                 workspace_id: 1,
                 chart_id: 1,
-            },
-            McpCommand::RemovePineInstance {
+            }),
+            McpCommand::Pine(PineCommand::RemoveInstance {
                 workspace_id: 1,
                 chart_id: 1,
                 instance_id: 1,
-            },
-            McpCommand::EditPineScript {
+            }),
+            McpCommand::Pine(PineCommand::EditScript {
                 script_id: "s".into(),
                 expected_revision: "r".into(),
                 source: None,
-            },
-            McpCommand::CancelPaperOrders {
+            }),
+            McpCommand::Paper(PaperCommand::CancelOrders {
                 account_id: 1,
                 order_ids: None,
-            },
-            McpCommand::ClosePaperPositions {
+            }),
+            McpCommand::Paper(PaperCommand::ClosePositions {
                 account_id: 1,
                 instrument_key: None,
-            },
+            }),
         ];
         for command in &ask {
-            assert_eq!(gate(command), Gate::Ask, "{command:?}");
+            assert!(matches!(gate(command), Gate::Ask(_)), "{command:?}");
             assert!(tool_of(command).is_some_and(|tool| GATED_TOOLS.contains(&tool)));
         }
-        let free = [McpCommand::ListWorkspaces, McpCommand::ListWatchlists];
+        let free = [
+            McpCommand::Chart(ChartCommand::ListWorkspaces),
+            McpCommand::Watchlist(WatchlistCommand::List),
+        ];
         for command in &free {
             assert_eq!(gate(command), Gate::Free, "{command:?}");
             assert_eq!(tool_of(command), None);
@@ -953,43 +809,43 @@ mod tests {
 
     fn remote_asks() -> Vec<McpCommand> {
         vec![
-            McpCommand::SetTimeframe {
+            McpCommand::Chart(ChartCommand::SetTimeframe {
                 workspace_id: 1,
                 timeframe: crate::model::Timeframe::Day,
-            },
-            McpCommand::EditPineScript {
+            }),
+            McpCommand::Pine(PineCommand::EditScript {
                 script_id: "s".into(),
                 expected_revision: "r".into(),
                 source: Some("x".into()),
-            },
-            McpCommand::SetAlertPaused {
+            }),
+            McpCommand::Alert(AlertCommand::SetPaused {
                 alert_id: 3,
                 paused: true,
-            },
-            McpCommand::SetAlertPaused {
+            }),
+            McpCommand::Alert(AlertCommand::SetPaused {
                 alert_id: 3,
                 paused: false,
-            },
-            McpCommand::CreateWatchlist {
+            }),
+            McpCommand::Watchlist(WatchlistCommand::Create {
                 name: "Majors".into(),
                 markets: Vec::new(),
-            },
-            McpCommand::ControlReplay {
+            }),
+            McpCommand::Replay(ReplayRequest::Control {
                 workspace_id: 1,
                 command: crate::model::ReplayCommand::Stop,
-            },
-            McpCommand::RemoveIndicator {
+            }),
+            McpCommand::Chart(ChartCommand::RemoveIndicator {
                 workspace_id: 1,
                 chart_id: 1,
                 indicator: crate::model::BuiltIn::Rsi,
-            },
+            }),
         ]
     }
 
     #[test]
     fn changes_that_are_easy_to_undo_are_asked_about_only_of_a_remote_credential() {
         for command in &remote_asks() {
-            assert_eq!(gate(command), Gate::AskRemote, "{command:?}");
+            assert!(matches!(gate(command), Gate::AskRemote(_)), "{command:?}");
             // Each one can be described and named in the log, or it could not be asked about.
             let summary = remote_summary(command).unwrap_or_else(|| panic!("{command:?}"));
             assert!(!summary.action.is_empty());
@@ -1000,28 +856,28 @@ mod tests {
             );
         }
         assert_eq!(
-            remote_summary(&McpCommand::SetAlertPaused {
+            remote_summary(&McpCommand::Alert(AlertCommand::SetPaused {
                 alert_id: 3,
                 paused: false
-            })
+            }))
             .unwrap()
             .line(),
             "Resume a price alert: alert 3"
         );
         assert_eq!(
-            tool_of(&McpCommand::SetAlertPaused {
+            tool_of(&McpCommand::Alert(AlertCommand::SetPaused {
                 alert_id: 3,
                 paused: true
-            }),
+            })),
             Some("degenview_pause_price_alert")
         );
         // A draft and a save are different tools.
         assert_eq!(
-            tool_of(&McpCommand::EditPineScript {
+            tool_of(&McpCommand::Pine(PineCommand::EditScript {
                 script_id: "s".into(),
                 expected_revision: "r".into(),
                 source: None,
-            }),
+            })),
             Some("degenview_save_pine_script")
         );
     }
@@ -1047,7 +903,7 @@ mod tests {
 
     #[test]
     fn a_request_that_arrived_as_remote_keeps_asking_when_remote_access_is_switched_off() {
-        let destructive = McpCommand::DeleteAlert { alert_id: 1 };
+        let destructive = McpCommand::Alert(AlertCommand::Delete { alert_id: 1 });
         let change = remote_asks().remove(0);
         for require in [true, false] {
             // The credential has just stopped being remote (shared_with(false, ..)), but the
@@ -1080,9 +936,9 @@ mod tests {
 
     #[test]
     fn who_is_asked_about_what() {
-        let destructive = McpCommand::DeleteAlert { alert_id: 1 };
+        let destructive = McpCommand::Alert(AlertCommand::Delete { alert_id: 1 });
         let change = remote_asks().remove(0);
-        let read = McpCommand::ListWorkspaces;
+        let read = McpCommand::Chart(ChartCommand::ListWorkspaces);
         for (remote, require) in [(false, true), (false, false), (true, true), (true, false)] {
             let shared = shared_with(remote, require);
             let asks = |command: &McpCommand| needs_approval(&shared, "c", false, command);
