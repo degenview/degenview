@@ -157,7 +157,7 @@ impl SettingsHost {
         let mut out = Vec::new();
         // The page fills the native Settings window itself: no egui window inside it, which
         // drew a second title bar and let the page be dragged around within its own window.
-        let endpoints = store.webhook_endpoints();
+        let endpoints = store.webhook_endpoints_cached();
         // Read again every second, like the assistant's: a change another Mac made reaches the page.
         if self
             .snapshots_read_at

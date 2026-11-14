@@ -78,7 +78,7 @@ impl ChartWorkspace {
         let endpoints = self
             .store
             .lock()
-            .map(|store| store.webhook_endpoints())
+            .map(|store| store.webhook_endpoints_cached())
             .unwrap_or_default();
         let mut actions = Vec::new();
         let mut finished = false;

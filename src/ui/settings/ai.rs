@@ -121,7 +121,7 @@ impl AiSettingsState {
         let kind = self.kind();
         if store.is_configured(kind) {
             ("API key saved", Tone::Good)
-        } else if std::env::var(kind.env_var()).is_ok_and(|value| !value.trim().is_empty()) {
+        } else if kind.env_key_present() {
             ("Key from environment", Tone::Good)
         } else if kind.needs_key() {
             ("No API key", Tone::Neutral)

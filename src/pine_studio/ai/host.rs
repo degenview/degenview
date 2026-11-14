@@ -35,8 +35,7 @@ pub(in crate::pine_studio) fn diagnostics_of(script: &str) -> Vec<Diagnostic> {
 }
 
 fn key_available(kind: ProviderKind) -> bool {
-    AiKeyStore::shared().is_configured(kind)
-        || std::env::var(kind.env_var()).is_ok_and(|value| !value.trim().is_empty())
+    AiKeyStore::shared().is_configured(kind) || kind.env_key_present()
 }
 
 impl PineStudio {
