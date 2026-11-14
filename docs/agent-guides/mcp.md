@@ -4,12 +4,37 @@
 
 - Only `src/mcp/` may use async: one current-thread Tokio runtime on the `mcp-server` thread for
   rmcp/axum. Keep it egui-free; `host/mcp/mod.rs` bridges stateful workspace access.
-- Tools validate and enqueue `mcp::bridge::Request`; `DegenViewApp::tick_mcp` runs it via workspace
-  methods on the app thread. Tool/HTTP threads never lock `TabSlot`/`ChartWorkspace` or write SQLite.
-- Authorize each call from fresh `McpShared` state. New tool: add a `Permission`, map it in
-  `tools::required_permission`, test direct-call denial. Unmapped routed tools never run (`call_tool`
-  fails closed; `every_routed_tool_has_a_permission_and_an_unmapped_name_is_not_run` fails the
-  build).
+- Tools validate and enqueue `mcp::bridge::Request`; `DegenViewApp::tick_mcp` hands it to its
+  domain's `host::mcp::<domain>::run` on the app thread. Tool/HTTP threads never lock
+  `TabSlot`/`ChartWorkspace` or write SQLite. A domain gets the parts of the app it reaches (an
+  `McpTabs` view of the tabs, a store, a host), never `DegenViewApp`.
+- Authorize each call from fresh `McpShared` state. Map every tool in `tools::required_permission`
+  and test direct-call denial. Unmapped routed tools never run (`call_tool` fails closed;
+  `every_routed_tool_has_a_permission_and_an_unmapped_name_is_not_run` fails the build), and
+  `the_tool_list_and_its_permissions_are_pinned` holds the whole list.
+
+## Adding a tool
+
+In its domain (`chart`, `alert`, `pine`, `paper`, `portfolio`, `market` for watchlists, `replay`,
+`snapshot`):
+
+1. Name and permission: a `const` with the domain's other names (`mcp/tools.rs` or
+   `mcp/<domain>/tools.rs`), its arm in `tools::required_permission` (a new `Permission` if no
+   grant fits) and its row in `the_tool_list_and_its_permissions_are_pinned`.
+2. The handler in the domain's `#[tool_router]`: it takes `Caller(client): Caller` beside its
+   `Parameters`, checks every argument, then `self.bridge.call(&client, permission,
+   <Domain>Command::…, REQUEST_TIMEOUT)`. A tool that needs no app thread (search, quotes) skips the
+   bridge.
+3. The command: a variant of the domain's command enum (`mcp::<domain>`) and its arm in that
+   enum's `Confirm::gate` (see Confirmation).
+4. The app-thread work: its arm in `host::mcp::<domain>::run`; reuse an `McpReply` variant or add one.
+5. Results: a field that takes a closed set of words (a status, a kind) is an enum
+   (`wire_words!` in `mcp::types`, snake_case), never a `String` set from a literal.
+
+Both matches are exhaustive, so a missing step does not compile. `app/mcp.rs` and
+`mcp/bridge.rs` change only for a new domain: an `McpCommand` variant (and its `from_domain!`
+entry and `McpCommand::domain` arm), its arms in the app's `run_mcp_command` and
+`confirmation_summary`, and its router in `DegenViewMcp::new`.
 - Persist before publishing shared state. Store/log only SHA-256 token verifiers, never tokens.
   `McpShared::authenticate` carries a match across its lock gap as the client id, re-checking the
   verifier; never a list index.
@@ -52,9 +77,10 @@
 
 ## Confirmation
 
-- Classify each new mutating `McpCommand` in `mcp::confirm::gate` (exhaustive match). If it asks:
-  describe it in `App::confirmation_summary` / `host::mcp::confirmation` from what the app knows of
-  the target, never agent text (missing target: own error, unasked); add its tool to
+- Classify each new command in its domain's `Confirm::gate` (`mcp::<domain>`, an exhaustive match;
+  `Gate::Ask` and `Gate::AskRemote` carry the tool's name for the log). If it asks: describe it in
+  `host::mcp::<domain>::describe` with a summary from `host::mcp::confirmation`, from what the app
+  knows of the target, never agent text (missing target: own error, unasked); add its tool to
   `confirm::GATED_TOOLS`; say so in the tool description.
 - The gate runs on the app thread before dispatch, never waits: it answers `CONFIRMATION_REQUIRED`
   and the agent repeats the call. An approval is consumed by its call; never widen it beyond the
@@ -64,8 +90,8 @@
 - Approval is decided by `confirm::needs_approval(shared, client_id, command)`, never `gate` alone.
   `remote_allowed` credential: asked about every change (`Gate::Ask`, `Gate::AskRemote`), "ask before
   high-impact requests" setting ignored. Local: `Gate::Ask` only, never with the setting off. An
-  `AskRemote` command also needs a `tool_of` name and `confirm::remote_summary`, else it is refused,
-  not run unasked. Turning the setting off drains only local questions
+  `AskRemote` command also needs a `Confirm::plain_summary` (read through `confirm::remote_summary`),
+  else it is refused, not run unasked. Turning the setting off drains only local questions
   (`ConfirmationBook::drain_where`).
 
 ## Tools
@@ -75,15 +101,16 @@
   as the sheet does). The snapshot is up to 1 s old and shared per frame, so commands carry an
   `AlertPrecondition` (`Create`: id free, below the cap, no identical alert; `Unchanged`: alert still
   matches the planned base) checked by `AlertEngine::apply`. Refusals land in `rejected_commands`
-  and surface as `CONFLICT` via `McpCommand::AlertCommandOutcome`. Never use snapshot `revision` as
+  and surface as `CONFLICT` via `AlertCommand::CommandOutcome`. Never use snapshot `revision` as
   a precondition (moves on every quote and delivery). An unqueueable save is an error, never "queued".
-- Read-only script tools: `mcp/pine.rs` with `ScriptStore` and compiler on a worker; chart-private
-  Pine state via `ChartWorkspace::pine_instance_views` on the app thread. Never invent reports or
-  alert history.
+- Read-only script tools: `mcp/pine/tools.rs` and `mcp/pine/mod.rs` with `ScriptStore` and compiler
+  on a worker; chart-private Pine state via `ChartWorkspace::pine_instance_views` on the app
+  thread. Never invent reports or alert history.
 - Scripts on charts: `ChartWorkspace::{add_pine_instance_to,
   change_pine_instance,remove_pine_instance_from}` (take the undo step); validate scripts and inputs
   with `mcp::pine` before queuing; apply only saved text, never the draft.
-- Pine edits: revision-checked `mcp::pine::{update_draft,save_script}` on the app thread, then
+- Pine edits: revision-checked `mcp::pine::{update_draft,save_script}` on the app thread
+  (`host::mcp::pine`, reaching the Pine Studio through `McpTabs::find_in_pine_studios`), then
   `PineStudio::adopt_external_text`. Never bypass the live editor revision or write script files
   from a worker. Saves compare the file with what the editor last read
   (`PineStudio::open_disk_state`, `ScriptStore::save_if_unchanged`) and are refused during an

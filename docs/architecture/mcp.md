@@ -9,6 +9,19 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
        → permission/deadline/cancel recheck → existing workspace/host mutation path
 ```
 
+## Routing
+
+A tool lives in its domain's router (`mcp::chart::tools`, `mcp::alert::tools`, `mcp::pine::tools`,
+`mcp::market::tools` and the others, put together in `DegenViewMcp::new`). It takes its caller
+through the `Caller` extractor and queues one `McpCommand`, which is one variant per domain
+(`Chart`, `Alert`, `Pine`, `Paper`, `Portfolio`, `Watchlist`, `Replay`, `Snapshot`) carrying that
+domain's own command enum, defined beside its tools with what it says about confirmation
+(`confirm::Confirm`). On the app thread `DegenViewApp::run_mcp_command` only routes: it hands the
+domain's command to `host::mcp::<domain>::run` with the parts of the app it reaches (an `McpTabs`
+view of the open tabs, a store, a host, the alert sheet's Save), and `confirmation_summary` hands it
+to `host::mcp::<domain>::describe`. Replies stay one `McpReply` enum. Result fields with a closed set
+of words (statuses, kinds, versions) are snake_case enums in `mcp::types`.
+
 ## Security and execution
 
 - Bind loopback only. Accept `Host` for `127.0.0.1`/`localhost`; reject every `Origin`. Without a
@@ -53,8 +66,9 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   before it existed; published to `McpShared` so the app thread reads it without the host lock),
   these commands wait for the user: delete alert / watchlist / drawings, remove chart or script
   instance, save a script over its saved source (a draft write is free), and paper order place (a dry
-  run is free), modify, cancel and close. `confirm::gate` decides, as an exhaustive match, so a new
-  `McpCommand` cannot compile until someone says whether it asks. The gate runs on the app thread in
+  run is free), modify, cancel and close. `confirm::gate` decides from each domain's
+  `Confirm::gate` (an exhaustive match beside the domain's commands, naming the tool), so a new
+  command cannot compile until someone says whether it asks. The gate runs on the app thread in
   `App::run_gated`, before dispatch, and never parks a worker: the first call answers
   `CONFIRMATION_REQUIRED` at once (with `confirmation_id`, `expires_in_seconds`, `operation`,
   `next_step`; nothing changed) and opens a question; the user answers in a modal drawn by the
@@ -70,8 +84,8 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   user reads the whole summary. A question lives 120 s, an approval 120 s
   after it is given, a "no" 300 s (the agent gets `CONFIRMATION_DENIED`, not another question); a
   client may have 8 open and the app 32 (`RESOURCE_LIMIT` beyond). The summary the user reads is
-  built by the app from what it knows of the target (`host::mcp::confirmation::delete_alert` and
-  the others; a target that does not exist is refused with its own error, unasked), never from
+  built by the app from what it knows of the target (each domain's `host::mcp::<domain>::describe`
+  picks `host::mcp::confirmation::delete_alert` or another; a target that does not exist is refused with its own error, unasked), never from
   agent text, and is cut to one clean line. Revoking a client drops what it had open; turning the setting off, or stopping and starting
   the server (off and on, a new port: `McpShared::generation` moved), drops everything, and the
   questions nobody answered are logged as expired. Answers and expiries are rows in the activity log (`Confirmation` kind: Approved,
