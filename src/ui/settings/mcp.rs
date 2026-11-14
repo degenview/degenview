@@ -14,7 +14,7 @@ use crate::model::mcp::{
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{Tone, time_text::relative_time};
 use crate::ui::mcp::activity::{self, ActivityInput, ActivityState};
-use crate::ui::settings::window::{card, section, status_badge, status_message};
+use crate::ui::settings::window::{card, section, status_message};
 use crate::ui::{
     kit::{self, sheet},
     settings::card,
@@ -558,7 +558,7 @@ fn server_section(
         card(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 10.0;
             row(ui, "Status", |ui| {
-                status_badge(ui, input.status.label(), status_tone(input.status));
+                kit::status_badge(ui, input.status.label(), status_tone(input.status));
             });
             if let McpStatus::Failed(reason) = input.status {
                 ui.add(

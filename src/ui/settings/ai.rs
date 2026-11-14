@@ -11,14 +11,13 @@ use crate::service::llm::{HttpProvider, LlmError, LlmProvider, ProviderKind, val
 use crate::service::work_queue::{self, Pending};
 use crate::ui::icons::Icon;
 use crate::ui::kit::loading::LoadingIndicator;
+use crate::ui::kit::{Autosave, destructive_button, field, open_button};
 use crate::ui::kit::{
     Tone,
     error_notice::{self, ErrorEvent, ErrorNotice},
 };
-use crate::ui::settings::api_keys::{
-    Autosave, StatusMessage, destructive_button, field, open_button,
-};
-use crate::ui::settings::window::{card, section, status_badge, status_message};
+use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::window::{card, section, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
 
@@ -258,7 +257,7 @@ pub fn body(
             .request_repaint_after(std::time::Duration::from_millis(150));
     }
     let (text, tone) = state.badge(store);
-    status_badge(ui, text, tone);
+    kit::status_badge(ui, text, tone);
     ui.add_space(18.0);
     failure_card(ui, state);
 

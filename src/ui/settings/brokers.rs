@@ -26,7 +26,8 @@ use crate::host::broker::{BrokerHost, Connection, Operation};
 use crate::host::trading::TradingHub;
 use crate::ui::icons::Icon;
 use crate::ui::kit::Tone;
-use crate::ui::settings::api_keys::{StatusMessage, destructive_button, field};
+use crate::ui::kit::{destructive_button, field};
+use crate::ui::settings::card::StatusMessage;
 use crate::ui::settings::window::status_message;
 use crate::ui::{kit, theme};
 

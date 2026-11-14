@@ -980,9 +980,9 @@ fn draw_form(ctx: &egui::Context, session: &mut EditSession, form: &EditForm) ->
             ));
             ui.add_space(16.0);
             let (price, size) = session.fields_mut();
-            crate::ui::settings::api_keys::field(ui, form.price_title, None, "0", price, false);
+            kit::field(ui, form.price_title, None, "0", price, false);
             ui.add_space(12.0);
-            crate::ui::settings::api_keys::field(ui, "Size", None, "0", size, false);
+            kit::field(ui, "Size", None, "0", size, false);
             ui.add_space(8.0);
             let red = |ui: &mut egui::Ui, text: &str, weight| {
                 ui.label(kit::text(text, kit::size::CAPTION + 0.5, weight, kit::RED));

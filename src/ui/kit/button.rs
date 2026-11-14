@@ -464,3 +464,37 @@ pub fn destructive_sheet_button(ui: &mut Ui, icon: Icon, label: &str) -> egui::R
     );
     response
 }
+
+/// A button that opens `url` in the browser, beside the page's other buttons (Get API Key).
+pub fn open_button(ui: &mut egui::Ui, label: &str, url: &str) {
+    if sheet_button(ui, label, false, true)
+        .on_hover_text(url)
+        .clicked()
+    {
+        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+    }
+}
+
+/// A destructive button: the regular button with red text.
+pub fn destructive_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    let galley = galley(ui, label, size::BODY, REGULAR, RED, f32::INFINITY);
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2((galley.size().x + 32.0).max(76.0), 28.0),
+        egui::Sense::click(),
+    );
+    let response = crate::ui::accessibility::label(response, label);
+    ui.painter().rect_filled(
+        rect,
+        7.0,
+        primary(if response.is_pointer_button_down_on() {
+            0.18
+        } else if response.hovered() {
+            0.14
+        } else {
+            0.1
+        }),
+    );
+    ui.painter()
+        .galley(rect.center() - galley.size() / 2.0, galley, RED);
+    response
+}

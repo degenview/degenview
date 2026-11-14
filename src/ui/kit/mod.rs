@@ -5,6 +5,7 @@
 //! re-exported here, so callers write `kit::push_button` whichever file draws it.
 
 pub(in crate::ui) mod art;
+mod autosave;
 pub mod bar;
 mod button;
 mod card;
@@ -33,13 +34,15 @@ mod text;
 mod ticker_icon;
 pub mod time_text;
 
+pub use autosave::Autosave;
 pub use button::{
-    FooterButton, cta_button, destructive_sheet_button, footer_button, hover_button, large_button,
-    large_prominent_button, push_button, sheet_button, tinted_button,
+    FooterButton, cta_button, destructive_button, destructive_sheet_button, footer_button,
+    hover_button, large_button, large_prominent_button, open_button, push_button, sheet_button,
+    tinted_button,
 };
 pub use card::{CARD_RADIUS, card_frame, divider, paint_card_badge, paint_well, panel_divider};
 pub use confirm::{Alert, Confirm, ConfirmOutcome, Notice, alert, confirm, notice};
-pub use field::{FIELD_HEIGHT, field_frame, input_frame, plain_field, search_field};
+pub use field::{FIELD_HEIGHT, field, field_frame, input_frame, plain_field, search_field};
 pub use form::{
     StepDirection, color_well, paint_switch, segmented, segmented_filling, stepper, stepper_arrows,
     switch,

@@ -337,21 +337,6 @@ impl SettingsSection {
     }
 }
 
-/// A status pill laid out in the flow, sized to its label.
-pub(in crate::ui) fn status_badge(ui: &mut egui::Ui, text: &str, tone: Tone) {
-    let probe = kit::galley(
-        ui,
-        text,
-        kit::size::CAPTION + 0.5,
-        kit::SEMIBOLD,
-        Color32::WHITE,
-        f32::INFINITY,
-    );
-    let size = Vec2::new(9.0 + 7.0 + 6.0 + probe.size().x + 9.0, probe.size().y + 8.0);
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-    kit::paint_status_badge(ui, rect.right(), rect.center().y, text, tone);
-}
-
 /// A status line in a page's body: the icon, then the message, wrapped to the page.
 pub(in crate::ui) fn status_message(ui: &mut egui::Ui, text: &str, is_error: bool) {
     let color = if is_error { kit::RED } else { kit::GREEN };
@@ -762,7 +747,7 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
             let health = input.health;
             card(ui, |ui| {
                 row(ui, "Status", |ui| {
-                    status_badge(
+                    kit::status_badge(
                         ui,
                         service_label(health.service_state),
                         service_tone(health.service_state),
@@ -770,7 +755,7 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                 });
                 kit::divider(ui);
                 row(ui, "Notification permission", |ui| {
-                    status_badge(
+                    kit::status_badge(
                         ui,
                         permission_label(health.notification_permission),
                         permission_tone(health.notification_permission),
@@ -790,7 +775,7 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                 for provider in &health.providers {
                     kit::divider(ui);
                     row(ui, provider.source.display_name(), |ui| {
-                        status_badge(
+                        kit::status_badge(
                             ui,
                             &provider_label(
                                 provider.last_error.as_deref(),
@@ -875,7 +860,7 @@ mod tests {
         use crate::service::llm::prefs::AiPrefs;
         use crate::ui::render_tests::{Screen, gallery_dir};
         use crate::ui::settings::ai::{self, AiSettingsInput};
-        use crate::ui::settings::api_keys::StatusMessage;
+        use crate::ui::settings::card::StatusMessage;
         use crate::ui::theme::AppTheme;
         let _theme = crate::ui::theme::RestoreDefaultTheme;
         let failure = crate::service::llm::sample::server_error().report();

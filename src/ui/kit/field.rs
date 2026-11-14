@@ -1,6 +1,7 @@
-//! Text fields: the search field, the wells inputs sit in and a frameless field.
+//! Text fields: the labelled field of a form, the search field, the wells inputs sit in and a
+//! frameless field.
 
-use super::{REGULAR, primary, size, text};
+use super::{MEDIUM, REGULAR, primary, size, text};
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
 use eframe::egui::{self, FontId, Id, Sense, Stroke, StrokeKind, Ui, text::LayoutJob, vec2};
@@ -134,4 +135,73 @@ pub fn plain_field(
             .desired_width(width)
             .layouter(&mut layouter),
     )
+}
+
+/// A labelled text field in the app's field style. A secret field hides its text and offers an
+/// eye button to reveal it, so a pasted key can be checked before saving.
+pub fn field(
+    ui: &mut egui::Ui,
+    title: &str,
+    hint: Option<&str>,
+    prompt: &str,
+    value: &mut String,
+    secret: bool,
+) -> egui::Response {
+    let id = egui::Id::new(("settings-field", title));
+    let revealed_id = id.with("revealed");
+    let mut revealed: bool = ui.data(|data| data.get_temp(revealed_id)).unwrap_or(false);
+    ui.spacing_mut().item_spacing.y = 0.0;
+    ui.label(text(
+        title,
+        size::SUBHEADLINE + 1.0,
+        MEDIUM,
+        theme::text_primary(),
+    ));
+    ui.add_space(6.0);
+    let focused = ui.memory(|memory| memory.has_focus(id));
+    let mut edit = None;
+    input_frame(focused).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.set_height(FIELD_HEIGHT);
+        ui.horizontal_centered(|ui| {
+            let eye = if secret {
+                22.0 + ui.spacing().item_spacing.x
+            } else {
+                0.0
+            };
+            edit = Some(
+                ui.add(
+                    egui::TextEdit::singleline(value)
+                        .id(id)
+                        .frame(egui::Frame::NONE)
+                        .font(egui::FontId::proportional(size::BODY))
+                        .text_color(theme::text_primary())
+                        .hint_text(text(prompt, size::BODY, REGULAR, theme::text_tertiary()))
+                        .password(secret && !revealed)
+                        .desired_width(ui.available_width() - eye),
+                ),
+            );
+            if secret {
+                let (icon, tip) = if revealed {
+                    (Icon::EyeSlash, format!("Hide {title}"))
+                } else {
+                    (Icon::Eye, format!("Show {title}"))
+                };
+                if icons::button(ui, icon, 22.0, theme::text_secondary(), &tip).clicked() {
+                    revealed = !revealed;
+                    ui.data_mut(|data| data.insert_temp(revealed_id, revealed));
+                }
+            }
+        });
+    });
+    if let Some(hint) = hint {
+        ui.add_space(6.0);
+        ui.label(text(
+            hint,
+            size::CAPTION + 0.5,
+            REGULAR,
+            theme::text_secondary(),
+        ));
+    }
+    edit.expect("the field's text edit ran")
 }

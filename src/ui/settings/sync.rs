@@ -17,7 +17,7 @@ use crate::ui::kit::{
     dialog::{self, Dialog},
     time_text::relative_time,
 };
-use crate::ui::settings::window::{card, row, section, status_badge, status_message};
+use crate::ui::settings::window::{card, row, section, status_message};
 use crate::ui::{kit, settings::card, theme};
 use eframe::egui;
 
@@ -337,14 +337,12 @@ fn delete_section(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
                             } else {
                                 "Delete…"
                             };
-                            if crate::ui::settings::api_keys::destructive_button(ui, label)
-                                .clicked()
-                            {
+                            if kit::destructive_button(ui, label).clicked() {
                                 open = true;
                             }
                         } else {
                             ui.add_enabled_ui(false, |ui| {
-                                crate::ui::settings::api_keys::destructive_button(ui, "Delete…");
+                                kit::destructive_button(ui, "Delete…");
                             });
                         }
                     });
@@ -522,7 +520,9 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             {
                 label = "iCloud isn't set up for this release yet".to_owned();
             }
-            row(ui, "Status", |ui| status_badge(ui, &label, tone));
+            row(ui, "Status", |ui| {
+                kit::status_badge(ui, &label, tone);
+            });
             let last = view.last_send_ms.max(view.last_fetch_ms);
             if let Some(last) = last {
                 kit::divider(ui);
@@ -560,7 +560,7 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             if view.environment.as_deref() == Some("Development") {
                 kit::divider(ui);
                 row(ui, "iCloud environment", |ui| {
-                    status_badge(ui, "Development (test data)", Tone::Warning);
+                    kit::status_badge(ui, "Development (test data)", Tone::Warning);
                 });
             }
         });
