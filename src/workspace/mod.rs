@@ -9,7 +9,7 @@ use crate::model::watchlist::text::ImportReport;
 use crate::model::watchlist::{EntryId, WatchlistInstrument, now_ms};
 use crate::model::{
     BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, DrawingStyle,
-    InstrumentId, LayoutSnapshot, MagnetMode, ReplayEngine, ReplayStatus, Timeframe, Tool,
+    InstrumentId, LayoutSnapshot, MagnetMode, Timeframe, Tool,
 };
 use crate::service::market::live::BinanceLiveFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
@@ -25,7 +25,6 @@ use crate::ui::drawing::properties::DrawingProperties;
 use crate::ui::paper::chart_trading::PaperOverlayAction;
 use crate::ui::paper::panel::PaperPanel;
 use crate::ui::pine::settings_popover::PineSettingsPopover;
-use crate::ui::replay::date_sheet::{self, ReplayDateSheetState};
 use crate::ui::watchlist::sidebar::WatchlistSidebarState;
 use crate::ui::workspace::layout_prompts::NamePrompt;
 use crate::ui::{self, CrosshairInfo, replay::bar, workspace::tool_sidebar};
@@ -37,6 +36,7 @@ use drawing::is_lockable;
 use eframe::egui;
 use empty_page::EmptyPageCache;
 use layout::autosave::AutosaveState;
+use replay::ReplayState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
@@ -224,14 +224,10 @@ pub struct ChartWorkspace {
     hide_all_drawings: bool,
     /// Drawing, indicator, market and view edits as undoable steps.
     history: UndoHistory,
-    replay: ReplayEngine,
-    replay_last_step: Instant,
-    /// The timeframe changed under a replay: its bars are being reloaded, and the replay moves
-    /// onto them once they are in.
-    replay_rebase: bool,
+    /// The replay clock, its bar and its date sheet.
+    replay: ReplayState,
     watchlist: Arc<Mutex<WatchlistStore>>,
     watchlist_sidebar: WatchlistSidebarState,
-    date_sheet: ReplayDateSheetState,
     quote_book: WatchlistQuoteBook,
     quote_coordinator: WatchlistQuoteCoordinator,
     import_report: Option<ImportReport>,
@@ -404,12 +400,9 @@ impl ChartWorkspace {
             keep_drawing: true,
             hide_all_drawings: false,
             history: UndoHistory::default(),
-            replay: ReplayEngine::default(),
-            replay_last_step: Instant::now(),
-            replay_rebase: false,
+            replay: ReplayState::default(),
             watchlist,
             watchlist_sidebar: WatchlistSidebarState::default(),
-            date_sheet: ReplayDateSheetState::default(),
             quote_book,
             quote_coordinator,
             import_report: None,
@@ -717,7 +710,7 @@ impl ChartWorkspace {
         if self.replay.is_bar_visible() {
             egui::Panel::top("replay_bar")
                 .exact_size(bar::preferred_height(
-                    self.replay.status,
+                    self.replay.status(),
                     ui.available_width(),
                     false,
                 ))
@@ -905,15 +898,7 @@ impl ChartWorkspace {
         actions.extend(self.show_alert_editor(&ctx));
         actions.extend(self.show_context_ui(&ctx, &mut lock(paper)));
         actions.extend(self.take_logs_actions());
-        if self.date_sheet.is_open() {
-            let timeline = self.replay_timeline();
-            if let Some(date_sheet::ReplayDateSheetResult::Start(ms)) =
-                date_sheet::show(&ctx, &mut self.date_sheet, &timeline)
-            {
-                let (symbol, timeline) = self.focused_chart_data();
-                self.replay.start(ms, &symbol, timeline);
-            }
-        }
+        self.show_replay_date_sheet(&ctx);
         actions
     }
 }

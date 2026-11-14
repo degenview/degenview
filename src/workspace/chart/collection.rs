@@ -108,11 +108,7 @@ impl ChartWorkspace {
             .charts
             .iter()
             .find(|chart| chart.id == chart_id && chart.is_market())?;
-        let replay_ms = if self.replay.is_active() {
-            self.replay.current_ms()
-        } else {
-            None
-        };
+        let replay_ms = self.replay.cut_ms();
         Some(ChartData {
             instrument: InstrumentId::new(chart.source, &chart.symbol),
             chart_type: chart.chart.effective_chart_type(chart.source),
@@ -315,7 +311,7 @@ impl ChartWorkspace {
         ctx: &egui::Context,
     ) {
         self.timeframe = timeframe;
-        self.replay_rebase |= self.replay.session.is_some();
+        self.replay.rebase_on_new_bars();
         self.drop_rulers();
         self.forget_views(None);
         self.link_state.series_changed();

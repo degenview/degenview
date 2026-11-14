@@ -203,14 +203,6 @@ impl ChartWorkspace {
         self.charts.iter().position(|chart| chart.id == chart_id)
     }
 
-    pub(in crate::workspace) fn replay_cut(&self) -> Option<i64> {
-        if self.replay.is_active() {
-            self.replay.current_ms()
-        } else {
-            None
-        }
-    }
-
     /// Whether the chart can trade on paper at all. Having no account yet does not count against
     /// it: choosing an order entry creates the default account, as opening the paper panel does.
     fn paper_access(chart: &Chart) -> PaperAccess {
@@ -228,7 +220,7 @@ impl ChartWorkspace {
         templates: &[TemplateRow],
     ) -> Option<Facts> {
         let index = self.chart_index(context.chart_id)?;
-        let replay_ms = self.replay_cut();
+        let replay_ms = self.replay.cut_ms();
         let chart = &self.charts[index];
         let last_price = displayed_candles(&chart.candles, replay_ms)
             .last()
@@ -259,7 +251,7 @@ impl ChartWorkspace {
             price_format: chart.chart.appearance().price_format(),
             last_price,
             tick: instrument.tick_size,
-            replay: self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart,
+            replay: self.replay.is_engaged(),
             alerts_supported: chart.is_market() && ui::supports_alerts(chart.source),
             paper,
             live,
@@ -444,7 +436,7 @@ impl ChartWorkspace {
             }
             Command::AddOrder => {
                 if let Some(price) = context.price() {
-                    let last = displayed_candles(&self.charts[index].candles, self.replay_cut())
+                    let last = displayed_candles(&self.charts[index].candles, self.replay.cut_ms())
                         .last()
                         .map(|candle| candle.close);
                     let tick = Self::paper_instrument(&self.charts[index]).tick_size;
@@ -834,9 +826,8 @@ impl ChartWorkspace {
             self.context.logs.chart = None;
         }
         let table = self.context.table_chart;
-        let replay_ms = self.replay_cut();
-        let replaying =
-            self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart;
+        let replay_ms = self.replay.cut_ms();
+        let replaying = self.replay.is_engaged();
         for chart in &mut self.charts {
             chart.chart.set_table_wanted(table == Some(chart.id));
             let mut lines = if chart.is_market() {
@@ -902,13 +893,13 @@ impl ChartWorkspace {
     /// drop's, in the alert's currency; the side is the one the level is on from the market's
     /// last price, as for "Add alert at this price". State, frequency, note and webhooks stay.
     fn move_alert(&mut self, index: usize, moved: ui::AlertMove) -> Option<WorkspaceAction> {
-        if self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart {
+        if self.replay.is_engaged() {
             self.say("Alerts are not available during replay.", true);
             return None;
         }
         let chart = &self.charts[index];
         let market = InstrumentId::new(chart.source, &chart.symbol);
-        let last = displayed_candles(&chart.candles, self.replay_cut())
+        let last = displayed_candles(&chart.candles, self.replay.cut_ms())
             .last()
             .map(|candle| candle.close);
         let alert = self

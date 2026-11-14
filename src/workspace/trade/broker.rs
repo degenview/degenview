@@ -43,8 +43,7 @@ impl ChartWorkspace {
 
     /// A replay's prices are history: no live order may be started, changed or sent from one.
     pub(in crate::workspace) fn replay_blocks_trading(&self) -> bool {
-        self.replay.is_active()
-            || self.replay.status == crate::workspace::ReplayStatus::SelectingStart
+        self.replay.is_engaged()
     }
 
     fn broker_market(chart: &Chart) -> Option<MarketRef> {

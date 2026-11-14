@@ -6,8 +6,7 @@ use crate::host::paper::PaperHost;
 use crate::lock::lock;
 use crate::model::watchlist::WatchlistError;
 use crate::model::{
-    ChartColumn, ChartLayout, Drawing, DrawingCommand, DrawingStyle, InstrumentId, ReplayStatus,
-    Tool,
+    ChartColumn, ChartLayout, Drawing, DrawingCommand, DrawingStyle, InstrumentId, Tool,
 };
 use crate::ui::ViewMove;
 use crate::ui::chart::settings::ChartSettingsState;
@@ -264,12 +263,8 @@ impl ChartWorkspace {
         let selected_drawing = self.selected_drawing.clone();
         let (magnet, keep_drawing, hide_all_drawings) =
             (self.magnet, self.keep_drawing, self.hide_all_drawings);
-        let replay_ms = if self.replay.is_active() {
-            self.replay.current_ms()
-        } else {
-            None
-        };
-        let replay_selecting = self.replay.status == ReplayStatus::SelectingStart;
+        let replay_ms = self.replay.cut_ms();
+        let replay_selecting = self.replay.is_selecting_start();
         // The logs pane's drag over bars: only its own chart takes it, and a replay's start wins
         // if both were somehow asked for.
         if replay_selecting {
@@ -951,9 +946,12 @@ impl ChartWorkspace {
             self.open_drawing_properties(chart_id, drawing_id);
         }
         let esc_pressed = ui.input(|input| input.key_pressed(egui::Key::Escape));
-        if esc_pressed && !drawing_escape && !self.date_sheet.is_open() && !self.context_menu_open()
+        if esc_pressed
+            && !drawing_escape
+            && !self.replay.is_choosing_date()
+            && !self.context_menu_open()
         {
-            if self.replay.status == ReplayStatus::SelectingStart {
+            if self.replay.is_selecting_start() {
                 self.replay.cancel_selection();
             } else if self.context.logs.picking {
                 self.context.logs.picking = false;

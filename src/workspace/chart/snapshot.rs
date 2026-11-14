@@ -185,11 +185,7 @@ impl ChartWorkspace {
         options: snapshot::SnapshotOptions,
     ) -> Result<(raster::Scene, SnapshotDimensions), CaptureError> {
         let index = self.chart_index(chart_id).ok_or(CaptureError::NoChart)?;
-        let replay_ms = if self.replay.is_active() {
-            self.replay.current_ms()
-        } else {
-            None
-        };
+        let replay_ms = self.replay.cut_ms();
         let chart = &self.charts[index];
         let size = chart.chart.snapshot_size();
         let dimensions = SnapshotDimensions::fit(size.x, size.y, options.scale)
@@ -1242,7 +1238,7 @@ mod tests {
             .replay
             .start(cut, "BTCUSDT", times.clone());
         assert!(replaying.workspace.replay.is_active());
-        let before = replaying.workspace.replay.current_ms();
+        let before = replaying.workspace.replay.cut_ms();
         replaying.workspace.begin_snapshot(
             &replaying.ctx,
             replaying.chart_id,
@@ -1250,7 +1246,7 @@ mod tests {
         );
         let replayed = copied(replaying.finish());
         assert_eq!(
-            replaying.workspace.replay.current_ms(),
+            replaying.workspace.replay.cut_ms(),
             before,
             "the replay did not move"
         );

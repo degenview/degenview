@@ -2,15 +2,102 @@
 
 use super::ChartWorkspace;
 use crate::model::{
-    ClockCommand, ReplayCommand, ReplayError, ReplayInterval, ReplayStart, ReplayStatus, ReplayView,
+    ClockCommand, ReplayCommand, ReplayEngine, ReplayError, ReplayInterval, ReplayStart,
+    ReplayStatus, ReplayView,
 };
 use crate::ui::replay::bar::{self, ReplayBarAction, ReplayBarInput};
+use crate::ui::replay::date_sheet::{self, ReplayDateSheetState};
 use eframe::egui;
 use std::time::{Duration, Instant};
 
+/// The tab's replay: one clock for every chart, when it last stepped, whether it waits for bars
+/// reloaded at a new timeframe, and the date sheet that picks its start.
+pub(super) struct ReplayState {
+    engine: ReplayEngine,
+    last_step: Instant,
+    /// The timeframe changed under a replay: its bars are being reloaded, and the replay moves
+    /// onto them once they are in.
+    rebase: bool,
+    date_sheet: ReplayDateSheetState,
+}
+
+impl Default for ReplayState {
+    fn default() -> Self {
+        Self {
+            engine: ReplayEngine::default(),
+            last_step: Instant::now(),
+            rebase: false,
+            date_sheet: ReplayDateSheetState::default(),
+        }
+    }
+}
+
+impl ReplayState {
+    pub(super) fn status(&self) -> ReplayStatus {
+        self.engine.status
+    }
+
+    /// A replay is running (playing, paused or finished): the charts show history up to its
+    /// position.
+    pub(super) fn is_active(&self) -> bool {
+        self.engine.is_active()
+    }
+
+    /// The replay bar is up, running or not.
+    pub(super) fn is_bar_visible(&self) -> bool {
+        self.engine.is_bar_visible()
+    }
+
+    /// The user is picking the replay's start on a chart.
+    pub(super) fn is_selecting_start(&self) -> bool {
+        self.engine.status == ReplayStatus::SelectingStart
+    }
+
+    /// A replay runs or its start is being picked: what the charts show is history, so nothing
+    /// may act on the live market from them.
+    pub(super) fn is_engaged(&self) -> bool {
+        self.is_active() || self.is_selecting_start()
+    }
+
+    /// The time the charts are cut at: the replay's position while it runs, else none.
+    pub(super) fn cut_ms(&self) -> Option<i64> {
+        if self.engine.is_active() {
+            self.engine.current_ms()
+        } else {
+            None
+        }
+    }
+
+    /// Starts the replay at the bar at or before `ms` of `timeline`.
+    pub(super) fn start(&mut self, ms: i64, symbol: &str, timeline: Vec<i64>) {
+        self.engine.start(ms, symbol, timeline);
+    }
+
+    /// Ends picking a start on a chart: back to the replay that was paused, or to the bar.
+    pub(super) fn cancel_selection(&mut self) {
+        self.engine.cancel_selection();
+    }
+
+    /// The date sheet that picks the start is up.
+    pub(super) fn is_choosing_date(&self) -> bool {
+        self.date_sheet.is_open()
+    }
+
+    /// The timeframe changed: a replay that has a session waits for the new bars and then moves
+    /// onto them (`tick_replay`).
+    pub(super) fn rebase_on_new_bars(&mut self) {
+        self.rebase |= self.engine.session.is_some();
+    }
+
+    #[cfg(test)]
+    pub(super) fn engine_mut(&mut self) -> &mut ReplayEngine {
+        &mut self.engine
+    }
+}
+
 impl ChartWorkspace {
     pub fn replay_view(&self) -> ReplayView {
-        self.replay.view(self.replay_rebase)
+        self.replay.engine.view(self.replay.rebase)
     }
 
     /// Runs a command of the replay clock for an agent, through the engine the replay bar drives.
@@ -40,9 +127,9 @@ impl ChartWorkspace {
                 ReplayStart::First => first,
                 ReplayStart::At(time) => time,
             };
-            self.replay.start(requested, &symbol, timeline);
-            self.replay_rebase = false;
-            self.replay_last_step = Instant::now();
+            self.replay.engine.start(requested, &symbol, timeline);
+            self.replay.rebase = false;
+            self.replay.last_step = Instant::now();
             return Ok(self.replay_view());
         }
         let clock = match command {
@@ -56,11 +143,11 @@ impl ChartWorkspace {
             ReplayCommand::SetSpeed(speed) => ClockCommand::SetSpeed(speed),
             ReplayCommand::Stop => ClockCommand::Stop,
         };
-        if !self.replay.apply(clock) {
+        if !self.replay.engine.apply(clock) {
             return Err(ReplayError::NotRunning);
         }
         if clock == ClockCommand::Play {
-            self.replay_last_step = Instant::now();
+            self.replay.last_step = Instant::now();
         }
         Ok(self.replay_view())
     }
@@ -74,10 +161,10 @@ impl ChartWorkspace {
     }
 
     pub(super) fn toggle_replay(&mut self) {
-        if self.replay.is_bar_visible() {
-            self.replay.stop();
+        if self.replay.engine.is_bar_visible() {
+            self.replay.engine.stop();
         } else {
-            self.replay.open();
+            self.replay.engine.open();
         }
     }
 
@@ -89,16 +176,16 @@ impl ChartWorkspace {
             .resolved_focused_id()
             .and_then(|id| self.charts.iter().find(|chart| chart.id == id))
         else {
-            self.replay_rebase = false;
+            self.replay.rebase = false;
             return;
         };
         if chart.loading {
             return;
         }
         let timeline: Vec<i64> = chart.candles.iter().map(|kline| kline.open_time).collect();
-        self.replay_rebase = false;
+        self.replay.rebase = false;
         if timeline.is_empty() {
-            self.replay.stop();
+            self.replay.engine.stop();
             self.say(
                 format!(
                     "Replay stopped: no {} history to replay.",
@@ -106,7 +193,7 @@ impl ChartWorkspace {
                 ),
                 true,
             );
-        } else if !self.replay.rebase(timeline) {
+        } else if !self.replay.engine.rebase(timeline) {
             self.say(
                 format!(
                     "{} history starts after the replay position, so the replay moved to its first bar.",
@@ -115,28 +202,29 @@ impl ChartWorkspace {
                 false,
             );
         }
-        self.replay_last_step = Instant::now();
+        self.replay.last_step = Instant::now();
     }
 
     pub(super) fn tick_replay(&mut self) {
-        if self.replay_rebase {
-            if self.replay.session.is_none() {
-                self.replay_rebase = false;
+        if self.replay.rebase {
+            if self.replay.engine.session.is_none() {
+                self.replay.rebase = false;
             } else {
                 self.finish_replay_rebase();
             }
         }
-        if self.replay_rebase || self.replay.status != ReplayStatus::Playing {
+        if self.replay.rebase || self.replay.engine.status != ReplayStatus::Playing {
             return;
         }
         let delay = self
             .replay
+            .engine
             .session
             .as_ref()
             .map_or(1_000, |session| session.speed.delay_ms());
-        if self.replay_last_step.elapsed() >= Duration::from_millis(delay) {
-            self.replay_last_step = Instant::now();
-            self.replay.step_forward();
+        if self.replay.last_step.elapsed() >= Duration::from_millis(delay) {
+            self.replay.last_step = Instant::now();
+            self.replay.engine.step_forward();
         }
     }
 
@@ -155,7 +243,7 @@ impl ChartWorkspace {
     fn start_replay_first(&mut self) {
         let (symbol, timeline) = self.focused_chart_data();
         if let Some(first) = timeline.first().copied() {
-            self.replay.start(first, &symbol, timeline);
+            self.replay.engine.start(first, &symbol, timeline);
         }
     }
 
@@ -172,14 +260,28 @@ impl ChartWorkspace {
         let eligible = ((timeline.len() as f64) * 0.8).ceil().max(1.0) as usize;
         let index = nanos % eligible;
         let picked = timeline[index];
-        self.replay.start(picked, &symbol, timeline);
+        self.replay.engine.start(picked, &symbol, timeline);
+    }
+
+    /// The date sheet over the window, while it is open; a chosen date starts the replay there.
+    pub(super) fn show_replay_date_sheet(&mut self, ctx: &egui::Context) {
+        if !self.replay.date_sheet.is_open() {
+            return;
+        }
+        let timeline = self.replay_timeline();
+        if let Some(date_sheet::ReplayDateSheetResult::Start(ms)) =
+            date_sheet::show(ctx, &mut self.replay.date_sheet, &timeline)
+        {
+            let (symbol, timeline) = self.focused_chart_data();
+            self.replay.start(ms, &symbol, timeline);
+        }
     }
 
     pub(super) fn show_replay_bar(&mut self, ui: &mut egui::Ui) {
         let available = [ReplayInterval::Automatic, ReplayInterval::ChartBar];
         let input = ReplayBarInput {
-            engine: &self.replay,
-            is_preparing: self.replay_rebase,
+            engine: &self.replay.engine,
+            is_preparing: self.replay.rebase,
             notice: None,
             resolved_interval: None,
             available_intervals: &available,
@@ -191,32 +293,32 @@ impl ChartWorkspace {
     fn apply_replay_actions(&mut self, actions: Vec<ReplayBarAction>) {
         for action in actions {
             match action {
-                ReplayBarAction::SelectOnChart => self.replay.begin_selecting(),
-                ReplayBarAction::CancelSelection => self.replay.cancel_selection(),
-                ReplayBarAction::ReturnToLive => self.replay.stop(),
-                ReplayBarAction::ChangeStart => self.replay.begin_selecting(),
-                ReplayBarAction::Restart => self.replay.restart(),
+                ReplayBarAction::SelectOnChart => self.replay.engine.begin_selecting(),
+                ReplayBarAction::CancelSelection => self.replay.engine.cancel_selection(),
+                ReplayBarAction::ReturnToLive => self.replay.engine.stop(),
+                ReplayBarAction::ChangeStart => self.replay.engine.begin_selecting(),
+                ReplayBarAction::Restart => self.replay.engine.restart(),
                 ReplayBarAction::StepBack => {
-                    self.replay.step_backward();
+                    self.replay.engine.step_backward();
                 }
                 ReplayBarAction::StepForward => {
-                    self.replay.step_forward();
+                    self.replay.engine.step_forward();
                 }
                 ReplayBarAction::TogglePlayback => {
-                    if self.replay.status == ReplayStatus::Playing {
-                        self.replay.pause();
+                    if self.replay.engine.status == ReplayStatus::Playing {
+                        self.replay.engine.pause();
                     } else {
-                        self.replay.play();
+                        self.replay.engine.play();
                     }
                 }
-                ReplayBarAction::Seek(fraction) => self.replay.seek(fraction),
-                ReplayBarAction::SetSpeed(speed) => self.replay.set_speed(speed),
-                ReplayBarAction::SetInterval(interval) => self.replay.set_interval(interval),
+                ReplayBarAction::Seek(fraction) => self.replay.engine.seek(fraction),
+                ReplayBarAction::SetSpeed(speed) => self.replay.engine.set_speed(speed),
+                ReplayBarAction::SetInterval(interval) => self.replay.engine.set_interval(interval),
                 ReplayBarAction::FirstBar => self.start_replay_first(),
                 ReplayBarAction::RandomBar => self.start_replay_random(),
                 ReplayBarAction::ChooseDate => {
                     let timeline = self.replay_timeline();
-                    self.date_sheet.open(&timeline);
+                    self.replay.date_sheet.open(&timeline);
                 }
                 ReplayBarAction::DismissNotice => {}
             }
