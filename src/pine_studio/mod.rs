@@ -4,7 +4,6 @@
 //! Layout (see `workspace/mod.rs`): a sidebar with the script list, and for the selected script a
 //! split between the code editor and the preview chart, with the Inputs / Report / Problems
 //! drawer under the chart.
-#![allow(dead_code)] // transient: phase-2 pieces (completion, find bar) are not wired yet
 
 pub mod ai;
 mod bar;
@@ -393,10 +392,6 @@ impl PineStudio {
         }
         self.exit_prompt = Some(ExitPrompt { reason, scripts });
         true
-    }
-
-    pub fn exit_prompt_open(&self) -> bool {
-        self.exit_prompt.is_some()
     }
 
     /// Drops the question without an answer (the quit it was asked for was called off).

@@ -401,7 +401,6 @@ impl WatchlistInstrument {
     /// A row for a search hit or a chart's market. `symbol` is what the hit displays
     /// ("BTCUSDT", "AAPL — Apple Inc.", a market's question); `full_symbol` is the
     /// provider's own id and becomes the identity.
-    #[allow(dead_code)] // for the chart-card star and search-result menus
     pub fn from_market(source: DataSource, symbol: &str, full_symbol: &str) -> Self {
         let (name, label, display_name) = if source.is_prediction_market() {
             // The provider id is an opaque token, not a useful row label. Keep it solely as the

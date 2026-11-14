@@ -8,7 +8,8 @@ use crate::mcp::indicator::{
     IndicatorValuesResult, MAX_EMA_PERIOD, MIN_EMA_PERIOD, Reading, ReadingRequest,
 };
 use crate::mcp::tools::{
-    DegenViewMcp, McpIndicator, client_of, failure, invalid, parse_chart_id, parse_id, unexpected,
+    DegenViewMcp, McpIndicator, client_of, failure, invalid, parse_chart_id, parse_workspace_id,
+    unexpected,
 };
 use crate::mcp::types::AddIndicatorResult;
 use crate::model::mcp::Permission;
@@ -138,7 +139,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<IndicatorValuesParams>,
     ) -> Result<Json<IndicatorValuesResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let request = reading_request(&params)?;
         match self
@@ -177,7 +178,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<RemoveIndicatorParams>,
     ) -> Result<Json<AddIndicatorResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         match self
             .bridge

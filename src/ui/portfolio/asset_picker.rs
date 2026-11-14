@@ -3,9 +3,6 @@
 //! sources or the stock source as you type (debounced, off the UI thread) and hands back the
 //! chosen `SearchResult`; the host turns it into a `PortfolioAsset`.
 
-// Transient: the portfolio host opens this once it is wired.
-#![allow(dead_code)]
-
 use crate::model::DataSource;
 use crate::service::SearchResult;
 use crate::store::SharedStore;
@@ -167,6 +164,7 @@ impl AssetPickerState {
         self.inbox.is_some()
     }
 
+    #[cfg(test)]
     pub fn results(&self) -> &[(DataSource, Result<Vec<SearchResult>, String>)] {
         &self.results
     }
@@ -286,24 +284,6 @@ impl AssetPickerState {
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => self.inbox = None,
         }
-    }
-}
-
-// MARK: Pure text
-
-pub fn hit_summary(hit: &SearchResult) -> String {
-    match hit.price {
-        Some(price) => format!("{}  ·  {}", hit.symbol, crate::format::price(price)),
-        None => hit.symbol.clone(),
-    }
-}
-
-/// What a source's section says when it has no rows.
-pub fn empty_note(result: &Result<Vec<SearchResult>, String>) -> Option<String> {
-    match result {
-        Err(message) => Some(message.clone()),
-        Ok(hits) if hits.is_empty() => Some("No matches".to_owned()),
-        Ok(_) => None,
     }
 }
 
@@ -703,15 +683,11 @@ mod tests {
             binance[0].full_symbol, "BTCUSDT",
             "the exact base ranks first"
         );
+        assert!(state.results()[1].1.as_ref().is_ok_and(Vec::is_empty));
         assert_eq!(
-            empty_note(&state.results()[1].1).as_deref(),
-            Some("No matches")
-        );
-        assert_eq!(
-            empty_note(&state.results()[2].1).as_deref(),
+            state.results()[2].1.as_ref().err().map(String::as_str),
             Some("rate limited")
         );
-        assert_eq!(empty_note(&state.results()[0].1), None);
     }
 
     #[test]
@@ -824,13 +800,6 @@ mod tests {
         assert!(!state.is_due(Instant::now() + Duration::from_secs(1)));
         assert!(!state.is_loading());
         assert!(calls.lock().unwrap().is_empty());
-        assert_eq!(
-            hit_summary(&hit(DataSource::Binance, "BTC/USDT", "x")),
-            "BTC/USDT"
-        );
-        let mut priced = hit(DataSource::Binance, "BTC/USDT", "x");
-        priced.price = Some(67_432.19);
-        assert!(hit_summary(&priced).starts_with("BTC/USDT  ·  "));
     }
 
     #[test]

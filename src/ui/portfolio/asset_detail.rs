@@ -3,9 +3,6 @@
 //! editing or deleting a transaction refreshes the figures in place) and applies the actions.
 //! Every amount is in the reporting currency — the same one the Holdings table shows — and says so.
 
-// Transient: the portfolio host opens this once it is wired.
-#![allow(dead_code)]
-
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::{PortfolioAsset, PortfolioHolding, PortfolioTransaction};
 use crate::ui::chart::picker_kit::{art, widgets};

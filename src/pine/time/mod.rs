@@ -23,8 +23,9 @@ pub const PART_NAMES: [&str; 8] = [
     "weekofyear",
 ];
 
-/// Every `timeframe.*` name `timeframe` resolves.
-pub const TIMEFRAME_NAMES: [&str; 11] = [
+/// Every `timeframe.*` name `timeframe` resolves, for the test that checks each one.
+#[cfg(test)]
+const TIMEFRAME_NAMES: [&str; 11] = [
     "timeframe.period",
     "timeframe.main_period",
     "timeframe.multiplier",

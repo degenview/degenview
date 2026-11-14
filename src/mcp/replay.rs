@@ -6,7 +6,7 @@ use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::chart::data::iso;
 use crate::mcp::chart::drawings::{TimeArg, parse_time};
 use crate::mcp::tools::{
-    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_id, unexpected,
+    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::model::mcp::Permission;
 use crate::model::{ReplaySpeed, ReplayStatus, ReplayView};
@@ -249,7 +249,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<WorkspaceReplayParams>,
     ) -> Result<Json<ReplayResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         match self
             .bridge
             .call(
@@ -282,7 +282,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<ControlReplayParams>,
     ) -> Result<Json<ReplayResult>, CallToolResult> {
         let client = client_of(&parts)?;
-        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let command = command_of(&params)?;
         match self
             .bridge

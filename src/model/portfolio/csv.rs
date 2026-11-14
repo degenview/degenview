@@ -7,9 +7,6 @@
 //! export writes them, so a file exported here imports here). Error line numbers still count
 //! non-empty records, header = line 1, as before.
 
-// Transient: the import sheets use this once the portfolio host wires them.
-#![allow(dead_code)]
-
 use crate::format::{civil_from_days, days_from_civil};
 use crate::model::DataSource;
 use crate::model::portfolio::{

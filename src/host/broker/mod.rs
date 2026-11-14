@@ -368,15 +368,8 @@ impl BrokerHost {
     }
 
     /// The latest snapshot of a connected broker.
-    #[allow(dead_code)] // The trading panel reads it next.
     pub fn snapshot(&self, id: BrokerId) -> Option<Arc<BrokerSnapshot>> {
         self.runtime(id).map(|runtime| runtime.snapshot())
-    }
-
-    /// The brokers with a running connection.
-    #[allow(dead_code)] // The trading panel lists them next.
-    pub fn connected(&self) -> Vec<BrokerId> {
-        self.lock().running.keys().copied().collect()
     }
 
     pub fn connection(&self, id: BrokerId) -> Connection {
@@ -594,7 +587,6 @@ impl BrokerHost {
     }
 
     /// Notices that arrived since the last call, oldest first.
-    #[allow(dead_code)] // The notification layer drains them next.
     pub fn drain_notices(&self) -> Vec<(BrokerId, Notice)> {
         self.notices
             .0
@@ -619,17 +611,19 @@ fn operation(receiver: Receiver<Result<(), String>>) -> Operation {
 /// The environment live trading runs in: the real brokers. A developer build with
 /// `dev-mock-broker` can point it at a local mock exchange instead (loopback only: the crate refuses
 /// anything else, so a stray variable can never send a signed request elsewhere).
+#[cfg(not(feature = "dev-mock-broker"))]
 fn production_env() -> Env {
-    #[allow(unused_mut)]
+    Env::default()
+}
+
+#[cfg(feature = "dev-mock-broker")]
+fn production_env() -> Env {
     let mut env = Env::default();
-    #[cfg(feature = "dev-mock-broker")]
-    {
-        if let Ok(url) = std::env::var("DEGENVIEW_MOCK_BROKER_URL") {
-            env = env.with_loopback_base_url(url);
-        }
-        if let Ok(url) = std::env::var("DEGENVIEW_MOCK_BROKER_WS_URL") {
-            env = env.with_loopback_ws_url(url);
-        }
+    if let Ok(url) = std::env::var("DEGENVIEW_MOCK_BROKER_URL") {
+        env = env.with_loopback_base_url(url);
+    }
+    if let Ok(url) = std::env::var("DEGENVIEW_MOCK_BROKER_WS_URL") {
+        env = env.with_loopback_ws_url(url);
     }
     env
 }

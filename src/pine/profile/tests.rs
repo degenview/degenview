@@ -10,6 +10,9 @@ use crate::pine::runtime::session::Session;
 use crate::pine::syntax::token::Limits;
 use crate::pine::tests::bench::{self, bars, run_script};
 
+use super::clock::SteppingClock;
+use super::session::StartError;
+use super::wait::WaitMeter;
 use super::*;
 
 const STEP: u64 = 1_000;
@@ -801,7 +804,6 @@ fn regions_know_their_parents_and_the_first_statement_of_each_block() {
     assert_eq!(regions[0].kind, RegionKind::Branch);
     assert_eq!(regions[0].blocks, vec![Some(1), Some(3)]);
     assert!(regions[1..].iter().all(|region| region.parent == Some(0)));
-    assert!(table.encloses(0, 3) && !table.encloses(3, 0));
 }
 
 #[test]

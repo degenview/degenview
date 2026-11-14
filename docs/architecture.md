@@ -53,7 +53,8 @@ Behavior, what is verified against TradingView and what is decided here, per fea
   [profiler](pine-profiler.md), [colour picker](pine-color-picker.md), [editor themes](editor-themes.md),
   [AI assistant](ai-assistant.md).
 - **MCP:** [implementation](mcp-implementation.md), [remaining work](mcp-remaining-work.md).
-- **Reviews and audits:** dated records in [`reviews/`](reviews/), not guidance.
+- **Reviews and audits:** dated records in [`reviews/`](reviews/), not guidance; the
+  [architecture refactor](architecture-refactor/plan.md) tracks the November 2026 layering work.
 
 [`context-menu.md`](context-menu.md) and [`profiler.md`](profiler.md) are task briefs written
 as "Implement ..." prompts, not documentation of current behavior; use the feature docs above.

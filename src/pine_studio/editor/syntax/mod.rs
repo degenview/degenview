@@ -44,6 +44,7 @@ pub fn utf16_to_byte_offsets(source: &str) -> Vec<usize> {
 }
 
 /// The character index (what egui's cursor counts) at a UTF-16 offset.
+#[cfg(test)]
 pub fn utf16_to_char_index(source: &str, utf16: usize) -> usize {
     let mut units = 0;
     for (index, character) in source.chars().enumerate() {

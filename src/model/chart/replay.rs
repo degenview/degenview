@@ -23,20 +23,7 @@ pub enum ReplayInterval {
     ChartBar,
 }
 
-// `ALL`/`label`/`seconds` are consumed by the replay bar UI (second agent).
-#[allow(dead_code)]
 impl ReplayInterval {
-    pub const ALL: [Self; 8] = [
-        Self::Automatic,
-        Self::OneMinute,
-        Self::FiveMinutes,
-        Self::FifteenMinutes,
-        Self::ThirtyMinutes,
-        Self::OneHour,
-        Self::OneDay,
-        Self::ChartBar,
-    ];
-
     pub fn label(self) -> &'static str {
         match self {
             Self::Automatic => "Auto",
@@ -47,18 +34,6 @@ impl ReplayInterval {
             Self::OneHour => "1h",
             Self::OneDay => "1D",
             Self::ChartBar => "1 bar",
-        }
-    }
-
-    pub fn seconds(self) -> Option<i64> {
-        match self {
-            Self::Automatic | Self::ChartBar => None,
-            Self::OneMinute => Some(60),
-            Self::FiveMinutes => Some(300),
-            Self::FifteenMinutes => Some(900),
-            Self::ThirtyMinutes => Some(1_800),
-            Self::OneHour => Some(3_600),
-            Self::OneDay => Some(86_400),
         }
     }
 }
@@ -75,8 +50,6 @@ pub enum ReplaySpeed {
     Max,
 }
 
-// `ALL`/`label` are consumed by the replay bar UI (second agent); `delay_ms` by the play loop.
-#[allow(dead_code)]
 impl ReplaySpeed {
     pub const ALL: [Self; 8] = [
         Self::Half,
@@ -167,9 +140,6 @@ pub struct ReplayEngine {
     pub timeline: Vec<i64>,
 }
 
-// `begin_selecting`/`play`/`pause`/`set_speed`/`set_interval` are driven by the
-// replay bar UI (second agent); the play loop + rewind use the rest.
-#[allow(dead_code)]
 impl ReplayEngine {
     pub fn view(&self, preparing: bool) -> ReplayView {
         let session = self.session.as_ref();

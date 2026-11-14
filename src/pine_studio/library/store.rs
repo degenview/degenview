@@ -149,10 +149,6 @@ impl ScriptStore {
         Some(Self::new(base.join("Scripts"), base.join("ScriptMetadata")))
     }
 
-    pub fn scripts_dir(&self) -> &Path {
-        &self.scripts_dir
-    }
-
     /// Always rescans the folder, so files added, edited or renamed outside the app show up.
     /// Newest first.
     pub fn all_scripts(&mut self) -> Result<Vec<LocalScript>> {
@@ -281,7 +277,8 @@ impl ScriptStore {
         Ok(())
     }
 
-    /// A fresh script id, for a conflict copy made while applying another Mac's version.
+    /// A fresh script id, like the one a new script gets.
+    #[cfg(test)]
     pub fn fresh_id() -> ScriptId {
         new_id()
     }
@@ -330,24 +327,6 @@ impl ScriptStore {
             }
         }
         Ok(imported)
-    }
-
-    /// The id of the library script stored at `path`, or `None` when it is outside the library.
-    pub fn script_id_for_file(&mut self, path: &Path) -> Result<Option<ScriptId>> {
-        let canonical = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-        let Some(folder) = path.parent() else {
-            return Ok(None);
-        };
-        if canonical(folder) != canonical(&self.scripts_dir) {
-            return Ok(None);
-        }
-        self.rescan()?;
-        let file = path.file_name().map(|n| n.to_string_lossy().into_owned());
-        Ok(self
-            .file_names
-            .iter()
-            .find(|(_, name)| Some(*name) == file.as_ref())
-            .map(|(id, _)| id.clone()))
     }
 
     /// Where the script's `.pine` file lives inside the library.

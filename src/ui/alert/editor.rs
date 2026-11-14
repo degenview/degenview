@@ -3,11 +3,7 @@
 //! parsing, hints and summary live on the state so they are testable and the host (which
 //! owns the quote layer and the alert store) only feeds prices in and takes the alert out.
 
-// Transient: a few state accessors (`candidate`, webhook preview, ...) wait on the duplicate check
-// and the sheet's webhook preview being wired.
-#![allow(dead_code)]
-
-use crate::model::alert::message::{AlertMessageContext, DEFAULT_PRICE_ALERT_TEMPLATE, render};
+use crate::model::alert::message::AlertMessageContext;
 use crate::model::alert::{
     AlertAsset, AlertCondition, AlertCurrency, AlertFrequency, AlertState, PriceAlert,
 };
@@ -37,15 +33,6 @@ impl Direction {
             Self::Below => "Below",
             Self::Rises => "Rises",
             Self::Falls => "Falls",
-        }
-    }
-
-    pub fn glyph(self) -> &'static str {
-        match self {
-            Self::Above => "↗",
-            Self::Below => "↘",
-            Self::Rises => "↑",
-            Self::Falls => "↓",
         }
     }
 
@@ -178,6 +165,7 @@ impl PriceAlertEditorState {
         &self.asset
     }
 
+    #[cfg(test)]
     pub fn currency(&self) -> AlertCurrency {
         self.currency
     }
@@ -186,6 +174,7 @@ impl PriceAlertEditorState {
         self.current_price
     }
 
+    #[cfg(test)]
     pub fn reference(&self) -> Option<f64> {
         self.reference
     }
@@ -358,18 +347,6 @@ impl PriceAlertEditorState {
         ))
     }
 
-    /// The alert as it would be saved, for the host's duplicate check.
-    pub fn candidate(&self) -> Option<PriceAlert> {
-        let condition = self.condition()?;
-        let mut alert = PriceAlert::new(self.asset.clone(), condition, 0);
-        if let Some(existing) = &self.existing {
-            alert.id = existing.id;
-        }
-        alert.currency = self.currency;
-        alert.frequency = self.frequency;
-        Some(alert)
-    }
-
     /// The saved form: the existing alert updated in place (id, creation time kept), or a
     /// new one; always active. Webhooks off means none, whatever was picked before.
     pub fn result(&self, now_ms: i64) -> Option<PriceAlert> {
@@ -393,13 +370,6 @@ impl PriceAlertEditorState {
         Some(alert)
     }
 
-    pub fn toggle_webhook(&mut self, endpoint: EndpointId, on: bool) {
-        self.webhook_ids.retain(|id| *id != endpoint);
-        if on {
-            self.webhook_ids.push(endpoint);
-        }
-    }
-
     /// Example values for the webhook message preview: what this alert would send for its
     /// own market.
     pub fn example_context(&self, now_ms: i64) -> AlertMessageContext {
@@ -416,16 +386,6 @@ impl PriceAlertEditorState {
             now_ms,
             ..AlertMessageContext::default()
         }
-    }
-
-    /// The message the webhook would post right now, with example values.
-    pub fn webhook_preview(&self, now_ms: i64) -> String {
-        let template = if self.webhook_message.trim().is_empty() {
-            DEFAULT_PRICE_ALERT_TEMPLATE
-        } else {
-            &self.webhook_message
-        };
-        render(template, &self.example_context(now_ms))
     }
 }
 
@@ -1011,6 +971,7 @@ fn footer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::alert::message::{DEFAULT_PRICE_ALERT_TEMPLATE, render};
     use crate::model::{DataSource, InstrumentId};
 
     fn asset() -> AlertAsset {
@@ -1136,9 +1097,7 @@ mod tests {
         let mut state = state();
         state.target = "100".into();
         state.sends_to_webhooks = true;
-        state.toggle_webhook(5, true);
-        state.toggle_webhook(6, true);
-        state.toggle_webhook(5, false);
+        state.webhook_ids = vec![6];
         state.webhook_message = "  hello  ".into();
         let on = state.result(1).unwrap();
         assert_eq!(on.webhook_endpoint_ids, vec![6]);
@@ -1263,24 +1222,19 @@ mod tests {
     }
 
     #[test]
-    fn the_candidate_carries_the_existing_id_for_the_duplicate_check() {
-        let saved = PriceAlert::new(asset(), AlertCondition::CrossesAbove { target: 5.0 }, 0);
-        let editing = PriceAlertEditorState::new(asset(), Some(saved.clone()), None);
-        assert_eq!(editing.candidate().unwrap().id, saved.id);
-        assert!(state().candidate().is_none());
-    }
-
-    #[test]
     fn the_webhook_preview_renders_with_this_alerts_own_market() {
         let mut state = state();
         state.set_current_price(Some(67_432.5));
+        let context = state.example_context(1_714_571_130_000);
         assert_eq!(
-            state.webhook_preview(1_714_571_130_000),
+            render(DEFAULT_PRICE_ALERT_TEMPLATE, &context),
             "BTCUSDT alert: 67432.5"
         );
-        state.webhook_message = "{{exchange}} {{ticker}} {{interval}} {{time}} {{open}}".into();
         assert_eq!(
-            state.webhook_preview(1_714_571_130_000),
+            render(
+                "{{exchange}} {{ticker}} {{interval}} {{time}} {{open}}",
+                &context
+            ),
             "Binance BTCUSDT 1 2024-05-01T13:45:30Z {{open}}",
             "a value the alert does not have stays a placeholder"
         );
@@ -1291,6 +1245,5 @@ mod tests {
         assert!(Direction::Rises.is_percent() && !Direction::Above.is_percent());
         assert_eq!(Direction::Below.title(), "Below");
         assert!(Direction::Falls.blurb().contains("drops by a percentage"));
-        assert_eq!(Direction::Above.glyph(), "↗");
     }
 }

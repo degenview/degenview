@@ -7,10 +7,7 @@
 //! clock, sleep, BTC spot source and storage directory are all injectable, so the rules (the
 //! seven-day lookback, retries, cache lifetimes) are tested without a network.
 
-// Transient: the portfolio host wires this up for the CMC import and live conversion.
-#![allow(dead_code)]
-
-use crate::format::{civil_from_days, days_from_civil};
+use crate::format::civil_from_days;
 use crate::model::portfolio::PortfolioCurrency;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -149,6 +146,8 @@ pub fn start_of_day(epoch_ms: i64) -> i64 {
     epoch_ms.div_euclid(DAY_MS) * DAY_MS
 }
 
+/// The day `day_key` names, as its first millisecond.
+#[cfg(test)]
 fn parse_day(key: &str) -> Option<i64> {
     let mut parts = key.split('-');
     let (year, month, day) = (
@@ -156,7 +155,7 @@ fn parse_day(key: &str) -> Option<i64> {
         parts.next()?.parse().ok()?,
         parts.next()?.parse().ok()?,
     );
-    Some(days_from_civil(year, month, day) * DAY_MS)
+    Some(crate::format::days_from_civil(year, month, day) * DAY_MS)
 }
 
 fn is_btc_or_usd(currency: PortfolioCurrency) -> bool {
@@ -530,12 +529,6 @@ impl FxRateService {
             result.insert(*date, outcome);
         }
         result
-    }
-
-    /// Refreshes the current fiat rates; failures are ignored (the old ones keep serving).
-    pub fn refresh(&self) {
-        let mut state = self.lock();
-        let _ = self.refresh_current_fiat(&mut state);
     }
 
     // MARK: Current

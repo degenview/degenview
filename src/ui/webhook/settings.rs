@@ -2,9 +2,6 @@
 //! to. A pure view returning `WebhookSettingsAction`s; the host owns the store, sends the
 //! test (through the same `deliver` alerts use, in test mode) and feeds the result back.
 
-// Transient: the Settings window hosts this once the webhook store is wired.
-#![allow(dead_code)]
-
 use crate::model::webhook::{
     EndpointId, WebhookDeliveryError, WebhookDeliveryResult, WebhookEndpoint,
 };
@@ -204,6 +201,7 @@ impl WebhookSettingsState {
         self.test_states.remove(&endpoint);
     }
 
+    #[cfg(test)]
     pub fn is_editing(&self) -> bool {
         self.editor.is_some()
     }

@@ -19,7 +19,6 @@ struct Declaration<'a> {
     name: &'a str,
     kind: FunctionKind,
     parameters: &'a [Parameter],
-    body: &'a [Statement],
     range: SourceRange,
 }
 
@@ -37,13 +36,12 @@ pub fn validate(statements: &[Statement], exported: &HashSet<String>) -> Vec<Dia
                 name,
                 kind,
                 parameters,
-                body,
                 range,
+                ..
             } => Some(Declaration {
                 name,
                 kind: *kind,
                 parameters,
-                body,
                 range: *range,
             }),
             _ => None,

@@ -1,9 +1,6 @@
 //! The viewer's UTC offset, for showing and typing dates in local time. macOS only (through
 //! `localtime_r`); elsewhere, and under test, it is UTC so results are deterministic.
 
-// Transient: the portfolio host reads this; other screens adopt it as they need local time.
-#![allow(dead_code)]
-
 /// Seconds east of UTC at `epoch_ms`, in the system time zone (DST included).
 pub fn local_utc_offset_secs(epoch_ms: i64) -> i64 {
     if cfg!(test) {

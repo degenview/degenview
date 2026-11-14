@@ -3,9 +3,6 @@
 //! CoinMarketCap connection test happen here, since the stores are process-wide, but every rule
 //! (what may be saved, what the status says) is a plain function tested against in-memory stores.
 
-// Transient: reachable once the Settings window is shown.
-#![allow(dead_code)]
-
 use crate::service::keychain::api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore,
 };

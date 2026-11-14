@@ -3,9 +3,6 @@
 //! one-line summary of the section and its bulk action (Close All, Cancel All, Export) behind a
 //! confirmation. Pure views returning actions; the host owns the store and the engine.
 
-// Transient: the paper-trading panel hosts these once the host is wired.
-#![allow(dead_code)]
-
 use crate::model::paper::PaperCurrency;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
@@ -25,7 +22,6 @@ pub struct PaperHeaderInput<'a> {
     pub currency: Option<PaperCurrency>,
     pub position_count: usize,
     pub working_order_count: usize,
-    pub show_trading_on_charts: bool,
 }
 
 #[derive(Default)]
@@ -41,7 +37,6 @@ pub enum PaperHeaderAction {
     ResetAccount,
     DeleteAccount,
     ToggleShowOnCharts,
-    Close,
 }
 
 /// Deleting needs another account to fall back to: an empty list is refilled with a default.
@@ -78,27 +73,11 @@ pub fn tab_count(tab: PaperTab, input: &PaperHeaderInput) -> Option<usize> {
     }
 }
 
-/// "Positions 2", or just "Positions" for a section without a count.
-pub fn tab_text(tab: PaperTab, count: Option<usize>) -> String {
-    match count {
-        Some(count) => format!("{} {count}", tab.title()),
-        None => tab.title().to_owned(),
-    }
-}
-
 pub fn account_name<'a>(input: &'a PaperHeaderInput) -> &'a str {
     input
         .selected
         .and_then(|id| input.accounts.iter().find(|account| account.id == id))
         .map_or("No account", |account| account.name.as_str())
-}
-
-pub fn eye_label(showing: bool) -> &'static str {
-    if showing {
-        "Hide trading on charts"
-    } else {
-        "Show trading on charts"
-    }
 }
 
 /// The Swift tab glyphs.
@@ -360,7 +339,6 @@ mod tests {
             currency: Some(PaperCurrency::Usd),
             position_count: 2,
             working_order_count: 0,
-            show_trading_on_charts: true,
         }
     }
 
@@ -386,8 +364,6 @@ mod tests {
         for tab in [PaperTab::History, PaperTab::Trades, PaperTab::Journal] {
             assert_eq!(tab_count(tab, &input), None);
         }
-        assert_eq!(tab_text(PaperTab::Positions, Some(2)), "Positions 2");
-        assert_eq!(tab_text(PaperTab::Journal, None), "Journal");
     }
 
     #[test]
@@ -402,12 +378,6 @@ mod tests {
     fn the_empty_state_invites_a_first_account() {
         assert_eq!(NO_ACCOUNT_TITLE, "No paper account");
         assert!(NO_ACCOUNT_MESSAGE.contains("simulated money"));
-    }
-
-    #[test]
-    fn the_eye_says_what_a_click_will_do() {
-        assert_eq!(eye_label(true), "Hide trading on charts");
-        assert_eq!(eye_label(false), "Show trading on charts");
     }
 
     #[test]

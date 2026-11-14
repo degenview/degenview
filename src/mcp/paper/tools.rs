@@ -15,7 +15,9 @@ use crate::mcp::paper::{
     PaperAccountsResult, PaperChangeResult, PaperFillsResult, PaperOrderResult, PaperTradesResult,
 };
 use crate::mcp::state::ClientIdentity;
-use crate::mcp::tools::{DegenViewMcp, McpSource, client_of, failure, invalid, unexpected};
+use crate::mcp::tools::{
+    DegenViewMcp, McpSource, client_of, failure, invalid, parse_id, unexpected,
+};
 use crate::model::mcp::Permission;
 use crate::model::paper::{
     PaperInstrument, PaperOrderChanges, PaperOrderRequest, PaperOrderSide, PaperOrderType,
@@ -262,9 +264,7 @@ fn order_id(raw: &str) -> Result<u64, CallToolResult> {
 }
 
 fn account_id(raw: &str) -> Result<u64, CallToolResult> {
-    raw.trim()
-        .parse::<u64>()
-        .map_err(|_| invalid("account_id must be an id returned by degenview_list_paper_accounts"))
+    parse_id(raw, "account_id", "degenview_list_paper_accounts")
 }
 
 fn page(params: &PaperHistoryParams) -> Result<(usize, usize), CallToolResult> {

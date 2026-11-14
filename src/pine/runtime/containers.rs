@@ -332,10 +332,6 @@ impl Matrix {
         self.rows += other.rows;
     }
 
-    pub fn fill(&mut self, value: RuntimeValue) {
-        self.elements = vec![value; self.elements.len()];
-    }
-
     pub fn transposed(&self) -> Self {
         let mut result = Matrix::new(self.columns, self.rows, RuntimeValue::Na);
         for r in 0..self.rows {

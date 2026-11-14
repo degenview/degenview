@@ -5,9 +5,6 @@
 //! Every block here has a fixed height and paints its text at measured positions, so nothing
 //! reflows while prices stream in and cards in one row always end level.
 
-// Transient: the Portfolio window hosts these once the portfolio store is wired.
-#![allow(dead_code)]
-
 use crate::model::portfolio::accounting::ClosedPosition;
 use crate::model::portfolio::format::{PortfolioValueFormatter, Tone};
 use crate::model::portfolio::statistics::{
@@ -108,19 +105,6 @@ pub fn top_holdings(holdings: &[PortfolioHolding]) -> Vec<&PortfolioHolding> {
 /// "Portfolio · 3 assets".
 pub fn asset_count_text(count: usize) -> String {
     format!("{count} {}", if count == 1 { "asset" } else { "assets" })
-}
-
-/// The caption beside a change figure: "▲ 3.21%" (the glyph hidden in privacy mode, and for a
-/// move of exactly zero).
-pub fn change_caption(formatter: &PortfolioValueFormatter, amount: f64, percentage: f64) -> String {
-    let glyph = if formatter.privacy || amount == 0.0 {
-        ""
-    } else if amount > 0.0 {
-        "▲ "
-    } else {
-        "▼ "
-    };
-    format!("{glyph}{}", formatter.percent(percentage.abs(), 2))
 }
 
 // MARK: Painting helpers
@@ -1277,24 +1261,6 @@ fn top_holding_row(
     accessibility::label_as(response, egui::WidgetType::Button, spoken);
 }
 
-fn card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
-    egui::Frame::new()
-        .fill(theme::chrome())
-        .stroke(Stroke::new(1.0, theme::separator().gamma_multiply(0.6)))
-        .corner_radius(12.0)
-        .shadow(egui::Shadow {
-            offset: [0, 2],
-            blur: 10,
-            spread: 0,
-            color: Color32::from_black_alpha(30),
-        })
-        .inner_margin(egui::Margin::same(16))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            content(ui);
-        });
-}
-
 // MARK: Statistics tab
 
 pub struct StatisticsInput<'a> {
@@ -2115,20 +2081,6 @@ mod tests {
         assert_eq!(asset_count_text(0), "0 assets");
         assert_eq!(asset_count_text(1), "1 asset");
         assert_eq!(asset_count_text(12), "12 assets");
-    }
-
-    #[test]
-    fn the_change_caption_shows_direction_unless_hidden_or_flat() {
-        let open = PortfolioValueFormatter::new(PortfolioCurrency::Usd, false);
-        let hidden = PortfolioValueFormatter::new(PortfolioCurrency::Usd, true);
-        assert_eq!(change_caption(&open, 120.0, 0.0321), "▲ 3.21%");
-        assert_eq!(change_caption(&open, -120.0, -0.0321), "▼ 3.21%");
-        assert_eq!(change_caption(&open, 0.0, 0.0), "0.00%");
-        assert_eq!(
-            change_caption(&hidden, 120.0, 0.0321),
-            "3.21%",
-            "no glyph to give the sign away"
-        );
     }
 
     #[test]

@@ -1,28 +1,19 @@
-//! Small runtime support types: the result, execution rejection, security keys/providers, dataset
-//! identity and the flattened library linkage. Ported from `Pine/Runtime/*`.
+//! Small runtime support types: the result, security keys/providers and the flattened library
+//! linkage. Ported from `Pine/Runtime/*`.
 
 use std::collections::HashSet;
 
 use super::fast_hash::FastMap;
 use super::types::RuntimeFunction;
 use crate::model::Kline;
-use crate::pine::Diagnostic;
 use crate::pine::compiler::program::{CompiledProgram, Import};
 use crate::pine::syntax::ast::{EnumMember, Expression, Parameter, Statement, TypeField};
 
+/// What `Session::evaluate` returns: the output and every bar's flags.
+#[cfg(test)]
 pub struct RuntimeResult {
     pub output: crate::pine::compiler::program::VisualOutput,
-    pub diagnostics: Vec<Diagnostic>,
     pub bar_states: Vec<super::types::BarFlags>,
-}
-
-/// Why `execute` refused a bar. Not a script failure: the feed repeated or reordered itself.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExecutionRejection {
-    /// The bar opened before one already executed.
-    StaleBar,
-    /// The bar is the one most recently committed.
-    DuplicateBar,
 }
 
 /// A series `request.security` asks for: a symbol as the script wrote it, at a bar length in seconds.
@@ -79,50 +70,6 @@ pub struct ChartSpan {
     pub end_ms: i64,
     /// The chart's bar length.
     pub spacing_ms: i64,
-}
-
-/// A provider that holds no data and remembers what it was asked for.
-pub struct SecurityRecorder {
-    recorded: std::sync::Mutex<Vec<SecurityKey>>,
-}
-
-impl SecurityRecorder {
-    pub fn new() -> Self {
-        Self {
-            recorded: std::sync::Mutex::new(Vec::new()),
-        }
-    }
-
-    /// The series asked for, in first-asked order, without repeats.
-    pub fn keys(&self) -> Vec<SecurityKey> {
-        self.recorded.lock().unwrap().clone()
-    }
-}
-
-impl SecurityDataProvider for SecurityRecorder {
-    fn candles(&self, key: &SecurityKey) -> Option<Vec<Kline>> {
-        let mut recorded = self.recorded.lock().unwrap();
-        if !recorded.contains(key) {
-            recorded.push(key.clone());
-        }
-        Some(Vec::new())
-    }
-}
-
-/// What a set of committed bars belongs to. Series from one key are never reused for another.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct DatasetKey {
-    /// `"<source>:<ticker>"`, matching `syminfo.tickerid`.
-    pub symbol_key: String,
-    /// The chart timeframe's label, e.g. `"1h"`.
-    pub timeframe: String,
-}
-
-/// A bar's identity: dataset plus open time. Duplicate transport messages for one bar share it.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct BarId {
-    pub dataset: DatasetKey,
-    pub open_time: i64,
 }
 
 /// What the imported libraries contribute to a run, flattened out of the compiled import graph.

@@ -49,8 +49,6 @@ enum Step {
     Expression(String),
     /// The values a series took on earlier bars.
     Series,
-    /// `[n]` bars back, within a series.
-    Offset(usize),
     /// An element of an array, a tuple, or a matrix row.
     Element(usize),
     /// A map entry's value, by position in insertion order.
@@ -606,9 +604,6 @@ fn resolve(env: &mut Env<'_>, reference: &ValueRef) -> Result<Node, InspectError
                 Step::Variable(name) if !is_compound(&value) => Node::Series(name.clone()),
                 _ => return Err(InspectError::Gone),
             },
-            (Node::Series(name), Step::Offset(back)) => Node::Value(
-                series_value(env, reference.frame, &name, *back).ok_or(InspectError::Gone)?,
-            ),
             (Node::Value(RuntimeValue::Tuple(items)), Step::Element(index)) => {
                 Node::Value(items.get(*index).cloned().ok_or(InspectError::Gone)?)
             }

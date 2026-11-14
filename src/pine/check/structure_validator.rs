@@ -4,7 +4,6 @@
 //! Name rules (`CE10090`, `CE10190`) come from [`super::identifier_rules`].
 
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 
 use super::identifier_rules;
 use crate::pine::compiler::symbol_catalog;

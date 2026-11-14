@@ -12,8 +12,6 @@
 //! Under `is_disabled` (tests, `DEGENVIEW_NO_KEYCHAIN=1`) values stay in memory: a
 //! rebuilt, re-signed binary would otherwise block on a Keychain access prompt.
 
-#![allow(dead_code)] // Transient: the Settings ▸ Webhooks editor and the alert runtime wire it next.
-
 use crate::model::webhook::EndpointId;
 use crate::service::webhook::delivery::{
     InMemoryWebhookSecretStore, SecretStoreError, WebhookSecretStore,

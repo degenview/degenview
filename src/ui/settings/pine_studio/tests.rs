@@ -84,7 +84,6 @@ fn the_page_is_in_the_sidebar_after_appearance() {
     let visible: Vec<_> = S::visible().collect();
     assert_eq!(visible[1], S::PineStudio);
     assert_eq!(S::PineStudio.title(), "Pine Studio");
-    assert_eq!(S::from_key(S::PineStudio.key()), Some(S::PineStudio));
     // The sidebar still fits the smallest window Settings can be (400 points tall).
     assert!(10.0 + 32.0 * visible.len() as f32 <= 400.0);
 }

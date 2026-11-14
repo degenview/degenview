@@ -282,6 +282,7 @@ impl EditorState {
     }
 
     /// The status strip's note while it is still fresh.
+    #[cfg(test)]
     pub fn notice(&self) -> Option<&str> {
         self.notice
             .as_ref()
@@ -392,6 +393,7 @@ impl EditorState {
     }
 
     /// The runtime failures being shown with the compile diagnostics.
+    #[cfg(test)]
     pub fn runtime_problems(&self) -> &[Diagnostic] {
         &self.runtime_problems
     }
@@ -475,6 +477,7 @@ impl EditorState {
     }
 
     /// Where the caret is, as a character index, if the text has been laid out.
+    #[cfg(test)]
     pub fn caret_index(&self, ctx: &egui::Context) -> Option<usize> {
         TextEditState::load(ctx, self.id)
             .and_then(|edit| edit.cursor.char_range())

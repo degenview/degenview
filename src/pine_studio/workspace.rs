@@ -16,7 +16,7 @@ use super::{Cmd, OpenScript, PineStudio};
 use crate::pine::syntax::token::Diagnostic;
 use crate::ui::kit::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::theme;
-use eframe::egui::{self, Align, Id, RichText, Ui, pos2};
+use eframe::egui::{self, Id, RichText, Ui, pos2};
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 
@@ -435,6 +435,3 @@ fn preview_pane(
         cmds.borrow_mut().push(Cmd::ToggleDrawer);
     }
 }
-
-#[allow(dead_code)]
-fn _keep(_: Instant, _: Align) {}

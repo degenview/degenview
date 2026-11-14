@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! What the Alerts window and the sidebar bell show about alerts that already fired:
 //! how many are unseen, and the history bucketed under day headings.
 
@@ -45,6 +44,7 @@ impl UnseenAlerts {
         self.unseen.len()
     }
 
+    #[cfg(test)]
     pub fn last_seen_ms(&self) -> i64 {
         self.last_seen_ms
     }
@@ -199,10 +199,7 @@ mod tests {
         assert_eq!(unseen.count(), 0);
         unseen.receive(price_event(3, 2_000));
         unseen.receive(price_event(3, 2_000));
-        unseen.receive(AlertDomainEvent::ScriptAlertTriggered {
-            event_id: 4,
-            at_ms: 2_500,
-        });
+        unseen.receive(price_event(4, 2_500));
         assert_eq!(
             unseen.count(),
             2,

@@ -10,7 +10,6 @@ pub const DISPLAY_PANE: u32 = 1;
 pub const DISPLAY_DATA_WINDOW: u32 = 2;
 pub const DISPLAY_PRICE_SCALE: u32 = 4;
 pub const DISPLAY_STATUS_LINE: u32 = 8;
-pub const DISPLAY_HIDDEN: u32 = 0;
 pub const DISPLAY_ALL: u32 =
     DISPLAY_PANE | DISPLAY_DATA_WINDOW | DISPLAY_PRICE_SCALE | DISPLAY_STATUS_LINE;
 
@@ -87,17 +86,7 @@ pub enum TextAlign {
     Bottom,
 }
 
-impl TextAlign {
-    pub fn pine_name(self) -> &'static str {
-        match self {
-            Self::Left => "text.align_left",
-            Self::Center => "text.align_center",
-            Self::Right => "text.align_right",
-            Self::Top => "text.align_top",
-            Self::Bottom => "text.align_bottom",
-        }
-    }
-}
+impl TextAlign {}
 
 /// `yloc.*`: where a label's y comes from. `price` is its own `y`; above or below the bar it sits at
 /// the bar's high or low and `y` is ignored.
@@ -109,15 +98,7 @@ pub enum YLocation {
     BelowBar,
 }
 
-impl YLocation {
-    pub fn pine_name(self) -> &'static str {
-        match self {
-            Self::Price => "yloc.price",
-            Self::AboveBar => "yloc.abovebar",
-            Self::BelowBar => "yloc.belowbar",
-        }
-    }
-}
+impl YLocation {}
 
 /// `extend.*`: how far a line or box runs on.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -271,33 +252,7 @@ pub enum LabelStyle {
     TextOutline,
 }
 
-impl LabelStyle {
-    pub fn pine_name(self) -> &'static str {
-        match self {
-            Self::None => "label.style_none",
-            Self::LabelDown => "label.style_label_down",
-            Self::LabelUp => "label.style_label_up",
-            Self::LabelLeft => "label.style_label_left",
-            Self::LabelRight => "label.style_label_right",
-            Self::LabelCenter => "label.style_label_center",
-            Self::LabelLowerLeft => "label.style_label_lower_left",
-            Self::LabelLowerRight => "label.style_label_lower_right",
-            Self::LabelUpperLeft => "label.style_label_upper_left",
-            Self::LabelUpperRight => "label.style_label_upper_right",
-            Self::Circle => "label.style_circle",
-            Self::Square => "label.style_square",
-            Self::Diamond => "label.style_diamond",
-            Self::Cross => "label.style_cross",
-            Self::Xcross => "label.style_xcross",
-            Self::Flag => "label.style_flag",
-            Self::TriangleUp => "label.style_triangleup",
-            Self::TriangleDown => "label.style_triangledown",
-            Self::ArrowUp => "label.style_arrowup",
-            Self::ArrowDown => "label.style_arrowdown",
-            Self::TextOutline => "label.style_text_outline",
-        }
-    }
-}
+impl LabelStyle {}
 
 /// `position.*`: where a table sits on the plot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

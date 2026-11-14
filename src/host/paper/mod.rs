@@ -3,7 +3,6 @@
 //! The execution engine deliberately records rejected orders before returning their error. This
 //! host therefore persists and publishes every candidate engine state, including a domain-error
 //! result, while still refusing all writes after an initial load failure.
-#![allow(dead_code)]
 
 use crate::model::paper;
 use crate::model::paper::engine::PaperTradingEngine;
@@ -273,16 +272,6 @@ impl PaperHost {
 
     pub fn select_account(&mut self, id: u64) -> Result<(), PaperHostError> {
         self.apply(|engine| engine.select_account(id))
-    }
-
-    pub fn update_settings(
-        &mut self,
-        account_id: u64,
-        settings: PaperAccountSettings,
-    ) -> Result<(), PaperHostError> {
-        self.apply_for(Some(account_id), move |engine| {
-            engine.update_settings(account_id, settings)
-        })
     }
 
     pub fn reset_account(
@@ -730,10 +719,6 @@ impl Default for PaperPanel {
 }
 
 impl PaperPanel {
-    pub fn tab(&self) -> PaperTab {
-        self.header.tab
-    }
-
     pub fn show_trading_on_charts(&self) -> bool {
         self.show_trading_on_charts
     }
@@ -768,7 +753,6 @@ impl PaperPanel {
             currency: account.map(|account| account.base_currency),
             position_count: positions.len(),
             working_order_count: working_orders.len(),
-            show_trading_on_charts: self.show_trading_on_charts,
         };
         let parts = header::header_parts(&input);
         let header_events = panel_header::show(
@@ -889,7 +873,7 @@ impl PaperPanel {
             );
         }
 
-        self.apply_header_actions(header_actions, host, account, &mut panel_actions);
+        self.apply_header_actions(header_actions, host, account);
         self.apply_table_actions(table_actions, host);
         self.apply_footer_actions(footer_actions, host, account_id);
         if std::mem::take(&mut self.export_requested) {
@@ -1075,7 +1059,6 @@ impl PaperPanel {
         actions: Vec<PaperHeaderAction>,
         host: &mut PaperHost,
         account: Option<&crate::model::paper::PaperAccount>,
-        panel_actions: &mut Vec<PanelEvent>,
     ) {
         for action in actions {
             match action {
@@ -1099,7 +1082,6 @@ impl PaperPanel {
                 PaperHeaderAction::ToggleShowOnCharts => {
                     self.show_trading_on_charts = !self.show_trading_on_charts;
                 }
-                PaperHeaderAction::Close => panel_actions.push(PanelEvent::Close),
             }
         }
     }

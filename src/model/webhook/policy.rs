@@ -137,7 +137,10 @@ pub fn url_message(error: WebhookDeliveryError) -> &'static str {
 /// never appear. Unparseable input yields a bare marker. The Settings row shows the address in
 /// full, as the user typed it: a secret in it is a `{{secret}}` placeholder, its value is in
 /// the secret store.
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "the webhook guide sends any logged webhook URL through here; nothing logs one yet"
+)]
 pub fn redact(url: &str) -> String {
     let Some(parsed) = parse_url(url).filter(|parsed| !parsed.host.is_empty()) else {
         return "•••".to_owned();

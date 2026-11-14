@@ -2,9 +2,6 @@
 //! A pure view over a `CsvPreview`; the host runs the import and reports a failure back through
 //! `ImportPreviewState::failed`.
 
-// Transient: the portfolio host opens this once the importers are wired.
-#![allow(dead_code)]
-
 use crate::model::portfolio::accounting::unique_assets;
 use crate::model::portfolio::csv::CsvPreview;
 use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};

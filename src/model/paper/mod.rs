@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Paper-trading data model: accounts, orders, fills, positions, quotes and the
 //! snapshot that persists them. Mirrors `PaperTradingModels.swift` with `Decimal` mapped
 //! to `f64`, `UUID` to `u64` and `Date` to epoch milliseconds.
@@ -79,13 +78,6 @@ pub enum PaperOrderStatus {
 }
 
 impl PaperOrderStatus {
-    pub fn is_terminal(self) -> bool {
-        matches!(
-            self,
-            Self::Filled | Self::Canceled | Self::Rejected | Self::Expired
-        )
-    }
-
     pub fn is_working(self) -> bool {
         matches!(self, Self::Working | Self::PartiallyFilled)
     }
@@ -131,17 +123,6 @@ pub enum PaperCommissionConfiguration {
     PerContract {
         value: f64,
     },
-}
-
-impl PaperCommissionConfiguration {
-    pub fn label(self) -> String {
-        match self {
-            Self::None => "None".to_owned(),
-            Self::FixedPerOrder { value } => format!("{value} per order"),
-            Self::Percentage { value } => format!("{value}% of value"),
-            Self::PerContract { value } => format!("{value} per contract"),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -312,6 +293,7 @@ pub struct PaperAccount {
 }
 
 impl PaperAccount {
+    #[cfg(test)]
     pub fn new(id: u64, name: impl Into<String>, created_at: i64) -> Self {
         Self {
             id,
@@ -600,7 +582,6 @@ pub enum PaperTradingError {
     InvalidQuantity(String),
     InvalidPrice(String),
     StaleMarketData,
-    MarketClosed,
     NoMarketData,
     UnsupportedCurrencyConversion {
         from: PaperCurrency,
@@ -622,9 +603,6 @@ impl PaperTradingError {
             Self::InvalidQuantity(message) | Self::InvalidPrice(message) => message.clone(),
             Self::StaleMarketData => {
                 "Order cannot be simulated reliably because market data is stale.".to_owned()
-            }
-            Self::MarketClosed => {
-                "The market is closed; the paper order remains pending.".to_owned()
             }
             Self::NoMarketData => "No executable market price is available.".to_owned(),
             Self::UnsupportedCurrencyConversion { from, to } => {
@@ -665,10 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn order_status_terminal_and_working() {
-        assert!(PaperOrderStatus::Filled.is_terminal());
-        assert!(PaperOrderStatus::Canceled.is_terminal());
-        assert!(!PaperOrderStatus::Working.is_terminal());
+    fn order_status_working() {
         assert!(PaperOrderStatus::Working.is_working());
         assert!(PaperOrderStatus::PartiallyFilled.is_working());
         assert!(!PaperOrderStatus::Filled.is_working());
@@ -762,14 +737,9 @@ mod tests {
     }
 
     #[test]
-    fn leverage_and_commission() {
+    fn stocks_trade_without_leverage_by_default() {
         let leverage = PaperLeverageConfiguration::default();
         assert_eq!(leverage.leverage(PaperAssetClass::Stock), 1.0);
-        assert_eq!(
-            PaperCommissionConfiguration::Percentage { value: 0.25 }.label(),
-            "0.25% of value"
-        );
-        assert_eq!(PaperCommissionConfiguration::None.label(), "None");
     }
 
     #[test]

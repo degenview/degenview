@@ -3,9 +3,6 @@
 //! Rows come from the unprojected ledger (so Edit opens exactly what was entered); the price
 //! and fee shown are the reporting-currency projection of the same transaction.
 
-// Transient: the Portfolio window hosts this once the portfolio store is wired.
-#![allow(dead_code)]
-
 use crate::model::DataSource;
 use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};
 use crate::model::portfolio::{PortfolioAsset, PortfolioTransaction, PortfolioTransactionType};
@@ -68,10 +65,6 @@ impl TransactionColumn {
     /// The fee column does not sort, as in the Swift table.
     pub fn is_sortable(self) -> bool {
         self != Self::Fee
-    }
-
-    fn is_numeric(self) -> bool {
-        matches!(self, Self::Quantity | Self::Price | Self::Total | Self::Fee)
     }
 
     /// A first click sorts text A to Z and everything else (dates, figures) newest/largest first.
@@ -346,10 +339,12 @@ impl Default for TransactionsState {
 }
 
 impl TransactionsState {
+    #[cfg(test)]
     pub fn column(&self) -> TransactionColumn {
         self.column
     }
 
+    #[cfg(test)]
     pub fn is_ascending(&self) -> bool {
         self.ascending
     }

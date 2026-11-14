@@ -170,10 +170,6 @@ impl ProfileRuntime {
         self
     }
 
-    pub fn table(&self) -> &Arc<RegionTable> {
-        &self.table
-    }
-
     // MARK: Bars
 
     pub fn begin_bar(&mut self) {

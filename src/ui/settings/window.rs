@@ -4,9 +4,6 @@
 //!
 //! A pure view: it reads settings values and returns `SettingsAction`s for the host.
 
-// Transient: the app shell opens this window once the settings host is wired.
-#![allow(dead_code)]
-
 use crate::model::alert::{
     AlertNotificationPermission, AlertNotificationSettings, AlertRuntimeHealth, AlertServiceState,
 };
@@ -107,7 +104,7 @@ impl SettingsSection {
         }
     }
 
-    /// The stable name the selection is remembered under.
+    /// A stable name for the section, which its widgets' ids are made from.
     pub fn key(self) -> &'static str {
         match self {
             Self::Appearance => "appearance",
@@ -124,10 +121,6 @@ impl SettingsSection {
             Self::Sync => "icloud",
             Self::About => "about",
         }
-    }
-
-    pub fn from_key(key: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|section| section.key() == key)
     }
 }
 
@@ -291,15 +284,6 @@ impl NotificationSwitch {
             Self::MacosNotifications => {
                 "Send alerts through Notification Center, including in the background."
             }
-        }
-    }
-
-    pub fn glyph(self) -> &'static str {
-        match self {
-            Self::Delivery => "🔔",
-            Self::Sound => "🔊",
-            Self::InAppBanners => "▭",
-            Self::MacosNotifications => "⌘",
         }
     }
 
@@ -1013,20 +997,17 @@ mod tests {
     }
 
     #[test]
-    fn sections_remember_themselves_by_key() {
-        for section in SettingsSection::ALL {
-            assert_eq!(SettingsSection::from_key(section.key()), Some(section));
-        }
-        assert_eq!(SettingsSection::from_key("display"), None);
+    fn sections_have_unique_keys_and_open_on_appearance() {
+        let keys: std::collections::HashSet<_> = SettingsSection::ALL
+            .iter()
+            .map(|section| section.key())
+            .collect();
+        assert_eq!(keys.len(), SettingsSection::ALL.len());
         // Swift opens Settings on Appearance, first in the sidebar.
         assert_eq!(SettingsSection::default(), SettingsSection::Appearance);
         assert_eq!(SettingsSection::ALL[0], SettingsSection::Appearance);
         assert_eq!(SettingsSection::Webhooks.title(), "Webhooks");
         assert_eq!(SettingsSection::Storage.title(), "Storage");
-        assert_eq!(
-            SettingsSection::from_key("storage"),
-            Some(SettingsSection::Storage)
-        );
         // Storage sits before About, which stays last.
         assert_eq!(
             SettingsSection::ALL[SettingsSection::ALL.len() - 1],

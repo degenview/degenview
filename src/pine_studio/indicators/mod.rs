@@ -32,11 +32,6 @@ pub fn script_id(indicator: &BundledIndicator) -> String {
     format!("{SCRIPT_ID_PREFIX}{}", indicator.id)
 }
 
-/// The bundled indicator a chart instance's script id names.
-pub fn from_script_id(script_id: &str) -> Option<&'static BundledIndicator> {
-    find(script_id.strip_prefix(SCRIPT_ID_PREFIX)?)
-}
-
 pub fn find(id: &str) -> Option<&'static BundledIndicator> {
     ALL.iter().find(|indicator| indicator.id == id)
 }
@@ -290,16 +285,19 @@ mod tests {
     }
 
     #[test]
-    fn ids_are_unique_and_round_trip_through_script_ids() {
+    fn ids_are_unique_and_script_ids_name_them() {
         let ids: HashSet<&str> = ALL.iter().map(|indicator| indicator.id).collect();
         assert_eq!(ids.len(), ALL.len());
         for indicator in &ALL {
+            let script_id = script_id(indicator);
             assert_eq!(
-                from_script_id(&script_id(indicator)).map(|i| i.id),
+                script_id
+                    .strip_prefix(SCRIPT_ID_PREFIX)
+                    .and_then(find)
+                    .map(|i| i.id),
                 Some(indicator.id)
             );
         }
-        assert!(from_script_id("abc").is_none());
     }
 
     #[test]

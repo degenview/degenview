@@ -9,7 +9,7 @@ use crate::mcp::portfolio::{
     PortfoliosResult, TransactionsResult, value_holdings,
 };
 use crate::mcp::state::ClientIdentity;
-use crate::mcp::tools::{DegenViewMcp, client_of, failure, invalid, unexpected};
+use crate::mcp::tools::{DegenViewMcp, client_of, failure, invalid, parse_id, unexpected};
 use crate::model::InstrumentId;
 use crate::model::mcp::Permission;
 use rmcp::handler::server::tool::Extension;
@@ -56,12 +56,8 @@ pub struct TransactionsParams {
 }
 
 fn portfolio_id(raw: Option<&str>) -> Result<Option<u64>, CallToolResult> {
-    raw.map(|raw| {
-        raw.trim().parse::<u64>().map_err(|_| {
-            invalid("portfolio_id must be an id returned by degenview_list_portfolios")
-        })
-    })
-    .transpose()
+    raw.map(|raw| parse_id(raw, "portfolio_id", "degenview_list_portfolios"))
+        .transpose()
 }
 
 #[tool_router(router = portfolio_router, vis = "pub(in crate::mcp)")]

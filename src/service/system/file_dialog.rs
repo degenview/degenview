@@ -3,9 +3,6 @@
 //! reach a file outside the sandbox. Windows has none yet. Every call blocks until the user
 //! answers, so run them on a worker thread. A cancelled panel is `None`, not an error.
 
-// Transient: the portfolio import/export flow calls these.
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 #[cfg(not(target_os = "linux"))]
 use std::process::Command;
@@ -61,10 +58,13 @@ pub fn parse_path(output: &str) -> Option<PathBuf> {
     (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
 }
 
-/// File name extensions the open panels offer, without the dot. The AppleScript panels ask for
-/// the matching uniform type identifiers instead.
+/// File name extensions the portal's open panels offer, without the dot. The AppleScript panels
+/// ask for the matching uniform type identifiers instead.
+#[cfg(any(target_os = "linux", test))]
 const CSV_EXTENSIONS: [&str; 3] = ["csv", "txt", "text"];
+#[cfg(any(target_os = "linux", test))]
 const IMAGE_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
+#[cfg(any(target_os = "linux", test))]
 const JSON_EXTENSIONS: [&str; 1] = ["json"];
 
 #[cfg(target_os = "linux")]

@@ -1,6 +1,5 @@
 //! Portfolio ledger storage. `PortfolioLedger` persists whole snapshots, so each save replaces
 //! the ledger tables in one transaction. Ported from `AppDatabase+Portfolio.swift`.
-#![allow(dead_code)] // transient until the portfolio ledger host wires these
 
 use crate::model::portfolio::PortfolioSnapshot;
 use crate::model::portfolio::{Portfolio, PortfolioLedgerSnapshot};

@@ -11,6 +11,7 @@ use super::{
 };
 use crate::host::sync::{EventSink, TransportFactory};
 use crate::service::system::entitlements::{icloud_environment, read_self};
+#[cfg(test)]
 use crate::sync::record::{RecordName, SyncRecord};
 use serde_json::{Value, json};
 use std::ffi::c_void;
@@ -453,7 +454,7 @@ impl TransportFactory for CloudKitFactory {
 }
 
 /// Builds a record the way it appears after a round trip, for tests.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn sample_record(name: &str, payload: &[u8]) -> SyncRecord {
     SyncRecord {
         name: RecordName::parse(name).expect("a valid record name"),

@@ -3,9 +3,6 @@
 //! `model::portfolio::editor`) that returns an outcome; the host saves it to the ledger and
 //! reports a rejection back through `TransactionEditorState::failed`.
 
-// Transient: the portfolio host opens the editor once it is wired.
-#![allow(dead_code)]
-
 use crate::model::portfolio::editor::{Category, EditorField, Summary, TransactionDraft};
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
 use crate::ui::chart::picker_kit::{art, widgets};
@@ -112,14 +109,6 @@ impl TransactionEditorState {
     pub fn failed(&mut self, message: impl Into<String>) {
         self.submitting = false;
         self.error = Some(message.into());
-    }
-
-    fn subtitle(&self) -> String {
-        format!(
-            "{} · {}",
-            self.base.asset.display_ticker(),
-            self.base.asset.source.display_name()
-        )
     }
 }
 
@@ -797,7 +786,6 @@ mod tests {
         state.failed("Sell exceeds the holding.");
         assert!(!state.submitting);
         assert_eq!(state.error.as_deref(), Some("Sell exceeds the holding."));
-        assert_eq!(state.subtitle(), "BTC · Binance");
         assert_eq!(state.asset_ticker(), "BTC");
     }
 

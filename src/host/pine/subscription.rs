@@ -2,7 +2,6 @@
 //! persistent [`ExecutionController`] the chart's latest candles, returning the alerts raised by
 //! realtime ticks and closes. Webhook/notification dispatch is the caller's (the app), which
 //! already owns the webhook + notification services.
-#![allow(dead_code)] // transient until the app threads it
 
 use crate::host::pine::KlineSecurityDataProvider;
 use crate::model::Kline;
@@ -80,6 +79,7 @@ impl PineSubscriptionHost {
         self.subscriptions = store.pine_subscriptions();
     }
 
+    #[cfg(test)]
     pub fn subscriptions(&self) -> &[PineAlertSubscription] {
         &self.subscriptions
     }
@@ -125,12 +125,8 @@ impl PineSubscriptionHost {
         }
     }
 
-    /// Feeds `bars` to every active subscription that watches `symbol_key`, returning
-    /// `(subscription, alert)` pairs for the alerts raised by the new realtime tick or close.
-    /// Each subscription owns one persistent controller, so a forming bar is re-evaluated as a
-    /// tick (`freq_all`, `freq_once_per_bar`) and `freq_once_per_bar_close` waits for the real
-    /// close. The first snapshot, and any rebuild after the market, source or inputs changed,
-    /// replays history silently. A subscription without a stored source is skipped.
+    /// [`Self::run_active_on`] for a time-based chart.
+    #[cfg(test)]
     pub fn run_active(
         &mut self,
         chart_id: u64,
@@ -151,8 +147,14 @@ impl PineSubscriptionHost {
         )
     }
 
-    /// [`Self::run_active`] for a chart that may be price-based: `bars` are the bars the chart's
-    /// scripts run over, and `chart` says how they were made.
+    /// Feeds `bars` to every active subscription that watches `symbol_key`, returning
+    /// `(subscription, alert)` pairs for the alerts raised by the new realtime tick or close.
+    /// Each subscription owns one persistent controller, so a forming bar is re-evaluated as a
+    /// tick (`freq_all`, `freq_once_per_bar`) and `freq_once_per_bar_close` waits for the real
+    /// close. The first snapshot, and any rebuild after the market, source or inputs changed,
+    /// replays history silently. A subscription without a stored source is skipped. The chart
+    /// may be price-based: `bars` are the bars the chart's scripts run over, and `chart` says how
+    /// they were made.
     #[allow(clippy::too_many_arguments)]
     pub fn run_active_on(
         &mut self,

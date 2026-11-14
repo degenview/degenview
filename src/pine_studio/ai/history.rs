@@ -105,6 +105,7 @@ impl History {
             .map_err(|error| error.to_string())
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.conversations.is_empty()
     }

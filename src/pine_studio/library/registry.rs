@@ -47,16 +47,6 @@ impl LibraryRegistry {
             *guard = next;
         }
     }
-
-    /// The names a script can import, sorted: each library's file name.
-    pub fn library_names() -> Vec<String> {
-        let mut names: Vec<String> = catalog()
-            .read()
-            .map(|c| c.by_name.keys().cloned().collect())
-            .unwrap_or_default();
-        names.sort();
-        names
-    }
 }
 
 impl LibraryResolver for LibraryRegistry {

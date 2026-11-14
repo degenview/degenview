@@ -1963,13 +1963,6 @@ mod tests {
         Arg { name: None, value }
     }
 
-    fn named(name: &str, value: RuntimeValue) -> Arg {
-        Arg {
-            name: Some(name.to_owned()),
-            value,
-        }
-    }
-
     fn run(state: &mut RuntimeState, name: &str, args: &[Arg]) -> Result<RuntimeValue, Diagnostic> {
         call(
             name,

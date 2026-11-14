@@ -12,9 +12,6 @@
 //! fills and areas, and a fan from the centroid for closed polylines, which is exact for convex and
 //! star-shaped outlines.
 
-// Transient: the chart card calls this once the Pine session produces output.
-#![allow(dead_code)]
-
 use crate::model::Kline;
 use crate::model::chart::look::drawn_extremes;
 use crate::pine::compiler::program::VisualOutput;
@@ -250,6 +247,7 @@ impl PineLayer<'_> {
     }
 
     /// `barcolor()` for the candle at `index`, if the script set one.
+    #[cfg(test)]
     pub fn bar_color(&self, index: usize) -> Option<Color32> {
         bar_color_at(self.pine, self.count(), self.tail, index)
     }

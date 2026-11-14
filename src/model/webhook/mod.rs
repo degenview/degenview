@@ -3,9 +3,6 @@
 //! in as `{{secret}}` and its value lives only in the Keychain. Anything written to a log
 //! goes through `webhook::policy::redact` first.
 
-// Transient: nothing calls this yet; the alert runtime and Settings wire it next.
-#![allow(dead_code)]
-
 pub mod policy;
 
 use crate::model::watchlist::new_id;

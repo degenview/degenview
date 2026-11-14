@@ -40,9 +40,6 @@ pub fn phase_label(phase: Phase) -> (String, Tone) {
         Phase::Paused(PauseReason::RemoteDataDeleted) => {
             ("Paused: iCloud data was removed", Tone::Warning)
         }
-        Phase::Paused(PauseReason::NeedsUpdate) => {
-            ("Update DegenView to keep syncing", Tone::Warning)
-        }
         Phase::NeedsAttention => ("Needs your attention", Tone::Warning),
         Phase::Error(kind) => return (error_label(kind).to_owned(), Tone::Bad),
     };
@@ -909,7 +906,6 @@ mod tests {
             Phase::WaitingForAccount,
             Phase::Paused(PauseReason::AccountChanged),
             Phase::Paused(PauseReason::RemoteDataDeleted),
-            Phase::Paused(PauseReason::NeedsUpdate),
             Phase::NeedsAttention,
             Phase::Error(ErrorKind::Quota),
         ];

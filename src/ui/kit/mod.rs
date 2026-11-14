@@ -497,18 +497,6 @@ pub fn tab_bar<T: Copy + PartialEq>(ui: &mut Ui, id: Id, items: &[TabItem<T>], s
     tab_bar_impl(ui, id, items, selected, true);
 }
 
-/// The compact `IconTabBar` that hugs its titles instead of filling the row, as the Paper
-/// Trading panel's section tabs do in Swift.
-#[allow(dead_code)] // for the paper panel's tabs
-pub fn tab_bar_compact<T: Copy + PartialEq>(
-    ui: &mut Ui,
-    id: Id,
-    items: &[TabItem<T>],
-    selected: &mut T,
-) {
-    tab_bar_impl(ui, id, items, selected, false);
-}
-
 /// The compact bar at 28 pt tall, so it lines up with other 28 pt controls in a header row.
 pub fn tab_bar_slim<T: Copy + PartialEq>(
     ui: &mut Ui,

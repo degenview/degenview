@@ -104,7 +104,6 @@ impl ChartWorkspace {
     }
 
     /// Timeline the replay bar builds from the focused chart's candle opens.
-    #[allow(dead_code)] // consumed by the replay bar UI (second agent)
     pub(super) fn replay_timeline(&self) -> Vec<i64> {
         self.resolved_focused_id()
             .and_then(|id| self.charts.iter().find(|chart| chart.id == id))

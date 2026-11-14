@@ -162,9 +162,6 @@ impl crate::sync::record::scripts::ScriptSink for FakeLibrary {
         self.scripts.remove(id);
         Ok(())
     }
-    fn fresh_id(&mut self) -> String {
-        self.fresh_id_value()
-    }
 }
 
 pub(in crate::sync) struct Mac {

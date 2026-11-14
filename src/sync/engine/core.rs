@@ -58,8 +58,6 @@ pub enum PauseReason {
     AccountChanged,
     /// The cloud data was deleted elsewhere.
     RemoteDataDeleted,
-    /// A newer DegenView wrote data this version must not touch.
-    NeedsUpdate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -235,6 +233,7 @@ impl<T: SyncTransport> SyncCore<T> {
         self.scripts = Some(cache);
     }
 
+    #[cfg(test)]
     pub fn transport_mut(&mut self) -> &mut T {
         &mut self.transport
     }
@@ -250,10 +249,6 @@ impl<T: SyncTransport> SyncCore<T> {
             .sync_state()
             .ok()
             .flatten()
-    }
-
-    fn enabled(&self) -> bool {
-        self.state().is_some_and(|state| state.enabled)
     }
 
     // MARK: Lifecycle
@@ -1304,6 +1299,7 @@ impl<T: SyncTransport> SyncCore<T> {
         }
     }
 
+    #[cfg(test)]
     pub fn phase(&self) -> Phase {
         self.status().phase
     }

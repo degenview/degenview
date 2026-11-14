@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Stateful portfolio ledger: the mutation surface over `PortfolioLedgerSnapshot`,
 //! delegating accounting to `portfolio::accounting`. Ported from `PortfolioLedger`.
 
@@ -34,6 +33,7 @@ impl PortfolioLedger {
         &self.snapshot
     }
 
+    #[cfg(test)]
     pub fn into_snapshot(self) -> PortfolioLedgerSnapshot {
         self.snapshot
     }
