@@ -1,6 +1,6 @@
 use super::catalog::Catalog;
 use crate::model::Kline;
-use crate::service::{MarketSource, SearchResult, fold_calendar, rank_results};
+use crate::service::{MarketSource, ProviderError, SearchResult, fold_calendar, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -13,13 +13,13 @@ pub const ALPACA: Alpaca = Alpaca;
 /// What a search or a fetch says when no Alpaca keys are saved.
 pub const MISSING_KEY: &str = "Set up your Alpaca API key before using stock charts.";
 
-fn credentials() -> Result<(String, String), String> {
-    crate::service::keychain::api_keys::alpaca_credentials().ok_or_else(|| MISSING_KEY.to_owned())
+fn credentials() -> Result<(String, String), ProviderError> {
+    crate::service::keychain::api_keys::alpaca_credentials().ok_or(ProviderError::MissingKey)
 }
 
 /// Settings ▸ Alpaca ▸ Test Connection: one bar of one stock, asked for with the given keys (the
 /// ones typed in the fields, saved or not), which is what stock charts need the keys for.
-pub fn test_connection(key_id: &str, secret_key: &str) -> Result<(), String> {
+pub fn test_connection(key_id: &str, secret_key: &str) -> Result<(), ProviderError> {
     let url = format!("{BARS_URL}/AAPL/bars?timeframe=1Day&limit=1&feed=iex");
     crate::service::net::http::get_text(
         &url,
@@ -30,7 +30,7 @@ pub fn test_connection(key_id: &str, secret_key: &str) -> Result<(), String> {
         crate::service::net::http::Retry::Never,
     )
     .map(|_| ())
-    .map_err(|error| format!("Alpaca error: {error}"))
+    .map_err(ProviderError::Alpaca)
 }
 
 /// Quarterly and yearly bars don't exist on Alpaca; they fold monthly ones.
@@ -73,7 +73,12 @@ fn market_gap_factor(interval: &str) -> f64 {
 }
 
 impl MarketSource for Alpaca {
-    fn fetch_klines(&self, symbol: &str, interval: &str, limit: u32) -> Result<Vec<Kline>, String> {
+    fn fetch_klines(
+        &self,
+        symbol: &str,
+        interval: &str,
+        limit: u32,
+    ) -> Result<Vec<Kline>, ProviderError> {
         let fold_seconds = monthly_fold(interval);
         let source_interval = if fold_seconds.is_some() {
             "1M"
@@ -108,7 +113,7 @@ impl MarketSource for Alpaca {
         start_ms: i64,
         end_ms: i64,
         max: usize,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         let fold_seconds = monthly_fold(interval);
         let source_interval = if fold_seconds.is_some() {
             "1M"
@@ -130,7 +135,7 @@ impl MarketSource for Alpaca {
         Ok(shown[skip..].to_vec())
     }
 
-    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, String> {
+    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // Credentials first: with none saved, a cached list must not make search seem available.
         let (key, secret) = credentials()?;
         let assets = CATALOG.get(|| download_assets(&key, &secret))?;
@@ -174,7 +179,7 @@ pub(in crate::service) fn clear_catalog() {
     CATALOG.clear_memory();
 }
 
-fn download_assets(key: &str, secret: &str) -> Result<Vec<Asset>, String> {
+fn download_assets(key: &str, secret: &str) -> Result<Vec<Asset>, ProviderError> {
     let url = "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity";
     let body = crate::service::net::http::get_text_with_limit(
         url,
@@ -182,13 +187,12 @@ fn download_assets(key: &str, secret: &str) -> Result<Vec<Asset>, String> {
         crate::service::net::http::Retry::Transient,
         32 * 1024 * 1024,
     )
-    .map_err(|error| format!("Alpaca error: {error}"))?;
+    .map_err(ProviderError::Alpaca)?;
     parse_assets(&body)
 }
 
-fn parse_assets(body: &str) -> Result<Vec<Asset>, String> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| format!("Data error: {error}"))?;
+fn parse_assets(body: &str) -> Result<Vec<Asset>, ProviderError> {
+    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
     Ok(value
         .as_array()
         .map(Vec::as_slice)
@@ -215,7 +219,7 @@ fn fetch_bars(
     start_ms: i64,
     end_ms: Option<i64>,
     limit: usize,
-) -> Result<Vec<Kline>, String> {
+) -> Result<Vec<Kline>, ProviderError> {
     let (key, secret) = credentials()?;
     let mut url = format!(
         "{BARS_URL}/{}/bars?timeframe={}&start={}&limit={}&adjustment=all&feed=iex&sort=desc",
@@ -232,24 +236,23 @@ fn fetch_bars(
         &[("APCA-API-KEY-ID", &key), ("APCA-API-SECRET-KEY", &secret)],
         crate::service::net::http::Retry::Transient,
     )
-    .map_err(|error| format!("Alpaca error: {error}"))?;
+    .map_err(ProviderError::Alpaca)?;
     let mut bars = parse_bars(&body)?;
     // The newest page of a market with no bars at all is an error; an older page with none is
     // the start of its history.
     if bars.is_empty() && end_ms.is_none() {
-        return Err(format!(
+        return Err(ProviderError::Other(format!(
             "No data is available for {} on Alpaca's free IEX feed.",
             symbol.to_uppercase()
-        ));
+        )));
     }
     bars.sort_by_key(|candle| candle.open_time);
     Ok(bars)
 }
 
 /// `{"bars": [{"t": ISO, "o", "h", "l", "c", "v", "vw"}]}` newest first.
-fn parse_bars(body: &str) -> Result<Vec<Kline>, String> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| format!("Data error: {error}"))?;
+fn parse_bars(body: &str) -> Result<Vec<Kline>, ProviderError> {
+    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
     let bars = value
         .get("bars")
         .and_then(Value::as_array)

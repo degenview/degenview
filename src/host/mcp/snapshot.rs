@@ -1,7 +1,7 @@
 use super::chart::no_chart;
 use crate::mcp::bridge::McpError;
 use crate::mcp::snapshot::{SnapshotProgress, SnapshotStarted};
-use crate::workspace::ChartWorkspace;
+use crate::workspace::{CaptureError, ChartWorkspace};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -46,12 +46,11 @@ impl SnapshotJobs {
         }
         let (receiver, dimensions) = workspace
             .snapshot_png_for_mcp(ctx, chart_id, scale)
-            .map_err(|message| {
-                if message.starts_with("There is no such") {
+            .map_err(|error| match error {
+                CaptureError::NoChart | CaptureError::NoMarketChart => {
                     no_chart(workspace, chart_id)
-                } else {
-                    McpError::Conflict(message)
                 }
+                other => McpError::Conflict(other.to_string()),
             })?;
         self.next += 1;
         self.jobs.insert(

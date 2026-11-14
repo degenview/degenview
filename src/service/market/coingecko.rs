@@ -1,6 +1,7 @@
 use crate::model::Kline;
 use crate::service::{
-    MarketSource, SearchResult, bucket_start_ms, interval_seconds, next_bucket_start_ms,
+    MarketSource, ProviderError, SearchResult, bucket_start_ms, interval_seconds,
+    next_bucket_start_ms,
 };
 use serde_json::Value;
 
@@ -11,32 +12,40 @@ pub struct CoinGecko;
 pub const COINGECKO: CoinGecko = CoinGecko;
 
 impl MarketSource for CoinGecko {
-    fn fetch_klines(&self, symbol: &str, interval: &str, limit: u32) -> Result<Vec<Kline>, String> {
+    fn fetch_klines(
+        &self,
+        symbol: &str,
+        interval: &str,
+        limit: u32,
+    ) -> Result<Vec<Kline>, ProviderError> {
         let coin_id = symbol.to_lowercase();
         let target = interval_seconds(interval).unwrap_or(3_600);
         let days = market_chart_days(target, limit);
         crate::service::net::rate_limit::coingecko().wait_for_slot();
         let url = format!("{BASE_URL}/coins/{coin_id}/market_chart?vs_currency=usd&days={days}");
-        let body =
-            crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
-                .map_err(|error| format!("Network error: {error}"))?;
+        let body = crate::service::net::http::get_text(
+            &url,
+            &[],
+            crate::service::net::http::Retry::Never,
+        )?;
         let prices = parse_prices(&body)?;
         let candles = fold_prices(&prices, target);
         let start = candles.len().saturating_sub(limit as usize);
         Ok(candles[start..].to_vec())
     }
 
-    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, String> {
+    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         let q = query.trim().to_lowercase();
         if q.is_empty() {
             return Ok(Vec::new());
         }
         let url = format!("{BASE_URL}/search?query={q}");
-        let body =
-            crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
-                .map_err(|error| format!("Network error: {error}"))?;
-        let value: Value =
-            serde_json::from_str(&body).map_err(|error| format!("Data error: {error}"))?;
+        let body = crate::service::net::http::get_text(
+            &url,
+            &[],
+            crate::service::net::http::Retry::Never,
+        )?;
+        let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
         let mut results = Vec::new();
         for coin in value
             .get("coins")
@@ -83,13 +92,12 @@ fn sample_step(days: i64) -> i64 {
 }
 
 /// `/market_chart` returns `{"prices": [[timestamp_ms, price], …]}`, oldest first.
-fn parse_prices(body: &str) -> Result<Vec<(i64, f64)>, String> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| format!("Data error: {error}"))?;
+fn parse_prices(body: &str) -> Result<Vec<(i64, f64)>, ProviderError> {
+    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
     let rows = value
         .get("prices")
         .and_then(Value::as_array)
-        .ok_or_else(|| "Data error: expected a prices array".to_owned())?;
+        .ok_or_else(|| ProviderError::data("expected a prices array"))?;
     let mut prices = Vec::with_capacity(rows.len());
     for row in rows {
         let Some(fields) = row.as_array() else {

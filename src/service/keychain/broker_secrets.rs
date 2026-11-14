@@ -18,6 +18,7 @@ use std::sync::{Mutex, OnceLock};
 
 use degenview_brokers::{BrokerId, Credentials, SecretStore, SecretStoreError};
 
+use crate::lock::lock;
 use crate::service::keychain::api_keys::{KeyBackend, default_backend};
 use crate::service::keychain::webhook_secrets::Scope;
 
@@ -57,7 +58,7 @@ impl BrokerSecrets {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Cache> {
-        self.cache.lock().unwrap_or_else(|e| e.into_inner())
+        lock(&self.cache)
     }
 }
 

@@ -241,7 +241,7 @@ impl PaperPanel {
             owner_note(ui, elsewhere);
         }
         if let Some(error) = host.last_error() {
-            error_banner(ui, &error.message());
+            error_banner(ui, &error.to_string());
         }
 
         let mut table_actions = Vec::new();
@@ -411,13 +411,8 @@ impl PaperPanel {
             return;
         };
         let text = match failures.len() {
-            1 => first.message(),
-            more => format!(
-                "{} failed: {} (and {} more)",
-                more,
-                first.message(),
-                more - 1
-            ),
+            1 => first.to_string(),
+            more => format!("{more} failed: {first} (and {} more)", more - 1),
         };
         self.notice = Some(PanelNotice::error(text));
         host.clear_error();
@@ -616,7 +611,7 @@ impl PaperPanel {
                     // retry or cancel instead of losing what they typed.
                     Err(error) => {
                         if let Some(sheet) = self.account_sheet.as_mut() {
-                            sheet.submit_error = Some(error.message());
+                            sheet.submit_error = Some(error.to_string());
                         }
                         host.clear_error();
                     }
@@ -688,10 +683,9 @@ fn bulk_failure_text<T>(
         String::new()
     };
     Some(format!(
-        "{verb} {} of {} {noun}. {}{more}",
+        "{verb} {} of {} {noun}. {first}{more}",
         results.len() - failures.len(),
         results.len(),
-        first.message()
     ))
 }
 

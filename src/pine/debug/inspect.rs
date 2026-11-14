@@ -121,26 +121,17 @@ pub struct Page {
     pub items: Vec<Variable>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum InspectError {
     /// The script has resumed since this reference was made.
+    #[error("The script has moved on.")]
     Stale,
     /// The value is no longer there (the variable left scope, the array shrank).
+    #[error("The value is no longer available.")]
     Gone,
+    #[error("{0}")]
     Failed(String),
 }
-
-impl std::fmt::Display for InspectError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Stale => f.write_str("The script has moved on."),
-            Self::Gone => f.write_str("The value is no longer available."),
-            Self::Failed(message) => f.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for InspectError {}
 
 /// What inspecting needs of the stopped script.
 pub(crate) struct Env<'a> {

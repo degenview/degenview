@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use super::broker::{BrokerHost, Connection, Operation};
 use super::paper::PaperHost;
+use crate::lock::lock;
 use crate::model::broker::prefs::BrokerPrefs;
 use crate::model::broker::venue::TradingVenue;
 use crate::store::SharedStore;
@@ -90,7 +91,7 @@ impl TradingHub {
             .and_then(|store| store.lock().ok()?.setting::<String>(LAST_USED_KEY));
         let first_run = saved.is_none();
         let mut enabled: BTreeSet<String> = saved.unwrap_or_default().into_iter().collect();
-        if first_run && paper_was_used(&paper.lock().unwrap_or_else(|e| e.into_inner())) {
+        if first_run && paper_was_used(&lock(&paper)) {
             enabled.insert(PAPER_ID.to_owned());
         }
         let mut backends: Vec<(TradingVenue, Arc<dyn TradingBackend>)> = vec![(
@@ -135,7 +136,7 @@ impl TradingHub {
     }
 
     fn choices(&self) -> std::sync::MutexGuard<'_, Choices> {
-        self.choices.lock().unwrap_or_else(|e| e.into_inner())
+        lock(&self.choices)
     }
 
     /// The enabled venues changed: every window redraws (the broker host owns the app's counter).
@@ -219,10 +220,7 @@ impl TradingHub {
                 // which may be drawing a window that holds it.
                 let paper = Arc::clone(&self.paper);
                 std::thread::spawn(move || {
-                    let _ = paper
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .ensure_default_account();
+                    let _ = lock(&paper).ensure_default_account();
                 });
             }
             TradingVenue::Broker(id) => self.brokers.connect_without_credentials(id),

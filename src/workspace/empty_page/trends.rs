@@ -2,7 +2,7 @@
 //! kept for a while, so each tile can draw its sparkline.
 
 use crate::model::{InstrumentId, Kline, Timeframe};
-use crate::service;
+use crate::service::{self, ProviderError};
 use crate::ui::workspace::empty_state::Trend;
 use eframe::egui;
 use std::collections::HashMap;
@@ -81,7 +81,7 @@ impl TrendLoader {
     }
 
     /// Records what a read found. A failed refresh keeps the week already shown.
-    fn finish(&self, key: &str, result: Result<Vec<f32>, String>, now: Instant) {
+    fn finish(&self, key: &str, result: Result<Vec<f32>, ProviderError>, now: Instant) {
         let Ok(mut slots) = self.slots.lock() else {
             return;
         };
@@ -98,7 +98,7 @@ impl TrendLoader {
     }
 }
 
-fn week_of_closes(instrument: &InstrumentId) -> Result<Vec<f32>, String> {
+fn week_of_closes(instrument: &InstrumentId) -> Result<Vec<f32>, ProviderError> {
     service::fetch_klines(
         instrument.source,
         &instrument.api_symbol(),
@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(loader.claim(std::slice::from_ref(&btc), later).len(), 1);
         // The old week stays on screen while the new one is read, and survives a failed read.
         assert!(loader.snapshot().contains_key(&btc.key()));
-        loader.finish(&btc.key(), Err("offline".into()), later);
+        loader.finish(&btc.key(), Err(ProviderError::other("offline")), later);
         assert_eq!(
             loader.snapshot().get(&btc.key()),
             Some(&Trend::Ready(vec![1.0, 2.0, 3.0]))
@@ -181,7 +181,11 @@ mod tests {
         let market = market("NOPEUSDT");
         let now = Instant::now();
         loader.claim(std::slice::from_ref(&market), now);
-        loader.finish(&market.key(), Err("unknown market".into()), now);
+        loader.finish(
+            &market.key(),
+            Err(ProviderError::other("unknown market")),
+            now,
+        );
         assert_eq!(
             loader.snapshot().get(&market.key()),
             Some(&Trend::Unavailable)

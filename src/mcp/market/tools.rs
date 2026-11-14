@@ -448,7 +448,8 @@ fn search_all(
                                 .to_owned()),
                         );
                     }
-                    (source, search(data, query))
+                    // MCP reports each source's failure as text, next to its own.
+                    (source, search(data, query).map_err(|error| error.to_string()))
                 })
             })
             .collect();
@@ -640,9 +641,9 @@ impl DegenViewMcp {
         }
         let candles = match tokio::time::timeout(CANDLE_DEADLINE, receiver).await {
             Ok(Ok(Ok(candles))) => candles,
-            Ok(Ok(Err(message))) => {
+            Ok(Ok(Err(error))) => {
                 return Err(failure(&McpError::AppUnavailable(
-                    message.chars().take(300).collect::<String>(),
+                    error.to_string().chars().take(300).collect::<String>(),
                 )));
             }
             Ok(Err(_)) => {

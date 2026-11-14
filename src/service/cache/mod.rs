@@ -11,6 +11,7 @@ pub mod disk;
 pub mod lookup;
 
 use crate::model::{DataSource, Kline};
+use crate::service::ProviderError;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -97,13 +98,13 @@ pub fn fetch(
     interval: &str,
     limit: u32,
     policy: Policy,
-    fetch: impl Fn(u32) -> Result<Vec<Kline>, String>,
-) -> Result<Vec<Kline>, String> {
+    fetch: impl Fn(u32) -> Result<Vec<Kline>, ProviderError>,
+) -> Result<Vec<Kline>, ProviderError> {
     let key = key(source, symbol, interval);
     let flight = {
         let mut held = held()
             .lock()
-            .map_err(|_| "The candle cache stopped".to_owned())?;
+            .map_err(|_| ProviderError::other("The candle cache stopped"))?;
         // Series nobody waits on are forgotten, so the table follows the entries.
         if held.flights.len() > MAX_ENTRIES * 4 {
             held.flights
@@ -113,12 +114,12 @@ pub fn fetch(
     };
     let _turn = flight
         .lock()
-        .map_err(|_| "The candle cache stopped".to_owned())?;
+        .map_err(|_| ProviderError::other("The candle cache stopped"))?;
 
     let current = {
         let held = held()
             .lock()
-            .map_err(|_| "The candle cache stopped".to_owned())?;
+            .map_err(|_| ProviderError::other("The candle cache stopped"))?;
         held.entries
             .get(&key)
             .filter(|entry| entry.requested >= limit)
@@ -188,6 +189,7 @@ fn forget_where(forget: impl Fn(&str) -> bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::net::http;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn candle(open_time: i64, close: f64) -> Kline {
@@ -282,7 +284,7 @@ mod tests {
     fn a_failed_refresh_is_an_error_not_a_stale_answer() {
         let ok = |_: u32| Ok(series(0..10));
         fetch(DataSource::Coinbase, "error-test", "1h", 10, STALE, ok).unwrap();
-        let broken = |_: u32| Err("Network error: down".to_owned());
+        let broken = |_: u32| Err(ProviderError::from(http::Error::Network("down".to_owned())));
         assert!(fetch(DataSource::Coinbase, "error-test", "1h", 10, STALE, broken).is_err());
     }
 

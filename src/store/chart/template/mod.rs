@@ -6,6 +6,7 @@
 //! writes in one transaction and only then shows the result. A table that cannot be read is
 //! never written: the sheet says so and the presets keep working.
 
+use crate::lock::lock;
 use crate::model::ChartAppearance;
 use crate::model::chart::template::{
     ChartAppearanceTemplate, TemplateBook, TemplateError, TemplateId, new_user_id,
@@ -45,10 +46,7 @@ pub struct ChartTemplateStore {
 
 impl ChartTemplateStore {
     pub fn new(store: SharedStore) -> Self {
-        let loaded = store
-            .lock()
-            .expect("store lock poisoned")
-            .chart_templates_strict();
+        let loaded = lock(&store).chart_templates_strict();
         match loaded {
             Ok(templates) => Self {
                 store,
@@ -83,7 +81,7 @@ impl ChartTemplateStore {
             ));
         }
         let shared = self.store.clone();
-        let store = shared.lock().expect("store lock poisoned");
+        let store = lock(&shared);
         let fresh = match store.chart_templates_strict() {
             Ok(fresh) => fresh,
             Err(error) => {

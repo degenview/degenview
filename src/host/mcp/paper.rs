@@ -170,7 +170,7 @@ impl OrderMemory {
 
 fn paper_error(error: PaperHostError) -> McpError {
     use crate::model::paper::PaperTradingError as E;
-    let message = error.message();
+    let message = error.to_string();
     match error {
         PaperHostError::Engine(E::AccountNotFound | E::OrderNotFound) => {
             McpError::NotFound(message)
@@ -347,7 +347,7 @@ pub fn cancel_paper_orders(
         }
         match host.cancel(*id) {
             Ok(()) => done.push(*id),
-            Err(error) => failures.push(format!("Order {id}: {}", error.message())),
+            Err(error) => failures.push(format!("Order {id}: {error}")),
         }
     }
     Ok(PaperChangeResult {
@@ -387,7 +387,7 @@ pub fn close_paper_positions(
     for key in &keys {
         match host.close_position(account_id, key) {
             Ok(order_id) => order_ids.push(order_id),
-            Err(error) => failures.push(format!("{key}: {}", error.message())),
+            Err(error) => failures.push(format!("{key}: {error}")),
         }
     }
     Ok(PaperChangeResult {

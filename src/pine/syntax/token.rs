@@ -1,7 +1,6 @@
 //! Token and source-location types shared by the lexer, parser and diagnostics.
 
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -84,7 +83,8 @@ pub enum DiagnosticCategory {
     Cancellation,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, thiserror::Error)]
+#[error("{code} at {}:{}: {message}", range.start.line, range.start.column)]
 pub struct Diagnostic {
     pub code: String,
     pub severity: DiagnosticSeverity,
@@ -113,18 +113,6 @@ impl Diagnostic {
         format!("{}:{}:{}", self.code, self.range.start.offset, self.message)
     }
 }
-
-impl fmt::Display for Diagnostic {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{} at {}:{}: {}",
-            self.code, self.range.start.line, self.range.start.column, self.message
-        )
-    }
-}
-
-impl std::error::Error for Diagnostic {}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Limits {

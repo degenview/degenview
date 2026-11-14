@@ -2,6 +2,7 @@
 
 use super::ChartWorkspace;
 use super::alerts::AlertRequest;
+use crate::lock::lock;
 use crate::model::InstrumentId;
 use crate::model::alert::AlertAsset;
 use crate::model::watchlist::{WatchlistError, WatchlistInstrument, WatchlistNotice};
@@ -61,7 +62,7 @@ impl ChartWorkspace {
         }
         let actions = {
             let watchlist = Arc::clone(&self.watchlist);
-            let store = watchlist.lock().expect("watchlist lock poisoned");
+            let store = lock(&watchlist);
             let lists = store.lists();
             let flags = store.flags();
             let quote = |id: &InstrumentId| self.quote_book.get(id);
@@ -102,7 +103,7 @@ impl ChartWorkspace {
     fn apply_watchlist_actions(&mut self, actions: Vec<WatchlistAction>, ctx: &egui::Context) {
         let mut opens: Vec<(bool, WatchlistInstrument)> = Vec::new();
         {
-            let mut store = self.watchlist.lock().expect("watchlist lock poisoned");
+            let mut store = lock(&self.watchlist);
             for action in actions {
                 match action {
                     WatchlistAction::Open(item) => opens.push((true, item)),

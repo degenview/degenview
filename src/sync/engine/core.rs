@@ -10,6 +10,7 @@
 //! * The status is never `UpToDate` while anything is waiting to upload.
 
 use super::outbox::{Disposition, classify, is_transient};
+use crate::lock::lock;
 use crate::store::SharedStore;
 use crate::store::sync::{InboxRecord, Load, OutboxOp, OutboxRow, OutboxState, SyncState};
 use crate::sync::record::policy::{EntityKind, Merge, merge_of};
@@ -21,7 +22,6 @@ use crate::sync::transport::{
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::sync::PoisonError;
 
 /// A Mac that has not fetched for this long starts from scratch: its checkpoint is not trusted.
 const STALE_AFTER_MS: i64 = 60 * 24 * 60 * 60 * 1_000;
@@ -243,12 +243,7 @@ impl<T: SyncTransport> SyncCore<T> {
     }
 
     fn state(&self) -> Option<SyncState> {
-        self.store
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .sync_state()
-            .ok()
-            .flatten()
+        lock(&self.store).sync_state().ok().flatten()
     }
 
     // MARK: Lifecycle
@@ -263,10 +258,7 @@ impl<T: SyncTransport> SyncCore<T> {
         // Records an earlier launch had to set aside (a kind or schema it did not know) are
         // looked at again, now that this one may.
         if state.initial_sync_done
-            && self
-                .store
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
+            && lock(&self.store)
                 .inbox_count(&[
                     super::apply::UNKNOWN_TYPE,
                     super::apply::NEWER_SCHEMA,
@@ -358,11 +350,7 @@ impl<T: SyncTransport> SyncCore<T> {
     pub fn tick(&mut self) {
         if self.reconcile_needed && self.can_sync() {
             self.reconcile_needed = false;
-            let result = self
-                .store
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .reconcile_stored();
+            let result = lock(&self.store).reconcile_stored();
             match result {
                 Ok(_) => self.clear_store_error(SCAN_LOCAL),
                 Err(error) => {
@@ -383,7 +371,7 @@ impl<T: SyncTransport> SyncCore<T> {
 
     /// A database write or read this session needed failed. Say so (the status line shows it),
     /// and carry on: the caller decides whether the work is retried or the checkpoint is held.
-    fn note_store_error(&mut self, what: &'static str, error: &rusqlite::Error) {
+    fn note_store_error(&mut self, what: &'static str, error: &impl std::fmt::Display) {
         self.last_error = Some((ErrorKind::Storage, format!("Could not {what}: {error}")));
         self.store_error_what = Some(what);
     }
@@ -402,7 +390,7 @@ impl<T: SyncTransport> SyncCore<T> {
     /// Fetched data could not be set aside durably. The checkpoint must not move past it, so a
     /// batch id that is never acknowledged keeps `flush_state` closed until the session restarts
     /// and iCloud sends it again.
-    fn hold_checkpoint(&mut self, error: &rusqlite::Error) {
+    fn hold_checkpoint(&mut self, error: &impl std::fmt::Display) {
         self.unapplied.insert(CHECKPOINT_HELD);
         self.note_store_error(KEEP_FETCHED, error);
     }
@@ -467,11 +455,7 @@ impl<T: SyncTransport> SyncCore<T> {
             .values()
             .map(|entry| (entry.kind, entry.sync_id.clone()))
             .collect();
-        let due = self
-            .store
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .outbox_due(now);
+        let due = lock(&self.store).outbox_due(now);
         let due = match due {
             Ok(due) => {
                 self.clear_store_error(READ_QUEUE);
@@ -533,7 +517,7 @@ impl<T: SyncTransport> SyncCore<T> {
             return None;
         };
         let (meta, load) = {
-            let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+            let store = lock(&self.store);
             (
                 store.entity_meta(row.kind, &row.sync_id).ok().flatten(),
                 store.load_projected(row.kind, &row.sync_id).ok(),
@@ -555,11 +539,7 @@ impl<T: SyncTransport> SyncCore<T> {
                     Load::Found(entity) => entity,
                     Load::Gone => {
                         // The row vanished without a delete being queued: an out-of-band change.
-                        let _ = self
-                            .store
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .remove_outbox(row.seq);
+                        let _ = lock(&self.store).remove_outbox(row.seq);
                         self.reconcile_needed = true;
                         return None;
                     }
@@ -601,11 +581,7 @@ impl<T: SyncTransport> SyncCore<T> {
     }
 
     fn block(&mut self, seq: i64, reason: &str) {
-        let result = self
-            .store
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .set_outbox_state(seq, OutboxState::Blocked, Some(reason));
+        let result = lock(&self.store).set_outbox_state(seq, OutboxState::Blocked, Some(reason));
         if let Err(error) = result {
             self.note_store_error("mark a change as too large to upload", &error);
         }
@@ -704,7 +680,7 @@ impl<T: SyncTransport> SyncCore<T> {
                 self.pause = Some(PauseReason::RemoteDataDeleted);
             }
             ZoneEvent::EncryptedDataReset => {
-                let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+                let store = lock(&self.store);
                 let forgot = store.forget_cloud_state();
                 let reconciled = store.reconcile_stored();
                 drop(store);
@@ -754,11 +730,7 @@ impl<T: SyncTransport> SyncCore<T> {
 
     /// Drops the checkpoint and fetches everything again.
     fn restart_from_scratch(&mut self) {
-        let saved = self
-            .store
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .save_engine_state(None, None, self.now());
+        let saved = lock(&self.store).save_engine_state(None, None, self.now());
         if let Err(error) = saved {
             self.note_store_error("forget the old sync position", &error);
         }
@@ -807,11 +779,7 @@ impl<T: SyncTransport> SyncCore<T> {
                     "initial_pending",
                 ]
             };
-            let _ = self
-                .store
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove_inbox_if_reason(name, reasons);
+            let _ = lock(&self.store).remove_inbox_if_reason(name, reasons);
             if let Some(parsed) = RecordName::parse(name) {
                 named.push(parsed);
             }
@@ -823,7 +791,7 @@ impl<T: SyncTransport> SyncCore<T> {
         // Before the first-time merge nothing is applied: the records wait in the inbox, durably,
         // until the user chooses how to combine iCloud's data with this Mac's.
         if !self.state().is_some_and(|s| s.initial_sync_done) {
-            let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+            let store = lock(&self.store);
             let mut failed = None;
             for record in &records {
                 let kept = store.put_inbox(
@@ -864,23 +832,20 @@ impl<T: SyncTransport> SyncCore<T> {
     fn admit(&mut self, raw: RawRecord, now: i64) -> Option<RemoteRecord> {
         let keep = |reason: &str, raw: &RawRecord, this: &Self| -> rusqlite::Result<()> {
             let entity_type = raw.name.split('.').next().unwrap_or_default().to_string();
-            this.store
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .put_inbox(
-                    &InboxRecord {
-                        record_name: raw.name.clone(),
-                        entity_type,
-                        schema_version: raw.schema_version,
-                        reason: reason.to_string(),
-                        payload: raw.payload.clone(),
-                        system_fields: Some(raw.system_fields.clone()),
-                        revision: raw.revision,
-                        origin_device: raw.origin_device.clone(),
-                        modified_ms: raw.modified_ms,
-                    },
-                    now,
-                )
+            lock(&this.store).put_inbox(
+                &InboxRecord {
+                    record_name: raw.name.clone(),
+                    entity_type,
+                    schema_version: raw.schema_version,
+                    reason: reason.to_string(),
+                    payload: raw.payload.clone(),
+                    system_fields: Some(raw.system_fields.clone()),
+                    revision: raw.revision,
+                    origin_device: raw.origin_device.clone(),
+                    modified_ms: raw.modified_ms,
+                },
+                now,
+            )
         };
         let (record, system_fields) = match raw.clone().into_record() {
             Ok(parsed) => parsed,
@@ -906,10 +871,7 @@ impl<T: SyncTransport> SyncCore<T> {
             }
             Verdict::Accept(value) => {
                 // Our own upload coming back, or a duplicate delivery: already what we hold.
-                let known = self
-                    .store
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
+                let known = lock(&self.store)
                     .entity_meta(record.name.kind, &record.name.id)
                     .ok()
                     .flatten();
@@ -939,12 +901,7 @@ impl<T: SyncTransport> SyncCore<T> {
         let Some(seen) = self.stale_seen.take() else {
             return;
         };
-        let known = self
-            .store
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .synced_entities()
-            .unwrap_or_default();
+        let known = lock(&self.store).synced_entities().unwrap_or_default();
         let missing: Vec<RecordName> = known
             .iter()
             .filter_map(|(kind, id)| RecordName::new(*kind, id.clone()))
@@ -982,11 +939,7 @@ impl<T: SyncTransport> SyncCore<T> {
     /// The host applied a remote batch locally.
     pub fn remote_applied(&mut self, batch_id: u64) {
         self.unapplied.remove(&batch_id);
-        let released = self
-            .store
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .release_merged_edits();
+        let released = lock(&self.store).release_merged_edits();
         if let Err(error) = released {
             self.note_store_error("release merged changes for upload", &error);
         }
@@ -1011,11 +964,8 @@ impl<T: SyncTransport> SyncCore<T> {
             Account::Available(hash) => Some(hash.clone()),
             _ => None,
         };
-        let saved = self
-            .store
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .save_engine_state(Some(&bytes), account.as_deref(), self.now());
+        let saved =
+            lock(&self.store).save_engine_state(Some(&bytes), account.as_deref(), self.now());
         match saved {
             Ok(()) => self.clear_store_error(SAVE_POSITION),
             Err(error) => {
@@ -1044,7 +994,7 @@ impl<T: SyncTransport> SyncCore<T> {
             let Some(name) = RecordName::parse(&done.name) else {
                 continue;
             };
-            let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+            let store = lock(&self.store);
             let (hash, sent) = entry.map_or((None, None), |entry| (entry.hash, entry.payload));
             // None of this is fatal when it fails: the entry stays queued and is sent again, which
             // the cloud accepts as a no-op. It is reported, so a broken database is not silent.
@@ -1091,7 +1041,7 @@ impl<T: SyncTransport> SyncCore<T> {
             let Some(name) = RecordName::parse(&done.name) else {
                 continue;
             };
-            let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+            let store = lock(&self.store);
             let mut failed = Vec::new();
             failed.extend(
                 store
@@ -1120,10 +1070,7 @@ impl<T: SyncTransport> SyncCore<T> {
 
     fn on_failure(&mut self, failure: SendFailure, now: i64) {
         let entry = self.inflight.remove(&failure.outbox_seq);
-        let row = self
-            .store
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        let row = lock(&self.store)
             .outbox()
             .ok()
             .and_then(|rows| rows.into_iter().find(|r| r.seq == failure.outbox_seq));
@@ -1143,7 +1090,7 @@ impl<T: SyncTransport> SyncCore<T> {
                 self.retry_later(row.seq, now + delay, &failure);
             }
             Disposition::Recreate => {
-                let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+                let store = lock(&self.store);
                 let _ = store.clear_system_fields(row.kind, &row.sync_id);
                 let _ = store.retry_now(row.seq);
             }
@@ -1157,11 +1104,7 @@ impl<T: SyncTransport> SyncCore<T> {
     fn retry_later(&mut self, seq: i64, at_ms: i64, failure: &SendFailure) {
         // Best effort: when this write fails the entry keeps its old state and is staged again on
         // the next pass, so nothing is lost; the failure itself is already what is shown.
-        let _ = self
-            .store
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .fail_outbox(seq, at_ms, &failure.message);
+        let _ = lock(&self.store).fail_outbox(seq, at_ms, &failure.message);
         self.last_error = Some((failure.kind, failure.message.clone()));
         self.failure_streak = if failure.kind == ErrorKind::Unknown {
             self.failure_streak + 1
@@ -1189,17 +1132,11 @@ impl<T: SyncTransport> SyncCore<T> {
         if let Some(hash) = entry.and_then(|entry| entry.hash)
             && sha256_hex(&record.payload) == hash
         {
-            let _ = self
-                .store
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .ack_saved(row.seq, row.kind, &row.sync_id, &hash, &fields, now);
+            let _ =
+                lock(&self.store).ack_saved(row.seq, row.kind, &row.sync_id, &hash, &fields, now);
             return;
         }
-        let meta = self
-            .store
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        let meta = lock(&self.store)
             .entity_meta(row.kind, &row.sync_id)
             .ok()
             .flatten();
@@ -1219,7 +1156,7 @@ impl<T: SyncTransport> SyncCore<T> {
                         record.origin_device.as_str(),
                     )
             });
-        let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+        let store = lock(&self.store);
         // This exact cloud version was already merged in (an upload staged before the merge went
         // out with the old change tag): merging it again would only repeat the work, and for a
         // keep-both entity add a second conflict copy. Take its tag and send what is stored now.
@@ -1274,7 +1211,7 @@ impl<T: SyncTransport> SyncCore<T> {
     // MARK: Status
 
     pub fn status(&self) -> Status {
-        let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+        let store = lock(&self.store);
         let state = store.sync_state().ok().flatten();
         let outbox = store.outbox().unwrap_or_default();
         let conflicts = store.open_conflict_count().unwrap_or(0);

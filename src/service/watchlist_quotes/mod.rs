@@ -11,6 +11,7 @@ mod coinbase_ws;
 mod engine;
 mod provider;
 
+use crate::lock::lock;
 pub use book::WatchlistQuoteBook;
 pub use engine::Config;
 #[cfg(test)]
@@ -27,7 +28,7 @@ use engine::Engine;
 use provider::LiveProvider;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// How often the loop drains the Coinbase channel: a busy feed becomes a few updates
@@ -72,48 +73,28 @@ impl WatchlistQuoteCoordinator {
     /// What `owner` (a window's sidebar) needs now. A hidden sidebar keeps its place
     /// but asks for nothing until it is visible again.
     pub fn set_demand(&self, owner: u64, instruments: Vec<InstrumentId>, visible: bool) {
-        self.inner
-            .engine
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .update(owner, instruments, visible, now_ms());
+        lock(&self.inner.engine).update(owner, instruments, visible, now_ms());
     }
 
     /// Like `set_demand`, for a workspace's sidebar. The demand also lapses when the
     /// sidebar stops asking for `SIDEBAR_LEASE_MS`: it asks on every frame it draws, so
     /// a background tab or a hidden or covered window stops costing requests by itself.
     pub fn set_sidebar_demand(&self, owner: u64, instruments: Vec<InstrumentId>, visible: bool) {
-        self.inner
-            .engine
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .update_leased(owner, instruments, visible, now_ms());
+        lock(&self.inner.engine).update_leased(owner, instruments, visible, now_ms());
     }
 
     /// Drops a window's demand when it closes.
     pub fn release(&self, owner: u64) {
-        self.inner
-            .engine
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .release(owner, now_ms());
+        lock(&self.inner.engine).release(owner, now_ms());
     }
 
     #[cfg(test)]
     pub fn has_subscriptions(&self) -> bool {
-        self.inner
-            .engine
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .has_subscriptions()
+        lock(&self.inner.engine).has_subscriptions()
     }
 
     pub fn provider_health(&self) -> Vec<AlertProviderHealth> {
-        self.inner
-            .engine
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .provider_health()
+        lock(&self.inner.engine).provider_health()
     }
 }
 
@@ -139,7 +120,7 @@ fn run(
         std::thread::sleep(TICK);
         let now = now_ms();
         let (products, interval, active, renew) = {
-            let mut guard = engine.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut guard = lock(engine);
             guard.expire_leases(now);
             (
                 guard.coinbase_products(),
@@ -165,10 +146,7 @@ fn run(
 
         let ticks: Vec<CoinbaseTick> = receiver.try_iter().collect();
         if !ticks.is_empty() {
-            engine
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .receive_ticks(ticks, now);
+            lock(engine).receive_ticks(ticks, now);
         }
 
         if active && now - last_round >= interval {

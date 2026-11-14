@@ -5,6 +5,7 @@
 //! [`WorkQueue::start`], [`start`] or [`start_for`] and is polled each frame through the
 //! [`Pending`] it returns; the job asks for a repaint when it ends, so the answer is drawn at once.
 
+use crate::lock::lock;
 use eframe::egui;
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 
@@ -32,7 +33,7 @@ impl WorkQueue {
                 let receiver = receiver.clone();
                 std::thread::spawn(move || {
                     loop {
-                        let job = receiver.lock().expect("work queue poisoned").recv();
+                        let job = lock(&receiver).recv();
                         match job {
                             Ok(job) => job(),
                             Err(_) => break,

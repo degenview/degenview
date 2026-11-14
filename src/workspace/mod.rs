@@ -1,5 +1,6 @@
 use crate::host::paper::PaperHost;
 use crate::host::portfolio::card::PortfolioCardEnv;
+use crate::lock::lock;
 use crate::model::alert::{AlertCurrency, PriceAlert};
 use crate::model::chart::sync::SyncHub;
 use crate::model::tab::link::LinkColor;
@@ -62,6 +63,7 @@ mod undo;
 mod watchlist;
 
 pub use chart::collection::{ChartSummary, ChartTypeError};
+pub use chart::snapshot::CaptureError;
 pub use pine::{
     IndicatorError, IndicatorOutcome, PineChartTarget, PineInstanceView, RemoveOutcome,
 };
@@ -684,7 +686,6 @@ impl ChartWorkspace {
         ui: &mut egui::Ui,
         paper: &std::sync::Arc<std::sync::Mutex<PaperHost>>,
     ) -> Vec<WorkspaceAction> {
-        let lock = || paper.lock().unwrap_or_else(|e| e.into_inner());
         let ctx = ui.ctx().clone();
         let timeframe = self.timeframe;
         for chart in &mut self.charts {
@@ -703,7 +704,7 @@ impl ChartWorkspace {
         self.tick_overlays(&ctx);
         self.update_live_feed(&ctx);
         {
-            let mut host = lock();
+            let mut host = lock(paper);
             self.sync_paper_quotes(&mut host);
             self.configure_paper_cards(&host);
         }
@@ -809,7 +810,7 @@ impl ChartWorkspace {
                                 stats.as_ref(),
                             )
                         }
-                        _ => self.paper_panel.ui(ui, &mut lock(), &bar),
+                        _ => self.paper_panel.ui(ui, &mut lock(paper), &bar),
                     }
                 })
                 .inner;
@@ -875,7 +876,7 @@ impl ChartWorkspace {
                     .fill(ui::theme::background())
                     .inner_margin(egui::Margin::same(10)),
             )
-            .show(ui, |ui| self.render_grid(ui, &mut lock()));
+            .show(ui, |ui| self.render_grid(ui, &mut lock(paper)));
         if let Some(item) = self.open_new_tab_request.take() {
             actions.push(WorkspaceAction::OpenWatchlistInNewTab(item));
         }
@@ -910,7 +911,7 @@ impl ChartWorkspace {
             self.confirm_chart_removal(&ctx, chart_id);
         }
         actions.extend(self.show_alert_editor(&ctx));
-        actions.extend(self.show_context_ui(&ctx, &mut lock()));
+        actions.extend(self.show_context_ui(&ctx, &mut lock(paper)));
         actions.extend(self.take_logs_actions());
         if self.date_sheet.is_open() {
             let timeline = self.replay_timeline();

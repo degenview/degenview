@@ -3,6 +3,7 @@
 use super::ChartWorkspace;
 use super::chart::displayed_candles;
 use crate::host::paper::PaperHost;
+use crate::lock::lock;
 use crate::model::watchlist::WatchlistError;
 use crate::model::{
     ChartColumn, ChartLayout, Drawing, DrawingCommand, DrawingStyle, InstrumentId, ReplayStatus,
@@ -331,7 +332,7 @@ impl ChartWorkspace {
         let mut live_trade = None;
         let mut context_request: Option<(u64, ui::ContextRequest)> = None;
         let (favorites, watchlist_memberships): (HashSet<String>, Vec<_>) = {
-            let store = self.watchlist.lock().expect("watchlist lock poisoned");
+            let store = lock(&self.watchlist);
             let favorites = favorite_keys(store.lists());
             let memberships = store
                 .lists()
@@ -578,7 +579,7 @@ impl ChartWorkspace {
                                                 &chart.symbol,
                                                 candles,
                                                 chart.loading,
-                                                chart.error.as_deref(),
+                                                chart.error.as_ref(),
                                                 chart.scale_mode,
                                                 chart.source,
                                                 &chart.indicators,
@@ -754,7 +755,7 @@ impl ChartWorkspace {
         );
 
         if !favorite_toggles.is_empty() || !watchlist_changes.is_empty() {
-            let mut store = self.watchlist.lock().expect("watchlist lock poisoned");
+            let mut store = lock(&self.watchlist);
             let list_id = store.favorites();
             for chart_id in favorite_toggles {
                 if let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) {

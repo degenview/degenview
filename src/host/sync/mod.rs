@@ -9,9 +9,11 @@
 pub mod scripts;
 
 use crate::host::sync::scripts::StoreScriptSink;
+use crate::lock::lock;
 use crate::store::SharedStore;
 use crate::store::scripts::ScriptStore;
 use crate::store::sync::ConflictSummary;
+use crate::sync::engine::SyncError;
 use crate::sync::engine::account::{self, AccountChoice};
 use crate::sync::engine::apply::{ApplyCtx, ApplyReport, apply_batch};
 use crate::sync::engine::core::{Effect, PauseReason, Phase, RemoteBatch, SyncCore};
@@ -22,7 +24,7 @@ use crate::sync::transport::{EventSink, SyncTransport, TransportEvent, Transport
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// How often another Mac's changes are looked for even without a push. A fetch with nothing new
@@ -331,10 +333,6 @@ fn now_ms() -> i64 {
         .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
 impl SyncHost {
     /// `scripts` is the user's script library (a separate handle on the same files as the Pine
     /// Studio's); `None` leaves scripts out of sync.
@@ -402,7 +400,7 @@ impl SyncHost {
         host
     }
 
-    fn refuse_to_start(&self, error: &rusqlite::Error) {
+    fn refuse_to_start(&self, error: &SyncError) {
         if let Some(view) = lock(&self.shared).view.as_mut() {
             view.last_error = Some(format!(
                 "iCloud Sync did not start: could not set up this Mac ({error})."
@@ -590,7 +588,7 @@ impl SyncHost {
 
     /// A database write the user's choice depends on. When it fails nothing else happens: the
     /// worker is not told, the page says why, and the choice can be made again.
-    fn guard<T>(&self, what: &str, result: rusqlite::Result<T>) -> Option<T> {
+    fn guard<T, E: std::fmt::Display>(&self, what: &str, result: Result<T, E>) -> Option<T> {
         match result {
             Ok(value) => Some(value),
             Err(error) => {

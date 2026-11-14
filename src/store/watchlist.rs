@@ -1,6 +1,7 @@
 //! Persistence and mutation for the tab's watchlists. Lists live in the `watchlist`
 //! document table; per-market flags live in the `watchlist.flags` setting.
 
+use crate::lock::lock;
 use crate::model::InstrumentId;
 use crate::model::watchlist::layout::Flags;
 use crate::model::watchlist::text::ImportReport;
@@ -94,7 +95,7 @@ fn respell_flags(flags: Flags) -> (Flags, bool) {
 impl WatchlistStore {
     pub fn new(store: SharedStore) -> Self {
         let (mut lists, flags, load_failed, last_error) = {
-            let store = store.lock().expect("store lock poisoned");
+            let store = lock(&store);
             let loaded = store.documents_strict::<Watchlist>("watchlist");
             let loaded_flags = store.setting_strict::<Flags>("watchlist.flags");
             let error = loaded
@@ -145,7 +146,7 @@ impl WatchlistStore {
     /// own copy and would undo that change on the next edit.
     pub fn reload(&mut self) {
         let (loaded, loaded_flags) = {
-            let store = self.store.lock().expect("store lock poisoned");
+            let store = lock(&self.store);
             (
                 store.documents_strict::<Watchlist>("watchlist"),
                 store.setting_strict::<Flags>("watchlist.flags"),
@@ -220,7 +221,7 @@ impl WatchlistStore {
         if self.load_failed {
             return false;
         }
-        let store = self.store.lock().expect("store lock poisoned");
+        let store = lock(&self.store);
         match store.replace_documents("watchlist", &self.lists) {
             Ok(()) => true,
             Err(error) => {
@@ -245,7 +246,7 @@ impl WatchlistStore {
         if self.load_failed {
             return;
         }
-        let store = self.store.lock().expect("store lock poisoned");
+        let store = lock(&self.store);
         if let Err(error) = store.set_setting("watchlist.flags", &self.flags) {
             self.last_error = Some(format!("Could not save watchlist flags: {error}"));
             match store.setting_strict::<Flags>("watchlist.flags") {

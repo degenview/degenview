@@ -6,6 +6,7 @@ mod format;
 mod host;
 #[cfg(test)]
 mod layout_tests;
+mod lock;
 mod mcp;
 mod model;
 mod native_bridge;

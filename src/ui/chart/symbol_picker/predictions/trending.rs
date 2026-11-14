@@ -1,8 +1,8 @@
 //! The busiest prediction markets, shown while the Predictions tab's box is empty.
 
 use crate::model::DataSource;
-use crate::service::SearchResult;
 use crate::service::work_queue::{self, Pending};
+use crate::service::{ProviderError, SearchResult};
 use eframe::egui;
 use std::time::{Duration, Instant};
 
@@ -15,7 +15,7 @@ const RETRY: Duration = Duration::from_secs(30);
 /// The provider that ranks its markets by activity; Kalshi cannot.
 pub const PROVIDER: DataSource = DataSource::Polymarket;
 
-type Fetch = fn(DataSource, usize) -> Result<Vec<SearchResult>, String>;
+type Fetch = fn(DataSource, usize) -> Result<Vec<SearchResult>, ProviderError>;
 
 /// The held list, and the fetch under way to renew it.
 pub struct Trending {
@@ -23,7 +23,7 @@ pub struct Trending {
     results: Vec<SearchResult>,
     /// When the list stops being fresh; `None` before the first answer.
     expires: Option<Instant>,
-    inbox: Option<Pending<Result<Vec<SearchResult>, String>>>,
+    inbox: Option<Pending<Result<Vec<SearchResult>, ProviderError>>>,
 }
 
 impl Trending {
@@ -49,7 +49,8 @@ impl Trending {
     /// trending is an extra, not something the user asked for.
     pub fn refresh(&mut self, ctx: &egui::Context) {
         if let Some(inbox) = &mut self.inbox
-            && let Some(answer) = inbox.poll_or(|| Err(String::new()))
+            && let Some(answer) =
+                inbox.poll_or(|| Err(ProviderError::other("The trending list stopped loading.")))
         {
             self.inbox = None;
             let lifetime = match answer {

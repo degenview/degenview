@@ -1,5 +1,5 @@
 use crate::model::Kline;
-use crate::service::{MarketSource, SearchResult, rank_results};
+use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -12,7 +12,12 @@ pub const DEXSCREENER: DexScreener = DexScreener;
 impl MarketSource for DexScreener {
     /// DEXScreener publishes no candles on its free tier, so charts come from
     /// GeckoTerminal, which indexes the same pools and does.
-    fn fetch_klines(&self, symbol: &str, interval: &str, limit: u32) -> Result<Vec<Kline>, String> {
+    fn fetch_klines(
+        &self,
+        symbol: &str,
+        interval: &str,
+        limit: u32,
+    ) -> Result<Vec<Kline>, ProviderError> {
         super::geckoterminal::fetch_klines(symbol, interval, limit)
     }
 
@@ -23,11 +28,11 @@ impl MarketSource for DexScreener {
         start_ms: i64,
         end_ms: i64,
         max: usize,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         super::geckoterminal::fetch_klines_range(symbol, interval, start_ms, end_ms, max)
     }
 
-    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, String> {
+    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         let q = query.trim().to_lowercase();
         if q.is_empty() {
             return Ok(Vec::new());
@@ -37,15 +42,13 @@ impl MarketSource for DexScreener {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| format!("Network error: {error}"))?;
+        )?;
         parse_search(&body, query)
     }
 }
 
-fn parse_search(body: &str, query: &str) -> Result<Vec<SearchResult>, String> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| format!("Data error: {error}"))?;
+fn parse_search(body: &str, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
+    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
 
     // Deduplicate by base+quote symbol, keeping the highest-liquidity pair.
     let mut by_pair: HashMap<String, (f64, SearchResult)> = HashMap::new();

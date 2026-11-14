@@ -5,6 +5,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::lock::lock;
 use crate::model::tab::title::TabTitleStyle;
 use crate::store::{SharedStore, Store};
 
@@ -45,13 +46,13 @@ impl TabTitleHost {
     }
 
     pub fn style(&self) -> TabTitleStyle {
-        *self.style.lock().unwrap_or_else(|e| e.into_inner())
+        *lock(&self.style)
     }
 
     /// Applies the choice and saves it. `held` is the store when the caller already has it
     /// locked (the Settings window draws under that lock); `None` locks the host's own.
     pub fn set(&self, held: Option<&Store>, style: TabTitleStyle) -> Result<(), String> {
-        let mut current = self.style.lock().unwrap_or_else(|e| e.into_inner());
+        let mut current = lock(&self.style);
         if *current == style {
             return Ok(());
         }

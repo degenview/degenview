@@ -280,6 +280,7 @@ mod tests {
     use crate::host::broker::{BrokerHost, store_journal};
     use crate::host::paper::PaperHost;
     use crate::host::trading::TradingHub;
+    use crate::lock::lock;
     use crate::model::broker::venue::TradingVenue;
     use crate::model::{DataSource, InstrumentId};
     use crate::workspace::test_support::empty_workspace;
@@ -294,7 +295,7 @@ mod tests {
     fn shared() -> (&'static Shared, std::sync::MutexGuard<'static, ()>) {
         static HOST: OnceLock<Shared> = OnceLock::new();
         static TURN: Mutex<()> = Mutex::new(());
-        let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let turn = lock(&TURN);
         let pair = HOST.get_or_init(|| {
             let exchange = CoinbaseExchange::start();
             let store = Arc::new(Mutex::new(crate::store::Store::open_in_memory().unwrap()));

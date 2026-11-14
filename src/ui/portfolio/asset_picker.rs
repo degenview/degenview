@@ -4,8 +4,8 @@
 //! chosen `SearchResult`; the host turns it into a `PortfolioAsset`.
 
 use crate::model::DataSource;
-use crate::service::SearchResult;
 use crate::service::work_queue::{self, PendingAll};
+use crate::service::{ProviderError, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::chart::picker_kit::recents::{self, RecentMarket};
 use crate::ui::chart::picker_kit::suggestions::{
@@ -30,9 +30,9 @@ pub const STOCK_SOURCES: [DataSource; 1] = [DataSource::Alpaca];
 
 /// A provider's ticker search: results, or why there are none.
 pub type SearchFn =
-    Arc<dyn Fn(DataSource, &str) -> Result<Vec<SearchResult>, String> + Send + Sync>;
+    Arc<dyn Fn(DataSource, &str) -> Result<Vec<SearchResult>, ProviderError> + Send + Sync>;
 
-type Answer = Result<Vec<SearchResult>, String>;
+type Answer = Result<Vec<SearchResult>, ProviderError>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PickerTab {
@@ -166,7 +166,7 @@ impl AssetPickerState {
     }
 
     #[cfg(test)]
-    pub fn results(&self) -> &[(DataSource, Result<Vec<SearchResult>, String>)] {
+    pub fn results(&self) -> &[(DataSource, Result<Vec<SearchResult>, ProviderError>)] {
         &self.results
     }
 
@@ -564,7 +564,7 @@ impl AssetPickerState {
     fn first_error(&self) -> Option<String> {
         self.results
             .iter()
-            .find_map(|(_, result)| result.as_ref().err().cloned())
+            .find_map(|(_, result)| result.as_ref().err().map(ToString::to_string))
     }
 }
 
@@ -598,7 +598,7 @@ mod tests {
                     hit(source, "WBTC/USDT", "WBTCUSDT"),
                 ]),
                 DataSource::Coinbase => Ok(vec![]),
-                DataSource::CoinGecko => Err("rate limited".to_owned()),
+                DataSource::CoinGecko => Err(ProviderError::other("rate limited")),
                 _ => Ok(vec![hit(source, "BTC/WETH", "0xabc")]),
             }
         });
@@ -666,8 +666,8 @@ mod tests {
         );
         assert!(state.results()[1].1.as_ref().is_ok_and(Vec::is_empty));
         assert_eq!(
-            state.results()[2].1.as_ref().err().map(String::as_str),
-            Some("rate limited")
+            state.results()[2].1.as_ref().err(),
+            Some(&ProviderError::other("rate limited"))
         );
     }
 

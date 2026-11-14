@@ -56,10 +56,7 @@ impl OffsetCache {
         source: impl FnOnce(i64) -> i64,
     ) -> i64 {
         let minute = epoch_secs.div_euclid(60);
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut state = crate::lock::lock(&self.state);
         let state = state.get_or_insert_with(|| OffsetCacheState {
             started: now,
             by_minute: std::collections::HashMap::new(),

@@ -31,6 +31,7 @@ use crate::host::tab::link::TabLinkHost;
 use crate::host::tab::title::TabTitleHost;
 use crate::host::tab::window::{Placement, TabWindowHost};
 use crate::host::update::UpdateHost;
+use crate::lock::lock;
 use crate::model::Timeframe;
 use crate::model::alert::{AlertCurrency, AlertRuntimeOwner, AlertState};
 use crate::model::watchlist::WatchlistInstrument;
@@ -284,10 +285,7 @@ impl DegenViewApp {
         let tab_title_host = TabTitleHost::load(store.clone());
         let tab_link_host = TabLinkHost::load(store.clone());
         let editor_themes = {
-            let loaded = store
-                .lock()
-                .expect("store lock poisoned")
-                .load_editor_themes();
+            let loaded = lock(&store).load_editor_themes();
             let repaint = creation.egui_ctx.clone();
             let catalog = crate::service::editor_theme::fonts::FontCatalog::start(
                 crate::service::editor_theme::fonts::system_font_dirs(),
@@ -310,24 +308,21 @@ impl DegenViewApp {
                 Arc::new(move || ctx.request_repaint()),
             )))
         };
-        let mcp_confirmations = Arc::new(Mutex::new(ConfirmationHost::new(
-            mcp_host.lock().expect("mcp host lock poisoned").shared(),
-        )));
+        let mcp_confirmations =
+            Arc::new(Mutex::new(ConfirmationHost::new(lock(&mcp_host).shared())));
         // The server reads quotes from the feed the watchlists already run, on its own threads.
-        mcp_host
-            .lock()
-            .expect("mcp host lock poisoned")
+        lock(&mcp_host)
             .shared()
             .attach_quotes(crate::mcp::state::QuoteAccess {
                 book: quote_book.clone(),
                 coordinator: quote_coordinator.clone(),
             });
         let alert_host = Arc::new(Mutex::new({
-            let store = store.lock().expect("store lock poisoned");
+            let store = lock(&store);
             AlertHost::load(&store, now_ms())
         }));
         let pine_host = Arc::new(Mutex::new({
-            let store = store.lock().expect("store lock poisoned");
+            let store = lock(&store);
             PineSubscriptionHost::load(&store)
         }));
         let sync = {
@@ -370,7 +365,7 @@ impl DegenViewApp {
         )));
 
         let (saved_tabs, saved_next_id) = {
-            let store = store.lock().expect("store lock poisoned");
+            let store = lock(&store);
             (
                 store.documents::<PersistedTab>("tab"),
                 store.setting::<u64>("session.next_id").unwrap_or(2),

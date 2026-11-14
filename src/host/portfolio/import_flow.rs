@@ -385,7 +385,7 @@ impl PortfolioImportFlow {
             }
             Err(error) => {
                 host.clear_error();
-                state.failed(error.message());
+                state.failed(error.to_string());
                 None
             }
         }

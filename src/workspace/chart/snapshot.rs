@@ -14,9 +14,9 @@ use crate::service::snapshot::job::{self, Outcome, Retry, SystemBackend};
 use crate::service::snapshot::providers::Destination;
 use crate::service::snapshot::raster;
 use crate::service::{system::timezone, work_queue};
-use crate::ui::SnapshotInput;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
+use crate::ui::{SnapshotError, SnapshotInput};
 use crate::workspace::drawing::content::snapshot_images;
 use crate::workspace::*;
 use eframe::egui::{Context, Id};
@@ -75,6 +75,21 @@ pub(in crate::workspace) struct SnapshotState {
     backend: Option<Arc<dyn job::Backend>>,
     /// The camera menu asked for the Snapshots page of Settings; the app takes it this frame.
     pub(in crate::workspace) settings_requested: bool,
+}
+
+/// Why a chart could not be frozen into a picture.
+#[derive(Debug, thiserror::Error)]
+pub enum CaptureError {
+    #[error("There is no such chart.")]
+    NoChart,
+    /// An agent asked for a chart that is a portfolio card, not a market.
+    #[error("There is no such market chart.")]
+    NoMarketChart,
+    /// The chart has not been laid out on screen yet.
+    #[error("There is no chart to take a picture of yet.")]
+    NotLaidOut,
+    #[error("{}", .0.message())]
+    Scene(SnapshotError),
 }
 
 impl ChartWorkspace {
@@ -168,10 +183,8 @@ impl ChartWorkspace {
         ctx: &Context,
         chart_id: u64,
         options: snapshot::SnapshotOptions,
-    ) -> Result<(raster::Scene, SnapshotDimensions), String> {
-        let index = self
-            .chart_index(chart_id)
-            .ok_or_else(|| "There is no such chart.".to_owned())?;
+    ) -> Result<(raster::Scene, SnapshotDimensions), CaptureError> {
+        let index = self.chart_index(chart_id).ok_or(CaptureError::NoChart)?;
         let replay_ms = if self.replay.is_active() {
             self.replay.current_ms()
         } else {
@@ -180,7 +193,7 @@ impl ChartWorkspace {
         let chart = &self.charts[index];
         let size = chart.chart.snapshot_size();
         let dimensions = SnapshotDimensions::fit(size.x, size.y, options.scale)
-            .ok_or_else(|| "There is no chart to take a picture of yet.".to_owned())?;
+            .ok_or(CaptureError::NotLaidOut)?;
         let open_notes = chart.chart.open_notes();
         let images = snapshot_images(ctx, &chart.drawings);
         let input = SnapshotInput {
@@ -200,7 +213,7 @@ impl ChartWorkspace {
             .chart
             .snapshot_scene(&input, dimensions, ui::theme::surface())
             .map(|scene| (scene, dimensions))
-            .map_err(|error| error.message().to_owned())
+            .map_err(CaptureError::Scene)
     }
 
     /// Starts a picture of chart `chart_id` for an agent: the scene is frozen now, on the UI
@@ -212,12 +225,12 @@ impl ChartWorkspace {
         ctx: &Context,
         chart_id: u64,
         scale: snapshot::SnapshotScale,
-    ) -> Result<(PngReceiver, SnapshotDimensions), String> {
+    ) -> Result<(PngReceiver, SnapshotDimensions), CaptureError> {
         if !self
             .chart_index(chart_id)
             .is_some_and(|index| self.charts[index].is_market())
         {
-            return Err("There is no such market chart.".to_owned());
+            return Err(CaptureError::NoMarketChart);
         }
         let options = snapshot::SnapshotOptions {
             scale,
@@ -250,10 +263,10 @@ impl ChartWorkspace {
         } = request;
         let (scene, _) = match self.capture_scene(ctx, chart_id, options) {
             Ok(captured) => captured,
-            Err(message) => {
+            Err(error) => {
                 // An unknown chart was always silent; the rest is worth saying.
                 if self.chart_index(chart_id).is_some() {
-                    self.say(message, true);
+                    self.say(error.to_string(), true);
                 }
                 return;
             }

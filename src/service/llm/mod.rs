@@ -201,29 +201,45 @@ pub struct Done {
     pub truncated: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum LlmError {
+    #[error("Cancelled")]
     Cancelled,
     /// 401 / 403: the key is wrong, expired, or not allowed to use the model.
+    #[error("The provider rejected the API key: {message}")]
     Auth {
         message: String,
         request_id: Option<String>,
     },
+    #[error("Rate limited: {message}")]
     RateLimited {
         message: String,
         request_id: Option<String>,
     },
+    /// A 200 carrying an error is shown as the provider worded it, without the status.
+    #[error("{}", http_text(*status, message))]
     Http {
         status: u16,
         message: String,
         /// The provider's id for the request, from its response header.
         request_id: Option<String>,
     },
+    #[error("Network error: {0}")]
     Network(String),
     /// The server answered, but not in the format expected.
+    #[error("{0}")]
     Protocol(String),
     /// Nothing was sent: the settings are incomplete.
+    #[error("{0}")]
     Config(String),
+}
+
+fn http_text(status: u16, message: &str) -> String {
+    if status == 200 {
+        message.to_owned()
+    } else {
+        format!("HTTP {status}: {message}")
+    }
 }
 
 impl LlmError {
@@ -271,30 +287,6 @@ impl LlmError {
         }
     }
 }
-
-impl std::fmt::Display for LlmError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Cancelled => f.write_str("Cancelled"),
-            Self::Auth { message, .. } => {
-                write!(f, "The provider rejected the API key: {message}")
-            }
-            Self::RateLimited { message, .. } => write!(f, "Rate limited: {message}"),
-            Self::Http {
-                status: 200,
-                message,
-                ..
-            } => f.write_str(message),
-            Self::Http {
-                status, message, ..
-            } => write!(f, "HTTP {status}: {message}"),
-            Self::Network(message) => write!(f, "Network error: {message}"),
-            Self::Protocol(message) | Self::Config(message) => f.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for LlmError {}
 
 /// Why a turn ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

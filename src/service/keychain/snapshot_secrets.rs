@@ -11,6 +11,7 @@
 //! secure storage) it lives in memory for the session; a field's environment variable stands in
 //! when nothing is saved.
 
+use crate::lock::lock;
 use crate::service::keychain::api_keys::{KeyBackend, default_backend};
 use crate::service::keychain::webhook_secrets::Scope;
 use crate::service::snapshot::providers::{FieldSpec, SecretPresence, Secrets, SnapshotProvider};
@@ -80,7 +81,7 @@ fn clean(text: Option<String>) -> Option<String> {
 
 /// Records what the storage said about `account`, unless something more certain arrived first.
 fn settle(slots: &Slots, account: String, found: bool) {
-    let mut slots = slots.lock().unwrap_or_else(|e| e.into_inner());
+    let mut slots = lock(slots);
     let slot = slots.entry(account).or_default();
     slot.checking = false;
     if !slot.loaded {
@@ -126,11 +127,11 @@ impl SnapshotSecrets {
 
     /// Calls `ready` whenever an answer from the storage arrives (from the thread that asked).
     pub fn set_on_ready(&self, ready: OnReady) {
-        *self.on_ready.lock().unwrap_or_else(|e| e.into_inner()) = Some(ready);
+        *lock(&self.on_ready) = Some(ready);
     }
 
     fn slots(&self) -> std::sync::MutexGuard<'_, HashMap<String, Slot>> {
-        self.slots.lock().unwrap_or_else(|e| e.into_inner())
+        lock(&self.slots)
     }
 
     fn environment(&self, field: &FieldSpec) -> Option<String> {
@@ -204,7 +205,7 @@ impl SnapshotSecrets {
         std::thread::spawn(move || {
             let found = backend.exists(SCOPE, &account);
             settle(&slots, account, found);
-            let ready = on_ready.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let ready = lock(&on_ready).clone();
             if let Some(ready) = ready {
                 ready();
             }
