@@ -716,15 +716,6 @@ pub(in crate::ui) fn card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)
     });
 }
 
-pub(in crate::ui) fn divider(ui: &mut egui::Ui) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().hline(
-        rect.x_range(),
-        rect.center().y,
-        Stroke::new(1.0, kit::hairline()),
-    );
-}
-
 impl NotificationSwitch {
     fn icon(self) -> Icon {
         match self {
@@ -777,7 +768,7 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                         service_tone(health.service_state),
                     );
                 });
-                divider(ui);
+                kit::divider(ui);
                 row(ui, "Notification permission", |ui| {
                     status_badge(
                         ui,
@@ -786,7 +777,7 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                     );
                 });
                 if let Some(heartbeat) = health.heartbeat_ms {
-                    divider(ui);
+                    kit::divider(ui);
                     row(ui, "Last heartbeat", |ui| {
                         ui.label(kit::text(
                             relative_time(input.now_ms, heartbeat),
@@ -797,7 +788,7 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                     });
                 }
                 for provider in &health.providers {
-                    divider(ui);
+                    kit::divider(ui);
                     row(ui, provider.source.display_name(), |ui| {
                         status_badge(
                             ui,

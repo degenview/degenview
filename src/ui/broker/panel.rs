@@ -337,7 +337,7 @@ pub fn ui(
     let rows = backend.orders();
 
     header(ui, state, bar, backend, &rows, &mut actions);
-    divider(ui);
+    kit::panel_divider(ui);
 
     let connection = backend.state();
     if connection == BackendState::NotConnected
@@ -366,7 +366,7 @@ pub fn ui(
     }
     poll_flights(state);
     stats_strip::show(ui, stats);
-    divider(ui);
+    kit::panel_divider(ui);
 
     let commands = backend.broker_commands();
     match state.tab {
@@ -396,10 +396,6 @@ fn empty_with_settings(ui: &mut egui::Ui, message: &str) -> bool {
         message,
         Some("Open Settings"),
     )
-}
-
-fn divider(ui: &mut egui::Ui) {
-    notice::divider(ui);
 }
 
 fn note(ui: &mut egui::Ui, text: &str, error: bool) {

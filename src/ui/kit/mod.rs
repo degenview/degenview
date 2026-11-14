@@ -37,7 +37,7 @@ pub use button::{
     FooterButton, cta_button, destructive_sheet_button, footer_button, hover_button, large_button,
     large_prominent_button, push_button, sheet_button, tinted_button,
 };
-pub use card::{CARD_RADIUS, card_frame, paint_card_badge, paint_well};
+pub use card::{CARD_RADIUS, card_frame, divider, paint_card_badge, paint_well, panel_divider};
 pub use confirm::{Alert, Confirm, ConfirmOutcome, Notice, alert, confirm, notice};
 pub use field::{FIELD_HEIGHT, field_frame, input_frame, plain_field, search_field};
 pub use form::{

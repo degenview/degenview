@@ -1,8 +1,9 @@
-//! Settings cards: the flat frame, the bare badge and the inset well.
+//! Cards: the flat frame, the bare badge, the inset well and the hairline between rows.
 
+use super::hairline;
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
-use eframe::egui::{self, Color32, Rect, Stroke, StrokeKind, Ui, Vec2};
+use eframe::egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, vec2};
 
 /// Corner radius of a settings card.
 pub const CARD_RADIUS: f32 = 10.0;
@@ -48,4 +49,19 @@ pub fn paint_well(ui: &Ui, rect: Rect, radius: f32) {
             theme::pick(Color32::from_black_alpha(70), theme::ink(18)),
         ),
     );
+}
+
+/// A one-point hairline across the width: between a card's rows, under a pane's toolbar.
+pub fn divider(ui: &mut Ui) {
+    line_across(ui, hairline());
+}
+
+/// [`divider`] in the separator colour, between the bands of a docked panel.
+pub fn panel_divider(ui: &mut Ui) {
+    line_across(ui, theme::separator());
+}
+
+fn line_across(ui: &mut Ui, color: Color32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    ui.painter().rect_filled(rect, 0.0, color);
 }

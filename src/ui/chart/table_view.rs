@@ -88,7 +88,7 @@ pub fn show(
     // height, or a short table would collapse the panel.
     ui.set_min_height(ui.available_height());
     toolbar(ui, state, title, feed, &mut action);
-    divider(ui);
+    kit::divider(ui);
     let Some(feed) = feed.filter(|feed| !feed.is_empty()) else {
         empty(ui);
         return action;
@@ -134,12 +134,6 @@ pub fn show(
             });
         });
     action
-}
-
-/// The thin line under the toolbar.
-fn divider(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(rect, 0.0, kit::hairline());
 }
 
 fn toolbar(

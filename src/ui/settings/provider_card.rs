@@ -21,7 +21,7 @@ use crate::ui::paper::form;
 use crate::ui::settings::api_keys::{Autosave, StatusMessage, destructive_button, field};
 use crate::ui::settings::brokers::{fitted, gray_link, muted, step_row, titled_group};
 use crate::ui::settings::snapshots::SnapshotsAction;
-use crate::ui::settings::window::{divider, status_message};
+use crate::ui::settings::window::status_message;
 use crate::ui::{kit, theme};
 use eframe::egui::{self, vec2};
 use std::collections::{BTreeMap, BTreeSet};
@@ -299,7 +299,7 @@ pub fn provider_card(
     }
     if is_open {
         inner.add_space(12.0);
-        divider(inner);
+        kit::divider(inner);
         inner.add_space(14.0);
         inner.spacing_mut().item_spacing.y = 10.0;
         body(inner, provider, input, form, &settings, &present, actions);

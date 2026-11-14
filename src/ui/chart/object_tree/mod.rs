@@ -81,7 +81,7 @@ pub fn show(
     // The content fills the panel however short the list is.
     ui.set_min_height(ui.available_height());
     toolbar(ui, title, &mut actions);
-    divider(ui);
+    kit::divider(ui);
     ui.add_space(10.0);
     search(ui, state);
     ui.add_space(8.0);
@@ -111,11 +111,6 @@ pub fn show(
         hint(ui);
     }
     actions
-}
-
-fn divider(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(rect, 0.0, kit::hairline());
 }
 
 fn toolbar(ui: &mut Ui, title: &str, actions: &mut Vec<TreeAction>) {
