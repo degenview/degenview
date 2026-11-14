@@ -163,7 +163,7 @@ impl PineStudio {
                 BarMenu::ChartPosition => {
                     position_menu(ui, response, state.chart_position, actions);
                 }
-                BarMenu::Market => preview::market_picker(ui, preview, response),
+                BarMenu::Market => preview::market_picker::market_picker(ui, preview, response),
             },
         );
         for action in actions {

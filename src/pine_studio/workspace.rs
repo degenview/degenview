@@ -374,7 +374,7 @@ fn preview_pane(
         Id::new("script-preview-drawer"),
         spec,
         &mut drawer_state,
-        |ui| super::preview::chart(ui, &mut preview.borrow_mut(), input, cmds),
+        |ui| super::preview::chart::chart(ui, &mut preview.borrow_mut(), input, cmds),
         |ui| {
             ui.painter()
                 .rect_filled(ui.max_rect(), 0.0, theme::background());
