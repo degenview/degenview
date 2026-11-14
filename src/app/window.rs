@@ -4,8 +4,8 @@ use super::alert::commit_price_alert;
 use super::mcp::show_mcp_confirmation;
 use super::now_ms;
 use super::open_system_settings;
+use super::tabs::SharedTabs;
 use super::tabs::TabContent;
-use super::tabs::TabRegistry;
 use super::tabs::show_tab;
 use crate::host::alert::AlertHost;
 use crate::host::mcp::confirmation::ConfirmationHost;
@@ -14,8 +14,6 @@ use crate::host::portfolio::PortfolioHost;
 use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::host::settings::{SettingsHost, SettingsHostAction};
 use crate::host::snapshot::SnapshotHost;
-use crate::host::tab::link::TabLinkHost;
-use crate::host::tab::title::TabTitleHost;
 use crate::host::tab::window::TabWindowHost;
 use crate::host::update::{Phase, UpdateHost, UpdateView};
 use crate::lock::lock;
@@ -39,7 +37,7 @@ use crate::ui::settings::window;
 use crate::ui::shortcut;
 use crate::ui::window::tab_bar::{self, TabBar, TabView, WindowChoice};
 use eframe::egui;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 /// Opens a System Settings pane by its extension id, as `x-apple.systempreferences:` links do.
@@ -76,9 +74,7 @@ pub(super) fn set_window_title(ctx: &egui::Context, title: String) {
 /// What every window callback needs; cloned into each deferred viewport.
 #[derive(Clone)]
 pub(super) struct WindowEnv {
-    pub(super) host: TabWindowHost,
-    pub(super) registry: TabRegistry,
-    pub(super) focused_tab: Arc<AtomicU64>,
+    pub(super) tabs: SharedTabs,
     pub(super) portfolio_host: Arc<Mutex<PortfolioHost>>,
     pub(super) card_env: PortfolioCardEnv,
     pub(super) paper_host: Arc<Mutex<PaperHost>>,
@@ -92,66 +88,6 @@ pub(super) struct WindowEnv {
     pub(super) mcp_confirmations: Arc<Mutex<ConfirmationHost>>,
     /// The shared quotes the tab strip reads its prices from.
     pub(super) quote_book: WatchlistQuoteBook,
-    tab_title: TabTitleHost,
-    pub(super) tab_link: TabLinkHost,
-}
-
-impl WindowEnv {
-    pub(super) fn content(&self, tab: u64) -> Option<Arc<Mutex<TabContent>>> {
-        self.registry.lock().ok()?.get(&tab).cloned()
-    }
-
-    pub(super) fn view(&self, tab: u64) -> Option<TabView> {
-        let content = self.content(tab)?;
-        let content = content.lock().ok()?;
-        let (chart, timeframe, link, linkable) = match &*content {
-            TabContent::Chart(workspace) => (
-                workspace.tab_chart(),
-                workspace.timeframe().label(),
-                workspace.link(),
-                true,
-            ),
-            _ => (None, "", None, false),
-        };
-        Some(TabView {
-            id: tab,
-            title: content.title(),
-            icon: content.icon(),
-            chart,
-            timeframe,
-            link,
-            linkable,
-            link_toggles: link
-                .map(|color| self.tab_link.toggles(color))
-                .unwrap_or_default(),
-        })
-    }
-
-    /// Tags a chart tab with a Tab Linking colour, or takes it out of its group. The chart is left
-    /// as it is; the hub aligns a tab that joined a group on the next frame.
-    fn set_tab_link(&self, tab: u64, color: Option<crate::model::tab::link::LinkColor>) {
-        let Some(content) = self.content(tab) else {
-            return;
-        };
-        if let Ok(mut content) = content.lock()
-            && let TabContent::Chart(workspace) = &mut *content
-            && workspace.set_link(color)
-        {
-            self.tab_link.touch();
-        }
-    }
-
-    /// Gives a chart tab its own title (or takes it away). Other tabs have none.
-    fn set_custom_title(&self, tab: u64, title: Option<String>) {
-        let Some(content) = self.content(tab) else {
-            return;
-        };
-        if let Ok(mut content) = content.lock()
-            && let TabContent::Chart(workspace) = &mut *content
-        {
-            workspace.set_custom_title(title);
-        }
-    }
 }
 
 /// One window: the tab strip, then the tab showing.
@@ -166,11 +102,11 @@ fn show_window(
         // The app closes the window's tabs (a script with edits asks first) and drops the
         // window itself; until then it stays up.
         ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-        env.host.request_close_window(window_id);
+        env.tabs.windows().request_close_window(window_id);
         ctx.request_repaint_of(egui::ViewportId::ROOT);
         return;
     }
-    let Some(window) = env.host.window(window_id) else {
+    let Some(window) = env.tabs.windows().window(window_id) else {
         return;
     };
     crate::ui::window::chrome::handle_resize_edges(&ctx);
@@ -178,36 +114,41 @@ fn show_window(
     native_bridge::center_traffic_lights(tab_bar::HEIGHT);
     let focused = ui.input(|input| input.viewport().focused == Some(true));
     if focused {
-        env.host.note_focused(window_id);
+        env.tabs.windows().note_focused(window_id);
         // A tab change reaches the root's frame, which publishes the Edit menu's state.
-        if env.focused_tab.swap(window.active, Ordering::AcqRel) != window.active {
+        if env.tabs.note_focused_tab(window.active) {
             ctx.request_repaint_of(egui::ViewportId::ROOT);
         }
     }
 
     // A tab being dragged is driven from the window that received the press.
-    env.host.drive_drag(&ctx, window_id);
-    let host_drag = env.host.drag_view(window_id);
+    env.tabs.windows().drive_drag(&ctx, window_id);
+    let host_drag = env.tabs.windows().drag_view(window_id);
     let drag = tab_bar::DragView {
         dragging: host_drag.dragging,
         incoming: host_drag.incoming.and_then(|(tab, slot, left)| {
             Some(tab_bar::Incoming {
-                tab: env.view(tab)?,
+                tab: env.tabs.view(tab)?,
                 slot,
                 left,
             })
         }),
     };
-    let views: Vec<TabView> = window.tabs.iter().filter_map(|id| env.view(*id)).collect();
+    let views: Vec<TabView> = window
+        .tabs
+        .iter()
+        .filter_map(|id| env.tabs.view(*id))
+        .collect();
     let others: Vec<WindowChoice> = env
-        .host
+        .tabs
+        .windows()
         .snapshot()
         .into_iter()
         .filter(|(other, _)| other.id != window_id)
         .filter_map(|(other, _)| {
             Some(WindowChoice {
                 id: other.id,
-                title: env.view(other.active)?.title,
+                title: env.tabs.view(other.active)?.title,
             })
         })
         .collect();
@@ -223,7 +164,7 @@ fn show_window(
                 drag,
                 other_windows: &others,
                 quotes: &env.quote_book,
-                style: env.tab_title.style(),
+                style: env.tabs.titles().style(),
                 update: Some(&update),
             }
             .show(ui)
@@ -235,7 +176,7 @@ fn show_window(
             [viewport.minimized, viewport.maximized, viewport.fullscreen].contains(&Some(true));
         (viewport.outer_rect, viewport.inner_rect, transient)
     });
-    env.host.publish_geometry(
+    env.tabs.windows().publish_geometry(
         window_id,
         outer,
         inner,
@@ -248,21 +189,21 @@ fn show_window(
     // Titles belong to the tabs and the style to the app, not to the window host.
     events.retain(|event| match event {
         tab_bar::TabBarEvent::SetCustomTitle { tab, title } => {
-            env.set_custom_title(*tab, title.clone());
+            env.tabs.set_custom_title(*tab, title.clone());
             false
         }
         tab_bar::TabBarEvent::SetLink { tab, color } => {
-            env.set_tab_link(*tab, *color);
+            env.tabs.set_link(*tab, *color);
             false
         }
         tab_bar::TabBarEvent::SetLinkToggles { color, toggles } => {
             // A failed write leaves the choice in force until the app quits.
-            let _ = env.tab_link.set_toggles(None, *color, *toggles);
+            let _ = env.tabs.links().set_toggles(None, *color, *toggles);
             false
         }
         tab_bar::TabBarEvent::SetTitleStyle(style) => {
             // A failed write leaves the choice in force until the app quits.
-            let _ = env.tab_title.set(None, *style);
+            let _ = env.tabs.titles().set(None, *style);
             false
         }
         _ => true,
@@ -294,22 +235,22 @@ fn show_window(
             }
         });
         if let Some(forward) = cycle {
-            env.host.cycle_window(window_id, forward);
+            env.tabs.windows().cycle_window(window_id, forward);
         }
     }
     if !events.is_empty() {
-        env.host.apply(window_id, events);
+        env.tabs.windows().apply(window_id, events);
         // New and Close are the app's to carry out.
         ctx.request_repaint_of(egui::ViewportId::ROOT);
     }
 
-    let Some(window) = env.host.window(window_id) else {
+    let Some(window) = env.tabs.windows().window(window_id) else {
         return;
     };
-    let Some(content) = env.content(window.active) else {
+    let Some(content) = env.tabs.content(window.active) else {
         return;
     };
-    if let Some(view) = env.view(window.active) {
+    if let Some(view) = env.tabs.view(window.active) {
         set_window_title(&ctx, view.title);
     }
     ui.push_id(window.active, |ui| {
@@ -368,10 +309,6 @@ fn show_restart_prompt(ctx: &egui::Context, env: &WindowEnv, update: &UpdateView
 }
 
 impl DegenViewApp {
-    pub(super) fn viewport_id(window: WindowId) -> egui::ViewportId {
-        TabWindowHost::viewport_id(window)
-    }
-
     pub(super) fn sync_viewports(&self, ctx: &egui::Context) {
         // What a script alert would watch: the focused chart's market.
         let chart_info = self
@@ -388,9 +325,7 @@ impl DegenViewApp {
                 instances: target.instances,
             });
         let env = WindowEnv {
-            host: self.tab_host.clone(),
-            registry: Arc::clone(&self.registry),
-            focused_tab: Arc::clone(&self.focused_tab),
+            tabs: self.tabs.shared().clone(),
             portfolio_host: Arc::clone(&self.portfolio),
             card_env: self.card_env.clone(),
             paper_host: Arc::clone(&self.paper),
@@ -403,16 +338,11 @@ impl DegenViewApp {
             snapshots: self.snapshots.clone(),
             mcp_confirmations: Arc::clone(&self.mcp_confirmations),
             quote_book: self.quote_book.clone(),
-            tab_title: self.tab_title_host.clone(),
-            tab_link: self.tab_link_host.clone(),
         };
-        for (window, placement) in self.tab_host.snapshot() {
-            let active = self
-                .registry
-                .lock()
-                .ok()
-                .and_then(|registry| registry.get(&window.active).cloned());
-            let (title, is_scripts) = active
+        for (window, placement) in self.tabs.windows().snapshot() {
+            let (title, is_scripts) = env
+                .tabs
+                .content(window.active)
                 .and_then(|content| {
                     let content = content.lock().ok()?;
                     Some((content.title(), matches!(&*content, TabContent::Pine(_))))
@@ -436,12 +366,16 @@ impl DegenViewApp {
             let env = env.clone();
             let chart_info = chart_info.clone();
             let window_id = window.id;
-            ctx.show_viewport_deferred(Self::viewport_id(window_id), builder, move |ui, _class| {
-                show_window(ui, &env, window_id, chart_info.clone());
-            });
+            ctx.show_viewport_deferred(
+                TabWindowHost::viewport_id(window_id),
+                builder,
+                move |ui, _class| {
+                    show_window(ui, &env, window_id, chart_info.clone());
+                },
+            );
         }
         // With a Pine Studio open, ⌘Q is answered by the app (see `request_quit`).
-        native_bridge::intercept_quit(self.tabs.iter().any(|tab| {
+        native_bridge::intercept_quit(self.tabs.slots().iter().any(|tab| {
             tab.content
                 .lock()
                 .is_ok_and(|content| matches!(&*content, TabContent::Pine(_)))

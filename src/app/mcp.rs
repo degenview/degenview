@@ -11,7 +11,6 @@ use crate::model::alert::{AlertPrecondition, AlertRuntimeCommand, AlertRuntimeCo
 use crate::service::alert::macos_notifications;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -220,9 +219,7 @@ impl DegenViewApp {
     fn announce_questions(&self, ctx: &egui::Context, fresh: &[crate::mcp::confirm::PendingView]) {
         ctx.request_repaint_of(egui::ViewportId::ROOT);
         ctx.request_repaint_of(settings_viewport_id());
-        for (window, _) in self.tab_host.snapshot() {
-            ctx.request_repaint_of(Self::viewport_id(window.id));
-        }
+        self.tabs.repaint_windows(ctx);
         let enabled = self.alert_host.lock().is_ok_and(|host| {
             crate::model::alert::notification::notifications_enabled(host.settings())
         });
@@ -251,9 +248,9 @@ impl DegenViewApp {
     ) -> Result<McpReply, McpError> {
         match command {
             McpCommand::ListWorkspaces => {
-                let active = self.focused_tab.load(Ordering::Relaxed);
+                let active = self.tabs.focused_tab();
                 let mut workspaces = Vec::new();
-                for tab in &self.tabs {
+                for tab in self.tabs.slots() {
                     let Ok(content) = tab.content.lock() else {
                         continue;
                     };
@@ -819,7 +816,7 @@ impl DegenViewApp {
         action: impl FnOnce(&mut ChartWorkspace) -> Result<R, McpError>,
     ) -> Result<R, McpError> {
         let not_found = || McpError::NotFound(format!("No workspace {workspace_id}"));
-        for tab in &self.tabs {
+        for tab in self.tabs.slots() {
             let mut content = tab
                 .content
                 .lock()

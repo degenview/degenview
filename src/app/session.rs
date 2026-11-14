@@ -1,6 +1,5 @@
 use super::DegenViewApp;
 use super::tabs::TabContent;
-use super::tabs::TabSlot;
 use crate::workspace::PersistedWorkspace;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -51,16 +50,9 @@ pub(super) struct PersistedSession {
 impl DegenViewApp {
     fn persisted_session(&self) -> Result<PersistedSession, String> {
         // Window order, then strip order: a restore lays the tabs out in the order they were in.
-        let ordered = self.tab_host.ordered_tabs();
-        let position = |tab: &TabSlot| {
-            ordered
-                .iter()
-                .position(|id| *id == tab.id())
-                .unwrap_or(usize::MAX)
-        };
-        let mut slots: Vec<&TabSlot> = self.tabs.iter().collect();
-        slots.sort_by_key(|tab| position(tab));
-        let tabs = slots
+        let tabs = self
+            .tabs
+            .in_window_order()
             .into_iter()
             .map(|tab| {
                 let content = tab.content.lock().map_err(|error| error.to_string())?;
@@ -80,7 +72,7 @@ impl DegenViewApp {
             })
             .collect::<Result<Vec<_>, String>>()?;
         Ok(PersistedSession {
-            next_id: self.next_id,
+            next_id: self.tabs.next_id(),
             tabs,
         })
     }

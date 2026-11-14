@@ -139,7 +139,7 @@ impl DegenViewApp {
             host.snapshot().alerts.iter().any(|alert| {
                 alert.state == AlertState::Active && alert.currency != AlertCurrency::Usd
             })
-        }) || self.tabs.iter().any(|tab| {
+        }) || self.tabs.slots().iter().any(|tab| {
             tab.content.lock().is_ok_and(|content| {
                 matches!(&*content, TabContent::Chart(workspace) if workspace.alert_editor_needs_fx_rates())
             })

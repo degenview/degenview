@@ -3,7 +3,6 @@ use super::tabs::TabContent;
 use crate::service::alert::macos_notifications;
 use eframe::egui;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 impl DegenViewApp {
@@ -21,7 +20,7 @@ impl DegenViewApp {
         if notices.is_empty() {
             return;
         }
-        let focused = self.focused_tab.load(Ordering::Acquire);
+        let focused = self.tabs.focused_tab();
         for (broker, notice) in notices {
             let prefs = self.broker_host.prefs(broker);
             if !prefs.notify {
@@ -34,7 +33,7 @@ impl DegenViewApp {
                 .snapshot(broker)
                 .and_then(|snapshot| snapshot.product(&notice.order.product).cloned());
             let text = crate::model::broker::ticket::notice_text(&notice, name, spec.as_ref());
-            for slot in &self.tabs {
+            for slot in self.tabs.slots() {
                 if slot.id() != focused {
                     continue;
                 }
@@ -78,7 +77,7 @@ impl DegenViewApp {
         // typed changes.
         let mut unsaved = std::collections::HashSet::new();
         let mut signature = 0u64;
-        for slot in &self.tabs {
+        for slot in self.tabs.slots() {
             if let Ok(content) = slot.content.try_lock()
                 && let TabContent::Pine(manager) = &*content
             {
@@ -98,13 +97,8 @@ impl DegenViewApp {
                 watchlist.reload();
             }
             if report.tables.contains("saved_view") {
-                for slot in &self.tabs {
-                    if let Ok(mut content) = slot.content.lock()
-                        && let TabContent::Chart(workspace) = &mut *content
-                    {
-                        workspace.adopt_remote_layout();
-                    }
-                }
+                self.tabs
+                    .each_chart(|workspace| workspace.adopt_remote_layout());
             }
             if report.tables.contains("paper_account")
                 && let Ok(mut paper) = self.paper.lock()

@@ -13,8 +13,8 @@ use crate::app::session::PersistedSpecialTab;
 use crate::app::session::PersistedSpecialTabKind;
 use crate::app::session::PersistedTab;
 use crate::app::tabs::TabContent;
-use crate::app::tabs::TabRegistry;
 use crate::app::tabs::TabSlot;
+use crate::app::tabs::TabState;
 use crate::app::window::settings_viewport_id;
 use crate::host::alert::AlertHost;
 use crate::host::alert::runtime::AlertRuntimeRunner;
@@ -29,7 +29,7 @@ use crate::host::settings::SettingsHost;
 use crate::host::snapshot::SnapshotHost;
 use crate::host::tab::link::TabLinkHost;
 use crate::host::tab::title::TabTitleHost;
-use crate::host::tab::window::{Placement, TabWindowHost};
+use crate::host::tab::window::Placement;
 use crate::host::update::UpdateHost;
 use crate::lock::lock;
 use crate::model::Timeframe;
@@ -51,7 +51,7 @@ use crate::ui::alert::pine_editor::PineAlertWebhooksState;
 use crate::ui::portfolio::tab::PortfolioTab;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -131,30 +131,11 @@ enum AppAction {
 }
 
 pub struct DegenViewApp {
-    tabs: Vec<TabSlot>,
-    registry: TabRegistry,
-    /// Which tabs share a window; each window shows one tab strip over its active tab.
-    tab_host: TabWindowHost,
-    /// The id of the tab whose window last had keyboard focus, for Save and other app-level commands.
-    focused_tab: Arc<AtomicU64>,
-    next_id: u64,
+    tabs: TabState,
     store: SharedStore,
     watchlist: Arc<Mutex<WatchlistStore>>,
     quote_book: WatchlistQuoteBook,
     quote_coordinator: WatchlistQuoteCoordinator,
-    /// How chart tabs name themselves, shared by every window and Settings.
-    tab_title_host: TabTitleHost,
-    /// Tab Linking: the switches of every colour, and who is in which group.
-    tab_link_host: TabLinkHost,
-    link_hub: crate::model::tab::link::LinkHub,
-    tab_link_revision: u64,
-    /// The markets the tab strips asked quotes for last time (their keys), so the demand is only
-    /// re-issued when a tab's focused chart changes.
-    tab_quote_keys: Vec<String>,
-    /// The quote book's revision the tab windows were last repainted for.
-    tab_quote_revision: u64,
-    /// The title style's revision they were last repainted for.
-    tab_title_revision: u64,
     portfolio_quotes: PortfolioQuoteFeed,
     /// How portfolio cards on chart grids reach the portfolios.
     card_env: PortfolioCardEnv,
@@ -171,8 +152,6 @@ pub struct DegenViewApp {
     /// The venues the user trades on (paper and each connected broker), shared by every window and
     /// Settings: the one owner of a venue's lifecycle.
     trading_hub: Arc<crate::host::trading::TradingHub>,
-    /// The broker host's revision the tab windows were last repainted for.
-    broker_revision: u64,
     /// Orders placed over MCP by `request_id`, so a retried call places nothing twice.
     mcp_orders: Mutex<crate::host::mcp::paper::OrderMemory>,
     /// Chart pictures being made for MCP clients.
@@ -372,7 +351,7 @@ impl DegenViewApp {
             )
         };
 
-        let (tabs, next_id) = if saved_tabs.is_empty() {
+        let (slots, next_id) = if saved_tabs.is_empty() {
             (
                 vec![TabSlot::new(TabContent::Chart(Box::new(
                     ChartWorkspace::empty(
@@ -432,18 +411,9 @@ impl DegenViewApp {
                 egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(width, height))
             },
         ));
-        let tab_host = TabWindowHost::restore(tabs.iter().map(TabSlot::id), first_window);
-        let registry: TabRegistry = Arc::new(Mutex::new(
-            tabs.iter()
-                .map(|tab| (tab.id(), Arc::clone(&tab.content)))
-                .collect(),
-        ));
+        let tabs = TabState::restore(slots, next_id, first_window, tab_title_host, tab_link_host);
         Self {
             tabs,
-            registry,
-            tab_host,
-            focused_tab: Arc::new(AtomicU64::new(0)),
-            next_id,
             store,
             watchlist,
             quote_book,
@@ -459,17 +429,9 @@ impl DegenViewApp {
             paper,
             broker_host,
             trading_hub,
-            broker_revision: 0,
             mcp_orders: Mutex::new(crate::host::mcp::paper::OrderMemory::default()),
             mcp_snapshots: Mutex::new(crate::host::mcp::snapshot::SnapshotJobs::default()),
             settings_host,
-            tab_title_host,
-            tab_link_host,
-            link_hub: Default::default(),
-            tab_link_revision: 0,
-            tab_quote_keys: Vec::new(),
-            tab_quote_revision: 0,
-            tab_title_revision: 0,
             snapshots,
             editor_themes,
             mcp_host,
@@ -521,12 +483,20 @@ impl eframe::App for DegenViewApp {
         self.updates.tick(ctx);
         self.tick_sync(ctx);
         self.tick_editor_themes();
-        self.tick_tab_quotes(ctx);
+        self.tabs.tick_quotes(
+            ctx,
+            &self.quote_book,
+            &self.quote_coordinator,
+            self.broker_host.revision(),
+        );
         self.tick_broker_notices();
         self.broker_host.tick_quotes();
-        self.tick_tab_links(ctx);
-        self.tab_host
-            .restore_frames(ctx, native_bridge::screen_layout(), now_ms().max(0) as u64);
+        self.tabs.tick_links(ctx);
+        self.tabs.windows().restore_frames(
+            ctx,
+            native_bridge::screen_layout(),
+            now_ms().max(0) as u64,
+        );
         if self.session_last_saved_at.elapsed() >= Duration::from_secs(10) {
             self.save_session();
         }
@@ -570,13 +540,9 @@ impl eframe::App for DegenViewApp {
             self.editor_themes.flush(&store);
         }
         // A layout with Autosave on is written before the session goes, even mid-debounce.
-        for tab in &self.tabs {
-            if let Ok(mut content) = tab.content.lock()
-                && let TabContent::Chart(workspace) = &mut *content
-            {
-                workspace.flush_autosave();
-            }
-        }
+        self.tabs.each_chart(|workspace| {
+            workspace.flush_autosave();
+        });
         self.save_session();
     }
 }
