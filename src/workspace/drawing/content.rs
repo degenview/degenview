@@ -237,7 +237,7 @@ impl ChartWorkspace {
     /// Everything the content tools need each frame: the sheet, what was read, drops.
     pub(in crate::workspace) fn tick_content(&mut self, ctx: &egui::Context) {
         self.take_picture(ctx);
-        let tool = self.active_tool;
+        let tool = self.tools.active;
         let content_tool = matches!(tool, Tool::Image | Tool::Post);
         let armed = content_tool && self.content.last_tool != tool;
         self.content.last_tool = tool;
@@ -302,7 +302,7 @@ impl ChartWorkspace {
                     }) => {
                         // A dialog open on the drawing takes the picture into its draft, so OK
                         // commits it with the rest and Cancel leaves the drawing as it was.
-                        match self.drawing_props.as_mut() {
+                        match self.tools.properties.as_mut() {
                             Some(dialog)
                                 if dialog.chart_id == chart_id
                                     && dialog.draft().id() == drawing_id =>
@@ -317,7 +317,7 @@ impl ChartWorkspace {
                         self.content.place_now = at_once;
                         // The tool is armed so the picture follows the pointer if it is not
                         // placed at once.
-                        self.active_tool = Tool::Image;
+                        self.tools.active = Tool::Image;
                         self.content.last_tool = Tool::Image;
                     }
                     None => {}
@@ -358,7 +358,7 @@ impl ChartWorkspace {
             ImageSheetAction::Close => {
                 self.content.sheet = false;
                 self.content.error = None;
-                self.active_tool = Tool::Cursor;
+                self.tools.active = Tool::Cursor;
             }
         }
     }

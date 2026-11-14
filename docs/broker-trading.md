@@ -55,7 +55,7 @@ removed). Removing a key that is not stored counts as removed.
 ## The panel
 
 The Paper Trading panel is the trading panel: when a broker is connected, a "Trade on" switch
-(Paper | Coinbase...) appears above it, per tab (`ChartWorkspace::trading_venue`, never saved: a tab
+(Paper | Coinbase...) appears above it, per tab (the workspace's `TradeSide`, never saved: a tab
 starts on paper). On a live venue the panel is `ui/broker/panel.rs`, with an amber rule and a
 `LIVE · NAME` badge (`ui/broker/badge.rs`; amber is not the buy/sell colour and never blue) that
 paper trading never uses. The paper account is only created while the venue is Paper, and paper

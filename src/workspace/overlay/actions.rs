@@ -5,7 +5,7 @@ use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::overlay::{AddOutcome, OverlayCommand, OverlayId, OverlayScale};
 use crate::ui::chart::settings::overlay_popover::{self, OverlaySettingsPopover};
 use crate::workspace::ChartWorkspace;
-use crate::workspace::undo::{RESTYLE_WINDOW, Snapshot, UndoEntry};
+use crate::workspace::undo::Snapshot;
 use eframe::egui;
 use std::time::Instant;
 
@@ -22,15 +22,13 @@ impl ChartWorkspace {
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
             return;
         };
-        self.undo.push(UndoEntry {
+        self.history.record(
             chart_id,
-            before: Snapshot::Overlays {
+            Snapshot::Overlays {
                 list: chart.overlays.clone(),
                 scale_mode,
             },
-        });
-        self.redo.clear();
-        self.last_restyle = None;
+        );
     }
 
     /// Whether `chart_id` is a chart another market can be drawn on.
@@ -173,15 +171,8 @@ impl ChartWorkspace {
         // A colour dragged in the picker reports every frame: the run is one step, as a drawing's
         // restyle is. The run breaks on another overlay, another command, or any other undo step.
         let now = Instant::now();
-        let merges = style_run.is_some_and(|id| {
-            self.last_overlay_style
-                .is_some_and(|(chart, overlay, len, at)| {
-                    chart == chart_id
-                        && overlay == id
-                        && len == self.undo.len()
-                        && now.saturating_duration_since(at) <= RESTYLE_WINDOW
-                })
-        });
+        let merges =
+            style_run.is_some_and(|id| self.history.continues_overlay_style(chart_id, id, now));
         // Taking the last compared market off puts the axis back to Regular, as adding the first
         // switched it to Percent; the step carries the old mode so undo restores both.
         let reverts = if probe.is_empty() {
@@ -202,7 +193,8 @@ impl ChartWorkspace {
                 chart.scale_mode = PriceScaleMode::Regular;
             }
         }
-        self.last_overlay_style = style_run.map(|id| (chart_id, id, self.undo.len(), now));
+        self.history
+            .set_overlay_style_run(style_run.map(|id| (chart_id, id, now)));
         true
     }
 }
@@ -216,6 +208,7 @@ mod tests {
     use crate::model::{DataSource, Kline, Timeframe};
     use crate::service::ProviderError;
     use crate::workspace::test_support::{candle, chart_with_drawings, empty_workspace};
+    use crate::workspace::undo::RESTYLE_WINDOW;
     use eframe::egui;
     use std::sync::Arc;
 
@@ -290,7 +283,7 @@ mod tests {
         let mut workspace = empty_workspace(1);
         let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
         workspace.add_overlay(a, market("ETHUSDT"), None);
-        let steps = workspace.undo.len();
+        let steps = workspace.history.steps();
         assert_eq!(
             workspace.add_overlay(a, market("btcusdt"), None),
             Some(AddOutcome::MainMarket)
@@ -300,7 +293,7 @@ mod tests {
             Some(AddOutcome::Duplicate(_))
         ));
         assert_eq!(overlays_of(&workspace, a), ["ETHUSDT"]);
-        assert_eq!(workspace.undo.len(), steps);
+        assert_eq!(workspace.history.steps(), steps);
     }
 
     #[test]
@@ -647,12 +640,16 @@ mod tests {
         for symbol in ["ETHUSDT", "SOLUSDT", "BNBUSDT"] {
             workspace.add_overlay(a, market(symbol), None);
         }
-        let steps = workspace.undo.len();
+        let steps = workspace.history.steps();
         assert!(workspace.apply_overlay_command(a, OverlayCommand::SetAllVisible(false)));
         assert!(chart(&workspace, a).overlays.iter().all(|o| !o.visible));
-        assert_eq!(workspace.undo.len(), steps + 1);
+        assert_eq!(workspace.history.steps(), steps + 1);
         assert!(!workspace.apply_overlay_command(a, OverlayCommand::SetAllVisible(false)));
-        assert_eq!(workspace.undo.len(), steps + 1, "nothing changed, no step");
+        assert_eq!(
+            workspace.history.steps(),
+            steps + 1,
+            "nothing changed, no step"
+        );
         workspace.undo(&eframe::egui::Context::default());
         assert!(chart(&workspace, a).overlays.iter().all(|o| o.visible));
     }
@@ -669,7 +666,7 @@ mod tests {
             (list.as_slice()[0].id, list.as_slice()[1].id)
         };
         let original = chart(&workspace, a).overlays.get(eth).unwrap().color;
-        let before = workspace.undo.len();
+        let before = workspace.history.steps();
         // A drag reports a new colour on every frame.
         for n in 0..40u8 {
             let changed = workspace
@@ -677,7 +674,7 @@ mod tests {
             assert!(changed);
         }
         assert_eq!(
-            workspace.undo.len(),
+            workspace.history.steps(),
             before + 1,
             "one step for the whole drag"
         );
@@ -692,13 +689,13 @@ mod tests {
         );
 
         // Another overlay's colour, or another command in between, is a step of its own.
-        let start = workspace.undo.len();
+        let start = workspace.history.steps();
         workspace.apply_overlay_command(a, OverlayCommand::SetColor(eth, Rgba::new(1, 1, 1, 255)));
         workspace.apply_overlay_command(a, OverlayCommand::SetColor(sol, Rgba::new(2, 2, 2, 255)));
         workspace.apply_overlay_command(a, OverlayCommand::SetColor(sol, Rgba::new(3, 3, 3, 255)));
         workspace.apply_overlay_command(a, OverlayCommand::SetWidth(sol, 3.0));
         workspace.apply_overlay_command(a, OverlayCommand::SetColor(sol, Rgba::new(4, 4, 4, 255)));
-        assert_eq!(workspace.undo.len(), start + 4);
+        assert_eq!(workspace.history.steps(), start + 4);
     }
 
     #[test]
@@ -709,17 +706,15 @@ mod tests {
         workspace.add_overlay(a, market("ETHUSDT"), None);
         let id = chart(&workspace, a).overlays.as_slice()[0].id;
         workspace.apply_overlay_command(a, OverlayCommand::SetColor(id, Rgba::new(9, 9, 9, 255)));
-        let steps = workspace.undo.len();
+        let steps = workspace.history.steps();
         // A drawing step in between ends the run.
         workspace.apply_drawing_commands(a, vec![crate::model::DrawingCommand::Remove(1)]);
         workspace.apply_overlay_command(a, OverlayCommand::SetColor(id, Rgba::new(8, 8, 8, 255)));
-        assert_eq!(workspace.undo.len(), steps + 2);
+        assert_eq!(workspace.history.steps(), steps + 2);
         // The window lapsing ends it too.
-        let (chart_id, overlay, len, _) = workspace.last_overlay_style.unwrap();
-        workspace.last_overlay_style =
-            Some((chart_id, overlay, len, Instant::now() - RESTYLE_WINDOW * 2));
+        workspace.history.age_overlay_style_run(RESTYLE_WINDOW * 2);
         workspace.apply_overlay_command(a, OverlayCommand::SetColor(id, Rgba::new(7, 7, 7, 255)));
-        assert_eq!(workspace.undo.len(), steps + 3);
+        assert_eq!(workspace.history.steps(), steps + 3);
     }
 
     /// Prints a saved session tab holding a chart that compares several markets, for loading into a

@@ -1,9 +1,9 @@
 use super::super::test_support::{chart_with_drawings, drawing_ids, empty_workspace};
+use crate::model::ReplayStatus;
 use crate::model::tab::link::{LinkColor, LinkSignal};
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, InstrumentId, Timeframe};
 use crate::service::ProviderError;
-use crate::workspace::ReplayStatus;
 use eframe::egui;
 
 fn row(symbol: &str) -> WatchlistInstrument {
@@ -126,12 +126,12 @@ fn a_tab_in_replay_takes_neither_symbol_nor_interval() {
     let mut workspace = empty_workspace(1);
     let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
     workspace.set_link(Some(LinkColor::Blue));
-    workspace.replay.status = ReplayStatus::Paused;
+    workspace.replay.engine_mut().status = ReplayStatus::Paused;
     assert!(!workspace.apply_link(1, &market("ETHUSDT"), &ctx));
     assert!(!workspace.apply_link(2, &LinkSignal::Timeframe(Timeframe::Hour), &ctx));
     assert_eq!(shown(&workspace, chart), "BTCUSDT");
     assert_eq!(
-        workspace.replay.status,
+        workspace.replay.status(),
         ReplayStatus::Paused,
         "replay untouched"
     );

@@ -15,7 +15,7 @@ impl ChartWorkspace {
         ctx: &egui::Context,
     ) -> Vec<WorkspaceAction> {
         let mut actions = Vec::new();
-        let active_view_id = self.active_view_id;
+        let active_view_id = self.layout.active_view_id();
         let layout_index = self.layout_index();
         let mut save_clicked = false;
         let mut copy_clicked = false;
@@ -44,18 +44,18 @@ impl ChartWorkspace {
             |action| crate::ui::shortcut::snapshot(action).map(|shortcut| shortcut.label());
         let input = toolbar::ToolbarInput {
             timeframe: self.timeframe,
-            layout_name: self.active_view_name.as_deref().unwrap_or("Unnamed"),
+            layout_name: self.layout.active_view_name().unwrap_or("Unnamed"),
             // Autosave keeps a layout clean in the user's eyes: "(unsaved)" only shows while
             // nothing is going to save it.
-            unsaved: dirty && !(autosave_on && !self.autosave.failed),
+            unsaved: dirty && !(autosave_on && !self.layout.autosave_failed()),
             autosave: toolbar::AutosaveState {
                 available: active_view_id.is_some(),
                 on: autosave_on,
-                failed: self.autosave.failed,
+                failed: self.layout.autosave_failed(),
             },
             layouts,
             active_layout: active_view_id,
-            watchlist_visible: self.watchlist_visible,
+            watchlist_visible: self.watchlist_pane.is_visible(),
             symbol: symbol.as_deref(),
             chart: self
                 .focused_market_chart()
@@ -68,8 +68,8 @@ impl ChartWorkspace {
                     compare: self.can_compare(chart.id),
                     indicators: chart.takes_indicators(),
                 }),
-            can_undo: !self.undo.is_empty(),
-            can_redo: !self.redo.is_empty(),
+            can_undo: self.history.can_undo(),
+            can_redo: self.history.can_redo(),
             replay_open: self.replay.is_bar_visible(),
             can_replay: self
                 .charts
@@ -99,7 +99,7 @@ impl ChartWorkspace {
                 ToolbarAction::OpenLayout(id) => open_id = Some(id),
                 ToolbarAction::DeleteLayout(id) => delete_id = Some(id),
                 ToolbarAction::ToggleWatchlist => {
-                    self.watchlist_visible = !self.watchlist_visible;
+                    self.watchlist_pane.toggle();
                 }
                 ToolbarAction::OpenPortfolio => actions.push(WorkspaceAction::OpenPortfolio),
                 ToolbarAction::OpenPineStudio => {
@@ -161,7 +161,8 @@ impl ChartWorkspace {
         if let Some(chart) = self.focused_market_chart()
             && crate::ui::supports_alerts(chart.source)
         {
-            self.new_alert_request = Some(AlertRequest::market(Self::alert_asset(chart)));
+            self.alerts
+                .request(AlertRequest::market(Self::alert_asset(chart)));
         }
     }
 
@@ -225,16 +226,19 @@ mod tests {
     fn the_toolbar_alert_starts_an_alert_on_the_focused_market() {
         let mut workspace = empty_workspace(1);
         workspace.create_alert_for_focused_chart();
-        assert!(workspace.new_alert_request.is_none(), "no chart, no alert");
+        assert!(
+            workspace.alerts.take_request().is_none(),
+            "no chart, no alert"
+        );
         let first = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
         let second = chart_with_drawings(&mut workspace, "ETHUSDT", &[]);
         workspace.focused = Some(first);
         workspace.create_alert_for_focused_chart();
-        let request = workspace.new_alert_request.take().expect("a request");
+        let request = workspace.alerts.take_request().expect("a request");
         assert_eq!(request.asset.instrument.symbol, "BTCUSDT");
         workspace.focused = Some(second);
         workspace.create_alert_for_focused_chart();
-        let request = workspace.new_alert_request.take().expect("a request");
+        let request = workspace.alerts.take_request().expect("a request");
         assert_eq!(request.asset.instrument.symbol, "ETHUSDT");
     }
 }

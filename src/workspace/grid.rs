@@ -6,8 +6,7 @@ use crate::host::paper::PaperHost;
 use crate::lock::lock;
 use crate::model::watchlist::WatchlistError;
 use crate::model::{
-    ChartColumn, ChartLayout, Drawing, DrawingCommand, DrawingStyle, InstrumentId, ReplayStatus,
-    Tool,
+    ChartColumn, ChartLayout, Drawing, DrawingCommand, DrawingStyle, InstrumentId, Tool,
 };
 use crate::ui::ViewMove;
 use crate::ui::chart::settings::ChartSettingsState;
@@ -42,17 +41,13 @@ fn freeze(previous: Option<CrosshairInfo>, chart_id: u64) -> Option<CrosshairInf
         })
 }
 
-/// A star or membership toggle that finds the market already in (or already out of) the list
-/// has nothing to report; anything else says why it was refused.
-fn star_result(
-    slot: &mut Option<crate::model::watchlist::WatchlistNotice>,
-    result: Result<bool, WatchlistError>,
-) {
-    let result = match result {
-        Err(WatchlistError::Duplicate(_) | WatchlistError::NotFound) => Ok(false),
-        other => other,
-    };
-    super::watchlist::report_watchlist(slot, result.map(|_| ()));
+/// What a star or membership toggle has to report: finding the market already in (or already out
+/// of) the list is no failure; anything else says why it was refused.
+fn star_result(result: Result<bool, WatchlistError>) -> Result<(), WatchlistError> {
+    match result {
+        Err(WatchlistError::Duplicate(_) | WatchlistError::NotFound) => Ok(()),
+        other => other.map(|_| ()),
+    }
 }
 
 /// The markets of the Favorites list, by `InstrumentId::key`, so the star reads "on" for a
@@ -256,20 +251,16 @@ impl ChartWorkspace {
         let crosshair = self.crosshair;
         let mut crosshair_update: Option<CrosshairInfo> = None;
         let mut hover_update: Option<(u64, crate::model::Anchor)> = None;
-        // Zoom In and a drawing tool are one choice: whichever was picked last holds the pointer.
-        if self.active_tool != Tool::Cursor {
-            self.zoom_armed = false;
-        }
-        let (active_tool, zoom_armed) = (self.active_tool, self.zoom_armed);
-        let selected_drawing = self.selected_drawing.clone();
-        let (magnet, keep_drawing, hide_all_drawings) =
-            (self.magnet, self.keep_drawing, self.hide_all_drawings);
-        let replay_ms = if self.replay.is_active() {
-            self.replay.current_ms()
-        } else {
-            None
-        };
-        let replay_selecting = self.replay.status == ReplayStatus::SelectingStart;
+        self.tools.give_pointer_to_tool();
+        let (active_tool, zoom_armed) = (self.tools.active_tool(), self.tools.is_zoom_armed());
+        let selected_drawing = self.tools.selection().cloned();
+        let (magnet, keep_drawing, hide_all_drawings) = (
+            self.tools.magnet(),
+            self.tools.keeps_drawing(),
+            self.tools.hides_all(),
+        );
+        let replay_ms = self.replay.cut_ms();
+        let replay_selecting = self.replay.is_selecting_start();
         // The logs pane's drag over bars: only its own chart takes it, and a replay's start wins
         // if both were somehow asked for.
         if replay_selecting {
@@ -313,18 +304,13 @@ impl ChartWorkspace {
         let mut link_request: Option<(u64, u64, ui::LinkRequest)> = None;
         let mut drawing_properties_request: Option<(u64, u64)> = None;
         let mut drawing_style_copied: Option<(Tool, DrawingStyle)> = None;
-        let style_clipboard = self.style_clipboard;
-        let dialog_open = self.drawing_props.is_some()
-            || self.confirm_remove_drawings.is_some()
-            || self.content.sheet_open();
+        let style_clipboard = self.tools.style_clipboard();
+        let dialog_open = self.tools.has_dialog() || self.content.sheet_open();
         let mut drawing_reveal = false;
         let mut drawing_copy = false;
         let mut drawing_alert: Option<(u64, f64)> = None;
         let drawing_defaults = self.drawing_templates().defaults().clone();
-        let drawing_preview: Option<(u64, Drawing)> = self
-            .drawing_props
-            .as_ref()
-            .map(|props| (props.chart_id, props.draft().clone()));
+        let drawing_preview: Option<(u64, Drawing)> = self.tools.previewed_draft();
         let mut drawing_escape = false;
         let mut paper_actions = Vec::new();
         let mut quick_trade = None;
@@ -765,7 +751,7 @@ impl ChartWorkspace {
                     } else {
                         store.add_to_list(list_id, self.favorite_item(chart))
                     };
-                    star_result(&mut self.watchlist_error, result);
+                    self.watchlist_pane.report(star_result(result));
                 }
             }
             for (chart_id, (list_id, included)) in watchlist_changes {
@@ -776,7 +762,7 @@ impl ChartWorkspace {
                     } else {
                         store.remove_from_list(list_id, &instrument)
                     };
-                    star_result(&mut self.watchlist_error, result);
+                    self.watchlist_pane.report(star_result(result));
                 }
             }
         }
@@ -889,7 +875,7 @@ impl ChartWorkspace {
             );
         }
         let paper_failures = Self::apply_paper_overlay_actions(paper_host, paper_actions);
-        self.paper_panel.report_messages(&paper_failures);
+        self.trade.report_paper_messages(&paper_failures);
         if let Some((_, side, _)) = quick_trade {
             self.start_order(
                 match side {
@@ -901,10 +887,14 @@ impl ChartWorkspace {
             );
         }
         if let Some((chart_id, select)) = drawing_select {
-            self.selected_drawing = (!select.is_empty()).then_some((chart_id, select));
+            if select.is_empty() {
+                self.tools.clear_selection();
+            } else {
+                self.tools.select(chart_id, select);
+            }
         }
         if drawing_disarm {
-            self.active_tool = Tool::Cursor;
+            self.tools.disarm();
         }
         // A zoom puts the tool down, is an undo step, and the chart it was made on becomes the
         // focused one, which is the one Zoom out goes back on. Every chart is asked, so none keeps
@@ -918,7 +908,7 @@ impl ChartWorkspace {
             self.remember_view(chart_id, before, ViewMove::Back);
         }
         if let Some(&(chart_id, _)) = zoomed.last() {
-            self.zoom_armed = false;
+            self.tools.disarm_zoom();
             self.focus_chart(chart_id);
         }
         self.picture_work_done();
@@ -936,7 +926,7 @@ impl ChartWorkspace {
             self.link_requested(&ctx, chart_id, drawing_id, request);
         }
         if drawing_reveal {
-            self.hide_all_drawings = false;
+            self.tools.reveal_all();
         }
         if drawing_copy {
             self.copy_selection(&ctx);
@@ -944,25 +934,24 @@ impl ChartWorkspace {
         if let Some((chart_id, price)) = drawing_alert {
             self.start_alert_at(chart_id, Some(price));
         }
-        if drawing_style_copied.is_some() {
-            self.style_clipboard = drawing_style_copied;
+        if let Some((tool, style)) = drawing_style_copied {
+            self.tools.copy_style(tool, style);
         }
         if let Some((chart_id, drawing_id)) = drawing_properties_request {
             self.open_drawing_properties(chart_id, drawing_id);
         }
         let esc_pressed = ui.input(|input| input.key_pressed(egui::Key::Escape));
-        if esc_pressed && !drawing_escape && !self.date_sheet.is_open() && !self.context_menu_open()
+        if esc_pressed
+            && !drawing_escape
+            && !self.replay.is_choosing_date()
+            && !self.context_menu_open()
         {
-            if self.replay.status == ReplayStatus::SelectingStart {
+            if self.replay.is_selecting_start() {
                 self.replay.cancel_selection();
             } else if self.context.logs.picking {
                 self.context.logs.picking = false;
-            } else if self.zoom_armed {
-                self.zoom_armed = false;
-            } else if self.active_tool != Tool::Cursor {
-                self.active_tool = Tool::Cursor;
             } else {
-                self.selected_drawing = None;
+                self.tools.escape();
             }
         }
     }

@@ -45,7 +45,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
 - **Watchlist mode** (`open_for_watchlist(name)`): a pick follows the market in that list
   (`Output::Watchlist`, `WatchlistCard`) and the picker **stays open** so several can be added in a
   row; the footer says what was added. It records no recents, offers no Replace or Compare, has no
-  Watchlists tab, and the workspace keeps the target list (`add_to_watchlist`) only while the picker
+  Watchlists tab, and the workspace keeps the target list (`WatchlistPane::picker_target`) only while the picker
   is open.
 - **Tabs** All, Stocks, Crypto, Predictions, Dashboards, Watchlists (Tab cycles the tabs of the mode)
   and a filter pull-down at their right: the exchange ("All venues"), the prediction provider, or on

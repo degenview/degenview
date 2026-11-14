@@ -27,7 +27,7 @@ impl ChartWorkspace {
                 continue;
             };
             let instrument = Self::paper_instrument(chart);
-            if !self.paper_panel_visible && !host.tracks(&instrument.key) {
+            if !self.trade.panel_visible && !host.tracks(&instrument.key) {
                 continue;
             }
             let should_send = chart.last_paper_quote.is_none_or(|(price, sent_at)| {
@@ -60,9 +60,9 @@ impl ChartWorkspace {
                 .iter()
                 .find(|account| account.id == id)
         });
-        let enabled = self.paper_panel_visible
-            && !self.trading_venue.is_live()
-            && self.paper_panel.show_trading_on_charts()
+        let enabled = self.trade.panel_visible
+            && !self.trade.venue.is_live()
+            && self.trade.paper_panel.show_trading_on_charts()
             && account.is_some();
         let currency = account.map_or(PaperCurrency::Usd, |account| account.base_currency);
         for chart in &mut self.charts {

@@ -43,7 +43,7 @@ impl ChartWorkspace {
         let owner = symbol_picker::quote_owner(self.id);
         if !self.symbol_picker.is_open() {
             // A watchlist the picker was opened for is only the target while it is open.
-            self.add_to_watchlist = None;
+            self.watchlist_pane.clear_picker_target();
             return Vec::new();
         }
         if self.symbol_picker.wants_watchlists()
@@ -136,12 +136,12 @@ impl ChartWorkspace {
     }
 
     fn add_to_picker_watchlist(&mut self, item: WatchlistInstrument) {
-        let Some(list_id) = self.add_to_watchlist else {
+        let Some(list_id) = self.watchlist_pane.picker_target() else {
             return;
         };
         if let Ok(mut store) = self.watchlist.lock() {
             let result = store.add_to_list(list_id, item).map(|_| ());
-            crate::workspace::watchlist::report_watchlist(&mut self.watchlist_error, result);
+            self.watchlist_pane.report(result);
         }
     }
 
@@ -369,7 +369,7 @@ mod tests {
             let mut store = workspace.watchlist.lock().unwrap();
             store.create_list("Bets", None).unwrap()
         };
-        workspace.add_to_watchlist = Some(id);
+        workspace.watchlist_pane.set_picker_target(Some(id));
         workspace.add_pick_to_watchlist(&choice("Fed decision", "Hold", 0.7));
         workspace.add_to_picker_watchlist(WatchlistInstrument::for_card(
             PortfolioCard::new(crate::model::portfolio::card::CardKind::Value, None),
@@ -392,7 +392,7 @@ mod tests {
     fn the_watchlist_target_lasts_only_while_the_picker_is_open() {
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(1);
-        workspace.add_to_watchlist = Some(7);
+        workspace.watchlist_pane.set_picker_target(Some(7));
         workspace.symbol_picker.open_for_watchlist("Bets");
         let frame = |workspace: &mut ChartWorkspace| {
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -401,10 +401,10 @@ mod tests {
             output.textures_delta.clear();
         };
         frame(&mut workspace);
-        assert_eq!(workspace.add_to_watchlist, Some(7));
+        assert_eq!(workspace.watchlist_pane.picker_target(), Some(7));
         workspace.symbol_picker.close();
         frame(&mut workspace);
-        assert_eq!(workspace.add_to_watchlist, None);
+        assert_eq!(workspace.watchlist_pane.picker_target(), None);
     }
 
     #[test]

@@ -108,11 +108,7 @@ impl ChartWorkspace {
             .charts
             .iter()
             .find(|chart| chart.id == chart_id && chart.is_market())?;
-        let replay_ms = if self.replay.is_active() {
-            self.replay.current_ms()
-        } else {
-            None
-        };
+        let replay_ms = self.replay.cut_ms();
         Some(ChartData {
             instrument: InstrumentId::new(chart.source, &chart.symbol),
             chart_type: chart.chart.effective_chart_type(chart.source),
@@ -315,7 +311,7 @@ impl ChartWorkspace {
         ctx: &egui::Context,
     ) {
         self.timeframe = timeframe;
-        self.replay_rebase |= self.replay.session.is_some();
+        self.replay.rebase_on_new_bars();
         self.drop_rulers();
         self.forget_views(None);
         self.link_state.series_changed();
@@ -442,9 +438,7 @@ impl ChartWorkspace {
 
     /// Gives this tab the venues it can trade on. Cheap to call every frame.
     pub fn set_trading_hub(&mut self, hub: &Arc<TradingHub>) {
-        if self.trading_hub.is_none() {
-            self.trading_hub = Some(Arc::clone(hub));
-        }
+        self.trade.set_hub(hub);
     }
 
     /// The identity a chart has in a watchlist: its market, or its card's placeholder.

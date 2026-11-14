@@ -158,7 +158,7 @@ impl ChartWorkspace {
             }
             LogsAction::PickRange => {
                 // One "click a candle" at a time: the bars win over a replay's start.
-                if self.replay.status == ReplayStatus::SelectingStart {
+                if self.replay.is_selecting_start() {
                     self.replay.cancel_selection();
                 }
                 self.context.logs.picking = true;
@@ -227,7 +227,7 @@ impl ChartWorkspace {
             return;
         };
         self.focus_chart(chart_id);
-        let replay_ms = self.replay_cut();
+        let replay_ms = self.replay.cut_ms();
         let chart = &mut self.charts[index];
         let candles = displayed_candles(&chart.candles, replay_ms);
         match chart.chart.scroll_to_time(time_ms, candles) {

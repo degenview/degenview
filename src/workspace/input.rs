@@ -29,7 +29,7 @@ impl ChartWorkspace {
             self.redo(ui.ctx());
         }
         if !typing && ui.input_mut(|input| shortcut::HIDE_DRAWINGS.consume(input)) {
-            self.hide_all_drawings = !self.hide_all_drawings;
+            self.tools.toggle_hide_all();
         }
         // Alt (Option) and a letter arm a line tool, like the strip's tile does. Option+letter
         // types a character on a Mac, so a text field keeps it.
@@ -74,7 +74,7 @@ impl ChartWorkspace {
         // macOS owns Save in its menu (`NativeCommand::SaveCurrentLayout`); everywhere else the
         // shortcut is handled here, in the tab that has focus.
         if !shortcut::is_mac()
-            && self.layout_prompt.is_none()
+            && !self.layout.is_prompting()
             && ui.input_mut(|input| shortcut::SAVE.consume(input))
         {
             self.save_layout(ui.ctx());

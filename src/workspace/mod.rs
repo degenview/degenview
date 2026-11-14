@@ -1,48 +1,45 @@
 use crate::host::paper::PaperHost;
 use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::lock::lock;
-use crate::model::alert::{AlertCurrency, PriceAlert};
+use crate::model::alert::PriceAlert;
 use crate::model::chart::sync::SyncHub;
 use crate::model::tab::link::LinkColor;
 use crate::model::tab::title::{MAX_CUSTOM_TITLE_CHARS, TabChart};
-use crate::model::watchlist::text::ImportReport;
-use crate::model::watchlist::{EntryId, WatchlistInstrument, now_ms};
+use crate::model::watchlist::{WatchlistInstrument, now_ms};
 use crate::model::{
-    BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, DrawingStyle,
-    InstrumentId, LayoutSnapshot, MagnetMode, ReplayEngine, ReplayStatus, Timeframe, Tool,
+    BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, InstrumentId,
+    Timeframe,
 };
 use crate::service::market::live::BinanceLiveFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use crate::store::SharedStore;
-use crate::store::drawing_template::{DrawingPrefs, DrawingTemplateStore};
 use crate::store::watchlist::WatchlistStore;
-use crate::ui::alert::editor::{self, PriceAlertEditorState};
+use crate::ui::alert::editor;
 use crate::ui::chart::indicator_picker::{self, IndicatorPicker};
 use crate::ui::chart::settings::overlay_popover::OverlaySettingsPopover;
 use crate::ui::chart::settings::{self as chart_settings, ChartSettingsState};
 use crate::ui::chart::symbol_picker::SymbolPicker;
-use crate::ui::drawing::properties::DrawingProperties;
 use crate::ui::paper::chart_trading::PaperOverlayAction;
-use crate::ui::paper::panel::PaperPanel;
 use crate::ui::pine::settings_popover::PineSettingsPopover;
-use crate::ui::replay::date_sheet::{self, ReplayDateSheetState};
-use crate::ui::watchlist::sidebar::WatchlistSidebarState;
-use crate::ui::workspace::layout_prompts::NamePrompt;
 use crate::ui::{self, CrosshairInfo, replay::bar, workspace::tool_sidebar};
-use alerts::AlertRequest;
+use alerts::AlertUi;
 use chart::context::ContextState;
 use chart::snapshot::SnapshotState;
 use chart::{Chart, displayed_candles};
 use drawing::is_lockable;
+use drawing::tools::DrawingTools;
 use eframe::egui;
 use empty_page::EmptyPageCache;
-use layout::autosave::AutosaveState;
+use layout::session::LayoutSession;
+use replay::ReplayState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use undo::{Snapshot, UndoEntry};
+use trade::TradeSide;
+use undo::UndoHistory;
+use watchlist::WatchlistPane;
 
 mod alerts;
 mod chart;
@@ -161,22 +158,10 @@ pub struct ChartWorkspace {
     sync_hub: SyncHub,
     focused: Option<u64>,
     next_id: u64,
-    watchlist_visible: bool,
-    baseline: Option<LayoutSnapshot>,
-    /// Bumped by every change to a chart's drawings; see `drawings_dirty`.
-    drawings_version: u64,
-    saved_drawings_version: u64,
-    /// Each chart's drawings as of the last save or open: the common ancestor when another Mac's
-    /// edit to the open layout arrives (`adopt_remote_layout`).
-    saved_drawings: HashMap<u64, Vec<Drawing>>,
     indicator_picker: IndicatorPicker,
     symbol_picker: SymbolPicker,
-    add_to_watchlist: Option<EntryId>,
-    unseen_alerts: usize,
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
     card_env: Option<PortfolioCardEnv>,
-    /// The venues this tab can trade on, handed in by the window each frame.
-    trading_hub: Option<Arc<crate::host::trading::TradingHub>>,
     live_feed: Option<BinanceLiveFeed>,
     /// The candles of every overlay market on this workspace's charts, fetched once per market.
     overlay_hub: overlay::OverlayHub,
@@ -185,107 +170,43 @@ pub struct ChartWorkspace {
     script_popover: Option<PineSettingsPopover>,
     /// The settings of a compared market, up beside its row on the chart's overlay card.
     overlay_popover: Option<OverlaySettingsPopover>,
-    /// The open properties dialog of a drawing.
-    drawing_props: Option<DrawingProperties>,
-    /// Saved drawing templates, each tool's default style and the strip's remembered options.
-    /// Opened on first use.
-    drawing_templates: Option<DrawingTemplateStore>,
-    /// The strip's options as last saved, to notice a change.
-    saved_prefs: DrawingPrefs,
-    /// The style last copied from a drawing, for Paste style.
-    style_clipboard: Option<(Tool, DrawingStyle)>,
-    /// A chart whose drawings the user asked to remove all of; waiting for the confirmation.
-    confirm_remove_drawings: Option<u64>,
-    /// The last restyle, so a burst of them (dragging a colour picker) is one undo step.
-    last_restyle: Option<(u64, u64, Instant)>,
-    /// The overlay colour edit the undo stack last took: chart, overlay, the stack's length right
-    /// after, and when. A drag of the colour picker continues it instead of stacking steps.
-    last_overlay_style: Option<(u64, crate::model::overlay::OverlayId, usize, Instant)>,
+    /// The armed tool, the strip's options, the selection and the dialogs about drawings.
+    tools: DrawingTools,
     /// The chart a header ✕ asked to remove, awaiting confirmation.
     removing_chart: Option<u64>,
     settings_state: ChartSettingsState,
     crosshair: Option<CrosshairInfo>,
-    active_tool: Tool,
-    /// The Zoom In mode of the tool rail. A mode of its own, never a drawing tool: a drag on a
-    /// plot selects a rectangle to zoom to. Exclusive with `active_tool`; not saved.
-    zoom_armed: bool,
-    /// The selected drawings of one chart: `(chart id, drawing ids)`.
-    selected_drawing: Option<(u64, Vec<u64>)>,
-    /// The tool the strip's grouped brushes, arrows and shapes tile shows: the last one used.
-    group_tool: Tool,
-    line_tool: Tool,
-    note_tool: Tool,
-    /// The tool the chart patterns, Elliott waves and cycles tile shows.
-    pattern_tool: Tool,
-    /// The tool the forecasting, volume and measurement tile shows.
-    forecast_tool: Tool,
-    /// The tool the Fibonacci and Gann tile shows.
-    fib_tool: Tool,
-    /// How drawings snap to the bars' prices (the strip's magnet).
-    magnet: MagnetMode,
-    /// Stay on a drawing tool after a drawing is placed; off returns to the crosshair.
-    keep_drawing: bool,
-    /// Every drawing is hidden (view state only: nothing is changed or saved).
-    hide_all_drawings: bool,
-    undo: Vec<UndoEntry>,
-    redo: Vec<UndoEntry>,
-    replay: ReplayEngine,
-    replay_last_step: Instant,
-    /// The timeframe changed under a replay: its bars are being reloaded, and the replay moves
-    /// onto them once they are in.
-    replay_rebase: bool,
+    /// Drawing, indicator, market and view edits as undoable steps.
+    history: UndoHistory,
+    /// The replay clock, its bar and its date sheet.
+    replay: ReplayState,
     watchlist: Arc<Mutex<WatchlistStore>>,
-    watchlist_sidebar: WatchlistSidebarState,
-    date_sheet: ReplayDateSheetState,
     quote_book: WatchlistQuoteBook,
     quote_coordinator: WatchlistQuoteCoordinator,
-    import_report: Option<ImportReport>,
-    watchlist_error: Option<crate::model::watchlist::WatchlistNotice>,
-    watchlist_file_result: Option<crate::service::work_queue::Pending<Result<(), String>>>,
-    paper_panel_visible: bool,
-    /// The order sheet beside the chart. Open and closed with the trading panel, and by its own ✕.
-    trade_sheet_visible: bool,
-    trade_sheet: crate::ui::trade::order_sheet::SheetState,
-    /// Where this tab's trading happens: paper, or a connected broker with real money. Not
-    /// saved: a tab always starts on paper.
-    trading_venue: crate::model::broker::venue::TradingVenue,
-    broker_panel: crate::ui::broker::panel::BrokerPanelState,
-    /// A chart's bell (or a watchlist row's menu) asked for a price alert this frame; `ui`
-    /// opens the sheet on it.
-    new_alert_request: Option<AlertRequest>,
+    /// The watchlist sidebar and what it asks of the tab.
+    watchlist_pane: WatchlistPane,
+    /// The order sheet and the orders panel, and the venue they trade on.
+    trade: TradeSide,
     /// The chart menu's state: the open menu, its messages, and the panels it toggles.
     context: ContextState,
     /// The snapshot being made, and what it waits for.
     snapshot: SnapshotState,
     /// The snapshot settings all windows share (set by the app).
     snapshots: Option<crate::host::snapshot::SnapshotHost>,
-    /// The "Create Price Alert" sheet, over this tab's window.
-    alert_editor: Option<PriceAlertEditorState>,
-    /// USD → currency rates for the sheet's currency menu, pushed in by the app.
-    alert_fx_rates: HashMap<AlertCurrency, f64>,
-    open_new_tab_request: Option<WatchlistInstrument>,
+    /// The bell's count and the price-alert sheet.
+    alerts: AlertUi,
     /// What the empty page reads from the database and Keychain, loaded once per visit.
     empty_page: EmptyPageCache,
-    paper_panel: PaperPanel,
     /// Saved-layout persistence + the tab's relation to the layout library.
     store: SharedStore,
-    active_view_id: Option<u64>,
-    active_view_name: Option<String>,
     /// What the user typed as this tab's title; `None` shows the symbol, price and layout.
     custom_title: Option<String>,
     /// The Tab Linking group this tab is in, if any. Membership is the tab's own; the switches
     /// belong to the colour and live in `TabLinkHost`.
     link: Option<LinkColor>,
     link_state: tab_link::LinkState,
-    /// The name prompt that is open, if any, and the text in it.
-    layout_prompt: Option<NamePrompt>,
-    prompt_name: String,
-    prompt_focus: bool,
-    /// A layout waiting for the "save changes?" answer before it opens.
-    pending_open_id: Option<u64>,
-    /// Why the last layout operation failed, until the alert is dismissed.
-    layout_error: Option<String>,
-    autosave: AutosaveState,
+    /// The open layout, what was last saved of it, its prompts and its autosave.
+    layout: LayoutSession,
     /// The chart drag in progress over the grid: where it would land, and the new-column preview.
     grid_drag: ui::workspace::grid_drop::GridDrag,
     /// Choosing what a content tool places: the picture that waits, the sheet, the worker.
@@ -375,83 +296,35 @@ impl ChartWorkspace {
             sync_hub: SyncHub::default(),
             focused: None,
             next_id: 1,
-            watchlist_visible: false,
-            baseline: None,
             indicator_picker: IndicatorPicker::new(Some(store.clone())),
             symbol_picker: SymbolPicker::new(store.clone()),
-            add_to_watchlist: None,
-            unseen_alerts: 0,
             card_env: None,
-            trading_hub: None,
             live_feed: None,
             overlay_hub: overlay::OverlayHub::new(),
             settings_chart: None,
             script_popover: None,
             overlay_popover: None,
-            drawing_props: None,
-            drawing_templates: None,
-            saved_prefs: DrawingPrefs::default(),
-            style_clipboard: None,
-            confirm_remove_drawings: None,
-            last_restyle: None,
-            last_overlay_style: None,
+            tools: DrawingTools::default(),
             removing_chart: None,
             settings_state: ChartSettingsState::default(),
             crosshair: None,
-            active_tool: Tool::Cursor,
-            zoom_armed: false,
-            selected_drawing: None,
-            group_tool: Tool::Brush,
-            line_tool: Tool::TrendLine,
-            note_tool: Tool::Text,
-            pattern_tool: Tool::XabcdPattern,
-            forecast_tool: Tool::LongPosition,
-            fib_tool: Tool::FibRetracement,
-            magnet: MagnetMode::Off,
-            keep_drawing: true,
-            hide_all_drawings: false,
-            undo: Vec::new(),
-            redo: Vec::new(),
-            replay: ReplayEngine::default(),
-            replay_last_step: Instant::now(),
-            replay_rebase: false,
+            history: UndoHistory::default(),
+            replay: ReplayState::default(),
             watchlist,
-            watchlist_sidebar: WatchlistSidebarState::default(),
-            date_sheet: ReplayDateSheetState::default(),
             quote_book,
             quote_coordinator,
-            import_report: None,
-            watchlist_error: None,
-            watchlist_file_result: None,
-            paper_panel_visible: false,
-            trade_sheet_visible: false,
-            trade_sheet: crate::ui::trade::order_sheet::SheetState::default(),
-            trading_venue: crate::model::broker::venue::TradingVenue::default(),
-            broker_panel: crate::ui::broker::panel::BrokerPanelState::default(),
-            new_alert_request: None,
+            watchlist_pane: WatchlistPane::default(),
+            trade: TradeSide::default(),
             context: ContextState::default(),
             snapshot: SnapshotState::default(),
             snapshots: None,
-            alert_editor: None,
-            alert_fx_rates: HashMap::new(),
-            open_new_tab_request: None,
+            alerts: AlertUi::default(),
             empty_page: EmptyPageCache::default(),
-            paper_panel: PaperPanel::default(),
             store,
-            active_view_id: None,
-            active_view_name: None,
             custom_title: None,
             link: None,
             link_state: Default::default(),
-            layout_prompt: None,
-            prompt_name: String::new(),
-            prompt_focus: false,
-            pending_open_id: None,
-            layout_error: None,
-            autosave: AutosaveState::default(),
-            drawings_version: 0,
-            saved_drawings_version: 0,
-            saved_drawings: HashMap::new(),
+            layout: LayoutSession::default(),
             grid_drag: ui::workspace::grid_drop::GridDrag::default(),
             content: drawing::content::ContentFlow::default(),
         }
@@ -527,14 +400,13 @@ impl ChartWorkspace {
             quote_coordinator,
             store,
         );
-        workspace.watchlist_visible = watchlist_visible;
+        workspace.watchlist_pane.set_visible(watchlist_visible);
         workspace.sync = sync;
         workspace.focused = focused;
         workspace.custom_title = custom_title.filter(|title| !title.trim().is_empty());
         workspace.link = link;
         if let Some(view) = active_view {
-            workspace.active_view_id = Some(view.id);
-            workspace.active_view_name = Some(view.name);
+            workspace.layout.set_active_view(view.id, view.name);
         }
         workspace.charts = charts
             .into_iter()
@@ -584,9 +456,10 @@ impl ChartWorkspace {
             // No chart yet: the layout's name, or "New tab" for a blank page. (The layout menu
             // still calls an unsaved layout "Unnamed", as Swift does.)
             return self
-                .active_view_name
-                .clone()
-                .unwrap_or_else(|| "New tab".to_owned());
+                .layout
+                .active_view_name()
+                .unwrap_or("New tab")
+                .to_owned();
         };
         if chart.card.is_some() {
             // A card has no timeframe to name.
@@ -653,7 +526,7 @@ impl ChartWorkspace {
             source: chart.source,
             symbol: chart.symbol.clone(),
             title: chart.display_title(),
-            layout: self.active_view_name.clone(),
+            layout: self.layout.active_view_name().map(str::to_owned),
             custom_title: self.custom_title.clone(),
         })
     }
@@ -725,7 +598,7 @@ impl ChartWorkspace {
         if self.replay.is_bar_visible() {
             egui::Panel::top("replay_bar")
                 .exact_size(bar::preferred_height(
-                    self.replay.status,
+                    self.replay.status(),
                     ui.available_width(),
                     false,
                 ))
@@ -745,80 +618,9 @@ impl ChartWorkspace {
             .inner;
         actions.extend(rail_actions);
 
-        if self.watchlist_visible {
-            let minimum_width = self
-                .watchlist
-                .lock()
-                .ok()
-                .map(|store| self.watchlist_sidebar.minimum_width(store.lists()))
-                .unwrap_or(286.0);
-            egui::Panel::right("watchlist")
-                .default_size(minimum_width.max(270.0))
-                .min_size(minimum_width)
-                .max_size(640.0)
-                .frame(
-                    egui::Frame::new()
-                        .fill(ui::theme::chrome())
-                        .inner_margin(egui::Margin::ZERO),
-                )
-                .show(ui, |ui| self.show_watchlist(ui, &ctx));
-        } else {
-            self.suspend_watchlist_demand();
-        }
+        self.show_watchlist_panel(ui, &ctx);
 
-        if self.trade_sheet_visible {
-            let sheet_actions = egui::Panel::right(egui::Id::new(("trade_sheet", self.id)))
-                .resizable(true)
-                .default_size(340.0)
-                .min_size(300.0)
-                .max_size(460.0)
-                .frame(
-                    egui::Frame::new()
-                        .fill(ui::kit::window())
-                        .inner_margin(egui::Margin::ZERO),
-                )
-                .show(ui, |ui| self.show_trade_sheet(ui))
-                .inner;
-            actions.extend(sheet_actions);
-        }
-
-        if self.paper_panel_visible {
-            let mut panel_actions: Vec<WorkspaceAction> = Vec::new();
-            let events = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
-                .resizable(true)
-                .default_size(340.0)
-                .min_size(280.0)
-                .frame(egui::Frame::new().fill(ui::kit::window()))
-                .show(ui, |ui| {
-                    let Some((venue, bar)) = self.panel_venue(ui, &mut panel_actions) else {
-                        return Vec::new();
-                    };
-                    let hub = self.trading_hub.clone();
-                    let context = self.broker_panel_context();
-                    match (venue.broker(), hub, context) {
-                        (Some(_), Some(hub), Some(context)) => {
-                            let Some(backend) = hub.backend(venue) else {
-                                return Vec::new();
-                            };
-                            let stats = backend.stats();
-                            crate::ui::broker::panel::ui(
-                                ui,
-                                &mut self.broker_panel,
-                                &*backend,
-                                context,
-                                &bar,
-                                stats.as_ref(),
-                            )
-                        }
-                        _ => self.paper_panel.ui(ui, &mut lock(paper), &bar),
-                    }
-                })
-                .inner;
-            actions.extend(panel_actions);
-            for event in events {
-                self.apply_panel_event(event, &mut actions);
-            }
-        }
+        actions.extend(self.show_trade_panels(ui, paper));
 
         self.show_broker_dialogs(&ctx);
         self.sync_context_panels();
@@ -877,7 +679,7 @@ impl ChartWorkspace {
                     .inner_margin(egui::Margin::same(10)),
             )
             .show(ui, |ui| self.render_grid(ui, &mut lock(paper)));
-        if let Some(item) = self.open_new_tab_request.take() {
+        if let Some(item) = self.watchlist_pane.take_new_tab_request() {
             actions.push(WorkspaceAction::OpenWatchlistInNewTab(item));
         }
         if std::mem::take(&mut self.snapshot.settings_requested) {
@@ -913,15 +715,7 @@ impl ChartWorkspace {
         actions.extend(self.show_alert_editor(&ctx));
         actions.extend(self.show_context_ui(&ctx, &mut lock(paper)));
         actions.extend(self.take_logs_actions());
-        if self.date_sheet.is_open() {
-            let timeline = self.replay_timeline();
-            if let Some(date_sheet::ReplayDateSheetResult::Start(ms)) =
-                date_sheet::show(&ctx, &mut self.date_sheet, &timeline)
-            {
-                let (symbol, timeline) = self.focused_chart_data();
-                self.replay.start(ms, &symbol, timeline);
-            }
-        }
+        self.show_replay_date_sheet(&ctx);
         actions
     }
 }
@@ -1157,14 +951,14 @@ mod tests {
         workspace.focused = Some(eth_id);
         assert_eq!(workspace.focused_instrument(), Some(eth.clone()));
 
-        workspace.active_view_name = Some("Layout 1".into());
+        workspace.layout.set_active_view(1, "Layout 1".into());
         let chart = workspace.tab_chart().expect("market tab");
         assert_eq!(chart.layout.as_deref(), Some("Layout 1"));
         assert_eq!(chart.symbol, "ETHUSDT");
         assert_eq!(chart.source, DataSource::Binance);
 
         // A renamed layout shows at once; the symbol is not part of the layout's identity.
-        workspace.active_view_name = Some("Swing".into());
+        workspace.layout.set_active_view(1, "Swing".into());
         workspace.focused = Some(workspace.charts[0].id);
         let chart = workspace.tab_chart().expect("market tab");
         assert_eq!(chart.layout.as_deref(), Some("Swing"));
@@ -1288,17 +1082,18 @@ mod tests {
         };
 
         let restored = restore(Some(77));
-        assert_eq!(restored.active_view_id, Some(77));
-        assert_eq!(restored.active_view_name.as_deref(), Some("Swing setups"));
+        assert_eq!(restored.layout.active_view_id(), Some(77));
+        assert_eq!(restored.layout.active_view_name(), Some("Swing setups"));
         assert_eq!(restored.persisted().active_view, Some(77));
 
         let deleted = restore(Some(78));
         assert_eq!(
-            deleted.active_view_id, None,
+            deleted.layout.active_view_id(),
+            None,
             "a deleted layout is not reopened"
         );
-        assert_eq!(deleted.active_view_name, None);
-        assert_eq!(restore(None).active_view_id, None);
+        assert_eq!(deleted.layout.active_view_name(), None);
+        assert_eq!(restore(None).layout.active_view_id(), None);
     }
 
     #[test]

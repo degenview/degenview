@@ -185,11 +185,7 @@ impl ChartWorkspace {
         options: snapshot::SnapshotOptions,
     ) -> Result<(raster::Scene, SnapshotDimensions), CaptureError> {
         let index = self.chart_index(chart_id).ok_or(CaptureError::NoChart)?;
-        let replay_ms = if self.replay.is_active() {
-            self.replay.current_ms()
-        } else {
-            None
-        };
+        let replay_ms = self.replay.cut_ms();
         let chart = &self.charts[index];
         let size = chart.chart.snapshot_size();
         let dimensions = SnapshotDimensions::fit(size.x, size.y, options.scale)
@@ -205,7 +201,7 @@ impl ChartWorkspace {
             drawings: &chart.drawings,
             open_notes: &open_notes,
             images: Some(&images),
-            hide_all_drawings: self.hide_all_drawings,
+            hide_all_drawings: self.tools.hides_all(),
             replay_active: replay_ms.is_some(),
             include_trading: options.include_trading,
         };
@@ -1242,7 +1238,7 @@ mod tests {
             .replay
             .start(cut, "BTCUSDT", times.clone());
         assert!(replaying.workspace.replay.is_active());
-        let before = replaying.workspace.replay.current_ms();
+        let before = replaying.workspace.replay.cut_ms();
         replaying.workspace.begin_snapshot(
             &replaying.ctx,
             replaying.chart_id,
@@ -1250,7 +1246,7 @@ mod tests {
         );
         let replayed = copied(replaying.finish());
         assert_eq!(
-            replaying.workspace.replay.current_ms(),
+            replaying.workspace.replay.cut_ms(),
             before,
             "the replay did not move"
         );
@@ -1282,14 +1278,14 @@ mod tests {
         let mut rig = rig();
         let index = rig.workspace.chart_index(rig.chart_id).unwrap();
         let candles = rig.workspace.charts[index].candles.clone();
-        let (focused, hidden) = (rig.workspace.focused, rig.workspace.hide_all_drawings);
+        let (focused, hidden) = (rig.workspace.focused, rig.workspace.tools.hides_all());
         for action in [SnapshotAction::CopyImage, SnapshotAction::CopyImage] {
             rig.workspace.begin_snapshot(&rig.ctx, rig.chart_id, action);
             rig.finish();
         }
         assert_eq!(rig.workspace.charts[index].candles, candles);
         assert_eq!(
-            (rig.workspace.focused, rig.workspace.hide_all_drawings),
+            (rig.workspace.focused, rig.workspace.tools.hides_all()),
             (focused, hidden)
         );
     }

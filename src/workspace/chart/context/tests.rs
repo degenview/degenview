@@ -201,7 +201,7 @@ fn a_closed_chart_is_refused_with_a_message_and_nothing_changes() {
     let context = rig.open(first, 100.0);
     rig.workspace.charts.retain(|chart| chart.id != first);
     rig.run(context, Command::RemoveDrawings);
-    assert_eq!(rig.workspace.confirm_remove_drawings, None);
+    assert_eq!(rig.workspace.tools.removal_asked(), None);
     let (text, error) = rig.message().expect("a message");
     assert!(error);
     assert!(text.contains("closed"), "{text}");
@@ -236,7 +236,7 @@ fn add_alert_prefills_the_editor_and_creates_nothing() {
             .iter()
             .all(|action| !matches!(action, WorkspaceAction::SavePriceAlert { .. }))
     );
-    let editor = rig.workspace.alert_editor.as_ref().expect("editor open");
+    let editor = rig.workspace.alerts.editor().expect("editor open");
     assert_eq!(editor.draft.target, "118150.99");
     assert_eq!(
         editor.draft.direction,
@@ -255,7 +255,7 @@ fn an_alert_below_the_market_crosses_downward() {
         rig.workspace.show_alert_editor(ui.ctx());
     });
     output.textures_delta.clear();
-    let editor = rig.workspace.alert_editor.as_ref().expect("editor open");
+    let editor = rig.workspace.alerts.editor().expect("editor open");
     assert_eq!(
         editor.draft.direction,
         crate::model::alert::draft::Direction::Below
@@ -276,7 +276,7 @@ fn add_alert_is_refused_for_a_market_without_alerts() {
     rig.chart_mut(id).candles = vec![kline(0, 50.0)];
     let context = rig.open(id, 50.0);
     rig.run(context, Command::AddAlert);
-    assert!(rig.workspace.new_alert_request.is_none());
+    assert!(rig.workspace.alerts.take_request().is_none());
     assert!(rig.message().is_some_and(|(_, error)| error));
 }
 
@@ -292,9 +292,12 @@ fn a_quick_order_starts_the_order_in_the_sheet_and_places_no_order() {
             kind: PaperOrderType::Limit,
         }),
     );
-    assert!(rig.workspace.paper_panel_visible, "the panel opens for it");
-    assert!(rig.workspace.trade_sheet_visible, "and so does the sheet");
-    let draft = &rig.workspace.trade_sheet.draft;
+    assert!(
+        rig.workspace.trade.is_panel_open(),
+        "the panel opens for it"
+    );
+    assert!(rig.workspace.trade.is_sheet_open(), "and so does the sheet");
+    let draft = &rig.workspace.trade.sheet().draft;
     assert_eq!(draft.side, degenview_brokers::Side::Sell);
     assert_eq!(draft.class, crate::trading::model::OrderClass::Limit);
     assert_eq!(draft.price_text, "120");
@@ -310,7 +313,7 @@ fn add_order_suggests_the_type_the_price_implies() {
     let chart = rig.chart("BTCUSDT", 100.0);
     let context = rig.open(chart, 90.0);
     rig.run(context, Command::AddOrder);
-    let draft = &rig.workspace.trade_sheet.draft;
+    let draft = &rig.workspace.trade.sheet().draft;
     assert_eq!(draft.side, degenview_brokers::Side::Buy);
     assert_eq!(draft.class, crate::trading::model::OrderClass::Limit);
     assert_eq!(draft.price_text, "90");
@@ -337,7 +340,7 @@ fn order_entries_work_before_any_paper_account_exists() {
             .map(|(_, enabled)| *enabled);
         assert_eq!(enabled, Some(true), "{label}: {items:?}");
     }
-    assert!(!rig.workspace.paper_panel_visible);
+    assert!(!rig.workspace.trade.is_panel_open());
 
     rig.run(
         context,
@@ -346,12 +349,15 @@ fn order_entries_work_before_any_paper_account_exists() {
             kind: PaperOrderType::Limit,
         }),
     );
-    assert!(rig.workspace.paper_panel_visible, "the panel opens for it");
+    assert!(
+        rig.workspace.trade.is_panel_open(),
+        "the panel opens for it"
+    );
     assert!(
         rig.host.snapshot().selected_account_id.is_none(),
         "no account is made behind the user's back"
     );
-    let draft = &rig.workspace.trade_sheet.draft;
+    let draft = &rig.workspace.trade.sheet().draft;
     assert_eq!(draft.side, degenview_brokers::Side::Sell);
     assert_eq!(draft.class, crate::trading::model::OrderClass::Limit);
     assert!(
@@ -366,8 +372,8 @@ fn add_order_opens_the_panel_and_the_sheet_and_makes_no_account() {
     let chart = rig.chart("BTCUSDT", 100.0);
     let context = rig.open(chart, 90.0);
     rig.run(context, Command::AddOrder);
-    assert!(rig.workspace.paper_panel_visible);
-    assert!(rig.workspace.trade_sheet_visible);
+    assert!(rig.workspace.trade.is_panel_open());
+    assert!(rig.workspace.trade.is_sheet_open());
     assert!(rig.host.snapshot().selected_account_id.is_none());
     assert!(rig.host.snapshot().orders.is_empty());
 }
@@ -385,9 +391,9 @@ fn replay_blocks_alerts_and_orders() {
     let context = rig.open(chart, 120.0);
     rig.run(context.clone(), Command::AddAlert);
     rig.run(context, Command::AddOrder);
-    assert!(rig.workspace.new_alert_request.is_none());
+    assert!(rig.workspace.alerts.take_request().is_none());
     assert!(
-        !rig.workspace.trade_sheet_visible,
+        !rig.workspace.trade.is_sheet_open(),
         "no order starts in a replay"
     );
 }
@@ -469,7 +475,7 @@ fn removing_drawings_asks_first_then_is_one_undo_step() {
     rig.chart_mut(chart).drawings = (1..=4).map(|id| rectangle(id, id as i64 * 100)).collect();
     let context = rig.open(chart, 100.0);
     rig.run(context, Command::RemoveDrawings);
-    assert_eq!(rig.workspace.confirm_remove_drawings, Some(chart));
+    assert_eq!(rig.workspace.tools.removal_asked(), Some(chart));
     assert_eq!(rig.drawing_ids(chart), [1, 2, 3, 4], "nothing yet");
 }
 
@@ -479,7 +485,7 @@ fn paste_adds_new_drawings_at_the_click_as_one_undoable_step() {
     let source = rig.chart("BTCUSDT", 100.0);
     let target = rig.chart("ETHUSDT", 50.0);
     rig.chart_mut(source).drawings = vec![rectangle(1, 1_000), rectangle(2, 2_000)];
-    rig.workspace.selected_drawing = Some((source, vec![1, 2]));
+    rig.workspace.tools.select(source, vec![1, 2]);
     rig.workspace.copy_selection(&rig.ctx);
     assert_eq!(rig.copied().len(), 1);
     assert!(rig.copied()[0].starts_with("degenview-clipboard/v1\n"));
@@ -499,8 +505,15 @@ fn paste_adds_new_drawings_at_the_click_as_one_undoable_step() {
         chart.drawings[1].anchors()[0].time_ms,
         5 * 86_400_000 + 1_000
     );
-    assert_eq!(rig.workspace.selected_drawing, Some((target, pasted)));
-    assert_eq!(rig.workspace.undo.len(), 1, "one step for the whole paste");
+    assert_eq!(
+        rig.workspace.tools.selection().cloned(),
+        Some((target, pasted))
+    );
+    assert_eq!(
+        rig.workspace.history.steps(),
+        1,
+        "one step for the whole paste"
+    );
     rig.workspace.undo(&rig.ctx);
     assert!(rig.drawing_ids(target).is_empty());
 }
@@ -534,7 +547,7 @@ fn a_keyboard_paste_lands_under_the_pointer_of_the_hovered_chart() {
     let source = rig.chart("BTCUSDT", 100.0);
     let target = rig.chart("ETHUSDT", 50.0);
     rig.chart_mut(source).drawings = vec![rectangle(1, 1_000)];
-    rig.workspace.selected_drawing = Some((source, vec![1]));
+    rig.workspace.tools.select(source, vec![1]);
     rig.workspace.copy_selection(&rig.ctx);
     let text = rig.copied().remove(0);
     rig.workspace.note_hover(
@@ -611,9 +624,13 @@ fn remove_indicators_counts_and_takes_the_compared_markets_in_one_undo_step() {
     assert_eq!(facts.indicators, 2);
     let _ = context;
 
-    let steps = rig.workspace.undo.len();
+    let steps = rig.workspace.history.steps();
     rig.workspace.remove_all_indicators(chart);
-    assert_eq!(rig.workspace.undo.len(), steps + 1, "one step for both");
+    assert_eq!(
+        rig.workspace.history.steps(),
+        steps + 1,
+        "one step for both"
+    );
     assert!(!BuiltIn::Ema.applied(&rig.chart_mut(chart).indicators));
     assert!(rig.chart_mut(chart).overlays.is_empty());
     rig.workspace.undo(&rig.ctx);
@@ -1066,7 +1083,7 @@ fn the_tree_hides_and_shows_a_drawing_and_undo_reverts_it() {
         .apply_tree_action(chart, TreeAction::ToggleShown(TreeKey::Drawing(1)));
     assert!(rig.chart_mut(chart).drawings[0].hidden());
     assert!(!rig.chart_mut(chart).drawings[1].hidden());
-    assert_eq!(rig.workspace.undo.len(), 1);
+    assert_eq!(rig.workspace.history.steps(), 1);
     rig.workspace
         .apply_tree_action(chart, TreeAction::ToggleShown(TreeKey::Drawing(1)));
     assert!(!rig.chart_mut(chart).drawings[0].hidden());
@@ -1091,12 +1108,12 @@ fn the_tree_deletes_a_drawing_undoably_and_never_a_locked_one() {
     use crate::model::chart::object_tree::Key as TreeKey;
     use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
-    rig.workspace.selected_drawing = Some((chart, vec![1, 2]));
+    rig.workspace.tools.select(chart, vec![1, 2]);
     rig.workspace
         .apply_tree_action(chart, TreeAction::Delete(TreeKey::Drawing(1)));
     assert_eq!(rig.drawing_ids(chart), [2]);
     assert_eq!(
-        rig.workspace.selected_drawing,
+        rig.workspace.tools.selection().cloned(),
         Some((chart, vec![2])),
         "the deleted drawing leaves the selection"
     );
@@ -1135,11 +1152,11 @@ fn the_tree_hides_and_removes_a_compared_market_and_undo_restores_it() {
             .get(id)
             .map(|overlay| overlay.visible)
     };
-    let before = rig.workspace.undo.len();
+    let before = rig.workspace.history.steps();
     rig.workspace
         .apply_tree_action(chart, TreeAction::ToggleShown(TreeKey::Overlay(id)));
     assert_eq!(visible(&mut rig), Some(false));
-    assert_eq!(rig.workspace.undo.len(), before + 1, "one undo step");
+    assert_eq!(rig.workspace.history.steps(), before + 1, "one undo step");
     rig.workspace.undo(&rig.ctx);
     assert_eq!(visible(&mut rig), Some(true));
 
@@ -1157,10 +1174,13 @@ fn the_tree_opens_the_compare_page_for_a_compared_market_and_leaves_the_drawing_
     use crate::ui::chart::settings::Tab;
     let (mut rig, chart) = tree_rig();
     let id = compared(&mut rig, chart);
-    rig.workspace.selected_drawing = Some((chart, vec![2]));
+    rig.workspace.tools.select(chart, vec![2]);
     rig.workspace
         .apply_tree_action(chart, TreeAction::Select(TreeKey::Overlay(id)));
-    assert_eq!(rig.workspace.selected_drawing, Some((chart, vec![2])));
+    assert_eq!(
+        rig.workspace.tools.selection().cloned(),
+        Some((chart, vec![2]))
+    );
     rig.workspace
         .apply_tree_action(chart, TreeAction::Settings(TreeKey::Overlay(id)));
     assert_eq!(rig.workspace.settings_chart, Some(chart));
@@ -1174,7 +1194,10 @@ fn the_tree_selects_a_drawing_as_the_charts_one_selection() {
     let (mut rig, chart) = tree_rig();
     rig.workspace
         .apply_tree_action(chart, TreeAction::Select(TreeKey::Drawing(2)));
-    assert_eq!(rig.workspace.selected_drawing, Some((chart, vec![2])));
+    assert_eq!(
+        rig.workspace.tools.selection().cloned(),
+        Some((chart, vec![2]))
+    );
 }
 
 #[test]
@@ -1251,7 +1274,7 @@ fn the_tree_can_delete_a_drawing_from_a_newer_version_and_nothing_else_touches_i
         rig.workspace.apply_tree_action(chart, action);
     }
     assert_eq!(rig.chart_mut(chart).drawings[2], future);
-    assert!(rig.workspace.undo.is_empty(), "no change, no undo step");
+    assert!(!rig.workspace.history.can_undo(), "no change, no undo step");
     // Deleting it works, and undoes.
     rig.workspace
         .apply_tree_action(chart, TreeAction::Delete(TreeKey::Drawing(40)));
@@ -1275,7 +1298,7 @@ fn a_tree_action_for_a_closed_chart_does_nothing() {
         .retain(|candidate| candidate.id != chart);
     rig.workspace
         .apply_tree_action(chart, TreeAction::Delete(TreeKey::Drawing(1)));
-    assert!(rig.workspace.undo.is_empty());
+    assert!(!rig.workspace.history.can_undo());
 }
 
 /// The labels and enabled state of a menu built for `context`, the way the screen builds it.
@@ -1311,7 +1334,7 @@ fn paste_is_greyed_until_drawings_are_copied_then_enabled() {
     assert!(!paste(&rig, &context), "nothing has been copied");
 
     // Copy from the drawing's menu or Cmd+C: either way it is the workspace's copy.
-    rig.workspace.selected_drawing = Some((source, vec![1]));
+    rig.workspace.tools.select(source, vec![1]);
     rig.workspace.copy_selection(&rig.ctx);
     assert!(paste(&rig, &context), "a copy is waiting");
 
@@ -1326,7 +1349,7 @@ fn a_copy_stays_available_to_every_chart_and_tab_sharing_the_context() {
     let mut first = Rig::new();
     let source = first.chart("BTCUSDT", 100.0);
     first.chart_mut(source).drawings = vec![rectangle(1, 1_000)];
-    first.workspace.selected_drawing = Some((source, vec![1]));
+    first.workspace.tools.select(source, vec![1]);
     first.workspace.copy_selection(&first.ctx);
 
     let mut second = Rig::new();
@@ -1453,16 +1476,17 @@ fn a_pasted_link_waits_to_be_placed_in_the_middle_of_the_focused_chart() {
         Some(Content::Link(card)) if card.link.url() == POST_LINK
     ));
     assert!(rig.workspace.content.place_now);
-    assert_eq!(rig.workspace.active_tool, Tool::Post);
+    assert_eq!(rig.workspace.tools.active_tool(), Tool::Post);
     rig.workspace.content.pending = None;
-    rig.workspace.active_tool = Tool::Cursor;
+    rig.workspace.tools.disarm();
     rig.workspace.paste_text(&rig.ctx, TRADINGVIEW_LINK);
     assert!(
-        rig.workspace.content.pending.is_none() && rig.workspace.active_tool == Tool::Cursor,
+        rig.workspace.content.pending.is_none()
+            && rig.workspace.tools.active_tool() == Tool::Cursor,
         "only X links become cards"
     );
     assert!(
-        rig.workspace.undo.is_empty(),
+        !rig.workspace.history.can_undo(),
         "nothing is created until it is placed"
     );
 }
@@ -1497,7 +1521,7 @@ fn the_replace_sheet_survives_the_frame_that_follows_while_the_tool_is_the_curso
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
-    rig.workspace.active_tool = Tool::Cursor;
+    rig.workspace.tools.disarm();
     rig.workspace
         .link_requested(&rig.ctx, chart, 1, crate::ui::LinkRequest::Replace);
     assert!(rig.workspace.content.links.sheet.is_some());
@@ -1562,7 +1586,7 @@ fn a_placed_post_card_asks_for_its_preview_without_being_pressed() {
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
-    rig.workspace.selected_drawing = Some((chart, vec![1]));
+    rig.workspace.tools.select(chart, vec![1]);
     rig.workspace.preview_placed_card(&rig.ctx);
     // Not allowed yet: the one-time question comes first, and nothing is contacted.
     assert!(rig.workspace.content.links.consent.is_some());
@@ -1579,12 +1603,12 @@ fn a_card_that_already_has_its_preview_or_is_not_a_card_is_left_alone() {
     }
     rig.chart_mut(chart).drawings = vec![fetched, rectangle(2, 5_000)];
     for ids in [vec![1], vec![2], vec![1, 2], vec![]] {
-        rig.workspace.selected_drawing = Some((chart, ids));
+        rig.workspace.tools.select(chart, ids);
         rig.workspace.preview_placed_card(&rig.ctx);
         assert!(rig.workspace.content.links.consent.is_none());
         assert!(rig.workspace.content.links.inbox.is_none());
     }
-    rig.workspace.selected_drawing = None;
+    rig.workspace.tools.clear_selection();
     rig.workspace.preview_placed_card(&rig.ctx);
     assert!(rig.workspace.content.links.consent.is_none());
 }
@@ -1618,7 +1642,7 @@ fn a_fetched_preview_is_written_to_its_card_as_one_undo_step() {
         card_of(&mut rig, chart, 1).meta,
         Some(fetched_meta("Developers"))
     );
-    assert_eq!(rig.workspace.undo.len(), 1);
+    assert_eq!(rig.workspace.history.steps(), 1);
     assert!(rig.workspace.content.links.inbox.is_none());
     rig.workspace.undo(&rig.ctx);
     assert_eq!(card_of(&mut rig, chart, 1).meta, None);
@@ -1644,7 +1668,7 @@ fn a_preview_for_a_link_the_card_no_longer_has_is_dropped() {
         .unwrap();
     rig.workspace.take_fetched();
     assert_eq!(card_of(&mut rig, chart, 1).meta, None);
-    assert!(rig.workspace.undo.is_empty());
+    assert!(!rig.workspace.history.can_undo());
 }
 
 #[test]
@@ -1669,7 +1693,7 @@ fn a_failed_fetch_says_why_and_leaves_the_card_alone() {
         Some((FetchError::Unavailable.message(), true))
     );
     assert_eq!(card_of(&mut rig, chart, 1).meta, None);
-    assert!(rig.workspace.undo.is_empty());
+    assert!(!rig.workspace.history.can_undo());
 }
 
 #[test]
@@ -1691,7 +1715,7 @@ fn replacing_the_link_of_a_card_drops_the_preview_of_the_old_one() {
     assert_eq!(replaced.link, other);
     assert_eq!(replaced.meta, None);
     assert_eq!(replaced.size, [400.0, 200.0], "its size is kept");
-    assert_eq!(rig.workspace.undo.len(), 1);
+    assert_eq!(rig.workspace.history.steps(), 1);
 }
 
 #[test]
@@ -1706,5 +1730,5 @@ fn a_new_link_waits_for_a_click_and_arms_its_tool() {
         Some(Content::Link(_))
     ));
     assert!(!rig.workspace.content.place_now, "a click places it");
-    assert_eq!(rig.workspace.active_tool, Tool::Post);
+    assert_eq!(rig.workspace.tools.active_tool(), Tool::Post);
 }

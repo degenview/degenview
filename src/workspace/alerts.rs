@@ -4,7 +4,7 @@ use super::chart::Chart;
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::DataSource;
 use crate::model::alert::draft::Direction;
-use crate::model::alert::{AlertAsset, AlertCurrency};
+use crate::model::alert::{AlertAsset, AlertCurrency, PriceAlert};
 use crate::model::watchlist::now_ms;
 use crate::ui::alert::editor::{self, PriceAlertEditorOutcome, PriceAlertEditorState};
 use eframe::egui;
@@ -29,22 +29,86 @@ impl AlertRequest {
     }
 }
 
+/// The tab's side of price alerts: the bell's count, the sheet a bell or menu asked for, the sheet
+/// that is open, and the FX rates it prices other currencies with.
+#[derive(Default)]
+pub(super) struct AlertUi {
+    /// Alerts fired since the Alerts window was last looked at.
+    unseen: usize,
+    /// A chart's bell (or a watchlist row's menu) asked for a price alert this frame; the next
+    /// `show_alert_editor` opens the sheet on it.
+    request: Option<AlertRequest>,
+    /// The "Create Price Alert" sheet, over this tab's window.
+    editor: Option<PriceAlertEditorState>,
+    /// USD → currency rates for the sheet's currency menu, pushed in by the app.
+    fx_rates: HashMap<AlertCurrency, f64>,
+}
+
+impl AlertUi {
+    /// Asks for the sheet on a new alert; it opens with the next frame.
+    pub(super) fn request(&mut self, request: AlertRequest) {
+        self.request = Some(request);
+    }
+
+    /// Opens the sheet on an existing alert, to edit it.
+    pub(super) fn edit(&mut self, alert: &PriceAlert) {
+        self.editor = Some(PriceAlertEditorState::new(
+            alert.asset.clone(),
+            Some(alert.clone()),
+            Some(alert.currency),
+        ));
+    }
+
+    /// How many alerts fired unseen, for the bell's badge.
+    pub(super) fn unseen(&self) -> usize {
+        self.unseen
+    }
+
+    /// USD → currency rates, to draw alert levels in their own currency.
+    pub(super) fn fx_rates(&self) -> &HashMap<AlertCurrency, f64> {
+        &self.fx_rates
+    }
+
+    /// How many units of `currency` one USD buys, when known (USD is always 1).
+    pub(super) fn usd_rate(&self, currency: AlertCurrency) -> Option<f64> {
+        if currency == AlertCurrency::Usd {
+            Some(1.0)
+        } else {
+            self.fx_rates
+                .get(&currency)
+                .copied()
+                .filter(|rate| *rate > 0.0)
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn take_request(&mut self) -> Option<AlertRequest> {
+        self.request.take()
+    }
+
+    #[cfg(test)]
+    pub(super) fn editor(&self) -> Option<&PriceAlertEditorState> {
+        self.editor.as_ref()
+    }
+}
+
 impl ChartWorkspace {
     /// How many alerts have fired since the Alerts window was last looked at, for the bell.
     pub fn set_unseen_alerts(&mut self, count: usize) {
-        self.unseen_alerts = count;
+        self.alerts.unseen = count;
     }
 
     /// The app's latest USD → currency rates, for the price-alert sheet.
     pub fn set_alert_fx_rates(&mut self, rates: &HashMap<AlertCurrency, f64>) {
-        if self.alert_fx_rates != *rates {
-            self.alert_fx_rates.clone_from(rates);
+        if self.alerts.fx_rates != *rates {
+            self.alerts.fx_rates.clone_from(rates);
         }
     }
 
     /// The open price-alert sheet is in a currency that needs FX rates.
     pub fn alert_editor_needs_fx_rates(&self) -> bool {
-        self.alert_editor
+        self.alerts
+            .editor
             .as_ref()
             .is_some_and(|editor| editor.draft.needs_fx_rates())
     }
@@ -52,7 +116,7 @@ impl ChartWorkspace {
     /// Keeps the open sheet's market priced: it asks for the quote for as long as it is open.
     pub(super) fn show_alert_editor(&mut self, ctx: &egui::Context) -> Vec<WorkspaceAction> {
         let owner = editor::quote_owner(self.id);
-        if let Some(request) = self.new_alert_request.take() {
+        if let Some(request) = self.alerts.request.take() {
             let mut editor = PriceAlertEditorState::new(request.asset, None, None);
             // A chart point prefills the level and the way to cross it; the user still reviews
             // and saves, so nothing is created here.
@@ -64,9 +128,9 @@ impl ChartWorkspace {
                         _ => Direction::Above,
                     };
             }
-            self.alert_editor = Some(editor);
+            self.alerts.editor = Some(editor);
         }
-        let Some(state) = self.alert_editor.as_mut() else {
+        let Some(state) = self.alerts.editor.as_mut() else {
             return Vec::new();
         };
         self.quote_coordinator.set_demand(
@@ -74,7 +138,7 @@ impl ChartWorkspace {
             vec![state.draft.asset().instrument.clone()],
             true,
         );
-        state.feed_from_book(&self.quote_book, &self.alert_fx_rates);
+        state.feed_from_book(&self.quote_book, &self.alerts.fx_rates);
         let endpoints = self
             .store
             .lock()
@@ -97,7 +161,7 @@ impl ChartWorkspace {
             None => {}
         }
         if finished {
-            self.alert_editor = None;
+            self.alerts.editor = None;
             self.quote_coordinator.release(owner);
         }
         actions
