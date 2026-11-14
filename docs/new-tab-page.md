@@ -26,11 +26,13 @@ through them. The title is `TITLE2 + 11`, larger than the `TITLE2 + 3` page titl
 
 ## Sparklines
 
-Each market tile and row shows its last seven daily closes, green when the week ended at or above where
-it began, red otherwise. `empty_state::show` reports the markets it drew (`EmptyStateOutput::wanted`);
-`TrendLoader` reads each through `service::fetch_klines` (`1d`, 8 candles, on the provider's work-queue
-lane) and keeps the result: fresh for 10 minutes, a market with no history retried after 5. A failed
-refresh keeps the week already shown. States: not read yet = faint flat line, no history = nothing,
+Each market tile and row shows the daily closes of its last seven calendar days (a stock's five
+sessions), green when the week ended at or above where it began, red otherwise (`kit::sparkline::paint`).
+`empty_state::show` reports the markets it drew (`EmptyStateOutput::wanted`); the page's own
+`service::market::trend::TrendLoader` (7 days) reads each through `service::fetch_klines` (`1d`, 8
+candles, on the provider's work-queue lane) and keeps the closes that fall in the week
+(`model::market::trend::closes_within`): fresh for 10 minutes, a market with no history retried
+after 5. A failed refresh keeps the week already shown. States: not read yet = faint flat line, no history = nothing,
 else the week. Only markets of the shown tab are read. Keyed by `InstrumentId::key()`; the
 provider id is `InstrumentId::api_symbol()`.
 

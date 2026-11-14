@@ -112,6 +112,11 @@ watchlists.
   collapses repeated markets; nothing else is deleted.
 - Selecting a row focuses or opens its market in that workspace; highlighting mirrors the focused
   chart.
+- Rows chart the market's last month (`WatchlistDisplaySettings::shows_chart`, per list, on by
+  default and for lists saved before it; Columns ▸ Show 1M Chart). Closes come from the app-wide
+  `service::market::trend::month()` loader (30 calendar days of `1d` candles, fresh for 10 minutes),
+  asked only for the rows the sidebar draws (`WatchlistSidebarState::trend_demand`), none when the
+  chart is off. The panel's minimum width (`style::minimum_panel_width`) makes room for it.
 
 ## Paper-trading quotes
 

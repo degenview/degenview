@@ -4,13 +4,12 @@
 //! moving.
 
 mod backdrop;
-mod sparkline;
 mod tabs;
 mod tiles;
 
-pub use sparkline::Trend;
 pub use tabs::Tab;
 
+use crate::model::market::trend::Trend;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, InstrumentId};
 use crate::ui::chart::picker_kit::recents::RecentMarket;

@@ -12,3 +12,4 @@ pub(in crate::service) mod kalshi;
 pub mod live;
 pub(in crate::service) mod polymarket;
 pub mod search_rank;
+pub mod trend;

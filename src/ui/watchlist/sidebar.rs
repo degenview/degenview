@@ -6,14 +6,15 @@
 //! shows, its filter and its highlighted row live in `WatchlistSidebarState`.
 
 use crate::model::InstrumentId;
+use crate::model::market::trend::Trend;
 use crate::model::watchlist;
 use crate::model::watchlist::layout::{Filter, Flags, Row};
 use crate::model::watchlist::quote::WatchlistQuote;
 use crate::model::watchlist::quote::{Direction, Freshness};
 use crate::model::watchlist::text::ImportReport;
 use crate::model::watchlist::{
-    EntryId, Watchlist, WatchlistColumn, WatchlistError, WatchlistFlag, WatchlistInstrument,
-    WatchlistNotice, WatchlistSort, WatchlistSortKey,
+    EntryId, Watchlist, WatchlistColumn, WatchlistDisplaySettings, WatchlistError, WatchlistFlag,
+    WatchlistInstrument, WatchlistNotice, WatchlistSort, WatchlistSortKey,
 };
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::sheet;
@@ -23,6 +24,7 @@ use crate::ui::theme;
 use crate::ui::watchlist::rows::{self, RowStyle};
 use crate::ui::watchlist::style::{self as style, LEADING_INSET, TRAILING_INSET};
 use eframe::egui::{self, Align, Color32, Id, Layout, Pos2, Rect, RichText, Sense, Stroke, Vec2};
+use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
 
 /// What the workspace should do on the sidebar's behalf.
@@ -111,6 +113,10 @@ pub enum WatchlistAction {
         list: EntryId,
         shows: bool,
     },
+    SetShowsChart {
+        list: EntryId,
+        shows: bool,
+    },
     SetFlag {
         instrument: InstrumentId,
         flag: Option<WatchlistFlag>,
@@ -133,6 +139,8 @@ pub struct WatchlistSidebarInput<'a> {
     pub lists: &'a [Watchlist],
     pub flags: &'a Flags,
     pub quote: &'a dyn Fn(&InstrumentId) -> Option<WatchlistQuote>,
+    /// Each market's last month of closes, by `InstrumentId::key()`, for the row charts.
+    pub trends: &'a HashMap<String, Trend>,
     /// The market the tab's focused chart shows; the matching row is highlighted.
     pub focused_market: Option<&'a InstrumentId>,
     /// The saved lists couldn't be read, so changes are off.
@@ -209,6 +217,8 @@ pub struct WatchlistSidebarState {
     synced_list: Option<EntryId>,
     /// Markets of the rows drawn this frame, for the quote feed.
     demand: Vec<InstrumentId>,
+    /// The list drawn this frame shows the month's chart, so `demand` also wants closes.
+    demands_trends: bool,
     /// The filter box gave up focus this frame, so its Enter must not reach the rows.
     filter_blurred: bool,
 }
@@ -233,6 +243,7 @@ impl Default for WatchlistSidebarState {
             synced_focus: None,
             synced_list: None,
             demand: Vec::new(),
+            demands_trends: false,
             filter_blurred: false,
         }
     }
@@ -240,12 +251,10 @@ impl Default for WatchlistSidebarState {
 
 impl WatchlistSidebarState {
     pub fn minimum_width(&mut self, lists: &[Watchlist]) -> f32 {
-        let columns = self
-            .resolved(lists)
-            .map(|list| list.display.columns.as_slice());
-        style::minimum_panel_width(
-            columns.unwrap_or(&[WatchlistColumn::Last, WatchlistColumn::ChangePercent]),
-        )
+        match self.resolved(lists) {
+            Some(list) => style::minimum_panel_width(&list.display),
+            None => style::minimum_panel_width(&WatchlistDisplaySettings::default()),
+        }
     }
 
     #[cfg(test)]
@@ -288,6 +297,15 @@ impl WatchlistSidebarState {
     /// a collapsed section, a filtered-out row or a portfolio card.
     pub fn quote_demand(&self) -> &[InstrumentId] {
         &self.demand
+    }
+
+    /// Markets whose month of closes the rows drawn this frame chart; none when the chart is off.
+    pub fn trend_demand(&self) -> &[InstrumentId] {
+        if self.demands_trends {
+            &self.demand
+        } else {
+            &[]
+        }
     }
 
     /// Keeps the highlight on a row that is drawn: a filter, a collapsed section or
@@ -346,6 +364,7 @@ pub fn show(
         }
     }
     state.demand.clear();
+    state.demands_trends = false;
     state.filter_blurred = false;
     let list = state.resolved(input.lists);
 
@@ -378,6 +397,7 @@ pub fn show(
             input.quote,
         );
         state.reconcile_selection(&rows);
+        state.demands_trends = list.display.shows_chart;
         state.demand = rows
             .iter()
             .filter_map(|row| match row {
@@ -833,6 +853,20 @@ fn options_menu(
                         shows: !shows,
                     });
                 }
+                let shows = list.display.shows_chart;
+                let chart = kit::menu_row(
+                    ui,
+                    kit::MenuRow {
+                        checked: shows,
+                        ..kit::MenuRow::new("Show 1M Chart")
+                    },
+                );
+                if chart.clicked() {
+                    actions.push(WatchlistAction::SetShowsChart {
+                        list: list.id,
+                        shows: !shows,
+                    });
+                }
             },
         );
 
@@ -987,6 +1021,9 @@ fn content(
     let mut rects: Vec<Rect> = Vec::with_capacity(rows.len());
     let mut drop_requested = false;
     let mut drag_started = None;
+    // A hairline parts two symbol rows unless either is lit (selected or hovered), so a lit
+    // row's rounded fill never sits against a line.
+    let mut previous_symbol_unlit = false;
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
@@ -994,6 +1031,7 @@ fn content(
             ui.spacing_mut().item_spacing.y = 0.0;
             for (index, row) in rows.iter().enumerate() {
                 let dragged = state.drag.as_ref().is_some_and(|drag| drag.index == index);
+                let mut symbol_unlit = false;
                 let response = match row {
                     Row::Section { section, count } => {
                         let response = rows::section_row(ui, section, *count, index == 0, dragged);
@@ -1020,14 +1058,18 @@ fn content(
                         response
                     }
                     Row::Instrument { item, .. } => {
+                        let selected = state.selected_entry == Some(item.id);
                         let style = RowStyle {
                             display: &list.display,
                             flags: input.flags,
                             quote: input.quote,
-                            selected: state.selected_entry == Some(item.id),
+                            trend: input.trends.get(&item.instrument.key()),
+                            selected,
                             dragged,
+                            divider: previous_symbol_unlit,
                         };
                         let response = rows::instrument_row(ui, item, &style);
+                        symbol_unlit = !selected && !response.hovered();
                         let more_rect = Rect::from_center_size(
                             Pos2::new(
                                 response.rect.right() - TRAILING_INSET - 11.0,
@@ -1073,6 +1115,7 @@ fn content(
                     }
                     Row::EmptySection { .. } => rows::empty_section_row(ui),
                 };
+                previous_symbol_unlit = symbol_unlit;
                 rects.push(response.rect);
 
                 if row.entry_id().is_some() {
@@ -2193,6 +2236,7 @@ mod tests {
                     "Add Section\u{2026}",
                     "Delete Section",
                     "Show Symbol Subtitle",
+                    "Show 1M Chart",
                     "Descending",
                     "Clear Flag",
                     "New Watchlist\u{2026}",
@@ -2389,6 +2433,7 @@ mod tests {
                 lists: &self.lists,
                 flags: &flags,
                 quote: &quote,
+                trends: &HashMap::new(),
                 focused_market: None,
                 load_failed: false,
                 error: None,
@@ -2481,6 +2526,7 @@ mod tests {
             lists,
             flags: &flags,
             quote: &quote,
+            trends: &HashMap::new(),
             focused_market: None,
             load_failed: false,
             error: None,
@@ -2675,6 +2721,7 @@ mod tests {
             lists: &lists,
             flags: &flags,
             quote: &lookup,
+            trends: &HashMap::new(),
             focused_market: None,
             load_failed: false,
             error: None,
