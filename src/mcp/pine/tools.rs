@@ -7,7 +7,7 @@ use crate::mcp::chart::tools::ChartPineParams;
 use crate::mcp::pine::{self, InputArgs, Target, Version};
 use crate::mcp::state::ClientIdentity;
 use crate::mcp::tools::{
-    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_id, parse_workspace_id,
+    Caller, DegenViewMcp, failure, invalid, parse_chart_id, parse_id, parse_workspace_id,
     unexpected,
 };
 use crate::mcp::types::{
@@ -17,7 +17,6 @@ use crate::mcp::types::{
 };
 use crate::model::mcp::Permission;
 use crate::store::scripts::ScriptStore;
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -226,9 +225,8 @@ impl DegenViewMcp {
     )]
     async fn list_pine_scripts(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
     ) -> Result<Json<PineScriptsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         self.pine_job(&client, Permission::PineScriptsList, |store| {
             pine::list_scripts(store)
         })
@@ -248,10 +246,9 @@ impl DegenViewMcp {
     )]
     async fn get_pine_script(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<GetPineScriptParams>,
     ) -> Result<Json<PineScriptSource>, CallToolResult> {
-        let client = client_of(&parts)?;
         let id = clean_script_id(&params.script_id)?;
         let version = params.version.version();
         self.pine_job(&client, Permission::PineScriptsRead, move |store| {
@@ -273,10 +270,9 @@ impl DegenViewMcp {
     )]
     async fn update_pine_script(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<UpdatePineParams>,
     ) -> Result<Json<PineEditResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let id = clean_script_id(&params.script_id)?;
         if !pine::is_revision(&params.expected_revision) {
             return Err(invalid(
@@ -334,10 +330,9 @@ impl DegenViewMcp {
     )]
     async fn save_pine_script(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<SavePineParams>,
     ) -> Result<Json<PineEditResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let id = clean_script_id(&params.script_id)?;
         if !pine::is_revision(&params.expected_revision) {
             return Err(invalid(
@@ -383,10 +378,9 @@ impl DegenViewMcp {
     )]
     async fn compile_pine_script(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<CompilePineParams>,
     ) -> Result<Json<PineCompileResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let target = match (params.script_id, params.source) {
             (Some(id), None) => Target::Script(
                 clean_script_id(&id)?,
@@ -427,10 +421,9 @@ impl DegenViewMcp {
     )]
     async fn get_pine_inputs(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<PineInputsParams>,
     ) -> Result<Json<PineInputsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let id = clean_script_id(&params.script_id)?;
         let version = params
             .version
@@ -454,10 +447,9 @@ impl DegenViewMcp {
     )]
     async fn list_chart_pine_instances(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<ChartPineParams>,
     ) -> Result<Json<AppliedPineList>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         match self
@@ -491,10 +483,9 @@ impl DegenViewMcp {
     )]
     async fn get_pine_instance(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<PineInstanceParams>,
     ) -> Result<Json<AppliedPineDetail>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let instance_id = parse_instance_id(&params.instance_id)?;
@@ -539,10 +530,9 @@ impl DegenViewMcp {
     )]
     async fn get_pine_styles(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<PineInstanceParams>,
     ) -> Result<Json<PineStylesResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let instance_id = parse_instance_id(&params.instance_id)?;
@@ -578,10 +568,9 @@ impl DegenViewMcp {
     )]
     async fn get_pine_report(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<PineReportParams>,
     ) -> Result<Json<PineReportResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let instance_id = parse_instance_id(&params.instance_id)?;
@@ -639,9 +628,8 @@ impl DegenViewMcp {
     )]
     async fn list_pine_alerts(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
     ) -> Result<Json<PineAlertsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         match self
             .bridge
             .call(
@@ -670,10 +658,9 @@ impl DegenViewMcp {
     )]
     async fn add_pine_script_to_chart(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<AddPineToChartParams>,
     ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let id = clean_script_id(&params.script_id)?;
@@ -718,10 +705,9 @@ impl DegenViewMcp {
     )]
     async fn update_pine_instance(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<UpdatePineInstanceParams>,
     ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let instance_id = parse_instance_id(&params.instance_id)?;
@@ -763,10 +749,9 @@ impl DegenViewMcp {
     )]
     async fn remove_pine_instance(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<PineInstanceParams>,
     ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let instance_id = parse_instance_id(&params.instance_id)?;

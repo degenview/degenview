@@ -8,7 +8,7 @@ use crate::mcp::chart::drawings::{
     StylePatch, TimeArg, parse_drawing_id, parse_time,
 };
 use crate::mcp::tools::{
-    DegenViewMcp, McpIndicator, McpSource, alpaca_configured, client_of, failure, invalid,
+    Caller, DegenViewMcp, McpIndicator, McpSource, alpaca_configured, failure, invalid,
     parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::mcp::types::{
@@ -18,7 +18,6 @@ use crate::mcp::types::{
 use crate::model::mcp::Permission;
 use crate::model::watchlist::text::validate_market;
 use crate::model::{DataSource, EMA_PERIODS};
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -169,9 +168,8 @@ impl DegenViewMcp {
     )]
     async fn list_workspaces(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
     ) -> Result<Json<WorkspacesResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         match self
             .bridge
             .call(
@@ -200,10 +198,9 @@ impl DegenViewMcp {
     )]
     async fn list_charts(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<ListChartsParams>,
     ) -> Result<Json<ChartsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         match self
             .bridge
@@ -233,9 +230,9 @@ impl DegenViewMcp {
     )]
     async fn list_indicators(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        // Nothing of the caller's is read, but a tool is only ever called by one.
+        Caller(_): Caller,
     ) -> Result<Json<IndicatorsResult>, CallToolResult> {
-        client_of(&parts)?;
         Ok(Json(IndicatorsResult {
             indicators: indicator_catalog(),
         }))
@@ -253,10 +250,9 @@ impl DegenViewMcp {
     )]
     async fn add_indicator(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<AddIndicatorParams>,
     ) -> Result<Json<AddIndicatorResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let ema_period = match params.inputs.and_then(|inputs| inputs.period) {
@@ -306,10 +302,9 @@ impl DegenViewMcp {
     )]
     async fn add_chart(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<AddChartParams>,
     ) -> Result<Json<AddChartResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let source = params.source.data_source();
         let instrument = validate_market(source, &params.symbol).map_err(invalid)?;
@@ -349,10 +344,9 @@ impl DegenViewMcp {
     )]
     async fn get_candles(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<GetCandlesParams>,
     ) -> Result<Json<CandlesResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let limit = params.limit.map_or(DEFAULT_CANDLES, |limit| limit as usize);
@@ -400,10 +394,9 @@ impl DegenViewMcp {
     )]
     async fn list_drawings(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<ChartPineParams>,
     ) -> Result<Json<DrawingsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         match self
@@ -437,10 +430,9 @@ impl DegenViewMcp {
     )]
     async fn add_drawings(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<AddDrawingsParams>,
     ) -> Result<Json<DrawingsChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         if params.drawings.is_empty() || params.drawings.len() > MAX_DRAWINGS_PER_CALL {
@@ -494,10 +486,9 @@ impl DegenViewMcp {
     )]
     async fn update_drawing(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<UpdateDrawingParams>,
     ) -> Result<Json<DrawingsChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let drawing_id = parse_drawing_id(&params.drawing_id).map_err(|error| failure(&error))?;
@@ -563,10 +554,9 @@ impl DegenViewMcp {
     )]
     async fn delete_drawings(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<DeleteDrawingsParams>,
     ) -> Result<Json<DrawingsChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         if params.drawing_ids.is_empty() || params.drawing_ids.len() > MAX_DELETES_PER_CALL {

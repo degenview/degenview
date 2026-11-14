@@ -4,12 +4,11 @@
 
 use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::tools::{
-    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
+    Caller, DegenViewMcp, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::mcp::types::ChartInfo;
 use crate::model::mcp::Permission;
 use crate::model::{ChartType, Timeframe};
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -130,10 +129,9 @@ impl DegenViewMcp {
     )]
     async fn set_timeframe(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<SetTimeframeParams>,
     ) -> Result<Json<TimeframeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         match self
             .bridge
@@ -166,10 +164,9 @@ impl DegenViewMcp {
     )]
     async fn set_chart_type(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<SetChartTypeParams>,
     ) -> Result<Json<ChartChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let chart_type = chart_type_named(&params.chart_type).ok_or_else(|| {
@@ -211,10 +208,9 @@ impl DegenViewMcp {
     )]
     async fn remove_chart(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<RemoveChartParams>,
     ) -> Result<Json<ChartChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         match self

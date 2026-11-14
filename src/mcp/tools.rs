@@ -28,6 +28,7 @@ use crate::mcp::snapshot::GET_CHART_SNAPSHOT;
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::model::mcp::{McpAuditOutcome, Permission};
 use crate::model::{BuiltIn, DataSource};
+use rmcp::handler::server::common::{AsRequestContext, FromContextPart};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::model::{
     CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, JsonObject,
@@ -203,13 +204,27 @@ pub(super) fn parse_workspace_id(raw: &str) -> Result<u64, CallToolResult> {
     parse_id(raw, "workspace_id", "degenview_list_workspaces")
 }
 
-/// The client the HTTP guard authenticated for this request.
-pub(super) fn client_of(parts: &http::request::Parts) -> Result<ClientIdentity, CallToolResult> {
-    parts
+/// The client the HTTP guard authenticated for this request, as a tool argument: a tool names
+/// `Caller(client): Caller` beside its `Parameters` and rmcp hands it over. A request with no
+/// authenticated client never reaches a tool (`call_tool` refuses it first), so a missing one is a
+/// protocol error here, not a tool result.
+pub(super) struct Caller(pub(super) ClientIdentity);
+
+impl<C: AsRequestContext> FromContextPart<C> for Caller {
+    fn from_context_part(context: &mut C) -> Result<Self, ErrorData> {
+        identity(context.as_request_context())
+            .cloned()
+            .map(Self)
+            .ok_or_else(|| ErrorData::invalid_params("Not authenticated", None))
+    }
+}
+
+/// The client the HTTP guard (`transport::auth`) attached to the request it let in.
+fn identity(context: &RequestContext<RoleServer>) -> Option<&ClientIdentity> {
+    context
         .extensions
-        .get::<ClientIdentity>()
-        .cloned()
-        .ok_or_else(|| failure(&McpError::PermissionDenied("Not authenticated".into())))
+        .get::<http::request::Parts>()
+        .and_then(|parts| parts.extensions.get::<ClientIdentity>())
 }
 
 pub(super) fn unexpected() -> CallToolResult {
@@ -389,11 +404,7 @@ impl ServerHandler for DegenViewMcp {
         // Every call is recorded in the activity log, however it ends. The guard writes its row
         // when the call finishes below, or as cancelled if this future is dropped first (the
         // client hung up, or the server stopped).
-        let client = context
-            .extensions
-            .get::<http::request::Parts>()
-            .and_then(|parts| parts.extensions.get::<ClientIdentity>())
-            .cloned();
+        let client = identity(&context).cloned();
         let audit = client.as_ref().map(|client| {
             AuditGuard::begin(
                 &self.shared,
@@ -426,10 +437,7 @@ impl ServerHandler for DegenViewMcp {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        let client = context
-            .extensions
-            .get::<http::request::Parts>()
-            .and_then(|parts| parts.extensions.get::<ClientIdentity>());
+        let client = identity(&context);
         let tools = self
             .tool_router
             .list_all()

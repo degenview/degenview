@@ -6,16 +6,13 @@ use crate::mcp::bridge::{
     AlertCommandOutcome, AlertUpdate, McpCommand, McpError, McpReply, NewAlert, REQUEST_TIMEOUT,
 };
 use crate::mcp::state::ClientIdentity;
-use crate::mcp::tools::{
-    DegenViewMcp, McpSource, client_of, failure, invalid, parse_id, unexpected,
-};
+use crate::mcp::tools::{Caller, DegenViewMcp, McpSource, failure, invalid, parse_id, unexpected};
 use crate::mcp::types::{
     AlertChangeResult, AlertInfo, AlertsResult, CreateAlertResult, UpdateAlertResult,
 };
 use crate::model::alert::{AlertCurrency, AlertFrequency};
 use crate::model::mcp::Permission;
 use crate::model::watchlist::text::validate_market;
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -172,9 +169,8 @@ impl DegenViewMcp {
     )]
     async fn list_price_alerts(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
     ) -> Result<Json<AlertsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         match self
             .bridge
             .call(
@@ -203,10 +199,9 @@ impl DegenViewMcp {
     )]
     async fn create_price_alert(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<CreateAlertParams>,
     ) -> Result<Json<CreateAlertResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let source = params.source.data_source();
         let instrument = validate_market(source, &params.symbol).map_err(invalid)?;
         let target_text = clean_price_text(&params.target_price).ok_or_else(|| {
@@ -276,10 +271,9 @@ impl DegenViewMcp {
     )]
     async fn update_price_alert(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<UpdateAlertParams>,
     ) -> Result<Json<UpdateAlertResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let alert_id = parse_alert_id(&params.alert_id)?;
         if params.condition.is_none()
             && params.target_price.is_none()
@@ -368,10 +362,10 @@ impl DegenViewMcp {
     )]
     async fn pause_price_alert(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<AlertIdParams>,
     ) -> Result<Json<AlertChangeResult>, CallToolResult> {
-        self.set_alert_paused(&parts, &params.alert_id, true).await
+        self.set_alert_paused(&client, &params.alert_id, true).await
     }
 
     #[tool(
@@ -386,10 +380,11 @@ impl DegenViewMcp {
     )]
     async fn resume_price_alert(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<AlertIdParams>,
     ) -> Result<Json<AlertChangeResult>, CallToolResult> {
-        self.set_alert_paused(&parts, &params.alert_id, false).await
+        self.set_alert_paused(&client, &params.alert_id, false)
+            .await
     }
 
     #[tool(
@@ -404,10 +399,9 @@ impl DegenViewMcp {
     )]
     async fn delete_price_alert(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<AlertIdParams>,
     ) -> Result<Json<AlertChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let alert_id = parse_alert_id(&params.alert_id)?;
         let mut changed = match self
             .bridge
@@ -498,11 +492,10 @@ impl DegenViewMcp {
 
     async fn set_alert_paused(
         &self,
-        parts: &http::request::Parts,
+        client: &ClientIdentity,
         raw_id: &str,
         paused: bool,
     ) -> Result<Json<AlertChangeResult>, CallToolResult> {
-        let client = client_of(parts)?;
         let alert_id = parse_alert_id(raw_id)?;
         let mut changed = match self
             .bridge

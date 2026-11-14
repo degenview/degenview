@@ -9,10 +9,9 @@ use crate::mcp::portfolio::{
     PortfoliosResult, TransactionsResult, value_holdings,
 };
 use crate::mcp::state::ClientIdentity;
-use crate::mcp::tools::{DegenViewMcp, client_of, failure, invalid, parse_id, unexpected};
+use crate::mcp::tools::{Caller, DegenViewMcp, failure, invalid, parse_id, unexpected};
 use crate::model::InstrumentId;
 use crate::model::mcp::Permission;
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -74,9 +73,8 @@ impl DegenViewMcp {
     )]
     async fn list_portfolios(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
     ) -> Result<Json<PortfoliosResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         match self
             .bridge
             .call(
@@ -105,10 +103,9 @@ impl DegenViewMcp {
     )]
     async fn get_portfolio_holdings(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<HoldingsParams>,
     ) -> Result<Json<HoldingsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let portfolio_id = portfolio_id(params.portfolio_id.as_deref())?;
         let wait = quote_wait(params.wait_seconds)?;
         let priced = params.include_prices.unwrap_or(true);
@@ -172,10 +169,9 @@ impl DegenViewMcp {
     )]
     async fn list_portfolio_transactions(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<TransactionsParams>,
     ) -> Result<Json<TransactionsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let portfolio_id = portfolio_id(params.portfolio_id.as_deref())?;
         let limit = params
             .limit

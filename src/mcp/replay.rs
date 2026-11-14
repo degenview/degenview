@@ -6,12 +6,11 @@ use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::chart::data::iso;
 use crate::mcp::chart::drawings::{TimeArg, parse_time};
 use crate::mcp::tools::{
-    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
+    Caller, DegenViewMcp, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::model::mcp::Permission;
 use crate::model::{ReplayCommand, ReplayStart};
 use crate::model::{ReplaySpeed, ReplayStatus, ReplayView};
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -245,10 +244,9 @@ impl DegenViewMcp {
     )]
     async fn get_replay(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<WorkspaceReplayParams>,
     ) -> Result<Json<ReplayResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         match self
             .bridge
@@ -278,10 +276,9 @@ impl DegenViewMcp {
     )]
     async fn control_replay(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<ControlReplayParams>,
     ) -> Result<Json<ReplayResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let command = command_of(&params)?;
         match self

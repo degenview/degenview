@@ -7,11 +7,10 @@
 
 use crate::mcp::bridge::{McpCommand, McpError, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::tools::{
-    DegenViewMcp, client_of, failure, parse_chart_id, parse_workspace_id, unexpected,
+    Caller, DegenViewMcp, failure, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::model::chart::snapshot::SnapshotScale;
 use crate::model::mcp::Permission;
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::{tool, tool_router};
@@ -98,10 +97,9 @@ impl DegenViewMcp {
     )]
     async fn get_chart_snapshot(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<SnapshotParams>,
     ) -> Result<CallToolResult, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let scale = match params.scale {
