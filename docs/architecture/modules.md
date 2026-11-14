@@ -154,11 +154,32 @@ router), `pine`, `replay`, `snapshot` and `tests/` at its root. Tools are groupe
 and what guards it: `auth`, `cancel`, `limits`, `seal`, `tls`, `tls_protect`.
 
 `app/` splits `impl DegenViewApp` by concern, each child adding an `impl` block (like `workspace/`):
-`tabs` (tab registry, open, close, quotes, links), `window` (the native windows and their viewports,
-Settings and alert windows), `commands` (native menu commands, quit), `mcp` (the MCP command loop and
-confirmation), `pine` (Pine Studio and scripts), `alert` (the alert runtime), `background` (broker
-notices, editor themes, sync), `session` (the saved session) and `tests`. A helper used by one child
-stays private to it; what two children share is `pub(super)`.
+`tabs` (open, close, show, tab quotes, Tab Linking), `window` (the tab windows and Settings, and their viewports), `commands`
+(native menu commands, quit), `mcp` (the MCP command loop and confirmation), `pine` (Pine Studio and
+scripts), `alert/` (the alert coordinator and the Alerts window), `background` (broker notices,
+editor themes, sync), `session` (the saved session) and `tests`. A helper used by one child stays
+private to it; what two children share is `pub(super)`.
+
+The root keeps the shared hosts every window is handed (store, watchlist store, quote book and
+coordinator, portfolio, paper, broker and trading hosts, Settings, snapshots, editor themes, updates,
+sync, Pine subscriptions), the notifier and the window callbacks' action queue. Each other concern is
+an owned part whose fields only its module sees. A deferred viewport callback must be `'static`, so
+what a window shares with the app is a part's cheap `Clone` handle, not the app's fields:
+
+| Part | Field | Module | Owns | Handle the windows hold |
+| --- | --- | --- | --- | --- |
+| `TabState` | `tabs` | `tabs` | The open `TabSlot`s, the next tab id, Tab Linking's hub, what the tab windows were last repainted for (quotes, title style, broker, links); opening, closing, showing and the per-frame quote and link ticks | `SharedTabs`: the window host, the id→content registry, the focused tab, the title and link hosts |
+| `AlertCoordinator` | `alerts` | `alert/` | The alert host, the runtime this window runs, the FX feed (`alert/fx`), the banner, the Alerts window (`alert/window`: its open flag, and the centre, editor, Webhooks… sheet and chart datasets behind one lock) | `AlertRegistration` (`alert/registration`: notifier, background service, runtime control; commit an alert, retry), `SharedFxRates` |
+| `McpState` | `mcp` | `mcp` | The MCP host, the clients' questions, the orders placed and pictures being made between requests | `McpQuestions` |
+| `SessionState` | `session` | `session` | When the session was last written, what was written, why the write failed | `SessionSaveError` |
+
+Cross-part work (a tick that reads the tabs and runs the alerts, an MCP command on a chart) stays on
+`DegenViewApp` and calls each part. Where locks nest, the split kept the order they were taken in:
+the Settings window takes its host, then the store, then the alert host, the MCP host, the Pine host
+or the registration, one at a time; the Alerts window takes the store, then its own state, then the
+alert, Pine or Settings host; the registration takes its runtime control before the background
+service. Never take one of these locks again while holding it: the frame and every window callback
+run on the main thread, so that deadlocks at once.
 
 `host/mcp/` keeps `McpHost` (listener lifecycle, settings, credentials, activity log) in `mod.rs`. What
 the app thread runs for a tool is grouped by domain like `mcp/`: `chart`, `pine`, `alert`, `paper`,

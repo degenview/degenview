@@ -5,7 +5,8 @@
 `main` opens `Store`, builds `eframe::NativeOptions`, and starts `DegenViewApp` in a hidden root
 viewport. Each visible deferred viewport renders one `TabWindows` entry: the app-owned tab strip and
 its active `ChartWorkspace`, `PortfolioTab`, or `PineStudio`. `TabWindowHost` owns grouping and
-dragging; `DegenViewApp` owns `TabSlot`s and routes Settings/Alerts window actions to shared hosts.
+dragging; the app's `TabState` owns the `TabSlot`s, and `DegenViewApp` routes Settings/Alerts window
+actions to shared hosts.
 
 `UpdateHost` is app-owned and projected into each window and Settings. It checks after launch and
 every six hours, then exposes availability, byte progress, failure, and restart state.
@@ -22,8 +23,9 @@ every six hours, then exposes availability, byte progress, failure, and restart 
   other provider requests through `start_for`; dialogs and Keychain reads use `SNAPSHOTS`.
 - `BinanceLiveFeed`, `WatchlistQuoteCoordinator`, and Coinbase's ticker socket own reconnecting
   threads and channels. Hidden/occluded workspaces suspend feeds.
-- App-wide state uses `Arc<Mutex<...>>`; per-tab content is `Arc<Mutex<TabContent>>`. Hold the store
-  lock only for short operations. Portfolio/paper compute candidates first, then transact.
+- App-wide state uses `Arc<Mutex<...>>`, held by the app's parts, which hand each window callback
+  one cheap `Clone` handle (see [Modules](modules.md)); per-tab content is `Arc<Mutex<TabContent>>`.
+  Hold the store lock only for short operations. Portfolio/paper compute candidates first, then transact.
 
 ## Market and chart flow
 
