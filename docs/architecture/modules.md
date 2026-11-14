@@ -239,7 +239,7 @@ picture test sits beside it (`broker/panel_gallery.rs`). A helper used by severa
 | `pine/` | Pine output on a chart, report, style view, settings popover, Pine Logs (`logs_view/`) and the script catalog |
 | `settings/` | The Settings window (`window`, run by `host::settings`) and one file per page; the Pine Studio page owns the font picker and theme editor |
 | `workspace/`, `window/` | Workspace chrome (toolbar, tool rail, layouts, the new-tab page in `empty_state/`, chart linking, snapshot menu) and window chrome (tab strip, tab-link menu, update indicator) |
-| `kit/`, `theme/` | Shared widgets (`kit`, with `bar` (the flat top bar every tab kind shares), `dialog`, `sheet`, `popover`, `icon_tabs`, `color_picker`, `date_picker`, `split`, `source_logo`, `art`, ...) and colours and fonts |
+| `kit/`, `theme/` | Shared widgets, one file per family and all re-exported from `kit` (`kit::push_button`, not `kit::button::push_button`): `text` (type scale, galleys), `palette`, `pill`, `ticker_icon` (market logos, monograms), `tab_bar`, `menu/` (rows, `fit`, `picker`), `button`, `field`, `form` (switch, segmented, stepper, colour well), `card` (frame, divider), `page` (empty state, footer bar, notice card), `confirm`, `autosave`; plus the modules called by path: `bar` (the flat top bar every tab kind shares), `dialog`, `sheet`, `popover`, `icon_tabs`, `color_picker`, `date_picker`, `split`, `source_logo`, `time_text`, `art`, ... And colours and fonts (`theme`) |
 | root | `mod.rs` and the three single-file foundations: `icons`, `shortcut`, `accessibility` (plus `editor_appearance/`) |
 
 A new screen goes in its domain's directory; a new domain gets a directory and a row here.
