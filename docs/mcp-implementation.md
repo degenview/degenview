@@ -597,7 +597,7 @@ src/
 ├── model/mcp/mod.rs
 ├── store/mcp/mod.rs
 ├── service/keychain_mcp.rs
-└── ui/settings/mcp.rs
+└── ui/settings/mcp/
 ```
 
 Adapt this to the existing repository.
