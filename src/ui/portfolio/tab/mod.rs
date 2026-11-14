@@ -28,11 +28,12 @@ use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerSt
 use crate::ui::portfolio::empty;
 use crate::ui::portfolio::holdings::{self, HoldingsAction, HoldingsInput, HoldingsState};
 use crate::ui::portfolio::overview::{
-    self, OverviewAction, OverviewInput, OverviewState, PriceStatus, StatisticsInput,
+    self, OverviewAction, OverviewInput, OverviewState, PriceStatus,
 };
 use crate::ui::portfolio::sheets::{
     self, CreateOutcome, CreateState, ManageAction, ManageInput, ManageRow, ManageState,
 };
+use crate::ui::portfolio::statistics::{self, StatisticsInput};
 use crate::ui::portfolio::transaction_editor::{
     self, EditorMode, TransactionEditorOutcome, TransactionEditorState,
 };
@@ -523,7 +524,7 @@ impl PortfolioTab {
                         }
                     }
                 }
-                PortfolioSection::Statistics => overview::show_statistics(
+                PortfolioSection::Statistics => statistics::show_statistics(
                     ui,
                     &StatisticsInput {
                         holdings: &holding_values,

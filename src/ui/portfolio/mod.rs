@@ -2,6 +2,7 @@
 
 pub mod asset_detail;
 pub mod asset_picker;
+pub mod blocks;
 pub mod cards;
 pub mod charts;
 pub mod cmc_import;
@@ -14,6 +15,7 @@ pub mod import_preview;
 pub mod overview;
 pub mod sheet_parts;
 pub mod sheets;
+pub mod statistics;
 pub mod tab;
 pub mod table;
 pub mod transaction_editor;

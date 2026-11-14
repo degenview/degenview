@@ -11,8 +11,8 @@ use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::sheet;
 use crate::ui::portfolio::empty;
 use crate::ui::portfolio::grid::{self, Col, Navigation, RowContext, TableSpec};
-use crate::ui::portfolio::overview::activity_caption;
 use crate::ui::portfolio::sheet_parts::{card_background, problem_card, status_dot};
+use crate::ui::portfolio::statistics::activity_caption;
 use crate::ui::portfolio::transactions::{
     asset_subtitle, kind_counts, paint_asset_cell, paint_date_cell, paint_type_capsule,
     paint_type_tick, quantity_sign, type_mix, type_name,
