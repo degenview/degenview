@@ -9,6 +9,7 @@ pub fn local_utc_offset_secs(epoch_ms: i64) -> i64 {
     platform::offset(epoch_ms.div_euclid(1_000))
 }
 
+#[cfg(any(target_os = "macos", test))]
 /// A sane offset: real zones sit within −12h…+14h.
 pub fn clamp_offset(secs: i64) -> i64 {
     secs.clamp(-12 * 3_600, 14 * 3_600)

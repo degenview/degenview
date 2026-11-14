@@ -6,6 +6,8 @@ use crate::model::alert::AlertServiceState;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const AGENT_BUNDLE_ID: &str = "es.nico.degenview.alert-agent";
 
+/// Only the macOS login item reports the first four.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeServiceStatus {
     NotRegistered,
