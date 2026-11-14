@@ -67,6 +67,24 @@ pub fn clock_time(ms: i64, utc_offset_secs: i64) -> String {
     format!("{:02}:{:02}", seconds / 3_600, seconds % 3_600 / 60)
 }
 
+/// "14:03:07" in the viewer's time zone, or "—" when there is no time: a table's time cell.
+pub fn clock_time_seconds(ms: Option<i64>) -> String {
+    ms.map_or_else(
+        || "—".to_owned(),
+        |ms| clock_seconds_at(ms, local_utc_offset_secs(ms)),
+    )
+}
+
+fn clock_seconds_at(ms: i64, utc_offset_secs: i64) -> String {
+    let seconds = (ms.div_euclid(1_000) + utc_offset_secs).rem_euclid(86_400);
+    format!(
+        "{:02}:{:02}:{:02}",
+        seconds / 3_600,
+        seconds % 3_600 / 60,
+        seconds % 60
+    )
+}
+
 /// "Oct 9, 2026 14:03" in the viewer's time zone.
 pub fn date_time_text(ms: i64, utc_offset_secs: i64) -> String {
     format!(
@@ -121,6 +139,13 @@ mod tests {
         assert_eq!(clock_time(1_705_330_800_000, 2 * 3_600), "17:00");
         assert_eq!(clock_time(1_705_330_800_000, -8 * 3_600), "07:00");
         assert_eq!(clock_time(1_705_330_800_000 + 90_000, 0), "15:01");
+    }
+
+    #[test]
+    fn table_times_keep_their_seconds_and_dash_a_missing_one() {
+        assert_eq!(clock_seconds_at(1_705_330_807_000, 0), "15:00:07");
+        assert_eq!(clock_seconds_at(1_705_330_807_000, -8 * 3_600), "07:00:07");
+        assert_eq!(clock_time_seconds(None), "—");
     }
 
     #[test]

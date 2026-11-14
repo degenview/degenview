@@ -30,7 +30,7 @@ use crate::ui::trade::tables::{self, OrderAction, badge_tone};
 use crate::ui::trade::{notice, stats_strip};
 use crate::ui::{
     broker::badge,
-    kit::{self, dialog, sheet},
+    kit::{self, dialog, sheet, time_text::clock_time_seconds},
     theme,
 };
 
@@ -175,15 +175,6 @@ fn side_color(side: Side) -> Color32 {
 
 fn side_word(side: Side) -> &'static str {
     if side == Side::Buy { "Buy" } else { "Sell" }
-}
-
-fn time_text(ms: Option<i64>) -> String {
-    let Some(ms) = ms else {
-        return "—".to_owned();
-    };
-    let secs = ms.div_euclid(1000) + crate::service::system::timezone::local_utc_offset_secs(ms);
-    let day = secs.rem_euclid(86_400);
-    format!("{:02}:{:02}:{:02}", day / 3600, day % 3600 / 60, day % 60)
 }
 
 /// The size column: the base amount, or "25 (spend)" for a market buy sized by an amount to spend.
@@ -669,7 +660,7 @@ fn history_tab(
             let primary = theme::text_primary();
             let weak = theme::text_secondary();
             match column {
-                0 => grid::figure(ui, &time_text(order.created_ms), weak),
+                0 => grid::figure(ui, &clock_time_seconds(order.created_ms), weak),
                 1 => grid::text_cell(ui, &order.market, primary),
                 2 => grid::tag(
                     ui,
@@ -741,7 +732,7 @@ fn fills_tab(
         let primary = theme::text_primary();
         let weak = theme::text_secondary();
         match column {
-            0 => grid::figure(ui, &time_text(Some(fill.time_ms)), weak),
+            0 => grid::figure(ui, &clock_time_seconds(Some(fill.time_ms)), weak),
             1 => grid::text_cell(ui, &fill.market, primary),
             2 => grid::tag(
                 ui,
@@ -1082,8 +1073,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn times_and_ids_are_short() {
-        assert_eq!(time_text(None), "—");
+    fn ids_are_short() {
         assert_eq!(short_id("abcdefghijkl"), "abcdefgh");
     }
 }
