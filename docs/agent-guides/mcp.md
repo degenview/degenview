@@ -103,7 +103,7 @@ entry and `McpCommand::domain` arm), its arms in the app's `run_mcp_command` and
   matches the planned base) checked by `AlertEngine::apply`. Refusals land in `rejected_commands`
   and surface as `CONFLICT` via `AlertCommand::CommandOutcome`. Never use snapshot `revision` as
   a precondition (moves on every quote and delivery). An unqueueable save is an error, never "queued".
-- Read-only script tools: `mcp/pine/tools.rs` and `mcp/pine/mod.rs` with `ScriptStore` and compiler
+- Read-only script tools: `mcp/pine/tools.rs` and `mcp/pine/scripts.rs` with `ScriptStore` and compiler
   on a worker; chart-private Pine state via `ChartWorkspace::pine_instance_views` on the app
   thread. Never invent reports or alert history.
 - Scripts on charts: `ChartWorkspace::{add_pine_instance_to,

@@ -61,16 +61,16 @@ SettingsPage ← SyncView ← SyncHost (app thread: apply, actions)   ──mpsc
 ```
 
 * **Outbox.** `Store::replace_documents` and `set_setting` queue the upload intent in the *same
-  SAVEPOINT* as the write (`src/store/sync/mod.rs`). A change can never commit without it, and a crash
+  SAVEPOINT* as the write (`src/store/sync/track.rs`). A change can never commit without it, and a crash
   right after a save still uploads after restart. Rows are projected to sync entities first
-  (`src/sync/record/project.rs`): alert runtime fields, per-Mac layout fields and snapshot consent are
+  (`src/sync/record/project/`): alert runtime fields, per-Mac layout fields and snapshot consent are
   dropped, drawings are split out of layouts. That equality is what makes the alert engine's
   once-a-second rewrite and the apply of a remote change queue nothing.
 * **Core** (`src/sync/engine/core.rs`) has no threads or network. It stages due outbox entries in bounded
   batches tagged with the account they belong to, clears an entry only when the cloud accepted
   that exact `seq`, retries with backoff per failure kind (honouring server retry-after), and
   saves the engine checkpoint only after a fetched batch was applied.
-* **Apply** (`src/sync/engine/apply/mod.rs`) writes one fetched batch in one transaction. Each remote row is
+* **Apply** (`src/sync/engine/apply/`, one file per record kind) writes one fetched batch in one transaction. Each remote row is
   checked against this version's own model first; a table holding a row this version cannot read
   is never rewritten; what cannot be applied is kept in `sync_inbox`, never dropped.
   A batch that cannot be saved at all (a full disk, a locked or damaged database) is **not
@@ -145,7 +145,7 @@ drawing record stays small and a layout never embeds pixels. The picture is its 
 
 * **Limits.** A stored picture is at most 600 000 bytes (`annotation::ingest` re-encodes and shrinks until it
   fits), so its record stays under `MAX_PAYLOAD_BYTES` (900 000) after base64. No `CKAsset` is used.
-* **Validation** (`sync/record/validate.rs`): a record is accepted only if its name is 64 lower-case hex
+* **Validation** (`sync/record/validate/`): a record is accepted only if its name is 64 lower-case hex
   digits, the mime is PNG or JPEG, the bytes are within the limit, start with that format's signature
   and hash to the name. A record that is anything else is refused, not stored.
 * **Merge.** A picture is immutable (its name is its hash), so there is nothing to merge: last writer
@@ -167,7 +167,7 @@ drawing record stays small and a layout never embeds pixels. The picture is its 
 
 Tested on `MockCloud` (`sync/tests/asset.rs`: upload, a second device receiving it, a picture arriving
 after its drawing, a remote delete, a layout that stops using a picture, and all twelve text, note and
-content drawings reaching the other Mac exactly as drawn; `sync/record/validate.rs`: damaged and oversize
+content drawings reaching the other Mac exactly as drawn; `sync/record/validate/tests.rs`: damaged and oversize
 records). Not verified: a real CloudKit transfer of a
 picture, and a record near the size limit.
 
