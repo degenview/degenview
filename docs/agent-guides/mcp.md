@@ -166,7 +166,7 @@ entry and `McpCommand::domain` arm), its arms in the app's `run_mcp_command` and
 - Remote failed sign-ins hit the address's own bucket first (`RateLimiter::failed_auth(peer, now)`,
   bounded table), then the shared one; one `AuthRefused` row per address per minute. Audit rows
   carry `peer` (empty for this machine), never a token or request content.
-- Security card "Remote connections" (`ui/settings/mcp.rs`) saves nothing until `SetBind` is sent
+- Security card "Remote connections" (`ui/settings/mcp/security.rs`) saves nothing until `SetBind` is sent
   with an address `parse_interface` accepted. Fingerprint from `McpHost::tls_fingerprint`, never
   computed in the page. `detect_local_address` is a system call: on click only, never per frame.
 

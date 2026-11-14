@@ -6,7 +6,7 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
 ## Rendering and prices
 
 - `ui::chart::card::ChartCard` owns the painter loop, `ui::chart::series` draws every main series,
-  `model::chart::look` decides bar appearance. No type-specific drawing in `chart/card/mod.rs`.
+  `model::chart::look` decides bar appearance. No type-specific drawing in `chart/card/`.
 - State: `workspace::Chart`. Order: grid, main series, overlays/indicators, labels.
 - `ui::chart::card::PriceScale` is the only price<->y map (linear, or log while the frame can draw
   one), carrying `PriceScaleMode` and reference. Percent and Indexed to 100 change only what axis,

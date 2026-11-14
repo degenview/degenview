@@ -114,14 +114,14 @@ Stacked pull requests, logic changes first and pure moves last.
 
 ### Wave 4: splits and copies
 
-- [x] **PR 12: one UI kit.**
+- [x] **PR 12: one UI kit.** [#523](https://github.com/degenview/degenview/pull/523)
   - [x] Asset logo, divider, settings fields and buttons into `ui/kit`; local copies of
         `with_alpha`, `time_text`, `galley` and the Settings `status_badge` deleted. The other
         empty states, chips and card frames stay: each looks different from the kit's (sizes,
         discs, fills), and folding them in would change pixels.
   - [x] `ui/kit/mod.rs` split by widget family.
 - [ ] **PR 13: big files split** (move only), inline tests into `tests.rs`.
-  - [ ] UI: chart card, watchlist sidebar, Settings ▸ MCP, portfolio overview/statistics, chart
+  - [x] UI: chart card, watchlist sidebar, Settings ▸ MCP, portfolio overview/statistics, chart
         settings, tab bar, drawing properties.
   - [ ] Pine: runtime session, outputs/drawings; Pine Studio: editor, studio commands, preview.
   - [ ] Store and sync: `store/sync`, `sync/engine/apply`; `mcp/pine`.

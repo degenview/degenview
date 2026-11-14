@@ -8,9 +8,8 @@ use crate::model::portfolio::{
 };
 use crate::ui::portfolio::empty::{self, Scene};
 use crate::ui::portfolio::holdings::{self, HoldingsInput, HoldingsState};
-use crate::ui::portfolio::overview::{
-    self, OverviewInput, OverviewState, PriceStatus, StatisticsInput,
-};
+use crate::ui::portfolio::overview::{self, OverviewInput, OverviewState, PriceStatus};
+use crate::ui::portfolio::statistics::{self, StatisticsInput};
 use crate::ui::portfolio::transactions::{self, Projection, TransactionsInput, TransactionsState};
 use crate::ui::render_tests::Screen;
 use crate::ui::{icons::Icon, kit::header_controls, theme};
@@ -202,7 +201,7 @@ fn portfolio_gallery_statistics() {
         both_themes(name, size, move |ui| {
             let holdings = if empty { Vec::new() } else { holdings() };
             let history = if empty { Vec::new() } else { history() };
-            overview::show_statistics(
+            statistics::show_statistics(
                 ui,
                 &StatisticsInput {
                     holdings: &holdings,

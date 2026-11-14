@@ -13,12 +13,13 @@ use crate::ui::kit::{
     self, MEDIUM, REGULAR, SEMIBOLD,
     time_text::{clock_time, date_text},
 };
+use crate::ui::portfolio::blocks::lift;
 use crate::ui::portfolio::charts;
 use crate::ui::portfolio::empty;
 use crate::ui::portfolio::grid::{
     self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec, put,
 };
-use crate::ui::portfolio::overview::{activity_caption, lift};
+use crate::ui::portfolio::statistics::activity_caption;
 use crate::ui::portfolio::table;
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, Rect, Sense, Stroke, pos2, vec2};

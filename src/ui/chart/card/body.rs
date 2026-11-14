@@ -1,6 +1,6 @@
-//! The live chart's frame, around the shared painter in [`super::frame`]: what `body_inner` sets up
-//! before the layout and settles after the paint. The pure pieces are plain functions so they can
-//! be tested without a UI.
+//! The live chart's frame, around the shared painter in [`super::frame`]: [`ChartCard::body`], and
+//! what `body_inner` sets up before the layout and settles after the paint. The pure pieces are
+//! plain functions so they can be tested without a UI.
 
 use super::frame::FrameLayout;
 use super::*;
@@ -254,6 +254,294 @@ pub(super) fn report_hover(
         pointer.hover_x_fraction = Some(((position.x - plot.left()) / plot.width()) as f64);
         pointer.hover_price = Some(view.scale.price(position.y));
         pointer.hover_anchor = Some(projection.anchor(position));
+    }
+}
+
+impl ChartCard {
+    /// Plot body. Reports the pointer (click + hover) back to the workspace.
+    #[allow(clippy::too_many_arguments)]
+    /// The chart; when a refresh failed but there is data to show, the last result stays up with
+    /// a small warning along the bottom.
+    pub fn body(
+        &mut self,
+        ui: &mut egui::Ui,
+        symbol: &str,
+        candles: &[Kline],
+        loading: bool,
+        error: Option<&ProviderError>,
+        scale_mode: PriceScaleMode,
+        source: DataSource,
+        indicators: &IndicatorConfig,
+        crosshair: Option<&CrosshairInfo>,
+        chart_id: u64,
+        drawing: &mut DrawingFrame,
+        replay: &mut ReplayChartFrame,
+    ) -> ChartPointer {
+        self.sync_baseline = None;
+        let args = BodyArgs {
+            symbol,
+            candles,
+            error,
+            scale_mode,
+            source,
+            indicators,
+            crosshair,
+            chart_id,
+        };
+        let _ = loading;
+        let pointer = self.body_inner(ui, &args, drawing, replay);
+        self.end_sync_frame(source, candles);
+        if let (Some(error), false, Some(rect)) = (error, candles.is_empty(), pointer.rect) {
+            refresh_warning(ui, rect, error, source);
+        }
+        pointer
+    }
+
+    fn body_inner(
+        &mut self,
+        ui: &mut egui::Ui,
+        args: &BodyArgs,
+        drawing: &mut DrawingFrame,
+        replay: &mut ReplayChartFrame,
+    ) -> ChartPointer {
+        let BodyArgs {
+            symbol,
+            candles,
+            scale_mode,
+            source,
+            indicators,
+            crosshair,
+            chart_id,
+            ..
+        } = *args;
+        // An open scale menu owns the keyboard: Escape closes it and nothing else, and no draft
+        // takes the Enter or Delete meant for one of its rows.
+        if scale_menu::is_open(ui.ctx(), chart_id) {
+            drawing.keys_blocked = true;
+            scale_menu::close_on_escape(ui.ctx(), chart_id);
+        }
+        let line = source.is_line_chart();
+        let mut pointer = ChartPointer::default();
+        let available = ui.available_size();
+        let size = Vec2::new(available.x.max(1.0), available.y.max(50.0));
+        let (response, painter) = ui.allocate_painter(size, Sense::click_and_drag());
+        let response = crate::ui::accessibility::label_as(
+            response,
+            egui::WidgetType::Panel,
+            format!(
+                "{} {} chart",
+                self.display_title(symbol, source),
+                source.display_name()
+            ),
+        );
+        let rect = response.rect;
+        pointer.rect = Some(rect);
+        self.body_size = rect.size();
+        let style = CanvasStyle::resolve(&self.appearance.canvas);
+        let full_rect = rect;
+        canvas::paint_background(&painter, rect, style.fill);
+
+        if self.paint_placeholder(ui, &response, &painter, args) {
+            return pointer;
+        }
+
+        // A script that isn't an overlay (RSI, MACD …) gets a pane under the candles: 30% of the
+        // chart's height shared between them, the candles keep the rest and the time axis. On a
+        // line chart every script draws over the line instead.
+        // A price-based chart type draws bars it constructed from the candles, and the scripts
+        // and indicators on it read those same bars; every other type draws the candles as they
+        // are. Either way `bars` is what the chart is, and `candles` stays the market.
+        let chart_type = if line {
+            ChartType::Candles
+        } else {
+            self.appearance.style.effective_type(source)
+        };
+        self.drawn_type = chart_type;
+        let constructed = self.constructed_series(candles, chart_type);
+        // Editing a price-based type's construction (box size, reversal) rebuilds its bars, which
+        // is a different series for a stored view as much as another type is.
+        let drawn = constructed.as_ref().map(|built| built.construction);
+        if drawn != self.drawn_series {
+            self.drawn_series = drawn;
+            self.new_series();
+        }
+        let bars: &[Kline] = constructed
+            .as_ref()
+            .map_or(candles, |built| built.klines.as_slice());
+        self.keep_view_on_its_bars(bars);
+        self.begin_sync_frame();
+        let symbol_info = body::symbol_info(symbol, source, chart_type);
+        let source_bar_seconds = body::source_bar_seconds(candles, constructed.is_some());
+        let placed = self.pine_outputs(ui.ctx(), &symbol_info, bars, source_bar_seconds);
+        let outputs = frame::split_forced_overlays(placed, line);
+        self.feed_table(
+            bars,
+            chart_type,
+            line,
+            source.provides_volume(),
+            indicators,
+            &outputs,
+        );
+        self.refresh_script_extent(&outputs, line, bars.len());
+        let data = frame::FrameData {
+            symbol,
+            source,
+            line,
+            chart_type,
+            scale_mode,
+            candles,
+            bars,
+            constructed: constructed.as_deref(),
+            outputs: &outputs,
+            indicators,
+        };
+        let layout = self.frame_layout(&data, full_rect, self.top_inset, &painter, &style);
+        self.keep_panes_in_step(&layout);
+        let plot = layout.plot;
+        let pane_rects = &layout.pane_rects;
+        let chart_hovered = ui.rect_contains_pointer(full_rect);
+        let regions = self.handle_frame_input(ui, &response, &data, &layout, drawing, replay);
+
+        let Some(view) = self.view(bars, (plot, layout.top_inset), scale_mode, chart_type) else {
+            return pointer;
+        };
+        self.near_oldest = view.start <= self.viewport.horizontal.visible * NEAR_OLDEST_SCREENS;
+        #[cfg(test)]
+        {
+            self.probe = Some(Probe {
+                plot,
+                start: view.start,
+                lead: view.lead,
+                slot_width: view.slot_width,
+                minimum: view.scale.minimum,
+                maximum: view.scale.maximum,
+            });
+        }
+        let projection = view.projection(plot, bars, self.appearance.price_format(), ui.ctx());
+        pointer.context = self.context_request(
+            &response,
+            &regions,
+            pane_rects,
+            &projection,
+            &view.scale,
+            drawing,
+        );
+        let mut layer = std::mem::take(&mut self.layer);
+        let mut overlays = LiveOverlays {
+            ui,
+            response: &response,
+            card: self,
+            replay,
+            chart_id,
+            chart_hovered,
+            pane_actions: Vec::new(),
+            alert_menu: None,
+            alert_moves: Vec::new(),
+            alert_toggled: Vec::new(),
+            alert_deleted: Vec::new(),
+            paper: (Vec::new(), None),
+            live: Vec::new(),
+            navigation: None,
+            scale_mode: None,
+            overlay_action: None,
+            on_overlay_card: false,
+        };
+        self.paint_frame(
+            &painter,
+            &data,
+            &layout,
+            &view,
+            &mut layer,
+            drawing,
+            &frame::Decor {
+                chart_id,
+                replay_active: overlays.replay.active,
+                time_lock: true,
+                crosshair,
+            },
+            &mut overlays,
+        );
+        let LiveOverlays {
+            pane_actions,
+            alert_menu,
+            alert_moves,
+            alert_toggled,
+            alert_deleted,
+            paper,
+            live,
+            navigation,
+            scale_mode,
+            overlay_action,
+            on_overlay_card,
+            ..
+        } = overlays;
+        pointer.overlay_action = overlay_action;
+        pointer.on_overlay_card = on_overlay_card;
+        self.layer = layer;
+        self.apply_overlay_results(
+            OverlayResults {
+                pane_actions,
+                alert_menu,
+                alert_moves,
+                alert_toggled,
+                alert_deleted,
+                paper,
+                live,
+                navigation,
+                scale_mode,
+            },
+            bars.len(),
+        );
+        body::report_hover(&mut pointer, &response, plot, &view, &projection);
+
+        pointer.clicked = response.clicked();
+        pointer
+    }
+
+    /// "Click a candle" mode: marker at the candle under the pointer, click picks it.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn handle_start_pick(
+        &self,
+        ui: &egui::Ui,
+        response: &Response,
+        painter: &egui::Painter,
+        plot: Rect,
+        time_of: &dyn Fn(usize) -> i64,
+        view: &View,
+        replay: &mut ReplayChartFrame,
+    ) {
+        if self.pick_kind == overlay::PickKind::LogsRange {
+            self.handle_range_pick(ui, response, painter, plot, time_of, view, replay);
+            return;
+        }
+        let Some(position) = response.hover_pos().filter(|point| plot.contains(*point)) else {
+            return;
+        };
+        let Some(index) = overlay::candle_at(
+            position.x,
+            plot.left(),
+            view.slot_width,
+            view.lead,
+            view.start,
+            view.end,
+        ) else {
+            return;
+        };
+        let open_time = time_of(index);
+        let x = plot.left()
+            + view.slot_width * ((index - view.start) as f32 + 0.5)
+            + view.slot_width * view.lead;
+        overlay::paint_selection(
+            painter,
+            self.below_header(plot),
+            x,
+            open_time,
+            self.pick_kind,
+        );
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        if response.clicked() {
+            replay.picked_ms = Some(open_time);
+        }
     }
 }
 
