@@ -1,4 +1,5 @@
 use super::alert::commit_price_alert_checked;
+use super::session::PersistedSession;
 use super::window::set_window_title;
 use super::*;
 use crate::model::alert::AlertServiceState;

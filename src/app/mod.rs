@@ -8,10 +8,10 @@ mod tabs;
 mod window;
 
 use crate::app::alert::AlertRuntimeControl;
-use crate::app::session::PersistedSession;
 use crate::app::session::PersistedSpecialTab;
 use crate::app::session::PersistedSpecialTabKind;
 use crate::app::session::PersistedTab;
+use crate::app::session::SessionState;
 use crate::app::tabs::TabContent;
 use crate::app::tabs::TabSlot;
 use crate::app::tabs::TabState;
@@ -188,12 +188,10 @@ pub struct DegenViewApp {
     banner: AlertBannerState,
     notifier: Arc<dyn Notifier>,
     actions: Arc<Mutex<Vec<AppAction>>>,
-    session_save_error: Arc<Mutex<Option<String>>>,
-    session_last_saved_at: Instant,
+    session: SessionState,
     /// The root window is a hidden 1×1 surface; it is asked to hide once, because every viewport
     /// command asks egui for another frame.
     root_hidden: bool,
-    last_saved_session: Option<PersistedSession>,
 }
 
 impl DegenViewApp {
@@ -452,10 +450,8 @@ impl DegenViewApp {
             banner,
             notifier,
             actions,
-            session_save_error: Arc::new(Mutex::new(None)),
-            session_last_saved_at: Instant::now(),
+            session: SessionState::new(),
             root_hidden: false,
-            last_saved_session: None,
         }
     }
 }
@@ -497,7 +493,7 @@ impl eframe::App for DegenViewApp {
             native_bridge::screen_layout(),
             now_ms().max(0) as u64,
         );
-        if self.session_last_saved_at.elapsed() >= Duration::from_secs(10) {
+        if self.session.is_due() {
             self.save_session();
         }
         let now = now_ms();

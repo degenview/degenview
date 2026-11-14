@@ -4,6 +4,7 @@ use super::alert::commit_price_alert;
 use super::mcp::show_mcp_confirmation;
 use super::now_ms;
 use super::open_system_settings;
+use super::session::SessionSaveError;
 use super::tabs::SharedTabs;
 use super::tabs::TabContent;
 use super::tabs::show_tab;
@@ -82,7 +83,7 @@ pub(super) struct WindowEnv {
     pub(super) alert_host: Arc<Mutex<AlertHost>>,
     pub(super) alert_fx_shared: Arc<Mutex<std::collections::HashMap<AlertCurrency, f64>>>,
     pub(super) app_actions: Arc<Mutex<Vec<AppAction>>>,
-    pub(super) session_save_error: Arc<Mutex<Option<String>>>,
+    pub(super) session_save_error: SessionSaveError,
     pub(super) updates: UpdateHost,
     pub(super) snapshots: SnapshotHost,
     pub(super) mcp_confirmations: Arc<Mutex<ConfirmationHost>>,
@@ -257,9 +258,7 @@ fn show_window(
         show_tab(ui, env, window.active, &content, chart_info);
     });
 
-    if let Ok(error) = env.session_save_error.lock()
-        && let Some(message) = error.as_ref()
-    {
+    if let Some(message) = env.session_save_error.message() {
         egui::Window::new("Could not save session")
             .id(egui::Id::new(("session-save-error", window_id)))
             .collapsible(false)
@@ -333,7 +332,7 @@ impl DegenViewApp {
             alert_host: Arc::clone(&self.alert_host),
             alert_fx_shared: Arc::clone(&self.alert_fx_shared),
             app_actions: Arc::clone(&self.actions),
-            session_save_error: Arc::clone(&self.session_save_error),
+            session_save_error: self.session.error().clone(),
             updates: self.updates.clone(),
             snapshots: self.snapshots.clone(),
             mcp_confirmations: Arc::clone(&self.mcp_confirmations),
