@@ -25,15 +25,36 @@ the login-item agent (`bin/degenview-alert-agent.rs`).
 `workspace/mod.rs` keeps `ChartWorkspace`'s state, constructors and the per-frame `ui` entry point.
 Every other concern is a child module in `workspace/` that adds an `impl ChartWorkspace` block; a
 child sees the root's private fields, and anything another child calls is `pub(in crate::workspace)`.
-The children are grouped by domain, like `model/` and `ui/`:
+
+The root holds the charts and their grid (charts, columns, focus, timeframe, sync), shared handles
+(store, watchlist store, quote book and coordinator, card environment, snapshot settings), and the
+state of views that already have a type of their own (the pickers and popovers, the chart menu's
+`ContextState`, `SnapshotState`, `EmptyPageCache`, Tab Linking's `LinkState`). Each other concern is
+an owned part, a struct whose fields only its own module (or directory) sees; the rest of the
+workspace calls its methods:
+
+| Part | Field | Module | Owns |
+| --- | --- | --- | --- |
+| `DrawingTools` | `tools` | `drawing/tools` | The armed tool and Zoom In, the strip's options (`DrawingPrefs`) and the templates store, hiding, the selection, the copied style, the properties dialog and Remove all's question |
+| `LayoutSession` | `layout` | `layout/session` | The open layout's id and name, the saved fingerprint and drawings (dirty state, merging another Mac's edit), the name prompt, the pending open, the error alert, the autosave debounce |
+| `UndoHistory` | `history` | `undo` | The undo and redo stacks, and the runs (a drawing's restyles, an overlay's colour drag) that collapse into one step; `record` is the one way to take a step |
+| `ReplayState` | `replay` | `replay` | The replay clock, its step timer, the rebase after a timeframe change, the date sheet |
+| `WatchlistPane` | `watchlist_pane` | `watchlist` | Whether the sidebar shows, its view state, notices, import report and export, the list the symbol picker adds to, a row's open-in-new-tab request |
+| `TradeSide` | `trade` | `trade/` | The trading hub, the order sheet and orders panel and whether they show, the venue, the broker and paper panels |
+| `AlertUi` | `alerts` | `alerts` | The bell's unseen count, the requested and open price-alert sheet, its FX rates |
+
+`DrawingTools` and `LayoutSession` keep their fields `pub(super)`, visible to their directory
+(`drawing/`, `layout/`) and nowhere else. An operation that spans parts (opening a layout clears the
+undo history; an edit bumps the layout's drawings version) stays on `ChartWorkspace` and calls each
+part. The children are grouped by domain, like `model/` and `ui/`:
 
 | Directory | Owns |
 | --- | --- |
 | `chart/` | `mod.rs`: one chart's market data, fetching, refresh cadence, older-history paging; `collection` (add, replace, focus, remove, summaries for MCP), `live` (the live Binance feed), `settings` (the chart settings window), `symbol_picker`, `snapshot`, `context/` (the right-click menu) |
 | `overlay/` | Compared markets: their candles fetched once per market (`mod.rs`) and the undoable add, edit and remove (`actions`) |
-| `drawing/` | `mod.rs`: drawing properties, templates, locking, merging another Mac's drawings; `content` (where a placed picture comes from), `links` (Post cards), `tool_rail` (the tool rail and its grouped tiles) |
-| `layout/` | Saved layouts: persisted form, dirty state, open/save/rename/delete (`mod.rs`), and the autosave debounce (`autosave`) |
-| `trade/` | The tab's trading side: `broker`, `paper` (quotes, portfolio cards, chart orders) and `sheet` (the order sheet's venue and actions) |
+| `drawing/` | `mod.rs`: drawing properties, templates, locking, merging another Mac's drawings; `tools` (`DrawingTools`), `content` (where a placed picture comes from), `links` (Post cards), `tool_rail` (the tool rail and its grouped tiles) |
+| `layout/` | Saved layouts: persisted form, dirty state, open/save/rename/delete (`mod.rs`), the tab's `LayoutSession` (`session`) and the autosave debounce (`autosave`) |
+| `trade/` | The tab's trading side: `TradeSide` and its panels (`mod.rs`), `broker`, `paper` (quotes, portfolio cards, chart orders) and `sheet` (the order sheet's venue and actions) |
 | `pine/` | Scripts and indicators on a chart, and the views the app and MCP take (`mod.rs`); the Pine Logs pane (`logs/`) |
 | `tab_link/` | A tab's side of Tab Linking |
 | `empty_page/` | The new-tab page's slow reads (recents, layouts, Alpaca key) in `mod.rs`, and the week of closes behind its sparklines (`trends`) |

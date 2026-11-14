@@ -96,12 +96,12 @@ Stacked pull requests, logic changes first and pure moves last.
 
 ### Wave 3: structure
 
-- [x] **PR 8: typed errors.**
+- [x] **PR 8: typed errors.** [#519](https://github.com/degenview/degenview/pull/519)
   - [x] Add `thiserror`.
   - [x] Providers return a `ProviderError`; no error is matched by its text.
   - [x] The sync engine has its own `SyncError`.
   - [x] One shared poison-tolerant `lock` helper.
-- [ ] **PR 9: `ChartWorkspace` in owned parts.** Drawing tools, layout session, watchlist pane, trade
+- [x] **PR 9: `ChartWorkspace` in owned parts.** Drawing tools, layout session, watchlist pane, trade
       side, replay, undo history and alert UI become sub-structs with their own methods.
 - [ ] **PR 10: `DegenViewApp` in owned parts.** An alert coordinator, the tab state and the MCP state.
 - [ ] **PR 11: MCP routing.**

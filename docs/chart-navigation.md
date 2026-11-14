@@ -68,7 +68,7 @@ Linking the charts of a workspace is built on this viewport: see [linked charts]
 
 ## Zoom In
 
-The magnifying-glass tile under the Ruler arms a **mode** (`ChartWorkspace::zoom_armed`), not a
+The magnifying-glass tile under the Ruler arms a **mode** (`DrawingTools::is_zoom_armed`), not a
 drawing tool: there is no `Tool` variant, no `Geometry`, nothing stored, synced or put in a
 template. The zoom itself is an undo step (below). Arming it puts any drawing tool down and arming a drawing tool (or the crosshair tile, or
 Escape) puts it down; a finished zoom does too, whatever the Keep drawing setting says.
@@ -127,8 +127,8 @@ comparing what it holds: applying a step `Back` removes the history's newest ent
 (a zoom older than the 8 it keeps finds none and adds none), applying it `Forward` adds the view it
 replaces. A zoom records `Back`, a Zoom out records `Forward`, and applying an entry records the
 inverse. The swap is made outside a frame, so it records `scroll_from` and linked charts follow it. A
-view is not part of a layout, so undoing a zoom does not mark one changed (`drawings_version` is left
-alone).
+view is not part of a layout, so undoing a zoom does not mark one changed (it never calls
+`LayoutSession::drawings_edited`).
 
 **Observed on tradingview.com** (1D BTCUSDT chart, web): the tile sits under the Ruler; a drag zooms both
 axes to the rectangle and the tool reverts to the crosshair; a click without a drag does nothing and the
