@@ -500,7 +500,7 @@ impl DegenViewMcp {
         let mut changed = match self
             .bridge
             .call(
-                &client,
+                client,
                 Permission::AlertsPause,
                 AlertCommand::SetPaused { alert_id, paused },
                 REQUEST_TIMEOUT,
@@ -518,7 +518,7 @@ impl DegenViewMcp {
                 (AlertStatus::Active, AlertChangeStatus::Active)
             };
             if matches!(
-                self.settle(&client, Permission::AlertsPause, alert_id, None, |alerts| {
+                self.settle(client, Permission::AlertsPause, alert_id, None, |alerts| {
                     alerts.first().is_some_and(|alert| alert.status == wanted)
                 })
                 .await,
