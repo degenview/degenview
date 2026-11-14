@@ -60,8 +60,9 @@ source. Navigating to it needs the library's source, not the script's.
 
 ## Who reads them
 
-Capture is off by default: `ExecutionController::with_logs()` turns it on. The chart's `PineWorker`
-does; alert subscriptions, one-shot runs and the corpus do not, so they format and keep nothing.
+Capture is off by default: `ExecutionController::with_logs()` turns it on. A chart's script runs
+(`host::pine::chart`) do; alert subscriptions, one-shot runs and the corpus do not, so they format
+and keep nothing.
 
 Each `ExecutionUpdate` carries a `LogBatch`. Batches cover consecutive `from..to` sequence ranges;
 a reader (`LogHistory`) that sees a batch whose `from` is not where it stopped throws away what it

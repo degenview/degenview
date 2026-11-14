@@ -719,7 +719,10 @@ fn wait_for_script(rig: &mut Rig, id: u64) {
 }
 
 fn generation(rig: &Rig, id: u64) -> u64 {
-    rig.card.runs.get(&id).expect("the script ran").generation
+    rig.card
+        .pine
+        .generation_for_tests(id)
+        .expect("the script ran")
 }
 
 #[test]

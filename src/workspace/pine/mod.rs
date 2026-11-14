@@ -392,7 +392,11 @@ impl ChartWorkspace {
             .iter()
             .filter(|chart| chart.is_market())
             .map(|chart| {
-                let (bars, run) = chart.chart.pine_feed(&chart.candles, chart.source, now_ms);
+                let (bars, run) = crate::host::pine::subscription::ChartRun::feed(
+                    chart.chart.construction(chart.source),
+                    &chart.candles,
+                    now_ms,
+                );
                 ChartFeed {
                     chart_id: chart.id,
                     symbol_key: InstrumentId::new(chart.source, &chart.symbol).key(),

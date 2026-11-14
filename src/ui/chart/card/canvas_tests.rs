@@ -703,9 +703,9 @@ fn the_right_margin_never_changes_the_data_a_script_reads() {
     let candles = series(300);
     let mut card = ChartCard::default();
     card.appearance_mut().canvas.margins.right = 0;
-    let before = run_revision(&candles, None, 0);
+    let before = RunRevision::of(&candles, None, 0);
     card.appearance_mut().canvas.margins.right = 80;
-    assert_eq!(before, run_revision(&candles, None, 0));
+    assert_eq!(before, RunRevision::of(&candles, None, 0));
 }
 
 #[test]
@@ -958,7 +958,7 @@ fn changing_the_canvas_never_rebuilds_the_bars_or_reruns_scripts() {
     harness.card.set_chart_type(ChartType::Renko);
     harness.draw();
     let built = harness.card.constructed.clone().expect("constructed bars");
-    let revision = run_revision(&harness.candles, None, 0);
+    let revision = RunRevision::of(&harness.candles, None, 0);
     let changes: [fn(&mut ChartCanvas); 6] = [
         |canvas| canvas.background.mode = BackgroundMode::Gradient,
         |canvas| canvas.vertical_grid.visible = false,
@@ -973,7 +973,7 @@ fn changing_the_canvas_never_rebuilds_the_bars_or_reruns_scripts() {
         let now = harness.card.constructed.clone().expect("still constructed");
         assert!(Arc::ptr_eq(&built, &now), "the Renko bars were rebuilt");
     }
-    assert_eq!(revision, run_revision(&harness.candles, None, 0));
+    assert_eq!(revision, RunRevision::of(&harness.candles, None, 0));
 }
 
 #[test]

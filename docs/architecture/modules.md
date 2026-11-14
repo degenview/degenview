@@ -103,10 +103,12 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 
 `host/` has only `mod.rs` at its root. One directory per domain, the host in `mod.rs` and its helpers
 beside it: `alert/` (with `runtime`), `broker/`, `editor_theme/`, `mcp/` (with `confirmation`), `paper/`,
-`pine/` (with `subscription`), `portfolio/` (with `card` and `import_flow`), `settings/` (the
-Settings window's controller: it builds the page's input and applies its actions), `snapshot/`,
-`sync/`, `tab/` (`window`, `title`, `link`), `trading/` (the hub), `update/`. Hosts draw
-nothing: the views that sit on them live in `ui/` (`ui::portfolio::tab`, `ui::paper::panel`).
+`pine/` (with `chart/`, the runs of a chart's scripts and their workers; `batch`, scripts run once
+each; `subscription`), `portfolio/` (with `card` and `import_flow`), `settings/` (the Settings
+window's controller: it builds the page's input and applies its actions), `snapshot/`, `sync/`,
+`tab/` (`window`, `title`, `link`), `trading/` (the hub), `update/`. Hosts draw nothing: the views
+that sit on them live in `ui/` (`ui::portfolio::tab`, `ui::paper::panel`), and views run nothing:
+the chart card hands its bars to `host::pine::chart` and draws what comes back.
 
 `store/` has one file per single-table domain store (`alert`, `asset_store`, `drawing_template`,
 `identity`, `paper`, `pine`, `portfolio`, `watchlist`, `webhook`) and a directory once a store has a

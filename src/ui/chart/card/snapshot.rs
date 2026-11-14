@@ -116,7 +116,7 @@ impl ChartCard {
     /// What instance `id`'s last run drew, counted.
     #[cfg(test)]
     pub fn pine_visual_for_tests(&self, id: u64) -> VisualCounts {
-        let output = &self.runs[&id].styled;
+        let output = self.pine.styled_for_tests(id).expect("the script ran");
         VisualCounts {
             labels: output.labels.len(),
             lines: output.lines.len(),
@@ -134,17 +134,7 @@ impl ChartCard {
     /// The scripts' last runs, in the order the chart draws them. Unlike [`Self::pine_outputs`]
     /// it starts and requests nothing.
     pub(super) fn last_pine_outputs(&self) -> Vec<Placed> {
-        self.instances
-            .iter()
-            .filter(|instance| instance.visible)
-            .filter_map(|instance| {
-                let run = self
-                    .runs
-                    .get(&instance.id)
-                    .filter(|run| run.placement_known)?;
-                Some((Arc::clone(&run.styled), instance.visual_order, instance.id))
-            })
-            .collect()
+        self.pine.last_outputs(&self.instances)
     }
 
     /// Paints the chart into `rect` of `painter`, as it stands.

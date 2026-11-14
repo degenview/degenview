@@ -16,8 +16,9 @@ a portfolio card is not a target) through `apply_indicator_action`, so undo is o
   Discover is a fixed "Popular" row and the rest in a seeded order (the Shuffle button bumps the
   seed, so a shuffle is repeatable and needs no random source). `sections` is pure and tested.
 - **Cards** show a generated chart (`preview.rs`): fixed synthetic bars, natives computed on the spot,
-  each bundled script run once by a worker thread on first open and cached; a saved script, or one
-  whose run failed, gets a glyph. Never run a script on the UI thread.
+  each bundled script run once in the background on first open (`host::pine::batch`, on the work
+  queue) and cached; a saved script, or one whose run failed, gets a glyph. Never run a script on
+  the UI thread.
 - **Detail panel** (dropped below 900pt of window): preview, description, author and license, a
   neutral "Add to chart" (never the accent colour), Favorite. A native indicator already on the
   chart offers "Remove from chart"; a script or bundled one "Add another copy".

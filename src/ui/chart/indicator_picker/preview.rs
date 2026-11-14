@@ -1,17 +1,19 @@
 //! The little chart on a card: a fixed synthetic candle series with the indicator drawn over or
-//! under it. Native indicators are computed on the spot; Pine ones run once on a worker thread
-//! (the first time the picker opens) and are cached, so a frame never waits for a script.
+//! under it. Native indicators are computed on the spot; Pine ones run once in the background
+//! (`host::pine::batch`, the first time the picker opens) and are cached, so a frame never waits
+//! for a script.
 
+use crate::host::pine::batch::{BatchRun, Finished};
 use crate::model::indicators::catalog::{CatalogEntry, EntryKey};
 use crate::model::{BuiltIn, Kline, bollinger, ema, rsi, supertrend_flips};
-use crate::pine::compiler::program::SymbolInfo;
+use crate::pine::compiler::program::{SymbolInfo, VisualOutput};
 use crate::pine::outputs::{MarkerLocation, PlotStyle};
+use crate::pine::syntax::token::Diagnostic;
 use crate::pine_studio::indicators;
 use crate::ui::pine::geometry::rgba;
 use crate::ui::theme;
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Shape, Stroke, pos2};
 use std::collections::HashMap;
-use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, OnceLock};
 
 const BARS: usize = 120;
@@ -146,11 +148,9 @@ pub fn native(kind: BuiltIn) -> Preview {
     }
 }
 
-/// The preview of a Pine script: its plots, horizontal levels and markers over the shared bars.
-/// `None` when it fails to run.
-pub fn pine(source: &str) -> Option<Preview> {
-    let (output, failure) =
-        crate::host::pine::run_script_checked(source, bars(), &symbol(), &HashMap::new());
+/// The preview of a Pine script's run over the shared bars: its plots, horizontal levels and
+/// markers. `None` when it failed to run.
+fn pine(output: &VisualOutput, failure: Option<&Diagnostic>) -> Option<Preview> {
     if failure.is_some() {
         return None;
     }
@@ -192,43 +192,42 @@ pub fn pine(source: &str) -> Option<Preview> {
     (!preview.lines.is_empty() || !preview.marks.is_empty()).then_some(preview)
 }
 
-type Finished = (EntryKey, Option<Preview>);
-
 /// The cache the picker draws from.
 #[derive(Default)]
 pub struct Previews {
     ready: HashMap<EntryKey, Option<Arc<Preview>>>,
-    receiver: Option<Receiver<Finished>>,
+    runs: Option<BatchRun<EntryKey>>,
 }
 
 impl Previews {
-    /// Starts the worker that runs every bundled script, once.
+    /// Starts running every bundled script, once.
     fn start(&mut self, ctx: &egui::Context) {
-        if self.receiver.is_some() {
+        if self.runs.is_some() {
             return;
         }
-        let (sender, receiver) = channel();
-        self.receiver = Some(receiver);
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            for indicator in &indicators::ALL {
-                let preview = pine(indicator.source);
-                if sender
-                    .send((EntryKey::Bundled(indicator.id), preview))
-                    .is_err()
-                {
-                    return;
-                }
-                ctx.request_repaint();
-            }
-        });
+        let scripts = indicators::ALL
+            .iter()
+            .map(|indicator| (EntryKey::Bundled(indicator.id), indicator.source.to_owned()))
+            .collect();
+        self.runs = Some(BatchRun::start(
+            scripts,
+            Arc::clone(bars()),
+            symbol(),
+            ctx.clone(),
+        ));
     }
 
     /// The preview of `entry` if it is ready; starts the work the first time it is asked for.
     pub fn get(&mut self, ctx: &egui::Context, entry: &CatalogEntry) -> Option<Arc<Preview>> {
         self.start(ctx);
-        if let Some(receiver) = &self.receiver {
-            while let Ok((key, preview)) = receiver.try_recv() {
+        if let Some(runs) = &self.runs {
+            for Finished {
+                key,
+                output,
+                failure,
+            } in runs.finished()
+            {
+                let preview = pine(&output, failure.as_ref());
                 self.ready.insert(key, preview.map(Arc::new));
             }
         }
@@ -431,7 +430,13 @@ mod tests {
     #[test]
     fn every_bundled_script_previews_and_agrees_on_its_pane() {
         for indicator in &indicators::ALL {
-            let preview = pine(indicator.source)
+            let (output, failure) = crate::host::pine::run_script_checked(
+                indicator.source,
+                bars(),
+                &symbol(),
+                &HashMap::new(),
+            );
+            let preview = pine(&output, failure.as_ref())
                 .unwrap_or_else(|| panic!("{} has no preview", indicator.name));
             assert_eq!(preview.overlay, indicator.overlay, "{}", indicator.name);
             if indicator.id == "williams-fractals" {

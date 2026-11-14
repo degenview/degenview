@@ -12,7 +12,15 @@ The compiler folds constants, collects inputs, validates structure/types, and li
 `Session` interprets bars; builtin families route to focused pure modules. The strategy broker lives
 inside per-bar state, so realtime rollback restores orders, positions, and trades too.
 
-`host::pine::run_script_checked_in_range` runs applied chart instances and returns renderer-neutral output.
+`host::pine::chart::ChartRuns` runs the scripts applied to a chart: the card hands it, each frame,
+the bars it draws, the `syminfo`, theme and visible range, and its instances; every visible instance
+gets a persistent `ExecutionController` on the work queue (`host/pine/chart/worker.rs`, latest
+request wins), run again only when its source, inputs, market, bar length, theme or bars changed
+(the visible range too, for a script that reads it). The card keeps only the outputs, failures,
+logs and busy state it is handed back. The bars are hashed only when they differ from the copy the
+runs were last handed (a bitwise comparison, cheaper than the hash). `host::pine::batch` runs a list
+of scripts once each over the same bars (the indicator picker's previews), and
+`host::pine::run_script_checked_in_range` runs one script once and returns renderer-neutral output.
 `host::pine::subscription` runs active subscriptions and returns fired `alert()` events.
 `request.*` uses `KlineSecurityDataProvider` with a short REST cache; imports use the Pine
 Studio's `LibraryRegistry`. `request.footprint()` builds a bar's volume footprint from the same

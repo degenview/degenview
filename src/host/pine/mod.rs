@@ -1,7 +1,11 @@
 //! Minimal Pine runtime host: compiles a script and runs it over a series of bars, returning the
 //! chart `VisualOutput` the renderer consumes. Input resolution and library imports are wired
-//! incrementally; the session itself owns the per-bar state machine.
+//! incrementally; the session itself owns the per-bar state machine. `chart` keeps the scripts on a
+//! chart running in the background, `batch` runs a list of scripts once each, and `subscription`
+//! runs the alert subscriptions.
 
+pub mod batch;
+pub mod chart;
 pub mod subscription;
 
 use crate::model::chart::synthetic::ticker;
