@@ -500,7 +500,11 @@ fn paste_adds_new_drawings_at_the_click_as_one_undoable_step() {
         5 * 86_400_000 + 1_000
     );
     assert_eq!(rig.workspace.selected_drawing, Some((target, pasted)));
-    assert_eq!(rig.workspace.undo.len(), 1, "one step for the whole paste");
+    assert_eq!(
+        rig.workspace.history.steps(),
+        1,
+        "one step for the whole paste"
+    );
     rig.workspace.undo(&rig.ctx);
     assert!(rig.drawing_ids(target).is_empty());
 }
@@ -611,9 +615,13 @@ fn remove_indicators_counts_and_takes_the_compared_markets_in_one_undo_step() {
     assert_eq!(facts.indicators, 2);
     let _ = context;
 
-    let steps = rig.workspace.undo.len();
+    let steps = rig.workspace.history.steps();
     rig.workspace.remove_all_indicators(chart);
-    assert_eq!(rig.workspace.undo.len(), steps + 1, "one step for both");
+    assert_eq!(
+        rig.workspace.history.steps(),
+        steps + 1,
+        "one step for both"
+    );
     assert!(!BuiltIn::Ema.applied(&rig.chart_mut(chart).indicators));
     assert!(rig.chart_mut(chart).overlays.is_empty());
     rig.workspace.undo(&rig.ctx);
@@ -1066,7 +1074,7 @@ fn the_tree_hides_and_shows_a_drawing_and_undo_reverts_it() {
         .apply_tree_action(chart, TreeAction::ToggleShown(TreeKey::Drawing(1)));
     assert!(rig.chart_mut(chart).drawings[0].hidden());
     assert!(!rig.chart_mut(chart).drawings[1].hidden());
-    assert_eq!(rig.workspace.undo.len(), 1);
+    assert_eq!(rig.workspace.history.steps(), 1);
     rig.workspace
         .apply_tree_action(chart, TreeAction::ToggleShown(TreeKey::Drawing(1)));
     assert!(!rig.chart_mut(chart).drawings[0].hidden());
@@ -1135,11 +1143,11 @@ fn the_tree_hides_and_removes_a_compared_market_and_undo_restores_it() {
             .get(id)
             .map(|overlay| overlay.visible)
     };
-    let before = rig.workspace.undo.len();
+    let before = rig.workspace.history.steps();
     rig.workspace
         .apply_tree_action(chart, TreeAction::ToggleShown(TreeKey::Overlay(id)));
     assert_eq!(visible(&mut rig), Some(false));
-    assert_eq!(rig.workspace.undo.len(), before + 1, "one undo step");
+    assert_eq!(rig.workspace.history.steps(), before + 1, "one undo step");
     rig.workspace.undo(&rig.ctx);
     assert_eq!(visible(&mut rig), Some(true));
 
@@ -1251,7 +1259,7 @@ fn the_tree_can_delete_a_drawing_from_a_newer_version_and_nothing_else_touches_i
         rig.workspace.apply_tree_action(chart, action);
     }
     assert_eq!(rig.chart_mut(chart).drawings[2], future);
-    assert!(rig.workspace.undo.is_empty(), "no change, no undo step");
+    assert!(!rig.workspace.history.can_undo(), "no change, no undo step");
     // Deleting it works, and undoes.
     rig.workspace
         .apply_tree_action(chart, TreeAction::Delete(TreeKey::Drawing(40)));
@@ -1275,7 +1283,7 @@ fn a_tree_action_for_a_closed_chart_does_nothing() {
         .retain(|candidate| candidate.id != chart);
     rig.workspace
         .apply_tree_action(chart, TreeAction::Delete(TreeKey::Drawing(1)));
-    assert!(rig.workspace.undo.is_empty());
+    assert!(!rig.workspace.history.can_undo());
 }
 
 /// The labels and enabled state of a menu built for `context`, the way the screen builds it.
@@ -1462,7 +1470,7 @@ fn a_pasted_link_waits_to_be_placed_in_the_middle_of_the_focused_chart() {
         "only X links become cards"
     );
     assert!(
-        rig.workspace.undo.is_empty(),
+        !rig.workspace.history.can_undo(),
         "nothing is created until it is placed"
     );
 }
@@ -1618,7 +1626,7 @@ fn a_fetched_preview_is_written_to_its_card_as_one_undo_step() {
         card_of(&mut rig, chart, 1).meta,
         Some(fetched_meta("Developers"))
     );
-    assert_eq!(rig.workspace.undo.len(), 1);
+    assert_eq!(rig.workspace.history.steps(), 1);
     assert!(rig.workspace.content.links.inbox.is_none());
     rig.workspace.undo(&rig.ctx);
     assert_eq!(card_of(&mut rig, chart, 1).meta, None);
@@ -1644,7 +1652,7 @@ fn a_preview_for_a_link_the_card_no_longer_has_is_dropped() {
         .unwrap();
     rig.workspace.take_fetched();
     assert_eq!(card_of(&mut rig, chart, 1).meta, None);
-    assert!(rig.workspace.undo.is_empty());
+    assert!(!rig.workspace.history.can_undo());
 }
 
 #[test]
@@ -1669,7 +1677,7 @@ fn a_failed_fetch_says_why_and_leaves_the_card_alone() {
         Some((FetchError::Unavailable.message(), true))
     );
     assert_eq!(card_of(&mut rig, chart, 1).meta, None);
-    assert!(rig.workspace.undo.is_empty());
+    assert!(!rig.workspace.history.can_undo());
 }
 
 #[test]
@@ -1691,7 +1699,7 @@ fn replacing_the_link_of_a_card_drops_the_preview_of_the_old_one() {
     assert_eq!(replaced.link, other);
     assert_eq!(replaced.meta, None);
     assert_eq!(replaced.size, [400.0, 200.0], "its size is kept");
-    assert_eq!(rig.workspace.undo.len(), 1);
+    assert_eq!(rig.workspace.history.steps(), 1);
 }
 
 #[test]

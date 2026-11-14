@@ -68,8 +68,8 @@ impl ChartWorkspace {
                     compare: self.can_compare(chart.id),
                     indicators: chart.takes_indicators(),
                 }),
-            can_undo: !self.undo.is_empty(),
-            can_redo: !self.redo.is_empty(),
+            can_undo: self.history.can_undo(),
+            can_redo: self.history.can_redo(),
             replay_open: self.replay.is_bar_visible(),
             can_replay: self
                 .charts

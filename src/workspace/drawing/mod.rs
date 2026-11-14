@@ -439,7 +439,7 @@ mod tests {
                 .all(|c| c.drawings.iter().all(Drawing::locked))
         );
         // One undo step per chart, since history is per chart.
-        assert_eq!(workspace.undo.len(), 2);
+        assert_eq!(workspace.history.steps(), 2);
         workspace.undo(&eframe::egui::Context::default());
         workspace.undo(&eframe::egui::Context::default());
         assert_eq!(workspace.drawing_lock_state(), (true, false));
@@ -451,7 +451,7 @@ mod tests {
         let mut empty = empty_workspace(13);
         chart_with_drawings(&mut empty, "BTCUSDT", &[]);
         empty.set_all_locked(true);
-        assert!(empty.undo.is_empty());
+        assert!(!empty.history.can_undo());
         assert_eq!(empty.drawing_lock_state(), (false, false));
     }
 

@@ -501,7 +501,7 @@ mod tests {
         let mut workspace = empty_workspace(7);
         let btc = InstrumentId::new(DataSource::Binance, "BTCUSDT");
         let chart_id = workspace.add_chart_for(&btc, &ctx).chart_id;
-        let base = workspace.undo.len();
+        let base = workspace.history.steps();
 
         let inputs = HashMap::from([("len".to_owned(), InputValue::Int(50))]);
         assert_eq!(
@@ -530,7 +530,7 @@ mod tests {
             workspace.change_pine_instance(chart_id, id, Some(&inputs), Some(false)),
             Some(false)
         );
-        assert_eq!(workspace.undo.len(), base + 1);
+        assert_eq!(workspace.history.steps(), base + 1);
         assert_eq!(
             workspace.change_pine_instance(chart_id, 99, None, Some(true)),
             None
@@ -728,7 +728,7 @@ mod tests {
                 ),
                 None
             );
-            assert!(workspace.undo.is_empty(), "nothing was recorded");
+            assert!(!workspace.history.can_undo(), "nothing was recorded");
         }
     }
 

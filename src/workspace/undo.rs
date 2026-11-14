@@ -4,6 +4,7 @@
 use super::ChartWorkspace;
 use super::chart::{Chart, MarketState};
 use super::drawing::is_ruler;
+use crate::model::overlay::OverlayId;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{Drawing, DrawingCommand, IndicatorConfig};
 use crate::ui::{ViewMove, ViewStep};
@@ -130,6 +131,139 @@ fn restyle_merges(
     })
 }
 
+/// The workspace's undo and redo stacks, and the runs of edits that collapse into one step (a
+/// drawing's restyles, an overlay's colour drag). Every step goes through `record`, which ends the
+/// redo line and any restyle run.
+#[derive(Default)]
+pub(super) struct UndoHistory {
+    undo: Vec<UndoEntry>,
+    redo: Vec<UndoEntry>,
+    /// The last restyle, so a burst of them (dragging a colour picker) is one undo step.
+    last_restyle: Option<(u64, u64, Instant)>,
+    /// The overlay colour edit the undo stack last took: chart, overlay, the stack's length right
+    /// after, and when. A drag of the colour picker continues it instead of stacking steps.
+    last_overlay_style: Option<(u64, OverlayId, usize, Instant)>,
+}
+
+impl UndoHistory {
+    /// Takes a new step: what `chart_id` held before the change. It ends the redo line and any
+    /// run of restyles.
+    pub(super) fn record(&mut self, chart_id: u64, before: Snapshot) {
+        self.undo.push(UndoEntry { chart_id, before });
+        self.redo.clear();
+        self.last_restyle = None;
+    }
+
+    pub(super) fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    pub(super) fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    /// How many steps Undo can take.
+    #[cfg(test)]
+    pub(super) fn steps(&self) -> usize {
+        self.undo.len()
+    }
+
+    /// Forgets every step: they belonged to a layout that is no longer open.
+    pub(super) fn clear(&mut self) {
+        self.undo.clear();
+        self.redo.clear();
+    }
+
+    /// Forgets the drawing steps of `chart_id`: they would put back drawings that were since
+    /// added or removed elsewhere.
+    pub(super) fn forget_drawings(&mut self, chart_id: u64) {
+        self.forget(|entry| {
+            entry.chart_id == chart_id && matches!(entry.before, Snapshot::Drawings(_))
+        });
+    }
+
+    /// Drops the steps, undoable or redoable, that `gone` matches.
+    fn forget(&mut self, gone: impl Fn(&UndoEntry) -> bool) {
+        self.undo.retain(|entry| !gone(entry));
+        self.redo.retain(|entry| !gone(entry));
+    }
+
+    /// Takes a drawing edit: `before` is the step to push, `None` when the edit continues the last
+    /// restyle; `restyle` is the drawing a lone restyle changed and when, which starts (or
+    /// continues) a run.
+    fn record_drawing_edit(
+        &mut self,
+        chart_id: u64,
+        before: Option<Snapshot>,
+        restyle: Option<(u64, Instant)>,
+    ) {
+        if let Some(before) = before {
+            self.undo.push(UndoEntry { chart_id, before });
+        }
+        self.redo.clear();
+        self.last_restyle = restyle.map(|(drawing, at)| (chart_id, drawing, at));
+    }
+
+    /// Whether restyling `drawing_id` of `chart_id` at `now` continues the last restyle.
+    fn continues_restyle(&self, chart_id: u64, drawing_id: u64, now: Instant) -> bool {
+        restyle_merges(self.last_restyle, chart_id, drawing_id, now)
+    }
+
+    fn end_restyle_run(&mut self) {
+        self.last_restyle = None;
+    }
+
+    /// Takes the newest step off the undo stack (or the redo stack).
+    fn pop(&mut self, undoing: bool) -> Option<UndoEntry> {
+        if undoing {
+            self.undo.pop()
+        } else {
+            self.redo.pop()
+        }
+    }
+
+    /// Puts what a step replaced on the other stack, so the step can be taken back.
+    fn push_inverse(&mut self, undoing: bool, entry: UndoEntry) {
+        if undoing {
+            self.redo.push(entry);
+        } else {
+            self.undo.push(entry);
+        }
+    }
+
+    /// Whether a colour edit of `overlay` on `chart_id` at `now` continues the last one: the same
+    /// overlay, no other step since, and within the restyle window.
+    pub(super) fn continues_overlay_style(
+        &self,
+        chart_id: u64,
+        overlay: OverlayId,
+        now: Instant,
+    ) -> bool {
+        self.last_overlay_style
+            .is_some_and(|(chart, last, len, at)| {
+                chart == chart_id
+                    && last == overlay
+                    && len == self.undo.len()
+                    && now.saturating_duration_since(at) <= RESTYLE_WINDOW
+            })
+    }
+
+    /// Notes the overlay edit just made: a colour edit of `(chart, overlay)` at `at` starts or
+    /// continues a run, anything else (`None`) ends it.
+    pub(super) fn set_overlay_style_run(&mut self, run: Option<(u64, OverlayId, Instant)>) {
+        self.last_overlay_style =
+            run.map(|(chart, overlay, at)| (chart, overlay, self.undo.len(), at));
+    }
+
+    /// Moves the overlay colour run back in time by `age`, as if the user had paused.
+    #[cfg(test)]
+    pub(super) fn age_overlay_style_run(&mut self, age: Duration) {
+        if let Some((_, _, _, at)) = &mut self.last_overlay_style {
+            *at -= age;
+        }
+    }
+}
+
 impl ChartWorkspace {
     pub(super) fn apply_drawing_commands(&mut self, chart_id: u64, commands: Vec<DrawingCommand>) {
         if commands.is_empty() {
@@ -140,7 +274,7 @@ impl ChartWorkspace {
         };
         let restyled = restyled_drawing(&commands);
         let now = Instant::now();
-        let merge = restyled.is_some_and(|id| restyle_merges(self.last_restyle, chart_id, id, now));
+        let merge = restyled.is_some_and(|id| self.history.continues_restyle(chart_id, id, now));
         // A restyle that merges into the last step needs no copy of the drawings to go back to.
         let before: Vec<Drawing> = if merge {
             Vec::new()
@@ -156,28 +290,21 @@ impl ChartWorkspace {
         if crate::model::drawings::apply_commands(&mut chart.drawings, commands) {
             self.drawings_version += 1;
             // A restyle that follows another of the same drawing moments ago is part of it.
-            if !merge {
-                self.undo.push(UndoEntry {
-                    chart_id,
-                    before: Snapshot::Drawings(before),
-                });
-            }
-            self.redo.clear();
-            self.last_restyle = restyled.map(|id| (chart_id, id, now));
+            self.history.record_drawing_edit(
+                chart_id,
+                (!merge).then_some(Snapshot::Drawings(before)),
+                restyled.map(|id| (id, now)),
+            );
         } else if restyled.is_none() {
-            self.last_restyle = None;
+            self.history.end_restyle_run();
         }
     }
 
     /// Puts the view a zoom left on the undo stack: Zoom In and Zoom out are steps like any edit,
     /// and a new step ends the redo line.
     pub(super) fn remember_view(&mut self, chart_id: u64, step: ViewStep, direction: ViewMove) {
-        self.undo.push(UndoEntry {
-            chart_id,
-            before: Snapshot::View { step, direction },
-        });
-        self.redo.clear();
-        self.last_restyle = None;
+        self.history
+            .record(chart_id, Snapshot::View { step, direction });
     }
 
     /// Forgets the views `chart_id` could be put back to (all charts when `None`): they were
@@ -187,8 +314,7 @@ impl ChartWorkspace {
             matches!(entry.before, Snapshot::View { .. })
                 && chart_id.is_none_or(|id| entry.chart_id == id)
         };
-        self.undo.retain(|entry| !gone(entry));
-        self.redo.retain(|entry| !gone(entry));
+        self.history.forget(gone);
     }
 
     pub(super) fn undo(&mut self, ctx: &egui::Context) {
@@ -217,9 +343,7 @@ impl ChartWorkspace {
         if !self.switch_chart(chart_id, item, ctx) {
             return false;
         }
-        self.undo.push(UndoEntry { chart_id, before });
-        self.redo.clear();
-        self.last_restyle = None;
+        self.history.record(chart_id, before);
         true
     }
 
@@ -227,13 +351,9 @@ impl ChartWorkspace {
     /// bars the chart no longer shows cannot be put back, so it is dropped and the step beneath it
     /// is the one this press takes: a press that did nothing would be worse than skipping.
     fn step_through(&mut self, undoing: bool, ctx: &egui::Context) {
-        self.last_restyle = None;
+        self.history.end_restyle_run();
         loop {
-            let entry = if undoing {
-                self.undo.pop()
-            } else {
-                self.redo.pop()
-            };
+            let entry = self.history.pop(undoing);
             let Some(entry) = entry else {
                 return;
             };
@@ -254,11 +374,7 @@ impl ChartWorkspace {
                 chart_id: entry.chart_id,
                 before: after,
             };
-            if undoing {
-                self.redo.push(moved);
-            } else {
-                self.undo.push(moved);
-            }
+            self.history.push_inverse(undoing, moved);
             if reloads {
                 self.market_changed(entry.chart_id, ctx);
                 if let Some(chart) = self.charts.iter().find(|chart| chart.id == entry.chart_id) {
@@ -399,7 +515,7 @@ mod tests {
             }],
         );
         workspace.apply_drawing_commands(chart, vec![DrawingCommand::Remove(404)]);
-        assert!(workspace.undo.is_empty(), "no entries");
+        assert!(workspace.history.undo.is_empty(), "no entries");
         assert_eq!(workspace.charts[0].drawings.len(), 2, "the ruler is there");
         // A persisted chart never carries it.
         assert!(
@@ -425,7 +541,7 @@ mod tests {
         for width in [3.0, 4.0, 5.0, 6.0] {
             workspace.apply_drawing_commands(chart, vec![restyle(width)]);
         }
-        assert_eq!(workspace.undo.len(), 1);
+        assert_eq!(workspace.history.undo.len(), 1);
         assert_eq!(
             workspace.charts[0].drawings[0]
                 .style()
@@ -447,11 +563,11 @@ mod tests {
         // After an undo the next restyle starts a new step.
         workspace.apply_drawing_commands(chart, vec![restyle(8.0)]);
         workspace.apply_drawing_commands(chart, vec![restyle(9.0)]);
-        assert_eq!(workspace.undo.len(), 1);
+        assert_eq!(workspace.history.undo.len(), 1);
         // Another edit in between ends the burst.
         workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(rectangle(2, 300))]);
         workspace.apply_drawing_commands(chart, vec![restyle(10.0)]);
-        assert_eq!(workspace.undo.len(), 3);
+        assert_eq!(workspace.history.undo.len(), 3);
     }
 
     // MARK: Zoom steps
@@ -522,7 +638,7 @@ mod tests {
 
         // Zooming again after an undo drops what could have been redone.
         zoomed(&mut workspace, chart, 60, 10.0);
-        assert!(workspace.redo.is_empty());
+        assert!(workspace.history.redo.is_empty());
     }
 
     #[test]
@@ -536,7 +652,7 @@ mod tests {
         workspace.zoom_out_focused();
         assert_eq!(chart_offset(&workspace, chart), 0.0);
         assert!(!workspace.charts[0].chart.can_zoom_out());
-        assert_eq!(workspace.undo.len(), 2, "Zoom out is a step too");
+        assert_eq!(workspace.history.undo.len(), 2, "Zoom out is a step too");
 
         // Undoing it zooms back in, and Zoom out is offered again.
         workspace.undo(&egui::Context::default());
@@ -623,7 +739,7 @@ mod tests {
             vec![1],
             "the press undid the step beneath it instead of doing nothing"
         );
-        assert!(workspace.undo.is_empty());
+        assert!(workspace.history.undo.is_empty());
     }
 
     #[test]
@@ -636,11 +752,14 @@ mod tests {
         workspace.apply_drawing_commands(first, vec![DrawingCommand::Remove(1)]);
         workspace.forget_views(Some(first));
         // The other chart's view and the drawing step stay.
-        assert_eq!(workspace.undo.len(), 2);
-        assert!(workspace.undo.iter().any(|e| e.chart_id == second));
+        assert_eq!(workspace.history.undo.len(), 2);
+        assert!(workspace.history.undo.iter().any(|e| e.chart_id == second));
         workspace.forget_views(None);
-        assert_eq!(workspace.undo.len(), 1);
-        assert!(matches!(workspace.undo[0].before, Snapshot::Drawings(_)));
+        assert_eq!(workspace.history.undo.len(), 1);
+        assert!(matches!(
+            workspace.history.undo[0].before,
+            Snapshot::Drawings(_)
+        ));
     }
 
     fn replace(
@@ -681,7 +800,7 @@ mod tests {
             workspace.charts[0].indicators.show_rsi,
             "a market keeps them"
         );
-        assert_eq!(workspace.undo.len(), 1);
+        assert_eq!(workspace.history.undo.len(), 1);
 
         workspace.undo(&ctx);
         assert_eq!(market(&workspace), (DataSource::Binance, "BTCUSDT".into()));
@@ -710,7 +829,7 @@ mod tests {
             assert!(replace(&mut workspace, chart, source, symbol, &ctx));
             assert_eq!(workspace.charts[0].indicators, IndicatorConfig::default());
             assert!(workspace.charts[0].chart.pine_instances().is_empty());
-            assert_eq!(workspace.undo.len(), 1, "one step for both");
+            assert_eq!(workspace.history.undo.len(), 1, "one step for both");
 
             workspace.undo(&ctx);
             assert_eq!(market(&workspace), (DataSource::Binance, "BTCUSDT".into()));
@@ -742,12 +861,12 @@ mod tests {
             "ETHUSDT",
             &ctx
         ));
-        assert!(workspace.undo.is_empty());
+        assert!(workspace.history.undo.is_empty());
 
         // Tab Linking moves the market without it being this tab's own edit.
         let item = WatchlistInstrument::from_market(DataSource::Binance, "ETHUSDT", "ETHUSDT");
         assert!(workspace.switch_chart(chart, &item, &ctx));
-        assert!(workspace.undo.is_empty());
+        assert!(workspace.history.undo.is_empty());
     }
 
     #[test]
@@ -758,9 +877,9 @@ mod tests {
         let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
         replace(&mut workspace, chart, DataSource::Binance, "ETHUSDT", &ctx);
         workspace.undo(&ctx);
-        assert_eq!(workspace.redo.len(), 1);
+        assert_eq!(workspace.history.redo.len(), 1);
         replace(&mut workspace, chart, DataSource::Binance, "SOLUSDT", &ctx);
-        assert!(workspace.redo.is_empty());
+        assert!(workspace.history.redo.is_empty());
         workspace.undo(&ctx);
         assert_eq!(market(&workspace), (DataSource::Binance, "BTCUSDT".into()));
     }

@@ -28,6 +28,7 @@ use crate::ui::chart::session_stats_view::{self, StatsViewState};
 use crate::ui::chart::settings::templates::{self, TemplateState};
 use crate::ui::chart::table_view::{self, TableAction, TableViewState};
 use crate::workspace::overlay::actions::reverts_to_regular;
+use crate::workspace::undo::Snapshot;
 use crate::workspace::*;
 use eframe::egui::{Context, Id, Pos2};
 
@@ -1154,12 +1155,8 @@ impl ChartWorkspace {
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
             return;
         };
-        self.undo.push(UndoEntry {
-            chart_id,
-            before: Snapshot::indicators_of(chart),
-        });
-        self.redo.clear();
-        self.last_restyle = None;
+        self.history
+            .record(chart_id, Snapshot::indicators_of(chart));
     }
 
     /// Removes the chart's built-in indicators, scripts and compared markets as one undo step.
@@ -1184,9 +1181,7 @@ impl ChartWorkspace {
                 },
             ])
         };
-        self.undo.push(UndoEntry { chart_id, before });
-        self.redo.clear();
-        self.last_restyle = None;
+        self.history.record(chart_id, before);
         if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
             for indicator in BuiltIn::ALL {
                 indicator.set_applied(&mut chart.indicators, false);

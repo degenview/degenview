@@ -5,7 +5,7 @@ pub(in crate::workspace) mod autosave;
 use super::chart::Chart;
 use super::drawing::{is_ruler, merge_remote_drawings, plain_drawings};
 use super::layout::autosave::AutosaveState;
-use super::undo::{Snapshot, UndoEntry};
+
 use super::{ChartWorkspace, PersistedChart, PersistedWorkspace};
 use crate::model::watchlist::{new_id, now_ms};
 use crate::model::{ChartColumn, ChartConfig, Drawing, LayoutSnapshot, SavedView};
@@ -143,12 +143,7 @@ impl ChartWorkspace {
                 chart.drawings = merged;
                 chart.drawings.extend(rulers);
                 // An undo step would put back drawings that were since added or removed elsewhere.
-                let id = chart.id;
-                let drawn = |entry: &UndoEntry| {
-                    entry.chart_id == id && matches!(entry.before, Snapshot::Drawings(_))
-                };
-                self.undo.retain(|entry| !drawn(entry));
-                self.redo.retain(|entry| !drawn(entry));
+                self.history.forget_drawings(chart.id);
                 changed = true;
             }
             self.saved_drawings.insert(chart.id, remote);
@@ -420,8 +415,7 @@ impl ChartWorkspace {
         self.focused = self.charts.first().map(|chart| chart.id);
         self.set_sync(view.sync);
         self.drop_rulers();
-        self.undo.clear();
-        self.redo.clear();
+        self.history.clear();
         self.active_view_id = Some(view.id);
         self.active_view_name = Some(view.name.clone());
         self.set_baseline();

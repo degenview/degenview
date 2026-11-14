@@ -42,7 +42,7 @@ use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use undo::{Snapshot, UndoEntry};
+use undo::UndoHistory;
 
 mod alerts;
 mod chart;
@@ -196,11 +196,6 @@ pub struct ChartWorkspace {
     style_clipboard: Option<(Tool, DrawingStyle)>,
     /// A chart whose drawings the user asked to remove all of; waiting for the confirmation.
     confirm_remove_drawings: Option<u64>,
-    /// The last restyle, so a burst of them (dragging a colour picker) is one undo step.
-    last_restyle: Option<(u64, u64, Instant)>,
-    /// The overlay colour edit the undo stack last took: chart, overlay, the stack's length right
-    /// after, and when. A drag of the colour picker continues it instead of stacking steps.
-    last_overlay_style: Option<(u64, crate::model::overlay::OverlayId, usize, Instant)>,
     /// The chart a header ✕ asked to remove, awaiting confirmation.
     removing_chart: Option<u64>,
     settings_state: ChartSettingsState,
@@ -227,8 +222,8 @@ pub struct ChartWorkspace {
     keep_drawing: bool,
     /// Every drawing is hidden (view state only: nothing is changed or saved).
     hide_all_drawings: bool,
-    undo: Vec<UndoEntry>,
-    redo: Vec<UndoEntry>,
+    /// Drawing, indicator, market and view edits as undoable steps.
+    history: UndoHistory,
     replay: ReplayEngine,
     replay_last_step: Instant,
     /// The timeframe changed under a replay: its bars are being reloaded, and the replay moves
@@ -393,8 +388,6 @@ impl ChartWorkspace {
             saved_prefs: DrawingPrefs::default(),
             style_clipboard: None,
             confirm_remove_drawings: None,
-            last_restyle: None,
-            last_overlay_style: None,
             removing_chart: None,
             settings_state: ChartSettingsState::default(),
             crosshair: None,
@@ -410,8 +403,7 @@ impl ChartWorkspace {
             magnet: MagnetMode::Off,
             keep_drawing: true,
             hide_all_drawings: false,
-            undo: Vec::new(),
-            redo: Vec::new(),
+            history: UndoHistory::default(),
             replay: ReplayEngine::default(),
             replay_last_step: Instant::now(),
             replay_rebase: false,
