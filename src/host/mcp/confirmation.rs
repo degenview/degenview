@@ -20,6 +20,7 @@ use crate::mcp::confirm::{
     Verdict, remote_summary,
 };
 use crate::mcp::state::McpShared;
+use crate::mcp::types::AlertConditionKind;
 use crate::model::alert::AlertId;
 use crate::model::alert::pine::PineAlertSubscription;
 use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome};
@@ -263,12 +264,12 @@ fn plural(count: usize, one: &str, many: &str) -> String {
 pub fn delete_alert(host: &AlertHost, id: AlertId) -> Result<Summary, McpError> {
     require_loaded(host)?;
     let info = super::alert::alert_info(find_alert(host, id)?, None);
-    let condition = match info.condition.as_str() {
-        "crosses_above" => "crosses above",
-        "crosses_below" => "crosses below",
-        "rises_by" => "rises by",
-        "falls_by" => "falls by",
-        _ => "alert",
+    let condition = match info.condition {
+        AlertConditionKind::CrossesAbove => "crosses above",
+        AlertConditionKind::CrossesBelow => "crosses below",
+        AlertConditionKind::RisesBy => "rises by",
+        AlertConditionKind::FallsBy => "falls by",
+        AlertConditionKind::Unsupported => "alert",
     };
     let level = info
         .target_price

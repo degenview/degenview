@@ -12,7 +12,7 @@ use crate::model::chart::kind::{LineDash, Rgba};
 use crate::model::drawings::MAX_TEXT_CHARS;
 use crate::model::drawings::style::MAX_STROKE_WIDTH;
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Drawings one `degenview_add_drawings` call may create (one undo step in the app).
 pub const MAX_DRAWINGS_PER_CALL: usize = 25;
@@ -188,7 +188,9 @@ pub enum PriceField {
     Close,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+// A line's dash, as a drawing argument takes it and a listed drawing gives it. Not a doc
+// comment: it would add a description to the input schemas of the drawing tools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum McpDash {
     Solid,

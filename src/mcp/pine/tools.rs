@@ -13,7 +13,7 @@ use crate::mcp::tools::{
 use crate::mcp::types::{
     AppliedPineDetail, AppliedPineList, PineAlertsResult, PineCompileResult, PineEditResult,
     PineInputsResult, PineInstanceChangeResult, PineReportResult, PineScriptSource,
-    PineScriptsResult, PineStylesResult,
+    PineScriptsResult, PineStylesResult, ScriptStatus, SourceVersion,
 };
 use crate::model::mcp::Permission;
 use crate::store::scripts::ScriptStore;
@@ -310,7 +310,7 @@ impl DegenViewMcp {
             .pine_job(&client, Permission::PineScriptsWrite, move |store| {
                 let mut compiled = pine::compile_script(store, Target::Inline(source))?;
                 compiled.script_id = Some(script_id);
-                compiled.version = "draft".into();
+                compiled.version = SourceVersion::Draft;
                 Ok(compiled)
             })
             .await;
@@ -833,11 +833,11 @@ impl DegenViewMcp {
         permission: Permission,
         script_id: Option<String>,
         applied_hash: String,
-    ) -> String {
+    ) -> ScriptStatus {
         self.pine_job(client, permission, move |store| {
             pine::script_status(store, script_id.as_deref(), &applied_hash)
         })
         .await
-        .unwrap_or_else(|_| "unknown".to_owned())
+        .unwrap_or(ScriptStatus::Unknown)
     }
 }

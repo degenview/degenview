@@ -9,8 +9,9 @@ use crate::mcp::chart::drawings::{DrawingEdit, NewDrawing};
 use crate::mcp::confirm::Summary;
 use crate::mcp::indicator::{IndicatorValuesResult, ReadingMeta, ReadingRequest, indicator_values};
 use crate::mcp::types::{
-    AddChartResult, AddIndicatorResult, CandlesResult, ChartInfo, ChartsResult,
-    DrawingsChangeResult, DrawingsResult, IndicatorsInfo, PineInstanceInfo, WorkspaceInfo,
+    AddChartResult, AddChartStatus, AddIndicatorResult, CandlesResult, ChartInfo, ChartStatus,
+    ChartsResult, DrawingsChangeResult, DrawingsResult, DrawingsStatus, IndicatorStatus,
+    IndicatorsInfo, PineInstanceInfo, WorkspaceInfo,
 };
 use crate::model::watchlist::now_ms;
 use crate::model::{
@@ -188,11 +189,11 @@ pub fn workspace_info(workspace: &ChartWorkspace, active: bool) -> WorkspaceInfo
 fn chart_info(workspace: &ChartWorkspace, chart: ChartSummary) -> ChartInfo {
     let indicators = chart.indicators;
     let status = if chart.error.is_some() {
-        "error"
+        ChartStatus::Error
     } else if chart.loading {
-        "loading"
+        ChartStatus::Loading
     } else {
-        "ready"
+        ChartStatus::Ready
     };
     ChartInfo {
         chart_id: chart.id.to_string(),
@@ -216,7 +217,7 @@ fn chart_info(workspace: &ChartWorkspace, chart: ChartSummary) -> ChartInfo {
                 script_name: name,
             })
             .collect(),
-        status: status.to_owned(),
+        status,
         error: chart.error,
         focused: chart.focused,
     }
@@ -249,11 +250,10 @@ pub fn apply_indicator(
             chart_id: chart_id.to_string(),
             indicator: indicator.id().to_owned(),
             status: match outcome {
-                IndicatorOutcome::Added => "added",
-                IndicatorOutcome::Updated => "updated",
-                IndicatorOutcome::AlreadyApplied => "already_applied",
-            }
-            .to_owned(),
+                IndicatorOutcome::Added => IndicatorStatus::Added,
+                IndicatorOutcome::Updated => IndicatorStatus::Updated,
+                IndicatorOutcome::AlreadyApplied => IndicatorStatus::AlreadyApplied,
+            },
             indicators: indicators_info(config),
         }),
         Err(IndicatorError::NoSuchChart) => Err(McpError::NotFound(format!(
@@ -311,11 +311,10 @@ pub fn add_chart(
         ),
         timeframe: workspace.timeframe().label().to_owned(),
         status: if outcome.created {
-            "created"
+            AddChartStatus::Created
         } else {
-            "already_present"
-        }
-        .to_owned(),
+            AddChartStatus::AlreadyPresent
+        },
     }
 }
 
@@ -370,7 +369,7 @@ pub fn chart_drawings(
 fn drawings_changed(
     workspace: &ChartWorkspace,
     chart_id: u64,
-    status: &str,
+    status: DrawingsStatus,
     ids: &[u64],
 ) -> Result<DrawingsChangeResult, McpError> {
     let data = workspace
@@ -379,7 +378,7 @@ fn drawings_changed(
     Ok(DrawingsChangeResult {
         workspace_id: workspace.id().to_string(),
         chart_id: chart_id.to_string(),
-        status: status.to_owned(),
+        status,
         drawing_ids: ids.iter().map(u64::to_string).collect(),
         drawings: data
             .drawings
@@ -408,7 +407,7 @@ pub fn add_drawings(
     let next_free = first_id.saturating_add(ids.len() as u64);
     let commands = drawings.into_iter().map(DrawingCommand::Add).collect();
     workspace.apply_planned_drawings(chart_id, commands, next_free);
-    drawings_changed(workspace, chart_id, "added", &ids)
+    drawings_changed(workspace, chart_id, DrawingsStatus::Added, &ids)
 }
 
 pub fn edit_drawing(
@@ -421,9 +420,9 @@ pub fn edit_drawing(
         .ok_or_else(|| no_chart(workspace, chart_id))?;
     let command = data::plan_edit(data.drawings, data.candles, edit)?;
     let status = if command.is_some() {
-        "updated"
+        DrawingsStatus::Updated
     } else {
-        "unchanged"
+        DrawingsStatus::Unchanged
     };
     if let Some(command) = command {
         workspace.apply_planned_drawings(chart_id, vec![command], 0);
@@ -448,7 +447,7 @@ pub fn remove_drawings(
         })
         .collect();
     workspace.apply_planned_drawings(chart_id, commands, 0);
-    drawings_changed(workspace, chart_id, "removed", &removed)
+    drawings_changed(workspace, chart_id, DrawingsStatus::Removed, &removed)
 }
 
 /// Takes a built-in indicator off a chart through the workspace's own method.
@@ -464,10 +463,9 @@ pub fn remove_indicator(
             chart_id: chart_id.to_string(),
             indicator: indicator.id().to_owned(),
             status: match outcome {
-                RemoveOutcome::Removed => "removed",
-                RemoveOutcome::NotApplied => "not_applied",
-            }
-            .to_owned(),
+                RemoveOutcome::Removed => IndicatorStatus::Removed,
+                RemoveOutcome::NotApplied => IndicatorStatus::NotApplied,
+            },
             indicators: indicators_info(config),
         }),
         Err(_) => Err(no_chart(workspace, chart_id)),

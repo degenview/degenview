@@ -16,9 +16,10 @@ use crate::mcp::tools::{
     UPDATE_PINE_SCRIPT,
 };
 use crate::mcp::types::{
-    PineCompileResult, PineCompileSummary, PineDiagnosticInfo, PineEditResult, PineInputInfo,
-    PineInputOption, PineInputsResult, PineScriptInfo, PineScriptSource, PineScriptsResult,
-    parse_color,
+    CompileState, DiagnosticKind, EditAction, EditStatus, PineCompileResult, PineCompileSummary,
+    PineDiagnosticInfo, PineEditResult, PineInputInfo, PineInputOption, PineInputsResult,
+    PineScriptInfo, PineScriptSource, PineScriptsResult, ScriptKind, ScriptStatus, Severity,
+    SourceVersion, parse_color,
 };
 use crate::model::pine::script::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
 use crate::pine::compiler;
@@ -142,10 +143,10 @@ pub enum Version {
 }
 
 impl Version {
-    pub fn label(self) -> &'static str {
+    pub fn wire(self) -> SourceVersion {
         match self {
-            Self::Saved => "saved",
-            Self::Draft => "draft",
+            Self::Saved => SourceVersion::Saved,
+            Self::Draft => SourceVersion::Draft,
         }
     }
 }
@@ -167,28 +168,28 @@ fn changed_on_disk() -> McpError {
     )
 }
 
-fn type_name(script_type: ScriptType) -> &'static str {
+fn script_kind(script_type: ScriptType) -> ScriptKind {
     match script_type {
-        ScriptType::Indicator => "indicator",
-        ScriptType::Strategy => "strategy",
-        ScriptType::Library => "library",
+        ScriptType::Indicator => ScriptKind::Indicator,
+        ScriptType::Strategy => ScriptKind::Strategy,
+        ScriptType::Library => ScriptKind::Library,
     }
 }
 
-fn declared_name(script_type: DeclaredType) -> &'static str {
+fn declared_kind(script_type: DeclaredType) -> ScriptKind {
     match script_type {
-        DeclaredType::Indicator => "indicator",
-        DeclaredType::Strategy => "strategy",
-        DeclaredType::Library => "library",
+        DeclaredType::Indicator => ScriptKind::Indicator,
+        DeclaredType::Strategy => ScriptKind::Strategy,
+        DeclaredType::Library => ScriptKind::Library,
     }
 }
 
-fn status_name(status: CompileStatus) -> &'static str {
+fn compile_state(status: CompileStatus) -> CompileState {
     match status {
-        CompileStatus::NotCompiled => "not_compiled",
-        CompileStatus::Valid => "valid",
-        CompileStatus::Warning => "warning",
-        CompileStatus::Error => "error",
+        CompileStatus::NotCompiled => CompileState::NotCompiled,
+        CompileStatus::Valid => CompileState::Valid,
+        CompileStatus::Warning => CompileState::Warning,
+        CompileStatus::Error => CompileState::Error,
     }
 }
 
@@ -221,7 +222,7 @@ pub fn list_scripts(store: &mut ScriptStore) -> Result<PineScriptsResult, McpErr
             PineScriptInfo {
                 script_id: script.id.clone(),
                 name: script.name.clone(),
-                script_type: type_name(script.script_type).to_owned(),
+                script_type: script_kind(script.script_type),
                 has_draft,
                 is_favorite: script.is_favorite,
                 modified_at: iso8601(script.modified_at_ms),
@@ -229,7 +230,7 @@ pub fn list_scripts(store: &mut ScriptStore) -> Result<PineScriptsResult, McpErr
                     .compile_record
                     .as_ref()
                     .map(|record| PineCompileSummary {
-                        status: status_name(record.status).to_owned(),
+                        status: compile_state(record.status),
                         current: record.source_hash == hash
                             && record.compiler_version == COMPILER_VERSION,
                         compiled_at: iso8601(record.compiled_at_ms),
@@ -276,8 +277,8 @@ pub fn get_script(
     Ok(PineScriptSource {
         script_id: script.id,
         name: script.name,
-        script_type: type_name(script.script_type).to_owned(),
-        version: version.label().to_owned(),
+        script_type: script_kind(script.script_type),
+        version: version.wire(),
         size_chars: source.chars().count(),
         source_hash: hash_source(&source),
         source,
@@ -287,30 +288,30 @@ pub fn get_script(
     })
 }
 
-fn severity_name(severity: DiagnosticSeverity) -> &'static str {
+fn severity(severity: DiagnosticSeverity) -> Severity {
     match severity {
-        DiagnosticSeverity::Error => "error",
-        DiagnosticSeverity::Warning => "warning",
+        DiagnosticSeverity::Error => Severity::Error,
+        DiagnosticSeverity::Warning => Severity::Warning,
     }
 }
 
-fn category_name(category: DiagnosticCategory) -> &'static str {
+fn diagnostic_kind(category: DiagnosticCategory) -> DiagnosticKind {
     match category {
-        DiagnosticCategory::Lexical => "lexical",
-        DiagnosticCategory::Syntax => "syntax",
-        DiagnosticCategory::Semantic => "semantic",
-        DiagnosticCategory::Unsupported => "unsupported",
-        DiagnosticCategory::Resource => "resource",
-        DiagnosticCategory::Runtime => "runtime",
-        DiagnosticCategory::Cancellation => "cancellation",
+        DiagnosticCategory::Lexical => DiagnosticKind::Lexical,
+        DiagnosticCategory::Syntax => DiagnosticKind::Syntax,
+        DiagnosticCategory::Semantic => DiagnosticKind::Semantic,
+        DiagnosticCategory::Unsupported => DiagnosticKind::Unsupported,
+        DiagnosticCategory::Resource => DiagnosticKind::Resource,
+        DiagnosticCategory::Runtime => DiagnosticKind::Runtime,
+        DiagnosticCategory::Cancellation => DiagnosticKind::Cancellation,
     }
 }
 
 pub fn diagnostic_info(diagnostic: &Diagnostic) -> PineDiagnosticInfo {
     PineDiagnosticInfo {
-        severity: severity_name(diagnostic.severity).to_owned(),
+        severity: severity(diagnostic.severity),
         code: diagnostic.code.clone(),
-        category: category_name(diagnostic.category).to_owned(),
+        category: diagnostic_kind(diagnostic.category),
         message: diagnostic.message.clone(),
         line: diagnostic.range.start.line,
         column: diagnostic.range.start.column,
@@ -324,16 +325,15 @@ pub fn script_status(
     store: &mut ScriptStore,
     script_id: Option<&str>,
     applied_hash: &str,
-) -> Result<String, McpError> {
+) -> Result<ScriptStatus, McpError> {
     let Some(id) = script_id else {
-        return Ok("unlinked".into());
+        return Ok(ScriptStatus::Unlinked);
     };
     Ok(match store.script(id).map_err(store_error)? {
-        None => "deleted",
-        Some(script) if hash_source(&script.source) == applied_hash => "unchanged",
-        Some(_) => "changed",
-    }
-    .into())
+        None => ScriptStatus::Deleted,
+        Some(script) if hash_source(&script.source) == applied_hash => ScriptStatus::Unchanged,
+        Some(_) => ScriptStatus::Changed,
+    })
 }
 
 fn compile_source(source: &str) -> CompiledProgram {
@@ -352,10 +352,10 @@ pub fn compile_script(
     store: &mut ScriptStore,
     target: Target,
 ) -> Result<PineCompileResult, McpError> {
-    let (script_id, version, source): (Option<ScriptId>, &str, String) = match target {
+    let (script_id, version, source): (Option<ScriptId>, SourceVersion, String) = match target {
         Target::Script(id, version) => {
             let (script, source, _) = text_of(store, &id, version)?;
-            (Some(script.id), version.label(), source)
+            (Some(script.id), version.wire(), source)
         }
         Target::Inline(source) => {
             if source.chars().count() > MAX_SOURCE_CHARS {
@@ -365,7 +365,7 @@ pub fn compile_script(
             }
             // Warm the library catalog so `import` lines resolve against the user's libraries.
             let _ = store.all_scripts();
-            (None, "inline", source)
+            (None, SourceVersion::Inline, source)
         }
     };
     let program = compile_source(&source);
@@ -374,10 +374,9 @@ pub fn compile_script(
     Ok(PineCompileResult {
         success: errors == 0,
         script_id,
-        version: version.to_owned(),
+        version,
         source_hash: hash_source(&source),
-        script_type: (errors == 0)
-            .then(|| declared_name(program.declaration.script_type).to_owned()),
+        script_type: (errors == 0).then(|| declared_kind(program.declaration.script_type)),
         pine_version: program.declaration.pine_version,
         title: (errors == 0).then(|| program.declaration.title.clone()),
         error_count: errors,
@@ -465,8 +464,8 @@ fn check_revision(expected: &str, working: &Working) -> Result<String, McpError>
 
 fn edit_result(
     script: &LocalScript,
-    action: &str,
-    status: &str,
+    action: EditAction,
+    status: EditStatus,
     previous: String,
     revision: String,
     saved_revision_id: Option<String>,
@@ -474,8 +473,8 @@ fn edit_result(
 ) -> PineEditResult {
     PineEditResult {
         script_id: script.id.clone(),
-        action: action.to_owned(),
-        status: status.to_owned(),
+        action,
+        status,
         previous_revision: previous,
         revision,
         saved_revision_id,
@@ -505,8 +504,8 @@ pub fn update_draft(
     if source == working.text {
         return Ok(edit_result(
             &script,
-            "update_draft",
-            "unchanged",
+            EditAction::UpdateDraft,
+            EditStatus::Unchanged,
             previous.clone(),
             previous,
             None,
@@ -523,8 +522,8 @@ pub fn update_draft(
         .map_err(store_error)?;
     Ok(edit_result(
         &script,
-        "update_draft",
-        "updated",
+        EditAction::UpdateDraft,
+        EditStatus::Updated,
         previous,
         hash_source(source),
         None,
@@ -555,8 +554,8 @@ pub fn save_script(
     if working.text == script.source {
         return Ok(edit_result(
             &script,
-            "save",
-            "unchanged",
+            EditAction::Save,
+            EditStatus::Unchanged,
             previous.clone(),
             previous,
             script.latest_revision_id.clone(),
@@ -593,8 +592,8 @@ pub fn save_script(
         })?;
     Ok(edit_result(
         &saved,
-        "save",
-        "saved",
+        EditAction::Save,
+        EditStatus::Saved,
         previous,
         hash_source(&saved.source),
         saved.latest_revision_id.clone(),
@@ -661,7 +660,7 @@ pub fn script_inputs(
     let program = compile_source(&source);
     Ok(PineInputsResult {
         script_id: script.id,
-        version: version.label().to_owned(),
+        version: version.wire(),
         source_hash: hash_source(&source),
         compiled: program.is_valid(),
         inputs: program.input_schema.inputs.iter().map(input_info).collect(),
@@ -1094,7 +1093,7 @@ plot(ta.sma(close, len) * mult)\n";
         let listed = list_scripts(&mut store).unwrap();
         assert_eq!(listed.total, 2);
         let by_name = |name: &str| listed.scripts.iter().find(|s| s.name == name).unwrap();
-        assert_eq!(by_name("Strat").script_type, "strategy");
+        assert_eq!(by_name("Strat").script_type, ScriptKind::Strategy);
         assert!(by_name("Strat").has_draft);
         assert!(!by_name("Plain").has_draft);
         assert_eq!(by_name("Plain").source_hash, hash_source(&plain.source));
@@ -1117,7 +1116,7 @@ plot(ta.sma(close, len) * mult)\n";
         );
 
         let saved = get_script(&mut store, &script.id, Version::Saved).unwrap();
-        assert_eq!(saved.version, "saved");
+        assert_eq!(saved.version, SourceVersion::Saved);
         assert_eq!(saved.source, script.source);
         assert_eq!(saved.source_hash, hash_source(&script.source));
         assert!(!saved.has_draft);
@@ -1138,8 +1137,8 @@ plot(ta.sma(close, len) * mult)\n";
             .unwrap();
         let draft = get_script(&mut store, &script.id, Version::Draft).unwrap();
         assert_eq!(
-            (draft.version.as_str(), draft.source.as_str()),
-            ("draft", draft_text)
+            (draft.version, draft.source.as_str()),
+            (SourceVersion::Draft, draft_text)
         );
         assert_eq!(draft.source_hash, hash_source(draft_text));
         assert!(draft.has_draft && draft.draft_modified_at.is_some());
@@ -1168,10 +1167,13 @@ plot(ta.sma(close, len) * mult)\n";
         let result =
             compile_script(&mut store, Target::Script(ok.id.clone(), Version::Saved)).unwrap();
         assert!(result.success);
-        assert_eq!(result.script_type.as_deref(), Some("indicator"));
+        assert_eq!(result.script_type, Some(ScriptKind::Indicator));
         assert_eq!(result.title.as_deref(), Some("Ok"));
         assert_eq!(result.pine_version, Some(6));
-        assert_eq!((result.error_count, result.version.as_str()), (0, "saved"));
+        assert_eq!(
+            (result.error_count, result.version),
+            (0, SourceVersion::Saved)
+        );
 
         let bad = compile_script(
             &mut store,
@@ -1179,11 +1181,11 @@ plot(ta.sma(close, len) * mult)\n";
         )
         .unwrap();
         assert!(!bad.success);
-        assert_eq!(bad.version, "inline");
+        assert_eq!(bad.version, SourceVersion::Inline);
         assert!(bad.script_id.is_none());
         assert!(bad.error_count > 0);
         let first = &bad.diagnostics[0];
-        assert_eq!(first.severity, "error");
+        assert_eq!(first.severity, Severity::Error);
         assert!(first.code.starts_with("PINE"), "{}", first.code);
         assert!(first.line >= 1 && first.column >= 1);
         assert!(!first.message.is_empty());
@@ -1303,8 +1305,8 @@ plot(ta.sma(close, len) * mult)\n";
         let revision = hash_source(V1);
         let result = update_draft(&mut store, &script.id, &revision, V2, None).unwrap();
         assert_eq!(
-            (result.action.as_str(), result.status.as_str()),
-            ("update_draft", "updated")
+            (result.action, result.status),
+            (EditAction::UpdateDraft, EditStatus::Updated)
         );
         assert_eq!(result.previous_revision, revision);
         assert_eq!(result.revision, hash_source(V2));
@@ -1408,7 +1410,7 @@ plot(ta.sma(close, len) * mult)\n";
     fn repeating_an_edit_is_a_no_op_and_sources_are_checked() {
         let (mut store, script, root) = edit_store("noop");
         let same = update_draft(&mut store, &script.id, &hash_source(V1), V1, None).unwrap();
-        assert_eq!(same.status, "unchanged");
+        assert_eq!(same.status, EditStatus::Unchanged);
         assert!(!same.has_draft);
         assert!(
             store.draft(&script.id).unwrap().is_none(),
@@ -1461,8 +1463,8 @@ plot(ta.sma(close, len) * mult)\n";
 
         let saved = save_script(&mut store, &script.id, &hash_source(V2), None, None).unwrap();
         assert_eq!(
-            (saved.action.as_str(), saved.status.as_str()),
-            ("save", "saved")
+            (saved.action, saved.status),
+            (EditAction::Save, EditStatus::Saved)
         );
         assert_eq!(saved.revision, hash_source(V2));
         assert!(saved.saved_revision_id.is_some() && !saved.has_draft);
@@ -1479,7 +1481,7 @@ plot(ta.sma(close, len) * mult)\n";
 
         // Nothing left to save.
         let again = save_script(&mut store, &script.id, &hash_source(V2), None, None).unwrap();
-        assert_eq!(again.status, "unchanged");
+        assert_eq!(again.status, EditStatus::Unchanged);
         assert_eq!(store.revisions(&script.id).unwrap().len(), 1);
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1511,7 +1513,7 @@ plot(ta.sma(close, len) * mult)\n";
     fn saving_what_an_open_editor_shows_works_without_a_draft_file() {
         let (mut store, script, root) = edit_store("save-live");
         let saved = save_script(&mut store, &script.id, &hash_source(V2), Some(V2), None).unwrap();
-        assert_eq!(saved.status, "saved");
+        assert_eq!(saved.status, EditStatus::Saved);
         assert_eq!(store.script(&script.id).unwrap().unwrap().source, V2);
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1596,7 +1598,7 @@ plot(ta.sma(close, len) * mult)\n";
             Some(&open_editor(V1, false)),
         )
         .unwrap();
-        assert_eq!(saved.status, "saved");
+        assert_eq!(saved.status, EditStatus::Saved);
         assert_eq!(store.script(&script.id).unwrap().unwrap().source, V2);
         let _ = std::fs::remove_dir_all(root);
     }

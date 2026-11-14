@@ -123,18 +123,18 @@ fn applying_changing_and_removing_a_script_report_what_happened() {
         Err(McpError::NotFound(_))
     ));
     let added = add_pine_instance(&mut workspace, chart_id, &script, true).unwrap();
-    assert_eq!(added.status, "added");
+    assert_eq!(added.status, InstanceStatus::Added);
     assert_eq!(added.chart.instances.len(), 1);
     assert_eq!(added.chart.instances[0].instance_id, added.instance_id);
-    assert_eq!(added.chart.instances[0].run_status, "not_run");
+    assert_eq!(added.chart.instances[0].run_status, RunStatus::NotRun);
     let id: u64 = added.instance_id.parse().unwrap();
 
     let set = args(serde_json::json!({"len": 5}));
     let changed =
         update_pine_instance(&mut workspace, chart_id, id, Some(&set), None, &[]).unwrap();
-    assert_eq!(changed.status, "updated");
+    assert_eq!(changed.status, InstanceStatus::Updated);
     let again = update_pine_instance(&mut workspace, chart_id, id, Some(&set), None, &[]).unwrap();
-    assert_eq!(again.status, "unchanged");
+    assert_eq!(again.status, InstanceStatus::Unchanged);
     let hidden =
         update_pine_instance(&mut workspace, chart_id, id, None, Some(false), &[]).unwrap();
     assert!(!hidden.chart.instances[0].visible);
@@ -155,7 +155,7 @@ fn applying_changing_and_removing_a_script_report_what_happened() {
     ));
 
     let removed = remove_pine_instance(&mut workspace, chart_id, id, &[]).unwrap();
-    assert_eq!(removed.status, "removed");
+    assert_eq!(removed.status, InstanceStatus::Removed);
     assert!(removed.chart.instances.is_empty());
     assert!(matches!(
         remove_pine_instance(&mut workspace, chart_id, id, &[]),
@@ -194,7 +194,7 @@ fn a_report_carries_the_charts_own_numbers_and_the_context_that_made_them() {
     assert_eq!((metrics.open_profit, metrics.open_trades), (Some(3.5), 1));
 
     let context = result.context.unwrap();
-    assert_eq!(context.kind, "chart_instance");
+    assert_eq!(context.kind, ReportSource::ChartInstance);
     assert_eq!(context.instrument, "BINANCE:BTCUSDT");
     assert_eq!(context.timeframe, "1D");
     assert_eq!(context.bar_count, 500);
@@ -215,7 +215,7 @@ fn a_report_carries_the_charts_own_numbers_and_the_context_that_made_them() {
         result.settings.unwrap().initial_capital,
         StrategySettings::default().initial_capital
     );
-    assert_eq!(result.open_trades[0].direction, "long");
+    assert_eq!(result.open_trades[0].direction, TradeDirection::Long);
     assert!(result.trades[0].entry_time.ends_with('Z'));
 }
 
@@ -320,8 +320,8 @@ fn style_rows_show_defaults_and_this_instances_overrides() {
 fn applied_instances_report_run_status_and_the_hash_of_their_own_source() {
     let info = applied_info(&view(None));
     assert_eq!(
-        (info.instance_id.as_str(), info.run_status.as_str()),
-        ("4", "not_run")
+        (info.instance_id.as_str(), info.run_status),
+        ("4", RunStatus::NotRun)
     );
     assert_eq!(info.is_strategy, None);
     assert_eq!(info.script_id.as_deref(), Some("script-1"));
@@ -330,7 +330,10 @@ fn applied_instances_report_run_status_and_the_hash_of_their_own_source() {
         crate::store::scripts::hash_source(STRATEGY_SOURCE)
     );
 
-    assert_eq!(applied_info(&view(Some(run(None, None)))).run_status, "ok");
+    assert_eq!(
+        applied_info(&view(Some(run(None, None)))).run_status,
+        RunStatus::Ok
+    );
     let failed = Diagnostic::error(
         "PINE8004",
         DiagnosticCategory::Runtime,
@@ -338,7 +341,7 @@ fn applied_instances_report_run_status_and_the_hash_of_their_own_source() {
         SourceRange::ZERO,
     );
     let broken = applied_info(&view(Some(run(None, Some(failed)))));
-    assert_eq!(broken.run_status, "error");
+    assert_eq!(broken.run_status, RunStatus::Error);
     assert_eq!(broken.error.unwrap().code, "PINE8004");
     assert!(matches!(
         applied_info(&view(Some(run(Some(report(vec![], vec![])), None)))).is_strategy,
@@ -380,7 +383,11 @@ fn a_workspace_lists_its_applied_scripts_and_says_when_they_have_not_run() {
         "the same script can be applied twice"
     );
     assert_ne!(list.instances[0].instance_id, list.instances[1].instance_id);
-    assert!(list.instances.iter().all(|i| i.run_status == "not_run"));
+    assert!(
+        list.instances
+            .iter()
+            .all(|i| i.run_status == RunStatus::NotRun)
+    );
 
     let second: u64 = list.instances[1].instance_id.parse().unwrap();
     assert_eq!(
@@ -474,7 +481,7 @@ fn a_script_with_an_armed_alert_keeps_its_inputs_and_stays_on_the_chart() {
         update_pine_instance(&mut workspace, chart_id, id, Some(&same), None, &armed)
             .unwrap()
             .status,
-        "unchanged"
+        InstanceStatus::Unchanged
     );
     // Another instance's alert, a paused or silenced one, or another chart's, does not block.
     for other in [
@@ -523,11 +530,11 @@ fn script_alert_subscriptions_are_listed_without_webhooks_or_invented_history() 
     assert_eq!(info.subscription_id, "1791000000000000001");
     assert_eq!(
         (
-            info.state.as_str(),
+            info.state,
             info.instrument.as_str(),
             info.timeframe.as_str()
         ),
-        ("script_changed", "binance:BTCUSDT", "1d")
+        (ScriptAlertState::ScriptChanged, "binance:BTCUSDT", "1d")
     );
     assert!(info.sends_to_webhooks);
     assert!(!result.event_history_available && result.recent_events.is_empty());

@@ -7,6 +7,10 @@ use crate::mcp::bridge::McpError;
 use crate::mcp::pine::{InputArgs, ScriptToApply};
 use crate::mcp::state::McpStatus;
 use crate::mcp::transport::auth::verifier_hex;
+use crate::mcp::types::{
+    AlertConditionKind, AlertFrequencyKind, AlertStatus, InstanceStatus, ReportSource, RunStatus,
+    ScriptAlertState, TradeDirection,
+};
 use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
 };

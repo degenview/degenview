@@ -7,7 +7,8 @@ use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::state::ClientIdentity;
 use crate::mcp::tools::{Caller, DegenViewMcp, McpSource, failure, invalid, parse_id, unexpected};
 use crate::mcp::types::{
-    AlertChangeResult, AlertInfo, AlertsResult, CreateAlertResult, UpdateAlertResult,
+    AlertChangeResult, AlertChangeStatus, AlertInfo, AlertStatus, AlertsResult, CreateAlertResult,
+    CreateAlertStatus, UpdateAlertResult, UpdateAlertStatus,
 };
 use crate::model::alert::{AlertCurrency, AlertFrequency};
 use crate::model::mcp::Permission;
@@ -234,7 +235,7 @@ impl DegenViewMcp {
             Ok(_) => return Err(unexpected()),
             Err(error) => return Err(failure(&error)),
         };
-        if created.status == "queued" {
+        if created.status == CreateAlertStatus::Queued {
             let id = parse_alert_id(&created.alert.alert_id)?;
             if let Some(stored) = self
                 .settle(
@@ -249,7 +250,7 @@ impl DegenViewMcp {
                 .and_then(|alerts| alerts.into_iter().next())
             {
                 created = CreateAlertResult {
-                    status: "created".into(),
+                    status: CreateAlertStatus::Created,
                     alert: stored,
                     command_id: None,
                 };
@@ -321,7 +322,7 @@ impl DegenViewMcp {
             Ok(_) => return Err(unexpected()),
             Err(error) => return Err(failure(&error)),
         };
-        if updated.status == "queued" {
+        if updated.status == UpdateAlertStatus::Queued {
             let expected = updated.alert.clone();
             if let Some(stored) = self
                 .settle(
@@ -340,7 +341,7 @@ impl DegenViewMcp {
                 .and_then(|alerts| alerts.into_iter().next())
             {
                 updated = UpdateAlertResult {
-                    status: "updated".into(),
+                    status: UpdateAlertStatus::Updated,
                     alert: stored,
                     command_id: None,
                 };
@@ -427,7 +428,7 @@ impl DegenViewMcp {
             .await,
             Ok(Some(_))
         ) {
-            changed.status = "deleted".into();
+            changed.status = AlertChangeStatus::Deleted;
         }
         Ok(Json(changed))
     }
@@ -510,8 +511,12 @@ impl DegenViewMcp {
             Ok(_) => return Err(unexpected()),
             Err(error) => return Err(failure(&error)),
         };
-        if changed.status == "queued" {
-            let wanted = if paused { "paused" } else { "active" };
+        if changed.status == AlertChangeStatus::Queued {
+            let (wanted, now) = if paused {
+                (AlertStatus::Paused, AlertChangeStatus::Paused)
+            } else {
+                (AlertStatus::Active, AlertChangeStatus::Active)
+            };
             if matches!(
                 self.settle(&client, Permission::AlertsPause, alert_id, None, |alerts| {
                     alerts.first().is_some_and(|alert| alert.status == wanted)
@@ -519,7 +524,7 @@ impl DegenViewMcp {
                 .await,
                 Ok(Some(_))
             ) {
-                changed.status = wanted.into();
+                changed.status = now;
             }
         }
         Ok(Json(changed))

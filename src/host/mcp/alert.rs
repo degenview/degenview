@@ -6,7 +6,10 @@ use crate::mcp::alert::{AlertCommandOutcome, AlertUpdate, NewAlert};
 use crate::mcp::bridge::McpError;
 use crate::mcp::bridge::McpReply;
 use crate::mcp::confirm::Summary;
-use crate::mcp::types::{AlertChangeResult, CreateAlertResult, UpdateAlertResult};
+use crate::mcp::types::{
+    AlertChangeResult, AlertChangeStatus, AlertConditionKind, AlertFrequencyKind, AlertStatus,
+    CreateAlertResult, CreateAlertStatus, UpdateAlertResult, UpdateAlertStatus,
+};
 use crate::mcp::types::{AlertInfo, AlertsResult};
 use crate::model::alert::draft::{Direction, PriceAlertDraft};
 use crate::model::alert::{
@@ -93,8 +96,8 @@ pub fn run(
         AlertCommand::SetPaused { alert_id, paused } => {
             let plan = plan_pause_alert(&*alerts.host()?, alert_id, paused)?;
             let status = match plan {
-                StatePlan::Already if paused => "already_paused",
-                StatePlan::Already => "already_active",
+                StatePlan::Already if paused => AlertChangeStatus::AlreadyPaused,
+                StatePlan::Already => AlertChangeStatus::AlreadyActive,
                 StatePlan::Change { id, state } => {
                     alerts.queue(
                         ctx,
@@ -105,12 +108,12 @@ pub fn run(
                         },
                         None,
                     )?;
-                    "queued"
+                    AlertChangeStatus::Queued
                 }
             };
             Ok(McpReply::AlertChanged(AlertChangeResult {
                 alert_id: alert_id.to_string(),
-                status: status.into(),
+                status,
             }))
         }
         AlertCommand::Delete { alert_id } => {
@@ -118,7 +121,7 @@ pub fn run(
             alerts.queue(ctx, AlertRuntimeCommandPayload::Delete(id), None)?;
             Ok(McpReply::AlertChanged(AlertChangeResult {
                 alert_id: id.to_string(),
-                status: "queued".into(),
+                status: AlertChangeStatus::Queued,
             }))
         }
     }
@@ -139,7 +142,7 @@ fn create(
     )?;
     match plan {
         CreatePlan::Existing(alert) => Ok(McpReply::AlertCreated(CreateAlertResult {
-            status: "already_exists".into(),
+            status: CreateAlertStatus::AlreadyExists,
             alert: *alert,
             command_id: None,
         })),
@@ -164,7 +167,7 @@ fn create(
                 .map_err(|_| McpError::AppUnavailable("Could not queue the alert".into()))?;
             ctx.request_repaint();
             Ok(McpReply::AlertCreated(CreateAlertResult {
-                status: "queued".into(),
+                status: CreateAlertStatus::Queued,
                 alert: info,
                 command_id: Some(command_id),
             }))
@@ -186,7 +189,7 @@ fn update(
     )?;
     match plan {
         UpdatePlan::Unchanged(alert) => Ok(McpReply::AlertUpdated(UpdateAlertResult {
-            status: "unchanged".into(),
+            status: UpdateAlertStatus::Unchanged,
             alert: *alert,
             command_id: None,
         })),
@@ -204,7 +207,7 @@ fn update(
                 Some(AlertPrecondition::Unchanged(base)),
             )?;
             Ok(McpReply::AlertUpdated(UpdateAlertResult {
-                status: "queued".into(),
+                status: UpdateAlertStatus::Queued,
                 alert: info,
                 command_id: Some(command_id),
             }))
@@ -240,38 +243,44 @@ pub fn alert_info(alert: &PriceAlert, last_triggered_ms: Option<i64>) -> AlertIn
     let currency = alert.currency;
     let price = decimal;
     let (condition, percent, reference) = match &alert.condition {
-        AlertCondition::CrossesAbove { .. } => ("crosses_above", None, None),
-        AlertCondition::CrossesBelow { .. } => ("crosses_below", None, None),
+        AlertCondition::CrossesAbove { .. } => (AlertConditionKind::CrossesAbove, None, None),
+        AlertCondition::CrossesBelow { .. } => (AlertConditionKind::CrossesBelow, None, None),
         AlertCondition::RisesBy {
             percent, reference, ..
-        } => ("rises_by", Some(decimal(*percent)), Some(price(*reference))),
+        } => (
+            AlertConditionKind::RisesBy,
+            Some(decimal(*percent)),
+            Some(price(*reference)),
+        ),
         AlertCondition::FallsBy {
             percent, reference, ..
-        } => ("falls_by", Some(decimal(*percent)), Some(price(*reference))),
-        AlertCondition::Unsupported { .. } => ("unsupported", None, None),
+        } => (
+            AlertConditionKind::FallsBy,
+            Some(decimal(*percent)),
+            Some(price(*reference)),
+        ),
+        AlertCondition::Unsupported { .. } => (AlertConditionKind::Unsupported, None, None),
     };
     AlertInfo {
         alert_id: alert.id.to_string(),
         instrument: alert.asset.key(),
         source: source_slug(alert.asset.source()).to_owned(),
         symbol: alert.asset.instrument.symbol.clone(),
-        condition: condition.to_owned(),
+        condition,
         target_price: alert.condition.target().map(price),
         percent,
         reference_price: reference,
         currency: currency.code().to_owned(),
         frequency: match alert.frequency {
-            AlertFrequency::Once => "once",
-            AlertFrequency::EveryTime => "every_time",
-        }
-        .to_owned(),
+            AlertFrequency::Once => AlertFrequencyKind::Once,
+            AlertFrequency::EveryTime => AlertFrequencyKind::EveryTime,
+        },
         status: match alert.state {
-            AlertState::Active => "active",
-            AlertState::Paused => "paused",
-            AlertState::Triggered => "triggered",
-            AlertState::Unsupported => "unsupported",
-        }
-        .to_owned(),
+            AlertState::Active => AlertStatus::Active,
+            AlertState::Paused => AlertStatus::Paused,
+            AlertState::Triggered => AlertStatus::Triggered,
+            AlertState::Unsupported => AlertStatus::Unsupported,
+        },
         note: alert.note.clone(),
         sends_to_webhooks: !alert.webhook_endpoint_ids.is_empty(),
         created_at: crate::format::iso8601(alert.created_at_ms),
