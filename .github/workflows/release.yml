@@ -22,7 +22,7 @@ env:
   # The compiler every release is built with. A release is signed and shipped, so the toolchain is
   # chosen here, in a reviewed change, not by whatever "stable" means on the day of the build. Keep
   # in step with ci.yml and the other workflows that build; bump it with its own pull request.
-  RUST_TOOLCHAIN: "1.99.0"
+  RUST_TOOLCHAIN: "1.100.0"
   # The Windows installer compiler; keep in step with windows-installer-check.yml.
   INNO_SETUP_VERSION: "6.7.1"
 

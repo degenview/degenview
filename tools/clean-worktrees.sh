@@ -193,8 +193,10 @@ idle)
     while IFS="$tab" read -r wt br fl; do
         [ -d "$wt/target/debug" ] || continue
         if in_use "$wt"; then continue; fi
-        # Anything built or touched within the window means it is still being worked on.
-        if [ -n "$(find "$wt/target/debug/deps" -maxdepth 1 -mtime "-$idle_days" 2>/dev/null | head -n 1)" ]; then
+        # Anything built or touched within the window means it is still being worked on. Two levels
+        # deep covers both Cargo layouts: up to 1.99 every build writes into `deps/`; from 1.100
+        # there is no `deps/`, and a build adds to `build/<crate>/` and `incremental/` instead.
+        if [ -n "$(find "$wt/target/debug" -maxdepth 2 -mtime "-$idle_days" 2>/dev/null | head -n 1)" ]; then
             continue
         fi
         echo "$wt" >>"$tmp/idle"
