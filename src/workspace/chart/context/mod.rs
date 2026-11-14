@@ -545,7 +545,7 @@ impl ChartWorkspace {
                     host,
                     vec![PaperOverlayAction::CancelOrder(id)],
                 );
-                self.paper_panel.report_messages(&failures);
+                self.trade.report_paper_messages(&failures);
             }
             Command::ClosePosition(key) => {
                 let account = self.charts[index]
@@ -563,13 +563,10 @@ impl ChartWorkspace {
                             instrument_key: key,
                         }],
                     );
-                    self.paper_panel.report_messages(&failures);
+                    self.trade.report_paper_messages(&failures);
                 }
             }
-            Command::ShowPaperPanel => {
-                self.paper_panel_visible = true;
-                self.trade_sheet_visible = true;
-            }
+            Command::ShowPaperPanel => self.trade.open_panel(),
         }
         actions
     }

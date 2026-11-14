@@ -23,7 +23,6 @@ use crate::ui::chart::settings::{self as chart_settings, ChartSettingsState};
 use crate::ui::chart::symbol_picker::SymbolPicker;
 use crate::ui::drawing::properties::DrawingProperties;
 use crate::ui::paper::chart_trading::PaperOverlayAction;
-use crate::ui::paper::panel::PaperPanel;
 use crate::ui::pine::settings_popover::PineSettingsPopover;
 use crate::ui::watchlist::sidebar::WatchlistSidebarState;
 use crate::ui::workspace::layout_prompts::NamePrompt;
@@ -42,6 +41,7 @@ use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use trade::TradeSide;
 use undo::UndoHistory;
 
 mod alerts;
@@ -174,8 +174,6 @@ pub struct ChartWorkspace {
     add_to_watchlist: Option<EntryId>,
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
     card_env: Option<PortfolioCardEnv>,
-    /// The venues this tab can trade on, handed in by the window each frame.
-    trading_hub: Option<Arc<crate::host::trading::TradingHub>>,
     live_feed: Option<BinanceLiveFeed>,
     /// The candles of every overlay market on this workspace's charts, fetched once per market.
     overlay_hub: overlay::OverlayHub,
@@ -232,14 +230,8 @@ pub struct ChartWorkspace {
     import_report: Option<ImportReport>,
     watchlist_error: Option<crate::model::watchlist::WatchlistNotice>,
     watchlist_file_result: Option<crate::service::work_queue::Pending<Result<(), String>>>,
-    paper_panel_visible: bool,
-    /// The order sheet beside the chart. Open and closed with the trading panel, and by its own ✕.
-    trade_sheet_visible: bool,
-    trade_sheet: crate::ui::trade::order_sheet::SheetState,
-    /// Where this tab's trading happens: paper, or a connected broker with real money. Not
-    /// saved: a tab always starts on paper.
-    trading_venue: crate::model::broker::venue::TradingVenue,
-    broker_panel: crate::ui::broker::panel::BrokerPanelState,
+    /// The order sheet and the orders panel, and the venue they trade on.
+    trade: TradeSide,
     /// The chart menu's state: the open menu, its messages, and the panels it toggles.
     context: ContextState,
     /// The snapshot being made, and what it waits for.
@@ -251,7 +243,6 @@ pub struct ChartWorkspace {
     open_new_tab_request: Option<WatchlistInstrument>,
     /// What the empty page reads from the database and Keychain, loaded once per visit.
     empty_page: EmptyPageCache,
-    paper_panel: PaperPanel,
     /// Saved-layout persistence + the tab's relation to the layout library.
     store: SharedStore,
     active_view_id: Option<u64>,
@@ -366,7 +357,6 @@ impl ChartWorkspace {
             symbol_picker: SymbolPicker::new(store.clone()),
             add_to_watchlist: None,
             card_env: None,
-            trading_hub: None,
             live_feed: None,
             overlay_hub: overlay::OverlayHub::new(),
             settings_chart: None,
@@ -401,18 +391,13 @@ impl ChartWorkspace {
             import_report: None,
             watchlist_error: None,
             watchlist_file_result: None,
-            paper_panel_visible: false,
-            trade_sheet_visible: false,
-            trade_sheet: crate::ui::trade::order_sheet::SheetState::default(),
-            trading_venue: crate::model::broker::venue::TradingVenue::default(),
-            broker_panel: crate::ui::broker::panel::BrokerPanelState::default(),
+            trade: TradeSide::default(),
             context: ContextState::default(),
             snapshot: SnapshotState::default(),
             snapshots: None,
             alerts: AlertUi::default(),
             open_new_tab_request: None,
             empty_page: EmptyPageCache::default(),
-            paper_panel: PaperPanel::default(),
             store,
             active_view_id: None,
             active_view_name: None,
@@ -742,59 +727,7 @@ impl ChartWorkspace {
             self.suspend_watchlist_demand();
         }
 
-        if self.trade_sheet_visible {
-            let sheet_actions = egui::Panel::right(egui::Id::new(("trade_sheet", self.id)))
-                .resizable(true)
-                .default_size(340.0)
-                .min_size(300.0)
-                .max_size(460.0)
-                .frame(
-                    egui::Frame::new()
-                        .fill(ui::kit::window())
-                        .inner_margin(egui::Margin::ZERO),
-                )
-                .show(ui, |ui| self.show_trade_sheet(ui))
-                .inner;
-            actions.extend(sheet_actions);
-        }
-
-        if self.paper_panel_visible {
-            let mut panel_actions: Vec<WorkspaceAction> = Vec::new();
-            let events = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
-                .resizable(true)
-                .default_size(340.0)
-                .min_size(280.0)
-                .frame(egui::Frame::new().fill(ui::kit::window()))
-                .show(ui, |ui| {
-                    let Some((venue, bar)) = self.panel_venue(ui, &mut panel_actions) else {
-                        return Vec::new();
-                    };
-                    let hub = self.trading_hub.clone();
-                    let context = self.broker_panel_context();
-                    match (venue.broker(), hub, context) {
-                        (Some(_), Some(hub), Some(context)) => {
-                            let Some(backend) = hub.backend(venue) else {
-                                return Vec::new();
-                            };
-                            let stats = backend.stats();
-                            crate::ui::broker::panel::ui(
-                                ui,
-                                &mut self.broker_panel,
-                                &*backend,
-                                context,
-                                &bar,
-                                stats.as_ref(),
-                            )
-                        }
-                        _ => self.paper_panel.ui(ui, &mut lock(paper), &bar),
-                    }
-                })
-                .inner;
-            actions.extend(panel_actions);
-            for event in events {
-                self.apply_panel_event(event, &mut actions);
-            }
-        }
+        actions.extend(self.show_trade_panels(ui, paper));
 
         self.show_broker_dialogs(&ctx);
         self.sync_context_panels();

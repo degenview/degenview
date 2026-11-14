@@ -884,7 +884,7 @@ impl ChartWorkspace {
             );
         }
         let paper_failures = Self::apply_paper_overlay_actions(paper_host, paper_actions);
-        self.paper_panel.report_messages(&paper_failures);
+        self.trade.report_paper_messages(&paper_failures);
         if let Some((_, side, _)) = quick_trade {
             self.start_order(
                 match side {

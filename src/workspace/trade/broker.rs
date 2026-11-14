@@ -28,9 +28,9 @@ use degenview_brokers::model::ticket::TicketKind;
 impl ChartWorkspace {
     /// The venue of the broker this tab trades at, and how the user trades there.
     fn active_broker(&self) -> Option<(Arc<dyn TradingBackend>, BrokerPrefs)> {
-        let hub = self.trading_hub.as_ref()?;
-        let prefs = hub.prefs(self.trading_venue)?;
-        Some((hub.backend(self.trading_venue)?, prefs))
+        let hub = self.trade.hub.as_ref()?;
+        let prefs = hub.prefs(self.trade.venue)?;
+        Some((hub.backend(self.trade.venue)?, prefs))
     }
 
     /// What the orders panel is told about the tab's broker besides the venue itself.
@@ -79,8 +79,8 @@ impl ChartWorkspace {
         let show_lines = prefs.show_on_charts;
         let broker_name = backend.info().name;
         let replay = self.replay_blocks_trading();
-        let review_closed = replay && self.trade_sheet.close_review();
-        if (replay && self.broker_panel.close_order_entry()) || review_closed {
+        let review_closed = replay && self.trade.sheet.close_review();
+        if (replay && self.trade.broker_panel.close_order_entry()) || review_closed {
             self.say(
                 "A replay started, so the live order was closed unsent.",
                 true,
@@ -198,7 +198,7 @@ impl ChartWorkspace {
         };
         self.start_order(request.side, Some(class), request.price);
         if request.kind == TicketKind::Market && request.side == Side::Buy {
-            self.trade_sheet.draft.spend_in_quote = prefs.spend_in_quote_by_default;
+            self.trade.sheet.draft.spend_in_quote = prefs.spend_in_quote_by_default;
         }
     }
 
@@ -214,7 +214,7 @@ impl ChartWorkspace {
         for action in actions {
             match action {
                 BrokerOverlayAction::Cancel(order) => {
-                    self.broker_panel.cancel_one(
+                    self.trade.broker_panel.cancel_one(
                         backend.broker_commands(),
                         prefs.confirm_single_cancel,
                         order,
@@ -239,6 +239,7 @@ impl ChartWorkspace {
             return;
         }
         if !self
+            .trade
             .broker_panel
             .begin_edit(backend.broker_commands(), order, price)
         {
@@ -252,12 +253,12 @@ impl ChartWorkspace {
         let Some((backend, _)) = self.active_broker() else {
             return;
         };
-        if !self.paper_panel_visible && self.broker_panel.has_dialog() {
-            panel::dialogs_only(ctx, &mut self.broker_panel, &*backend);
+        if !self.trade.panel_visible && self.trade.broker_panel.has_dialog() {
+            panel::dialogs_only(ctx, &mut self.trade.broker_panel, &*backend);
         }
         // The panel shows its own message; with it closed the tab's notice does.
-        if !self.paper_panel_visible
-            && let Some((text, error)) = self.broker_panel.take_notice()
+        if !self.trade.panel_visible
+            && let Some((text, error)) = self.trade.broker_panel.take_notice()
         {
             self.say(text, error);
         }
@@ -355,7 +356,7 @@ mod tests {
         let mut workspace = empty_workspace(1);
         workspace.add_chart_for(&InstrumentId::new(DataSource::Coinbase, "BTC-USD"), &ctx);
         workspace.add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx);
-        workspace.trading_venue = TradingVenue::Broker(ID);
+        workspace.trade.venue = TradingVenue::Broker(ID);
         workspace.set_trading_hub(hub);
         workspace
     }
@@ -364,7 +365,7 @@ mod tests {
     fn a_tab_on_paper_draws_no_live_trading_and_a_live_tab_draws_only_its_brokers_markets() {
         let ((host, _, hub), _turn) = shared();
         let mut workspace = workspace(hub);
-        workspace.trading_venue = TradingVenue::Paper;
+        workspace.trade.venue = TradingVenue::Paper;
         workspace.configure_broker_cards();
         assert!(
             workspace
@@ -373,7 +374,7 @@ mod tests {
                 .all(|c| !c.chart.live.show_lines && c.chart.live.order_entry.is_none())
         );
 
-        workspace.trading_venue = TradingVenue::Broker(ID);
+        workspace.trade.venue = TradingVenue::Broker(ID);
         let runtime = host.runtime(ID).unwrap();
         let placed = runtime
             .submit(
@@ -425,11 +426,11 @@ mod tests {
         };
         workspace.open_live_ticket(0, request());
         assert!(
-            workspace.trade_sheet_visible,
+            workspace.trade.sheet_visible,
             "outside replay the order starts in the sheet"
         );
-        assert_eq!(workspace.trade_sheet.draft.side, Side::Buy);
-        assert_eq!(workspace.trade_sheet.draft.class, OrderClass::Market);
+        assert_eq!(workspace.trade.sheet.draft.side, Side::Buy);
+        assert_eq!(workspace.trade.sheet.draft.class, OrderClass::Market);
 
         workspace.replay.start(1, "BTC-USD", vec![1, 2, 3]);
         assert!(workspace.replay.is_active());
@@ -439,10 +440,10 @@ mod tests {
             Some(Err(Unavailable::InReplay)),
             "the pills stay, greyed, with the reason"
         );
-        workspace.trade_sheet_visible = false;
+        workspace.trade.sheet_visible = false;
         workspace.open_live_ticket(0, request());
         assert!(
-            !workspace.trade_sheet_visible,
+            !workspace.trade.sheet_visible,
             "and no order can be started during one"
         );
         // Editing from a line is refused too.
@@ -450,7 +451,7 @@ mod tests {
         workspace.apply_broker_overlay_actions(vec![BrokerOverlayAction::Open(
             order.as_str().to_owned(),
         )]);
-        assert!(!workspace.broker_panel.has_dialog());
+        assert!(!workspace.trade.broker_panel.has_dialog());
     }
 
     use degenview_brokers::OrderId;
@@ -498,7 +499,7 @@ mod tests {
             price: "99000.00".parse().unwrap(),
         }]);
         assert!(
-            workspace.broker_panel.has_dialog(),
+            workspace.trade.broker_panel.has_dialog(),
             "the proposed change is shown for approval"
         );
         assert_eq!(
@@ -506,7 +507,7 @@ mod tests {
             before_edits,
             "nothing is changed by dropping a line"
         );
-        workspace.broker_panel.close_order_entry();
+        workspace.trade.broker_panel.close_order_entry();
 
         // ✕ cancels (single cancels do not ask by default): the request goes out, the line stays.
         workspace.apply_broker_overlay_actions(vec![BrokerOverlayAction::Cancel(
@@ -538,9 +539,9 @@ mod tests {
     fn the_menu_sees_live_facts_only_on_a_live_tab() {
         let ((_, _, hub), _turn) = shared();
         let mut workspace = workspace(hub);
-        workspace.trading_venue = TradingVenue::Paper;
+        workspace.trade.venue = TradingVenue::Paper;
         assert!(workspace.live_facts(&workspace.charts[0]).is_none());
-        workspace.trading_venue = TradingVenue::Broker(ID);
+        workspace.trade.venue = TradingVenue::Broker(ID);
         let facts = workspace.live_facts(&workspace.charts[0]).unwrap();
         assert_eq!(facts.broker_name, "Coinbase");
         assert_eq!(facts.unavailable, None);

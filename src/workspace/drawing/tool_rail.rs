@@ -33,7 +33,7 @@ impl ChartWorkspace {
             hide_all: self.hide_all_drawings,
             all_locked,
             has_drawings,
-            paper_open: self.paper_panel_visible,
+            paper_open: self.trade.is_panel_open(),
             has_market: self
                 .charts
                 .iter()
@@ -69,9 +69,7 @@ impl ChartWorkspace {
                     self.set_all_locked(!all_locked);
                 }
                 ToolSidebarAction::TogglePaper => {
-                    // The orders and the order sheet open and close together.
-                    self.paper_panel_visible = !self.paper_panel_visible;
-                    self.trade_sheet_visible = self.paper_panel_visible;
+                    self.trade.toggle_panel();
                 }
                 ToolSidebarAction::OpenAlerts => actions.push(WorkspaceAction::OpenAlerts),
                 ToolSidebarAction::SetSync(sync) => self.set_sync(sync),

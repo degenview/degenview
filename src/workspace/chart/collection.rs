@@ -438,9 +438,7 @@ impl ChartWorkspace {
 
     /// Gives this tab the venues it can trade on. Cheap to call every frame.
     pub fn set_trading_hub(&mut self, hub: &Arc<TradingHub>) {
-        if self.trading_hub.is_none() {
-            self.trading_hub = Some(Arc::clone(hub));
-        }
+        self.trade.set_hub(hub);
     }
 
     /// The identity a chart has in a watchlist: its market, or its card's placeholder.

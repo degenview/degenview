@@ -292,9 +292,12 @@ fn a_quick_order_starts_the_order_in_the_sheet_and_places_no_order() {
             kind: PaperOrderType::Limit,
         }),
     );
-    assert!(rig.workspace.paper_panel_visible, "the panel opens for it");
-    assert!(rig.workspace.trade_sheet_visible, "and so does the sheet");
-    let draft = &rig.workspace.trade_sheet.draft;
+    assert!(
+        rig.workspace.trade.is_panel_open(),
+        "the panel opens for it"
+    );
+    assert!(rig.workspace.trade.is_sheet_open(), "and so does the sheet");
+    let draft = &rig.workspace.trade.sheet().draft;
     assert_eq!(draft.side, degenview_brokers::Side::Sell);
     assert_eq!(draft.class, crate::trading::model::OrderClass::Limit);
     assert_eq!(draft.price_text, "120");
@@ -310,7 +313,7 @@ fn add_order_suggests_the_type_the_price_implies() {
     let chart = rig.chart("BTCUSDT", 100.0);
     let context = rig.open(chart, 90.0);
     rig.run(context, Command::AddOrder);
-    let draft = &rig.workspace.trade_sheet.draft;
+    let draft = &rig.workspace.trade.sheet().draft;
     assert_eq!(draft.side, degenview_brokers::Side::Buy);
     assert_eq!(draft.class, crate::trading::model::OrderClass::Limit);
     assert_eq!(draft.price_text, "90");
@@ -337,7 +340,7 @@ fn order_entries_work_before_any_paper_account_exists() {
             .map(|(_, enabled)| *enabled);
         assert_eq!(enabled, Some(true), "{label}: {items:?}");
     }
-    assert!(!rig.workspace.paper_panel_visible);
+    assert!(!rig.workspace.trade.is_panel_open());
 
     rig.run(
         context,
@@ -346,12 +349,15 @@ fn order_entries_work_before_any_paper_account_exists() {
             kind: PaperOrderType::Limit,
         }),
     );
-    assert!(rig.workspace.paper_panel_visible, "the panel opens for it");
+    assert!(
+        rig.workspace.trade.is_panel_open(),
+        "the panel opens for it"
+    );
     assert!(
         rig.host.snapshot().selected_account_id.is_none(),
         "no account is made behind the user's back"
     );
-    let draft = &rig.workspace.trade_sheet.draft;
+    let draft = &rig.workspace.trade.sheet().draft;
     assert_eq!(draft.side, degenview_brokers::Side::Sell);
     assert_eq!(draft.class, crate::trading::model::OrderClass::Limit);
     assert!(
@@ -366,8 +372,8 @@ fn add_order_opens_the_panel_and_the_sheet_and_makes_no_account() {
     let chart = rig.chart("BTCUSDT", 100.0);
     let context = rig.open(chart, 90.0);
     rig.run(context, Command::AddOrder);
-    assert!(rig.workspace.paper_panel_visible);
-    assert!(rig.workspace.trade_sheet_visible);
+    assert!(rig.workspace.trade.is_panel_open());
+    assert!(rig.workspace.trade.is_sheet_open());
     assert!(rig.host.snapshot().selected_account_id.is_none());
     assert!(rig.host.snapshot().orders.is_empty());
 }
@@ -387,7 +393,7 @@ fn replay_blocks_alerts_and_orders() {
     rig.run(context, Command::AddOrder);
     assert!(rig.workspace.alerts.take_request().is_none());
     assert!(
-        !rig.workspace.trade_sheet_visible,
+        !rig.workspace.trade.is_sheet_open(),
         "no order starts in a replay"
     );
 }
