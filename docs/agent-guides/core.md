@@ -21,11 +21,17 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
 - **Modules, not MVVM.** `model/` pure domain logic; `service/` providers/networking; `ui/` egui rendering; `store/` SQLite; `host/` (one directory per domain) bridges stateful components; `workspace/mod.rs` chart workspaces; `app/` coordinates.
 - **Immediate-mode UI.** Pass state into views; never add observed view models. Render charts with `egui::Painter`, not a chart library.
 - **Background work.** Outside `src/mcp/`, threads and `std::sync::mpsc`, no async runtimes. Shared state `Arc<Mutex<...>>`; keep locks short.
+  Work a frame starts and waits on for one answer (a search, a test connection, a file dialog, an
+  upload) runs through `service::work_queue::Pending`: `start`, `start_for(source, …)` (a provider's
+  rate-limit lane), `start_search(source, …)` (a picker's search, off the candle workers) or `SNAPSHOTS.start` (anything that waits on the user: panels, Keychain prompts),
+  polled each frame; the job repaints when it ends, and a panicked job ends without an answer
+  (`poll_or`). Views hold the `Pending` a host or service returned; they never spawn threads or build
+  channels.
 - **Layering is tested.** `layout_tests.rs` fails when a module imports a layer above it (`model/` and
   `pine/` import no I/O, coordinator or view; `service/`, `store/`, `sync/` no `host/`, `ui/`, `app/` or
   `workspace/`) or when anything outside the view layers draws (`egui::Ui`, a window or a panel). Its
   debt lists only shrink: fix the import instead of adding to them.
-- **Frame performance.** Code reached from `update`/`ui` must never parse JSON, make blocking system calls (XPC, `SMAppService`), or query SQLite beyond cheap change checks. Cache by change signal (e.g. `Store::layout_index`) or run on a thread and poll (e.g. `AlertRuntimeControl::poll_service_status`).
+- **Frame performance.** Code reached from `update`/`ui` must never parse JSON, make blocking system calls (XPC, `SMAppService`), or query SQLite beyond cheap change checks. Cache by change signal (e.g. `Store::layout_index`) or run it on a worker and poll (`work_queue::Pending`, see Background work).
 
 ## Build and Test
 

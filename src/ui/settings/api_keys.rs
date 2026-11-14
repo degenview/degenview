@@ -3,17 +3,18 @@
 //! CoinMarketCap connection test happen here, since the stores are process-wide, but every rule
 //! (what may be saved, what the status says) is a plain function tested against in-memory stores.
 
+use crate::model::DataSource;
 use crate::service::keychain::api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore,
 };
 use crate::service::llm::report::ErrorReport;
+use crate::service::work_queue::{self, Pending};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone;
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::settings::window::{card, section, status_badge, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
-use std::sync::mpsc::{Receiver, TryRecvError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StatusMessage {
@@ -59,7 +60,7 @@ pub struct AlpacaForm {
     loaded: bool,
     pub is_saved: bool,
     pub status: Option<StatusMessage>,
-    test: Option<Receiver<Result<(), String>>>,
+    test: Option<Pending<Result<(), String>>>,
     autosave: Autosave,
 }
 
@@ -69,7 +70,7 @@ pub struct CmcForm {
     loaded: bool,
     pub configured: bool,
     pub status: Option<StatusMessage>,
-    test: Option<Receiver<Result<(), String>>>,
+    test: Option<Pending<Result<(), String>>>,
     autosave: Autosave,
 }
 
@@ -126,9 +127,11 @@ impl AlpacaForm {
         self.test.is_some()
     }
 
-    /// Asks Alpaca for a bar with the typed keys, off the UI thread; `poll_test` picks up the answer.
+    /// Asks Alpaca for a bar with the typed keys, on Alpaca's workers; `poll_test` picks up the
+    /// answer.
     pub fn start_test(
         &mut self,
+        repaint: Option<&egui::Context>,
         test: impl FnOnce(String, String) -> Result<(), String> + Send + 'static,
     ) {
         if self.test.is_some() {
@@ -136,30 +139,16 @@ impl AlpacaForm {
         }
         self.status = None;
         let (key_id, secret_key) = (self.key_id.clone(), self.secret_key.clone());
-        let (sender, receiver) = std::sync::mpsc::channel();
-        self.test = Some(receiver);
-        std::thread::spawn(move || {
-            let _ = sender.send(test(key_id, secret_key));
-        });
+        self.test = Some(work_queue::start_for(
+            DataSource::Alpaca,
+            repaint,
+            move || test(key_id, secret_key),
+        ));
     }
 
     /// Takes the connection test's answer when it has arrived.
     pub fn poll_test(&mut self) {
-        let Some(receiver) = &self.test else {
-            return;
-        };
-        let outcome = match receiver.try_recv() {
-            Ok(outcome) => outcome,
-            Err(TryRecvError::Empty) => return,
-            Err(TryRecvError::Disconnected) => {
-                Err("The connection test stopped unexpectedly.".to_owned())
-            }
-        };
-        self.test = None;
-        self.status = Some(match outcome {
-            Ok(()) => StatusMessage::ok("Connection successful."),
-            Err(message) => StatusMessage::error(message),
-        });
+        take_test_answer(&mut self.test, &mut self.status);
     }
 
     pub fn remove(&mut self, store: &AlpacaCredentialsStore) {
@@ -239,37 +228,44 @@ impl CmcForm {
         });
     }
 
-    /// Runs `test` off the UI thread; `poll_test` picks up the answer.
-    pub fn start_test(&mut self, test: impl FnOnce() -> Result<(), String> + Send + 'static) {
+    /// Runs `test` on a worker that may wait on the user (it reads the saved key, which may
+    /// prompt); `poll_test` picks up the answer.
+    pub fn start_test(
+        &mut self,
+        repaint: Option<&egui::Context>,
+        test: impl FnOnce() -> Result<(), String> + Send + 'static,
+    ) {
         if self.test.is_some() {
             return;
         }
         self.status = None;
-        let (sender, receiver) = std::sync::mpsc::channel();
-        self.test = Some(receiver);
-        std::thread::spawn(move || {
-            let _ = sender.send(test());
-        });
+        self.test = Some(work_queue::SNAPSHOTS.start(repaint, test));
     }
 
     /// Takes the connection test's answer when it has arrived.
     pub fn poll_test(&mut self) {
-        let Some(receiver) = &self.test else {
-            return;
-        };
-        let outcome = match receiver.try_recv() {
-            Ok(outcome) => outcome,
-            Err(TryRecvError::Empty) => return,
-            Err(TryRecvError::Disconnected) => {
-                Err("The connection test stopped unexpectedly.".to_owned())
-            }
-        };
-        self.test = None;
-        self.status = Some(match outcome {
-            Ok(()) => StatusMessage::ok("Connection successful."),
-            Err(message) => StatusMessage::error(message),
-        });
+        take_test_answer(&mut self.test, &mut self.status);
     }
+}
+
+/// Turns a finished connection test into the status under its button.
+fn take_test_answer(
+    test: &mut Option<Pending<Result<(), String>>>,
+    status: &mut Option<StatusMessage>,
+) {
+    let Some(pending) = test else {
+        return;
+    };
+    let Some(outcome) =
+        pending.poll_or(|| Err("The connection test stopped unexpectedly.".to_owned()))
+    else {
+        return;
+    };
+    *test = None;
+    *status = Some(match outcome {
+        Ok(()) => StatusMessage::ok("Connection successful."),
+        Err(message) => StatusMessage::error(message),
+    });
 }
 
 // MARK: Views
@@ -530,7 +526,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                     ui.add(LoadingIndicator::new().size(14.0));
                 } else if kit::sheet_button(ui, "Test Connection", false, form.can_save()).clicked()
                 {
-                    form.start_test(|key_id, secret| {
+                    form.start_test(Some(ui.ctx()), |key_id, secret| {
                         crate::service::alpaca_test_connection(&key_id, &secret)
                     });
                 }
@@ -598,7 +594,7 @@ pub fn coinmarketcap_body(
                 if form.is_testing() {
                     ui.add(LoadingIndicator::new().size(14.0));
                 } else if kit::sheet_button(ui, "Test Connection", false, true).clicked() {
-                    form.start_test(crate::service::market::cmc::test_connection);
+                    form.start_test(Some(ui.ctx()), crate::service::market::cmc::test_connection);
                 }
                 open_button(ui, "Get API Key", "https://pro.coinmarketcap.com/signup/");
                 if form.configured && destructive_button(ui, "Remove Key").clicked() {
@@ -735,10 +731,10 @@ mod tests {
             status: Some(StatusMessage::error("old")),
             ..CmcForm::default()
         };
-        form.start_test(|| Ok(()));
+        form.start_test(None, || Ok(()));
         assert!(form.is_testing());
         assert_eq!(form.status, None, "a new test clears the old message");
-        form.start_test(|| Err("ignored: one test at a time".into()));
+        form.start_test(None, || Err("ignored: one test at a time".into()));
         wait_for_test(&mut form);
         assert!(!form.is_testing());
         assert_eq!(
@@ -746,7 +742,7 @@ mod tests {
             Some(StatusMessage::ok("Connection successful."))
         );
 
-        form.start_test(|| Err("Invalid API key".into()));
+        form.start_test(None, || Err("Invalid API key".into()));
         wait_for_test(&mut form);
         assert_eq!(form.status, Some(StatusMessage::error("Invalid API key")));
     }

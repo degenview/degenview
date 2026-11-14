@@ -15,6 +15,7 @@ use crate::model::watchlist::{
     EntryId, Watchlist, WatchlistColumn, WatchlistError, WatchlistFlag, WatchlistInstrument,
     WatchlistNotice, WatchlistSort, WatchlistSortKey,
 };
+use crate::service::work_queue::Pending;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::sheet;
 use crate::ui::kit::source_logo;
@@ -23,7 +24,6 @@ use crate::ui::theme;
 use crate::ui::watchlist::rows::{self, RowStyle};
 use crate::ui::watchlist::style::{self as style, LEADING_INSET, TRAILING_INSET};
 use eframe::egui::{self, Align, Color32, Id, Layout, Pos2, Rect, RichText, Sense, Stroke, Vec2};
-use std::sync::mpsc::{self, Receiver};
 
 /// What the workspace should do on the sidebar's behalf.
 #[derive(Clone, Debug, PartialEq)]
@@ -121,6 +121,9 @@ pub enum WatchlistAction {
         text: String,
     },
     BeginImport,
+    /// "Open File…" in the import sheet: the host owns the open dialog and hands the job back
+    /// through [`WatchlistSidebarState::read_import_file`].
+    ChooseImportFile,
     /// "Export to File…": the host owns the save dialog.
     Export {
         list: EntryId,
@@ -201,7 +204,7 @@ pub struct WatchlistSidebarState {
     prompt_text: String,
     confirm_delete: bool,
     import_text: Option<String>,
-    import_picker: Option<Receiver<Result<Option<String>, String>>>,
+    import_picker: Option<Pending<Result<Option<String>, String>>>,
     import_error: Option<String>,
     shows_detail: bool,
     drag: Option<Drag>,
@@ -239,6 +242,12 @@ impl Default for WatchlistSidebarState {
 }
 
 impl WatchlistSidebarState {
+    /// The import sheet's file being chosen and read, as the host started it for
+    /// [`WatchlistAction::ChooseImportFile`]; its text fills the sheet when it arrives.
+    pub fn read_import_file(&mut self, job: Pending<Result<Option<String>, String>>) {
+        self.import_picker = Some(job);
+    }
+
     pub fn minimum_width(&mut self, lists: &[Watchlist]) -> f32 {
         let columns = self
             .resolved(lists)
@@ -326,23 +335,15 @@ pub fn show(
     input: &WatchlistSidebarInput,
 ) -> Vec<WatchlistAction> {
     let mut actions = Vec::new();
-    if let Some(receiver) = &state.import_picker {
-        match receiver.try_recv() {
-            Ok(Ok(Some(text))) => {
-                state.import_text = Some(text);
-                state.import_picker = None;
-            }
-            Ok(Ok(None)) => {
-                state.import_picker = None;
-            }
-            Ok(Err(error)) => {
-                state.import_error = Some(error);
-                state.import_picker = None;
-            }
-            Err(mpsc::TryRecvError::Disconnected) => {
-                state.import_picker = None;
-            }
-            Err(mpsc::TryRecvError::Empty) => {}
+    if let Some(picker) = &mut state.import_picker {
+        match picker.poll() {
+            Some(Ok(Some(text))) => state.import_text = Some(text),
+            Some(Ok(None)) => {}
+            Some(Err(error)) => state.import_error = Some(error),
+            None => {}
+        }
+        if !picker.is_pending() {
+            state.import_picker = None;
         }
     }
     state.demand.clear();
@@ -2096,23 +2097,7 @@ fn import_window(
                         )
                         .clicked()
                 {
-                    let (sender, receiver) = mpsc::channel();
-                    state.import_picker = Some(receiver);
-                    std::thread::spawn(move || {
-                        let result = crate::service::system::file_dialog::choose_csv(
-                            "Choose watchlist symbols",
-                        )
-                        .and_then(|path| {
-                            path.map(|path| {
-                                crate::service::system::file_dialog::read_text_up_to(
-                                    &path,
-                                    crate::model::watchlist::text::MAX_IMPORT_BYTES,
-                                )
-                            })
-                            .transpose()
-                        });
-                        let _ = sender.send(result);
-                    });
+                    actions.push(WatchlistAction::ChooseImportFile);
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if input.import_report.is_some() {

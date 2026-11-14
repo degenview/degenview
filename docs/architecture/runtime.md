@@ -15,6 +15,11 @@ every six hours, then exposes availability, byte progress, failure, and restart 
 - UI and state coordination run on the app thread. Only `mcp/` has an async runtime.
 - Blocking replaceable REST jobs use `service::work_queue` and `std::sync::mpsc`. Fetch generations
   discard stale replies.
+- One-answer jobs started from a frame (searches, test connections, file dialogs, uploads) return a
+  `work_queue::Pending<T>` (`PendingAll` for several providers at once) that the frame polls. The job
+  asks for a repaint when it ends. Picker searches go through `start_search` (CoinGecko and
+  GeckoTerminal on their rate-limit lanes, the rest on search workers apart from candle fetches);
+  other provider requests through `start_for`; dialogs and Keychain reads use `SNAPSHOTS`.
 - `BinanceLiveFeed`, `WatchlistQuoteCoordinator`, and Coinbase's ticker socket own reconnecting
   threads and channels. Hidden/occluded workspaces suspend feeds.
 - App-wide state uses `Arc<Mutex<...>>`; per-tab content is `Arc<Mutex<TabContent>>`. Hold the store

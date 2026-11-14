@@ -23,6 +23,7 @@ mod workspace;
 use crate::model::pine::instance::{PineInstance, StoredInput};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
+use crate::service::work_queue::{self, Pending};
 use crate::store::SharedStore;
 use crate::ui::kit::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::shortcut;
@@ -38,7 +39,6 @@ use library::unsaved::{ExitPrompt, UnsavedChoice, UnsavedScript};
 use model::{CompileStatus, LocalScript, ScriptId, ScriptType};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 /// What the Pine Studio asks the app to do.
@@ -218,7 +218,7 @@ pub struct PineStudio {
     profiler_now: Option<profiler::ProfileKey>,
     pub(crate) problems_copied: Option<Instant>,
     actions: Vec<PineStudioAction>,
-    export_rx: Option<Receiver<(ScriptId, Option<PathBuf>)>>,
+    export: Option<Pending<(ScriptId, Option<PathBuf>)>>,
 }
 
 impl PineStudio {
@@ -260,7 +260,7 @@ impl PineStudio {
             error: None,
             cmds: Vec::new(),
             actions: Vec::new(),
-            export_rx: None,
+            export: None,
             problems_copied: None,
         }
     }
@@ -523,13 +523,16 @@ impl PineStudio {
             Duration::from_millis(1500)
         });
         self.ai_begin_frame(ctx);
-        if let Some(rx) = &self.export_rx
-            && let Ok((id, destination)) = rx.try_recv()
+        let exported = self.export.as_mut().and_then(Pending::poll);
+        if self
+            .export
+            .as_ref()
+            .is_some_and(|export| !export.is_pending())
         {
-            self.export_rx = None;
-            if let Some(path) = destination {
-                self.with_store(|store| store.export(&id, &path));
-            }
+            self.export = None;
+        }
+        if let Some((id, Some(path))) = exported {
+            self.with_store(|store| store.export(&id, &path));
         }
     }
 
@@ -1005,7 +1008,7 @@ impl PineStudio {
                     crate::platform::reveal_in_file_manager(&path);
                 }
             }
-            Cmd::Export(id) => self.begin_export(&id),
+            Cmd::Export(id) => self.begin_export(ctx, &id),
             Cmd::AskDelete(id) => {
                 if let Some(script) = self.script_named(&id) {
                     self.sheet = Some(Sheet::ConfirmDelete {
@@ -1253,16 +1256,15 @@ impl PineStudio {
         }
     }
 
-    /// The save panel runs off the UI thread; its result comes back through `export_rx`.
-    fn begin_export(&mut self, id: &str) {
+    /// The save panel runs on the workers that wait on the user; its answer comes back through
+    /// `export`.
+    fn begin_export(&mut self, ctx: &egui::Context, id: &str) {
         let Some(script) = self.script_named(id) else {
             return;
         };
         let default = format!("{}.pine", script.name);
-        let (sender, receiver) = mpsc::channel();
-        self.export_rx = Some(receiver);
         let id = id.to_owned();
-        std::thread::spawn(move || {
+        self.export = Some(work_queue::SNAPSHOTS.start(Some(ctx), move || {
             let script = format!(
                 "POSIX path of (choose file name with prompt \"Export Script\" default name \"{}\")",
                 default.replace('\\', "\\\\").replace('"', "\\\"")
@@ -1275,8 +1277,8 @@ impl PineStudio {
                 .filter(|o| o.status.success())
                 .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim().to_owned()))
                 .filter(|p| !p.as_os_str().is_empty());
-            let _ = sender.send((id, path));
-        });
+            (id, path)
+        }));
     }
 
     pub(crate) fn name_problem(&self, raw: &str) -> Option<String> {

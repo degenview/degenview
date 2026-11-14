@@ -13,6 +13,7 @@ use crate::service::snapshot::providers::{
     SnapshotProvider,
 };
 use crate::service::snapshot::upload::{self, UreqTransport};
+use crate::service::work_queue::{self, Pending};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone;
 use crate::ui::kit::loading::LoadingIndicator;
@@ -25,7 +26,6 @@ use crate::ui::{kit, theme};
 use eframe::egui::{self, vec2};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, TryRecvError};
 
 /// The height of a card's header row.
 const HEADER_HEIGHT: f32 = 36.0;
@@ -49,7 +49,7 @@ pub struct ProviderForm {
     /// The saved settings the fields were last filled from.
     loaded_from: Option<FieldValues>,
     autosave: Autosave,
-    test: Option<Receiver<Result<(), String>>>,
+    test: Option<Pending<Result<(), String>>>,
     /// What the last test said.
     test_status: Option<StatusMessage>,
     /// What the last save said.
@@ -187,9 +187,10 @@ impl ProviderForm {
                 == Readiness::Ready
     }
 
-    /// Uploads a one-pixel image with what is typed (else saved), off the UI thread.
+    /// Uploads a one-pixel image with what is typed (else saved), on the snapshot workers.
     fn start_test(
         &mut self,
+        repaint: &egui::Context,
         provider: &'static dyn SnapshotProvider,
         saved: &FieldValues,
         secrets: &Arc<SnapshotSecrets>,
@@ -201,30 +202,26 @@ impl ProviderForm {
         let destination = Destination::new(provider, self.settings_as_typed(descriptor, saved));
         let typed = self.typed_secrets(descriptor);
         let store = Arc::clone(secrets);
-        let (sender, receiver) = std::sync::mpsc::channel();
         self.test_status = None;
-        self.test = Some(receiver);
-        std::thread::spawn(move || {
+        self.test = Some(work_queue::SNAPSHOTS.start(Some(repaint), move || {
             // Read here, on the worker: the secure storage may prompt.
             let mut secrets = store.read_all(provider);
             for (key, value) in typed {
                 secrets.insert(&key, value);
             }
             let label = destination.label();
-            let result = upload::test(&UreqTransport::default(), &destination, &secrets)
-                .map_err(|error| error.message(&label));
-            let _ = sender.send(result);
-        });
+            upload::test(&UreqTransport::default(), &destination, &secrets)
+                .map_err(|error| error.message(&label))
+        }));
     }
 
     fn poll_test(&mut self, label: &str) {
-        let Some(receiver) = &self.test else {
+        let Some(test) = &mut self.test else {
             return;
         };
-        let outcome = match receiver.try_recv() {
-            Ok(outcome) => outcome,
-            Err(TryRecvError::Empty) => return,
-            Err(TryRecvError::Disconnected) => Err("The test stopped unexpectedly.".to_owned()),
+        let Some(outcome) = test.poll_or(|| Err("The test stopped unexpectedly.".to_owned()))
+        else {
+            return;
         };
         self.test = None;
         self.test_status = Some(match outcome {
@@ -434,7 +431,7 @@ fn actions_row(
                 .on_hover_text("Sends a one-pixel test image to check the settings.")
                 .clicked()
             {
-                form.start_test(provider, settings, input.secrets);
+                form.start_test(ui.ctx(), provider, settings, input.secrets);
             }
             if testing {
                 ui.add(LoadingIndicator::new().size(14.0));

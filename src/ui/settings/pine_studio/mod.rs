@@ -6,13 +6,14 @@
 //! The page works on the host directly (as the iCloud and updates pages do on theirs): there is
 //! nothing here to apply later and nothing to store, so it returns no actions.
 
-use crate::host::editor_theme::{CustomTheme, EditorThemeHost, FontStatus, View};
+use crate::host::editor_theme::{
+    CustomTheme, EditorThemeHost, FileRead, FileSave, FontStatus, View,
+};
 use crate::model::editor_theme::{
     BuiltInTheme, LineHeight, MAX_FONT_SIZE, MAX_NAME_CHARS, MIN_FONT_SIZE, Palette, SurfaceColor,
     SyntaxRole, ThemeId, ThemeSelection, ThemeSource, clamp_size,
 };
 use crate::pine_studio::theme_preview::ThemePreview;
-use crate::service::editor_theme::files;
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings::window::{SettingsSection, page_shell, section, status_message};
 use crate::ui::{
@@ -24,12 +25,8 @@ use eframe::egui::{
     self, Color32, CornerRadius, Id, Key, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
 use font_picker::FontPickerState;
-use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use theme_editor::Editing;
 
-/// The largest theme file the page reads (`codec::MAX_FILE_BYTES`).
-const MAX_IMPORT_BYTES: usize = crate::model::editor_theme::codec::MAX_FILE_BYTES;
 const TILE_GAP: f32 = 12.0;
 /// A tile's width when the row has room for them all; otherwise they are sized so the last one
 /// visible is cut off by the edge, which says the row goes on.
@@ -73,10 +70,10 @@ pub(in crate::ui) enum Dialog {
     ResetAll(ThemeId),
 }
 
-/// A file dialog that is open on another thread.
+/// A file dialog that is open on a worker.
 enum Flow {
-    Import(Receiver<Result<Option<String>, String>>),
-    Export(Receiver<Result<Option<PathBuf>, String>>, String),
+    Import(FileRead),
+    Export(FileSave, String),
 }
 
 /// The size field and the font picker, which the overview and the theme editor share.
@@ -233,7 +230,7 @@ fn overview(ui: &mut Ui, state: &mut PineStudioState, host: &EditorThemeHost, vi
                 if crate::platform::has_file_dialogs() {
                     let idle = state.flow.is_none();
                     if kit::push_button(ui, Some(Icon::Download), "Import…", idle).clicked() {
-                        state.flow = Some(import_flow(ui.ctx()));
+                        state.flow = Some(Flow::Import(host.choose_file()));
                     }
                 }
             });
@@ -765,8 +762,8 @@ fn apply(action: TileAction, state: &mut PineStudioState, host: &EditorThemeHost
                 error: None,
             });
         }
-        TileAction::Export(source) => match host.export(source) {
-            Ok((stem, text)) => state.flow = Some(export_flow(&stem, text)),
+        TileAction::Export(source) => match host.save_file(source) {
+            Ok((stem, job)) => state.flow = Some(Flow::Export(job, stem)),
             Err(error) => state.status = Some((error, true)),
         },
         TileAction::Delete(id) => state.dialog = Some(Dialog::Delete(id)),
@@ -1068,35 +1065,14 @@ fn customization(ui: &mut Ui, state: &mut PineStudioState, host: &EditorThemeHos
 
 // MARK: Files
 
-fn import_flow(ctx: &egui::Context) -> Flow {
-    let (sender, receiver) = channel();
-    let ctx = ctx.clone();
-    std::thread::spawn(move || {
-        let _ = sender.send(files::choose_and_read(MAX_IMPORT_BYTES));
-        ctx.request_repaint();
-    });
-    Flow::Import(receiver)
-}
-
-fn export_flow(stem: &str, text: String) -> Flow {
-    let (sender, receiver) = channel();
-    let name = stem.to_owned();
-    // The dialog is asked from the frame that clicked, so the repaint comes from the thread.
-    let stem = stem.to_owned();
-    std::thread::spawn(move || {
-        let _ = sender.send(files::save(&stem, &text));
-    });
-    Flow::Export(receiver, name)
-}
-
 /// Takes the answer of a file dialog that has finished.
 fn poll(state: &mut PineStudioState, host: &EditorThemeHost) {
     let Some(flow) = state.flow.take() else {
         return;
     };
     match flow {
-        Flow::Import(receiver) => match receiver.try_recv() {
-            Ok(Ok(Some(text))) => {
+        Flow::Import(mut job) => match job.poll() {
+            Some(Ok(Some(text))) => {
                 state.status = Some(match host.import(&text) {
                     Ok(imported) => {
                         let skipped = match imported.skipped.len() {
@@ -1115,23 +1091,23 @@ fn poll(state: &mut PineStudioState, host: &EditorThemeHost) {
                     Err(error) => (error, true),
                 });
             }
-            Ok(Ok(None)) => {}
-            Ok(Err(error)) => state.status = Some((error, true)),
-            Err(TryRecvError::Empty) => state.flow = Some(Flow::Import(receiver)),
-            Err(TryRecvError::Disconnected) => {}
+            Some(Ok(None)) => {}
+            Some(Err(error)) => state.status = Some((error, true)),
+            None if job.is_pending() => state.flow = Some(Flow::Import(job)),
+            None => {}
         },
-        Flow::Export(receiver, name) => match receiver.try_recv() {
-            Ok(Ok(Some(path))) => {
+        Flow::Export(mut job, name) => match job.poll() {
+            Some(Ok(Some(path))) => {
                 let file = path
                     .file_name()
                     .map(|file| file.to_string_lossy().into_owned())
                     .unwrap_or(name);
                 state.status = Some((format!("Exported “{file}”."), false));
             }
-            Ok(Ok(None)) => {}
-            Ok(Err(error)) => state.status = Some((error, true)),
-            Err(TryRecvError::Empty) => state.flow = Some(Flow::Export(receiver, name)),
-            Err(TryRecvError::Disconnected) => {}
+            Some(Ok(None)) => {}
+            Some(Err(error)) => state.status = Some((error, true)),
+            None if job.is_pending() => state.flow = Some(Flow::Export(job, name)),
+            None => {}
         },
     }
 }

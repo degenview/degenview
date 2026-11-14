@@ -5,6 +5,7 @@
 
 use crate::model::DataSource;
 use crate::service::SearchResult;
+use crate::service::work_queue::{self, PendingAll};
 use crate::store::SharedStore;
 use crate::ui::chart::picker_kit::recents::{self, RecentMarket};
 use crate::ui::chart::picker_kit::suggestions::{
@@ -16,7 +17,6 @@ use crate::ui::kit;
 use crate::ui::theme;
 use eframe::egui::{self, Color32, Id, Rect, Stroke, Ui, pos2, vec2};
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
 pub const DEBOUNCE: Duration = Duration::from_millis(300);
@@ -32,7 +32,7 @@ pub const STOCK_SOURCES: [DataSource; 1] = [DataSource::Alpaca];
 pub type SearchFn =
     Arc<dyn Fn(DataSource, &str) -> Result<Vec<SearchResult>, String> + Send + Sync>;
 
-type Batch = Vec<(DataSource, Result<Vec<SearchResult>, String>)>;
+type Answer = Result<Vec<SearchResult>, String>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PickerTab {
@@ -87,10 +87,11 @@ pub struct AssetPickerState {
     pub provider: DataSource,
     pub query: String,
     pub selected: Option<SearchResult>,
-    results: Vec<(DataSource, Result<Vec<SearchResult>, String>)>,
+    results: Vec<(DataSource, Answer)>,
     searched_query: String,
     searched_tab: Option<PickerTab>,
-    inbox: Option<Receiver<Batch>>,
+    /// The search under way, one job per provider.
+    inbox: Option<PendingAll<(DataSource, Answer)>>,
     debounce: Option<Instant>,
     search: SearchFn,
     focus: bool,
@@ -216,7 +217,8 @@ impl AssetPickerState {
             && (self.query.trim() != self.searched_query || self.searched_tab != Some(self.tab))
     }
 
-    /// Starts the search for the current query on a worker thread.
+    /// Starts the search for the current query: each provider on its own workers, so the
+    /// rate-limited ones keep their lanes.
     pub fn start(&mut self, ctx: &egui::Context) {
         self.debounce = None;
         let query = self.query.trim().to_owned();
@@ -226,64 +228,43 @@ impl AssetPickerState {
             self.results.clear();
             return;
         }
-        let (sender, receiver) = channel();
-        self.inbox = Some(receiver);
-        let search = Arc::clone(&self.search);
-        let sources = self.sources();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let batch: Batch = std::thread::scope(|scope| {
-                let handles: Vec<_> = sources
-                    .iter()
-                    .map(|source| {
-                        let (search, query) = (&search, &query);
-                        scope.spawn(move || (*source, search(*source, query)))
-                    })
-                    .collect();
-                handles
-                    .into_iter()
-                    .filter_map(|handle| handle.join().ok())
-                    .collect()
-            });
-            let _ = sender.send(batch);
-            ctx.request_repaint();
+        let searches = self.sources().into_iter().map(|source| {
+            let search = Arc::clone(&self.search);
+            let query = query.clone();
+            work_queue::start_search(source, Some(ctx), move || (source, search(source, &query)))
         });
+        self.inbox = Some(PendingAll::new(searches));
     }
 
-    /// Takes a finished search, if any. Results arrive in source priority order.
+    /// Takes a finished search, once every provider has ended. Results arrive in source priority
+    /// order; a provider whose job ended without an answer is left out.
     pub fn receive(&mut self) {
-        let Some(inbox) = &self.inbox else {
+        let Some(batch) = self.inbox.as_mut().and_then(PendingAll::poll) else {
             return;
         };
-        match inbox.try_recv() {
-            Ok(mut batch) => {
-                if self.query.trim() != self.searched_query || self.searched_tab != Some(self.tab) {
-                    self.inbox = None;
-                    return;
-                }
-                let sources = self.sources();
-                let order = |source: DataSource| {
-                    sources
-                        .iter()
-                        .position(|candidate| *candidate == source)
-                        .unwrap_or(usize::MAX)
-                };
-                batch.sort_by_key(|(source, _)| order(*source));
-                let query = self.searched_query.clone();
-                self.results = batch
-                    .into_iter()
-                    .map(|(source, result)| {
-                        (
-                            source,
-                            result.map(|hits| crate::service::rank_results(hits, &query)),
-                        )
-                    })
-                    .collect();
-                self.inbox = None;
-            }
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => self.inbox = None,
+        self.inbox = None;
+        let mut batch: Vec<(DataSource, Answer)> = batch.into_iter().flatten().collect();
+        if self.query.trim() != self.searched_query || self.searched_tab != Some(self.tab) {
+            return;
         }
+        let sources = self.sources();
+        let order = |source: DataSource| {
+            sources
+                .iter()
+                .position(|candidate| *candidate == source)
+                .unwrap_or(usize::MAX)
+        };
+        batch.sort_by_key(|(source, _)| order(*source));
+        let query = self.searched_query.clone();
+        self.results = batch
+            .into_iter()
+            .map(|(source, result)| {
+                (
+                    source,
+                    result.map(|hits| crate::service::rank_results(hits, &query)),
+                )
+            })
+            .collect();
     }
 }
 

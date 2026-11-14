@@ -2,8 +2,8 @@
 
 use crate::model::DataSource;
 use crate::service::SearchResult;
+use crate::service::work_queue::{self, Pending};
 use eframe::egui;
-use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 /// Events listed under "Trending", and how long that list is reused.
@@ -23,7 +23,7 @@ pub struct Trending {
     results: Vec<SearchResult>,
     /// When the list stops being fresh; `None` before the first answer.
     expires: Option<Instant>,
-    inbox: Option<Receiver<Result<Vec<SearchResult>, String>>>,
+    inbox: Option<Pending<Result<Vec<SearchResult>, String>>>,
 }
 
 impl Trending {
@@ -48,8 +48,8 @@ impl Trending {
     /// Reads a finished fetch and starts one when the held list is stale. A failure is quiet:
     /// trending is an extra, not something the user asked for.
     pub fn refresh(&mut self, ctx: &egui::Context) {
-        if let Some(inbox) = &self.inbox
-            && let Ok(answer) = inbox.try_recv()
+        if let Some(inbox) = &mut self.inbox
+            && let Some(answer) = inbox.poll_or(|| Err(String::new()))
         {
             self.inbox = None;
             let lifetime = match answer {
@@ -65,13 +65,9 @@ impl Trending {
         if self.inbox.is_some() || fresh {
             return;
         }
-        let (sender, receiver) = mpsc::channel();
-        let repaint = ctx.clone();
         let fetch = self.fetch;
-        std::thread::spawn(move || {
-            let _ = sender.send(fetch(PROVIDER, LIMIT));
-            repaint.request_repaint();
-        });
-        self.inbox = Some(receiver);
+        self.inbox = Some(work_queue::start_search(PROVIDER, Some(ctx), move || {
+            fetch(PROVIDER, LIMIT)
+        }));
     }
 }

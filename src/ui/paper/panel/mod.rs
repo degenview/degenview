@@ -141,7 +141,7 @@ pub struct PaperPanel {
     /// changed. Filtering and cloning the whole history every frame cost far more than drawing it.
     cached_view: Option<std::sync::Arc<PanelView>>,
     /// The folder dialog and the writing behind it, on a worker thread.
-    export_job: Option<std::sync::mpsc::Receiver<ExportOutcome>>,
+    export_job: Option<crate::service::work_queue::Pending<ExportOutcome>>,
     /// Set by the header menu and the footer; taken at the end of the frame.
     export_requested: bool,
 }
@@ -235,7 +235,7 @@ impl PaperPanel {
             }
         }
         divider(ui);
-        self.poll_export(ui.ctx());
+        self.poll_export();
         self.show_notice(ui);
         if let Some(elsewhere) = account_id.and_then(|id| host.owned_elsewhere(id)) {
             owner_note(ui, elsewhere);
@@ -349,32 +349,27 @@ impl PaperPanel {
             ));
             return;
         }
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let ctx = ctx.clone();
-        crate::service::work_queue::SNAPSHOTS.submit(move || {
-            let outcome =
-                crate::service::system::file_dialog::choose_folder("Export").and_then(|folder| {
-                    let Some(folder) = folder else {
-                        return Ok(None);
-                    };
-                    for (name, text) in export.files() {
-                        crate::service::system::file_dialog::write_text(&folder.join(name), text)?;
-                    }
-                    Ok(Some((folder, export.summary())))
-                });
-            let _ = sender.send(outcome);
-            ctx.request_repaint();
+        let job = crate::service::work_queue::SNAPSHOTS.start(Some(ctx), move || {
+            crate::service::system::file_dialog::choose_folder("Export").and_then(|folder| {
+                let Some(folder) = folder else {
+                    return Ok(None);
+                };
+                for (name, text) in export.files() {
+                    crate::service::system::file_dialog::write_text(&folder.join(name), text)?;
+                }
+                Ok(Some((folder, export.summary())))
+            })
         });
-        self.export_job = Some(receiver);
+        self.export_job = Some(job);
         self.notice = None;
     }
 
-    fn poll_export(&mut self, ctx: &egui::Context) {
-        let Some(job) = &self.export_job else {
+    fn poll_export(&mut self) {
+        let Some(job) = &mut self.export_job else {
             return;
         };
-        match job.try_recv() {
-            Ok(Ok(Some((folder, summary)))) => {
+        match job.poll() {
+            Some(Ok(Some((folder, summary)))) => {
                 let name = folder.file_name().map_or_else(
                     || folder.display().to_string(),
                     |n| n.to_string_lossy().into(),
@@ -384,15 +379,14 @@ impl PaperPanel {
                 )));
                 self.export_job = None;
             }
-            Ok(Ok(None)) => self.export_job = None,
-            Ok(Err(message)) => {
+            Some(Ok(None)) => self.export_job = None,
+            Some(Err(message)) => {
                 self.notice = Some(PanelNotice::error(message));
                 self.export_job = None;
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                ctx.request_repaint_after(std::time::Duration::from_millis(200));
-            }
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.export_job = None,
+            // Still open: the job repaints when it ends.
+            None if job.is_pending() => {}
+            None => self.export_job = None,
         }
     }
 

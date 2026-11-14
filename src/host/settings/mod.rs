@@ -11,6 +11,7 @@ use crate::service::cache::disk::{CacheStats, ClearOutcome};
 use crate::service::keychain::webhook_secrets::KeychainWebhookSecretStore;
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::webhook::delivery::{self, Mode, UreqTransport, WebhookSecretStore};
+use crate::service::work_queue::{self, Pending};
 use crate::store::Store;
 use crate::ui::settings::api_keys::StatusMessage;
 use crate::ui::settings::snapshots::SnapshotsAction;
@@ -19,7 +20,7 @@ use crate::ui::settings::window::{SettingsAction, SettingsInput, SettingsState};
 use crate::ui::webhook::settings::{WebhookSettingsAction, WebhookSettingsInput};
 use eframe::egui;
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
 /// Something the Settings window asked for that only the caller can do.
@@ -69,11 +70,11 @@ pub struct SettingsHost {
     snapshots_read_at: Option<std::time::Instant>,
     state: SettingsState,
     storage_events: StorageEvents,
-    /// Shared with the threads that run Test, so a slow endpoint never blocks the UI.
+    /// Shared with the jobs that run Test, so a slow endpoint never blocks the UI.
     secrets: Arc<KeychainWebhookSecretStore>,
     transport: Arc<UreqTransport>,
     /// Tests still in flight, by endpoint; each sends its one result when it finishes.
-    tests: Vec<(EndpointId, Receiver<WebhookDeliveryResult>)>,
+    tests: Vec<(EndpointId, Pending<WebhookDeliveryResult>)>,
     open: bool,
 }
 
@@ -260,19 +261,18 @@ impl SettingsHost {
     /// still running so their rows update without the pointer moving.
     fn collect_test_results(&mut self, ctx: &egui::Context) {
         let webhooks = &mut self.state.webhooks;
-        self.tests
-            .retain(|(id, receiver)| match receiver.try_recv() {
-                Ok(result) => {
-                    webhooks.set_test_result(&result);
-                    false
-                }
-                Err(TryRecvError::Empty) => true,
-                // The thread ended without an answer: the row stops saying "Testing…".
-                Err(TryRecvError::Disconnected) => {
-                    webhooks.forget(*id);
-                    false
-                }
-            });
+        self.tests.retain_mut(|(id, test)| match test.poll() {
+            Some(result) => {
+                webhooks.set_test_result(&result);
+                false
+            }
+            None if test.is_pending() => true,
+            // The job ended without an answer: the row stops saying "Testing…".
+            None => {
+                webhooks.forget(*id);
+                false
+            }
+        });
         if !self.tests.is_empty() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
@@ -392,18 +392,16 @@ impl SettingsHost {
     ) {
         match action {
             WebhookSettingsAction::Test { endpoint, message } => {
-                // The request can take its full 3 s timeout, so it runs on its own thread; the
-                // row shows "Testing…" until `collect_test_results` hands the answer back.
+                // The request can take its full 3 s timeout and reading the secret may prompt, so
+                // it runs on the workers that wait on the user; the row shows "Testing…" until
+                // `collect_test_results` (which repaints while any is in flight) hands it back.
                 let id = endpoint.id;
-                let (sender, receiver) = mpsc::channel();
                 let transport = Arc::clone(&self.transport);
                 let secrets = Arc::clone(&self.secrets);
-                std::thread::spawn(move || {
-                    let result =
-                        delivery::deliver(&*transport, &*secrets, &message, &endpoint, Mode::Test);
-                    let _ = sender.send(result);
+                let test = work_queue::SNAPSHOTS.start(None, move || {
+                    delivery::deliver(&*transport, &*secrets, &message, &endpoint, Mode::Test)
                 });
-                self.tests.push((id, receiver));
+                self.tests.push((id, test));
             }
             WebhookSettingsAction::Toggle(id) => {
                 let mut next = endpoints.to_vec();

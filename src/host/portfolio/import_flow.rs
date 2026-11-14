@@ -1,7 +1,8 @@
 //! The portfolio's CSV import and export, end to end: pick a file, parse it, (for CoinMarketCap)
 //! match tickers and fetch historical fee rates, preview, and commit to the ledger — plus saving
-//! exports. All slow work (file dialogs, auto-matching exchanges, FX lookups) runs on worker
-//! threads and reports back over channels; `poll` drains them each frame, and the tab's sheets
+//! exports. All slow work runs off the frame: file dialogs on the work queue's workers that wait
+//! on the user (`work_queue::Pending`), auto-matching exchanges and FX lookups on threads that
+//! report their progress over channels. `poll` drains them each frame, and the tab's sheets
 //! (`ui::portfolio::tab`) draw whichever is open. The pure rules live in `model::portfolio::csv`
 //! and the sheets' state types.
 
@@ -13,6 +14,7 @@ use crate::model::watchlist::new_id;
 use crate::service::portfolio::asset_auto_mapper;
 use crate::service::portfolio::quotes::PortfolioFxRates;
 use crate::service::system::file_dialog;
+use crate::service::work_queue::{self, Pending};
 use crate::ui::portfolio::asset_picker::AssetPickerState;
 use crate::ui::portfolio::cmc_import::CmcImportState;
 use crate::ui::portfolio::import_preview::ImportPreviewState;
@@ -33,15 +35,15 @@ type FileResult = Result<Option<String>, String>;
 
 enum Job {
     /// A chosen and read CSV, for the app's own format.
-    Csv(Receiver<FileResult>),
+    Csv(Pending<FileResult>),
     /// A chosen and read CoinMarketCap export, with its destination.
     Cmc {
-        inbox: Receiver<FileResult>,
+        inbox: Pending<FileResult>,
         portfolio_id: u64,
         currency: PortfolioCurrency,
     },
     /// A save panel and write, with the saved path.
-    Export(Receiver<Result<Option<std::path::PathBuf>, String>>),
+    Export(Pending<Result<Option<std::path::PathBuf>, String>>),
 }
 
 /// An import of a CoinMarketCap export, from the ticker matching to the preview.
@@ -235,19 +237,12 @@ impl PortfolioImportFlow {
 
     // MARK: Starting
 
-    fn read_file_job(ctx: &egui::Context, prompt: &'static str) -> Receiver<FileResult> {
-        let (sender, receiver) = channel();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let outcome = match file_dialog::choose_csv(prompt) {
-                Ok(Some(path)) => file_dialog::read_text(&path).map(Some),
-                Ok(None) => Ok(None),
-                Err(message) => Err(message),
-            };
-            let _ = sender.send(outcome);
-            ctx.request_repaint();
-        });
-        receiver
+    fn read_file_job(ctx: &egui::Context, prompt: &'static str) -> Pending<FileResult> {
+        work_queue::SNAPSHOTS.start(Some(ctx), move || match file_dialog::choose_csv(prompt) {
+            Ok(Some(path)) => file_dialog::read_text(&path).map(Some),
+            Ok(None) => Ok(None),
+            Err(message) => Err(message),
+        })
     }
 
     pub fn begin_import_csv(&mut self, ctx: &egui::Context) {
@@ -276,19 +271,16 @@ impl PortfolioImportFlow {
 
     /// Asks where to save `text` and writes it.
     pub fn begin_export(&mut self, ctx: &egui::Context, text: String, default_name: &str) {
-        let (sender, receiver) = channel();
-        let ctx = ctx.clone();
         let default_name = default_name.to_owned();
-        std::thread::spawn(move || {
-            let outcome = match file_dialog::choose_save_path("Export", &default_name) {
-                Ok(Some(path)) => file_dialog::write_text(&path, &text).map(|()| Some(path)),
-                Ok(None) => Ok(None),
-                Err(message) => Err(message),
-            };
-            let _ = sender.send(outcome);
-            ctx.request_repaint();
-        });
-        self.jobs.push(Job::Export(receiver));
+        let job =
+            work_queue::SNAPSHOTS.start(Some(ctx), move || {
+                match file_dialog::choose_save_path("Export", &default_name) {
+                    Ok(Some(path)) => file_dialog::write_text(&path, &text).map(|()| Some(path)),
+                    Ok(None) => Ok(None),
+                    Err(message) => Err(message),
+                }
+            });
+        self.jobs.push(Job::Export(job));
     }
 
     // MARK: Per frame
@@ -298,8 +290,8 @@ impl PortfolioImportFlow {
         let mut remaining = Vec::new();
         for job in std::mem::take(&mut self.jobs) {
             match job {
-                Job::Csv(inbox) => match inbox.try_recv() {
-                    Ok(Ok(Some(text))) => {
+                Job::Csv(mut inbox) => match inbox.poll() {
+                    Some(Ok(Some(text))) => {
                         let mut next = new_id;
                         let mut mint = Mint {
                             now_ms: crate::model::watchlist::now_ms(),
@@ -309,17 +301,17 @@ impl PortfolioImportFlow {
                             portfolio::csv::preview(&text, &host.snapshot().portfolios, &mut mint);
                         self.csv = Some((preview, ImportPreviewState::default()));
                     }
-                    Ok(Ok(None)) => {}
-                    Ok(Err(message)) => self.notice = Some(message),
-                    Err(TryRecvError::Empty) => remaining.push(Job::Csv(inbox)),
-                    Err(TryRecvError::Disconnected) => {}
+                    Some(Ok(None)) => {}
+                    Some(Err(message)) => self.notice = Some(message),
+                    None if inbox.is_pending() => remaining.push(Job::Csv(inbox)),
+                    None => {}
                 },
                 Job::Cmc {
-                    inbox,
+                    mut inbox,
                     portfolio_id,
                     currency,
-                } => match inbox.try_recv() {
-                    Ok(Ok(Some(text))) => {
+                } => match inbox.poll() {
+                    Some(Ok(Some(text))) => {
                         let preview = portfolio::csv::preview_coinmarketcap(&text);
                         let repaint_ctx = ctx.clone();
                         self.cmc = Some(CmcFlow::start(
@@ -332,20 +324,20 @@ impl PortfolioImportFlow {
                             Arc::new(move || repaint_ctx.request_repaint()),
                         ));
                     }
-                    Ok(Ok(None)) => {}
-                    Ok(Err(message)) => self.notice = Some(message),
-                    Err(TryRecvError::Empty) => remaining.push(Job::Cmc {
+                    Some(Ok(None)) => {}
+                    Some(Err(message)) => self.notice = Some(message),
+                    None if inbox.is_pending() => remaining.push(Job::Cmc {
                         inbox,
                         portfolio_id,
                         currency,
                     }),
-                    Err(TryRecvError::Disconnected) => {}
+                    None => {}
                 },
-                Job::Export(inbox) => match inbox.try_recv() {
-                    Ok(Ok(_)) => {}
-                    Ok(Err(message)) => self.notice = Some(message),
-                    Err(TryRecvError::Empty) => remaining.push(Job::Export(inbox)),
-                    Err(TryRecvError::Disconnected) => {}
+                Job::Export(mut inbox) => match inbox.poll() {
+                    Some(Ok(_)) => {}
+                    Some(Err(message)) => self.notice = Some(message),
+                    None if inbox.is_pending() => remaining.push(Job::Export(inbox)),
+                    None => {}
                 },
             }
         }
