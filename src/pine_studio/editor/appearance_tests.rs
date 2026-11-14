@@ -1,9 +1,13 @@
 //! The editor paints what its theme says, and a theme change touches nothing but paint.
 
+use super::gutter::{GUTTER_WIDTH, LINE_NUMBER_SIZE, line_number_size};
 use super::*;
+use crate::model::editor_theme::SyntaxRole;
+use crate::pine::syntax::token::DiagnosticSeverity;
 use crate::pine::syntax::token::{DiagnosticCategory, SourcePosition, SourceRange};
 use crate::ui::editor_appearance::RestorePublished;
 use crate::ui::theme::{self, AppTheme, RestoreDefaultTheme};
+use eframe::egui::Color32;
 use eframe::egui::epaint::ClippedShape;
 
 const SCRIPT: &str = "//@version=6\nindicator(\"x\")\nlen = 14\nplot(close)\n";

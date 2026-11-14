@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use super::combined;
 use crate::pine::syntax::token::DiagnosticSeverity;
 use crate::pine_studio::debug::studio_tests::Rig;
-use crate::pine_studio::editor::status_chip_with_runtime;
+use crate::pine_studio::editor::status::status_chip_with_runtime;
 use crate::pine_studio::editor::syntax;
 use crate::pine_studio::*;
 
