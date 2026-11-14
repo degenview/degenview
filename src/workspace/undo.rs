@@ -288,7 +288,7 @@ impl ChartWorkspace {
         };
         // One batch is one undo step, and a batch that changes nothing (or only a ruler) none.
         if crate::model::drawings::apply_commands(&mut chart.drawings, commands) {
-            self.drawings_version += 1;
+            self.layout.drawings_edited();
             // A restyle that follows another of the same drawing moments ago is part of it.
             self.history.record_drawing_edit(
                 chart_id,
@@ -369,7 +369,9 @@ impl ChartWorkspace {
             let Some(after) = entry.before.swap_into(chart) else {
                 continue;
             };
-            self.drawings_version += u64::from(layout);
+            if layout {
+                self.layout.drawings_edited();
+            }
             let moved = UndoEntry {
                 chart_id: entry.chart_id,
                 before: after,
@@ -604,7 +606,7 @@ mod tests {
     fn a_zoom_is_an_undo_step_and_redo_replays_it() {
         let mut workspace = empty_workspace(9);
         let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
-        let version = workspace.drawings_version;
+        let version = workspace.layout.drawings_version();
         zoomed(&mut workspace, chart, 40, 30.0);
 
         workspace.undo(&egui::Context::default());
@@ -614,7 +616,8 @@ mod tests {
         workspace.undo(&egui::Context::default());
         assert_eq!(chart_offset(&workspace, chart), 0.0);
         assert_eq!(
-            workspace.drawings_version, version,
+            workspace.layout.drawings_version(),
+            version,
             "a view is not part of what a layout stores"
         );
     }

@@ -8,7 +8,7 @@ use crate::model::tab::title::{MAX_CUSTOM_TITLE_CHARS, TabChart};
 use crate::model::watchlist::{WatchlistInstrument, now_ms};
 use crate::model::{
     BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, DrawingStyle,
-    InstrumentId, LayoutSnapshot, MagnetMode, Timeframe, Tool,
+    InstrumentId, MagnetMode, Timeframe, Tool,
 };
 use crate::service::market::live::BinanceLiveFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
@@ -23,7 +23,6 @@ use crate::ui::chart::symbol_picker::SymbolPicker;
 use crate::ui::drawing::properties::DrawingProperties;
 use crate::ui::paper::chart_trading::PaperOverlayAction;
 use crate::ui::pine::settings_popover::PineSettingsPopover;
-use crate::ui::workspace::layout_prompts::NamePrompt;
 use crate::ui::{self, CrosshairInfo, replay::bar, workspace::tool_sidebar};
 use alerts::AlertUi;
 use chart::context::ContextState;
@@ -32,7 +31,7 @@ use chart::{Chart, displayed_candles};
 use drawing::is_lockable;
 use eframe::egui;
 use empty_page::EmptyPageCache;
-use layout::autosave::AutosaveState;
+use layout::session::LayoutSession;
 use replay::ReplayState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -160,13 +159,6 @@ pub struct ChartWorkspace {
     sync_hub: SyncHub,
     focused: Option<u64>,
     next_id: u64,
-    baseline: Option<LayoutSnapshot>,
-    /// Bumped by every change to a chart's drawings; see `drawings_dirty`.
-    drawings_version: u64,
-    saved_drawings_version: u64,
-    /// Each chart's drawings as of the last save or open: the common ancestor when another Mac's
-    /// edit to the open layout arrives (`adopt_remote_layout`).
-    saved_drawings: HashMap<u64, Vec<Drawing>>,
     indicator_picker: IndicatorPicker,
     symbol_picker: SymbolPicker,
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
@@ -239,23 +231,14 @@ pub struct ChartWorkspace {
     empty_page: EmptyPageCache,
     /// Saved-layout persistence + the tab's relation to the layout library.
     store: SharedStore,
-    active_view_id: Option<u64>,
-    active_view_name: Option<String>,
     /// What the user typed as this tab's title; `None` shows the symbol, price and layout.
     custom_title: Option<String>,
     /// The Tab Linking group this tab is in, if any. Membership is the tab's own; the switches
     /// belong to the colour and live in `TabLinkHost`.
     link: Option<LinkColor>,
     link_state: tab_link::LinkState,
-    /// The name prompt that is open, if any, and the text in it.
-    layout_prompt: Option<NamePrompt>,
-    prompt_name: String,
-    prompt_focus: bool,
-    /// A layout waiting for the "save changes?" answer before it opens.
-    pending_open_id: Option<u64>,
-    /// Why the last layout operation failed, until the alert is dismissed.
-    layout_error: Option<String>,
-    autosave: AutosaveState,
+    /// The open layout, what was last saved of it, its prompts and its autosave.
+    layout: LayoutSession,
     /// The chart drag in progress over the grid: where it would land, and the new-column preview.
     grid_drag: ui::workspace::grid_drop::GridDrag,
     /// Choosing what a content tool places: the picture that waits, the sheet, the worker.
@@ -345,7 +328,6 @@ impl ChartWorkspace {
             sync_hub: SyncHub::default(),
             focused: None,
             next_id: 1,
-            baseline: None,
             indicator_picker: IndicatorPicker::new(Some(store.clone())),
             symbol_picker: SymbolPicker::new(store.clone()),
             card_env: None,
@@ -387,20 +369,10 @@ impl ChartWorkspace {
             alerts: AlertUi::default(),
             empty_page: EmptyPageCache::default(),
             store,
-            active_view_id: None,
-            active_view_name: None,
             custom_title: None,
             link: None,
             link_state: Default::default(),
-            layout_prompt: None,
-            prompt_name: String::new(),
-            prompt_focus: false,
-            pending_open_id: None,
-            layout_error: None,
-            autosave: AutosaveState::default(),
-            drawings_version: 0,
-            saved_drawings_version: 0,
-            saved_drawings: HashMap::new(),
+            layout: LayoutSession::default(),
             grid_drag: ui::workspace::grid_drop::GridDrag::default(),
             content: drawing::content::ContentFlow::default(),
         }
@@ -482,8 +454,7 @@ impl ChartWorkspace {
         workspace.custom_title = custom_title.filter(|title| !title.trim().is_empty());
         workspace.link = link;
         if let Some(view) = active_view {
-            workspace.active_view_id = Some(view.id);
-            workspace.active_view_name = Some(view.name);
+            workspace.layout.set_active_view(view.id, view.name);
         }
         workspace.charts = charts
             .into_iter()
@@ -533,9 +504,10 @@ impl ChartWorkspace {
             // No chart yet: the layout's name, or "New tab" for a blank page. (The layout menu
             // still calls an unsaved layout "Unnamed", as Swift does.)
             return self
-                .active_view_name
-                .clone()
-                .unwrap_or_else(|| "New tab".to_owned());
+                .layout
+                .active_view_name()
+                .unwrap_or("New tab")
+                .to_owned();
         };
         if chart.card.is_some() {
             // A card has no timeframe to name.
@@ -602,7 +574,7 @@ impl ChartWorkspace {
             source: chart.source,
             symbol: chart.symbol.clone(),
             title: chart.display_title(),
-            layout: self.active_view_name.clone(),
+            layout: self.layout.active_view_name().map(str::to_owned),
             custom_title: self.custom_title.clone(),
         })
     }
@@ -1027,14 +999,14 @@ mod tests {
         workspace.focused = Some(eth_id);
         assert_eq!(workspace.focused_instrument(), Some(eth.clone()));
 
-        workspace.active_view_name = Some("Layout 1".into());
+        workspace.layout.set_active_view(1, "Layout 1".into());
         let chart = workspace.tab_chart().expect("market tab");
         assert_eq!(chart.layout.as_deref(), Some("Layout 1"));
         assert_eq!(chart.symbol, "ETHUSDT");
         assert_eq!(chart.source, DataSource::Binance);
 
         // A renamed layout shows at once; the symbol is not part of the layout's identity.
-        workspace.active_view_name = Some("Swing".into());
+        workspace.layout.set_active_view(1, "Swing".into());
         workspace.focused = Some(workspace.charts[0].id);
         let chart = workspace.tab_chart().expect("market tab");
         assert_eq!(chart.layout.as_deref(), Some("Swing"));
@@ -1158,17 +1130,18 @@ mod tests {
         };
 
         let restored = restore(Some(77));
-        assert_eq!(restored.active_view_id, Some(77));
-        assert_eq!(restored.active_view_name.as_deref(), Some("Swing setups"));
+        assert_eq!(restored.layout.active_view_id(), Some(77));
+        assert_eq!(restored.layout.active_view_name(), Some("Swing setups"));
         assert_eq!(restored.persisted().active_view, Some(77));
 
         let deleted = restore(Some(78));
         assert_eq!(
-            deleted.active_view_id, None,
+            deleted.layout.active_view_id(),
+            None,
             "a deleted layout is not reopened"
         );
-        assert_eq!(deleted.active_view_name, None);
-        assert_eq!(restore(None).active_view_id, None);
+        assert_eq!(deleted.layout.active_view_name(), None);
+        assert_eq!(restore(None).layout.active_view_id(), None);
     }
 
     #[test]

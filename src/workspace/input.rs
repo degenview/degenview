@@ -74,7 +74,7 @@ impl ChartWorkspace {
         // macOS owns Save in its menu (`NativeCommand::SaveCurrentLayout`); everywhere else the
         // shortcut is handled here, in the tab that has focus.
         if !shortcut::is_mac()
-            && self.layout_prompt.is_none()
+            && !self.layout.is_prompting()
             && ui.input_mut(|input| shortcut::SAVE.consume(input))
         {
             self.save_layout(ui.ctx());

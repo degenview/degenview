@@ -1,6 +1,7 @@
 //! Saved layouts: the workspace's persisted form, its dirty state, and opening, saving, renaming and deleting layouts.
 
 pub(in crate::workspace) mod autosave;
+pub(in crate::workspace) mod session;
 
 use super::chart::Chart;
 use super::drawing::{is_ruler, merge_remote_drawings, plain_drawings};
@@ -49,7 +50,7 @@ impl ChartWorkspace {
             columns: self.columns.clone(),
             focused: self.focused,
             sync: self.sync,
-            active_view: self.active_view_id,
+            active_view: self.layout.active_view_id,
             custom_title: self.custom_title.clone(),
             link: self.link,
         }
@@ -83,7 +84,8 @@ impl ChartWorkspace {
     /// Whether the layout differs from the last saved fingerprint. Zoom, focus,
     /// and watchlist edits do not count.
     pub fn is_dirty(&self) -> bool {
-        self.baseline
+        self.layout
+            .baseline
             .as_ref()
             .is_some_and(|baseline| *baseline != self.layout_snapshot())
     }
@@ -94,9 +96,9 @@ impl ChartWorkspace {
 
     /// Records the layout as saved: its fingerprint, and the drawings it holds.
     pub(super) fn set_baseline(&mut self) {
-        self.baseline = Some(self.layout_snapshot());
-        self.saved_drawings_version = self.drawings_version;
-        self.saved_drawings = self
+        self.layout.baseline = Some(self.layout_snapshot());
+        self.layout.saved_drawings_version = self.layout.drawings_version;
+        self.layout.saved_drawings = self
             .charts
             .iter()
             .map(|chart| (chart.id, plain_drawings(&chart.drawings)))
@@ -120,6 +122,7 @@ impl ChartWorkspace {
             };
             let remote = plain_drawings(&saved.drawings);
             let base = self
+                .layout
                 .saved_drawings
                 .get(&chart.id)
                 .cloned()
@@ -146,13 +149,13 @@ impl ChartWorkspace {
                 self.history.forget_drawings(chart.id);
                 changed = true;
             }
-            self.saved_drawings.insert(chart.id, remote);
+            self.layout.saved_drawings.insert(chart.id, remote);
         }
         if changed {
-            self.drawings_version += 1;
+            self.layout.drawings_version += 1;
             // Nothing here beyond what is already stored: no save is due.
             if !was_dirty && !diverged {
-                self.saved_drawings_version = self.drawings_version;
+                self.layout.saved_drawings_version = self.layout.drawings_version;
             }
         }
     }
@@ -161,7 +164,7 @@ impl ChartWorkspace {
     /// out (a drag must not mark a layout as edited), so an Autosave layout watches this too:
     /// without it a drawing would only reach the saved layout, and other Macs, by accident.
     pub(super) fn drawings_dirty(&self) -> bool {
-        self.drawings_version != self.saved_drawings_version
+        self.layout.drawings_version != self.layout.saved_drawings_version
     }
 
     pub(super) fn load_saved_views(&self) -> Vec<SavedView> {
@@ -182,7 +185,7 @@ impl ChartWorkspace {
     }
 
     pub(super) fn active_view(&self) -> Option<SavedView> {
-        let id = self.active_view_id?;
+        let id = self.layout.active_view_id?;
         self.load_saved_views()
             .into_iter()
             .find(|view| view.id == id)
@@ -190,7 +193,7 @@ impl ChartWorkspace {
 
     /// The toolbar menu's "Save": save in place, or ask for a name the first time.
     pub(super) fn request_save(&mut self, ctx: &egui::Context) {
-        if self.active_view_id.is_some() {
+        if self.layout.active_view_id.is_some() {
             self.save_active(true);
         } else {
             self.open_name_prompt(NamePrompt::Save { then_open: None }, ctx);
@@ -203,20 +206,20 @@ impl ChartWorkspace {
     }
 
     pub(super) fn open_name_prompt(&mut self, prompt: NamePrompt, ctx: &egui::Context) {
-        let base = self.active_view_name.clone();
-        self.prompt_name = match prompt {
+        let base = self.layout.active_view_name.clone();
+        self.layout.prompt_name = match prompt {
             NamePrompt::Copy => format!("{} copy", base.as_deref().unwrap_or("My Chart")),
             NamePrompt::Rename => base.unwrap_or_default(),
             NamePrompt::Save { .. } => String::new(),
         };
-        self.prompt_focus = true;
-        self.layout_prompt = Some(prompt);
+        self.layout.prompt_focus = true;
+        self.layout.prompt = Some(prompt);
         ctx.request_repaint();
     }
 
     fn close_name_prompt(&mut self) {
-        self.layout_prompt = None;
-        self.prompt_name.clear();
+        self.layout.prompt = None;
+        self.layout.prompt_name.clear();
     }
 
     /// Writes the live layout over the open one, keeping its autosave choice. A failure leaves
@@ -235,12 +238,12 @@ impl ChartWorkspace {
         match self.upsert_view(view) {
             Ok(()) => {
                 self.mark_clean();
-                self.autosave = AutosaveState::default();
+                self.layout.autosave = AutosaveState::default();
                 true
             }
             Err(error) => {
                 if report {
-                    self.layout_error = Some(format!("Couldn’t save “{}”: {error}", existing.name));
+                    self.layout.error = Some(format!("Couldn’t save “{}”: {error}", existing.name));
                 }
                 false
             }
@@ -253,14 +256,14 @@ impl ChartWorkspace {
         let (id, name) = (view.id, view.name.clone());
         match self.upsert_view(view) {
             Ok(()) => {
-                self.active_view_id = Some(id);
-                self.active_view_name = Some(name);
+                self.layout.active_view_id = Some(id);
+                self.layout.active_view_name = Some(name);
                 self.mark_clean();
-                self.autosave = AutosaveState::default();
+                self.layout.autosave = AutosaveState::default();
                 true
             }
             Err(error) => {
-                self.layout_error = Some(format!("Couldn’t save the layout: {error}"));
+                self.layout.error = Some(format!("Couldn’t save the layout: {error}"));
                 false
             }
         }
@@ -311,7 +314,7 @@ impl ChartWorkspace {
         &mut self,
         edit: impl FnOnce(&mut SavedView),
     ) -> Result<(), String> {
-        let Some(id) = self.active_view_id else {
+        let Some(id) = self.layout.active_view_id else {
             return Ok(());
         };
         let store = self.store.lock().map_err(|error| error.to_string())?;
@@ -332,7 +335,7 @@ impl ChartWorkspace {
                 self.apply_saved_view_by_id(id, ctx);
             }
         } else if self.is_dirty() {
-            self.pending_open_id = Some(id);
+            self.layout.pending_open_id = Some(id);
             ctx.request_repaint();
         } else {
             self.apply_saved_view_by_id(id, ctx);
@@ -358,15 +361,15 @@ impl ChartWorkspace {
     }
 
     fn rename_layout(&mut self, name: String) {
-        if self.active_view_id.is_none() {
+        if self.layout.active_view_id.is_none() {
             self.save_named(name, None);
             return;
         }
         let renamed = name.clone();
         match self.update_active_view(|view| view.name = renamed) {
-            Ok(()) => self.active_view_name = Some(name),
+            Ok(()) => self.layout.active_view_name = Some(name),
             Err(error) => {
-                self.layout_error = Some(format!("Couldn’t rename the layout: {error}"));
+                self.layout.error = Some(format!("Couldn’t rename the layout: {error}"));
             }
         }
     }
@@ -384,14 +387,14 @@ impl ChartWorkspace {
                     .map_err(|error| error.to_string())
             });
         if let Err(error) = result {
-            self.layout_error = Some(format!("Couldn’t delete the layout: {error}"));
+            self.layout.error = Some(format!("Couldn’t delete the layout: {error}"));
             return;
         }
         // The tab keeps its charts and becomes unnamed.
-        if self.active_view_id == Some(id) {
-            self.active_view_id = None;
-            self.active_view_name = None;
-            self.autosave = AutosaveState::default();
+        if self.layout.active_view_id == Some(id) {
+            self.layout.active_view_id = None;
+            self.layout.active_view_name = None;
+            self.layout.autosave = AutosaveState::default();
         }
     }
 
@@ -416,27 +419,27 @@ impl ChartWorkspace {
         self.set_sync(view.sync);
         self.drop_rulers();
         self.history.clear();
-        self.active_view_id = Some(view.id);
-        self.active_view_name = Some(view.name.clone());
+        self.layout.active_view_id = Some(view.id);
+        self.layout.active_view_name = Some(view.name.clone());
         self.set_baseline();
-        self.autosave = AutosaveState::default();
+        self.layout.autosave = AutosaveState::default();
         let _ = self.update_active_view(|opened| opened.last_opened_at_ms = Some(now_ms()));
     }
 
     /// The name prompt, the "save changes?" question and the error alert, one at a time.
     pub(super) fn show_layout_sheets(&mut self, ctx: &egui::Context) {
-        if let Some(message) = self.layout_error.clone() {
+        if let Some(message) = self.layout.error.clone() {
             if layout_prompts::show_error(ctx, &message) {
-                self.layout_error = None;
+                self.layout.error = None;
             }
             return;
         }
-        if let Some(prompt) = self.layout_prompt {
-            let mut focus = std::mem::take(&mut self.prompt_focus);
-            let mut name = std::mem::take(&mut self.prompt_name);
+        if let Some(prompt) = self.layout.prompt {
+            let mut focus = std::mem::take(&mut self.layout.prompt_focus);
+            let mut name = std::mem::take(&mut self.layout.prompt_name);
             let outcome = layout_prompts::show_name(ctx, prompt, &mut name, &mut focus);
-            self.prompt_name = name;
-            self.prompt_focus = focus;
+            self.layout.prompt_name = name;
+            self.layout.prompt_focus = focus;
             match outcome {
                 Some(NameOutcome::Confirm(name)) => {
                     self.close_name_prompt();
@@ -445,7 +448,7 @@ impl ChartWorkspace {
                             if self.save_named(name, None)
                                 && let Some(id) = then_open
                             {
-                                self.pending_open_id = None;
+                                self.layout.pending_open_id = None;
                                 self.apply_saved_view_by_id(id, ctx);
                             }
                         }
@@ -455,22 +458,23 @@ impl ChartWorkspace {
                 }
                 Some(NameOutcome::Cancel) => {
                     self.close_name_prompt();
-                    self.pending_open_id = None;
+                    self.layout.pending_open_id = None;
                 }
                 None => {}
             }
             return;
         }
-        let Some(id) = self.pending_open_id else {
+        let Some(id) = self.layout.pending_open_id else {
             return;
         };
         let name = self
+            .layout
             .active_view_name
             .clone()
             .unwrap_or_else(|| "Unnamed".to_owned());
         match layout_prompts::show_unsaved(ctx, &name) {
             Some(UnsavedChoice::Save) => {
-                if self.active_view_id.is_none() {
+                if self.layout.active_view_id.is_none() {
                     // The first save needs a name; opening follows it.
                     self.open_name_prompt(
                         NamePrompt::Save {
@@ -479,15 +483,15 @@ impl ChartWorkspace {
                         ctx,
                     );
                 } else if self.save_active(true) {
-                    self.pending_open_id = None;
+                    self.layout.pending_open_id = None;
                     self.apply_saved_view_by_id(id, ctx);
                 }
             }
             Some(UnsavedChoice::Discard) => {
-                self.pending_open_id = None;
+                self.layout.pending_open_id = None;
                 self.apply_saved_view_by_id(id, ctx);
             }
-            Some(UnsavedChoice::Cancel) => self.pending_open_id = None,
+            Some(UnsavedChoice::Cancel) => self.layout.pending_open_id = None,
             None => {}
         }
     }

@@ -15,7 +15,7 @@ impl ChartWorkspace {
         ctx: &egui::Context,
     ) -> Vec<WorkspaceAction> {
         let mut actions = Vec::new();
-        let active_view_id = self.active_view_id;
+        let active_view_id = self.layout.active_view_id();
         let layout_index = self.layout_index();
         let mut save_clicked = false;
         let mut copy_clicked = false;
@@ -44,14 +44,14 @@ impl ChartWorkspace {
             |action| crate::ui::shortcut::snapshot(action).map(|shortcut| shortcut.label());
         let input = toolbar::ToolbarInput {
             timeframe: self.timeframe,
-            layout_name: self.active_view_name.as_deref().unwrap_or("Unnamed"),
+            layout_name: self.layout.active_view_name().unwrap_or("Unnamed"),
             // Autosave keeps a layout clean in the user's eyes: "(unsaved)" only shows while
             // nothing is going to save it.
-            unsaved: dirty && !(autosave_on && !self.autosave.failed),
+            unsaved: dirty && !(autosave_on && !self.layout.autosave_failed()),
             autosave: toolbar::AutosaveState {
                 available: active_view_id.is_some(),
                 on: autosave_on,
-                failed: self.autosave.failed,
+                failed: self.layout.autosave_failed(),
             },
             layouts,
             active_layout: active_view_id,
