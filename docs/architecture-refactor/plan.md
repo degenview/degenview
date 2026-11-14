@@ -90,17 +90,17 @@ Stacked pull requests, logic changes first and pure moves last.
   - [x] Sync id-space constants and the custom-title limit move to `model`.
   - [x] `EventSink`/`TransportFactory` move to `sync::transport`; `StoreScriptSink` to `host::sync`.
   - [x] The script library's file store moves out of `pine_studio/`.
-- [x] **PR 7: nothing slow in a frame.**
+- [x] **PR 7: nothing slow in a frame.** [#518](https://github.com/degenview/degenview/pull/518)
   - [x] Pine subscriptions are cached by change signal instead of queried per frame.
   - [x] The MCP connection JSON is made only when copied; the local UTC offset is cached.
 
 ### Wave 3: structure
 
-- [ ] **PR 8: typed errors.**
-  - [ ] Add `thiserror`.
-  - [ ] Providers return a `ProviderError`; no error is matched by its text.
-  - [ ] The sync engine has its own `SyncError`.
-  - [ ] One shared poison-tolerant `lock` helper.
+- [x] **PR 8: typed errors.**
+  - [x] Add `thiserror`.
+  - [x] Providers return a `ProviderError`; no error is matched by its text.
+  - [x] The sync engine has its own `SyncError`.
+  - [x] One shared poison-tolerant `lock` helper.
 - [ ] **PR 9: `ChartWorkspace` in owned parts.** Drawing tools, layout session, watchlist pane, trade
       side, replay, undo history and alert UI become sub-structs with their own methods.
 - [ ] **PR 10: `DegenViewApp` in owned parts.** An alert coordinator, the tab state and the MCP state.

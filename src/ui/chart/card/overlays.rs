@@ -12,6 +12,7 @@
 //! can only land on one of them.
 
 use super::{ChartCard, View};
+use crate::lock::lock;
 use crate::model::chart;
 use crate::model::chart::kind::{ChartType, PriceSource};
 use crate::model::chart::price_scale::PriceScaleMode;
@@ -212,11 +213,7 @@ impl ChartCard {
     ) {
         debug_assert_eq!(config.len(), feeds.len());
         let state = &mut self.overlay;
-        state
-            .memo
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .retain(|id, _| config.get(*id).is_some());
+        lock(&state.memo).retain(|id, _| config.get(*id).is_some());
         state.config = config;
         state.feeds = feeds;
         state.stamp = Some((version, source, symbol.to_owned()));
@@ -265,10 +262,7 @@ impl ChartCard {
         let bar_ms = self.bar_ms();
         let supported = !chart_type.is_synthetic();
         let (first, last) = (bars[start].open_time, bars[end - 1].open_time);
-        let mut memo = state
-            .memo
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut memo = lock(&state.memo);
         let mut resolved: Vec<(&ChartOverlay, &OverlayFeed, Arc<Aligned>)> = Vec::new();
         for (overlay, feed) in state.config.iter().zip(&state.feeds) {
             let wanted = supported

@@ -13,10 +13,28 @@ const TIMEOUT: Duration = Duration::from_secs(600);
 const MAX_HOPS: usize = 3;
 const CHUNK_BYTES: usize = 64 * 1024;
 
+/// Why the download failed, in the words the update banner shows.
+#[derive(Debug, thiserror::Error)]
+pub enum DownloadError {
+    /// A hop asked for plain HTTP, another host or a malformed address.
+    #[error("Download failed: unexpected download address.")]
+    UnexpectedAddress,
+    #[error("Download failed: redirect without a location.")]
+    RedirectWithoutLocation,
+    #[error("Download failed: too many redirects.")]
+    TooManyRedirects,
+    /// The server answered with a status other than 200 or a redirect.
+    #[error("Download failed: HTTP {0}.")]
+    Status(u16),
+    /// The connection failed or broke off while reading.
+    #[error("Download failed: {0}")]
+    Network(String),
+}
+
 /// Blocking: GETs `url`, following at most `MAX_HOPS` allowed redirects, and returns the body,
 /// which must be `max_bytes` long or shorter.
 /// Calls `progress` with the bytes received so far after every chunk.
-pub fn get(url: &str, max_bytes: u64, progress: &dyn Fn(u64)) -> Result<Vec<u8>, String> {
+pub fn get(url: &str, max_bytes: u64, progress: &dyn Fn(u64)) -> Result<Vec<u8>, DownloadError> {
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
         .http_status_as_error(false)
@@ -39,11 +57,11 @@ fn fetch(
     max_bytes: u64,
     allowed: &dyn Fn(&str) -> bool,
     progress: &dyn Fn(u64),
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, DownloadError> {
     let mut url = url.to_owned();
     for _ in 0..=MAX_HOPS {
         if !allowed(&url) {
-            return Err("Download failed: unexpected download address.".to_owned());
+            return Err(DownloadError::UnexpectedAddress);
         }
         let mut response = agent
             .get(&url)
@@ -52,7 +70,7 @@ fn fetch(
                 concat!("DegenView/", env!("CARGO_PKG_VERSION")),
             )
             .call()
-            .map_err(|error| format!("Download failed: {error}"))?;
+            .map_err(|error| DownloadError::Network(error.to_string()))?;
         match response.status().as_u16() {
             200 => {
                 let reader = response
@@ -67,24 +85,23 @@ fn fetch(
                     .headers()
                     .get("location")
                     .and_then(|value| value.to_str().ok())
-                    .ok_or("Download failed: redirect without a location.")?;
-                url = resolve(&url, location)
-                    .ok_or("Download failed: unexpected download address.")?;
+                    .ok_or(DownloadError::RedirectWithoutLocation)?;
+                url = resolve(&url, location).ok_or(DownloadError::UnexpectedAddress)?;
             }
-            status => return Err(format!("Download failed: HTTP {status}.")),
+            status => return Err(DownloadError::Status(status)),
         }
     }
-    Err("Download failed: too many redirects.".to_owned())
+    Err(DownloadError::TooManyRedirects)
 }
 
 /// Reads `reader` to the end in chunks, reporting the running total.
-fn read_counting(mut reader: impl Read, progress: &dyn Fn(u64)) -> Result<Vec<u8>, String> {
+fn read_counting(mut reader: impl Read, progress: &dyn Fn(u64)) -> Result<Vec<u8>, DownloadError> {
     let mut bytes = Vec::new();
     let mut chunk = vec![0_u8; CHUNK_BYTES];
     loop {
         let read = reader
             .read(&mut chunk)
-            .map_err(|error| format!("Download failed: {error}"))?;
+            .map_err(|error| DownloadError::Network(error.to_string()))?;
         if read == 0 {
             return Ok(bytes);
         }
@@ -243,7 +260,7 @@ mod tests {
             &|_| {},
         )
         .unwrap_err();
-        assert!(error.contains("unexpected download address"), "{error}");
+        assert!(matches!(error, DownloadError::UnexpectedAddress), "{error}");
         thread.join().unwrap();
     }
 
@@ -279,7 +296,8 @@ mod tests {
             &|_| {},
         )
         .unwrap_err();
-        assert!(error.contains("too many redirects"), "{error}");
+        assert!(matches!(error, DownloadError::TooManyRedirects), "{error}");
+        assert_eq!(error.to_string(), "Download failed: too many redirects.");
         thread.join().unwrap();
     }
 
@@ -288,11 +306,9 @@ mod tests {
         let (base, thread) = serve(vec![
             "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
         ]);
-        assert!(
-            fetch(&agent(), &format!("{base}/a"), 100, &local_only, &|_| {})
-                .unwrap_err()
-                .contains("HTTP 404")
-        );
+        let error = fetch(&agent(), &format!("{base}/a"), 100, &local_only, &|_| {}).unwrap_err();
+        assert!(matches!(error, DownloadError::Status(404)), "{error}");
+        assert_eq!(error.to_string(), "Download failed: HTTP 404.");
         thread.join().unwrap();
         let (base, thread) = serve(vec![ok("0123456789")]);
         assert!(fetch(&agent(), &format!("{base}/a"), 3, &local_only, &|_| {}).is_err());

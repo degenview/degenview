@@ -1,5 +1,5 @@
 use crate::model::Kline;
-use crate::service::{fill_gaps, fold_calendar, interval_seconds};
+use crate::service::{ProviderError, fill_gaps, fold_calendar, interval_seconds};
 use serde_json::Value;
 
 const BASE_URL: &str = "https://api.geckoterminal.com/api/v2";
@@ -51,13 +51,17 @@ impl Window {
 /// GeckoTerminal only lists intervals that traded and tops out at daily bars, so empty hours and
 /// days are filled flat and coarser bars are folded on the calendar, which makes the series
 /// line up with an exchange's.
-pub fn fetch_klines(pair_address: &str, interval: &str, limit: u32) -> Result<Vec<Kline>, String> {
+pub fn fetch_klines(
+    pair_address: &str,
+    interval: &str,
+    limit: u32,
+) -> Result<Vec<Kline>, ProviderError> {
     let window = Window::for_interval(interval, limit as usize);
     let network = network_for(pair_address)?;
     let side = side_for(&network, pair_address);
     let raw = fetch_ohlcv(&network, pair_address, side, &window, None)?;
     if raw.is_empty() {
-        return Err("No chart data for this pool".to_owned());
+        return Err(ProviderError::other("No chart data for this pool"));
     }
     let candles = shape(raw, interval, &window, crate::service::now_ms());
     let start = candles.len().saturating_sub(limit as usize);
@@ -88,13 +92,15 @@ fn shape(mut raw: Vec<Kline>, interval: &str, window: &Window, now_ms: i64) -> V
 enum Fetch {
     /// The free API only serves the last 180 days; the request asked for older ones.
     BeyondHistory,
-    Failed(String),
+    Failed(ProviderError),
 }
 
-impl From<Fetch> for String {
-    fn from(fetch: Fetch) -> String {
+impl From<Fetch> for ProviderError {
+    fn from(fetch: Fetch) -> Self {
         match fetch {
-            Fetch::BeyondHistory => "GeckoTerminal has no older candles for this pool".to_owned(),
+            Fetch::BeyondHistory => {
+                ProviderError::other("GeckoTerminal has no older candles for this pool")
+            }
             Fetch::Failed(error) => error,
         }
     }
@@ -128,7 +134,7 @@ fn fetch_ohlcv(
         Err(crate::service::net::http::Error::Status(401)) if before.is_some() => {
             return Err(Fetch::BeyondHistory);
         }
-        Err(error) => return Err(Fetch::Failed(format!("Network error: {error}"))),
+        Err(error) => return Err(Fetch::Failed(error.into())),
     };
     parse_ohlcv(&body).map_err(Fetch::Failed)
 }
@@ -142,10 +148,12 @@ pub fn fetch_klines_range(
     start_ms: i64,
     end_ms: i64,
     max: usize,
-) -> Result<Vec<Kline>, String> {
+) -> Result<Vec<Kline>, ProviderError> {
     let window = Window::for_interval(interval, max);
     if window.needs_aggregation {
-        return Err("GeckoTerminal pages hourly and daily candles only".to_owned());
+        return Err(ProviderError::other(
+            "GeckoTerminal pages hourly and daily candles only",
+        ));
     }
     let network = network_for(pair_address)?;
     let side = side_for(&network, pair_address);
@@ -162,13 +170,12 @@ pub fn fetch_klines_range(
 }
 
 /// `[timestamp_seconds, open, high, low, close, volumeUSD]`, newest first.
-fn parse_ohlcv(body: &str) -> Result<Vec<Kline>, String> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| format!("Data error: {error}"))?;
+fn parse_ohlcv(body: &str) -> Result<Vec<Kline>, ProviderError> {
+    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
     let rows = value
         .pointer("/data/attributes/ohlcv_list")
         .and_then(Value::as_array)
-        .ok_or_else(|| "No chart data for this pool".to_owned())?;
+        .ok_or_else(|| ProviderError::other("No chart data for this pool"))?;
     let mut candles = Vec::with_capacity(rows.len());
     for row in rows {
         let Some(fields) = row.as_array() else {
@@ -295,7 +302,7 @@ const NETWORK_NAMESPACE: &str = "geckoterminal_networks";
 const NETWORK_TTL: std::time::Duration = std::time::Duration::from_secs(30 * 86_400);
 
 /// Which chain a pool address sits on, from memory or disk when it was found before.
-fn network_for(pair_address: &str) -> Result<String, String> {
+fn network_for(pair_address: &str) -> Result<String, ProviderError> {
     let key = pair_address.to_lowercase();
     let cache = crate::service::cache::lookup::shared();
     if let Some(hit) = cache.get::<String>(NETWORK_NAMESPACE, &key, NETWORK_TTL)
@@ -310,15 +317,13 @@ fn network_for(pair_address: &str) -> Result<String, String> {
 
 /// Asks GeckoTerminal which chain a pool address sits on. The per-pool endpoints are namespaced by
 /// network, and DEXScreener's chain names don't match GeckoTerminal's ids.
-fn lookup_network(pair_address: &str) -> Result<String, String> {
+fn lookup_network(pair_address: &str) -> Result<String, ProviderError> {
     let key = pair_address.to_lowercase();
     let url = format!("{BASE_URL}/search/pools?query={pair_address}");
     crate::service::net::rate_limit::geckoterminal().wait_for_slot();
     let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
-            .map_err(|error| format!("Network error: {error}"))?;
-    let value: Value =
-        serde_json::from_str(&body).map_err(|error| format!("Data error: {error}"))?;
+        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)?;
+    let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
     let suffix = format!("_{key}");
     for pool in value
         .get("data")
@@ -344,7 +349,7 @@ fn lookup_network(pair_address: &str) -> Result<String, String> {
             }
         }
     }
-    Err("Pool not indexed by GeckoTerminal".to_owned())
+    Err(ProviderError::other("Pool not indexed by GeckoTerminal"))
 }
 
 #[cfg(test)]

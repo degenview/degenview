@@ -14,7 +14,7 @@ inventory.
 | `native_bridge.rs` | AppKit menus, window behavior, cursor, Keychain/accessibility boundaries |
 | `host/update/mod.rs` | Update checks, install progress, and restart state |
 | `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
-| `format.rs`, `platform.rs` | Leaf helpers every layer imports: number/price text and per-platform wording |
+| `format.rs`, `platform.rs`, `lock.rs` | Leaf helpers every layer imports: number/price text, per-platform wording, and locks that survive a poisoning panic |
 
 Feature hosts in `host/` (one directory per domain, see `host/` layout below) bridge pure engines,
 persistence, workers, and UI. `host/alert/runtime.rs` is the alert loop shared by the GUI fallback and
@@ -90,7 +90,7 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 
 | Directory | Holds |
 | --- | --- |
-| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), `live` feed, `candles` shaping, symbol `catalog`, `search_rank`, `fx_rates` |
+| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), their `error` (`ProviderError`), `live` feed, `candles` shaping, symbol `catalog`, `search_rank`, `fx_rates` |
 | `net/` | Shared transport: `http`, `rate_limit`, `ws`, `multipart` |
 | `cache/` | `mod.rs` the candle cache; `disk`, `lookup` and `control` (what Settings ▸ Storage does) |
 | `annotation/` | What drawings' pictures and Post cards need: `asset_host`, `ingest`, `link_fetch` |

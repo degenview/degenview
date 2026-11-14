@@ -789,7 +789,7 @@ impl PortfolioTab {
                         Err(error) => {
                             // Shown beside the form, not in the generic portfolio alert.
                             host.clear_error();
-                            editor.failed(error.message());
+                            editor.failed(error.to_string());
                         }
                     }
                 }
@@ -824,7 +824,7 @@ impl PortfolioTab {
     fn show_error(&mut self, ctx: &egui::Context, host: &mut PortfolioHost) {
         let message = host
             .last_error()
-            .map(PortfolioHostError::message)
+            .map(PortfolioHostError::to_string)
             .or_else(|| self.notice.clone());
         let Some(message) = message else { return };
         sheet::show(

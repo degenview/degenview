@@ -1,7 +1,7 @@
 use super::catalog::Catalog;
 use super::search_rank::normalize;
 use crate::model::Kline;
-use crate::service::{MarketSource, SearchResult, fold_calendar, rank_results};
+use crate::service::{MarketSource, ProviderError, SearchResult, fold_calendar, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -25,7 +25,12 @@ fn native_interval(interval: &str) -> (&str, Option<(i64, usize)>) {
 }
 
 impl MarketSource for Binance {
-    fn fetch_klines(&self, symbol: &str, interval: &str, limit: u32) -> Result<Vec<Kline>, String> {
+    fn fetch_klines(
+        &self,
+        symbol: &str,
+        interval: &str,
+        limit: u32,
+    ) -> Result<Vec<Kline>, ProviderError> {
         let (native, fold) = native_interval(interval);
         // A fold asks for one extra bar's worth of months so the oldest bar is whole.
         let requested = match fold {
@@ -40,8 +45,7 @@ impl MarketSource for Binance {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| format!("Network error: {error}"))?;
+        )?;
         let candles = parse_klines(&body)?;
         let Some((seconds, _)) = fold else {
             return Ok(candles);
@@ -58,7 +62,7 @@ impl MarketSource for Binance {
         start_ms: i64,
         end_ms: i64,
         max: usize,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         const PAGE: usize = MAX_PER_REQUEST;
         // Pages are fetched side by side: their start times follow from the interval alone.
         const PARALLEL: usize = 8;
@@ -66,7 +70,7 @@ impl MarketSource for Binance {
         let output_max = max;
         let max = max * fold.map_or(1, |(_, months)| months);
         let step = crate::service::interval_seconds(interval)
-            .ok_or_else(|| format!("Unknown interval {interval}"))?
+            .ok_or_else(|| ProviderError::other(format!("Unknown interval {interval}")))?
             * 1_000;
         let page_ms = step * PAGE as i64;
         let first = (end_ms - step * max as i64).max(start_ms);
@@ -76,7 +80,7 @@ impl MarketSource for Binance {
             .collect();
         let mut candles: Vec<Kline> = Vec::new();
         for batch in starts.chunks(PARALLEL) {
-            let pages: Vec<Result<Vec<Kline>, String>> = std::thread::scope(|scope| {
+            let pages: Vec<Result<Vec<Kline>, ProviderError>> = std::thread::scope(|scope| {
                 let handles: Vec<_> = batch
                     .iter()
                     .map(|&from| {
@@ -87,8 +91,7 @@ impl MarketSource for Binance {
                                 symbol.to_uppercase()
                             );
                             let body =
-                                crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
-                                    .map_err(|error| format!("Network error: {error}"))?;
+                                crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)?;
                             parse_klines(&body)
                         })
                     })
@@ -96,9 +99,9 @@ impl MarketSource for Binance {
                 handles
                     .into_iter()
                     .map(|handle| {
-                        handle
-                            .join()
-                            .unwrap_or_else(|_| Err("The candle download stopped.".to_owned()))
+                        handle.join().unwrap_or_else(|_| {
+                            Err(ProviderError::other("The candle download stopped."))
+                        })
                     })
                     .collect()
             });
@@ -119,7 +122,7 @@ impl MarketSource for Binance {
         Ok(candles)
     }
 
-    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, String> {
+    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // `BTC-USDT` and `btc/usdt` find `BTCUSDT`: Binance writes no separator.
         let needle = normalize(query);
         if needle.is_empty() {
@@ -163,19 +166,17 @@ pub(in crate::service) fn clear_catalog() {
     CATALOG.clear_memory();
 }
 
-fn download_pairs() -> Result<Vec<Pair>, String> {
+fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
     let body = crate::service::net::http::get_text(
         "https://api.binance.com/api/v3/exchangeInfo",
         &[],
         crate::service::net::http::Retry::Transient,
-    )
-    .map_err(|error| format!("Network error: {error}"))?;
+    )?;
     parse_pairs(&body)
 }
 
-fn parse_pairs(body: &str) -> Result<Vec<Pair>, String> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| format!("Data error: {error}"))?;
+fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
+    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
     Ok(value
         .get("symbols")
         .and_then(Value::as_array)
@@ -193,26 +194,25 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, String> {
         .collect())
 }
 
-fn parse_klines(body: &str) -> Result<Vec<Kline>, String> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| format!("Data error: {error}"))?;
+fn parse_klines(body: &str) -> Result<Vec<Kline>, ProviderError> {
+    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
     let rows = value
         .as_array()
-        .ok_or_else(|| "Data error: expected a candle array".to_owned())?;
+        .ok_or_else(|| ProviderError::data("expected a candle array"))?;
     rows.iter().map(parse_row).collect()
 }
 
-fn parse_row(row: &Value) -> Result<Kline, String> {
-    let value = |index: usize| -> Result<f64, String> {
+fn parse_row(row: &Value) -> Result<Kline, ProviderError> {
+    let value = |index: usize| -> Result<f64, ProviderError> {
         row.get(index)
             .and_then(Value::as_str)
             .and_then(|text| text.parse().ok())
-            .ok_or_else(|| format!("Data error: invalid field {index}"))
+            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
     };
-    let time = |index: usize| -> Result<i64, String> {
+    let time = |index: usize| -> Result<i64, ProviderError> {
         row.get(index)
             .and_then(Value::as_i64)
-            .ok_or_else(|| format!("Data error: invalid timestamp {index}"))
+            .ok_or_else(|| ProviderError::data(format!("invalid timestamp {index}")))
     };
 
     Ok(Kline {
@@ -283,7 +283,7 @@ mod tests {
     fn rejects_error_objects() {
         let error = parse_klines(r#"{"code":-1121,"msg":"Invalid symbol."}"#)
             .expect_err("object must fail");
-        assert!(error.contains("expected a candle array"));
+        assert_eq!(error, ProviderError::data("expected a candle array"));
     }
 
     #[test]

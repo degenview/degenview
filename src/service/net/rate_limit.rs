@@ -1,3 +1,4 @@
+use crate::lock::lock;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -18,7 +19,7 @@ impl RateLimiter {
     }
 
     pub fn wait_for_slot(&self) {
-        let mut guard = self.next_slot.lock().expect("rate limiter poisoned");
+        let mut guard = lock(&self.next_slot);
         let now = Instant::now();
         let next = match *guard {
             Some(slot) if slot > now => slot,

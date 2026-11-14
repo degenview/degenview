@@ -4,6 +4,7 @@
 
 use crate::store::Store;
 use crate::store::sync::SyncState;
+use crate::sync::engine::SyncError;
 use std::path::{Path, PathBuf};
 
 pub const CONTAINER: &str = "iCloud.es.nico.degenview";
@@ -33,7 +34,7 @@ pub fn enable(
     device_name: &str,
     hardware_hash: &str,
     environment: &str,
-) -> rusqlite::Result<SyncState> {
+) -> Result<SyncState, SyncError> {
     let mut state = store.ensure_sync_state(device_name, hardware_hash)?;
     state.enabled = true;
     state.container_id = Some(CONTAINER.to_string());
@@ -44,7 +45,7 @@ pub fn enable(
 
 /// Stops all sync activity. Local data, the iCloud binding and anything waiting to upload are
 /// kept, and nothing is deleted from iCloud; turning sync back on resumes where it left off.
-pub fn disable(store: &Store) -> rusqlite::Result<()> {
+pub fn disable(store: &Store) -> Result<(), SyncError> {
     if let Some(mut state) = store.sync_state()? {
         state.enabled = false;
         store.save_sync_state(&state)?;
@@ -54,16 +55,16 @@ pub fn disable(store: &Store) -> rusqlite::Result<()> {
 
 /// Binds this database to the account the user just agreed to use. The first-time merge still
 /// has to run before anything uploads.
-pub fn bind(store: &Store, user_hash: &str, now_ms: i64) -> rusqlite::Result<()> {
+pub fn bind(store: &Store, user_hash: &str, now_ms: i64) -> Result<(), SyncError> {
     let Some(mut state) = store.sync_state()? else {
-        return Err(rusqlite::Error::QueryReturnedNoRows);
+        return Err(SyncError::NoSyncState);
     };
     state.account_hash = Some(user_hash.to_string());
     state.account_bound_ms = Some(now_ms);
     state.initial_sync_done = false;
     state.engine_state = None;
     state.engine_state_account_hash = None;
-    store.save_sync_state(&state)
+    Ok(store.save_sync_state(&state)?)
 }
 
 /// What resolving an account change did, for the interface to report.
@@ -84,7 +85,7 @@ pub fn resolve_account_change(
     new_user_hash: &str,
     backups_dir: &Path,
     now_ms: i64,
-) -> rusqlite::Result<Resolution> {
+) -> Result<Resolution, SyncError> {
     // Each choice is one change: either all of it happens or none, never a reset database that
     // is still bound to the old account, or half the collections cleared. (The file copy made
     // first is outside the database and stays either way; that is what it is for.)
@@ -131,8 +132,8 @@ pub fn resolve_account_change(
 /// After iCloud confirmed that this Mac's data there was deleted: stop syncing and forget the
 /// binding and everything learned about the cloud. Local data is untouched, and turning sync on
 /// again starts a fresh first-time merge.
-pub fn after_cloud_delete(store: &Store) -> rusqlite::Result<()> {
-    store.in_savepoint("after_cloud_delete", || {
+pub fn after_cloud_delete(store: &Store) -> Result<(), SyncError> {
+    Ok(store.in_savepoint("after_cloud_delete", || {
         if let Some(mut state) = store.sync_state()? {
             state.enabled = false;
             state.account_hash = None;
@@ -144,12 +145,12 @@ pub fn after_cloud_delete(store: &Store) -> rusqlite::Result<()> {
             store.save_sync_state(&state)?;
         }
         store.reset_sync_data()
-    })
+    })?)
 }
 
 /// Another Mac deleted DegenView's data in iCloud. Either upload this Mac's data again as a fresh
 /// start (`reupload`), or stop syncing. Nothing local is removed either way.
-pub fn resolve_remote_deletion(store: &Store, reupload: bool) -> rusqlite::Result<()> {
+pub fn resolve_remote_deletion(store: &Store, reupload: bool) -> Result<(), SyncError> {
     store.in_savepoint("resolve_remote_deletion", || {
         store.reset_sync_data()?;
         if let Some(mut state) = store.sync_state()? {
@@ -169,9 +170,8 @@ pub fn resolve_remote_deletion(store: &Store, reupload: bool) -> rusqlite::Resul
 }
 
 /// A copy of the whole database, named by time, that opens as an ordinary DegenView database.
-pub fn stash(store: &Store, backups_dir: &Path, now_ms: i64) -> rusqlite::Result<PathBuf> {
-    std::fs::create_dir_all(backups_dir)
-        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+pub fn stash(store: &Store, backups_dir: &Path, now_ms: i64) -> Result<PathBuf, SyncError> {
+    std::fs::create_dir_all(backups_dir)?;
     let mut path = backups_dir.join(format!("degenview-before-icloud-{now_ms}.sqlite"));
     let mut n = 2;
     while path.exists() {
@@ -195,7 +195,10 @@ pub const NAME_HASH_PREFIX: &str = "name:";
 /// `None` is "this Mac's identifier could not be read": nothing is compared, since guessing wrong
 /// would throw away a good identity. A stored hash made from the computer's name (the same
 /// failure, earlier) is replaced by the real one without a new identity.
-pub fn check_device_identity(store: &Store, hardware_hash: Option<&str>) -> rusqlite::Result<bool> {
+pub fn check_device_identity(
+    store: &Store,
+    hardware_hash: Option<&str>,
+) -> Result<bool, SyncError> {
     let (Some(state), Some(hardware_hash)) = (store.sync_state()?, hardware_hash) else {
         return Ok(false);
     };

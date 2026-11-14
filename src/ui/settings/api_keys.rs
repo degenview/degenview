@@ -4,6 +4,7 @@
 //! (what may be saved, what the status says) is a plain function tested against in-memory stores.
 
 use crate::model::DataSource;
+use crate::service::ProviderError;
 use crate::service::keychain::api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore,
 };
@@ -60,7 +61,7 @@ pub struct AlpacaForm {
     loaded: bool,
     pub is_saved: bool,
     pub status: Option<StatusMessage>,
-    test: Option<Pending<Result<(), String>>>,
+    test: Option<Pending<Result<(), ProviderError>>>,
     autosave: Autosave,
 }
 
@@ -70,7 +71,7 @@ pub struct CmcForm {
     loaded: bool,
     pub configured: bool,
     pub status: Option<StatusMessage>,
-    test: Option<Pending<Result<(), String>>>,
+    test: Option<Pending<Result<(), ProviderError>>>,
     autosave: Autosave,
 }
 
@@ -132,7 +133,7 @@ impl AlpacaForm {
     pub fn start_test(
         &mut self,
         repaint: Option<&egui::Context>,
-        test: impl FnOnce(String, String) -> Result<(), String> + Send + 'static,
+        test: impl FnOnce(String, String) -> Result<(), ProviderError> + Send + 'static,
     ) {
         if self.test.is_some() {
             return;
@@ -233,7 +234,7 @@ impl CmcForm {
     pub fn start_test(
         &mut self,
         repaint: Option<&egui::Context>,
-        test: impl FnOnce() -> Result<(), String> + Send + 'static,
+        test: impl FnOnce() -> Result<(), ProviderError> + Send + 'static,
     ) {
         if self.test.is_some() {
             return;
@@ -250,21 +251,23 @@ impl CmcForm {
 
 /// Turns a finished connection test into the status under its button.
 fn take_test_answer(
-    test: &mut Option<Pending<Result<(), String>>>,
+    test: &mut Option<Pending<Result<(), ProviderError>>>,
     status: &mut Option<StatusMessage>,
 ) {
     let Some(pending) = test else {
         return;
     };
-    let Some(outcome) =
-        pending.poll_or(|| Err("The connection test stopped unexpectedly.".to_owned()))
-    else {
+    let Some(outcome) = pending.poll_or(|| {
+        Err(ProviderError::other(
+            "The connection test stopped unexpectedly.",
+        ))
+    }) else {
         return;
     };
     *test = None;
     *status = Some(match outcome {
         Ok(()) => StatusMessage::ok("Connection successful."),
-        Err(message) => StatusMessage::error(message),
+        Err(error) => StatusMessage::error(error.to_string()),
     });
 }
 
@@ -734,7 +737,9 @@ mod tests {
         form.start_test(None, || Ok(()));
         assert!(form.is_testing());
         assert_eq!(form.status, None, "a new test clears the old message");
-        form.start_test(None, || Err("ignored: one test at a time".into()));
+        form.start_test(None, || {
+            Err(ProviderError::other("ignored: one test at a time"))
+        });
         wait_for_test(&mut form);
         assert!(!form.is_testing());
         assert_eq!(
@@ -742,7 +747,7 @@ mod tests {
             Some(StatusMessage::ok("Connection successful."))
         );
 
-        form.start_test(None, || Err("Invalid API key".into()));
+        form.start_test(None, || Err(ProviderError::other("Invalid API key")));
         wait_for_test(&mut form);
         assert_eq!(form.status, Some(StatusMessage::error("Invalid API key")));
     }

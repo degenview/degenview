@@ -12,7 +12,7 @@ use super::PickMode;
 use crate::model::DataSource;
 use crate::service::market::search_rank::{self, is_dollar_quote};
 use crate::service::work_queue::{self, Pending};
-use crate::service::{self, SearchResult};
+use crate::service::{self, ProviderError, SearchResult};
 use crate::ui::chart::picker_kit::suggestions::{CRYPTO_SUGGESTIONS, STOCK_SUGGESTIONS};
 use eframe::egui;
 use std::collections::HashMap;
@@ -162,7 +162,7 @@ pub fn trading_kind(source: DataSource) -> &'static str {
     }
 }
 
-type Answer = Result<Vec<SearchResult>, String>;
+type Answer = Result<Vec<SearchResult>, ProviderError>;
 
 /// What a search that ended without an answer (its worker panicked) shows for its provider.
 const STOPPED: &str = "The search stopped unexpectedly.";
@@ -170,11 +170,11 @@ const STOPPED: &str = "The search stopped unexpectedly.";
 /// Where the answers come from: the providers, or canned ones under test.
 #[derive(Clone, Copy)]
 pub struct Backend {
-    pub search: fn(DataSource, &str) -> Result<Vec<SearchResult>, String>,
+    pub search: fn(DataSource, &str) -> Result<Vec<SearchResult>, ProviderError>,
     /// The other dollar markets of an asset.
     pub related: fn(&str) -> Vec<SearchResult>,
     /// The busiest prediction markets, for the Predictions tab while the box is empty.
-    pub trending: fn(DataSource, usize) -> Result<Vec<SearchResult>, String>,
+    pub trending: fn(DataSource, usize) -> Result<Vec<SearchResult>, ProviderError>,
 }
 
 impl Backend {
@@ -208,7 +208,7 @@ pub struct Listing {
     /// A provider is still answering.
     pub searching: bool,
     /// Why a provider gave nothing, by provider.
-    pub errors: Vec<(DataSource, String)>,
+    pub errors: Vec<(DataSource, ProviderError)>,
 }
 
 impl SymbolSearch {
@@ -242,7 +242,7 @@ impl SymbolSearch {
     ) -> Listing {
         let answers = &mut self.answers;
         self.pending.retain(|slot, search| {
-            let Some(answer) = search.poll_or(|| Err(STOPPED.to_owned())) else {
+            let Some(answer) = search.poll_or(|| Err(ProviderError::other(STOPPED))) else {
                 return true;
             };
             answers.insert(slot.clone(), answer);
@@ -277,7 +277,7 @@ impl SymbolSearch {
             let slot = (key.clone(), *source);
             match self.answers.get(&slot) {
                 Some(Ok(results)) => groups.push(results.clone()),
-                Some(Err(message)) => errors.push((*source, message.clone())),
+                Some(Err(error)) => errors.push((*source, error.clone())),
                 None => searching = true,
             }
         }
@@ -510,7 +510,7 @@ mod tests {
         let mut search = SymbolSearch::default();
         search.answers.insert(
             ("aapl".into(), DataSource::Alpaca),
-            Err("Add your Alpaca API key in Settings".into()),
+            Err(ProviderError::other("Add your Alpaca API key in Settings")),
         );
         let listing = search.listing(&ctx, "aapl", Scope::Stocks, None);
         assert_eq!(listing.errors.len(), 1);

@@ -4,6 +4,7 @@
 //! a mutex, written to the `setting` table on every change. The secrets a provider asks for are
 //! not here: they are in the secure storage (`keychain::snapshot_secrets`).
 
+use crate::lock::lock;
 use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale};
 use crate::service::keychain::snapshot_secrets::SnapshotSecrets;
 use crate::service::snapshot::providers::{self, Destination, FieldKind, Readiness};
@@ -65,7 +66,7 @@ impl SnapshotHost {
     }
 
     pub fn prefs(&self) -> SnapshotPrefs {
-        self.prefs.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        lock(&self.prefs).clone()
     }
 
     pub fn secrets(&self) -> &Arc<SnapshotSecrets> {
@@ -110,7 +111,7 @@ impl SnapshotHost {
         held: Option<&Store>,
         change: impl FnOnce(&mut SnapshotPrefs),
     ) -> Result<(), String> {
-        let mut prefs = self.prefs.lock().unwrap_or_else(|e| e.into_inner());
+        let mut prefs = lock(&self.prefs);
         // What is stored is the truth, not what was read at launch: iCloud Sync may have applied
         // another Mac's change since, and writing the old copy back would undo it there.
         if let Some(stored) = self.stored(held) {
@@ -155,7 +156,7 @@ impl SnapshotHost {
     /// reaches the page and the camera menu this way. Not for every frame: it reads the database.
     pub fn refresh(&self, held: Option<&Store>) {
         if let Some(stored) = self.stored(held) {
-            *self.prefs.lock().unwrap_or_else(|e| e.into_inner()) = stored;
+            *lock(&self.prefs) = stored;
         }
     }
 

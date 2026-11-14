@@ -2,6 +2,7 @@ use super::DegenViewApp;
 use super::now_ms;
 use super::tabs::TabContent;
 use crate::host::alert::runtime::{AlertRuntimeLease, GuiRuntimeDecision, gui_runtime_decision};
+use crate::lock::lock;
 use crate::model::alert::{
     AlertCurrency, AlertRuntimeCommand, AlertRuntimeCommandPayload, AlertServiceState, AlertState,
 };
@@ -191,10 +192,7 @@ impl DegenViewApp {
             .map(|host| host.health().clone())
             .unwrap_or_default();
         let (decision, owns_lease, service_state) = {
-            let mut control = self
-                .alert_runtime_control
-                .lock()
-                .expect("alert runtime control lock poisoned");
+            let mut control = lock(&self.alert_runtime_control);
             control.poll_service_status();
             if control.status_probe.is_none()
                 && now.saturating_sub(control.last_status_check_ms) >= 1_000
@@ -231,7 +229,7 @@ impl DegenViewApp {
         };
 
         let events = if decision == GuiRuntimeDecision::Foreground && owns_lease {
-            let mut host = self.alert_host.lock().expect("alert host lock poisoned");
+            let mut host = lock(&self.alert_host);
             let runtime_state = if service_state == AlertServiceState::Enabled {
                 AlertServiceState::Disabled
             } else {
@@ -249,11 +247,8 @@ impl DegenViewApp {
             )
         } else {
             self.alert_runner.suspend_quotes(&self.quote_coordinator);
-            let store = self.store.lock().expect("store lock poisoned");
-            self.alert_host
-                .lock()
-                .expect("alert host lock poisoned")
-                .reload_from_store(&store, now)
+            let store = lock(&self.store);
+            lock(&self.alert_host).reload_from_store(&store, now)
         };
         if !events.is_empty()
             && let Ok(host) = self.alert_host.lock()

@@ -10,7 +10,7 @@ use crate::ui::paper::chart_trading::{MarkerMenu, PaperOverlayAction};
 pub(super) struct BodyArgs<'a> {
     pub symbol: &'a str,
     pub candles: &'a [Kline],
-    pub error: Option<&'a str>,
+    pub error: Option<&'a ProviderError>,
     pub scale_mode: PriceScaleMode,
     pub source: DataSource,
     pub indicators: &'a IndicatorConfig,
@@ -70,13 +70,13 @@ impl ChartCard {
         args: &BodyArgs,
     ) -> bool {
         let rect = response.rect;
-        if let Some(message) = args.error
+        if let Some(error) = args.error
             && args.candles.is_empty()
         {
             painter.text(
                 rect.center(),
                 Align2::CENTER_CENTER,
-                message,
+                error.to_string(),
                 FontId::proportional(13.0),
                 theme::DOWN,
             );

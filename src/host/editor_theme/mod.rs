@@ -13,6 +13,7 @@
 //! this Mac, the editor keeps the system's monospace font and the saved name is kept, so the font
 //! comes back when it does.
 
+use crate::lock::lock;
 use crate::model::editor_theme::codec;
 use crate::model::editor_theme::{
     BUNDLED_FONT, BuiltInTheme, ColorKey, EditorPrefs, EditorTheme, Rgba, SYSTEM_FONT, ThemeBook,
@@ -436,7 +437,7 @@ impl EditorThemeHost {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
-        self.inner.lock().expect("editor theme lock poisoned")
+        lock(&self.inner)
     }
 
     /// Tells the host which context to repaint and to install fonts into, and picks up a font the

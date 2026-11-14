@@ -7,6 +7,7 @@
 //! `keychain::webhook_secrets::is_disabled` (tests, `DEGENVIEW_NO_KEYCHAIN=1`) nothing touches
 //! the Keychain: keys live in memory for the session.
 
+use crate::lock::lock;
 use crate::service::keychain::webhook_secrets::{Scope, is_disabled, platform};
 use crate::service::webhook::delivery::SecretStoreError;
 use serde::{Deserialize, Serialize};
@@ -154,7 +155,7 @@ impl AlpacaCredentialsStore {
     /// The saved credentials, or empty ones. The first read may prompt for Keychain access.
     /// A key found only outside the shared group is copied into it, as the Swift app did.
     pub fn credentials(&self) -> AlpacaCredentials {
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         if let Some(credentials) = &cache.credentials {
             return credentials.clone();
         }
@@ -180,7 +181,7 @@ impl AlpacaCredentialsStore {
 
     /// Whether credentials are saved. Reads attributes only, so it never prompts.
     pub fn is_configured(&self) -> bool {
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         if let Some(credentials) = &cache.credentials {
             return credentials.is_configured();
         }
@@ -206,7 +207,7 @@ impl AlpacaCredentialsStore {
             let own = self.backend.delete(ALPACA_OWN, ALPACA_ACCOUNT);
             shared.and(own)?;
         }
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         cache.credentials = Some(normalized);
         cache.exists = None;
         drop(cache);
@@ -248,7 +249,7 @@ impl CoinMarketCapKeyStore {
 
     /// The saved key. The first read may prompt for Keychain access.
     pub fn api_key(&self) -> Option<String> {
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         if !cache.loaded {
             cache.loaded = true;
             cache.key = self
@@ -261,7 +262,7 @@ impl CoinMarketCapKeyStore {
 
     /// Whether a key is saved, without reading it (so without a prompt).
     pub fn is_configured(&self) -> bool {
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         if cache.loaded {
             return cache.key.is_some();
         }
@@ -280,7 +281,7 @@ impl CoinMarketCapKeyStore {
             return self.remove();
         }
         self.backend.write(CMC, CMC_ACCOUNT, value)?;
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         *cache = CmcCache {
             loaded: true,
             key: Some(value.to_owned()),
@@ -292,7 +293,7 @@ impl CoinMarketCapKeyStore {
 
     pub fn remove(&self) -> Result<(), SecretStoreError> {
         self.backend.delete(CMC, CMC_ACCOUNT)?;
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = lock(&self.cache);
         *cache = CmcCache {
             loaded: true,
             key: None,

@@ -1,7 +1,7 @@
 use crate::model::Kline;
 use crate::service::{
-    EventInfo, EventStats, MarketSource, SearchResult, downsample, effective_span_days,
-    replace_last_price, whole_dollars,
+    EventInfo, EventStats, MarketSource, ProviderError, SearchResult, downsample,
+    effective_span_days, replace_last_price, whole_dollars,
 };
 use serde_json::Value;
 use std::sync::{Mutex, OnceLock};
@@ -49,7 +49,7 @@ fn series_cache() -> &'static SeriesStore {
 }
 
 /// The series list is one unpaginated request (~18 MB), held in memory for 12 hours.
-fn series_list() -> Result<Vec<Series>, String> {
+fn series_list() -> Result<Vec<Series>, ProviderError> {
     if let Some((fetched, list)) = series_cache().lock().ok().and_then(|guard| guard.clone())
         && fetched.elapsed() < Duration::from_secs(12 * 3_600)
     {
@@ -62,10 +62,8 @@ fn series_list() -> Result<Vec<Series>, String> {
         &[],
         crate::service::net::http::Retry::Transient,
         32 * 1024 * 1024,
-    )
-    .map_err(|error| format!("Network error: {error}"))?;
-    let value: Value =
-        serde_json::from_str(&body).map_err(|error| format!("Data error: {error}"))?;
+    )?;
+    let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
 
     let list: Vec<Series> = value
         .get("series")
@@ -161,14 +159,19 @@ fn rank_series(series: &[Series], query: &str, limit: usize) -> Vec<Series> {
 }
 
 impl MarketSource for Kalshi {
-    fn fetch_klines(&self, symbol: &str, interval: &str, limit: u32) -> Result<Vec<Kline>, String> {
+    fn fetch_klines(
+        &self,
+        symbol: &str,
+        interval: &str,
+        limit: u32,
+    ) -> Result<Vec<Kline>, ProviderError> {
         let (series, market) = symbol
             .split_once('/')
-            .ok_or_else(|| "Unrecognized Kalshi market id".to_owned())?;
+            .ok_or_else(|| ProviderError::other("Unrecognized Kalshi market id"))?;
         let (period, span) = kalshi_window(interval);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| "System clock is before the epoch".to_owned())?
+            .map_err(|_| ProviderError::other("System clock is before the epoch"))?
             .as_secs() as i64;
         let url = format!(
             "{BASE_URL}/series/{series}/markets/{market}/candlesticks?start_ts={}&end_ts={now}&period_interval={period}",
@@ -178,10 +181,8 @@ impl MarketSource for Kalshi {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| format!("Network error: {error}"))?;
-        let value: Value =
-            serde_json::from_str(&body).map_err(|error| format!("Data error: {error}"))?;
+        )?;
+        let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
 
         let mut rows: Vec<(i64, &Value)> = value
             .get("candlesticks")
@@ -219,7 +220,9 @@ impl MarketSource for Kalshi {
             });
         }
         if candles.is_empty() {
-            return Err("No price history for this market in this range".to_owned());
+            return Err(ProviderError::other(
+                "No price history for this market in this range",
+            ));
         }
 
         let thinned = downsample(&candles, limit as usize);
@@ -229,7 +232,7 @@ impl MarketSource for Kalshi {
         })
     }
 
-    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, String> {
+    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         let q = query.trim().to_owned();
         if q.is_empty() {
             return Ok(Vec::new());
@@ -331,15 +334,16 @@ fn event_stats(event: &Value, markets: &[&Value]) -> EventStats {
     }
 }
 
-fn open_events(series: &str) -> Result<Vec<Value>, String> {
+fn open_events(series: &str) -> Result<Vec<Value>, ProviderError> {
     let url = format!(
         "{BASE_URL}/events?series_ticker={series}&status=open&with_nested_markets=true&limit=20"
     );
-    let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
-            .map_err(|error| format!("Network error: {error}"))?;
-    let value: Value =
-        serde_json::from_str(&body).map_err(|error| format!("Data error: {error}"))?;
+    let body = crate::service::net::http::get_text(
+        &url,
+        &[],
+        crate::service::net::http::Retry::Transient,
+    )?;
+    let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
     Ok(value
         .get("events")
         .and_then(Value::as_array)

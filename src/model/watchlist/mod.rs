@@ -45,53 +45,33 @@ pub const MAX_NAME_CHARS: usize = 200;
 /// The most lists. Nothing syncs or draws well past this; it stops runaway imports.
 pub const MAX_LISTS: usize = 200;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum WatchlistError {
+    #[error("\"{0}\" is already in this watchlist")]
     Duplicate(String),
+    #[error("That watchlist item no longer exists")]
     NotFound,
+    #[error("A name can't be empty")]
     EmptyName,
+    #[error("A name can be at most {MAX_NAME_CHARS} characters")]
     NameTooLong,
+    #[error("A name can't contain control characters")]
     InvalidName,
     /// Two sections have the same title, so a title does not say which is meant.
+    #[error("More than one section is called \"{0}\": use its section_id")]
     AmbiguousSection(String),
     /// The list is at `MAX_ENTRIES_PER_LIST`.
+    #[error("A watchlist holds at most {MAX_ENTRIES_PER_LIST} items")]
     ListFull,
     /// There are already `MAX_LISTS` lists.
+    #[error("You can have at most {MAX_LISTS} watchlists")]
     TooManyLists,
+    #[error("Your saved watchlists couldn't be read, so changes are turned off to protect them")]
     PersistenceUnavailable,
     /// The change was refused by the database; the lists are as they were.
+    #[error("Your watchlists couldn't be saved")]
     SaveFailed,
 }
-
-impl std::fmt::Display for WatchlistError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Duplicate(name) => write!(formatter, "\"{name}\" is already in this watchlist"),
-            Self::NotFound => formatter.write_str("That watchlist item no longer exists"),
-            Self::EmptyName => formatter.write_str("A name can't be empty"),
-            Self::NameTooLong => write!(
-                formatter,
-                "A name can be at most {MAX_NAME_CHARS} characters"
-            ),
-            Self::InvalidName => formatter.write_str("A name can't contain control characters"),
-            Self::AmbiguousSection(title) => write!(
-                formatter,
-                "More than one section is called \"{title}\": use its section_id"
-            ),
-            Self::ListFull => write!(
-                formatter,
-                "A watchlist holds at most {MAX_ENTRIES_PER_LIST} items"
-            ),
-            Self::TooManyLists => write!(formatter, "You can have at most {MAX_LISTS} watchlists"),
-            Self::SaveFailed => formatter.write_str("Your watchlists couldn't be saved"),
-            Self::PersistenceUnavailable => formatter.write_str(
-                "Your saved watchlists couldn't be read, so changes are turned off to protect them",
-            ),
-        }
-    }
-}
-
-impl std::error::Error for WatchlistError {}
 
 /// A refusal as the sidebar shows it: a short title and the sentence under it.
 #[derive(Clone, Debug, Eq, PartialEq)]

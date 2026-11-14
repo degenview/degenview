@@ -14,39 +14,21 @@ use crate::model::paper::{
 use crate::store::SharedStore;
 use crate::store::sync::Elsewhere;
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum PaperHostError {
+    #[error("Could not load paper trading: {0}")]
     Load(String),
+    #[error("{}", .0.message())]
     Engine(PaperTradingError),
+    #[error("Could not save paper trading: {0}")]
     Persistence(String),
     /// The data disagrees with itself; nothing was saved or shown from it.
+    #[error("Paper trading data failed a consistency check: {0}")]
     Integrity(String),
+    #[error("The paper-trading database is unavailable.")]
     StoreUnavailable,
 }
-
-impl PaperHostError {
-    pub fn message(&self) -> String {
-        match self {
-            Self::Load(message) => format!("Could not load paper trading: {message}"),
-            Self::Engine(error) => error.message(),
-            Self::Persistence(message) => format!("Could not save paper trading: {message}"),
-            Self::Integrity(message) => {
-                format!("Paper trading data failed a consistency check: {message}")
-            }
-            Self::StoreUnavailable => "The paper-trading database is unavailable.".to_owned(),
-        }
-    }
-}
-
-impl fmt::Display for PaperHostError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message())
-    }
-}
-
-impl std::error::Error for PaperHostError {}
 
 pub struct PaperHost {
     store: SharedStore,

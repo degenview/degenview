@@ -134,7 +134,7 @@ for its rate-limit slot instead of running beside its candle requests; the rest 
 of their own, so a busy chart never delays the list. It keeps every
 answer under `(query, provider)` so switching tabs or venues re-reads instead of re-asking, and
 reports a failing provider without hiding the others. Stocks need an Alpaca key: a missing key
-(`service::ALPACA_MISSING_KEY`) shows a card pinned to the bottom of the list with an Open Settings
+(`ProviderError::MissingKey`) shows a card pinned to the bottom of the list with an Open Settings
 button (`Output::OpenAlpacaSettings`); any other Alpaca failure shows its message without the button.
 The key is checked only when a stock is picked, never per frame. `Backend` lets tests replace the
 providers.

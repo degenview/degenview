@@ -1,9 +1,10 @@
+use crate::lock::lock;
 use crate::model::Kline;
 use eframe::egui;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// The most bars the inbox keeps. A feed nobody reads for days (a background tab, a hidden
@@ -22,7 +23,7 @@ pub struct LiveInbox {
 
 impl LiveInbox {
     fn push(&self, symbol: String, kline: Kline) {
-        let mut latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut latest = lock(&self.latest);
         latest.insert((kline.open_time, symbol), kline);
         while latest.len() > INBOX_CAPACITY {
             latest.pop_first();
@@ -31,7 +32,7 @@ impl LiveInbox {
 
     /// Everything received since the last call, oldest bar first.
     pub fn drain(&self) -> Vec<(String, Kline)> {
-        let mut latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut latest = lock(&self.latest);
         std::mem::take(&mut *latest)
             .into_iter()
             .map(|((_, symbol), kline)| (symbol, kline))

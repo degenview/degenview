@@ -5,6 +5,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::lock::lock;
 use crate::model::tab::link::{LinkColor, LinkTable, LinkToggles};
 use crate::store::{SharedStore, Store};
 
@@ -49,7 +50,7 @@ impl TabLinkHost {
 
     /// The switches of every group, for the hub.
     pub fn table(&self) -> LinkTable {
-        self.table.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        lock(&self.table).clone()
     }
 
     /// Applies a group's switches and saves them. `held` is the store when the caller already has
@@ -60,7 +61,7 @@ impl TabLinkHost {
         color: LinkColor,
         toggles: LinkToggles,
     ) -> Result<(), String> {
-        let mut table = self.table.lock().unwrap_or_else(|e| e.into_inner());
+        let mut table = lock(&self.table);
         if !table.set(color, toggles) {
             return Ok(());
         }

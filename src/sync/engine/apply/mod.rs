@@ -18,6 +18,7 @@ use crate::store::asset_store::StoredAsset;
 use crate::store::sync::{
     ConflictRecord, EntityLink, EntityMeta, InboxRecord, OutboxOp, row_decodes,
 };
+use crate::sync::engine::SyncError;
 use crate::sync::record::ids::{Direction, map_fields};
 use crate::sync::record::policy::{EntityKind, Merge, category_of, merge_of, setting_is_portable};
 use crate::sync::record::project::{
@@ -90,7 +91,7 @@ pub fn apply_batch(
     scripts: &mut dyn ScriptSink,
     batch: &RemoteBatch,
     ctx: &ApplyCtx,
-) -> rusqlite::Result<ApplyReport> {
+) -> Result<ApplyReport, SyncError> {
     store.in_savepoint("apply_remote", || {
         let mut work = Work::new(store, scripts, ctx);
         let mut records: Vec<&RemoteRecord> = batch.records.iter().collect();
@@ -191,7 +192,7 @@ impl<'a> Work<'a> {
     // MARK: Table access
 
     /// Whether every existing row of the table is one this version can read and rewrite.
-    fn table_writable(&mut self, table: &'static str) -> rusqlite::Result<bool> {
+    fn table_writable(&mut self, table: &'static str) -> Result<bool, SyncError> {
         if let Some(known) = self.writable.get(table) {
             return Ok(*known);
         }
@@ -203,7 +204,7 @@ impl<'a> Work<'a> {
         Ok(ok)
     }
 
-    fn rows(&mut self, table: &'static str) -> rusqlite::Result<&mut Vec<Value>> {
+    fn rows(&mut self, table: &'static str) -> Result<&mut Vec<Value>, SyncError> {
         if !self.tables.contains_key(table) {
             let rows = self.store.raw_rows(table)?;
             self.tables.insert(table, rows);
@@ -219,7 +220,7 @@ impl<'a> Work<'a> {
         }
     }
 
-    fn find_local(&mut self, kind: EntityKind, sync_id: &str) -> rusqlite::Result<Option<Local>> {
+    fn find_local(&mut self, kind: EntityKind, sync_id: &str) -> Result<Option<Local>, SyncError> {
         if kind == EntityKind::Setting {
             let current = match self.settings.get(sync_id) {
                 Some(pending) => pending.clone(),
@@ -294,7 +295,7 @@ impl<'a> Work<'a> {
         table: &'static str,
         index: Option<usize>,
         row: Value,
-    ) -> rusqlite::Result<()> {
+    ) -> Result<(), SyncError> {
         let rows = self.rows(table)?;
         match index {
             Some(index) => rows[index] = row,
@@ -305,14 +306,14 @@ impl<'a> Work<'a> {
         Ok(())
     }
 
-    fn remove_row(&mut self, table: &'static str, index: usize) -> rusqlite::Result<()> {
+    fn remove_row(&mut self, table: &'static str, index: usize) -> Result<(), SyncError> {
         self.rows(table)?.remove(index);
         self.dirty.insert(table);
         self.report.tables.insert(table.to_string());
         Ok(())
     }
 
-    fn flush(&mut self) -> rusqlite::Result<()> {
+    fn flush(&mut self) -> Result<(), SyncError> {
         let dirty: Vec<_> = self.dirty.iter().copied().collect();
         for table in dirty {
             let rows = self.tables.get(table).cloned().unwrap_or_default();
@@ -327,7 +328,7 @@ impl<'a> Work<'a> {
 
     // MARK: Inbox
 
-    fn keep(&mut self, record: &RemoteRecord, reason: &str) -> rusqlite::Result<()> {
+    fn keep(&mut self, record: &RemoteRecord, reason: &str) -> Result<(), SyncError> {
         self.store.put_inbox(
             &InboxRecord {
                 record_name: record.record.name.render(),
@@ -348,7 +349,7 @@ impl<'a> Work<'a> {
 
     // MARK: Records
 
-    fn apply_record(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+    fn apply_record(&mut self, record: &RemoteRecord) -> Result<(), SyncError> {
         // A category the user switched off waits in the inbox, to be applied if it is switched on.
         let name = &record.record.name;
         if self.disabled.contains(&category_of(name.kind, &name.id)) {
@@ -373,7 +374,7 @@ impl<'a> Work<'a> {
 
     /// A picture from the cloud. It is stored on its own (never through the table's working copy,
     /// which would read every picture), and only when it is what its name says.
-    fn apply_asset(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+    fn apply_asset(&mut self, record: &RemoteRecord) -> Result<(), SyncError> {
         let id = record.record.name.id.clone();
         let Ok(asset) = serde_json::from_value::<StoredAsset>(record.value.clone()) else {
             return self.keep(record, "invalid");
@@ -402,7 +403,7 @@ impl<'a> Work<'a> {
     /// Another Mac deleted a picture. Nothing here ever deletes one: a drawing on some Mac, in a
     /// layout not synced yet or on an undo stack may still show it. A picture this Mac holds goes
     /// back up (an edit beats a delete); one it does not hold is only noted as gone.
-    fn keep_asset(&mut self, id: &str) -> rusqlite::Result<()> {
+    fn keep_asset(&mut self, id: &str) -> Result<(), SyncError> {
         let kind = EntityKind::DrawingAsset;
         if self.store.has_asset(id)? {
             self.store.forget_synced(kind, id)?;
@@ -414,7 +415,7 @@ impl<'a> Work<'a> {
         Ok(())
     }
 
-    fn apply_simple(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+    fn apply_simple(&mut self, record: &RemoteRecord) -> Result<(), SyncError> {
         let RecordName { kind, id } = &record.record.name;
         let (kind, id) = (*kind, id.as_str());
         if kind == EntityKind::Setting && !setting_is_portable(id) {
@@ -495,7 +496,7 @@ impl<'a> Work<'a> {
         id: &str,
         meta: Option<&EntityMeta>,
         local: Option<&Local>,
-    ) -> rusqlite::Result<Option<Value>> {
+    ) -> Result<Option<Value>, SyncError> {
         let remote_hash = sha256_hex(&canonical_json(&record.value));
         let value = match local {
             None => record.value.clone(),
@@ -563,7 +564,7 @@ impl<'a> Work<'a> {
         ))
     }
 
-    fn apply_script(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+    fn apply_script(&mut self, record: &RemoteRecord) -> Result<(), SyncError> {
         let id = record.record.name.id.clone();
         let Some((name, source, favorite)) = Self::script_fields(&record.value) else {
             return self.keep(record, "invalid");
@@ -736,7 +737,7 @@ impl<'a> Work<'a> {
         original: &str,
         loser: ScriptSnapshot,
         from_local: bool,
-    ) -> rusqlite::Result<ConflictRecord> {
+    ) -> Result<ConflictRecord, SyncError> {
         // `from_local` here means the local script won, so the loser is the cloud's version.
         let loser_is_local = !from_local;
         let device = if loser_is_local {
@@ -761,9 +762,7 @@ impl<'a> Work<'a> {
                 self.scripts
                     .adopt(&copy_id, &copy_name, &loser.source, loser.is_favorite)
         {
-            return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
-                std::io::Error::other(format!("could not keep the other version: {message}")),
-            )));
+            return Err(SyncError::ConflictCopy(message.to_string()));
         }
         Ok(ConflictRecord {
             entity: EntityKind::Script,
@@ -777,7 +776,7 @@ impl<'a> Work<'a> {
         })
     }
 
-    fn delete_script(&mut self, id: &str) -> rusqlite::Result<()> {
+    fn delete_script(&mut self, id: &str) -> Result<(), SyncError> {
         let kind = EntityKind::Script;
         let meta = self.store.entity_meta(kind, id)?;
         let Ok(Some(local)) = self.scripts.get(id) else {
@@ -811,7 +810,7 @@ impl<'a> Work<'a> {
     }
 
     /// Scripts that were being edited when their update arrived are applied once they are saved.
-    fn retry_busy_scripts(&mut self) -> rusqlite::Result<()> {
+    fn retry_busy_scripts(&mut self) -> Result<(), SyncError> {
         let waiting: Vec<InboxRecord> = self
             .store
             .inbox()?
@@ -848,7 +847,7 @@ impl<'a> Work<'a> {
     /// Alerts are owned by whichever process runs evaluation (the app or the background agent),
     /// which holds the live list in memory and rewrites it. A table write from here would be
     /// overwritten, so remote changes go through the same command queue as the UI.
-    fn apply_alert(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+    fn apply_alert(&mut self, record: &RemoteRecord) -> Result<(), SyncError> {
         let id = record.record.name.id.clone();
         let remote_payload = canonical_json(&record.value);
         let remote_hash = sha256_hex(&remote_payload);
@@ -935,8 +934,8 @@ impl<'a> Work<'a> {
         record: &RemoteRecord,
         id: &str,
         remote_hash: String,
-    ) -> rusqlite::Result<()> {
-        self.store.link_entity(&EntityLink {
+    ) -> Result<(), SyncError> {
+        Ok(self.store.link_entity(&EntityLink {
             kind: EntityKind::Alert,
             sync_id: id.to_string(),
             local_id: id.to_string(),
@@ -946,10 +945,10 @@ impl<'a> Work<'a> {
             revision: record.record.revision as i64,
             origin_device: record.record.origin_device.clone(),
             now_ms: self.ctx.now_ms,
-        })
+        })?)
     }
 
-    fn delete_alert(&mut self, id: &str) -> rusqlite::Result<()> {
+    fn delete_alert(&mut self, id: &str) -> Result<(), SyncError> {
         let kind = EntityKind::Alert;
         let meta = self.store.entity_meta(kind, id)?;
         let Some(local) = self.find_local(kind, id)? else {
@@ -987,7 +986,7 @@ impl<'a> Work<'a> {
 
     // MARK: Layouts
 
-    fn apply_layout(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+    fn apply_layout(&mut self, record: &RemoteRecord) -> Result<(), SyncError> {
         let id = record.record.name.id.clone();
         if !self.table_writable("saved_view")? {
             return self.keep(record, "local_unreadable");
@@ -1102,7 +1101,7 @@ impl<'a> Work<'a> {
         record: &RemoteRecord,
         mut row: Value,
         from_local: bool,
-    ) -> rusqlite::Result<()> {
+    ) -> Result<(), SyncError> {
         let Some(object) = row.as_object_mut() else {
             return Ok(());
         };
@@ -1128,7 +1127,7 @@ impl<'a> Work<'a> {
         }
         let local_payload = from_local.then(|| row.to_string().into_bytes());
         self.put_row("saved_view", None, row)?;
-        self.store.record_conflict(
+        Ok(self.store.record_conflict(
             &ConflictRecord {
                 entity: EntityKind::Layout,
                 sync_id: record.record.name.id.clone(),
@@ -1140,10 +1139,10 @@ impl<'a> Work<'a> {
                 copy_sync_id: Some(new_id.to_string()),
             },
             self.ctx.now_ms,
-        )
+        )?)
     }
 
-    fn delete_layout(&mut self, id: &str) -> rusqlite::Result<()> {
+    fn delete_layout(&mut self, id: &str) -> Result<(), SyncError> {
         let kind = EntityKind::Layout;
         if !self.table_writable("saved_view")? {
             self.report.inboxed += 1;
@@ -1205,7 +1204,7 @@ impl<'a> Work<'a> {
         layout: u64,
         chart: u64,
         drawing: u64,
-    ) -> rusqlite::Result<Option<DrawingSpot>> {
+    ) -> Result<Option<DrawingSpot>, SyncError> {
         let id = layout.to_string();
         let rows = self.rows("saved_view")?;
         let Some(row_index) = rows.iter().position(|row| Self::row_id(row) == id) else {
@@ -1233,7 +1232,7 @@ impl<'a> Work<'a> {
         }))
     }
 
-    fn apply_drawing(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+    fn apply_drawing(&mut self, record: &RemoteRecord) -> Result<(), SyncError> {
         let name = &record.record.name;
         let Some((layout, chart, drawing_id_number)) = name.layout_drawing_parts() else {
             return self.keep(record, "invalid");
@@ -1374,7 +1373,7 @@ impl<'a> Work<'a> {
         Ok(())
     }
 
-    fn delete_drawing(&mut self, name: &RecordName) -> rusqlite::Result<()> {
+    fn delete_drawing(&mut self, name: &RecordName) -> Result<(), SyncError> {
         let kind = EntityKind::LayoutDrawing;
         let id = name.id.as_str();
         let Some((layout, chart, drawing)) = name.layout_drawing_parts() else {
@@ -1427,7 +1426,7 @@ impl<'a> Work<'a> {
     /// Records this version could not read when they arrived (a kind it did not know, a schema
     /// newer than it) are looked at again: an update may have taught it to read them. Whatever it
     /// still cannot read stays where it is, untouched.
-    fn retry_set_aside(&mut self) -> rusqlite::Result<()> {
+    fn retry_set_aside(&mut self) -> Result<(), SyncError> {
         let waiting: Vec<InboxRecord> = self
             .store
             .inbox()?
@@ -1462,7 +1461,7 @@ impl<'a> Work<'a> {
     }
 
     /// Deletions kept because their table could not be rewritten are applied once it can be.
-    fn retry_pending_deletions(&mut self) -> rusqlite::Result<()> {
+    fn retry_pending_deletions(&mut self) -> Result<(), SyncError> {
         let waiting: Vec<InboxRecord> = self
             .store
             .inbox()?
@@ -1487,7 +1486,7 @@ impl<'a> Work<'a> {
 
     /// Records kept because their table held a row this version could not read are applied once
     /// every row can be.
-    fn retry_local_unreadable(&mut self) -> rusqlite::Result<()> {
+    fn retry_local_unreadable(&mut self) -> Result<(), SyncError> {
         let waiting: Vec<InboxRecord> = self
             .store
             .inbox()?
@@ -1511,7 +1510,7 @@ impl<'a> Work<'a> {
     }
 
     /// Records held back because their category was off are applied once it is switched on.
-    fn retry_category_off(&mut self) -> rusqlite::Result<()> {
+    fn retry_category_off(&mut self) -> Result<(), SyncError> {
         let waiting: Vec<InboxRecord> = self
             .store
             .inbox()?
@@ -1536,7 +1535,7 @@ impl<'a> Work<'a> {
     }
 
     /// Drawings that arrived before their layout are applied once it exists.
-    fn retry_orphans(&mut self) -> rusqlite::Result<()> {
+    fn retry_orphans(&mut self) -> Result<(), SyncError> {
         let waiting: Vec<InboxRecord> = self
             .store
             .inbox()?
@@ -1576,7 +1575,7 @@ impl<'a> Work<'a> {
 
     // MARK: Deletions
 
-    fn apply_deletion(&mut self, name: &RecordName) -> rusqlite::Result<()> {
+    fn apply_deletion(&mut self, name: &RecordName) -> Result<(), SyncError> {
         let (kind, id) = (name.kind, name.id.as_str());
         // A copy set aside is for a record that still exists: it must not come back later.
         self.store.remove_inbox(&name.render())?;

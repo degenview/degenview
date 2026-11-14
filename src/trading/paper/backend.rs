@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use degenview_brokers::{Decimal, MarketRef, Side};
 
 use crate::host::paper::PaperHost;
+use crate::lock::lock;
 use crate::model::DataSource;
 use crate::model::broker::ticket::display;
 use crate::model::broker::venue::TradingVenue;
@@ -39,7 +40,7 @@ impl PaperBackend {
     }
 
     fn host(&self) -> MutexGuard<'_, PaperHost> {
-        self.host.lock().unwrap_or_else(|e| e.into_inner())
+        lock(&self.host)
     }
 }
 
@@ -459,7 +460,7 @@ impl TradingBackend for PaperBackend {
             },
             Err(error) => PreviewResult {
                 accepted: false,
-                problems: vec![error.message()],
+                problems: vec![error.to_string()],
                 ..PreviewResult::default()
             },
         };
@@ -486,7 +487,7 @@ impl TradingBackend for PaperBackend {
         Task::ready(
             host.submit(request)
                 .map(|id| Submitted { id: id.to_string() })
-                .map_err(|error| error.message()),
+                .map_err(|error| error.to_string()),
         )
     }
 
@@ -494,6 +495,6 @@ impl TradingBackend for PaperBackend {
         let Ok(id) = order_id.parse::<u64>() else {
             return Task::ready(Err("That is not a paper order.".to_owned()));
         };
-        Task::ready(self.host().cancel(id).map_err(|error| error.message()))
+        Task::ready(self.host().cancel(id).map_err(|error| error.to_string()))
     }
 }

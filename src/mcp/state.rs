@@ -4,6 +4,7 @@
 //! Every request reads this fresh, so revoking a credential or changing a permission takes
 //! effect on the very next request. Nothing here knows about HTTP or egui.
 
+use crate::lock::{lock, read, write};
 use crate::mcp::audit::AuditQueue;
 use crate::mcp::transport::cancel::CallRegistry;
 use crate::mcp::transport::limits::{RateLimiter, RateLimits};
@@ -11,13 +12,13 @@ use crate::model::DataSource;
 use crate::model::InstrumentId;
 use crate::model::mcp::{McpClient, Peer, Permission, PermissionSet};
 use crate::model::watchlist::now_ms;
-use crate::service::SearchResult;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
+use crate::service::{ProviderError, SearchResult};
 use crate::store::scripts::ScriptStore;
 #[cfg(test)]
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, Instant};
 
 /// Opens the script library; replaceable so tests never read the user's scripts.
@@ -25,12 +26,14 @@ pub type ScriptLocator = Box<dyn Fn() -> Option<ScriptStore> + Send + Sync>;
 
 /// Searches a provider for symbols; replaceable so tests never reach the network.
 pub type MarketSearch =
-    Arc<dyn Fn(DataSource, &str) -> Result<Vec<SearchResult>, String> + Send + Sync>;
+    Arc<dyn Fn(DataSource, &str) -> Result<Vec<SearchResult>, ProviderError> + Send + Sync>;
 
 /// Fetches candles from a provider: `(source, symbol, interval token, limit)`. Replaceable so
 /// tests never reach the network.
 pub type CandleFetch = Arc<
-    dyn Fn(DataSource, &str, &str, u32) -> Result<Vec<crate::model::Kline>, String> + Send + Sync,
+    dyn Fn(DataSource, &str, &str, u32) -> Result<Vec<crate::model::Kline>, ProviderError>
+        + Send
+        + Sync,
 >;
 
 /// Script reads and compiles running at once.
@@ -151,12 +154,6 @@ pub struct McpShared {
     next_quote_owner: AtomicU64,
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 impl McpShared {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
@@ -186,15 +183,11 @@ impl McpShared {
     }
 
     fn read(&self) -> RwLockReadGuard<'_, Config> {
-        self.config
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        read(&self.config)
     }
 
     fn write(&self) -> RwLockWriteGuard<'_, Config> {
-        self.config
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        write(&self.config)
     }
 
     pub fn set_remote_ceiling(&self, ceiling: PermissionSet) {
@@ -395,51 +388,33 @@ impl McpShared {
     }
 
     pub fn candle_fetch(&self) -> CandleFetch {
-        self.candle_fetch
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        read(&self.candle_fetch).clone()
     }
 
     /// Points candle fetches somewhere else (tests serve canned bars).
     #[cfg(test)]
     pub fn set_candle_fetch(&self, fetch: CandleFetch) {
-        *self
-            .candle_fetch
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = fetch;
+        *write(&self.candle_fetch) = fetch;
     }
 
     pub fn market_search(&self) -> MarketSearch {
-        self.market_search
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        read(&self.market_search).clone()
     }
 
     /// Points symbol search somewhere else (tests serve canned results).
     #[cfg(test)]
     pub fn set_market_search(&self, search: MarketSearch) {
-        *self
-            .market_search
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = search;
+        *write(&self.market_search) = search;
     }
 
     /// Hands the server the app's quote feed. Until then (and in tests that never do) quotes
     /// are unavailable.
     pub fn attach_quotes(&self, access: QuoteAccess) {
-        *self
-            .quotes
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(access);
+        *write(&self.quotes) = Some(access);
     }
 
     pub fn quotes(&self) -> Option<QuoteAccess> {
-        self.quotes
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        read(&self.quotes).clone()
     }
 
     /// Asks for `instruments` to be quoted until the returned lease is dropped. A lease has its
@@ -451,19 +426,13 @@ impl McpShared {
     }
 
     pub fn script_store(&self) -> Option<ScriptStore> {
-        (self
-            .script_locator
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()))()
+        (read(&self.script_locator))()
     }
 
     /// Points script reads somewhere else (tests serve a throwaway library).
     #[cfg(test)]
     pub fn set_script_locator(&self, locator: ScriptLocator) {
-        *self
-            .script_locator
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = locator;
+        *write(&self.script_locator) = locator;
     }
 
     pub fn status(&self) -> McpStatus {

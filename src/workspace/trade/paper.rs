@@ -129,7 +129,7 @@ impl ChartWorkspace {
                 PaperOverlayAction::CancelOrder(id) => host.cancel(id),
             };
             if let Err(error) = result {
-                failures.push(error.message());
+                failures.push(error.to_string());
             }
         }
         if !failures.is_empty() {

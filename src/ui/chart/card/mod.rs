@@ -17,6 +17,7 @@ use crate::pine::compiler::program::ChartTheme;
 use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::outputs::style_overrides::StyleRow;
 use crate::pine::syntax::token::Diagnostic;
+use crate::service::ProviderError;
 use crate::ui::alert::lines;
 use crate::ui::chart::buttons::{self, PaneAction};
 use crate::ui::chart::canvas::{self, CanvasStyle};
@@ -135,9 +136,7 @@ pub struct CrosshairInfo {
 use body::{BodyArgs, OverlayResults};
 pub use context::ContextRequest;
 use live_overlays::LiveOverlays;
-#[cfg(test)]
-use snapshot::SnapshotError;
-pub use snapshot::SnapshotInput;
+pub use snapshot::{SnapshotError, SnapshotInput};
 
 /// What a chart reports back while drawing, plus whether its plot was clicked.
 #[derive(Clone, Debug, Default)]
@@ -185,29 +184,29 @@ fn truncated(label: &str, max: usize) -> String {
 }
 
 /// What the warning pill says: rate limits get their own wording, `detailed` appends the error.
-fn refresh_warning_text(message: &str, source: DataSource, detailed: bool) -> String {
-    if message.contains("429") {
+fn refresh_warning_text(error: &ProviderError, source: DataSource, detailed: bool) -> String {
+    if error.is_rate_limited() {
         format!(
             "{} rate limit reached · showing the last result",
             source.display_name()
         )
     } else if detailed {
-        format!("Couldn't refresh · showing the last result ({message})")
+        format!("Couldn't refresh · showing the last result ({error})")
     } else {
         "Couldn't refresh · showing the last result".to_owned()
     }
 }
 
 /// A pill along the bottom of the chart saying the latest refresh failed.
-fn refresh_warning(ui: &egui::Ui, rect: Rect, message: &str, source: DataSource) {
+fn refresh_warning(ui: &egui::Ui, rect: Rect, error: &ProviderError, source: DataSource) {
     // The detailed wording first, then the short one if the card is too narrow for it.
     let layout = |text: String| {
         ui.painter()
             .layout_no_wrap(text, FontId::proportional(10.5), theme::text_primary())
     };
-    let mut galley = layout(refresh_warning_text(message, source, true));
+    let mut galley = layout(refresh_warning_text(error, source, true));
     if galley.size().x + 26.0 > rect.width() - 16.0 {
-        galley = layout(refresh_warning_text(message, source, false));
+        galley = layout(refresh_warning_text(error, source, false));
     }
     let size = galley.size() + Vec2::new(26.0, 8.0);
     if size.x > rect.width() - 16.0 {
@@ -1741,7 +1740,7 @@ impl ChartCard {
         symbol: &str,
         candles: &[Kline],
         loading: bool,
-        error: Option<&str>,
+        error: Option<&ProviderError>,
         scale_mode: PriceScaleMode,
         source: DataSource,
         indicators: &IndicatorConfig,
@@ -1764,8 +1763,8 @@ impl ChartCard {
         let _ = loading;
         let pointer = self.body_inner(ui, &args, drawing, replay);
         self.end_sync_frame(source, candles);
-        if let (Some(message), false, Some(rect)) = (error, candles.is_empty(), pointer.rect) {
-            refresh_warning(ui, rect, message, source);
+        if let (Some(error), false, Some(rect)) = (error, candles.is_empty(), pointer.rect) {
+            refresh_warning(ui, rect, error, source);
         }
         pointer
     }
@@ -2921,14 +2920,17 @@ mod tests {
 
     #[test]
     fn the_refresh_warning_names_rate_limits() {
-        use super::{DataSource, refresh_warning_text};
+        use super::{DataSource, ProviderError, refresh_warning_text};
+        use crate::service::net::http;
         let source = DataSource::CoinMarketCap;
+        let limited = ProviderError::CoinMarketCap(http::Error::Status(429));
         assert_eq!(
-            refresh_warning_text("HTTP 429", source, true),
+            refresh_warning_text(&limited, source, true),
             "CoinMarketCap rate limit reached · showing the last result"
         );
-        assert!(refresh_warning_text("timeout", source, true).ends_with("(timeout)"));
-        assert!(!refresh_warning_text("timeout", source, false).contains("timeout"));
+        let timeout = ProviderError::other("timeout");
+        assert!(refresh_warning_text(&timeout, source, true).ends_with("(timeout)"));
+        assert!(!refresh_warning_text(&timeout, source, false).contains("timeout"));
     }
 
     use super::*;

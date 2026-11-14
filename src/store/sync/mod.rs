@@ -21,6 +21,19 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+/// Why a synced table or setting could not be read or replaced as JSON.
+#[derive(Debug, thiserror::Error)]
+pub enum RawDataError {
+    #[error(transparent)]
+    Sql(#[from] rusqlite::Error),
+    /// A stored row or setting is not JSON.
+    #[error(transparent)]
+    NotJson(#[from] serde_json::Error),
+    /// A row, stored or about to be written, does not decode as its table's model.
+    #[error("{table}: {reason}")]
+    Undecodable { table: String, reason: &'static str },
+}
+
 /// The singleton row describing this Mac's sync identity and checkpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncState {
@@ -1311,7 +1324,7 @@ impl Store {
 
     /// Every row of a synced table as JSON, in order. A row that is not JSON fails the read: a
     /// collection with an unreadable row must never be rewritten.
-    pub fn raw_rows(&self, table: &str) -> rusqlite::Result<Vec<Value>> {
+    pub fn raw_rows(&self, table: &str) -> Result<Vec<Value>, RawDataError> {
         let mut statement = self
             .connection
             .prepare(&format!("SELECT payload FROM {table} ORDER BY position"))?;
@@ -1320,10 +1333,7 @@ impl Store {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         payloads
             .into_iter()
-            .map(|payload| {
-                serde_json::from_str(&payload)
-                    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
-            })
+            .map(|payload| Ok(serde_json::from_str(&payload)?))
             .collect()
     }
 
@@ -1331,11 +1341,10 @@ impl Store {
     /// Refuses unless every existing row, and every new row, decodes as the table's model: this
     /// version must never write something it cannot read back, nor overwrite what a newer
     /// version wrote.
-    pub fn write_raw_rows(&self, table: &str, rows: &[Value]) -> rusqlite::Result<()> {
-        let unreadable = |reason: &str| {
-            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(format!(
-                "{table}: {reason}"
-            ))))
+    pub fn write_raw_rows(&self, table: &str, rows: &[Value]) -> Result<(), RawDataError> {
+        let unreadable = |reason: &'static str| RawDataError::Undecodable {
+            table: table.to_owned(),
+            reason,
         };
         for existing in self.raw_rows(table)? {
             if !row_decodes(table, &existing.to_string()) {
@@ -1346,23 +1355,20 @@ impl Store {
             return Err(unreadable("a new row cannot be decoded"));
         }
         if table == "portfolio_transaction" {
-            return self.replace_raw_transactions(rows);
+            return Ok(self.replace_raw_transactions(rows)?);
         }
         let docs: Vec<RawDoc> = rows.iter().cloned().map(RawDoc).collect();
-        self.replace_documents(table, &docs)
+        Ok(self.replace_documents(table, &docs)?)
     }
 
-    pub fn raw_setting(&self, key: &str) -> rusqlite::Result<Option<Value>> {
-        self.connection
+    pub fn raw_setting(&self, key: &str) -> Result<Option<Value>, RawDataError> {
+        let text = self
+            .connection
             .query_row("SELECT value FROM setting WHERE key = ?1", [key], |row| {
                 row.get::<_, String>(0)
             })
-            .optional()?
-            .map(|text| {
-                serde_json::from_str(&text)
-                    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
-            })
-            .transpose()
+            .optional()?;
+        Ok(text.map(|text| serde_json::from_str(&text)).transpose()?)
     }
 
     /// Writes or clears a setting through the tracked path.
@@ -1668,11 +1674,11 @@ impl Store {
             .collect()
     }
 
-    pub(crate) fn in_savepoint<R>(
+    pub(crate) fn in_savepoint<R, E: From<rusqlite::Error>>(
         &self,
         name: &str,
-        f: impl FnOnce() -> rusqlite::Result<R>,
-    ) -> rusqlite::Result<R> {
+        f: impl FnOnce() -> Result<R, E>,
+    ) -> Result<R, E> {
         self.connection
             .execute_batch(&format!("SAVEPOINT {name}"))?;
         let result = f();

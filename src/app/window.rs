@@ -18,6 +18,7 @@ use crate::host::tab::link::TabLinkHost;
 use crate::host::tab::title::TabTitleHost;
 use crate::host::tab::window::TabWindowHost;
 use crate::host::update::{Phase, UpdateHost, UpdateView};
+use crate::lock::lock;
 use crate::model::alert::pine::PineAlertState;
 use crate::model::alert::{
     AlertCurrency, AlertRuntimeCommand, AlertRuntimeCommandPayload, AlertState,
@@ -482,9 +483,9 @@ impl DegenViewApp {
                 return;
             }
             if let Ok(mut host) = host.lock() {
-                let store = store.lock().expect("store lock poisoned");
+                let store = lock(&store);
                 let (notifications, health, alerts) = {
-                    let alert = alert_host.lock().expect("alert host lock poisoned");
+                    let alert = lock(&alert_host);
                     (
                         alert.settings().clone(),
                         alert.health().clone(),
@@ -508,7 +509,7 @@ impl DegenViewApp {
                 // The MCP host is only read here (no store access), so holding the store
                 // lock above cannot deadlock; its changes are queued and applied per frame.
                 let mcp = {
-                    let mcp = mcp_host.lock().expect("mcp host lock poisoned");
+                    let mcp = lock(&mcp_host);
                     (
                         mcp.status(),
                         mcp.settings().clone(),
@@ -672,14 +673,12 @@ impl DegenViewApp {
                 }
                 return;
             }
-            let store = store.lock().expect("store lock poisoned");
+            let store = lock(&store);
             if let Ok(mut host) = alert_host.lock() {
                 let focused = ui.input(|input| input.viewport().focused.unwrap_or(false));
                 host.set_alerts_window_active(focused, &store, now_ms());
             }
-            let mut state = alert_center_state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut state = lock(&alert_center_state);
             let script_alerts: Vec<ScriptAlertRow> = {
                 let datasets = chart_datasets
                     .lock()

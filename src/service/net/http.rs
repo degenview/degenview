@@ -23,21 +23,14 @@ pub enum Retry {
     Transient,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Error {
+    #[error("HTTP {0}")]
     Status(u16),
+    #[error("response exceeds {0} bytes")]
     BodyTooLarge(u64),
+    #[error("{0}")]
     Network(String),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Status(code) => write!(f, "HTTP {code}"),
-            Self::BodyTooLarge(limit) => write!(f, "response exceeds {limit} bytes"),
-            Self::Network(message) => f.write_str(message),
-        }
-    }
 }
 
 pub fn get_text(url: &str, headers: &[(&str, &str)], retry: Retry) -> Result<String, Error> {

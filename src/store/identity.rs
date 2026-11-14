@@ -9,6 +9,7 @@
 //! the same portfolio, and counters minted from now on belong to the new tag.
 
 use super::Store;
+use super::sync::RawDataError;
 use crate::sync::record::ids::{Direction, IdSpace, map_fields_with};
 use crate::sync::record::paper::{COLLECTIONS, map_collection_row};
 use crate::sync::record::policy::EntityKind;
@@ -21,7 +22,7 @@ type Map<'a> = &'a dyn Fn(u64) -> u64;
 impl Store {
     /// Takes this database to new hardware: counter ids move to the old tag's form, then the device
     /// identity, the engine checkpoint and the id tag are replaced. One savepoint: all of it or none.
-    pub fn move_to_new_device(&self, hardware_hash: &str) -> rusqlite::Result<()> {
+    pub fn move_to_new_device(&self, hardware_hash: &str) -> Result<(), RawDataError> {
         self.in_savepoint("move_to_new_device", || {
             let state = self
                 .sync_state()?
@@ -40,7 +41,7 @@ impl Store {
 
     /// Rewrites every counter id this database holds to the form `old` gave it in iCloud. Ids that
     /// are already global (nanosecond ids, other Macs' tagged ids) pass through unchanged.
-    fn tag_counter_ids(&self, old: IdSpace) -> rusqlite::Result<()> {
+    fn tag_counter_ids(&self, old: IdSpace) -> Result<(), RawDataError> {
         let map = |id: u64| old.to_global(id);
         let map: Map = &map;
 
@@ -164,7 +165,7 @@ impl Store {
     }
 
     /// A setting that holds one id as a JSON number.
-    fn retag_id_setting(&self, key: &str, map: Map) -> rusqlite::Result<()> {
+    fn retag_id_setting(&self, key: &str, map: Map) -> Result<(), RawDataError> {
         let Some(Value::Number(number)) = self.raw_setting(key)? else {
             return Ok(());
         };
@@ -179,7 +180,7 @@ impl Store {
     }
 
     /// A setting that is a JSON object keyed by ids.
-    fn retag_id_keys(&self, key: &str, map: Map) -> rusqlite::Result<()> {
+    fn retag_id_keys(&self, key: &str, map: Map) -> Result<(), RawDataError> {
         let Some(Value::Object(object)) = self.raw_setting(key)? else {
             return Ok(());
         };

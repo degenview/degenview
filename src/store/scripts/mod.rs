@@ -17,7 +17,6 @@ use crate::pine_studio::library::name::{self, FILE_EXTENSION, ScriptNameError};
 use crate::pine_studio::library::registry::LibraryRegistry;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -27,37 +26,22 @@ pub const COMPILER_VERSION: &str = "pine-local-3";
 pub const ID_ATTRIBUTE: &str = "es.nico.degenview.script-id";
 const MAX_REVISIONS: usize = 100;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ScriptStoreError {
+    #[error("The script no longer exists.")]
     MissingScript,
+    #[error("A script with that name already exists.")]
     NameConflict,
+    #[error("The file isn't a readable text file.")]
     UnreadableFile,
     /// The file was edited outside the app since the app last read it, so saving would overwrite
     /// that edit.
+    #[error("The file changed outside the app.")]
     ChangedOnDisk,
-    Name(ScriptNameError),
+    #[error(transparent)]
+    Name(#[from] ScriptNameError),
+    #[error("{0}")]
     Io(String),
-}
-
-impl fmt::Display for ScriptStoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingScript => f.write_str("The script no longer exists."),
-            Self::NameConflict => f.write_str("A script with that name already exists."),
-            Self::UnreadableFile => f.write_str("The file isn't a readable text file."),
-            Self::ChangedOnDisk => f.write_str("The file changed outside the app."),
-            Self::Name(error) => error.fmt(f),
-            Self::Io(message) => f.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for ScriptStoreError {}
-
-impl From<ScriptNameError> for ScriptStoreError {
-    fn from(error: ScriptNameError) -> Self {
-        Self::Name(error)
-    }
 }
 
 impl From<std::io::Error> for ScriptStoreError {

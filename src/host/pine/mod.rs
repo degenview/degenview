@@ -8,6 +8,7 @@ pub mod batch;
 pub mod chart;
 pub mod subscription;
 
+use crate::lock::lock;
 use crate::model::chart::synthetic::ticker;
 use crate::model::{DataSource, Kline};
 use crate::pine::compiler;
@@ -47,16 +48,13 @@ const INTRABAR_BASES: [(i64, &str); 6] = [
 
 impl KlineSecurityDataProvider {
     fn cached(key: &(SecurityKey, Option<ChartSpan>)) -> Option<Vec<Kline>> {
-        let cache = SECURITY_CACHE.lock().unwrap();
+        let cache = lock(&SECURITY_CACHE);
         let (candles, fetched_at) = cache.get(key)?;
         (now_millis() - fetched_at < SECURITY_CACHE_TTL_MS).then(|| candles.clone())
     }
 
     fn remember(key: (SecurityKey, Option<ChartSpan>), candles: &[Kline]) {
-        SECURITY_CACHE
-            .lock()
-            .unwrap()
-            .insert(key, (candles.to_vec(), now_millis()));
+        lock(&SECURITY_CACHE).insert(key, (candles.to_vec(), now_millis()));
     }
 
     /// The series of finer bars over the chart's whole span (or its `calc_bars_count` newest bars).

@@ -2,6 +2,7 @@ use super::*;
 use crate::model::portfolio::card::CardKind;
 use crate::model::watchlist::quote::Freshness;
 use crate::service::EventInfo;
+use crate::service::net::http;
 use crate::ui::render_tests::{Screen, gallery_dir};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -11,7 +12,7 @@ fn pair(source: DataSource, symbol: &str, base: &str, quote: &str) -> SearchResu
 }
 
 /// Canned provider answers: what each exchange lists for a handful of queries.
-fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, String> {
+fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
     use DataSource::{Alpaca, Binance, CoinGecko, Coinbase, DexScreener};
     match (source, query) {
         (Binance, "btc") => Ok(vec![
@@ -43,7 +44,7 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Str
             pair(Binance, "ETHBTC", "ETH", "BTC"),
         ]),
         (Coinbase, "eth") => Ok(vec![pair(Coinbase, "ETH-USD", "ETH", "USD")]),
-        (Alpaca, _) => Err(service::ALPACA_MISSING_KEY.to_owned()),
+        (Alpaca, _) => Err(ProviderError::MissingKey),
         (DataSource::Polymarket, "fed") => Ok(vec![
             chance(DataSource::Polymarket, "Fed decision", "Cut", Some(0.2)),
             chance(DataSource::Polymarket, "Fed decision", "Hold", Some(0.7)),
@@ -54,7 +55,7 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Str
             chance(DataSource::Kalshi, "Fed rate", "Above 5%", Some(0.6)),
             chance(DataSource::Kalshi, "Fed rate", "Below 5%", Some(0.3)),
         ]),
-        (DataSource::Kalshi, "boom") => Err("Kalshi is down".to_owned()),
+        (DataSource::Kalshi, "boom") => Err(ProviderError::other("Kalshi is down")),
         _ => Ok(Vec::new()),
     }
 }
@@ -87,7 +88,7 @@ fn chance(source: DataSource, event: &str, label: &str, chance: Option<f64>) -> 
     }
 }
 
-fn stub_trending(source: DataSource, _limit: usize) -> Result<Vec<SearchResult>, String> {
+fn stub_trending(source: DataSource, _limit: usize) -> Result<Vec<SearchResult>, ProviderError> {
     match source {
         DataSource::Polymarket => Ok(vec![
             chance(source, "Election", "Left", Some(0.45)),
@@ -478,7 +479,10 @@ fn a_missing_alpaca_key_is_a_card_with_a_settings_button_not_a_hint() {
     assert!(notice.settings);
     // Another failure of the stock search has nothing to set up.
     let mut listing = rig.picker.listing(&ctx);
-    listing.errors = vec![(DataSource::Alpaca, "Network error: timed out".to_owned())];
+    listing.errors = vec![(
+        DataSource::Alpaca,
+        ProviderError::from(http::Error::Network("timed out".to_owned())),
+    )];
     let notice = rig.picker.notice(&listing).expect("a failure");
     assert_eq!(notice.title, "Stocks could not be searched");
     assert!(!notice.settings);

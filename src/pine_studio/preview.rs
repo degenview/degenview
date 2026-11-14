@@ -17,7 +17,7 @@ use crate::pine::compiler;
 use crate::pine::compiler::program::{InputSchema, InputValue, VisualOutput};
 use crate::pine::syntax::token::{DiagnosticSeverity, Limits};
 use crate::service::work_queue::{self, Pending, PendingAll};
-use crate::service::{self, SearchResult};
+use crate::service::{self, ProviderError, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
@@ -196,8 +196,8 @@ pub struct PreviewState {
     /// `candles_fingerprint(&candles)`, made when the candles are replaced and not every frame.
     candles_fingerprint: u64,
     loading: bool,
-    error: Option<String>,
-    inbox: Option<Pending<Result<Vec<Kline>, String>>>,
+    error: Option<ProviderError>,
+    inbox: Option<Pending<Result<Vec<Kline>, ProviderError>>>,
     last_fetch: Option<Instant>,
     /// What the candles on screen were fetched for.
     fetched_for: Option<(PreviewMarket, Timeframe)>,
@@ -710,7 +710,8 @@ impl PreviewState {
         let Some(fetch) = &mut self.inbox else {
             return;
         };
-        let Some(result) = fetch.poll_or(|| Err("The candles could not be loaded.".to_owned()))
+        let Some(result) =
+            fetch.poll_or(|| Err(ProviderError::other("The candles could not be loaded.")))
         else {
             return;
         };
@@ -721,7 +722,7 @@ impl PreviewState {
                 self.set_candles(candles);
                 self.error = None;
             }
-            Err(message) => self.error = Some(message),
+            Err(error) => self.error = Some(error),
         }
     }
 
@@ -940,7 +941,7 @@ pub fn chart(
         &candles,
         loading,
         if candles.is_empty() {
-            error.as_deref()
+            error.as_ref()
         } else {
             None
         },
@@ -986,8 +987,8 @@ pub fn chart(
             .on_hover_text("Show problems");
     }
     // Refresh failures with candles on screen: a retry banner at the bottom.
-    if let Some(message) = error.filter(|_| !preview.candles.is_empty())
-        && error_banner(ui, area, &message)
+    if let Some(error) = error.filter(|_| !preview.candles.is_empty())
+        && error_banner(ui, area, &error.to_string())
     {
         preview.fetched_for = None;
     }

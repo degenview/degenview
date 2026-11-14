@@ -214,6 +214,7 @@ mod tests {
     use crate::model::overlay::feed::OverlayStatus;
     use crate::model::overlay::{OverlayScale, ScaleChoice};
     use crate::model::{DataSource, Kline, Timeframe};
+    use crate::service::ProviderError;
     use crate::workspace::test_support::{candle, chart_with_drawings, empty_workspace};
     use eframe::egui;
     use std::sync::Arc;
@@ -500,13 +501,19 @@ mod tests {
             symbol: &str,
             _: &str,
             _: u32,
-        ) -> Result<Vec<Kline>, String> {
+        ) -> Result<Vec<Kline>, ProviderError> {
             if symbol == "BADUSDT" {
-                return Err("no such market".into());
+                return Err(ProviderError::other("no such market"));
             }
             Ok((0..5).map(|n| candle(n * 60_000, 2.0 + n as f64)).collect())
         }
-        fn page(&self, _: DataSource, _: &str, _: &str, _: i64) -> Result<Vec<Kline>, String> {
+        fn page(
+            &self,
+            _: DataSource,
+            _: &str,
+            _: &str,
+            _: i64,
+        ) -> Result<Vec<Kline>, ProviderError> {
             Ok(Vec::new())
         }
     }

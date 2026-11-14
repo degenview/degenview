@@ -2,6 +2,7 @@ use super::DegenViewApp;
 use super::now_ms;
 use super::tabs::TabContent;
 use super::tabs::TabSlot;
+use crate::lock::lock;
 use crate::mcp::bridge::McpError;
 use crate::pine_studio::PineStudio;
 use eframe::egui;
@@ -187,7 +188,7 @@ impl DegenViewApp {
     }
 
     pub(super) fn tick_pine(&mut self) {
-        let store = self.store.lock().expect("store lock poisoned");
+        let store = lock(&self.store);
         let now = now_ms();
         let mut fired = Vec::new();
         let mut datasets = std::collections::HashMap::new();

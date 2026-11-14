@@ -2,7 +2,7 @@ use crate::model::market::cmc::{
     ALTCOIN_HISTORICAL, ALTCOIN_LATEST, CHART_TYPES, FEAR_GREED_HISTORICAL, FEAR_GREED_LATEST,
 };
 use crate::model::{DataSource, Kline};
-use crate::service::{MarketSource, SearchResult, downsample};
+use crate::service::{MarketSource, ProviderError, SearchResult, downsample};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -134,7 +134,7 @@ fn base_url(key: Option<&str>) -> String {
 #[derive(Default)]
 struct ResponseCache {
     responses: HashMap<String, (Instant, Value)>,
-    failures: HashMap<String, (Instant, String)>,
+    failures: HashMap<String, (Instant, ProviderError)>,
 }
 
 static RESPONSES: LazyLock<Mutex<ResponseCache>> = LazyLock::new(Default::default);
@@ -146,7 +146,7 @@ const FAILURE_BACKOFF: Duration = Duration::from_secs(120);
 /// The cache only ever sees a handful of URLs; this just bounds the worst case.
 const MAX_CACHED: usize = 32;
 
-fn get(path: &str, key: Option<&str>, ttl: Duration) -> Result<Value, String> {
+fn get(path: &str, key: Option<&str>, ttl: Duration) -> Result<Value, ProviderError> {
     let url = format!("{}{path}", base_url(key));
     cached_get(&RESPONSES, &url, ttl, FAILURE_BACKOFF, || fetch(path, key))
 }
@@ -157,8 +157,8 @@ fn cached_get(
     url: &str,
     ttl: Duration,
     backoff: Duration,
-    fetch: impl FnOnce() -> Result<Value, String>,
-) -> Result<Value, String> {
+    fetch: impl FnOnce() -> Result<Value, ProviderError>,
+) -> Result<Value, ProviderError> {
     if let Ok(cache) = cache.lock() {
         if let Some((fetched, value)) = cache.responses.get(url)
             && fetched.elapsed() < ttl
@@ -199,7 +199,7 @@ fn cached_get(
     result
 }
 
-fn fetch(path: &str, key: Option<&str>) -> Result<Value, String> {
+fn fetch(path: &str, key: Option<&str>) -> Result<Value, ProviderError> {
     let url = format!("{}{path}", base_url(key));
     let mut headers = vec![("Accept", "application/json")];
     if let Some(key) = key {
@@ -210,19 +210,19 @@ fn fetch(path: &str, key: Option<&str>) -> Result<Value, String> {
         &headers,
         crate::service::net::http::Retry::Transient,
     )
-    .map_err(|error| format!("CoinMarketCap error: {error}"))?;
-    let value: Value =
-        serde_json::from_str(&body).map_err(|error| format!("Data error: {error}"))?;
+    .map_err(ProviderError::CoinMarketCap)?;
+    let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
     if value["status"]["error_code"].as_i64().unwrap_or(0) != 0 {
-        return Err(value["status"]["error_message"]
-            .as_str()
-            .unwrap_or("CoinMarketCap API error")
-            .to_owned());
+        return Err(ProviderError::other(
+            value["status"]["error_message"]
+                .as_str()
+                .unwrap_or("CoinMarketCap API error"),
+        ));
     }
     Ok(value)
 }
 
-fn to_klines(points: Vec<(i64, f64)>, limit: u32) -> Result<Vec<Kline>, String> {
+fn to_klines(points: Vec<(i64, f64)>, limit: u32) -> Result<Vec<Kline>, ProviderError> {
     let candles: Vec<Kline> = points
         .into_iter()
         .map(|(t, value)| Kline {
@@ -236,7 +236,7 @@ fn to_klines(points: Vec<(i64, f64)>, limit: u32) -> Result<Vec<Kline>, String> 
         })
         .collect();
     if candles.is_empty() {
-        return Err("No CoinMarketCap data".to_owned());
+        return Err(ProviderError::other("No CoinMarketCap data"));
     }
     Ok(downsample(&candles, limit as usize))
 }
@@ -247,7 +247,7 @@ impl MarketSource for CoinMarketCap {
         symbol: &str,
         _interval: &str,
         limit: u32,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         let key = api_key();
         match symbol {
             ALTCOIN_HISTORICAL => {
@@ -279,7 +279,7 @@ impl MarketSource for CoinMarketCap {
                 };
                 let (time, mut reading) =
                     parse_latest(symbol, &get(path, key.as_deref(), LATEST_TTL)?)
-                        .ok_or_else(|| "No CoinMarketCap data".to_owned())?;
+                        .ok_or_else(|| ProviderError::other("No CoinMarketCap data"))?;
                 if symbol == FEAR_GREED_LATEST {
                     // The history only decorates the gauge, so a failure here is not an error.
                     // On a failure the previous history stays rather than the gauge losing it.
@@ -296,11 +296,11 @@ impl MarketSource for CoinMarketCap {
                 // chart body draws the cached reading as a gauge instead of a line.
                 to_klines(vec![(time, value)], limit)
             }
-            _ => Err("Unknown CoinMarketCap chart".to_owned()),
+            _ => Err(ProviderError::other("Unknown CoinMarketCap chart")),
         }
     }
 
-    fn search_tickers(&self, _query: &str) -> Result<Vec<SearchResult>, String> {
+    fn search_tickers(&self, _query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         Ok(CHART_TYPES
             .iter()
             .map(|(key, title)| SearchResult {
@@ -324,7 +324,7 @@ const MAX_HISTORY_PAGES: usize = 4;
 /// Every Fear & Greed reading CMC will page out, oldest first. The endpoint doesn't document its
 /// order, so pages are followed until the newest reading is current (one request when the
 /// newest come first).
-fn fear_greed_series(key: Option<&str>) -> Result<Vec<(i64, f64)>, String> {
+fn fear_greed_series(key: Option<&str>) -> Result<Vec<(i64, f64)>, ProviderError> {
     let mut points: Vec<(i64, f64)> = Vec::new();
     for page in 0..MAX_HISTORY_PAGES {
         let path = format!(
@@ -360,7 +360,7 @@ fn parse_series(value: &Value) -> Vec<(i64, f64)> {
 }
 
 /// The most recent 90 daily readings, oldest first, for the gauge.
-fn fear_greed_history(key: Option<&str>) -> Result<Vec<(i64, f64)>, String> {
+fn fear_greed_history(key: Option<&str>) -> Result<Vec<(i64, f64)>, ProviderError> {
     let mut points = fear_greed_series(key)?;
     let keep = points.len().saturating_sub(90);
     points.drain(..keep);
@@ -368,7 +368,7 @@ fn fear_greed_history(key: Option<&str>) -> Result<Vec<(i64, f64)>, String> {
 }
 
 /// Settings ▸ CoinMarketCap ▸ Test Connection: one cheap authenticated-if-configured request.
-pub fn test_connection() -> Result<(), String> {
+pub fn test_connection() -> Result<(), ProviderError> {
     fetch("/v3/fear-and-greed/latest", api_key().as_deref()).map(|_| ())
 }
 
@@ -405,6 +405,7 @@ fn parse_date(text: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::net::http;
 
     #[test]
     fn parses_the_latest_readings() {
@@ -454,8 +455,8 @@ mod tests {
 
     fn counted(
         calls: &std::cell::Cell<u32>,
-        result: Result<Value, String>,
-    ) -> impl FnOnce() -> Result<Value, String> + '_ {
+        result: Result<Value, ProviderError>,
+    ) -> impl FnOnce() -> Result<Value, ProviderError> + '_ {
         move || {
             calls.set(calls.get() + 1);
             result
@@ -495,10 +496,11 @@ mod tests {
         let cache = Mutex::new(ResponseCache::default());
         let calls = std::cell::Cell::new(0);
         let minute = Duration::from_secs(60);
-        let failure = || Err("HTTP 429".to_owned());
+        let limited = ProviderError::CoinMarketCap(http::Error::Status(429));
+        let failure = || Err(limited.clone());
         assert_eq!(
             cached_get(&cache, "u", minute, minute, counted(&calls, failure())),
-            Err("HTTP 429".to_owned())
+            Err(limited.clone())
         );
         assert_eq!(
             cached_get(
@@ -508,7 +510,7 @@ mod tests {
                 minute,
                 counted(&calls, Ok(Value::Null))
             ),
-            Err("HTTP 429".to_owned())
+            Err(limited)
         );
         assert_eq!(calls.get(), 1);
         // Once the backoff has passed the request goes out again, and a success clears it.
