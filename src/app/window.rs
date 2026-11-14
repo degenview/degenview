@@ -1,7 +1,7 @@
 use super::AppAction;
 use super::DegenViewApp;
 use super::alert::commit_price_alert;
-use super::mcp::show_mcp_confirmation;
+use super::mcp::McpQuestions;
 use super::now_ms;
 use super::open_system_settings;
 use super::session::SessionSaveError;
@@ -9,7 +9,6 @@ use super::tabs::SharedTabs;
 use super::tabs::TabContent;
 use super::tabs::show_tab;
 use crate::host::alert::AlertHost;
-use crate::host::mcp::confirmation::ConfirmationHost;
 use crate::host::paper::PaperHost;
 use crate::host::portfolio::PortfolioHost;
 use crate::host::portfolio::card::PortfolioCardEnv;
@@ -86,7 +85,7 @@ pub(super) struct WindowEnv {
     pub(super) session_save_error: SessionSaveError,
     pub(super) updates: UpdateHost,
     pub(super) snapshots: SnapshotHost,
-    pub(super) mcp_confirmations: Arc<Mutex<ConfirmationHost>>,
+    pub(super) mcp_questions: McpQuestions,
     /// The shared quotes the tab strip reads its prices from.
     pub(super) quote_book: WatchlistQuoteBook,
 }
@@ -214,7 +213,7 @@ fn show_window(
     }
     if focused {
         show_restart_prompt(&ctx, env, &update);
-        show_mcp_confirmation(&ctx, &env.mcp_confirmations);
+        env.mcp_questions.show(&ctx);
         let cycle = ui.input_mut(|input| {
             // macOS reaches these two through File ▸ New Tab / Close Tab.
             if !shortcut::is_mac() && shortcut::NEW_TAB.consume(input) {
@@ -335,7 +334,7 @@ impl DegenViewApp {
             session_save_error: self.session.error().clone(),
             updates: self.updates.clone(),
             snapshots: self.snapshots.clone(),
-            mcp_confirmations: Arc::clone(&self.mcp_confirmations),
+            mcp_questions: self.mcp.questions().clone(),
             quote_book: self.quote_book.clone(),
         };
         for (window, placement) in self.tabs.windows().snapshot() {
@@ -391,7 +390,7 @@ impl DegenViewApp {
             return;
         }
         let host = Arc::clone(&self.settings_host);
-        let mcp_host = Arc::clone(&self.mcp_host);
+        let mcp_host = Arc::clone(self.mcp.host());
         let alert_host = Arc::clone(&self.alert_host);
         let pine_host = Arc::clone(&self.pine_host);
         let store = Arc::clone(&self.store);
@@ -400,7 +399,7 @@ impl DegenViewApp {
         let app_actions = Arc::clone(&self.actions);
         let updates = self.updates.clone();
         let sync = self.sync.clone();
-        let mcp_confirmations = Arc::clone(&self.mcp_confirmations);
+        let mcp_questions = self.mcp.questions().clone();
         let trading_hub = Arc::clone(&self.trading_hub);
         let builder = crate::ui::window::chrome::branded(
             egui::ViewportBuilder::default()
@@ -491,7 +490,7 @@ impl DegenViewApp {
                 );
                 // A question from an MCP client is answered where the user is looking.
                 if ui.input(|input| input.viewport().focused == Some(true)) {
-                    show_mcp_confirmation(ui.ctx(), &mcp_confirmations);
+                    mcp_questions.show(ui.ctx());
                 }
                 for action in actions {
                     match action {

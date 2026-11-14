@@ -4,33 +4,159 @@ use super::now_ms;
 use super::tabs::TabContent;
 use super::window::settings_viewport_id;
 use crate::host::mcp;
+use crate::host::mcp::McpHost;
 use crate::host::mcp::confirmation::{self, ConfirmationHost};
-use crate::mcp::bridge::{McpCommand, McpError, McpReply};
+use crate::host::mcp::paper::OrderMemory;
+use crate::host::mcp::snapshot::SnapshotJobs;
+use crate::mcp::bridge::{McpCommand, McpError, McpReply, Request};
+use crate::mcp::state::McpShared;
 use crate::mcp::types::{AlertChangeResult, CreateAlertResult, UpdateAlertResult};
 use crate::model::alert::{AlertPrecondition, AlertRuntimeCommand, AlertRuntimeCommandPayload};
 use crate::service::alert::macos_notifications;
+use crate::store::SharedStore;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
-/// The question an MCP client's request raises, if one is open. Drawn by the focused window only,
-/// so one question shows however many windows are open; the answer goes to the host.
-pub(super) fn show_mcp_confirmation(ctx: &egui::Context, host: &Mutex<ConfirmationHost>) {
-    let now = Instant::now();
-    let pending = host
-        .lock()
-        .map(|host| host.pending(now))
-        .unwrap_or_default();
-    let answer = crate::ui::mcp::confirmation::show(ctx, &pending);
-    let Some(answer) = answer else {
-        return;
-    };
-    if let Ok(mut host) = host.lock() {
-        match answer {
-            crate::ui::mcp::confirmation::Answer::Allow(id) => host.approve(now, id),
-            crate::ui::mcp::confirmation::Answer::Deny(id) => host.deny(now, id),
+/// The questions MCP clients' high-impact requests raise, waiting for the user. Cheap to clone;
+/// the window callbacks each hold one to draw the open question.
+#[derive(Clone)]
+pub(super) struct McpQuestions(Arc<Mutex<ConfirmationHost>>);
+
+impl McpQuestions {
+    /// The question an MCP client's request raises, if one is open. Drawn by the focused window
+    /// only, so one question shows however many windows are open; the answer goes to the host.
+    pub(super) fn show(&self, ctx: &egui::Context) {
+        let now = Instant::now();
+        let pending = self
+            .0
+            .lock()
+            .map(|host| host.pending(now))
+            .unwrap_or_default();
+        let answer = crate::ui::mcp::confirmation::show(ctx, &pending);
+        let Some(answer) = answer else {
+            return;
+        };
+        if let Ok(mut host) = self.0.lock() {
+            match answer {
+                crate::ui::mcp::confirmation::Answer::Allow(id) => host.approve(now, id),
+                crate::ui::mcp::confirmation::Answer::Deny(id) => host.deny(now, id),
+            }
         }
+    }
+}
+
+/// The app's side of the MCP server: the server's host, the questions its clients raise, and what
+/// the app remembers between requests (placed orders, pictures being made).
+pub(super) struct McpState {
+    /// The MCP server's lifecycle, credentials and request queue.
+    host: Arc<Mutex<McpHost>>,
+    questions: McpQuestions,
+    /// Orders placed over MCP by `request_id`, so a retried call places nothing twice.
+    orders: Mutex<OrderMemory>,
+    /// Chart pictures being made for MCP clients.
+    snapshots: Mutex<SnapshotJobs>,
+}
+
+impl McpState {
+    /// Loads the server's settings and credentials (starting it if it is on) and gives it the
+    /// watchlists' quote feed to read from. `wake` asks for a frame when a request arrives.
+    pub(super) fn load(
+        store: SharedStore,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        quotes: crate::mcp::state::QuoteAccess,
+    ) -> Self {
+        let host = McpHost::load(store, wake);
+        let questions = McpQuestions(Arc::new(Mutex::new(ConfirmationHost::new(host.shared()))));
+        // The server reads quotes from the feed the watchlists already run, on its own threads.
+        host.shared().attach_quotes(quotes);
+        Self {
+            host: Arc::new(Mutex::new(host)),
+            questions,
+            orders: Mutex::new(OrderMemory::default()),
+            snapshots: Mutex::new(SnapshotJobs::default()),
+        }
+    }
+
+    /// The server's host, for the Settings window's MCP page.
+    pub(super) fn host(&self) -> &Arc<Mutex<McpHost>> {
+        &self.host
+    }
+
+    pub(super) fn questions(&self) -> &McpQuestions {
+        &self.questions
+    }
+
+    /// Stops the server and writes the activity log's last rows (they are otherwise written about
+    /// once a second, so a quit would lose the final moments).
+    pub(super) fn shutdown(&self) {
+        if let Ok(mut host) = self.host.lock() {
+            host.shutdown();
+        }
+    }
+
+    /// What the server's threads and the app share: its clients, permissions and script library.
+    pub(super) fn shared(&self) -> Result<Arc<McpShared>, McpError> {
+        Ok(self
+            .host
+            .lock()
+            .map_err(|_| McpError::AppUnavailable("The MCP host is unavailable".into()))?
+            .shared())
+    }
+
+    /// Applies queued MCP Settings changes and takes up to `max` of the requests the server queued.
+    /// Pictures an agent never collected are dropped on time, not at its next snapshot call.
+    fn begin_frame(&self, max: usize) -> Option<(Vec<Request>, Arc<McpShared>)> {
+        let taken = {
+            let mut host = self.host.lock().ok()?;
+            host.tick();
+            (host.take_requests(max), host.shared())
+        };
+        if let Ok(mut snapshots) = self.snapshots.lock() {
+            snapshots.expire();
+        }
+        Some(taken)
+    }
+
+    /// Questions nobody answered run out; returns the ones raised since the last frame.
+    fn take_fresh_questions(&self) -> Vec<crate::mcp::confirm::PendingView> {
+        match self.questions.0.lock() {
+            Ok(mut confirmations) => {
+                confirmations.tick(Instant::now());
+                confirmations.take_fresh()
+            }
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// Lets `command` run only once the user approved this exact request (see `mcp::confirm`);
+    /// until then the caller is told the question to put to the user.
+    fn gate(
+        &self,
+        client_id: &str,
+        client_name: &str,
+        remote_origin: bool,
+        command: &McpCommand,
+        describe: impl FnOnce() -> Result<crate::mcp::confirm::Summary, McpError>,
+    ) -> Result<(), McpError> {
+        confirmation::gate_command(
+            &self.questions.0,
+            Instant::now(),
+            client_id,
+            client_name,
+            remote_origin,
+            command,
+            describe,
+        )
+    }
+
+    fn orders(&self) -> Result<MutexGuard<'_, OrderMemory>, McpError> {
+        self.orders.lock().map_err(|_| paper_unavailable())
+    }
+
+    fn snapshot_jobs(&self) -> Result<MutexGuard<'_, SnapshotJobs>, McpError> {
+        self.snapshots.lock().map_err(|_| snapshot_unavailable())
     }
 }
 
@@ -60,19 +186,11 @@ impl DegenViewApp {
     pub(super) fn tick_mcp(&mut self, ctx: &egui::Context) {
         /// Requests run per frame; the rest wait for the next one.
         const REQUESTS_PER_FRAME: usize = 8;
-        let (requests, shared) = {
-            let Ok(mut host) = self.mcp_host.lock() else {
-                return;
-            };
-            host.tick();
-            (host.take_requests(REQUESTS_PER_FRAME), host.shared())
+        let Some((requests, shared)) = self.mcp.begin_frame(REQUESTS_PER_FRAME) else {
+            return;
         };
         if requests.len() == REQUESTS_PER_FRAME {
             ctx.request_repaint();
-        }
-        // Pictures an agent never collected are dropped on time, not at its next snapshot call.
-        if let Ok(mut snapshots) = self.mcp_snapshots.lock() {
-            snapshots.expire();
         }
         for request in requests {
             let client_id = request.client_id.clone();
@@ -81,13 +199,7 @@ impl DegenViewApp {
             });
         }
         // Questions nobody answered run out, and a new one is announced where the user can see it.
-        let fresh = match self.mcp_confirmations.lock() {
-            Ok(mut confirmations) => {
-                confirmations.tick(Instant::now());
-                confirmations.take_fresh()
-            }
-            Err(_) => Vec::new(),
-        };
+        let fresh = self.mcp.take_fresh_questions();
         if !fresh.is_empty() {
             self.announce_questions(ctx, &fresh);
         }
@@ -110,15 +222,10 @@ impl DegenViewApp {
                 .find(|client| client.id == client_id)
                 .map(|client| client.name)
                 .unwrap_or_default();
-            confirmation::gate_command(
-                &self.mcp_confirmations,
-                Instant::now(),
-                client_id,
-                &name,
-                remote_origin,
-                &command,
-                || self.confirmation_summary(&command),
-            )?;
+            self.mcp
+                .gate(client_id, &name, remote_origin, &command, || {
+                    self.confirmation_summary(&command)
+                })?;
         }
         self.run_mcp_command(ctx, command)
     }
@@ -166,11 +273,7 @@ impl DegenViewApp {
                 })
             }
             McpCommand::EditPineScript { script_id, .. } => {
-                let shared = self
-                    .mcp_host
-                    .lock()
-                    .map_err(|_| McpError::AppUnavailable("The MCP host is unavailable".into()))?
-                    .shared();
+                let shared = self.mcp.shared()?;
                 let mut store = shared.script_store().ok_or_else(|| {
                     McpError::AppUnavailable("The script library is unavailable".into())
                 })?;
@@ -475,7 +578,7 @@ impl DegenViewApp {
                 request_id,
             } => {
                 let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
-                let mut memory = self.mcp_orders.lock().map_err(|_| paper_unavailable())?;
+                let mut memory = self.mcp.orders()?;
                 let result = mcp::paper::place_paper_order(
                     &mut host,
                     &mut memory,
@@ -719,20 +822,14 @@ impl DegenViewApp {
                 chart_id,
                 scale,
             } => {
-                let mut jobs = self
-                    .mcp_snapshots
-                    .lock()
-                    .map_err(|_| snapshot_unavailable())?;
+                let mut jobs = self.mcp.snapshot_jobs()?;
                 let started = self.with_mcp_workspace(workspace_id, |workspace| {
                     jobs.begin(workspace, chart_id, scale, ctx)
                 })?;
                 Ok(McpReply::SnapshotStarted(started))
             }
             McpCommand::PollSnapshot { job_id } => {
-                let mut jobs = self
-                    .mcp_snapshots
-                    .lock()
-                    .map_err(|_| snapshot_unavailable())?;
+                let mut jobs = self.mcp.snapshot_jobs()?;
                 jobs.poll(job_id).map(McpReply::SnapshotProgress)
             }
             McpCommand::GetReplay { workspace_id } => self

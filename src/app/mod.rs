@@ -8,6 +8,7 @@ mod tabs;
 mod window;
 
 use crate::app::alert::AlertRuntimeControl;
+use crate::app::mcp::McpState;
 use crate::app::session::PersistedSpecialTab;
 use crate::app::session::PersistedSpecialTabKind;
 use crate::app::session::PersistedTab;
@@ -19,8 +20,6 @@ use crate::app::window::settings_viewport_id;
 use crate::host::alert::AlertHost;
 use crate::host::alert::runtime::AlertRuntimeRunner;
 use crate::host::editor_theme::EditorThemeHost;
-use crate::host::mcp::McpHost;
-use crate::host::mcp::confirmation::ConfirmationHost;
 use crate::host::paper::PaperHost;
 use crate::host::pine::subscription::PineSubscriptionHost;
 use crate::host::portfolio::PortfolioHost;
@@ -152,19 +151,14 @@ pub struct DegenViewApp {
     /// The venues the user trades on (paper and each connected broker), shared by every window and
     /// Settings: the one owner of a venue's lifecycle.
     trading_hub: Arc<crate::host::trading::TradingHub>,
-    /// Orders placed over MCP by `request_id`, so a retried call places nothing twice.
-    mcp_orders: Mutex<crate::host::mcp::paper::OrderMemory>,
-    /// Chart pictures being made for MCP clients.
-    mcp_snapshots: Mutex<crate::host::mcp::snapshot::SnapshotJobs>,
     settings_host: Arc<Mutex<SettingsHost>>,
     /// What the user chose about chart snapshots, shared by every window and Settings.
     snapshots: SnapshotHost,
     /// The editor's themes and typography, shared by every window and Settings.
     editor_themes: EditorThemeHost,
-    /// The MCP server's lifecycle, credentials and request queue.
-    mcp_host: Arc<Mutex<McpHost>>,
-    /// The questions MCP clients' high-impact requests raise, waiting for the user.
-    mcp_confirmations: Arc<Mutex<ConfirmationHost>>,
+    /// The MCP server, the questions its clients raise, and what the app remembers between
+    /// their requests.
+    mcp: McpState,
     alert_host: Arc<Mutex<AlertHost>>,
     alert_runner: AlertRuntimeRunner,
     alert_runtime_control: Arc<Mutex<AlertRuntimeControl>>,
@@ -278,22 +272,17 @@ impl DegenViewApp {
             editor_themes.clone(),
             tab_title_host.clone(),
         )));
-        let mcp_host = {
+        let mcp = {
             let ctx = creation.egui_ctx.clone();
-            Arc::new(Mutex::new(McpHost::load(
+            McpState::load(
                 store.clone(),
                 Arc::new(move || ctx.request_repaint()),
-            )))
+                crate::mcp::state::QuoteAccess {
+                    book: quote_book.clone(),
+                    coordinator: quote_coordinator.clone(),
+                },
+            )
         };
-        let mcp_confirmations =
-            Arc::new(Mutex::new(ConfirmationHost::new(lock(&mcp_host).shared())));
-        // The server reads quotes from the feed the watchlists already run, on its own threads.
-        lock(&mcp_host)
-            .shared()
-            .attach_quotes(crate::mcp::state::QuoteAccess {
-                book: quote_book.clone(),
-                coordinator: quote_coordinator.clone(),
-            });
         let alert_host = Arc::new(Mutex::new({
             let store = lock(&store);
             AlertHost::load(&store, now_ms())
@@ -427,13 +416,10 @@ impl DegenViewApp {
             paper,
             broker_host,
             trading_hub,
-            mcp_orders: Mutex::new(crate::host::mcp::paper::OrderMemory::default()),
-            mcp_snapshots: Mutex::new(crate::host::mcp::snapshot::SnapshotJobs::default()),
             settings_host,
             snapshots,
             editor_themes,
-            mcp_host,
-            mcp_confirmations,
+            mcp,
             alert_host,
             alert_runner: AlertRuntimeRunner::new(AlertRuntimeOwner::App),
             alert_runtime_control,
@@ -523,9 +509,7 @@ impl eframe::App for DegenViewApp {
     fn on_exit(&mut self) {
         // Stops the MCP server and writes the activity log's last rows (they are otherwise
         // written about once a second, so a quit would lose the final moments).
-        if let Ok(mut host) = self.mcp_host.lock() {
-            host.shutdown();
-        }
+        self.mcp.shutdown();
         if let Err(error) = self.updates.relaunch_if_armed() {
             eprintln!("{error}");
         }

@@ -128,11 +128,7 @@ impl DegenViewApp {
         expected_revision: &str,
         source: Option<&str>,
     ) -> Result<crate::mcp::types::PineEditResult, McpError> {
-        let shared = self
-            .mcp_host
-            .lock()
-            .map_err(|_| McpError::AppUnavailable("The MCP host is unavailable".into()))?
-            .shared();
+        let shared = self.mcp.shared()?;
         let mut store = shared
             .script_store()
             .ok_or_else(|| McpError::AppUnavailable("The script library is unavailable".into()))?;
