@@ -5,8 +5,7 @@ use crate::model::alert::PriceAlert;
 use crate::model::chart::sync::SyncHub;
 use crate::model::tab::link::LinkColor;
 use crate::model::tab::title::{MAX_CUSTOM_TITLE_CHARS, TabChart};
-use crate::model::watchlist::text::ImportReport;
-use crate::model::watchlist::{EntryId, WatchlistInstrument, now_ms};
+use crate::model::watchlist::{WatchlistInstrument, now_ms};
 use crate::model::{
     BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, DrawingStyle,
     InstrumentId, LayoutSnapshot, MagnetMode, Timeframe, Tool,
@@ -24,7 +23,6 @@ use crate::ui::chart::symbol_picker::SymbolPicker;
 use crate::ui::drawing::properties::DrawingProperties;
 use crate::ui::paper::chart_trading::PaperOverlayAction;
 use crate::ui::pine::settings_popover::PineSettingsPopover;
-use crate::ui::watchlist::sidebar::WatchlistSidebarState;
 use crate::ui::workspace::layout_prompts::NamePrompt;
 use crate::ui::{self, CrosshairInfo, replay::bar, workspace::tool_sidebar};
 use alerts::AlertUi;
@@ -43,6 +41,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use trade::TradeSide;
 use undo::UndoHistory;
+use watchlist::WatchlistPane;
 
 mod alerts;
 mod chart;
@@ -161,7 +160,6 @@ pub struct ChartWorkspace {
     sync_hub: SyncHub,
     focused: Option<u64>,
     next_id: u64,
-    watchlist_visible: bool,
     baseline: Option<LayoutSnapshot>,
     /// Bumped by every change to a chart's drawings; see `drawings_dirty`.
     drawings_version: u64,
@@ -171,7 +169,6 @@ pub struct ChartWorkspace {
     saved_drawings: HashMap<u64, Vec<Drawing>>,
     indicator_picker: IndicatorPicker,
     symbol_picker: SymbolPicker,
-    add_to_watchlist: Option<EntryId>,
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
     card_env: Option<PortfolioCardEnv>,
     live_feed: Option<BinanceLiveFeed>,
@@ -224,12 +221,10 @@ pub struct ChartWorkspace {
     /// The replay clock, its bar and its date sheet.
     replay: ReplayState,
     watchlist: Arc<Mutex<WatchlistStore>>,
-    watchlist_sidebar: WatchlistSidebarState,
     quote_book: WatchlistQuoteBook,
     quote_coordinator: WatchlistQuoteCoordinator,
-    import_report: Option<ImportReport>,
-    watchlist_error: Option<crate::model::watchlist::WatchlistNotice>,
-    watchlist_file_result: Option<crate::service::work_queue::Pending<Result<(), String>>>,
+    /// The watchlist sidebar and what it asks of the tab.
+    watchlist_pane: WatchlistPane,
     /// The order sheet and the orders panel, and the venue they trade on.
     trade: TradeSide,
     /// The chart menu's state: the open menu, its messages, and the panels it toggles.
@@ -240,7 +235,6 @@ pub struct ChartWorkspace {
     snapshots: Option<crate::host::snapshot::SnapshotHost>,
     /// The bell's count and the price-alert sheet.
     alerts: AlertUi,
-    open_new_tab_request: Option<WatchlistInstrument>,
     /// What the empty page reads from the database and Keychain, loaded once per visit.
     empty_page: EmptyPageCache,
     /// Saved-layout persistence + the tab's relation to the layout library.
@@ -351,11 +345,9 @@ impl ChartWorkspace {
             sync_hub: SyncHub::default(),
             focused: None,
             next_id: 1,
-            watchlist_visible: false,
             baseline: None,
             indicator_picker: IndicatorPicker::new(Some(store.clone())),
             symbol_picker: SymbolPicker::new(store.clone()),
-            add_to_watchlist: None,
             card_env: None,
             live_feed: None,
             overlay_hub: overlay::OverlayHub::new(),
@@ -385,18 +377,14 @@ impl ChartWorkspace {
             history: UndoHistory::default(),
             replay: ReplayState::default(),
             watchlist,
-            watchlist_sidebar: WatchlistSidebarState::default(),
             quote_book,
             quote_coordinator,
-            import_report: None,
-            watchlist_error: None,
-            watchlist_file_result: None,
+            watchlist_pane: WatchlistPane::default(),
             trade: TradeSide::default(),
             context: ContextState::default(),
             snapshot: SnapshotState::default(),
             snapshots: None,
             alerts: AlertUi::default(),
-            open_new_tab_request: None,
             empty_page: EmptyPageCache::default(),
             store,
             active_view_id: None,
@@ -488,7 +476,7 @@ impl ChartWorkspace {
             quote_coordinator,
             store,
         );
-        workspace.watchlist_visible = watchlist_visible;
+        workspace.watchlist_pane.set_visible(watchlist_visible);
         workspace.sync = sync;
         workspace.focused = focused;
         workspace.custom_title = custom_title.filter(|title| !title.trim().is_empty());
@@ -706,26 +694,7 @@ impl ChartWorkspace {
             .inner;
         actions.extend(rail_actions);
 
-        if self.watchlist_visible {
-            let minimum_width = self
-                .watchlist
-                .lock()
-                .ok()
-                .map(|store| self.watchlist_sidebar.minimum_width(store.lists()))
-                .unwrap_or(286.0);
-            egui::Panel::right("watchlist")
-                .default_size(minimum_width.max(270.0))
-                .min_size(minimum_width)
-                .max_size(640.0)
-                .frame(
-                    egui::Frame::new()
-                        .fill(ui::theme::chrome())
-                        .inner_margin(egui::Margin::ZERO),
-                )
-                .show(ui, |ui| self.show_watchlist(ui, &ctx));
-        } else {
-            self.suspend_watchlist_demand();
-        }
+        self.show_watchlist_panel(ui, &ctx);
 
         actions.extend(self.show_trade_panels(ui, paper));
 
@@ -786,7 +755,7 @@ impl ChartWorkspace {
                     .inner_margin(egui::Margin::same(10)),
             )
             .show(ui, |ui| self.render_grid(ui, &mut lock(paper)));
-        if let Some(item) = self.open_new_tab_request.take() {
+        if let Some(item) = self.watchlist_pane.take_new_tab_request() {
             actions.push(WorkspaceAction::OpenWatchlistInNewTab(item));
         }
         if std::mem::take(&mut self.snapshot.settings_requested) {

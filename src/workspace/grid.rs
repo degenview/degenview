@@ -41,17 +41,13 @@ fn freeze(previous: Option<CrosshairInfo>, chart_id: u64) -> Option<CrosshairInf
         })
 }
 
-/// A star or membership toggle that finds the market already in (or already out of) the list
-/// has nothing to report; anything else says why it was refused.
-fn star_result(
-    slot: &mut Option<crate::model::watchlist::WatchlistNotice>,
-    result: Result<bool, WatchlistError>,
-) {
-    let result = match result {
-        Err(WatchlistError::Duplicate(_) | WatchlistError::NotFound) => Ok(false),
-        other => other,
-    };
-    super::watchlist::report_watchlist(slot, result.map(|_| ()));
+/// What a star or membership toggle has to report: finding the market already in (or already out
+/// of) the list is no failure; anything else says why it was refused.
+fn star_result(result: Result<bool, WatchlistError>) -> Result<(), WatchlistError> {
+    match result {
+        Err(WatchlistError::Duplicate(_) | WatchlistError::NotFound) => Ok(()),
+        other => other.map(|_| ()),
+    }
 }
 
 /// The markets of the Favorites list, by `InstrumentId::key`, so the star reads "on" for a
@@ -760,7 +756,7 @@ impl ChartWorkspace {
                     } else {
                         store.add_to_list(list_id, self.favorite_item(chart))
                     };
-                    star_result(&mut self.watchlist_error, result);
+                    self.watchlist_pane.report(star_result(result));
                 }
             }
             for (chart_id, (list_id, included)) in watchlist_changes {
@@ -771,7 +767,7 @@ impl ChartWorkspace {
                     } else {
                         store.remove_from_list(list_id, &instrument)
                     };
-                    star_result(&mut self.watchlist_error, result);
+                    self.watchlist_pane.report(star_result(result));
                 }
             }
         }

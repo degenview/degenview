@@ -17,7 +17,7 @@ impl ChartWorkspace {
         PersistedWorkspace {
             id: self.id,
             timeframe: self.timeframe,
-            watchlist_visible: self.watchlist_visible,
+            watchlist_visible: self.watchlist_pane.is_visible(),
             charts: self
                 .charts
                 .iter()

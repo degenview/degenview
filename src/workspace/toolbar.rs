@@ -55,7 +55,7 @@ impl ChartWorkspace {
             },
             layouts,
             active_layout: active_view_id,
-            watchlist_visible: self.watchlist_visible,
+            watchlist_visible: self.watchlist_pane.is_visible(),
             symbol: symbol.as_deref(),
             chart: self
                 .focused_market_chart()
@@ -99,7 +99,7 @@ impl ChartWorkspace {
                 ToolbarAction::OpenLayout(id) => open_id = Some(id),
                 ToolbarAction::DeleteLayout(id) => delete_id = Some(id),
                 ToolbarAction::ToggleWatchlist => {
-                    self.watchlist_visible = !self.watchlist_visible;
+                    self.watchlist_pane.toggle();
                 }
                 ToolbarAction::OpenPortfolio => actions.push(WorkspaceAction::OpenPortfolio),
                 ToolbarAction::OpenPineStudio => {
