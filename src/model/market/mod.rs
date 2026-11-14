@@ -6,3 +6,4 @@ pub(in crate::model) mod kline;
 pub(in crate::model) mod pm_series;
 pub(in crate::model) mod source;
 pub(in crate::model) mod timeframe;
+pub mod trend;

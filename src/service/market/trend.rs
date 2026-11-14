@@ -1,20 +1,26 @@
-//! The last week of daily closes for the markets on the empty page, read in the background and
-//! kept for a while, so each tile can draw its sparkline.
+//! Recent daily closes of markets, read in the background and kept for a while, so a tile or a
+//! watchlist row can draw its sparkline. One loader reads one span (a week, a month).
 
-use crate::model::{InstrumentId, Kline, Timeframe};
+use crate::model::market::trend::{self, Trend};
+use crate::model::{InstrumentId, Timeframe};
 use crate::service;
-use crate::ui::workspace::empty_state::Trend;
-use eframe::egui;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-/// Closes a sparkline shows.
-const DAYS: usize = 7;
-/// How long a week is shown before it is read again.
+/// How long a span is shown before it is read again.
 const FRESH_FOR: Duration = Duration::from_secs(10 * 60);
-/// How long a market that gave no week is left alone.
+/// How long a market that gave no closes is left alone.
 const RETRY_AFTER: Duration = Duration::from_secs(5 * 60);
+/// Calendar days of the watchlist's month.
+const MONTH_DAYS: u32 = 30;
+
+/// The month every watchlist sidebar draws. One for the app, so tabs and windows showing the
+/// same markets share their reads.
+pub fn month() -> &'static TrendLoader {
+    static MONTH: LazyLock<TrendLoader> = LazyLock::new(|| TrendLoader::new(MONTH_DAYS));
+    &MONTH
+}
 
 struct Slot {
     /// What the last read found; `None` until the first one ends.
@@ -24,15 +30,24 @@ struct Slot {
     reading: bool,
 }
 
-/// Shared with the reading threads, so cloning it is cheap and every clone sees the same weeks.
-#[derive(Clone, Default)]
-pub(super) struct TrendLoader {
+/// Shared with the reading threads, so cloning it is cheap and every clone sees the same closes.
+#[derive(Clone)]
+pub struct TrendLoader {
+    /// Calendar days of closes each market shows.
+    days: u32,
     slots: Arc<Mutex<HashMap<String, Slot>>>,
 }
 
 impl TrendLoader {
+    pub fn new(days: u32) -> Self {
+        Self {
+            days: days.max(2),
+            slots: Arc::default(),
+        }
+    }
+
     /// What is known so far, by market key. A market still being read for the first time is not in it.
-    pub(super) fn snapshot(&self) -> HashMap<String, Trend> {
+    pub fn snapshot(&self) -> HashMap<String, Trend> {
         let Ok(slots) = self.slots.lock() else {
             return HashMap::new();
         };
@@ -42,15 +57,16 @@ impl TrendLoader {
             .collect()
     }
 
-    /// Starts reading every market of `wanted` that has no week yet or whose week has gone stale.
-    pub(super) fn request(&self, wanted: &[InstrumentId], ctx: &egui::Context) {
+    /// Starts reading every market of `wanted` that has no closes yet or whose closes have gone
+    /// stale; `arrived` runs after each read (a repaint request).
+    pub fn request(&self, wanted: &[InstrumentId], arrived: Arc<dyn Fn() + Send + Sync>) {
         for instrument in self.claim(wanted, Instant::now()) {
             let loader = self.clone();
-            let ctx = ctx.clone();
+            let arrived = Arc::clone(&arrived);
             service::work_queue::submit_for(instrument.source, move || {
-                let result = week_of_closes(&instrument);
+                let result = loader.read(&instrument);
                 loader.finish(&instrument.key(), result, Instant::now());
-                ctx.request_repaint();
+                arrived();
             });
         }
     }
@@ -80,7 +96,7 @@ impl TrendLoader {
         claimed
     }
 
-    /// Records what a read found. A failed refresh keeps the week already shown.
+    /// Records what a read found. A failed refresh keeps the closes already shown.
     fn finish(&self, key: &str, result: Result<Vec<f32>, String>, now: Instant) {
         let Ok(mut slots) = self.slots.lock() else {
             return;
@@ -96,25 +112,17 @@ impl TrendLoader {
             _ => slot.trend = Some(Trend::Unavailable),
         }
     }
-}
 
-fn week_of_closes(instrument: &InstrumentId) -> Result<Vec<f32>, String> {
-    service::fetch_klines(
-        instrument.source,
-        &instrument.api_symbol(),
-        Timeframe::Day.interval(),
-        DAYS as u32 + 1,
-    )
-    .map(|candles| closes(&candles))
-}
-
-/// The closes of the last `DAYS` candles, oldest first.
-fn closes(candles: &[Kline]) -> Vec<f32> {
-    let start = candles.len().saturating_sub(DAYS);
-    candles[start..]
-        .iter()
-        .map(|candle| candle.close as f32)
-        .collect()
+    /// One more candle than the span has days, so a market that trades every day fills it.
+    fn read(&self, instrument: &InstrumentId) -> Result<Vec<f32>, String> {
+        service::fetch_klines(
+            instrument.source,
+            &instrument.api_symbol(),
+            Timeframe::Day.interval(),
+            self.days + 1,
+        )
+        .map(|candles| trend::closes_within(&candles, self.days))
+    }
 }
 
 #[cfg(test)]
@@ -126,21 +134,9 @@ mod tests {
         InstrumentId::new(DataSource::Binance, symbol)
     }
 
-    fn candle(close: f64) -> Kline {
-        Kline {
-            open_time: 0,
-            close_time: 1,
-            open: close,
-            high: close,
-            low: close,
-            close,
-            volume: 0.0,
-        }
-    }
-
     #[test]
     fn a_market_is_read_once_while_it_is_being_read() {
-        let loader = TrendLoader::default();
+        let loader = TrendLoader::new(7);
         let now = Instant::now();
         let wanted = [market("BTCUSDT"), market("btcusdt"), market("ETHUSDT")];
         let claimed = loader.claim(&wanted, now);
@@ -153,8 +149,8 @@ mod tests {
     }
 
     #[test]
-    fn a_week_is_shown_then_read_again_when_stale() {
-        let loader = TrendLoader::default();
+    fn closes_are_shown_then_read_again_when_stale() {
+        let loader = TrendLoader::new(7);
         let btc = market("BTCUSDT");
         let now = Instant::now();
         loader.claim(std::slice::from_ref(&btc), now);
@@ -166,7 +162,7 @@ mod tests {
         assert!(loader.claim(std::slice::from_ref(&btc), now).is_empty());
         let later = now + FRESH_FOR;
         assert_eq!(loader.claim(std::slice::from_ref(&btc), later).len(), 1);
-        // The old week stays on screen while the new one is read, and survives a failed read.
+        // The old closes stay on screen while the new ones are read, and survive a failed read.
         assert!(loader.snapshot().contains_key(&btc.key()));
         loader.finish(&btc.key(), Err("offline".into()), later);
         assert_eq!(
@@ -177,7 +173,7 @@ mod tests {
 
     #[test]
     fn a_market_without_history_is_retried_later() {
-        let loader = TrendLoader::default();
+        let loader = TrendLoader::new(7);
         let market = market("NOPEUSDT");
         let now = Instant::now();
         loader.claim(std::slice::from_ref(&market), now);
@@ -196,8 +192,8 @@ mod tests {
     }
 
     #[test]
-    fn one_close_is_not_a_week() {
-        let loader = TrendLoader::default();
+    fn one_close_is_not_a_trend() {
+        let loader = TrendLoader::new(7);
         let market = market("BTCUSDT");
         let now = Instant::now();
         loader.claim(std::slice::from_ref(&market), now);
@@ -206,13 +202,5 @@ mod tests {
             loader.snapshot().get(&market.key()),
             Some(&Trend::Unavailable)
         );
-    }
-
-    #[test]
-    fn only_the_last_week_of_candles_is_kept() {
-        let candles: Vec<Kline> = (0..10).map(|day| candle(day as f64)).collect();
-        assert_eq!(closes(&candles), vec![3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
-        assert_eq!(closes(&candles[..3]), vec![0.0, 1.0, 2.0]);
-        assert!(closes(&[]).is_empty());
     }
 }
