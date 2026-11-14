@@ -13,10 +13,9 @@ use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
 use crate::service::EventStats;
 use crate::service::SearchResult;
 use crate::ui::chart::picker_kit::artwork::{prediction_icon, result_icon};
-use crate::ui::chart::picker_kit::text::galley_rows;
 use crate::ui::icons;
 use crate::ui::kit::time_text::date_text;
-use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD};
+use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD, galley_rows};
 use crate::ui::{kit::source_logo, theme};
 use eframe::egui::{
     self, Align, Color32, Layout, Pos2, Rect, Stroke, Ui, UiBuilder, Vec2, pos2, vec2,
@@ -174,15 +173,7 @@ fn prediction(
     prediction_icon(ui, icon, title, artwork);
     let text_left = icon.right() + 16.0;
     let width = inner.right() - text_left;
-    let title = crate::ui::chart::picker_kit::text::galley_rows(
-        ui,
-        title,
-        20.0,
-        BOLD,
-        theme::text_primary(),
-        width,
-        3,
-    );
+    let title = galley_rows(ui, title, 20.0, BOLD, theme::text_primary(), width, 3);
     let top = icon.center().y - title.size().y.min(ICON) / 2.0;
     ui.painter().galley(
         pos2(text_left, top.max(inner.top())),

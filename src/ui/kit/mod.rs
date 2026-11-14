@@ -58,5 +58,11 @@ pub use pill::{
     value_chip,
 };
 pub use tab_bar::{TabItem, tab_bar, tab_bar_regular, tab_bar_regular_width, tab_bar_slim};
-pub use text::{BOLD, MEDIUM, REGULAR, SEMIBOLD, digits, galley, paragraph, size, text};
-pub use ticker_icon::{chart_icon, chart_icon_with_label, source_badge, ticker_icon};
+pub use text::{
+    BOLD, MEDIUM, REGULAR, SEMIBOLD, digits, galley, galley_rows, galley_words, paragraph, size,
+    text,
+};
+pub use ticker_icon::{
+    cached_logo, chart_icon, chart_icon_with_label, monogram_with, round_image, source_badge,
+    ticker_icon,
+};

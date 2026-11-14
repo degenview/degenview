@@ -1,8 +1,8 @@
 //! Market artwork: a coin, company or prediction-market picture in a circle.
 
-use super::text::{BOLD, galley};
 use crate::model::DataSource;
-use crate::service::{self, SearchResult};
+use crate::service::SearchResult;
+use crate::ui::kit::{self, BOLD};
 use eframe::egui::{self, Color32, CornerRadius, Rect, Ui};
 
 /// A coin, company or market logo in a circle; a hue-seeded monogram until (or unless) the
@@ -15,15 +15,8 @@ pub(in crate::ui) fn ticker_icon(
     market: &str,
 ) {
     let lookup = supports_ticker_icon_lookup(source);
-    if lookup && let Some(url) = service::image::icon::get_url(source, market) {
-        egui::Image::new(url)
-            .fit_to_exact_size(rect.size())
-            .corner_radius(CornerRadius::same((rect.width() / 2.0) as u8))
-            .paint_at(ui, rect);
+    if lookup && kit::cached_logo(ui, rect, source, market, Some(symbol), Color32::WHITE) {
         return;
-    }
-    if lookup {
-        service::image::icon::request_with_base(source, market, symbol);
     }
     monogram(ui, rect, symbol);
 }
@@ -39,34 +32,9 @@ fn supports_ticker_icon_lookup(source: DataSource) -> bool {
     )
 }
 
-/// A hue-seeded circle with the symbol's first two letters.
+/// A hue-seeded circle with the symbol's first two letters, a touch larger than the kit's.
 fn monogram(ui: &Ui, rect: Rect, symbol: &str) {
-    let seed = symbol
-        .to_uppercase()
-        .chars()
-        .fold(0u32, |sum, c| sum.wrapping_add((c as u32).wrapping_mul(31)));
-    let fill: Color32 = egui::ecolor::Hsva::new((seed % 360) as f32 / 360.0, 0.55, 0.7, 1.0).into();
-    let painter = ui.painter();
-    painter.circle_filled(rect.center(), rect.width() / 2.0, fill);
-    let initials: String = symbol
-        .chars()
-        .filter(|c| c.is_alphanumeric())
-        .take(2)
-        .collect::<String>()
-        .to_uppercase();
-    let monogram = galley(
-        ui,
-        &initials,
-        rect.width() * 0.42,
-        BOLD,
-        Color32::WHITE,
-        f32::INFINITY,
-    );
-    painter.galley(
-        rect.center() - monogram.size() / 2.0,
-        monogram,
-        Color32::WHITE,
-    );
+    kit::monogram_with(ui, rect, symbol, 0.42, Some(BOLD));
 }
 
 /// A prediction market's own artwork in a circle, a monogram until (or unless) it loads.
