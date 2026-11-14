@@ -1,13 +1,17 @@
 # Portfolio page
 
-The Portfolio tab: the shared top bar (`host/portfolio/bar.rs`: portfolio picker, currency, privacy, Import or Export, Add Transaction), a section bar
+The Portfolio tab: the shared top bar (`ui/portfolio/tab/bar.rs`: portfolio picker, currency, privacy, Import or Export, Add Transaction), a section bar
 (Overview, Holdings, Transactions, Statistics) and the page of the selected section. The grid
 cards are a separate surface: see [portfolio cards](portfolio-cards.md).
 
 ## Where things live
 
-- `host/portfolio/mod.rs`: the tab (`PortfolioTab::ui`), the section bar, the centred
-  column (`capped`), and the figures handed to the views.
+- `ui/portfolio/tab/mod.rs`: the tab (`PortfolioTab::ui`), the section bar, the centred
+  column (`capped`), and the figures handed to the views; `ui/portfolio/tab/import.rs`: the import
+  and export sheets.
+- `host/portfolio/mod.rs`: `PortfolioHost`, the ledger, its saved preferences and history rebuilds;
+  `host/portfolio/import_flow.rs`: the import and export work (file dialogs, parsing, matching, the
+  ledger write) the sheets drive.
 - `service/portfolio/quotes.rs`: `PortfolioQuoteFeed`, the valuation the views read.
 - `ui/portfolio/overview.rs`: Overview (hero, key figures, charts, lists) and Statistics.
 - `ui/portfolio/holdings.rs`, `ui/portfolio/transactions.rs`, `ui/portfolio/grid.rs`: the tables.
@@ -59,7 +63,7 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
 
 ## The bar
 
-`host/portfolio/bar.rs` draws the tab's top bar on the shared flat bar (`ui::kit::bar`, see
+`ui/portfolio/tab/bar.rs` draws the tab's top bar on the shared flat bar (`ui::kit::bar`, see
 [Workspace toolbar](workspace-toolbar.md)): `kit::bar::HEIGHT` (44) on `theme::chrome()`, the same
 as the chart's toolbar, across the whole window (only the page below is capped at
 `CONTENT_MAX_WIDTH`). Left: the portfolio menu (its name, never dropped when narrow) and the currency

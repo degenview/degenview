@@ -57,7 +57,7 @@ Stacked pull requests, logic changes first and pure moves last.
   - [x] Remove the 61 file-level `#![allow(dead_code)]`; delete what is dead, keep a narrow, reasoned
         `#[allow]` only for code that is used on another platform or feature.
   - [x] `parse_id` in `mcp/tools.rs` names the tool that returns the id it parses.
-- [x] **PR 2: layering guard and CI lints.**
+- [x] **PR 2: layering guard and CI lints.** [#512](https://github.com/degenview/degenview/pull/512)
   - [x] `layout_tests.rs` checks import direction (`model`/`pine` import no coordinator, UI or I/O;
         `service`/`store`/`sync` import no `ui`/`host`/`app`/`workspace`; `ui` imports no `app`), with
         today's exceptions in an allowlist that later PRs empty. A second test bans drawing types
@@ -67,10 +67,10 @@ Stacked pull requests, logic changes first and pure moves last.
 
 ### Wave 2: layering
 
-- [ ] **PR 3: views out of hosts.**
-  - [ ] `PortfolioTab` and the portfolio bar and import sheets move to `ui/portfolio/`.
-  - [ ] `PaperPanel` and its banners move to `ui/paper/`; the export runs on the work queue.
-  - [ ] `host/webhook` becomes `host/settings`, the Settings-window controller it is.
+- [x] **PR 3: views out of hosts.**
+  - [x] `PortfolioTab` and the portfolio bar and import sheets move to `ui/portfolio/`.
+  - [x] `PaperPanel` and its banners move to `ui/paper/`; the export runs on the work queue.
+  - [x] `host/webhook` becomes `host/settings`, the Settings-window controller it is.
 - [ ] **PR 4: the Pine worker leaves the chart card.**
   - [ ] The chart card's worker and run bookkeeping move to `host::pine`; the card asks for a run and
         keeps the latest output.

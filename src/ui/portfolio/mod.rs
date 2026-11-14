@@ -14,6 +14,7 @@ pub mod import_preview;
 pub mod overview;
 pub mod sheet_parts;
 pub mod sheets;
+pub mod tab;
 pub mod table;
 pub mod transaction_editor;
 pub mod transactions;

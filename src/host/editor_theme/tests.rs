@@ -82,7 +82,7 @@ fn choosing_a_built_in_theme_reaches_the_editors_at_once() {
 }
 
 /// The launch bug: the app builds its real host from the saved choice (Dracula), and a placeholder
-/// host built afterwards (a field's `Default`, as `WebhookHost::new`'s `..Self::default()` does)
+/// host built afterwards (a field's `Default`, as `SettingsHost::new`'s `..Self::default()` does)
 /// published Automatic over it, so every editor opened Dark. A placeholder must never publish.
 #[test]
 fn a_placeholder_host_never_undoes_the_real_hosts_choice() {

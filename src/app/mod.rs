@@ -23,14 +23,14 @@ use crate::host::mcp::McpHost;
 use crate::host::mcp::confirmation::ConfirmationHost;
 use crate::host::paper::PaperHost;
 use crate::host::pine::subscription::PineSubscriptionHost;
+use crate::host::portfolio::PortfolioHost;
 use crate::host::portfolio::card::PortfolioCardEnv;
-use crate::host::portfolio::{PortfolioHost, PortfolioTab};
+use crate::host::settings::SettingsHost;
 use crate::host::snapshot::SnapshotHost;
 use crate::host::tab::link::TabLinkHost;
 use crate::host::tab::title::TabTitleHost;
 use crate::host::tab::window::{Placement, TabWindowHost};
 use crate::host::update::UpdateHost;
-use crate::host::webhook::WebhookHost;
 use crate::model::Timeframe;
 use crate::model::alert::{AlertCurrency, AlertRuntimeOwner, AlertState};
 use crate::model::watchlist::WatchlistInstrument;
@@ -47,6 +47,7 @@ use crate::ui::alert::banner::{self, AlertBannerState};
 use crate::ui::alert::center::AlertCenterState;
 use crate::ui::alert::editor::PriceAlertEditorState;
 use crate::ui::alert::pine_editor::PineAlertWebhooksState;
+use crate::ui::portfolio::tab::PortfolioTab;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -175,7 +176,7 @@ pub struct DegenViewApp {
     mcp_orders: Mutex<crate::host::mcp::paper::OrderMemory>,
     /// Chart pictures being made for MCP clients.
     mcp_snapshots: Mutex<crate::host::mcp::snapshot::SnapshotJobs>,
-    webhook_host: Arc<Mutex<WebhookHost>>,
+    settings_host: Arc<Mutex<SettingsHost>>,
     /// What the user chose about chart snapshots, shared by every window and Settings.
     snapshots: SnapshotHost,
     /// The editor's themes and typography, shared by every window and Settings.
@@ -297,7 +298,7 @@ impl DegenViewApp {
             host
         };
         let updates = UpdateHost::load(&store);
-        let webhook_host = Arc::new(Mutex::new(WebhookHost::new(
+        let settings_host = Arc::new(Mutex::new(SettingsHost::new(
             snapshots.clone(),
             editor_themes.clone(),
             tab_title_host.clone(),
@@ -466,7 +467,7 @@ impl DegenViewApp {
             broker_revision: 0,
             mcp_orders: Mutex::new(crate::host::mcp::paper::OrderMemory::default()),
             mcp_snapshots: Mutex::new(crate::host::mcp::snapshot::SnapshotJobs::default()),
-            webhook_host,
+            settings_host,
             tab_title_host,
             tab_link_host,
             link_hub: Default::default(),

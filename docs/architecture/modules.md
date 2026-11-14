@@ -103,8 +103,10 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 
 `host/` has only `mod.rs` at its root. One directory per domain, the host in `mod.rs` and its helpers
 beside it: `alert/` (with `runtime`), `broker/`, `editor_theme/`, `mcp/` (with `confirmation`), `paper/`,
-`pine/` (with `subscription`), `portfolio/` (with `card` and `import_flow`), `snapshot/`, `sync/`,
-`tab/` (`window`, `title`, `link`), `trading/` (the hub), `update/`, `webhook/`.
+`pine/` (with `subscription`), `portfolio/` (with `card` and `import_flow`), `settings/` (the
+Settings window's controller: it builds the page's input and applies its actions), `snapshot/`,
+`sync/`, `tab/` (`window`, `title`, `link`), `trading/` (the hub), `update/`. Hosts draw
+nothing: the views that sit on them live in `ui/` (`ui::portfolio::tab`, `ui::paper::panel`).
 
 `store/` has one file per single-table domain store (`alert`, `asset_store`, `drawing_template`,
 `identity`, `paper`, `pine`, `portfolio`, `watchlist`, `webhook`) and a directory once a store has a
@@ -180,10 +182,10 @@ picture test sits beside it (`broker/panel_gallery.rs`). A helper used by severa
 | `chart/` | The chart card (`card/`), canvas and series rendering, chart menus, scale menu, indicator strip, table view, object tree, session stats, chart settings with templates and overlays (`settings/`), the symbol and indicator pickers, and the pieces the symbol picker shares with the portfolio pickers (`picker_kit/`: recents, suggestions, artwork, result rows, search box, header art) |
 | `drawing/` | Drawings: pure geometry (`geometry/`, with `fib`, `line`, `annotation`, `pattern`), the interaction layer (`layer/`), the properties panel (`properties/`), `render`, and the text/note/table content tools (`content/`) |
 | `alert/`, `webhook/`, `mcp/` | Alert center, editors, banner and chart lines; webhook editor, picker and settings; MCP activity and confirmation |
-| `paper/`, `broker/`, `trade/` | Paper trading screens, live trading screens, and what both share (the order sheet and its fields) |
-| `portfolio/`, `watchlist/`, `replay/` | The Portfolio tab and its cards, the watchlist sidebar, the replay bar, date sheet and overlay |
+| `paper/`, `broker/`, `trade/` | Paper trading screens (the panel under a chart in `panel/`), live trading screens, and what both share (the order sheet and its fields) |
+| `portfolio/`, `watchlist/`, `replay/` | The Portfolio tab (`tab/`: its bar, pages and import sheets) and its cards, the watchlist sidebar, the replay bar, date sheet and overlay |
 | `pine/` | Pine output on a chart, report, style view, settings popover, Pine Logs (`logs_view/`) and the script catalog |
-| `settings/` | The Settings window (`window`) and one file per page; the Pine Studio page owns the font picker and theme editor |
+| `settings/` | The Settings window (`window`, run by `host::settings`) and one file per page; the Pine Studio page owns the font picker and theme editor |
 | `workspace/`, `window/` | Workspace chrome (toolbar, tool rail, layouts, the new-tab page in `empty_state/`, chart linking, snapshot menu) and window chrome (tab strip, tab-link menu, update indicator) |
 | `kit/`, `theme/` | Shared widgets (`kit`, with `bar` (the flat top bar every tab kind shares), `dialog`, `sheet`, `popover`, `icon_tabs`, `color_picker`, `date_picker`, `split`, `source_logo`, `art`, ...) and colours and fonts |
 | root | `mod.rs` and the three single-file foundations: `icons`, `shortcut`, `accessibility` (plus `editor_appearance/`) |

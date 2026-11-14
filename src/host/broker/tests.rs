@@ -474,7 +474,7 @@ fn nothing_that_scripts_or_agents_reach_can_touch_a_broker() {
     for file in [
         "host/alert/mod.rs",
         "host/alert/runtime.rs",
-        "host/webhook/mod.rs",
+        "host/settings/mod.rs",
         "host/mcp/mod.rs",
     ] {
         let text = std::fs::read_to_string(root.join(file)).unwrap();

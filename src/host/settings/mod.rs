@@ -1,7 +1,8 @@
-//! Host for the app-level Settings window: owns the window state, the Keychain secret store and
-//! the HTTP transport, and applies the webhook and storage actions the pure
-//! `settings_window`/`webhook_settings`/`settings_storage` views return. Actions that reach outside the webhook
-//! store (notifications, login items, alert reference bookkeeping) are handed back to the caller.
+//! Controller for the app-level Settings window: owns the window state, the Keychain secret store
+//! and the HTTP transport, builds what the pure `ui::settings::window` view shows, and applies the
+//! actions it returns. It draws nothing itself: the caller hands it the view to run. Actions that
+//! reach outside the settings it owns (notifications, login items, alert reference bookkeeping) are
+//! handed back to the caller.
 
 use crate::model::alert::{AlertNotificationSettings, AlertRuntimeHealth};
 use crate::model::webhook::{EndpointId, WebhookDeliveryResult, WebhookEndpoint};
@@ -14,15 +15,15 @@ use crate::store::Store;
 use crate::ui::settings::api_keys::StatusMessage;
 use crate::ui::settings::snapshots::SnapshotsAction;
 use crate::ui::settings::storage::StorageAction;
-use crate::ui::settings::window::{self, SettingsAction, SettingsInput, SettingsState};
+use crate::ui::settings::window::{SettingsAction, SettingsInput, SettingsState};
 use crate::ui::webhook::settings::{WebhookSettingsAction, WebhookSettingsInput};
 use eframe::egui;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Duration;
 
-/// Something the settings window asked for that the webhook store cannot do on its own.
-pub enum WebhookHostAction {
+/// Something the Settings window asked for that only the caller can do.
+pub enum SettingsHostAction {
     UpdateNotifications(AlertNotificationSettings),
     RetryRegistration,
     OpenLoginItems,
@@ -54,7 +55,7 @@ impl Default for StorageEvents {
 }
 
 #[derive(Default)]
-pub struct WebhookHost {
+pub struct SettingsHost {
     /// The snapshot choices the Snapshots page edits.
     snapshots: crate::host::snapshot::SnapshotHost,
     /// The editor's themes and typography, which the Pine Studio page edits.
@@ -76,7 +77,7 @@ pub struct WebhookHost {
     open: bool,
 }
 
-impl WebhookHost {
+impl SettingsHost {
     pub fn new(
         snapshots: crate::host::snapshot::SnapshotHost,
         editor_themes: crate::host::editor_theme::EditorThemeHost,
@@ -128,13 +129,15 @@ impl WebhookHost {
         self.open = true;
     }
 
-    /// Renders the Settings window and applies webhook actions in place. `reference_count`
-    /// answers "how many alerts use this endpoint" for the delete confirmation; the alert host
-    /// supplies it (returns 0 until it exists). Returns the out-of-store actions for the caller.
+    /// Runs one frame of the Settings window: builds its input, hands it with the window state to
+    /// `view` (which draws the page and returns what the user did), and applies those actions in
+    /// place. `reference_count` answers "how many alerts use this endpoint" for the delete
+    /// confirmation; the alert host supplies it. Returns the actions only the caller can apply.
     #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
-        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        view: impl FnOnce(&mut SettingsState, &SettingsInput<'_>) -> Vec<SettingsAction>,
         store: &Store,
         notifications: &AlertNotificationSettings,
         health: &AlertRuntimeHealth,
@@ -144,11 +147,11 @@ impl WebhookHost {
         trading_hub: &std::sync::Arc<crate::host::trading::TradingHub>,
         now_ms: i64,
         reference_count: &dyn Fn(EndpointId) -> usize,
-    ) -> Vec<WebhookHostAction> {
+    ) -> Vec<SettingsHostAction> {
         if !self.open {
             return Vec::new();
         }
-        self.collect_test_results(ui.ctx());
+        self.collect_test_results(ctx);
         self.collect_storage_events();
         let mut out = Vec::new();
         // The page fills the native Settings window itself: no egui window inside it, which
@@ -196,12 +199,12 @@ impl WebhookHost {
             tab_title_style: self.tab_titles.style(),
             now_ms,
         };
-        for action in window::show(ui, &mut self.state, &input) {
+        for action in view(&mut self.state, &input) {
             match action {
                 SettingsAction::Webhook(action) => {
                     self.apply_webhook(action, store, &endpoints, now_ms, &mut out);
                 }
-                SettingsAction::Storage(action) => self.apply_storage(action, ui.ctx()),
+                SettingsAction::Storage(action) => self.apply_storage(action, ctx),
                 SettingsAction::Snapshots(action) => self.apply_snapshots(action, store),
                 SettingsAction::Ai(crate::ui::settings::ai::AiAction::SavePrefs(prefs)) => {
                     if let Err(error) = prefs.save(store) {
@@ -225,28 +228,28 @@ impl WebhookHost {
                 }
                 SettingsAction::SetTheme(theme) => {
                     let _ = store.set_setting(crate::ui::theme::THEME_KEY, &theme);
-                    crate::ui::theme::apply(ui.ctx(), theme);
+                    crate::ui::theme::apply(ctx, theme);
                 }
                 SettingsAction::SetTabTitleStyle(style) => {
                     // The page draws under the store's lock, so it is written through it.
                     let _ = self.tab_titles.set(Some(store), style);
                 }
                 SettingsAction::UpdateNotifications(settings) => {
-                    out.push(WebhookHostAction::UpdateNotifications(settings));
+                    out.push(SettingsHostAction::UpdateNotifications(settings));
                 }
                 SettingsAction::RetryRegistration => {
-                    out.push(WebhookHostAction::RetryRegistration);
+                    out.push(SettingsHostAction::RetryRegistration);
                 }
                 SettingsAction::OpenLoginItems => {
-                    out.push(WebhookHostAction::OpenLoginItems);
+                    out.push(SettingsHostAction::OpenLoginItems);
                 }
                 SettingsAction::OpenNotificationSettings => {
-                    out.push(WebhookHostAction::OpenNotificationSettings);
+                    out.push(SettingsHostAction::OpenNotificationSettings);
                 }
-                SettingsAction::Mcp(action) => out.push(WebhookHostAction::Mcp(action)),
-                SettingsAction::QuitForUpdate => out.push(WebhookHostAction::QuitForUpdate),
+                SettingsAction::Mcp(action) => out.push(SettingsHostAction::Mcp(action)),
+                SettingsAction::QuitForUpdate => out.push(SettingsHostAction::QuitForUpdate),
                 SettingsAction::SetUpdateChannel(channel) => {
-                    updates.set_channel(store, ui.ctx(), channel);
+                    updates.set_channel(store, ctx, channel);
                 }
             }
         }
@@ -385,7 +388,7 @@ impl WebhookHost {
         store: &Store,
         endpoints: &[WebhookEndpoint],
         now_ms: i64,
-        out: &mut Vec<WebhookHostAction>,
+        out: &mut Vec<SettingsHostAction>,
     ) {
         match action {
             WebhookSettingsAction::Test { endpoint, message } => {
@@ -422,7 +425,7 @@ impl WebhookHost {
                     self.state.webhooks.save_failed(error.to_string());
                 } else {
                     self.secrets.remove(id);
-                    out.push(WebhookHostAction::EndpointDeleted(id));
+                    out.push(SettingsHostAction::EndpointDeleted(id));
                 }
             }
             WebhookSettingsAction::Save(result) => self.save(result, store, endpoints, now_ms),
@@ -490,172 +493,4 @@ impl WebhookHost {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::model::webhook::WebhookHttpMethod;
-    use crate::ui::webhook::settings::WebhookTestState;
-    use std::time::Instant;
-
-    #[test]
-    fn a_test_runs_off_the_ui_thread_and_its_result_lands_later() {
-        let store = Store::open_in_memory().unwrap();
-        let endpoint = WebhookEndpoint {
-            id: 7,
-            name: "Broken".into(),
-            description: String::new(),
-            url: "not a url".into(),
-            method: WebhookHttpMethod::Post,
-            headers: Vec::new(),
-            is_enabled: true,
-            created_at_ms: 0,
-            updated_at_ms: 0,
-        };
-        let mut host = WebhookHost::default();
-        let mut out = Vec::new();
-        host.apply_webhook(
-            WebhookSettingsAction::Test {
-                endpoint: Box::new(endpoint.clone()),
-                message: "{}".into(),
-            },
-            &store,
-            std::slice::from_ref(&endpoint),
-            0,
-            &mut out,
-        );
-        assert_eq!(host.tests.len(), 1, "the request is in flight, not awaited");
-
-        let ctx = egui::Context::default();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while !host.tests.is_empty() && Instant::now() < deadline {
-            host.collect_test_results(&ctx);
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(host.tests.is_empty());
-        assert!(matches!(
-            host.state.webhooks.test_state(7),
-            WebhookTestState::Failed { .. }
-        ));
-    }
-
-    #[test]
-    fn failed_delete_keeps_the_secret_and_reference_action() {
-        let path = std::env::temp_dir().join(format!(
-            "degenview-webhook-delete-{}.sqlite",
-            crate::model::watchlist::new_id()
-        ));
-        let store = Store::open(&path).expect("open");
-        let endpoint = WebhookEndpoint::new("Test", "https://example.com/hook", 1_000);
-        store
-            .replace_webhook_endpoints(std::slice::from_ref(&endpoint))
-            .expect("seed");
-        rusqlite::Connection::open(&path)
-            .expect("second connection")
-            .execute_batch(
-                "CREATE TRIGGER reject_webhook_delete BEFORE DELETE ON webhook_endpoint
-             BEGIN SELECT RAISE(ABORT, 'delete failed'); END;",
-            )
-            .expect("trigger");
-        let mut host = WebhookHost::default();
-        host.secrets
-            .set_secret(endpoint.id, "secret")
-            .expect("secret");
-        let mut actions = Vec::new();
-        host.apply_webhook(
-            WebhookSettingsAction::Delete(endpoint.id),
-            &store,
-            std::slice::from_ref(&endpoint),
-            1_000,
-            &mut actions,
-        );
-        assert!(actions.is_empty());
-        assert!(host.secrets.has_secret(endpoint.id));
-        assert_eq!(store.webhook_endpoints(), vec![endpoint]);
-        drop(store);
-        let _ = std::fs::remove_file(path);
-    }
-
-    /// The Settings window draws with the store locked, and every change on the Snapshots page
-    /// `WebhookHost::new` fills the rest of its fields from `Self::default()`, which builds a throwaway
-    /// `EditorThemeHost`. That must not change what the editors draw: at launch it replaced the saved
-    /// theme with Automatic before the first frame.
-    #[test]
-    fn building_the_host_leaves_the_editors_theme_alone() {
-        use crate::host::editor_theme::EditorThemeHost;
-        use crate::model::editor_theme::{BuiltInTheme, EditorPrefs, ThemeSelection};
-        use crate::service::editor_theme::fonts::FontCatalog;
-        use crate::ui::editor_appearance::{RestorePublished, current, of_built_in};
-        let _published = RestorePublished;
-        let store = Store::open_in_memory().expect("a store");
-        store
-            .set_editor_prefs(&EditorPrefs {
-                selected: ThemeSelection::BuiltIn(BuiltInTheme::Dracula),
-                ..EditorPrefs::default()
-            })
-            .unwrap();
-        let themes = EditorThemeHost::new(
-            store.load_editor_themes(),
-            FontCatalog::with_entries(Vec::new()),
-        );
-        assert!(Arc::ptr_eq(&current(), &of_built_in(BuiltInTheme::Dracula)));
-        let _host = WebhookHost::new(Default::default(), themes, Default::default());
-        assert!(
-            Arc::ptr_eq(&current(), &of_built_in(BuiltInTheme::Dracula)),
-            "WebhookHost::new replaced the saved editor theme"
-        );
-    }
-
-    /// is saved from there: saving must use that lock, not wait for it (which never ends).
-    #[test]
-    fn a_snapshot_setting_changed_in_settings_is_saved_without_locking_the_store_twice() {
-        use crate::model::chart::snapshot::{SELF_HOSTED, SnapshotPrefs, SnapshotScale};
-        let shared: crate::store::SharedStore = Arc::new(std::sync::Mutex::new(
-            Store::open_in_memory().expect("a store"),
-        ));
-        let snapshots = crate::host::snapshot::SnapshotHost::load(shared.clone());
-        let mut host = WebhookHost::new(snapshots.clone(), Default::default(), Default::default());
-        let (done, finished) = mpsc::channel();
-        let worker_store = shared.clone();
-        std::thread::spawn(move || {
-            let store = worker_store.lock().expect("the store");
-            for action in [
-                SnapshotsAction::IncludeTrading(true),
-                SnapshotsAction::Scale(SnapshotScale::X1),
-                SnapshotsAction::SetProvider(Some(SELF_HOSTED)),
-                SnapshotsAction::Save {
-                    provider: SELF_HOSTED,
-                    fields: std::collections::BTreeMap::from([(
-                        "host".to_owned(),
-                        "https://snap.example.com/up".to_owned(),
-                    )]),
-                    secrets: Default::default(),
-                },
-                SnapshotsAction::ForgetConsent,
-            ] {
-                host.apply_snapshots(action, &store);
-            }
-            let _ = done.send(host.state.snapshots.status.take());
-        });
-        let status = finished
-            .recv_timeout(Duration::from_secs(5))
-            .expect("the settings did not wait on a lock they already hold");
-        assert!(status.is_none_or(|status| !status.is_error));
-        let prefs = snapshots.prefs();
-        assert!(prefs.include_trading);
-        assert_eq!(prefs.scale, SnapshotScale::X1);
-        assert_eq!(prefs.provider.as_deref(), Some(SELF_HOSTED));
-        assert_eq!(
-            prefs
-                .settings_of(SELF_HOSTED)
-                .get("host")
-                .map(String::as_str),
-            Some("https://snap.example.com/up")
-        );
-        // It reached the database too, not only the host's memory.
-        let saved: SnapshotPrefs = shared
-            .lock()
-            .unwrap()
-            .setting(SnapshotPrefs::KEY)
-            .expect("a saved setting");
-        assert_eq!(saved, prefs);
-    }
-}
+mod tests;

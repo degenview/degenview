@@ -5,8 +5,8 @@ use super::now_ms;
 use super::tabs::TabContent;
 use super::window::alerts_viewport_id;
 use super::window::raise_viewport;
+use crate::host::settings::SettingsHost;
 use crate::host::tab::window::TabRequest;
-use crate::host::webhook::WebhookHost;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::model::alert::{AlertRuntimeCommand, AlertRuntimeCommandPayload};
 use crate::model::watchlist::new_id;
@@ -123,16 +123,16 @@ impl DegenViewApp {
                 AppAction::OpenPine => self.open_pine(ctx),
                 AppAction::OpenPineSource(target) => self.open_pine_source(ctx, &target),
                 AppAction::OpenAlpacaSettings => {
-                    self.open_settings_page(ctx, WebhookHost::open_alpaca);
+                    self.open_settings_page(ctx, SettingsHost::open_alpaca);
                 }
                 AppAction::OpenBrokerSettings => {
-                    self.open_settings_page(ctx, WebhookHost::open_brokers);
+                    self.open_settings_page(ctx, SettingsHost::open_brokers);
                 }
                 AppAction::OpenAiSettings => {
-                    self.open_settings_page(ctx, WebhookHost::open_ai);
+                    self.open_settings_page(ctx, SettingsHost::open_ai);
                 }
                 AppAction::OpenSnapshotSettings => {
-                    self.open_settings_page(ctx, WebhookHost::open_snapshots);
+                    self.open_settings_page(ctx, SettingsHost::open_snapshots);
                 }
                 AppAction::OpenAlerts => {
                     if self.alerts_open.swap(true, Ordering::AcqRel) {
@@ -181,7 +181,7 @@ impl DegenViewApp {
                     }
                 }
                 AppAction::OpenWebhookSettings => {
-                    if let Ok(mut host) = self.webhook_host.lock() {
+                    if let Ok(mut host) = self.settings_host.lock() {
                         host.open_webhooks();
                     }
                 }
