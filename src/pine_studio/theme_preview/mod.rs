@@ -9,7 +9,7 @@
 //! and one it warns about, which gives the error and warning colours something to colour.
 
 use super::editor::{EditorState, show};
-use super::model::CompileStatus;
+use crate::model::pine::script::CompileStatus;
 use crate::pine::compiler::{NoLibraries, compile};
 use crate::pine::syntax::token::Limits;
 use eframe::egui::{self, Ui, Vec2};

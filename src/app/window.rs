@@ -928,7 +928,7 @@ impl DegenViewApp {
                         .unwrap_or_default();
                     quote_coordinator.set_demand(
                         editor::ALERTS_WINDOW_QUOTE_OWNER,
-                        vec![state.asset().instrument.clone()],
+                        vec![state.draft.asset().instrument.clone()],
                         true,
                     );
                     state.feed_from_book(&quote_book, &rates);
@@ -936,7 +936,7 @@ impl DegenViewApp {
                     let now = now_ms();
                     match editor::show(ui.ctx(), state, &endpoints, now) {
                         Some(PriceAlertEditorOutcome::Save(alert)) => {
-                            let baseline = state.current_price();
+                            let baseline = state.draft.current_price();
                             commit_price_alert(
                                 &store,
                                 &notifier,

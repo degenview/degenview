@@ -6,6 +6,7 @@ pub mod drawings;
 pub mod editor_theme;
 pub mod fib;
 pub mod forecast;
+pub mod ids;
 pub mod indicators;
 pub mod market;
 pub mod mcp;
@@ -26,7 +27,8 @@ pub use chart::layout::{ChartColumn, ChartConfig, ChartLayout, LayoutSnapshot};
 pub use chart::persisted::PersistedChart;
 pub use chart::price_format::{PriceFormat, SmallPrices};
 pub use chart::replay::{
-    ClockCommand, ReplayEngine, ReplayInterval, ReplaySpeed, ReplayStatus, ReplayView,
+    ClockCommand, ReplayCommand, ReplayEngine, ReplayError, ReplayInterval, ReplaySpeed,
+    ReplayStart, ReplayStatus, ReplayView,
 };
 pub use chart::saved_view::SavedView;
 pub use chart::sync::ChartSyncSettings;

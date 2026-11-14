@@ -86,7 +86,7 @@ impl ChartCard {
             return true;
         }
         if args.source == DataSource::CoinMarketCap
-            && crate::service::market::cmc::is_latest(args.symbol)
+            && crate::model::market::cmc::is_latest(args.symbol)
         {
             if let Some(reading) = crate::service::market::cmc::latest_reading(args.symbol) {
                 let description =

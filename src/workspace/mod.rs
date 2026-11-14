@@ -3,7 +3,7 @@ use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::model::alert::{AlertCurrency, PriceAlert};
 use crate::model::chart::sync::SyncHub;
 use crate::model::tab::link::LinkColor;
-use crate::model::tab::title::TabChart;
+use crate::model::tab::title::{MAX_CUSTOM_TITLE_CHARS, TabChart};
 use crate::model::watchlist::text::ImportReport;
 use crate::model::watchlist::{EntryId, WatchlistInstrument, now_ms};
 use crate::model::{
@@ -43,9 +43,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use undo::{Snapshot, UndoEntry};
 
-/// How long a tab title the user typed may be.
-pub const MAX_CUSTOM_TITLE_CHARS: usize = 60;
-
 mod alerts;
 mod chart;
 mod drawing;
@@ -68,7 +65,6 @@ pub use chart::collection::{ChartSummary, ChartTypeError};
 pub use pine::{
     IndicatorError, IndicatorOutcome, PineChartTarget, PineInstanceView, RemoveOutcome,
 };
-pub use replay::{ReplayCommand, ReplayError, ReplayStart};
 // Named only by the MCP host's tests; it is the type of `PineInstanceView::run`.
 #[cfg(test)]
 pub use pine::PineRunView;

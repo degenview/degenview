@@ -6,10 +6,10 @@
 //! plain Rust and is tested against a fake bridge.
 
 use super::{
-    AccountChange, AccountStatus, ErrorKind, RawRecord, SendFailure, SentDeleted, SentSaved,
-    StagedChange, StagedOp, SyncTransport, TransportCommand, TransportEvent, ZoneEvent,
+    AccountChange, AccountStatus, ErrorKind, EventSink, RawRecord, SendFailure, SentDeleted,
+    SentSaved, StagedChange, StagedOp, SyncTransport, TransportCommand, TransportEvent,
+    TransportFactory, ZoneEvent,
 };
-use crate::host::sync::{EventSink, TransportFactory};
 use crate::service::system::entitlements::{icloud_environment, read_self};
 #[cfg(test)]
 use crate::sync::record::{RecordName, SyncRecord};

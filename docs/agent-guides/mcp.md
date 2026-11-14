@@ -71,12 +71,12 @@
 ## Tools
 
 - Price alerts: plan against `AlertHost` in `host/mcp/alert.rs`, enqueue `AlertRuntimeCommand`; never
-  write alert tables or reimplement `PriceAlertEditorState`. The snapshot is up to 1 s old and
-  shared per frame, so commands carry an `AlertPrecondition` (`Create`: id free, below the cap, no
-  identical alert; `Unchanged`: alert still matches the planned base) checked by
-  `AlertEngine::apply`. Refusals land in `rejected_commands` and surface as `CONFLICT` via
-  `McpCommand::AlertCommandOutcome`. Never use snapshot `revision` as a precondition (moves on every
-  quote and delivery). An unqueueable save is an error, never "queued".
+  write alert tables or reimplement the sheet's rules (build a `model::alert::draft::PriceAlertDraft`,
+  as the sheet does). The snapshot is up to 1 s old and shared per frame, so commands carry an
+  `AlertPrecondition` (`Create`: id free, below the cap, no identical alert; `Unchanged`: alert still
+  matches the planned base) checked by `AlertEngine::apply`. Refusals land in `rejected_commands`
+  and surface as `CONFLICT` via `McpCommand::AlertCommandOutcome`. Never use snapshot `revision` as
+  a precondition (moves on every quote and delivery). An unqueueable save is an error, never "queued".
 - Read-only script tools: `mcp/pine.rs` with `ScriptStore` and compiler on a worker; chart-private
   Pine state via `ChartWorkspace::pine_instance_views` on the app thread. Never invent reports or
   alert history.

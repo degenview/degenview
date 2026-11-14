@@ -347,11 +347,8 @@ impl Harness {
 }
 
 /// The script library a harness serves, so tests never read the user's own scripts.
-pub fn script_store_at(root: &std::path::Path) -> crate::pine_studio::library::store::ScriptStore {
-    crate::pine_studio::library::store::ScriptStore::new(
-        root.join("Scripts"),
-        root.join("ScriptMetadata"),
-    )
+pub fn script_store_at(root: &std::path::Path) -> crate::store::scripts::ScriptStore {
+    crate::store::scripts::ScriptStore::new(root.join("Scripts"), root.join("ScriptMetadata"))
 }
 
 impl Drop for Harness {
@@ -449,7 +446,7 @@ fn stub_app(
             workspace_id,
             command,
         } => {
-            use crate::workspace::{ReplayCommand, ReplayStart};
+            use crate::model::{ReplayCommand, ReplayStart};
             if workspace_id != 1 {
                 return Err(McpError::NotFound("No such workspace".into()));
             }
@@ -2295,7 +2292,7 @@ const PINE_ALL: &[Permission] = &[
 const GOOD_SCRIPT: &str = "//@version=6\nindicator(\"Good\", overlay=true)\nlen = input.int(20, \"Length\", minval=1)\nplot(ta.sma(close, len))\n";
 
 fn seed_script(harness: &Harness, name: &str, source: &str) -> String {
-    use crate::pine_studio::model::ScriptType;
+    use crate::model::pine::script::ScriptType;
     let mut store = script_store_at(&harness.scripts_root);
     store
         .create(name, ScriptType::Indicator, Some(source), true)
@@ -2722,7 +2719,7 @@ const EDIT_V2: &str = "//@version=6\nindicator(\"E\")\nplot(open)\n";
 const EDIT_V3: &str = "//@version=6\nindicator(\"E\")\nplot(high)\n";
 
 fn sha(text: &str) -> String {
-    crate::pine_studio::library::store::hash_source(text)
+    crate::store::scripts::hash_source(text)
 }
 
 #[test]
@@ -3155,7 +3152,7 @@ fn a_saved_script_reaches_the_app_with_checked_inputs() {
 
 #[test]
 fn an_unusable_script_or_input_never_reaches_the_app() {
-    use crate::pine_studio::model::ScriptType;
+    use crate::model::pine::script::ScriptType;
     let harness = Harness::start(&[("c1", "tok", APPLY_ONLY)]);
     let url = harness.url();
     let good = seed_script(&harness, "Good", GOOD_SCRIPT);

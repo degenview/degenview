@@ -15,13 +15,13 @@ use super::settings::templates::{TemplateAction, TemplateState};
 use crate::model::chart::price_format::MAX_DECIMALS;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::pine::instance::{PineInstance, VisualOrder};
+use crate::model::pine::script::{LocalScript, ScriptType};
 use crate::model::{
     BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, ChartAppearance, DataSource, EMA_PERIODS,
     IndicatorConfig, PriceFormat, RSI_OVERBOUGHT, RSI_OVERSOLD, RSI_PERIOD, SUPERTREND_MULTIPLIER,
     SUPERTREND_PERIOD, SmallPrices,
 };
 use crate::pine_studio::drawer;
-use crate::pine_studio::model::{LocalScript, ScriptType};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;

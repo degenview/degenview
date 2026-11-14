@@ -2,11 +2,11 @@ use super::chart::source_slug;
 use crate::host::alert::AlertHost;
 use crate::mcp::bridge::{AlertCommandOutcome, AlertUpdate, McpError, NewAlert};
 use crate::mcp::types::{AlertInfo, AlertsResult};
+use crate::model::alert::draft::{Direction, PriceAlertDraft};
 use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
 };
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
-use crate::ui::alert::editor::{Direction, PriceAlertEditorState};
 use crate::workspace::ChartWorkspace;
 
 /// Alerts one `degenview_list_price_alerts` call returns.
@@ -142,26 +142,36 @@ pub fn plan_create_alert(
     }
     let asset =
         ChartWorkspace::alert_asset_for(&request.instrument.symbol, request.instrument.source);
-    let mut editor = PriceAlertEditorState::new(asset, None, Some(request.currency));
-    editor.direction = if request.crosses_above {
+    let mut draft = PriceAlertDraft::new(asset, None, Some(request.currency));
+    draft.direction = if request.crosses_above {
         Direction::Above
     } else {
         Direction::Below
     };
-    editor.target = request.target_text.clone();
-    editor.frequency = request.frequency;
-    editor.note = request.note.clone();
-    editor.feed_from_book(book, rates);
-    let alert = editor.result(now_ms).ok_or_else(|| {
+    draft.target = request.target_text.clone();
+    draft.frequency = request.frequency;
+    draft.note = request.note.clone();
+    feed(&mut draft, book, rates);
+    let alert = draft.result(now_ms).ok_or_else(|| {
         McpError::InvalidArgument("target_price must be a positive number".into())
     })?;
     if let Some(existing) = host.find_identical(&alert) {
         return Ok(CreatePlan::Existing(Box::new(info_for(host, existing))));
     }
     Ok(CreatePlan::New {
-        baseline: editor.current_price(),
+        baseline: draft.current_price(),
         alert: Box::new(alert),
     })
+}
+
+/// Prices the draft from the shared quote book, as the sheet does every frame.
+fn feed(
+    draft: &mut PriceAlertDraft,
+    book: &WatchlistQuoteBook,
+    rates: &std::collections::HashMap<AlertCurrency, f64>,
+) {
+    let quote = book.get_by_key(&draft.asset().key());
+    draft.feed_quote(quote.as_ref(), rates);
 }
 
 pub enum UpdatePlan {
@@ -207,32 +217,32 @@ pub fn plan_update_alert(
             "A percentage alert can only have its frequency and note changed".into(),
         ));
     }
-    let mut editor = PriceAlertEditorState::new(
+    let mut draft = PriceAlertDraft::new(
         existing.asset.clone(),
         Some(existing.clone()),
         Some(existing.currency),
     );
     if let Some(currency) = request.currency {
-        editor.set_currency(currency);
+        draft.set_currency(currency);
     }
     if let Some(above) = request.crosses_above {
-        editor.direction = if above {
+        draft.direction = if above {
             Direction::Above
         } else {
             Direction::Below
         };
     }
     if let Some(target) = &request.target_text {
-        editor.target = target.clone();
+        draft.target = target.clone();
     }
     if let Some(frequency) = request.frequency {
-        editor.frequency = frequency;
+        draft.frequency = frequency;
     }
     if let Some(note) = &request.note {
-        editor.note = note.clone();
+        draft.note = note.clone();
     }
-    editor.feed_from_book(book, rates);
-    let mut alert = editor.result(now_ms).ok_or_else(|| {
+    feed(&mut draft, book, rates);
+    let mut alert = draft.result(now_ms).ok_or_else(|| {
         McpError::InvalidArgument("target_price must be a positive number".into())
     })?;
     let settings_changed = alert.condition != existing.condition
@@ -253,7 +263,7 @@ pub fn plan_update_alert(
         )));
     }
     Ok(UpdatePlan::Change {
-        baseline: editor.current_price(),
+        baseline: draft.current_price(),
         alert: Box::new(alert),
         base: Box::new(existing),
     })

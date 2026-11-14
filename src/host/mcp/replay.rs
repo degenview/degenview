@@ -1,6 +1,7 @@
 use crate::mcp::bridge::McpError;
 use crate::mcp::replay::{self, ReplayResult};
-use crate::workspace::{ChartWorkspace, ReplayCommand, ReplayError};
+use crate::model::{ReplayCommand, ReplayError};
+use crate::workspace::ChartWorkspace;
 
 pub fn replay_state(workspace: &ChartWorkspace) -> ReplayResult {
     replay::replay_result(

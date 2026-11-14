@@ -8,10 +8,10 @@
 use super::Cmd;
 use super::inputs::{self, InputEdit, InputValues, InputsStore};
 use super::library::registry::LibraryRegistry;
-use super::model::ScriptType;
 use super::workspace::PreviewInput;
 use crate::format;
 use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::pine::script::ScriptType;
 use crate::model::{DataSource, IndicatorConfig, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{InputSchema, InputValue, VisualOutput};

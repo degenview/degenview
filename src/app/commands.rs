@@ -13,7 +13,7 @@ use crate::model::watchlist::new_id;
 use crate::native_bridge::{self, NativeCommand};
 use crate::pine_studio::ExitReason;
 use crate::pine_studio::editor::EditAction;
-use crate::pine_studio::library::store::hash_source;
+use crate::store::scripts::hash_source;
 use crate::ui::window::tab_bar;
 use eframe::egui;
 use std::sync::atomic::Ordering;

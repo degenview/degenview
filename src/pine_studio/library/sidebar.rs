@@ -2,7 +2,7 @@
 //! inline rename, the context menu, the New Script button and the footer link. Ported from the
 //! sidebar of `PineStudioView` and its `ScriptRow`.
 
-use crate::pine_studio::model::{LocalScript, ScriptId, ScriptType};
+use crate::model::pine::script::{LocalScript, ScriptId, ScriptType};
 use crate::pine_studio::{Cmd, PineStudio};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;

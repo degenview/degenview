@@ -8,9 +8,9 @@ use eframe::egui;
 
 use super::ProfileKey;
 use super::ui::Action;
+use crate::model::pine::script::{CompileStatus, ScriptType};
 use crate::pine::profile::ProfileConfig;
 use crate::pine_studio::library::registry::LibraryRegistry;
-use crate::pine_studio::model::{CompileStatus, ScriptType};
 use crate::pine_studio::{Cmd, PineStudio};
 use crate::ui::shortcut;
 use crate::ui::theme;
@@ -32,7 +32,7 @@ impl PineStudio {
         let open = self.open.as_ref()?;
         let run = self.preview.run_identity(
             &open.editor.source,
-            crate::pine_studio::model::now_ms(),
+            crate::model::pine::script::now_ms(),
             theme::is_light(),
         );
         Some(ProfileKey::new(&open.id, &open.editor.source, run))
@@ -112,7 +112,7 @@ impl PineStudio {
         let source = open.editor.source.clone();
         let Some(feed) = self
             .preview
-            .debug_feed(crate::pine_studio::model::now_ms(), theme::is_light())
+            .debug_feed(crate::model::pine::script::now_ms(), theme::is_light())
         else {
             self.profiler
                 .wait("The preview chart has no bars yet. Wait for it to load.");

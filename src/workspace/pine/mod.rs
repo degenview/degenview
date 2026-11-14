@@ -292,7 +292,7 @@ impl ChartWorkspace {
             Action::AddBundled(indicator) => self
                 .add_pine_instance_to(
                     chart_id,
-                    crate::pine_studio::indicators::script_id(indicator),
+                    crate::model::pine::bundled::script_id(indicator),
                     indicator.name,
                     indicator.source,
                     &HashMap::new(),
@@ -769,7 +769,7 @@ mod tests {
         let b = workspace
             .add_chart_for(&InstrumentId::new(DataSource::Binance, "ETHUSDT"), &ctx)
             .chart_id;
-        let macd = crate::pine_studio::indicators::find("macd").unwrap();
+        let macd = crate::model::pine::bundled::find("macd").unwrap();
 
         assert!(workspace.apply_indicator_action(b, &Action::AddBundled(macd)));
         let scripts = |workspace: &ChartWorkspace, id: u64| -> Vec<Option<String>> {

@@ -3,8 +3,8 @@
 
 use std::time::{Duration, Instant};
 
+use crate::model::pine::script::CompileStatus;
 use crate::pine_studio::debug::studio_tests::Rig;
-use crate::pine_studio::model::CompileStatus;
 use crate::pine_studio::*;
 use eframe::egui;
 

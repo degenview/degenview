@@ -71,7 +71,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     fresh, a failure retried after 30 seconds and shown as nothing); Kalshi cannot rank its markets,
     so with it chosen only the topics show. Predictions are never kept as recents.
   - **Dashboards** (`dashboards.rs`) is a list, not a search: "Market indices" (the four CoinMarketCap
-    gauges, `cmc::CHART_TYPES`) and "Portfolio" (the four card kinds, `CardKind::ALL`, for the portfolio
+    gauges, `model::market::cmc::CHART_TYPES`) and "Portfolio" (the four card kinds, `CardKind::ALL`, for the portfolio
     the pull-down chooses). The box filters titles and descriptions. An index replaces or adds a chart
     like a market; a card only ever adds (`Output::AddCard`, a card cannot take a chart's place), and
     a check marks a card or index already on the tab (`Env::cards_on_tab`). Without a portfolio the

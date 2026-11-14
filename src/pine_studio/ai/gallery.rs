@@ -285,7 +285,7 @@ fn gallery_of_the_assistant() {
                     .rig
                     .manager
                     .preview
-                    .debug_feed(crate::pine_studio::model::now_ms(), false);
+                    .debug_feed(crate::model::pine::script::now_ms(), false);
                 let tools = ToolBox::new(Mode::Edit, &tools_base, super::host::diagnostics_of)
                     .with_bars(feed);
                 let request = ChatRequest {
@@ -379,7 +379,7 @@ fn gallery_of_the_assistant() {
                 .rig
                 .manager
                 .preview
-                .debug_feed(crate::pine_studio::model::now_ms(), false);
+                .debug_feed(crate::model::pine::script::now_ms(), false);
             let plan_tools =
                 ToolBox::new(Mode::Plan, &tools_base, super::host::diagnostics_of).with_bars(feed);
             let plan_request = ChatRequest {
