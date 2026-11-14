@@ -66,9 +66,9 @@ impl ChartWorkspace {
 
     pub(in crate::workspace) fn set_autosave(&mut self, enabled: bool) {
         match self.update_active_view(|view| view.autosave = enabled.then_some(true)) {
-            Ok(()) => self.autosave = AutosaveState::default(),
+            Ok(()) => self.layout.autosave = AutosaveState::default(),
             Err(error) => {
-                self.layout_error = Some(format!("Couldn’t change Autosave: {error}"));
+                self.layout.error = Some(format!("Couldn’t change Autosave: {error}"));
             }
         }
     }
@@ -81,20 +81,20 @@ impl ChartWorkspace {
         dirty: bool,
         enabled: bool,
     ) {
-        let mut state = std::mem::take(&mut self.autosave);
+        let mut state = std::mem::take(&mut self.layout.autosave);
         let step = state.step(dirty, enabled, || self.layout_snapshot(), Instant::now());
-        self.autosave = state;
+        self.layout.autosave = state;
         match step {
             AutosaveStep::Nothing => {}
             AutosaveStep::Wait(remaining) => ctx.request_repaint_after(remaining),
-            AutosaveStep::Save => self.autosave.failed = !self.save_active(false),
+            AutosaveStep::Save => self.layout.autosave.failed = !self.save_active(false),
         }
     }
 
     /// Writes a pending autosave now, before the layout changes or the app quits. False means
     /// the layout is still dirty on disk.
     pub fn flush_autosave(&mut self) -> bool {
-        self.autosave.due = None;
+        self.layout.autosave.due = None;
         let enabled = self.autosave_enabled();
         if !(self.is_dirty() || (enabled && self.drawings_dirty())) || !enabled {
             return true;
@@ -102,7 +102,7 @@ impl ChartWorkspace {
         if self.save_active(true) {
             true
         } else {
-            self.autosave.failed = true;
+            self.layout.autosave.failed = true;
             false
         }
     }

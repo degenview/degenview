@@ -10,6 +10,7 @@ use crate::model::paper::{
 };
 use crate::store::sync::Elsewhere;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit;
 use crate::ui::paper::account_sheet::{
     AccountSheetOutcome, PaperAccountSheetState, show as show_account_sheet,
 };
@@ -141,7 +142,7 @@ pub struct PaperPanel {
     /// changed. Filtering and cloning the whole history every frame cost far more than drawing it.
     cached_view: Option<std::sync::Arc<PanelView>>,
     /// The folder dialog and the writing behind it, on a worker thread.
-    export_job: Option<std::sync::mpsc::Receiver<ExportOutcome>>,
+    export_job: Option<crate::service::work_queue::Pending<ExportOutcome>>,
     /// Set by the header menu and the footer; taken at the end of the frame.
     export_requested: bool,
 }
@@ -234,14 +235,14 @@ impl PaperPanel {
                 }
             }
         }
-        divider(ui);
-        self.poll_export(ui.ctx());
+        kit::panel_divider(ui);
+        self.poll_export();
         self.show_notice(ui);
         if let Some(elsewhere) = account_id.and_then(|id| host.owned_elsewhere(id)) {
             owner_note(ui, elsewhere);
         }
         if let Some(error) = host.last_error() {
-            error_banner(ui, &error.message());
+            error_banner(ui, &error.to_string());
         }
 
         let mut table_actions = Vec::new();
@@ -253,7 +254,7 @@ impl PaperPanel {
         } else {
             let strip = crate::trading::paper::stats::stats(metrics.as_ref(), currency);
             stats_strip::show(ui, Some(&strip));
-            divider(ui);
+            kit::panel_divider(ui);
             let context = TableContext {
                 currency,
                 // The offset now, as the portfolio tables use: rows from the other side of a
@@ -349,32 +350,27 @@ impl PaperPanel {
             ));
             return;
         }
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let ctx = ctx.clone();
-        crate::service::work_queue::SNAPSHOTS.submit(move || {
-            let outcome =
-                crate::service::system::file_dialog::choose_folder("Export").and_then(|folder| {
-                    let Some(folder) = folder else {
-                        return Ok(None);
-                    };
-                    for (name, text) in export.files() {
-                        crate::service::system::file_dialog::write_text(&folder.join(name), text)?;
-                    }
-                    Ok(Some((folder, export.summary())))
-                });
-            let _ = sender.send(outcome);
-            ctx.request_repaint();
+        let job = crate::service::work_queue::SNAPSHOTS.start(Some(ctx), move || {
+            crate::service::system::file_dialog::choose_folder("Export").and_then(|folder| {
+                let Some(folder) = folder else {
+                    return Ok(None);
+                };
+                for (name, text) in export.files() {
+                    crate::service::system::file_dialog::write_text(&folder.join(name), text)?;
+                }
+                Ok(Some((folder, export.summary())))
+            })
         });
-        self.export_job = Some(receiver);
+        self.export_job = Some(job);
         self.notice = None;
     }
 
-    fn poll_export(&mut self, ctx: &egui::Context) {
-        let Some(job) = &self.export_job else {
+    fn poll_export(&mut self) {
+        let Some(job) = &mut self.export_job else {
             return;
         };
-        match job.try_recv() {
-            Ok(Ok(Some((folder, summary)))) => {
+        match job.poll() {
+            Some(Ok(Some((folder, summary)))) => {
                 let name = folder.file_name().map_or_else(
                     || folder.display().to_string(),
                     |n| n.to_string_lossy().into(),
@@ -384,15 +380,14 @@ impl PaperPanel {
                 )));
                 self.export_job = None;
             }
-            Ok(Ok(None)) => self.export_job = None,
-            Ok(Err(message)) => {
+            Some(Ok(None)) => self.export_job = None,
+            Some(Err(message)) => {
                 self.notice = Some(PanelNotice::error(message));
                 self.export_job = None;
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                ctx.request_repaint_after(std::time::Duration::from_millis(200));
-            }
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.export_job = None,
+            // Still open: the job repaints when it ends.
+            None if job.is_pending() => {}
+            None => self.export_job = None,
         }
     }
 
@@ -417,13 +412,8 @@ impl PaperPanel {
             return;
         };
         let text = match failures.len() {
-            1 => first.message(),
-            more => format!(
-                "{} failed: {} (and {} more)",
-                more,
-                first.message(),
-                more - 1
-            ),
+            1 => first.to_string(),
+            more => format!("{more} failed: {first} (and {} more)", more - 1),
         };
         self.notice = Some(PanelNotice::error(text));
         host.clear_error();
@@ -622,7 +612,7 @@ impl PaperPanel {
                     // retry or cancel instead of losing what they typed.
                     Err(error) => {
                         if let Some(sheet) = self.account_sheet.as_mut() {
-                            sheet.submit_error = Some(error.message());
+                            sheet.submit_error = Some(error.to_string());
                         }
                         host.clear_error();
                     }
@@ -660,14 +650,6 @@ impl PaperPanel {
     }
 }
 
-/// A one-pixel hairline across the panel.
-fn divider(ui: &mut egui::Ui) {
-    let (line, _) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-    ui.painter()
-        .rect_filled(line, 0.0, crate::ui::theme::separator());
-}
-
 fn owner_note(ui: &mut egui::Ui, elsewhere: &Elsewhere) {
     egui::Frame::new()
         .inner_margin(egui::Margin::symmetric(12, 6))
@@ -694,10 +676,9 @@ fn bulk_failure_text<T>(
         String::new()
     };
     Some(format!(
-        "{verb} {} of {} {noun}. {}{more}",
+        "{verb} {} of {} {noun}. {first}{more}",
         results.len() - failures.len(),
         results.len(),
-        first.message()
     ))
 }
 

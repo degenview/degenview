@@ -6,8 +6,8 @@
 //! TradingView library, a local library has neither, so both are accepted and ignored. The name
 //! is the script's file name, or failing that the title in its `library("…")` declaration.
 
+use crate::model::pine::script::{LocalScript, ScriptType};
 use crate::pine::compiler::LibraryResolver;
-use crate::pine_studio::model::{LocalScript, ScriptType};
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 

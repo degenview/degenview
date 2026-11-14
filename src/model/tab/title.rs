@@ -12,6 +12,9 @@ use crate::model::DataSource;
 use crate::model::watchlist;
 use crate::model::watchlist::quote::{Direction, Freshness, WatchlistQuote};
 
+/// How long a tab title the user typed may be.
+pub const MAX_CUSTOM_TITLE_CHARS: usize = 60;
+
 /// How a chart tab names itself (Settings ▸ Appearance ▸ Tabs). TradingView documents a
 /// layout name as an alternative to the symbol, set in its Settings, with "reset to default";
 /// the price block and the choices around it are this app's own.

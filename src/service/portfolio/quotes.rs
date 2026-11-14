@@ -5,6 +5,7 @@
 //! projection can touch the network, so it runs off the UI thread and publishes an immutable
 //! snapshot when every historical/current conversion is ready.
 
+use crate::lock::lock;
 use crate::model::InstrumentId;
 use crate::model::portfolio::accounting::{holdings, unique_assets};
 use crate::model::portfolio::history::DAY_MS;
@@ -16,7 +17,7 @@ use crate::model::watchlist::quote::Freshness;
 use crate::service::market::fx_rates::{Conversion, FxRateService};
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// How long the first valuation waits for every market to report before it publishes with
@@ -53,7 +54,7 @@ impl PortfolioFxRates for FxRateService {
         to: PortfolioCurrency,
         on: Option<i64>,
     ) -> Result<Conversion, String> {
-        FxRateService::conversion(self, from, to, on).map_err(|error| error.message())
+        FxRateService::conversion(self, from, to, on).map_err(|error| error.to_string())
     }
 
     fn conversions(
@@ -64,7 +65,7 @@ impl PortfolioFxRates for FxRateService {
     ) -> HashMap<i64, Result<Conversion, String>> {
         FxRateService::conversions(self, from, to, dates)
             .into_iter()
-            .map(|(date, result)| (date, result.map_err(|error| error.message())))
+            .map(|(date, result)| (date, result.map_err(|error| error.to_string())))
             .collect()
     }
 }
@@ -207,11 +208,7 @@ impl PortfolioQuoteFeed {
         };
         let book_revision = self.inner.book.revision();
         let start_worker = {
-            let mut state = self
-                .inner
-                .state
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let mut state = lock(&self.inner.state);
             let same_basis = state.basis.as_ref() == Some(&basis);
             let unchanged = same_basis && state.book_revision == book_revision;
             let expired_while_waiting = !state.settle_expired
@@ -262,12 +259,7 @@ impl PortfolioQuoteFeed {
     }
 
     pub fn state(&self) -> PortfolioQuoteState {
-        self.inner
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .published
-            .clone()
+        lock(&self.inner.state).published.clone()
     }
 
     pub fn release(&self, owner: u64) {
@@ -278,7 +270,7 @@ impl PortfolioQuoteFeed {
 fn run_projections(inner: &Inner) {
     loop {
         let request = {
-            let mut state = inner.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut state = lock(&inner.state);
             match state.pending.take() {
                 Some(request) => request,
                 None => {
@@ -296,7 +288,7 @@ fn run_projections(inner: &Inner) {
             inner.fx.as_ref(),
             now_ms,
         );
-        let mut state = inner.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut state = lock(&inner.state);
         if state.generation == generation {
             // An error is news too; so is a valuation that differs from the one on screen.
             let mut changed = true;

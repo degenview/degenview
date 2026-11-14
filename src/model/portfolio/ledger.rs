@@ -23,7 +23,7 @@ impl PortfolioLedger {
             .map(|portfolio| portfolio.id)
             .chain(snapshot.transactions.iter().map(|tx| tx.id))
             // Ids at or above the legacy limit belong to records that arrived from another Mac.
-            .filter(|id| *id < crate::sync::record::ids::LEGACY_LIMIT)
+            .filter(|id| *id < crate::model::ids::LEGACY_LIMIT)
             .max()
             .map_or(1, |max| max + 1);
         Self { snapshot, next_id }
@@ -399,15 +399,12 @@ mod tests {
             .create_portfolio("Mine", PortfolioCurrency::Usd)
             .unwrap();
         let mut snapshot = ledger.into_snapshot();
-        snapshot.portfolios[0].id = crate::sync::record::ids::GLOBAL_BASE | (9 << 24) | 1;
+        snapshot.portfolios[0].id = crate::model::ids::GLOBAL_BASE | (9 << 24) | 1;
         let mut ledger = PortfolioLedger::new(snapshot);
         let local = ledger
             .create_portfolio("Local", PortfolioCurrency::Usd)
             .unwrap();
-        assert!(
-            local < crate::sync::record::ids::LEGACY_LIMIT,
-            "minted {local}"
-        );
+        assert!(local < crate::model::ids::LEGACY_LIMIT, "minted {local}");
     }
 
     fn asset(key: &str) -> PortfolioAsset {

@@ -1,7 +1,7 @@
 use crate::model::Kline;
 use crate::service::{
-    EventInfo, EventStats, MarketSource, SearchResult, downsample, effective_span_days,
-    line_chart_point_count, replace_last_price, whole_dollars,
+    EventInfo, EventStats, MarketSource, ProviderError, SearchResult, downsample,
+    effective_span_days, line_chart_point_count, replace_last_price, whole_dollars,
 };
 use serde_json::Value;
 
@@ -53,7 +53,12 @@ fn pm_window(interval: &str) -> (String, i64) {
 }
 
 impl MarketSource for Polymarket {
-    fn fetch_klines(&self, symbol: &str, interval: &str, limit: u32) -> Result<Vec<Kline>, String> {
+    fn fetch_klines(
+        &self,
+        symbol: &str,
+        interval: &str,
+        limit: u32,
+    ) -> Result<Vec<Kline>, ProviderError> {
         let (window, fidelity) = pm_window(interval);
         let url = format!(
             "{CLOB_BASE}/prices-history?market={symbol}&interval={window}&fidelity={fidelity}"
@@ -62,10 +67,8 @@ impl MarketSource for Polymarket {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| format!("Network error: {error}"))?;
-        let value: Value =
-            serde_json::from_str(&body).map_err(|error| format!("Data error: {error}"))?;
+        )?;
+        let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
 
         let mut points: Vec<(i64, f64)> = value
             .get("history")
@@ -94,7 +97,9 @@ impl MarketSource for Polymarket {
             })
             .collect();
         if candles.is_empty() {
-            return Err("No price history for this market in this range".to_owned());
+            return Err(ProviderError::other(
+                "No price history for this market in this range",
+            ));
         }
 
         let thinned = downsample(&candles, limit as usize);
@@ -104,7 +109,7 @@ impl MarketSource for Polymarket {
         })
     }
 
-    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, String> {
+    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         let q = query.trim().to_owned();
         if q.is_empty() {
             return Ok(Vec::new());
@@ -115,10 +120,8 @@ impl MarketSource for Polymarket {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| format!("Network error: {error}"))?;
-        let value: Value =
-            serde_json::from_str(&body).map_err(|error| format!("Data error: {error}"))?;
+        )?;
+        let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
 
         let events = value
             .get("events")
@@ -233,15 +236,16 @@ fn event_stats(event: &Value) -> EventStats {
 }
 
 /// The most-traded live events of the last 24 hours, flattened like search results.
-pub fn trending(limit: usize) -> Result<Vec<SearchResult>, String> {
+pub fn trending(limit: usize) -> Result<Vec<SearchResult>, ProviderError> {
     let url = format!(
         "{GAMMA_BASE}/events?active=true&closed=false&order=volume24hr&ascending=false&limit={limit}"
     );
-    let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
-            .map_err(|error| format!("Network error: {error}"))?;
-    let events: Vec<Value> =
-        serde_json::from_str(&body).map_err(|error| format!("Data error: {error}"))?;
+    let body = crate::service::net::http::get_text(
+        &url,
+        &[],
+        crate::service::net::http::Retry::Transient,
+    )?;
+    let events: Vec<Value> = serde_json::from_str(&body).map_err(ProviderError::data)?;
     Ok(events.iter().flat_map(event_results).collect())
 }
 

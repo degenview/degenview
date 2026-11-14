@@ -11,6 +11,9 @@ source → Lexer → Parser → Compiler → CompiledProgram → Session
 The compiler folds constants, collects inputs, validates structure/types, and links libraries.
 `Session` interprets bars; builtin families route to focused pure modules. The strategy broker lives
 inside per-bar state, so realtime rollback restores orders, positions, and trades too.
+`pine/runtime/session/` holds the interpreter one concern per file: building a session (`build`),
+running bars (`running`), `expressions`, `statements`, `calls` with the plain-value builtins
+(`scalar`), the debugger's and profiler's `hooks`, and the `bookkeeping` between ticks and bars.
 
 `host::pine::chart::ChartRuns` runs the scripts applied to a chart: the card hands it, each frame,
 the bars it draws, the `syminfo`, theme and visible range, and its instances; every visible instance
@@ -36,7 +39,10 @@ frozen copy of the preview's bars and talks to the UI through bounded channels. 
 ## Pine Studio
 
 Scripts are file-backed (`Scripts/*.pine` plus `ScriptMetadata/`) with stable ids in extended
-attributes. The manager owns the sidebar, editor, preview split, and Inputs/Report/Problems drawer.
+attributes. The manager owns the sidebar, editor, preview split, and Inputs/Report/Problems drawer;
+the views queue `Cmd`s that it runs after the frame (`pine_studio/commands.rs`), the open script
+and edits made outside the app are `open_script.rs`, and the Swift app's scripts and preview inputs
+come across through `migrate_swift.rs`.
 Edits recompile for diagnostics. Drafts remain separate from saved source so invalid work cannot
 replace the active saved result. The editor resolves names itself for go to definition and
 rename (`pine_studio/editor/symbols.rs`, token-based so it survives half-typed code) and supports

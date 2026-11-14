@@ -15,7 +15,7 @@ use crate::ui::icons::{self, Icon};
 use crate::ui::kit::time_text;
 use crate::ui::kit::{Tone, time_text::relative_time};
 use crate::ui::settings::mcp::capsule;
-use crate::ui::settings::window::{card, divider, section};
+use crate::ui::settings::window::{card, section};
 use crate::ui::{
     kit::{self, date_picker, sheet},
     theme,
@@ -492,7 +492,7 @@ pub fn preview(ui: &mut Ui, state: &mut ActivityState, input: &ActivityInput) {
                 ui.spacing_mut().item_spacing.y = 8.0;
                 for (index, entry) in input.entries.iter().take(PREVIEW_ROWS).enumerate() {
                     if index > 0 {
-                        divider(ui);
+                        kit::divider(ui);
                     }
                     row(ui, entry, input, false);
                 }
@@ -957,7 +957,7 @@ fn list(
                 ui.spacing_mut().item_spacing.y = 8.0;
                 for (index, entry) in view.page_rows().iter().enumerate() {
                     if index > 0 {
-                        divider(ui);
+                        kit::divider(ui);
                     }
                     row(ui, entry, input, full_stamp);
                 }

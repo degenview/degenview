@@ -14,7 +14,7 @@ inventory.
 | `native_bridge.rs` | AppKit menus, window behavior, cursor, Keychain/accessibility boundaries |
 | `host/update/mod.rs` | Update checks, install progress, and restart state |
 | `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
-| `format.rs`, `platform.rs` | Leaf helpers every layer imports: number/price text and per-platform wording |
+| `format.rs`, `platform.rs`, `lock.rs` | Leaf helpers every layer imports: number/price text, per-platform wording, and locks that survive a poisoning panic |
 
 Feature hosts in `host/` (one directory per domain, see `host/` layout below) bridge pure engines,
 persistence, workers, and UI. `host/alert/runtime.rs` is the alert loop shared by the GUI fallback and
@@ -25,15 +25,36 @@ the login-item agent (`bin/degenview-alert-agent.rs`).
 `workspace/mod.rs` keeps `ChartWorkspace`'s state, constructors and the per-frame `ui` entry point.
 Every other concern is a child module in `workspace/` that adds an `impl ChartWorkspace` block; a
 child sees the root's private fields, and anything another child calls is `pub(in crate::workspace)`.
-The children are grouped by domain, like `model/` and `ui/`:
+
+The root holds the charts and their grid (charts, columns, focus, timeframe, sync), shared handles
+(store, watchlist store, quote book and coordinator, card environment, snapshot settings), and the
+state of views that already have a type of their own (the pickers and popovers, the chart menu's
+`ContextState`, `SnapshotState`, `EmptyPageCache`, Tab Linking's `LinkState`). Each other concern is
+an owned part, a struct whose fields only its own module (or directory) sees; the rest of the
+workspace calls its methods:
+
+| Part | Field | Module | Owns |
+| --- | --- | --- | --- |
+| `DrawingTools` | `tools` | `drawing/tools` | The armed tool and Zoom In, the strip's options (`DrawingPrefs`) and the templates store, hiding, the selection, the copied style, the properties dialog and Remove all's question |
+| `LayoutSession` | `layout` | `layout/session` | The open layout's id and name, the saved fingerprint and drawings (dirty state, merging another Mac's edit), the name prompt, the pending open, the error alert, the autosave debounce |
+| `UndoHistory` | `history` | `undo` | The undo and redo stacks, and the runs (a drawing's restyles, an overlay's colour drag) that collapse into one step; `record` is the one way to take a step |
+| `ReplayState` | `replay` | `replay` | The replay clock, its step timer, the rebase after a timeframe change, the date sheet |
+| `WatchlistPane` | `watchlist_pane` | `watchlist` | Whether the sidebar shows, its view state, notices, import report and export, the list the symbol picker adds to, a row's open-in-new-tab request |
+| `TradeSide` | `trade` | `trade/` | The trading hub, the order sheet and orders panel and whether they show, the venue, the broker and paper panels |
+| `AlertUi` | `alerts` | `alerts` | The bell's unseen count, the requested and open price-alert sheet, its FX rates |
+
+`DrawingTools` and `LayoutSession` keep their fields `pub(super)`, visible to their directory
+(`drawing/`, `layout/`) and nowhere else. An operation that spans parts (opening a layout clears the
+undo history; an edit bumps the layout's drawings version) stays on `ChartWorkspace` and calls each
+part. The children are grouped by domain, like `model/` and `ui/`:
 
 | Directory | Owns |
 | --- | --- |
 | `chart/` | `mod.rs`: one chart's market data, fetching, refresh cadence, older-history paging; `collection` (add, replace, focus, remove, summaries for MCP), `live` (the live Binance feed), `settings` (the chart settings window), `symbol_picker`, `snapshot`, `context/` (the right-click menu) |
 | `overlay/` | Compared markets: their candles fetched once per market (`mod.rs`) and the undoable add, edit and remove (`actions`) |
-| `drawing/` | `mod.rs`: drawing properties, templates, locking, merging another Mac's drawings; `content` (where a placed picture comes from), `links` (Post cards), `tool_rail` (the tool rail and its grouped tiles) |
-| `layout/` | Saved layouts: persisted form, dirty state, open/save/rename/delete (`mod.rs`), and the autosave debounce (`autosave`) |
-| `trade/` | The tab's trading side: `broker`, `paper` (quotes, portfolio cards, chart orders) and `sheet` (the order sheet's venue and actions) |
+| `drawing/` | `mod.rs`: drawing properties, templates, locking, merging another Mac's drawings; `tools` (`DrawingTools`), `content` (where a placed picture comes from), `links` (Post cards), `tool_rail` (the tool rail and its grouped tiles) |
+| `layout/` | Saved layouts: persisted form, dirty state, open/save/rename/delete (`mod.rs`), the tab's `LayoutSession` (`session`) and the autosave debounce (`autosave`) |
+| `trade/` | The tab's trading side: `TradeSide` and its panels (`mod.rs`), `broker`, `paper` (quotes, portfolio cards, chart orders) and `sheet` (the order sheet's venue and actions) |
 | `pine/` | Scripts and indicators on a chart, and the views the app and MCP take (`mod.rs`); the Pine Logs pane (`logs/`) |
 | `tab_link/` | A tab's side of Tab Linking |
 | `empty_page/` | The new-tab page's slow reads (recents, layouts, Alpaca key) in `mod.rs`, and the week of closes behind its sparklines (`trends`) |
@@ -45,10 +66,10 @@ The children are grouped by domain, like `model/` and `ui/`:
 | --- | --- |
 | `model/` | Alerts, charts/canvas/types, drawings, indicators, instruments, layouts, paper/portfolio engines, replay, tabs, watchlists, and webhooks |
 | `pine/` | Lexer → parser → compiler → session, builtins, strategies, alerts, drawings, libraries, `request.*`, and corpus tests |
-| `pine_studio/` | File-backed scripts, editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
+| `pine_studio/` | The script library (registry, names, sidebar), editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
 | `host/` | The stateful seams: one host per feature, bridging engines, stores, workers, and views (one directory per domain, see below) |
 | `service/` | Market providers, HTTP/WebSocket work, updater, caches, images/icons, FX, notifications, files, Keychain, quotes, webhooks, and login-item registration (see the layout below) |
-| `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, and webhook persistence |
+| `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, webhook persistence, and the file-backed script library (`scripts/`) |
 | `ui/` | egui screens, one directory per domain (see `ui/` layout below), plus the shared `kit/`, `theme/` and `icons` |
 | `mcp/` | Loopback HTTP transport, auth, shared permission state, app bridge, tools, and wire types |
 | `sync/` | iCloud Sync: policy (what syncs), records, merge, outbox, id tagging and the CloudKit transport (bridge in `native/swift`); no UI |
@@ -65,13 +86,14 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 
 | Directory | Holds |
 | --- | --- |
-| `alert/`, `webhook/` | Price and Pine alerts (engine, feed, line, messages, notifications) and webhook endpoints and policy |
+| `alert/`, `webhook/` | Price and Pine alerts (engine, feed, line, messages, notifications, the `draft` the sheet and MCP build) and webhook endpoints and policy |
 | `paper/`, `portfolio/`, `watchlist/`, `broker/` | Paper trading, the portfolio ledger and its statistics, watchlists, and the shared live-trading values |
-| `chart/` | One chart: appearance, canvas, viewport, price scale, kind, layout, templates, context menu, linked-chart sync, snapshots, replay, constructed bars (`synthetic/`) |
-| `market/` | Instruments, sources, timeframes, candles, history paging, prediction-market series |
+| `chart/` | One chart: appearance, canvas, viewport, price scale, kind, layout, templates, context menu, linked-chart sync, snapshots, replay (the clock and what an agent asks of it), constructed bars (`synthetic/`) |
+| `market/` | Instruments, sources, timeframes, candles, history paging, prediction-market series, CoinMarketCap chart keys and titles (`cmc`) |
 | `drawings/`, `annotation/`, `pattern/`, `fib/`, `forecast/` | Drawings and their tools: the shared model and styles, text/image/post/table content, patterns and Elliott waves, Fibonacci and Gann, positions and measurers |
-| `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart |
+| `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart, script value types (`script`) and the Pine indicators bundled with the app (`bundled/`) |
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
+| `ids/` | The id space engines mint into (`LEGACY_LIMIT`, `GLOBAL_BASE`); sync tags it in `sync::record::ids` |
 
 Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, `model::ChartType`).
 A new module goes in the matching directory; a new domain gets its own directory and a row here.
@@ -89,7 +111,7 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 
 | Directory | Holds |
 | --- | --- |
-| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), `live` feed, `candles` shaping, symbol `catalog`, `search_rank`, `fx_rates` |
+| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), their `error` (`ProviderError`), `live` feed, `candles` shaping, symbol `catalog`, `search_rank`, `fx_rates` |
 | `net/` | Shared transport: `http`, `rate_limit`, `ws`, `multipart` |
 | `cache/` | `mod.rs` the candle cache; `disk`, `lookup` and `control` (what Settings ▸ Storage does) |
 | `annotation/` | What drawings' pictures and Post cards need: `asset_host`, `ingest`, `link_fetch` |
@@ -105,40 +127,73 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 beside it: `alert/` (with `runtime`), `broker/`, `editor_theme/`, `mcp/` (with `confirmation`), `paper/`,
 `pine/` (with `chart/`, the runs of a chart's scripts and their workers; `batch`, scripts run once
 each; `subscription`), `portfolio/` (with `card` and `import_flow`), `settings/` (the Settings
-window's controller: it builds the page's input and applies its actions), `snapshot/`, `sync/`,
-`tab/` (`window`, `title`, `link`), `trading/` (the hub), `update/`. Hosts draw nothing: the views
-that sit on them live in `ui/` (`ui::portfolio::tab`, `ui::paper::panel`), and views run nothing:
-the chart card hands its bars to `host::pine::chart` and draws what comes back.
+window's controller: it builds the page's input and applies its actions), `snapshot/`, `sync/` (with
+`scripts`, the script sink over the file store), `tab/` (`window`, `title`, `link`), `trading/` (the
+hub), `update/`. Hosts draw nothing: the views that sit on them live in `ui/` (`ui::portfolio::tab`,
+`ui::paper::panel`), and views run nothing: the chart card hands its bars to `host::pine::chart` and
+draws what comes back.
 
 `store/` has one file per single-table domain store (`alert`, `asset_store`, `drawing_template`,
-`identity`, `paper`, `pine`, `portfolio`, `watchlist`, `webhook`) and a directory once a store has a
-second file: `chart/` (`template/`, `saved_view`), `editor_theme/`, `mcp/` (with `audit`), `sync/`.
+`identity`, `paper`, `pine`, `webhook`) and a directory once a store has a second file (its
+`tests.rs` counts): `chart/` (`template/`, `saved_view`), `editor_theme/`, `mcp/` (with `audit`),
+`portfolio/`, `watchlist/`, `scripts/` (the user's Pine scripts as `.pine` files with their metadata
+beside them, not SQLite) and `sync/`. `sync/` keeps one file per table or concern: `schema`, `state`
+(the identity singleton), `track` (the write hooks), `outbox`, `entity`, `inbox`, `conflicts`,
+`alert`, `paper`, `raw` (remote applies) and `reconcile`, with the queueing primitives they share in
+`mod.rs`.
 
 `sync/`:
 
 | Directory | Holds |
 | --- | --- |
-| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge`, `outbox`, `apply/`, `account` |
-| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project`, `validate`, `paper`, `scripts` |
-| `transport/` | The CloudKit boundary: `mod.rs` the trait and events, `native/` (the Swift bridge), `mock` (tests) |
+| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge/`, `outbox`, `account`, and `apply/` (the batch and dispatch in `mod.rs`, one file per record kind: `simple`, `asset`, `script`, `alert`, `layout`, `drawing`, `paper`, `portfolio`; inbox retries in `retry`) |
+| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project/`, `validate/`, `paper`, `scripts` |
+| `transport/` | The CloudKit boundary: `mod.rs` the trait, its factory, the event sink and events, `native/` (the Swift bridge), `mock` (tests) |
 | `tests/` | End-to-end sync tests, one file per concern |
 
-`mcp/` keeps `mod.rs`, `bridge`, `state`, `types`, `confirm`, `audit`, `tools` (the chart tools and the
-router), `pine`, `replay`, `snapshot` and `tests/` at its root. Tools are grouped by domain: `chart/`
-(`control`, `data`, `drawings`), `indicator/`, `market/`, `paper/`, `portfolio/`, `session_stats/`, where
-`mod.rs` holds the pure result types and `tools.rs` the tool router. `transport/` holds the HTTP surface
+`mcp/` keeps `mod.rs`, `bridge` (the queue and `McpCommand`, one variant per domain), `state`,
+`types` (results and their word enums), `confirm`, `audit`, `tools` (names, permissions, the `Caller`
+extractor, the routers put together and the handler that guards them), `replay`, `snapshot` and
+`tests/` at its root. Tools are grouped by domain: `alert/`, `chart/` (`control`, `data`, `drawings`),
+`indicator/`, `market/`, `paper/`, `pine/`, `portfolio/`, `session_stats/`, where `mod.rs` holds the
+domain's command enum (what it hands the app thread and whether each command asks first) and its
+pure result types, and `tools.rs` the tool router (`pine/` also keeps `scripts`, `edit`, `inputs`
+and `apply`, the script views the tools run on a worker). `transport/` holds the HTTP surface
 and what guards it: `auth`, `cancel`, `limits`, `seal`, `tls`, `tls_protect`.
 
 `app/` splits `impl DegenViewApp` by concern, each child adding an `impl` block (like `workspace/`):
-`tabs` (tab registry, open, close, quotes, links), `window` (the native windows and their viewports,
-Settings and alert windows), `commands` (native menu commands, quit), `mcp` (the MCP command loop and
-confirmation), `pine` (Pine Studio and scripts), `alert` (the alert runtime), `background` (broker
-notices, editor themes, sync), `session` (the saved session) and `tests`. A helper used by one child
-stays private to it; what two children share is `pub(super)`.
+`tabs` (open, close, show, tab quotes, Tab Linking), `window` (the tab windows and Settings, and their viewports), `commands`
+(native menu commands, quit), `mcp` (the MCP command loop, which routes each command to its domain, and confirmation), `pine` (Pine Studio and
+scripts), `alert/` (the alert coordinator and the Alerts window), `background` (broker notices,
+editor themes, sync), `session` (the saved session) and `tests`. A helper used by one child stays
+private to it; what two children share is `pub(super)`.
 
-`host/mcp/` keeps `McpHost` (listener lifecycle, settings, credentials, activity log) in `mod.rs`. What
-the app thread runs for a tool is grouped by domain like `mcp/`: `chart`, `pine`, `alert`, `paper`,
-`portfolio`, `watchlist`, `replay`, `snapshot`, plus `confirmation`; its tests are in `tests/`.
+The root keeps the shared hosts every window is handed (store, watchlist store, quote book and
+coordinator, portfolio, paper, broker and trading hosts, Settings, snapshots, editor themes, updates,
+sync, Pine subscriptions), the notifier and the window callbacks' action queue. Each other concern is
+an owned part whose fields only its module sees. A deferred viewport callback must be `'static`, so
+what a window shares with the app is a part's cheap `Clone` handle, not the app's fields:
+
+| Part | Field | Module | Owns | Handle the windows hold |
+| --- | --- | --- | --- | --- |
+| `TabState` | `tabs` | `tabs` | The open `TabSlot`s, the next tab id, Tab Linking's hub, what the tab windows were last repainted for (quotes, title style, broker, links); opening, closing, showing and the per-frame quote and link ticks | `SharedTabs`: the window host, the id→content registry, the focused tab, the title and link hosts |
+| `AlertCoordinator` | `alerts` | `alert/` | The alert host, the runtime this window runs, the FX feed (`alert/fx`), the banner, the Alerts window (`alert/window`: its open flag, and the centre, editor, Webhooks… sheet and chart datasets behind one lock) | `AlertRegistration` (`alert/registration`: notifier, background service, runtime control; commit an alert, retry), `SharedFxRates` |
+| `McpState` | `mcp` | `mcp` | The MCP host, the clients' questions, the orders placed and pictures being made between requests | `McpQuestions` |
+| `SessionState` | `session` | `session` | When the session was last written, what was written, why the write failed | `SessionSaveError` |
+
+Cross-part work (a tick that reads the tabs and runs the alerts, an MCP command on a chart) stays on
+`DegenViewApp` and calls each part. Where locks nest, the split kept the order they were taken in:
+the Settings window takes its host, then the store, then the alert host, the MCP host, the Pine host
+or the registration, one at a time; the Alerts window takes the store, then its own state, then the
+alert, Pine or Settings host; the registration takes its runtime control before the background
+service. Never take one of these locks again while holding it: the frame and every window callback
+run on the main thread, so that deadlocks at once.
+
+`host/mcp/` keeps `McpHost` (listener lifecycle, settings, credentials, activity log) and the
+`McpTabs` view of the app's tabs in `mod.rs`. What the app thread runs for a tool is grouped by domain
+like `mcp/`: `chart`, `pine`, `alert`, `paper`, `portfolio`, `watchlist`, `replay`, `snapshot`, each with
+a `run` for its commands and a `describe` for the confirmation step, plus `confirmation` (the
+questions and the summaries); its tests are in `tests/`.
 
 `trading/` keeps the trait, drafts and previews at its root and one directory per backend family:
 `broker/` (`backend`, `commands`) and `paper/` (`backend`, `stats`).
@@ -156,9 +211,9 @@ beside the code they exercise.
 | `syntax/` | `token`, `lexer`, `parser`, `ast`, `traversal` |
 | `check/` | The type checker and the rules that need no types: names, structure, declarations, identifiers, ignored features, `callables` |
 | `compiler/` | `compiler` (source → `CompiledProgram`), `program`, the builtin `registry`, `symbol_catalog` |
-| `runtime/` | The interpreter: `session`, `state`, `value`, `support`, `containers`, `execution`, call routing and binding, user methods, `request.security` |
+| `runtime/` | The interpreter: `session/` (`build`, `running`, `expressions`, `statements`, `calls`, `scalar`, `hooks`, `bookkeeping`), `state`, `value`, `support`, `containers`, `execution`, call routing and binding, user methods, `request.security` |
 | `builtins/` | Constants and colour math (`mod.rs`), then one child per namespace: `alert`, `array`, `map`, `matrix`, `math`, `strings`, `number_format`, `regex_lite`, `ta`, `misc`, `market_values` |
-| `outputs/`, `inputs/` | Chart output types with `visuals`, `drawings`, `style_overrides`; how an `input.*` call is read |
+| `outputs/`, `inputs/` | Chart output types with `visuals`, `drawings/` (dispatch and binding in `mod.rs`; `names`, `coordinates`, `create`, `table`, `mutate`), `style_overrides`; how an `input.*` call is read |
 | `strategy/`, `footprint/`, `logs/`, `time/` | The strategy model, `broker` and `strategy.*`; `request.footprint()`; Pine Logs; calendar, time zones, sessions |
 | `debug/`, `profile/`, `tests/`, `corpus/` | The debugger, the profiler, end-to-end and benchmark tests, the corpus data |
 
@@ -167,10 +222,10 @@ beside the code they exercise.
 | Directory | Holds |
 | --- | --- |
 | `ai/`, `debug/`, `profiler/` | The assistant, the debugger and the profiler: their state, host, panel, gallery pictures and `studio_tests` |
-| `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites` |
-| `library/` | Where scripts live: `store`, `registry`, `sidebar`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
+| `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites`; the view itself is `mod.rs` (`show`, the find bar, undoable edits) with `state`, `text_view`, `completion_view`, `signature_view`, `gutter/` (`breakpoints`, `changes`, `profile`), `indent_guides`, `assists` and `status` |
+| `library/` | The script library around its file store (`store::scripts`): `registry`, `sidebar`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
 | `drawer/` | The drawer under the preview: `problems/`, `logs/`, the intro, `bottom_bar`, `tab_chrome` |
-| root | `mod.rs` (the manager), `model`, `preview`, `inputs`, `workspace`, `sheets`, `indicators/`, `theme_preview/` |
+| root | `mod.rs` (the manager) with `commands` (`Cmd` and running it), `open_script`, `migrate_swift`; `preview/` (`state`, `source`, `fetch`, `chart`, `market_picker`), `inputs`, `workspace`, `sheets`, `theme_preview/` |
 
 ## `ui/` layout
 
@@ -181,15 +236,15 @@ picture test sits beside it (`broker/panel_gallery.rs`). A helper used by severa
 
 | Directory | Holds |
 | --- | --- |
-| `chart/` | The chart card (`card/`), canvas and series rendering, chart menus, scale menu, indicator strip, table view, object tree, session stats, chart settings with templates and overlays (`settings/`), the symbol and indicator pickers, and the pieces the symbol picker shares with the portfolio pickers (`picker_kit/`: recents, suggestions, artwork, result rows, search box, header art) |
-| `drawing/` | Drawings: pure geometry (`geometry/`, with `fib`, `line`, `annotation`, `pattern`), the interaction layer (`layer/`), the properties panel (`properties/`), `render`, and the text/note/table content tools (`content/`) |
+| `chart/` | The chart card (`card/`, one child per concern: `header`, `body` and `frame`, `paint`, `crosshair`, `price_scale`, `view`, `scripts`, ...), canvas and series rendering, chart menus, scale menu, indicator strip, table view, object tree, session stats, chart settings with templates and overlays (`settings/`, one child per page: `appearance`, `indicators`, `scripts/`, `canvas`, `compare`, ...), the symbol and indicator pickers, and the pieces the symbol picker shares with the portfolio pickers (`picker_kit/`: recents, suggestions, artwork, result rows, search box, header art) |
+| `drawing/` | Drawings: pure geometry (`geometry/`, with `fib`, `line`, `annotation`, `pattern`), the interaction layer (`layer/`), the properties panel (`properties/`, one child per page plus the shared `rows` and the saved `templates`), `render`, and the text/note/table content tools (`content/`) |
 | `alert/`, `webhook/`, `mcp/` | Alert center, editors, banner and chart lines; webhook editor, picker and settings; MCP activity and confirmation |
 | `paper/`, `broker/`, `trade/` | Paper trading screens (the panel under a chart in `panel/`), live trading screens, and what both share (the order sheet and its fields) |
-| `portfolio/`, `watchlist/`, `replay/` | The Portfolio tab (`tab/`: its bar, pages and import sheets) and its cards, the watchlist sidebar, the replay bar, date sheet and overlay |
+| `portfolio/`, `watchlist/`, `replay/` | The Portfolio tab (`tab/`: its bar, pages and import sheets), its Overview (`overview/`) and Statistics (`statistics/`) pages and the blocks both draw with (`blocks`), and its cards; the watchlist sidebar (`sidebar/`: `header`, `content`, `detail`, `menus`, `modals`); the replay bar, date sheet and overlay |
 | `pine/` | Pine output on a chart, report, style view, settings popover, Pine Logs (`logs_view/`) and the script catalog |
-| `settings/` | The Settings window (`window`, run by `host::settings`) and one file per page; the Pine Studio page owns the font picker and theme editor |
-| `workspace/`, `window/` | Workspace chrome (toolbar, tool rail, layouts, the new-tab page in `empty_state/`, chart linking, snapshot menu) and window chrome (tab strip, tab-link menu, update indicator) |
-| `kit/`, `theme/` | Shared widgets (`kit`, with `bar` (the flat top bar every tab kind shares), `dialog`, `sheet`, `popover`, `icon_tabs`, `color_picker`, `date_picker`, `split`, `source_logo`, `art`, ...) and colours and fonts |
+| `settings/` | The Settings window (`window`, run by `host::settings`) and one file per page, a directory for a large one (`mcp/`: `server`, `security`, `credentials`, `clients`, `permissions_sheet`, `controls`); the Pine Studio page owns the font picker and theme editor |
+| `workspace/`, `window/` | Workspace chrome (toolbar, tool rail, layouts, the new-tab page in `empty_state/`, chart linking, snapshot menu) and window chrome (tab strip in `tab_bar/`: `geometry`, `menu`, `rename`, `paint`; tab-link menu, update indicator) |
+| `kit/`, `theme/` | Shared widgets, one file per family and all re-exported from `kit` (`kit::push_button`, not `kit::button::push_button`): `text` (type scale, galleys), `palette`, `pill`, `ticker_icon` (market logos, monograms), `tab_bar`, `menu/` (rows, `fit`, `picker`), `button`, `field`, `form` (switch, segmented, stepper, colour well), `card` (frame, divider), `page` (empty state, footer bar, notice card), `confirm`, `autosave`; plus the modules called by path: `bar` (the flat top bar every tab kind shares), `dialog`, `sheet`, `popover`, `icon_tabs`, `color_picker`, `date_picker`, `split`, `source_logo`, `time_text`, `art`, ... And colours and fonts (`theme`) |
 | root | `mod.rs` and the three single-file foundations: `icons`, `shortcut`, `accessibility` (plus `editor_appearance/`) |
 
 A new screen goes in its domain's directory; a new domain gets a directory and a row here.

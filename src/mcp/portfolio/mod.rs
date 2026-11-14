@@ -11,6 +11,7 @@
 pub mod tools;
 
 use crate::mcp::chart::data::iso;
+use crate::mcp::confirm::{Confirm, Gate};
 use crate::model::portfolio::{
     Portfolio, PortfolioCurrency, PortfolioHolding, PortfolioTransaction, PortfolioTransactionType,
 };
@@ -19,6 +20,30 @@ use crate::model::{DataSource, InstrumentId};
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::collections::BTreeMap;
+
+/// What the portfolio tools hand the app thread, run in `host::mcp::portfolio`. All reads.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PortfolioCommand {
+    List,
+    /// The ledger side of a holdings read: one portfolio, or every unarchived one.
+    GetHoldings {
+        portfolio_id: Option<u64>,
+    },
+    ListTransactions {
+        portfolio_id: Option<u64>,
+        asset: Option<String>,
+        offset: usize,
+        limit: usize,
+    },
+}
+
+impl Confirm for PortfolioCommand {
+    fn gate(&self) -> Gate {
+        match self {
+            Self::List | Self::GetHoldings { .. } | Self::ListTransactions { .. } => Gate::Free,
+        }
+    }
+}
 
 pub const MAX_TRANSACTION_PAGE: usize = 200;
 pub const DEFAULT_TRANSACTION_PAGE: usize = 50;

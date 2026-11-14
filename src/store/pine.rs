@@ -63,11 +63,11 @@ impl Store {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::model::alert::pine::PineAlertState;
 
-    fn subscription(id: u64) -> PineAlertSubscription {
+    pub(in crate::store) fn subscription(id: u64) -> PineAlertSubscription {
         PineAlertSubscription {
             id,
             chart_id: 1,

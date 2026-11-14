@@ -139,10 +139,10 @@ pub fn show(
     ui.spacing_mut().item_spacing.y = 0.0;
     if !state.embedded {
         title(ui, state, scripts, &mut actions);
-        divider(ui);
+        kit::divider(ui);
     }
     toolbar(ui, state, feed.as_ref(), &mut actions);
-    divider(ui);
+    kit::divider(ui);
     ui.spacing_mut().item_spacing.y = spacing;
     match feed {
         None => no_script(ui),
@@ -152,11 +152,6 @@ pub fn show(
         }
     }
     actions
-}
-
-fn divider(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(rect, 0.0, kit::hairline());
 }
 
 /// The docked pane's title, with the choice of script when the chart has more than one.

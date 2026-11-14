@@ -9,7 +9,7 @@
 use crate::platform;
 use crate::service::cache::disk::{CacheStats, ClearOutcome, Usage};
 use crate::ui::icons::Icon;
-use crate::ui::settings::window::{card, divider, row, section, status_message};
+use crate::ui::settings::window::{card, row, section, status_message};
 use crate::ui::{kit, settings::card, theme};
 use eframe::egui;
 
@@ -146,12 +146,12 @@ pub fn body(ui: &mut egui::Ui, state: &mut StorageState, actions: &mut Vec<Stora
                     }
                 };
                 value_row(ui, "Logos", &images);
-                divider(ui);
+                kit::divider(ui);
                 value_row(ui, "Lookups", &lookups);
-                divider(ui);
+                kit::divider(ui);
                 value_row(ui, "Total", &total);
                 if let Some(location) = &location {
-                    divider(ui);
+                    kit::divider(ui);
                     row(ui, "Location", |ui| {
                         let label = format!("Show in {}", platform::file_manager());
                         if kit::push_button(ui, None, &label, true).clicked() {

@@ -3,6 +3,7 @@
 //! the store. Prices are `f64` (the Swift app used `Decimal`); crossings compare the
 //! quote's own digits, so rounding at the display edge never moves a trigger.
 
+pub mod draft;
 pub mod engine;
 pub mod feed;
 pub mod line;

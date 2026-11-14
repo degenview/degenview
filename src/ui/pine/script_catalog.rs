@@ -4,8 +4,8 @@
 //! list is read at most every [`REFRESH`] and shared by every chart and the settings sheet, and a
 //! caller asks for it only while a menu or the Scripts page is open.
 
-use crate::pine_studio::library::store::ScriptStore;
-use crate::pine_studio::model::{LocalScript, ScriptType};
+use crate::model::pine::script::{LocalScript, ScriptType};
+use crate::store::scripts::ScriptStore;
 use eframe::egui;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

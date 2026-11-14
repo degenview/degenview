@@ -5,6 +5,7 @@
 //! Both run on `service::work_queue` threads and report over `mpsc` channels the UI drains each
 //! frame, like the quote feed.
 
+use crate::lock::lock;
 use crate::model::DataSource;
 use crate::model::Kline;
 use crate::model::portfolio::accounting::{holdings, unique_assets};
@@ -19,7 +20,7 @@ use crate::service::portfolio::quotes::PortfolioFxRates;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 /// The most daily bars one request asks for; Binance caps a page at 1000.
 const MAX_BARS: u32 = 1_000;
@@ -397,7 +398,7 @@ impl IntradayFeed {
         now_ms: i64,
     ) -> Vec<PortfolioSnapshot> {
         let bucket = now_ms.div_euclid(crate::model::portfolio::history::INTRADAY_STEP_MS);
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut state = lock(&self.state);
         let up_to_date = state
             .computed_for
             .as_ref()
@@ -436,14 +437,13 @@ fn refresh(
     now_ms: i64,
     bucket: i64,
 ) {
-    let lock = || shared.lock().unwrap_or_else(PoisonError::into_inner);
     let replayable = !request.portfolios.is_empty()
         && request
             .portfolios
             .iter()
             .all(|(_, base)| *base == PortfolioCurrency::Usd);
     if !replayable {
-        let mut state = lock();
+        let mut state = lock(shared);
         state.points.clear();
         state.computed_for = Some((request.clone(), bucket));
         state.working = false;
@@ -454,7 +454,7 @@ fn refresh(
         .into_iter()
         .filter(|asset| asset.quote_currency == PortfolioCurrency::Usd)
         .filter(|asset| {
-            let state = lock();
+            let state = lock(shared);
             !state.in_flight.contains(&asset.key)
                 && state
                     .bars
@@ -462,12 +462,12 @@ fn refresh(
                     .is_none_or(|(fetched, _)| now_ms - fetched >= INTRADAY_FRESH_MS)
         })
         .collect();
-    lock()
+    lock(shared)
         .in_flight
         .extend(wanted.iter().map(|asset| asset.key.clone()));
     let fetched = fetch_all(&wanted, intraday_bars);
     {
-        let mut state = lock();
+        let mut state = lock(shared);
         for asset in &wanted {
             state.in_flight.remove(&asset.key);
         }
@@ -479,7 +479,7 @@ fn refresh(
         }
     }
 
-    let bars: HashMap<String, IntradayBars> = lock()
+    let bars: HashMap<String, IntradayBars> = lock(shared)
         .bars
         .iter()
         .map(|(key, (_, bars))| (key.clone(), bars.clone()))
@@ -504,7 +504,7 @@ fn refresh(
         1 => series.into_iter().next().unwrap_or_default(),
         _ => sum_intraday(&series),
     };
-    let mut state = lock();
+    let mut state = lock(shared);
     state.points = points;
     state.computed_for = Some((request.clone(), bucket));
     state.working = false;

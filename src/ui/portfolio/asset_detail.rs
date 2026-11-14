@@ -9,9 +9,9 @@ use crate::ui::chart::picker_kit::{art, widgets};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::kit::sheet;
+use crate::ui::portfolio::blocks::{StatCard, tone_or};
 use crate::ui::portfolio::charts;
 use crate::ui::portfolio::grid::{self, Col, MENU_RESERVE, Navigation, RowContext, TableSpec};
-use crate::ui::portfolio::overview::{StatCard, tone_or};
 use crate::ui::portfolio::sheet_parts::card_background;
 use crate::ui::portfolio::transactions::{
     paint_date_cell, paint_type_capsule, paint_type_tick, quantity_sign, type_name,

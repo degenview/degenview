@@ -5,6 +5,7 @@
 //! stateful bridge that runs them on `work_queue::UPDATES`, remembers the outcome, and exposes it
 //! as a plain `UpdateView` both UIs draw. Nothing here is persisted: a launch starts unchecked.
 
+use crate::lock::lock;
 use crate::service::update::check::{self, Channel, Release, UpdateOutcome};
 use crate::service::update::install::{self, Prepared, Progress, Stage};
 use crate::service::work_queue;
@@ -12,7 +13,7 @@ use crate::store::{SharedStore, Store};
 use eframe::egui;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -228,7 +229,7 @@ impl UpdateHost {
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
-        self.shared.lock().unwrap_or_else(PoisonError::into_inner)
+        lock(&self.shared)
     }
 
     /// The view for a window that draws it this frame: remembers the window, so a change that

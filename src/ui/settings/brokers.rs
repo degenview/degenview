@@ -12,9 +12,9 @@
 //! A pasted private key is never left on screen: once entered the field shows only its length.
 //! Rules are plain functions; the egui code only draws them.
 
+use crate::service::work_queue::Pending;
 use crate::ui::kit::loading::LoadingIndicator;
 use std::collections::{BTreeMap, HashMap};
-use std::sync::mpsc::{Receiver, TryRecvError};
 
 use degenview_brokers::{
     Broker, BrokerError, BrokerSnapshot, Credentials, Descriptor, FieldKind, Permissions, Session,
@@ -26,8 +26,9 @@ use crate::host::broker::{BrokerHost, Connection, Operation};
 use crate::host::trading::TradingHub;
 use crate::ui::icons::Icon;
 use crate::ui::kit::Tone;
-use crate::ui::settings::api_keys::{StatusMessage, destructive_button, field};
-use crate::ui::settings::window::{divider, status_message};
+use crate::ui::kit::{destructive_button, field};
+use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::window::status_message;
 use crate::ui::{kit, theme};
 
 /// What the Brokers page remembers between frames.
@@ -49,7 +50,7 @@ struct BrokerForm {
     values: BTreeMap<String, String>,
     status: Option<StatusMessage>,
     /// The key being checked, and the answer when it comes.
-    checking: Option<(Credentials, Receiver<Result<Session, BrokerError>>)>,
+    checking: Option<(Credentials, Pending<Result<Session, BrokerError>>)>,
     confirming_disconnect: bool,
     /// A save or a removal of the key that has not answered yet (the secret store may prompt).
     operation: Option<(KeyOperation, Operation)>,
@@ -266,7 +267,7 @@ fn broker_card(
     }
     if is_open {
         inner.add_space(12.0);
-        divider(inner);
+        kit::divider(inner);
         inner.add_space(14.0);
         inner.spacing_mut().item_spacing.y = 10.0;
         if let Some(detail) = snapshot.as_deref().and_then(status_detail) {
@@ -495,7 +496,7 @@ fn connected_body(
         if let Some(permissions) = permissions {
             for row in permission_rows(&permissions) {
                 if !first {
-                    divider(ui);
+                    kit::divider(ui);
                 }
                 first = false;
                 let (icon, color, word) = match (row.granted, row.warn) {
@@ -563,7 +564,7 @@ fn trading_choices(
         ];
         for (index, (label, value)) in rows.into_iter().enumerate() {
             if index > 0 {
-                divider(ui);
+                kit::divider(ui);
             }
             switch_row(ui, label, value);
         }
@@ -820,7 +821,7 @@ fn poll_operation(descriptor: &'static Descriptor, form: &mut BrokerForm) {
     });
 }
 
-/// Starts checking the typed key, off the interface thread.
+/// Starts checking the typed key on a worker.
 fn start_check(host: &BrokerHost, descriptor: &'static Descriptor, form: &mut BrokerForm) {
     let credentials = credentials_from(descriptor, &form.values);
     form.status = None;
@@ -864,15 +865,15 @@ fn poll_check(
     descriptor: &'static Descriptor,
     form: &mut BrokerForm,
 ) {
-    let Some((_, receiver)) = &form.checking else {
+    let Some((_, check)) = &mut form.checking else {
         return;
     };
-    let answer = match receiver.try_recv() {
-        Ok(answer) => answer,
-        Err(TryRecvError::Empty) => return,
-        Err(TryRecvError::Disconnected) => Err(BrokerError::invalid(
+    let Some(answer) = check.poll_or(|| {
+        Err(BrokerError::invalid(
             "The check stopped unexpectedly. Try again.",
-        )),
+        ))
+    }) else {
+        return;
     };
     let Some((credentials, _)) = form.checking.take() else {
         return;

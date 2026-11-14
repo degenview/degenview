@@ -1,4 +1,5 @@
 use super::*;
+use crate::model::ReplayStatus;
 use crate::model::pine::logs_view::{Levels, SearchOptions};
 use crate::pine::logs::LogLevel;
 use crate::store::watchlist::WatchlistStore;
@@ -326,11 +327,11 @@ fn asking_for_a_drag_over_bars_arms_the_chart_and_cancelling_or_closing_disarms_
 fn a_replay_start_and_a_drag_over_bars_never_wait_together() {
     let (mut workspace, chart, ids) = rig();
     workspace.open_pine_logs(chart, Some(ids[0]));
-    workspace.replay.begin_selecting();
+    workspace.replay.engine_mut().begin_selecting();
     workspace.apply_logs_action(chart, LogsAction::PickRange);
     assert!(workspace.context.logs.picking);
     assert_ne!(
-        workspace.replay.status,
+        workspace.replay.status(),
         ReplayStatus::SelectingStart,
         "the bars win over the replay's start"
     );

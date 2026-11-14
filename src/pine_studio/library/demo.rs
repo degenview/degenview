@@ -2,7 +2,7 @@
 //! `DemoScriptLibrary.swift`. They are copied into the user's script library, never edited in
 //! place, so they behave like any other script once they are there.
 
-use super::store::{ScriptStore, ScriptStoreError, declared_type};
+use crate::store::scripts::{ScriptStore, ScriptStoreError, declared_type};
 
 pub struct Demo {
     pub name: &'static str,
@@ -57,7 +57,7 @@ pub fn add_missing(store: &mut ScriptStore) -> Result<usize, ScriptStoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine_studio::model::ScriptType;
+    use crate::model::pine::script::ScriptType;
 
     #[test]
     fn demos_add_once_and_types_follow_declarations() {

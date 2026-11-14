@@ -9,7 +9,6 @@
 
 use crate::model::drawings::{self, Anchor, Drawing, MAX_POINTS};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 const HEADER: &str = "degenview-clipboard/v1\n";
 const VERSION: u32 = 1;
@@ -20,30 +19,23 @@ pub const MAX_BYTES: usize = 256 * 1024;
 pub const MAX_DRAWINGS: usize = 500;
 
 /// Why a payload was refused, in words a toast can show.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ClipError {
     /// Nothing DegenView wrote.
+    #[error("The clipboard holds no DegenView drawings.")]
     NotDrawings,
     /// Larger than [`MAX_BYTES`].
+    #[error("The copied drawings are too large to paste.")]
     TooLarge,
     /// A DegenView payload this version cannot read.
+    #[error("These drawings come from a different version of DegenView.")]
     Unsupported,
     /// Readable but empty or holding a drawing that cannot be drawn.
+    #[error("The copied drawings are damaged and were not pasted.")]
     Invalid,
     /// The target price cannot take the copy (log scale needs positive prices).
+    #[error("The drawings do not fit at that price on this scale.")]
     OutOfRange,
-}
-
-impl fmt::Display for ClipError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::NotDrawings => "The clipboard holds no DegenView drawings.",
-            Self::TooLarge => "The copied drawings are too large to paste.",
-            Self::Unsupported => "These drawings come from a different version of DegenView.",
-            Self::Invalid => "The copied drawings are damaged and were not pasted.",
-            Self::OutOfRange => "The drawings do not fit at that price on this scale.",
-        })
-    }
 }
 
 #[derive(Deserialize, Serialize)]

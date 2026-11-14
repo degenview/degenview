@@ -252,10 +252,6 @@ fn symbol_cell(ui: &mut egui::Ui, instrument: &PaperInstrument) {
     .on_hover_text(&instrument.display_name);
 }
 
-fn chip(ui: &mut egui::Ui, text: &str, tint: Color32) {
-    grid::tag(ui, text, tint);
-}
-
 // MARK: Positions
 
 pub struct PositionsInput<'a> {
@@ -311,7 +307,7 @@ pub fn positions_table(
             let primary = theme::text_primary();
             match column {
                 0 => symbol_cell(ui, &position.instrument),
-                1 => chip(
+                1 => grid::tag(
                     ui,
                     position.side().badge_text(),
                     position_tint(position.side()),
@@ -571,7 +567,7 @@ pub fn trades_table(ui: &mut egui::Ui, trades: &[PaperClosedTrade], ctx: Context
             let primary = theme::text_primary();
             match column {
                 0 => symbol_cell(ui, &trade.instrument),
-                1 => chip(ui, trade.side.badge_text(), position_tint(trade.side)),
+                1 => grid::tag(ui, trade.side.badge_text(), position_tint(trade.side)),
                 2 => grid::figure(
                     ui,
                     &fmt::quantity(trade.quantity, &trade.instrument),

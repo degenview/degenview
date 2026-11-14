@@ -1,9 +1,12 @@
 use super::*;
 use crate::model::editor_theme::{ColorKey, Rgba, SyntaxRole, ThemeSource};
+use crate::service::work_queue::Pending;
 use crate::ui::editor_appearance::{Appearance, RestorePublished, current, editor_font};
 use crate::ui::render_tests::{Screen, gallery_dir};
 use crate::ui::theme::{AppTheme, RestoreDefaultTheme};
 use eframe::egui::{Event, Modifiers, PointerButton, Vec2};
+use std::path::PathBuf;
+use std::sync::mpsc::channel;
 
 /// The page's room in the Settings window: the window less its sidebar.
 const CONTENT: Vec2 = Vec2::new(
@@ -383,7 +386,7 @@ fn an_import_wears_the_theme_and_says_what_it_skipped() {
     let mut state = PineStudioState::default();
     let (sender, receiver) = channel();
     sender.send(Ok(Some(damaged))).unwrap();
-    state.flow = Some(Flow::Import(receiver));
+    state.flow = Some(Flow::Import(Pending::from_receiver(receiver)));
     poll(&mut state, &host);
     let (message, is_error) = state.status.clone().expect("a result");
     assert!(!is_error, "{message}");
@@ -394,7 +397,7 @@ fn an_import_wears_the_theme_and_says_what_it_skipped() {
 
     // A dialog still open leaves the flow in place; a failure is an error, a cancel says nothing.
     let (sender, receiver) = channel::<Result<Option<String>, String>>();
-    state.flow = Some(Flow::Import(receiver));
+    state.flow = Some(Flow::Import(Pending::from_receiver(receiver)));
     poll(&mut state, &host);
     assert!(state.flow.is_some(), "still waiting");
     sender.send(Err("could not read it".into())).unwrap();
@@ -403,13 +406,13 @@ fn an_import_wears_the_theme_and_says_what_it_skipped() {
     state.status = None;
     let (sender, receiver) = channel();
     sender.send(Ok(None)).unwrap();
-    state.flow = Some(Flow::Import(receiver));
+    state.flow = Some(Flow::Import(Pending::from_receiver(receiver)));
     poll(&mut state, &host);
     assert!(state.status.is_none());
     // A file that is not a theme is an error and adds nothing.
     let (sender, receiver) = channel();
     sender.send(Ok(Some("{\"hello\": 1}".to_owned()))).unwrap();
-    state.flow = Some(Flow::Import(receiver));
+    state.flow = Some(Flow::Import(Pending::from_receiver(receiver)));
     poll(&mut state, &host);
     assert!(matches!(&state.status, Some((_, true))));
     assert_eq!(host.view().customs.len(), 2);
@@ -423,7 +426,10 @@ fn an_export_says_where_it_went() {
     sender
         .send(Ok(Some(PathBuf::from("/tmp/Night.degenview-theme.json"))))
         .unwrap();
-    state.flow = Some(Flow::Export(receiver, "Night".into()));
+    state.flow = Some(Flow::Export(
+        Pending::from_receiver(receiver),
+        "Night".into(),
+    ));
     poll(&mut state, &host);
     assert_eq!(
         state.status,

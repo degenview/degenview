@@ -7,8 +7,8 @@
 use crate::format::civil_from_days;
 use crate::mcp::bridge::McpError;
 use crate::mcp::chart::drawings::{
-    AnchorSpec, DrawingEdit, MAX_DRAWINGS_PER_CHART, McpDrawingTool, NewDrawing, PriceField,
-    PriceSpec, StylePatch,
+    AnchorSpec, DrawingEdit, MAX_DRAWINGS_PER_CHART, McpDash, McpDrawingTool, NewDrawing,
+    PriceField, PriceSpec, StylePatch,
 };
 use crate::mcp::types::{
     CandleRange, CandleRow, CandleSummary, CandlesResult, DrawingAnchorInfo, DrawingInfo,
@@ -185,11 +185,10 @@ fn style_info(style: &DrawingStyle) -> DrawingStyleInfo {
         color: hex(style.stroke.color),
         width: f64::from(style.stroke.width),
         dash: match style.stroke.dash {
-            LineDash::Solid => "solid",
-            LineDash::Dashed => "dashed",
-            LineDash::Dotted => "dotted",
-        }
-        .to_owned(),
+            LineDash::Solid => McpDash::Solid,
+            LineDash::Dashed => McpDash::Dashed,
+            LineDash::Dotted => McpDash::Dotted,
+        },
         extend_left: style.extend_left,
         extend_right: style.extend_right,
         fill_color: style.fill.enabled.then(|| hex(style.fill.color)),
@@ -830,7 +829,7 @@ mod tests {
         let info = drawing_info(&planned[0]).unwrap();
         assert_eq!(info.tool, "trend_line");
         assert_eq!(info.style.as_ref().unwrap().color, "#FFC107FF");
-        assert_eq!(info.style.unwrap().dash, "dashed");
+        assert_eq!(info.style.unwrap().dash, McpDash::Dashed);
         assert!(info.editable);
         assert_eq!(
             drawing_info(&planned[1]).unwrap().text.as_deref(),

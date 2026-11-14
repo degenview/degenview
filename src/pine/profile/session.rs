@@ -69,22 +69,13 @@ impl ProfileConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum StartError {
+    #[error("There are no bars to run the script on yet.")]
     NoBars,
+    #[error("Could not start the profiler: {0}")]
     Thread(String),
 }
-
-impl std::fmt::Display for StartError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NoBars => f.write_str("There are no bars to run the script on yet."),
-            Self::Thread(error) => write!(f, "Could not start the profiler: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for StartError {}
 
 /// How a session ended.
 #[derive(Debug)]

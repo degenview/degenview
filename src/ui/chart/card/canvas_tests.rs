@@ -87,7 +87,7 @@ pub(super) struct Harness {
     pub(super) crosshair: Option<CrosshairInfo>,
     pub(super) indicators: IndicatorConfig,
     pub(super) drawings: Vec<crate::model::Drawing>,
-    pub(super) error: Option<&'static str>,
+    pub(super) error: Option<ProviderError>,
     pub(super) scale_mode: PriceScaleMode,
     pub(super) source: DataSource,
 }
@@ -129,7 +129,7 @@ impl Harness {
             &self.candles,
             self.replay_active,
             self.crosshair,
-            self.error,
+            self.error.as_ref(),
             self.scale_mode,
         );
         let (indicators, drawings) = (&self.indicators, &self.drawings);
@@ -1559,7 +1559,7 @@ fn every_pane_labels_its_own_scale_with_at_least_two_prices() {
 fn a_failed_load_with_no_candles_shows_only_the_message() {
     let mut harness = Harness::new(ChartCanvas::default());
     harness.candles.clear();
-    harness.error = Some("Binance is down");
+    harness.error = Some(ProviderError::other("Binance is down"));
     let (drawn, pointer) = harness.draw();
     let texts: Vec<&str> = drawn
         .texts
@@ -1588,7 +1588,7 @@ fn no_candles_and_no_error_draws_an_empty_chart_without_panicking() {
 #[test]
 fn a_failed_refresh_keeps_the_last_candles_and_adds_a_warning() {
     let mut harness = Harness::new(ChartCanvas::default());
-    harness.error = Some("timeout");
+    harness.error = Some(ProviderError::other("timeout"));
     let (drawn, pointer) = harness.draw();
     assert!(
         price_labels(&drawn).len() >= 2,

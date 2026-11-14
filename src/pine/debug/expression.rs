@@ -35,7 +35,8 @@ impl DebugExpression {
 }
 
 /// Why text is not an expression the debugger can run.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("{message}")]
 pub struct ExpressionError {
     pub message: String,
 }
@@ -47,14 +48,6 @@ impl ExpressionError {
         }
     }
 }
-
-impl std::fmt::Display for ExpressionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ExpressionError {}
 
 /// Parses `text` as one Pine expression and checks it is safe to run against a stopped script.
 pub fn parse(text: &str) -> Result<DebugExpression, ExpressionError> {

@@ -2,6 +2,7 @@
 //! the embedded login item. Pine alerts deliberately stay in the GUI.
 
 use crate::host::alert::AlertHost;
+use crate::lock::lock;
 use crate::model::alert::{
     AlertCurrency, AlertRuntimeCommandPayload, AlertRuntimeHealth, AlertRuntimeOwner,
     AlertServiceState, AlertTriggerEvent,
@@ -120,7 +121,7 @@ impl AlertRuntimeRunner {
         self.last_tick_ms = now_ms;
 
         let requests_authorization = {
-            let store = store_handle.lock().expect("store lock poisoned");
+            let store = lock(store_handle);
             let requests_authorization = store.pending_alert_commands().iter().any(|command| {
                 matches!(
                     &command.payload,
@@ -147,7 +148,7 @@ impl AlertRuntimeRunner {
             Vec::new()
         };
         if !events.is_empty() {
-            let store = store_handle.lock().expect("store lock poisoned");
+            let store = lock(store_handle);
             host.dispatch_webhooks(&events, &store, store_handle, now_ms);
             host.receive_events(&events, &store, now_ms);
         }
@@ -160,7 +161,7 @@ impl AlertRuntimeRunner {
             providers: quote_coordinator.provider_health(),
             unreconciled_gaps: Vec::new(),
         });
-        let store = store_handle.lock().expect("store lock poisoned");
+        let store = lock(store_handle);
         host.save_if_dirty(&store);
         events
     }
@@ -184,7 +185,7 @@ pub fn run_alert_agent() -> Result<(), Box<dyn std::error::Error>> {
     let mut rates = HashMap::new();
     let mut rates_refreshed_at = i64::MIN / 2;
     let mut host = {
-        let store = store.lock().expect("store lock poisoned");
+        let store = lock(&store);
         AlertHost::load(&store, now_ms())
     };
     let mut runner = AlertRuntimeRunner::new(AlertRuntimeOwner::Agent);

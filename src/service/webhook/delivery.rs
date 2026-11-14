@@ -54,16 +54,9 @@ pub trait WebhookTransport: Send + Sync {
 }
 
 /// Why a secret could not be saved. Carries the platform's code, never the secret.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("Couldn't save the secret: {0}")]
 pub struct SecretStoreError(pub String);
-
-impl std::fmt::Display for SecretStoreError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "Couldn't save the secret: {}", self.0)
-    }
-}
-
-impl std::error::Error for SecretStoreError {}
 
 /// Where an endpoint's secret lives (the Keychain in the app). The value never goes in
 /// SQLite; the endpoint row only holds templates that say where it is used.

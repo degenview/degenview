@@ -2,18 +2,18 @@
 //! built-in indicator off it. Adding one is `degenview_add_indicator`; what a chart has applied
 //! is in `degenview_list_charts`.
 
-use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
+use crate::mcp::chart::ChartCommand;
 use crate::mcp::chart::drawings::{TimeArg, parse_time};
 use crate::mcp::indicator::{
     IndicatorValuesResult, MAX_EMA_PERIOD, MIN_EMA_PERIOD, Reading, ReadingRequest,
 };
 use crate::mcp::tools::{
-    DegenViewMcp, McpIndicator, client_of, failure, invalid, parse_chart_id, parse_workspace_id,
+    Caller, DegenViewMcp, McpIndicator, failure, invalid, parse_chart_id, parse_workspace_id,
     unexpected,
 };
 use crate::mcp::types::AddIndicatorResult;
 use crate::model::mcp::Permission;
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -135,10 +135,9 @@ impl DegenViewMcp {
     )]
     async fn get_indicator_values(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<IndicatorValuesParams>,
     ) -> Result<Json<IndicatorValuesResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let request = reading_request(&params)?;
@@ -147,7 +146,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsCandlesRead,
-                McpCommand::GetIndicatorValues {
+                ChartCommand::GetIndicatorValues {
                     workspace_id,
                     chart_id,
                     request,
@@ -174,10 +173,9 @@ impl DegenViewMcp {
     )]
     async fn remove_indicator(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<RemoveIndicatorParams>,
     ) -> Result<Json<AddIndicatorResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         match self
@@ -185,7 +183,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsIndicatorsWrite,
-                McpCommand::RemoveIndicator {
+                ChartCommand::RemoveIndicator {
                     workspace_id,
                     chart_id,
                     indicator: params.indicator.built_in(),

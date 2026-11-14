@@ -33,9 +33,11 @@ use degenview_brokers::{
     ProductId, Quote, RuntimeConfig, SecretStore, Session, Waker,
 };
 
+use crate::lock::lock;
 use crate::model::broker;
 use crate::model::broker::prefs::{AllPrefs, BrokerPrefs};
 use crate::service::keychain::broker_secrets::BrokerSecrets;
+use crate::service::work_queue::{self, Pending};
 use crate::store::SharedStore;
 use crate::trading::task::Task;
 
@@ -116,7 +118,7 @@ struct TaggedNotices {
 
 impl NoticeSink for TaggedNotices {
     fn notice(&self, notice: Notice) {
-        let mut queue = self.queue.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut queue = lock(&self.queue.0);
         queue.push_back((self.broker, notice));
         // A runaway stream must not grow this without bound.
         while queue.len() > 200 {
@@ -170,7 +172,7 @@ impl Prober {
     fn run(&self, id: BrokerId) {
         let found = self.secrets.is_configured(id, PROFILE);
         {
-            let mut saved = self.saved.lock().unwrap_or_else(|e| e.into_inner());
+            let mut saved = lock(&self.saved);
             saved.known.insert(id, found);
             saved.asked.remove(&id);
         }
@@ -284,20 +286,14 @@ impl BrokerHost {
 
     /// How the user trades at `id`: confirmations, notifications, chart overlays.
     pub fn prefs(&self, id: BrokerId) -> BrokerPrefs {
-        self.prefs
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .of(id.as_str())
+        lock(&self.prefs).of(id.as_str())
     }
 
     /// Applies the choices for `id` at once and saves them (to this Mac only) on a thread of their
     /// own. The Settings page calls this while the shared store is locked, so saving here would wait
     /// for the lock the caller holds. A save that fails leaves the choices applied for this session.
     pub fn set_prefs(self: &Arc<Self>, id: BrokerId, prefs: BrokerPrefs) {
-        self.prefs
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .set(id.as_str(), prefs);
+        lock(&self.prefs).set(id.as_str(), prefs);
         self.changed();
         let Some(store) = self.store.clone() else {
             return;
@@ -307,7 +303,7 @@ impl BrokerHost {
             // The newest choices, read once the store's lock is held: a thread that read before
             // waiting for it would write older choices after newer ones.
             if let Ok(store) = store.lock() {
-                let all = host.prefs.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let all = lock(&host.prefs).clone();
                 let _ = store.set_setting(broker::prefs::KEY, &all);
             }
         });
@@ -347,7 +343,7 @@ impl BrokerHost {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Slots> {
-        self.slots.lock().unwrap_or_else(|e| e.into_inner())
+        lock(&self.slots)
     }
 
     /// The connection the user wants of this broker right now.
@@ -382,26 +378,21 @@ impl BrokerHost {
         }
     }
 
-    /// Checks credentials by connecting with them (reads only: nothing is placed or changed), off
-    /// the interface thread. Nothing is saved.
+    /// Checks credentials by connecting with them (reads only: nothing is placed or changed), on
+    /// a worker. Nothing is saved; the attached window is repainted when the answer is there.
     pub fn validate(
         &self,
         id: BrokerId,
         credentials: Credentials,
-    ) -> Receiver<Result<Session, BrokerError>> {
-        let (sender, receiver) = mpsc::channel();
+    ) -> Pending<Result<Session, BrokerError>> {
         let env = self.env.clone();
         let broker = degenview_brokers::registry::by_id(id);
-        std::thread::spawn(move || {
-            let result = match broker {
-                Some(broker) => broker
-                    .connect(&credentials, &env)
-                    .map(|connection| connection.session().clone()),
-                None => Err(BrokerError::invalid("That broker is not available.")),
-            };
-            let _ = sender.send(result);
-        });
-        receiver
+        work_queue::start(self.waker.context.get(), move || match broker {
+            Some(broker) => broker
+                .connect(&credentials, &env)
+                .map(|connection| connection.session().clone()),
+            None => Err(BrokerError::invalid("That broker is not available.")),
+        })
     }
 
     /// Replaces the record of unconfirmed orders with something that is not one, as a damaged
@@ -419,11 +410,7 @@ impl BrokerHost {
 
     /// Queues `job` for the secrets thread.
     fn on_secrets_thread(&self, job: impl FnOnce() + Send + 'static) {
-        let _ = self
-            .jobs
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .send(Box::new(job));
+        let _ = lock(&self.jobs).send(Box::new(job));
     }
 
     /// Whether a key is saved, as far as the secret store has said. Never asks it from the caller's
@@ -431,7 +418,7 @@ impl BrokerHost {
     /// comes (the screens redraw when it does).
     fn key_saved(&self, id: BrokerId) -> bool {
         let first = {
-            let mut saved = self.saved.lock().unwrap_or_else(|e| e.into_inner());
+            let mut saved = lock(&self.saved);
             match saved.known.get(&id) {
                 Some(known) => return *known,
                 None => saved.asked.insert(id),
@@ -588,12 +575,7 @@ impl BrokerHost {
 
     /// Notices that arrived since the last call, oldest first.
     pub fn drain_notices(&self) -> Vec<(BrokerId, Notice)> {
-        self.notices
-            .0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .drain(..)
-            .collect()
+        lock(&self.notices.0).drain(..).collect()
     }
 }
 

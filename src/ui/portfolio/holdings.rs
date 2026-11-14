@@ -9,12 +9,12 @@ use crate::model::portfolio::{PortfolioAsset, PortfolioHolding, PortfolioHolding
 use crate::ui::accessibility;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
+use crate::ui::portfolio::blocks::lift;
 use crate::ui::portfolio::charts;
 use crate::ui::portfolio::empty;
 use crate::ui::portfolio::grid::{
     self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec, put,
 };
-use crate::ui::portfolio::overview::lift;
 use crate::ui::portfolio::table;
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, Rect, Sense, Stroke, Vec2, pos2, vec2};

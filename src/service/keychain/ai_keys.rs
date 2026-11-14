@@ -4,6 +4,7 @@
 //! with no Keychain a save reports the failure, but the key is still kept for the session so the
 //! assistant works until the app quits.
 
+use crate::lock::lock;
 use crate::service::keychain::api_keys::{KeyBackend, default_backend};
 use crate::service::keychain::webhook_secrets::Scope;
 use crate::service::llm::ProviderKind;
@@ -47,7 +48,7 @@ impl AiKeyStore {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Cache> {
-        self.cache.lock().unwrap_or_else(|e| e.into_inner())
+        lock(&self.cache)
     }
 
     /// The saved key. The first read may prompt for Keychain access.

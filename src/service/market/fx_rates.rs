@@ -8,6 +8,7 @@
 //! seven-day lookback, retries, cache lifetimes) are tested without a network.
 
 use crate::format::civil_from_days;
+use crate::lock::lock;
 use crate::model::portfolio::PortfolioCurrency;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -100,38 +101,27 @@ pub struct Conversion {
     pub is_cached: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum FxError {
+    #[error(
+        "Exchange rate from {} to {} is unavailable{}.",
+        from.code(),
+        to.code(),
+        date_ms.map(|ms| format!(" for {}", day_key(ms))).unwrap_or_default()
+    )]
     RateUnavailable {
         from: PortfolioCurrency,
         to: PortfolioCurrency,
         date_ms: Option<i64>,
     },
+    #[error("The exchange-rate service answered HTTP {0}.")]
     Http(u16),
+    #[error("Network error: {0}")]
     Network(String),
+    #[error("{0} returned an invalid response.")]
     InvalidResponse(String),
+    #[error("Bitstamp returned no BTC/USD history.")]
     EmptyBitcoinHistory,
-}
-
-impl FxError {
-    pub fn message(&self) -> String {
-        match self {
-            Self::RateUnavailable { from, to, date_ms } => {
-                let suffix = date_ms
-                    .map(|ms| format!(" for {}", day_key(ms)))
-                    .unwrap_or_default();
-                format!(
-                    "Exchange rate from {} to {} is unavailable{suffix}.",
-                    from.code(),
-                    to.code()
-                )
-            }
-            Self::Http(status) => format!("The exchange-rate service answered HTTP {status}."),
-            Self::Network(message) => format!("Network error: {message}"),
-            Self::InvalidResponse(what) => format!("{what} returned an invalid response."),
-            Self::EmptyBitcoinHistory => "Bitstamp returned no BTC/USD history.".to_owned(),
-        }
-    }
 }
 
 // MARK: Pure rules
@@ -401,9 +391,7 @@ impl FxRateService {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        lock(&self.state)
     }
 
     // MARK: Public API
@@ -1044,7 +1032,7 @@ mod tests {
             .on("quotes=EUR", Err(TransportError::Fatal("offline".into())));
         let error = f.service.conversion(Usd, Eur, None).unwrap_err();
         assert_eq!(error, FxError::Network("offline".into()));
-        assert!(error.message().contains("offline"));
+        assert!(error.to_string().contains("offline"));
     }
 
     #[test]
@@ -1140,7 +1128,7 @@ mod tests {
             }
         );
         assert_eq!(
-            error.message(),
+            error.to_string(),
             "Exchange rate from USD to EUR is unavailable for 2024-03-05."
         );
     }

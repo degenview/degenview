@@ -1,6 +1,6 @@
 use super::*;
 use crate::model::BuiltIn;
-use crate::pine_studio::model::ScriptType;
+use crate::model::pine::script::ScriptType;
 use crate::ui::pine::script_catalog::sample;
 use crate::ui::render_tests::{Screen, gallery_dir};
 use std::sync::{Arc, Mutex};
@@ -146,7 +146,7 @@ fn actions_follow_what_the_entry_is() {
     );
     assert_eq!(
         action_for(macd, Availability::AddAnother),
-        Some(Action::AddBundled(indicators::find("macd").unwrap()))
+        Some(Action::AddBundled(bundled::find("macd").unwrap()))
     );
     assert_eq!(action_for(macd, Availability::Blocked("no")), None);
 }
@@ -191,7 +191,7 @@ fn searching_lists_matches_across_sections_and_return_adds_the_first() {
     let output = rig.key(Key::Enter, Modifiers::NONE);
     assert_eq!(
         output,
-        apply(Action::AddBundled(indicators::find("macd").unwrap()), false)
+        apply(Action::AddBundled(bundled::find("macd").unwrap()), false)
     );
 }
 

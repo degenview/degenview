@@ -87,7 +87,7 @@ fn a_key_is_checked_then_saved_then_connected_and_disconnect_removes_it() {
     let credentials = credentials(&generate_key_pem());
     let session = host
         .validate(ID, credentials.clone())
-        .recv()
+        .wait()
         .unwrap()
         .expect("a good key");
     assert!(session.permissions.can_trade);
@@ -215,7 +215,7 @@ fn a_bad_key_is_refused_without_echoing_it_and_nothing_is_saved() {
     let bad = Credentials::new()
         .with("name", "organizations/o/apiKeys/SECRET-NAME-123")
         .with("private_key", "SECRET-PRIVATE-KEY-456");
-    let error = host.validate(ID, bad).recv().unwrap().unwrap_err();
+    let error = host.validate(ID, bad).wait().unwrap().unwrap_err();
     let shown = format!("{error} {} {error:?}", error.detail);
     assert!(
         !shown.contains("SECRET-NAME-123") && !shown.contains("SECRET-PRIVATE-KEY-456"),

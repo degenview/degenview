@@ -13,7 +13,8 @@ cards are a separate surface: see [portfolio cards](portfolio-cards.md).
   `host/portfolio/import_flow.rs`: the import and export work (file dialogs, parsing, matching, the
   ledger write) the sheets drive.
 - `service/portfolio/quotes.rs`: `PortfolioQuoteFeed`, the valuation the views read.
-- `ui/portfolio/overview.rs`: Overview (hero, key figures, charts, lists) and Statistics.
+- `ui/portfolio/overview/`: the Overview (hero, key figures, charts, lists); `ui/portfolio/statistics/`:
+  the Statistics tab; `ui/portfolio/blocks.rs`: the painting helpers and stat cards both share.
 - `ui/portfolio/holdings.rs`, `ui/portfolio/transactions.rs`, `ui/portfolio/grid.rs`: the tables.
 - `ui/portfolio/empty.rs`: the pictures and introductions for a page or panel with nothing in it.
 - `ui/portfolio/gallery_tests.rs`: hand-run galleries of the pages (see "Looking at it").

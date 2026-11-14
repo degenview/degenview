@@ -20,35 +20,19 @@ use crate::service::system::timezone::local_utc_offset_secs;
 use crate::store::{SharedStore, Store};
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum PortfolioHostError {
+    #[error("Could not load portfolios: {0}")]
     Load(String),
+    #[error("{}", .0.message())]
     Mutation(PortfolioError),
+    #[error("Could not save portfolios: {0}")]
     Persistence(String),
+    #[error("The portfolio database is unavailable.")]
     StoreUnavailable,
 }
-
-impl PortfolioHostError {
-    pub fn message(&self) -> String {
-        match self {
-            Self::Load(message) => format!("Could not load portfolios: {message}"),
-            Self::Mutation(error) => error.message(),
-            Self::Persistence(message) => format!("Could not save portfolios: {message}"),
-            Self::StoreUnavailable => "The portfolio database is unavailable.".to_owned(),
-        }
-    }
-}
-
-impl fmt::Display for PortfolioHostError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message())
-    }
-}
-
-impl std::error::Error for PortfolioHostError {}
 
 pub struct PortfolioHost {
     store: SharedStore,

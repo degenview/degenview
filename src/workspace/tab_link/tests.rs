@@ -1,8 +1,9 @@
 use super::super::test_support::{chart_with_drawings, drawing_ids, empty_workspace};
+use crate::model::ReplayStatus;
 use crate::model::tab::link::{LinkColor, LinkSignal};
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, InstrumentId, Timeframe};
-use crate::workspace::ReplayStatus;
+use crate::service::ProviderError;
 use eframe::egui;
 
 fn row(symbol: &str) -> WatchlistInstrument {
@@ -125,12 +126,12 @@ fn a_tab_in_replay_takes_neither_symbol_nor_interval() {
     let mut workspace = empty_workspace(1);
     let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
     workspace.set_link(Some(LinkColor::Blue));
-    workspace.replay.status = ReplayStatus::Paused;
+    workspace.replay.engine_mut().status = ReplayStatus::Paused;
     assert!(!workspace.apply_link(1, &market("ETHUSDT"), &ctx));
     assert!(!workspace.apply_link(2, &LinkSignal::Timeframe(Timeframe::Hour), &ctx));
     assert_eq!(shown(&workspace, chart), "BTCUSDT");
     assert_eq!(
-        workspace.replay.status,
+        workspace.replay.status(),
         ReplayStatus::Paused,
         "replay untouched"
     );
@@ -170,7 +171,7 @@ fn a_symbol_that_fails_to_load_is_put_back_and_the_tab_says_so() {
     let index = workspace.chart_index(chart).unwrap();
     workspace.charts[index].inbox = None;
     workspace.charts[index].loading = false;
-    workspace.charts[index].error = Some("Unknown symbol".into());
+    workspace.charts[index].error = Some(ProviderError::other("Unknown symbol"));
     workspace.tick_link_probation(&ctx);
 
     assert_eq!(shown(&workspace, chart), "BTCUSDT");
@@ -198,7 +199,7 @@ fn a_symbol_that_loads_is_accepted_and_one_the_user_left_is_forgotten() {
 
     workspace.apply_link(2, &market("SOLUSDT"), &ctx);
     workspace.charts[index].symbol = "ADAUSDT".into(); // the user chose another meanwhile
-    workspace.charts[index].error = Some("x".into());
+    workspace.charts[index].error = Some(ProviderError::other("x"));
     workspace.charts[index].loading = false;
     workspace.tick_link_probation(&ctx);
     assert_eq!(
@@ -459,7 +460,7 @@ fn a_symbol_the_user_chose_over_a_pending_link_is_not_reverted_when_it_fails() {
     // The user's choice fails to load.
     workspace.charts[index].inbox = None;
     workspace.charts[index].loading = false;
-    workspace.charts[index].error = Some("Unknown symbol".into());
+    workspace.charts[index].error = Some(ProviderError::other("Unknown symbol"));
     workspace.tick_link_probation(&ctx);
 
     assert_eq!(workspace.charts[index].source, DataSource::Binance);

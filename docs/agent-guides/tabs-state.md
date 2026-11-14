@@ -2,8 +2,8 @@
 
 ## Ownership
 
-- Each tab owns one `ChartWorkspace`, never app-global. `DegenViewApp` owns `TabSlot`s holding a
-  workspace, portfolio tab, or Pine Studio.
+- Each tab owns one `ChartWorkspace`, never app-global. The app's `TabState` owns `TabSlot`s holding
+  a workspace, portfolio tab, or Pine Studio; window callbacks reach them through `SharedTabs`.
 - Live feeds/refreshes follow the workspace window's visibility/occlusion; hidden tabs suspend.
   Stores and portfolio/paper/alert/webhook/Pine hosts are shared `Arc<Mutex>`; presentation state is
   per tab/window.
@@ -19,11 +19,11 @@
   window, accessibility label and Move Tab to Window rows. The strip paints a chart tab from
   `ChartWorkspace::tab_chart()` via `model::tab::title`: logo, symbol, `▲`/`▼`, price and change,
   `/ <layout name>`. Market: the **focused chart's** (first chart if none; a portfolio card gives
-  none). Layout: `active_view_name`, following the layout, not the symbol; unnamed has no `/`
-  segment. Session persistence: debounced ten seconds, plus on save/quit.
+  none). Layout: `LayoutSession::active_view_name`, following the layout, not the symbol; unnamed
+  has no `/` segment. Session persistence: debounced ten seconds, plus on save/quit.
 - Tab prices come from the shared `WatchlistQuoteBook` (provider's reference: rolling 24h or
   previous close), never chart candles; a missing price or reference is omitted, not zero.
-  `DegenViewApp::tick_tab_quotes` requests them, only when the set changed, with one non-lapsing
+  `TabState::tick_quotes` requests them, only when the set changed, with one non-lapsing
   demand owner (`TAB_QUOTE_OWNER`, `1 << 60`) for every open chart tab in every window; demand
   merges by market, so markets a sidebar or alert follows cost nothing. Prediction markets and
   CoinMarketCap are skipped (`tab_title::wants_quote`). The coordinator repaints only the root

@@ -14,6 +14,7 @@ use super::{
 use crate::model::portfolio::PortfolioTransaction;
 use crate::model::portfolio::accounting::holdings;
 use crate::store::sync::OutboxOp;
+use crate::sync::engine::SyncError;
 use crate::sync::record::ids::{Direction, map_fields};
 use crate::sync::record::project::canonical_json;
 use serde_json::Value;
@@ -97,12 +98,12 @@ fn set_row(rows: &mut Vec<Value>, id: &str, row: Option<&Value>) {
 }
 
 impl Work<'_> {
-    fn portfolio_exists(&mut self, local_id: u64) -> rusqlite::Result<bool> {
+    fn portfolio_exists(&mut self, local_id: u64) -> Result<bool, SyncError> {
         let id = local_id.to_string();
         Ok(self.rows("portfolio")?.iter().any(|row| row_id(row) == id))
     }
 
-    pub(super) fn apply_transaction(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+    pub(super) fn apply_transaction(&mut self, record: &RemoteRecord) -> Result<(), SyncError> {
         let kind = EntityKind::PortfolioTransaction;
         let sync_id = record.record.name.id.clone();
         if !self.table_writable(TRANSACTIONS)? {
@@ -142,7 +143,7 @@ impl Work<'_> {
         self.put_row(TRANSACTIONS, local.as_ref().map(|l| l.index), row)
     }
 
-    pub(super) fn delete_transaction(&mut self, name: &RecordName) -> rusqlite::Result<()> {
+    pub(super) fn delete_transaction(&mut self, name: &RecordName) -> Result<(), SyncError> {
         let kind = EntityKind::PortfolioTransaction;
         let sync_id = name.id.as_str();
         let local_id = self.ids.to_local_string(sync_id);
@@ -183,7 +184,7 @@ impl Work<'_> {
     }
 
     /// A remote delete of a portfolio took it; its transactions and valuation history go too.
-    pub(super) fn cascade_portfolio_delete(&mut self, local: &Local) -> rusqlite::Result<()> {
+    pub(super) fn cascade_portfolio_delete(&mut self, local: &Local) -> Result<(), SyncError> {
         let Some(portfolio) = local.row.get("id").and_then(Value::as_u64) else {
             return Ok(());
         };
@@ -215,7 +216,7 @@ impl Work<'_> {
     /// Whether this Mac holds a transaction of the portfolio that the Mac which deleted it cannot
     /// have seen: added or changed here and still waiting to upload, or uploaded from here a moment
     /// ago. Adding to a portfolio counts as editing it, so the delete must not take it.
-    pub(super) fn has_unseen_transactions(&mut self, portfolio: u64) -> rusqlite::Result<bool> {
+    pub(super) fn has_unseen_transactions(&mut self, portfolio: u64) -> Result<bool, SyncError> {
         let ids = self.ids;
         let kind = EntityKind::PortfolioTransaction;
         let now = self.ctx.now_ms;
@@ -257,7 +258,7 @@ impl Work<'_> {
     }
 
     /// Records held back for the ledger, applied again now that more may have arrived.
-    pub(super) fn retry_held_ledgers(&mut self) -> rusqlite::Result<()> {
+    pub(super) fn retry_held_ledgers(&mut self) -> Result<(), SyncError> {
         if self.ledger.staged.is_empty() {
             return Ok(());
         }
@@ -277,7 +278,7 @@ impl Work<'_> {
     }
 
     /// Transactions that arrived before their portfolio are applied once it exists.
-    pub(super) fn retry_orphan_transactions(&mut self) -> rusqlite::Result<()> {
+    pub(super) fn retry_orphan_transactions(&mut self) -> Result<(), SyncError> {
         let waiting: Vec<InboxRecord> = self
             .store
             .inbox()?
@@ -304,7 +305,7 @@ impl Work<'_> {
     }
 
     /// Checks every portfolio that changed this batch, links what is sound and holds the rest.
-    pub(super) fn finish_ledgers(&mut self) -> rusqlite::Result<()> {
+    pub(super) fn finish_ledgers(&mut self) -> Result<(), SyncError> {
         let staged = std::mem::take(&mut self.ledger.staged);
         if staged.is_empty() {
             return Ok(());
@@ -336,7 +337,7 @@ impl Work<'_> {
     /// Puts the portfolio back as it was, then lets each staged change back in while the ledger
     /// stays possible. A sale staged before its purchase gets another chance once the purchase is
     /// in, so the order the batch arrived in does not matter.
-    fn sort_out(&mut self, portfolio: u64, group: &[Staged]) -> rusqlite::Result<Vec<bool>> {
+    fn sort_out(&mut self, portfolio: u64, group: &[Staged]) -> Result<Vec<bool>, SyncError> {
         let ids = self.ids;
         let rows = self.rows(TRANSACTIONS)?;
         let incoming = |change: &Staged| match &change.change {
@@ -383,7 +384,7 @@ impl Work<'_> {
         Ok(accepted)
     }
 
-    fn accept(&mut self, change: Staged) -> rusqlite::Result<()> {
+    fn accept(&mut self, change: Staged) -> Result<(), SyncError> {
         let kind = EntityKind::PortfolioTransaction;
         let current = self
             .rows(TRANSACTIONS)?
@@ -419,7 +420,7 @@ impl Work<'_> {
         match change.change {
             Change::Upsert(record) => {
                 self.report.applied += 1;
-                self.store.link_entity(&EntityLink {
+                Ok(self.store.link_entity(&EntityLink {
                     kind,
                     sync_id: change.sync_id,
                     local_id: change.local_id,
@@ -429,7 +430,7 @@ impl Work<'_> {
                     revision: record.record.revision as i64,
                     origin_device: record.record.origin_device.clone(),
                     now_ms: self.ctx.now_ms,
-                })
+                })?)
             }
             Change::Delete => {
                 self.report.applied += 1;
@@ -439,12 +440,12 @@ impl Work<'_> {
                     &change.local_id,
                     self.ctx.now_ms,
                 )?;
-                self.store.cancel_outbox(kind, &change.sync_id)
+                Ok(self.store.cancel_outbox(kind, &change.sync_id)?)
             }
         }
     }
 
-    fn reject(&mut self, change: Staged, portfolio: u64) -> rusqlite::Result<()> {
+    fn reject(&mut self, change: Staged, portfolio: u64) -> Result<(), SyncError> {
         let kind = EntityKind::PortfolioTransaction;
         let name = self.portfolio_name(portfolio)?;
         match change.change {
@@ -463,7 +464,7 @@ impl Work<'_> {
         }
     }
 
-    fn portfolio_name(&mut self, local_id: u64) -> rusqlite::Result<String> {
+    fn portfolio_name(&mut self, local_id: u64) -> Result<String, SyncError> {
         let id = local_id.to_string();
         Ok(self
             .rows("portfolio")?
@@ -480,7 +481,7 @@ impl Work<'_> {
         sync_id: &str,
         portfolio_name: &str,
         remote: Option<Vec<u8>>,
-    ) -> rusqlite::Result<()> {
+    ) -> Result<(), SyncError> {
         let kind = EntityKind::PortfolioTransaction;
         let open =
             self.store.conflicts()?.iter().any(|(entity, id, what)| {
@@ -490,7 +491,7 @@ impl Work<'_> {
             return Ok(());
         }
         self.report.conflicts += 1;
-        self.store.record_conflict(
+        Ok(self.store.record_conflict(
             &ConflictRecord {
                 entity: kind,
                 sync_id: sync_id.to_string(),
@@ -502,11 +503,11 @@ impl Work<'_> {
                 copy_sync_id: None,
             },
             self.ctx.now_ms,
-        )
+        )?)
     }
 
     /// Valuation history that no longer matches the ledger, dropped and marked stale.
-    pub(super) fn flush_ledger_history(&mut self) -> rusqlite::Result<()> {
+    pub(super) fn flush_ledger_history(&mut self) -> Result<(), SyncError> {
         let history = std::mem::take(&mut self.ledger.history);
         let removed = std::mem::take(&mut self.ledger.removed);
         if !history.is_empty() {

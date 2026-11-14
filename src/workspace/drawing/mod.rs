@@ -3,10 +3,11 @@
 pub(in crate::workspace) mod content;
 pub(in crate::workspace) mod links;
 pub(in crate::workspace) mod tool_rail;
+pub(in crate::workspace) mod tools;
 
 use super::ChartWorkspace;
 use crate::model::{Drawing, DrawingCommand};
-use crate::store::drawing_template::{DrawingPrefs, DrawingTemplateStore};
+use crate::store::drawing_template::DrawingTemplateStore;
 use crate::ui::drawing::properties::{self, DrawingProperties};
 use eframe::egui;
 use std::time::Instant;
@@ -89,39 +90,23 @@ impl ChartWorkspace {
     /// The saved drawing templates and defaults. The first call opens them and takes the strip's
     /// remembered options (magnet, keep drawing, the grouped tile's tool) from them.
     pub(super) fn drawing_templates(&mut self) -> &mut DrawingTemplateStore {
-        if self.drawing_templates.is_none() {
+        if self.tools.templates.is_none() {
             let templates = DrawingTemplateStore::new(self.store.clone());
             let prefs = templates.prefs();
-            self.magnet = prefs.magnet;
-            self.keep_drawing = prefs.keep_drawing;
-            self.group_tool = prefs.group_tool;
-            self.line_tool = prefs.line_tool;
-            self.note_tool = prefs.note_tool;
-            self.pattern_tool = prefs.pattern_tool;
-            self.forecast_tool = prefs.forecast_tool;
-            self.fib_tool = prefs.fib_tool;
-            self.saved_prefs = prefs;
-            self.drawing_templates = Some(templates);
+            self.tools.prefs = prefs;
+            self.tools.saved_prefs = prefs;
+            self.tools.templates = Some(templates);
         }
-        let templates = self.drawing_templates.as_mut().expect("opened just above");
+        let templates = self.tools.templates.as_mut().expect("opened just above");
         templates.refresh(Instant::now());
         templates
     }
 
     /// Saves the strip's options when they changed.
     pub(super) fn save_drawing_prefs(&mut self) {
-        let prefs = DrawingPrefs {
-            magnet: self.magnet,
-            keep_drawing: self.keep_drawing,
-            group_tool: self.group_tool,
-            line_tool: self.line_tool,
-            note_tool: self.note_tool,
-            pattern_tool: self.pattern_tool,
-            forecast_tool: self.forecast_tool,
-            fib_tool: self.fib_tool,
-        };
-        if prefs != self.saved_prefs {
-            self.saved_prefs = prefs;
+        let prefs = self.tools.prefs;
+        if prefs != self.tools.saved_prefs {
+            self.tools.saved_prefs = prefs;
             self.drawing_templates().set_prefs(&prefs);
         }
     }
@@ -130,10 +115,10 @@ impl ChartWorkspace {
     pub(super) fn open_drawing_properties(&mut self, chart_id: u64, drawing_id: u64) {
         // One dialog at a time: a request while one is open (a Return meant for it, say) must
         // not replace the edits in it.
-        if self.drawing_props.is_some() {
+        if self.tools.properties.is_some() {
             return;
         }
-        self.drawing_props = self
+        self.tools.properties = self
             .charts
             .iter()
             .find(|chart| chart.id == chart_id)
@@ -144,7 +129,7 @@ impl ChartWorkspace {
 
     /// The alert behind "Remove all drawings".
     pub(super) fn confirm_drawings_removal(&mut self, ctx: &egui::Context) {
-        let Some(chart_id) = self.confirm_remove_drawings else {
+        let Some(chart_id) = self.tools.confirm_remove else {
             return;
         };
         let count = self
@@ -155,7 +140,7 @@ impl ChartWorkspace {
                 chart.drawings.iter().filter(|d| is_lockable(d)).count()
             });
         if count == 0 {
-            self.confirm_remove_drawings = None;
+            self.tools.confirm_remove = None;
             return;
         }
         let message = format!(
@@ -174,7 +159,7 @@ impl ChartWorkspace {
         );
         match result {
             Some(crate::ui::kit::ConfirmOutcome::Confirmed) => {
-                self.confirm_remove_drawings = None;
+                self.tools.confirm_remove = None;
                 let commands: Vec<DrawingCommand> = self
                     .charts
                     .iter()
@@ -189,9 +174,9 @@ impl ChartWorkspace {
                     })
                     .unwrap_or_default();
                 self.apply_drawing_commands(chart_id, commands);
-                self.selected_drawing = None;
+                self.tools.selected = None;
             }
-            Some(crate::ui::kit::ConfirmOutcome::Cancelled) => self.confirm_remove_drawings = None,
+            Some(crate::ui::kit::ConfirmOutcome::Cancelled) => self.tools.confirm_remove = None,
             None => {}
         }
     }
@@ -199,7 +184,7 @@ impl ChartWorkspace {
     /// Draws the drawing's properties dialog, if one is up, and applies what it returns. The
     /// dialog goes away with its drawing or its chart.
     pub(super) fn show_drawing_properties(&mut self, ctx: &egui::Context) {
-        let Some(mut dialog) = self.drawing_props.take() else {
+        let Some(mut dialog) = self.tools.properties.take() else {
             return;
         };
         let (chart_id, drawing_id) = (dialog.chart_id, dialog.draft().id());
@@ -217,7 +202,7 @@ impl ChartWorkspace {
             self.replace_picture_request(ctx, chart_id, drawing_id);
         }
         match outcome {
-            properties::Outcome::Open => self.drawing_props = Some(dialog),
+            properties::Outcome::Open => self.tools.properties = Some(dialog),
             properties::Outcome::Cancel => {}
             properties::Outcome::Apply(drawing) => {
                 self.apply_drawing_commands(
@@ -439,7 +424,7 @@ mod tests {
                 .all(|c| c.drawings.iter().all(Drawing::locked))
         );
         // One undo step per chart, since history is per chart.
-        assert_eq!(workspace.undo.len(), 2);
+        assert_eq!(workspace.history.steps(), 2);
         workspace.undo(&eframe::egui::Context::default());
         workspace.undo(&eframe::egui::Context::default());
         assert_eq!(workspace.drawing_lock_state(), (true, false));
@@ -451,7 +436,7 @@ mod tests {
         let mut empty = empty_workspace(13);
         chart_with_drawings(&mut empty, "BTCUSDT", &[]);
         empty.set_all_locked(true);
-        assert!(empty.undo.is_empty());
+        assert!(!empty.history.can_undo());
         assert_eq!(empty.drawing_lock_state(), (false, false));
     }
 
@@ -470,25 +455,28 @@ mod tests {
         );
         workspace.open_drawing_properties(chart, 2);
         assert!(
-            workspace.drawing_props.is_none(),
+            workspace.tools.properties.is_none(),
             "a locked drawing is not edited"
         );
         workspace.open_drawing_properties(chart, 1);
         let opened = workspace
-            .drawing_props
+            .tools
+            .properties
             .as_ref()
             .map(|dialog| dialog.draft().id());
         assert_eq!(opened, Some(1));
         // A second request (a Return meant for the dialog) leaves the open one, and its edits.
         workspace
-            .drawing_props
+            .tools
+            .properties
             .as_mut()
             .expect("dialog")
             .set_draft_text_for_test("edited");
         workspace.open_drawing_properties(chart, 1);
         assert_eq!(
             workspace
-                .drawing_props
+                .tools
+                .properties
                 .as_ref()
                 .map(|dialog| dialog.draft().text().to_owned()),
             Some("edited".to_owned())

@@ -96,25 +96,16 @@ impl DebugConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum StartError {
+    #[error("There are no bars to run the script on yet.")]
     NoBars,
     /// The source does not compile; the diagnostic is the first error.
+    #[error("The script has errors: {}", .0.message)]
     Compile(Diagnostic),
+    #[error("Could not start the debugger: {0}")]
     Thread(String),
 }
-
-impl std::fmt::Display for StartError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NoBars => f.write_str("There are no bars to run the script on yet."),
-            Self::Compile(error) => write!(f, "The script has errors: {}", error.message),
-            Self::Thread(error) => write!(f, "Could not start the debugger: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for StartError {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Outcome {

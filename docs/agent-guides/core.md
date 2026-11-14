@@ -21,11 +21,26 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
 - **Modules, not MVVM.** `model/` pure domain logic; `service/` providers/networking; `ui/` egui rendering; `store/` SQLite; `host/` (one directory per domain) bridges stateful components; `workspace/mod.rs` chart workspaces; `app/` coordinates.
 - **Immediate-mode UI.** Pass state into views; never add observed view models. Render charts with `egui::Painter`, not a chart library.
 - **Background work.** Outside `src/mcp/`, threads and `std::sync::mpsc`, no async runtimes. Shared state `Arc<Mutex<...>>`; keep locks short.
+  Work a frame starts and waits on for one answer (a search, a test connection, a file dialog, an
+  upload) runs through `service::work_queue::Pending`: `start`, `start_for(source, …)` (a provider's
+  rate-limit lane), `start_search(source, …)` (a picker's search, off the candle workers) or `SNAPSHOTS.start` (anything that waits on the user: panels, Keychain prompts),
+  polled each frame; the job repaints when it ends, and a panicked job ends without an answer
+  (`poll_or`). Views hold the `Pending` a host or service returned; they never spawn threads or build
+  channels.
+- **Errors.** Each layer has its own `thiserror` enums, and the message a user sees is the variant's
+  `#[error(...)]`. Market providers return `service::ProviderError` (`is_rate_limited()`,
+  `MissingKey`, …), the sync engine `sync::engine::SyncError`, the updater's download `DownloadError`.
+  Decide on the variant, never on the text: no `message.contains("429")`. A `String` error is for
+  text only shown, at the edge where it is shown.
+- **Locks.** Take a `Mutex`/`RwLock` through `crate::lock::{lock, read, write}`, which recover from a
+  poisoning panic; no `.expect("… poisoned")` and no hand-rolled `unwrap_or_else(PoisonError::into_inner)`.
+  Code that treats a poisoned store as unavailable (`if let Ok(store) = store.lock()`) does so on
+  purpose and says so in its tests.
 - **Layering is tested.** `layout_tests.rs` fails when a module imports a layer above it (`model/` and
   `pine/` import no I/O, coordinator or view; `service/`, `store/`, `sync/` no `host/`, `ui/`, `app/` or
   `workspace/`) or when anything outside the view layers draws (`egui::Ui`, a window or a panel). Its
   debt lists only shrink: fix the import instead of adding to them.
-- **Frame performance.** Code reached from `update`/`ui` must never parse JSON, make blocking system calls (XPC, `SMAppService`), or query SQLite beyond cheap change checks. Cache by change signal (e.g. `Store::layout_index`) or run on a thread and poll (e.g. `AlertRuntimeControl::poll_service_status`).
+- **Frame performance.** Code reached from `update`/`ui` must never parse JSON, make blocking system calls (XPC, `SMAppService`), or query SQLite beyond cheap change checks. Cache by change signal (e.g. `Store::layout_index` and the other `store::frame_cache` reads, see [Storage](storage.md)) or run it on a worker and poll (`work_queue::Pending`, see Background work).
 
 ## Build and Test
 

@@ -10,6 +10,7 @@ use super::account::{disable, stash};
 use super::apply::{ApplyCtx, ApplyReport, apply_batch, remote_from_inbox};
 use super::core::RemoteBatch;
 use crate::store::Store;
+use crate::sync::engine::SyncError;
 use crate::sync::record::policy::EntityKind;
 use crate::sync::record::scripts::{ScriptCache, ScriptSink, scan_scripts};
 use std::collections::BTreeSet;
@@ -92,7 +93,7 @@ pub enum JoinMode {
 }
 
 /// Counts what iCloud holds (read, not yet applied) next to what this Mac holds.
-pub fn summarize(store: &Store, local_scripts: usize) -> rusqlite::Result<JoinSummary> {
+pub fn summarize(store: &Store, local_scripts: usize) -> Result<JoinSummary, SyncError> {
     let mut cloud = Counts::default();
     let mut cloud_devices = BTreeSet::new();
     for entry in store.inbox()?.into_iter().filter(|e| e.reason == PENDING) {
@@ -137,7 +138,7 @@ pub fn finish_join(
     mode: JoinMode,
     backups_dir: &Path,
     ctx: &ApplyCtx,
-) -> rusqlite::Result<JoinOutcome> {
+) -> Result<JoinOutcome, SyncError> {
     if mode == JoinMode::KeepLocalOnly {
         for entry in store.inbox()?.into_iter().filter(|e| e.reason == PENDING) {
             store.remove_inbox(&entry.record_name)?;
@@ -179,7 +180,7 @@ pub fn finish_join(
         for entry in store.inbox()?.into_iter().filter(|e| e.reason == PENDING) {
             store.remove_inbox(&entry.record_name)?;
         }
-        Ok(report)
+        Ok::<_, SyncError>(report)
     })?;
 
     // An untouched default paper account would only duplicate the one iCloud brought.

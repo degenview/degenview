@@ -28,11 +28,12 @@ use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerSt
 use crate::ui::portfolio::empty;
 use crate::ui::portfolio::holdings::{self, HoldingsAction, HoldingsInput, HoldingsState};
 use crate::ui::portfolio::overview::{
-    self, OverviewAction, OverviewInput, OverviewState, PriceStatus, StatisticsInput,
+    self, OverviewAction, OverviewInput, OverviewState, PriceStatus,
 };
 use crate::ui::portfolio::sheets::{
     self, CreateOutcome, CreateState, ManageAction, ManageInput, ManageRow, ManageState,
 };
+use crate::ui::portfolio::statistics::{self, StatisticsInput};
 use crate::ui::portfolio::transaction_editor::{
     self, EditorMode, TransactionEditorOutcome, TransactionEditorState,
 };
@@ -523,7 +524,7 @@ impl PortfolioTab {
                         }
                     }
                 }
-                PortfolioSection::Statistics => overview::show_statistics(
+                PortfolioSection::Statistics => statistics::show_statistics(
                     ui,
                     &StatisticsInput {
                         holdings: &holding_values,
@@ -789,7 +790,7 @@ impl PortfolioTab {
                         Err(error) => {
                             // Shown beside the form, not in the generic portfolio alert.
                             host.clear_error();
-                            editor.failed(error.message());
+                            editor.failed(error.to_string());
                         }
                     }
                 }
@@ -824,7 +825,7 @@ impl PortfolioTab {
     fn show_error(&mut self, ctx: &egui::Context, host: &mut PortfolioHost) {
         let message = host
             .last_error()
-            .map(PortfolioHostError::message)
+            .map(PortfolioHostError::to_string)
             .or_else(|| self.notice.clone());
         let Some(message) = message else { return };
         sheet::show(

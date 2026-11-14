@@ -14,8 +14,8 @@
   `None` unless `attach_debugger` ran; hooks (statement loop, `invoke`, `execute_bar`,
   `request.security` evaluator) test it and call `#[cold] #[inline(never)]` helpers. Never hook
   `eval`, `budget` or any per-expression path, or add debugger-less work to the statement loop.
-  Check `session.rs` changes with `tools/pine-bench.sh <base-rev>` (interleaved A/B; checksums prove
-  both builds ran the same program). Watches/conditions must parse with
+  Check `runtime/session/` changes with `tools/pine-bench.sh <base-rev>` (interleaved A/B;
+  checksums prove both builds ran the same program). Watches/conditions must parse with
   `pine::debug::parse_expression`; its allow-list takes only calls that neither write state nor
   allocate a handle, tested against a clean run.
 - Profiler (`pine/profile/`, [Pine profiler](../pine-profiler.md)) shares the gate: `Session::hooks`
@@ -305,7 +305,7 @@ failures with original code; never copy corpus scripts into the repository.
 
 ## iCloud Sync
 
-User scripts sync as files via `sync::record::scripts::ScriptSink` (`StoreScriptSink` over `ScriptStore`).
+User scripts sync as files via `sync::record::scripts::ScriptSink` (`host::sync::scripts::StoreScriptSink` over `store::scripts::ScriptStore`).
 Drafts and revisions never sync; unmodified bundled examples are neither uploaded nor kept over an
 incoming same-name script; text being typed is never overwritten (incoming waits in the sync inbox).
 Two edits to one script keep both; the loser becomes a conflict-copy script. Sync code writes script

@@ -3,8 +3,8 @@
 //! here draws or touches storage.
 
 use crate::model::BuiltIn;
-use crate::pine_studio::indicators::{self, BundledIndicator};
-use crate::pine_studio::model::{LocalScript, ScriptType};
+use crate::model::pine::bundled::{self, BundledIndicator};
+use crate::model::pine::script::{LocalScript, ScriptType};
 use std::sync::Arc;
 
 /// What an indicator measures. The picker's "Families" sidebar and its counts.
@@ -74,7 +74,7 @@ impl EntryKey {
                 .into_iter()
                 .find(|built_in| built_in.id() == id)
                 .map(Self::Native),
-            "bundled" => indicators::find(id).map(|indicator| Self::Bundled(indicator.id)),
+            "bundled" => bundled::find(id).map(|indicator| Self::Bundled(indicator.id)),
             "script" => Some(Self::Script(id.to_owned())),
             _ => None,
         }
@@ -220,7 +220,7 @@ impl CatalogEntry {
 /// own order.
 pub fn all(scripts: &[Arc<LocalScript>]) -> Vec<CatalogEntry> {
     let mut found: Vec<CatalogEntry> = BuiltIn::ALL.into_iter().map(CatalogEntry::native).collect();
-    found.extend(indicators::ALL.iter().map(CatalogEntry::bundled));
+    found.extend(bundled::ALL.iter().map(CatalogEntry::bundled));
     found.extend(scripts.iter().map(CatalogEntry::script));
     found
 }
@@ -260,7 +260,7 @@ mod tests {
         let first_bundled = origins.iter().position(|o| *o == Origin::Bundled).unwrap();
         let first_script = origins.iter().position(|o| *o == Origin::Script).unwrap();
         assert_eq!(first_bundled, BuiltIn::ALL.len());
-        assert_eq!(first_script, BuiltIn::ALL.len() + indicators::ALL.len());
+        assert_eq!(first_script, BuiltIn::ALL.len() + bundled::ALL.len());
         assert_eq!(found.len(), first_script + 1);
     }
 

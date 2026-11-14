@@ -18,6 +18,7 @@
 //! monogram, never a plausible but wrong crypto match. Polymarket artwork is looked up by
 //! token; the other prediction markets have none. Callers draw a monogram until `get_url` has an answer.
 
+use crate::lock::lock;
 use crate::model::DataSource;
 use crate::service::cache::lookup::{self, Hit, LookupCache};
 use serde::{Deserialize, Serialize};
@@ -120,7 +121,7 @@ pub fn request(source: DataSource, ticker: &str) {
 pub fn request_with_base(source: DataSource, ticker: &str, base: &str) {
     let cache_key = key(source, ticker);
     {
-        let mut guard = cache().lock().expect("icon cache poisoned");
+        let mut guard = lock(cache());
         let entry = guard.entry(cache_key.clone()).or_default();
         if entry.resolving {
             return;

@@ -27,7 +27,9 @@ use crate::ui::chart::object_tree::{self as tree_view, TreeAction, TreeState};
 use crate::ui::chart::session_stats_view::{self, StatsViewState};
 use crate::ui::chart::settings::templates::{self, TemplateState};
 use crate::ui::chart::table_view::{self, TableAction, TableViewState};
+use crate::workspace::alerts::AlertRequest;
 use crate::workspace::overlay::actions::reverts_to_regular;
+use crate::workspace::undo::Snapshot;
 use crate::workspace::*;
 use eframe::egui::{Context, Id, Pos2};
 
@@ -202,14 +204,6 @@ impl ChartWorkspace {
         self.charts.iter().position(|chart| chart.id == chart_id)
     }
 
-    pub(in crate::workspace) fn replay_cut(&self) -> Option<i64> {
-        if self.replay.is_active() {
-            self.replay.current_ms()
-        } else {
-            None
-        }
-    }
-
     /// Whether the chart can trade on paper at all. Having no account yet does not count against
     /// it: choosing an order entry creates the default account, as opening the paper panel does.
     fn paper_access(chart: &Chart) -> PaperAccess {
@@ -227,7 +221,7 @@ impl ChartWorkspace {
         templates: &[TemplateRow],
     ) -> Option<Facts> {
         let index = self.chart_index(context.chart_id)?;
-        let replay_ms = self.replay_cut();
+        let replay_ms = self.replay.cut_ms();
         let chart = &self.charts[index];
         let last_price = displayed_candles(&chart.candles, replay_ms)
             .last()
@@ -258,7 +252,7 @@ impl ChartWorkspace {
             price_format: chart.chart.appearance().price_format(),
             last_price,
             tick: instrument.tick_size,
-            replay: self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart,
+            replay: self.replay.is_engaged(),
             alerts_supported: chart.is_market() && ui::supports_alerts(chart.source),
             paper,
             live,
@@ -443,7 +437,7 @@ impl ChartWorkspace {
             }
             Command::AddOrder => {
                 if let Some(price) = context.price() {
-                    let last = displayed_candles(&self.charts[index].candles, self.replay_cut())
+                    let last = displayed_candles(&self.charts[index].candles, self.replay.cut_ms())
                         .last()
                         .map(|candle| candle.close);
                     let tick = Self::paper_instrument(&self.charts[index]).tick_size;
@@ -490,7 +484,7 @@ impl ChartWorkspace {
                 self.context.templates_chart = Some(chart_id);
                 self.context.templates.open_reset();
             }
-            Command::RemoveDrawings => self.confirm_remove_drawings = Some(chart_id),
+            Command::RemoveDrawings => self.tools.ask_to_remove_all(chart_id),
             Command::RemoveIndicators => self.context.confirm_remove_indicators = Some(chart_id),
             Command::OpenSettings => {
                 self.settings_state = ChartSettingsState::default();
@@ -527,11 +521,7 @@ impl ChartWorkspace {
             Command::PineLogs(instance) => self.open_pine_logs(chart_id, Some(instance)),
             Command::EditAlert(id) => {
                 if let Some(alert) = self.context.alerts.iter().find(|alert| alert.id == id) {
-                    self.alert_editor = Some(PriceAlertEditorState::new(
-                        alert.asset.clone(),
-                        Some(alert.clone()),
-                        Some(alert.currency),
-                    ));
+                    self.alerts.edit(alert);
                 }
             }
             Command::ToggleAlert(id) => {
@@ -555,7 +545,7 @@ impl ChartWorkspace {
                     host,
                     vec![PaperOverlayAction::CancelOrder(id)],
                 );
-                self.paper_panel.report_messages(&failures);
+                self.trade.report_paper_messages(&failures);
             }
             Command::ClosePosition(key) => {
                 let account = self.charts[index]
@@ -573,13 +563,10 @@ impl ChartWorkspace {
                             instrument_key: key,
                         }],
                     );
-                    self.paper_panel.report_messages(&failures);
+                    self.trade.report_paper_messages(&failures);
                 }
             }
-            Command::ShowPaperPanel => {
-                self.paper_panel_visible = true;
-                self.trade_sheet_visible = true;
-            }
+            Command::ShowPaperPanel => self.trade.open_panel(),
         }
         actions
     }
@@ -610,7 +597,7 @@ impl ChartWorkspace {
             return;
         };
         let last = chart.candles.last().map(|candle| candle.close);
-        self.new_alert_request = Some(AlertRequest {
+        self.alerts.request(AlertRequest {
             asset: Self::alert_asset(chart),
             price: Some(price),
             last,
@@ -693,7 +680,7 @@ impl ChartWorkspace {
     }
 
     pub(in crate::workspace) fn copy_selection(&mut self, ctx: &Context) {
-        let Some((chart_id, ids)) = self.selected_drawing.clone() else {
+        let Some((chart_id, ids)) = self.tools.selection().cloned() else {
             return;
         };
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
@@ -800,8 +787,8 @@ impl ChartWorkspace {
         let commands = drawings.into_iter().map(DrawingCommand::Add).collect();
         self.apply_drawing_commands(chart_id, commands);
         // A paste while drawings are hidden would vanish; show them again.
-        self.hide_all_drawings = false;
-        self.selected_drawing = Some((chart_id, ids));
+        self.tools.reveal_all();
+        self.tools.select(chart_id, ids);
         self.say(
             format!(
                 "Pasted {count} drawing{}.",
@@ -833,16 +820,15 @@ impl ChartWorkspace {
             self.context.logs.chart = None;
         }
         let table = self.context.table_chart;
-        let replay_ms = self.replay_cut();
-        let replaying =
-            self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart;
+        let replay_ms = self.replay.cut_ms();
+        let replaying = self.replay.is_engaged();
         for chart in &mut self.charts {
             chart.chart.set_table_wanted(table == Some(chart.id));
             let mut lines = if chart.is_market() {
                 crate::model::alert::line::lines_for(
                     &self.context.alerts,
                     &InstrumentId::new(chart.source, &chart.symbol),
-                    &self.alert_fx_rates,
+                    self.alerts.fx_rates(),
                 )
             } else {
                 Vec::new()
@@ -901,13 +887,13 @@ impl ChartWorkspace {
     /// drop's, in the alert's currency; the side is the one the level is on from the market's
     /// last price, as for "Add alert at this price". State, frequency, note and webhooks stay.
     fn move_alert(&mut self, index: usize, moved: ui::AlertMove) -> Option<WorkspaceAction> {
-        if self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart {
+        if self.replay.is_engaged() {
             self.say("Alerts are not available during replay.", true);
             return None;
         }
         let chart = &self.charts[index];
         let market = InstrumentId::new(chart.source, &chart.symbol);
-        let last = displayed_candles(&chart.candles, self.replay_cut())
+        let last = displayed_candles(&chart.candles, self.replay.cut_ms())
             .last()
             .map(|candle| candle.close);
         let alert = self
@@ -915,15 +901,7 @@ impl ChartWorkspace {
             .alerts
             .iter()
             .find(|alert| alert.id == moved.id && alert.asset.instrument == market)?;
-        let rate = if alert.currency == AlertCurrency::Usd {
-            Some(1.0)
-        } else {
-            self.alert_fx_rates
-                .get(&alert.currency)
-                .copied()
-                .filter(|rate| *rate > 0.0)
-        };
-        let Some(rate) = rate else {
+        let Some(rate) = self.alerts.usd_rate(alert.currency) else {
             self.say(
                 "The exchange rate for this alert is not available yet.",
                 true,
@@ -1029,12 +1007,7 @@ impl ChartWorkspace {
             },
             &self.context.tree.filter,
         );
-        let selected: Vec<u64> = self
-            .selected_drawing
-            .as_ref()
-            .filter(|(selected_chart, _)| *selected_chart == chart_id)
-            .map(|(_, ids)| ids.clone())
-            .unwrap_or_default();
+        let selected = self.tools.selected_on(chart_id);
         let actions = tree_view::show(ui, &mut self.context.tree, &title, &rows, &selected);
         for action in actions {
             self.apply_tree_action(chart_id, action);
@@ -1056,7 +1029,7 @@ impl ChartWorkspace {
         match action {
             TreeAction::Close => self.context.tree_chart = None,
             TreeAction::Select(TreeKey::Drawing(id)) => {
-                self.selected_drawing = Some((chart_id, vec![id]));
+                self.tools.select(chart_id, vec![id]);
                 self.focus_chart(chart_id);
             }
             TreeAction::Select(_) => self.focus_chart(chart_id),
@@ -1124,9 +1097,7 @@ impl ChartWorkspace {
             TreeAction::Delete(TreeKey::Drawing(id)) => {
                 if drawing(self, id).is_some_and(|d| !d.locked()) {
                     self.apply_drawing_commands(chart_id, vec![DrawingCommand::Remove(id)]);
-                    if let Some((_, ids)) = &mut self.selected_drawing {
-                        ids.retain(|selected| *selected != id);
-                    }
+                    self.tools.deselect(id);
                 }
             }
             TreeAction::Delete(TreeKey::Indicator(IndicatorKey::BuiltIn(indicator))) => {
@@ -1154,12 +1125,8 @@ impl ChartWorkspace {
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
             return;
         };
-        self.undo.push(UndoEntry {
-            chart_id,
-            before: Snapshot::indicators_of(chart),
-        });
-        self.redo.clear();
-        self.last_restyle = None;
+        self.history
+            .record(chart_id, Snapshot::indicators_of(chart));
     }
 
     /// Removes the chart's built-in indicators, scripts and compared markets as one undo step.
@@ -1184,9 +1151,7 @@ impl ChartWorkspace {
                 },
             ])
         };
-        self.undo.push(UndoEntry { chart_id, before });
-        self.redo.clear();
-        self.last_restyle = None;
+        self.history.record(chart_id, before);
         if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
             for indicator in BuiltIn::ALL {
                 indicator.set_applied(&mut chart.indicators, false);

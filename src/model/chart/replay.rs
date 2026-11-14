@@ -100,6 +100,47 @@ pub struct ReplaySession {
     pub speed: ReplaySpeed,
 }
 
+/// Where an agent starts a replay.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplayStart {
+    /// The chart's first bar.
+    First,
+    /// The bar at or before this time (epoch milliseconds); earlier than the first bar is the
+    /// first bar.
+    At(i64),
+}
+
+/// What an agent may ask of the replay clock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplayCommand {
+    /// Starts (or restarts) the replay on a chart, the focused one when none is named. Paused.
+    Start {
+        chart_id: Option<u64>,
+        at: ReplayStart,
+    },
+    Play,
+    Pause,
+    StepForward(usize),
+    StepBack(usize),
+    /// Back to the chosen start.
+    Restart,
+    /// To the bar at or before this time.
+    Seek(i64),
+    SetSpeed(ReplaySpeed),
+    /// Back to live.
+    Stop,
+}
+
+/// Why an agent's replay command was refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplayError {
+    NoSuchChart,
+    /// The chart has no candles yet (it may still be loading).
+    NoCandles,
+    /// There is no replay to act on.
+    NotRunning,
+}
+
 /// What an agent may ask of a running replay clock. Starting one needs a chart's bars, so that is
 /// the workspace's business.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

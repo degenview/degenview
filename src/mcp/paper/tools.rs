@@ -9,22 +9,20 @@
 //! the app (`mcp::confirm`): the first call answers `CONFIRMATION_REQUIRED`, and the same call
 //! repeated after the user approves runs once.
 
-use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
 use crate::mcp::paper::{
     DEFAULT_HISTORY_PAGE, MAX_HISTORY_PAGE, PaperAccountDetail, PaperAccountInfo,
-    PaperAccountsResult, PaperChangeResult, PaperFillsResult, PaperOrderResult, PaperTradesResult,
+    PaperAccountsResult, PaperChangeResult, PaperCommand, PaperFillsResult, PaperOrderResult,
+    PaperTradesResult,
 };
 use crate::mcp::state::ClientIdentity;
-use crate::mcp::tools::{
-    DegenViewMcp, McpSource, client_of, failure, invalid, parse_id, unexpected,
-};
+use crate::mcp::tools::{Caller, DegenViewMcp, McpSource, failure, invalid, parse_id, unexpected};
 use crate::model::mcp::Permission;
 use crate::model::paper::{
     PaperInstrument, PaperOrderChanges, PaperOrderRequest, PaperOrderSide, PaperOrderType,
     PaperTimeInForce,
 };
 use crate::model::watchlist::text::market_item;
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -303,15 +301,14 @@ impl DegenViewMcp {
     )]
     async fn list_paper_accounts(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
     ) -> Result<Json<PaperAccountsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         match self
             .bridge
             .call(
                 &client,
                 Permission::PaperRead,
-                McpCommand::ListPaperAccounts,
+                PaperCommand::ListAccounts,
                 REQUEST_TIMEOUT,
             )
             .await
@@ -334,17 +331,16 @@ impl DegenViewMcp {
     )]
     async fn get_paper_account(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<PaperAccountParams>,
     ) -> Result<Json<PaperAccountDetail>, CallToolResult> {
-        let client = client_of(&parts)?;
         let account_id = account_id(&params.account_id)?;
         match self
             .bridge
             .call(
                 &client,
                 Permission::PaperRead,
-                McpCommand::GetPaperAccount { account_id },
+                PaperCommand::GetAccount { account_id },
                 REQUEST_TIMEOUT,
             )
             .await
@@ -367,10 +363,9 @@ impl DegenViewMcp {
     )]
     async fn list_paper_fills(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<PaperHistoryParams>,
     ) -> Result<Json<PaperFillsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let account_id = account_id(&params.account_id)?;
         let (offset, limit) = page(&params)?;
         match self
@@ -378,7 +373,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperRead,
-                McpCommand::ListPaperHistory {
+                PaperCommand::ListHistory {
                     account_id,
                     closed_trades: false,
                     offset,
@@ -406,10 +401,9 @@ impl DegenViewMcp {
     )]
     async fn list_paper_trades(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<PaperHistoryParams>,
     ) -> Result<Json<PaperTradesResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let account_id = account_id(&params.account_id)?;
         let (offset, limit) = page(&params)?;
         match self
@@ -417,7 +411,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperRead,
-                McpCommand::ListPaperHistory {
+                PaperCommand::ListHistory {
                     account_id,
                     closed_trades: true,
                     offset,
@@ -445,10 +439,9 @@ impl DegenViewMcp {
     )]
     async fn place_paper_order(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<PlaceOrderParams>,
     ) -> Result<Json<PaperOrderResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let account = account_id(&params.account_id)?;
         let request = order_request(&params, account)?;
         let request_id = clean_request_id(params.request_id.as_deref())?;
@@ -457,7 +450,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperOrdersPlace,
-                McpCommand::PlacePaperOrder {
+                PaperCommand::PlaceOrder {
                     request: Box::new(request),
                     dry_run: params.dry_run.unwrap_or(false),
                     request_id,
@@ -488,10 +481,9 @@ impl DegenViewMcp {
     )]
     async fn modify_paper_order(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<ModifyOrderParams>,
     ) -> Result<Json<PaperChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let order_id = order_id(&params.order_id)?;
         let changes = PaperOrderChanges {
             quantity: optional_price("quantity", params.quantity)?,
@@ -506,7 +498,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperOrdersPlace,
-                McpCommand::ModifyPaperOrder { order_id, changes },
+                PaperCommand::ModifyOrder { order_id, changes },
                 REQUEST_TIMEOUT,
             )
             .await
@@ -533,10 +525,9 @@ impl DegenViewMcp {
     )]
     async fn cancel_paper_orders(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<CancelOrdersParams>,
     ) -> Result<Json<PaperChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let account_id = account_id(&params.account_id)?;
         let order_ids = match (&params.order_ids, params.all.unwrap_or(false)) {
             (Some(ids), false) if !ids.is_empty() && ids.len() <= MAX_ORDER_IDS => Some(
@@ -556,7 +547,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperOrdersCancel,
-                McpCommand::CancelPaperOrders {
+                PaperCommand::CancelOrders {
                     account_id,
                     order_ids,
                 },
@@ -586,10 +577,9 @@ impl DegenViewMcp {
     )]
     async fn close_paper_positions(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<ClosePositionsParams>,
     ) -> Result<Json<PaperChangeResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let account_id = account_id(&params.account_id)?;
         let instrument_key = match (&params.source, &params.symbol, params.all.unwrap_or(false)) {
             (Some(source), Some(symbol), false) => {
@@ -616,7 +606,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::PaperPositionsClose,
-                McpCommand::ClosePaperPositions {
+                PaperCommand::ClosePositions {
                     account_id,
                     instrument_key,
                 },

@@ -11,12 +11,12 @@ const HOUR: i64 = 3_600_000;
 struct Fake {
     jobs: Mutex<Vec<Box<dyn FnOnce() + Send>>>,
     calls: Mutex<Vec<String>>,
-    answers: Mutex<HashMap<String, Result<Vec<Kline>, String>>>,
+    answers: Mutex<HashMap<String, Result<Vec<Kline>, ProviderError>>>,
     pages: Mutex<HashMap<String, Vec<Kline>>>,
 }
 
 impl Fake {
-    fn answer(&self, symbol: &str, result: Result<Vec<Kline>, String>) {
+    fn answer(&self, symbol: &str, result: Result<Vec<Kline>, ProviderError>) {
         self.answers
             .lock()
             .unwrap()
@@ -44,7 +44,13 @@ impl OverlayBackend for Fake {
         self.jobs.lock().unwrap().push(job);
     }
 
-    fn klines(&self, _: DataSource, symbol: &str, _: &str, _: u32) -> Result<Vec<Kline>, String> {
+    fn klines(
+        &self,
+        _: DataSource,
+        symbol: &str,
+        _: &str,
+        _: u32,
+    ) -> Result<Vec<Kline>, ProviderError> {
         self.calls.lock().unwrap().push(format!("klines {symbol}"));
         self.answers
             .lock()
@@ -54,7 +60,13 @@ impl OverlayBackend for Fake {
             .unwrap_or_else(|| Ok(vec![candle(10 * HOUR, 1.0), candle(11 * HOUR, 2.0)]))
     }
 
-    fn page(&self, _: DataSource, symbol: &str, _: &str, end: i64) -> Result<Vec<Kline>, String> {
+    fn page(
+        &self,
+        _: DataSource,
+        symbol: &str,
+        _: &str,
+        end: i64,
+    ) -> Result<Vec<Kline>, ProviderError> {
         self.calls
             .lock()
             .unwrap()
@@ -199,7 +211,7 @@ fn hidden_overlays_are_not_fetched_until_shown() {
 fn one_failing_market_does_not_touch_the_others_and_is_retried_later() {
     let (mut hub, fake) = hub();
     let now = Instant::now();
-    fake.answer("BADUSDT", Err("no such market".into()));
+    fake.answer("BADUSDT", Err(ProviderError::other("no such market")));
     let list = overlays(&["BADUSDT", "ETHUSDT"]);
     frame(&mut hub, 1, &list, now);
     fake.run_jobs();

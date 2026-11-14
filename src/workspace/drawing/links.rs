@@ -90,7 +90,7 @@ impl ChartWorkspace {
                 LinkSheetAction::Confirm(link) => self.link_chosen(link, sheet.replace),
                 LinkSheetAction::Close => {
                     if sheet.replace.is_none() {
-                        self.active_tool = Tool::Cursor;
+                        self.tools.active = Tool::Cursor;
                     }
                 }
             }
@@ -112,7 +112,7 @@ impl ChartWorkspace {
         let Some((chart_id, drawing_id)) = replace else {
             self.content.pending = Some(Content::Link(LinkCard::new(link)));
             self.content.place_now = false;
-            self.active_tool = Tool::Post;
+            self.tools.active = Tool::Post;
             self.content.last_tool = Tool::Post;
             return;
         };
@@ -137,7 +137,7 @@ impl ChartWorkspace {
     pub(in crate::workspace) fn place_pasted_link(&mut self, link: Link) {
         self.content.pending = Some(Content::Link(LinkCard::new(link)));
         self.content.place_now = true;
-        self.active_tool = Tool::Post;
+        self.tools.active = Tool::Post;
         self.content.last_tool = Tool::Post;
         self.content.links.close_sheet();
     }
@@ -161,7 +161,7 @@ impl ChartWorkspace {
     /// a card arriving from another Mac never contacts X. The first time, the one-time question
     /// comes first.
     pub(in crate::workspace) fn preview_placed_card(&mut self, ctx: &egui::Context) {
-        let Some((chart_id, ids)) = self.selected_drawing.clone() else {
+        let Some((chart_id, ids)) = self.tools.selected.clone() else {
             return;
         };
         let [drawing_id] = ids[..] else {

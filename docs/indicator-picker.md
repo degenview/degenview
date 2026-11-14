@@ -40,7 +40,7 @@ Pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib indicator_picker::tests:
 ## The catalog
 
 `model::indicators::catalog` is pure data and search. A `CatalogEntry` is one row: a native built-in
-(`BuiltIn`), a bundled Pine indicator (`pine_studio::indicators`) or a saved script. Its `EntryKey`
+(`BuiltIn`), a bundled Pine indicator (`model::pine::bundled`) or a saved script. Its `EntryKey`
 (`Native`, `Bundled`, `Script`) is the stable identity that tells one row from another;
 `EntryKey::stored`/`parse` is the text the favorites keep.
 
@@ -67,7 +67,7 @@ summary and aliases in `CatalogEntry::native`.
 
 ## Bundled indicators
 
-`pine_studio/indicators/mod.rs` lists 20 Pine indicators, each a `.pine` file in `pine_studio/indicators/`
+`model/pine/bundled/mod.rs` lists 20 Pine indicators, each a `.pine` file in `model/pine/bundled/`
 included with `include_str!`. They are not the demo scripts (`pine_studio::library::demo`, which are copied
 once into the user's library and then belong to the user): a bundled indicator is always available
 and is never written to the Scripts folder.
@@ -83,7 +83,7 @@ Rules for a bundled indicator:
   paste code from TradingView, a community script or another project. Vela (Apache-2.0) was read for
   names and default lengths only.
 - It compiles with **zero diagnostics, warnings included**, and draws something on the test bars. Both
-  are tests in `pine_studio::indicators`; the overlay flag in the table must agree with the script's
+  are tests in `model::pine::bundled`; the overlay flag in the table must agree with the script's
   `indicator(overlay = ...)`.
 - An `id` is stable for ever: favorites and instances on saved charts refer to it. Never rename or
   reuse one.

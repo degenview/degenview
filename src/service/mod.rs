@@ -15,8 +15,8 @@ pub mod watchlist_quotes;
 pub mod webhook;
 pub mod work_queue;
 
-pub use market::alpaca::MISSING_KEY as ALPACA_MISSING_KEY;
 pub use market::alpaca::test_connection as alpaca_test_connection;
+pub use market::error::ProviderError;
 
 use crate::model::{DataSource, Kline, PmSeries};
 pub(crate) use market::candles::{fill_gaps, fold_calendar, next_bucket_start_ms, normalize};
@@ -146,7 +146,12 @@ pub(crate) fn whole_dollars(raw: &serde_json::Value) -> Option<u64> {
 
 /// A provider that can serve OHLC candles and, optionally, ticker search.
 pub trait MarketSource {
-    fn fetch_klines(&self, symbol: &str, interval: &str, limit: u32) -> Result<Vec<Kline>, String>;
+    fn fetch_klines(
+        &self,
+        symbol: &str,
+        interval: &str,
+        limit: u32,
+    ) -> Result<Vec<Kline>, ProviderError>;
 
     /// Candles that open in `[start_ms, end_ms)`, oldest first, at most `max` of them (the newest if
     /// there are more). Only sources with a time-range endpoint implement it.
@@ -157,12 +162,14 @@ pub trait MarketSource {
         start_ms: i64,
         end_ms: i64,
         max: usize,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         let _ = (symbol, interval, start_ms, end_ms, max);
-        Err("This source cannot serve a time range of candles.".to_owned())
+        Err(ProviderError::other(
+            "This source cannot serve a time range of candles.",
+        ))
     }
 
-    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, String> {
+    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         let _ = query;
         Ok(Vec::new())
     }
@@ -187,7 +194,7 @@ pub fn fetch_klines(
     symbol: &str,
     interval: &str,
     limit: u32,
-) -> Result<Vec<Kline>, String> {
+) -> Result<Vec<Kline>, ProviderError> {
     let provider = for_source(source);
     let fetch = |limit: u32| {
         provider
@@ -208,7 +215,7 @@ pub fn fetch_klines_range(
     start_ms: i64,
     end_ms: i64,
     max: usize,
-) -> Result<Vec<Kline>, String> {
+) -> Result<Vec<Kline>, ProviderError> {
     for_source(source)
         .fetch_klines_range(symbol, interval, start_ms, end_ms, max)
         .map(normalize)
@@ -245,7 +252,7 @@ pub fn fetch_choices(
 }
 
 /// Search one provider.
-pub fn search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, String> {
+pub fn search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
     for_source(source).search_tickers(query)
 }
 
@@ -255,7 +262,7 @@ pub fn supports_trending(source: DataSource) -> bool {
 }
 
 /// The provider's busiest markets, or an empty list when it cannot say.
-pub fn trending(source: DataSource, limit: usize) -> Result<Vec<SearchResult>, String> {
+pub fn trending(source: DataSource, limit: usize) -> Result<Vec<SearchResult>, ProviderError> {
     match source {
         DataSource::Polymarket => market::polymarket::trending(limit),
         _ => Ok(Vec::new()),

@@ -22,7 +22,7 @@ use crate::model::portfolio::Portfolio;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::quote::WatchlistQuote;
 use crate::model::{DataSource, InstrumentId};
-use crate::service::{self, SearchResult};
+use crate::service::{self, ProviderError, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
@@ -1308,7 +1308,7 @@ impl SymbolPicker {
                 Rect::from_center_size(rect.center(), Vec2::splat(40.0)),
                 LoadingIndicator::new().size(40.0),
             );
-        } else if let Some((source, message)) = listing
+        } else if let Some((source, error)) = listing
             .errors
             .iter()
             .find(|(source, _)| *source != DataSource::Alpaca)
@@ -1316,7 +1316,7 @@ impl SymbolPicker {
             widgets::no_results(
                 ui,
                 &format!("{} could not be searched", source.display_name()),
-                message,
+                &error.to_string(),
             );
         } else if self.scope == Scope::Predictions {
             widgets::no_results(
@@ -1340,14 +1340,16 @@ impl SymbolPicker {
             .errors
             .iter()
             .find(|(source, _)| *source == DataSource::Alpaca)
-            .map(|(_, message)| message.as_str());
+            .map(|(_, error)| error);
         match failure {
-            Some(message) if message != service::ALPACA_MISSING_KEY => Some(Notice {
+            Some(ProviderError::MissingKey) => {
+                Some(Notice::missing_key("Stocks need an Alpaca key"))
+            }
+            Some(error) => Some(Notice {
                 title: "Stocks could not be searched",
-                detail: message.to_owned(),
+                detail: error.to_string(),
                 settings: false,
             }),
-            Some(_) => Some(Notice::missing_key("Stocks need an Alpaca key")),
             None if self.needs_alpaca => Some(Notice::missing_key("Set up Alpaca to open a stock")),
             None => None,
         }

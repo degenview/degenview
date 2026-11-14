@@ -45,7 +45,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
 - **Watchlist mode** (`open_for_watchlist(name)`): a pick follows the market in that list
   (`Output::Watchlist`, `WatchlistCard`) and the picker **stays open** so several can be added in a
   row; the footer says what was added. It records no recents, offers no Replace or Compare, has no
-  Watchlists tab, and the workspace keeps the target list (`add_to_watchlist`) only while the picker
+  Watchlists tab, and the workspace keeps the target list (`WatchlistPane::picker_target`) only while the picker
   is open.
 - **Tabs** All, Stocks, Crypto, Predictions, Dashboards, Watchlists (Tab cycles the tabs of the mode)
   and a filter pull-down at their right: the exchange ("All venues"), the prediction provider, or on
@@ -71,7 +71,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     fresh, a failure retried after 30 seconds and shown as nothing); Kalshi cannot rank its markets,
     so with it chosen only the topics show. Predictions are never kept as recents.
   - **Dashboards** (`dashboards.rs`) is a list, not a search: "Market indices" (the four CoinMarketCap
-    gauges, `cmc::CHART_TYPES`) and "Portfolio" (the four card kinds, `CardKind::ALL`, for the portfolio
+    gauges, `model::market::cmc::CHART_TYPES`) and "Portfolio" (the four card kinds, `CardKind::ALL`, for the portfolio
     the pull-down chooses). The box filters titles and descriptions. An index replaces or adds a chart
     like a market; a card only ever adds (`Output::AddCard`, a card cannot take a chart's place), and
     a check marks a card or index already on the tab (`Env::cards_on_tab`). Without a portfolio the
@@ -128,10 +128,13 @@ odd quotes.
 
 ## Search
 
-`SymbolSearch` asks each provider of the scope on its own thread after a 220 ms pause, keeps every
+`SymbolSearch` asks each provider of the scope after a 220 ms pause through
+`work_queue::start_search`: CoinGecko and GeckoTerminal searches take their provider's lane and wait
+for its rate-limit slot instead of running beside its candle requests; the rest run on search workers
+of their own, so a busy chart never delays the list. It keeps every
 answer under `(query, provider)` so switching tabs or venues re-reads instead of re-asking, and
 reports a failing provider without hiding the others. Stocks need an Alpaca key: a missing key
-(`service::ALPACA_MISSING_KEY`) shows a card pinned to the bottom of the list with an Open Settings
+(`ProviderError::MissingKey`) shows a card pinned to the bottom of the list with an Open Settings
 button (`Output::OpenAlpacaSettings`); any other Alpaca failure shows its message without the button.
 The key is checked only when a stock is picked, never per frame. `Backend` lets tests replace the
 providers.

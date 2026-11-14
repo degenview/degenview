@@ -12,9 +12,9 @@ use crate::service::keychain::snapshot_secrets::SnapshotSecrets;
 use crate::service::snapshot::providers::{self, Readiness};
 use crate::ui::icons::Icon;
 use crate::ui::kit::Tone;
-use crate::ui::settings::api_keys::StatusMessage;
+use crate::ui::settings::card::StatusMessage;
 use crate::ui::settings::provider_card::{CardInput, ProviderForm, provider_card};
-use crate::ui::settings::window::{section, status_badge, status_message};
+use crate::ui::settings::window::{section, status_message};
 use crate::ui::{kit, settings::card, theme};
 use eframe::egui;
 use std::collections::{BTreeMap, HashMap};
@@ -188,13 +188,13 @@ fn sharing_badge(ui: &mut egui::Ui, input: &SnapshotsInput) {
     let Some(provider) = provider else {
         if input.prefs.provider.is_some() {
             // Chosen with a newer version of DegenView: there is no row for it here to act on.
-            status_badge(
+            kit::status_badge(
                 ui,
                 "This version does not know the selected host",
                 Tone::Warning,
             );
         } else {
-            status_badge(ui, "Sharing is off", Tone::Neutral);
+            kit::status_badge(ui, "Sharing is off", Tone::Neutral);
         }
         return;
     };
@@ -202,21 +202,20 @@ fn sharing_badge(ui: &mut egui::Ui, input: &SnapshotsInput) {
     let settings = input.prefs.settings_of(id);
     let present = input.secrets.presence(provider);
     if present.is_pending() {
-        status_badge(ui, "Checking the saved key", Tone::Neutral);
+        kit::status_badge(ui, "Checking the saved key", Tone::Neutral);
         return;
     }
-    match provider.readiness(&settings, &present) {
-        Readiness::Ready => status_badge(
-            ui,
-            &format!("Sharing to {}", provider.label(&settings)),
+    let (label, tone) = match provider.readiness(&settings, &present) {
+        Readiness::Ready => (
+            format!("Sharing to {}", provider.label(&settings)),
             Tone::Good,
         ),
-        Readiness::Needs(_) => status_badge(
-            ui,
-            &format!("{} needs setting up", provider.descriptor().name),
+        Readiness::Needs(_) => (
+            format!("{} needs setting up", provider.descriptor().name),
             Tone::Warning,
         ),
-    }
+    };
+    kit::status_badge(ui, &label, tone);
 }
 
 /// The privacy card's words: which destinations the user has agreed to upload to.

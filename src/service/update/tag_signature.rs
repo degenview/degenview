@@ -28,30 +28,19 @@ use serde::Deserialize;
 const MAINTAINER_EMAILS: &[&str] = &["nicoswd@gmail.com"];
 const API: &str = "https://api.github.com/repos/degenview/degenview/git";
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
 pub enum TagError {
     /// No tag object, a lightweight tag, or no signature on it.
+    #[error("This release's tag is not signed.")]
     Unsigned,
     /// Signed, but GitHub does not accept the signature or the tagger is not the maintainer.
+    #[error("This release's tag is not signed by the DegenView maintainer.")]
     NotTrusted,
     /// Signed, but for a different tag or a non-commit target.
+    #[error("This release's tag signature belongs to another tag.")]
     WrongTag,
+    #[error("Could not check the release signature: {0}")]
     Network(String),
-}
-
-impl std::fmt::Display for TagError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unsigned => f.write_str("This release's tag is not signed."),
-            Self::NotTrusted => {
-                f.write_str("This release's tag is not signed by the DegenView maintainer.")
-            }
-            Self::WrongTag => f.write_str("This release's tag signature belongs to another tag."),
-            Self::Network(message) => {
-                write!(f, "Could not check the release signature: {message}")
-            }
-        }
-    }
 }
 
 #[derive(Deserialize)]

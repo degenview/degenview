@@ -173,7 +173,7 @@ pub fn flatten(blocks: &[Block]) -> Vec<&CatalogEntry> {
 mod tests {
     use super::*;
     use crate::model::indicators::catalog::all;
-    use crate::pine_studio::model::{LocalScript, ScriptType};
+    use crate::model::pine::script::{LocalScript, ScriptType};
     use crate::ui::pine::script_catalog::sample;
     use std::sync::Arc;
 

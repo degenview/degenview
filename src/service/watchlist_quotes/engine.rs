@@ -11,6 +11,7 @@
 use super::book::WatchlistQuoteBook;
 use super::coinbase_ws::CoinbaseTick;
 use super::provider::{QuoteFailure, QuoteProvider, QuoteRequest, chunk_size};
+use crate::lock::lock;
 use crate::model::alert::AlertProviderHealth;
 use crate::model::watchlist::quote::{
     Freshness, SourceQuote, WatchlistQuote, evaluate_freshness, refresh_interval_secs,
@@ -18,7 +19,6 @@ use crate::model::watchlist::quote::{
 use crate::model::{DataSource, InstrumentId};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Mutex;
-use std::sync::PoisonError;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -845,10 +845,6 @@ fn bisect(
         }
         Err(failure) => Outcome::failing(symbols(requests), failure),
     }
-}
-
-fn lock(engine: &Mutex<Engine>) -> std::sync::MutexGuard<'_, Engine> {
-    engine.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// One full round against a shared engine: look up missing DEX networks, plan, fetch every

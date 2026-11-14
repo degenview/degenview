@@ -130,15 +130,7 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
 /// a known debt with its fix planned in `docs/architecture-refactor/plan.md`; the list only
 /// shrinks. An entry that no longer breaks the rule fails the test too, so it is removed with the
 /// fix.
-const KNOWN_LAYERING_DEBT: &[(&str, &str)] = &[
-    ("mcp/bridge.rs", "workspace"),
-    ("mcp/replay.rs", "workspace"),
-    ("model/indicators/catalog.rs", "pine_studio"),
-    ("model/market/source.rs", "service"),
-    ("model/paper/engine.rs", "sync"),
-    ("model/portfolio/ledger.rs", "sync"),
-    ("sync/transport/native/mod.rs", "host"),
-];
+const KNOWN_LAYERING_DEBT: &[(&str, &str)] = &[];
 
 /// The top-level modules a file's non-test code names through `crate::`, including those inside
 /// a `use crate::{a::.., b::..}` group.

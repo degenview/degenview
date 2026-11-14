@@ -1,4 +1,5 @@
 use super::*;
+use crate::lock::lock;
 use crate::sync::record::policy::EntityKind;
 use std::sync::Mutex;
 
@@ -315,7 +316,7 @@ fn collecting_sink() -> (EventSink, Arc<Mutex<Vec<TransportEvent>>>) {
 
 #[test]
 fn commands_reach_the_bridge_and_its_events_reach_the_sink() {
-    let _turn = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let _turn = lock(&SERIAL);
     let (api, bridge) = install(ABI_VERSION, false);
     let (sink, seen) = collecting_sink();
     let mut transport = NativeTransport::new(api, sink).unwrap();
@@ -341,7 +342,7 @@ fn commands_reach_the_bridge_and_its_events_reach_the_sink() {
 
 #[test]
 fn a_garbled_event_becomes_an_error_event_and_never_crashes() {
-    let _turn = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let _turn = lock(&SERIAL);
     let (api, bridge) = install(ABI_VERSION, false);
     let (sink, seen) = collecting_sink();
     let _transport = NativeTransport::new(api, sink).unwrap();
@@ -354,7 +355,7 @@ fn a_garbled_event_becomes_an_error_event_and_never_crashes() {
 
 #[test]
 fn a_panicking_sink_does_not_unwind_into_swift() {
-    let _turn = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let _turn = lock(&SERIAL);
     let (api, bridge) = install(ABI_VERSION, false);
     let sink: EventSink = Arc::new(|_| panic!("the app side blew up"));
     let _transport = NativeTransport::new(api, sink).unwrap();
@@ -363,7 +364,7 @@ fn a_panicking_sink_does_not_unwind_into_swift() {
 
 #[test]
 fn a_bridge_of_the_wrong_version_is_refused() {
-    let _turn = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let _turn = lock(&SERIAL);
     let (api, _bridge) = install(ABI_VERSION + 1, false);
     let (sink, _) = collecting_sink();
     assert!(NativeTransport::new(api, sink).is_err());
@@ -371,7 +372,7 @@ fn a_bridge_of_the_wrong_version_is_refused() {
 
 #[test]
 fn a_bridge_that_cannot_start_is_reported_and_leaves_an_inert_transport() {
-    let _turn = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let _turn = lock(&SERIAL);
     let (api, _bridge) = install(ABI_VERSION, true);
     let (sink, seen) = collecting_sink();
     let factory = CloudKitFactory::new(api);
@@ -385,7 +386,7 @@ fn a_bridge_that_cannot_start_is_reported_and_leaves_an_inert_transport() {
 
 #[test]
 fn the_factory_refuses_to_run_when_this_copy_is_not_signed_for_icloud() {
-    let _turn = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let _turn = lock(&SERIAL);
     let (api, bridge) = install(ABI_VERSION, false);
     let factory = CloudKitFactory::new(api);
     assert!(

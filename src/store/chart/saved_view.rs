@@ -19,13 +19,6 @@ pub struct LayoutIndex {
     pub autosave: Vec<u64>,
 }
 
-/// An index plus the database state it was built from.
-pub struct CachedLayoutIndex {
-    /// `(changes made through this connection, changes made through any other)`.
-    stamp: (u64, i64),
-    index: Arc<LayoutIndex>,
-}
-
 impl Store {
     pub fn saved_views(&self) -> Vec<SavedView> {
         self.documents("saved_view")
@@ -34,35 +27,21 @@ impl Store {
     /// The saved layouts' index, rebuilt only after a write to the database: the toolbar asks
     /// every frame, and parsing every layout each time kept the UI thread busy.
     pub fn layout_index(&self) -> Arc<LayoutIndex> {
-        // Any write counts, not only to `saved_view`: it costs one rebuild per write, and no
-        // writer (sync, another window, a restore) can be forgotten.
-        let stamp = (
-            self.connection.total_changes(),
-            self.connection
-                .query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0))
-                .unwrap_or_default(),
-        );
-        let mut cached = self.layout_index.borrow_mut();
-        if let Some(hit) = cached.as_ref().filter(|hit| hit.stamp == stamp) {
-            return Arc::clone(&hit.index);
-        }
-        let views = self.saved_views();
-        let index = Arc::new(LayoutIndex {
-            layouts: views
-                .iter()
-                .map(|view| (view.id, view.name.clone()))
-                .collect(),
-            autosave: views
-                .iter()
-                .filter(|view| view.autosave == Some(true))
-                .map(|view| view.id)
-                .collect(),
-        });
-        *cached = Some(CachedLayoutIndex {
-            stamp,
-            index: Arc::clone(&index),
-        });
-        index
+        // Any write counts, not only to `saved_view` (see `frame_cache`).
+        self.frame_caches.layout_index.get(self.change_stamp(), || {
+            let views = self.saved_views();
+            LayoutIndex {
+                layouts: views
+                    .iter()
+                    .map(|view| (view.id, view.name.clone()))
+                    .collect(),
+                autosave: views
+                    .iter()
+                    .filter(|view| view.autosave == Some(true))
+                    .map(|view| view.id)
+                    .collect(),
+            }
+        })
     }
 
     pub fn replace_saved_views(&self, views: &[SavedView]) -> rusqlite::Result<()> {

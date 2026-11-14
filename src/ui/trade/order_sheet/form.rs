@@ -14,7 +14,7 @@ use crate::trading::draft::{DraftCheck, DraftField, floor_to_increment};
 use crate::trading::model::{BackendState, MarketRules, OrderClass, VenueInfo, VenueKind};
 use crate::ui::icons::{self, Icon};
 use crate::ui::trade::fields::{self, Edit, NumberInput};
-use crate::ui::trade::{figures, notice};
+use crate::ui::trade::figures;
 use crate::ui::{kit, paper, theme};
 use degenview_brokers::model::preview::PREVIEW_DEBOUNCE;
 use degenview_brokers::model::ticket::parse_decimal;
@@ -315,7 +315,7 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, context: &FormCont
     state.poll_cancels();
 
     ui.add_space(16.0);
-    notice::divider(ui);
+    kit::panel_divider(ui);
     ui.add_space(8.0);
     open_orders::show(ui, state, backend);
 }

@@ -1,7 +1,7 @@
 use super::catalog::Catalog;
 use super::search_rank::normalize;
 use crate::model::Kline;
-use crate::service::{MarketSource, SearchResult, fold_calendar, rank_results};
+use crate::service::{MarketSource, ProviderError, SearchResult, fold_calendar, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -102,15 +102,20 @@ impl Granularity {
 }
 
 impl MarketSource for Coinbase {
-    fn fetch_klines(&self, symbol: &str, interval: &str, limit: u32) -> Result<Vec<Kline>, String> {
+    fn fetch_klines(
+        &self,
+        symbol: &str,
+        interval: &str,
+        limit: u32,
+    ) -> Result<Vec<Kline>, ProviderError> {
         let plan = Granularity::for_interval(interval).ok_or_else(|| {
-            format!(
+            ProviderError::Other(format!(
                 "Coinbase has no {} candles",
                 crate::model::Timeframe::ALL
                     .iter()
                     .find(|tf| tf.interval() == interval)
                     .map_or(interval.to_owned(), |tf| tf.label().to_owned())
-            )
+            ))
         })?;
         let id = product_id(symbol);
         let needed = limit as usize * plan.per_target
@@ -136,9 +141,9 @@ impl MarketSource for Coinbase {
         start_ms: i64,
         end_ms: i64,
         max: usize,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         let plan = Granularity::for_interval(interval)
-            .ok_or_else(|| format!("Coinbase has no {interval} candles"))?;
+            .ok_or_else(|| ProviderError::other(format!("Coinbase has no {interval} candles")))?;
         let needed = max * plan.per_target
             + if plan.needs_aggregation() {
                 plan.per_target
@@ -161,7 +166,7 @@ impl MarketSource for Coinbase {
         Ok(shown[start..].to_vec())
     }
 
-    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, String> {
+    fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // `BTC-USD`, `btc/usd` and `BTCUSD` are one query.
         let needle = normalize(query);
         if needle.is_empty() {
@@ -206,19 +211,17 @@ pub(in crate::service) fn clear_catalog() {
     CATALOG.clear_memory();
 }
 
-fn download_products() -> Result<Vec<Product>, String> {
+fn download_products() -> Result<Vec<Product>, ProviderError> {
     let body = crate::service::net::http::get_text(
         "https://api.exchange.coinbase.com/products",
         &[],
         crate::service::net::http::Retry::Transient,
-    )
-    .map_err(|error| format!("Network error: {error}"))?;
+    )?;
     parse_products(&body)
 }
 
-fn parse_products(body: &str) -> Result<Vec<Product>, String> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| format!("Data error: {error}"))?;
+fn parse_products(body: &str) -> Result<Vec<Product>, ProviderError> {
+    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
     Ok(value
         .as_array()
         .map(Vec::as_slice)
@@ -242,7 +245,7 @@ impl Coinbase {
         id: &str,
         granularity: i64,
         needed: usize,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         let mut candles = self.fetch_page(id, granularity, None, None)?;
         let mut pages = 0;
         while candles.len() < needed && pages < MAX_PAGES {
@@ -271,7 +274,7 @@ impl Coinbase {
         start_ms: i64,
         end_ms: i64,
         needed: usize,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         let span = granularity * PAGE_BUCKETS * 1_000;
         let mut candles: Vec<Kline> = Vec::new();
         let mut upper = end_ms;
@@ -300,7 +303,7 @@ impl Coinbase {
         granularity: i64,
         start: Option<i64>,
         end: Option<i64>,
-    ) -> Result<Vec<Kline>, String> {
+    ) -> Result<Vec<Kline>, ProviderError> {
         let mut url = format!("{BASE_URL}/products/{id}/candles?granularity={granularity}");
         if let (Some(start), Some(end)) = (start, end) {
             url.push_str(&format!(
@@ -313,19 +316,17 @@ impl Coinbase {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| format!("Network error: {error}"))?;
+        )?;
         parse_page(&body, granularity)
     }
 }
 
 /// `[time s, low, high, open, close, volume]`, newest first.
-fn parse_page(body: &str, granularity: i64) -> Result<Vec<Kline>, String> {
-    let value: Value =
-        serde_json::from_str(body).map_err(|error| format!("Data error: {error}"))?;
+fn parse_page(body: &str, granularity: i64) -> Result<Vec<Kline>, ProviderError> {
+    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
     let rows = value
         .as_array()
-        .ok_or_else(|| "Data error: expected a candle array".to_owned())?;
+        .ok_or_else(|| ProviderError::data("expected a candle array"))?;
     let mut candles = Vec::with_capacity(rows.len());
     for row in rows {
         let Some(fields) = row.as_array() else {

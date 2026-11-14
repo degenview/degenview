@@ -7,6 +7,7 @@
 //! served and the provider is left alone for `FAILURE_BACKOFF`, so an outage costs a search
 //! nothing and does not turn into a retry per keystroke.
 
+use crate::service::ProviderError;
 use crate::service::cache::lookup::{self, LookupCache};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -44,20 +45,23 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
     /// The list, from memory, the lookup cache or — only when neither is fresh — `download`.
     pub fn get(
         &self,
-        download: impl FnOnce() -> Result<Vec<T>, String>,
-    ) -> Result<Arc<Vec<T>>, String> {
+        download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
+    ) -> Result<Arc<Vec<T>>, ProviderError> {
         self.get_from(lookup::shared(), download)
     }
 
     fn get_from(
         &self,
         cache: &LookupCache,
-        download: impl FnOnce() -> Result<Vec<T>, String>,
-    ) -> Result<Arc<Vec<T>>, String> {
+        download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
+    ) -> Result<Arc<Vec<T>>, ProviderError> {
         if let Some(items) = self.fresh() {
             return Ok(items);
         }
-        let _refreshing = self.refresh.lock().map_err(|_| "catalog unavailable")?;
+        let _refreshing = self
+            .refresh
+            .lock()
+            .map_err(|_| ProviderError::other("catalog unavailable"))?;
         // Another search may have finished the download while this one waited.
         if let Some(items) = self.fresh() {
             return Ok(items);
@@ -87,12 +91,19 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
                 Ok(items)
             }
             // An empty list is a provider hiccup, not an answer worth a day.
-            Ok(_) => self.fall_back(stale, "the provider returned no symbols".to_owned()),
+            Ok(_) => self.fall_back(
+                stale,
+                ProviderError::other("the provider returned no symbols"),
+            ),
             Err(error) => self.fall_back(stale, error),
         }
     }
 
-    fn fall_back(&self, stale: Option<Arc<Vec<T>>>, error: String) -> Result<Arc<Vec<T>>, String> {
+    fn fall_back(
+        &self,
+        stale: Option<Arc<Vec<T>>>,
+        error: ProviderError,
+    ) -> Result<Arc<Vec<T>>, ProviderError> {
         let items = stale.ok_or(error)?;
         self.keep(&items, FAILURE_BACKOFF);
         Ok(items)
@@ -160,8 +171,8 @@ mod tests {
 
         fn download(
             &self,
-            result: Result<Vec<Pair>, String>,
-        ) -> impl FnOnce() -> Result<Vec<Pair>, String> + '_ {
+            result: Result<Vec<Pair>, ProviderError>,
+        ) -> impl FnOnce() -> Result<Vec<Pair>, ProviderError> + '_ {
             move || {
                 self.downloads.fetch_add(1, Ordering::SeqCst);
                 result
@@ -197,7 +208,10 @@ mod tests {
 
         let (cache, catalog) = fixture.launch();
         let items = catalog
-            .get_from(&cache, fixture.download(Err("must not be asked".into())))
+            .get_from(
+                &cache,
+                fixture.download(Err(ProviderError::other("must not be asked"))),
+            )
             .unwrap();
         assert_eq!(*items, pairs(&["BTCUSDT"]));
         assert_eq!(fixture.downloads(), 1);
@@ -234,7 +248,10 @@ mod tests {
         let (cache, catalog) = fixture.launch();
         for _ in 0..4 {
             let items = catalog
-                .get_from(&cache, fixture.download(Err("offline".into())))
+                .get_from(
+                    &cache,
+                    fixture.download(Err(ProviderError::other("offline"))),
+                )
                 .unwrap();
             assert_eq!(*items, pairs(&["OLD"]));
         }
@@ -250,9 +267,12 @@ mod tests {
         let fixture = Fixture::new();
         let (cache, catalog) = fixture.launch();
         let error = catalog
-            .get_from(&cache, fixture.download(Err("offline".into())))
+            .get_from(
+                &cache,
+                fixture.download(Err(ProviderError::other("offline"))),
+            )
             .unwrap_err();
-        assert_eq!(error, "offline");
+        assert_eq!(error, ProviderError::other("offline"));
         let items = catalog
             .get_from(&cache, fixture.download(Ok(pairs(&["BTCUSDT"]))))
             .unwrap();
@@ -287,7 +307,10 @@ mod tests {
         catalog.clear_memory();
         // Still in the lookup cache, so no download.
         catalog
-            .get_from(&cache, fixture.download(Err("not asked".into())))
+            .get_from(
+                &cache,
+                fixture.download(Err(ProviderError::other("not asked"))),
+            )
             .unwrap();
         assert_eq!(fixture.downloads(), 1);
     }

@@ -2,14 +2,14 @@
 //! its sample size and a 95% interval. A read of the chart's own candles, like the indicator
 //! values, so it needs the candles permission and changes nothing.
 
-use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
+use crate::mcp::chart::ChartCommand;
 use crate::mcp::session_stats::{Query, SessionStatsResult};
 use crate::mcp::tools::{
-    DegenViewMcp, client_of, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
+    Caller, DegenViewMcp, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::model::mcp::Permission;
 use crate::model::session_stats::{Filter, Outcome, Side, WeekdaySet};
-use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
 use rmcp::{tool, tool_router};
@@ -148,10 +148,9 @@ impl DegenViewMcp {
     )]
     async fn get_session_stats(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        Caller(client): Caller,
         Parameters(params): Parameters<SessionStatsParams>,
     ) -> Result<Json<SessionStatsResult>, CallToolResult> {
-        let client = client_of(&parts)?;
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
         let chart_id = parse_chart_id(&params.chart_id)?;
         let query = query(&params)?;
@@ -160,7 +159,7 @@ impl DegenViewMcp {
             .call(
                 &client,
                 Permission::ChartsCandlesRead,
-                McpCommand::GetSessionStats {
+                ChartCommand::GetSessionStats {
                     workspace_id,
                     chart_id,
                     query,

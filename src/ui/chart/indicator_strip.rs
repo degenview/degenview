@@ -3,9 +3,9 @@
 use super::card::ChartCard;
 pub use crate::model::BuiltIn;
 use crate::model::overlay::{OverlayCommand, OverlayId};
+use crate::model::pine::bundled::BundledIndicator;
+use crate::model::pine::script::LocalScript;
 use crate::model::{EMA_PERIODS, IndicatorConfig};
-use crate::pine_studio::indicators::BundledIndicator;
-use crate::pine_studio::model::LocalScript;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::popover;

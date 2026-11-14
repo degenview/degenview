@@ -129,11 +129,11 @@ fn listing_reports_the_alert_and_never_exposes_webhooks() {
     assert_eq!((listed.total, listed.truncated), (1, false));
     let info = &listed.alerts[0];
     assert_eq!(info.alert_id, id.to_string());
-    assert_eq!(info.condition, "crosses_below");
+    assert_eq!(info.condition, AlertConditionKind::CrossesBelow);
     assert_eq!(info.target_price.as_deref(), Some("0.00000278"));
     assert_eq!(
-        (info.status.as_str(), info.frequency.as_str()),
-        ("active", "once")
+        (info.status, info.frequency),
+        (AlertStatus::Active, AlertFrequencyKind::Once)
     );
     assert_eq!(info.note, "dip");
     assert!(info.sends_to_webhooks);
@@ -264,7 +264,10 @@ fn pause_resume_and_delete_follow_the_alert_windows_semantics() {
             baseline: None,
         },
     );
-    assert_eq!(list_alerts(&host, Some(id)).alerts[0].status, "paused");
+    assert_eq!(
+        list_alerts(&host, Some(id)).alerts[0].status,
+        AlertStatus::Paused
+    );
     assert!(matches!(
         plan_pause_alert(&host, id, true),
         Ok(StatePlan::Already)
@@ -331,8 +334,8 @@ fn an_alert_with_a_condition_from_a_newer_version_cannot_be_toggled() {
     ));
     let info = &list_alerts(&host, Some(id)).alerts[0];
     assert_eq!(
-        (info.condition.as_str(), info.status.as_str()),
-        ("unsupported", "unsupported")
+        (info.condition, info.status),
+        (AlertConditionKind::Unsupported, AlertStatus::Unsupported)
     );
     assert_eq!(info.target_price, None);
 }
@@ -359,7 +362,7 @@ fn percent_conditions_report_their_reference() {
         NOW,
     );
     let info = alert_info(&alert, Some(NOW));
-    assert_eq!(info.condition, "rises_by");
+    assert_eq!(info.condition, AlertConditionKind::RisesBy);
     assert_eq!(info.percent.as_deref(), Some("10"));
     assert_eq!(info.reference_price.as_deref(), Some("100"));
     assert_eq!(info.target_price.as_deref(), Some("110"));
