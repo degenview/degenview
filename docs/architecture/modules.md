@@ -206,9 +206,9 @@ beside the code they exercise.
 | `syntax/` | `token`, `lexer`, `parser`, `ast`, `traversal` |
 | `check/` | The type checker and the rules that need no types: names, structure, declarations, identifiers, ignored features, `callables` |
 | `compiler/` | `compiler` (source → `CompiledProgram`), `program`, the builtin `registry`, `symbol_catalog` |
-| `runtime/` | The interpreter: `session`, `state`, `value`, `support`, `containers`, `execution`, call routing and binding, user methods, `request.security` |
+| `runtime/` | The interpreter: `session/` (`build`, `running`, `expressions`, `statements`, `calls`, `scalar`, `hooks`, `bookkeeping`), `state`, `value`, `support`, `containers`, `execution`, call routing and binding, user methods, `request.security` |
 | `builtins/` | Constants and colour math (`mod.rs`), then one child per namespace: `alert`, `array`, `map`, `matrix`, `math`, `strings`, `number_format`, `regex_lite`, `ta`, `misc`, `market_values` |
-| `outputs/`, `inputs/` | Chart output types with `visuals`, `drawings`, `style_overrides`; how an `input.*` call is read |
+| `outputs/`, `inputs/` | Chart output types with `visuals`, `drawings/` (dispatch and binding in `mod.rs`; `names`, `coordinates`, `create`, `table`, `mutate`), `style_overrides`; how an `input.*` call is read |
 | `strategy/`, `footprint/`, `logs/`, `time/` | The strategy model, `broker` and `strategy.*`; `request.footprint()`; Pine Logs; calendar, time zones, sessions |
 | `debug/`, `profile/`, `tests/`, `corpus/` | The debugger, the profiler, end-to-end and benchmark tests, the corpus data |
 
@@ -217,10 +217,10 @@ beside the code they exercise.
 | Directory | Holds |
 | --- | --- |
 | `ai/`, `debug/`, `profiler/` | The assistant, the debugger and the profiler: their state, host, panel, gallery pictures and `studio_tests` |
-| `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites` |
+| `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites`; the view itself is `mod.rs` (`show`, the find bar, undoable edits) with `state`, `text_view`, `completion_view`, `signature_view`, `gutter/` (`breakpoints`, `changes`, `profile`), `indent_guides`, `assists` and `status` |
 | `library/` | The script library around its file store (`store::scripts`): `registry`, `sidebar`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
 | `drawer/` | The drawer under the preview: `problems/`, `logs/`, the intro, `bottom_bar`, `tab_chrome` |
-| root | `mod.rs` (the manager), `preview`, `inputs`, `workspace`, `sheets`, `theme_preview/` |
+| root | `mod.rs` (the manager) with `commands` (`Cmd` and running it), `open_script`, `migrate_swift`; `preview/` (`state`, `source`, `fetch`, `chart`, `market_picker`), `inputs`, `workspace`, `sheets`, `theme_preview/` |
 
 ## `ui/` layout
 

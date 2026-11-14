@@ -139,7 +139,7 @@ Allocations (`PINE_BENCH_FEATURES=alloc-count`, 5000 bars, whole run):
 Peak memory rose by about 200 KB (1.4-1.8%) on every workload, including the function ones. It was not
 traced to a cause; the session now keeps a second `Vec` of the script's functions (`callables`, sharing
 their bodies by `Arc`) and the program's `resolutions` table was moved, not copied. Check a change to
-`session.rs`, `user_methods.rs` or `call_binding.rs` with `tools/pine-bench.sh`.
+`runtime/session/`, `user_methods/` or `call_binding/` with `tools/pine-bench.sh`.
 
 ## Tests
 

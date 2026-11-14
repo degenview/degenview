@@ -120,10 +120,11 @@ Stacked pull requests, logic changes first and pure moves last.
         empty states, chips and card frames stay: each looks different from the kit's (sizes,
         discs, fills), and folding them in would change pixels.
   - [x] `ui/kit/mod.rs` split by widget family.
-- [ ] **PR 13: big files split** (move only), inline tests into `tests.rs`.
+- [ ] **PR 13: big files split** [#524](https://github.com/degenview/degenview/pull/524) (move only), inline tests into `tests.rs`.
   - [x] UI: chart card, watchlist sidebar, Settings ▸ MCP, portfolio overview/statistics, chart
         settings, tab bar, drawing properties.
-  - [ ] Pine: runtime session, outputs/drawings; Pine Studio: editor, studio commands, preview.
+  - [x] Pine: runtime session, outputs/drawings; Pine Studio: editor, studio commands, preview,
+        the assistant's inline tests.
   - [ ] Store and sync: `store/sync`, `sync/engine/apply`; `mcp/pine`.
 
 ### Later (not in this series)
