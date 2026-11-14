@@ -83,7 +83,7 @@ name, `foo/mod.rs` and never `foo.rs` beside `foo/`, no three files with one pre
 the names `model/` and `ui/` already use (`alert`, `webhook`, `portfolio`, `paper`, `broker`, `chart`,
 `market`, `annotation`, `editor_theme`, `mcp`, `pine`, `tab`, `sync`); only plumbing gets a new word
 (`net`, `cache`, `keychain`, `system`). `layout_tests.rs` fails the build on the two mechanical
-mistakes.
+mistakes, on an import that points up a layer, and on drawing code outside the view layers.
 
 `service/` (external I/O; root: `mod.rs` with `MarketSource`, `SearchResult` and `fetch_*`, and `work_queue`):
 
