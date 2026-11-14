@@ -36,7 +36,7 @@ The children are grouped by domain, like `model/` and `ui/`:
 | `trade/` | The tab's trading side: `broker`, `paper` (quotes, portfolio cards, chart orders) and `sheet` (the order sheet's venue and actions) |
 | `pine/` | Scripts and indicators on a chart, and the views the app and MCP take (`mod.rs`); the Pine Logs pane (`logs/`) |
 | `tab_link/` | A tab's side of Tab Linking |
-| `empty_page/` | The new-tab page's slow reads (recents, layouts, Alpaca key) in `mod.rs`, and the week of closes behind its sparklines (`trends`) |
+| `empty_page/` | The new-tab page's slow reads (recents, layouts, Alpaca key) and the week of closes behind its sparklines (a `service::market::trend` loader) |
 | root | `grid` (the column grid), `undo` (drawing and indicator edits as steps), `replay`, `alerts`, `watchlist`, `toolbar`, `input` (shortcuts), `test_support` (test fixtures) |
 
 ## Feature directories
@@ -89,7 +89,7 @@ mistakes.
 
 | Directory | Holds |
 | --- | --- |
-| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), `live` feed, `candles` shaping, symbol `catalog`, `search_rank`, `fx_rates` |
+| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), `live` feed, `candles` shaping, symbol `catalog`, `search_rank`, `fx_rates`, `trend` (recent daily closes for sparklines) |
 | `net/` | Shared transport: `http`, `rate_limit`, `ws`, `multipart` |
 | `cache/` | `mod.rs` the candle cache; `disk`, `lookup` and `control` (what Settings ▸ Storage does) |
 | `annotation/` | What drawings' pictures and Post cards need: `asset_host`, `ingest`, `link_fetch` |
@@ -185,7 +185,7 @@ picture test sits beside it (`broker/panel_gallery.rs`). A helper used by severa
 | `pine/` | Pine output on a chart, report, style view, settings popover, Pine Logs (`logs_view/`) and the script catalog |
 | `settings/` | The Settings window (`window`) and one file per page; the Pine Studio page owns the font picker and theme editor |
 | `workspace/`, `window/` | Workspace chrome (toolbar, tool rail, layouts, the new-tab page in `empty_state/`, chart linking, snapshot menu) and window chrome (tab strip, tab-link menu, update indicator) |
-| `kit/`, `theme/` | Shared widgets (`kit`, with `bar` (the flat top bar every tab kind shares), `dialog`, `sheet`, `popover`, `icon_tabs`, `color_picker`, `date_picker`, `split`, `source_logo`, `art`, ...) and colours and fonts |
+| `kit/`, `theme/` | Shared widgets (`kit`, with `bar` (the flat top bar every tab kind shares), `dialog`, `sheet`, `popover`, `icon_tabs`, `color_picker`, `date_picker`, `split`, `source_logo`, `sparkline`, `art`, ...) and colours and fonts |
 | root | `mod.rs` and the three single-file foundations: `icons`, `shortcut`, `accessibility` (plus `editor_appearance/`) |
 
 A new screen goes in its domain's directory; a new domain gets a directory and a row here.

@@ -16,6 +16,7 @@ pub mod markdown_view;
 pub mod popover;
 pub mod sheet;
 pub mod source_logo;
+pub mod sparkline;
 pub mod split;
 pub mod time_text;
 
