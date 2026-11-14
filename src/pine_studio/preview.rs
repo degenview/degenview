@@ -16,6 +16,7 @@ use crate::model::{DataSource, IndicatorConfig, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{InputSchema, InputValue, VisualOutput};
 use crate::pine::syntax::token::{DiagnosticSeverity, Limits};
+use crate::service::work_queue::{self, Pending, PendingAll};
 use crate::service::{self, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
@@ -33,7 +34,6 @@ use eframe::egui::{
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 const MARKET_KEY: &str = "scriptPreview.market";
@@ -102,9 +102,8 @@ struct Picker {
     stock_text: String,
     last_edit: Option<Instant>,
     results: Vec<SearchResult>,
-    searching: bool,
-    inbox: Option<Receiver<(u64, Vec<SearchResult>)>>,
-    generation: u64,
+    /// The search under way, one job per provider; a newer query replaces it.
+    search: Option<PendingAll<Vec<SearchResult>>>,
     needs_focus: bool,
     /// The keyboard-highlighted row of the results (or of the recents).
     cursor: usize,
@@ -122,9 +121,7 @@ impl Picker {
             stock_text: String::new(),
             last_edit: None,
             results: Vec::new(),
-            searching: false,
-            inbox: None,
-            generation: 0,
+            search: None,
             needs_focus: true,
             cursor: 0,
         }
@@ -200,7 +197,7 @@ pub struct PreviewState {
     candles_fingerprint: u64,
     loading: bool,
     error: Option<String>,
-    inbox: Option<Receiver<Result<Vec<Kline>, String>>>,
+    inbox: Option<Pending<Result<Vec<Kline>, String>>>,
     last_fetch: Option<Instant>,
     /// What the candles on screen were fetched for.
     fetched_for: Option<(PreviewMarket, Timeframe)>,
@@ -699,27 +696,22 @@ impl PreviewState {
             self.fetched_for = Some((self.market.clone(), self.timeframe));
             return;
         }
-        let (sender, receiver) = mpsc::channel();
         let market = self.market.clone();
         let interval = self.timeframe.interval();
-        let repaint = ctx.clone();
-        std::thread::spawn(move || {
-            let result =
-                service::fetch_klines(market.source, &market.ticker, interval, CANDLE_LIMIT);
-            let _ = sender.send(result);
-            repaint.request_repaint();
-        });
-        self.inbox = Some(receiver);
+        self.inbox = Some(work_queue::start_for(market.source, Some(ctx), move || {
+            service::fetch_klines(market.source, &market.ticker, interval, CANDLE_LIMIT)
+        }));
         self.loading = true;
         self.last_fetch = Some(Instant::now());
         self.fetched_for = Some((self.market.clone(), self.timeframe));
     }
 
     fn receive_candles(&mut self) {
-        let Some(receiver) = &self.inbox else {
+        let Some(fetch) = &mut self.inbox else {
             return;
         };
-        let Ok(result) = receiver.try_recv() else {
+        let Some(result) = fetch.poll_or(|| Err("The candles could not be loaded.".to_owned()))
+        else {
             return;
         };
         self.inbox = None;
@@ -1186,7 +1178,7 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
         AssetType::Stock => "Search US stocks and ETFs, e.g. AAPL, Tesla",
     };
     let field_id = Id::new("script-preview-search");
-    let searching = picker.searching;
+    let searching = picker.search.is_some();
     let mut submitted = false;
     let mut text_changed = false;
     let focus = std::mem::take(&mut picker.needs_focus);
@@ -1320,7 +1312,7 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
                             }
                         }
                     });
-            } else if picker.searching || picker.last_edit.is_some() {
+            } else if picker.search.is_some() || picker.last_edit.is_some() {
                 let (rect, _) =
                     ui.allocate_exact_size(vec2(rows_width, BODY_HEIGHT), Sense::hover());
                 ui.put(
@@ -1459,17 +1451,13 @@ fn recent_row(
     response
 }
 
-/// Debounces the query by 300 ms, then searches the right providers off the UI thread.
+/// Debounces the query by 300 ms, then searches the right providers, each on its own workers.
 fn drive_search(picker: &mut Picker, ctx: &egui::Context) {
-    if let Some(inbox) = &picker.inbox
-        && let Ok((generation, results)) = inbox.try_recv()
-    {
-        picker.inbox = None;
-        picker.searching = false;
-        if generation == picker.generation {
-            picker.results = results;
-            picker.cursor = 0;
-        }
+    if let Some(answers) = picker.search.as_mut().and_then(PendingAll::poll) {
+        picker.search = None;
+        // In provider order; a provider that failed adds nothing.
+        picker.results = answers.into_iter().flatten().flatten().collect();
+        picker.cursor = 0;
     }
     let Some(at) = picker.last_edit else {
         return;
@@ -1480,31 +1468,25 @@ fn drive_search(picker: &mut Picker, ctx: &egui::Context) {
     }
     picker.last_edit = None;
     let query = picker.text().trim().to_owned();
-    picker.generation += 1;
+    // A newer query (or none) replaces the search under way; its answers are dropped.
+    picker.search = None;
     if query.is_empty() {
         picker.results.clear();
-        picker.searching = false;
         return;
     }
-    let generation = picker.generation;
     let sources: Vec<DataSource> = match picker.asset {
         AssetType::Crypto => CRYPTO_SOURCES.to_vec(),
         AssetType::Stock => vec![DataSource::Alpaca],
     };
-    let (sender, receiver) = mpsc::channel();
-    let repaint = ctx.clone();
-    std::thread::spawn(move || {
-        let mut all = Vec::new();
-        for source in sources {
-            if let Ok(mut found) = service::for_source(source).search_tickers(&query) {
-                all.append(&mut found);
-            }
-        }
-        let _ = sender.send((generation, all));
-        repaint.request_repaint();
+    let searches = sources.into_iter().map(|source| {
+        let query = query.clone();
+        work_queue::start_search(source, Some(ctx), move || {
+            service::for_source(source)
+                .search_tickers(&query)
+                .unwrap_or_default()
+        })
     });
-    picker.inbox = Some(receiver);
-    picker.searching = true;
+    picker.search = Some(PendingAll::new(searches));
 }
 
 #[cfg(test)]

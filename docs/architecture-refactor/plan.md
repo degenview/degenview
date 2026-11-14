@@ -71,15 +71,17 @@ Stacked pull requests, logic changes first and pure moves last.
   - [x] `PortfolioTab` and the portfolio bar and import sheets move to `ui/portfolio/`.
   - [x] `PaperPanel` and its banners move to `ui/paper/`; the export runs on the work queue.
   - [x] `host/webhook` becomes `host/settings`, the Settings-window controller it is.
-- [x] **PR 4: the Pine worker leaves the chart card.**
+- [x] **PR 4: the Pine worker leaves the chart card.** [#515](https://github.com/degenview/degenview/pull/515)
   - [x] The chart card's worker and run bookkeeping move to `host::pine`; the card asks for a run and
         keeps the latest output.
   - [x] Indicator-picker previews run through the same host.
-- [ ] **PR 5: one background-job handle.**
-  - [ ] `trading::task::Task` becomes `service::work_queue::Pending<T>`, which repaints on completion.
-  - [ ] UI thread spawns (searches, test connections, uploads, file dialogs) go through it; searches use
+- [x] **PR 5: one background-job handle.**
+  - [x] `service::work_queue::Pending<T>` (and `PendingAll<T>`), which repaints on completion.
+        `trading::task::Task` stays: venues answer through polling closures (paper at once, brokers
+        through the broker crate's own handle), not through one job.
+  - [x] UI thread spawns (searches, test connections, uploads, file dialogs) go through it; searches use
         the per-provider lanes; Keychain reads move onto the job.
-  - [ ] Pine Studio's preview fetch, search and export use it too.
+  - [x] Pine Studio's preview fetch, search and export use it too.
 - [ ] **PR 6: types where they belong.**
   - [ ] CoinMarketCap chart-type titles move to `model::market`.
   - [ ] `ReplayCommand`/`ReplayStart` move to `model`.

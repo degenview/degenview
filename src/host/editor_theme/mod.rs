@@ -19,12 +19,15 @@ use crate::model::editor_theme::{
     ThemeError, ThemeId, ThemeSelection, ThemeSource, Typography, TypographyOverride, new_user_id,
 };
 use crate::model::watchlist::now_ms;
+use crate::service::editor_theme::files;
 use crate::service::editor_theme::fonts::{FontCatalog, check_outlines, read_font};
+use crate::service::work_queue::{self, Pending};
 use crate::store::Store;
 use crate::store::editor_theme::Loaded;
 use crate::ui::editor_appearance::{self, Appearance, EditorFont};
 use crate::ui::theme::{self, EditorFontSource};
 use eframe::egui;
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -46,6 +49,11 @@ pub enum FontStatus {
 }
 
 type FontReply = (String, Result<Arc<egui::FontData>, String>);
+
+/// A theme file being chosen and read: its text, `None` when the person cancels.
+pub type FileRead = Pending<Result<Option<String>, String>>;
+/// A theme file being saved: where it went, `None` when the person cancels.
+pub type FileSave = Pending<Result<Option<PathBuf>, String>>;
 
 struct Inner {
     ctx: Option<egui::Context>,
@@ -628,6 +636,26 @@ impl EditorThemeHost {
                 .ok_or_else(|| ThemeError::Missing.message())?,
         };
         Ok((file_stem(&theme.name), codec::export(&theme)))
+    }
+
+    /// Asks for a theme file and reads it, on a worker that may wait as long as the person does.
+    /// The answer is `None` when they cancel; [`Self::import`] takes the text.
+    pub fn choose_file(&self) -> FileRead {
+        let ctx = self.lock().ctx.clone();
+        work_queue::SNAPSHOTS.start(ctx.as_ref(), || {
+            files::choose_and_read(codec::MAX_FILE_BYTES)
+        })
+    }
+
+    /// Asks where to save `source` as a theme file and writes it, on a worker that may wait as
+    /// long as the person does. Returns the file's stem and the job, whose answer is the path it
+    /// was written to (`None` when the person cancels).
+    pub fn save_file(&self, source: ThemeSource) -> Result<(String, FileSave), String> {
+        let (stem, text) = self.export(source)?;
+        let ctx = self.lock().ctx.clone();
+        let name = stem.clone();
+        let job = work_queue::SNAPSHOTS.start(ctx.as_ref(), move || files::save(&name, &text));
+        Ok((stem, job))
     }
 
     /// Reads a theme file and wears the theme it makes. A file never replaces a theme: its name

@@ -243,7 +243,7 @@ pub struct ChartWorkspace {
     quote_coordinator: WatchlistQuoteCoordinator,
     import_report: Option<ImportReport>,
     watchlist_error: Option<crate::model::watchlist::WatchlistNotice>,
-    watchlist_file_result: Option<Receiver<Result<(), String>>>,
+    watchlist_file_result: Option<crate::service::work_queue::Pending<Result<(), String>>>,
     paper_panel_visible: bool,
     /// The order sheet beside the chart. Open and closed with the trading panel, and by its own ✕.
     trade_sheet_visible: bool,

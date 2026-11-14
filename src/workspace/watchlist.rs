@@ -5,9 +5,11 @@ use super::alerts::AlertRequest;
 use crate::model::InstrumentId;
 use crate::model::alert::AlertAsset;
 use crate::model::watchlist::{WatchlistError, WatchlistInstrument, WatchlistNotice};
+use crate::service::system::file_dialog;
+use crate::service::work_queue::{self, Pending};
 use crate::ui::watchlist::sidebar::{self, WatchlistAction, WatchlistSidebarInput};
 use eframe::egui;
-use std::sync::{Arc, mpsc};
+use std::sync::Arc;
 
 /// Shows why a change was refused. A failed save already shows the store's own message.
 pub(super) fn report_watchlist(
@@ -20,18 +22,41 @@ pub(super) fn report_watchlist(
     }
 }
 
+/// Asks for a file of watchlist symbols and reads it, on the workers that wait on the user. The
+/// answer is `None` when the user cancels.
+fn read_import_file(ctx: &egui::Context) -> Pending<Result<Option<String>, String>> {
+    work_queue::SNAPSHOTS.start(Some(ctx), || {
+        file_dialog::choose_csv("Choose watchlist symbols").and_then(|path| {
+            path.map(|path| {
+                file_dialog::read_text_up_to(&path, crate::model::watchlist::text::MAX_IMPORT_BYTES)
+            })
+            .transpose()
+        })
+    })
+}
+
+/// Asks where to save the watchlist `name` and writes `text` there, on the workers that wait on
+/// the user.
+fn export_to_file(ctx: &egui::Context, name: &str, text: String) -> Pending<Result<(), String>> {
+    let file_name = crate::model::watchlist::text::export_file_name(name);
+    work_queue::SNAPSHOTS.start(Some(ctx), move || {
+        file_dialog::choose_save_path("Export watchlist", &file_name)
+            .and_then(|path| {
+                path.map(|path| file_dialog::write_text(&path, &text))
+                    .transpose()
+            })
+            .map(|_| ())
+    })
+}
+
 impl ChartWorkspace {
     pub(super) fn show_watchlist(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        if let Some(receiver) = &self.watchlist_file_result {
-            match receiver.try_recv() {
-                Ok(Err(error)) => {
-                    self.watchlist_error = Some(WatchlistNotice::new("File Error", error));
-                    self.watchlist_file_result = None;
-                }
-                Ok(Ok(())) | Err(mpsc::TryRecvError::Disconnected) => {
-                    self.watchlist_file_result = None;
-                }
-                Err(mpsc::TryRecvError::Empty) => {}
+        if let Some(export) = &mut self.watchlist_file_result {
+            if let Some(Err(error)) = export.poll() {
+                self.watchlist_error = Some(WatchlistNotice::new("File Error", error));
+            }
+            if !export.is_pending() {
+                self.watchlist_file_result = None;
             }
         }
         let actions = {
@@ -206,6 +231,10 @@ impl ChartWorkspace {
                         }
                     }
                     WatchlistAction::BeginImport => self.import_report = None,
+                    WatchlistAction::ChooseImportFile => {
+                        self.watchlist_sidebar
+                            .read_import_file(read_import_file(ctx));
+                    }
                     WatchlistAction::Export { list } => {
                         if let Some(text) = store.export(list) {
                             let name = store
@@ -214,24 +243,7 @@ impl ChartWorkspace {
                                 .find(|candidate| candidate.id == list)
                                 .map(|candidate| candidate.name.clone())
                                 .unwrap_or_else(|| "Watchlist".to_owned());
-                            let (sender, receiver) = mpsc::channel();
-                            self.watchlist_file_result = Some(receiver);
-                            std::thread::spawn(move || {
-                                let result = crate::service::system::file_dialog::choose_save_path(
-                                    "Export watchlist",
-                                    &crate::model::watchlist::text::export_file_name(&name),
-                                )
-                                .and_then(|path| {
-                                    path.map(|path| {
-                                        crate::service::system::file_dialog::write_text(
-                                            &path, &text,
-                                        )
-                                    })
-                                    .transpose()
-                                })
-                                .map(|_| ());
-                                let _ = sender.send(result);
-                            });
+                            self.watchlist_file_result = Some(export_to_file(ctx, &name, text));
                         }
                     }
                     WatchlistAction::CopyText(text) => ctx.copy_text(text),

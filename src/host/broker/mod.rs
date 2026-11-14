@@ -36,6 +36,7 @@ use degenview_brokers::{
 use crate::model::broker;
 use crate::model::broker::prefs::{AllPrefs, BrokerPrefs};
 use crate::service::keychain::broker_secrets::BrokerSecrets;
+use crate::service::work_queue::{self, Pending};
 use crate::store::SharedStore;
 use crate::trading::task::Task;
 
@@ -382,26 +383,21 @@ impl BrokerHost {
         }
     }
 
-    /// Checks credentials by connecting with them (reads only: nothing is placed or changed), off
-    /// the interface thread. Nothing is saved.
+    /// Checks credentials by connecting with them (reads only: nothing is placed or changed), on
+    /// a worker. Nothing is saved; the attached window is repainted when the answer is there.
     pub fn validate(
         &self,
         id: BrokerId,
         credentials: Credentials,
-    ) -> Receiver<Result<Session, BrokerError>> {
-        let (sender, receiver) = mpsc::channel();
+    ) -> Pending<Result<Session, BrokerError>> {
         let env = self.env.clone();
         let broker = degenview_brokers::registry::by_id(id);
-        std::thread::spawn(move || {
-            let result = match broker {
-                Some(broker) => broker
-                    .connect(&credentials, &env)
-                    .map(|connection| connection.session().clone()),
-                None => Err(BrokerError::invalid("That broker is not available.")),
-            };
-            let _ = sender.send(result);
-        });
-        receiver
+        work_queue::start(self.waker.context.get(), move || match broker {
+            Some(broker) => broker
+                .connect(&credentials, &env)
+                .map(|connection| connection.session().clone()),
+            None => Err(BrokerError::invalid("That broker is not available.")),
+        })
     }
 
     /// Replaces the record of unconfirmed orders with something that is not one, as a damaged
