@@ -3,11 +3,13 @@
 
 use super::super::select_tests::{HOUR, Rig};
 use super::*;
+use crate::lock::lock;
 use crate::model::Tool;
 use crate::model::chart::snapshot::framing::{Dial, Step};
-use crate::model::chart::snapshot::studio::{AspectRatio, Background, Style};
-use crate::model::chart::snapshot::{SnapshotScale, layout_file_name};
+use crate::model::chart::snapshot::studio::{AspectRatio, Background, Include, StudioPrefs, Style};
+use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale, layout_file_name};
 use crate::service::snapshot::export::ExportError;
+use crate::store::SharedStore;
 use crate::ui::shortcut;
 use crate::workspace::test_support::rectangle;
 use eframe::egui::{Event, Key, Modifiers, Pos2, vec2};
@@ -67,7 +69,10 @@ fn rig(symbols: &[&str]) -> Rig {
 
 /// A rig with a Studio open on a selection over the first chart.
 fn opened(symbols: &[&str]) -> Rig {
-    let mut rig = rig(symbols);
+    open_on(rig(symbols))
+}
+
+fn open_on(mut rig: Rig) -> Rig {
     rig.begin();
     rig.drag(rig.at(0, (0.1, 0.1)), rig.at(0, (0.9, 0.9)));
     rig.settle();
@@ -76,6 +81,36 @@ fn opened(symbols: &[&str]) -> Rig {
         "the selection opened the Studio"
     );
     rig
+}
+
+/// Gives the rig's workspace a snapshot host over a store of its own, holding `look` if there is
+/// one, as a window of the app has. Returns the store, to read what was saved.
+fn remember(rig: &mut Rig, look: Option<StudioPrefs>) -> SharedStore {
+    use crate::service::keychain::api_keys::MemoryBackend;
+    use crate::service::keychain::snapshot_secrets::SnapshotSecrets;
+    let store: SharedStore = Arc::new(Mutex::new(crate::store::Store::open_in_memory().unwrap()));
+    if let Some(studio) = look {
+        let saved = SnapshotPrefs {
+            studio,
+            ..SnapshotPrefs::default()
+        };
+        lock(&store)
+            .set_setting(SnapshotPrefs::KEY, &saved)
+            .unwrap();
+    }
+    let secrets = SnapshotSecrets::with(Box::new(MemoryBackend::default()), Box::new(|_| None));
+    let host = SnapshotHost::load_with(store.clone(), Arc::new(secrets));
+    rig.workspace.set_snapshots(&host);
+    store
+}
+
+/// The look the store holds.
+fn saved_look(store: &SharedStore) -> StudioPrefs {
+    lock(store)
+        .setting_strict::<SnapshotPrefs>(SnapshotPrefs::KEY)
+        .unwrap()
+        .unwrap_or_default()
+        .studio
 }
 
 fn session(rig: &Rig) -> &StudioSession {
@@ -200,7 +235,9 @@ fn the_summary_is_the_exports_own_size() {
 
 #[test]
 fn portion_goes_back_to_the_charts_and_the_next_selection_reopens_with_the_look() {
-    let mut rig = opened(&["BTCUSDT"]);
+    let mut rig = rig(&["BTCUSDT"]);
+    remember(&mut rig, None);
+    let mut rig = open_on(rig);
     click(&mut rig, "DegenView mark, on");
     click(&mut rig, "Radiant background");
     click(&mut rig, "Chart");
@@ -222,23 +259,179 @@ fn portion_goes_back_to_the_charts_and_the_next_selection_reopens_with_the_look(
         (before.style, before.background, before.include)
     );
     assert!(after.framing.is_default());
-    assert!(rig.workspace.snapshot.kept_look.is_none());
 }
 
 #[test]
-fn a_selection_cancelled_on_the_way_forgets_the_look() {
-    let mut rig = opened(&["BTCUSDT"]);
+fn a_selection_cancelled_on_the_way_still_remembers_the_look() {
+    let mut rig = rig(&["BTCUSDT"]);
+    remember(&mut rig, None);
+    let mut rig = open_on(rig);
     click(&mut rig, "Radiant background");
     click(&mut rig, "Portion");
     assert!(rig.selecting());
     rig.escape();
     rig.settle();
     assert!(!rig.selecting() && !rig.workspace.studio_open());
-    assert!(rig.workspace.snapshot.kept_look.is_none());
     rig.begin();
     rig.drag(rig.at(0, (0.1, 0.1)), rig.at(0, (0.9, 0.9)));
     rig.settle();
-    assert_eq!(session(&rig).config.background, Background::None);
+    assert_eq!(session(&rig).config.background, Background::Radiant);
+}
+
+// MARK: Remembering the look
+
+#[test]
+fn a_studio_opens_in_the_look_that_was_remembered_with_the_framing_at_its_default() {
+    let look = StudioPrefs {
+        style: Style::Chart,
+        size: AspectRatio::Portrait9x16,
+        background: Background::Illuminated,
+        include: Include {
+            indicators: true,
+            drawings: false,
+            branding: false,
+        },
+    };
+    let mut rig = rig(&["BTCUSDT"]);
+    remember(&mut rig, Some(look));
+    let rig = open_on(rig);
+    let config = session(&rig).config;
+    assert_eq!(config.area, Area::Portion, "the area is how it was opened");
+    assert_eq!(config.look(), look);
+    assert!(config.framing.is_default());
+    assert!(!config.size_enabled(), "Chart keeps Size dimmed");
+}
+
+#[test]
+fn changing_a_control_saves_the_look_and_a_frame_that_changes_nothing_saves_nothing() {
+    let mut rig = rig(&["BTCUSDT"]);
+    let store = remember(&mut rig, None);
+    // A row this version would rewrite if it saved anything: it stays while nothing changes.
+    let marked = serde_json::json!({"provider": null, "marker": 1});
+    lock(&store)
+        .set_setting(SnapshotPrefs::KEY, &marked)
+        .unwrap();
+    let mut rig = open_on(rig);
+    for _ in 0..5 {
+        rig.frame(Vec::new());
+    }
+    assert_eq!(
+        lock(&store)
+            .raw_setting(SnapshotPrefs::KEY)
+            .unwrap()
+            .unwrap(),
+        marked,
+        "opening and drawing frames writes nothing"
+    );
+
+    click(&mut rig, "Spectrum background");
+    assert_eq!(saved_look(&store).background, Background::Spectrum);
+    click(&mut rig, "9:16");
+    click(&mut rig, "DegenView mark, on");
+    let saved = saved_look(&store);
+    assert_eq!(saved.size, AspectRatio::Portrait9x16);
+    assert!(!saved.include.branding);
+    assert_eq!(saved, session(&rig).config.look());
+    assert!(
+        lock(&store)
+            .raw_setting(SnapshotPrefs::KEY)
+            .unwrap()
+            .unwrap()
+            .get("marker")
+            .is_none(),
+        "a change writes the settings"
+    );
+}
+
+#[test]
+fn the_framing_and_the_area_are_never_saved() {
+    let mut rig = rig(&["BTCUSDT"]);
+    let store = remember(&mut rig, None);
+    let mut rig = open_on(rig);
+    click(&mut rig, "Spectrum background");
+    let before = lock(&store).raw_setting(SnapshotPrefs::KEY).unwrap();
+    {
+        let mut taken = rig.workspace.snapshot.studio.take().expect("a session");
+        taken.config.framing.width = 1.4;
+        rig.workspace.snapshot.studio = Some(taken);
+    }
+    for _ in 0..3 {
+        rig.frame(Vec::new());
+    }
+    click(&mut rig, "Full chart");
+    assert_eq!(
+        lock(&store).raw_setting(SnapshotPrefs::KEY).unwrap(),
+        before,
+        "reframing and changing the area leave the saved look alone"
+    );
+    let keys: Vec<_> = before.unwrap()["studio"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    assert!(
+        keys.iter()
+            .all(|key| ["style", "size", "background", "include"].contains(&key.as_str())),
+        "{keys:?}"
+    );
+}
+
+#[test]
+fn a_toggle_that_is_unavailable_does_not_overwrite_what_was_remembered() {
+    // The chart has no indicators and no drawings, so those two toggles are dimmed. The look
+    // that was remembered has them off; switching the mark must not turn them on.
+    let remembered = StudioPrefs {
+        include: Include {
+            indicators: false,
+            drawings: false,
+            branding: true,
+        },
+        ..StudioPrefs::default()
+    };
+    let mut rig = rig(&["BTCUSDT"]);
+    let store = remember(&mut rig, Some(remembered));
+    let mut rig = open_on(rig);
+    assert!(!session(&rig).capture.has_indicators() && !session(&rig).capture.has_drawings());
+    click(&mut rig, "Indicators, off");
+    click(&mut rig, "Drawings, off");
+    assert_eq!(saved_look(&store), remembered, "dimmed toggles do nothing");
+    click(&mut rig, "DegenView mark, on");
+    let saved = saved_look(&store).include;
+    assert_eq!(
+        (saved.indicators, saved.drawings, saved.branding),
+        (false, false, false)
+    );
+}
+
+#[test]
+fn a_look_that_could_not_be_saved_is_said_once_and_does_not_hold_up_the_studio() {
+    let mut rig = rig(&["BTCUSDT"]);
+    let store = remember(&mut rig, None);
+    let mut rig = open_on(rig);
+    // The database is gone: the lock is poisoned, as after a crash while it was held.
+    let poisoner = store.clone();
+    let _ = std::thread::spawn(move || {
+        let _held = poisoner.lock().unwrap();
+        panic!("poisons the lock");
+    })
+    .join();
+    click(&mut rig, "Spectrum background");
+    assert_eq!(session(&rig).config.background, Background::Spectrum);
+    assert!(rig.workspace.studio_open());
+    assert!(
+        notice(&rig).is_some_and(|(_, error)| error),
+        "the user is told, {:?}",
+        notice(&rig)
+    );
+    for _ in 0..5 {
+        rig.frame(Vec::new());
+    }
+    assert_eq!(
+        session(&rig).remembered.background,
+        Background::Spectrum,
+        "it is not tried again every frame"
+    );
 }
 
 #[test]

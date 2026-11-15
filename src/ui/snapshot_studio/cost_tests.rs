@@ -11,8 +11,9 @@ use crate::ui::chart::card::studio_fixture::Fixture;
 use std::time::Instant;
 
 /// Prints how long each stage takes for a 500-candle chart with indicators, a script pane and a
-/// drawing: the preview (about 1600 × 1066 pixels, on the UI thread: the scene; on the worker:
-/// the raster) and an export at 2× in 3:2 on Spectrum (scene, raster, PNG).
+/// drawing: the preview (about 1600 × 1066 pixels, and half of that each way while a drag is under
+/// way; on the UI thread: the scene; on the worker: the raster) and an export at 2× in 3:2 on
+/// Spectrum (scene, raster, PNG).
 #[test]
 #[ignore = "a measurement, not a check"]
 fn studio_cost() {
@@ -23,27 +24,25 @@ fn studio_cost() {
     let cards = |id: u64| (id == CHART_ID).then(|| fixture.card());
     let config = styled(AspectRatio::Landscape3x2, Background::Spectrum);
 
-    for run in 0..2 {
-        let started = Instant::now();
-        let (scene, dimensions) = compose::scene(
-            &capture,
-            &cards,
-            &config,
-            Target::Preview {
-                max_px: (1600, 1066),
-            },
-        )
-        .expect("a scene");
-        let composed = started.elapsed();
-        let started = Instant::now();
-        let image = rasterized(&scene);
-        let rasterizing = started.elapsed();
-        eprintln!(
-            "preview {}×{} (run {run}): compose+tessellate {composed:?} (UI thread), rasterize {rasterizing:?} ({} px)",
-            dimensions.width,
-            dimensions.height,
-            image.pixels.len(),
-        );
+    // The picture at the room the preview has, and at half the pixels each way, which is what a
+    // drag or a ruler drag asks for while it goes on.
+    for (what, max_px) in [("full", (1600, 1066)), ("half, while dragging", (800, 533))] {
+        for run in 0..2 {
+            let started = Instant::now();
+            let (scene, dimensions) =
+                compose::scene(&capture, &cards, &config, Target::Preview { max_px })
+                    .expect("a scene");
+            let composed = started.elapsed();
+            let started = Instant::now();
+            let image = rasterized(&scene);
+            let rasterizing = started.elapsed();
+            eprintln!(
+                "preview {what} {}×{} (run {run}): compose+tessellate {composed:?} (UI thread), rasterize {rasterizing:?} ({} px)",
+                dimensions.width,
+                dimensions.height,
+                image.pixels.len(),
+            );
+        }
     }
 
     let started = Instant::now();

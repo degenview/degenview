@@ -158,8 +158,16 @@ pub fn project_setting(key: &str, value: &str) -> Option<Projected> {
         // reading it as this version does would make a Mac that merely received it send it back
         // as a new edit, over what another Mac chose since. A value that names its provider (or
         // none, as an explicit `null`) is the new shape, and a leftover `host` in it is not sent.
+        // The Studio's look (`studio`) is portable like `scale`, but only goes out once something
+        // wrote it: a value without one projects as it always did, so it is not a new edit.
         let fields: &[&str] = if value.get("provider").is_some() {
-            &["provider", "providers", "include_trading", "scale"]
+            &[
+                "provider",
+                "providers",
+                "include_trading",
+                "scale",
+                "studio",
+            ]
         } else {
             &["host", "include_trading", "scale"]
         };

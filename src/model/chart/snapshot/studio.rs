@@ -4,11 +4,13 @@
 //! lives in [`composition`](super::composition) and the view in [`framing`](super::framing).
 //!
 //! The names, labels and tooltips are the ones the Studio shows, so a view never spells a choice
-//! out by hand. The look (style, size, background, include) is serde so it can be remembered;
-//! the area and the framing belong to one capture and never are.
+//! out by hand. The look (style, size, background, include) is [`StudioPrefs`], which is what is
+//! remembered; the area and the framing belong to one capture and never are.
 
 use super::framing::Framing;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// Which part of the workspace the image shows.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -211,6 +213,59 @@ impl Default for Include {
     }
 }
 
+/// The look the Studio remembers between captures: how it is dressed, its proportions, what is
+/// behind it and what it holds. Never the area, the framing or anything about one capture.
+///
+/// A part this version cannot read (a choice a newer version added) falls back to its default on
+/// its own, so it never takes the other snapshot settings down with it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(from = "StoredStudio")]
+pub struct StudioPrefs {
+    pub style: Style,
+    pub size: AspectRatio,
+    pub background: Background,
+    pub include: Include,
+}
+
+impl Default for StudioPrefs {
+    /// What a first Studio opens with: Styled at 3:2, nothing behind the chart, everything in
+    /// (the way Vela's documented images show it; a decision, Chart is one segment away).
+    fn default() -> Self {
+        Self {
+            style: Style::Styled,
+            size: AspectRatio::default(),
+            background: Background::None,
+            include: Include::default(),
+        }
+    }
+}
+
+/// How the look is read: every part separately, so one that is not understood is only itself lost.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct StoredStudio {
+    style: Option<Value>,
+    size: Option<Value>,
+    background: Option<Value>,
+    include: Option<Value>,
+}
+
+fn understood<T: DeserializeOwned>(value: Option<Value>) -> Option<T> {
+    value.and_then(|value| serde_json::from_value(value).ok())
+}
+
+impl From<StoredStudio> for StudioPrefs {
+    fn from(stored: StoredStudio) -> Self {
+        let default = Self::default();
+        Self {
+            style: understood(stored.style).unwrap_or(default.style),
+            size: understood(stored.size).unwrap_or(default.size),
+            background: understood(stored.background).unwrap_or(default.background),
+            include: understood(stored.include).unwrap_or(default.include),
+        }
+    }
+}
+
 /// Everything the Studio's controls decide about one capture.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StudioConfig {
@@ -225,16 +280,30 @@ pub struct StudioConfig {
 }
 
 impl StudioConfig {
-    /// A capture of `area` as the Studio opens it: Styled at 3:2 with nothing behind the chart,
-    /// the way Vela's documented images show it (a decision; Chart is one segment away).
+    /// A capture of `area` as a first Studio opens it ([`StudioPrefs::default`]).
     pub fn new(area: Area) -> Self {
+        Self::remembering(area, &StudioPrefs::default())
+    }
+
+    /// A capture of `area` in the remembered `look`, at the default framing.
+    pub fn remembering(area: Area, look: &StudioPrefs) -> Self {
         Self {
             area,
-            style: Style::Styled,
-            size: AspectRatio::default(),
-            background: Background::None,
-            include: Include::default(),
+            style: look.style,
+            size: look.size,
+            background: look.background,
+            include: look.include,
             framing: Framing::default(),
+        }
+    }
+
+    /// The part of this configuration that is remembered.
+    pub fn look(&self) -> StudioPrefs {
+        StudioPrefs {
+            style: self.style,
+            size: self.size,
+            background: self.background,
+            include: self.include,
         }
     }
 

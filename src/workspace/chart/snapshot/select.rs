@@ -192,8 +192,6 @@ impl ChartWorkspace {
         grid: Rect,
     ) -> bool {
         if self.snapshot.selecting.is_none() {
-            // A selection that ended without a capture takes the Studio's look with it.
-            self.snapshot.kept_look = None;
             return false;
         }
         let regions = self.portion_regions();
@@ -242,8 +240,8 @@ impl ChartWorkspace {
     fn finish_portion(&mut self, ctx: &Context, selection: Rect, regions: &[Region]) {
         match self.capture_portion(ctx, selection, regions) {
             Ok(capture) => {
-                let look = self.snapshot.kept_look.take();
-                self.snapshot.studio = Some(StudioSession::portion(capture, look));
+                let look = self.snapshot_prefs().studio;
+                self.snapshot.studio = Some(StudioSession::portion(capture, &look));
             }
             Err(error) => self.say(error.to_string(), true),
         }

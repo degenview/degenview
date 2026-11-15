@@ -1,10 +1,12 @@
 //! What the user chose about snapshots, shared by every window and the Settings page: which
 //! provider hosted snapshots go to (if any), what each was given, whether the account is drawn on
-//! them, how sharp they are and which destinations they agreed to send images to. One value behind
-//! a mutex, written to the `setting` table on every change. The secrets a provider asks for are
-//! not here: they are in the secure storage (`keychain::snapshot_secrets`).
+//! them, how sharp they are, the look the Screenshot Studio opens in and which destinations they
+//! agreed to send images to. One value behind a mutex, written to the `setting` table on every
+//! change. The secrets a provider asks for are not here: they are in the secure storage
+//! (`keychain::snapshot_secrets`).
 
 use crate::lock::lock;
+use crate::model::chart::snapshot::studio::StudioPrefs;
 use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale};
 use crate::service::keychain::snapshot_secrets::SnapshotSecrets;
 use crate::service::snapshot::providers::{self, Destination, FieldKind, Readiness};
@@ -166,6 +168,19 @@ impl SnapshotHost {
 
     pub fn set_scale(&self, held: Option<&Store>, scale: SnapshotScale) -> Result<(), String> {
         self.update(held, |prefs| prefs.scale = scale)
+    }
+
+    /// Remembers the look the Screenshot Studio opens in. Nothing is written when what is saved
+    /// already is this look.
+    pub fn set_studio(&self, held: Option<&Store>, studio: StudioPrefs) -> Result<(), String> {
+        if self
+            .stored(held)
+            .is_some_and(|stored| stored.studio == studio)
+        {
+            lock(&self.prefs).studio = studio;
+            return Ok(());
+        }
+        self.update(held, |prefs| prefs.studio = studio)
     }
 
     /// Turns `provider` on, which turns the one that was on off; `None` turns sharing off.
@@ -532,6 +547,79 @@ mod tests {
         assert!(prefs.include_trading, "and the change made here is made");
         let saved = host_with(shared).prefs();
         assert_eq!(saved.provider.as_deref(), Some("imgbb"));
+    }
+
+    #[test]
+    fn the_studios_look_survives_a_restart_and_the_defaults_are_styled_at_three_to_two() {
+        use crate::model::chart::snapshot::studio::{AspectRatio, Background, Style};
+        let shared = store();
+        let host = host_with(shared.clone());
+        let first = host.prefs().studio;
+        assert_eq!(
+            (first.style, first.size, first.background),
+            (Style::Styled, AspectRatio::Landscape3x2, Background::None)
+        );
+        let look = StudioPrefs {
+            style: Style::Chart,
+            size: AspectRatio::Square,
+            background: Background::Dots,
+            ..first
+        };
+        host.set_studio(None, look).unwrap();
+        host.set_scale(None, SnapshotScale::X1).unwrap();
+        assert_eq!(host_with(shared).prefs().studio, look);
+    }
+
+    #[test]
+    fn a_look_that_is_already_saved_is_not_written_again() {
+        let shared = store();
+        let host = host_with(shared.clone());
+        let look = StudioPrefs {
+            background: crate::model::chart::snapshot::studio::Background::Spectrum,
+            ..StudioPrefs::default()
+        };
+        // Stored by hand with a key this version would drop on a write: it stays only if
+        // nothing was written.
+        let stored = serde_json::json!({
+            "provider": null, "providers": {}, "include_trading": false, "scale": "X2",
+            "studio": look, "consented": [], "marker": 1
+        });
+        shared
+            .lock()
+            .unwrap()
+            .set_setting(SnapshotPrefs::KEY, &stored)
+            .unwrap();
+        host.set_studio(None, look).unwrap();
+        let after = shared
+            .lock()
+            .unwrap()
+            .raw_setting(SnapshotPrefs::KEY)
+            .unwrap()
+            .unwrap();
+        assert_eq!(after, stored, "same look, same row");
+        assert_eq!(host.prefs().studio, look, "and the window holds it");
+        // A different look is written, over what was synced in since launch.
+        let other = StudioPrefs::default();
+        host.set_studio(None, other).unwrap();
+        let after = shared
+            .lock()
+            .unwrap()
+            .raw_setting(SnapshotPrefs::KEY)
+            .unwrap()
+            .unwrap();
+        assert!(after.get("marker").is_none());
+        assert_eq!(host_with(shared).prefs().studio, other);
+    }
+
+    #[test]
+    fn a_look_saved_with_a_host_that_has_no_database_is_still_held() {
+        let host = SnapshotHost::default();
+        let look = StudioPrefs {
+            size: crate::model::chart::snapshot::studio::AspectRatio::Square,
+            ..StudioPrefs::default()
+        };
+        host.set_studio(None, look).unwrap();
+        assert_eq!(host.prefs().studio, look);
     }
 
     #[test]

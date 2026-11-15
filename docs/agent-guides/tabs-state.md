@@ -112,7 +112,7 @@
   `kind`.
 - New/first-launch tabs are empty (`ChartWorkspace::empty`); only opening a watchlist market seeds a
   chart. Cache empty-page database/Keychain reads per visit, not per frame.
-- Snapshot choices (`snapshot.prefs` in the `setting` table: host, trading overlays, scale, approved
-  hosts) are app-wide in `host::snapshot::SnapshotHost`, shared by all windows and Settings. An
+- Snapshot choices (`snapshot.prefs` in the `setting` table: host, trading overlays, scale, the
+  Screenshot Studio's look, approved hosts) are app-wide in `host::snapshot::SnapshotHost`, shared by all windows and Settings. An
   in-flight snapshot belongs to its workspace; closing the tab drops its result (a sent upload
   cannot be recalled). Token in the Keychain.
