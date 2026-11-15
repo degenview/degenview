@@ -12,10 +12,11 @@ use eframe::egui::{
 };
 use eframe::emath::GuiRounding;
 
-/// The dimming outside the rectangle being dragged: about 35% black on a dark window, less on a
-/// light one, where the same black would be heavy.
+/// The dimming outside the rectangle being dragged. A dark chart is near black already, so it
+/// takes more black (about 55%) than a light one (about 20%) before the candles outside visibly
+/// recede.
 fn outside_dim() -> Color32 {
-    Color32::from_black_alpha(if theme::is_light() { 64 } else { 90 })
+    Color32::from_black_alpha(if theme::is_light() { 52 } else { 140 })
 }
 
 /// The light dimming of the whole grid before the drag begins.
