@@ -112,8 +112,10 @@ Keeps a hostile change out of a signed release; each rule's reason is in `releas
 
 - **Every `uses:` pinned to a commit hash**, version in a trailing comment
   (`actions/checkout@<40 hex> # v7`). Dependabot (`.github/dependabot.yml`) proposes hashes; `zizmor`
-  (`supply-chain.yml`) fails a PR adding an unpinned one. No third-party action in a job with secrets
-  or on the release path without a reason.
+  (`supply-chain.yml`) fails a PR adding an unpinned one. The comment names a tag that is that hash,
+  never a branch: zizmor checks it online (`ref-version-mismatch`), so `# master` fails every open
+  PR the day the branch moves on. No third-party action in a job with secrets or on the release
+  path without a reason.
 - **Permissions per job.** Default `contents: read`; only `release` gets `contents: write` (plus
   `id-token`, `attestations` for provenance). Checkouts use `persist-credentials: false`.
 - **One commit.** `verify` resolves the signed tag to a commit in `main`'s history; later jobs check
