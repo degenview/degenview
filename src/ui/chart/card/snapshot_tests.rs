@@ -8,7 +8,7 @@ use crate::model::{ChartCanvas, Drawing, Tool};
 use eframe::egui::ColorImage;
 use eframe::egui::epaint::ClippedShape;
 
-fn input(harness: &Harness, include_trading: bool) -> SnapshotInput<'_> {
+pub(super) fn input(harness: &Harness, include_trading: bool) -> SnapshotInput<'_> {
     SnapshotInput {
         symbol: "BTCUSDT",
         source: DataSource::Binance,
@@ -21,6 +21,7 @@ fn input(harness: &Harness, include_trading: bool) -> SnapshotInput<'_> {
         hide_all_drawings: false,
         replay_active: harness.replay_active,
         include_trading,
+        frame: SnapshotFrame::default(),
     }
 }
 
@@ -61,7 +62,7 @@ fn describe(shape: &Shape) -> String {
     }
 }
 
-fn dumped(shapes: &[ClippedShape]) -> Vec<String> {
+pub(super) fn dumped(shapes: &[ClippedShape]) -> Vec<String> {
     shapes
         .iter()
         .map(|clipped| format!("{:?} {}", clipped.clip_rect, describe(&clipped.shape)))
@@ -76,7 +77,7 @@ fn gist(dump: &str) -> String {
 /// The live chart's last frame with nothing pointing at it, and its plot's rectangle. The
 /// scale button of the corner is the live chart's alone and has a test of its own below, so the
 /// comparisons of everything else leave it out.
-fn settled(harness: &mut Harness) -> (Vec<ClippedShape>, Rect) {
+pub(super) fn settled(harness: &mut Harness) -> (Vec<ClippedShape>, Rect) {
     harness.card.set_scale_menu(false);
     let mut last = harness.frame();
     for _ in 0..4 {
@@ -172,7 +173,7 @@ fn comparison_overlays_snapshot_as_they_draw() {
     same_as_live(&mut harness, false);
 }
 
-fn everything_on() -> IndicatorConfig {
+pub(super) fn everything_on() -> IndicatorConfig {
     IndicatorConfig {
         show_volume: true,
         show_rsi: true,

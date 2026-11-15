@@ -53,6 +53,27 @@ pub struct CanvasStyle {
     pub ohlc_readout: bool,
 }
 
+/// What a picture of the chart changes in its canvas without touching the chart's settings.
+/// `Default` changes nothing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Restyle {
+    /// Draw neither grid.
+    pub hide_grid: bool,
+    pub hide_watermark: bool,
+    /// How much larger the axis text is drawn (the axes grow with it); `1.0` is the settings'.
+    pub text_scale: f32,
+}
+
+impl Default for Restyle {
+    fn default() -> Self {
+        Self {
+            hide_grid: false,
+            hide_watermark: false,
+            text_scale: 1.0,
+        }
+    }
+}
+
 /// An `Rgba` as the straight-alpha colour egui paints.
 pub fn rgba(color: Rgba) -> Color32 {
     Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3])
@@ -158,6 +179,22 @@ impl CanvasStyle {
             pane_buttons: canvas.buttons.pane,
             ohlc_readout: canvas.ohlc_readout,
         }
+    }
+
+    /// This canvas with `restyle` applied.
+    pub fn restyled(mut self, restyle: Restyle) -> Self {
+        if restyle.hide_grid {
+            self.vertical_grid = None;
+            self.horizontal_grid = None;
+        }
+        if restyle.hide_watermark {
+            self.watermark = Color32::TRANSPARENT;
+        }
+        if restyle.text_scale.is_finite() && restyle.text_scale > 0.0 {
+            self.price_size *= restyle.text_scale;
+            self.time_size *= restyle.text_scale;
+        }
+        self
     }
 
     pub fn price_font(&self) -> FontId {

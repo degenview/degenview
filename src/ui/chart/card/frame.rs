@@ -166,6 +166,7 @@ impl ChartCard {
     pub(super) fn frame_layout<'a>(
         &self,
         data: &FrameData<'a>,
+        framing: Framing,
         rect: Rect,
         top_inset: f32,
         painter: &egui::Painter,
@@ -246,7 +247,13 @@ impl ChartCard {
                     .x
             };
             let mut widest = 0.0f32;
-            if let Some(view) = self.view(bars, (provisional, top_inset), scale_mode, chart_type) {
+            if let Some(view) = self.view(
+                framing,
+                bars,
+                (provisional, top_inset),
+                scale_mode,
+                chart_type,
+            ) {
                 let scale = &view.scale;
                 let budget =
                     chart::canvas::tick_budget(provisional.height(), style.price_tick_spacing());

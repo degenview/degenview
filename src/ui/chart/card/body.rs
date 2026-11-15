@@ -100,32 +100,42 @@ impl ChartCard {
         false
     }
 
-    /// Overlay scripts may draw past the last bar (a stack to the right of the chart) and above
-    /// or below the candles; the line chart draws none of that.
+    /// How far the overlay scripts in `outputs` reach for `viewport` over `bars` bars: overlay
+    /// scripts may draw past the last bar (a stack to the right of the chart) and above or below
+    /// the candles; the line chart draws none of that.
+    pub(super) fn extent_of(
+        &self,
+        viewport: &ChartViewport,
+        outputs: &[frame::Placed],
+        line: bool,
+        bars: usize,
+    ) -> OverlayExtent {
+        if line {
+            return OverlayExtent::default();
+        }
+        let shown_count = chart::canvas::visible_window(
+            bars,
+            viewport.horizontal.visible,
+            viewport.horizontal.right_offset,
+            usize::from(self.appearance.canvas.margins.right),
+        )
+        .count();
+        overlay_extent(
+            outputs
+                .iter()
+                .filter(|(output, _, _)| output.overlay)
+                .map(|(output, _, _)| &**output),
+            shown_count,
+        )
+    }
+
     pub(super) fn refresh_script_extent(
         &mut self,
         outputs: &[frame::Placed],
         line: bool,
         bars: usize,
     ) {
-        let shown_count = chart::canvas::visible_window(
-            bars,
-            self.viewport.horizontal.visible,
-            self.viewport.horizontal.right_offset,
-            usize::from(self.appearance.canvas.margins.right),
-        )
-        .count();
-        self.script_extent = if line {
-            OverlayExtent::default()
-        } else {
-            overlay_extent(
-                outputs
-                    .iter()
-                    .filter(|(output, _, _)| output.overlay)
-                    .map(|(output, _, _)| &**output),
-                shown_count,
-            )
-        };
+        self.script_extent = self.extent_of(&self.viewport, outputs, line, bars);
     }
 
     /// The panes the layout drew are the card's panes; a maximized one that is gone is dropped.
@@ -154,6 +164,7 @@ impl ChartCard {
         replay.picked_ms = None;
         replay.picked_range = None;
         let view = self.view(
+            self.framing(),
             bars,
             (plot, layout.top_inset),
             data.scale_mode,
@@ -188,7 +199,7 @@ impl ChartCard {
                 .as_ref()
                 .map(|view| PriceRange::new(view.scale.minimum, view.scale.maximum)),
             total: bars.len(),
-            slot_width: self.slot_width(plot),
+            slot_width: self.slot_width(self.framing(), plot),
             scale_height: view
                 .as_ref()
                 .map_or_else(|| plot.height(), |view| view.scale.height),
@@ -395,14 +406,27 @@ impl ChartCard {
             outputs: &outputs,
             indicators,
         };
-        let layout = self.frame_layout(&data, full_rect, self.top_inset, &painter, &style);
+        let layout = self.frame_layout(
+            &data,
+            self.framing(),
+            full_rect,
+            self.top_inset,
+            &painter,
+            &style,
+        );
         self.keep_panes_in_step(&layout);
         let plot = layout.plot;
         let pane_rects = &layout.pane_rects;
         let chart_hovered = ui.rect_contains_pointer(full_rect);
         let regions = self.handle_frame_input(ui, &response, &data, &layout, drawing, replay);
 
-        let Some(view) = self.view(bars, (plot, layout.top_inset), scale_mode, chart_type) else {
+        let Some(view) = self.view(
+            self.framing(),
+            bars,
+            (plot, layout.top_inset),
+            scale_mode,
+            chart_type,
+        ) else {
             return pointer;
         };
         self.near_oldest = view.start <= self.viewport.horizontal.visible * NEAR_OLDEST_SCREENS;

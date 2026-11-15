@@ -16,7 +16,7 @@ use crate::service::snapshot::raster;
 use crate::service::{system::timezone, work_queue};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
-use crate::ui::{SnapshotError, SnapshotInput};
+use crate::ui::{SnapshotError, SnapshotFrame, SnapshotInput};
 use crate::workspace::drawing::content::snapshot_images;
 use crate::workspace::*;
 use eframe::egui::{Context, Id};
@@ -204,6 +204,7 @@ impl ChartWorkspace {
             hide_all_drawings: self.tools.hides_all(),
             replay_active: replay_ms.is_some(),
             include_trading: options.include_trading,
+            frame: SnapshotFrame::default(),
         };
         chart
             .chart

@@ -15,6 +15,7 @@ pub mod scale_menu;
 pub(in crate::ui) mod series;
 pub mod session_stats_view;
 pub mod settings;
+pub mod snapshot_scene;
 pub mod symbol_picker;
 pub mod table_view;
 pub mod type_menu;

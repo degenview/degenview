@@ -1,0 +1,460 @@
+//! What a snapshot may draw differently from the live frame (`SnapshotFrame`): other bars and
+//! prices, frozen script outputs, no indicators, a restyled canvas. And that none of it reaches
+//! the card.
+
+use super::canvas_tests::{Drawn, Harness, gather, wait_for_run};
+use super::snapshot::SnapshotGeometry;
+use super::snapshot_tests::{dumped, everything_on, input, settled};
+use super::*;
+use crate::model::ChartCanvas;
+use crate::model::chart::canvas::visible_window;
+use crate::model::chart::snapshot::{SnapshotDimensions, SnapshotScale};
+use crate::model::chart::viewport::zoom::Selection;
+use crate::model::chart::viewport::{HorizontalViewport, VerticalViewport};
+use crate::ui::chart::canvas::Restyle;
+use eframe::egui::epaint::ClippedShape;
+
+const PANE_SCRIPT: &str = "//@version=6\nindicator(\"Pane\")\nplot(close)\n";
+const REACHING_SCRIPT: &str = "//@version=6
+indicator(\"Reaching\", overlay = true)
+if barstate.islast
+    line.new(bar_index, close, bar_index + 12, close * 5)
+";
+
+fn painted(harness: &Harness, input: &SnapshotInput) -> Vec<ClippedShape> {
+    let rect = Rect::from_min_size(Pos2::ZERO, harness.card.snapshot_size());
+    let ctx = egui::Context::default();
+    let raw = egui::RawInput {
+        screen_rect: Some(rect),
+        ..Default::default()
+    };
+    let mut output = ctx.run_ui(raw, |ui| {
+        harness
+            .card
+            .paint_snapshot(&ui.painter_at(rect), rect, input)
+            .expect("a chart to paint");
+    });
+    output.textures_delta.clear();
+    std::mem::take(&mut output.shapes)
+}
+
+fn geometry(harness: &Harness, input: &SnapshotInput) -> SnapshotGeometry {
+    harness
+        .card
+        .snapshot_geometry(input, harness.card.snapshot_size(), 1.0)
+        .expect("a chart to measure")
+}
+
+fn showing(horizontal: HorizontalViewport, prices: Option<(f64, f64)>) -> ChartViewport {
+    ChartViewport {
+        horizontal,
+        vertical: VerticalViewport {
+            manual: prices.map(|(low, high)| PriceRange::new(low, high)),
+            ..VerticalViewport::default()
+        },
+    }
+}
+
+fn settled_harness() -> Harness {
+    let mut harness = Harness::new(ChartCanvas::default());
+    settled(&mut harness);
+    harness
+}
+
+/// A chart with one script pane and every built-in indicator, drawn until the run arrived.
+fn busy_harness() -> (Harness, u64) {
+    let mut harness = Harness::new(ChartCanvas::default());
+    harness.indicators = everything_on();
+    let id = harness.card.add_pine_instance(None, "Pane", PANE_SCRIPT);
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    assert_eq!(harness.card.pane_count(), 1, "the script has its pane");
+    (harness, id)
+}
+
+// MARK: Bars and prices
+
+#[test]
+fn an_override_viewport_draws_exactly_the_bars_and_prices_asked_for() {
+    let harness = settled_harness();
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 40,
+            right_offset: 25.0,
+        },
+        Some((150.0, 300.0)),
+    ));
+    let view = geometry(&harness, &input).view;
+    let window = visible_window(300, 40, 25.0, view.reserved);
+    assert_eq!((view.start, view.end), (window.start, window.end));
+    assert_eq!(view.lead, window.lead);
+    assert_eq!((view.minimum, view.maximum), (150.0, 300.0));
+    let slots = (40 + view.reserved) as f32;
+    assert!((view.slot_width - view.plot.width() / slots).abs() < 1e-4);
+    // What is painted is on that scale: no price on the axis is outside the range.
+    let drawn = gather(&painted(&harness, &input));
+    let axis: Vec<f64> = drawn
+        .texts
+        .iter()
+        .filter(|(pos, ..)| pos.x > view.plot.right())
+        .filter_map(|(_, text, _)| text.parse().ok())
+        .collect();
+    assert!(axis.len() >= 3, "{axis:?}");
+    assert!(axis.iter().all(|price| (150.0..=300.0).contains(price)));
+}
+
+#[test]
+fn a_snapshot_may_show_fewer_bars_than_a_chart_ever_does() {
+    let harness = settled_harness();
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 7,
+            right_offset: 0.0,
+        },
+        None,
+    ));
+    let view = geometry(&harness, &input).view;
+    assert_eq!(view.end - view.start, 7);
+    assert_eq!(view.end, 300, "the newest bars");
+    let slots = (7 + view.reserved) as f32;
+    assert!((view.slot_width - view.plot.width() / slots).abs() < 1e-4);
+    // Autoscale follows the seven bars it shows.
+    let shown = &harness.candles[view.start..view.end];
+    let high = shown.iter().map(|bar| bar.high).fold(f64::MIN, f64::max);
+    let low = shown.iter().map(|bar| bar.low).fold(f64::MAX, f64::min);
+    assert!(view.minimum <= low && view.maximum >= high);
+    let all = geometry(&harness, &self::input(&harness, false)).view;
+    assert!(view.maximum - view.minimum < all.maximum - all.minimum);
+    painted(&harness, &input);
+}
+
+#[test]
+fn the_geometry_is_where_the_snapshot_paints() {
+    let harness = settled_harness();
+    let input = input(&harness, false);
+    let SnapshotGeometry {
+        view,
+        axis_width,
+        time_axis_height,
+    } = geometry(&harness, &input);
+    let size = harness.card.snapshot_size();
+    assert_eq!(view.plot.min, Pos2::ZERO);
+    assert_eq!(view.plot.right() + axis_width, size.x);
+    assert_eq!(view.plot.bottom() + time_axis_height, size.y);
+    assert_eq!(view.top_inset, 0.0);
+    assert_eq!(view.total, 300);
+    // The lines that bound the scales are drawn on the plot's edges.
+    let drawn = gather(&painted(&harness, &input));
+    let line = CanvasStyle::resolve(&harness.card.appearance().canvas).scale_line;
+    let bounding: Vec<_> = drawn
+        .segments
+        .iter()
+        .filter(|(_, stroke)| stroke.color == line)
+        .collect();
+    assert!(
+        bounding.iter().any(|(points, _)| points[0].x == points[1].x
+            && (points[0].x - view.plot.right()).abs() <= 0.5),
+        "the price axis' edge"
+    );
+    assert!(
+        bounding.iter().any(|(points, _)| points[0].y == points[1].y
+            && (points[0].y - view.plot.bottom()).abs() <= 0.5),
+        "the time axis' edge"
+    );
+}
+
+#[test]
+fn the_geometry_follows_the_scale_the_picture_is_drawn_at() {
+    let harness = settled_harness();
+    let input = input(&harness, false);
+    let size = harness.card.snapshot_size();
+    let at = |ppp| harness.card.snapshot_geometry(&input, size, ppp).unwrap();
+    let (one, two) = (at(1.0), at(2.0));
+    // Text is measured for the pixels it lands on, so the axis may differ by a pixel at most.
+    assert!((one.axis_width - two.axis_width).abs() <= 1.0);
+    assert_eq!(
+        (one.view.start, one.view.end),
+        (two.view.start, two.view.end)
+    );
+}
+
+#[test]
+fn a_rectangle_on_the_plot_round_trips_through_a_viewport() {
+    let harness = settled_harness();
+    for log in [false, true] {
+        let mut input = input(&harness, false);
+        input.scale_mode = PriceScaleMode::from_log_flag(log);
+        let base = geometry(&harness, &input).view;
+        let plot = base.plot;
+        let selection = Selection::between(
+            (plot.left() + 120.0, plot.top() + 60.0),
+            (plot.left() + 420.0, plot.top() + 260.0),
+            (plot.left(), plot.top(), plot.right(), plot.bottom()),
+        );
+        let viewport = base.viewport_for(&selection).expect("a viewport");
+        assert!(viewport.vertical.manual.is_some());
+        input.frame.viewport = Some(viewport);
+        let framed = geometry(&harness, &input).view;
+
+        let slot_at = |view: &ViewGeometry, x: f32| {
+            f64::from(view.start as f32 - view.lead)
+                + f64::from(x - view.plot.left()) / f64::from(view.slot_width)
+        };
+        let (want_left, want_right) = (
+            slot_at(&base, selection.left),
+            slot_at(&base, selection.right),
+        );
+        let (got_left, got_right) = (
+            slot_at(&framed, framed.plot.left()),
+            slot_at(&framed, framed.plot.right()),
+        );
+        // The bar count is whole: the edges land within half a bar of the rectangle's.
+        assert!((got_left - want_left).abs() <= 0.5 + 1e-3, "{log}");
+        assert!((got_right - want_right).abs() <= 0.5 + 1e-3, "{log}");
+
+        let price_at = |y: f32| {
+            let fraction = f64::from((y - plot.top()) / plot.height());
+            if log {
+                (base.maximum.ln() - fraction * (base.maximum.ln() - base.minimum.ln())).exp()
+            } else {
+                base.maximum - fraction * (base.maximum - base.minimum)
+            }
+        };
+        let close = |a: f64, b: f64| (a - b).abs() <= 1e-6 * b.abs();
+        assert!(close(framed.maximum, price_at(selection.top)), "{log}");
+        assert!(close(framed.minimum, price_at(selection.bottom)), "{log}");
+        assert_eq!(framed.logarithmic, log);
+    }
+}
+
+#[test]
+fn a_rectangle_too_narrow_to_choose_is_no_viewport_and_a_flat_one_keeps_autoscale() {
+    let harness = settled_harness();
+    let base = geometry(&harness, &input(&harness, false)).view;
+    let plot = base.plot;
+    let bounds = (plot.left(), plot.top(), plot.right(), plot.bottom());
+    let thin = Selection::between((100.0, 50.0), (102.0, 250.0), bounds);
+    assert_eq!(base.viewport_for(&thin), None);
+    let flat = Selection::between((100.0, 100.0), (400.0, 102.0), bounds);
+    let viewport = base.viewport_for(&flat).expect("the bars still");
+    assert_eq!(viewport.vertical.manual, None);
+}
+
+// MARK: Nothing changes
+
+#[test]
+fn drawing_with_overrides_changes_nothing_in_the_card() {
+    let (mut harness, id) = busy_harness();
+    harness.card.set_visible_candles(80);
+    settled(&mut harness);
+    let viewport = harness.card.saved_viewport();
+    let horizontal = harness.card.horizontal();
+    let visible = harness.card.visible_candles();
+    let panes = harness.card.pane_ids.clone();
+    let extent = format!("{:?}", harness.card.script_extent);
+    let near_oldest = harness.card.near_oldest;
+    let own = dumped(&painted(&harness, &input(&harness, false)));
+    let frozen = harness.card.snapshot_outputs();
+    let mut overridden = input(&harness, false);
+    overridden.frame = SnapshotFrame {
+        viewport: Some(showing(
+            HorizontalViewport {
+                visible: 9,
+                right_offset: -4.0,
+            },
+            Some((120.0, 180.0)),
+        )),
+        outputs: Some(&frozen),
+        include_indicators: false,
+        restyle: Restyle {
+            hide_grid: true,
+            hide_watermark: true,
+            text_scale: 2.0,
+        },
+    };
+    let size = harness.card.snapshot_size();
+    for scale in SnapshotScale::ALL {
+        let dimensions = SnapshotDimensions::fit(size.x, size.y, scale).expect("a size");
+        harness
+            .card
+            .snapshot_scene(&overridden, dimensions, Color32::BLACK)
+            .expect("a scene");
+    }
+    geometry(&harness, &overridden);
+    assert_eq!(harness.card.saved_viewport(), viewport);
+    assert_eq!(harness.card.horizontal(), horizontal);
+    assert_eq!(harness.card.visible_candles(), visible);
+    assert_eq!(harness.card.pane_ids, panes);
+    assert_eq!(format!("{:?}", harness.card.script_extent), extent);
+    assert_eq!(harness.card.near_oldest, near_oldest);
+    assert_eq!(harness.card.pane_count(), 1);
+    assert!(harness.card.pine_status(id).is_some());
+    // The card's own picture is what it was.
+    assert_eq!(
+        dumped(&painted(&harness, &self::input(&harness, false))),
+        own
+    );
+}
+
+// MARK: Indicators
+
+#[test]
+fn without_indicators_the_chart_is_the_plain_chart_with_the_whole_height() {
+    let (busy, _) = busy_harness();
+    let plain = settled_harness();
+    let with = geometry(&busy, &input(&busy, false));
+    let mut without = input(&busy, false);
+    without.frame.include_indicators = false;
+    let bare = geometry(&busy, &without);
+    let size = busy.card.snapshot_size();
+    assert!(
+        with.view.plot.height() < bare.view.plot.height() * 0.8,
+        "the pane took its share: {} vs {}",
+        with.view.plot.height(),
+        bare.view.plot.height()
+    );
+    assert_eq!(bare.view.plot.bottom() + bare.time_axis_height, size.y);
+    // Nothing of an indicator, a script or a pane is left: it is the plain chart's picture.
+    assert_eq!(
+        dumped(&painted(&busy, &without)),
+        dumped(&painted(&plain, &input(&plain, false)))
+    );
+    assert_ne!(
+        dumped(&painted(&busy, &input(&busy, false))),
+        dumped(&painted(&plain, &input(&plain, false))),
+        "and with them it is not"
+    );
+}
+
+#[test]
+fn without_indicators_an_overlay_script_reserves_no_slots_and_widens_no_scale() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Reaching", REACHING_SCRIPT);
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let plain = settled_harness();
+    let with = geometry(&harness, &input(&harness, false)).view;
+    let bare = geometry(&plain, &input(&plain, false)).view;
+    assert!(
+        with.reserved > bare.reserved,
+        "the script reaches past the bars"
+    );
+    assert!(with.maximum > bare.maximum, "and above the prices");
+    let mut without = input(&harness, false);
+    without.frame.include_indicators = false;
+    assert_eq!(
+        geometry(&harness, &without),
+        geometry(&plain, &input(&plain, false))
+    );
+}
+
+// MARK: Frozen outputs
+
+#[test]
+fn frozen_outputs_are_drawn_whatever_the_scripts_do_afterwards() {
+    let (mut harness, id) = busy_harness();
+    let frozen = harness.card.snapshot_outputs();
+    let before = dumped(&painted(&harness, &input(&harness, false)));
+    let tall = geometry(&harness, &input(&harness, false));
+
+    harness.card.remove_pine_instance(id);
+    harness.frame();
+    settled(&mut harness);
+    assert_eq!(harness.card.pane_count(), 0);
+
+    let live = input(&harness, false);
+    assert_ne!(
+        dumped(&painted(&harness, &live)),
+        before,
+        "the script is gone"
+    );
+    let mut kept = input(&harness, false);
+    kept.frame.outputs = Some(&frozen);
+    assert_eq!(dumped(&painted(&harness, &kept)), before);
+    assert_eq!(geometry(&harness, &kept), tall);
+}
+
+// MARK: Restyle
+
+fn grid_segments(drawn: &Drawn, style: &CanvasStyle) -> usize {
+    let colors = [style.horizontal_grid, style.vertical_grid]
+        .map(|line| line.expect("the grid is on").stroke.color);
+    drawn
+        .segments
+        .iter()
+        .filter(|(_, stroke)| colors.contains(&stroke.color))
+        .count()
+}
+
+fn largest_axis_text(drawn: &Drawn, plot_right: f32) -> f32 {
+    drawn
+        .texts
+        .iter()
+        .filter(|(pos, ..)| pos.x > plot_right)
+        .map(|(_, _, size)| *size)
+        .fold(0.0, f32::max)
+}
+
+#[test]
+fn a_restyle_takes_the_grid_away_and_makes_the_axis_text_larger() {
+    let harness = settled_harness();
+    let style = CanvasStyle::resolve(&harness.card.appearance().canvas);
+    let plain = input(&harness, false);
+    let mut restyled = input(&harness, false);
+    restyled.frame.restyle = Restyle {
+        hide_grid: true,
+        hide_watermark: true,
+        text_scale: 1.5,
+    };
+    let (before, after) = (
+        gather(&painted(&harness, &plain)),
+        gather(&painted(&harness, &restyled)),
+    );
+    assert!(grid_segments(&before, &style) >= 4);
+    assert_eq!(grid_segments(&after, &style), 0);
+    let (small, large) = (geometry(&harness, &plain), geometry(&harness, &restyled));
+    let (small_text, large_text) = (
+        largest_axis_text(&before, small.view.plot.right()),
+        largest_axis_text(&after, large.view.plot.right()),
+    );
+    assert!(small_text > 0.0);
+    assert!((large_text - small_text * 1.5).abs() < 1e-3, "{large_text}");
+    assert!(
+        large.axis_width > small.axis_width,
+        "the axis grows with it"
+    );
+    assert!(large.time_axis_height > small.time_axis_height);
+    // The chart's own settings are not what changed.
+    assert!(harness.card.appearance().canvas.vertical_grid.visible);
+}
+
+#[test]
+fn a_restyle_that_changes_nothing_changes_nothing() {
+    let harness = settled_harness();
+    let plain = input(&harness, false);
+    let mut same = input(&harness, false);
+    same.frame.restyle = Restyle::default();
+    assert_eq!(
+        dumped(&painted(&harness, &plain)),
+        dumped(&painted(&harness, &same))
+    );
+    let canvas = &harness.card.appearance().canvas;
+    let style = CanvasStyle::resolve(canvas);
+    let kept = style.restyled(Restyle::default());
+    assert_eq!(
+        (kept.price_size, kept.time_size, kept.watermark),
+        (style.price_size, style.time_size, style.watermark)
+    );
+    // A scale that is no number is no scale.
+    for scale in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        let odd = style.restyled(Restyle {
+            text_scale: scale,
+            ..Restyle::default()
+        });
+        assert_eq!(odd.price_size, style.price_size, "{scale}");
+    }
+}

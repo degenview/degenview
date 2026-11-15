@@ -41,6 +41,19 @@ click / shortcut ─► ChartWorkspace::begin_snapshot(chart_id, action)        
   workspace. Live candles arriving later do not change an image already drawn.
 - **Read-only.** `paint_snapshot` takes `&self`: it reads each script's last run (never reruns
   Pine), builds constructed bars without caching them, and moves no viewport, pane or replay state.
+- **Overrides are the snapshot's alone.** `SnapshotInput.frame` (`SnapshotFrame`) lets a caller draw
+  other bars and prices (`viewport`, which may show fewer bars than a chart ever does), script
+  outputs frozen earlier (`ChartCard::snapshot_outputs`), no indicators or script outputs at all
+  (`include_indicators: false`, panes included), and a `Restyle` of the canvas (no grid or
+  watermark, larger axis text). `Default` is the live frame. They are drawn instead of the card's
+  own state, which is never written: the live viewport, panes and script extent stay as they were,
+  and the scripts' reach past the last bar is recomputed for the viewport drawn.
+  `snapshot_geometry` returns the bars, prices and plot rectangle `paint_snapshot` would lay out
+  for a given size and scale (the same code path), and `ViewGeometry::viewport_for` turns a
+  rectangle on that plot into the viewport that shows it, as Zoom In does but without the chart's
+  20-bar minimum. `ui/chart/snapshot_scene.rs` is the one scratch-context scene builder
+  (`render`); a caller adds a logo or an icon by putting it, decoded, in the `images` it passes
+  and reading it back with `asset_host::lookup`.
 - **Rasterizer.** `service/snapshot/raster.rs` draws egui's tessellated meshes on the CPU the way
   the wgpu shader does (gamma-space premultiplied blending, bilinear/nearest texture sampling,
   top-left fill rule, 8-bit rounding per draw). No window, GPU or readback is involved, so it works

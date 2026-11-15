@@ -31,7 +31,7 @@ pub use chart::card::take_table_cell_selected;
 pub use chart::card::{
     ChartCard, ChartCardAction, CrosshairInfo, Scrolled, SeriesLine, WatchlistMembership,
 };
-pub use chart::card::{SnapshotError, SnapshotInput};
+pub use chart::card::{SnapshotError, SnapshotFrame, SnapshotInput};
 pub use chart::card::{ViewMove, ViewStep};
 pub use drawing::layer::{DrawingFrame, LinkRequest};
 pub use replay::overlay::{PickKind, ReplayChartFrame};
