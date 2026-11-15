@@ -14,6 +14,7 @@ const JETBRAINS_LICENCE: &str = include_str!("../../../assets/fonts/OFL-JetBrain
 const NOTO_LICENCE: &str = include_str!("../../../assets/fonts/OFL-NotoSansSymbols2.txt");
 const FONTS_README: &str = include_str!("../../../assets/fonts/README.md");
 const ROOT_README: &str = include_str!("../../../README.md");
+const LICENSING: &str = include_str!("../../../docs/licensing.md");
 const BUNDLE_SCRIPT: &str = include_str!("../../../tools/bundle.sh");
 const FLATPAK: &str = include_str!("../../../packaging/flatpak/es.nico.degenview.yml");
 const RELEASE: &str = include_str!("../../../.github/workflows/release.yml");
@@ -69,7 +70,7 @@ fn both_licence_texts_are_the_ofl_with_the_right_copyright() {
 
 #[test]
 fn the_readmes_name_both_fonts_their_licence_and_their_files() {
-    for readme in [FONTS_README, ROOT_README] {
+    for readme in [FONTS_README, LICENSING] {
         for needed in [
             "JetBrains Mono",
             "Noto Sans Symbols 2",
@@ -91,8 +92,10 @@ fn the_readmes_name_both_fonts_their_licence_and_their_files() {
     ] {
         assert!(FONTS_README.contains(needed), "fonts README: {needed:?}");
     }
-    // And the licence stays GPL for the program itself.
+    // And the licence stays GPL for the program itself, with the fonts' notes one link away.
     assert!(ROOT_README.contains("GPL-3.0-only"));
+    assert!(ROOT_README.contains("docs/licensing.md"));
+    assert!(LICENSING.contains("GPL-3.0-only"));
 }
 
 #[test]
@@ -104,6 +107,7 @@ fn every_file_the_readmes_point_at_exists() {
         "assets/fonts/OFL-JetBrainsMono.txt",
         "assets/fonts/OFL-NotoSansSymbols2.txt",
         "assets/fonts/README.md",
+        "docs/licensing.md",
     ] {
         assert!(root.join(file).is_file(), "{file}");
     }

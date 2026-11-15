@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="assets/brand/DegenView-512-rounded.png" width="128" alt="DegenView logo">
-
 # DegenView: the free, open source TradingView alternative
 
 Charts for crypto, stocks and prediction markets, with Pine Script v6 that runs on your own machine.
@@ -55,7 +53,7 @@ Write TradingView-style Pine Script v6 and run it locally. Nothing is uploaded.
 - **Pine Studio** with a script library, a smart editor and a live preview chart.
 - **Step debugger** and **profiler** to find bugs and slow lines fast.
 - **20 bundled Pine indicators** such as Ichimoku Cloud, MACD, VWAP and Stochastic.
-- **AI assistant** that edits your script, using your own API key.
+- **Vibe-code your indicators.** Describe what you want in plain English and the AI assistant writes, compiles and fixes the script for you, using your own API key.
 - **Editor themes** to match your taste.
 
 | Step debugger | Profiler |
@@ -76,10 +74,19 @@ Write TradingView-style Pine Script v6 and run it locally. Nothing is uploaded.
 - **Multiple currencies**: USD, EUR, GBP, JPY, CHF and BTC.
 - **CSV import and export**, including CoinMarketCap exports.
 
+### MCP server
+
+Let an AI assistant or automation tool work with DegenView through the [Model Context Protocol](https://modelcontextprotocol.io).
+
+- **Read** charts, candles, indicator values, quotes, watchlists and portfolios.
+- **Change** charts, timeframes, indicators, drawings and watchlists.
+- **Vibe-code from your own AI tool**: write Pine scripts, check them and put them on a chart.
+- **Manage** price alerts and paper trades.
+- **Stay in control**: off by default, local only and permission based. Deletes and orders wait for your approval in the app.
+
 ### Extras
 
 - **Session statistics** that show how often gaps fill, prior-day levels break and weekdays behave, with sample sizes.
-- **MCP server** so your AI assistant can read and drive DegenView. Off by default, local only and permission based.
 - **Light and dark themes**, and sessions that come back as you left them.
 
 ## Download
@@ -157,24 +164,5 @@ DegenView is an independent project and is not affiliated with TradingView.
 
 ## License
 
-DegenView is licensed under the [GNU General Public License v3.0 only](LICENSE.md)
-(`GPL-3.0-only`).
-
-Copyright © 2026 Nico Oelgart.
-
-### Fonts
-
-Two fonts are built into DegenView. They are not covered by the GPL. Each keeps its own licence, the
-[SIL Open Font License 1.1](https://openfontlicense.org), and neither declares a Reserved Font Name. The
-licence texts are in [`assets/fonts`](assets/fonts) and ship with every download (the macOS app's
-`Contents/Resources/Licenses`, the Flatpak's `share/licenses`, the Linux and Windows archives and the
-Windows installer's `licenses` folder).
-
-- **JetBrains Mono** (the NL build, without ligatures, version 2.304), the Pine editor's default font.
-  Copyright 2020 The JetBrains Mono Project Authors, <https://github.com/JetBrains/JetBrainsMono>.
-  [Licence](assets/fonts/OFL-JetBrainsMono.txt).
-- **Noto Sans Symbols 2** (a subset of version 2.008), the fallback for symbols such as ▲ ● ★ ✔ that other
-  fonts lack. Copyright 2022 The Noto Project Authors, <https://github.com/notofonts/symbols>.
-  [Licence](assets/fonts/OFL-NotoSansSymbols2.txt).
-
-Where each file comes from, how to fetch it again and how it is checked: [`assets/fonts/README.md`](assets/fonts/README.md).
+DegenView is licensed under the [GNU General Public License v3.0 only](LICENSE.md) (`GPL-3.0-only`).
+The two fonts built into the app keep their own licences, see [Licensing](docs/licensing.md).

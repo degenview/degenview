@@ -171,8 +171,8 @@ about 205 KB) and is the default editor font, on every platform, with nothing to
 build (no ligatures): egui shapes text with the font's default features and the editor draws each syntax
 colour as its own run, so ligatures would form in some runs and not in others. The file is unmodified, and
 under the SIL Open Font License 1.1 with no Reserved Font Name; the licence texts, the copyright notices,
-the version, where the file comes from and its hash are in `assets/fonts/README.md` and the root
-`README.md`, and the licence texts ship in every download (the macOS bundle's `Resources/Licenses`, the
+the version, where the file comes from and its hash are in `assets/fonts/README.md` and
+`docs/licensing.md`, and the licence texts ship in every download (the macOS bundle's `Resources/Licenses`, the
 Flatpak's `share/licenses`, the Linux and Windows archives). A test (`bundled_fonts_tests`) holds the file to
 its recorded hash and checks that the licences, the READMEs and the packaging say what they must.
 
