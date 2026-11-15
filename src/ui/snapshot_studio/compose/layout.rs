@@ -8,10 +8,10 @@
 //! what lies outside.
 
 use super::super::capture::LayoutCapture;
-use super::{Cards, chart};
+use super::{Cards, chart, styled};
 use crate::model::chart::snapshot::framing::Framing;
 use crate::model::chart::snapshot::studio::StudioConfig;
-use crate::ui::chart::canvas::CanvasStyle;
+use crate::ui::chart::canvas::{CanvasStyle, Fill, paint_background};
 use crate::ui::chart::card::SnapshotError;
 use eframe::egui::{Painter, Pos2, Rect, Stroke, Vec2};
 
@@ -41,6 +41,9 @@ pub fn paint<'c>(
 ) -> Result<(), SnapshotError> {
     let place = mapper(layout.view(), body);
     let clipped = painter.with_clip_rect(body);
+    // The gutters between the charts take the headline chart's canvas, as they do on a plain
+    // image, rather than letting the backdrop through as a stripe.
+    paint_background(&clipped, body, Fill::Solid(styled::top_color(style.fill)));
     let mut shown = Vec::new();
     for (capture, rect) in &layout.charts {
         let rect = place(*rect);
