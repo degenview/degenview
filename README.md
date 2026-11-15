@@ -15,7 +15,7 @@ No account. No subscription.
 
 <br>
 
-![DegenView showing a BTCUSDT candlestick chart with a volume panel, RSI, EMA, a Pine overlay and a MACD pane](assets/screenshots/hero.png)
+![DegenView adding indicators, drawing trend lines and overlaying ETH on a BTCUSDT candlestick chart](assets/screenshots/hero.gif)
 
 </div>
 
