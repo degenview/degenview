@@ -266,6 +266,7 @@ fn crosshair_at(_chart: &Harness, x_fraction: f64) -> CrosshairInfo {
     CrosshairInfo {
         frozen: false,
         x_fraction,
+        time: None,
         price: 120.0,
         owner_id: 1,
     }

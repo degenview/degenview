@@ -629,7 +629,11 @@ impl ChartCard {
                 main_visible,
             );
         }
-        if let Some(crosshair) = decor.crosshair {
+        if let Some((crosshair, x)) = decor.crosshair.and_then(|crosshair| {
+            let slots = view.geometry(plot, bars.len()).slots();
+            self.crosshair_column(crosshair, decor.chart_id, data.source, plot, slots, bars)
+                .map(|x| (crosshair, x))
+        }) {
             self.draw_crosshair(
                 painter,
                 plot,
@@ -637,6 +641,7 @@ impl ChartCard {
                 &layout.pane_rects,
                 crosshair,
                 decor.chart_id,
+                x,
                 scale,
                 shown,
                 slot_width,

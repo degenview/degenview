@@ -62,7 +62,7 @@ pub struct ViewGeometry {
 }
 
 impl ViewGeometry {
-    fn slots(&self) -> Slots {
+    pub(super) fn slots(&self) -> Slots {
         Slots {
             first: self.start as f64 - f64::from(self.lead),
             left: f64::from(self.plot.left()),

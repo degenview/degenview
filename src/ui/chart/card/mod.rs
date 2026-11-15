@@ -113,15 +113,20 @@ pub struct WatchlistMembership {
     pub contains_market: bool,
 }
 
-/// The shared crosshair a tab draws across all its charts. Stored as a fraction
-/// of plot width so the same column lines up on every card.
+/// The shared crosshair a tab draws across all its charts: the owner follows the pointer, every
+/// other chart puts its column at the same instant, whatever its zoom or bars.
 #[derive(Clone, Copy, Debug)]
 pub struct CrosshairInfo {
     /// The pointer is on the overlay card, not the plot: the bar stays where it was and only the
     /// readouts are drawn (no lines, no tags).
     pub frozen: bool,
     pub owner_id: u64,
+    /// Where the pointer is on the owner's plot, as a share of its width. Only the owner reads
+    /// it: another chart's plot has other bars under that share.
     pub x_fraction: f64,
+    /// The time (ms) under the pointer, when the owner's slots have one. A price-based chart's
+    /// do not, and then no other chart has a column to draw.
+    pub time: Option<f64>,
     pub price: f64,
 }
 
@@ -144,6 +149,8 @@ pub struct ChartPointer {
     pub context: Option<ContextRequest>,
     pub clicked: bool,
     pub hover_x_fraction: Option<f64>,
+    /// The time (ms) under the pointer, on a chart whose slots are time.
+    pub hover_time: Option<f64>,
     pub hover_price: Option<f64>,
     /// The time and price under the pointer, through the chart's own projection.
     pub hover_anchor: Option<Anchor>,

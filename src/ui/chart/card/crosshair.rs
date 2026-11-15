@@ -1,8 +1,32 @@
 //! The crosshair: its lines and tags, and the readout naming the bar under it.
 
 use super::*;
+use crate::model::chart::sync::TimeAxis;
+use crate::model::chart::viewport::zoom::Slots;
 
 impl ChartCard {
+    /// Where the crosshair's column lies on this chart's plot. The owner's is under its pointer.
+    /// Any other chart's is at the same instant, wherever that falls on its own bars; a chart
+    /// without a time scale, or one that does not reach the instant on screen, has none.
+    pub(super) fn crosshair_column(
+        &self,
+        crosshair: &CrosshairInfo,
+        chart_id: u64,
+        source: DataSource,
+        plot: Rect,
+        slots: Slots,
+        bars: &[Kline],
+    ) -> Option<f32> {
+        if crosshair.owner_id == chart_id {
+            return Some(plot.left() + plot.width() * crosshair.x_fraction as f32);
+        }
+        if !self.takes_part_in_sync(source) {
+            return None;
+        }
+        let x = slots.x(TimeAxis::new(bars).x_at(crosshair.time?)?);
+        plot.x_range().contains(x).then_some(x)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_crosshair(
         &self,
@@ -12,6 +36,7 @@ impl ChartCard {
         pane_rects: &[Rect],
         crosshair: &CrosshairInfo,
         chart_id: u64,
+        x: f32,
         scale: &PriceScale,
         candles: &[Kline],
         slot_width: f32,
@@ -22,7 +47,6 @@ impl ChartCard {
         info: &CrosshairBars,
     ) {
         let line = style.crosshair;
-        let x = plot.left() + plot.width() * crosshair.x_fraction as f32;
 
         // Vertical line — every chart draws it at the shared column, through the price chart and
         // on through each script pane under it.
