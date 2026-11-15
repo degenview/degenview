@@ -2739,3 +2739,75 @@ fn a_mac_that_never_set_a_provider_up_does_not_erase_this_macs_settings_for_it()
     );
     assert_eq!(prefs["consented"], json!(["mine.example"]));
 }
+
+#[test]
+fn the_studios_look_follows_the_later_edit_and_an_older_mac_does_not_erase_it() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let look = json!({
+        "style": "styled", "size": "wide16x9", "background": "luminous",
+        "include": {"indicators": true, "drawings": true, "branding": false}
+    });
+    b.store
+        .lock()
+        .unwrap()
+        .set_setting(
+            "snapshot.prefs",
+            &json!({"provider": null, "providers": {}, "include_trading": false, "scale": "X1", "consented": ["trusted.example"]}),
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(3));
+    a.store
+        .lock()
+        .unwrap()
+        .set_setting(
+            "snapshot.prefs",
+            &json!({
+                "provider": null, "providers": {}, "include_trading": false, "scale": "X2",
+                "studio": look, "consented": ["evil.example"]
+            }),
+        )
+        .unwrap();
+    settle(&mut a, &mut b);
+    let stored = |mac: &Mac| {
+        mac.store
+            .lock()
+            .unwrap()
+            .raw_setting("snapshot.prefs")
+            .unwrap()
+            .unwrap()
+    };
+    let prefs = stored(&b);
+    assert_eq!(prefs["studio"], look, "the look arrives");
+    assert_eq!(prefs["consented"], json!(["trusted.example"]));
+    let read: crate::model::chart::snapshot::SnapshotPrefs = serde_json::from_value(prefs).unwrap();
+    assert_eq!(
+        read.studio.background,
+        crate::model::chart::snapshot::studio::Background::Luminous
+    );
+    assert_eq!(
+        outbox_len(&b),
+        0,
+        "a Mac that merely received the look does not send it back"
+    );
+
+    // A Mac from before the Studio changes the scale and sends no look: it is not erased.
+    cloud.put_from_elsewhere(
+        raw(
+            "setting.snapshot.prefs",
+            &json!({"provider": null, "providers": {}, "include_trading": true, "scale": "X1"}),
+            9,
+            4_000_000_000_000,
+            "Z",
+        ),
+        "Z",
+    );
+    settle(&mut a, &mut b);
+    for mac in [&a, &b] {
+        let prefs = stored(mac);
+        assert_eq!(prefs["scale"], "X1", "what the older Mac changed is taken");
+        assert_eq!(prefs["include_trading"], true);
+        assert_eq!(prefs["studio"], look, "and the look stays");
+    }
+}

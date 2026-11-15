@@ -9,7 +9,6 @@
 //! has happened.
 
 use crate::host::snapshot::{Hosting, SnapshotHost, TURN_ON_A_HOST};
-use crate::model::chart::snapshot::studio::StudioConfig;
 use crate::model::chart::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
 use crate::service::snapshot::job::{self, Outcome, Retry, SystemBackend};
 use crate::service::snapshot::providers::Destination;
@@ -103,9 +102,6 @@ pub(in crate::workspace) struct SnapshotState {
     selecting: Option<select::Selecting>,
     /// What the last selection captured: the Studio that is open on it.
     studio: Option<studio::StudioSession>,
-    /// The look of a Studio that went back to the charts to select a portion, for the one that
-    /// opens on that selection.
-    kept_look: Option<StudioConfig>,
 }
 
 /// Why a chart could not be frozen into a picture.

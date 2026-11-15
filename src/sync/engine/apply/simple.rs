@@ -127,13 +127,21 @@ fn compose_setting(key: &str, synced: &Value, existing: Option<&Value>) -> Value
     }
     // Take which provider to upload to and how it is set up; keep the destinations this Mac has
     // agreed to send images to. A Mac from before providers sends its one `host` instead: it is
-    // taken too, and only read if this Mac has not chosen a provider yet.
+    // taken too, and only read if this Mac has not chosen a provider yet. A field the other Mac
+    // does not send (the Studio's look, from a Mac that does not know it) keeps what is here.
     let mut prefs = existing
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
     if let Some(remote) = synced.as_object() {
-        for field in ["host", "provider", "providers", "include_trading", "scale"] {
+        for field in [
+            "host",
+            "provider",
+            "providers",
+            "include_trading",
+            "scale",
+            "studio",
+        ] {
             let Some(value) = remote.get(field) else {
                 continue;
             };

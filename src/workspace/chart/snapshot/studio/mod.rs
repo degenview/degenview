@@ -11,7 +11,7 @@
 use super::*;
 use crate::model::chart::snapshot::composition;
 use crate::model::chart::snapshot::framing::{Base, Framing};
-use crate::model::chart::snapshot::studio::{Area, StudioConfig};
+use crate::model::chart::snapshot::studio::{Area, StudioConfig, StudioPrefs};
 use crate::ui::ChartCard;
 use crate::ui::snapshot_studio::capture::Capture;
 use crate::ui::snapshot_studio::compose::{self, ComposeError, Target};
@@ -27,6 +27,8 @@ const AREAS_ALONE: [Area; 2] = [Area::FullChart, Area::Portion];
 pub(super) struct StudioSession {
     pub(super) capture: Capture,
     pub(super) config: StudioConfig,
+    /// The look as it was last remembered: saved again only when the controls move it.
+    remembered: StudioPrefs,
     previews: Previews,
     /// The framing when the pointer went down on the preview: a drag is measured from it.
     drag: Option<Framing>,
@@ -37,24 +39,16 @@ impl StudioSession {
     pub(super) fn new(capture: Capture, config: StudioConfig) -> Self {
         Self {
             capture,
+            remembered: config.look(),
             config,
             previews: Previews::default(),
             drag: None,
         }
     }
 
-    /// A session on what a selection captured, opened the way a portion opens: in `look` if the
-    /// Studio went back to the charts to select, else in the Studio's own.
-    pub(super) fn portion(capture: Capture, look: Option<StudioConfig>) -> Self {
-        let config = look.map_or_else(
-            || StudioConfig::new(Area::Portion),
-            |look| StudioConfig {
-                area: Area::Portion,
-                framing: Framing::default(),
-                ..look
-            },
-        );
-        Self::new(capture, config)
+    /// A session on what a selection captured, in the `look` the Studio remembers.
+    pub(super) fn portion(capture: Capture, look: &StudioPrefs) -> Self {
+        Self::new(capture, StudioConfig::remembering(Area::Portion, look))
     }
 
     /// The charts the capture holds.
@@ -194,13 +188,13 @@ impl ChartWorkspace {
                 break;
             }
         }
+        self.remember_look(&mut session);
         match next {
             Next::Close => return,
             Next::Select => {
                 self.begin_portion_selection();
                 // A selection that could not begin (an export is running) leaves the Studio up.
                 if self.is_selecting_portion() {
-                    self.snapshot.kept_look = Some(session.config);
                     return;
                 }
             }
@@ -213,6 +207,21 @@ impl ChartWorkspace {
         });
         self.tick_previews(ctx, &mut session);
         self.snapshot.studio = Some(session);
+    }
+
+    /// Saves the look when a control changed it, so the next Studio opens the same way. A look
+    /// that did not change costs nothing: no write, no read of the store.
+    fn remember_look(&mut self, session: &mut StudioSession) {
+        let look = session.config.look();
+        if look == session.remembered {
+            return;
+        }
+        session.remembered = look;
+        if let Some(host) = &self.snapshots
+            && let Err(error) = host.set_studio(None, look)
+        {
+            self.say(error, true);
+        }
     }
 
     /// Takes a finished picture and starts the one that is wanted.

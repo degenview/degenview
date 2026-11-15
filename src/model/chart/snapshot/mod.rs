@@ -12,6 +12,7 @@ pub mod framing;
 pub mod selection;
 pub mod studio;
 
+use self::studio::StudioPrefs;
 use crate::format;
 use crate::model::webhook::{self, policy::ParsedUrl};
 use serde::{Deserialize, Serialize};
@@ -447,6 +448,8 @@ pub struct SnapshotPrefs {
     /// Orders, positions and their stops on the chart. Off: they show the account's holdings.
     pub include_trading: bool,
     pub scale: SnapshotScale,
+    /// The look the Screenshot Studio opens in. Synced like `scale`.
+    pub studio: StudioPrefs,
     /// What the user agreed to send images to: one entry per destination, as the provider names
     /// it (`host[:port]` for a host of their own).
     pub consented: Vec<String>,
@@ -469,6 +472,8 @@ struct StoredPrefs {
     providers: BTreeMap<String, FieldValues>,
     include_trading: bool,
     scale: SnapshotScale,
+    /// Read part by part (see [`StudioPrefs`]); one that is not an object is the default look.
+    studio: Option<serde_json::Value>,
     consented: Vec<String>,
 }
 
@@ -487,6 +492,10 @@ impl From<StoredPrefs> for SnapshotPrefs {
             providers: stored.providers,
             include_trading: stored.include_trading,
             scale: stored.scale,
+            studio: stored
+                .studio
+                .and_then(|look| serde_json::from_value(look).ok())
+                .unwrap_or_default(),
             consented: stored.consented,
         };
         // An older save: nobody who set a host loses it. Once the provider is written (even as

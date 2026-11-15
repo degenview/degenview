@@ -428,3 +428,103 @@ fn consent_is_per_destination() {
     assert!(prefs.has_consented("a.example") && !prefs.has_consented("b.example"));
     assert_eq!(prefs.consented.len(), 1);
 }
+
+// MARK: The Studio's look
+
+use super::studio::{AspectRatio, Background, Include, StudioConfig, StudioPrefs, Style};
+
+#[test]
+fn a_save_from_before_the_studio_reads_as_it_did_and_opens_the_default_look() {
+    let before = r#"{"provider":"imgbb","providers":{"imgbb":{"expiry":"7d"}},"include_trading":true,"scale":"X1","consented":["api.imgbb.com"]}"#;
+    let prefs = read(before);
+    assert_eq!(prefs.studio, StudioPrefs::default());
+    assert_eq!(prefs.provider.as_deref(), Some("imgbb"));
+    assert_eq!(prefs.scale, SnapshotScale::X1);
+    assert!(prefs.include_trading && prefs.has_consented("api.imgbb.com"));
+    assert_eq!(
+        (
+            prefs.studio.style,
+            prefs.studio.size,
+            prefs.studio.background
+        ),
+        (Style::Styled, AspectRatio::Landscape3x2, Background::None)
+    );
+    assert_eq!(prefs.studio.include, Include::default());
+}
+
+#[test]
+fn the_look_is_written_and_read_back_whole() {
+    let prefs = SnapshotPrefs {
+        studio: StudioPrefs {
+            style: Style::Chart,
+            size: AspectRatio::Portrait9x16,
+            background: Background::Spectrum,
+            include: Include {
+                indicators: false,
+                drawings: true,
+                branding: false,
+            },
+        },
+        ..SnapshotPrefs::default()
+    };
+    let json = serde_json::to_value(&prefs).unwrap();
+    assert_eq!(
+        json["studio"],
+        serde_json::json!({
+            "style": "chart", "size": "portrait9x16", "background": "spectrum",
+            "include": {"indicators": false, "drawings": true, "branding": false}
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<SnapshotPrefs>(json).unwrap(),
+        prefs
+    );
+}
+
+#[test]
+fn only_the_look_is_remembered_never_the_framing_or_the_area() {
+    let json = serde_json::to_value(StudioPrefs::default()).unwrap();
+    let mut keys: Vec<_> = json.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, ["background", "include", "size", "style"]);
+    // A look opens a capture of any area with the framing at its default.
+    let look = StudioPrefs {
+        background: Background::Radiant,
+        ..StudioPrefs::default()
+    };
+    let config = StudioConfig::remembering(super::studio::Area::EntireLayout, &look);
+    assert_eq!(config.area, super::studio::Area::EntireLayout);
+    assert_eq!(config.look(), look);
+    assert!(config.framing.is_default());
+}
+
+#[test]
+fn a_part_of_the_look_this_version_cannot_read_is_the_default_and_nothing_else_is_lost() {
+    // A newer version added a backdrop; the rest of the settings and of the look are intact.
+    let prefs = read(
+        r#"{"provider":"imgbb","scale":"X1","studio":{"style":"chart","background":"aurora","size":"square"}}"#,
+    );
+    assert_eq!(prefs.provider.as_deref(), Some("imgbb"));
+    assert_eq!(prefs.scale, SnapshotScale::X1);
+    assert_eq!(prefs.studio.style, Style::Chart);
+    assert_eq!(prefs.studio.size, AspectRatio::Square);
+    assert_eq!(prefs.studio.background, Background::None);
+    // A look that is not an object at all is the default look.
+    for odd in ["null", "3", r#""wide""#, "[]"] {
+        let prefs = read(&format!(r#"{{"provider":"imgbb","studio":{odd}}}"#));
+        assert_eq!(prefs.studio, StudioPrefs::default(), "{odd}");
+        assert_eq!(prefs.provider.as_deref(), Some("imgbb"), "{odd}");
+    }
+    // Missing parts are the defaults, including an include that names only some of its parts.
+    let partial = read(r#"{"studio":{"include":{"drawings":false}}}"#);
+    assert!(!partial.studio.include.drawings && partial.studio.include.indicators);
+    assert_eq!(partial.studio.style, Style::Styled);
+}
+
+#[test]
+fn a_first_studio_opens_in_the_default_look() {
+    assert_eq!(
+        StudioConfig::new(super::studio::Area::FullChart).look(),
+        StudioPrefs::default()
+    );
+}

@@ -310,3 +310,46 @@ fn a_snapshot_host_nobody_has_rewritten_since_the_update_still_goes_out_as_it_is
         sent.hash
     );
 }
+
+#[test]
+fn snapshot_prefs_carry_the_studios_look_like_the_scale_and_never_before_one_was_written() {
+    let look = json!({
+        "style": "chart", "size": "square", "background": "dots",
+        "include": {"indicators": true, "drawings": false, "branding": true}
+    });
+    let with = json!({
+        "provider": null, "providers": {}, "include_trading": false, "scale": "X2",
+        "studio": look, "consented": ["trusted.example"]
+    })
+    .to_string();
+    let sent = project_setting("snapshot.prefs", &with).unwrap();
+    let body: Value = serde_json::from_slice(&sent.payload).unwrap();
+    assert_eq!(body["studio"], look);
+    assert!(body.get("consented").is_none());
+    // A value nobody wrote a look into projects exactly as it did before there was one.
+    let without = json!({
+        "provider": null, "providers": {}, "include_trading": false, "scale": "X2",
+        "consented": []
+    })
+    .to_string();
+    let before: Value =
+        serde_json::from_slice(&project_setting("snapshot.prefs", &without).unwrap().payload)
+            .unwrap();
+    assert!(before.get("studio").is_none(), "{before}");
+    // A value that merely carries the look projects the same on every Mac that holds it.
+    let received = json!({
+        "provider": null, "providers": {}, "include_trading": false, "scale": "X2",
+        "studio": look, "consented": []
+    })
+    .to_string();
+    assert_eq!(
+        project_setting("snapshot.prefs", &received).unwrap().hash,
+        sent.hash
+    );
+    // The older shape (a top-level host) has no look to send.
+    let legacy = json!({"host": "https://snaps.example/up", "studio": look}).to_string();
+    let body: Value =
+        serde_json::from_slice(&project_setting("snapshot.prefs", &legacy).unwrap().payload)
+            .unwrap();
+    assert!(body.get("studio").is_none());
+}

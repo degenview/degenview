@@ -16,7 +16,7 @@ It is never disabled: it is where a provider is turned on.
 click / shortcut ─► ChartWorkspace::begin_snapshot(chart_id, action)           UI thread
     SnapshotRequest { chart_id, action, options }   fixed here; later setting changes don't touch it
     ChartCard::snapshot_scene  ─ a scratch egui Context at the image's scale ─►  paint_snapshot
-    ctx.tessellate ─► Scene { meshes, textures }                               (one frame, 6–13 ms)
+    ctx.tessellate ─► Scene { meshes, textures }                               (one frame, 4–9 ms)
         │
         ▼ work_queue::SNAPSHOTS (worker, no workspace or store lock)
     snapshot::job::run
@@ -132,7 +132,8 @@ transport (`snapshot::upload`) knows nothing of providers: it checks the size an
 a PNG, sends the provider's request once with no redirects, and hands the answer back.
 
 Saved shape (`snapshot.prefs`): `provider` (the id that is on, or an explicit `null` for off),
-`providers` (each provider's non-secret settings by id), `include_trading`, `scale`, `consented`.
+`providers` (each provider's non-secret settings by id), `include_trading`, `scale`, `studio` (the
+Screenshot Studio's look, [below](#the-look-is-remembered)), `consented`.
 A save from before providers has one top-level `host`: if it is still a valid address it reads as
 `provider = self_hosted` with that address, so nobody loses their setup, and the next change writes
 the new shape (an address the page would not have accepted is not carried over). A `host` that
@@ -140,14 +141,25 @@ arrives later (an older Mac syncing) is ignored once a provider has been written
 a provider off or back on. An id this build does not know is kept, inactive; the camera menu says
 to choose another, and so does a badge on the page.
 
-**Sync.** `provider` and `providers` sync; consent and secrets never do. A record is applied per
+**Sync.** `provider`, `providers`, `include_trading`, `scale` and `studio` sync; consent and secrets never do. A record is applied per
 provider (a Mac that never set a provider up cannot erase this Mac's settings for it), and a value
 nobody has rewritten since the update still goes out in the shape an older Mac wrote, a top-level
 `host`, exactly as stored: reading it as this version does would make a Mac that merely received
 it send it back as a new edit. The running window holds the choices in memory, so every change is
 made on what is stored (a change synced in meanwhile is not undone by it) and the Settings page
 reads them again each second; the camera menu of a window that has not opened Settings or changed a
-setting shows a synced provider after the next launch.
+setting shows a synced provider after the next launch, and a Studio opens in the look the app
+holds, which is the one stored at launch, the last one saved here, or what the Settings page read
+since.
+
+`studio` is portable like `scale`, and follows the same rules. A Mac applies each field a record
+carries and keeps its own for one the record does not: an older Mac, which does not know `studio`,
+sends records without it and so never erases it. A value that nobody has written a `studio` into
+projects exactly as it did before there was one, so installing this version is not an edit; a
+`studio` that came from another Mac is stored as it arrived and projects to the same record, so it
+is not sent back as a new edit. The older shape (a top-level `host`) never carries one. Each part
+of the look is read by itself: a choice a newer version added (a backdrop this one has not got) is
+read as that part's default, and never takes the provider or the other parts with it.
 
 ### ImgBB
 
@@ -362,11 +374,12 @@ the **Width** and **Height** rulers with **Reset view**; the footer.
 
 - **Area**: *Full chart* | *Portion*, and *Entire layout* between them when the workspace has more
   than one market chart. *Portion* goes back to the charts to select again and keeps the look
-  (`SnapshotState::kept_look`: the next capture opens with it, the framing reset; a selection
-  that is cancelled forgets it). *Full chart* (the focused chart) and *Entire layout* take a new
+  (the look is remembered, [below](#the-look-is-remembered), so the next capture opens with it, the
+  framing reset; a selection that is cancelled changes nothing). *Full chart* (the focused chart) and *Entire layout* take a new
   frozen picture of the live workspace (`capture_full`, `capture_layout`) and reset the framing.
-- **Style**: *Chart* | *Styled*. A new Studio opens **Styled at 3:2** (Vela's documented images show
-  Styled; `StudioConfig::new`). Switching to Styled sets 3:2.
+- **Style**: *Chart* | *Styled*. The first Studio opens **Styled at 3:2** (Vela's documented images
+  show Styled; `StudioPrefs::default`), every later one in the look it was last left in. Switching
+  to Styled sets 3:2.
 - **Size**: Original, 16:9, 3:2, 1:1, 9:16; disabled in Chart (the control shows Original, dimmed,
   with the tooltip "Size applies to the Styled look").
 - **Background**: six swatches painted from `background::swatch`, the composer's own definitions
@@ -377,7 +390,8 @@ the **Width** and **Height** rulers with **Reset view**; the footer.
   Styled, a toggle we added). Where a group row does not fit the window the groups wrap to a
   second line (`toolbar::lines`).
 - **Rulers** (`kit::ruler`, generic): a pill of evenly spaced ticks that slides under a fixed
-  centre marker, the value written beside it (`1.28×`, `1×`; `framing::multiplier_text`). Dragging
+  centre marker, the value written beside it (`1.28×`, `1×`; `framing::multiplier_text`), from 0.5×
+  to 2×. Dragging
   the ticks LEFT raises the value; letting go within 0.04 of 1× lands on 1×. Focused: Right/Up
   and Left/Down step 0.02, Page Up/Down 0.1, Home or 0 or a double-click put it at 1×. The widget
   reports events and keeps no value; it is a slider to a screen reader. Disabled, with the tooltip
@@ -413,7 +427,7 @@ the **Width** and **Height** rulers with **Reset view**; the footer.
 `ui/snapshot_studio/previews/` holds no workspace and no thread. Each frame the window reports the
 room the preview has in pixels; the workspace asks for a `Key` (the configuration, that room,
 and `coarse` while a drag or a ruler drag is under way). A change is a new **generation**. The scene
-is composed on the UI thread (`compose::scene(.., Target::Preview { max_px })`, 4 to 6 ms) and
+is composed on the UI thread (`compose::scene(.., Target::Preview { max_px })`, 4 to 5 ms) and
 rasterized on `work_queue::SNAPSHOTS` through a `Pending`; **at most one raster job is in flight**,
 the newest wanted key waits and is started when it ends (**latest wins**, overtaken keys are never
 composed), and a picture is uploaded into one `TextureHandle` that every later picture replaces, so
@@ -421,7 +435,8 @@ the old one stays on screen until a newer one arrives. A picture is shown if it 
 one shown, which means a drag is followed by the pictures that finish while it goes on and not only
 by its last; pictures of before a restart (the capture was replaced by Full chart or Entire layout)
 are dropped. While `coarse` the picture is drawn at half the pixels each way (about four times
-faster) and the full one follows the release. No Pine runs, nothing is fetched, nothing written.
+fewer pixels, [timings](#verifying)) and the full one follows the release. No Pine runs, nothing
+is fetched, nothing written.
 
 #### Export
 
@@ -435,6 +450,34 @@ the Studio's runs both buttons are disabled and the one pressed shows the candle
 Studio is closed meanwhile the job finishes and its notice still shows (a decision: a file may
 well be written after a Save panel was answered).
 
+#### The look is remembered
+
+`SnapshotPrefs.studio` (`StudioPrefs { style, size, background, include }`, in `snapshot.prefs`)
+holds the look the next Studio opens in; a first one, and an older save with no `studio`, opens
+Styled, 3:2, no backdrop, every Include on (`StudioPrefs::default`, which `StudioConfig::new`
+builds from).
+
+- **Opening.** A selection builds its `StudioConfig` from the stored look
+  (`StudioConfig::remembering(Area::Portion, look)`): the area is how the Studio was opened and
+  the framing is the default. Full chart and Entire layout inside the Studio keep the session's
+  look.
+- **Saving.** After the actions of a frame are applied, the session compares its look with the
+  one it last saved (`StudioSession::remembered`); only a difference calls
+  `SnapshotHost::set_studio`, which reads what is stored first (as every setter does, so a change
+  synced in meanwhile survives) and writes nothing if the stored look is already this one. A frame
+  that changes nothing costs one comparison. A save that fails says so once ("Could not save the
+  snapshot settings: …") and is not retried every frame; the Studio stays usable and the look
+  stays in the window's memory.
+- **Never stored:** the area, the framing (dials and position), the selection, the capture and its
+  data.
+- **Include and what the capture has.** A toggle that is dimmed because the capture has nothing
+  to switch (no indicators, no visible drawings, the mark outside Styled) cannot be clicked, so
+  the stored choice for it is carried through untouched and applies again to a capture that does
+  have them.
+- **Windows share it** (one `SnapshotHost`). A look synced in from another Mac reaches the open
+  windows when the Settings page next reads the settings, or at launch; a save from a Studio is made
+  on what is stored, so it never undoes a provider that was synced in meanwhile.
+
 #### Verified and decided
 
 - Verified (from Vela's docs and images): the groups and their order, Chart and Styled with Size
@@ -442,10 +485,10 @@ well be written after a Save panel was answered).
   dials' range, step, snap and reset, Reset view appearing after a change, the preview's limits and
   rubber band, the footer's summary and a prominent download button.
 - Our additions: **Copy image** and the **DegenView mark** toggle.
-- Decided: the Studio opens Styled; a drag of the ruler to the left raises the value (documented
+- Decided: the first Studio opens Styled; a drag of the ruler to the left raises the value (documented
   by Vela for the rulers; the preview is dragged like content, the other way); the arrow steps on
-  the preview; half-resolution pictures during a drag; the backdrop does not close the window; a
-  Studio that was closed keeps no look until the preferences land (a later change).
+  the preview; half-resolution pictures during a drag; the backdrop does not close the window; the
+  look is remembered (and synced) but never the framing.
 - Shortcuts are unchanged: the Studio has none, and the existing ones wait while it is open.
 - **Not checked**: everything above was driven headlessly (pointer and keyboard events over a real
   grid and the window in pictures of both themes at the default and the smallest window size);
@@ -489,9 +532,14 @@ indicators, script panes, script labels/lines/boxes/shapes/tables, drawings, ale
 account, shape for shape), exclusions, no state
 mutation, PNG, atomic saving, the upload client against a mock server, the job, the workspace flow
 and the menu. `cargo test --release snapshot_cost -- --ignored --nocapture` prints stage timings
-(a 500-candle chart with indicators, two script panes, a drawing and the account, release build:
-freeze + tessellate 6–13 ms on the UI thread, rasterize 14 ms at 1× and 44 ms at 2×, PNG 11 ms and
-28 ms, 91 KiB and 222 KiB files; the 2× image is 6 MiB raw).
+(a 500-candle chart with indicators, two script panes, a drawing and the account, release build on
+an Apple M2 Max; the first run of a process pays for fonts and is the slower UI-thread figure):
+
+| Camera menu image | Freeze + tessellate (UI thread) | Rasterize (worker) | PNG | File | Raw |
+| --- | --- | --- | --- | --- | --- |
+| 760 × 520 (1×) | 9 ms | 11 ms | 9 ms | 92 KiB | 1 MiB |
+| 1520 × 1040 (2×) | 4 ms | 40 ms | 28 ms | 226 KiB | 6 MiB |
+
 Checked by hand on a release build against live Binance data: the camera and menu render, ⇧⌘S puts
 a 2724 × 1446 PNG on the clipboard (read back as `PNGf`), a first ⌥S asks before uploading, and
 after agreeing the image reaches a local mock host as an `image/png` POST and its link is on the
@@ -513,10 +561,23 @@ to a PNG of the footer's size, the live charts untouched, the keys waiting).
 `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_studio -- --ignored` writes
 every backdrop in the Chart and Styled looks and every size on a dark and a light canvas, plus layouts and
 portions, and (`gallery_of_the_studio_window`, with `DEGENVIEW_GALLERY_FILTER=<part of a name>` to
-write some) the whole window in both themes at the default and smallest sizes in every state; `cargo test --release studio_cost -- --ignored --nocapture` prints stage timings (a
-500-candle chart with indicators, a script pane and a drawing: freeze 3–5 ms once; a 1599 × 1066 preview
-compose and tessellate 4–6 ms on the UI thread, rasterize about 77 ms on the worker; the 3:2 Spectrum
-export at 2× compose 4 ms, rasterize 89 ms, PNG 43 ms, 298 KiB).
+write some) the whole window in both themes at the default and smallest sizes in every state.
+
+`cargo test --release studio_cost -- --ignored --nocapture` prints the Studio's stage timings (a
+500-candle chart with indicators, a script pane and a drawing, 3:2 on Spectrum, release build on an
+Apple M2 Max). The compose step runs on the UI thread, the raster and the PNG on the snapshot
+worker; the freeze happens once, when the capture is taken (1.3 ms here).
+
+| Studio picture | Compose + tessellate (UI thread) | Rasterize (worker) | PNG | File |
+| --- | --- | --- | --- | --- |
+| Preview, 1599 × 1066 (full) | 3.7–4.8 ms | 74 ms | not made | |
+| Preview, 799 × 533 (half, while dragging) | 3.5–4.2 ms | 20 ms | not made | |
+| Export at 2×, 1710 × 1140 | 4.0 ms | 88 ms | 42 ms | 279 KiB (7 MiB raw) |
+
+The half-size picture holds a quarter of the pixels and rasterizes in about a quarter of the
+time, which is what lets a drag keep up; the compose step costs the same at either size, since it
+makes the same shapes. An export is the preview's work at another scale plus the PNG, about 130 ms
+on the worker after the click, with the window never waiting.
 
 The Settings page and its provider rows are drawn headless by
 `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_snapshots_page -- --ignored`, which

@@ -210,7 +210,9 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   directly.
 - The Screenshot Studio's composer (`ui/snapshot_studio/compose/`) is the only presentation layer
   around `paint_snapshot`: backdrop, shadow, title block, mark and layout positions. It never draws
-  a chart itself; a preview and an export are one `compose::paint` at two scales.
+  a chart itself; a preview and an export are one `compose::paint` at two scales. The Studio's
+  look (style, size, backdrop, include) is remembered in `snapshot.prefs.studio`; the area, framing
+  and selection belong to one capture and are never stored.
   [Chart snapshots](../snapshots.md).
 - Frame frozen on the UI thread in one pass; saving, rasterizing, PNG, upload run on
   `work_queue::SNAPSHOTS`, handing clipboard/browser work back as an `Outcome`. Never report a copy,
