@@ -1,7 +1,7 @@
 //! The macOS type scale with real SF weights, and the galleys every kit widget sets its words in:
 //! one line cut with an ellipsis, figures, and wrapped paragraphs.
 
-use eframe::egui::{self, Color32, FontId, Galley, RichText, Ui, text::LayoutJob};
+use eframe::egui::{self, Color32, FontId, Galley, Painter, RichText, Ui, text::LayoutJob};
 use std::sync::Arc;
 
 /// SF Pro weights on its `wght` axis.
@@ -36,8 +36,20 @@ pub fn galley(
     color: Color32,
     max_width: f32,
 ) -> Arc<Galley> {
+    galley_on(ui.painter(), value, size, weight, color, max_width)
+}
+
+/// [`galley`] for code that paints on a bare [`Painter`], such as a picture of a chart.
+pub fn galley_on(
+    painter: &Painter,
+    value: &str,
+    size: f32,
+    weight: f32,
+    color: Color32,
+    max_width: f32,
+) -> Arc<Galley> {
     galley_font(
-        ui,
+        painter,
         value,
         FontId::proportional(size),
         weight,
@@ -97,7 +109,7 @@ pub fn digits(
     max_width: f32,
 ) -> Arc<Galley> {
     galley_font(
-        ui,
+        ui.painter(),
         value,
         FontId::proportional(size),
         weight,
@@ -131,7 +143,7 @@ pub fn paragraph(
 }
 
 fn galley_font(
-    ui: &Ui,
+    painter: &Painter,
     value: &str,
     font_id: FontId,
     weight: f32,
@@ -153,5 +165,5 @@ fn galley_font(
     job.wrap.max_rows = 1;
     job.wrap.break_anywhere = true;
     job.wrap.overflow_character = Some('…');
-    ui.painter().layout_job(job)
+    painter.layout_job(job)
 }

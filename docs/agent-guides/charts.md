@@ -208,6 +208,10 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   restyled canvas) says so in `SnapshotInput.frame`; the live viewport is never moved to take one.
   `view()` and `frame_layout()` read a `Framing` (viewport and script extent), never `self.viewport`
   directly.
+- The Screenshot Studio's composer (`ui/snapshot_studio/compose/`) is the only presentation layer
+  around `paint_snapshot`: backdrop, shadow, title block, mark and layout positions. It never draws
+  a chart itself; a preview and an export are one `compose::paint` at two scales.
+  [Chart snapshots](../snapshots.md).
 - Frame frozen on the UI thread in one pass; saving, rasterizing, PNG, upload run on
   `work_queue::SNAPSHOTS`, handing clipboard/browser work back as an `Outcome`. Never report a copy,
   save or open before it happened.

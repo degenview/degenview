@@ -15,6 +15,14 @@ pub(crate) mod render_tests;
 pub mod replay;
 pub mod settings;
 pub mod shortcut;
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the Studio window and Select portion, which call the composer, land in PRs 4 and 5"
+    )
+)]
+pub mod snapshot_studio;
 pub mod theme;
 pub mod trade;
 pub mod watchlist;

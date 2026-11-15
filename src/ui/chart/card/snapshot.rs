@@ -68,6 +68,13 @@ impl Default for SnapshotFrame<'_> {
 #[derive(Clone)]
 pub struct FrozenOutputs(Vec<Placed>);
 
+impl FrozenOutputs {
+    /// Whether no script drew anything.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// Where a snapshot puts its parts, in points from the corner of the frame it is drawn in: what
 /// a caller needs to frame a picture of it, read the way [`ChartCard::paint_snapshot`] lays it out.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -325,13 +332,24 @@ impl ChartCard {
         pixels_per_point: f32,
     ) -> Result<SnapshotGeometry, SnapshotError> {
         snapshot_scene::measure(size, pixels_per_point, |painter, rect| {
-            self.with_snapshot_frame(painter, rect, input, |data, layout, view| {
-                SnapshotGeometry {
-                    view: view.geometry(layout.plot, data.bars.len()),
-                    axis_width: layout.rect.right() - layout.plot.right(),
-                    time_axis_height: layout.style.time_axis_height(),
-                }
-            })
+            self.snapshot_geometry_in(painter, rect, input)
+        })
+    }
+
+    /// [`Self::snapshot_geometry`] for `rect` of a painter the caller already has, at that
+    /// painter's scale: what a composer that is about to paint there asks before it does.
+    pub fn snapshot_geometry_in(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        input: &SnapshotInput,
+    ) -> Result<SnapshotGeometry, SnapshotError> {
+        self.with_snapshot_frame(painter, rect, input, |data, layout, view| {
+            SnapshotGeometry {
+                view: view.geometry(layout.plot, data.bars.len()),
+                axis_width: layout.rect.right() - layout.plot.right(),
+                time_axis_height: layout.style.time_axis_height(),
+            }
         })
     }
 

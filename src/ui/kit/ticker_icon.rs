@@ -1,10 +1,10 @@
 //! Market artwork: coin, company and chart logos from the shared icon cache, clipped to a circle,
 //! the monogram that stands in for one, and the data source's corner badge.
 
-use super::{BOLD, galley, source_logo, window};
+use super::{BOLD, galley_on, source_logo, window};
 use crate::model::DataSource;
 use crate::service::image::icon;
-use eframe::egui::{self, Color32, CornerRadius, FontId, Rect, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, FontId, Painter, Rect, Ui, Vec2};
 
 /// A coin, company or market logo in a circle; a hue-seeded monogram until (or unless) the
 /// shared icon cache resolves one. Crypto shares one lookup per base asset.
@@ -107,13 +107,17 @@ pub fn monogram(ui: &Ui, rect: Rect, symbol: &str) {
 /// [`monogram`] with its initials at `scale` of the circle's width and at `weight`; `None` sets
 /// them in the face's own weight.
 pub fn monogram_with(ui: &Ui, rect: Rect, symbol: &str, scale: f32, weight: Option<f32>) {
+    monogram_on(ui.painter(), rect, symbol, scale, weight);
+}
+
+/// [`monogram_with`] on a bare [`Painter`], for a picture of a chart that has no `Ui`.
+pub fn monogram_on(painter: &Painter, rect: Rect, symbol: &str, scale: f32, weight: Option<f32>) {
     let seed = symbol
         .to_uppercase()
         .chars()
         .fold(0u32, |sum, c| sum.wrapping_add((c as u32).wrapping_mul(31)));
     let fill: Color32 = egui::ecolor::Hsva::new((seed % 360) as f32 / 360.0, 0.55, 0.7, 1.0).into();
-    ui.painter()
-        .circle_filled(rect.center(), rect.width() / 2.0, fill);
+    painter.circle_filled(rect.center(), rect.width() / 2.0, fill);
     let initials: String = symbol
         .chars()
         .filter(|c| c.is_alphanumeric())
@@ -122,13 +126,17 @@ pub fn monogram_with(ui: &Ui, rect: Rect, symbol: &str, scale: f32, weight: Opti
         .to_uppercase();
     let size = rect.width() * scale;
     let label = match weight {
-        Some(weight) => galley(ui, &initials, size, weight, Color32::WHITE, f32::INFINITY),
-        None => ui
-            .painter()
-            .layout_no_wrap(initials, FontId::proportional(size), Color32::WHITE),
+        Some(weight) => galley_on(
+            painter,
+            &initials,
+            size,
+            weight,
+            Color32::WHITE,
+            f32::INFINITY,
+        ),
+        None => painter.layout_no_wrap(initials, FontId::proportional(size), Color32::WHITE),
     };
-    ui.painter()
-        .galley(rect.center() - label.size() / 2.0, label, Color32::WHITE);
+    painter.galley(rect.center() - label.size() / 2.0, label, Color32::WHITE);
 }
 
 /// The source's logo badged half outside an icon's bottom-right corner, ringed in the window

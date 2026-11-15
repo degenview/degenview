@@ -184,7 +184,7 @@ pub(super) fn everything_on() -> IndicatorConfig {
     }
 }
 
-fn trend_line() -> Drawing {
+pub(super) fn trend_line() -> Drawing {
     Drawing::build(
         Tool::TrendLine,
         1,
