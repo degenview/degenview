@@ -280,18 +280,23 @@ Capture (frozen once)  +  StudioConfig  ─►  compose::paint ─► Scene ─�
   (a monogram until the icon cache has one), its name in bold and `EXCHANGE · timeframe`. Its
   colours follow the canvas, not the app's theme: near black on a light canvas, near white on a dark
   one, the axis text colour for the subline. The mark (the app icon in a circle and "DegenView",
-  at 55 % opacity) goes inside the main plot at its bottom-left, above the time axis and any panes
-  (a decision: the layout reserves the chart's bottom-left corner, where the axis labels are).
+  at 55 % opacity) is at the right end of the title strip, centred on it, so it is never over market
+  data (`composition::branding`); the title is cut short of it, and the mark is left out only when
+  the strip cannot hold it with a strip height of room for the title (a decision: the title is what
+  stays).
 - **Layouts** (`compose/layout.rs`): each chart's rectangle is mapped onto the body (a different
   proportion stretches the arrangement; each chart is refitted to its plot, never stretched) and
   painted clipped to its own rectangle, with a hairline on every edge two charts share. Framing is
   not applied. A portion across charts is the same picture with the layout mapped from the
   selection's origin and everything outside clipped, still vector. The title block names the focused
   chart.
-- **Known limits.** A different plot shape shows other prices around the same centre at the
-  capture's price scale, so Styled (whose title strip makes the plot shorter) shows slightly fewer
-  prices than the capture did; the Height dial is how to get them back. The mark is drawn over the
-  data and can collide with a busy chart. Not checked: the logo from the icon cache in a real
+- **Price fit.** Horizontally a bar keeps the width it had in the capture (a wider plot shows more
+  bars). Vertically the capture's starting price range fills the composition's actual plot height at
+  Height 1× whatever the size, so the last-price tag and the newest candle the capture showed are never
+  cropped; Height 2× shows half that range (a decision, `framing`; the earlier rule of keeping the
+  price per point cropped the range when the title strip made the plot shorter).
+- **Known limits.** In a size other than the capture's the candles are taller or shorter than in the
+  capture (the price scale is fitted, not kept). Not checked: the logo from the icon cache in a real
   window (tests use the monogram), a layout in a real window.
 
 ## Platforms

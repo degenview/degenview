@@ -12,7 +12,7 @@ use super::{Cards, chart};
 use crate::model::chart::snapshot::framing::Framing;
 use crate::model::chart::snapshot::studio::StudioConfig;
 use crate::ui::chart::canvas::CanvasStyle;
-use crate::ui::chart::card::{SnapshotError, SnapshotGeometry};
+use crate::ui::chart::card::SnapshotError;
 use eframe::egui::{Painter, Pos2, Rect, Stroke, Vec2};
 
 /// How close, in points, two edges are to be the same edge.
@@ -30,7 +30,7 @@ fn mapper(view: Rect, body: Rect) -> impl Fn(Rect) -> Rect {
     }
 }
 
-/// Paints the layout's charts into `body` and their dividers; gives the geometry of each.
+/// Paints the layout's charts into `body` and their dividers.
 pub fn paint<'c>(
     painter: &Painter,
     body: Rect,
@@ -38,11 +38,10 @@ pub fn paint<'c>(
     cards: &Cards<'c>,
     config: &StudioConfig,
     style: &CanvasStyle,
-) -> Result<Vec<SnapshotGeometry>, SnapshotError> {
+) -> Result<(), SnapshotError> {
     let place = mapper(layout.view(), body);
     let clipped = painter.with_clip_rect(body);
     let mut shown = Vec::new();
-    let mut geometries = Vec::new();
     for (capture, rect) in &layout.charts {
         let rect = place(*rect);
         if !rect.intersects(body) {
@@ -50,18 +49,18 @@ pub fn paint<'c>(
         }
         let card = cards(capture.chart_id()).ok_or(SnapshotError::Empty)?;
         // A label that reaches past its chart's edge is cut there, as it is on screen.
-        geometries.push(chart::paint(
+        chart::paint(
             &clipped.with_clip_rect(rect),
             rect,
             capture,
             card,
             config,
             &Framing::default(),
-        )?);
+        )?;
         shown.push(rect);
     }
     dividers(&clipped, &shown, style);
-    Ok(geometries)
+    Ok(())
 }
 
 /// A hairline along every edge two charts share: the edges that are not on the arrangement's

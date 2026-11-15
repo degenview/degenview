@@ -199,15 +199,18 @@ fn twice_the_height_shows_half_the_prices_about_the_same_centre() {
 }
 
 #[test]
-fn a_taller_composition_shows_more_prices_at_the_same_price_per_point() {
+fn the_starting_prices_fill_the_plot_however_tall_it_is() {
     let base = base();
-    let tall = range_of(&Framing::default().viewport(&base, vec2(800.0, 600.0)));
-    assert!(
-        near(tall.minimum, 75.0) && near(tall.maximum, 225.0),
-        "{tall:?}"
-    );
-    // 100 prices over 400 pt before; 150 over 600 pt now.
-    assert!(near((tall.maximum - tall.minimum) / 600.0, 100.0 / 400.0));
+    for plot in [vec2(800.0, 600.0), vec2(800.0, 200.0), vec2(300.0, 900.0)] {
+        let range = range_of(&Framing::default().viewport(&base, plot));
+        assert!(
+            near(range.minimum, 100.0) && near(range.maximum, 200.0),
+            "{plot:?}: {range:?}"
+        );
+    }
+    // The dial then scales that span, whatever the plot.
+    let double = range_of(&framed(1.0, 2.0, 0.0, 0.0).viewport(&base, vec2(800.0, 200.0)));
+    assert!(near(double.maximum - double.minimum, 50.0), "{double:?}");
 }
 
 #[test]

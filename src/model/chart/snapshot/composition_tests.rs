@@ -1,5 +1,6 @@
 use super::composition::{
-    BRANDING_HEIGHT, HEADER_HEIGHT, MIN_PADDING, PADDING_SHARE, dimensions, layout, summary,
+    BRANDING_HEIGHT, HEADER_HEIGHT, HEADER_PAD_SHARE, MIN_PADDING, PADDING_SHARE, dimensions,
+    layout, summary,
 };
 use super::studio::{Area, AspectRatio, Background, StudioConfig, Style};
 use super::{MAX_PIXELS, MAX_SIDE_PX, SnapshotDimensions, SnapshotScale};
@@ -247,24 +248,20 @@ fn the_chart_style_has_no_header_and_the_body_is_the_chart() {
 }
 
 #[test]
-fn the_mark_sits_at_the_charts_bottom_left_clear_of_the_header() {
+fn the_mark_sits_at_the_right_end_of_the_title_strip_centred_on_it() {
     let got = layout(
         CAPTURE,
         &styled(AspectRatio::Landscape3x2, Background::Radiant),
     );
     let mark = got.branding.expect("the mark");
     let header = got.header.expect("header");
-    assert!(got.chart.contains_rect(mark));
-    assert!(mark.min.y >= header.max.y);
+    assert!(header.contains_rect(mark), "{mark:?} in {header:?}");
     assert!(mark.height() >= BRANDING_HEIGHT.0 && mark.height() <= BRANDING_HEIGHT.1);
-    assert!(
-        mark.min.x - got.chart.min.x < got.chart.width() / 4.0,
-        "left"
-    );
-    assert!(
-        got.chart.max.y - mark.max.y < got.chart.height() / 4.0,
-        "bottom"
-    );
+    assert!(near(mark.center().y, header.center().y));
+    // Right-aligned with the margin the title has on the left.
+    let pad = header.height() * HEADER_PAD_SHARE;
+    assert!(near(header.max.x - mark.max.x, pad));
+    assert!(!mark.intersects(got.body()), "never over market data");
 }
 
 #[test]
@@ -284,12 +281,17 @@ fn the_mark_is_left_out_when_switched_off_or_not_styled() {
 }
 
 #[test]
-fn the_mark_is_left_out_of_a_chart_too_small_to_hold_it() {
+fn the_mark_is_left_out_of_a_strip_too_narrow_for_it_and_the_title() {
     let got = layout(
         vec2(90.0, 300.0),
         &styled(AspectRatio::Original, Background::None),
     );
     assert_eq!(got.branding, None);
+    assert!(got.header.is_some(), "the title stays");
+    for size in AspectRatio::ALL {
+        let got = layout(CAPTURE, &styled(size, Background::Dots));
+        assert!(got.branding.is_some(), "{size:?} has room for both");
+    }
 }
 
 // MARK: Pixels

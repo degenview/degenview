@@ -23,6 +23,13 @@ pub const HEADER_HEIGHT: (f32, f32) = (44.0, 96.0);
 const BRANDING_SHARE: f32 = 0.05;
 /// The mark's least and most height, in points.
 pub const BRANDING_HEIGHT: (f32, f32) = (18.0, 28.0);
+/// The title block's proportions, as shares of the strip's height: the margin at its left and at
+/// the mark's right, the logo's diameter and the gap after it. The composer sets the title in them.
+pub const HEADER_PAD_SHARE: f32 = 0.34;
+pub const HEADER_LOGO_SHARE: f32 = 0.52;
+pub const HEADER_GAP_SHARE: f32 = 0.22;
+/// The room, in strip heights, the title must keep beside the mark for the mark to be drawn.
+const TITLE_ROOM: f32 = 1.0;
 /// The mark's width over its height: the app icon and the word beside it.
 const BRANDING_ASPECT: f32 = 6.5;
 
@@ -38,7 +45,7 @@ pub struct Composition {
     /// A Styled image's title block: the strip across the top of the chart, its content at the
     /// left.
     pub header: Option<Rect>,
-    /// A Styled image's DegenView mark, at the chart's bottom-left, drawn faintly over the chart.
+    /// A Styled image's DegenView mark, at the right end of the title strip.
     pub branding: Option<Rect>,
 }
 
@@ -155,7 +162,7 @@ pub fn layout(capture: Vec2, config: &StudioConfig) -> Composition {
     });
     let branding = config
         .shows_branding()
-        .then(|| branding_rect(chart, header))
+        .then(|| header.and_then(|header| branding_rect(header, chart)))
         .flatten();
     Composition {
         size,
@@ -166,17 +173,22 @@ pub fn layout(capture: Vec2, config: &StudioConfig) -> Composition {
     }
 }
 
-/// The mark's place in the chart's bottom-left corner, if the chart is large enough to hold it
-/// clear of the header.
-fn branding_rect(chart: Rect, header: Option<Rect>) -> Option<Rect> {
-    let height = (chart.height() * BRANDING_SHARE).clamp(BRANDING_HEIGHT.0, BRANDING_HEIGHT.1);
-    let inset = height / 2.0;
+/// The mark's place in the title strip: at its right end, centred on the strip, so it never lies
+/// over market data. `None` where the strip cannot hold it and still leave the title the room
+/// [`TITLE_ROOM`] asks (a narrow image: the title is what stays).
+fn branding_rect(header: Rect, chart: Rect) -> Option<Rect> {
+    let height = (chart.height() * BRANDING_SHARE)
+        .clamp(BRANDING_HEIGHT.0, BRANDING_HEIGHT.1)
+        .min(header.height() / 2.0);
+    let width = height * BRANDING_ASPECT;
+    let pad = header.height() * HEADER_PAD_SHARE;
     let rect = Rect::from_min_size(
-        pos2(chart.min.x + inset, chart.max.y - inset - height),
-        vec2(height * BRANDING_ASPECT, height),
+        pos2(header.max.x - pad - width, header.center().y - height / 2.0),
+        vec2(width, height),
     );
-    let top = header.map_or(chart.min.y, |header| header.max.y);
-    (rect.max.x + inset <= chart.max.x && rect.min.y >= top).then_some(rect)
+    // What the title block takes before its text: the margin, the logo and the gap after it.
+    let before_title = header.height() * (HEADER_PAD_SHARE + HEADER_LOGO_SHARE + HEADER_GAP_SHARE);
+    (rect.min.x - header.min.x >= before_title + TITLE_ROOM * header.height()).then_some(rect)
 }
 
 /// The image's size in pixels at `scale`, or at a smaller one where the image would pass the

@@ -3,9 +3,11 @@
 //!
 //! A [`Framing`] is four numbers. [`Framing::viewport`] turns them, with a [`Base`] describing the
 //! starting view, into the [`ChartViewport`] the composer draws the chart with. The chart's own
-//! scale is never changed: a bar keeps the width and a price the height they had in the capture,
-//! so a dial at 2× shows half the bars (or half the prices) and one at 0.5× twice as many, and the
-//! candles are never stretched. Dragging is limited to a quarter of the starting view each way, to the history that
+//! time scale is never changed: a bar keeps the width it had in the capture, so a wider plot shows
+//! more bars and a dial at 2× half as many, and the candles are never stretched sideways. The price
+//! scale is fitted instead: at 1× the starting price range fills the plot the composition gives
+//! the chart whatever its height, so the newest candle and the last-price tag the capture showed are
+//! never cropped, and the Height dial at 2× shows half that range (0.5× twice it). Dragging is limited to a quarter of the starting view each way, to the history that
 //! is loaded and to a little empty space past the newest bar; past a limit the view gives way a
 //! little (a rubber band) and [`Framing::settle`] puts it back on release.
 //!
@@ -169,18 +171,15 @@ impl Base {
         }
     }
 
-    /// The share of the capture's plot that `plot` is, across and down: how much more room the
-    /// composition gives the chart. `1.0` where either plot has no size to compare.
-    fn room(&self, plot: Vec2) -> (f64, f64) {
-        let share = |now: f32, then: f32| {
-            let share = f64::from(now) / f64::from(then);
-            if share.is_finite() && share > 0.0 {
-                share
-            } else {
-                1.0
-            }
-        };
-        (share(plot.x, self.plot.x), share(plot.y, self.plot.y))
+    /// The share of the capture's plot width that `plot` is: how much more room across the
+    /// composition gives the chart. `1.0` where either has no width to compare.
+    fn room_across(&self, plot: Vec2) -> f64 {
+        let share = f64::from(plot.x) / f64::from(self.plot.x);
+        if share.is_finite() && share > 0.0 {
+            share
+        } else {
+            1.0
+        }
     }
 
     /// The span of a price range in the scale's own space.
@@ -272,7 +271,7 @@ impl Framing {
     /// slots on top. Rounding to whole bars moves a slot's width by at most half a slot over the
     /// plot's width.
     fn slots(&self, base: &Base, plot: Vec2) -> (usize, f64) {
-        let (across, _) = base.room(plot);
+        let across = base.room_across(plot);
         let wanted = base.bars_in_view * across / self.width.clamp(MIN, MAX);
         let free = base.reserved as f64;
         let visible = if (wanted - free).is_finite() {
@@ -333,9 +332,11 @@ impl Framing {
         }
     }
 
-    /// The view to draw the chart with in a composition whose plot is `plot` points: the
-    /// capture's bar width and price per point, divided by the dials, centred on the capture's
-    /// centre moved by the offsets. The price range is manual, so autoscale does not undo it.
+    /// The view to draw the chart with in a composition whose plot is `plot` points across: the
+    /// capture's bar width, divided by the Width dial, and the capture's price range, divided by
+    /// the Height dial, centred on the capture's centre moved by the offsets. The price range
+    /// fills the plot's height at any `plot`, so only its width matters here. The range is manual,
+    /// so autoscale does not undo it.
     ///
     /// The offsets are held to the limits plus the room a rubber band may take, so a framing that
     /// was dragged past a limit still draws, and one that no longer fits a limit (a dial moved
@@ -354,11 +355,10 @@ impl Framing {
             right_offset: (base.total_bars + base.reserved) as f64 - centre - slots / 2.0,
         };
 
-        let (_, down) = base.room(plot);
         let log = base.logarithmic;
         let shown = base
             .price
-            .scaled(down / self.height.clamp(MIN, MAX), log)
+            .scaled(1.0 / self.height.clamp(MIN, MAX), log)
             .unwrap_or(base.price);
         let moved = shown
             .shifted(dy * base.span(base.price) / base.span(shown), log)

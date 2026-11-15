@@ -8,8 +8,8 @@ use crate::model::chart::snapshot::composition::summary;
 use crate::model::chart::snapshot::framing::Framing;
 use crate::model::chart::snapshot::studio::{Area, AspectRatio, Background, Style};
 use crate::model::chart::snapshot::{MAX_PIXELS, MAX_SIDE_PX};
-use crate::ui::chart::card::SnapshotFrame;
 use crate::ui::chart::card::studio_fixture::Fixture;
+use crate::ui::chart::card::{SnapshotFrame, SnapshotGeometry};
 use crate::ui::snapshot_studio::capture::{Capture, LayoutCapture};
 use crate::ui::snapshot_studio::fixtures::{
     CHART_ID, Flat, chart_capture, close, first_difference, flatten, light_canvas, paint_shapes,
@@ -346,35 +346,60 @@ fn the_styled_look_names_the_market_and_the_chart_look_does_not() {
 }
 
 #[test]
-fn the_mark_stands_above_the_time_axis_and_clear_of_the_header() {
+fn the_mark_is_in_the_title_strip_beside_the_title_and_never_over_the_chart() {
     let fixture = Fixture::busy(ChartCanvas::default(), 300);
     let capture = single(&fixture);
     let cards = |id: u64| (id == CHART_ID).then(|| fixture.card());
-    let config = styled(AspectRatio::Landscape3x2, Background::Illuminated);
-    let composition = composition::layout(capture.size(), &config);
-    let shapes = flatten(&painted(&capture, &cards, &config, 1.0));
-    let mark = shapes
-        .iter()
-        .find_map(|flat| match flat {
-            Flat::Text { text, pos, .. } if text == "DegenView" => Some(*pos),
-            _ => None,
-        })
-        .expect("the mark's name");
-    let reserved = composition.branding.expect("room for the mark");
-    assert!(
-        mark.y < reserved.min.y,
-        "above the corner the layout reserved: {mark:?}"
-    );
-    // The time axis' labels are lower still.
-    let lowest_label = shapes
-        .iter()
-        .filter_map(|flat| match flat {
-            Flat::Text { text, pos, .. } if text.contains(':') || text.contains('/') => Some(pos.y),
-            _ => None,
-        })
-        .fold(0.0, f32::max);
-    assert!(mark.y < lowest_label);
-    assert!(mark.y > composition.header.expect("header").max.y);
+    for size in AspectRatio::ALL {
+        let config = styled(size, Background::Illuminated);
+        let composition = composition::layout(capture.size(), &config);
+        let header = composition.header.expect("header");
+        let reserved = composition
+            .branding
+            .unwrap_or_else(|| panic!("{size:?}: no room for the mark in {composition:?}"));
+        let shapes = flatten(&painted(&capture, &cards, &config, 1.0));
+        let at = |word: &str| {
+            shapes.iter().find_map(|flat| match flat {
+                Flat::Text { text, pos, .. } if text == word => Some(*pos),
+                _ => None,
+            })
+        };
+        let mark = at("DegenView").expect("the mark's name");
+        assert!(header.contains(mark), "{size:?}: {mark:?} in {header:?}");
+        assert!(mark.x > reserved.min.x, "{size:?}: right of the icon");
+        assert!(
+            mark.y < composition.body().min.y,
+            "{size:?}: above the body"
+        );
+        // And the title has not run into it.
+        let title = at("BTC/USDT").expect("the title");
+        assert!(title.x < reserved.min.x, "{size:?}");
+    }
+}
+
+#[test]
+fn the_starting_prices_fill_the_plot_in_every_size_so_the_last_price_is_inside_it() {
+    let fixture = Fixture::busy(ChartCanvas::default(), 300);
+    let capture = single(&fixture);
+    let Capture::Single(chart) = &capture else {
+        panic!("a single chart");
+    };
+    let last = fixture.candles().last().expect("candles").close;
+    for size in AspectRatio::ALL {
+        let config = styled(size, Background::Spectrum);
+        let view = view_of(&capture, &fixture, &config).view;
+        assert!(
+            (view.minimum - chart.base().price.minimum).abs() < 1e-6
+                && (view.maximum - chart.base().price.maximum).abs() < 1e-6,
+            "{size:?}: {} to {}",
+            view.minimum,
+            view.maximum
+        );
+        assert!(
+            view.minimum < last && last < view.maximum,
+            "{size:?}: {last}"
+        );
+    }
 }
 
 // MARK: Size

@@ -23,7 +23,7 @@ use crate::model::chart::snapshot::studio::StudioConfig;
 use crate::model::chart::snapshot::{SnapshotDimensions, SnapshotScale};
 use crate::service::snapshot::raster::Scene;
 use crate::ui::chart::canvas::{CanvasStyle, Fill, paint_background};
-use crate::ui::chart::card::{ChartCard, SnapshotError, SnapshotGeometry};
+use crate::ui::chart::card::{ChartCard, SnapshotError};
 use crate::ui::chart::snapshot_scene;
 use eframe::egui::{Color32, Painter, Rect, vec2};
 use surround::Surround;
@@ -128,57 +128,33 @@ pub fn paint<'c>(
             Fill::Solid(styled::top_color(style.fill)),
         );
     }
-    let plots = match capture {
+    match capture {
         Capture::Single(single) => {
             let card = cards(single.chart_id()).ok_or(SnapshotError::Empty)?;
-            vec![chart::paint(
+            chart::paint(
                 &painter.with_clip_rect(body),
                 body,
                 single,
                 card,
                 config,
                 &config.framing,
-            )?]
+            )?;
         }
         Capture::Layout(arrangement) => {
-            layout::paint(painter, body, arrangement, cards, config, &style)?
+            layout::paint(painter, body, arrangement, cards, config, &style)?;
         }
-    };
+    }
     if let Some(surround) = &surround {
         surround.paint_over(painter);
     }
+    let mark = composition.branding.map(|mark| mark.translate(origin));
     if let (Some(header), Some(headline)) = (composition.header, capture.headline()) {
-        styled::paint_header(painter, header.translate(origin), headline, &style);
+        styled::paint_header(painter, header.translate(origin), mark, headline, &style);
     }
-    if let Some(mark) = composition
-        .branding
-        .and_then(|reserved| marked(reserved.translate(origin), body, &plots))
-    {
+    if let Some(mark) = mark {
         styled::paint_mark(painter, mark, &style);
     }
     Ok(())
-}
-
-/// Where the DegenView mark goes: the layout reserved the chart's bottom-left corner, but the
-/// time axis (and any panes) are there. The mark goes inside the plot that is nearest that
-/// corner instead, above the axis, with the margin the layout gave it. `None` where the plot is
-/// too short to hold it.
-fn marked(reserved: Rect, body: Rect, plots: &[SnapshotGeometry]) -> Option<Rect> {
-    let corner = body.left_bottom();
-    let plot = plots
-        .iter()
-        .map(|geometry| geometry.view.plot)
-        .min_by(|a, b| {
-            a.left_bottom()
-                .distance(corner)
-                .total_cmp(&b.left_bottom().distance(corner))
-        })?;
-    let inset = reserved.height() / 2.0;
-    let placed = Rect::from_min_size(
-        plot.left_bottom() + vec2(inset, -inset - reserved.height()),
-        reserved.size(),
-    );
-    (placed.min.y >= plot.top() + inset).then_some(placed)
 }
 
 /// The colour the image starts out as: what shows in a pixel the painting does not reach.
