@@ -259,8 +259,9 @@ impl SeriesLine {
 
 pub struct ChartCard {
     appearance: ChartAppearance,
-    /// How big the plot area was drawn at the last frame, in points: what a snapshot is the size of.
-    body_size: Vec2,
+    /// Where the plot area was drawn at the last frame, in window points: what a snapshot is the
+    /// size of, and what Select portion maps a selection from.
+    body_rect: Rect,
     /// How much of the plot's top the header covers: the price scale starts below it, and what
     /// anchors to the plot's top (readouts, tags) sits under it. A snapshot has no header.
     top_inset: f32,
@@ -333,6 +334,9 @@ pub struct ChartCard {
     /// The Zoom In tool: armed state, the rectangle being dragged, the views to zoom out to.
     /// View state, never saved.
     zoom: zoom_rect::ZoomTool,
+    /// The workspace's Select portion mode is on: the pointer is the selection's, not the
+    /// chart's. View state, never saved.
+    snapshot_select: bool,
     /// Bars that arrived at the newest end since this card began, whatever the view showed: what a
     /// stored view is translated by (see [`zoom_rect::ViewStep`]).
     arrivals: u64,
@@ -384,7 +388,7 @@ impl Default for ChartCard {
     fn default() -> Self {
         Self {
             appearance: ChartAppearance::default(),
-            body_size: Vec2::ZERO,
+            body_rect: Rect::ZERO,
             top_inset: 0.0,
             title: None,
             series: Vec::new(),
@@ -416,6 +420,7 @@ impl Default for ChartCard {
             logs_range: None,
             scroll_from: None,
             zoom: zoom_rect::ZoomTool::default(),
+            snapshot_select: false,
             arrivals: 0,
             series_epoch: 0,
             drawn_series: None,
@@ -744,6 +749,7 @@ mod paint;
 mod price_scale;
 mod scripts;
 mod snapshot;
+mod snapshot_select;
 mod sync;
 mod table;
 mod view;

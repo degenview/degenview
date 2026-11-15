@@ -91,6 +91,8 @@ pub enum ToolbarAction {
     CreateAlert,
     /// Take this snapshot of the focused chart.
     Snapshot(crate::model::chart::snapshot::SnapshotAction),
+    /// Start choosing which part of the charts to capture.
+    SelectPortion,
     /// Open the Snapshots page of Settings.
     SnapshotSettings,
     Undo,
@@ -139,6 +141,9 @@ pub fn show(ui: &mut Ui, input: &ToolbarInput) -> Vec<ToolbarAction> {
                 match crate::ui::workspace::snapshot_menu::menu(ui, response, &input.snapshot) {
                     Some(crate::ui::workspace::snapshot_menu::Pick::Take(picked)) => {
                         actions.push(ToolbarAction::Snapshot(picked));
+                    }
+                    Some(crate::ui::workspace::snapshot_menu::Pick::SelectPortion) => {
+                        actions.push(ToolbarAction::SelectPortion);
                     }
                     Some(crate::ui::workspace::snapshot_menu::Pick::Configure) => {
                         actions.push(ToolbarAction::SnapshotSettings);

@@ -78,13 +78,6 @@ impl FrozenOutputs {
 /// Where a snapshot puts its parts, in points from the corner of the frame it is drawn in: what
 /// a caller needs to frame a picture of it, read the way [`ChartCard::paint_snapshot`] lays it out.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the Screenshot Studio, next in this stack, is its caller"
-    )
-)]
 pub struct SnapshotGeometry {
     pub view: ViewGeometry,
     pub axis_width: f32,
@@ -163,11 +156,24 @@ impl Overlays for SnapshotOverlays<'_> {
 impl ChartCard {
     /// How big the chart was at the last frame, in points.
     pub fn snapshot_size(&self) -> Vec2 {
-        // Without the header's strip: a snapshot has no header over its plot.
-        Vec2::new(
-            self.body_size.x,
-            (self.body_size.y - self.top_inset).max(1.0),
+        self.snapshot_frame().size()
+    }
+
+    /// Where the snapshot's frame lies on the window as of the last frame, in points: the body
+    /// without the header's strip, since a snapshot has no header over its plot. A point of it
+    /// is the same point of the snapshot, counted from the frame's top-left corner.
+    pub fn snapshot_frame(&self) -> Rect {
+        let body = self.body_rect;
+        Rect::from_min_size(
+            egui::pos2(body.left(), body.top() + self.top_inset),
+            Vec2::new(body.width(), (body.height() - self.top_inset).max(1.0)),
         )
+    }
+
+    /// Where the chart's body (header strip included) was drawn at the last frame, in window
+    /// points.
+    pub fn body_rect(&self) -> Rect {
+        self.body_rect
     }
 
     /// What instance `id`'s last run drew, counted.
@@ -185,7 +191,7 @@ impl ChartCard {
     /// Pretends the chart was drawn at `size`.
     #[cfg(test)]
     pub fn set_snapshot_size_for_tests(&mut self, size: Vec2) {
-        self.body_size = size;
+        self.body_rect = Rect::from_min_size(egui::Pos2::ZERO, size);
     }
 
     /// The scripts' last runs, in the order the chart draws them. Unlike [`Self::pine_outputs`]
@@ -195,13 +201,6 @@ impl ChartCard {
     }
 
     /// The scripts' last runs, frozen for a snapshot to draw whatever happens to them next.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the Screenshot Studio, next in this stack, is its caller"
-        )
-    )]
     pub fn snapshot_outputs(&self) -> FrozenOutputs {
         FrozenOutputs(self.last_pine_outputs())
     }
@@ -318,13 +317,6 @@ impl ChartCard {
     /// Where [`Self::paint_snapshot`] would put the chart in a frame of `size` points at
     /// `pixels_per_point`. Text is measured at that scale, so ask at the scale the picture will
     /// be drawn at. Paints and changes nothing.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the Screenshot Studio, next in this stack, is its caller"
-        )
-    )]
     pub fn snapshot_geometry(
         &self,
         input: &SnapshotInput,

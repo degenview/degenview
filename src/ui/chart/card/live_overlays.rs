@@ -43,7 +43,7 @@ impl Overlays for LiveOverlays<'_> {
             && !self.replay.selecting
             && !self
                 .card
-                .zoom_is_live(layout.main_visible, self.replay.selecting)
+                .pointer_is_held(layout.main_visible, self.replay.selecting)
         {
             layer.overlay(self.ui, projection, drawing);
         }

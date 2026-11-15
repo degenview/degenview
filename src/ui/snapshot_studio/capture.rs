@@ -23,24 +23,6 @@ use std::sync::Arc;
 /// is kept as it is. Larger than any header shows it at 2×.
 const LOGO_PIXELS: u32 = 256;
 
-/// What the card paints a chart with `parts` from.
-fn input_of<'a>(parts: &'a ChartParts, frame: SnapshotFrame<'a>) -> SnapshotInput<'a> {
-    SnapshotInput {
-        symbol: &parts.symbol,
-        source: parts.source,
-        candles: &parts.candles,
-        scale_mode: parts.scale_mode,
-        indicators: &parts.indicators,
-        drawings: &parts.drawings,
-        open_notes: &parts.open_notes,
-        images: Some(&parts.images),
-        hide_all_drawings: false,
-        replay_active: parts.replay_active,
-        include_trading: parts.include_trading,
-        frame,
-    }
-}
-
 /// What a chart is made of besides its card: the workspace's data for it, as the chart shows it.
 pub struct ChartParts {
     pub chart_id: u64,
@@ -64,6 +46,26 @@ pub struct ChartParts {
     /// The market's logo, if the icon cache has it already; the header's monogram stands in
     /// otherwise.
     pub logo: Option<Arc<ColorImage>>,
+}
+
+impl ChartParts {
+    /// What the card paints this chart from. `frame` says where it departs from the live chart.
+    pub fn input<'a>(&'a self, frame: SnapshotFrame<'a>) -> SnapshotInput<'a> {
+        SnapshotInput {
+            symbol: &self.symbol,
+            source: self.source,
+            candles: &self.candles,
+            scale_mode: self.scale_mode,
+            indicators: &self.indicators,
+            drawings: &self.drawings,
+            open_notes: &self.open_notes,
+            images: Some(&self.images),
+            hide_all_drawings: false,
+            replay_active: self.replay_active,
+            include_trading: self.include_trading,
+            frame,
+        }
+    }
 }
 
 /// One chart, frozen.
@@ -91,7 +93,7 @@ impl ChartCapture {
         let outputs = card.snapshot_outputs();
         let full = card.snapshot_size();
         let measure = |frame: SnapshotFrame, size: Vec2| {
-            card.snapshot_geometry(&input_of(&parts, frame), size, pixels_per_point)
+            card.snapshot_geometry(&parts.input(frame), size, pixels_per_point)
         };
         let mut size = full;
         let mut geometry = measure(
@@ -134,7 +136,7 @@ impl ChartCapture {
 
     /// What the card paints this chart from. `frame` says where it departs from the live chart.
     pub fn input<'a>(&'a self, frame: SnapshotFrame<'a>) -> SnapshotInput<'a> {
-        input_of(&self.parts, frame)
+        self.parts.input(frame)
     }
 
     pub fn chart_id(&self) -> u64 {

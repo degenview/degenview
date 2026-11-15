@@ -50,7 +50,7 @@ part. The children are grouped by domain, like `model/` and `ui/`:
 
 | Directory | Owns |
 | --- | --- |
-| `chart/` | `mod.rs`: one chart's market data, fetching, refresh cadence, older-history paging; `collection` (add, replace, focus, remove, summaries for MCP), `live` (the live Binance feed), `settings` (the chart settings window), `symbol_picker`, `snapshot`, `context/` (the right-click menu) |
+| `chart/` | `mod.rs`: one chart's market data, fetching, refresh cadence, older-history paging; `collection` (add, replace, focus, remove, summaries for MCP), `live` (the live Binance feed), `settings` (the chart settings window), `symbol_picker`, `snapshot/` (the snapshot jobs, plus `select`: Select portion), `context/` (the right-click menu) |
 | `overlay/` | Compared markets: their candles fetched once per market (`mod.rs`) and the undoable add, edit and remove (`actions`) |
 | `drawing/` | `mod.rs`: drawing properties, templates, locking, merging another Mac's drawings; `tools` (`DrawingTools`), `content` (where a placed picture comes from), `links` (Post cards), `tool_rail` (the tool rail and its grouped tiles) |
 | `layout/` | Saved layouts: persisted form, dirty state, open/save/rename/delete (`mod.rs`), the tab's `LayoutSession` (`session`) and the autosave debounce (`autosave`) |

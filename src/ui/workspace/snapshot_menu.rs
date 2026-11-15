@@ -1,8 +1,9 @@
 //! The menu under the toolbar's camera button: what to do with a picture of the focused chart.
 //!
 //! The button is the toolbar's and reports the row picked; the workspace takes the snapshot of
-//! the focused chart. A row that cannot work says why instead of doing nothing: the hosted
-//! ones need a host in Settings, and every row waits while a snapshot is being made.
+//! the focused chart, or starts the selection of a portion of the workspace. A row that cannot
+//! work says why instead of doing nothing: the hosted ones need a host in Settings, and every
+//! row waits while a snapshot is being made.
 
 use crate::model::chart::snapshot::SnapshotAction;
 use crate::ui::icons::Icon;
@@ -26,12 +27,74 @@ pub struct SnapshotMenu<'a> {
 pub enum Pick {
     /// Take a snapshot and do this with it.
     Take(SnapshotAction),
+    /// Drag a rectangle over the charts to say which part of them to capture.
+    SelectPortion,
     /// Open Settings on the Snapshots page.
     Configure,
 }
 
 /// The row after the separator, which opens the Snapshots page of Settings.
 const CONFIGURE_LABEL: &str = "Configure Snapshots…";
+
+/// The row that starts the selection of a portion: it takes no snapshot by itself.
+const SELECT_PORTION_LABEL: &str = "Select portion";
+
+/// A row above the separator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Row {
+    Take(SnapshotAction),
+    SelectPortion,
+}
+
+impl Row {
+    /// Every row in the order the menu shows them: the local actions, the selection, then the
+    /// ones that upload.
+    fn all() -> impl Iterator<Item = Self> {
+        SnapshotAction::ALL.into_iter().flat_map(|action| {
+            std::iter::once(Self::Take(action))
+                .chain((action == SnapshotAction::CopyImage).then_some(Self::SelectPortion))
+        })
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Take(action) => action.label(),
+            Self::SelectPortion => SELECT_PORTION_LABEL,
+        }
+    }
+
+    const fn icon(self) -> Icon {
+        match self {
+            Self::Take(action) => icon(action),
+            Self::SelectPortion => Icon::SelectArea,
+        }
+    }
+
+    const fn pick(self) -> Pick {
+        match self {
+            Self::Take(action) => Pick::Take(action),
+            Self::SelectPortion => Pick::SelectPortion,
+        }
+    }
+
+    /// Why this row cannot be used now, or `None` when it can.
+    fn unavailable(self, menu: &SnapshotMenu) -> Option<String> {
+        match self {
+            Self::Take(action) => unavailable(action, menu),
+            Self::SelectPortion => menu
+                .busy
+                .then(|| "A snapshot is already being made.".to_owned()),
+        }
+    }
+
+    /// The shortcut the row shows: only where one works, and the selection has none.
+    fn shortcut(self, menu: &SnapshotMenu) -> Option<String> {
+        match self {
+            Self::Take(action) if unavailable(action, menu).is_none() => (menu.shortcut)(action),
+            Self::Take(_) | Self::SelectPortion => None,
+        }
+    }
+}
 
 const fn icon(action: SnapshotAction) -> Icon {
     match action {
@@ -63,19 +126,10 @@ pub fn menu(ui: &mut egui::Ui, response: &egui::Response, menu: &SnapshotMenu) -
         return picked;
     }
     // As wide as the rows and their shortcuts need, worked out only while the menu is open.
-    let hints: Vec<Option<String>> = SnapshotAction::ALL
-        .into_iter()
-        .map(|action| {
-            unavailable(action, menu)
-                .is_none()
-                .then(|| (menu.shortcut)(action))
-                .flatten()
-        })
-        .collect();
-    let rows: Vec<(&str, Option<&str>)> = SnapshotAction::ALL
-        .into_iter()
+    let hints: Vec<Option<String>> = Row::all().map(|row| row.shortcut(menu)).collect();
+    let rows: Vec<(&str, Option<&str>)> = Row::all()
         .zip(&hints)
-        .map(|(action, hint)| (action.label(), hint.as_deref()))
+        .map(|(row, hint)| (row.label(), hint.as_deref()))
         .chain([(CONFIGURE_LABEL, None)])
         .collect();
     let width = kit::menu_width_for_rows(ui, &rows, 0.0);
@@ -86,26 +140,21 @@ pub fn menu(ui: &mut egui::Ui, response: &egui::Response, menu: &SnapshotMenu) -
             ui.set_width(width - kit::MENU_FRAME_MARGIN);
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             kit::menu_heading(ui, "Chart snapshot");
-            for action in SnapshotAction::ALL {
-                let blocked = unavailable(action, menu);
-                let shortcut = if blocked.is_none() {
-                    (menu.shortcut)(action)
-                } else {
-                    None
-                };
-                let row = kit::menu_row(
+            for (row, shortcut) in Row::all().zip(&hints) {
+                let blocked = row.unavailable(menu);
+                let item = kit::menu_row(
                     ui,
                     kit::MenuRow {
-                        icon: Some(icon(action)),
+                        icon: Some(row.icon()),
                         shortcut: shortcut.as_deref(),
                         enabled: blocked.is_none(),
-                        ..kit::MenuRow::new(action.label())
+                        ..kit::MenuRow::new(row.label())
                     },
                 );
                 if let Some(reason) = &blocked {
-                    row.on_hover_text(reason);
-                } else if row.clicked() {
-                    picked = Some(Pick::Take(action));
+                    item.on_hover_text(reason);
+                } else if item.clicked() {
+                    picked = Some(row.pick());
                     ui.close();
                 }
             }
@@ -129,7 +178,7 @@ pub fn menu(ui: &mut egui::Ui, response: &egui::Response, menu: &SnapshotMenu) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eframe::egui::Rect;
+    use eframe::egui::{Rect, vec2};
 
     fn none(_: SnapshotAction) -> Option<String> {
         None
@@ -137,21 +186,73 @@ mod tests {
 
     #[test]
     fn every_row_has_its_own_icon_and_label() {
-        let icons: Vec<_> = SnapshotAction::ALL.into_iter().map(icon).collect();
+        let icons: Vec<_> = Row::all().map(Row::icon).collect();
         for (i, a) in icons.iter().enumerate() {
             assert!(icons.iter().skip(i + 1).all(|b| a != b), "{a:?} repeats");
         }
-        let labels: Vec<_> = SnapshotAction::ALL.into_iter().map(|a| a.label()).collect();
+        let labels: Vec<_> = Row::all().map(Row::label).collect();
         assert_eq!(
             labels,
             [
                 "Download image",
                 "Copy image",
+                "Select portion",
                 "Copy link",
                 "Open in new tab",
                 "Tweet image"
             ]
         );
+    }
+
+    #[test]
+    fn the_selection_sits_after_copy_image_and_before_the_hosted_rows() {
+        let rows: Vec<_> = Row::all().collect();
+        assert_eq!(
+            rows[..3],
+            [
+                Row::Take(SnapshotAction::Download),
+                Row::Take(SnapshotAction::CopyImage),
+                Row::SelectPortion
+            ]
+        );
+        assert!(rows[3..].iter().all(|row| matches!(
+            row,
+            Row::Take(action) if action.is_hosted()
+        )));
+        let actions: Vec<_> = rows
+            .iter()
+            .filter_map(|row| match row {
+                Row::Take(action) => Some(*action),
+                Row::SelectPortion => None,
+            })
+            .collect();
+        assert_eq!(actions, SnapshotAction::ALL, "every action, in its order");
+    }
+
+    #[test]
+    fn the_selection_has_no_shortcut_and_waits_only_for_a_snapshot_in_progress() {
+        let everything = |_: SnapshotAction| Some("⌥⌘S".to_owned());
+        let menu = SnapshotMenu {
+            busy: false,
+            working: false,
+            hosting_unavailable: Some("Set a host"),
+            shortcut: &everything,
+        };
+        assert_eq!(Row::SelectPortion.shortcut(&menu), None);
+        assert_eq!(
+            Row::Take(SnapshotAction::Download)
+                .shortcut(&menu)
+                .as_deref(),
+            Some("⌥⌘S"),
+            "the other rows keep theirs"
+        );
+        assert_eq!(
+            Row::SelectPortion.unavailable(&menu),
+            None,
+            "it never uploads, so a missing host does not matter"
+        );
+        let busy = SnapshotMenu { busy: true, ..menu };
+        assert!(Row::SelectPortion.unavailable(&busy).is_some());
     }
 
     #[test]
@@ -281,13 +382,56 @@ mod tests {
         let (button_rect, _) = frame(&ctx, &menu, Vec::new());
         frame(&ctx, &menu, click(button_rect.center()));
         frame(&ctx, &menu, Vec::new());
-        // Heading, five rows, then the separator, each row 24 points tall.
+        // Heading, six rows, then the separator, each row 24 points tall.
         let row = egui::pos2(
             button_rect.left() + 40.0,
-            button_rect.bottom() + 6.0 + 24.0 + 5.0 * 24.0 + 9.0 + 12.0,
+            button_rect.bottom() + 6.0 + 24.0 + 6.0 * 24.0 + 9.0 + 12.0,
         );
         let (_, first) = frame(&ctx, &menu, click(row));
         let (_, second) = frame(&ctx, &menu, Vec::new());
         assert_eq!(first.or(second), Some(Pick::Configure));
+    }
+
+    /// The opened menu, written as PNGs in both themes to look at (rows fit, the new icon reads).
+    /// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_snapshot_menu -- --ignored`.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_snapshot_menu() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        use crate::ui::theme::{self, AppTheme};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let _theme = theme::RestoreDefaultTheme;
+        let shortcut =
+            |action: SnapshotAction| (action == SnapshotAction::Download).then(|| "⌥⌘S".to_owned());
+        for (look, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            let mut screen = Screen::new(vec2(300.0, 260.0));
+            theme::apply(&screen.ctx, app_theme);
+            let menu_input = SnapshotMenu {
+                busy: false,
+                working: false,
+                hosting_unavailable: Some("Set a host"),
+                shortcut: &shortcut,
+            };
+            let button = std::cell::Cell::new(Rect::NOTHING);
+            let run = |screen: &mut Screen, events| {
+                screen.run(events, |ui| {
+                    ui.horizontal(|ui| {
+                        let (rect, response) =
+                            ui.allocate_exact_size(Vec2::splat(27.0), egui::Sense::click());
+                        button.set(rect);
+                        menu(ui, &response, &menu_input);
+                    });
+                })
+            };
+            run(&mut screen, Vec::new());
+            run(&mut screen, click(button.get().center()));
+            let mut last = None;
+            for _ in 0..3 {
+                last = Some(run(&mut screen, Vec::new()));
+            }
+            screen.save(&format!("snapshot-menu-{look}"), last.expect("a frame"));
+        }
     }
 }

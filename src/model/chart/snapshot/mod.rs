@@ -25,13 +25,6 @@ pub mod composition;
     )
 )]
 pub mod framing;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "used by the Screenshot Studio composer (PR 3 of the stack)"
-    )
-)]
 pub mod selection;
 #[cfg_attr(
     not(test),

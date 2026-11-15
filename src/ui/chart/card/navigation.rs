@@ -118,7 +118,7 @@ impl ChartCard {
             self.gesture = None;
         }
 
-        if response.hovered() {
+        if response.hovered() && !self.snapshot_select {
             self.scroll_and_zoom(ui, nav);
         }
 

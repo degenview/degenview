@@ -252,6 +252,8 @@ impl ChartWorkspace {
         let mut crosshair_update: Option<CrosshairInfo> = None;
         let mut hover_update: Option<(u64, crate::model::Anchor)> = None;
         self.tools.give_pointer_to_tool();
+        self.give_pointer_to_tool_over_selection();
+        let selecting_portion = self.is_selecting_portion();
         let (active_tool, zoom_armed) = (self.tools.active_tool(), self.tools.is_zoom_armed());
         let selected_drawing = self.tools.selection().cloned();
         let (magnet, keep_drawing, hide_all_drawings) = (
@@ -542,6 +544,7 @@ impl ChartWorkspace {
                                                     .map(|(_, draft)| draft),
                                             );
                                             chart.chart.set_zoom_armed(zoom_armed);
+                                            chart.chart.set_snapshot_select(selecting_portion);
                                             let for_logs = logs_chart == Some(chart_id);
                                             chart
                                                 .chart
@@ -554,8 +557,11 @@ impl ChartWorkspace {
                                                 },
                                             );
                                             let mut replay_frame = ReplayChartFrame {
-                                                selecting: replay_selecting
-                                                    || (for_logs && logs_picking),
+                                                // Select portion has the pointer: nothing is
+                                                // picked meanwhile, and the pick waits.
+                                                selecting: (replay_selecting
+                                                    || (for_logs && logs_picking))
+                                                    && !selecting_portion,
                                                 active: replay_active,
                                                 picked_ms: None,
                                                 picked_range: None,
@@ -739,6 +745,7 @@ impl ChartWorkspace {
             previewed,
             &mut commands,
         );
+        drawing_escape |= self.drive_portion_selection(&ctx, grid_rect);
 
         if !favorite_toggles.is_empty() || !watchlist_changes.is_empty() {
             let mut store = lock(&self.watchlist);

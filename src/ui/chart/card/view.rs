@@ -124,13 +124,6 @@ impl ViewGeometry {
     /// The viewport that shows exactly what `selection` (a rectangle on the plot) covers: the bars
     /// across it, however few, and the prices between its edges as a manual range (autoscale when
     /// it is too flat to choose any). Reads, never changes, the chart it was measured on.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the Screenshot Studio, next in this stack, is its caller"
-        )
-    )]
     pub fn viewport_for(&self, selection: &Selection) -> Option<ChartViewport> {
         let horizontal = zoom::portion(selection, self.slots(), self.total, self.reserved)?;
         Some(ChartViewport {

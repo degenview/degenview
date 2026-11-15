@@ -19,7 +19,7 @@ pub mod shortcut;
     not(test),
     expect(
         dead_code,
-        reason = "the Studio window and Select portion, which call the composer, land in PRs 4 and 5"
+        reason = "the Studio window, which calls the composer, lands in the next PR of the stack"
     )
 )]
 pub mod snapshot_studio;
@@ -39,7 +39,7 @@ pub use chart::card::take_table_cell_selected;
 pub use chart::card::{
     ChartCard, ChartCardAction, CrosshairInfo, Scrolled, SeriesLine, WatchlistMembership,
 };
-pub use chart::card::{SnapshotError, SnapshotFrame, SnapshotInput};
+pub use chart::card::{SnapshotError, SnapshotFrame};
 pub use chart::card::{ViewMove, ViewStep};
 pub use drawing::layer::{DrawingFrame, LinkRequest};
 pub use replay::overlay::{PickKind, ReplayChartFrame};
