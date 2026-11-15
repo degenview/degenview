@@ -20,7 +20,7 @@ use crate::pine::outputs::{
     TableOutput, YLocation,
 };
 use crate::pine::strategy::StrategyReport;
-use crate::ui::chart::series::snap_candle;
+use crate::ui::chart::series::{WICK_WIDTH, candle_half_width, snap_candle, snap_rows};
 use crate::ui::pine::geometry::{
     self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, box_text_placement,
     candle_index_for_bar, dash_pattern, extended_line, faded, font_size, is_visible, label_layout,
@@ -40,24 +40,6 @@ const CROSS_HALF_SIZE: f32 = 3.0;
 const MARKER_OFFSET: f32 = 8.0;
 const LABEL_POINTER: f32 = 5.0;
 const LABEL_PADDING: Vec2 = Vec2::new(10.0, 6.0);
-
-/// How `plotcandle()` bodies and wicks are sized, to match the real candles they overlay.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct CandleStyle {
-    pub body_width: f32,
-    pub wick_width: f32,
-    pub min_body_height: f32,
-}
-
-impl Default for CandleStyle {
-    fn default() -> Self {
-        Self {
-            body_width: 6.0,
-            wick_width: 1.0,
-            min_body_height: 1.0,
-        }
-    }
-}
 
 /// A place a script gave a tooltip: a label, or a table cell. `rect` is what was drawn, so the
 /// hover and the picture agree.
@@ -116,7 +98,6 @@ pub struct PineLayer<'a> {
     pub x_for_index: &'a dyn Fn(i64) -> f32,
     /// The y of a price (or pane value).
     pub y_for: &'a dyn Fn(f64) -> f32,
-    pub candle_style: CandleStyle,
 }
 
 /// `barcolor()` for visible candle `index` of `count` (the last of them `tail` bars before the
@@ -506,7 +487,7 @@ impl PineLayer<'_> {
     /// The wicks reach at least the open and close and the high and low are ordered, whatever the
     /// script's values say; the values themselves are not changed.
     pub fn draw_candles(&self, painter: &Painter) {
-        let style = self.candle_style;
+        let ppp = painter.ctx().pixels_per_point();
         for output in self
             .pine
             .candles
@@ -523,30 +504,30 @@ impl PineLayer<'_> {
                     self.draw_ohlc_bar(painter, x, bar, (high, low));
                     continue;
                 }
-                let snapped = snap_candle(
+                let columns = snap_candle(
                     x,
-                    style.body_width / 2.0,
-                    style.wick_width,
-                    painter.ctx().pixels_per_point(),
+                    candle_half_width(self.slot_width),
+                    WICK_WIDTH,
+                    self.slot_width,
+                    ppp,
+                );
+                let rows = snap_rows(
+                    self.y(bar.open),
+                    self.y(bar.close),
+                    self.y(high),
+                    self.y(low),
+                    ppp,
                 );
                 if let Some(wick) = bar.wick_color.filter(|c| is_visible(*c)) {
-                    let (top, bottom) = (self.y(high), self.y(low));
                     let rect = Rect::from_min_max(
-                        Pos2::new(snapped.wick.0, top),
-                        Pos2::new(snapped.wick.1, top + (bottom - top).max(0.5)),
+                        Pos2::new(columns.wick.0, rows.wick.0),
+                        Pos2::new(columns.wick.1, rows.wick.1),
                     );
                     painter.rect_filled(rect, 0.0, rgba(wick));
                 }
-                let (top, bottom) = (
-                    self.y(bar.open.max(bar.close)),
-                    self.y(bar.open.min(bar.close)),
-                );
                 let body = Rect::from_min_max(
-                    Pos2::new(snapped.body.0, top),
-                    Pos2::new(
-                        snapped.body.1,
-                        top + (bottom - top).max(style.min_body_height),
-                    ),
+                    Pos2::new(columns.body.0, rows.body.0),
+                    Pos2::new(columns.body.1, rows.body.1),
                 );
                 if let Some(fill) = bar.color.filter(|c| is_visible(*c)) {
                     painter.rect_filled(body, 0.0, rgba(fill));
@@ -1514,8 +1495,8 @@ mod tests {
         }
     }
 
-    /// Runs `paint` on a headless egui frame and returns how many shapes it drew.
-    fn shapes_drawn(paint: impl FnOnce(&Painter)) -> usize {
+    /// Runs `paint` on a headless egui frame and returns what it drew.
+    fn shapes_of(paint: impl FnOnce(&Painter)) -> Vec<Shape> {
         let ctx = egui::Context::default();
         let mut paint = Some(paint);
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -1525,7 +1506,15 @@ mod tests {
         });
         // The frame's texture uploads go unused here; egui insists they are dropped on purpose.
         output.textures_delta.clear();
-        output.shapes.len()
+        output
+            .shapes
+            .into_iter()
+            .map(|clipped| clipped.shape)
+            .collect()
+    }
+
+    fn shapes_drawn(paint: impl FnOnce(&Painter)) -> usize {
+        shapes_of(paint).len()
     }
 
     fn layer<'a>(
@@ -1543,7 +1532,6 @@ mod tests {
             slot_width: 20.0,
             x_for_index: x,
             y_for: y,
-            candle_style: CandleStyle::default(),
         }
     }
 
@@ -2377,6 +2365,31 @@ mod tests {
             shapes_drawn(|painter| invisible_layer.draw_candles(painter)),
             0
         );
+    }
+
+    #[test]
+    fn a_plotcandle_doji_keeps_a_pixel_of_body_and_its_rows_sit_on_the_grid() {
+        let mut output = one_candle_output(false, Some(0x00FF_00FF), None);
+        if let Some(bar) = output.candles[0].bars[0].as_mut() {
+            (bar.open, bar.close) = (101.3, 101.3);
+        }
+        let candles = candles(1);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let layer = layer(&output, &candles, &x, &y);
+        let drawn = shapes_of(|painter| layer.draw_candles(painter));
+        let [Shape::Rect(wick), Shape::Rect(body)] = &drawn[..] else {
+            panic!("a wick and a body, got {drawn:?}");
+        };
+        assert_eq!(body.rect.height(), 1.0);
+        assert!(body.rect.min.y >= wick.rect.min.y && body.rect.max.y <= wick.rect.max.y);
+        for edge in [
+            wick.rect.min.y,
+            wick.rect.max.y,
+            body.rect.min.y,
+            body.rect.max.y,
+        ] {
+            assert_eq!(edge, edge.round());
+        }
     }
 
     #[test]

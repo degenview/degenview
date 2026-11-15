@@ -54,7 +54,8 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
 - Linked charts ([design](../chart-sync.md)) map viewport to time range and back; never copy an
   offset, bar index, or anything vertical. Followers are edited via `ChartCard::follow_sync` before
   drawing; publish only the user's own navigation, never a follower's change or a live bar.
-  `SyncHub` belongs to one `ChartWorkspace`, never global. Price-based chart types excluded.
+  `SyncHub` belongs to one `ChartWorkspace`, never global. Price-based chart types excluded. The
+  shared crosshair is by time, not plot fraction: only the owner reads `x_fraction`.
 
 ## Compared markets (overlays)
 

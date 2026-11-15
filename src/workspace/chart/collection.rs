@@ -319,7 +319,7 @@ impl ChartWorkspace {
             chart.chart.reset_view();
             chart.candles.clear();
             chart.reset_history();
-            chart.last_live_open_time = None;
+            chart.live = None;
             chart.fetch(self.timeframe, ctx);
         }
     }

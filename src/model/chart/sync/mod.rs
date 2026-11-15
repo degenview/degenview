@@ -81,6 +81,10 @@ impl ChartSyncSettings {
 /// slot wide and the map stays continuous and strictly increasing. Beyond either end it continues
 /// at the length of the first or last bar, which is what empty space on a chart means: no bars
 /// are invented, only a position in time.
+///
+/// A bar lasts from its open to its close. Providers whose bars are points (a prediction market's
+/// price, a raw pool trade) close the instant they open; such a bar lasts as long as the spacing
+/// to its neighbour, so empty space past either end is not a millisecond per slot.
 #[derive(Clone, Copy, Debug)]
 pub struct TimeAxis<'a> {
     bars: &'a [Kline],
@@ -99,30 +103,41 @@ impl<'a> TimeAxis<'a> {
     fn edge(&self, index: usize) -> f64 {
         match self.bars.get(index) {
             Some(bar) => bar.open_time as f64,
-            None => self
-                .bars
-                .last()
-                .map_or(0.0, |bar| bar.open_time as f64 + Self::span(bar)),
+            None => self.bars.len().checked_sub(1).map_or(0.0, |last| {
+                self.bars[last].open_time as f64 + self.span(last)
+            }),
         }
     }
 
-    /// How long a bar lasts, never less than a millisecond.
-    fn span(bar: &Kline) -> f64 {
-        ((bar.close_time - bar.open_time + 1) as f64).max(1.0)
+    /// How long bar `index` lasts, never less than a millisecond: its own open-to-close, or for a
+    /// bar that closes as it opens, the spacing to the next bar's open (the last bar takes the
+    /// spacing before it, a lone bar a millisecond).
+    fn span(&self, index: usize) -> f64 {
+        let bar = &self.bars[index];
+        let own = bar.close_time - bar.open_time + 1;
+        if own > 1 {
+            return own as f64;
+        }
+        let spacing = match (self.bars.get(index + 1), index.checked_sub(1)) {
+            (Some(next), _) => next.open_time - bar.open_time,
+            (None, Some(before)) => bar.open_time - self.bars[before].open_time,
+            (None, None) => 1,
+        };
+        spacing.max(1) as f64
     }
 
     /// The timestamp (ms) at slot position `x`, `None` for an empty chart or a number no chart
     /// can place.
     pub fn time_at(&self, x: f64) -> Option<f64> {
-        let (first, last) = (self.bars.first()?, self.bars.last()?);
+        self.bars.first()?;
         let len = self.bars.len() as f64;
         if !x.is_finite() {
             return None;
         }
         Some(if x <= 0.0 {
-            self.edge(0) + x * Self::span(first)
+            self.edge(0) + x * self.span(0)
         } else if x >= len {
-            self.edge(self.bars.len()) + (x - len) * Self::span(last)
+            self.edge(self.bars.len()) + (x - len) * self.span(self.bars.len() - 1)
         } else {
             let index = x.floor() as usize;
             let (from, to) = (self.edge(index), self.edge(index + 1));
@@ -132,16 +147,16 @@ impl<'a> TimeAxis<'a> {
 
     /// The slot position of timestamp `time` (ms): the inverse of [`Self::time_at`].
     pub fn x_at(&self, time: f64) -> Option<f64> {
-        let (first, last) = (self.bars.first()?, self.bars.last()?);
+        self.bars.first()?;
         let len = self.bars.len();
         if !time.is_finite() {
             return None;
         }
         let (start, end) = (self.edge(0), self.edge(len));
         Some(if time <= start {
-            (time - start) / Self::span(first)
+            (time - start) / self.span(0)
         } else if time >= end {
-            len as f64 + (time - end) / Self::span(last)
+            len as f64 + (time - end) / self.span(len - 1)
         } else {
             // The bar that has begun by `time`; at least the first, as `time > start`.
             let index = self
@@ -262,28 +277,37 @@ pub fn follow(
     }
     let zooms = settings.horizontal_zoom && change.zoom.is_some();
     let moves = settings.horizontal_position && change.moved;
-    // The x of the leader's right edge on this chart.
+    // Where the leader's right edge lies on this chart, and where this chart puts its own: the
+    // newest bar when the leader holds its newest, which a lagging feed would otherwise miss by
+    // one.
+    let edge = axis.x_at(change.range.right);
     let right = if change.latest {
         Some(total as f64)
     } else {
-        axis.x_at(change.range.right)
+        edge
     };
 
     let mut wanted_offset = None;
+    let mut reached = true;
     if zooms && settings.horizontal_position {
-        // Both linked: the follower shows the leader's time range.
-        // The span is the leader's range in this chart's bars; where the right edge goes may
-        // snap to the newest bar, which a lagging feed would otherwise miss by one.
-        let (Some(right), Some(span)) = (
-            right,
-            axis.x_at(change.range.right)
-                .zip(axis.x_at(change.range.left))
-                .map(|(right, left)| right - left),
-        ) else {
+        // Both linked: the follower shows the leader's time range, counted in this chart's bars.
+        let (Some(edge), Some(right), Some(left)) = (edge, right, axis.x_at(change.range.left))
+        else {
             return unchanged;
         };
+        // A leader holding its newest bar shows no space past it, so a chart whose data ended
+        // earlier does not count the time between its newest bar and the leader's as bars.
+        let edge = if change.latest {
+            edge.min(total as f64)
+        } else {
+            edge
+        };
+        let span = edge - left;
         if span > 0.0 {
-            next.set_visible((span.round() as usize).max(1), total);
+            let wanted = (span.round() as usize).max(1);
+            next.set_visible(wanted, total);
+            // A chart with less history cannot show all of it yet; older bars may still load.
+            reached = next.visible >= wanted;
             wanted_offset = Some(total as f64 - right);
         }
     } else if zooms && let Some(zoom) = zoom {
@@ -297,13 +321,12 @@ pub fn follow(
         wanted_offset = right.map(|right| total as f64 - right);
     }
 
-    let mut reached = true;
     if let Some(offset) = wanted_offset.filter(|offset| offset.is_finite()) {
         next.right_offset = offset;
         let (low, high) = next.offset_limits(total);
         // Only the older end is worth another try: older bars may still load. Space past the
         // newest bar is bounded for every chart alike.
-        reached = offset <= high + 1e-6;
+        reached &= offset <= high + 1e-6;
         next.right_offset = offset.clamp(low, high);
     }
     next.clamp(total);
@@ -364,9 +387,7 @@ impl SyncHub {
             sequence: self.sequence,
             change,
         });
-        if change.moved {
-            self.target = Some(change);
-        }
+        self.target = Some(change);
         match change.zoom {
             Some(zoom) => {
                 self.zoomed_this_frame = true;
@@ -397,7 +418,9 @@ impl SyncHub {
         axis: &TimeAxis,
         view: &mut HorizontalViewport,
     ) -> bool {
-        if !settings.is_linked() {
+        // A chart still loading hears nothing: the event stays unseen, so it applies once bars
+        // arrive, unless a newer one supersedes it.
+        if !settings.is_linked() || axis.len() == 0 {
             return false;
         }
         let fresh = self

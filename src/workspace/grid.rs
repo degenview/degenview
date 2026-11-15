@@ -683,6 +683,7 @@ impl ChartWorkspace {
                                                     frozen: false,
                                                     owner_id: chart_id,
                                                     x_fraction,
+                                                    time: pointer.hover_time,
                                                     price,
                                                 });
                                             }
@@ -1007,6 +1008,7 @@ mod freeze_tests {
             frozen: false,
             owner_id,
             x_fraction: 0.25,
+            time: Some(1_700_000_000_000.0),
             price: 12.5,
         }
     }
@@ -1015,7 +1017,10 @@ mod freeze_tests {
     fn a_frozen_crosshair_stays_where_it_was_and_only_for_its_own_chart() {
         let frozen = freeze(Some(crosshair(3)), 3).expect("kept");
         assert!(frozen.frozen);
-        assert_eq!((frozen.x_fraction, frozen.price), (0.25, 12.5));
+        assert_eq!(
+            (frozen.x_fraction, frozen.time, frozen.price),
+            (0.25, Some(1_700_000_000_000.0), 12.5)
+        );
         assert!(
             freeze(Some(crosshair(3)), 4).is_none(),
             "another chart's is dropped"

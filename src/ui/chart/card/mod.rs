@@ -35,7 +35,7 @@ use crate::ui::drawing::layer::{DrawingFrame, DrawingLayer, Projection, TextMeas
 use crate::ui::drawing::render::TimeIndex;
 use crate::ui::icons::{self, Icon};
 use crate::ui::paper::chart_trading::{self, PaperCardState};
-use crate::ui::pine::chart_render::{self, CandleStyle, HoverTarget, PineLayer};
+use crate::ui::pine::chart_render::{self, HoverTarget, PineLayer};
 use crate::ui::pine::geometry::{OverlayExtent, overlay_extent};
 use crate::ui::replay::overlay::{self, ReplayChartFrame};
 use crate::ui::theme;
@@ -85,11 +85,6 @@ fn visible_price_move(
     (amount.is_finite() && percent.is_finite()).then_some((amount, percent))
 }
 
-/// Half the width of a candle body, matching the real candles the Pine overlay recolours.
-fn candle_body_half_width(slot_width: f32) -> f32 {
-    (slot_width * 0.34).clamp(1.0, 8.0)
-}
-
 /// Signals a chart card emits while it is being drawn. The owning workspace
 /// applies them after the frame, so rendering never mutates layout mid-pass.
 #[derive(Clone, Debug, Default)]
@@ -113,15 +108,20 @@ pub struct WatchlistMembership {
     pub contains_market: bool,
 }
 
-/// The shared crosshair a tab draws across all its charts. Stored as a fraction
-/// of plot width so the same column lines up on every card.
+/// The shared crosshair a tab draws across all its charts: the owner follows the pointer, every
+/// other chart puts its column at the same instant, whatever its zoom or bars.
 #[derive(Clone, Copy, Debug)]
 pub struct CrosshairInfo {
     /// The pointer is on the overlay card, not the plot: the bar stays where it was and only the
     /// readouts are drawn (no lines, no tags).
     pub frozen: bool,
     pub owner_id: u64,
+    /// Where the pointer is on the owner's plot, as a share of its width. Only the owner reads
+    /// it: another chart's plot has other bars under that share.
     pub x_fraction: f64,
+    /// The time (ms) under the pointer, when the owner's slots have one. A price-based chart's
+    /// do not, and then no other chart has a column to draw.
+    pub time: Option<f64>,
     pub price: f64,
 }
 
@@ -144,6 +144,8 @@ pub struct ChartPointer {
     pub context: Option<ContextRequest>,
     pub clicked: bool,
     pub hover_x_fraction: Option<f64>,
+    /// The time (ms) under the pointer, on a chart whose slots are time.
+    pub hover_time: Option<f64>,
     pub hover_price: Option<f64>,
     /// The time and price under the pointer, through the chart's own projection.
     pub hover_anchor: Option<Anchor>,
@@ -662,10 +664,27 @@ impl ChartCard {
             opaque_rgba(self.appearance.bullish),
             opaque_rgba(self.appearance.bearish),
         );
+        let (up, down) = self.drawn_style().up_down(base);
+        (series::color(up), series::color(down))
+    }
+
+    /// The appearance's style with the type the chart is drawing.
+    fn drawn_style(&self) -> ChartStyle {
         let mut style = self.appearance.style;
         style.chart_type = self.drawn_type;
-        let (up, down) = style.up_down(base);
-        (series::color(up), series::color(down))
+        style
+    }
+
+    /// The colour the drawn type gives `bar`: the up or down colour by the reference it colours
+    /// from (the previous close, or the open), the same call the candle itself is painted by.
+    fn bar_color(&self, bar: &Kline, previous_close: Option<f64>) -> Color32 {
+        let (up, down) = self.up_down_colors();
+        let by_previous_close = self.drawn_style().colors_by_previous_close();
+        if chart::look::is_rising(bar, previous_close, by_previous_close) {
+            up
+        } else {
+            down
+        }
     }
 
     fn bullish_color(&self) -> Color32 {

@@ -38,7 +38,10 @@ Kagi, P&F: up/down; Baseline: its two lines; HLC Area: its high and low lines). 
 palette is no longer edited anywhere for these charts: it is only what an unset colour follows, so
 charts saved with custom colours look the same and the wells show them. What the chart draws beside
 its bars (volume bars, the last-price tag, trend-flip markers) follows the up/down colours of the
-type on screen (`ChartStyle::up_down`), falling back to the saved palette. A market drawn as a line
+type on screen (`ChartStyle::up_down`), falling back to the saved palette. The last-price tag and
+the crosshair readout pick the side the way the candle itself does (`ChartCard::bar_color`: the
+close against the previous close or the open, per `ChartStyle::colors_by_previous_close`); volume
+bars stay green when the close is at or above the open, TradingView's volume default. A market drawn as a line
 (prediction markets, CoinMarketCap) has no chart types and keeps its two "Line up / Line down" wells.
 The preview under the Style picker draws the selected type with the chart's own painter code over
 sample prices (a price-based type's box/reversal/range size is replaced by one that suits them).
@@ -75,6 +78,23 @@ from a price-based type rebuilds them against the other series. A source that dr
 (prediction markets, CoinMarketCap indices) keeps its line and the toolbar's chart-type button is disabled; Volume Candles
 is unavailable on a source that reports no volume, with the reason in the menu. A saved type the
 source cannot show falls back to candles on screen and is kept for when it can.
+
+## Candle geometry
+
+One width rule, `series::candle_half_width`, serves the chart's candles, a script's `plotcandle()`
+and the drawing tools' ghost and bars-pattern candles. `series::snap_candle` (columns) and
+`series::snap_rows` (rows) lay every one of them on whole physical pixels, so all three painters agree:
+
+* **Rows.** Body top and bottom and the wick ends round to a pixel; a body is at least one pixel
+  tall (a doji stays visible) and the wick ends on the body's own rows, so no seam shows where they
+  meet and edges do not shimmer while autoscale moves.
+* **Columns.** The wick sits on a whole pixel and the body has the wick's parity, centred on it.
+  A body is at most one pixel less than its slot (never narrower than the wick), so neighbours keep
+  a gap even though each centre is snapped on its own.
+* **Dense charts.** Bars whose wicks snap to the same pixel column (a slot under one pixel, as when
+  the whole history is in view) are painted once: highest high, lowest low, and the open, close and
+  look of the last bar. Candles, Hollow, Volume, Heikin Ashi, Range and bricks all go through this;
+  a frame never paints more than a few shapes per pixel column of the plot.
 
 ## Construction rules
 

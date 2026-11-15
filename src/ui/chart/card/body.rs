@@ -4,6 +4,7 @@
 
 use super::frame::FrameLayout;
 use super::*;
+use crate::model::chart::sync::TimeAxis;
 use crate::ui::paper::chart_trading::{MarkerMenu, PaperOverlayAction};
 
 /// What one call to [`ChartCard::body`] draws and reports on.
@@ -256,16 +257,23 @@ impl ChartCard {
     }
 }
 
-/// Where the pointer is on the plot, for the workspace's crosshair and the other charts'.
+/// Where the pointer is on the plot, for the workspace's crosshair and the other charts'. `time`
+/// is the chart's time scale, given only when its slots are time (see
+/// [`ChartCard::takes_part_in_sync`]): the other charts find the pointer's column by it.
 pub(super) fn report_hover(
     pointer: &mut ChartPointer,
     response: &Response,
     plot: Rect,
     view: &View,
     projection: &Projection,
+    time: Option<TimeAxis>,
 ) {
     if let Some(position) = response.hover_pos().filter(|point| plot.contains(*point)) {
         pointer.hover_x_fraction = Some(((position.x - plot.left()) / plot.width()) as f64);
+        pointer.hover_time = time.and_then(|axis| {
+            let slots = view.geometry(plot, axis.len()).slots();
+            axis.time_at(slots.at(position.x))
+        });
         pointer.hover_price = Some(view.scale.price(position.y));
         pointer.hover_anchor = Some(projection.anchor(position));
     }
@@ -519,7 +527,8 @@ impl ChartCard {
             },
             bars.len(),
         );
-        body::report_hover(&mut pointer, &response, plot, &view, &projection);
+        let time = self.takes_part_in_sync(source).then(|| TimeAxis::new(bars));
+        body::report_hover(&mut pointer, &response, plot, &view, &projection, time);
 
         pointer.clicked = response.clicked();
         pointer

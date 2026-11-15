@@ -423,3 +423,28 @@ fn shared_colours_follow_the_drawn_types_colours_or_the_saved_palette() {
     card.appearance_mut().bearish = [1, 2, 3];
     assert_eq!(card.bearish_color(), Color32::from_rgb(1, 2, 3));
 }
+
+#[test]
+fn a_bars_colour_follows_the_reference_the_drawn_type_colours_from() {
+    let bar = |open, close| Kline {
+        open_time: 0,
+        close_time: 1,
+        open,
+        high: open.max(close),
+        low: open.min(close),
+        close,
+        volume: 1.0,
+    };
+    let mut card = ChartCard::default();
+    let (up, down) = (card.bullish_color(), card.bearish_color());
+    // Closes above its open, below the previous close.
+    let (rising_bar, previous) = (bar(95.0, 98.0), Some(100.0));
+    assert_eq!(card.bar_color(&rising_bar, previous), up);
+    card.chart_style_mut().candles.color_by_previous_close = true;
+    assert_eq!(card.bar_color(&rising_bar, previous), down);
+    assert_eq!(
+        card.bar_color(&rising_bar, None),
+        up,
+        "no previous bar: against its own open"
+    );
+}

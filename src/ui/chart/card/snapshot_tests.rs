@@ -437,6 +437,7 @@ fn the_crosshair_a_hover_and_the_replay_badge_never_reach_a_snapshot() {
         frozen: false,
         owner_id: 1,
         x_fraction: 0.4,
+        time: None,
         price: 240.0,
     });
     pointed.pointer = Some(Pos2::new(300.0, 200.0));

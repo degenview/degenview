@@ -336,48 +336,80 @@ fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
     let sol_before = hub.feed(&market("SOLUSDT")).unwrap();
 
     // The forming bar is replaced; a new bar is appended.
-    hub.apply_live("ETHUSDT", &candle(11 * HOUR, 5.0));
+    hub.apply_live("ETHUSDT", &candle(11 * HOUR, 5.0), now);
     let eth = hub.feed(&market("ETHUSDT")).unwrap();
     assert_eq!(eth.candles.last().unwrap().close, 5.0);
     assert_eq!(eth.candles.len(), 2);
-    hub.apply_live("ethusdt", &candle(12 * HOUR, 6.0));
+    hub.apply_live("ethusdt", &candle(12 * HOUR, 6.0), now);
     assert_eq!(hub.feed(&market("ETHUSDT")).unwrap().candles.len(), 3);
     assert!(hub.version() > before);
 
     let sol_after = hub.feed(&market("SOLUSDT")).unwrap();
     assert_eq!(sol_after.revision, sol_before.revision);
     // A bar older than the newest is ignored.
-    hub.apply_live("ETHUSDT", &candle(5 * HOUR, 9.0));
+    hub.apply_live("ETHUSDT", &candle(5 * HOUR, 9.0), now);
     assert_eq!(hub.feed(&market("ETHUSDT")).unwrap().candles.len(), 3);
 }
 
-#[test]
-fn a_refresh_does_not_undo_a_newer_live_candle() {
+/// A hub holding ETHUSDT's first answer, with a refresh in flight that answers an older forming
+/// bar. Returns the time the refresh began.
+fn refreshing_hub() -> (OverlayHub, Arc<Fake>, Instant) {
     let (mut hub, fake) = hub();
     let now = Instant::now();
-    let list = overlays(&["ETHUSDT"]);
-    frame(&mut hub, 1, &list, now);
+    frame(&mut hub, 1, &overlays(&["ETHUSDT"]), now);
     fake.run_jobs();
     hub.poll(Timeframe::Hour, &egui::Context::default(), now);
-    hub.apply_live("ETHUSDT", &candle(11 * HOUR, 7.5));
-    // The REST answer is older than the live bar.
     fake.answer(
         "ETHUSDT",
         Ok(vec![candle(10 * HOUR, 1.0), candle(11 * HOUR, 2.0)]),
     );
-    let later = now + Duration::from_secs(6);
-    hub.poll(Timeframe::Hour, &egui::Context::default(), later);
-    fake.run_jobs();
-    hub.poll(Timeframe::Hour, &egui::Context::default(), later);
-    assert_eq!(
-        hub.feed(&market("ETHUSDT"))
-            .unwrap()
-            .candles
-            .last()
-            .unwrap()
-            .close,
-        7.5
+    let begun = now + Duration::from_secs(6);
+    hub.poll(Timeframe::Hour, &egui::Context::default(), begun);
+    assert_eq!(fake.pending(), 1, "the refresh is out");
+    (hub, fake, begun)
+}
+
+fn last_close(hub: &OverlayHub) -> f64 {
+    hub.feed(&market("ETHUSDT"))
+        .unwrap()
+        .candles
+        .last()
+        .unwrap()
+        .close
+}
+
+#[test]
+fn a_refresh_does_not_undo_a_live_candle_that_arrived_while_it_was_out() {
+    let (mut hub, fake, begun) = refreshing_hub();
+    hub.apply_live(
+        "ETHUSDT",
+        &candle(11 * HOUR, 7.5),
+        begun + Duration::from_secs(1),
     );
+    fake.run_jobs();
+    hub.poll(
+        Timeframe::Hour,
+        &egui::Context::default(),
+        begun + Duration::from_secs(2),
+    );
+    assert_eq!(last_close(&hub), 7.5);
+}
+
+#[test]
+fn a_refresh_updates_the_forming_bar_once_the_socket_went_quiet() {
+    let (mut hub, fake, begun) = refreshing_hub();
+    hub.apply_live(
+        "ETHUSDT",
+        &candle(11 * HOUR, 7.5),
+        begun - Duration::from_secs(3),
+    );
+    fake.run_jobs();
+    hub.poll(
+        Timeframe::Hour,
+        &egui::Context::default(),
+        begun + Duration::from_secs(2),
+    );
+    assert_eq!(last_close(&hub), 2.0);
 }
 
 #[test]

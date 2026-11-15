@@ -113,8 +113,8 @@ fn fill_between(
 }
 
 /// What every provider's candles pass through: ascending by open time, one candle per open time
-/// (the later one wins), no non-finite or non-positive prices, and a range that holds its own
-/// open and close.
+/// (the later one wins), no non-finite prices, and a range that holds its own open and close.
+/// Zero and negative prices stay: a prediction market's price reaches 0.
 pub(crate) fn normalize(mut candles: Vec<Kline>) -> Vec<Kline> {
     candles.retain(|candle| {
         candle.open_time > 0

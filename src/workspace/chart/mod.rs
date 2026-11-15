@@ -12,6 +12,7 @@ use crate::host::portfolio::card::CardRuntime;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::market;
 use crate::model::market::history::OlderHistory;
+use crate::model::market::live::LiveMark;
 use crate::model::overlay::OverlayList;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
@@ -54,7 +55,8 @@ pub(super) struct Chart {
     /// Wall-clock time (epoch ms) the candles last arrived from the provider or its live feed.
     /// Paper trading stamps its quotes with this, never with the time they are read.
     pub(super) last_data_ms: Option<i64>,
-    pub(super) last_live_open_time: Option<i64>,
+    /// The newest bar the live feed delivered: a refresh begun before it keeps it.
+    pub(super) live: Option<LiveMark>,
     /// Prediction markets: the choices charted together as lines, when there are several.
     pub(super) pm_series: Vec<PmSeries>,
     /// Markets compared on this chart, in visual order. Configuration only: their candles live in
@@ -136,7 +138,7 @@ impl Chart {
             next_drawing_id: 1,
             last_paper_quote: None,
             last_data_ms: None,
-            last_live_open_time: None,
+            live: None,
             pm_series: Vec::new(),
             overlays: OverlayList::new(),
             image_url: None,
@@ -251,7 +253,7 @@ impl Chart {
         self.pm_series.clear();
         self.last_paper_quote = None;
         self.last_data_ms = None;
-        self.last_live_open_time = None;
+        self.live = None;
         self.candles.clear();
         self.reset_history();
     }
@@ -441,8 +443,13 @@ impl Chart {
         self.inbox = None;
         match result {
             Ok(fetched) => {
-                let fresh =
-                    merge_fetched_candles(fetched.candles, &self.candles, self.last_live_open_time);
+                let live_open = self.live.and_then(|mark| mark.guard_for(self.last_fetch));
+                let fresh = market::live::merge_fetched(
+                    fetched.candles,
+                    &self.candles,
+                    live_open,
+                    CANDLE_LIMIT as usize,
+                );
                 self.candles =
                     market::history::with_older(&self.candles, fresh, self.older.keeps_older());
                 if !self.pm_series.is_empty() {
@@ -466,29 +473,6 @@ pub(super) struct OlderRequest {
     timeframe: Timeframe,
 }
 
-/// A websocket update for the current or a later bar wins over an older REST snapshot.
-pub(super) fn merge_fetched_candles(
-    mut fetched: Vec<Kline>,
-    current: &[Kline],
-    last_live_open_time: Option<i64>,
-) -> Vec<Kline> {
-    if let Some(live_open) = last_live_open_time
-        && let Some(last_fetched) = fetched.last()
-    {
-        let newer = current
-            .partition_point(|candle| candle.open_time < live_open.max(last_fetched.open_time));
-        if newer < current.len() {
-            let first_newer = current[newer].open_time;
-            fetched.retain(|candle| candle.open_time < first_newer);
-            fetched.extend_from_slice(&current[newer..]);
-        }
-    }
-    if fetched.len() > CANDLE_LIMIT as usize {
-        fetched.drain(..fetched.len() - CANDLE_LIMIT as usize);
-    }
-    fetched
-}
-
 pub(super) fn displayed_candles(candles: &[Kline], replay_ms: Option<i64>) -> &[Kline] {
     let Some(replay_ms) = replay_ms else {
         return candles;
@@ -501,14 +485,6 @@ pub(super) fn displayed_candles(candles: &[Kline], replay_ms: Option<i64>) -> &[
 mod tests {
     use super::*;
     use crate::workspace::test_support::candle;
-
-    #[test]
-    fn live_candle_wins_over_an_older_rest_snapshot() {
-        let fetched = vec![candle(1, 10.0), candle(2, 20.0)];
-        let live = vec![candle(1, 10.0), candle(2, 25.0), candle(3, 30.0)];
-        assert_eq!(merge_fetched_candles(fetched.clone(), &live, Some(2)), live);
-        assert_eq!(merge_fetched_candles(fetched.clone(), &live, None), fetched);
-    }
 
     /// A chart holding `times`, with a request for older candles outstanding that answers `page`.
     fn chart_awaiting_older(times: &[i64], page: Result<Vec<Kline>, ProviderError>) -> Chart {
@@ -579,6 +555,43 @@ mod tests {
         chart.inbox = Some(receiver);
         chart.receive_fetch();
         assert_eq!(open_times(&chart), vec![2, 3]);
+    }
+
+    /// A chart holding live bar 2 (closing 9.0), refreshing since `begun` with a fetch that
+    /// answers bar 2 closing 2.0; the live bar arrived `live_after` after the fetch began.
+    fn refreshed_over_live_bar(live_after: Duration, quiet: bool) -> Chart {
+        let begun = Instant::now();
+        let mut chart = Chart::blank(1, "BTCUSDT", DataSource::Binance);
+        chart.candles = vec![candle(1, 1.0), candle(2, 9.0)];
+        chart.last_fetch = begun;
+        let arrived = if quiet {
+            begun - live_after
+        } else {
+            begun + live_after
+        };
+        chart.live = Some(LiveMark::new(2, arrived));
+        let (sender, receiver) = mpsc::channel();
+        sender
+            .send(Ok(Fetched {
+                candles: vec![candle(1, 1.0), candle(2, 2.0)],
+                series: Vec::new(),
+            }))
+            .unwrap();
+        chart.inbox = Some(receiver);
+        chart.receive_fetch();
+        chart
+    }
+
+    #[test]
+    fn a_refresh_keeps_a_live_bar_that_arrived_while_it_was_out() {
+        let chart = refreshed_over_live_bar(Duration::from_millis(200), false);
+        assert_eq!(chart.candles[1].close, 9.0);
+    }
+
+    #[test]
+    fn a_refresh_updates_the_forming_bar_once_the_socket_went_quiet() {
+        let chart = refreshed_over_live_bar(Duration::from_secs(30), true);
+        assert_eq!(chart.candles[1].close, 2.0);
     }
 
     #[test]

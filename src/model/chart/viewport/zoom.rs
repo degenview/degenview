@@ -82,6 +82,11 @@ impl Slots {
     pub fn at(&self, x: f32) -> f64 {
         self.first + (f64::from(x) - self.left) / self.width
     }
+
+    /// The point's `x` of a slot coordinate: the inverse of [`Self::at`].
+    pub fn x(&self, slot: f64) -> f32 {
+        (self.left + (slot - self.first) * self.width) as f32
+    }
 }
 
 /// The slot coordinates `selection`'s left and right edges lie on, `None` when the rectangle is

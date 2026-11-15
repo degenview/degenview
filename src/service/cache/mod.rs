@@ -90,8 +90,8 @@ fn patched(candles: &[Kline], tail: &[Kline]) -> Option<Vec<Kline>> {
 /// Candles for `source`/`symbol`/`interval` through `fetch`, which asks the provider for a `limit`.
 ///
 /// Fresh candles are served as they are; older ones are patched with `fetch(TAIL_LIMIT)`; anything
-/// else is fetched whole. Calls for one series wait for each other, and the later ones find what
-/// the first brought.
+/// else, or a tail that failed for any reason but a rate limit, is fetched whole. Calls for one
+/// series wait for each other, and the later ones find what the first brought.
 pub fn fetch(
     source: DataSource,
     symbol: &str,
@@ -135,10 +135,19 @@ pub fn fetch(
         if age < policy.fresh {
             return Ok(newest(&candles, limit));
         }
-        if age < MAX_PATCH_AGE
-            && let Some(merged) = patched(&candles, &fetch(TAIL_LIMIT)?)
-        {
-            return Ok(store(&key, requested, merged, limit));
+        if age < MAX_PATCH_AGE {
+            match fetch(TAIL_LIMIT) {
+                Ok(tail) => {
+                    if let Some(merged) = patched(&candles, &tail) {
+                        return Ok(store(&key, requested, merged, limit));
+                    }
+                }
+                // Asking again whole would only spend the limit that was just refused.
+                Err(error) if error.is_rate_limited() => return Err(error),
+                // A window that holds no bar (a weekend) or a failed short request says nothing
+                // about the series: the whole fetch decides.
+                Err(_) => {}
+            }
         }
     }
     let candles = fetch(limit)?;
@@ -278,6 +287,70 @@ mod tests {
         fetch(DataSource::Alpaca, "gap-test", "1d", 10, STALE, provider).unwrap();
         fetch(DataSource::Alpaca, "gap-test", "1d", 10, STALE, provider).unwrap();
         assert_eq!(*asked.lock().unwrap(), [10, TAIL_LIMIT, 10]);
+    }
+
+    #[test]
+    fn a_failed_tail_falls_back_to_a_whole_fetch() {
+        let asked = Mutex::new(Vec::new());
+        let provider = |limit: u32| {
+            asked.lock().unwrap().push(limit);
+            if limit == TAIL_LIMIT {
+                Err(ProviderError::other("No data in that window"))
+            } else {
+                Ok(series(0..10))
+            }
+        };
+        fetch(
+            DataSource::Alpaca,
+            "tail-error-test",
+            "1h",
+            10,
+            STALE,
+            provider,
+        )
+        .unwrap();
+        let refreshed = fetch(
+            DataSource::Alpaca,
+            "tail-error-test",
+            "1h",
+            10,
+            STALE,
+            provider,
+        );
+        assert_eq!(refreshed.unwrap().len(), 10);
+        assert_eq!(*asked.lock().unwrap(), [10, TAIL_LIMIT, 10]);
+    }
+
+    #[test]
+    fn a_rate_limited_tail_is_an_error_without_a_whole_fetch() {
+        let asked = Mutex::new(Vec::new());
+        let provider = |limit: u32| {
+            asked.lock().unwrap().push(limit);
+            if limit == TAIL_LIMIT {
+                Err(ProviderError::from(http::Error::Status(429)))
+            } else {
+                Ok(series(0..10))
+            }
+        };
+        fetch(
+            DataSource::Coinbase,
+            "tail-limit-test",
+            "1h",
+            10,
+            STALE,
+            provider,
+        )
+        .unwrap();
+        let refreshed = fetch(
+            DataSource::Coinbase,
+            "tail-limit-test",
+            "1h",
+            10,
+            STALE,
+            provider,
+        );
+        assert!(refreshed.unwrap_err().is_rate_limited());
+        assert_eq!(*asked.lock().unwrap(), [10, TAIL_LIMIT]);
     }
 
     #[test]

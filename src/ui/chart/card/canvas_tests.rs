@@ -637,6 +637,54 @@ fn the_margins_follow_the_chart_whatever_its_type_or_scale() {
 }
 
 #[test]
+fn the_scale_reaches_the_wicks_that_are_drawn_when_a_bar_stops_short_of_its_open() {
+    let card = ChartCard::default();
+    let bar = |open, high, low, close| Kline {
+        open,
+        high,
+        low,
+        close,
+        ..series(1)[0]
+    };
+    // Open above the high, close below the low: the wick is drawn out to both.
+    let shown = [
+        bar(110.0, 105.0, 95.0, 90.0),
+        bar(100.0, 101.0, 99.0, 100.0),
+    ];
+    assert_eq!(card.value_range(&shown, ChartType::Candles), (90.0, 110.0));
+    assert_eq!(card.value_range(&shown, ChartType::Bars), (90.0, 110.0));
+}
+
+#[test]
+fn the_last_price_follows_the_charts_reference_for_up_and_down() {
+    // The last bar closes above its open but below the bar before it.
+    let mut candles = series(40);
+    let before = candles[38].close;
+    let last = candles.last_mut().expect("a bar");
+    last.close = before - 1.0;
+    last.open = before - 3.0;
+    for (by_previous_close, rising) in [(true, false), (false, true)] {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.candles = candles.clone();
+        harness
+            .card
+            .chart_style_mut()
+            .candles
+            .color_by_previous_close = by_previous_close;
+        let (up, down) = (harness.card.bullish_color(), harness.card.bearish_color());
+        let (drawn, _) = harness.draw();
+        let tag = |color| {
+            drawn
+                .rects
+                .iter()
+                .any(|(rect, fill)| rect.min.x > SIZE.x - 90.0 && *fill == color)
+        };
+        assert_eq!(tag(up), rising, "by previous close: {by_previous_close}");
+        assert_eq!(tag(down), !rising, "by previous close: {by_previous_close}");
+    }
+}
+
+#[test]
 fn margins_never_change_what_is_drawn_or_scanned() {
     // The prices the scale spans differ; the candles do not.
     let candles = series(100);
@@ -845,6 +893,7 @@ fn the_crosshair_takes_its_style_and_stays_above_the_series() {
         frozen: false,
         owner_id: 1,
         x_fraction: 0.5,
+        time: None,
         price: 230.0,
     });
     let (drawn, _) = harness.draw();
@@ -861,6 +910,7 @@ fn the_crosshair_takes_its_style_and_stays_above_the_series() {
         frozen: false,
         owner_id: 99,
         x_fraction: 0.5,
+        time: Some(harness.candles[250].open_time as f64),
         price: 230.0,
     });
     let (other, _) = harness.draw();
@@ -874,6 +924,117 @@ fn the_crosshair_takes_its_style_and_stays_above_the_series() {
     );
 }
 
+/// A chart drawn with another chart's crosshair at `time`: the time its vertical line lies at,
+/// `None` when it draws none.
+fn crosshair_time_on(mut harness: Harness, time: Option<f64>) -> Option<f64> {
+    let colour = Color32::from_rgba_unmultiplied(255, 128, 0, 200);
+    let canvas = &mut harness.card.appearance_mut().canvas;
+    canvas.crosshair.color = Some([255, 128, 0, 200]);
+    canvas.crosshair.dash = LineDash::Solid;
+    harness.crosshair = Some(CrosshairInfo {
+        frozen: false,
+        owner_id: 99,
+        x_fraction: 0.5,
+        time,
+        price: 230.0,
+    });
+    let (drawn, _) = harness.draw();
+    let probe = harness.card.probe.expect("a frame was drawn");
+    let columns: Vec<f32> = drawn
+        .segments
+        .iter()
+        .filter(|(points, stroke)| stroke.color == colour && points[0].x == points[1].x)
+        .map(|(points, _)| points[0].x)
+        .collect();
+    assert!(columns.len() <= 1, "one column at most: {columns:?}");
+    let x = *columns.first()?;
+    let slot = probe.start as f64 - f64::from(probe.lead)
+        + f64::from(x - probe.plot.left()) / f64::from(probe.slot_width);
+    crate::model::chart::sync::TimeAxis::new(&harness.candles).time_at(slot)
+}
+
+fn zoomed(visible: usize, right_offset: f64) -> Harness {
+    let mut harness = Harness::new(ChartCanvas::default());
+    harness.card.viewport.horizontal = crate::model::chart::viewport::HorizontalViewport {
+        visible,
+        right_offset,
+    };
+    harness
+}
+
+#[test]
+fn charts_of_any_zoom_draw_the_shared_crosshair_at_the_same_time() {
+    let wanted = 260.0 * HOUR as f64 + HOUR as f64 / 4.0;
+    for harness in [zoomed(60, 0.0), zoomed(200, 30.0), zoomed(120, 45.5)] {
+        let drawn = crosshair_time_on(harness, Some(wanted)).expect("a column");
+        // The line is snapped to a pixel, up to a fifth of a bar at the widest zoom.
+        assert!(
+            (drawn - wanted).abs() < HOUR as f64 / 5.0,
+            "{drawn} is not {wanted}"
+        );
+    }
+}
+
+#[test]
+fn a_crosshair_time_off_the_screen_or_unknown_draws_no_column() {
+    assert_eq!(
+        crosshair_time_on(zoomed(60, 0.0), Some(100.0 * HOUR as f64)),
+        None
+    );
+    assert_eq!(crosshair_time_on(zoomed(60, 0.0), None), None);
+}
+
+#[test]
+fn a_price_based_chart_draws_no_shared_column() {
+    let mut renko = zoomed(120, 0.0);
+    renko.card.appearance_mut().style.chart_type = ChartType::Renko;
+    assert_eq!(crosshair_time_on(renko, Some(290.0 * HOUR as f64)), None);
+}
+
+#[test]
+fn a_price_based_chart_still_draws_its_own_column_under_the_pointer() {
+    let mut renko = Harness::new(ChartCanvas::default());
+    renko.card.appearance_mut().style.chart_type = ChartType::Renko;
+    renko.crosshair = Some(CrosshairInfo {
+        frozen: false,
+        owner_id: 1,
+        x_fraction: 0.5,
+        time: None,
+        price: 230.0,
+    });
+    let (drawn, _) = renko.draw();
+    let own = Color32::from_gray(135).gamma_multiply(0.6);
+    assert!(
+        drawn
+            .segments
+            .iter()
+            .any(|(points, stroke)| stroke.color == own && points[0].y == points[1].y),
+        "the price line of the pointer's own chart"
+    );
+}
+
+#[test]
+fn a_chart_reports_the_time_under_its_pointer_only_when_its_slots_are_time() {
+    let mut harness = zoomed(100, 20.0);
+    harness.draw();
+    let probe = harness.card.probe.expect("a frame was drawn");
+    let at = Pos2::new(
+        probe.plot.left() + probe.plot.width() * 0.5,
+        probe.plot.top() + 200.0,
+    );
+    harness.pointer = Some(at);
+    let (_, pointer) = harness.draw();
+    let slot = probe.start as f64 - f64::from(probe.lead)
+        + f64::from(at.x - probe.plot.left()) / f64::from(probe.slot_width);
+    let time = pointer.hover_time.expect("a time");
+    assert!((time - slot * HOUR as f64).abs() < HOUR as f64 / 100.0);
+
+    harness.card.appearance_mut().style.chart_type = ChartType::Kagi;
+    let (_, pointer) = harness.draw();
+    assert!(pointer.hover_x_fraction.is_some());
+    assert_eq!(pointer.hover_time, None);
+}
+
 #[test]
 fn a_dashed_crosshair_is_the_default_and_a_style_change_keeps_the_position() {
     let mut harness = Harness::new(ChartCanvas::default());
@@ -881,6 +1042,7 @@ fn a_dashed_crosshair_is_the_default_and_a_style_change_keeps_the_position() {
         frozen: false,
         owner_id: 1,
         x_fraction: 0.25,
+        time: None,
         price: 230.0,
     });
     let (dashed, _) = harness.draw();
@@ -914,6 +1076,7 @@ fn the_ohlc_readout_hides_without_touching_the_crosshair() {
         frozen: false,
         owner_id: 1,
         x_fraction: 0.5,
+        time: None,
         price: 230.0,
     });
     let crosshair_lines = |drawn: &Drawn| {

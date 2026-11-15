@@ -323,11 +323,6 @@ pub(super) fn draw_script_pane(
         slot_width,
         x_for_index,
         y_for: &y_for,
-        candle_style: CandleStyle {
-            body_width: candle_body_half_width(slot_width) * 2.0,
-            wick_width: 1.0,
-            min_body_height: 1.0,
-        },
     };
     let clipped = painter.with_clip_rect(plot.expand2(Vec2::new(0.0, 0.0)));
     layer.draw_background(&clipped);

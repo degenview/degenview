@@ -33,6 +33,9 @@ impl ChartCard {
         if self.gesture.is_some() || !self.takes_part_in_sync(source) {
             return false;
         }
+        // The hub maps against these bars, so a bar that has just arrived is accounted for first:
+        // the body would otherwise add it to an offset that already counts it.
+        self.keep_view_on_its_bars(candles);
         hub.deliver(
             id,
             settings,
