@@ -175,12 +175,14 @@ impl ChartCard {
             main: layout.rect,
             chart: layout.full_rect,
         };
-        // The Zoom In tool owns the plot's pointer while it is armed: nothing is drawn or picked.
+        // The Zoom In tool and Select portion own the pointer while they are on: nothing is drawn
+        // or picked.
+        let held = self.pointer_is_held(layout.main_visible, replay.selecting);
         let zooming = self.zoom_is_live(layout.main_visible, replay.selecting);
         if layout.main_visible
             && let Some(view) = &view
         {
-            if replay.selecting || zooming {
+            if replay.selecting || held {
                 self.layer.clear_hover();
             } else {
                 self.layer.update(
@@ -207,6 +209,7 @@ impl ChartCard {
             // Dragging over bars for the logs pane is not a pan.
             drawing_claims: self.layer.claims_drag()
                 || self.zoom_claims_drag()
+                || self.snapshot_select
                 || (replay.selecting && self.pick_kind == overlay::PickKind::LogsRange),
             response,
         };
@@ -347,7 +350,7 @@ impl ChartCard {
         );
         let rect = response.rect;
         pointer.rect = Some(rect);
-        self.body_size = rect.size();
+        self.body_rect = rect;
         let style = CanvasStyle::resolve(&self.appearance.canvas);
         let full_rect = rect;
         canvas::paint_background(&painter, rect, style.fill);

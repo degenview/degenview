@@ -92,13 +92,6 @@ pub fn render<E>(
 
 /// What `measure` finds out in a frame of `size` points at `pixels_per_point`, with nothing
 /// tessellated: where things would land if `render` painted them.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the Screenshot Studio, next in this stack, is its caller"
-    )
-)]
 pub fn measure<R>(
     size: Vec2,
     pixels_per_point: f32,

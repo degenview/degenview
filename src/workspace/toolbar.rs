@@ -116,6 +116,7 @@ impl ChartWorkspace {
                         self.begin_snapshot(ctx, chart_id, action);
                     }
                 }
+                ToolbarAction::SelectPortion => self.begin_portion_selection(),
                 ToolbarAction::SnapshotSettings => self.snapshot.settings_requested = true,
                 ToolbarAction::Undo => self.undo(ctx),
                 ToolbarAction::Redo => self.redo(ctx),

@@ -132,13 +132,6 @@ pub fn horizontal(
 /// included. A chart may not show fewer than [`MIN_VISIBLE`](super::MIN_VISIBLE) bars, a picture
 /// of a part of it may. At least one bar stays in view. `None` as for [`horizontal`], and for no
 /// bars.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the Screenshot Studio, next in this stack, is its caller"
-    )
-)]
 pub fn portion(
     selection: &Selection,
     slots: Slots,

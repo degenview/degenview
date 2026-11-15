@@ -1065,6 +1065,93 @@ fn gallery_of_the_bar_range() {
     }
 }
 
+// MARK: Select portion
+
+mod select_portion {
+    use super::*;
+
+    fn selecting() -> Rig {
+        let mut rig = Rig::new();
+        rig.card.set_snapshot_select(true);
+        rig.frames(&[]);
+        rig
+    }
+
+    #[test]
+    fn a_drag_does_not_pan_and_leaves_drawings_alone() {
+        let mut rig = selecting();
+        rig.drawings = vec![trend_line()];
+        let before = (rig.drawings.clone(), rig.card.viewport);
+        let from = rig.in_plot();
+        rig.drag(from, Vec2::new(120.0, 60.0));
+        // Start it on the line itself, too.
+        let on_line = Pos2::new(rig.x_of(340), rig.y_of(255.0));
+        rig.drag(on_line, Vec2::new(-90.0, 40.0));
+        assert_eq!((rig.drawings.clone(), rig.card.viewport), before);
+        assert_eq!(rig.commands, 0, "no drawing, no undo step");
+    }
+
+    #[test]
+    fn the_axes_do_not_scale_either() {
+        let mut rig = selecting();
+        let viewport = rig.card.viewport;
+        let axis = rig.on_price_axis();
+        rig.drag(axis, Vec2::new(0.0, -80.0));
+        let axis = rig.on_time_axis();
+        rig.drag(axis, Vec2::new(80.0, 0.0));
+        assert_eq!(rig.card.viewport, viewport);
+    }
+
+    #[test]
+    fn the_wheel_and_a_swipe_do_nothing() {
+        let mut rig = selecting();
+        let viewport = rig.card.viewport;
+        let at = rig.in_plot();
+        rig.frame(vec![egui::Event::PointerMoved(at)]);
+        for delta in [Vec2::new(0.0, 40.0), Vec2::new(60.0, 3.0)] {
+            rig.frame(vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta,
+                phase: egui::TouchPhase::Move,
+                modifiers: Modifiers::NONE,
+            }]);
+            rig.frames(&[]);
+        }
+        assert_eq!(rig.card.viewport, viewport);
+    }
+
+    #[test]
+    fn the_card_does_not_ask_for_a_cursor_of_its_own() {
+        let mut rig = selecting();
+        for at in [rig.in_plot(), rig.on_price_axis(), rig.on_time_axis()] {
+            rig.frame(vec![egui::Event::PointerMoved(at)]);
+            assert_eq!(rig.cursor, egui::CursorIcon::Default, "{at:?}");
+        }
+    }
+
+    #[test]
+    fn it_ends_when_the_workspace_says_so() {
+        let mut rig = selecting();
+        rig.card.set_snapshot_select(false);
+        rig.frames(&[]);
+        let from = rig.in_plot();
+        rig.drag(from, Vec2::new(100.0, 0.0));
+        assert!(rig.offset() > 1.0, "the chart pans again");
+    }
+
+    #[test]
+    fn the_snapshot_frame_is_the_body_below_the_header() {
+        let mut rig = Rig::new();
+        rig.card.set_top_inset(36.0);
+        rig.frames(&[]);
+        let (body, frame) = (rig.card.body_rect(), rig.card.snapshot_frame());
+        assert_eq!(body, rig.rect);
+        assert_eq!(frame.min, Pos2::new(body.left(), body.top() + 36.0));
+        assert_eq!(frame.max, body.max);
+        assert_eq!(frame.size(), rig.card.snapshot_size());
+    }
+}
+
 // MARK: Zoom In
 
 mod zoom_in {

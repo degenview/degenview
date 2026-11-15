@@ -164,6 +164,8 @@ pub enum Icon {
     Minus,
     RectFill,
     RectDashed,
+    /// Four corner brackets: an area to select.
+    SelectArea,
     Undo,
     /// Undo's mirror image.
     Redo,
@@ -481,6 +483,20 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 ((14.0, 5.2), (14.0, 10.8)),
             ] {
                 line(&[p(a.0, a.1), p(b.0, b.1)]);
+            }
+        }
+        Icon::SelectArea => {
+            for (corner, along, down) in [
+                ((2.0, 3.0), 1.0, 1.0),
+                ((14.0, 3.0), -1.0, 1.0),
+                ((2.0, 13.0), 1.0, -1.0),
+                ((14.0, 13.0), -1.0, -1.0),
+            ] {
+                line(&[
+                    p(corner.0 + along * 4.0, corner.1),
+                    p(corner.0, corner.1),
+                    p(corner.0, corner.1 + down * 4.0),
+                ]);
             }
         }
         Icon::Undo => {
@@ -2469,6 +2485,7 @@ mod tests {
             Minus,
             RectFill,
             RectDashed,
+            SelectArea,
             Undo,
             Redo,
             Rewind,

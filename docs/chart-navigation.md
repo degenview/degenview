@@ -101,6 +101,9 @@ The edit is made inside the frame, so linked charts follow through the usual `en
 (time only; prices never sync; price-based types do not take part) and older history pages as for any
 pan. Replay already hands the card replay-cut bars, so a zoom cannot show a bar that is not there.
 
+Zoom In's pointer check (`ChartCard::pointer_is_held`) is shared with the snapshot menu's Select portion,
+which also owns the pointer while it runs: [Select portion](snapshots.md#select-portion).
+
 **Zoom out** appears under Zoom in (as in TradingView) while the focused chart has a zoom to go back
 from: it restores the exact view the last zoom came from. The card keeps up to 8 (`MAX_BACK`), cleared
 by `reset_view`, a symbol or timeframe change and a switch to or from a price-based type; none is saved.

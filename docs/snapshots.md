@@ -233,9 +233,10 @@ ships no server; its tests use a mock server on this computer.
 ## Screenshot Studio (in progress)
 
 The Studio restyles, reframes and exports a picture of a chart or of the whole layout. It is
-being built in stacked changes; this is what exists so far, **the composer** (`ui/snapshot_studio/`),
-which nothing in the app calls yet: Select portion (the way in) and the Studio window follow.
-It is a presentation layer around `paint_snapshot` and never a second chart painter.
+being built in stacked changes; this is what exists so far: **the composer** (`ui/snapshot_studio/`),
+which nothing draws on screen yet, and **Select portion** (the way in, below). The Studio window
+that opens on a selection follows. The composer is a presentation layer around `paint_snapshot` and
+never a second chart painter.
 
 ```
 Capture (frozen once)  +  StudioConfig  ─►  compose::paint ─► Scene ─► raster
@@ -298,6 +299,55 @@ Capture (frozen once)  +  StudioConfig  ─►  compose::paint ─► Scene ─�
 - **Known limits.** In a size other than the capture's the candles are taller or shorter than in the
   capture (the price scale is fitted, not kept). Not checked: the logo from the icon cache in a real
   window (tests use the monogram), a layout in a real window.
+
+### Select portion
+
+The camera menu's **Select portion** row (after Copy image, before the hosted rows; no shortcut; it
+waits while a snapshot is being made like the others) starts a mode of the workspace, modelled on Zoom
+In but owned by the snapshot state (`SnapshotState::selecting`, `workspace/chart/snapshot/select.rs`).
+It is the workspace's, not a chart's, because the rectangle may begin on any market chart and cross
+into the next.
+
+- **Entering** disarms the drawing tools and Zoom In (without dropping rulers: a measurement may be
+  what is being captured); arming a tool or Zoom In afterwards puts the selection down (checked each
+  frame in `render_grid`, so every way of arming is covered). Replay start picking waits.
+- **Interaction.** A primary press inside any market chart's body (header strip included) begins the
+  rectangle; it follows the pointer in any direction and is kept inside the union of the charts'
+  snapshot frames (`selection::dragged`). **One press and release is the whole mode**: a release of
+  at least 24 pt a side (`selection::released`) captures, a smaller one or a plain click ends the mode
+  and captures nothing, silently.
+- **Cancel.** Escape (spent on the selection: the workspace's own Escape chain does not also act),
+  a second mouse button, the window losing focus, or a skipped frame (another tab was shown) end it.
+- **What stands back.** A layer above the grid and below menus and sheets
+  (`ui/workspace/portion_overlay.rs`) takes the pointer from everything under it, so headers, alert
+  pills, context menus, axes and overlays do not answer. The cards also stand down
+  (`ChartCard::set_snapshot_select`, through `pointer_is_held`, the check Zoom In shares): no pan,
+  wheel, axis scale, drawing hover, pick or placement, and no crosshair. The cursor is a crosshair.
+- **Painting.** Before the drag the grid is lightly dimmed with the hint "Drag to select an area · Esc
+  to cancel" at the top of the plots. While dragging, outside the rectangle is dimmed (about 35% black
+  in the dark theme, less in the light one) and the rectangle has a 1 pt border in the label colour,
+  snapped to the pixel grid. Flat: no animation, no shadow, nothing blue.
+- **Nothing is written.** No undo step, no layout save or dirty flag, no drawing, no change of any
+  chart's view; the freeze below only reads. Tests pin each.
+- **What a release freezes** (`capture_portion`, on the UI thread). The charts' data is read as
+  `capture_scene` reads it (`ChartParts`, shared: candles cut at the replay, drawings, indicators, open
+  notes, pictures, paper markers per the Settings, and the market's logo if the icon cache has it);
+  drawings are left out while all are hidden. The result is `SnapshotState::studio`, a `StudioSession`
+  holding the `Capture` and `StudioConfig::new(Area::Portion)`; nothing draws it yet.
+  - *Within one chart* (the selection overlaps only that chart's snapshot frame): `Capture::Single`, a
+    `ChartCapture` with the selection counted from the frame's top-left corner as its portion. The
+    snapshot frame is the body less the header strip, and a point of it is the same point of the
+    snapshot (`ChartCard::snapshot_frame`). The capture clamps the part of the portion on the plot to
+    the bars and prices it covers; the axes are always drawn, so a selection that takes in an axis
+    keeps it and one that does not still shows it, inside the same size. Panes are laid out a few points
+    differently in the snapshot than under the header, so the match is to the point only without them.
+    A sliver under 24 pt of the frame is no selection.
+  - *Across charts* (the selection overlaps the frames of several): `Capture::Layout` of the charts it
+    reaches, each at its frame's place relative to the corner of the union of all the market charts'
+    frames, with the selection as `crop`; `focused` is the focused chart if it is among them, else the
+    first. A selection that reaches no chart (only gaps and headers) says so.
+- **Not checked.** Everything above is driven headlessly (pointer events over the real grid, the
+  overlay in pictures of both themes); not exercised in a real window.
 
 ## Platforms
 

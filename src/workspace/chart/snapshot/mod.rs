@@ -16,10 +16,17 @@ use crate::service::snapshot::raster;
 use crate::service::{system::timezone, work_queue};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
-use crate::ui::{SnapshotError, SnapshotFrame, SnapshotInput};
+use crate::ui::snapshot_studio::capture::ChartParts;
+use crate::ui::{SnapshotError, SnapshotFrame};
 use crate::workspace::drawing::content::snapshot_images;
 use crate::workspace::*;
 use eframe::egui::{Context, Id};
+
+mod select;
+mod studio;
+
+#[cfg(test)]
+mod select_tests;
 
 /// The PNG of a picture made for an agent, or why it could not be made.
 pub type PngReceiver = Receiver<Result<Vec<u8>, String>>;
@@ -75,6 +82,10 @@ pub(in crate::workspace) struct SnapshotState {
     backend: Option<Arc<dyn job::Backend>>,
     /// The camera menu asked for the Snapshots page of Settings; the app takes it this frame.
     pub(in crate::workspace) settings_requested: bool,
+    /// Select portion is on: the user is choosing which part of the charts to capture.
+    selecting: Option<select::Selecting>,
+    /// What the last selection captured, for the Studio to work from.
+    studio: Option<studio::StudioSession>,
 }
 
 /// Why a chart could not be frozen into a picture.
@@ -88,6 +99,9 @@ pub enum CaptureError {
     /// The chart has not been laid out on screen yet.
     #[error("There is no chart to take a picture of yet.")]
     NotLaidOut,
+    /// A selection that covers no chart (only the gaps and headers between them).
+    #[error("There is no chart under the selection.")]
+    NothingSelected,
     #[error("{}", .0.message())]
     Scene(SnapshotError),
 }
@@ -175,6 +189,42 @@ impl ChartWorkspace {
         }
     }
 
+    /// What chart `index` is made of, read from the workspace as the chart on screen shows it:
+    /// the candles cut at the replay's time, its indicators, the notes that are open and the
+    /// pictures that are loaded. Drawings are left out while the workspace hides them all, so a
+    /// picture shows what the chart does and a capture knows it has none to offer. The market's
+    /// logo is not looked up: only a Studio capture shows one.
+    fn chart_parts(&self, ctx: &Context, index: usize, include_trading: bool) -> ChartParts {
+        let chart = &self.charts[index];
+        let replay_ms = self.replay.cut_ms();
+        let hidden = self.tools.hides_all();
+        let drawings = if hidden {
+            Vec::new()
+        } else {
+            chart.drawings.clone()
+        };
+        ChartParts {
+            chart_id: chart.id,
+            symbol: chart.symbol.clone(),
+            source: chart.source,
+            timeframe: self.timeframe,
+            title: chart.display_title(),
+            candles: displayed_candles(&chart.candles, replay_ms).to_vec(),
+            images: snapshot_images(ctx, &drawings),
+            open_notes: if hidden {
+                Vec::new()
+            } else {
+                chart.chart.open_notes()
+            },
+            drawings,
+            indicators: chart.indicators,
+            replay_active: replay_ms.is_some(),
+            include_trading,
+            scale_mode: chart.scale_mode,
+            logo: None,
+        }
+    }
+
     /// Freezes chart `chart_id` into a scene, at the scale `options` asks for (smaller if the
     /// chart is too large for it), from the very data the chart on screen is drawn from. Runs on
     /// the UI thread and reads, never changes, the workspace.
@@ -185,30 +235,18 @@ impl ChartWorkspace {
         options: snapshot::SnapshotOptions,
     ) -> Result<(raster::Scene, SnapshotDimensions), CaptureError> {
         let index = self.chart_index(chart_id).ok_or(CaptureError::NoChart)?;
-        let replay_ms = self.replay.cut_ms();
         let chart = &self.charts[index];
         let size = chart.chart.snapshot_size();
         let dimensions = SnapshotDimensions::fit(size.x, size.y, options.scale)
             .ok_or(CaptureError::NotLaidOut)?;
-        let open_notes = chart.chart.open_notes();
-        let images = snapshot_images(ctx, &chart.drawings);
-        let input = SnapshotInput {
-            symbol: &chart.symbol,
-            source: chart.source,
-            candles: displayed_candles(&chart.candles, replay_ms),
-            scale_mode: chart.scale_mode,
-            indicators: &chart.indicators,
-            drawings: &chart.drawings,
-            open_notes: &open_notes,
-            images: Some(&images),
-            hide_all_drawings: self.tools.hides_all(),
-            replay_active: replay_ms.is_some(),
-            include_trading: options.include_trading,
-            frame: SnapshotFrame::default(),
-        };
+        let parts = self.chart_parts(ctx, index, options.include_trading);
         chart
             .chart
-            .snapshot_scene(&input, dimensions, ui::theme::surface())
+            .snapshot_scene(
+                &parts.input(SnapshotFrame::default()),
+                dimensions,
+                ui::theme::surface(),
+            )
             .map(|scene| (scene, dimensions))
             .map_err(CaptureError::Scene)
     }
