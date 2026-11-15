@@ -150,3 +150,38 @@ fn kept_history_is_bounded() {
         "the newest candles are the ones that stay"
     );
 }
+
+#[test]
+fn a_refresh_during_the_first_page_does_not_drop_the_bar_the_page_ends_before() {
+    let mut history = OlderHistory::default();
+    let mut held = bars(10..20);
+    let end = page_end(&held).unwrap();
+    history.started();
+    assert!(history.keeps_older(), "a page is on its way");
+
+    // A bar opened while the page was out: the refresh brings the newest ten, 11..21.
+    held = with_older(&held, bars(11..21), history.keeps_older());
+    assert_eq!(times(&held), (10..21).collect::<Vec<_>>());
+
+    // The page was asked for with the old end and stops before hour 10.
+    let page: Vec<Kline> = bars(5..10)
+        .into_iter()
+        .filter(|b| b.open_time < end)
+        .collect();
+    let added = prepend(&mut held, page);
+    history.arrived(added);
+    assert_eq!(
+        times(&held),
+        (5..21).collect::<Vec<_>>(),
+        "hour 10 is still there"
+    );
+}
+
+#[test]
+fn a_refresh_replaces_the_candles_when_nothing_is_loaded_or_on_its_way() {
+    let mut history = OlderHistory::default();
+    assert!(!history.keeps_older());
+    history.started();
+    history.failed(Instant::now());
+    assert!(!history.keeps_older());
+}

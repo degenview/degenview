@@ -1,9 +1,11 @@
 //! The live Binance feed: keeping it on the workspace's charts and folding its candles in.
 
-use crate::model::{DataSource, Timeframe};
+use crate::model::market::live::{self, LiveMark};
+use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::market::live::BinanceLiveFeed;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
+use std::time::Instant;
 
 impl ChartWorkspace {
     pub(in crate::workspace) fn update_live_feed(&mut self, ctx: &egui::Context) {
@@ -45,30 +47,63 @@ impl ChartWorkspace {
             .as_ref()
             .map(|feed| feed.inbox.drain())
             .unwrap_or_default();
+        let now = Instant::now();
         for (symbol, kline) in updates {
-            self.overlay_hub.apply_live(&symbol, &kline);
-            self.apply_live_kline(&symbol, kline);
+            self.overlay_hub.apply_live(&symbol, &kline, now);
+            self.apply_live_kline(&symbol, kline, now);
         }
     }
 
-    fn apply_live_kline(&mut self, symbol: &str, kline: crate::model::Kline) {
-        let Some(chart) = self.charts.iter_mut().find(|chart| {
+    fn apply_live_kline(&mut self, symbol: &str, kline: Kline, now: Instant) {
+        for chart in self.charts.iter_mut().filter(|chart| {
             chart.source == DataSource::Binance && chart.symbol.eq_ignore_ascii_case(symbol)
-        }) else {
-            return;
-        };
-        let replaces_last = chart
-            .candles
-            .last()
-            .is_some_and(|last| last.open_time == kline.open_time);
-        if replaces_last {
-            if let Some(last) = chart.candles.last_mut() {
-                *last = kline;
+        }) {
+            if live::apply_live(&mut chart.candles, kline.clone()) {
+                chart.live = Some(LiveMark::new(kline.open_time, now));
+                chart.last_data_ms = Some(crate::model::watchlist::now_ms());
             }
-        } else {
-            chart.candles.push(kline);
         }
-        chart.last_live_open_time = chart.candles.last().map(|candle| candle.open_time);
-        chart.last_data_ms = Some(crate::model::watchlist::now_ms());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workspace::chart::Chart;
+    use crate::workspace::test_support::{candle, empty_workspace};
+
+    #[test]
+    fn every_chart_of_the_symbol_takes_the_live_bar() {
+        let mut workspace = empty_workspace(1);
+        for id in 1..=2 {
+            let mut chart = Chart::blank(id, "BTCUSDT", DataSource::Binance);
+            chart.candles = vec![candle(1, 1.0)];
+            workspace.charts.push(chart);
+        }
+        let mut other = Chart::blank(3, "ETHUSDT", DataSource::Binance);
+        other.candles = vec![candle(1, 1.0)];
+        workspace.charts.push(other);
+
+        workspace.apply_live_kline("btcusdt", candle(2, 5.0), Instant::now());
+
+        let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
+        assert_eq!(lens, [2, 2, 1]);
+        assert!(workspace.charts[0].live.is_some() && workspace.charts[1].live.is_some());
+    }
+
+    #[test]
+    fn a_late_tick_of_an_older_bar_does_not_unsort_the_chart() {
+        let mut workspace = empty_workspace(1);
+        let mut chart = Chart::blank(1, "BTCUSDT", DataSource::Binance);
+        chart.candles = vec![candle(1, 1.0), candle(2, 2.0)];
+        workspace.charts.push(chart);
+
+        workspace.apply_live_kline("BTCUSDT", candle(1, 9.0), Instant::now());
+
+        assert_eq!(
+            workspace.charts[0].candles,
+            [candle(1, 1.0), candle(2, 2.0)]
+        );
+        assert!(workspace.charts[0].live.is_none());
     }
 }

@@ -17,9 +17,10 @@
 
 pub(in crate::workspace) mod actions;
 
-use super::chart::{CANDLE_LIMIT, merge_fetched_candles};
+use super::chart::CANDLE_LIMIT;
 use crate::model::market;
 use crate::model::market::history::OlderHistory;
+use crate::model::market::live::{self, LiveMark};
 use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
 use crate::model::overlay::{OverlayId, OverlayList};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
@@ -120,7 +121,8 @@ struct Series {
     retry_at: Option<Instant>,
     older: OlderHistory,
     older_inbox: Option<Receiver<Result<Vec<Kline>, ProviderError>>>,
-    last_live_open_time: Option<i64>,
+    /// The newest bar the live feed delivered: a refresh begun before it keeps it.
+    live: Option<LiveMark>,
 }
 
 impl Series {
@@ -137,7 +139,7 @@ impl Series {
             retry_at: None,
             older: OlderHistory::default(),
             older_inbox: None,
-            last_live_open_time: None,
+            live: None,
         }
     }
 
@@ -185,7 +187,7 @@ impl Series {
         self.older = OlderHistory::default();
         self.last_fetch = None;
         self.retry_at = None;
-        self.last_live_open_time = None;
+        self.live = None;
         self.status = OverlayStatus::Queued;
         if !self.candles.is_empty() {
             self.candles = Arc::new(Vec::new());
@@ -410,7 +412,7 @@ impl OverlayHub {
     }
 
     /// A live Binance candle for `symbol`: every overlay market on that symbol takes it.
-    pub(super) fn apply_live(&mut self, symbol: &str, kline: &Kline) {
+    pub(super) fn apply_live(&mut self, symbol: &str, kline: &Kline, now: Instant) {
         for series in self.series.values_mut() {
             if series.instrument.source != DataSource::Binance
                 || !series.instrument.symbol.eq_ignore_ascii_case(symbol)
@@ -418,14 +420,10 @@ impl OverlayHub {
                 continue;
             }
             let mut candles = (*series.candles).clone();
-            match candles.last() {
-                Some(last) if last.open_time == kline.open_time => {
-                    *candles.last_mut().unwrap() = kline.clone();
-                }
-                Some(last) if last.open_time > kline.open_time => continue,
-                _ => candles.push(kline.clone()),
+            if !live::apply_live(&mut candles, kline.clone()) {
+                continue;
             }
-            series.last_live_open_time = candles.last().map(|candle| candle.open_time);
+            series.live = Some(LiveMark::new(kline.open_time, now));
             if series.set_candles(candles) {
                 self.version += 1;
             }
@@ -590,7 +588,12 @@ fn receive_fetch(series: &mut Series, now: Instant) -> bool {
     series.inbox = None;
     match result {
         Ok(fresh) => {
-            let merged = merge_fetched_candles(fresh, &series.candles, series.last_live_open_time);
+            let live_open = series
+                .live
+                .zip(series.last_fetch)
+                .and_then(|(mark, begun)| mark.guard_for(begun));
+            let merged =
+                live::merge_fetched(fresh, &series.candles, live_open, CANDLE_LIMIT as usize);
             let candles =
                 market::history::with_older(&series.candles, merged, series.older.keeps_older());
             series.set_candles(candles);

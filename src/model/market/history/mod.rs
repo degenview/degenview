@@ -80,9 +80,11 @@ impl OlderHistory {
         self.in_flight = false;
     }
 
-    /// Whether a refresh must keep the older candles it did not bring back.
+    /// Whether a refresh must keep the older candles it did not bring back: a page is held, or
+    /// one is on its way. The page ends before the oldest candle held when it was asked for, so a
+    /// refresh that dropped that candle in the meantime would leave a hole.
     pub fn keeps_older(&self) -> bool {
-        self.loaded
+        self.loaded || self.in_flight
     }
 }
 
