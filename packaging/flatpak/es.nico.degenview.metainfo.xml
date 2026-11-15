@@ -29,8 +29,8 @@
   <url type="bugtracker">https://github.com/degenview/degenview/issues</url>
   <screenshots>
     <screenshot type="default">
-      <caption>Four linked candlestick charts with indicators and a watchlist</caption>
-      <image>https://raw.githubusercontent.com/degenview/degenview/main/assets/screenshots/screenshot.png</image>
+      <caption>A candlestick chart with volume, RSI, EMA, a Pine overlay and a MACD pane</caption>
+      <image>https://raw.githubusercontent.com/degenview/degenview/main/assets/screenshots/hero.png</image>
     </screenshot>
   </screenshots>
   <content_rating type="oars-1.1"/>

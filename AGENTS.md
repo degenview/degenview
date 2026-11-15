@@ -136,6 +136,7 @@ old output). Finished worktrees are where the disk goes.
 - [Pine Logs](docs/pine-logs.md) — `log.*()` messages: sink, limits, batches, TradingView verification.
 - [Portfolio cards](docs/portfolio-cards.md) — card design, known gaps.
 - [New-tab page](docs/new-tab-page.md) — the blank tab: search launcher, tabs, sparklines, animated backdrop.
+- [README hero GIF](tools/readme-gif/README.md): how the animated picture is recorded from the real app, and when to retake it.
 - [Chart snapshots](docs/snapshots.md) — camera menu, shared renderer, Screenshot Studio (Select portion, composer, backdrops, remembered look), hosted sharing via providers (ImgBB, your own host, adding one), privacy.
 - [MCP implementation](docs/mcp-implementation.md) and [remaining work](docs/mcp-remaining-work.md).
 - Also in Required reading, with details and what is verified versus decided:
