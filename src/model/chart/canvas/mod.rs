@@ -471,22 +471,35 @@ pub fn axis_width(widest_label: f32, floor: f32, ceiling: f32) -> f32 {
 /// Which of the `len` shown bars carry a time label and a vertical grid line: every `step`-th bar
 /// counted from the first bar of the whole series (`first_shown` is the index of the first shown
 /// bar), so a label stays on its bar while the chart pans instead of sliding to another one.
-pub fn time_ticks(first_shown: usize, len: usize, slot_width: f32) -> Vec<usize> {
-    let step = time_tick_step(slot_width);
+/// `label_width` is how wide one label is drawn, in points.
+pub fn time_ticks(first_shown: usize, len: usize, slot_width: f32, label_width: f32) -> Vec<usize> {
+    let step = time_tick_step(slot_width, label_width);
     (0..len)
         .filter(|index| (first_shown + index).is_multiple_of(step))
         .collect()
 }
 
-/// A label about every 100 points, however many bars share them: a price-based chart may show a
-/// dozen bars across the plot.
-pub fn time_tick_step(slot_width: f32) -> usize {
+/// The least room between two time labels' centres, in points.
+const TIME_LABEL_SPACING: f32 = 100.0;
+/// The least gap between two time labels, in points.
+const TIME_LABEL_GAP: f32 = 16.0;
+
+/// A label about every 100 points, however many bars share them (a price-based chart may show a
+/// dozen bars across the plot), or further apart when labels `label_width` wide would not leave
+/// a gap between them: a large axis font, or a picture's larger text.
+pub fn time_tick_step(slot_width: f32, label_width: f32) -> usize {
     let slot = if slot_width.is_finite() {
         slot_width.max(1.0)
     } else {
         1.0
     };
-    ((100.0 / slot).ceil() as usize).clamp(1, 1_000_000)
+    let label = if label_width.is_finite() {
+        label_width.max(0.0)
+    } else {
+        0.0
+    };
+    let spacing = TIME_LABEL_SPACING.max(label + TIME_LABEL_GAP);
+    ((spacing / slot).ceil() as usize).clamp(1, 1_000_000)
 }
 
 // MARK: Price range
