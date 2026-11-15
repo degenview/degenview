@@ -1,198 +1,115 @@
-# DegenView
+<div align="center">
 
-[![Total downloads](https://img.shields.io/github/downloads/degenview/degenview/total)](https://github.com/degenview/degenview/releases)
+<img src="assets/brand/DegenView-512-rounded.png" width="128" alt="DegenView logo">
 
-A cross-platform market dashboard for watching crypto, stocks, prediction markets, and
-CoinMarketCap market-wide indices in customizable charts.
+# DegenView: the free, open source TradingView alternative
 
-Its headline feature is a **local Pine Script v6 engine** — write TradingView-style scripts,
-run them on your own machine, keep every line of source on your device.
+Charts for crypto, stocks and prediction markets, with Pine Script v6 that runs on your own machine.
+No account. No subscription.
+
+[![Latest release](https://img.shields.io/github/v/release/degenview/degenview?include_prereleases&label=release)](https://github.com/degenview/degenview/releases)
+[![Downloads](https://img.shields.io/github/downloads/degenview/degenview/total)](https://github.com/degenview/degenview/releases)
+[![Stars](https://img.shields.io/github/stars/degenview/degenview)](https://github.com/degenview/degenview/stargazers)
+[![License](https://img.shields.io/github/license/degenview/degenview)](LICENSE.md)
+![Platforms](https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
+
+[Website](https://degenview.app) · [Download](#download) · [Docs](https://docs.degenview.app) · [Compare with TradingView](https://degenview.app/tradingview-alternative/)
+
+<br>
 
 ![DegenView showing a BTCUSDT candlestick chart with a volume panel, RSI, EMA, a Pine overlay and a MACD pane](assets/screenshots/hero.png)
+
+</div>
+
+## Why DegenView
+
+- **Free and open source.** GPL-3.0, no paywalled features.
+- **No account.** Install it and start charting.
+- **Private.** Your scripts, alerts, watchlists and portfolios stay on your device.
+- **Native and fast.** Built in Rust for macOS, Windows and Linux.
+
+## Features
+
+### Markets
+
+- **Crypto** from Binance, Coinbase, CoinGecko and on-chain DEX pairs, searchable side by side.
+- **US stocks and ETFs** through Alpaca. A free key is all you need.
+- **Prediction markets** from Polymarket and Kalshi, charted as probabilities.
+- **Market-wide gauges** such as Crypto Fear and Greed and Altcoin Season.
+- **Live prices** streamed in real time, with watchlists and a quick symbol search on `⌘K` or `Ctrl+K`.
+
+### Charting
+
+- **18 chart types** including Candles, Heikin Ashi, Renko, Kagi, Line Break and Point and Figure.
+- **80+ drawing tools**: trend lines, channels, Fibonacci, Gann, chart patterns, Elliott waves, position and forecast tools, notes and more.
+- **25+ indicators** with a searchable picker and live previews.
+- **Compare** any number of markets on one chart, in percent or log scale.
+- **Flexible layouts**: grids of charts, colour-linked tabs, saved layouts and chart templates.
+- **Bar replay**: step back in time and trade the market again with no lookahead.
+- **Screenshot Studio** for sharp chart images you can copy, save or share.
+
+![Crypto majors watchlist next to a BTC/USDT chart with Ichimoku Cloud, RSI and MACD](assets/screenshots/screenshot.png)
+
+### Pine Script
+
+Write TradingView-style Pine Script v6 and run it locally. Nothing is uploaded.
+
+- **Pine Studio** with a script library, a smart editor and a live preview chart.
+- **Step debugger** and **profiler** to find bugs and slow lines fast.
+- **20 bundled Pine indicators** such as Ichimoku Cloud, MACD, VWAP and Stochastic.
+- **AI assistant** that edits your script, using your own API key.
+- **Editor themes** to match your taste.
 
 | Step debugger | Profiler |
 | :---: | :---: |
 | ![Pine Studio paused on a breakpoint, with variables, watches and the call stack](assets/screenshots/pine-debugger.png) | ![Pine Studio profiler showing per-line time bars and the hottest lines and blocks](assets/screenshots/pine-profiler.png) |
 
-The Pine Studio ships with a **step debugger** and a **profiler**. Set breakpoints, step over, into
-and out, and inspect variables, watches and the call stack while the script runs on the preview
-chart's bars. The profiler shows where the time goes, with a bar and share beside each line and a
-ranked list of the hottest lines and blocks. See [Pine debugger](docs/pine-debugger.md) and
-[Pine profiler](docs/pine-profiler.md).
-
-## Features
-
-### Markets and live data
-
-- **Crypto** — Search Binance, Coinbase, CoinGecko, and DEXScreener side by side; DEX pairs
-  use GeckoTerminal for historical OHLCV.
-- **Stocks** — US equities through Alpaca's IEX feed (credentials stored securely in Keychain on
-  macOS, in the Secret Service on Linux and in Credential Manager on Windows, or in environment
-  variables).
-- **Prediction markets** — Polymarket and Kalshi events, charted as probabilities. No key needed.
-- **CoinMarketCap indices** — Altcoin Season and Crypto Fear and Greed, historical or latest.
-- **Live updates** — Binance and Coinbase crypto receive WebSocket updates; other sources
-  refresh automatically.
-- **Timeframes** — 1H, 1D, 1W, 1M, 3M, and 1Y candles with scroll-wheel zoom.
-- **Multi-source identity** — The same symbol can be added from different sources without
-  being treated as a duplicate.
-
-### Pine Script
-
-A TradingView-style scripting engine that runs entirely on your machine — scripts are lexed,
-parsed, and evaluated over your chart's bars in-process, with no account and no source ever
-leaving your device.
-
-- **Local evaluation** — Plots, shapes, backgrounds, and candle colors render straight onto the
-  chart from Pine Script v6.
-- **Typed `input.*` controls** — int, float, bool, color, time, and string inputs re-evaluate
-  the script live without recompiling.
-- **Pine Studio** — a `.pine` file library with a code editor (go to definition, rename,
-  multiple cursors), diagnostics, a step debugger, a profiler, and a live preview chart that
-  re-runs as you type.
-- **Pine alerts** — a script's `alert()` fires on a live bar (see [Alerts](#alerts)).
-
-### Charts and analysis
-
-- Hand-drawn OHLC candlesticks, line series, grid, time axis, adaptive price precision,
-  current-price overlay, and price-change readout — no third-party chart library.
-- **Indicators** — 25 built in: Volume, RSI, configurable EMA, Bollinger Bands and Supertrend flip markers,
-  plus 20 bundled Pine indicators (Ichimoku Cloud, MACD, VWAP, Stochastic and more), added from the
-  toolbar's searchable picker with a preview of each.
-- **Trend lines, Fibonacci retracements, and brush strokes** — anchored to time and price, with
-  per-window undo/redo (⌘Z / ⇧⌘Z).
-- **Ruler** — Temporary move measurement (percent, price, duration, bar count).
-- **Crosshair** — Synchronized vertical inspection across all charts in a tab.
-- **Price zoom** — Drag a chart's Y-axis to adjust its vertical scale.
-
-### Portfolio tracking
-
-- **Multiple portfolios** with a transaction ledger and weighted-average accounting.
-- **Live analytics** — value, allocation, 24-hour movement, cost basis, realized/unrealized
-  P&L, and best/worst performers.
-- **Multi-currency reporting** — USD, EUR, GBP, JPY, CHF, and BTC, with cached FX conversion.
-- **Portfolio history** — transaction-aware value snapshots across 1D–ALL ranges.
-- **CSV import/export**, including CoinMarketCap transaction exports with automatic asset
-  mapping.
-
 ### Alerts
 
-- **Local price alerts** — absolute or percentage crosses-above/below, once or repeating,
-  evaluated locally with no account or remote service.
-- **Pine script alerts** — notify when a script's `alert()` fires on a live bar.
-- **Delivery** — in-app banner, and a desktop notification on macOS, independently configurable.
-- **Background delivery on macOS** — signed bundles embed a login-item agent that keeps price
-  alerts, native notifications, and price-alert webhooks running after the GUI quits. Pine alerts
-  remain app-only.
-- **Alerts center** — search and filter active, triggered, paused, and history records.
+- **Price alerts** that cross above or below a level, once or repeating.
+- **Pine alerts** fired by your own scripts.
+- **Notifications** in the app and on your desktop, plus **webhooks** to reach other tools.
+- **Background alerts on macOS**, even after you quit the app.
 
-### MCP server
+### Trading and portfolio
 
-An optional, local [Model Context Protocol](https://modelcontextprotocol.io) server lets an AI
-assistant or automation tool inspect and drive DegenView. It is **off by default** and turned on
-in Settings ▸ MCP Server.
+- **Paper trading** with market, limit and stop orders, shown right on the chart.
+- **Portfolios** with a transaction ledger, profit and loss, allocation and history.
+- **Multiple currencies**: USD, EUR, GBP, JPY, CHF and BTC.
+- **CSV import and export**, including CoinMarketCap exports.
 
-- **Local and authenticated** — listens on `127.0.0.1` only, and every request needs a bearer
-  token. A token is shown once when you generate it; only a hash is kept. Revoking a client cuts it
-  off at once.
-- **Fine-grained permissions** — every permission is labelled **Read** or **Write**. Set a global
-  maximum, then narrow it per client; a client never gets more than the maximum, and changes apply
-  immediately.
-- **What clients can do** — list workspaces and charts, add charts and indicators, list and manage
-  price alerts, and read Pine scripts, diagnostics, inputs, styles, reports, and alert
-  subscriptions, with permissioned edits to a script's draft and saved source.
+### Extras
 
-### Paper trading
+- **Session statistics** that show how often gaps fill, prior-day levels break and weekdays behave, with sample sizes.
+- **MCP server** so your AI assistant can read and drive DegenView. Off by default, local only and permission based.
+- **Light and dark themes**, and sessions that come back as you left them.
 
-A local, persistent simulator with an order ticket, market/limit/stop orders, net-position
-tracking with weighted-average cost, and position/order markers on the chart. Paper orders
-never route to a live exchange.
+## Download
 
-### Historical bar replay
+Get the latest build from the [releases page](https://github.com/degenview/degenview/releases) or pick your platform.
 
-Pick a historical candle and step through the market with no lookahead, with play/pause, a
-timeline scrubber, speed and interval controls, and shared clock across every chart in a tab.
+| Platform | Install |
+| --- | --- |
+| **macOS** (Apple Silicon and Intel) | Open the `.dmg` and drag DegenView to Applications, or use Homebrew |
+| **Windows** (x64 and ARM64) | Run the `-setup.exe`, or unzip the portable `.zip` |
+| **Linux** (x64 and arm64) | Use the `.tar.gz` or the Flatpak bundle |
 
-### Dashboard and persistence
+DegenView updates itself from inside the app.
 
-- **Native tabs and windows on macOS** — independent charts, timeframe, layout, zoom, and
-  drawing state per tab; drag to reorder, detach, or merge. Other platforms use a single
-  workspace window.
-- **Restored sessions** — tabs, order, and window grouping return on relaunch.
-- **Flexible layouts** — vertical stacks or multi-column grids with drag reorder and drop
-  columns.
-- **Saved views** — named ticker sets with their timeframe, arrangement, zoom, source,
-  indicators, and appearance.
-- **Favorites sidebar** — an app-wide, reorderable watchlist.
-- **Appearance** — Dark (the default), Light, and System themes.
-
-## Requirements
-
-- macOS (Apple Silicon or Intel), Windows (x64 or ARM64), or Linux (x64 or arm64) with glibc 2.35 or
-  newer (Ubuntu 22.04, Debian 12, Fedora 36 and later); on an older distro such as RHEL 9, use the
-  Flatpak
-- [Rust](https://rustup.rs) 1.95 or newer (`cargo` on your `PATH`)
-- A free Alpaca account and API keys only if you want stock data — set `DEGENVIEW_ALPACA_KEY_ID`
-  and `DEGENVIEW_ALPACA_SECRET_KEY`, or store them in Keychain on macOS (the Secret Service on Linux, Credential Manager on Windows)
-- No CoinMarketCap API key is required; adding one in Settings is optional
-  (`DEGENVIEW_CMC_API_KEY`)
-
-## Build and run
+<details>
+<summary>Homebrew</summary>
 
 ```bash
-cargo run
+brew install --cask degenview/degenview/degenview      # latest final release
+brew install --cask degenview/degenview/degenview@rc   # latest release candidate
 ```
 
-Build a release binary:
+</details>
 
-```bash
-cargo build --release
-```
+<details>
+<summary>Linux notes</summary>
 
-The binary lands at `target/release/degenview` (`degenview.exe` on Windows).
-
-On macOS you can also build a Finder-launchable app bundle:
-
-```bash
-./tools/bundle.sh
-open target/DegenView.app
-```
-
-The default bundle is unsigned and uses foreground-only alert evaluation. To make the embedded
-`DegenViewAlertAgent.app` available through Login Items, sign both bundles with an Apple-issued
-identity, an explicit shared Keychain access group, and one provisioning profile per bundle. The
-profiles (Developer ID, for the App IDs `es.nico.degenview` and `es.nico.degenview.alert-agent`)
-are required: `keychain-access-groups` is a restricted entitlement, and macOS kills a signed
-build at launch without a profile that grants it.
-
-```bash
-DEGENVIEW_CODESIGN_IDENTITY="Developer ID Application: Example (TEAMID)" \
-DEGENVIEW_KEYCHAIN_ACCESS_GROUP="TEAMID.es.nico.degenview.shared" \
-DEGENVIEW_APP_PROFILE=/path/to/DegenView.provisionprofile \
-DEGENVIEW_HELPER_PROFILE=/path/to/DegenViewAlertAgent.provisionprofile \
-./tools/bundle.sh
-```
-
-The helper is installed at
-`DegenView.app/Contents/Library/LoginItems/DegenViewAlertAgent.app`. DegenView falls back to
-foreground evaluation when registration is unavailable, awaiting approval, or its heartbeat is
-stale.
-
-The Release workflow signs the macOS builds the same way, then notarizes and staples them. It reads
-these repository secrets: `MACOS_CERT_P12` (base64 `.p12` of the Developer ID Application
-certificate and key), `MACOS_CERT_PASSWORD`, `MACOS_CODESIGN_IDENTITY`,
-`MACOS_KEYCHAIN_ACCESS_GROUP` (`TEAMID.es.nico.degenview.shared`), `MACOS_PROFILE_APP` and
-`MACOS_PROFILE_HELPER` (base64 provisioning profiles), and an App Store Connect API key
-for `notarytool`: `ASC_KEY_P8` (base64 `.p8`), `ASC_KEY_ID`, `ASC_ISSUER_ID`.
-
-iCloud Sync is opt-in at build time: `DEGENVIEW_ICLOUD=1 ./tools/bundle.sh` compiles the CloudKit
-bridge (macOS with the Xcode command line tools) and signs the app with iCloud entitlements, which
-needs the App ID, container and provisioning profile described in
-[docs/icloud-sync.md](docs/icloud-sync.md). Run `tools/verify-icloud.sh target/DegenView.app` on the
-result. Without the variable nothing changes.
-
-On Linux the release tarball ships a `degenview.desktop` launcher and `degenview.png` icon. To
-get a launcher and dock icon, install them:
+Unpack the tarball and add a launcher and icon:
 
 ```bash
 install -Dm755 degenview "$HOME/.local/bin/degenview"
@@ -200,50 +117,35 @@ install -Dm644 degenview.png "$HOME/.local/share/icons/hicolor/512x512/apps/dege
 install -Dm644 degenview.desktop "$HOME/.local/share/applications/degenview.desktop"
 ```
 
-Installed in `~/.local/bin` (or any folder you own), the binary updates itself from inside the app: it
-downloads the new tarball, replaces `degenview` and restarts. A binary in a folder you cannot write to,
-such as `/usr/local/bin` or one a package manager owns, only shows a link to the release page. The
-launcher and icon files above are not touched by an update.
-
-Each release also carries a Flatpak bundle, `DegenView-<tag>-linux-x64.flatpak` or
-`-linux-arm64.flatpak` (the tarball likewise has an `-arm64` build), which needs no
-manual install steps and runs sandboxed (network, display and GPU only):
+Or install the sandboxed Flatpak:
 
 ```bash
 flatpak install --user DegenView-<tag>-linux-<x64|arm64>.flatpak
 flatpak run es.nico.degenview
 ```
 
-A bundle has no remote, so `flatpak update` does not find newer versions and the app cannot replace
-itself in the sandbox; download the next one from the release page. How it is built and what is unverified: [docs/flatpak.md](docs/flatpak.md).
+Flatpak bundles do not update themselves, so download the next one from the releases page.
+Linux needs glibc 2.35 or newer. On an older distro, use the Flatpak.
 
-Releases: push a tag like `v0.1.0` and the Release workflow builds macOS (arm64 + Intel, as a disk
-image and a zip), Windows (x64 and ARM64, each an installer and a portable zip), and Linux binaries (a tarball and a
-Flatpak) and publishes a GitHub release you can download.
+</details>
 
-On macOS, open `DegenView-<tag>-macos-<arm64|x64>.dmg` and drag DegenView onto the Applications
-shortcut. The app is signed and notarized, and updates itself from inside the app (it downloads the
-`.zip` with the same app in it, so keep it in Applications, not on the disk image).
+<details>
+<summary>Windows notes</summary>
 
-Or with Homebrew, from the [DegenView tap](https://github.com/degenview/homebrew-degenview):
+The installer needs no admin rights and keeps your data when you remove it. It is not signed yet,
+so SmartScreen may ask you to approve the first launch.
 
-```bash
-brew install --cask degenview/degenview/degenview      # latest final release
-brew install --cask degenview/degenview/degenview@rc   # latest release candidate
-```
+</details>
 
-On Windows, `DegenView-<tag>-windows-x64-setup.exe` (or `-windows-arm64-setup.exe` on a Windows on ARM
-PC such as a Snapdragon X laptop; the x64 build only runs there emulated) installs for the current
-user (no admin rights) into `%LOCALAPPDATA%\Programs\DegenView`, adds a Start menu entry and an uninstaller, and keeps your
-data when removed. The `.zip` is the portable alternative: unzip it into a folder you own. Both update
-themselves from inside the app. Neither is signed yet, so SmartScreen may ask you to approve the first
-launch.
+Want to build it yourself? See [BUILDING.md](BUILDING.md).
 
-## Documentation
+## Learn more
 
-- [Architecture](docs/architecture.md): project structure and data flow, including the
-  [MCP server](docs/architecture/mcp.md)
-- [MCP remaining work](docs/mcp-remaining-work.md): what is still planned for the MCP server
+- [User guide](https://docs.degenview.app) for markets, charts, Pine Studio, alerts and more
+- [BUILDING.md](BUILDING.md) to build from source and package a release
+- [Architecture](docs/architecture.md) for contributors
+
+DegenView is an independent project and is not affiliated with TradingView.
 
 ## Star History
 
@@ -257,20 +159,20 @@ launch.
 
 ## License
 
-DegenView is licensed under the [GNU General Public License v3.0 only](LICENSE)
+DegenView is licensed under the [GNU General Public License v3.0 only](LICENSE.md)
 (`GPL-3.0-only`).
 
 Copyright © 2026 Nico Oelgart.
 
 ### Fonts
 
-Two fonts are built into DegenView. They are not covered by the GPL: each keeps its own licence, the
+Two fonts are built into DegenView. They are not covered by the GPL. Each keeps its own licence, the
 [SIL Open Font License 1.1](https://openfontlicense.org), and neither declares a Reserved Font Name. The
-licence texts are in [`assets/fonts`](assets/fonts), and ship with every download (the macOS app's
-`Contents/Resources/Licenses`, the Flatpak's `share/licenses`, the Linux and Windows archives, the Windows installer's `licenses`
-folder).
+licence texts are in [`assets/fonts`](assets/fonts) and ship with every download (the macOS app's
+`Contents/Resources/Licenses`, the Flatpak's `share/licenses`, the Linux and Windows archives and the
+Windows installer's `licenses` folder).
 
-- **JetBrains Mono** (the NL build, without ligatures; version 2.304), the Pine editor's default font.
+- **JetBrains Mono** (the NL build, without ligatures, version 2.304), the Pine editor's default font.
   Copyright 2020 The JetBrains Mono Project Authors, <https://github.com/JetBrains/JetBrainsMono>.
   [Licence](assets/fonts/OFL-JetBrainsMono.txt).
 - **Noto Sans Symbols 2** (a subset of version 2.008), the fallback for symbols such as ▲ ● ★ ✔ that other
