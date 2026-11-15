@@ -204,6 +204,10 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   `snapshot_tests.rs` compares both frames shape for shape and fails on drift.
 - `paint_snapshot` is `&self`, read-only: no Pine run, cache write, viewport/pane/replay change. New
   chart state it reads must be cloneable or `Arc`.
+- A snapshot that must differ from the live frame (other bars, frozen outputs, no indicators, a
+  restyled canvas) says so in `SnapshotInput.frame`; the live viewport is never moved to take one.
+  `view()` and `frame_layout()` read a `Framing` (viewport and script extent), never `self.viewport`
+  directly.
 - Frame frozen on the UI thread in one pass; saving, rasterizing, PNG, upload run on
   `work_queue::SNAPSHOTS`, handing clipboard/browser work back as an `Outcome`. Never report a copy,
   save or open before it happened.

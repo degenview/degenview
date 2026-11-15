@@ -573,6 +573,7 @@ fn plot_of(card: &ChartCard, candles: &[Kline]) -> (Rect, View) {
     let plot = Rect::from_min_size(Pos2::ZERO, vec2(600.0, 400.0));
     let view = card
         .view(
+            card.framing(),
             candles,
             (plot, 0.0),
             PriceScaleMode::Regular,
@@ -618,6 +619,7 @@ fn the_margins_follow_the_chart_whatever_its_type_or_scale() {
             let plot = Rect::from_min_size(Pos2::ZERO, vec2(600.0, 400.0));
             let view = card
                 .view(
+                    card.framing(),
                     &candles,
                     (plot, 0.0),
                     PriceScaleMode::from_log_flag(log),

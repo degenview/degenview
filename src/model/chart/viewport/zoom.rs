@@ -84,6 +84,29 @@ impl Slots {
     }
 }
 
+/// The slot coordinates `selection`'s left and right edges lie on, `None` when the rectangle is
+/// too narrow to be a choice or the geometry is unusable.
+fn slots_across(selection: &Selection, slots: Slots) -> Option<(f64, f64)> {
+    if !selection.spans_time() || !(slots.width.is_finite() && slots.width > 0.0) {
+        return None;
+    }
+    let (from, to) = (slots.at(selection.left), slots.at(selection.right));
+    (from.is_finite() && to.is_finite() && to > from).then_some((from, to))
+}
+
+/// The bars `from..to` hold, once the `reserved` free slots past the newest are taken off.
+fn bars_between((from, to): (f64, f64), reserved: usize) -> usize {
+    (to - from - reserved as f64).round().max(0.0) as usize
+}
+
+/// The offset that puts the middle of `from..to` in the middle of the `visible + reserved` slots
+/// the plot shows.
+fn centred_offset((from, to): (f64, f64), visible: usize, total: usize, reserved: usize) -> f64 {
+    let shown = (visible + reserved) as f64;
+    let right_edge = (from + to) / 2.0 + shown / 2.0;
+    (total + reserved) as f64 - right_edge
+}
+
 /// The bar count and offset that make `selection` fill the plot, over `total` bars with `reserved`
 /// free slots past the newest. `None` when the rectangle is too narrow or the geometry is unusable.
 ///
@@ -96,23 +119,42 @@ pub fn horizontal(
     total: usize,
     reserved: usize,
 ) -> Option<HorizontalViewport> {
-    if !selection.spans_time() || !(slots.width.is_finite() && slots.width > 0.0) {
-        return None;
-    }
-    let (from, to) = (slots.at(selection.left), slots.at(selection.right));
-    let across = to - from;
-    if !(from.is_finite() && to.is_finite() && across > 0.0) {
-        return None;
-    }
-    let wanted = (across - reserved as f64).round().max(0.0) as usize;
+    let across = slots_across(selection, slots)?;
     let mut view = HorizontalViewport::default();
-    view.set_visible(wanted, total);
-    // The plot shows `visible + reserved` slots; put the rectangle's centre in the middle of them.
-    let shown = (view.visible + reserved) as f64;
-    let right_edge = (from + to) / 2.0 + shown / 2.0;
-    view.right_offset = (total + reserved) as f64 - right_edge;
+    view.set_visible(bars_between(across, reserved), total);
+    view.right_offset = centred_offset(across, view.visible, total, reserved);
     view.clamp(total);
     Some(view)
+}
+
+/// The bar count and offset of a picture of `selection`: as many bars as the rectangle spans,
+/// however few, and the offset where the rectangle puts it, empty space past the newest bar
+/// included. A chart may not show fewer than [`MIN_VISIBLE`](super::MIN_VISIBLE) bars, a picture
+/// of a part of it may. At least one bar stays in view. `None` as for [`horizontal`], and for no
+/// bars.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the Screenshot Studio, next in this stack, is its caller"
+    )
+)]
+pub fn portion(
+    selection: &Selection,
+    slots: Slots,
+    total: usize,
+    reserved: usize,
+) -> Option<HorizontalViewport> {
+    let across = slots_across(selection, slots)?;
+    if total == 0 {
+        return None;
+    }
+    let visible = bars_between(across, reserved).max(1);
+    let offset = centred_offset(across, visible, total, reserved);
+    Some(HorizontalViewport {
+        visible,
+        right_offset: offset.clamp(1.0 - visible as f64, total as f64 - 1.0),
+    })
 }
 
 /// The price range between two prices read off the plot's price scale, for a manual range.

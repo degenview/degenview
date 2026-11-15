@@ -2,6 +2,8 @@
 //! plot area under the header.
 
 use super::*;
+use crate::model::chart::viewport::zoom::{self, Selection, Slots};
+use crate::model::chart::viewport::{HorizontalViewport, VerticalViewport};
 
 /// The geometry of the last frame, as a test needs it to aim a pointer.
 #[cfg(test)]
@@ -22,9 +24,125 @@ pub(super) struct View {
     pub(super) scale: PriceScale,
     pub(super) slot_width: f32,
     pub(super) lead: f32,
+    /// The free slots kept past the newest bar.
+    pub(super) reserved: usize,
+}
+
+/// What frames a view besides the data: the bars and prices the viewer chose, and how far the
+/// overlay scripts reach past them. The live chart frames itself ([`ChartCard::framing`]); a
+/// snapshot may be framed otherwise without touching the card.
+#[derive(Clone, Copy)]
+pub(super) struct Framing<'a> {
+    pub(super) viewport: &'a ChartViewport,
+    pub(super) extent: &'a OverlayExtent,
+}
+
+/// Where a view's bars and prices lie on its plot, in points: what a rectangle drawn over the
+/// plot is read against, and what a picture of the chart is framed by.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewGeometry {
+    /// The first bar drawn and one past the last.
+    pub start: usize,
+    pub end: usize,
+    /// Slots between the plot's left edge and the first drawn bar's own slot.
+    pub lead: f32,
+    /// Points per bar slot.
+    pub slot_width: f32,
+    /// The prices at the bottom and top of the price scale.
+    pub minimum: f64,
+    pub maximum: f64,
+    pub logarithmic: bool,
+    pub plot: Rect,
+    /// What the header covers of the plot's top: the price scale starts below it.
+    pub top_inset: f32,
+    /// The bars the chart holds, and the free slots kept past the newest.
+    pub total: usize,
+    pub reserved: usize,
+}
+
+impl ViewGeometry {
+    fn slots(&self) -> Slots {
+        Slots {
+            first: self.start as f64 - f64::from(self.lead),
+            left: f64::from(self.plot.left()),
+            width: f64::from(self.slot_width),
+        }
+    }
+
+    fn scale(&self) -> PriceScale {
+        PriceScale {
+            minimum: self.minimum,
+            maximum: self.maximum,
+            top: self.plot.top() + self.top_inset,
+            height: (self.plot.height() - self.top_inset).max(1.0),
+            logarithmic: self.logarithmic,
+            mode: PriceScaleMode::Regular,
+            reference: None,
+        }
+    }
+
+    /// The prices between `selection`'s top and bottom, if it is tall enough to choose any and
+    /// they can be drawn.
+    pub(super) fn zoomed_prices(&self, selection: &Selection) -> Option<PriceRange> {
+        let scale = self.scale();
+        selection
+            .spans_price()
+            .then(|| {
+                zoom::price_range(
+                    scale.price(selection.top),
+                    scale.price(selection.bottom),
+                    self.logarithmic,
+                )
+            })
+            .flatten()
+    }
+
+    /// The bars across `selection`, kept to a chart's own limits (what Zoom In shows). `None` for
+    /// a rectangle too narrow to be a choice.
+    pub(super) fn zoomed_bars(&self, selection: &Selection) -> Option<HorizontalViewport> {
+        zoom::horizontal(selection, self.slots(), self.total, self.reserved)
+    }
+
+    /// The viewport that shows exactly what `selection` (a rectangle on the plot) covers: the bars
+    /// across it, however few, and the prices between its edges as a manual range (autoscale when
+    /// it is too flat to choose any). Reads, never changes, the chart it was measured on.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the Screenshot Studio, next in this stack, is its caller"
+        )
+    )]
+    pub fn viewport_for(&self, selection: &Selection) -> Option<ChartViewport> {
+        let horizontal = zoom::portion(selection, self.slots(), self.total, self.reserved)?;
+        Some(ChartViewport {
+            horizontal,
+            vertical: VerticalViewport {
+                manual: self.zoomed_prices(selection),
+                ..VerticalViewport::default()
+            },
+        })
+    }
 }
 
 impl View {
+    /// Where this view lies on `plot`.
+    pub(super) fn geometry(&self, plot: Rect, total: usize) -> ViewGeometry {
+        ViewGeometry {
+            start: self.start,
+            end: self.end,
+            lead: self.lead,
+            slot_width: self.slot_width,
+            minimum: self.scale.minimum,
+            maximum: self.scale.maximum,
+            logarithmic: self.scale.logarithmic,
+            plot,
+            top_inset: self.scale.top - plot.top(),
+            total,
+            reserved: self.reserved,
+        }
+    }
+
     pub(super) fn projection<'a>(
         &'a self,
         plot: Rect,
@@ -61,15 +179,24 @@ impl ChartCard {
         )
     }
 
-    /// Visible range and price scale for the current pan/zoom, if anything is shown.
+    /// The live chart's own framing: its viewport and the extent its scripts last reached.
+    pub(super) fn framing(&self) -> Framing<'_> {
+        Framing {
+            viewport: &self.viewport,
+            extent: &self.script_extent,
+        }
+    }
+
+    /// Visible range and price scale for `framing`'s pan/zoom, if anything is shown.
     pub(super) fn view(
         &self,
+        framing: Framing,
         candles: &[Kline],
         (plot, top_inset): (Rect, f32),
         mode: PriceScaleMode,
         chart_type: ChartType,
     ) -> Option<View> {
-        let window = self.window(candles.len());
+        let window = self.window(framing, candles.len());
         let (start, end) = (window.start, window.end);
         let shown = &candles[start..end];
         if shown.is_empty() {
@@ -100,7 +227,7 @@ impl ChartCard {
             high = high.max(to);
         }
         // Whatever an overlay script draws has to fit too.
-        for value in &self.script_extent.values {
+        for value in &framing.extent.values {
             low = low.min(*value);
             high = high.max(*value);
         }
@@ -109,7 +236,7 @@ impl ChartCard {
         let logarithmic = mode.is_logarithmic() && chart::price_scale::can_draw_logarithmic(low);
         let (minimum, maximum) =
             chart::canvas::price_range(low, high, self.appearance.canvas.margins, logarithmic);
-        let PriceRange { minimum, maximum } = self
+        let PriceRange { minimum, maximum } = framing
             .viewport
             .vertical
             .resolve(PriceRange::new(minimum, maximum), logarithmic);
@@ -128,27 +255,28 @@ impl ChartCard {
                 // reference and the axis follows; the map itself does not change.
                 reference,
             },
-            slot_width: self.slot_width(plot),
+            slot_width: self.slot_width(framing, plot),
             lead: window.lead,
+            reserved: self.reserved_slots_with(framing.extent),
         })
     }
 
     /// The open times of the first and last candle the plot shows: what `chart.left_visible_bar_time`
     /// and `chart.right_visible_bar_time` read. A run that reads them is given this range.
     pub(crate) fn visible_open_range(&self, candles: &[Kline]) -> Option<(i64, i64)> {
-        let window = self.window(candles.len());
+        let window = self.window(self.framing(), candles.len());
         candles
             .get(window.start..window.end)
             .and_then(|visible| Some((visible.first()?.open_time, visible.last()?.open_time)))
     }
 
     /// The bars the plot shows out of `len`, and where they sit in its slots.
-    fn window(&self, len: usize) -> Window {
+    fn window(&self, framing: Framing, len: usize) -> Window {
         chart::canvas::visible_window(
             len,
-            self.viewport.horizontal.visible,
-            self.viewport.horizontal.right_offset,
-            self.reserved_slots(),
+            framing.viewport.horizontal.visible,
+            framing.viewport.horizontal.right_offset,
+            self.reserved_slots_with(framing.extent),
         )
     }
 
@@ -193,8 +321,10 @@ impl ChartCard {
 
     /// The width of one candle slot: the plot shared by the visible candles and the free slots an
     /// overlay script reserves past the last one.
-    pub(super) fn slot_width(&self, plot: Rect) -> f32 {
-        plot.width() / (self.viewport.horizontal.visible + self.reserved_slots()) as f32
+    pub(super) fn slot_width(&self, framing: Framing, plot: Rect) -> f32 {
+        plot.width()
+            / (framing.viewport.horizontal.visible + self.reserved_slots_with(framing.extent))
+                as f32
     }
 
     /// Back to the newest bars at the natural scale, autoscale on.

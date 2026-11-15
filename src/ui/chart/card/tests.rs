@@ -132,6 +132,7 @@ fn slots_an_overlay_script_reserves_past_the_last_bar_narrow_every_slot_and_exte
     let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(550.0, 200.0));
     let alone = card
         .view(
+            card.framing(),
             &candles,
             (plot, 0.0),
             PriceScaleMode::Regular,
@@ -145,6 +146,7 @@ fn slots_an_overlay_script_reserves_past_the_last_bar_narrow_every_slot_and_exte
     };
     let with_script = card
         .view(
+            card.framing(),
             &candles,
             (plot, 0.0),
             PriceScaleMode::Regular,
@@ -165,6 +167,7 @@ fn the_price_scale_starts_below_the_header_while_the_plot_reaches_the_top() {
     let plot = Rect::from_min_size(Pos2::new(0.0, 10.0), Vec2::new(500.0, 300.0));
     let bare = card
         .view(
+            card.framing(),
             &candles,
             (plot, 0.0),
             PriceScaleMode::Regular,
@@ -173,6 +176,7 @@ fn the_price_scale_starts_below_the_header_while_the_plot_reaches_the_top() {
         .expect("view");
     let covered = card
         .view(
+            card.framing(),
             &candles,
             (plot, HEADER_HEIGHT),
             PriceScaleMode::Regular,
@@ -202,6 +206,7 @@ fn the_price_range_covers_every_line_not_only_the_candles() {
     let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0));
     let alone = card
         .view(
+            card.framing(),
             &candles,
             (plot, 0.0),
             PriceScaleMode::Regular,
@@ -213,6 +218,7 @@ fn the_price_range_covers_every_line_not_only_the_candles() {
     card.set_series(two_lines());
     let with_lines = card
         .view(
+            card.framing(),
             &candles,
             (plot, 0.0),
             PriceScaleMode::Regular,

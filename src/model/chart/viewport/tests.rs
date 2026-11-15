@@ -582,6 +582,88 @@ mod zoom_to_a_rectangle {
     }
 
     #[test]
+    fn a_portion_shows_the_bars_across_it_however_few_and_keeps_the_middle() {
+        let view = HorizontalViewport::default();
+        let total = 1000;
+        let slots = slots_of(&view, total, 0);
+        // 20 points wide is 4 bars of 5 points: a chart grows that to 20, a picture keeps it.
+        let s = Selection::between((300.0, 60.0), (320.0, 200.0), PLOT);
+        let portion = zoom::portion(&s, slots, total, 0).expect("a portion");
+        assert_eq!(portion.visible, 4);
+        let (first, last) = edges(&portion, total, 0);
+        let centre = (slots.at(s.left) + slots.at(s.right)) / 2.0;
+        assert!(((first + last) / 2.0 - centre).abs() < 1e-6);
+        assert_eq!(zoom::horizontal(&s, slots, total, 0).unwrap().visible, 20);
+    }
+
+    #[test]
+    fn a_portion_agrees_with_a_zoom_where_the_chart_may_show_that_many_bars() {
+        for (offset, reserved) in [(0.0, 10), (250.0, 0), (-6.5, 4)] {
+            let view = HorizontalViewport {
+                visible: 120,
+                right_offset: offset,
+            };
+            let total = 1000;
+            let slots = slots_of(&view, total, reserved);
+            let s = Selection::between((220.0, 60.0), (520.0, 200.0), PLOT);
+            assert_eq!(
+                zoom::portion(&s, slots, total, reserved),
+                zoom::horizontal(&s, slots, total, reserved),
+                "offset {offset}, reserved {reserved}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_portion_may_lie_in_the_empty_space_past_the_newest_bar() {
+        let view = HorizontalViewport {
+            visible: 40,
+            right_offset: -4.0,
+        };
+        let total = 300;
+        let slots = slots_of(&view, total, 5);
+        let s = Selection::between((500.0, 60.0), (700.0, 200.0), PLOT);
+        let portion = zoom::portion(&s, slots, total, 5).expect("a portion");
+        assert!(portion.right_offset < 0.0, "{}", portion.right_offset);
+        let (first, last) = edges(&portion, total, 5);
+        assert!((first - slots.at(s.left)).abs() <= 0.5 + 1e-9);
+        assert!((last - slots.at(s.right)).abs() <= 0.5 + 1e-9);
+    }
+
+    #[test]
+    fn a_portion_always_leaves_a_bar_to_draw() {
+        let slots = Slots {
+            first: 0.0,
+            left: PLOT.0 as f64,
+            width: 10.0,
+        };
+        // Far past the newest bar, and far before the oldest.
+        let s = Selection::between((100.0, 60.0), (700.0, 200.0), PLOT);
+        for first in [-100_000.0, 100_000.0] {
+            let portion = zoom::portion(&s, Slots { first, ..slots }, 50, 3).expect("a portion");
+            let window = visible_window(50, portion.visible, portion.right_offset, 3);
+            assert!(window.count() >= 1, "first {first}: {portion:?}");
+        }
+        let s = Selection::between((200.0, 60.0), (400.0, 200.0), PLOT);
+        assert_eq!(zoom::portion(&s, slots, 0, 0), None, "no bars, no portion");
+    }
+
+    #[test]
+    fn a_portion_refuses_what_a_zoom_refuses() {
+        let slots = slots_of(&HorizontalViewport::default(), 1000, 10);
+        let thin = Selection::between((300.0, 100.0), (300.0 + MIN_SELECTION - 0.5, 300.0), PLOT);
+        assert_eq!(zoom::portion(&thin, slots, 1000, 10), None);
+        let s = Selection::between((200.0, 60.0), (400.0, 200.0), PLOT);
+        let flat = |first, width| Slots {
+            first,
+            left: 100.0,
+            width,
+        };
+        assert_eq!(zoom::portion(&s, flat(0.0, 0.0), 10, 0), None);
+        assert_eq!(zoom::portion(&s, flat(f64::NAN, 5.0), 10, 0), None);
+    }
+
+    #[test]
     fn a_price_range_is_sorted_and_valid_for_the_scale() {
         assert_eq!(
             zoom::price_range(110.0, 90.0, false),

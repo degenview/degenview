@@ -166,6 +166,7 @@ impl ChartCard {
     pub(super) fn frame_layout<'a>(
         &self,
         data: &FrameData<'a>,
+        framing: Framing,
         rect: Rect,
         top_inset: f32,
         painter: &egui::Painter,
@@ -246,7 +247,13 @@ impl ChartCard {
                     .x
             };
             let mut widest = 0.0f32;
-            if let Some(view) = self.view(bars, (provisional, top_inset), scale_mode, chart_type) {
+            if let Some(view) = self.view(
+                framing,
+                bars,
+                (provisional, top_inset),
+                scale_mode,
+                chart_type,
+            ) {
                 let scale = &view.scale;
                 let budget =
                     chart::canvas::tick_budget(provisional.height(), style.price_tick_spacing());
@@ -365,7 +372,16 @@ impl ChartCard {
             })
             .collect();
 
-        let ticks = chart::canvas::time_ticks(view.start, shown.len(), slot_width);
+        // Every time label is as wide: the same eleven monospaced characters.
+        let label_width = painter
+            .layout_no_wrap(
+                "00-00 00:00".to_owned(),
+                style.time_font(),
+                style.text_color,
+            )
+            .size()
+            .x;
+        let ticks = chart::canvas::time_ticks(view.start, shown.len(), slot_width, label_width);
         let tick_xs: Vec<f32> = ticks.iter().map(|index| x_for(*index)).collect();
         self.draw_grid(&main_painter, plot, rect, scale, style, &tick_xs);
         canvas::paint_scale_lines(

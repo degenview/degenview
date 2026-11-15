@@ -131,10 +131,11 @@ use live_overlays::LiveOverlays;
 use price_scale::tick_step;
 pub(in crate::ui) use price_scale::{AxisTicks, PriceScale};
 use scripts::{draw_script_pane, pane_labels};
-pub use snapshot::{SnapshotError, SnapshotInput};
+pub use snapshot::{SnapshotError, SnapshotFrame, SnapshotInput};
 #[cfg(test)]
 use view::Probe;
-use view::View;
+pub use view::ViewGeometry;
+use view::{Framing, View};
 
 /// What a chart reports back while drawing, plus whether its plot was clicked.
 #[derive(Clone, Debug, Default)]
@@ -502,8 +503,12 @@ impl ChartCard {
     /// The slots past the newest bar the plot keeps free: the right margin, or more where an
     /// overlay script draws further.
     fn reserved_slots(&self) -> usize {
-        usize::from(self.appearance.canvas.margins.sanitized().right)
-            .max(self.script_extent.future_bars)
+        self.reserved_slots_with(&self.script_extent)
+    }
+
+    /// [`Self::reserved_slots`] for scripts that reach as far as `extent`.
+    fn reserved_slots_with(&self, extent: &OverlayExtent) -> usize {
+        usize::from(self.appearance.canvas.margins.sanitized().right).max(extent.future_bars)
     }
 
     pub fn chart_style_mut(&mut self) -> &mut ChartStyle {
@@ -753,6 +758,8 @@ mod canvas_tests;
 #[cfg(test)]
 mod overlay_tests;
 
+#[cfg(test)]
+mod snapshot_override_tests;
 #[cfg(test)]
 mod snapshot_tests;
 

@@ -14,6 +14,8 @@ use super::*;
 use crate::model::chart::snapshot::SnapshotDimensions;
 use crate::model::{Drawing, Tool};
 use crate::service::snapshot::raster::Scene;
+use crate::ui::chart::canvas::Restyle;
+use crate::ui::chart::snapshot_scene::{self, Images};
 
 /// What a snapshot is made from besides the card itself: the data the workspace holds.
 pub struct SnapshotInput<'a> {
@@ -27,11 +29,59 @@ pub struct SnapshotInput<'a> {
     /// The drawings whose note is open on the chart (a pin's).
     pub open_notes: &'a [u64],
     /// The pictures the drawings show, decoded: a snapshot has no store to ask for them.
-    pub images: Option<&'a std::collections::HashMap<String, Arc<egui::ColorImage>>>,
+    pub images: Option<&'a Images>,
     pub hide_all_drawings: bool,
     pub replay_active: bool,
     /// Draw the paper-trading orders and positions, if the chart shows them.
     pub include_trading: bool,
+    pub frame: SnapshotFrame<'a>,
+}
+
+/// Where a snapshot departs from the live frame. `Default` departs nowhere. Everything here is
+/// the snapshot's alone: it is drawn instead of the card's own state, which it never changes.
+#[derive(Clone)]
+pub struct SnapshotFrame<'a> {
+    /// The bars and prices to draw instead of the card's own (a manual price range wins, as on
+    /// the chart). It may show fewer bars than a chart ever does.
+    pub viewport: Option<ChartViewport>,
+    /// The scripts' outputs as they were frozen, instead of their last runs now.
+    pub outputs: Option<&'a FrozenOutputs>,
+    /// Draw the built-in indicators and the scripts' outputs, panes included. Off, the price
+    /// chart takes the whole height.
+    pub include_indicators: bool,
+    pub restyle: Restyle,
+}
+
+impl Default for SnapshotFrame<'_> {
+    fn default() -> Self {
+        Self {
+            viewport: None,
+            outputs: None,
+            include_indicators: true,
+            restyle: Restyle::default(),
+        }
+    }
+}
+
+/// What the scripts' last runs drew, kept as it was: a snapshot given these draws them whatever
+/// the scripts do afterwards. Cheap to clone (the outputs are shared).
+#[derive(Clone)]
+pub struct FrozenOutputs(Vec<Placed>);
+
+/// Where a snapshot puts its parts, in points from the corner of the frame it is drawn in: what
+/// a caller needs to frame a picture of it, read the way [`ChartCard::paint_snapshot`] lays it out.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the Screenshot Studio, next in this stack, is its caller"
+    )
+)]
+pub struct SnapshotGeometry {
+    pub view: ViewGeometry,
+    pub axis_width: f32,
+    pub time_axis_height: f32,
 }
 
 /// How many of each visual a script's last run put on the chart.
@@ -137,13 +187,27 @@ impl ChartCard {
         self.pine.last_outputs(&self.instances)
     }
 
-    /// Paints the chart into `rect` of `painter`, as it stands.
-    pub fn paint_snapshot(
+    /// The scripts' last runs, frozen for a snapshot to draw whatever happens to them next.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the Screenshot Studio, next in this stack, is its caller"
+        )
+    )]
+    pub fn snapshot_outputs(&self) -> FrozenOutputs {
+        FrozenOutputs(self.last_pine_outputs())
+    }
+
+    /// Lays the snapshot out in `rect` of `painter` and hands what it finds to `then`, the one
+    /// path painting and measuring share, so a measure is what the paint does.
+    fn with_snapshot_frame<R>(
         &self,
         painter: &egui::Painter,
         rect: Rect,
         input: &SnapshotInput,
-    ) -> Result<(), SnapshotError> {
+        then: impl FnOnce(&FrameData, &FrameLayout, &View) -> R,
+    ) -> Result<R, SnapshotError> {
         let candles = input.candles;
         if candles.is_empty() || rect.width() < 1.0 || rect.height() < 1.0 {
             return Err(SnapshotError::Empty);
@@ -153,8 +217,8 @@ impl ChartCard {
         {
             return Err(SnapshotError::Unsupported);
         }
-        let style = CanvasStyle::resolve(&self.appearance.canvas);
-        canvas::paint_background(painter, rect, style.fill);
+        let frame = &input.frame;
+        let style = CanvasStyle::resolve(&self.appearance.canvas).restyled(frame.restyle);
         let line = source.is_line_chart();
         let chart_type = if line {
             ChartType::Candles
@@ -165,7 +229,22 @@ impl ChartCard {
         let bars: &[Kline] = constructed
             .as_ref()
             .map_or(candles, |built| built.klines.as_slice());
-        let outputs = split_forced_overlays(self.last_pine_outputs(), line);
+        let outputs = match (frame.include_indicators, frame.outputs) {
+            (false, _) => Vec::new(),
+            (true, Some(frozen)) => split_forced_overlays(frozen.0.clone(), line),
+            (true, None) => split_forced_overlays(self.last_pine_outputs(), line),
+        };
+        let indicators = if frame.include_indicators {
+            *input.indicators
+        } else {
+            IndicatorConfig::default()
+        };
+        let viewport = frame.viewport.as_ref().unwrap_or(&self.viewport);
+        let extent = self.extent_of(viewport, &outputs, line, bars.len());
+        let framing = Framing {
+            viewport,
+            extent: &extent,
+        };
         let data = FrameData {
             symbol: input.symbol,
             source,
@@ -176,39 +255,84 @@ impl ChartCard {
             bars,
             constructed: constructed.as_deref(),
             outputs: &outputs,
-            indicators: input.indicators,
+            indicators: &indicators,
         };
-        let layout = self.frame_layout(&data, rect, 0.0, painter, &style);
-        let Some(view) = self.view(bars, (layout.plot, 0.0), input.scale_mode, chart_type) else {
-            return Err(SnapshotError::Empty);
-        };
-        let mut layer = DrawingLayer::default();
-        layer.set_open_notes(input.open_notes);
-        let mut drawing = DrawingFrame::new(input.drawings, Tool::Cursor, None, 1).with_view(
-            self.timeframe.unwrap_or(Timeframe::Day),
-            input.hide_all_drawings,
-        );
-        let mut overlays = SnapshotOverlays {
-            card: self,
-            painter: painter.clone(),
-            include_trading: input.include_trading,
-        };
-        self.paint_frame(
-            painter,
-            &data,
-            &layout,
-            &view,
-            &mut layer,
-            &mut drawing,
-            &Decor {
-                chart_id: 0,
-                replay_active: input.replay_active,
-                time_lock: false,
-                crosshair: None,
-            },
-            &mut overlays,
-        );
-        Ok(())
+        let layout = self.frame_layout(&data, framing, rect, 0.0, painter, &style);
+        let view = self
+            .view(
+                framing,
+                bars,
+                (layout.plot, 0.0),
+                input.scale_mode,
+                chart_type,
+            )
+            .ok_or(SnapshotError::Empty)?;
+        Ok(then(&data, &layout, &view))
+    }
+
+    /// Paints the chart into `rect` of `painter`, as it stands.
+    pub fn paint_snapshot(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        input: &SnapshotInput,
+    ) -> Result<(), SnapshotError> {
+        self.with_snapshot_frame(painter, rect, input, |data, layout, view| {
+            canvas::paint_background(painter, rect, layout.style.fill);
+            let mut layer = DrawingLayer::default();
+            layer.set_open_notes(input.open_notes);
+            let mut drawing = DrawingFrame::new(input.drawings, Tool::Cursor, None, 1).with_view(
+                self.timeframe.unwrap_or(Timeframe::Day),
+                input.hide_all_drawings,
+            );
+            let mut overlays = SnapshotOverlays {
+                card: self,
+                painter: painter.clone(),
+                include_trading: input.include_trading,
+            };
+            self.paint_frame(
+                painter,
+                data,
+                layout,
+                view,
+                &mut layer,
+                &mut drawing,
+                &Decor {
+                    chart_id: 0,
+                    replay_active: input.replay_active,
+                    time_lock: false,
+                    crosshair: None,
+                },
+                &mut overlays,
+            );
+        })
+    }
+
+    /// Where [`Self::paint_snapshot`] would put the chart in a frame of `size` points at
+    /// `pixels_per_point`. Text is measured at that scale, so ask at the scale the picture will
+    /// be drawn at. Paints and changes nothing.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the Screenshot Studio, next in this stack, is its caller"
+        )
+    )]
+    pub fn snapshot_geometry(
+        &self,
+        input: &SnapshotInput,
+        size: Vec2,
+        pixels_per_point: f32,
+    ) -> Result<SnapshotGeometry, SnapshotError> {
+        snapshot_scene::measure(size, pixels_per_point, |painter, rect| {
+            self.with_snapshot_frame(painter, rect, input, |data, layout, view| {
+                SnapshotGeometry {
+                    view: view.geometry(layout.plot, data.bars.len()),
+                    axis_width: layout.rect.right() - layout.plot.right(),
+                    time_axis_height: layout.style.time_axis_height(),
+                }
+            })
+        })
     }
 
     /// The chart tessellated for a `dimensions` image: painted on a context of its own at the
@@ -219,46 +343,12 @@ impl ChartCard {
         dimensions: SnapshotDimensions,
         background: Color32,
     ) -> Result<Scene, SnapshotError> {
-        let scale = dimensions.pixels_per_point;
-        let size = Vec2::new(
-            dimensions.width as f32 / scale,
-            dimensions.height as f32 / scale,
-        );
-        let ctx = egui::Context::default();
-        theme::install_offscreen(&ctx);
-        if let Some(images) = input.images {
-            crate::service::annotation::asset_host::freeze(
-                &ctx,
-                crate::service::annotation::asset_host::FrozenAssets(Arc::new(images.clone())),
-            );
-        }
-        let raw = egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
-            viewports: std::iter::once((
-                egui::ViewportId::ROOT,
-                egui::ViewportInfo {
-                    native_pixels_per_point: Some(scale),
-                    ..Default::default()
-                },
-            ))
-            .collect(),
-            ..Default::default()
-        };
-        let mut result = Ok(());
-        let mut output = ctx.run_ui(raw, |ui| {
-            let rect = Rect::from_min_size(Pos2::ZERO, size);
-            result = self.paint_snapshot(&ui.painter_at(rect), rect, input);
-        });
-        if let Err(error) = result {
-            output.textures_delta.clear();
-            return Err(error);
-        }
-        Ok(Scene::new(
-            ctx.tessellate(output.shapes, output.pixels_per_point),
-            output.textures_delta,
-            output.pixels_per_point,
+        snapshot_scene::render(
             (dimensions.width, dimensions.height),
+            dimensions.pixels_per_point,
             background,
-        ))
+            input.images,
+            |painter, rect| self.paint_snapshot(painter, rect, input),
+        )
     }
 }

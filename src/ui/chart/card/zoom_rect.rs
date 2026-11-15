@@ -11,7 +11,7 @@ use eframe::egui::{self, CursorIcon, Painter, Pos2, Rect, Response, Stroke, Stro
 use super::navigation::{Region, Regions};
 use super::{ChartCard, View};
 use crate::model::chart::viewport::ChartViewport;
-use crate::model::chart::viewport::zoom::{self, MAX_BACK, Selection, Slots};
+use crate::model::chart::viewport::zoom::{MAX_BACK, Selection};
 use crate::ui::kit;
 
 /// The rectangle being dragged.
@@ -268,27 +268,11 @@ impl ChartCard {
     /// rectangle too narrow to be a choice changes nothing (the tool stays armed); one too flat
     /// zooms the time axis only, and so does one whose prices cannot be drawn.
     fn apply_zoom(&mut self, selection: &Selection, view: &View, plot: Rect, total: usize) {
-        let slots = Slots {
-            first: view.start as f64 - f64::from(view.lead),
-            left: f64::from(plot.left()),
-            width: f64::from(view.slot_width),
-        };
-        let Some(horizontal) = zoom::horizontal(selection, slots, total, self.reserved_slots())
-        else {
+        let geometry = view.geometry(plot, total);
+        let Some(horizontal) = geometry.zoomed_bars(selection) else {
             return;
         };
-        let prices = selection
-            .spans_price()
-            .then(|| {
-                zoom::price_range(
-                    view.scale.price(selection.top),
-                    view.scale.price(selection.bottom),
-                    view.scale.logarithmic,
-                )
-            })
-            .flatten();
-
-        self.commit_zoom(horizontal, prices);
+        self.commit_zoom(horizontal, geometry.zoomed_prices(selection));
     }
 
     /// Applies a zoom: the view it leaves is Zoom out's newest entry and the workspace's undo step.

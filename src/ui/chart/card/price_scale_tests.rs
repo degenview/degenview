@@ -11,8 +11,14 @@ fn plot() -> Rect {
 }
 
 fn view(card: &ChartCard, candles: &[Kline], mode: PriceScaleMode) -> View {
-    card.view(candles, (plot(), 0.0), mode, ChartType::Candles)
-        .expect("a view")
+    card.view(
+        card.framing(),
+        candles,
+        (plot(), 0.0),
+        mode,
+        ChartType::Candles,
+    )
+    .expect("a view")
 }
 
 fn close(left: f64, right: f64) -> bool {
