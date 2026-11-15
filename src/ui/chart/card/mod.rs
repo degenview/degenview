@@ -664,10 +664,27 @@ impl ChartCard {
             opaque_rgba(self.appearance.bullish),
             opaque_rgba(self.appearance.bearish),
         );
+        let (up, down) = self.drawn_style().up_down(base);
+        (series::color(up), series::color(down))
+    }
+
+    /// The appearance's style with the type the chart is drawing.
+    fn drawn_style(&self) -> ChartStyle {
         let mut style = self.appearance.style;
         style.chart_type = self.drawn_type;
-        let (up, down) = style.up_down(base);
-        (series::color(up), series::color(down))
+        style
+    }
+
+    /// The colour the drawn type gives `bar`: the up or down colour by the reference it colours
+    /// from (the previous close, or the open), the same call the candle itself is painted by.
+    fn bar_color(&self, bar: &Kline, previous_close: Option<f64>) -> Color32 {
+        let (up, down) = self.up_down_colors();
+        let by_previous_close = self.drawn_style().colors_by_previous_close();
+        if chart::look::is_rising(bar, previous_close, by_previous_close) {
+            up
+        } else {
+            down
+        }
     }
 
     fn bullish_color(&self) -> Color32 {

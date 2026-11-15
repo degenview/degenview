@@ -637,6 +637,54 @@ fn the_margins_follow_the_chart_whatever_its_type_or_scale() {
 }
 
 #[test]
+fn the_scale_reaches_the_wicks_that_are_drawn_when_a_bar_stops_short_of_its_open() {
+    let card = ChartCard::default();
+    let bar = |open, high, low, close| Kline {
+        open,
+        high,
+        low,
+        close,
+        ..series(1)[0]
+    };
+    // Open above the high, close below the low: the wick is drawn out to both.
+    let shown = [
+        bar(110.0, 105.0, 95.0, 90.0),
+        bar(100.0, 101.0, 99.0, 100.0),
+    ];
+    assert_eq!(card.value_range(&shown, ChartType::Candles), (90.0, 110.0));
+    assert_eq!(card.value_range(&shown, ChartType::Bars), (90.0, 110.0));
+}
+
+#[test]
+fn the_last_price_follows_the_charts_reference_for_up_and_down() {
+    // The last bar closes above its open but below the bar before it.
+    let mut candles = series(40);
+    let before = candles[38].close;
+    let last = candles.last_mut().expect("a bar");
+    last.close = before - 1.0;
+    last.open = before - 3.0;
+    for (by_previous_close, rising) in [(true, false), (false, true)] {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.candles = candles.clone();
+        harness
+            .card
+            .chart_style_mut()
+            .candles
+            .color_by_previous_close = by_previous_close;
+        let (up, down) = (harness.card.bullish_color(), harness.card.bearish_color());
+        let (drawn, _) = harness.draw();
+        let tag = |color| {
+            drawn
+                .rects
+                .iter()
+                .any(|(rect, fill)| rect.min.x > SIZE.x - 90.0 && *fill == color)
+        };
+        assert_eq!(tag(up), rising, "by previous close: {by_previous_close}");
+        assert_eq!(tag(down), !rising, "by previous close: {by_previous_close}");
+    }
+}
+
+#[test]
 fn margins_never_change_what_is_drawn_or_scanned() {
     // The prices the scale spans differ; the candles do not.
     let candles = series(100);

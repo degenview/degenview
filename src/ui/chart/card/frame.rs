@@ -335,6 +335,7 @@ impl ChartCard {
             painter.with_clip_rect(Rect::NOTHING)
         };
         let synthetic_bars = data.synthetic();
+        let previous_close = view.start.checked_sub(1).map(|index| bars[index].close);
         let shown = &bars[view.start..view.end];
         let shown_synthetic = synthetic_bars.map(|all| &all[view.start..view.end]);
         let (scale, slot_width, lead) = (&view.scale, view.slot_width, view.lead);
@@ -445,7 +446,7 @@ impl ChartCard {
                 bars: shown,
                 synthetic: shown_synthetic,
                 box_size: data.constructed.and_then(|built| built.series.size),
-                previous_close: view.start.checked_sub(1).map(|index| bars[index].close),
+                previous_close,
                 slot_width,
                 x_for: &x_for,
                 scale,
@@ -645,6 +646,7 @@ impl ChartCard {
                 &CrosshairBars {
                     chart_type,
                     synthetic: shown_synthetic,
+                    previous_close,
                     source_candles: candles,
                     pine: pine_layers
                         .iter()

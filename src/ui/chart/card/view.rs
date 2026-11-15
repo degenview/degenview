@@ -322,11 +322,14 @@ impl ChartCard {
                         })
                 }
             },
-            _ => {
-                let (low, _) = reach(|bar| bar.low);
-                let (_, high) = reach(|bar| bar.high);
-                (low, high)
-            }
+            // The wicks are drawn to the open and close when a bar's own high and low stop short.
+            _ => shown
+                .iter()
+                .map(|bar| chart::look::drawn_extremes(bar.open, bar.high, bar.low, bar.close))
+                .filter(|(high, low)| high.is_finite() && low.is_finite())
+                .fold((f64::MAX, f64::MIN), |(low, high), drawn| {
+                    (low.min(drawn.1), high.max(drawn.0))
+                }),
         }
     }
 

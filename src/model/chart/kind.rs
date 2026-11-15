@@ -832,6 +832,23 @@ impl ChartStyle {
         })
     }
 
+    /// Whether the selected type colours a bar by its close against the previous close rather than
+    /// against its own open. Hollow Candles always do; their body fill follows the open.
+    pub fn colors_by_previous_close(&self) -> bool {
+        match self.chart_type {
+            ChartType::HollowCandles => true,
+            ChartType::Columns => self.columns.color_by_previous_close,
+            _ => self
+                .candle_settings()
+                .map(|settings| settings.color_by_previous_close)
+                .or_else(|| {
+                    self.bar_settings()
+                        .map(|settings| settings.color_by_previous_close)
+                })
+                .unwrap_or(false),
+        }
+    }
+
     /// The value of a bar the selected line-style, area, baseline or column type follows.
     pub fn value_source(&self) -> PriceSource {
         match self.chart_type {
@@ -946,6 +963,31 @@ mod tests {
             low,
             close,
             volume: 1.0,
+        }
+    }
+
+    #[test]
+    fn a_type_colours_by_the_previous_close_as_its_own_setting_says() {
+        let mut style = ChartStyle::default();
+        for kind in ChartType::ALL {
+            style.chart_type = kind;
+            assert_eq!(
+                style.colors_by_previous_close(),
+                matches!(kind, ChartType::HollowCandles | ChartType::Columns),
+                "{kind:?} by default"
+            );
+        }
+        style.candles.color_by_previous_close = true;
+        style.bars.color_by_previous_close = true;
+        style.columns.color_by_previous_close = false;
+        for (kind, expected) in [
+            (ChartType::Candles, true),
+            (ChartType::Bars, true),
+            (ChartType::Columns, false),
+            (ChartType::HeikinAshi, false),
+        ] {
+            style.chart_type = kind;
+            assert_eq!(style.colors_by_previous_close(), expected, "{kind:?}");
         }
     }
 

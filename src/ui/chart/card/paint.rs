@@ -411,11 +411,11 @@ impl ChartCard {
         if !plot.y_range().contains(y) {
             return;
         }
-        let color = if last.is_up() {
-            self.bullish_color()
-        } else {
-            self.bearish_color()
-        };
+        let previous_close = candles
+            .len()
+            .checked_sub(2)
+            .map(|before| candles[before].close);
+        let color = self.bar_color(last, previous_close);
         // Dotted, so the line that follows the price reads apart from the grid and the drawings.
         canvas::horizontal(
             painter,

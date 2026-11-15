@@ -38,7 +38,10 @@ Kagi, P&F: up/down; Baseline: its two lines; HLC Area: its high and low lines). 
 palette is no longer edited anywhere for these charts: it is only what an unset colour follows, so
 charts saved with custom colours look the same and the wells show them. What the chart draws beside
 its bars (volume bars, the last-price tag, trend-flip markers) follows the up/down colours of the
-type on screen (`ChartStyle::up_down`), falling back to the saved palette. A market drawn as a line
+type on screen (`ChartStyle::up_down`), falling back to the saved palette. The last-price tag and
+the crosshair readout pick the side the way the candle itself does (`ChartCard::bar_color`: the
+close against the previous close or the open, per `ChartStyle::colors_by_previous_close`); volume
+bars stay green when the close is at or above the open, TradingView's volume default. A market drawn as a line
 (prediction markets, CoinMarketCap) has no chart types and keeps its two "Line up / Line down" wells.
 The preview under the Style picker draws the selected type with the chart's own painter code over
 sample prices (a price-based type's box/reversal/range size is replaced by one that suits them).

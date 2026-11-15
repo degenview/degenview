@@ -113,7 +113,17 @@ impl ChartCard {
         // The header covers the plot's top, so the readouts start under it.
         let below_header = self.below_header(plot);
         let readout_bottom = if style.ohlc_readout {
-            self.draw_readout(painter, below_header, info, index, candle, show_volume)
+            let previous_close = match index.checked_sub(1) {
+                Some(before) => Some(candles[before].close),
+                None => info.previous_close,
+            };
+            self.draw_readout(
+                painter,
+                below_header,
+                info,
+                (index, candle, previous_close),
+                show_volume,
+            )
         } else {
             below_header.top() - 4.0
         };
@@ -151,15 +161,10 @@ impl ChartCard {
         painter: &egui::Painter,
         plot: Rect,
         info: &CrosshairBars,
-        index: usize,
-        candle: &Kline,
+        (index, candle, previous_close): (usize, &Kline, Option<f64>),
         show_volume: bool,
     ) -> f32 {
-        let color = if candle.is_up() {
-            self.bullish_color()
-        } else {
-            self.bearish_color()
-        };
+        let color = self.bar_color(candle, previous_close);
         let constructed = info.synthetic.and_then(|bars| bars.get(index));
         let price_format = self.appearance.price_format();
         let mut items = readout_items(info, constructed, candle, price_format);
@@ -219,6 +224,8 @@ impl ChartCard {
 pub(super) struct CrosshairBars<'a> {
     pub(super) chart_type: ChartType,
     pub(super) synthetic: Option<&'a [SyntheticBar]>,
+    /// The close of the bar before the first one in view, for colouring by the previous close.
+    pub(super) previous_close: Option<f64>,
     /// The market's own candles, whole.
     pub(super) source_candles: &'a [Kline],
     /// The scripts drawing on the chart: their `plotcandle()` and `plotbar()` values show too.
