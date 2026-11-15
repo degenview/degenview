@@ -45,6 +45,7 @@ fn gallery_of_the_studio_compositions() {
         for background in Background::ALL {
             let name = background.label().to_lowercase();
             let mut chart = StudioConfig::new(Area::FullChart);
+            chart.set_style(Style::Chart);
             chart.background = background;
             write(
                 &dir,
@@ -102,13 +103,11 @@ fn gallery_of_the_studio_layouts_and_portions() {
         _ => None,
     };
     let whole = layout(None);
-    write(
-        &dir,
-        "layout-chart",
-        &whole,
-        &cards,
-        &StudioConfig::new(Area::EntireLayout),
-    );
+    write(&dir, "layout-chart", &whole, &cards, &{
+        let mut config = StudioConfig::new(Area::EntireLayout);
+        config.set_style(Style::Chart);
+        config
+    });
     write(
         &dir,
         "layout-styled",
@@ -127,13 +126,11 @@ fn gallery_of_the_studio_layouts_and_portions() {
     // A portion of one chart, framed tighter and moved.
     let selection = Rect::from_min_max(pos2(220.0, 90.0), pos2(560.0, 330.0));
     let capture = Capture::Single(chart_capture(&left, 1, Some(selection)));
-    write(
-        &dir,
-        "portion-chart",
-        &capture,
-        &cards,
-        &StudioConfig::new(Area::Portion),
-    );
+    write(&dir, "portion-chart", &capture, &cards, &{
+        let mut config = StudioConfig::new(Area::Portion);
+        config.set_style(Style::Chart);
+        config
+    });
     let mut framed = styled(AspectRatio::Square, Background::Radiant);
     framed.area = Area::Portion;
     framed.set_style(Style::Styled);

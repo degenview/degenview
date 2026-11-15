@@ -70,8 +70,11 @@ pub(super) fn styled(size: AspectRatio, background: Background) -> StudioConfig 
     config
 }
 
+/// The chart as it is on screen: the Chart look, which the Studio no longer opens with.
 pub(super) fn plain() -> StudioConfig {
-    StudioConfig::new(Area::FullChart)
+    let mut config = StudioConfig::new(Area::FullChart);
+    config.set_style(Style::Chart);
+    config
 }
 
 /// Paints into a context of its own at `pixels_per_point`, on a screen of `size` points, and

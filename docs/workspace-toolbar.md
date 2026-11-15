@@ -66,7 +66,7 @@ snapshot menu, chart settings | layout menu.
 - **Snapshot** (camera, right of chart settings) opens the snapshot menu for the focused chart
   (`snapshot_menu::menu`). Both were buttons in each card's header, which now has neither. Its
   rows: Download image, Copy image, Select portion (a mode of the workspace, see
-  [Snapshots](snapshots.md#select-portion)), the hosted rows, then Configure Snapshots….
+  [Snapshots](snapshots.md#select-portion); a selection opens the [Studio](snapshots.md#the-studio-window)), the hosted rows, then Configure Snapshots….
 - The chart-type pick goes through `set_chart_type_for_mcp`, so the toolbar, the MCP tool and the
   menu share one rule.
 

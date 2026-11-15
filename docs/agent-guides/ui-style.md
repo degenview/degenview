@@ -75,9 +75,9 @@ content they act on.
 | Market logos (`ticker_icon`) | `ticker_icon`, `chart_icon`, `cached_logo` (the icon cache's logo in a circle, asking for it when missing), `round_image`, `monogram_with`, `source_badge` |
 | Tabs (`tab_bar`) | `tab_bar`, `tab_bar_slim`, `tab_bar_regular` |
 | Menus (`menu/`) | see Menus above, plus `menu_picker` |
-| Buttons (`button`) | `push_button`, `sheet_button`, `footer_button`, `large_button`, `large_prominent_button`, `tinted_button`, `cta_button`, `destructive_sheet_button`, `destructive_button` (red text), `open_button` (opens a URL), `hover_button` |
+| Buttons (`button`) | `push_button`, `sheet_button`, `footer_button`, `large_button`, `large_prominent_button`, `neutral_button` (32 pt: a near-white / near-black plate for a window's main action, or a quiet fill; `busy`), `tinted_button`, `cta_button`, `destructive_sheet_button`, `destructive_button` (red text), `open_button` (opens a URL), `hover_button` |
 | Fields (`field`) | `field` (labelled, with a reveal eye for secrets), `search_field`, `plain_field`, `input_frame`, `field_frame`, `FIELD_HEIGHT`; saving as typed: `Autosave` (`autosave`) |
-| Form controls (`form`) | `switch`, `paint_switch`, `segmented`, `stepper`, `color_well` |
+| Form controls (`form`) | `switch`, `paint_switch`, `segmented`, `segments` (per-choice tooltip and disabled, focus ring), `stepper`, `color_well`; by path `ruler` (a dial of sliding ticks) |
 | Cards (`card`) | `card_frame`, `CARD_RADIUS`, `paint_card_badge`, `paint_well`, `divider` (hairline across), `panel_divider` (a docked panel's separator line) |
 | Pages (`page`) | `empty_state`, `footer_bar`, `notice_card` |
 | Dialogs (`confirm`) | `confirm`, `alert`, `notice` over `kit::dialog` |

@@ -1,6 +1,6 @@
 use super::framing::{
-    Base, COARSE_STEP, Dial, FINE_STEP, Framing, MAX, MIN, POSITION_LIMIT, RUBBER_REACH, SNAP,
-    Step, resist,
+    Base, COARSE_STEP, Dial, FINE_STEP, Framing, KEY_BARS, KEY_PRICE, MAX, MIN, POSITION_LIMIT,
+    RUBBER_REACH, SNAP, Step, multiplier_text, resist,
 };
 use crate::model::chart::canvas::visible_window;
 use crate::model::chart::viewport::{ChartViewport, HorizontalViewport, PriceRange};
@@ -627,4 +627,117 @@ fn a_price_range_a_scale_cannot_use_leaves_the_price_axis_alone() {
     let base = base_over(PriceRange::new(-5.0, 5.0), true);
     let view = Framing::default().viewport(&base, PLOT);
     assert_eq!(view.vertical.manual, None);
+}
+
+// MARK: Dragging the preview and the keys
+
+#[test]
+fn dragging_right_shows_earlier_bars_by_the_distance_a_bar_is_wide() {
+    let base = base();
+    // 100 + 10 slots across 800 points: 800 / 110 points a slot.
+    let slot = 800.0 / 110.0;
+    let origin = Framing::default();
+    let got = origin.dragged(&base, PLOT, &origin, vec2(slot * 5.0, 0.0));
+    assert!(near(got.dx, -5.0), "{}", got.dx);
+    let got = origin.dragged(&base, PLOT, &origin, vec2(-slot * 3.0, 0.0));
+    assert!(near(got.dx, 3.0), "{}", got.dx);
+    assert_eq!(got.dy, 0.0);
+}
+
+#[test]
+fn a_bar_is_wider_on_screen_when_the_width_dial_is_up() {
+    let base = base();
+    let slot = 800.0 / 110.0;
+    let origin = framed(2.0, 1.0, 0.0, 0.0);
+    let got = origin.dragged(&base, PLOT, &origin, vec2(slot * 2.0, 0.0));
+    assert!(near(got.dx, -1.0), "{}", got.dx);
+}
+
+#[test]
+fn dragging_down_shows_higher_prices_by_the_share_of_the_plot_travelled() {
+    let base = base();
+    let origin = Framing::default();
+    // Half the plot's height is half the starting price range.
+    let got = origin.dragged(&base, PLOT, &origin, vec2(0.0, PLOT.y * 0.1));
+    assert!(near(got.dy, 0.1), "{}", got.dy);
+    let got = origin.dragged(&base, PLOT, &origin, vec2(0.0, -PLOT.y * 0.2));
+    assert!(near(got.dy, -0.2), "{}", got.dy);
+    // At twice the height the same travel is half the share.
+    let tall = framed(1.0, 2.0, 0.0, 0.0);
+    let got = tall.dragged(&base, PLOT, &tall, vec2(0.0, PLOT.y * 0.1));
+    assert!(near(got.dy, 0.05), "{}", got.dy);
+}
+
+#[test]
+fn a_drag_is_measured_from_where_it_began_not_from_the_last_frame() {
+    let base = base();
+    let origin = framed(1.0, 1.0, 4.0, 0.05);
+    let slot = 800.0 / 110.0;
+    let first = origin.dragged(&base, PLOT, &origin, vec2(slot * 2.0, 0.0));
+    let again = first.dragged(&base, PLOT, &origin, vec2(slot * 2.0, 0.0));
+    assert_eq!(first, again);
+    assert!(near(first.dx, 2.0));
+}
+
+#[test]
+fn a_drag_past_a_limit_gives_way_and_settles_on_it() {
+    let base = base();
+    let origin = Framing::default();
+    let pulled = origin.dragged(&base, PLOT, &origin, vec2(-100_000.0, 100_000.0));
+    assert!(pulled.dx > 20.0 && pulled.dy > 0.25, "{pulled:?}");
+    let settled = pulled.settle(&base, PLOT);
+    assert!(near(settled.dx, 20.0) && settled.dy == 0.25, "{settled:?}");
+}
+
+#[test]
+fn a_drag_ignores_a_pointer_that_is_not_a_number_and_keeps_the_dials() {
+    let base = base();
+    let origin = framed(1.4, 0.7, 3.0, 0.1);
+    let got = origin.dragged(&base, PLOT, &origin, vec2(f32::NAN, f32::INFINITY));
+    assert_eq!((got.width, got.height), (1.4, 0.7));
+    assert_eq!((got.dx, got.dy), (3.0, 0.1));
+    let flat = Vec2::ZERO;
+    let got = origin.dragged(&base, flat, &origin, vec2(10.0, 10.0));
+    assert!(got.dx.is_finite() && got.dy.is_finite());
+}
+
+#[test]
+fn an_arrow_moves_the_picture_a_bar_or_a_slice_of_the_prices() {
+    let base = base();
+    let origin = Framing::default();
+    let left = origin.nudged(&base, PLOT, -1, 0);
+    assert_eq!((left.dx, left.dy), (KEY_BARS, 0.0), "the picture goes left");
+    let right = origin.nudged(&base, PLOT, 1, 0);
+    assert_eq!(right.dx, -KEY_BARS);
+    let down = origin.nudged(&base, PLOT, 0, 1);
+    assert_eq!((down.dx, down.dy), (0.0, KEY_PRICE));
+    let up = down.nudged(&base, PLOT, 0, -1);
+    assert!(near(up.dy, 0.0));
+}
+
+#[test]
+fn an_arrow_stops_at_the_limit_without_a_rubber_band() {
+    let base = base();
+    let mut got = framed(1.0, 1.0, 19.5, 0.245);
+    got = got.nudged(&base, PLOT, -1, 1);
+    assert!(near(got.dx, 20.0) && near(got.dy, 0.25), "{got:?}");
+    let again = got.nudged(&base, PLOT, -1, 1);
+    assert_eq!(again, got);
+}
+
+#[test]
+fn a_dial_is_written_with_up_to_two_decimals_and_no_trailing_zeros() {
+    for (value, text) in [
+        (1.0, "1×"),
+        (1.28, "1.28×"),
+        (1.5, "1.5×"),
+        (0.75, "0.75×"),
+        (0.5, "0.5×"),
+        (2.0, "2×"),
+        (1.004, "1×"),
+        (1.2849, "1.28×"),
+        (f64::NAN, "1×"),
+    ] {
+        assert_eq!(multiplier_text(value), text, "{value}");
+    }
 }

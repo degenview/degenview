@@ -15,13 +15,6 @@ pub(crate) mod render_tests;
 pub mod replay;
 pub mod settings;
 pub mod shortcut;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the Studio window, which calls the composer, lands in the next PR of the stack"
-    )
-)]
 pub mod snapshot_studio;
 pub mod theme;
 pub mod trade;

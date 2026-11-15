@@ -230,13 +230,13 @@ ships no server; its tests use a mock server on this computer.
   browser. **The image is not attached to the post**, only its link: attaching needs an authorised
   X API integration, which this is not. No X account or credentials are requested.
 
-## Screenshot Studio (in progress)
+## Screenshot Studio
 
-The Studio restyles, reframes and exports a picture of a chart or of the whole layout. It is
-being built in stacked changes; this is what exists so far: **the composer** (`ui/snapshot_studio/`),
-which nothing draws on screen yet, and **Select portion** (the way in, below). The Studio window
-that opens on a selection follows. The composer is a presentation layer around `paint_snapshot` and
-never a second chart painter.
+The Studio restyles, reframes and exports a picture of a chart or of the whole layout. It opens
+from **Select portion** (the camera menu's third row, below) and is a window of the workspace
+(`ui/snapshot_studio/window/`, run by `workspace/chart/snapshot/studio/`) over a **composer**
+(`ui/snapshot_studio/compose/`), which is a presentation layer around `paint_snapshot` and never a
+second chart painter.
 
 ```
 Capture (frozen once)  +  StudioConfig  ─►  compose::paint ─► Scene ─► raster
@@ -333,7 +333,7 @@ into the next.
   `capture_scene` reads it (`ChartParts`, shared: candles cut at the replay, drawings, indicators, open
   notes, pictures, paper markers per the Settings, and the market's logo if the icon cache has it);
   drawings are left out while all are hidden. The result is `SnapshotState::studio`, a `StudioSession`
-  holding the `Capture` and `StudioConfig::new(Area::Portion)`; nothing draws it yet.
+  holding the `Capture` and a `StudioConfig` that opens the Studio window ([below](#the-studio-window)).
   - *Within one chart* (the selection overlaps only that chart's snapshot frame): `Capture::Single`, a
     `ChartCapture` with the selection counted from the frame's top-left corner as its portion. The
     snapshot frame is the body less the header strip, and a point of it is the same point of the
@@ -348,6 +348,110 @@ into the next.
     first. A selection that reaches no chart (only gaps and headers) says so.
 - **Not checked.** Everything above is driven headlessly (pointer events over the real grid, the
   overlay in pictures of both themes); not exercised in a real window.
+
+### The Studio window
+
+A modal sheet (`kit::sheet`) over the workspace: as wide as the screen allows up to 1120 pt and 92% of
+it, as tall as 92% of the screen up to 900 pt; the preview takes what the rest leaves (a chart
+window's smallest size, 960 × 620, leaves it about 280 pt). The window is immediate mode
+(`window::show(ctx, id, &Input) -> Output`): it is given the configuration, the latest picture and
+a few flags, keeps no state of its own (egui remembers focus and a drag in progress), and answers
+with `Action`s, which the workspace applies (`StudioSession`, `apply_studio_action`). Layout, top
+to bottom: the title and the close button; the **control groups**; the preview in a rounded well;
+the **Width** and **Height** rulers with **Reset view**; the footer.
+
+- **Area**: *Full chart* | *Portion*, and *Entire layout* between them when the workspace has more
+  than one market chart. *Portion* goes back to the charts to select again and keeps the look
+  (`SnapshotState::kept_look`: the next capture opens with it, the framing reset; a selection
+  that is cancelled forgets it). *Full chart* (the focused chart) and *Entire layout* take a new
+  frozen picture of the live workspace (`capture_full`, `capture_layout`) and reset the framing.
+- **Style**: *Chart* | *Styled*. A new Studio opens **Styled at 3:2** (Vela's documented images show
+  Styled; `StudioConfig::new`). Switching to Styled sets 3:2.
+- **Size**: Original, 16:9, 3:2, 1:1, 9:16; disabled in Chart (the control shows Original, dimmed,
+  with the tooltip "Size applies to the Styled look").
+- **Background**: six swatches painted from `background::swatch`, the composer's own definitions
+  (None a slashed circle, Dots a dotted disc, four gradient discs); the selected one has a ring;
+  hover says the name.
+- **Include**: three icon toggles. Indicators (disabled, "No indicators on this chart", when the
+  capture has none), Drawings (disabled, "No visible drawings") and the DegenView mark (only in
+  Styled, a toggle we added). Where a group row does not fit the window the groups wrap to a
+  second line (`toolbar::lines`).
+- **Rulers** (`kit::ruler`, generic): a pill of evenly spaced ticks that slides under a fixed
+  centre marker, the value written beside it (`1.28×`, `1×`; `framing::multiplier_text`). Dragging
+  the ticks LEFT raises the value; letting go within 0.04 of 1× lands on 1×. Focused: Right/Up
+  and Left/Down step 0.02, Page Up/Down 0.1, Home or 0 or a double-click put it at 1×. The widget
+  reports events and keeps no value; it is a slider to a screen reader. Disabled, with the tooltip
+  "Not available for several charts", for a layout.
+- **Preview**: the latest picture, fitted into the well, crisp (it is asked for at the well's size
+  in pixels, so a texel is a pixel). Dragging moves the picture inside the frame
+  (`Framing::dragged`: the pointer's travel in points of the image, measured from the framing when
+  the drag began; right shows earlier bars, down higher prices; the rubber band and the limits are
+  the model's, and release settles). When focused the arrows move it a bar or 2% of the shown
+  prices (`KEY_BARS`, `KEY_PRICE`), Home or 0 or a double-click put the position back (the dials
+  stay). A grab cursor. Nothing of it works on a layout, which says so on hover. The plot the drag
+  is measured against is an estimate (`composition::plot_in`: the capture's share of axes and
+  panes applied to the composition's body), since the real one is the card's to lay out when it
+  paints; it is within a bar or two.
+- **Reset view**: shown only while the framing is not the default; resets the dials and the
+  position and nothing else.
+- **Footer**: the summary (`Selected portion · Styled · 3,884 × 2,557 · PNG`) from the export's
+  real dimensions at the Settings' scale, or the reason there is none (`ComposeError::TooLarge`,
+  in the warning tone, with both buttons disabled); **Copy image** (our addition, secondary) and
+  **Download PNG** (`kit::neutral_button`: a near-white plate in the dark theme, near-black in the
+  light one; never the accent).
+- **Escape and the close button** close: the session, its textures and any picture in flight are
+  dropped. Closing never touches a chart. The Studio also ends when a chart it holds goes away. A
+  click on the dimmed area does not close it (a deviation from the other sheets: a stray click
+  should not lose a framing).
+- **The workspace waits.** While the Studio is open the shortcuts (the snapshot ones included,
+  Ctrl+K, undo, tool keys), the clipboard keys, Escape's own chain and the drawing layer's keys do
+  not act on the charts under it (`studio_open()` guards `handle_keyboard`, `handle_clipboard`,
+  `dialog_open` and the grid's Escape); the modal takes the pointer.
+
+#### The picture pipeline
+
+`ui/snapshot_studio/previews/` holds no workspace and no thread. Each frame the window reports the
+room the preview has in pixels; the workspace asks for a `Key` (the configuration, that room,
+and `coarse` while a drag or a ruler drag is under way). A change is a new **generation**. The scene
+is composed on the UI thread (`compose::scene(.., Target::Preview { max_px })`, 4 to 6 ms) and
+rasterized on `work_queue::SNAPSHOTS` through a `Pending`; **at most one raster job is in flight**,
+the newest wanted key waits and is started when it ends (**latest wins**, overtaken keys are never
+composed), and a picture is uploaded into one `TextureHandle` that every later picture replaces, so
+the old one stays on screen until a newer one arrives. A picture is shown if it is newer than the
+one shown, which means a drag is followed by the pictures that finish while it goes on and not only
+by its last; pictures of before a restart (the capture was replaced by Full chart or Entire layout)
+are dropped. While `coarse` the picture is drawn at half the pixels each way (about four times
+faster) and the full one follows the release. No Pine runs, nothing is fetched, nothing written.
+
+#### Export
+
+Download PNG and Copy image compose the scene at `Target::Export(scale)` and go through the same
+path as the camera menu: `launch` → `job::run(Download | CopyImage, &scene, &name, backend)` on
+the snapshot worker, the same `Running` state and `poll_snapshot` messages ("Saved …" and "Image
+copied" only after the job reports success, nothing for a cancelled Save panel, the existing
+error notice for a failure). The Studio stays open. The name is `snapshot::file_name(symbol,
+timeframe, now, offset)`, or `DegenView_Layout_<date>_<time>.png` for a layout. While an export of
+the Studio's runs both buttons are disabled and the one pressed shows the candle indicator. The result notice (`ui::chart::notice`) is drawn in the tooltip layer, above the window, so "Saved …" is not hidden by it. If the
+Studio is closed meanwhile the job finishes and its notice still shows (a decision: a file may
+well be written after a Save panel was answered).
+
+#### Verified and decided
+
+- Verified (from Vela's docs and images): the groups and their order, Chart and Styled with Size
+  disabled in Chart, the backgrounds and their names, Include's availability rules, the
+  dials' range, step, snap and reset, Reset view appearing after a change, the preview's limits and
+  rubber band, the footer's summary and a prominent download button.
+- Our additions: **Copy image** and the **DegenView mark** toggle.
+- Decided: the Studio opens Styled; a drag of the ruler to the left raises the value (documented
+  by Vela for the rulers; the preview is dragged like content, the other way); the arrow steps on
+  the preview; half-resolution pictures during a drag; the backdrop does not close the window; a
+  Studio that was closed keeps no look until the preferences land (a later change).
+- Shortcuts are unchanged: the Studio has none, and the existing ones wait while it is open.
+- **Not checked**: everything above was driven headlessly (pointer and keyboard events over a real
+  grid and the window in pictures of both themes at the default and the smallest window size);
+  nothing has been used in a real window, the Save panel and the clipboard were stood in for, and
+  the logo from the icon cache and a real layout of several charts were not seen in the window.
+
 
 ## Platforms
 
@@ -400,9 +504,16 @@ host.
 
 The Studio's composer is covered by `ui/snapshot_studio` tests (shape equality at two scales, pixel probes
 of every backdrop and the rounded corners, Include and Styled, dimensions, framing, layouts, no
-mutation). `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_studio -- --ignored` writes
+mutation), its window by `ui/snapshot_studio/window` (every control by pointer and keyboard
+events, disabled states and their tooltips, the smallest window) and by `kit::ruler`, its pipeline
+by `previews` (one job in flight, latest wins, restart) and its workspace side by
+`workspace/chart/snapshot/studio/tests.rs` (a real selection over a real grid, the areas, Portion
+and back, the picture arriving and replaced in one texture, half size during a drag, the export
+to a PNG of the footer's size, the live charts untouched, the keys waiting).
+`DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_studio -- --ignored` writes
 every backdrop in the Chart and Styled looks and every size on a dark and a light canvas, plus layouts and
-portions; `cargo test --release studio_cost -- --ignored --nocapture` prints stage timings (a
+portions, and (`gallery_of_the_studio_window`, with `DEGENVIEW_GALLERY_FILTER=<part of a name>` to
+write some) the whole window in both themes at the default and smallest sizes in every state; `cargo test --release studio_cost -- --ignored --nocapture` prints stage timings (a
 500-candle chart with indicators, a script pane and a drawing: freeze 3–5 ms once; a 1599 × 1066 preview
 compose and tessellate 4–6 ms on the UI thread, rasterize about 77 ms on the worker; the 3:2 Spectrum
 export at 2× compose 4 ms, rasterize 89 ms, PNG 43 ms, 298 KiB).

@@ -254,6 +254,12 @@ pub enum Icon {
     StopFill,
     Restart,
     Bug,
+    /// A zig-zag line: what a chart's indicators draw.
+    Indicators,
+    /// A frame with a small mark and a line at its foot: the signature on an image.
+    Branding,
+    /// A circular arrow turning back: Restart's mirror image.
+    ResetView,
 }
 
 /// Stroke width on the 16 grid.
@@ -2040,6 +2046,32 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&arc(8.0, 8.0, 5.4, 30.0, 330.0));
             line(&[p(13.5, 1.9), p(13.2, 5.0), p(10.0, 4.7)]);
         }
+        Icon::Indicators => line(&[
+            p(1.5, 11.5),
+            p(5.0, 5.0),
+            p(8.2, 9.8),
+            p(11.0, 4.2),
+            p(14.5, 8.5),
+        ]),
+        Icon::Branding => {
+            painter.rect_stroke(
+                rect_of(p(1.6, 2.8), p(14.4, 13.2)),
+                round(2.0),
+                stroke,
+                StrokeKind::Middle,
+            );
+            circle(p(4.9, 10.1), 1.15, true);
+            line(&[p(7.6, 10.1), p(11.4, 10.1)]);
+        }
+        Icon::ResetView => {
+            let flip = |q: Pos2| pos2(2.0 * (origin.x + 8.0 * scale) - q.x, q.y);
+            let ring: Vec<Pos2> = arc(8.0, 8.0, 5.4, 30.0, 330.0)
+                .into_iter()
+                .map(flip)
+                .collect();
+            line(&ring);
+            line(&[p(13.5, 1.9), p(13.2, 5.0), p(10.0, 4.7)].map(flip));
+        }
         Icon::Bug => {
             // The classic: a round body with a head, six legs and two feelers.
             circle(p(8.0, 9.4), 3.3, false);
@@ -2570,6 +2602,9 @@ mod tests {
             StopFill,
             Restart,
             Bug,
+            Indicators,
+            Branding,
+            ResetView,
         ];
         for icon in all {
             let ctx = egui::Context::default();

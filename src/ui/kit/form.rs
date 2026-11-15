@@ -48,34 +48,134 @@ fn segmented_with<T: Copy + PartialEq>(
     selected: &mut T,
     fill: Option<f32>,
 ) {
-    let labels: Vec<Arc<Galley>> = options
+    let segments: Vec<Segment<T>> = options
         .iter()
-        .map(|(value, label)| {
+        .map(|(value, label)| Segment::new(*value, label))
+        .collect();
+    if let Some(value) = segments_with(ui, id, &segments, *selected, true, fill) {
+        *selected = value;
+    }
+}
+
+/// One choice of a [`segments`] control.
+#[derive(Clone, Copy, Debug)]
+pub struct Segment<'a, T> {
+    pub value: T,
+    pub label: &'a str,
+    /// What hovering it says.
+    pub tooltip: Option<&'a str>,
+    /// A disabled choice is dimmed and cannot be picked.
+    pub enabled: bool,
+}
+
+impl<'a, T> Segment<'a, T> {
+    pub fn new(value: T, label: &'a str) -> Self {
+        Self {
+            value,
+            label,
+            tooltip: None,
+            enabled: true,
+        }
+    }
+
+    pub fn tooltip(mut self, tooltip: &'a str) -> Self {
+        self.tooltip = Some(tooltip);
+        self
+    }
+}
+
+/// A segmented control with a tooltip on each choice, choices and the whole control that can be
+/// disabled, and a focus ring for the keyboard. Returns the choice that was picked this frame.
+/// A disabled control still shows its choice, dimmed.
+pub fn segments<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    id: Id,
+    options: &[Segment<'_, T>],
+    selected: T,
+    enabled: bool,
+) -> Option<T> {
+    segments_with(ui, id, options, selected, enabled, None)
+}
+
+/// The room [`segments`] takes for `options` with `selected` chosen.
+pub fn segments_width<T: Copy + PartialEq>(
+    ui: &Ui,
+    options: &[Segment<'_, T>],
+    selected: T,
+) -> f32 {
+    segment_widths(&segment_labels(ui, options, selected), None)
+        .iter()
+        .sum::<f32>()
+        + 4.0
+}
+
+fn segment_labels<T: Copy + PartialEq>(
+    ui: &Ui,
+    options: &[Segment<'_, T>],
+    selected: T,
+) -> Vec<Arc<Galley>> {
+    options
+        .iter()
+        .map(|option| {
             galley(
                 ui,
-                label,
+                option.label,
                 size::SUBHEADLINE + 0.5,
-                if *value == *selected { MEDIUM } else { REGULAR },
+                if option.value == selected {
+                    MEDIUM
+                } else {
+                    REGULAR
+                },
                 theme::text_primary(),
                 f32::INFINITY,
             )
         })
-        .collect();
-    let widths: Vec<f32> = match fill {
-        Some(total) => vec![(total - 4.0) / options.len().max(1) as f32; options.len()],
+        .collect()
+}
+
+fn segment_widths(labels: &[Arc<Galley>], fill: Option<f32>) -> Vec<f32> {
+    match fill {
+        Some(total) => vec![(total - 4.0) / labels.len().max(1) as f32; labels.len()],
         None => labels.iter().map(|label| label.size().x + 20.0).collect(),
-    };
+    }
+}
+
+fn segments_with<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    id: Id,
+    options: &[Segment<'_, T>],
+    selected: T,
+    enabled: bool,
+    fill: Option<f32>,
+) -> Option<T> {
+    let labels = segment_labels(ui, options, selected);
+    let widths = segment_widths(&labels, fill);
     let total = widths.iter().sum::<f32>() + 4.0;
     let (track, _) = ui.allocate_exact_size(vec2(total, 22.0), Sense::hover());
     ui.painter().rect_filled(track, 6.0, primary(0.1));
+    let mut picked = None;
     let mut x = track.left() + 2.0;
-    for (index, ((value, label), galley)) in options.iter().zip(labels).enumerate() {
+    for (index, (option, galley)) in options.iter().zip(labels).enumerate() {
+        let usable = enabled && option.enabled;
         let segment = Rect::from_min_size(pos2(x, track.top() + 2.0), vec2(widths[index], 18.0));
-        let response = ui
-            .interact(segment, id.with(index), Sense::click())
-            .on_hover_cursor(egui::CursorIcon::PointingHand);
-        let response = crate::ui::accessibility::label(response, *label);
-        if *value == *selected {
+        let response = ui.interact(
+            segment,
+            id.with(index),
+            if usable {
+                Sense::click()
+            } else {
+                Sense::hover()
+            },
+        );
+        let mut response = crate::ui::accessibility::label(response, option.label);
+        if let Some(tooltip) = option.tooltip {
+            response = response.on_hover_text(tooltip);
+        }
+        if usable {
+            response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        }
+        let fade = if usable { 1.0 } else { 0.45 };
+        if option.value == selected {
             ui.painter().add(
                 egui::Shadow {
                     offset: [0, 1],
@@ -85,25 +185,41 @@ fn segmented_with<T: Copy + PartialEq>(
                 }
                 .as_shape(segment, 5.0),
             );
-            ui.painter()
-                .rect_filled(segment, 5.0, theme::pick(primary(0.24), Color32::WHITE));
-        } else if index > 0 && options[index - 1].0 != *selected {
+            ui.painter().rect_filled(
+                segment,
+                5.0,
+                theme::pick(primary(0.24), Color32::WHITE).gamma_multiply(if enabled {
+                    1.0
+                } else {
+                    0.6
+                }),
+            );
+        } else if index > 0 && options[index - 1].value != selected {
             ui.painter().vline(
                 segment.left() - 0.5,
                 (segment.top() + 4.0)..=(segment.bottom() - 4.0),
                 Stroke::new(1.0, primary(0.12)),
             );
         }
+        if usable && response.has_focus() {
+            ui.painter().rect_stroke(
+                segment,
+                5.0,
+                Stroke::new(1.5, theme::text_secondary()),
+                StrokeKind::Inside,
+            );
+        }
         ui.painter().galley(
             segment.center() - galley.size() / 2.0,
             galley,
-            theme::text_primary(),
+            theme::text_primary().gamma_multiply(fade),
         );
-        if response.clicked() {
-            *selected = *value;
+        if usable && response.clicked() {
+            picked = Some(option.value);
         }
         x += widths[index];
     }
+    picked
 }
 
 /// A switch painted into `rect` with the knob `progress` (0 off, 1 on) of the way across: an

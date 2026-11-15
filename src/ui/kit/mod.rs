@@ -26,6 +26,7 @@ mod page;
 mod palette;
 mod pill;
 pub mod popover;
+pub mod ruler;
 pub mod sheet;
 pub mod source_logo;
 pub mod sparkline;
@@ -38,15 +39,15 @@ pub mod time_text;
 pub use autosave::Autosave;
 pub use button::{
     FooterButton, cta_button, destructive_button, destructive_sheet_button, footer_button,
-    hover_button, large_button, large_prominent_button, open_button, push_button, sheet_button,
-    tinted_button,
+    hover_button, large_button, large_prominent_button, neutral_button, open_button, push_button,
+    sheet_button, tinted_button,
 };
 pub use card::{CARD_RADIUS, card_frame, divider, paint_card_badge, paint_well, panel_divider};
 pub use confirm::{Alert, Confirm, ConfirmOutcome, Notice, alert, confirm, notice};
 pub use field::{FIELD_HEIGHT, field, field_frame, input_frame, plain_field, search_field};
 pub use form::{
-    StepDirection, color_well, paint_switch, segmented, segmented_filling, stepper, stepper_arrows,
-    switch,
+    Segment, StepDirection, color_well, paint_switch, segmented, segmented_filling, segments,
+    segments_width, stepper, stepper_arrows, switch,
 };
 pub(crate) use menu::{MENU_FRAME_MARGIN, MENU_MAX_HEIGHT, menu_width_for, menu_width_for_rows};
 pub use menu::{

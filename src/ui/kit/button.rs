@@ -368,6 +368,42 @@ pub fn cta_button(
     )
 }
 
+/// A 32 pt button in neutral colours, for the main actions of a window that has no accent. The
+/// prominent one is a plate in the label colour with the window's colour for its text (near white
+/// in the dark theme, near black in the light one); the other is a quiet fill. While `busy` a
+/// small candle indicator leads the label and clicks are ignored; `enabled` false dims it.
+pub fn neutral_button(
+    ui: &mut Ui,
+    label: &str,
+    prominent: bool,
+    enabled: bool,
+    busy: bool,
+    min_width: f32,
+) -> egui::Response {
+    let (tint, label_color) = if prominent {
+        (
+            theme::text_primary(),
+            theme::pick(Color32::from_gray(22), Color32::WHITE),
+        )
+    } else {
+        (primary(0.12), theme::text_primary())
+    };
+    button_in_tint(
+        ui,
+        label,
+        ButtonLook {
+            tint,
+            label: label_color,
+            height: 32.0,
+            size: size::BODY + 1.0,
+            radius: 8.0,
+        },
+        enabled && !busy,
+        busy,
+        min_width,
+    )
+}
+
 struct ButtonLook {
     tint: Color32,
     /// The label's colour while the button can be pressed.
