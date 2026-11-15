@@ -131,7 +131,7 @@ use live_overlays::LiveOverlays;
 use price_scale::tick_step;
 pub(in crate::ui) use price_scale::{AxisTicks, PriceScale};
 use scripts::{draw_script_pane, pane_labels};
-pub use snapshot::{SnapshotError, SnapshotFrame, SnapshotInput};
+pub use snapshot::{FrozenOutputs, SnapshotError, SnapshotFrame, SnapshotGeometry, SnapshotInput};
 #[cfg(test)]
 use view::Probe;
 pub use view::ViewGeometry;
@@ -762,6 +762,8 @@ mod overlay_tests;
 mod snapshot_override_tests;
 #[cfg(test)]
 mod snapshot_tests;
+#[cfg(test)]
+pub(in crate::ui) mod studio_fixture;
 
 #[cfg(test)]
 mod navigation_tests;

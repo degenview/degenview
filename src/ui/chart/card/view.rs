@@ -2,6 +2,7 @@
 //! plot area under the header.
 
 use super::*;
+use crate::model::chart::snapshot::framing::Base;
 use crate::model::chart::viewport::zoom::{self, Selection, Slots};
 use crate::model::chart::viewport::{HorizontalViewport, VerticalViewport};
 
@@ -101,6 +102,23 @@ impl ViewGeometry {
     /// a rectangle too narrow to be a choice.
     pub(super) fn zoomed_bars(&self, selection: &Selection) -> Option<HorizontalViewport> {
         zoom::horizontal(selection, self.slots(), self.total, self.reserved)
+    }
+
+    /// The view as the Studio reframes it: where it starts, how many slots it spans across the
+    /// plot, the prices it shows and the plot's size. Drawing the chart with
+    /// `Framing::default().viewport(&base, plot)` shows what this shows.
+    pub fn framing_base(&self) -> Base {
+        let slots = f64::from(self.plot.width() / self.slot_width);
+        let first = self.start as f64 - f64::from(self.lead);
+        Base {
+            start_bar_center: first + slots / 2.0,
+            bars_in_view: slots,
+            price: PriceRange::new(self.minimum, self.maximum),
+            logarithmic: self.logarithmic,
+            total_bars: self.total,
+            reserved: self.reserved,
+            plot: self.plot.size(),
+        }
     }
 
     /// The viewport that shows exactly what `selection` (a rectangle on the plot) covers: the bars

@@ -230,6 +230,75 @@ ships no server; its tests use a mock server on this computer.
   browser. **The image is not attached to the post**, only its link: attaching needs an authorised
   X API integration, which this is not. No X account or credentials are requested.
 
+## Screenshot Studio (in progress)
+
+The Studio restyles, reframes and exports a picture of a chart or of the whole layout. It is
+being built in stacked changes; this is what exists so far, **the composer** (`ui/snapshot_studio/`),
+which nothing in the app calls yet: Select portion (the way in) and the Studio window follow.
+It is a presentation layer around `paint_snapshot` and never a second chart painter.
+
+```
+Capture (frozen once)  +  StudioConfig  ─►  compose::paint ─► Scene ─► raster
+   chart(s): candles, drawings,             (one function)    Target::Preview { max_px }  scale to fit, at most 2×
+   script outputs, pictures, logo,                            Target::Export(scale)       composition::dimensions
+   size, base view                                            the same shapes, another pixels_per_point
+```
+
+- **A capture is frozen.** `ChartCapture::new(card, ChartParts, pixels_per_point, portion)` owns
+  what the frame reads that can change (the candles cut at the replay, drawings, indicators,
+  `FrozenOutputs`, pictures, the logo as decoded pixels) and the **base view**
+  (`ViewGeometry::framing_base`): where the capture's plot started, which the Width and Height
+  dials and the drag measure from. A portion is a capture the size of the selection that shows the
+  bars and prices the selection covered (`viewport_for`), so its base is that view. The card itself is
+  only read (alert lines, paper markers and canvas come from it live); a test pins that composing
+  leaves it as it was. `Capture::Layout` holds each chart with its rectangle in layout points, and
+  `crop` for a selection across charts.
+- **One paint function.** `compose::paint(painter, rect, capture, cards, config)` is the only thing
+  that lays the image out, and `compose::scene` runs it on a scratch context at the target's scale
+  (`snapshot_scene::render`). Layout is in points, text is laid out at the scene's scale, so the
+  preview and the export are the same shapes at another `pixels_per_point` (a test compares the shape
+  dumps of one painting at 1× and 2×; labels may differ by a fraction of a point).
+- **Order:** backdrop (only with a frame, `Background::has_frame`), soft shadow, the chart(s)
+  through `paint_snapshot` with `SnapshotFrame { viewport: framing, outputs: frozen,
+  include_indicators, restyle }` and `hide_all_drawings` for Include, the rounded corners, the
+  Styled title block, the DegenView mark. The chart is painted into `Composition::body()` (below the
+  title strip). Its view is `Framing::viewport(base, plot)`, refitted (at most three rounds) to the
+  plot the card really lays out there, since the axis width and pane heights are the card's to decide.
+- **Backdrops** (`compose/background.rs`) are pure functions of position, `color_at(background, uv)`:
+  DegenView's own palettes (Luminous deep teal with a cyan glow, Radiant pink to orange, Spectrum purple
+  through magenta to teal, Illuminated deep blue with a bright glow, Dots charcoal with dots every
+  14 pt). A gradient is a 96 × 64 vertex-coloured grid (cells under the chart are skipped); dots are
+  circles on a fixed grid in points, so they are sharp at any scale. `swatch(background)` says what
+  the Studio's swatch row paints, from the same definitions.
+- **Rounded chart** (`compose/surround.rs`): the chart is painted square and four corner pieces (radius
+  10 pt) are laid over it, coloured by `Surround::surface_at`, the same function the backdrop and
+  the shadow are painted from, with a one-pixel feathered inner edge, so there is no seam. The shadow
+  is a mesh with its own falloff (not `epaint::Shadow`) for exactly that reason: the corners need to
+  know how dark it is. Softness and offset are shares of the margin, so it scales with the image.
+- **Styled** (`compose/styled.rs`): the canvas is restyled (`Restyle`: no grid, no watermark, axis text
+  at 1.35×). The title block fills the strip with the canvas' top colour and sets the market's logo
+  (a monogram until the icon cache has one), its name in bold and `EXCHANGE · timeframe`. Its
+  colours follow the canvas, not the app's theme: near black on a light canvas, near white on a dark
+  one, the axis text colour for the subline. The mark (the app icon in a circle and "DegenView",
+  at 55 % opacity) is at the right end of the title strip, centred on it, so it is never over market
+  data (`composition::branding` reserves its place). The market's name always comes first: it is cut
+  only when it alone is wider than the strip. The mark takes what is left of the strip, in full if it
+  fits beside the title block, as its icon alone if only that does, and not at all otherwise.
+- **Layouts** (`compose/layout.rs`): each chart's rectangle is mapped onto the body (a different
+  proportion stretches the arrangement; each chart is refitted to its plot, never stretched) and
+  painted clipped to its own rectangle, with a hairline on every edge two charts share. Framing is
+  not applied. A portion across charts is the same picture with the layout mapped from the
+  selection's origin and everything outside clipped, still vector. The title block names the focused
+  chart.
+- **Price fit.** Horizontally a bar keeps the width it had in the capture (a wider plot shows more
+  bars). Vertically the capture's starting price range fills the composition's actual plot height at
+  Height 1× whatever the size, so the last-price tag and the newest candle the capture showed are never
+  cropped; Height 2× shows half that range (a decision, `framing`; the earlier rule of keeping the
+  price per point cropped the range when the title strip made the plot shorter).
+- **Known limits.** In a size other than the capture's the candles are taller or shorter than in the
+  capture (the price scale is fitted, not kept). Not checked: the logo from the icon cache in a real
+  window (tests use the monogram), a layout in a real window.
+
 ## Platforms
 
 macOS is the platform this was built and checked on. Download uses the system Save panel
@@ -278,6 +347,15 @@ themes and window edges, Windows and Linux. To repeat: the camera menu in both t
 window edge, each action on a real chart with
 several indicators, a script pane and drawings, with replay, in a second window, and against a
 host.
+
+The Studio's composer is covered by `ui/snapshot_studio` tests (shape equality at two scales, pixel probes
+of every backdrop and the rounded corners, Include and Styled, dimensions, framing, layouts, no
+mutation). `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_studio -- --ignored` writes
+every backdrop in the Chart and Styled looks and every size on a dark and a light canvas, plus layouts and
+portions; `cargo test --release studio_cost -- --ignored --nocapture` prints stage timings (a
+500-candle chart with indicators, a script pane and a drawing: freeze 3–5 ms once; a 1599 × 1066 preview
+compose and tessellate 4–6 ms on the UI thread, rasterize about 77 ms on the worker; the 3:2 Spectrum
+export at 2× compose 4 ms, rasterize 89 ms, PNG 43 ms, 298 KiB).
 
 The Settings page and its provider rows are drawn headless by
 `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_snapshots_page -- --ignored`, which
