@@ -26,6 +26,17 @@ fn bar(open_time: i64, step: i64) -> Kline {
     }
 }
 
+/// `count` bars `step` apart that close the instant they open, as a prediction market's price
+/// points or a raw pool trade do.
+fn points(start: i64, step: i64, count: usize) -> Vec<Kline> {
+    (0..count as i64)
+        .map(|index| Kline {
+            close_time: start + index * step,
+            ..bar(start + index * step, step)
+        })
+        .collect()
+}
+
 /// `count` daily bars that skip every Saturday and Sunday.
 fn weekdays(count: usize) -> Vec<Kline> {
     (0..)
@@ -109,6 +120,53 @@ fn empty_space_continues_at_the_length_of_the_edge_bars() {
     let axis = TimeAxis::new(&data);
     assert_eq!(axis.time_at(12.0), Some((T0 + 12 * HOUR) as f64));
     assert_eq!(axis.time_at(-3.0), Some((T0 - 3 * HOUR) as f64));
+}
+
+#[test]
+fn bars_that_close_as_they_open_last_as_long_as_their_spacing() {
+    let data = points(T0, HOUR, 10);
+    let axis = TimeAxis::new(&data);
+    assert_eq!(axis.time_at(10.0), Some((T0 + 10 * HOUR) as f64));
+    assert_eq!(axis.time_at(13.0), Some((T0 + 13 * HOUR) as f64));
+    assert_eq!(axis.time_at(-3.0), Some((T0 - 3 * HOUR) as f64));
+    for x in [-30.0, -0.5, 0.0, 0.25, 7.0, 9.99, 10.0, 53.5] {
+        let time = axis.time_at(x).expect("time");
+        let back = axis.x_at(time).expect("x");
+        assert!((back - x).abs() < 1e-9, "{x} came back as {back}");
+    }
+}
+
+#[test]
+fn the_first_point_takes_the_spacing_to_the_next_and_the_last_the_one_before() {
+    let data = [T0, T0 + 5 * MINUTE, T0 + 20 * MINUTE].map(|open_time| Kline {
+        close_time: open_time,
+        ..bar(open_time, 1)
+    });
+    let axis = TimeAxis::new(&data);
+    assert_eq!(axis.time_at(-1.0), Some((T0 - 5 * MINUTE) as f64));
+    assert_eq!(axis.time_at(3.0), Some((T0 + 35 * MINUTE) as f64));
+    assert_eq!(axis.time_at(4.0), Some((T0 + 50 * MINUTE) as f64));
+    let mut last = f64::NEG_INFINITY;
+    for step in -8..24 {
+        let time = axis.time_at(f64::from(step) * 0.5).expect("time");
+        assert!(time > last, "time stalled or reversed");
+        last = time;
+    }
+}
+
+#[test]
+fn a_single_point_still_has_a_time_scale() {
+    let data = points(T0, HOUR, 1);
+    let axis = TimeAxis::new(&data);
+    assert_eq!(axis.time_at(1.0), Some((T0 + 1) as f64));
+    assert_eq!(axis.x_at((T0 + 1) as f64), Some(1.0));
+}
+
+#[test]
+fn a_bar_with_a_real_close_keeps_its_own_length() {
+    let data = bars(T0, HOUR, 10);
+    let axis = TimeAxis::new(&data);
+    assert_eq!(axis.span(9), HOUR as f64);
 }
 
 #[test]
@@ -325,6 +383,42 @@ fn a_chart_that_was_short_catches_up_once_older_bars_arrive() {
 }
 
 #[test]
+fn a_chart_of_points_that_ends_early_is_followed_at_its_own_spacing() {
+    let leader = bars(T0, HOUR, 400);
+    let market = points(T0, HOUR, 300);
+    // The leader looks at hours 280..380; the market's data ends at 300.
+    let zoomed = change(&leader, &view(60, 20.0), &view(100, 20.0));
+    let followed = follower(BOTH, &zoomed, &market, &view(120, 0.0));
+    assert_eq!(followed.viewport, view(100, -80.0));
+}
+
+#[test]
+fn panning_past_the_newest_bar_is_followed_by_a_chart_of_points() {
+    let leader = bars(T0, HOUR, 400);
+    let market = points(T0, HOUR, 400);
+    let panned = change(&leader, &view(100, 0.0), &view(100, -10.0));
+    let followed = follower(POSITION, &panned, &market, &view(100, 0.0));
+    assert_eq!(followed.viewport.right_offset, -10.0);
+    let back = change(&market, &view(100, 0.0), &view(100, -10.0));
+    let followed = follower(POSITION, &back, &leader, &view(100, 0.0));
+    assert_eq!(followed.viewport.right_offset, -10.0);
+}
+
+#[test]
+fn sessions_follow_a_round_the_clock_chart_across_weekends_both_ways() {
+    let crypto = bars(T0, DAY, 60);
+    let stock = weekdays(40);
+    // Four weeks of crypto, ending on a Thursday: twenty sessions.
+    let from_crypto = change(&crypto, &view(20, 8.0), &view(28, 8.0));
+    let followed = follower(BOTH, &from_crypto, &stock, &view(100, 0.0));
+    assert_eq!(followed.viewport, view(20, 2.0));
+    // And the sessions' twenty are four calendar weeks.
+    let from_stock = change(&stock, &view(30, 2.0), &view(20, 2.0));
+    let followed = follower(BOTH, &from_stock, &crypto, &view(100, 0.0));
+    assert_eq!(followed.viewport, view(28, 8.0));
+}
+
+#[test]
 fn a_chart_with_no_bars_is_left_alone() {
     let data = bars(T0, HOUR, 400);
     let panned = change(&data, &view(100, 0.0), &view(100, 24.0));
@@ -425,6 +519,42 @@ fn both_linked_a_pan_moves_position_without_touching_zoom() {
 }
 
 #[test]
+fn at_the_newest_bar_the_span_ends_where_the_follower_does() {
+    let leader = bars(T0, HOUR, 400);
+    // The follower's data ended two days ago: its newest bar is not at the leader's time.
+    let stale = bars(T0, HOUR, 352);
+    let zoomed = change(&leader, &view(60, 0.0), &view(100, 0.0));
+    assert!(zoomed.latest);
+    let followed = follower(BOTH, &zoomed, &stale, &view(120, 5.0));
+    assert_eq!(followed.viewport, view(52, 0.0));
+}
+
+#[test]
+fn a_follower_that_cannot_show_the_whole_range_has_not_arrived() {
+    let leader = bars(T0, HOUR, 1000);
+    let short = bars(T0 + 920 * HOUR, HOUR, 80);
+    let zoomed = change(&leader, &view(100, 0.0), &view(300, 0.0));
+    let followed = follower(BOTH, &zoomed, &short, &view(100, 0.0));
+    assert!(!followed.reached);
+    assert_eq!(followed.viewport.visible, 120, "the most it can show");
+}
+
+#[test]
+fn a_follower_that_was_short_of_history_zooms_out_once_older_bars_arrive() {
+    let leader = bars(T0, HOUR, 1000);
+    let short = bars(T0 + 920 * HOUR, HOUR, 80);
+    let longer = bars(T0 + 600 * HOUR, HOUR, 400);
+    let mut hub = SyncHub::default();
+    let mut other = view(100, 0.0);
+    hub.publish(1, change(&leader, &view(100, 0.0), &view(300, 0.0)));
+    assert!(hub.deliver(2, BOTH, &TimeAxis::new(&short), &mut other));
+    assert_eq!(other.visible, 120);
+    assert!(hub.deliver(2, BOTH, &TimeAxis::new(&longer), &mut other));
+    assert_eq!(other, view(300, 0.0));
+    assert!(!hub.deliver(2, BOTH, &TimeAxis::new(&longer), &mut other));
+}
+
+#[test]
 fn a_reset_with_both_linked_returns_every_chart_to_the_newest_bars() {
     let data = bars(T0, HOUR, 600);
     let reset = change(&data, &view(30, 200.0), &HorizontalViewport::default());
@@ -493,6 +623,30 @@ fn a_follower_that_moved_because_it_followed_publishes_nothing() {
     let at_frame_start = b;
     assert!(HorizontalChange::between(&at_frame_start, &b, &TimeAxis::new(&data)).is_none());
     assert_eq!(hub.latest_event().expect("event").origin, 1);
+}
+
+#[test]
+fn a_chart_still_loading_hears_the_pan_made_meanwhile() {
+    let data = bars(T0, HOUR, 600);
+    let mut hub = SyncHub::default();
+    let mut loading = view(100, 0.0);
+    hub.publish(1, pan_by(10.0));
+    assert!(!hub.deliver(2, BOTH, &TimeAxis::new(&[]), &mut loading));
+    assert_eq!(loading, view(100, 0.0));
+    assert!(hub.deliver(2, BOTH, &TimeAxis::new(&data), &mut loading));
+    assert_eq!(loading.right_offset, 10.0);
+}
+
+#[test]
+fn a_pan_missed_while_loading_is_superseded_by_a_newer_one() {
+    let data = bars(T0, HOUR, 600);
+    let mut hub = SyncHub::default();
+    let mut loading = view(100, 0.0);
+    hub.publish(1, pan_by(10.0));
+    hub.deliver(2, BOTH, &TimeAxis::new(&[]), &mut loading);
+    hub.publish(3, pan_by(30.0));
+    hub.deliver(2, BOTH, &TimeAxis::new(&data), &mut loading);
+    assert_eq!(loading.right_offset, 30.0);
 }
 
 #[test]
