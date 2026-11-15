@@ -36,6 +36,11 @@ pub const POSITION_LIMIT: f64 = 0.25;
 pub const RUBBER_REACH: f64 = 0.05;
 /// How much of a pull past a limit the view follows at first.
 const RESISTANCE: f64 = 0.5;
+/// A key press on the preview moves the view this many bars across.
+pub const KEY_BARS: f64 = 1.0;
+/// A key press on the preview moves the view this share of the price range being shown up or down
+/// (a decision: about what an arrow press moves the chart's own view by).
+pub const KEY_PRICE: f64 = 0.02;
 /// Dial values are kept to this many steps per unit, so repeated key steps never drift.
 const GRID: f64 = 1_000.0;
 /// The fewest bars an image may show; the plot of a narrow, zoomed-in capture is allowed to hold
@@ -149,6 +154,7 @@ pub struct Base {
 impl Base {
     /// The starting view of a chart drawn as `horizontal` and `price` say, over `total_bars` with
     /// `reserved` free slots, whose plot is `plot` points across.
+    #[cfg(test)]
     pub fn from_view(
         horizontal: &HorizontalViewport,
         price: PriceRange,
@@ -224,10 +230,12 @@ impl Framing {
         }
     }
 
+    #[cfg(test)]
     pub fn set_width(&mut self, value: f64) {
         self.set_dial(Dial::Width, value);
     }
 
+    #[cfg(test)]
     pub fn set_height(&mut self, value: f64) {
         self.set_dial(Dial::Height, value);
     }
@@ -321,6 +329,41 @@ impl Framing {
         }
     }
 
+    /// The framing while the preview is being dragged: `origin` (the framing when the pointer went
+    /// down) moved by `delta`, the pointer's travel since then in composition points, so the picture
+    /// follows the pointer: dragging right shows earlier bars, dragging down shows higher prices.
+    /// `plot` is the composition's plot in points (see [`drag`](Self::drag)). Held at the limits
+    /// with a rubber band like any drag; a capture with no plot to measure against is not moved.
+    pub fn dragged(&self, base: &Base, plot: Vec2, origin: &Self, delta: Vec2) -> Self {
+        let (across, down) = Self::points_to_offsets(base, plot, origin, delta);
+        Self {
+            width: origin.width,
+            height: origin.height,
+            ..*self
+        }
+        .drag(base, plot, origin.dx - across, origin.dy + down)
+    }
+
+    /// What a pointer travel of `delta` points is, in bars across and in shares of the starting
+    /// price range up, at the dials `origin` has.
+    fn points_to_offsets(base: &Base, plot: Vec2, origin: &Self, delta: Vec2) -> (f64, f64) {
+        let slot = f64::from(base.plot.x) / base.bars_in_view * origin.width.clamp(MIN, MAX);
+        let tall = f64::from(plot.y) * origin.height.clamp(MIN, MAX);
+        let ratio = |points: f32, per: f64| {
+            let moved = f64::from(points) / per;
+            if moved.is_finite() { moved } else { 0.0 }
+        };
+        (ratio(delta.x, slot), ratio(delta.y, tall))
+    }
+
+    /// The framing after a key press that moves the picture `across` (positive: right) and `down`
+    /// by one step, as an arrow key does: kept inside the limits, never into the rubber band.
+    pub fn nudged(&self, base: &Base, plot: Vec2, across: i8, down: i8) -> Self {
+        let dx = self.dx - KEY_BARS * f64::from(across.signum());
+        let dy = self.dy + KEY_PRICE * f64::from(down.signum()) / self.height.clamp(MIN, MAX);
+        self.drag(base, plot, dx, dy).settle(base, plot)
+    }
+
     /// The framing on release: an offset past a limit goes back to it. Also what a change of a
     /// dial or of the composition needs, since the limits move with them.
     pub fn settle(&self, base: &Base, plot: Vec2) -> Self {
@@ -371,4 +414,10 @@ impl Framing {
             },
         }
     }
+}
+
+/// A dial's value as the Studio writes it beside the ruler: `1.28×`, `1×`, `0.75×`.
+pub fn multiplier_text(value: f64) -> String {
+    let text = format!("{:.2}", if value.is_finite() { value } else { 1.0 });
+    format!("{}×", text.trim_end_matches('0').trim_end_matches('.'))
 }

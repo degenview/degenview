@@ -7,32 +7,9 @@
 //! view is reframed ([`framing`]), the image's layout and size ([`composition`]) and the rectangle
 //! the user selects ([`selection`]).
 
-// Nothing outside the tests uses these until the Studio's composer lands; `expect` fails the build
-// once a module is fully used, which is the cue to delete its line.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "used by the Screenshot Studio composer (PR 3 of the stack)"
-    )
-)]
 pub mod composition;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "used by the Screenshot Studio composer (PR 3 of the stack)"
-    )
-)]
 pub mod framing;
 pub mod selection;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "used by the Screenshot Studio composer (PR 3 of the stack)"
-    )
-)]
 pub mod studio;
 
 use crate::format;
@@ -193,20 +170,34 @@ fn name_part(text: &str, fallback: &str) -> String {
     }
 }
 
-/// `DegenView_BTCUSDT_1H_2026-10-19_1642.png`: the chart's symbol and timeframe and the local
-/// time (`offset_secs` east of UTC). A `1M` timeframe stays upper case so it is never read as
-/// minutes.
-pub fn file_name(symbol: &str, timeframe: &str, epoch_ms: i64, offset_secs: i64) -> String {
+/// `2026-10-19_1642`: the local date and time (`offset_secs` east of UTC) a file name carries.
+fn stamp(epoch_ms: i64, offset_secs: i64) -> String {
     let local = epoch_ms.div_euclid(1_000) + offset_secs;
     let (year, month, day) = format::civil_from_days(local.div_euclid(86_400));
     let seconds = local.rem_euclid(86_400);
     format!(
-        "DegenView_{}_{}_{year:04}-{month:02}-{day:02}_{:02}{:02}.png",
-        name_part(symbol, "Chart"),
-        name_part(timeframe, "Chart"),
+        "{year:04}-{month:02}-{day:02}_{:02}{:02}",
         seconds / 3_600,
         seconds % 3_600 / 60,
     )
+}
+
+/// `DegenView_BTCUSDT_1H_2026-10-19_1642.png`: the chart's symbol and timeframe and the local
+/// time (`offset_secs` east of UTC). A `1M` timeframe stays upper case so it is never read as
+/// minutes.
+pub fn file_name(symbol: &str, timeframe: &str, epoch_ms: i64, offset_secs: i64) -> String {
+    format!(
+        "DegenView_{}_{}_{}.png",
+        name_part(symbol, "Chart"),
+        name_part(timeframe, "Chart"),
+        stamp(epoch_ms, offset_secs),
+    )
+}
+
+/// `DegenView_Layout_2026-10-19_1642.png`: the name of an image of several charts, which has
+/// no one symbol to carry.
+pub fn layout_file_name(epoch_ms: i64, offset_secs: i64) -> String {
+    format!("DegenView_Layout_{}.png", stamp(epoch_ms, offset_secs))
 }
 
 /// `name` with `.png` on it when it has no extension of its own.

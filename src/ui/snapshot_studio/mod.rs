@@ -3,6 +3,8 @@
 
 pub mod capture;
 pub mod compose;
+pub mod previews;
+pub mod window;
 
 #[cfg(test)]
 mod capture_tests;

@@ -9,6 +9,7 @@
 //! has happened.
 
 use crate::host::snapshot::{Hosting, SnapshotHost, TURN_ON_A_HOST};
+use crate::model::chart::snapshot::studio::StudioConfig;
 use crate::model::chart::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
 use crate::service::snapshot::job::{self, Outcome, Retry, SystemBackend};
 use crate::service::snapshot::providers::Destination;
@@ -17,6 +18,7 @@ use crate::service::{system::timezone, work_queue};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use crate::ui::snapshot_studio::capture::ChartParts;
+use crate::ui::snapshot_studio::window::Export;
 use crate::ui::{SnapshotError, SnapshotFrame};
 use crate::workspace::drawing::content::snapshot_images;
 use crate::workspace::*;
@@ -42,6 +44,21 @@ struct Running {
     destination: Option<Destination>,
     /// When the work began (or began again, for a retry): a slow upload says so.
     started: Instant,
+    /// The Studio's button this was started from, if it was.
+    studio: Option<Export>,
+}
+
+/// A picture that is ready to be handed to the worker, and what the result will be called.
+struct Launch {
+    action: SnapshotAction,
+    scene: raster::Scene,
+    /// The file name offered when saving.
+    name: String,
+    /// What a post says when the snapshot is shared on X.
+    title: String,
+    timeframe: String,
+    destination: Option<Destination>,
+    studio: Option<Export>,
 }
 
 /// After this long an upload says it is still going, so a slow connection is not taken for a
@@ -84,8 +101,11 @@ pub(in crate::workspace) struct SnapshotState {
     pub(in crate::workspace) settings_requested: bool,
     /// Select portion is on: the user is choosing which part of the charts to capture.
     selecting: Option<select::Selecting>,
-    /// What the last selection captured, for the Studio to work from.
+    /// What the last selection captured: the Studio that is open on it.
     studio: Option<studio::StudioSession>,
+    /// The look of a Studio that went back to the charts to select a portion, for the one that
+    /// opens on that selection.
+    kept_look: Option<StudioConfig>,
 }
 
 /// Why a chart could not be frozen into a picture.
@@ -319,6 +339,31 @@ impl ChartWorkspace {
             now,
             timezone::local_utc_offset_secs(now),
         );
+        self.launch(
+            ctx,
+            Launch {
+                action,
+                scene,
+                name,
+                title,
+                timeframe,
+                destination,
+                studio: None,
+            },
+        );
+    }
+
+    /// Hands a picture to the snapshot worker and keeps the receiver the result comes back on.
+    fn launch(&mut self, ctx: &Context, launch: Launch) {
+        let Launch {
+            action,
+            scene,
+            name,
+            title,
+            timeframe,
+            destination,
+            studio,
+        } = launch;
         let (sender, receiver) = mpsc::channel();
         let (worker_ctx, worker_destination) = (ctx.clone(), destination.clone());
         let stand_in = self.snapshot.backend.clone();
@@ -339,6 +384,7 @@ impl ChartWorkspace {
             timeframe,
             destination,
             started: Instant::now(),
+            studio,
         });
     }
 
@@ -362,6 +408,7 @@ impl ChartWorkspace {
             timeframe: waiting.timeframe,
             destination: Some(waiting.destination),
             started: Instant::now(),
+            studio: None,
         });
     }
 

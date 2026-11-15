@@ -192,6 +192,8 @@ impl ChartWorkspace {
         grid: Rect,
     ) -> bool {
         if self.snapshot.selecting.is_none() {
+            // A selection that ended without a capture takes the Studio's look with it.
+            self.snapshot.kept_look = None;
             return false;
         }
         let regions = self.portion_regions();
@@ -239,9 +241,64 @@ impl ChartWorkspace {
     /// Freezes what `selection` covers and keeps it for the Studio; says why when it cannot.
     fn finish_portion(&mut self, ctx: &Context, selection: Rect, regions: &[Region]) {
         match self.capture_portion(ctx, selection, regions) {
-            Ok(capture) => self.snapshot.studio = Some(StudioSession::portion(capture)),
+            Ok(capture) => {
+                let look = self.snapshot.kept_look.take();
+                self.snapshot.studio = Some(StudioSession::portion(capture, look));
+            }
             Err(error) => self.say(error.to_string(), true),
         }
+    }
+
+    /// Freezes chart `index`, all of it or `portion` (a rectangle in points from its snapshot
+    /// frame's corner), with the market's logo if the icon cache has it already.
+    fn freeze_chart(
+        &self,
+        ctx: &Context,
+        index: usize,
+        portion: Option<Rect>,
+    ) -> Result<ChartCapture, CaptureError> {
+        let options = self.snapshot_prefs().options();
+        let mut parts = self.chart_parts(ctx, index, options.include_trading);
+        parts.logo = cached_logo_image(ctx, &parts.symbol, parts.source);
+        ChartCapture::new(
+            &self.charts[index].chart,
+            parts,
+            options.scale.factor(),
+            portion,
+        )
+        .map_err(CaptureError::Scene)
+    }
+
+    /// Freezes `hit` (some of the charts on screen, `regions`) as they are arranged, from the
+    /// corner of the union of all their frames; the image shows `crop` of it, or all of it.
+    fn freeze_layout(
+        &self,
+        ctx: &Context,
+        hit: &[&Region],
+        regions: &[Region],
+        crop: Option<Rect>,
+    ) -> Result<Capture, CaptureError> {
+        let origin = union(regions.iter().map(|region| region.frame));
+        let shift = -origin.min.to_vec2();
+        let charts = hit
+            .iter()
+            .map(|region| {
+                Ok((
+                    self.freeze_chart(ctx, region.index, None)?,
+                    region.frame.translate(shift),
+                ))
+            })
+            .collect::<Result<Vec<_>, CaptureError>>()?;
+        let focused = self.resolved_focused_id();
+        Ok(Capture::Layout(LayoutCapture {
+            charts,
+            size: origin.size(),
+            crop: crop.map(|crop| crop.translate(shift)),
+            focused: hit
+                .iter()
+                .position(|region| Some(self.charts[region.index].id) == focused)
+                .unwrap_or(0),
+        }))
     }
 
     /// Freezes the part of the charts `selection` (in window points) covers. Within one chart it
@@ -256,19 +313,6 @@ impl ChartWorkspace {
         selection: Rect,
         regions: &[Region],
     ) -> Result<Capture, CaptureError> {
-        let options = self.snapshot_prefs().options();
-        let pixels_per_point = options.scale.factor();
-        let freeze = |region: &Region, portion: Option<Rect>| {
-            let mut parts = self.chart_parts(ctx, region.index, options.include_trading);
-            parts.logo = cached_logo_image(ctx, &parts.symbol, parts.source);
-            ChartCapture::new(
-                &self.charts[region.index].chart,
-                parts,
-                pixels_per_point,
-                portion,
-            )
-            .map_err(CaptureError::Scene)
-        };
         let hit: Vec<&Region> = regions
             .iter()
             .filter(|region| overlaps(region.frame, selection))
@@ -281,28 +325,33 @@ impl ChartWorkspace {
                     return Err(CaptureError::NothingSelected);
                 }
                 let portion = covered.translate(-only.frame.min.to_vec2());
-                freeze(only, Some(portion)).map(Capture::Single)
+                self.freeze_chart(ctx, only.index, Some(portion))
+                    .map(Capture::Single)
             }
-            several => {
-                // The layout is every chart as the window arranges them, from the corner of the
-                // union of their frames; only the charts the selection reaches are frozen.
-                let origin = union(regions.iter().map(|region| region.frame));
-                let shift = -origin.min.to_vec2();
-                let charts = several
-                    .iter()
-                    .map(|region| Ok((freeze(region, None)?, region.frame.translate(shift))))
-                    .collect::<Result<Vec<_>, CaptureError>>()?;
-                let focused = self.resolved_focused_id();
-                Ok(Capture::Layout(LayoutCapture {
-                    charts,
-                    size: origin.size(),
-                    crop: Some(selection.translate(shift)),
-                    focused: several
-                        .iter()
-                        .position(|region| Some(self.charts[region.index].id) == focused)
-                        .unwrap_or(0),
-                }))
-            }
+            several => self.freeze_layout(ctx, several, regions, Some(selection)),
         }
+    }
+
+    /// Freezes the whole of chart `chart_id`: the Studio's Full chart.
+    pub(super) fn capture_full(
+        &self,
+        ctx: &Context,
+        chart_id: u64,
+    ) -> Result<Capture, CaptureError> {
+        let index = self.chart_index(chart_id).ok_or(CaptureError::NoChart)?;
+        if !self.charts[index].is_market() {
+            return Err(CaptureError::NoMarketChart);
+        }
+        self.freeze_chart(ctx, index, None).map(Capture::Single)
+    }
+
+    /// Freezes every market chart as the window arranges them: the Studio's Entire layout.
+    pub(super) fn capture_layout(&self, ctx: &Context) -> Result<Capture, CaptureError> {
+        let regions = self.portion_regions();
+        if regions.is_empty() {
+            return Err(CaptureError::NotLaidOut);
+        }
+        let all: Vec<&Region> = regions.iter().collect();
+        self.freeze_layout(ctx, &all, &regions, None)
     }
 }

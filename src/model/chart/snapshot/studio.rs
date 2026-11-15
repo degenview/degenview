@@ -23,6 +23,24 @@ pub enum Area {
 }
 
 impl Area {
+    /// The word on the Area control.
+    pub const fn control_label(self) -> &'static str {
+        match self {
+            Self::FullChart => "Full chart",
+            Self::Portion => "Portion",
+            Self::EntireLayout => "Entire layout",
+        }
+    }
+
+    /// What hovering the Area control's choice says.
+    pub const fn tooltip(self) -> &'static str {
+        match self {
+            Self::FullChart => "The whole chart that has the focus",
+            Self::Portion => "Choose a part of the charts; the window comes back with it",
+            Self::EntireLayout => "Every chart, as the window arranges them",
+        }
+    }
+
     /// The words in the footer's summary line.
     pub const fn label(self) -> &'static str {
         match self {
@@ -51,6 +69,13 @@ impl Style {
         match self {
             Self::Chart => "Chart",
             Self::Styled => "Styled",
+        }
+    }
+
+    pub const fn tooltip(self) -> &'static str {
+        match self {
+            Self::Chart => "The chart as it is on screen",
+            Self::Styled => "Larger labels, a title block and the DegenView mark",
         }
     }
 }
@@ -118,6 +143,7 @@ impl AspectRatio {
 
     /// Width over height; `None` for [`Original`](Self::Original), which is whatever the
     /// capture is.
+    #[cfg(test)]
     pub fn ratio(self) -> Option<f32> {
         self.terms()
             .map(|(width, height)| width as f32 / height as f32)
@@ -199,11 +225,12 @@ pub struct StudioConfig {
 }
 
 impl StudioConfig {
-    /// A capture of `area` in the Chart style, as it opens.
+    /// A capture of `area` as the Studio opens it: Styled at 3:2 with nothing behind the chart,
+    /// the way Vela's documented images show it (a decision; Chart is one segment away).
     pub fn new(area: Area) -> Self {
         Self {
             area,
-            style: Style::Chart,
+            style: Style::Styled,
             size: AspectRatio::default(),
             background: Background::None,
             include: Include::default(),

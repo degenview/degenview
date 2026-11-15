@@ -84,6 +84,29 @@ fn the_file_is_named_for_the_chart_and_the_local_time() {
 }
 
 #[test]
+fn an_image_of_the_layout_is_named_for_the_layout_and_the_local_time() {
+    assert_eq!(
+        layout_file_name(NOON, 0),
+        "DegenView_Layout_2026-10-19_1242.png"
+    );
+    assert_eq!(
+        layout_file_name(NOON, 2 * 3_600),
+        "DegenView_Layout_2026-10-19_1442.png"
+    );
+    assert_eq!(
+        layout_file_name(NOON + 12 * 3_600_000, 0),
+        "DegenView_Layout_2026-10-20_0042.png"
+    );
+    // Whatever the clock, the name has nothing a file system refuses.
+    let name = layout_file_name(NOON, -13 * 3_600);
+    assert_eq!(name, "DegenView_Layout_2026-10-18_2342.png");
+    assert!(
+        name.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+    );
+}
+
+#[test]
 fn a_name_keeps_to_what_every_file_system_takes() {
     assert_eq!(
         file_name("BTC/USDT", "1M", NOON, 0),

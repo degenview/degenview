@@ -52,8 +52,10 @@ pub fn show_progress(ctx: &Context, id: Id, text: &str, above_a_notice: bool) {
 }
 
 fn area(ctx: &Context, id: Id, text: &str, lead: Lead, lift: f32) {
+    // Above sheets as well as the chart: the Studio's "Saved …" must not be hidden by its own
+    // window, and a notice takes no pointer, so it hides nothing a sheet needs.
     egui::Area::new(id)
-        .order(Order::Foreground)
+        .order(Order::Tooltip)
         .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(BOTTOM + lift)))
         .interactable(false)
         .show(ctx, |ui| {

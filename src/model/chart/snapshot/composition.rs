@@ -7,6 +7,7 @@
 //! wider plot shows more bars, a taller one more prices, see [`framing`](super::framing)) around
 //! the area the capture had, and a backdrop adds an even margin.
 
+use super::framing::Base;
 use super::studio::{Area, StudioConfig, Style};
 use super::{SnapshotDimensions, SnapshotScale};
 use eframe::egui::{Rect, Vec2, pos2, vec2};
@@ -188,6 +189,28 @@ fn branding_rect(header: Rect, chart: Rect) -> Option<Rect> {
     // What the title block takes before its text: the margin, the logo and the gap after it.
     let before_title = header.height() * (HEADER_PAD_SHARE + HEADER_LOGO_SHARE + HEADER_GAP_SHARE);
     (rect.min.x - header.min.x >= before_title).then_some(rect)
+}
+
+/// Where the plot of a chart captured as `base` says (of a capture `capture` points across) lies
+/// in `composition`, as a size: the chart's body in the composition, less what the capture spent
+/// on axes and panes, in the same shares. An estimate: the card lays the plot out itself when it
+/// paints (an axis is as wide as its labels), but within a bar or two, which is what a drag and the
+/// limits need to be measured against before anything is drawn. Falls back to the whole body for a
+/// capture with no size to compare.
+pub fn plot_in(composition: &Composition, base: &Base, capture: Vec2) -> Vec2 {
+    let body = composition.body().size();
+    let share = |plot: f32, whole: f32| {
+        let share = plot / whole;
+        if share.is_finite() && share > 0.0 {
+            share.min(1.0)
+        } else {
+            1.0
+        }
+    };
+    vec2(
+        body.x * share(base.plot.x, capture.x),
+        body.y * share(base.plot.y, capture.y),
+    )
 }
 
 /// The image's size in pixels at `scale`, or at a smaller one where the image would pass the

@@ -713,6 +713,8 @@ impl ChartWorkspace {
             self.confirm_chart_removal(&ctx, chart_id);
         }
         actions.extend(self.show_alert_editor(&ctx));
+        // Before the notices (in the context UI), so a result is drawn over the window.
+        self.show_studio(&ctx);
         actions.extend(self.show_context_ui(&ctx, &mut lock(paper)));
         actions.extend(self.take_logs_actions());
         self.show_replay_date_sheet(&ctx);

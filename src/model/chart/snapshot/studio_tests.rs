@@ -10,6 +10,28 @@ fn the_footer_names_each_area() {
 #[test]
 fn the_styles_are_named_for_the_control_and_the_footer() {
     assert_eq!(Style::ALL.map(Style::label), ["Chart", "Styled"]);
+    for style in Style::ALL {
+        assert!(!style.tooltip().is_empty());
+    }
+}
+
+#[test]
+fn the_area_control_says_less_than_the_footer() {
+    let words: Vec<_> = [Area::FullChart, Area::Portion, Area::EntireLayout]
+        .into_iter()
+        .map(|area| (area.control_label(), area.label()))
+        .collect();
+    assert_eq!(
+        words,
+        [
+            ("Full chart", "Full chart"),
+            ("Portion", "Selected portion"),
+            ("Entire layout", "Entire layout")
+        ]
+    );
+    for area in [Area::FullChart, Area::Portion, Area::EntireLayout] {
+        assert!(!area.tooltip().is_empty());
+    }
 }
 
 #[test]
@@ -50,10 +72,11 @@ fn the_backgrounds_are_named_and_only_none_has_no_frame() {
 }
 
 #[test]
-fn a_capture_opens_as_the_chart_with_everything_included() {
+fn a_capture_opens_styled_at_three_to_two_with_everything_included() {
     let config = StudioConfig::new(Area::Portion);
     assert_eq!(config.area, Area::Portion);
-    assert_eq!(config.style, Style::Chart);
+    assert_eq!(config.style, Style::Styled);
+    assert_eq!(config.effective_size(), AspectRatio::Landscape3x2);
     assert_eq!(config.background, Background::None);
     assert_eq!(
         config.include,
@@ -70,6 +93,7 @@ fn a_capture_opens_as_the_chart_with_everything_included() {
 #[test]
 fn size_means_nothing_in_the_chart_style() {
     let mut config = StudioConfig::new(Area::FullChart);
+    config.set_style(Style::Chart);
     config.size = AspectRatio::Square;
     assert_eq!(config.effective_size(), AspectRatio::Original);
     assert!(!config.size_enabled());
@@ -81,6 +105,7 @@ fn size_means_nothing_in_the_chart_style() {
 #[test]
 fn styled_opens_at_three_to_two_and_keeps_a_size_picked_since() {
     let mut config = StudioConfig::new(Area::FullChart);
+    config.set_style(Style::Chart);
     config.set_style(Style::Styled);
     assert_eq!(config.size, AspectRatio::Landscape3x2);
 
@@ -97,6 +122,7 @@ fn styled_opens_at_three_to_two_and_keeps_a_size_picked_since() {
 #[test]
 fn the_mark_is_drawn_in_styled_unless_switched_off() {
     let mut config = StudioConfig::new(Area::FullChart);
+    config.set_style(Style::Chart);
     assert!(!config.shows_branding(), "the Chart style has none");
     config.set_style(Style::Styled);
     assert!(config.shows_branding());

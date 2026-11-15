@@ -1,9 +1,11 @@
 use super::composition::{
     BRANDING_HEIGHT, HEADER_HEIGHT, HEADER_PAD_SHARE, MIN_PADDING, PADDING_SHARE, dimensions,
-    layout, summary,
+    layout, plot_in, summary,
 };
+use super::framing::Base;
 use super::studio::{Area, AspectRatio, Background, StudioConfig, Style};
 use super::{MAX_PIXELS, MAX_SIDE_PX, SnapshotDimensions, SnapshotScale};
+use crate::model::chart::viewport::{HorizontalViewport, PriceRange};
 use eframe::egui::{Rect, Vec2, pos2, vec2};
 
 fn config(style: Style, size: AspectRatio, background: Background) -> StudioConfig {
@@ -420,4 +422,59 @@ fn group(n: u32) -> String {
     } else {
         format!("{},{:03}", n / 1000, n % 1000)
     }
+}
+
+// MARK: The plot inside the composition
+
+fn base_of(plot: Vec2) -> Base {
+    Base::from_view(
+        &HorizontalViewport {
+            visible: 100,
+            right_offset: 0.0,
+        },
+        PriceRange::new(100.0, 200.0),
+        false,
+        500,
+        10,
+        plot,
+    )
+}
+
+#[test]
+fn the_plot_is_the_same_share_of_the_body_as_it_was_of_the_capture() {
+    // A 1200 x 800 capture whose plot was 1100 x 700 (axes and a time scale took the rest).
+    let base = base_of(vec2(1100.0, 700.0));
+    let composition = layout(
+        CAPTURE,
+        &config(Style::Chart, AspectRatio::Original, Background::None),
+    );
+    let plot = plot_in(&composition, &base, CAPTURE);
+    assert!(near(plot.x, 1100.0) && near(plot.y, 700.0), "{plot:?}");
+
+    // The same capture as a Styled 16:9 image: the body is another shape, the shares stay.
+    let wide = layout(
+        CAPTURE,
+        &styled(AspectRatio::Wide16x9, Background::Spectrum),
+    );
+    let body = wide.body().size();
+    let plot = plot_in(&wide, &base, CAPTURE);
+    assert!(near(plot.x, body.x * 1100.0 / 1200.0), "{plot:?}");
+    assert!(near(plot.y, body.y * 700.0 / 800.0), "{plot:?}");
+    assert!(plot.x < body.x && plot.y < body.y);
+}
+
+#[test]
+fn a_capture_with_nothing_to_compare_gives_the_whole_body() {
+    let composition = layout(CAPTURE, &styled(AspectRatio::Square, Background::None));
+    let body = composition.body().size();
+    for base in [base_of(Vec2::ZERO), base_of(vec2(f32::NAN, 10.0))] {
+        assert_eq!(plot_in(&composition, &base, Vec2::ZERO), body);
+        assert_eq!(
+            plot_in(&composition, &base, vec2(f32::INFINITY, 1.0)).x,
+            body.x
+        );
+    }
+    // A plot reported larger than its capture is held to the capture.
+    let over = plot_in(&composition, &base_of(vec2(2_000.0, 2_000.0)), CAPTURE);
+    assert_eq!(over, body);
 }

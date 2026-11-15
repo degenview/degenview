@@ -12,10 +12,10 @@ use crate::workspace::test_support::empty_workspace;
 use crate::workspace::test_support::rectangle;
 use eframe::egui::{Event, Key, Modifiers, PointerButton, Pos2, RawInput, Rect, Vec2, pos2, vec2};
 
-const HOUR: i64 = 3_600_000;
-const SIZE: Vec2 = Vec2::new(1200.0, 800.0);
+pub(super) const HOUR: i64 = 3_600_000;
+pub(super) const SIZE: Vec2 = Vec2::new(1200.0, 800.0);
 
-fn series(count: usize) -> Vec<Kline> {
+pub(super) fn series(count: usize) -> Vec<Kline> {
     (0..count)
         .map(|index| {
             let close = 100.0 + (index as f64 * 0.31).sin() * 20.0 + index as f64 * 0.2;
@@ -33,19 +33,27 @@ fn series(count: usize) -> Vec<Kline> {
 }
 
 /// A workspace drawn on a window that takes pointer events, one chart per symbol.
-struct Rig {
-    ctx: egui::Context,
-    workspace: ChartWorkspace,
-    paper: PaperHost,
-    ids: Vec<u64>,
-    time: f64,
+pub(super) struct Rig {
+    pub(super) ctx: egui::Context,
+    pub(super) workspace: ChartWorkspace,
+    pub(super) paper: PaperHost,
+    pub(super) ids: Vec<u64>,
+    pub(super) time: f64,
     /// The window has the keyboard focus.
-    focused: bool,
-    cursor: egui::CursorIcon,
+    pub(super) focused: bool,
+    /// Draws the Studio over the grid, and gives the workspace the keyboard, as a frame does.
+    pub(super) studio: bool,
+    pub(super) cursor: egui::CursorIcon,
+    /// The textures the frames asked to free.
+    pub(super) freed: Vec<egui::TextureId>,
+    /// Where the widgets a screen reader is told of were last drawn, by name (Studio frames).
+    pub(super) labels: std::collections::HashMap<String, Rect>,
+    /// Every word of the last frame.
+    pub(super) words: Vec<String>,
 }
 
 impl Rig {
-    fn new(symbols: &[&str]) -> Self {
+    pub(super) fn new(symbols: &[&str]) -> Self {
         let mut workspace = empty_workspace(1);
         let ctx = egui::Context::default();
         let mut ids = Vec::new();
@@ -68,14 +76,18 @@ impl Rig {
             ids,
             time: 0.0,
             focused: true,
+            studio: false,
             cursor: egui::CursorIcon::Default,
+            freed: Vec::new(),
+            labels: std::collections::HashMap::new(),
+            words: Vec::new(),
         };
         rig.settle();
         rig.workspace.mark_clean();
         rig
     }
 
-    fn frame(&mut self, events: Vec<Event>) {
+    pub(super) fn frame(&mut self, events: Vec<Event>) {
         self.time += 0.016;
         let input = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
@@ -86,25 +98,56 @@ impl Rig {
         };
         let ctx = self.ctx.clone();
         let mut output = ctx.run_ui(input, |ui| self.paint(ui));
+        self.freed
+            .extend(output.textures_delta.free.iter().copied());
+        if let Some(update) = &output.platform_output.accesskit_update {
+            for (_, node) in &update.nodes {
+                if let (Some(label), Some(bounds)) = (node.label(), node.bounds()) {
+                    self.labels.insert(
+                        label.to_owned(),
+                        Rect::from_min_max(
+                            pos2(bounds.x0 as f32, bounds.y0 as f32),
+                            pos2(bounds.x1 as f32, bounds.y1 as f32),
+                        ),
+                    );
+                }
+            }
+        }
+        self.words = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                _ => None,
+            })
+            .collect();
         output.textures_delta.clear();
         self.cursor = output.platform_output.cursor_icon;
     }
 
     /// One frame of the grid, in the central panel the app puts it in.
-    fn paint(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn paint(&mut self, ui: &mut egui::Ui) {
         let (workspace, paper) = (&mut self.workspace, &mut self.paper);
+        if self.studio {
+            workspace.handle_keyboard(ui);
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
             .show(ui, |ui| workspace.render_grid(ui, paper));
+        if self.studio {
+            let ctx = ui.ctx().clone();
+            workspace.show_studio(&ctx);
+            workspace.show_context_ui(&ctx, paper);
+        }
     }
 
-    fn settle(&mut self) {
+    pub(super) fn settle(&mut self) {
         for _ in 0..4 {
             self.frame(Vec::new());
         }
     }
 
-    fn button(&self, at: Pos2, button: PointerButton, pressed: bool) -> Event {
+    pub(super) fn button(&self, at: Pos2, button: PointerButton, pressed: bool) -> Event {
         Event::PointerButton {
             pos: at,
             button,
@@ -113,31 +156,31 @@ impl Rig {
         }
     }
 
-    fn press(&mut self, at: Pos2) {
+    pub(super) fn press(&mut self, at: Pos2) {
         self.frame(vec![Event::PointerMoved(at)]);
         self.frame(vec![self.button(at, PointerButton::Primary, true)]);
     }
 
     /// Moves the held pointer to `to` over a few frames, as a hand does.
-    fn drag_to(&mut self, from: Pos2, to: Pos2) {
+    pub(super) fn drag_to(&mut self, from: Pos2, to: Pos2) {
         for step in 1..=6 {
             let at = from + (to - from) * (step as f32 / 6.0);
             self.frame(vec![Event::PointerMoved(at)]);
         }
     }
 
-    fn release(&mut self, at: Pos2) {
+    pub(super) fn release(&mut self, at: Pos2) {
         self.frame(vec![self.button(at, PointerButton::Primary, false)]);
         self.frame(Vec::new());
     }
 
-    fn drag(&mut self, from: Pos2, to: Pos2) {
+    pub(super) fn drag(&mut self, from: Pos2, to: Pos2) {
         self.press(from);
         self.drag_to(from, to);
         self.release(to);
     }
 
-    fn escape(&mut self) {
+    pub(super) fn escape(&mut self) {
         let key = |pressed| Event::Key {
             key: Key::Escape,
             physical_key: None,
@@ -148,21 +191,36 @@ impl Rig {
         self.frame(vec![key(true), key(false)]);
     }
 
-    fn card(&self, chart: usize) -> &ChartCard {
+    pub(super) fn card(&self, chart: usize) -> &ChartCard {
         let index = self.workspace.chart_index(self.ids[chart]).expect("chart");
         &self.workspace.charts[index].chart
     }
 
     /// What a snapshot of chart `chart` shows, on the window.
-    fn frame_of(&self, chart: usize) -> Rect {
+    pub(super) fn frame_of(&self, chart: usize) -> Rect {
         self.card(chart).snapshot_frame()
     }
 
-    fn selecting(&self) -> bool {
+    /// Opens the workspace's frames to the Studio: drawn over the grid, the keyboard its own.
+    pub(super) fn with_studio(mut self) -> Self {
+        self.studio = true;
+        self.ctx.enable_accesskit();
+        self
+    }
+
+    /// The centre of the widget a screen reader calls `label`.
+    pub(super) fn label_at(&self, label: &str) -> Pos2 {
+        self.labels
+            .get(label)
+            .unwrap_or_else(|| panic!("no widget called {label:?} in {:?}", self.labels.keys()))
+            .center()
+    }
+
+    pub(super) fn selecting(&self) -> bool {
         self.workspace.is_selecting_portion()
     }
 
-    fn captured(&self) -> Option<&Capture> {
+    pub(super) fn captured(&self) -> Option<&Capture> {
         self.workspace
             .snapshot
             .studio
@@ -170,22 +228,22 @@ impl Rig {
             .map(|session| &session.capture)
     }
 
-    fn view_of(&self, chart: usize) -> crate::ui::ViewStep {
+    pub(super) fn view_of(&self, chart: usize) -> crate::ui::ViewStep {
         self.card(chart).view_step()
     }
 
-    fn drawings_of(&self, chart: usize) -> usize {
+    pub(super) fn drawings_of(&self, chart: usize) -> usize {
         let index = self.workspace.chart_index(self.ids[chart]).expect("chart");
         self.workspace.charts[index].drawings.len()
     }
 
     /// A point `fraction` of the way across and down chart `chart`'s snapshot frame.
-    fn at(&self, chart: usize, fraction: (f32, f32)) -> Pos2 {
+    pub(super) fn at(&self, chart: usize, fraction: (f32, f32)) -> Pos2 {
         let frame = self.frame_of(chart);
         frame.min + frame.size() * vec2(fraction.0, fraction.1)
     }
 
-    fn begin(&mut self) {
+    pub(super) fn begin(&mut self) {
         self.workspace.begin_portion_selection();
         self.settle();
     }
@@ -475,7 +533,7 @@ fn a_drag_over_one_chart_captures_that_charts_portion() {
     assert!((capture.size() - wanted).abs().max_elem() < 0.01);
     let session = rig.workspace.snapshot.studio.as_ref().expect("a session");
     assert_eq!(session.config.area, Area::Portion);
-    assert_eq!(session.config.style, Style::Chart);
+    assert_eq!(session.config.style, Style::Styled);
 }
 
 #[test]
