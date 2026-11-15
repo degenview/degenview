@@ -526,6 +526,27 @@ fn a_new_bar_is_not_navigation() {
 }
 
 #[test]
+fn a_bar_arriving_in_the_frame_a_follower_follows_does_not_shift_it() {
+    let mut linked = Linked::pair(BOTH);
+    linked.set_view(0, DEFAULT_VISIBLE, 200.0);
+    linked.set_view(1, DEFAULT_VISIBLE, 200.0);
+    linked.frames(2);
+    let from = linked.in_plot(0);
+    linked.frame(vec![egui::Event::PointerMoved(from)]);
+    linked.frame(vec![Linked::button(from, true)]);
+    linked.frame(vec![egui::Event::PointerMoved(from + Vec2::new(40.0, 0.0))]);
+    for member in &mut linked.members {
+        let last = member.candles.last().expect("bars").clone();
+        member
+            .candles
+            .push(series(last.open_time + HOUR, HOUR, 1).remove(0));
+    }
+    // The leader's event and the new bar reach the follower together.
+    linked.frame(vec![egui::Event::PointerMoved(from + Vec2::new(80.0, 0.0))]);
+    assert_eq!(linked.range(1), linked.range(0));
+}
+
+#[test]
 fn a_chart_following_the_newest_bar_does_not_drag_the_others() {
     let mut linked = Linked::pair(BOTH);
     linked.set_view(1, DEFAULT_VISIBLE, 40.0);
