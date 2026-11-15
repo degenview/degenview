@@ -462,10 +462,11 @@ impl ChartCard {
             let x = x_for(*index);
             // A label that would hang over the plot's right edge waits for the chart to move, as a
             // price label does at the plot's top and bottom: it would run into the price axis and
-            // the scale button in the corner.
+            // the scale button in the corner. So does one cut by the left edge.
             let galley =
                 painter.layout_no_wrap(label[5..].to_owned(), style.time_font(), style.text_color);
-            if x + galley.size().x / 2.0 > plot_right {
+            let half = galley.size().x / 2.0;
+            if x + half > plot_right || x - half < rect.left() {
                 continue;
             }
             let at = Pos2::new(x, y) - galley.size() / 2.0;

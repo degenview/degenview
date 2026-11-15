@@ -340,7 +340,7 @@ fn the_tick_budget_follows_the_height() {
 fn time_ticks_stay_on_their_bars_while_the_chart_pans() {
     // 20-point slots: a label every fifth bar of the series.
     let at = |first| {
-        time_ticks(first, 30, 20.0)
+        time_ticks(first, 30, 20.0, 60.0)
             .into_iter()
             .map(|index| first + index)
             .collect::<Vec<_>>()
@@ -353,9 +353,20 @@ fn time_ticks_stay_on_their_bars_while_the_chart_pans() {
             assert!(panned.contains(bar), "{bar} moved");
         }
     }
-    assert_eq!(time_tick_step(20.0), 5);
-    assert_eq!(time_tick_step(500.0), 1);
-    assert_eq!(time_tick_step(f32::NAN), 100);
+    assert_eq!(time_tick_step(20.0, 60.0), 5);
+    assert_eq!(time_tick_step(500.0, 60.0), 1);
+    assert_eq!(time_tick_step(f32::NAN, 60.0), 100);
+}
+
+#[test]
+fn wide_time_labels_are_spaced_so_they_never_touch() {
+    // A 13-point axis font drawn 1.35 times larger: labels about 116 points wide.
+    let (slot, label) = (8.0, 116.0);
+    let step = time_tick_step(slot, label);
+    assert!(step as f32 * slot >= label + 16.0, "{step}");
+    // Narrow labels keep the usual spacing.
+    assert_eq!(time_tick_step(slot, 60.0), 13);
+    assert_eq!(time_tick_step(slot, f32::NAN), 13);
 }
 
 // MARK: Window
