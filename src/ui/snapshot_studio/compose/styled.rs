@@ -33,7 +33,7 @@ const APP_ICON: &[u8] = include_bytes!("../../../../assets/brand/app_icon.png");
 /// The rest of the title block's proportions, as shares of its height.
 const TITLE_SHARE: f32 = 0.31;
 const SUBLINE_SHARE: f32 = 0.18;
-const LINE_HEADER_GAP_SHARE: f32 = 0.06;
+const LINE_GAP_SHARE: f32 = 0.06;
 /// The mark: the wordmark's size and the gap after the icon, as shares of the mark's height; its
 /// opacity.
 const WORDMARK_SHARE: f32 = 0.62;
@@ -93,9 +93,21 @@ fn paint_round_image(
     );
 }
 
+/// What the DegenView mark shows: the icon and the name, the icon alone, or nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Mark {
+    Full,
+    Icon,
+    Omitted,
+}
+
 /// The title block, in `strip`, the chart's top: the market's logo (a monogram until it has one),
-/// its name in bold and `EXCHANGE · timeframe` under it. The title is cut short of `mark`, the
-/// DegenView mark's place at the strip's right end, if there is one.
+/// its name in bold and `EXCHANGE · timeframe` under it, and the DegenView mark at the strip's
+/// right end when `mark` (its place, as the layout reserved it) says there is one.
+///
+/// The market's name always comes first: it is cut only when it alone is wider than the strip.
+/// The mark takes what is left, in full if it fits beside the title block, as its icon alone if
+/// only that does, and not at all otherwise.
 pub fn paint_header(
     painter: &Painter,
     strip: Rect,
@@ -135,10 +147,7 @@ pub fn paint_header(
     }
 
     let left = logo.max.x + height * HEADER_GAP_SHARE;
-    let right = mark.map_or(strip.max.x - pad, |mark| {
-        mark.min.x - height * HEADER_GAP_SHARE
-    });
-    let room = (right - left).max(1.0);
+    let room = (strip.max.x - pad - left).max(1.0);
     let title = kit::galley_on(
         painter,
         chart.title(),
@@ -159,19 +168,24 @@ pub fn paint_header(
         style.text_color,
         room,
     );
-    let block = title.size().y + height * LINE_HEADER_GAP_SHARE + subline.size().y;
+    let block = title.size().y + height * LINE_GAP_SHARE + subline.size().y;
     let top = strip.center().y - block / 2.0;
+    let text_end = left + title.size().x.max(subline.size().x);
     painter.galley(pos2(left, top), Arc::clone(&title), Color32::WHITE);
     painter.galley(
-        pos2(left, top + title.size().y + height * LINE_HEADER_GAP_SHARE),
+        pos2(left, top + title.size().y + height * LINE_GAP_SHARE),
         subline,
         Color32::WHITE,
     );
+    if let Some(mark) = mark {
+        paint_mark(painter, mark, text_end + height * HEADER_GAP_SHARE, style);
+    }
 }
 
 /// The DegenView mark, right-aligned in `rect` (the strip's end), centred on its height: the icon
-/// in a circle and the name beside it, faint.
-pub fn paint_mark(painter: &Painter, rect: Rect, style: &CanvasStyle) {
+/// in a circle and the name beside it, faint. `from` is the least x it may start at (where the
+/// title block ends): it is drawn in full, as its icon alone or not at all, whichever fits.
+fn paint_mark(painter: &Painter, rect: Rect, from: f32, style: &CanvasStyle) {
     let diameter = rect.height();
     let name = kit::galley_on(
         painter,
@@ -182,7 +196,18 @@ pub fn paint_mark(painter: &Painter, rect: Rect, style: &CanvasStyle) {
         f32::INFINITY,
     );
     let gap = diameter * MARK_GAP_SHARE;
-    let left = rect.max.x - name.size().x - gap - diameter;
+    let full = diameter + gap + name.size().x;
+    let kind = if rect.max.x - full >= from {
+        Mark::Full
+    } else if rect.max.x - diameter >= from {
+        Mark::Icon
+    } else {
+        Mark::Omitted
+    };
+    if kind == Mark::Omitted {
+        return;
+    }
+    let left = rect.max.x - if kind == Mark::Full { full } else { diameter };
     let icon = Rect::from_min_size(pos2(left, rect.min.y), vec2(diameter, diameter));
     paint_round_image(
         painter,
@@ -191,9 +216,11 @@ pub fn paint_mark(painter: &Painter, rect: Rect, style: &CanvasStyle) {
         app_icon(),
         Color32::WHITE.gamma_multiply(MARK_OPACITY),
     );
-    painter.galley(
-        pos2(icon.max.x + gap, icon.center().y - name.size().y / 2.0),
-        name,
-        Color32::WHITE,
-    );
+    if kind == Mark::Full {
+        painter.galley(
+            pos2(icon.max.x + gap, icon.center().y - name.size().y / 2.0),
+            name,
+            Color32::WHITE,
+        );
+    }
 }

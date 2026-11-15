@@ -281,9 +281,9 @@ Capture (frozen once)  +  StudioConfig  ─►  compose::paint ─► Scene ─�
   colours follow the canvas, not the app's theme: near black on a light canvas, near white on a dark
   one, the axis text colour for the subline. The mark (the app icon in a circle and "DegenView",
   at 55 % opacity) is at the right end of the title strip, centred on it, so it is never over market
-  data (`composition::branding`); the title is cut short of it, and the mark is left out only when
-  the strip cannot hold it with a strip height of room for the title (a decision: the title is what
-  stays).
+  data (`composition::branding` reserves its place). The market's name always comes first: it is cut
+  only when it alone is wider than the strip. The mark takes what is left of the strip, in full if it
+  fits beside the title block, as its icon alone if only that does, and not at all otherwise.
 - **Layouts** (`compose/layout.rs`): each chart's rectangle is mapped onto the body (a different
   proportion stretches the arrangement; each chart is refitted to its plot, never stretched) and
   painted clipped to its own rectangle, with a hairline on every edge two charts share. Framing is

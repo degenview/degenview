@@ -147,12 +147,9 @@ pub fn paint<'c>(
     if let Some(surround) = &surround {
         surround.paint_over(painter);
     }
-    let mark = composition.branding.map(|mark| mark.translate(origin));
     if let (Some(header), Some(headline)) = (composition.header, capture.headline()) {
+        let mark = composition.branding.map(|mark| mark.translate(origin));
         styled::paint_header(painter, header.translate(origin), mark, headline, &style);
-    }
-    if let Some(mark) = mark {
-        styled::paint_mark(painter, mark, &style);
     }
     Ok(())
 }

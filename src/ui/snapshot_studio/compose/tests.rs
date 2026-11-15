@@ -10,10 +10,10 @@ use crate::model::chart::snapshot::studio::{Area, AspectRatio, Background, Style
 use crate::model::chart::snapshot::{MAX_PIXELS, MAX_SIDE_PX};
 use crate::ui::chart::card::studio_fixture::Fixture;
 use crate::ui::chart::card::{SnapshotFrame, SnapshotGeometry};
-use crate::ui::snapshot_studio::capture::{Capture, LayoutCapture};
+use crate::ui::snapshot_studio::capture::{Capture, ChartCapture, LayoutCapture};
 use crate::ui::snapshot_studio::fixtures::{
     CHART_ID, Flat, chart_capture, close, first_difference, flatten, light_canvas, paint_shapes,
-    pixel, plain, rasterized, single, styled, texts,
+    parts, pixel, plain, rasterized, single, styled, texts,
 };
 use eframe::egui::{Pos2, Vec2, pos2, vec2};
 
@@ -364,17 +364,53 @@ fn the_mark_is_in_the_title_strip_beside_the_title_and_never_over_the_chart() {
                 _ => None,
             })
         };
-        let mark = at("DegenView").expect("the mark's name");
-        assert!(header.contains(mark), "{size:?}: {mark:?} in {header:?}");
-        assert!(mark.x > reserved.min.x, "{size:?}: right of the icon");
-        assert!(
-            mark.y < composition.body().min.y,
-            "{size:?}: above the body"
-        );
-        // And the title has not run into it.
-        let title = at("BTC/USDT").expect("the title");
-        assert!(title.x < reserved.min.x, "{size:?}");
+        // The market's name is whole in every size, and the mark never pushes it.
+        let title = at("BTC/USDT").expect("the whole title");
+        if let Some(mark) = at("DegenView") {
+            assert!(header.contains(mark), "{size:?}: {mark:?} in {header:?}");
+            assert!(mark.x > reserved.min.x, "{size:?}: right of the icon");
+            assert!(mark.x > title.x, "{size:?}: beside the title");
+            assert!(
+                mark.y < composition.body().min.y,
+                "{size:?}: above the body"
+            );
+        }
     }
+}
+
+#[test]
+fn the_mark_gives_way_to_the_title_first_as_its_icon_and_then_altogether() {
+    let fixture = Fixture::plain(ChartCanvas::default(), 300);
+    let cards = |id: u64| (id == CHART_ID).then(|| fixture.card());
+    let config = styled(AspectRatio::Portrait9x16, Background::None);
+    let with_title = |title: &str| {
+        let mut parts = parts(&fixture, CHART_ID);
+        parts.title = title.to_owned();
+        let capture =
+            Capture::Single(ChartCapture::new(fixture.card(), parts, 1.0, None).expect("captured"));
+        let shapes = flatten(&painted(&capture, &cards, &config, 1.0));
+        let words = texts(&painted(&capture, &cards, &config, 1.0));
+        (words, shapes.len())
+    };
+    let (short, with_icon) = with_title("BTC");
+    assert!(short.contains(&"BTC".to_owned()) && short.contains(&"DegenView".to_owned()));
+    // A name that leaves room for the icon only: no wordmark, the icon is still drawn.
+    let (middling, icon_alone) = with_title("BTC/USDT Perp");
+    assert!(
+        middling.contains(&"BTC/USDT Perp".to_owned()),
+        "{middling:?}"
+    );
+    assert!(!middling.contains(&"DegenView".to_owned()));
+    assert_eq!(
+        icon_alone + 1,
+        with_icon,
+        "the icon is drawn, the wordmark is not"
+    );
+    // A name wider than the strip alone (it is cut there) leaves no room: the mark is gone.
+    let long = "A market whose name is far longer than any title strip".repeat(2);
+    let (cut, nothing) = with_title(&long);
+    assert!(!cut.contains(&"DegenView".to_owned()));
+    assert_eq!(nothing + 1, icon_alone, "no icon either");
 }
 
 #[test]

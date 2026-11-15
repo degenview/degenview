@@ -28,8 +28,6 @@ pub const BRANDING_HEIGHT: (f32, f32) = (18.0, 28.0);
 pub const HEADER_PAD_SHARE: f32 = 0.34;
 pub const HEADER_LOGO_SHARE: f32 = 0.52;
 pub const HEADER_GAP_SHARE: f32 = 0.22;
-/// The room, in strip heights, the title must keep beside the mark for the mark to be drawn.
-const TITLE_ROOM: f32 = 1.0;
 /// The mark's width over its height: the app icon and the word beside it.
 const BRANDING_ASPECT: f32 = 6.5;
 
@@ -174,8 +172,9 @@ pub fn layout(capture: Vec2, config: &StudioConfig) -> Composition {
 }
 
 /// The mark's place in the title strip: at its right end, centred on the strip, so it never lies
-/// over market data. `None` where the strip cannot hold it and still leave the title the room
-/// [`TITLE_ROOM`] asks (a narrow image: the title is what stays).
+/// over market data. This is the room the full mark may take, right-aligned; `None` where it would
+/// reach into the logo's place. How much of it is drawn (in full, its icon alone or none) depends on
+/// how wide the market's name is, which the composer measures: the name is never cut for the mark.
 fn branding_rect(header: Rect, chart: Rect) -> Option<Rect> {
     let height = (chart.height() * BRANDING_SHARE)
         .clamp(BRANDING_HEIGHT.0, BRANDING_HEIGHT.1)
@@ -188,7 +187,7 @@ fn branding_rect(header: Rect, chart: Rect) -> Option<Rect> {
     );
     // What the title block takes before its text: the margin, the logo and the gap after it.
     let before_title = header.height() * (HEADER_PAD_SHARE + HEADER_LOGO_SHARE + HEADER_GAP_SHARE);
-    (rect.min.x - header.min.x >= before_title + TITLE_ROOM * header.height()).then_some(rect)
+    (rect.min.x - header.min.x >= before_title).then_some(rect)
 }
 
 /// The image's size in pixels at `scale`, or at a smaller one where the image would pass the

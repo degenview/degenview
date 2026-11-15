@@ -281,7 +281,7 @@ fn the_mark_is_left_out_when_switched_off_or_not_styled() {
 }
 
 #[test]
-fn the_mark_is_left_out_of_a_strip_too_narrow_for_it_and_the_title() {
+fn the_mark_has_no_place_in_a_strip_too_narrow_to_clear_the_logo() {
     let got = layout(
         vec2(90.0, 300.0),
         &styled(AspectRatio::Original, Background::None),
