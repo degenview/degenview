@@ -39,6 +39,11 @@ watchlists.
   token tables must cover minutes or the script fails with `PINE4021`. Coinbase: 1m/5m/15m native,
   folds 30m (from 15m) and 4h (from 1h); pages stop at `MAX_PAGES` (60 x 290 candles), so 5m
   intrabars reach back ~60 days.
+  Alpaca: native `Nm` (1-59, `NMin`) and `Nh` (1-23, `NHour`), `1d`, `1w`, `1M`; any other token is
+  `ProviderError::Other("Alpaca has no <interval> candles")`, never daily bars. A bar closes 1 ms
+  before the next opens (days, weeks, months keep Alpaca's New York midnight offset, so an hour off
+  across a clock change). Intraday fetches look back at least 7 days, so a tail refresh (4 bars)
+  finds the last session over a weekend; every start is clamped to `EARLIEST_MS`.
 - `service::fetch_klines` runs every provider through `service::normalize` (ascending, one candle per
   open time, finite prices, range holds open and close). GeckoTerminal lists only traded intervals;
   `fill_gaps` adds flat zero-volume candles for even spacing. Volume units differ (base asset,
@@ -65,8 +70,14 @@ watchlists.
   disabled in tests.
 - `service::image::icon` keys by `"<source>:<ticker>"`, never chart id: static CDN (unthrottled HEAD), then
   rate-limited CoinGecko search, then a letter monogram.
-- One `BinanceLiveFeed` per workspace: updates the forming candle, reconnects with backoff. A
-  current-or-newer WebSocket bar beats an older REST snapshot.
+- One `BinanceLiveFeed` per workspace: updates the forming candle, reconnects with backoff. Charts
+  and compared markets fold a live kline with `model::market::live::apply_live` only (replace the
+  newest bar or append; a kline older than the newest is dropped, so candles stay ascending), and
+  every chart of the symbol takes it. A current-or-newer WebSocket bar beats an older REST snapshot
+  (`live::merge_fetched`) only if the socket delivered after that request began (`LiveMark::guard_for`):
+  when it goes quiet, REST refreshes update the forming bar again.
+- `service::cache::fetch`: a failed tail refresh falls back to the whole fetch, except a rate limit,
+  which is returned.
 - Visible watchlists share one Coinbase ticker socket (last trade, 24-hour open, volume); Coinbase
   has no candle channel.
 

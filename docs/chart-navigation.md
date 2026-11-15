@@ -177,8 +177,9 @@ or right after the first fetch (`OlderHistory::untouched`, so the first page is 
 the user scrolls), the chart asks `service::fetch_klines_range` for the 1,000 candles before it,
 through the work queue. One request is out at a time, a failure waits 15 s, an empty page marks the
 start of history, and a page for a market or timeframe the chart has left is dropped. A refresh
-keeps the older candles it did not bring (`history::with_older`) once a page has been loaded; the
-chart holds at most 100,000 candles.
+keeps the older candles it did not bring (`history::with_older`) once a page has been loaded or
+while one is in flight (a bar that opened meanwhile moves the oldest bar held, and the page, asked
+for with the old end, would leave it missing); the chart holds at most 100,000 candles.
 
 `DataSource::supports_older_history(timeframe)` says what can page. Coarser bars (1w, 1M, 3M, 1Y)
 are folded from finer pages with `service::fold_calendar`, whose first bucket is dropped when the

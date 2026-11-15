@@ -137,7 +137,7 @@ same `OverlayCommand`s through `apply_overlay_command`, so each is one undo step
 `OverlayHub` holds one entry per market (`InstrumentId::key()`), shared by every overlay on every chart
 of the workspace that names it, and dropped when the last holder goes. It composes the services the
 chart uses (`service::fetch_klines`, `fetch_klines_range`, `work_queue::submit_for`,
-`merge_fetched_candles`, `OlderHistory`) and adds no service of its own.
+`model::market::live`, `OlderHistory`) and adds no service of its own.
 
 * **Per frame**: `sync_chart` tells the hub what a chart's overlays name (a comparison, no allocation,
   when nothing changed); `poll` drains answers and starts what is due; the workspace hands each card

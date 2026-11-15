@@ -90,8 +90,8 @@ fn patched(candles: &[Kline], tail: &[Kline]) -> Option<Vec<Kline>> {
 /// Candles for `source`/`symbol`/`interval` through `fetch`, which asks the provider for a `limit`.
 ///
 /// Fresh candles are served as they are; older ones are patched with `fetch(TAIL_LIMIT)`; anything
-/// else, or a tail that failed for any reason but a rate limit, is fetched whole. Calls for one series wait for each other, and the later ones find what
-/// the first brought.
+/// else, or a tail that failed for any reason but a rate limit, is fetched whole. Calls for one
+/// series wait for each other, and the later ones find what the first brought.
 pub fn fetch(
     source: DataSource,
     symbol: &str,
