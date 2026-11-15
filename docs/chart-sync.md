@@ -46,6 +46,14 @@ one slot wide, so the map is continuous and strictly increasing and a chart neve
 between Friday and Monday. Beyond either end it continues at the length of the first or last bar:
 empty space is a position in time, never an invented bar.
 
+A bar's length is `close_time - open_time + 1`. Several providers (Polymarket, Kalshi,
+CoinMarketCap, raw GeckoTerminal trades) close a bar as it opens, which would make the empty space
+past either end run at a millisecond per slot: a follower whose data ends before the leader's time
+would jump to its widest margin, and with both switches on the span of a zoom would explode. Such a
+bar lasts as long as the spacing to its neighbour instead: the next bar's open (the first bar
+included), for the last bar the spacing before it, for a lone bar a millisecond. Provider-shaped
+bars are covered by tests; nothing was checked against a live prediction-market feed.
+
 | Position | Zoom | A pan | A zoom |
 | --- | --- | --- | --- |
 | off | off | – | – |
@@ -62,7 +70,9 @@ empty space is a position in time, never an invented bar.
   rounding cannot accumulate over a long wheel gesture. A burst ends with the first frame that does
   not zoom.
 - A chart at its newest bar sends followers to **their** newest bar, so "go to latest" works even
-  when one feed lags by a candle.
+  when one feed lags by a candle. With both switches on, the follower counts the bars of the
+  leader's range only up to its own data: a stock chart on a weekend, behind a crypto leader, shows
+  the leader's start to its own newest bar, not bars invented for the days after it.
 
 ## Who leads, and how loops are prevented
 
@@ -90,8 +100,22 @@ a single pass: egui's `request_discard` would repaint the grid twice every frame
 flashes a debug warning, so it was not used. See the measurements below.
 
 Live data is never navigation: a bar that arrives changes the offset before the baseline, so it
-publishes nothing. Replay cuts the bars a chart receives; the time map reads those, so
+publishes nothing. `follow_sync` accounts for an arrival (`keep_view_on_its_bars`) before the hub
+maps the leader's time onto the chart's bars, which already include it; otherwise the body would
+add the same bar to the offset the hub just set and show a scrolled-back follower one bar too old. Replay cuts the bars a chart receives; the time map reads those, so
 unrevealed bars cannot be shown and nothing here steps replay.
+
+## The crosshair
+
+The crosshair stays shared by every chart of the tab, but by **time**, not by position on the plot:
+the chart under the pointer reports the time at its slot position (`TimeAxis::time_at`), and every
+other chart draws its column where `TimeAxis::x_at` puts that time on its own bars, so charts of
+different zoom, margin, interval or session gaps point at the same instant. A chart whose time is
+off its screen draws no column. Price-based types (Renko, Kagi, ...) have no time: they neither
+report one nor draw another chart's column, but still draw their own crosshair under the pointer.
+`CrosshairInfo.x_fraction` stays for that, read only by the chart that owns the crosshair. No
+setting was added; the crosshair is shared as before, just aligned. The readout's bar pick is made
+from the resulting x, as it was.
 
 ## Vertical independence
 
@@ -105,8 +129,13 @@ publishes nothing.
 - A follower whose data starts after the leader's time stays at its oldest bars (with a screenful
   in view, the viewport's rule) and remembers it has not arrived. When older candles load it moves
   on, without any new gesture. The leader is never pushed back.
+- With both switches on, the same applies to zoom: a follower that cannot show the leader's whole
+  range yet (it has fewer bars than the range holds) shows as many as it can, and applies the
+  range again when older candles load.
 - Space past the newest bar is followed in time, within the limit every chart has.
-- A chart with no bars is left alone.
+- A chart with no bars is left alone, and the event it could not apply waits: it is delivered
+  once bars arrive, unless a newer one has replaced it, so a pan made while a chart loads is not
+  lost.
 
 ## Which charts take part
 
@@ -174,3 +203,6 @@ and CPU in the running app, hundreds of drawings or several Pine overlays togeth
 - A chart drawn before the leader trails it by one frame (see above).
 - Replay and the paper-trading, alert and Pine overlays were not exercised with linking beyond
   sharing the same viewport transform.
+- The crosshair's column is tested headlessly (same instant on charts of different zoom, none
+  for price-based types or a time off screen); it was not looked at in a window, nor across a
+  weekend gap or on the second window of a tab.
