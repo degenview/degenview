@@ -243,6 +243,8 @@ pub(super) struct Candle {
     pub close: f32,
     /// Half the width of the body, or of the ticks.
     pub half: f32,
+    /// The width of the chart's slot it sits in, which the gap between neighbours is kept in.
+    pub slot: f32,
     pub look: CandleLook,
 }
 

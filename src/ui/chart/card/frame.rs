@@ -340,15 +340,9 @@ impl ChartCard {
         let (scale, slot_width, lead) = (&view.scale, view.slot_width, view.lead);
         let x_for =
             |index: usize| plot.left() + slot_width * (index as f32 + 0.5) + slot_width * lead;
-        let body_half_width = candle_body_half_width(slot_width);
         let x_for_index =
             |index: i64| plot.left() + slot_width * (index as f32 + 0.5) + slot_width * lead;
         let y_for = |price: f64| scale.y(price);
-        let candle_style = CandleStyle {
-            body_width: body_half_width * 2.0,
-            wick_width: 1.0,
-            min_body_height: 1.0,
-        };
         // Bars lying after the last one shown: the scripts' series are indexed from the end.
         let tail = bars.len() - view.end;
         let pine_layers: Vec<(PineLayer, bool)> = layout
@@ -365,7 +359,6 @@ impl ChartCard {
                         slot_width,
                         x_for_index: &x_for_index,
                         y_for: &y_for,
-                        candle_style,
                     },
                     order.behind(pine.behind_chart),
                 )

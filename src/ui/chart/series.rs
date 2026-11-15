@@ -169,11 +169,31 @@ pub fn candle_half_width(slot_width: f32) -> f32 {
     (slot_width * 0.34).clamp(1.0, 8.0)
 }
 
+/// How wide a candle's wick is, in points.
+pub const WICK_WIDTH: f32 = 1.0;
+
+fn sane_pixels_per_point(pixels_per_point: f32) -> f32 {
+    if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
+        pixels_per_point
+    } else {
+        1.0
+    }
+}
+
 /// A candle's body and wick edges (points, left and right), laid on the physical pixel grid.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SnappedCandle {
     pub body: (f32, f32),
     pub wick: (f32, f32),
+}
+
+fn wick_pixels(wick_width: f32, ppp: f32) -> f32 {
+    (wick_width * ppp).round().max(1.0)
+}
+
+/// The physical pixel column a wick of `wick_px` pixels centred on `x` starts in.
+fn wick_column(x: f32, wick_px: f32, ppp: f32) -> f32 {
+    (x * ppp - wick_px / 2.0).round()
 }
 
 /// Lays a candle centred on `x` on whole physical pixels, so every body of one width paints the
@@ -183,18 +203,19 @@ pub struct SnappedCandle {
 /// the same body shows 5 px wide in one slot and 6 in the next, and the wick is off-centre. The
 /// body gets the width nearest to `2 * half_width` that has the wick's parity (an odd body for a
 /// one-pixel wick), which is what lets the wick be exactly centred.
+///
+/// A body is never wider than the slot less one pixel, so neighbours keep a gap: centres are
+/// snapped separately and can land a pixel closer than the slot is wide. In a slot too narrow for
+/// that the body is the wick.
 pub fn snap_candle(
     x: f32,
     half_width: f32,
     wick_width: f32,
+    slot_width: f32,
     pixels_per_point: f32,
 ) -> SnappedCandle {
-    let ppp = if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
-        pixels_per_point
-    } else {
-        1.0
-    };
-    let wick_px = (wick_width * ppp).round().max(1.0);
+    let ppp = sane_pixels_per_point(pixels_per_point);
+    let wick_px = wick_pixels(wick_width, ppp);
     let ideal = 2.0 * half_width * ppp;
     let mut body_px = ideal.round().max(wick_px);
     if (body_px - wick_px) % 2.0 != 0.0 {
@@ -206,11 +227,50 @@ pub fn snap_candle(
             up
         };
     }
-    let wick_left = (x * ppp - wick_px / 2.0).round();
+    let room = (slot_width * ppp).floor() - 1.0;
+    if body_px > room {
+        body_px = room.max(wick_px);
+        if (body_px - wick_px) % 2.0 != 0.0 {
+            body_px -= 1.0;
+        }
+    }
+    let wick_left = wick_column(x, wick_px, ppp);
     let body_left = wick_left - (body_px - wick_px) / 2.0;
     SnappedCandle {
         body: (body_left / ppp, (body_left + body_px) / ppp),
         wick: (wick_left / ppp, (wick_left + wick_px) / ppp),
+    }
+}
+
+/// A candle's body and wick extents (points, top and bottom), laid on the physical pixel grid.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SnappedRows {
+    pub body: (f32, f32),
+    pub wick: (f32, f32),
+}
+
+/// Lays a candle's rows on whole physical pixels from the screen `y` of its open, close, high and
+/// low (in any order).
+///
+/// Fractional edges render as two half-strength rows, shimmer while the scale changes, and leave a
+/// seam where a wick meets a body that were anti-aliased separately. Here the wick ends on the
+/// body's own rows, and a body (a doji's) is at least one pixel tall, so it never vanishes.
+pub fn snap_rows(
+    open_y: f32,
+    close_y: f32,
+    high_y: f32,
+    low_y: f32,
+    pixels_per_point: f32,
+) -> SnappedRows {
+    let ppp = sane_pixels_per_point(pixels_per_point);
+    let row = |y: f32| (y * ppp).round();
+    let body_top = row(open_y.min(close_y));
+    let body_bottom = row(open_y.max(close_y)).max(body_top + 1.0);
+    let wick_top = row(high_y.min(low_y)).min(body_top);
+    let wick_bottom = row(high_y.max(low_y)).max(body_bottom);
+    SnappedRows {
+        body: (body_top / ppp, body_bottom / ppp),
+        wick: (wick_top / ppp, wick_bottom / ppp),
     }
 }
 
@@ -219,15 +279,43 @@ fn brick_half_width(slot_width: f32) -> f32 {
     (slot_width * 0.46).clamp(1.0, 24.0)
 }
 
+/// A candle ready to paint: where it sits, how wide it is and how it looks.
+struct Candle {
+    index: usize,
+    x: f32,
+    half: f32,
+    ohlc: [f64; 4],
+    look: CandleLook,
+}
+
+impl Candle {
+    /// Folds the next bar of the same pixel column in: the column reaches every high and low and
+    /// looks like the later bar.
+    fn absorb(&mut self, next: Candle) {
+        let high = self.ohlc[1].max(next.ohlc[1]);
+        let low = self.ohlc[2].min(next.ohlc[2]);
+        *self = Candle {
+            ohlc: [next.ohlc[0], high, low, next.ohlc[3]],
+            ..next
+        };
+    }
+}
+
+/// Zoomed out far enough, several bars share a pixel column. Painting each would stack up to four
+/// shapes per bar on top of one another, the later hiding the earlier; a column is painted once
+/// instead, so the shapes of a frame never outnumber the plot's pixel columns.
 fn candles(frame: &SeriesFrame) {
     let style = frame.style;
     let settings = style.candle_settings().copied().unwrap_or_default();
     let brick = matches!(frame.chart_type, ChartType::Renko | ChartType::LineBreak);
+    let ppp = sane_pixels_per_point(frame.painter.ctx().pixels_per_point());
+    let wick_px = wick_pixels(WICK_WIDTH, ppp);
     let max_volume = frame
         .bars
         .iter()
         .map(|bar| bar.volume)
         .fold(0.0_f64, f64::max);
+    let mut open: Option<(f32, Candle)> = None;
     for (index, bar) in frame.bars.iter().enumerate() {
         let previous = frame.previous_close_of(index);
         let recolor = frame.recolor_of(index);
@@ -249,14 +337,26 @@ fn candles(frame: &SeriesFrame) {
         } else {
             drawn_extremes(bar.open, bar.high, bar.low, bar.close)
         };
-        paint_candle(
-            frame,
+        let x = (frame.x_for)(index);
+        let candle = Candle {
             index,
-            (frame.x_for)(index),
+            x,
             half,
-            [bar.open, high, low, bar.close],
-            &look,
-        );
+            ohlc: [bar.open, high, low, bar.close],
+            look,
+        };
+        let column = wick_column(x, wick_px, ppp);
+        match open.as_mut() {
+            Some((open_column, merged)) if *open_column == column => merged.absorb(candle),
+            _ => {
+                if let Some((_, done)) = open.replace((column, candle)) {
+                    paint_candle(frame, done.index, done.x, done.half, done.ohlc, &done.look);
+                }
+            }
+        }
+    }
+    if let Some((_, last)) = open {
+        paint_candle(frame, last.index, last.x, last.half, last.ohlc, &last.look);
     }
 }
 
@@ -270,25 +370,32 @@ pub(crate) fn paint_candle(
     look: &CandleLook,
 ) {
     let painter = frame.painter;
+    let ppp = painter.ctx().pixels_per_point();
     let [open, high, low, close] = ohlc;
-    let (open_y, close_y) = (frame.y(open), frame.y(close));
-    let (body_top, body_bottom) = (open_y.min(close_y), open_y.max(close_y));
-    let body_bottom = body_bottom.max(body_top + 1.0);
-    let snapped = snap_candle(x, half_width, 1.0, painter.ctx().pixels_per_point());
+    let rows = snap_rows(
+        frame.y(open),
+        frame.y(close),
+        frame.y(high),
+        frame.y(low),
+        ppp,
+    );
+    let snapped = snap_candle(x, half_width, WICK_WIDTH, frame.slot_width, ppp);
     if let Some(wick) = look.wick {
         let tint = frame.fade(index, color(wick));
         let (left, right) = snapped.wick;
-        for (top, bottom) in [(frame.y(high), body_top), (body_bottom, frame.y(low))] {
-            painter.rect_filled(
-                Rect::from_min_max(Pos2::new(left, top), Pos2::new(right, bottom)),
-                0.0,
-                tint,
-            );
+        for (top, bottom) in [(rows.wick.0, rows.body.0), (rows.body.1, rows.wick.1)] {
+            if bottom > top {
+                painter.rect_filled(
+                    Rect::from_min_max(Pos2::new(left, top), Pos2::new(right, bottom)),
+                    0.0,
+                    tint,
+                );
+            }
         }
     }
     let body = Rect::from_min_max(
-        Pos2::new(snapped.body.0, body_top),
-        Pos2::new(snapped.body.1, body_bottom),
+        Pos2::new(snapped.body.0, rows.body.0),
+        Pos2::new(snapped.body.1, rows.body.1),
     );
     if let Fill::Solid(fill) = look.body {
         painter.rect_filled(body, 0.5, frame.fade(index, color(fill)));
@@ -784,6 +891,7 @@ mod tests {
     use super::*;
     use crate::model::chart::kind::CandleSettings;
     use crate::model::chart::synthetic::{Construction, build_with};
+    use eframe::egui::epaint::RectShape;
     use eframe::egui::{self, pos2};
 
     fn bar(index: usize, open: f64, high: f64, low: f64, close: f64, volume: f64) -> Kline {
@@ -814,25 +922,26 @@ mod tests {
             .collect()
     }
 
-    /// How many shapes `paint` put on a headless frame for `chart_type` over `bars`.
-    fn shapes(
+    /// What `paint` drew on a headless frame, `slot` points per bar at `ppp` pixels per point.
+    fn painted(
         chart_type: ChartType,
         style: &ChartStyle,
         source: &[Kline],
         bars: &[Kline],
-    ) -> usize {
+        (slot, ppp): (f32, f32),
+    ) -> Vec<Shape> {
         let ctx = egui::Context::default();
+        ctx.set_pixels_per_point(ppp);
         let plot = Rect::from_min_max(pos2(0.0, 0.0), pos2(400.0, 200.0));
         let scale = PriceScale::linear(80.0, 120.0, 0.0, 200.0);
-        let slot = plot.width() / bars.len().max(1) as f32;
         let series = Construction::of(&ChartStyle {
             chart_type,
             ..*style
         })
         .map(|construction| build_with(construction, source, i64::MAX / 2));
         let synthetic = series.as_ref().map(|series| series.bars.as_slice());
-        let mut count = 0;
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            assert_eq!(ui.ctx().pixels_per_point(), ppp);
             let x_for = |index: usize| slot * (index as f32 + 0.5);
             paint(&SeriesFrame {
                 painter: ui.painter(),
@@ -851,9 +960,34 @@ mod tests {
                 price_format: PriceFormat::AUTO,
             });
         });
-        count += output.shapes.len();
         output.textures_delta.clear();
-        count
+        output
+            .shapes
+            .into_iter()
+            .map(|clipped| clipped.shape)
+            .collect()
+    }
+
+    /// How many shapes `paint` put on a headless frame for `chart_type` over `bars`.
+    fn shapes(
+        chart_type: ChartType,
+        style: &ChartStyle,
+        source: &[Kline],
+        bars: &[Kline],
+    ) -> usize {
+        let slot = 400.0 / bars.len().max(1) as f32;
+        painted(chart_type, style, source, bars, (slot, 1.0)).len()
+    }
+
+    /// The rectangles of `shapes` that are filled, and the ones that are only outlined.
+    fn rects(shapes: &[Shape]) -> (Vec<RectShape>, Vec<RectShape>) {
+        shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                Shape::Rect(rect) => Some(rect.clone()),
+                _ => None,
+            })
+            .partition(|rect| rect.fill != Color32::TRANSPARENT)
     }
 
     fn styled(chart_type: ChartType) -> ChartStyle {
@@ -993,7 +1127,7 @@ mod tests {
                 let mut width = None;
                 for step in 0..200 {
                     let x = 100.0 + step as f32 * 0.137;
-                    let c = snap_candle(x, half, 1.0, ppp);
+                    let c = snap_candle(x, half, 1.0, slot as f32, ppp);
                     let px = |v: f32| v * ppp;
                     for edge in [c.body.0, c.body.1, c.wick.0, c.wick.1] {
                         assert!((px(edge) - px(edge).round()).abs() < 1e-3, "off grid");
@@ -1009,6 +1143,161 @@ mod tests {
                     assert!((px(c.wick.0 + c.wick.1) / 2.0 - px(x)).abs() <= 0.5 + 1e-3);
                 }
             }
+        }
+    }
+
+    fn on_grid(value: f32, ppp: f32) -> bool {
+        (value * ppp - (value * ppp).round()).abs() < 1e-3
+    }
+
+    #[test]
+    fn rows_land_on_whole_pixels_and_a_doji_keeps_one() {
+        for ppp in [1.0_f32, 1.5, 2.0, 3.0] {
+            for step in 0..60 {
+                let y = 40.0 + step as f32 * 0.137;
+                let rows = snap_rows(y, y + 0.2, y - 7.3, y + 9.1, ppp);
+                for edge in [rows.body.0, rows.body.1, rows.wick.0, rows.wick.1] {
+                    assert!(on_grid(edge, ppp), "ppp {ppp} y {y}: {edge}");
+                }
+                assert!((rows.body.1 - rows.body.0) * ppp >= 1.0 - 1e-3);
+                assert!(rows.wick.0 <= rows.body.0 && rows.wick.1 >= rows.body.1);
+            }
+        }
+        let doji = snap_rows(50.3, 50.3, 50.3, 50.3, 2.0);
+        assert_eq!(doji.body, (50.5, 51.0));
+        assert_eq!(doji.wick, doji.body);
+    }
+
+    #[test]
+    fn a_wick_ends_on_the_bodys_rows_and_never_stops_short_of_it() {
+        let short = snap_rows(10.0, 30.0, 12.0, 28.0, 1.0);
+        assert_eq!(short.wick, short.body);
+        let swapped = snap_rows(30.4, 10.4, 40.2, 2.6, 2.0);
+        assert_eq!(swapped, snap_rows(10.4, 30.4, 2.6, 40.2, 2.0));
+    }
+
+    #[test]
+    fn a_painted_candle_shares_its_pixel_rows_between_wick_and_body() {
+        let bars = [
+            bar(0, 100.3, 104.7, 98.2, 103.1, 1.0),
+            bar(1, 100.0, 101.0, 99.0, 100.0, 1.0),
+        ];
+        for ppp in [1.0_f32, 2.0] {
+            for bar in &bars {
+                let one = std::slice::from_ref(bar);
+                let shapes = painted(
+                    ChartType::Candles,
+                    &styled(ChartType::Candles),
+                    one,
+                    one,
+                    (12.0, ppp),
+                );
+                let (filled, _) = rects(&shapes);
+                let [upper, lower, body] = &filled[..] else {
+                    panic!("two wicks and a body, got {}", filled.len());
+                };
+                assert_eq!(upper.rect.max.y, body.rect.min.y, "ppp {ppp}");
+                assert_eq!(body.rect.max.y, lower.rect.min.y, "ppp {ppp}");
+                for edge in [
+                    upper.rect.min.y,
+                    body.rect.min.y,
+                    body.rect.max.y,
+                    lower.rect.max.y,
+                ] {
+                    assert!(on_grid(edge, ppp), "ppp {ppp}: {edge}");
+                }
+                assert!(body.rect.height() * ppp >= 1.0 - 1e-3);
+                assert_eq!(
+                    upper.rect.min.x + upper.rect.max.x,
+                    body.rect.min.x + body.rect.max.x
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn neighbouring_bodies_keep_a_gap_at_every_slot_width() {
+        for ppp in [1.0_f32, 2.0] {
+            for step in 0..=56 {
+                let slot = 2.0 + step as f32 * 0.5;
+                let half = candle_half_width(slot);
+                let slot_px = (slot * ppp).floor();
+                for phase in 0..50 {
+                    let x = 100.0 + phase as f32 * 0.173;
+                    let here = snap_candle(x, half, WICK_WIDTH, slot, ppp);
+                    let next = snap_candle(x + slot, half, WICK_WIDTH, slot, ppp);
+                    let width = |edges: (f32, f32)| ((edges.1 - edges.0) * ppp).round();
+                    let (body, wick) = (width(here.body), width(here.wick));
+                    let at = format!("ppp {ppp} slot {slot} x {x}");
+                    assert!(body <= (slot_px - 1.0).max(wick), "{at}: body {body}");
+                    assert!(body >= wick && (body - wick) % 2.0 == 0.0, "{at}: parity");
+                    assert!(
+                        (here.body.0 + here.body.1 - here.wick.0 - here.wick.1).abs() * ppp < 1e-3,
+                        "{at}: wick off-centre"
+                    );
+                    if slot_px - 1.0 >= wick {
+                        assert!(
+                            (next.body.0 - here.body.1) * ppp >= 1.0 - 1e-3,
+                            "{at}: touching"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bars_sharing_a_pixel_column_paint_once_as_their_combined_range() {
+        let first = bar(0, 100.0, 101.0, 99.0, 100.5, 1.0);
+        let highest = bar(1, 100.5, 112.0, 100.0, 101.0, 1.0);
+        let lowest = bar(2, 101.0, 102.0, 88.0, 99.0, 1.0);
+        let last = bar(3, 99.0, 100.0, 97.0, 97.5, 1.0);
+        let bars = [first, highest, lowest, last];
+        let scale = PriceScale::linear(80.0, 120.0, 0.0, 200.0);
+        // Four bars to a pixel column.
+        let shapes = painted(
+            ChartType::Candles,
+            &styled(ChartType::Candles),
+            &bars,
+            &bars,
+            (0.25, 1.0),
+        );
+        let (filled, _) = rects(&shapes);
+        let [upper, lower, body] = &filled[..] else {
+            panic!("one candle, got {} filled shapes", filled.len());
+        };
+        assert_eq!(upper.rect.min.y, scale.y(112.0).round());
+        assert_eq!(lower.rect.max.y, scale.y(88.0).round());
+        assert_eq!(
+            body.fill,
+            Color32::from_rgb(200, 0, 0),
+            "the later bar falls"
+        );
+        assert_eq!(shapes.len(), 4);
+    }
+
+    #[test]
+    fn a_dense_chart_paints_no_more_than_a_candle_per_pixel_column() {
+        let bars: Vec<Kline> = (0..1600)
+            .map(|index| {
+                let base = 100.0 + (index % 9) as f64;
+                bar(index, base, base + 3.0, base - 3.0, base + 1.0, 1.0)
+            })
+            .collect();
+        for ppp in [1.0_f32, 2.0] {
+            let shapes = painted(
+                ChartType::Candles,
+                &styled(ChartType::Candles),
+                &bars,
+                &bars,
+                (0.25, ppp),
+            );
+            let columns = (400.0 * ppp) as usize + 1;
+            assert!(
+                shapes.len() <= 4 * columns,
+                "ppp {ppp}: {} shapes",
+                shapes.len()
+            );
         }
     }
 

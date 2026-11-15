@@ -35,7 +35,7 @@ use crate::ui::drawing::layer::{DrawingFrame, DrawingLayer, Projection, TextMeas
 use crate::ui::drawing::render::TimeIndex;
 use crate::ui::icons::{self, Icon};
 use crate::ui::paper::chart_trading::{self, PaperCardState};
-use crate::ui::pine::chart_render::{self, CandleStyle, HoverTarget, PineLayer};
+use crate::ui::pine::chart_render::{self, HoverTarget, PineLayer};
 use crate::ui::pine::geometry::{OverlayExtent, overlay_extent};
 use crate::ui::replay::overlay::{self, ReplayChartFrame};
 use crate::ui::theme;
@@ -83,11 +83,6 @@ fn visible_price_move(
     let amount = last.close - first.close;
     let percent = amount / first.close * 100.0;
     (amount.is_finite() && percent.is_finite()).then_some((amount, percent))
-}
-
-/// Half the width of a candle body, matching the real candles the Pine overlay recolours.
-fn candle_body_half_width(slot_width: f32) -> f32 {
-    (slot_width * 0.34).clamp(1.0, 8.0)
 }
 
 /// Signals a chart card emits while it is being drawn. The owning workspace

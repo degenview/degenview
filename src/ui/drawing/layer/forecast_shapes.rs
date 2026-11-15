@@ -22,6 +22,7 @@ use crate::model::forecast::style::{GhostOptions, PositionOptions};
 use crate::model::pattern::bars::{BarsMode, BarsPattern};
 use crate::model::watchlist::quote::compact_number;
 use crate::model::{Anchor, Geometry, PriceFormat, Tool};
+use crate::ui::chart::series;
 use crate::ui::drawing::geometry as geo;
 use crate::ui::drawing::render::RulerReadout;
 use eframe::egui::{Pos2, Rect, pos2, vec2};
@@ -495,11 +496,6 @@ fn forecast(
 
 // MARK: Bars pattern
 
-/// Half the width of a candle or a bar's ticks in a chart whose slots are `slot` px wide.
-fn half_width(slot: f32) -> f32 {
-    (slot * 0.32).clamp(0.75, 14.0)
-}
-
 fn bars_pattern(
     pattern: &BarsPattern,
     style: &DrawingStyle,
@@ -509,7 +505,7 @@ fn bars_pattern(
     let mut screen = Screen::empty();
     screen.handles = vertex_handles(points);
     let first = proj.times.index_of(pattern.at.time_ms);
-    let half = half_width(proj.slot_width);
+    let half = series::candle_half_width(proj.slot_width);
     let color = style.stroke.color;
     let plot = proj.plot.expand2(vec2(half + 2.0, 0.0));
     let mut path: Vec<Pos2> = Vec::new();
@@ -544,6 +540,7 @@ fn bars_pattern(
             low,
             close,
             half,
+            slot: proj.slot_width,
             look,
         });
         screen.hit.push(Rect::from_min_max(
@@ -605,7 +602,7 @@ fn ghost_feed(
         f64::from(options.variance) / 100.0,
         seed,
     );
-    let half = half_width(proj.slot_width);
+    let half = series::candle_half_width(proj.slot_width);
     let plot = proj.plot.expand2(vec2(half + 2.0, 0.0));
     for (index, candle) in candles.iter().enumerate() {
         let x = proj.x_at_index(from + (index + 1) as f64);
@@ -626,6 +623,7 @@ fn ghost_feed(
             low,
             close,
             half,
+            slot: proj.slot_width,
             look: CandleLook::Body {
                 fill: if up { options.up } else { options.down },
                 border: options.draw_border.then_some(if up {

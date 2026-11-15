@@ -456,6 +456,11 @@ fn a_ghost_feed_is_candles_from_the_first_price_to_the_second() {
     for (candle, x) in screen.candles.iter().zip([350.0, 450.0, 550.0, 650.0]) {
         assert!((candle.x - x).abs() < 0.05);
         assert!(matches!(candle.look, CandleLook::Body { .. }));
+        // As wide as the chart's own candles in the same slot.
+        assert_eq!(
+            candle.half,
+            crate::ui::chart::series::candle_half_width(candle.slot)
+        );
     }
     assert!((screen.candles[0].open - 200.0).abs() < 0.05);
     assert!((screen.candles[3].close - 100.0).abs() < 0.05);

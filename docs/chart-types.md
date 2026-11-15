@@ -76,6 +76,23 @@ from a price-based type rebuilds them against the other series. A source that dr
 is unavailable on a source that reports no volume, with the reason in the menu. A saved type the
 source cannot show falls back to candles on screen and is kept for when it can.
 
+## Candle geometry
+
+One width rule, `series::candle_half_width`, serves the chart's candles, a script's `plotcandle()`
+and the drawing tools' ghost and bars-pattern candles. `series::snap_candle` (columns) and
+`series::snap_rows` (rows) lay every one of them on whole physical pixels, so all three painters agree:
+
+* **Rows.** Body top and bottom and the wick ends round to a pixel; a body is at least one pixel
+  tall (a doji stays visible) and the wick ends on the body's own rows, so no seam shows where they
+  meet and edges do not shimmer while autoscale moves.
+* **Columns.** The wick sits on a whole pixel and the body has the wick's parity, centred on it.
+  A body is at most one pixel less than its slot (never narrower than the wick), so neighbours keep
+  a gap even though each centre is snapped on its own.
+* **Dense charts.** Bars whose wicks snap to the same pixel column (a slot under one pixel, as when
+  the whole history is in view) are painted once: highest high, lowest low, and the open, close and
+  look of the last bar. Candles, Hollow, Volume, Heikin Ashi, Range and bricks all go through this;
+  a frame never paints more than a few shapes per pixel column of the plot.
+
 ## Construction rules
 
 Builders live in `model/chart/synthetic/` and are pure and deterministic. They read the candles oldest
