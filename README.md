@@ -48,8 +48,6 @@ No account. No subscription.
 - **Bar replay**: step back in time and trade the market again with no lookahead.
 - **Screenshot Studio** for sharp chart images you can copy, save or share.
 
-![Crypto majors watchlist next to a BTC/USDT chart with Ichimoku Cloud, RSI and MACD](assets/screenshots/screenshot.png)
-
 ### Pine Script
 
 Write TradingView-style Pine Script v6 and run it locally. Nothing is uploaded.
