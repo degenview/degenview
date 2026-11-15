@@ -664,6 +664,42 @@ fn a_layout_paints_each_chart_in_its_rectangle_with_a_hairline_between() {
 }
 
 #[test]
+fn the_gutter_between_charts_is_the_canvas_and_never_the_backdrop() {
+    let (left, right) = (
+        Fixture::plain(ChartCanvas::default(), 300),
+        Fixture::plain(ChartCanvas::default(), 300),
+    );
+    let Capture::Layout(mut layout) = side_by_side(&left, &right) else {
+        panic!("a layout");
+    };
+    // The workspace leaves a gutter between its charts.
+    let gutter = 12.0;
+    layout.charts[1].1 = layout.charts[1].1.translate(vec2(gutter, 0.0));
+    layout.size.x += gutter;
+    let width = layout.charts[0].1.width();
+    let capture = Capture::Layout(layout);
+    let cards = |id: u64| match id {
+        1 => Some(left.card()),
+        2 => Some(right.card()),
+        _ => None,
+    };
+    for background in &Background::ALL[1..] {
+        let config = styled(AspectRatio::Original, *background);
+        let body = composition::layout(capture.size(), &config).body();
+        let scale = body.width() / capture.size().x;
+        let image = image(&capture, &cards, &config);
+        let x = (body.min.x + (width + gutter / 2.0) * scale) as usize;
+        let y = body.center().y as usize;
+        let found = pixel(&image, x, y);
+        let canvas = fill_of(&ChartCanvas::default());
+        assert!(
+            close(found, canvas, 3),
+            "{background:?} gutter at ({x}, {y}): {found:?} against {canvas:?}"
+        );
+    }
+}
+
+#[test]
 fn a_portion_of_a_layout_is_the_layout_cut_and_moved() {
     let (left, right) = (
         Fixture::plain(ChartCanvas::default(), 300),
