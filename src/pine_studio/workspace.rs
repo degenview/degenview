@@ -336,9 +336,6 @@ fn editor_and_debug(
         if output.changed {
             changed.set(true);
         }
-        if output.save {
-            cmds.borrow_mut().push(Cmd::Save);
-        }
         for event in output.gutter {
             cmds.borrow_mut().push(Cmd::Gutter(event));
         }

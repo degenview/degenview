@@ -256,8 +256,8 @@ impl EditorState {
         self.jump_to
     }
 
-    /// Marks the editor as a sample: everything of the editor, minus the Save button, since there is
-    /// no script behind it.
+    /// Marks the editor as a sample: everything of the editor, minus the colour picker, since there
+    /// is no script behind it.
     pub fn sampled(mut self) -> Self {
         self.sample = true;
         self

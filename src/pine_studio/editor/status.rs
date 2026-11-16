@@ -1,11 +1,12 @@
-//! The status strip under the text: the problems chip and the Save button.
+//! The status strip under the text: the problems chip, the changed-line counts and notices.
+//! Saving is ⌘S or File ▸ Save.
 
 use super::EditorState;
 use super::diff::DiffSnapshot;
 use crate::model::pine::script::CompileStatus;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::icons::{self, Icon};
-use crate::ui::{shortcut, theme};
+use crate::ui::theme;
 use eframe::egui::{self, Align, Color32, Rect, RichText, Ui, UiBuilder, Vec2};
 
 /// "No problems", "1 warning", "2 errors" — the chip's text and look.
@@ -57,15 +58,9 @@ pub fn status_chip_with_runtime(
     status_chip(status, diagnostics)
 }
 
-/// The chip and the Save button. Returns whether Save was clicked.
-pub(super) fn status_bar(
-    ui: &mut Ui,
-    bar: Rect,
-    state: &EditorState,
-    changes: &DiffSnapshot,
-) -> bool {
+/// The chip, the changed-line counts and the latest notice.
+pub(super) fn status_bar(ui: &mut Ui, bar: Rect, state: &EditorState, changes: &DiffSnapshot) {
     crate::pine_studio::drawer::bottom_bar::paint(ui, bar);
-    let mut save = false;
     let mut inner = ui.new_child(
         UiBuilder::new()
             .max_rect(bar.shrink2(Vec2::new(12.0, 0.0)))
@@ -115,19 +110,4 @@ pub(super) fn status_bar(
         );
         inner.ctx().request_repaint_after(left);
     }
-    if !state.sample {
-        inner.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-            // egui never draws a button under `interact_size.y`, so the bar lowers it.
-            ui.spacing_mut().interact_size.y = 20.0;
-            let button = egui::Button::new(egui::RichText::new("Save").size(12.0));
-            if ui
-                .add(button)
-                .on_hover_text(shortcut::SAVE.hint("Save the script"))
-                .clicked()
-            {
-                save = true;
-            }
-        });
-    }
-    save
 }

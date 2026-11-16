@@ -206,7 +206,6 @@ struct CompletionView {
 pub struct EditorOutput {
     /// The text changed this frame: compile it.
     pub changed: bool,
-    pub save: bool,
     /// Clicks in the breakpoint column.
     pub gutter: Vec<GutterEvent>,
     /// Where the text is drawn: right of the profile column and the gutter.
@@ -304,7 +303,7 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
         ui.ctx().request_repaint_after(DRAFT_DELAY);
     }
 
-    output.save = status_bar(ui, bar, state, &changes);
+    status_bar(ui, bar, state, &changes);
     output
 }
 
