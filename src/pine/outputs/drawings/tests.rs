@@ -20,6 +20,13 @@ fn arg(value: RuntimeValue) -> Arg {
     Arg { name: None, value }
 }
 
+fn named(name: &str, value: RuntimeValue) -> Arg {
+    Arg {
+        name: Some(name.to_owned()),
+        value,
+    }
+}
+
 fn run(state: &mut RuntimeState, name: &str, args: &[Arg]) -> Result<RuntimeValue, Diagnostic> {
     call(
         name,
@@ -255,4 +262,240 @@ fn handles_covers_namespaces() {
     assert!(handles("linefill.new") && handles("polyline.new") && handles("polyline.delete"));
     assert!(handles("chart.point") && handles("chart.point.now"));
     assert!(!handles("array.get") && !handles("plot") && !handles("line.nope_member"));
+}
+
+#[test]
+fn force_overlay_is_recorded_on_every_drawing_that_takes_it() {
+    let mut state = RuntimeState::default();
+    let forced = || named("force_overlay", RuntimeValue::Bool(true));
+    let corners = || vec![arg(Int(1)), arg(Float(10.0)), arg(Int(3)), arg(Float(20.0))];
+    let with = |mut args: Vec<Arg>, extra: Arg| {
+        args.push(extra);
+        args
+    };
+
+    let line = run(&mut state, "line.new", &with(corners(), forced())).unwrap();
+    let plain_line = run(&mut state, "line.new", &corners()).unwrap();
+    let (RuntimeValue::Ref(_, line_id), RuntimeValue::Ref(_, plain_line_id)) = (line, plain_line)
+    else {
+        panic!()
+    };
+    assert!(state.lines[&line_id].force_overlay);
+    assert!(!state.lines[&plain_line_id].force_overlay);
+
+    let label_args = || vec![arg(Int(1)), arg(Float(10.0)), arg(Str("hi".into()))];
+    let label = run(&mut state, "label.new", &with(label_args(), forced())).unwrap();
+    let plain_label = run(&mut state, "label.new", &label_args()).unwrap();
+    let (RuntimeValue::Ref(_, label_id), RuntimeValue::Ref(_, plain_label_id)) =
+        (label, plain_label)
+    else {
+        panic!()
+    };
+    assert!(state.labels[&label_id].force_overlay);
+    assert!(!state.labels[&plain_label_id].force_overlay);
+
+    let boxed = run(&mut state, "box.new", &with(corners(), forced())).unwrap();
+    let plain_box = run(&mut state, "box.new", &corners()).unwrap();
+    let (RuntimeValue::Ref(_, box_id), RuntimeValue::Ref(_, plain_box_id)) = (boxed, plain_box)
+    else {
+        panic!()
+    };
+    assert!(state.boxes[&box_id].force_overlay);
+    assert!(!state.boxes[&plain_box_id].force_overlay);
+
+    let grid = || vec![arg(Int(0)), arg(Int(1)), arg(Int(1))];
+    let table = run(&mut state, "table.new", &with(grid(), forced())).unwrap();
+    let plain_table = run(&mut state, "table.new", &grid()).unwrap();
+    let (RuntimeValue::Ref(_, table_id), RuntimeValue::Ref(_, plain_table_id)) =
+        (table, plain_table)
+    else {
+        panic!()
+    };
+    assert!(state.tables[&table_id].force_overlay);
+    assert!(!state.tables[&plain_table_id].force_overlay);
+
+    let a = point(&mut state, 1, 10.0);
+    let b = point(&mut state, 2, 20.0);
+    let array = crate::pine::builtins::array::new_array(&mut state, vec![a, b]);
+    let polyline = run(&mut state, "polyline.new", &[arg(array.clone()), forced()]).unwrap();
+    let plain_polyline = run(&mut state, "polyline.new", &[arg(array)]).unwrap();
+    let (RuntimeValue::Ref(_, polyline_id), RuntimeValue::Ref(_, plain_polyline_id)) =
+        (polyline, plain_polyline)
+    else {
+        panic!()
+    };
+    assert!(state.polylines[&polyline_id].force_overlay);
+    assert!(!state.polylines[&plain_polyline_id].force_overlay);
+}
+
+#[test]
+fn force_overlay_binds_by_position_and_in_the_point_forms() {
+    let mut state = RuntimeState::default();
+    let yes = || arg(RuntimeValue::Bool(true));
+    let line = run(
+        &mut state,
+        "line.new",
+        &[
+            arg(Int(1)),
+            arg(Float(10.0)),
+            arg(Int(3)),
+            arg(Float(20.0)),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            yes(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Line, line_id) = line else {
+        panic!()
+    };
+    assert!(state.lines[&line_id].force_overlay);
+
+    let table = run(
+        &mut state,
+        "table.new",
+        &[
+            arg(Int(0)),
+            arg(Int(1)),
+            arg(Int(1)),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            yes(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Table, table_id) = table else {
+        panic!()
+    };
+    assert!(state.tables[&table_id].force_overlay);
+
+    let first = point(&mut state, 5, 50.0);
+    let second = point(&mut state, 9, 90.0);
+    let point_line = run(
+        &mut state,
+        "line.new",
+        &[
+            arg(first.clone()),
+            arg(second.clone()),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            yes(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Line, point_line_id) = point_line else {
+        panic!()
+    };
+    assert!(state.lines[&point_line_id].force_overlay);
+
+    let point_label = run(
+        &mut state,
+        "label.new",
+        &[
+            arg(first.clone()),
+            arg(Str("hi".into())),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            yes(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Label, point_label_id) = point_label else {
+        panic!()
+    };
+    assert!(state.labels[&point_label_id].force_overlay);
+
+    let point_box = run(
+        &mut state,
+        "box.new",
+        &[
+            arg(first),
+            arg(second),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            arg(Na),
+            yes(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Box, point_box_id) = point_box else {
+        panic!()
+    };
+    assert!(state.boxes[&point_box_id].force_overlay);
+}
+
+#[test]
+fn copies_keep_force_overlay() {
+    let mut state = RuntimeState::default();
+    let forced = || named("force_overlay", RuntimeValue::Bool(true));
+    let line = run(
+        &mut state,
+        "line.new",
+        &[
+            arg(Int(1)),
+            arg(Float(10.0)),
+            arg(Int(3)),
+            arg(Float(20.0)),
+            forced(),
+        ],
+    )
+    .unwrap();
+    let label = run(
+        &mut state,
+        "label.new",
+        &[arg(Int(1)), arg(Float(10.0)), forced()],
+    )
+    .unwrap();
+    let boxed = run(
+        &mut state,
+        "box.new",
+        &[
+            arg(Int(1)),
+            arg(Float(10.0)),
+            arg(Int(3)),
+            arg(Float(20.0)),
+            forced(),
+        ],
+    )
+    .unwrap();
+    let line_copy = run(&mut state, "line.copy", &[arg(line)]).unwrap();
+    let label_copy = run(&mut state, "label.copy", &[arg(label)]).unwrap();
+    let box_copy = run(&mut state, "box.copy", &[arg(boxed)]).unwrap();
+    let (
+        RuntimeValue::Ref(_, line_id),
+        RuntimeValue::Ref(_, label_id),
+        RuntimeValue::Ref(_, box_id),
+    ) = (line_copy, label_copy, box_copy)
+    else {
+        panic!()
+    };
+    assert!(state.lines[&line_id].force_overlay);
+    assert!(state.labels[&label_id].force_overlay);
+    assert!(state.boxes[&box_id].force_overlay);
 }

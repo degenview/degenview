@@ -346,6 +346,8 @@ pub struct LineOutput {
     pub style: LineStyle,
     pub extend: LineExtend,
     pub time_anchored: bool,
+    /// `force_overlay`: draw on the main chart even when the script has its own pane.
+    pub force_overlay: bool,
 }
 
 impl LineOutput {
@@ -371,6 +373,8 @@ pub struct LabelOutput {
     pub text_align: TextAlign,
     pub yloc: YLocation,
     pub time_anchored: bool,
+    /// `force_overlay`: draw on the main chart even when the script has its own pane.
+    pub force_overlay: bool,
 }
 
 impl LabelOutput {
@@ -398,6 +402,8 @@ pub struct BoxOutput {
     pub text_horizontal_align: TextAlign,
     pub text_vertical_align: TextAlign,
     pub time_anchored: bool,
+    /// `force_overlay`: draw on the main chart even when the script has its own pane.
+    pub force_overlay: bool,
 }
 
 impl BoxOutput {
@@ -421,6 +427,8 @@ pub struct TableOutput {
     pub frame_color: Option<u32>,
     pub frame_width: usize,
     pub cells: Vec<TableCell>,
+    /// `force_overlay`: draw on the main chart even when the script has its own pane.
+    pub force_overlay: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -703,6 +711,8 @@ pub struct PolylineOutput {
     pub style: LineStyle,
     pub width: usize,
     pub curved: bool,
+    /// `force_overlay`: draw on the main chart even when the script has its own pane.
+    pub force_overlay: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -778,6 +788,7 @@ mod tests {
             style: LineStyle::Solid,
             extend: LineExtend::None,
             time_anchored: false,
+            force_overlay: false,
         };
         assert!(!line.is_complete());
     }

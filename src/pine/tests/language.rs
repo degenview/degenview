@@ -1651,6 +1651,22 @@ fn plotarrow_honours_offset_show_last_and_force_overlay() {
 }
 
 #[test]
+fn force_overlay_sends_a_drawing_to_the_main_chart_from_a_pane_script() {
+    let session = run(
+        "if barstate.islast\n    line.new(bar_index - 1, 1.0, bar_index, 2.0, force_overlay = true)\n    label.new(bar_index, 1.0, \"pane\")",
+        3,
+    );
+    let output = session.output();
+    assert!(!output.overlay);
+    assert!(output.has_forced_overlay());
+    let (pane, forced) = output.split_forced_overlay();
+    assert!(forced.overlay);
+    assert_eq!((forced.lines.len(), forced.labels.len()), (1, 0));
+    assert_eq!((pane.lines.len(), pane.labels.len()), (0, 1));
+    assert!(forced.lines[0].force_overlay && !pane.labels[0].force_overlay);
+}
+
+#[test]
 fn plotarrow_is_no_longer_reserved_and_its_ignored_arguments_are_warned_about() {
     assert!(
         !diagnostic_codes("plotarrow(close)")

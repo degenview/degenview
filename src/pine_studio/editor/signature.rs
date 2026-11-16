@@ -318,7 +318,7 @@ const SIGNATURES: &[(&str, &str, &str)] = &[
     ),
     (
         "line.new",
-        "x1, y1, x2, y2, xloc, extend, color, style, width",
+        "x1, y1, x2, y2, xloc, extend, color, style, width, force_overlay",
         "series line",
     ),
     ("line.delete", "id", ""),
@@ -327,7 +327,7 @@ const SIGNATURES: &[(&str, &str, &str)] = &[
     ("line.set_xloc", "id, x1, x2, xloc", ""),
     (
         "label.new",
-        "x, y, text, xloc, yloc, color, style, textcolor, size, textalign, tooltip",
+        "x, y, text, xloc, yloc, color, style, textcolor, size, textalign, tooltip, text_font_family, force_overlay, text_formatting",
         "series label",
     ),
     ("label.delete", "id", ""),
@@ -336,7 +336,7 @@ const SIGNATURES: &[(&str, &str, &str)] = &[
     ("label.set_yloc", "id, yloc", ""),
     (
         "box.new",
-        "left, top, right, bottom, border_color, border_width, border_style, extend, xloc, bgcolor",
+        "left, top, right, bottom, border_color, border_width, border_style, extend, xloc, bgcolor, text, text_size, text_color, text_halign, text_valign, text_wrap, text_font_family, force_overlay, text_formatting",
         "series box",
     ),
     ("table.cell_set_text", "table_id, column, row, text", ""),
@@ -384,10 +384,15 @@ const SIGNATURES: &[(&str, &str, &str)] = &[
     ),
     ("box.copy", "id", "series box"),
     ("box.set_xloc", "id, left, right, xloc", ""),
+    (
+        "polyline.new",
+        "points, curved, closed, xloc, line_color, fill_color, line_style, line_width, force_overlay",
+        "series polyline",
+    ),
     ("chart.point.copy", "id", "chart.point"),
     (
         "table.new",
-        "position, columns, rows, bgcolor, frame_color, frame_width, border_color, border_width",
+        "position, columns, rows, bgcolor, frame_color, frame_width, border_color, border_width, force_overlay",
         "series table",
     ),
     (

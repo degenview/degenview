@@ -227,20 +227,29 @@ pub struct VisualOutput {
 }
 
 impl VisualOutput {
-    /// Whether a script with its own pane asked (`force_overlay`) for some of its plots, markers
-    /// or candles to be drawn on the main chart.
+    /// Whether a script with its own pane asked (`force_overlay`) for some of its plots, markers,
+    /// candles or drawings to be drawn on the main chart.
     pub fn has_forced_overlay(&self) -> bool {
         self.plots.iter().any(|plot| plot.force_overlay)
             || self.markers.iter().any(|marker| marker.force_overlay)
             || self.arrows.iter().any(|arrow| arrow.force_overlay)
             || self.candles.iter().any(|candle| candle.force_overlay)
+            || self.lines.iter().any(|line| line.force_overlay)
+            || self.labels.iter().any(|label| label.force_overlay)
+            || self.boxes.iter().any(|boxed| boxed.force_overlay)
+            || self.tables.iter().any(|table| table.force_overlay)
+            || self.polylines.iter().any(|polyline| polyline.force_overlay)
     }
 
     /// Splits a pane script's output in two: what stays in its pane, and what it forced onto the
     /// main chart. A forced plot stays in the pane output with its pane display cleared, so a
     /// `fill()` between a forced plot and a pane plot still finds it; a `fill()` between two
-    /// forced plots goes to the main chart with them, where their prices are on scale. Each side
-    /// keeps the script's own identities, so style overrides and rows still match.
+    /// forced plots goes to the main chart with them, where their prices are on scale. Forced
+    /// lines, labels, boxes, tables and polylines move to the main chart and leave the pane (a
+    /// drawing has no display bit, and one left behind would stretch the pane's scale and catch
+    /// its hover); a linefill goes with its lines when both are forced, else it stays in the pane,
+    /// where it is not drawn because one of its lines is gone. Each side keeps the script's own
+    /// identities, so style overrides and rows still match.
     pub fn split_forced_overlay(&self) -> (Self, Self) {
         let mut pane = self.clone();
         let mut forced = Self {
@@ -280,6 +289,28 @@ impl VisualOutput {
             .partition(|fill| is_forced(fill.plot_a) && is_forced(fill.plot_b));
         pane.fills = in_pane;
         forced.fills = on_chart;
+        (forced.lines, pane.lines) = pane.lines.into_iter().partition(|line| line.force_overlay);
+        (forced.labels, pane.labels) = pane
+            .labels
+            .into_iter()
+            .partition(|label| label.force_overlay);
+        (forced.boxes, pane.boxes) = pane
+            .boxes
+            .into_iter()
+            .partition(|boxed| boxed.force_overlay);
+        (forced.tables, pane.tables) = pane
+            .tables
+            .into_iter()
+            .partition(|table| table.force_overlay);
+        (forced.polylines, pane.polylines) = pane
+            .polylines
+            .into_iter()
+            .partition(|polyline| polyline.force_overlay);
+        let line_is_forced = |id: usize| forced.lines.iter().any(|line| line.id == id);
+        (forced.linefills, pane.linefills) = pane
+            .linefills
+            .into_iter()
+            .partition(|fill| line_is_forced(fill.line1) && line_is_forced(fill.line2));
         (pane, forced)
     }
 }
@@ -331,6 +362,10 @@ impl CompiledProgram {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pine::outputs::{
+        BoxOutput, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle, LinefillOutput,
+        PolylineOutput, Size, TableOutput, TablePosition, TextAlign, YLocation,
+    };
 
     #[test]
     fn bar_phase_flags() {
@@ -399,5 +434,163 @@ mod tests {
         assert_eq!(pane.plots[1].display & DISPLAY_PANE, 0);
         assert_eq!(pane.candles[0].display & DISPLAY_PANE, 0);
         assert!(!VisualOutput::default().has_forced_overlay());
+    }
+
+    fn line(id: usize, force_overlay: bool) -> LineOutput {
+        LineOutput {
+            id,
+            x1: 0,
+            y1: 1.0,
+            x2: 1,
+            y2: 2.0,
+            color: 0,
+            width: 1,
+            style: LineStyle::Solid,
+            extend: LineExtend::None,
+            time_anchored: false,
+            force_overlay,
+        }
+    }
+
+    fn label(id: usize, force_overlay: bool) -> LabelOutput {
+        LabelOutput {
+            id,
+            x: 0,
+            y: 1.0,
+            text: String::new(),
+            color: None,
+            text_color: 0,
+            style: LabelStyle::LabelDown,
+            size: Size::Normal,
+            tooltip: None,
+            text_align: TextAlign::Center,
+            yloc: YLocation::Price,
+            time_anchored: false,
+            force_overlay,
+        }
+    }
+
+    fn boxed(id: usize, force_overlay: bool) -> BoxOutput {
+        BoxOutput {
+            id,
+            left: 0,
+            top: 2.0,
+            right: 1,
+            bottom: 1.0,
+            border_color: None,
+            border_width: 1,
+            background_color: None,
+            border_style: LineStyle::Solid,
+            extend: LineExtend::None,
+            text: String::new(),
+            text_color: 0,
+            text_size: Size::Normal,
+            text_horizontal_align: TextAlign::Center,
+            text_vertical_align: TextAlign::Center,
+            time_anchored: false,
+            force_overlay,
+        }
+    }
+
+    fn table(id: usize, force_overlay: bool) -> TableOutput {
+        TableOutput {
+            id,
+            position: TablePosition::TopRight,
+            columns: 1,
+            rows: 1,
+            background_color: None,
+            border_color: None,
+            border_width: 0,
+            frame_color: None,
+            frame_width: 0,
+            cells: Vec::new(),
+            force_overlay,
+        }
+    }
+
+    fn polyline(id: usize, force_overlay: bool) -> PolylineOutput {
+        PolylineOutput {
+            id,
+            points: Vec::new(),
+            closed: false,
+            line_color: None,
+            fill_color: None,
+            style: LineStyle::Solid,
+            width: 1,
+            curved: false,
+            force_overlay,
+        }
+    }
+
+    fn linefill(id: usize, line1: usize, line2: usize) -> LinefillOutput {
+        LinefillOutput {
+            id,
+            line1,
+            line2,
+            color: 0,
+        }
+    }
+
+    fn ids<T>(items: &[T], id: impl Fn(&T) -> usize) -> Vec<usize> {
+        items.iter().map(id).collect()
+    }
+
+    #[test]
+    fn forced_drawings_move_to_the_main_chart_and_leave_the_pane() {
+        let output = VisualOutput {
+            overlay: false,
+            bar_count: 1,
+            lines: vec![line(0, true), line(1, false)],
+            labels: vec![label(2, false), label(3, true)],
+            boxes: vec![boxed(4, true), boxed(5, false)],
+            tables: vec![table(6, false), table(7, true)],
+            polylines: vec![polyline(8, true), polyline(9, false)],
+            ..VisualOutput::default()
+        };
+        assert!(output.has_forced_overlay());
+        let (pane, forced) = output.split_forced_overlay();
+        assert!(forced.overlay && forced.bar_count == 1);
+        assert_eq!(ids(&forced.lines, |l| l.id), [0]);
+        assert_eq!(ids(&pane.lines, |l| l.id), [1]);
+        assert_eq!(ids(&forced.labels, |l| l.id), [3]);
+        assert_eq!(ids(&pane.labels, |l| l.id), [2]);
+        assert_eq!(ids(&forced.boxes, |b| b.id), [4]);
+        assert_eq!(ids(&pane.boxes, |b| b.id), [5]);
+        assert_eq!(ids(&forced.tables, |t| t.id), [7]);
+        assert_eq!(ids(&pane.tables, |t| t.id), [6]);
+        assert_eq!(ids(&forced.polylines, |p| p.id), [8]);
+        assert_eq!(ids(&pane.polylines, |p| p.id), [9]);
+    }
+
+    #[test]
+    fn a_linefill_follows_its_lines_only_when_both_are_forced() {
+        let output = VisualOutput {
+            overlay: false,
+            lines: vec![line(0, true), line(1, true), line(2, true), line(3, false)],
+            linefills: vec![linefill(10, 0, 1), linefill(11, 1, 3), linefill(12, 3, 3)],
+            ..VisualOutput::default()
+        };
+        let (pane, forced) = output.split_forced_overlay();
+        assert_eq!(ids(&forced.linefills, |f| f.id), [10]);
+        assert_eq!(ids(&pane.linefills, |f| f.id), [11, 12]);
+    }
+
+    #[test]
+    fn a_forced_table_alone_is_a_forced_overlay() {
+        let output = VisualOutput {
+            overlay: false,
+            tables: vec![table(0, true)],
+            ..VisualOutput::default()
+        };
+        assert!(output.has_forced_overlay());
+        let unforced = VisualOutput {
+            tables: vec![table(0, false)],
+            lines: vec![line(1, false)],
+            labels: vec![label(2, false)],
+            boxes: vec![boxed(3, false)],
+            polylines: vec![polyline(4, false)],
+            ..VisualOutput::default()
+        };
+        assert!(!unforced.has_forced_overlay());
     }
 }
