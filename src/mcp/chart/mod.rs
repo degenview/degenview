@@ -139,7 +139,7 @@ impl Confirm for ChartCommand {
             ),
             Self::EditDrawing { .. } => ("Change a drawing".to_owned(), String::new()),
             Self::SetTimeframe { timeframe, .. } => {
-                ("Change the timeframe".to_owned(), format!("{timeframe:?}"))
+                ("Change the timeframe".to_owned(), timeframe.to_string())
             }
             Self::SetChartType { chart_type, .. } => (
                 "Change the chart type".to_owned(),

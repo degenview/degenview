@@ -357,7 +357,7 @@ struct Live {
 impl Live {
     fn new(tool: crate::model::Tool) -> Self {
         let mut card = ChartCard::default();
-        card.set_timeframe(Timeframe::Hour);
+        card.set_timeframe(Timeframe::HOUR_1);
         let mut live = Self {
             screen: crate::ui::render_tests::Screen::new(vec2(520.0, 340.0)),
             card,
@@ -380,7 +380,7 @@ impl Live {
             (0, false, false, false);
         self.screen.run(events, |ui| {
             let mut drawing =
-                DrawingFrame::new(&[], tool, None, 100).with_view(Timeframe::Hour, false);
+                DrawingFrame::new(&[], tool, None, 100).with_view(Timeframe::HOUR_1, false);
             let mut replay = ReplayChartFrame {
                 selecting: false,
                 active: false,
@@ -590,7 +590,7 @@ fn gallery_of_the_scale_modes() {
     let frame = |screen: &mut Screen, card: &mut ChartCard, mode, events| {
         screen.run(events, |ui| {
             let mut drawing = DrawingFrame::new(&[], crate::model::Tool::Cursor, None, 1)
-                .with_view(Timeframe::Hour, false);
+                .with_view(Timeframe::HOUR_1, false);
             let mut replay = ReplayChartFrame {
                 selecting: false,
                 active: false,
@@ -621,7 +621,7 @@ fn gallery_of_the_scale_modes() {
     ] {
         let mut screen = Screen::new(size);
         let mut card = ChartCard::default();
-        card.set_timeframe(Timeframe::Hour);
+        card.set_timeframe(Timeframe::HOUR_1);
         let mut last = frame(&mut screen, &mut card, mode, Vec::new());
         for _ in 0..5 {
             last = frame(&mut screen, &mut card, mode, Vec::new());

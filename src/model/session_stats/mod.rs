@@ -46,20 +46,6 @@ pub const MAX_GAP_DAYS: i64 = 5;
 const Z95: f64 = 1.959_963_984_540_054;
 const DAY_MS: i64 = 86_400_000;
 
-/// The length of a bar of `timeframe`, as [`compute`] wants it. Anything over a day is only
-/// approximate (a month is not 30 days); [`compute`] refuses all of them alike.
-pub fn bar_ms(timeframe: super::Timeframe) -> i64 {
-    use crate::model::Timeframe;
-    match timeframe {
-        Timeframe::Hour => 3_600_000,
-        Timeframe::Day => DAY_MS,
-        Timeframe::Week => 7 * DAY_MS,
-        Timeframe::Month => 30 * DAY_MS,
-        Timeframe::Quarter => 91 * DAY_MS,
-        Timeframe::Year => 365 * DAY_MS,
-    }
-}
-
 // MARK: Questions
 
 /// What is being counted.

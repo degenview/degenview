@@ -298,6 +298,11 @@ fn count(value: Option<&RuntimeValue>) -> usize {
     value.and_then(RuntimeValue::int_value).unwrap_or(0).max(0) as usize
 }
 
+/// `force_overlay`: whether the script asked for the drawing on the main chart.
+fn force_overlay(bound: &HashMap<String, RuntimeValue>) -> bool {
+    super::visuals::flag(bound.get("force_overlay"))
+}
+
 fn text(bound: &HashMap<String, RuntimeValue>, key: &str) -> Option<String> {
     bound
         .get(key)

@@ -31,7 +31,7 @@ impl Rig {
         let book = WatchlistQuoteBook::default();
         let workspace = ChartWorkspace::empty(
             1,
-            Timeframe::Day,
+            Timeframe::DAY_1,
             Arc::new(Mutex::new(WatchlistStore::new(store.clone()))),
             book.clone(),
             WatchlistQuoteCoordinator::new(book, Arc::new(|| {})),

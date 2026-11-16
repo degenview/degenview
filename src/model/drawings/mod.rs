@@ -2743,13 +2743,13 @@ mod tests {
             DrawingStyle::default(),
         )
         .unwrap();
-        assert!(drawing.is_visible(Timeframe::Hour));
-        drawing.set_visibility(Visibility::ALL.with(Timeframe::Hour, false));
-        assert!(!drawing.is_visible(Timeframe::Hour));
-        assert!(drawing.is_visible(Timeframe::Day));
+        assert!(drawing.is_visible(Timeframe::HOUR_1));
+        drawing.set_visibility(Visibility::ALL.with_row(crate::model::VisibilityRow::Hours, false));
+        assert!(!drawing.is_visible(Timeframe::HOUR_1));
+        assert!(drawing.is_visible(Timeframe::DAY_1));
         drawing.set_hidden(true);
-        assert!(!drawing.is_visible(Timeframe::Day));
-        assert!(!Drawing::Unreadable(serde_json::Value::Null).is_visible(Timeframe::Day));
+        assert!(!drawing.is_visible(Timeframe::DAY_1));
+        assert!(!Drawing::Unreadable(serde_json::Value::Null).is_visible(Timeframe::DAY_1));
     }
 
     #[test]

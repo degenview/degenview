@@ -853,7 +853,7 @@ mod tests {
         let change = || {
             McpCommand::Chart(ChartCommand::SetTimeframe {
                 workspace_id: 1,
-                timeframe: crate::model::Timeframe::Day,
+                timeframe: crate::model::Timeframe::DAY_1,
             })
         };
         let described = || Ok(Summary::new("Change the timeframe", "Day"));
@@ -893,7 +893,7 @@ mod tests {
         let now = Instant::now();
         let change = McpCommand::Chart(ChartCommand::SetTimeframe {
             workspace_id: 1,
-            timeframe: crate::model::Timeframe::Day,
+            timeframe: crate::model::Timeframe::DAY_1,
         });
         let described = || Ok(Summary::new("Change the timeframe", "Day"));
         assert!(matches!(

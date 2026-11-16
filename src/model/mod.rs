@@ -32,7 +32,7 @@ pub use chart::replay::{
 };
 pub use chart::saved_view::SavedView;
 pub use chart::sync::ChartSyncSettings;
-pub use drawings::style::{DrawingStyle, Visibility};
+pub use drawings::style::{DrawingStyle, Visibility, VisibilityRow};
 pub use drawings::tool::{Caps, MagnetMode, Placement, Tool, ToolGroup};
 pub use drawings::{
     Anchor, AnnotationKind, ArrowDirection, Drawing, DrawingCommand, Geometry, LeaderKind,
@@ -48,4 +48,4 @@ pub use market::instrument::InstrumentId;
 pub use market::kline::Kline;
 pub use market::pm_series::PmSeries;
 pub use market::source::DataSource;
-pub use market::timeframe::Timeframe;
+pub use market::timeframe::{Section, TimeUnit, Timeframe, TimeframeParseError};

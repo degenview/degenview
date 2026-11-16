@@ -8,14 +8,11 @@ use super::results::{result_row, same_market};
 use crate::model::DataSource;
 use crate::service::SearchResult;
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::loading::LoadingIndicator;
-use crate::ui::kit::{BOLD, MEDIUM, SEMIBOLD, galley_words, size, text};
+use crate::ui::kit::{self, BOLD, MEDIUM, SEMIBOLD, galley_words, size, text};
 use crate::ui::{kit::source_logo, theme};
 use eframe::egui::{
-    self, Color32, FontId, Id, Rect, RichText, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
+    self, Color32, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
-
-const SEARCH_FIELD_HEIGHT: f32 = 36.0;
 
 pub(crate) const PREDICTION_PROVIDERS: [DataSource; 2] =
     [DataSource::Polymarket, DataSource::Kalshi];
@@ -145,92 +142,6 @@ fn paint_header_text(ui: &Ui, row: Rect, left: f32, title: &str, subtitle: &str)
     );
 }
 
-/// What happened in a [`search_box`] this frame.
-#[derive(Default)]
-pub(crate) struct SearchBoxEvent {
-    pub changed: bool,
-    pub submitted: bool,
-    pub cleared: bool,
-}
-
-pub(crate) fn search_box(
-    ui: &mut Ui,
-    query: &mut String,
-    searching: bool,
-    placeholder: &str,
-    id: Id,
-    focus: bool,
-) -> SearchBoxEvent {
-    let focused = ui.memory(|memory| memory.has_focus(id));
-    let mut event = SearchBoxEvent::default();
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(vec2(width, SEARCH_FIELD_HEIGHT), Sense::hover());
-    ui.painter().rect_filled(rect, 9.0, theme::quaternary(0.5));
-    ui.painter().rect_stroke(
-        rect,
-        9.0,
-        Stroke::new(
-            1.0,
-            if focused {
-                theme::with_alpha(theme::text_secondary(), 0.7)
-            } else {
-                theme::ink(31)
-            },
-        ),
-        StrokeKind::Inside,
-    );
-    let mut inner = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink2(vec2(12.0, 0.0)))
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    inner.spacing_mut().item_spacing.x = 8.0;
-    icons::inline(
-        &mut inner,
-        Icon::Magnifier,
-        14.0,
-        if focused {
-            theme::text_primary()
-        } else {
-            theme::text_secondary()
-        },
-    );
-    let trailing = if query.is_empty() { 0.0 } else { 24.0 } + if searching { 24.0 } else { 0.0 };
-    let edit = egui::TextEdit::singleline(query)
-        .id(id)
-        .frame(egui::Frame::NONE)
-        .font(FontId::proportional(size::BODY))
-        .text_color(theme::text_primary())
-        .hint_text(text(placeholder, size::BODY, 400.0, theme::text_tertiary()))
-        .desired_width((inner.available_width() - trailing).max(60.0));
-    let response = inner.add(edit);
-    if focus {
-        response.request_focus();
-    }
-    event.changed = response.changed();
-    if response.lost_focus() && inner.input(|input| input.key_pressed(egui::Key::Enter)) {
-        event.submitted = true;
-        response.request_focus();
-    }
-    if searching {
-        inner.add(LoadingIndicator::new().size(13.0));
-    }
-    if !query.is_empty()
-        && icons::button(
-            &mut inner,
-            Icon::XmarkCircleFill,
-            22.0,
-            theme::text_tertiary(),
-            "Clear search",
-        )
-        .clicked()
-    {
-        event.cleared = true;
-        response.request_focus();
-    }
-    event
-}
-
 /// The Polymarket / Kalshi switch, styled like the search box beside it.
 pub(crate) fn provider_menu(ui: &mut Ui, provider: DataSource) -> Option<DataSource> {
     let name = galley_words(
@@ -242,7 +153,8 @@ pub(crate) fn provider_menu(ui: &mut Ui, provider: DataSource) -> Option<DataSou
         f32::INFINITY,
     );
     let width = 12.0 + 18.0 + 8.0 + name.size().x + 8.0 + 9.0 + 12.0;
-    let (rect, response) = ui.allocate_exact_size(vec2(width, SEARCH_FIELD_HEIGHT), Sense::click());
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(width, kit::search_box::HEIGHT), Sense::click());
     let response = crate::ui::accessibility::label(response, "Prediction market provider")
         .on_hover_text("Prediction market provider")
         .on_hover_cursor(egui::CursorIcon::PointingHand);

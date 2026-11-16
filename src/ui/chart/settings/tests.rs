@@ -98,7 +98,7 @@ fn the_compare_page_lists_every_market_however_many_and_says_what_is_wrong_with_
         );
         feeds.push(OverlayFeed::empty(match n {
             3 => OverlayStatus::Error("no such market".into()),
-            4 => OverlayStatus::Blocked("Same market as the chart"),
+            4 => OverlayStatus::Blocked("Same market as the chart".into()),
             _ => OverlayStatus::Ready,
         }));
     }
@@ -502,7 +502,7 @@ fn card_with_overlays(count: usize) -> ChartCard {
                 2 => OverlayStatus::Error("HTTP 429: rate limited".into()),
                 5 => OverlayStatus::Loading,
                 6 => OverlayStatus::Queued,
-                7 => OverlayStatus::Blocked("Same market as the chart"),
+                7 => OverlayStatus::Blocked("Same market as the chart".into()),
                 _ => OverlayStatus::Ready,
             });
             feed.candles = std::sync::Arc::new(vec![crate::model::Kline {

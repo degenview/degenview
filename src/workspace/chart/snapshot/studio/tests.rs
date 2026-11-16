@@ -117,12 +117,15 @@ fn session(rig: &Rig) -> &StudioSession {
     rig.workspace.snapshot.studio.as_ref().expect("a session")
 }
 
-/// Runs frames until the picture of what is wanted has been made.
+/// Runs frames until the picture of what is wanted has been made, and drawn.
 fn picture(rig: &mut Rig) {
     for _ in 0..3_000 {
         rig.frame(Vec::new());
         let previews = &session(rig).previews;
         if previews.shown().is_some() && !previews.is_busy() {
+            // The picture can land after this frame drew the preview, which then still showed
+            // "Drawing the image…": one more frame draws it, so its widget is there to find.
+            rig.frame(Vec::new());
             return;
         }
         std::thread::sleep(Duration::from_millis(5));

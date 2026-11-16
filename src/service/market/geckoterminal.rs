@@ -1,91 +1,75 @@
-use crate::model::Kline;
-use crate::service::{ProviderError, fill_gaps, fold_calendar, interval_seconds};
+use super::candles::plan;
+use crate::model::market::bucket::{self, FoldPlan};
+use crate::model::market::natives::GECKOTERMINAL_PAGE;
+use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
+use crate::service::ProviderError;
 use serde_json::Value;
 
 const BASE_URL: &str = "https://api.geckoterminal.com/api/v2";
-const MAX_CANDLES: i64 = 1_000;
 
-/// Buckets GeckoTerminal serves natively, in seconds.
-const BUCKETS: [(&str, i64, i64); 7] = [
-    ("minute", 1, 60),
-    ("minute", 5, 300),
-    ("minute", 15, 900),
-    ("hour", 1, 3_600),
-    ("hour", 4, 14_400),
-    ("hour", 12, 43_200),
-    ("day", 1, 86_400),
-];
-
+/// What one OHLCV request asks for: the native bucket a timeframe is made from and how many of
+/// them.
 struct Window {
+    plan: FoldPlan,
+    /// GeckoTerminal's `timeframe` (`minute`, `hour`, `day`) and the `aggregate` of it.
     timeframe: &'static str,
-    aggregate: i64,
-    /// Seconds in one native bucket.
-    bucket_secs: i64,
+    aggregate: u16,
     fetch_limit: usize,
-    needs_aggregation: bool,
 }
 
 impl Window {
-    fn for_interval(interval: &str, limit: usize) -> Window {
-        let target = interval_seconds(interval).unwrap_or(3_600);
-        let span = target * limit as i64;
-        let bucket = BUCKETS
-            .iter()
-            .rev()
-            .find(|(_, _, seconds)| *seconds <= target)
-            .unwrap_or(&BUCKETS[0]);
-        let wanted = (span + bucket.2 - 1) / bucket.2;
+    fn new(plan: FoldPlan, limit: usize) -> Window {
+        let base = plan.base();
         Window {
-            timeframe: bucket.0,
-            aggregate: bucket.1,
-            bucket_secs: bucket.2,
-            fetch_limit: wanted.clamp(1, MAX_CANDLES) as usize,
-            needs_aggregation: bucket.2 < target,
+            plan,
+            timeframe: match base.unit() {
+                TimeUnit::Minute => "minute",
+                TimeUnit::Hour => "hour",
+                // Its natives hold no weeks or months.
+                TimeUnit::Day | TimeUnit::Week | TimeUnit::Month => "day",
+            },
+            aggregate: base.count(),
+            fetch_limit: plan.base_count(limit).clamp(1, GECKOTERMINAL_PAGE),
         }
+    }
+
+    fn bucket_ms(&self) -> i64 {
+        self.plan.base().nominal_ms()
     }
 }
 
 /// OHLCV for an on-chain DEX pool. `pair_address` is a contract address; the
 /// network is resolved through GeckoTerminal's pool search.
 ///
-/// GeckoTerminal only lists intervals that traded and tops out at daily bars, so empty hours and
-/// days are filled flat and coarser bars are folded on the calendar, which makes the series
+/// GeckoTerminal only lists intervals that traded and tops out at daily bars, so empty buckets
+/// are filled flat and coarser bars are folded on the calendar, which makes the series
 /// line up with an exchange's.
 pub fn fetch_klines(
     pair_address: &str,
-    interval: &str,
+    timeframe: Timeframe,
     limit: u32,
 ) -> Result<Vec<Kline>, ProviderError> {
-    let window = Window::for_interval(interval, limit as usize);
+    let window = Window::new(plan(DataSource::DexScreener, timeframe)?, limit as usize);
     let network = network_for(pair_address)?;
     let side = side_for(&network, pair_address);
     let raw = fetch_ohlcv(&network, pair_address, side, &window, None)?;
     if raw.is_empty() {
         return Err(ProviderError::other("No chart data for this pool"));
     }
-    let candles = shape(raw, interval, &window, crate::service::now_ms());
-    let start = candles.len().saturating_sub(limit as usize);
-    Ok(candles[start..].to_vec())
+    let mut candles = shape(raw, &window, crate::service::now_ms());
+    let skip = candles.len().saturating_sub(limit as usize);
+    candles.drain(..skip);
+    Ok(candles)
 }
 
-/// Native buckets with their gaps filled, folded to `interval` when that is coarser, oldest first.
-fn shape(mut raw: Vec<Kline>, interval: &str, window: &Window, now_ms: i64) -> Vec<Kline> {
+/// Native buckets with their gaps filled, folded to the timeframe when that is coarser, oldest
+/// first.
+fn shape(mut raw: Vec<Kline>, window: &Window, now_ms: i64) -> Vec<Kline> {
     raw.sort_by_key(|candle| candle.open_time);
     raw.dedup_by_key(|candle| candle.open_time);
-    let target = interval_seconds(interval).unwrap_or(window.bucket_secs);
     let truncated = raw.len() >= window.fetch_limit;
-    let filled = fill_gaps(raw, window.bucket_secs * 1_000, now_ms);
-    if window.needs_aggregation {
-        return fold_calendar(&filled, target, truncated);
-    }
-    // A bucket closes a millisecond before the next opens, as on an exchange.
-    filled
-        .into_iter()
-        .map(|candle| Kline {
-            close_time: candle.open_time + target * 1_000 - 1,
-            ..candle
-        })
-        .collect()
+    let filled = bucket::fill_gaps(raw, window.bucket_ms(), now_ms);
+    window.plan.fold(filled, truncated)
 }
 
 /// Why an OHLCV request brought no candles.
@@ -136,25 +120,20 @@ fn fetch_ohlcv(
         }
         Err(error) => return Err(Fetch::Failed(error.into())),
     };
-    parse_ohlcv(&body).map_err(Fetch::Failed)
+    parse_ohlcv(&body, window.bucket_ms()).map_err(Fetch::Failed)
 }
 
-/// An older page of hourly or daily candles: those opening in `[start_ms, end_ms)`, at most `max`
-/// (the newest), oldest first. Nothing older than 180 days exists on the free API, which ends the
-/// history with an empty page. Coarser bars are folded from the 180 days a fetch already holds.
+/// An older page: the candles of `timeframe` opening in `[start_ms, end_ms)`, at most `max` (the
+/// newest), oldest first, folded from one page of the native candles before `end_ms`. Nothing
+/// older than 180 days exists on the free API, which ends the history with an empty page.
 pub fn fetch_klines_range(
     pair_address: &str,
-    interval: &str,
+    timeframe: Timeframe,
     start_ms: i64,
     end_ms: i64,
     max: usize,
 ) -> Result<Vec<Kline>, ProviderError> {
-    let window = Window::for_interval(interval, max);
-    if window.needs_aggregation {
-        return Err(ProviderError::other(
-            "GeckoTerminal pages hourly and daily candles only",
-        ));
-    }
+    let window = Window::new(plan(DataSource::DexScreener, timeframe)?, max);
     let network = network_for(pair_address)?;
     let side = side_for(&network, pair_address);
     let raw = match fetch_ohlcv(&network, pair_address, side, &window, Some(end_ms / 1_000)) {
@@ -163,14 +142,15 @@ pub fn fetch_klines_range(
         Err(Fetch::Failed(error)) => return Err(error),
     };
     // Filled up to the slot before `end_ms`, so no gap opens between this page and what is held.
-    let mut candles = shape(raw, interval, &window, end_ms - 1);
+    let mut candles = shape(raw, &window, end_ms - 1);
     candles.retain(|candle| candle.open_time >= start_ms && candle.open_time < end_ms);
     let skip = candles.len().saturating_sub(max);
     Ok(candles.split_off(skip))
 }
 
-/// `[timestamp_seconds, open, high, low, close, volumeUSD]`, newest first.
-fn parse_ohlcv(body: &str) -> Result<Vec<Kline>, ProviderError> {
+/// `[timestamp_seconds, open, high, low, close, volumeUSD]`, newest first. A bucket closes a
+/// millisecond before the next opens, as on an exchange.
+fn parse_ohlcv(body: &str, bucket_ms: i64) -> Result<Vec<Kline>, ProviderError> {
     let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
     let rows = value
         .pointer("/data/attributes/ohlcv_list")
@@ -197,7 +177,7 @@ fn parse_ohlcv(body: &str) -> Result<Vec<Kline>, ProviderError> {
         let open_time = (seconds * 1_000.0) as i64;
         candles.push(Kline {
             open_time,
-            close_time: open_time,
+            close_time: open_time + bucket_ms - 1,
             open,
             high,
             low,
@@ -356,18 +336,44 @@ fn lookup_network(pair_address: &str) -> Result<String, ProviderError> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn picks_bucket_and_caps_fetch_limit() {
-        let hourly = Window::for_interval("1h", 500);
-        assert_eq!(hourly.timeframe, "hour");
-        assert_eq!(hourly.aggregate, 1);
-        assert_eq!(hourly.fetch_limit, 500);
-        assert!(!hourly.needs_aggregation);
+    fn window(timeframe: &str, limit: usize) -> Window {
+        let timeframe = Timeframe::parse(timeframe).unwrap();
+        Window::new(plan(DataSource::DexScreener, timeframe).unwrap(), limit)
+    }
 
-        let weekly = Window::for_interval("1w", 500);
+    #[test]
+    fn a_native_length_is_asked_for_as_it_is() {
+        for (token, unit, aggregate) in [
+            ("1m", "minute", 1),
+            ("5m", "minute", 5),
+            ("15m", "minute", 15),
+            ("1h", "hour", 1),
+            ("4h", "hour", 4),
+            ("12h", "hour", 12),
+            ("1d", "day", 1),
+        ] {
+            let hourly = window(token, 500);
+            assert_eq!(
+                (hourly.timeframe, hourly.aggregate),
+                (unit, aggregate),
+                "{token}"
+            );
+            assert_eq!(hourly.fetch_limit, 500, "{token}");
+            assert!(hourly.plan.is_native());
+        }
+    }
+
+    #[test]
+    fn other_lengths_fold_the_coarsest_native_that_nests_up_to_a_page() {
+        let three_hours = window("3h", 100);
+        assert_eq!((three_hours.timeframe, three_hours.aggregate), ("hour", 1));
+        assert_eq!(three_hours.fetch_limit, 101 * 3);
+        let weekly = window("1w", 500);
         assert_eq!(weekly.timeframe, "day");
-        assert!(weekly.needs_aggregation);
-        assert_eq!(weekly.fetch_limit, MAX_CANDLES as usize);
+        assert!(!weekly.plan.is_native());
+        assert_eq!(weekly.fetch_limit, GECKOTERMINAL_PAGE);
+        let odd = window("22m", 100);
+        assert_eq!((odd.timeframe, odd.aggregate), ("minute", 1));
     }
 
     fn daily(start: i64, days: &[i64]) -> Vec<Kline> {
@@ -393,9 +399,8 @@ mod tests {
         // the 500 bars asked for, which used to come back as mislabelled daily bars.
         let monday = crate::format::days_from_civil(2024, 1, 1) * 86_400_000;
         let raw = daily(monday, &[0, 1, 4, 5, 6, 7, 8, 9, 10]);
-        let window = Window::for_interval("1w", 500);
         let now = monday + 10 * 86_400_000 + 1_000;
-        let weeks = shape(raw, "1w", &window, now);
+        let weeks = shape(raw, &window("1w", 500), now);
         assert_eq!(weeks.len(), 2);
         assert_eq!(weeks[0].open_time, monday);
         assert_eq!(weeks[0].close_time, monday + 7 * 86_400_000 - 1);
@@ -408,9 +413,8 @@ mod tests {
     #[test]
     fn empty_days_are_filled_up_to_today() {
         let start = crate::format::days_from_civil(2024, 1, 1) * 86_400_000;
-        let window = Window::for_interval("1d", 500);
         let now = start + 6 * 86_400_000 + 5;
-        let days = shape(daily(start, &[0, 1, 4]), "1d", &window, now);
+        let days = shape(daily(start, &[0, 1, 4]), &window("1d", 500), now);
         assert_eq!(days.len(), 7);
         assert_eq!(days[2].volume, 0.0);
         assert_eq!(days[2].open, 11.0);

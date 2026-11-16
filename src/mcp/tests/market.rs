@@ -695,10 +695,10 @@ fn candles_of_any_market_come_from_the_provider_with_no_chart() {
         let seen = seen.clone();
         harness
             .shared
-            .set_candle_fetch(Arc::new(move |source, symbol, interval, limit| {
+            .set_candle_fetch(Arc::new(move |source, symbol, timeframe, limit| {
                 seen.lock()
                     .unwrap()
-                    .push(format!("{source:?} {symbol} {interval} {limit}"));
+                    .push(format!("{source:?} {symbol} {timeframe} {limit}"));
                 Ok((0..5).map(|day| bar(day, 100.0 + day as f64)).collect())
             }));
     }
@@ -710,7 +710,7 @@ fn candles_of_any_market_come_from_the_provider_with_no_chart() {
     );
     assert_eq!(result["isError"], json!(false), "{result}");
     let out = &result["structuredContent"];
-    assert_eq!(*seen.lock().unwrap(), ["Binance BTCUSDT 1d 3"]);
+    assert_eq!(*seen.lock().unwrap(), ["Binance BTCUSDT 1D 3"]);
     assert_eq!(out["instrument"], "BINANCE:BTCUSDT");
     assert_eq!(out["timeframe"], "1D");
     assert_eq!(
@@ -725,6 +725,25 @@ fn candles_of_any_market_come_from_the_provider_with_no_chart() {
     assert_eq!(out["summary"]["high"], 106.0);
     assert_eq!(out["summary"]["low"], 99.0);
     assert_eq!(out["range"]["to"], "2025-10-24T00:00:00Z");
+}
+
+#[test]
+fn market_candles_take_any_timeframe_and_name_it_as_the_app_does() {
+    let harness = Harness::start(&[("c", "tok", SEARCH)]);
+    harness
+        .shared
+        .set_candle_fetch(Arc::new(|_, _, timeframe, _| {
+            assert_eq!(timeframe.label(), "22m");
+            Ok(vec![bar(0, 100.0)])
+        }));
+    let result = call(
+        &harness.url(),
+        "tok",
+        "degenview_get_market_candles",
+        json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "22m"}),
+    );
+    assert_eq!(result["isError"], json!(false), "{result}");
+    assert_eq!(result["structuredContent"]["timeframe"], "22m");
 }
 
 #[test]
@@ -767,7 +786,9 @@ fn bad_candle_requests_never_reach_the_provider() {
     let url = harness.url();
     let tool = "degenview_get_market_candles";
     for arguments in [
-        json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "4h"}),
+        json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "30s"}),
+        json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "0m"}),
+        json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "2000m"}),
         json!({"source": "binance", "symbol": "BTCUSDT"}),
         json!({"source": "binance", "symbol": "BTC-USD", "timeframe": "1D"}),
         json!({"source": "binance", "symbol": "", "timeframe": "1D"}),

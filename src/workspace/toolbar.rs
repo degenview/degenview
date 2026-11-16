@@ -2,7 +2,7 @@
 
 use super::alerts::AlertRequest;
 use super::{ChartWorkspace, WorkspaceAction};
-use crate::model::{ChartType, DataSource};
+use crate::model::{ChartType, DataSource, Timeframe};
 use crate::ui::chart::settings::ChartSettingsState;
 use crate::ui::workspace::layout_prompts::NamePrompt;
 use crate::ui::workspace::toolbar::{self, ToolbarAction};
@@ -42,8 +42,21 @@ impl ChartWorkspace {
         };
         let snapshot_shortcut =
             |action| crate::ui::shortcut::snapshot(action).map(|shortcut| shortcut.label());
+        let pinned = self
+            .store
+            .lock()
+            .map(|store| store.pinned_timeframes_cached())
+            .unwrap_or_default();
+        let sources: Vec<DataSource> = self
+            .charts
+            .iter()
+            .filter(|chart| chart.is_market())
+            .map(|chart| chart.source)
+            .collect();
         let input = toolbar::ToolbarInput {
             timeframe: self.timeframe,
+            pinned: &pinned,
+            sources: &sources,
             layout_name: self.layout.active_view_name().unwrap_or("Unnamed"),
             // Autosave keeps a layout clean in the user's eyes: "(unsaved)" only shows while
             // nothing is going to save it.
@@ -84,13 +97,12 @@ impl ChartWorkspace {
         };
         for action in toolbar::show(ui, &input) {
             match action {
-                ToolbarAction::SetTimeframe(timeframe) => {
-                    let changed = self.timeframe != timeframe;
-                    self.reload_for_timeframe(timeframe, ctx);
-                    if changed {
-                        self.announce_timeframe();
-                    }
+                ToolbarAction::SetTimeframe(timeframe) => self.set_timeframe(timeframe, ctx),
+                ToolbarAction::PinTimeframe(timeframe) => {
+                    self.pin_timeframe(timeframe);
+                    self.set_timeframe(timeframe, ctx);
                 }
+                ToolbarAction::UnpinTimeframe(timeframe) => self.unpin_timeframe(timeframe),
                 ToolbarAction::OpenSymbolSearch => self.open_symbol_picker(),
                 ToolbarAction::SaveLayout => save_clicked = true,
                 ToolbarAction::CopyLayout => copy_clicked = true,
@@ -147,6 +159,30 @@ impl ChartWorkspace {
         actions
     }
 
+    /// Puts the tab on `timeframe`, as the timeframe picker does, and tells the tabs linked to it.
+    /// Picking the timeframe it is on reloads the charts and announces nothing.
+    fn set_timeframe(&mut self, timeframe: Timeframe, ctx: &egui::Context) {
+        let changed = self.timeframe != timeframe;
+        self.reload_for_timeframe(timeframe, ctx);
+        if changed {
+            self.announce_timeframe();
+        }
+    }
+
+    /// Keeps a custom timeframe among the picker's chips (a preset or a pinned one changes
+    /// nothing). A preference: a write that fails leaves the chip out.
+    fn pin_timeframe(&self, timeframe: Timeframe) {
+        if let Ok(store) = self.store.lock() {
+            let _ = store.pin_timeframe(timeframe);
+        }
+    }
+
+    fn unpin_timeframe(&self, timeframe: Timeframe) {
+        if let Ok(store) = self.store.lock() {
+            let _ = store.unpin_timeframe(timeframe);
+        }
+    }
+
     /// Gives the focused market chart `chart_type`, and no other chart. A type its market cannot
     /// draw is refused (the menu greys those rows), as is a tab with no focused market chart.
     pub(super) fn set_focused_chart_type(&mut self, chart_type: ChartType) -> bool {
@@ -200,6 +236,21 @@ mod tests {
         assert_eq!(type_of(&workspace, first), ChartType::Candles);
         // The same type again changes nothing.
         assert!(!workspace.set_focused_chart_type(ChartType::HeikinAshi));
+    }
+
+    #[test]
+    fn pinning_and_unpinning_change_the_shared_list_and_presets_never_join_it() {
+        use crate::model::{TimeUnit, Timeframe};
+        let workspace = empty_workspace(1);
+        let pinned = |workspace: &super::ChartWorkspace| {
+            workspace.store.lock().unwrap().pinned_timeframes_cached()
+        };
+        let custom = Timeframe::new(22, TimeUnit::Minute).unwrap();
+        workspace.pin_timeframe(custom);
+        workspace.pin_timeframe(Timeframe::HOUR_4);
+        assert_eq!(*pinned(&workspace), [custom]);
+        workspace.unpin_timeframe(custom);
+        assert!(pinned(&workspace).is_empty());
     }
 
     #[test]

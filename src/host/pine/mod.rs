@@ -10,7 +10,8 @@ pub mod subscription;
 
 use crate::lock::lock;
 use crate::model::chart::synthetic::ticker;
-use crate::model::{DataSource, Kline};
+use crate::model::market::bucket;
+use crate::model::{DataSource, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::runtime::session::{RunError, Session};
@@ -18,6 +19,7 @@ use crate::pine::runtime::support::{
     ChartSpan, MAX_INTRABAR_CANDLES, SecurityDataProvider, SecurityKey,
 };
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity, Limits};
+use crate::pine::time::bucket::timeframe_of;
 use crate::pine_studio::library::registry::LibraryRegistry;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -34,16 +36,16 @@ type SecurityCache = HashMap<(SecurityKey, Option<ChartSpan>), (Vec<Kline>, i64)
 static SECURITY_CACHE: LazyLock<Mutex<SecurityCache>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// The finest candle sizes the intrabar series are built from, coarsest first: a series of
-/// `request.security_lower_tf` is folded from the coarsest of these that divides its length (12
-/// minutes from 1-minute candles, 4 hours from 1-hour ones).
-const INTRABAR_BASES: [(i64, &str); 6] = [
-    (86_400, "1d"),
-    (3_600, "1h"),
-    (1_800, "30m"),
-    (900, "15m"),
-    (300, "5m"),
-    (60, "1m"),
+/// The candle sizes the intrabar series are built from: a series of `request.security_lower_tf`
+/// is folded from the coarsest of these that nests in its length (12 minutes from 1-minute
+/// candles, 4 hours from 1-hour ones).
+const INTRABAR_BASES: [Timeframe; 6] = [
+    Timeframe::DAY_1,
+    Timeframe::HOUR_1,
+    Timeframe::MINUTE_30,
+    Timeframe::MINUTE_15,
+    Timeframe::MINUTE_5,
+    Timeframe::MINUTE_1,
 ];
 
 impl KlineSecurityDataProvider {
@@ -59,14 +61,11 @@ impl KlineSecurityDataProvider {
 
     /// The series of finer bars over the chart's whole span (or its `calc_bars_count` newest bars).
     fn intrabars(key: &SecurityKey, chart: ChartSpan) -> Option<Vec<Kline>> {
-        let interval = key.interval.round() as i64;
-        let (base_seconds, token) = INTRABAR_BASES
-            .iter()
-            .copied()
-            .find(|(base, _)| *base <= interval && interval % base == 0)?;
+        let target = timeframe_of(key.interval)?;
+        let base = bucket::fold_base(target, &INTRABAR_BASES)?;
         let (plain, modifier) = ticker::split(&key.symbol);
         let (source, symbol) = resolve_symbol(plain)?;
-        let base_ms = base_seconds * 1_000;
+        let base_ms = base.nominal_ms();
         let mut start = chart
             .start_ms
             .max(chart.end_ms - base_ms * MAX_INTRABAR_CANDLES as i64);
@@ -76,17 +75,17 @@ impl KlineSecurityDataProvider {
         let candles = crate::service::fetch_klines_range(
             source,
             &symbol,
-            token,
+            base,
             start,
             chart.end_ms,
             MAX_INTRABAR_CANDLES,
         )
         .ok()
         .filter(|candles| !candles.is_empty())?;
-        let candles = if base_seconds == interval {
+        let candles = if base == target {
             candles
         } else {
-            fold_candles(&candles, interval)
+            bucket::fold(&candles, target, false)
         };
         Some(construct(modifier, candles))
     }
@@ -96,14 +95,14 @@ impl KlineSecurityDataProvider {
         // are fetched and the chart's own builders make the bars.
         let (plain, modifier) = ticker::split(&key.symbol);
         let (source, symbol) = resolve_symbol(plain)?;
-        let interval = resolve_interval(key.interval)?;
+        let timeframe = timeframe_of(key.interval)?;
         // Enough candles for the chart's span plus the expression's own lookback, up to the
         // service's page.
         let limit = chart.map_or(500, |chart| {
             let covering = (chart.end_ms - chart.start_ms) / (key.interval as i64 * 1_000).max(1);
             (covering + 300).clamp(500, 1_000) as u32
         });
-        let candles = crate::service::fetch_klines(source, &symbol, interval, limit).ok()?;
+        let candles = crate::service::fetch_klines(source, &symbol, timeframe, limit).ok()?;
         Some(construct(modifier, candles))
     }
 }
@@ -143,33 +142,6 @@ fn construct(modifier: Option<ticker::TickerModifier>, candles: Vec<Kline>) -> V
     }
 }
 
-/// `candles` folded into candles of `interval` seconds: one per calendar bucket, the open of the
-/// first, the extremes, the close of the last and the summed volume.
-fn fold_candles(candles: &[Kline], interval: i64) -> Vec<Kline> {
-    let mut folded: Vec<Kline> = Vec::new();
-    for candle in candles {
-        let bucket = crate::service::bucket_start_ms(candle.open_time, interval);
-        match folded.last_mut() {
-            Some(last) if last.open_time == bucket => {
-                last.high = last.high.max(candle.high);
-                last.low = last.low.min(candle.low);
-                last.close = candle.close;
-                last.volume += candle.volume;
-            }
-            _ => folded.push(Kline {
-                open_time: bucket,
-                close_time: bucket + interval * 1_000 - 1,
-                open: candle.open,
-                high: candle.high,
-                low: candle.low,
-                close: candle.close,
-                volume: candle.volume,
-            }),
-        }
-    }
-    folded
-}
-
 fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -197,28 +169,6 @@ fn source_for_slug(slug: &str) -> Option<DataSource> {
         "CMC" => Some(DataSource::CoinMarketCap),
         _ => None,
     }
-}
-
-/// The kline-service interval token for a bar length in seconds. None for a length the service does
-/// not serve directly.
-fn resolve_interval(seconds: f64) -> Option<&'static str> {
-    const TOKENS: &[(f64, &str)] = &[
-        (60.0, "1m"),
-        (300.0, "5m"),
-        (900.0, "15m"),
-        (1_800.0, "30m"),
-        (3_600.0, "1h"),
-        (14_400.0, "4h"),
-        (86_400.0, "1d"),
-        (604_800.0, "1w"),
-        (2_592_000.0, "1M"),
-        (7_776_000.0, "3M"),
-        (31_536_000.0, "1Y"),
-    ];
-    TOKENS
-        .iter()
-        .find(|(length, _)| (*length - seconds).abs() < 0.5)
-        .map(|(_, token)| *token)
 }
 
 /// Compiles `source` and runs it once over every bar (historical phase) with the user's input
@@ -300,57 +250,6 @@ mod tests {
                 volume: 1_000.0,
             })
             .collect()
-    }
-
-    fn minute(index: i64, open: f64, high: f64, low: f64, close: f64) -> Kline {
-        Kline {
-            open_time: index * 60_000,
-            close_time: index * 60_000 + 59_999,
-            open,
-            high,
-            low,
-            close,
-            volume: 1.0,
-        }
-    }
-
-    #[test]
-    fn minute_candles_fold_into_calendar_buckets() {
-        // Six 1-minute candles starting on a 5-minute boundary: one full 3-minute pair of buckets.
-        let candles = [
-            minute(0, 10.0, 11.0, 9.0, 10.5),
-            minute(1, 10.5, 12.0, 10.0, 11.0),
-            minute(2, 11.0, 11.5, 8.0, 9.0),
-            minute(3, 9.0, 9.5, 8.5, 9.2),
-            minute(4, 9.2, 10.0, 9.0, 9.9),
-        ];
-        let folded = fold_candles(&candles, 180);
-        assert_eq!(folded.len(), 2);
-        assert_eq!(
-            (folded[0].open_time, folded[0].close_time),
-            (0, 179_999),
-            "the bucket spans its three minutes"
-        );
-        assert_eq!(
-            (
-                folded[0].open,
-                folded[0].high,
-                folded[0].low,
-                folded[0].close
-            ),
-            (10.0, 12.0, 8.0, 9.0)
-        );
-        assert_eq!(folded[0].volume, 3.0);
-        assert_eq!(
-            (
-                folded[1].open_time,
-                folded[1].open,
-                folded[1].close,
-                folded[1].volume
-            ),
-            (180_000, 9.0, 9.9, 2.0),
-            "a partial last bucket still folds"
-        );
     }
 
     #[test]
@@ -472,15 +371,6 @@ mod tests {
             Some((DataSource::Coinbase, "BTC-USD".to_owned()))
         );
         assert_eq!(resolve_symbol("NOPE:ETHUSDT"), None);
-    }
-
-    #[test]
-    fn security_intervals_map_to_kline_tokens() {
-        assert_eq!(resolve_interval(60.0), Some("1m"));
-        assert_eq!(resolve_interval(3_600.0), Some("1h"));
-        assert_eq!(resolve_interval(86_400.0), Some("1d"));
-        assert_eq!(resolve_interval(2_592_000.0), Some("1M"));
-        assert_eq!(resolve_interval(120.0), None); // 2m is not served directly
     }
 }
 

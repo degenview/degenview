@@ -166,18 +166,18 @@ fn an_outbox_keeps_one_slot_per_kind_newest_wins() {
     let mut outbox = LinkOutbox::default();
     assert!(outbox.is_empty());
     outbox.push(LinkSignal::Market(market("BTCUSDT")));
-    outbox.push(LinkSignal::Timeframe(Timeframe::Hour));
+    outbox.push(LinkSignal::Timeframe(Timeframe::HOUR_1));
     outbox.push(LinkSignal::Market(market("ETHUSDT")));
     outbox.push(LinkSignal::View(view(1.0)));
     outbox.push(LinkSignal::View(view(2.0)));
-    outbox.push(LinkSignal::Timeframe(Timeframe::Day));
+    outbox.push(LinkSignal::Timeframe(Timeframe::DAY_1));
     let taken = outbox.take();
     assert_eq!(taken.len(), 3, "bounded by the number of kinds");
     assert!(
         matches!(&taken[0], LinkSignal::Market(m) if m.instrument.symbol == "ETHUSDT"),
         "the second market replaced the first"
     );
-    assert_eq!(taken[1], LinkSignal::Timeframe(Timeframe::Day));
+    assert_eq!(taken[1], LinkSignal::Timeframe(Timeframe::DAY_1));
     assert_eq!(taken[2], LinkSignal::View(view(2.0)));
     assert!(outbox.is_empty());
 }
@@ -189,11 +189,11 @@ fn a_symbol_reaches_every_other_member_of_the_group_and_nobody_else() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, LinkToggles::default());
     let members = [
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(4, on(LinkColor::Blue), "BTCUSDT", Timeframe::Hour),
-        member(5, None, "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(4, on(LinkColor::Blue), "BTCUSDT", Timeframe::HOUR_1),
+        member(5, None, "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     let out = hub.ingest(2, LinkSignal::Market(market("ETHUSDT")), &members, &table);
@@ -210,8 +210,8 @@ fn symbol_sync_is_bidirectional_and_each_tab_keeps_its_own_interval() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, LinkToggles::default());
     let mut members = vec![
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Day),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::DAY_1),
     ];
     hub.reconcile(&members, &table);
     let out = hub.ingest(1, LinkSignal::Market(market("ETHUSDT")), &members, &table);
@@ -238,12 +238,12 @@ fn a_market_is_identified_by_provider_and_symbol_not_by_spelling() {
         "BTC",
     ));
     let members = [
-        member(1, on(LinkColor::Red), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Red), "BTCUSDT", Timeframe::HOUR_1),
         Member {
             tab: 2,
             color: on(LinkColor::Red),
             market: Some(on_coinbase),
-            timeframe: Timeframe::Hour,
+            timeframe: Timeframe::HOUR_1,
         },
     ];
     hub.reconcile(&members, &table);
@@ -252,8 +252,8 @@ fn a_market_is_identified_by_provider_and_symbol_not_by_spelling() {
     assert_eq!(targets(&out), [2]);
     // The same market spelled another way is already shown: nothing to send.
     let members = [
-        member(1, on(LinkColor::Red), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Red), "btc/usdt", Timeframe::Hour),
+        member(1, on(LinkColor::Red), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Red), "btc/usdt", Timeframe::HOUR_1),
     ];
     let out = hub.ingest(1, LinkSignal::Market(market("BTCUSDT")), &members, &table);
     assert!(out.is_empty());
@@ -271,8 +271,8 @@ fn a_switched_off_kind_never_propagates_and_is_not_recorded() {
         },
     );
     let members = [
-        member(1, on(LinkColor::Green), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Green), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Green), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Green), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     assert!(
@@ -285,7 +285,7 @@ fn a_switched_off_kind_never_propagates_and_is_not_recorded() {
             .is_empty(),
         "no Time or Date range, no view"
     );
-    let out = hub.ingest(1, LinkSignal::Timeframe(Timeframe::Day), &members, &table);
+    let out = hub.ingest(1, LinkSignal::Timeframe(Timeframe::DAY_1), &members, &table);
     assert_eq!(targets(&out), [2]);
 }
 
@@ -294,13 +294,13 @@ fn with_all_four_off_the_colour_is_only_a_tag() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Pink, LinkToggles::NONE);
     let members = [
-        member(1, on(LinkColor::Pink), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Pink), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Pink), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Pink), "BTCUSDT", Timeframe::HOUR_1),
     ];
     assert!(hub.reconcile(&members, &table).is_empty());
     for signal in [
         LinkSignal::Market(market("ETHUSDT")),
-        LinkSignal::Timeframe(Timeframe::Week),
+        LinkSignal::Timeframe(Timeframe::WEEK_1),
         LinkSignal::View(view(1.0)),
     ] {
         assert!(hub.ingest(1, signal, &members, &table).is_empty());
@@ -312,9 +312,9 @@ fn an_unlinked_tab_neither_broadcasts_nor_receives() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, ALL);
     let members = [
-        member(1, None, "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(1, None, "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     assert!(
@@ -325,8 +325,13 @@ fn an_unlinked_tab_neither_broadcasts_nor_receives() {
     assert!(!targets(&out).contains(&1));
     // A tab the hub has never heard of is not a member either.
     assert!(
-        hub.ingest(99, LinkSignal::Timeframe(Timeframe::Day), &members, &table)
-            .is_empty()
+        hub.ingest(
+            99,
+            LinkSignal::Timeframe(Timeframe::DAY_1),
+            &members,
+            &table
+        )
+        .is_empty()
     );
 }
 
@@ -337,21 +342,26 @@ fn independent_colours_do_not_hear_each_other() {
     table.set(LinkColor::Orange, ALL);
     table.set(LinkColor::Blue, ALL);
     let members = [
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(3, on(LinkColor::Blue), "BTCUSDT", Timeframe::Hour),
-        member(4, on(LinkColor::Blue), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(3, on(LinkColor::Blue), "BTCUSDT", Timeframe::HOUR_1),
+        member(4, on(LinkColor::Blue), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
-    let out = hub.ingest(1, LinkSignal::Timeframe(Timeframe::Week), &members, &table);
+    let out = hub.ingest(
+        1,
+        LinkSignal::Timeframe(Timeframe::WEEK_1),
+        &members,
+        &table,
+    );
     assert_eq!(targets(&out), [2]);
-    let out = hub.ingest(4, LinkSignal::Timeframe(Timeframe::Day), &members, &table);
+    let out = hub.ingest(4, LinkSignal::Timeframe(Timeframe::DAY_1), &members, &table);
     assert_eq!(targets(&out), [3]);
     assert_eq!(
         hub.group_timeframe(LinkColor::Orange),
-        Some(Timeframe::Week)
+        Some(Timeframe::WEEK_1)
     );
-    assert_eq!(hub.group_timeframe(LinkColor::Blue), Some(Timeframe::Day));
+    assert_eq!(hub.group_timeframe(LinkColor::Blue), Some(Timeframe::DAY_1));
 }
 
 #[test]
@@ -367,18 +377,18 @@ fn switches_belong_to_the_group_not_the_tab() {
     );
     table.set(LinkColor::Blue, LinkToggles::default());
     let members = [
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(3, on(LinkColor::Blue), "BTCUSDT", Timeframe::Hour),
-        member(4, on(LinkColor::Blue), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(3, on(LinkColor::Blue), "BTCUSDT", Timeframe::HOUR_1),
+        member(4, on(LinkColor::Blue), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     assert_eq!(
-        targets(&hub.ingest(1, LinkSignal::Timeframe(Timeframe::Day), &members, &table)),
+        targets(&hub.ingest(1, LinkSignal::Timeframe(Timeframe::DAY_1), &members, &table)),
         [2]
     );
     assert!(
-        hub.ingest(3, LinkSignal::Timeframe(Timeframe::Day), &members, &table)
+        hub.ingest(3, LinkSignal::Timeframe(Timeframe::DAY_1), &members, &table)
             .is_empty(),
         "Blue has Interval off"
     );
@@ -391,16 +401,16 @@ fn an_interval_only_goes_to_tabs_that_do_not_already_have_it() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Cyan, ALL);
     let members = [
-        member(1, on(LinkColor::Cyan), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Cyan), "ETHUSDT", Timeframe::Hour),
-        member(3, on(LinkColor::Cyan), "SOLUSDT", Timeframe::Day),
+        member(1, on(LinkColor::Cyan), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Cyan), "ETHUSDT", Timeframe::HOUR_1),
+        member(3, on(LinkColor::Cyan), "SOLUSDT", Timeframe::DAY_1),
     ];
     hub.reconcile(&members, &table);
-    let out = hub.ingest(1, LinkSignal::Timeframe(Timeframe::Day), &members, &table);
+    let out = hub.ingest(1, LinkSignal::Timeframe(Timeframe::DAY_1), &members, &table);
     assert_eq!(targets(&out), [2], "tab 3 already shows 1D");
     assert!(matches!(
         out[0].signal,
-        LinkSignal::Timeframe(Timeframe::Day)
+        LinkSignal::Timeframe(Timeframe::DAY_1)
     ));
 }
 
@@ -417,8 +427,8 @@ fn a_view_goes_to_everyone_else_even_when_it_repeats() {
         },
     );
     let members = [
-        member(1, on(LinkColor::Yellow), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Yellow), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Yellow), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Yellow), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     for _ in 0..3 {
@@ -434,9 +444,9 @@ fn sequences_grow_and_a_tick_merges_to_the_newest_per_target_and_kind() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, LinkToggles::default());
     let members = [
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     let first = hub.ingest(1, LinkSignal::Market(market("ETHUSDT")), &members, &table);
@@ -459,9 +469,9 @@ fn two_tabs_speaking_in_one_tick_leave_the_later_one_standing_for_a_third() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, LinkToggles::default());
     let members = [
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     let out = hub.tick(
@@ -489,12 +499,12 @@ fn merging_never_lets_an_older_sequence_replace_a_newer_one() {
     let newer = Delivery {
         target: 1,
         sequence: 9,
-        signal: LinkSignal::Timeframe(Timeframe::Day),
+        signal: LinkSignal::Timeframe(Timeframe::DAY_1),
     };
     let older = Delivery {
         target: 1,
         sequence: 4,
-        signal: LinkSignal::Timeframe(Timeframe::Hour),
+        signal: LinkSignal::Timeframe(Timeframe::HOUR_1),
     };
     let merged = merge(vec![newer.clone(), older]);
     assert_eq!(merged, vec![newer]);
@@ -515,16 +525,26 @@ fn a_joiner_adopts_the_enabled_values_and_existing_members_are_untouched() {
         },
     );
     let mut members = vec![
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     hub.ingest(1, LinkSignal::Market(market("ETHUSDT")), &members, &table);
-    hub.ingest(1, LinkSignal::Timeframe(Timeframe::Week), &members, &table);
+    hub.ingest(
+        1,
+        LinkSignal::Timeframe(Timeframe::WEEK_1),
+        &members,
+        &table,
+    );
 
     // Tab 3 is recoloured Orange: it takes the symbol only (Interval is off) and nothing else
     // moves.
-    members.push(member(3, on(LinkColor::Orange), "SOLUSDT", Timeframe::Day));
+    members.push(member(
+        3,
+        on(LinkColor::Orange),
+        "SOLUSDT",
+        Timeframe::DAY_1,
+    ));
     let out = hub.reconcile(&members, &table);
     assert_eq!(targets(&out), [3]);
     assert_eq!(symbol_of(&out[0]), "ETHUSDT");
@@ -539,13 +559,23 @@ fn a_joiner_adopts_interval_and_view_when_those_are_on() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, ALL);
     let mut members = vec![
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
-    hub.ingest(1, LinkSignal::Timeframe(Timeframe::Week), &members, &table);
+    hub.ingest(
+        1,
+        LinkSignal::Timeframe(Timeframe::WEEK_1),
+        &members,
+        &table,
+    );
     hub.ingest(1, LinkSignal::View(view(3.0)), &members, &table);
-    members.push(member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::Day));
+    members.push(member(
+        3,
+        on(LinkColor::Orange),
+        "BTCUSDT",
+        Timeframe::DAY_1,
+    ));
     let out = hub.reconcile(&members, &table);
     let kinds: Vec<_> = out.iter().map(|d| d.signal.kind()).collect();
     assert!(out.iter().all(|d| d.target == 3));
@@ -561,11 +591,16 @@ fn a_joiner_that_already_matches_is_told_nothing() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, ALL);
     let mut members = vec![
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
-    members.push(member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour));
+    members.push(member(
+        3,
+        on(LinkColor::Orange),
+        "BTCUSDT",
+        Timeframe::HOUR_1,
+    ));
     assert!(hub.reconcile(&members, &table).is_empty());
 }
 
@@ -573,22 +608,32 @@ fn a_joiner_that_already_matches_is_told_nothing() {
 fn the_first_tab_of_a_group_seeds_it_so_the_next_one_has_something_to_adopt() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, ALL);
-    let mut members = vec![member(1, on(LinkColor::Orange), "ETHUSDT", Timeframe::Week)];
+    let mut members = vec![member(
+        1,
+        on(LinkColor::Orange),
+        "ETHUSDT",
+        Timeframe::WEEK_1,
+    )];
     assert!(
         hub.reconcile(&members, &table).is_empty(),
         "alone: nothing to do"
     );
     assert_eq!(
         hub.group_timeframe(LinkColor::Orange),
-        Some(Timeframe::Week)
+        Some(Timeframe::WEEK_1)
     );
-    members.push(member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour));
+    members.push(member(
+        2,
+        on(LinkColor::Orange),
+        "BTCUSDT",
+        Timeframe::HOUR_1,
+    ));
     let out = hub.reconcile(&members, &table);
     assert_eq!(targets(&out), [2, 2]);
     assert_eq!(symbol_of(&out[0]), "ETHUSDT");
     assert!(matches!(
         out[1].signal,
-        LinkSignal::Timeframe(Timeframe::Week)
+        LinkSignal::Timeframe(Timeframe::WEEK_1)
     ));
 }
 
@@ -597,9 +642,9 @@ fn a_restore_delivers_nothing_so_no_restored_tab_is_overwritten() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, ALL);
     let members = [
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "ETHUSDT", Timeframe::Day),
-        member(3, on(LinkColor::Orange), "SOLUSDT", Timeframe::Week),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "ETHUSDT", Timeframe::DAY_1),
+        member(3, on(LinkColor::Orange), "SOLUSDT", Timeframe::WEEK_1),
     ];
     assert!(hub.reconcile(&members, &table).is_empty());
     assert!(hub.reconcile(&members, &table).is_empty());
@@ -612,19 +657,29 @@ fn a_recoloured_tab_leaves_its_old_group_at_once() {
     table.set(LinkColor::Orange, ALL);
     table.set(LinkColor::Blue, ALL);
     let mut members = vec![
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(3, on(LinkColor::Blue), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(3, on(LinkColor::Blue), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     members[1].color = on(LinkColor::Blue);
     hub.reconcile(&members, &table);
-    let out = hub.ingest(1, LinkSignal::Timeframe(Timeframe::Week), &members, &table);
+    let out = hub.ingest(
+        1,
+        LinkSignal::Timeframe(Timeframe::WEEK_1),
+        &members,
+        &table,
+    );
     assert!(
         out.is_empty(),
         "tab 2 is Blue now; tab 1 is alone in Orange"
     );
-    let out = hub.ingest(3, LinkSignal::Timeframe(Timeframe::Week), &members, &table);
+    let out = hub.ingest(
+        3,
+        LinkSignal::Timeframe(Timeframe::WEEK_1),
+        &members,
+        &table,
+    );
     assert_eq!(targets(&out), [2]);
 }
 
@@ -633,19 +688,24 @@ fn unlinking_stops_both_directions_and_a_group_with_no_tabs_keeps_nothing() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, ALL);
     let mut members = vec![
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
-    hub.ingest(1, LinkSignal::Timeframe(Timeframe::Week), &members, &table);
+    hub.ingest(
+        1,
+        LinkSignal::Timeframe(Timeframe::WEEK_1),
+        &members,
+        &table,
+    );
     members[1].color = None;
     hub.reconcile(&members, &table);
     assert!(
-        hub.ingest(2, LinkSignal::Timeframe(Timeframe::Day), &members, &table)
+        hub.ingest(2, LinkSignal::Timeframe(Timeframe::DAY_1), &members, &table)
             .is_empty()
     );
     assert!(
-        hub.ingest(1, LinkSignal::Timeframe(Timeframe::Day), &members, &table)
+        hub.ingest(1, LinkSignal::Timeframe(Timeframe::DAY_1), &members, &table)
             .is_empty(),
         "tab 1 is alone"
     );
@@ -660,16 +720,16 @@ fn a_closed_tab_is_never_delivered_to() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, ALL);
     let mut members = vec![
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     members.remove(1);
     let out = hub.tick(
         &members,
         &table,
-        vec![(1, vec![LinkSignal::Timeframe(Timeframe::Week)])],
+        vec![(1, vec![LinkSignal::Timeframe(Timeframe::WEEK_1)])],
     );
     assert_eq!(targets(&out), [3]);
 }
@@ -678,11 +738,16 @@ fn a_closed_tab_is_never_delivered_to() {
 fn a_signal_from_a_closed_tab_is_dropped() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, ALL);
-    let members = [member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour)];
+    let members = [member(
+        2,
+        on(LinkColor::Orange),
+        "BTCUSDT",
+        Timeframe::HOUR_1,
+    )];
     let out = hub.tick(
         &members,
         &table,
-        vec![(1, vec![LinkSignal::Timeframe(Timeframe::Week)])],
+        vec![(1, vec![LinkSignal::Timeframe(Timeframe::WEEK_1)])],
     );
     assert!(out.is_empty());
 }
@@ -694,19 +759,19 @@ fn a_thousand_linked_tabs_get_one_delivery_each_without_allocating_per_event_sta
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Red, ALL);
     let members: Vec<_> = (1..=1_000)
-        .map(|tab| member(tab, on(LinkColor::Red), "BTCUSDT", Timeframe::Hour))
+        .map(|tab| member(tab, on(LinkColor::Red), "BTCUSDT", Timeframe::HOUR_1))
         .collect();
     hub.reconcile(&members, &table);
     let out = hub.tick(
         &members,
         &table,
-        vec![(1, vec![LinkSignal::Timeframe(Timeframe::Day)])],
+        vec![(1, vec![LinkSignal::Timeframe(Timeframe::DAY_1)])],
     );
     assert_eq!(out.len(), 999);
     let again = hub.tick(
         &members,
         &table,
-        vec![(1, vec![LinkSignal::Timeframe(Timeframe::Day)])],
+        vec![(1, vec![LinkSignal::Timeframe(Timeframe::DAY_1)])],
     );
     assert_eq!(again.len(), 999, "the snapshot says they still show 1H");
 }
@@ -718,13 +783,13 @@ fn a_delivered_signal_is_not_a_new_signal() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, ALL);
     let members = [
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
     ];
     hub.tick(
         &members,
         &table,
-        vec![(1, vec![LinkSignal::Timeframe(Timeframe::Day)])],
+        vec![(1, vec![LinkSignal::Timeframe(Timeframe::DAY_1)])],
     );
     for _ in 0..100 {
         assert!(hub.tick(&members, &table, Vec::new()).is_empty());
@@ -736,19 +801,24 @@ fn a_group_restored_with_several_tabs_gives_a_joiner_its_longest_standing_tabs_v
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, ALL);
     let mut members = vec![
-        member(5, on(LinkColor::Orange), "ETHUSDT", Timeframe::Week),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Day),
+        member(5, on(LinkColor::Orange), "ETHUSDT", Timeframe::WEEK_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::DAY_1),
     ];
     // The restore: nothing is delivered and nobody is overwritten.
     assert!(hub.reconcile(&members, &table).is_empty());
     // A tab is tagged afterwards: it adopts the lowest-id member's values.
-    members.push(member(9, on(LinkColor::Orange), "SOLUSDT", Timeframe::Hour));
+    members.push(member(
+        9,
+        on(LinkColor::Orange),
+        "SOLUSDT",
+        Timeframe::HOUR_1,
+    ));
     let out = hub.reconcile(&members, &table);
     assert_eq!(targets(&out), [9, 9]);
     assert_eq!(symbol_of(&out[0]), "BTCUSDT");
     assert!(matches!(
         out[1].signal,
-        LinkSignal::Timeframe(Timeframe::Day)
+        LinkSignal::Timeframe(Timeframe::DAY_1)
     ));
     assert!(
         hub.reconcile(&members, &table).is_empty(),
@@ -760,9 +830,9 @@ fn a_group_restored_with_several_tabs_gives_a_joiner_its_longest_standing_tabs_v
 
 fn three() -> [Member; 3] {
     [
-        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
-        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
+        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::HOUR_1),
     ]
 }
 
@@ -833,8 +903,8 @@ fn an_interval_chosen_later_in_a_tick_wins_the_same_way() {
         &members,
         &table,
         vec![
-            (1, vec![LinkSignal::Timeframe(Timeframe::Day)]),
-            (2, vec![LinkSignal::Timeframe(Timeframe::Week)]),
+            (1, vec![LinkSignal::Timeframe(Timeframe::DAY_1)]),
+            (2, vec![LinkSignal::Timeframe(Timeframe::WEEK_1)]),
         ],
     );
     assert!(kind_for(&out, 2, LinkKind::Interval).is_none());
@@ -843,7 +913,7 @@ fn an_interval_chosen_later_in_a_tick_wins_the_same_way() {
             kind_for(&out, tab, LinkKind::Interval)
                 .expect("told")
                 .signal,
-            LinkSignal::Timeframe(Timeframe::Week)
+            LinkSignal::Timeframe(Timeframe::WEEK_1)
         ));
     }
 }
@@ -859,7 +929,7 @@ fn one_kind_by_one_tab_does_not_suppress_another_kind_for_it() {
         &members,
         &table,
         vec![
-            (1, vec![LinkSignal::Timeframe(Timeframe::Day)]),
+            (1, vec![LinkSignal::Timeframe(Timeframe::DAY_1)]),
             (2, vec![LinkSignal::Market(market("SOLUSDT"))]),
         ],
     );
@@ -886,7 +956,7 @@ fn a_switched_off_kind_spoken_by_a_tab_suppresses_nothing() {
         &table,
         vec![
             (1, vec![LinkSignal::Market(market("ETHUSDT"))]),
-            (2, vec![LinkSignal::Timeframe(Timeframe::Week)]),
+            (2, vec![LinkSignal::Timeframe(Timeframe::WEEK_1)]),
         ],
     );
     assert!(kind_for(&out, 2, LinkKind::Symbol).is_some());
@@ -897,13 +967,18 @@ fn a_joiners_adoption_older_than_its_own_signal_is_dropped() {
     let mut hub = LinkHub::default();
     let table = table(LinkColor::Orange, LinkToggles::default());
     let mut members = vec![
-        member(1, on(LinkColor::Orange), "ETHUSDT", Timeframe::Hour),
-        member(2, on(LinkColor::Orange), "ETHUSDT", Timeframe::Hour),
+        member(1, on(LinkColor::Orange), "ETHUSDT", Timeframe::HOUR_1),
+        member(2, on(LinkColor::Orange), "ETHUSDT", Timeframe::HOUR_1),
     ];
     hub.reconcile(&members, &table);
     hub.ingest(1, LinkSignal::Market(market("ETHUSDT")), &members, &table);
     // Tab 3 is tagged Orange and, in the same tick, picks SOL itself.
-    members.push(member(3, on(LinkColor::Orange), "SOLUSDT", Timeframe::Hour));
+    members.push(member(
+        3,
+        on(LinkColor::Orange),
+        "SOLUSDT",
+        Timeframe::HOUR_1,
+    ));
     let out = hub.tick(
         &members,
         &table,

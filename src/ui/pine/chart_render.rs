@@ -1658,6 +1658,7 @@ mod tests {
             style: LineStyle::ArrowBoth,
             extend: LineExtend::Right,
             time_anchored: false,
+            force_overlay: false,
         });
         output.lines.push(LineOutput {
             id: 2,
@@ -1670,6 +1671,7 @@ mod tests {
             style: LineStyle::Solid,
             extend: LineExtend::None,
             time_anchored: false,
+            force_overlay: false,
         });
         output.boxes.push(BoxOutput {
             id: 1,
@@ -1688,6 +1690,7 @@ mod tests {
             text_horizontal_align: TextAlign::Left,
             text_vertical_align: TextAlign::Top,
             time_anchored: false,
+            force_overlay: false,
         });
         output.labels.push(LabelOutput {
             id: 1,
@@ -1702,6 +1705,7 @@ mod tests {
             text_align: TextAlign::Center,
             yloc: YLocation::Price,
             time_anchored: false,
+            force_overlay: false,
         });
         let layer = layer(&output, &candles, &x, &y);
         assert!(
@@ -1803,6 +1807,7 @@ mod tests {
             text_align: TextAlign::Center,
             yloc,
             time_anchored: false,
+            force_overlay: false,
         };
         // The price is ignored (here it is `na`) once the label hangs off its bar.
         output.labels.push(label(YLocation::AboveBar, f64::NAN));
@@ -2261,6 +2266,7 @@ mod tests {
                     }
                 },
             ],
+            force_overlay: false,
         });
         let layer = layer(&output, &candles, &x, &y);
         // Background, a cell background, two texts, one separator, the frame.
@@ -2474,6 +2480,7 @@ mod tests {
             text_align: TextAlign::Center,
             yloc: YLocation::Price,
             time_anchored: false,
+            force_overlay: false,
         }
     }
 
@@ -2507,6 +2514,7 @@ mod tests {
             frame_color: None,
             frame_width: 0,
             cells,
+            force_overlay: false,
         }
     }
 

@@ -88,17 +88,65 @@ fn the_timeframe_and_chart_type_reach_the_app_as_the_toolbar_names_them() {
 }
 
 #[test]
+fn any_count_and_unit_is_a_timeframe_and_the_old_names_still_are() {
+    let harness = Harness::start(&[("view", "tok", VIEW)]);
+    let url = harness.url();
+    for sent in ["4h", "22m", "2D", "1H"] {
+        let result = call(
+            &url,
+            "tok",
+            "degenview_set_timeframe",
+            json!({"workspace_id": "1", "timeframe": sent}),
+        );
+        assert_eq!(result["isError"], json!(false), "{sent}: {result}");
+    }
+    assert_eq!(
+        harness.draw_calls(),
+        [
+            "timeframe:4h",
+            "timeframe:22m",
+            "timeframe:2D",
+            "timeframe:1h"
+        ]
+    );
+}
+
+#[test]
+fn a_refused_timeframe_says_why_and_what_is_accepted() {
+    let harness = Harness::start(&[("view", "tok", VIEW)]);
+    let url = harness.url();
+    let result = call(
+        &url,
+        "tok",
+        "degenview_set_timeframe",
+        json!({"workspace_id": "1", "timeframe": "30s"}),
+    );
+    assert_eq!(error_code(&result), "INVALID_ARGUMENT");
+    let message = result["structuredContent"]["message"].as_str().unwrap();
+    assert!(message.contains("Seconds aren't supported"), "{message}");
+    assert!(message.contains("m minutes, h hours"), "{message}");
+}
+
+#[test]
 fn bad_arguments_never_reach_the_app() {
     let harness = Harness::start(&[("view", "v-tok", VIEW), ("delete", "d-tok", DELETE)]);
     let url = harness.url();
     for (tool, arguments) in [
         (
             "degenview_set_timeframe",
-            json!({"workspace_id": "1", "timeframe": "4h"}),
+            json!({"workspace_id": "1", "timeframe": "30s"}),
         ),
         (
             "degenview_set_timeframe",
-            json!({"workspace_id": "1", "timeframe": "1d"}),
+            json!({"workspace_id": "1", "timeframe": "0m"}),
+        ),
+        (
+            "degenview_set_timeframe",
+            json!({"workspace_id": "1", "timeframe": "2000m"}),
+        ),
+        (
+            "degenview_set_timeframe",
+            json!({"workspace_id": "1", "timeframe": "2Y"}),
         ),
         (
             "degenview_set_timeframe",

@@ -73,17 +73,6 @@ impl DataSource {
         )
     }
 
-    /// Whether this source can serve the candles before a given time at `timeframe`, which
-    /// scrolling back past what a refresh brings needs. GeckoTerminal's free API reaches back only
-    /// 180 days, so only its hourly bars have a second page; its daily ones arrive whole.
-    pub fn supports_older_history(self, timeframe: crate::model::Timeframe) -> bool {
-        match self {
-            Self::Binance | Self::Coinbase | Self::Alpaca => true,
-            Self::DexScreener => timeframe == crate::model::Timeframe::Hour,
-            _ => false,
-        }
-    }
-
     /// Whether this source's data is drawn as a line rather than candles.
     pub fn is_line_chart(self) -> bool {
         self.is_prediction_market() || matches!(self, Self::CoinMarketCap)
@@ -207,20 +196,5 @@ mod tests {
         assert!(!DataSource::CoinGecko.provides_volume());
         assert!(!DataSource::Polymarket.provides_volume());
         assert!(!DataSource::CoinMarketCap.provides_volume());
-    }
-
-    #[test]
-    fn older_pages_depend_on_the_source_and_the_timeframe() {
-        use crate::model::Timeframe;
-        for timeframe in Timeframe::ALL {
-            assert!(DataSource::Binance.supports_older_history(timeframe));
-            assert!(DataSource::Coinbase.supports_older_history(timeframe));
-            assert!(!DataSource::CoinGecko.supports_older_history(timeframe));
-            assert!(!DataSource::Kalshi.supports_older_history(timeframe));
-        }
-        // GeckoTerminal's free API reaches back 180 days: only hourly bars have a second page.
-        assert!(DataSource::DexScreener.supports_older_history(Timeframe::Hour));
-        assert!(!DataSource::DexScreener.supports_older_history(Timeframe::Day));
-        assert!(!DataSource::DexScreener.supports_older_history(Timeframe::Week));
     }
 }

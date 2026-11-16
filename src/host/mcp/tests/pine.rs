@@ -15,7 +15,7 @@ pub(super) fn empty_workspace(id: u64) -> ChartWorkspace {
     let book = WatchlistQuoteBook::default();
     ChartWorkspace::empty(
         id,
-        crate::model::Timeframe::Day,
+        crate::model::Timeframe::DAY_1,
         Arc::new(Mutex::new(WatchlistStore::new(store.clone()))),
         book.clone(),
         WatchlistQuoteCoordinator::new(book, Arc::new(|| {})),
@@ -79,7 +79,7 @@ fn view(run: Option<PineRunView>) -> PineInstanceView {
     PineInstanceView {
         chart_id: 2,
         instrument: InstrumentId::new(DataSource::Binance, "BTCUSDT"),
-        timeframe: crate::model::Timeframe::Day,
+        timeframe: crate::model::Timeframe::DAY_1,
         instance,
         run,
     }

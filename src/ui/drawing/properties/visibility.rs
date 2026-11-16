@@ -2,8 +2,7 @@
 
 use super::DrawingProperties;
 use super::rows::{Page, toggle_row};
-use crate::model::Timeframe;
-use crate::model::Visibility;
+use crate::model::{Visibility, VisibilityRow};
 use crate::ui::icons::Icon;
 use eframe::egui::Ui;
 
@@ -23,12 +22,12 @@ impl DrawingProperties {
         if all && !was_all {
             visibility = Visibility::ALL;
         }
-        for timeframe in Timeframe::ALL {
-            let mut shown = visibility.shows(timeframe);
+        for row in VisibilityRow::ALL {
+            let mut shown = visibility.shows_row(row);
             let was = shown;
-            toggle_row(ui, Icon::Clock, timeframe.description(), "", &mut shown);
+            toggle_row(ui, Icon::Clock, row.label(), "", &mut shown);
             if shown != was {
-                visibility = visibility.with(timeframe, shown);
+                visibility = visibility.with_row(row, shown);
             }
         }
         if visibility != before {

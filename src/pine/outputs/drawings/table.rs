@@ -2,7 +2,9 @@
 //! `table.clear`.
 
 use super::names::size_of;
-use super::{Arg, OPAQUE_BLACK, allocate, bind, count, parse, runtime_error, width_or};
+use super::{
+    Arg, OPAQUE_BLACK, allocate, bind, count, force_overlay, parse, runtime_error, width_or,
+};
 use crate::pine::outputs::{Size, TableCell, TableOutput, TablePosition, TextAlign};
 use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::{RefKind, RuntimeValue, color_value};
@@ -23,6 +25,7 @@ pub(super) fn new_table(
             "frame_width",
             "border_color",
             "border_width",
+            "force_overlay",
         ],
     );
     let id = allocate(state);
@@ -43,6 +46,7 @@ pub(super) fn new_table(
             frame_color: color_value(b.get("frame_color"), None),
             frame_width: width_or(b.get("frame_width"), 0),
             cells: Vec::new(),
+            force_overlay: force_overlay(&b),
         },
     );
     Ok(RuntimeValue::Ref(RefKind::Table, id))

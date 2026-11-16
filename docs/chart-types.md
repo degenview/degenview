@@ -191,10 +191,14 @@ claims identity:
   draws in front, as before; the Pine reference's default is true, but this app kept the existing
   look. "Visual Order" in the script's context menu (Scripts tab) overrides either way and is saved
   per applied script. Strategy trade markers always stay in front.
-* `force_overlay` on `plot`, `plotshape`, `plotchar`, `plotcandle` and `plotbar` sends that visual to
-  the main chart from a script with its own pane; the main chart's scale includes it. A `fill()`
-  between two forced plots goes with them; a `fill()` between a forced plot and a pane plot stays in
-  the pane, where the forced plot is not drawn.
+* `force_overlay` on `plot`, `plotshape`, `plotchar`, `plotarrow`, `plotcandle`, `plotbar`,
+  `line.new`, `label.new`, `box.new`, `table.new` and `polyline.new` sends that visual to the main
+  chart from a script with its own pane; the main chart's scale includes it. A forced drawing leaves
+  the pane (it no longer counts in the pane's scale or hover), and `*.copy` keeps the flag. A
+  `fill()` between two forced plots goes with them; a `fill()` between a forced plot and a pane
+  plot stays in the pane, where the forced plot is not drawn. A `linefill.new` (no parameter of its
+  own) goes with its lines when both are forced; with one forced line it stays in the pane, where it
+  is not drawn because that line left.
 * Style overrides are scoped to one applied script's outputs; two instances of a script never
   share them.
 

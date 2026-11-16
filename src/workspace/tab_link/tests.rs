@@ -45,7 +45,7 @@ fn a_linked_tab_queues_what_the_user_did_newest_per_kind() {
     let signals = workspace.take_link_signals();
     assert_eq!(signals.len(), 2);
     assert!(matches!(&signals[0], LinkSignal::Market(m) if m.instrument.symbol == "SOLUSDT"));
-    assert_eq!(signals[1], LinkSignal::Timeframe(Timeframe::Day));
+    assert_eq!(signals[1], LinkSignal::Timeframe(Timeframe::DAY_1));
     assert!(workspace.take_link_signals().is_empty());
 }
 
@@ -90,11 +90,11 @@ fn applying_an_interval_moves_the_tab_and_keeps_its_symbols() {
     let mut workspace = empty_workspace(1);
     let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
     workspace.set_link(Some(LinkColor::Cyan));
-    assert!(workspace.apply_link(1, &LinkSignal::Timeframe(Timeframe::Week), &ctx));
-    assert_eq!(workspace.timeframe, Timeframe::Week);
+    assert!(workspace.apply_link(1, &LinkSignal::Timeframe(Timeframe::WEEK_1), &ctx));
+    assert_eq!(workspace.timeframe, Timeframe::WEEK_1);
     assert_eq!(shown(&workspace, chart), "BTCUSDT");
     assert!(workspace.take_link_signals().is_empty());
-    assert!(!workspace.apply_link(2, &LinkSignal::Timeframe(Timeframe::Week), &ctx));
+    assert!(!workspace.apply_link(2, &LinkSignal::Timeframe(Timeframe::WEEK_1), &ctx));
 }
 
 #[test]
@@ -108,7 +108,7 @@ fn a_delivery_older_than_one_already_applied_is_dropped() {
     assert!(!workspace.apply_link(7, &market("ETHUSDT"), &ctx));
     assert_eq!(shown(&workspace, chart), "SOLUSDT");
     // Another kind has its own counter.
-    assert!(workspace.apply_link(6, &LinkSignal::Timeframe(Timeframe::Hour), &ctx));
+    assert!(workspace.apply_link(6, &LinkSignal::Timeframe(Timeframe::HOUR_1), &ctx));
 }
 
 #[test]
@@ -128,14 +128,14 @@ fn a_tab_in_replay_takes_neither_symbol_nor_interval() {
     workspace.set_link(Some(LinkColor::Blue));
     workspace.replay.engine_mut().status = ReplayStatus::Paused;
     assert!(!workspace.apply_link(1, &market("ETHUSDT"), &ctx));
-    assert!(!workspace.apply_link(2, &LinkSignal::Timeframe(Timeframe::Hour), &ctx));
+    assert!(!workspace.apply_link(2, &LinkSignal::Timeframe(Timeframe::HOUR_1), &ctx));
     assert_eq!(shown(&workspace, chart), "BTCUSDT");
     assert_eq!(
         workspace.replay.status(),
         ReplayStatus::Paused,
         "replay untouched"
     );
-    assert_eq!(workspace.timeframe, Timeframe::Day);
+    assert_eq!(workspace.timeframe, Timeframe::DAY_1);
 }
 
 #[test]
@@ -295,14 +295,14 @@ fn symbol_and_interval_are_independent_switches_across_tabs() {
     tick(&mut hub, &table, &mut [&mut a, &mut b, &mut c], &ctx);
 
     // Symbol on, Interval off (the default): the symbol moves, the interval stays.
-    a.reload_for_timeframe(Timeframe::Hour, &ctx);
+    a.reload_for_timeframe(Timeframe::HOUR_1, &ctx);
     a.announce_timeframe();
     a.switch_chart(chart_a, &row("ETHUSDT"), &ctx);
     a.announce_market(&row("ETHUSDT"));
     tick(&mut hub, &table, &mut [&mut a, &mut b, &mut c], &ctx);
     assert_eq!(shown(&b, chart_b), "ETHUSDT");
-    assert_eq!(b.timeframe, Timeframe::Day, "Interval is off");
-    assert_eq!(c.timeframe, Timeframe::Day);
+    assert_eq!(b.timeframe, Timeframe::DAY_1, "Interval is off");
+    assert_eq!(c.timeframe, Timeframe::DAY_1);
     assert_eq!(c.charts[0].symbol, "BTCUSDT", "Red never heard");
 
     // Symbol off, Interval on.
@@ -317,10 +317,10 @@ fn symbol_and_interval_are_independent_switches_across_tabs() {
     );
     a.switch_chart(chart_a, &row("SOLUSDT"), &ctx);
     a.announce_market(&row("SOLUSDT"));
-    a.reload_for_timeframe(Timeframe::Week, &ctx);
+    a.reload_for_timeframe(Timeframe::WEEK_1, &ctx);
     a.announce_timeframe();
     tick(&mut hub, &table, &mut [&mut a, &mut b, &mut c], &ctx);
-    assert_eq!(b.timeframe, Timeframe::Week);
+    assert_eq!(b.timeframe, Timeframe::WEEK_1);
     assert_eq!(shown(&b, chart_b), "ETHUSDT", "Symbol is off");
 }
 
@@ -488,7 +488,7 @@ fn a_symbol_or_interval_change_drops_a_view_the_old_series_was_waiting_for() {
     let ctx = egui::Context::default();
     for (name, change) in [
         ("symbol", market("ETHUSDT")),
-        ("interval", LinkSignal::Timeframe(Timeframe::Week)),
+        ("interval", LinkSignal::Timeframe(Timeframe::WEEK_1)),
     ] {
         let mut workspace = empty_workspace(1);
         chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
@@ -528,7 +528,7 @@ fn the_users_own_symbol_or_interval_change_also_drops_a_pending_view() {
     workspace.switch_chart(chart, &row("ETHUSDT"), &ctx);
     assert!(workspace.link_state.hub.latest_event().is_none());
     workspace.apply_link(2, &LinkSignal::View(pan_to(6_000.0)), &ctx);
-    workspace.reload_for_timeframe(Timeframe::Hour, &ctx);
+    workspace.reload_for_timeframe(Timeframe::HOUR_1, &ctx);
     assert!(workspace.link_state.hub.latest_event().is_none());
 }
 

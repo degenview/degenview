@@ -34,8 +34,10 @@ pub enum Scrolled {
 pub fn marker_label(open_time_ms: i64, timeframe: Option<Timeframe>) -> String {
     let full = format::timestamp(open_time_ms);
     match timeframe {
-        Some(Timeframe::Hour) | None => full,
-        Some(_) => full.split(' ').next().unwrap_or(&full).to_owned(),
+        Some(timeframe) if !timeframe.is_intraday() => {
+            full.split(' ').next().unwrap_or(&full).to_owned()
+        }
+        _ => full,
     }
 }
 
@@ -275,11 +277,11 @@ mod tests {
     fn the_label_has_the_detail_of_the_timeframe() {
         let time = 1_700_000_000_000;
         assert_eq!(
-            marker_label(time, Some(Timeframe::Hour)),
+            marker_label(time, Some(Timeframe::HOUR_1)),
             "2023-11-14 22:13"
         );
-        assert_eq!(marker_label(time, Some(Timeframe::Day)), "2023-11-14");
-        assert_eq!(marker_label(time, Some(Timeframe::Month)), "2023-11-14");
+        assert_eq!(marker_label(time, Some(Timeframe::DAY_1)), "2023-11-14");
+        assert_eq!(marker_label(time, Some(Timeframe::MONTH_1)), "2023-11-14");
         assert_eq!(marker_label(time, None), "2023-11-14 22:13");
     }
 }

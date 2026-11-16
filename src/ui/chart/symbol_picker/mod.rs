@@ -25,6 +25,7 @@ use crate::model::{DataSource, InstrumentId};
 use crate::service::{self, ProviderError, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::hints::{Hint, hint_row};
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
@@ -778,8 +779,9 @@ impl SymbolPicker {
         let focus = self.focus_frames > 0;
         self.focus_frames = self.focus_frames.saturating_sub(1);
         let placeholder = self.placeholder();
-        let event = widgets::search_box(
+        let event = kit::search_box::search_box(
             &mut field,
+            Icon::Magnifier,
             &mut self.query,
             listing.searching,
             &placeholder,
@@ -1359,22 +1361,22 @@ impl SymbolPicker {
     /// picker drops the least needed hints rather than run past its edge.
     fn footer(&self, ui: &mut Ui, area: Rect, env: &Env) -> Option<(Pick, PickKind)> {
         let mut hit = None;
-        let mut hints: Vec<(&[&str], String)> = vec![
-            (&["↑", "↓"], "Navigate".to_owned()),
-            (&["↵"], self.return_hint(env)),
+        let mut hints = vec![
+            Hint::new(&["↑", "↓"], "Navigate"),
+            Hint::new(&["↵"], self.return_hint(env)),
         ];
         let market = self.highlighted.as_ref().and_then(Item::market);
         if self.mode == PickMode::Chart
             && env.replacing.is_some()
             && !matches!(self.highlighted, Some(Item::Event(_)))
         {
-            hints.push((&["⇧", "↵"], "Add as new chart".to_owned()));
+            hints.push(Hint::new(&["⇧", "↵"], "Add as new chart"));
         }
         if self.mode == PickMode::Chart && env.can_overlay && market.is_some_and(Self::comparable) {
-            hints.push((&["⌥", "↵"], "Compare".to_owned()));
+            hints.push(Hint::new(&["⌥", "↵"], "Compare"));
         }
-        hints.push((&["Tab"], "Switch tab".to_owned()));
-        hints.push((&["Esc"], "Close".to_owned()));
+        hints.push(Hint::new(&["Tab"], "Switch tab"));
+        hints.push(Hint::new(&["Esc"], "Close"));
 
         // What sits at the right edge: the button for ticked choices, else what was just added.
         let together = self
@@ -1428,46 +1430,17 @@ impl SymbolPicker {
             right = left - 30.0;
         }
 
-        let room = right - area.left() - PADDING;
-        let width = |hint: &(&[&str], String)| -> f32 {
-            let label = kit::galley(
-                ui,
-                &hint.1,
-                13.0,
-                REGULAR,
-                theme::text_secondary(),
-                f32::INFINITY,
-            );
-            let keys: f32 = hint
-                .0
-                .iter()
-                .map(|key| crate::ui::kit::keycap::keycap_width(ui, key) + 6.0)
-                .sum();
-            keys + label.size().x + 6.0 + 10.0
-        };
-        for least_needed in ["Compare", "Add as new chart", "Switch tab", "Navigate"] {
-            if hints.iter().map(width).sum::<f32>() <= room {
-                break;
-            }
-            hints.retain(|hint| hint.1 != least_needed);
-        }
-
-        let mut row = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(Rect::from_min_max(
-                    pos2(area.left() + PADDING, area.top()),
-                    pos2(right, area.bottom()),
-                ))
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        let row = Rect::from_min_max(
+            pos2(area.left() + PADDING, area.top()),
+            pos2(right, area.bottom()),
         );
-        row.spacing_mut().item_spacing.x = 6.0;
-        for (keys, label) in &hints {
-            for key in *keys {
-                crate::ui::kit::keycap::keycap(&mut row, key);
-            }
-            row.label(kit::text(label, 13.0, REGULAR, theme::text_secondary()));
-            row.add_space(10.0);
-        }
+        hint_row(
+            ui,
+            row,
+            hints,
+            13.0,
+            &["Compare", "Add as new chart", "Switch tab", "Navigate"],
+        );
         hit
     }
 

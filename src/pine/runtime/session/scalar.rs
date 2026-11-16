@@ -223,7 +223,7 @@ impl Session {
                     };
                     // The chart's own timeframe keeps the bar's real open.
                     if seconds != self.bar_seconds {
-                        start = crate::pine::runtime::security_call::bucket_start(start, seconds);
+                        start = crate::pine::time::bucket::start(start, seconds);
                     }
                 }
                 if let Some(RuntimeValue::String(text)) = bound.get("session")
@@ -269,13 +269,10 @@ impl Session {
                         range,
                     ));
                 };
-                let start = crate::pine::runtime::security_call::bucket_start(
-                    context.bar.open_time,
-                    seconds,
-                );
-                Ok(Some(RuntimeValue::Int(
-                    crate::pine::runtime::security_call::bucket_end(start, seconds),
-                )))
+                let start = crate::pine::time::bucket::start(context.bar.open_time, seconds);
+                Ok(Some(RuntimeValue::Int(crate::pine::time::bucket::end(
+                    start, seconds,
+                ))))
             }
             "timestamp" => {
                 let mut positional = Vec::new();

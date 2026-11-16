@@ -5,13 +5,13 @@
 //! Colours are straight `[r, g, b, a]` bytes where the alpha is the opacity (as in the chart
 //! canvas), and every struct decodes from an older or partial row through `#[serde(default)]`.
 
-use crate::model::Timeframe;
 use crate::model::chart::kind::{LineDash, PriceSource, Rgba};
 use crate::model::fib::style::FibStyle;
 use crate::model::forecast::style::{
     GhostOptions, MeasureOptions, PositionOptions, ProfileOptions, VwapOptions,
 };
 use crate::model::pattern::elliott::Degree;
+use crate::model::{TimeUnit, Timeframe};
 use serde::{Deserialize, Serialize};
 
 /// The thickest stroke a drawing may carry, in logical pixels.
@@ -805,14 +805,84 @@ impl DrawingStyle {
     }
 }
 
-/// The timeframes a drawing shows on. A mask over [`Timeframe::ALL`]; the default is every one.
+/// The switches a drawing's visibility has: each is a group of timeframes, so a drawing needs no
+/// setting per length. A quarter row is 3 to 6 months, a year row 7 to 12.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VisibilityRow {
+    Minutes,
+    Hours,
+    Days,
+    Weeks,
+    Months,
+    Quarters,
+    Years,
+}
+
+impl VisibilityRow {
+    /// In the order the Visibility page lists them.
+    pub const ALL: [Self; 7] = [
+        Self::Minutes,
+        Self::Hours,
+        Self::Days,
+        Self::Weeks,
+        Self::Months,
+        Self::Quarters,
+        Self::Years,
+    ];
+
+    /// The row a timeframe is shown under.
+    pub const fn of(timeframe: Timeframe) -> Self {
+        match (timeframe.unit(), timeframe.count()) {
+            (TimeUnit::Minute, _) => Self::Minutes,
+            (TimeUnit::Hour, _) => Self::Hours,
+            (TimeUnit::Day, _) => Self::Days,
+            (TimeUnit::Week, _) => Self::Weeks,
+            (TimeUnit::Month, 1..=2) => Self::Months,
+            (TimeUnit::Month, 3..=6) => Self::Quarters,
+            (TimeUnit::Month, _) => Self::Years,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Minutes => "Minute candles",
+            Self::Hours => "Hourly candles",
+            Self::Days => "Daily candles",
+            Self::Weeks => "Weekly candles",
+            Self::Months => "Monthly candles",
+            Self::Quarters => "Quarterly candles",
+            Self::Years => "Yearly candles",
+        }
+    }
+
+    /// Each row owns one fixed bit, so the saved masks keep their meaning if the list of rows is
+    /// ever reordered or extended. Minutes came last, after the first six were saved.
+    const fn bit(self) -> u8 {
+        match self {
+            Self::Hours => 1 << 0,
+            Self::Days => 1 << 1,
+            Self::Weeks => 1 << 2,
+            Self::Months => 1 << 3,
+            Self::Quarters => 1 << 4,
+            Self::Years => 1 << 5,
+            Self::Minutes => MINUTES_BIT,
+        }
+    }
+}
+
+/// The timeframes a drawing shows on: a mask over [`VisibilityRow`]s; the default is every row.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct Visibility {
     pub mask: u8,
 }
 
-const ALL_TIMEFRAMES: u8 = (1 << Timeframe::ALL.len()) - 1;
+const MINUTES_BIT: u8 = 1 << 6;
+/// Set on every mask written with a Minutes bit. A mask without it was saved before minutes were
+/// offered, and says nothing about them: they follow the Hours bit, so a drawing that showed on
+/// every timeframe still does, and one hidden from hours stays hidden from minutes.
+const HAS_MINUTES: u8 = 1 << 7;
+const ALL_ROWS: u8 = 0b0111_1111;
 
 impl Default for Visibility {
     fn default() -> Self {
@@ -822,47 +892,46 @@ impl Default for Visibility {
 
 impl Visibility {
     pub const ALL: Self = Self {
-        mask: ALL_TIMEFRAMES,
+        mask: ALL_ROWS | HAS_MINUTES,
     };
 
-    /// Each timeframe owns one fixed bit, so the saved masks keep their meaning if the list of
-    /// timeframes is ever reordered or extended.
-    fn bit(timeframe: Timeframe) -> u8 {
-        match timeframe {
-            Timeframe::Hour => 1 << 0,
-            Timeframe::Day => 1 << 1,
-            Timeframe::Week => 1 << 2,
-            Timeframe::Month => 1 << 3,
-            Timeframe::Quarter => 1 << 4,
-            Timeframe::Year => 1 << 5,
+    /// The row bits in force: a mask saved before minutes existed gets its Minutes bit from the
+    /// hours, and one that names no row (a damaged row) means every one, so a drawing can never be
+    /// lost to being shown nowhere.
+    fn effective(&self) -> u8 {
+        let mut rows = self.mask & ALL_ROWS;
+        if self.mask & HAS_MINUTES == 0 && rows & VisibilityRow::Hours.bit() != 0 {
+            rows |= MINUTES_BIT;
+        }
+        match rows {
+            0 => ALL_ROWS,
+            rows => rows,
         }
     }
 
-    /// The mask in force: one that names no timeframe (a damaged row) means every one, so a
-    /// drawing can never be lost to being shown nowhere.
-    fn effective(&self) -> u8 {
-        match self.mask & ALL_TIMEFRAMES {
-            0 => ALL_TIMEFRAMES,
-            mask => mask,
-        }
+    pub fn shows_row(&self, row: VisibilityRow) -> bool {
+        self.effective() & row.bit() != 0
     }
 
     pub fn shows(&self, timeframe: Timeframe) -> bool {
-        self.effective() & Self::bit(timeframe) != 0
+        self.shows_row(VisibilityRow::of(timeframe))
     }
 
     pub fn is_all(&self) -> bool {
-        self.effective() == ALL_TIMEFRAMES
+        self.effective() == ALL_ROWS
     }
 
-    /// `self` with `timeframe` shown or hidden. Hiding the last one is refused: a drawing that
-    /// shows nowhere could not be found again to change it.
-    pub fn with(mut self, timeframe: Timeframe, shown: bool) -> Self {
-        let bit = Self::bit(timeframe);
+    /// `self` with `row` shown or hidden. Hiding the last one is refused: a drawing that shows
+    /// nowhere could not be found again to change it.
+    pub fn with_row(mut self, row: VisibilityRow, shown: bool) -> Self {
         let current = self.effective();
-        let next = if shown { current | bit } else { current & !bit };
-        if next & ALL_TIMEFRAMES != 0 {
-            self.mask = next & ALL_TIMEFRAMES;
+        let next = if shown {
+            current | row.bit()
+        } else {
+            current & !row.bit()
+        };
+        if next != 0 {
+            self.mask = next | HAS_MINUTES;
         }
         self
     }
@@ -872,46 +941,104 @@ impl Visibility {
 mod tests {
     use super::*;
 
+    fn every_row_shows(visibility: Visibility) -> bool {
+        VisibilityRow::ALL
+            .iter()
+            .all(|row| visibility.shows_row(*row))
+    }
+
     #[test]
     fn visibility_defaults_to_every_timeframe_and_decodes_from_nothing() {
         let visibility: Visibility = serde_json::from_str("{}").unwrap();
         assert!(visibility.is_all());
-        for timeframe in Timeframe::ALL {
+        assert!(every_row_shows(visibility));
+        for timeframe in Timeframe::PRESETS {
             assert!(visibility.shows(timeframe));
         }
     }
 
     #[test]
-    fn a_damaged_visibility_mask_shows_everywhere_and_bits_are_fixed_per_timeframe() {
-        let damaged = Visibility { mask: 0 };
-        assert!(damaged.is_all());
-        assert!(
-            Timeframe::ALL
-                .iter()
-                .all(|timeframe| damaged.shows(*timeframe))
-        );
-        let beyond = Visibility { mask: 0b1100_0000 };
-        assert!(beyond.is_all(), "bits no timeframe owns name nothing");
-        // The saved form is stable: Day is bit 1, Week bit 2.
-        let weekly_off = Visibility::ALL.with(Timeframe::Week, false);
-        assert_eq!(weekly_off.mask, 0b11_1011);
-        assert!(!weekly_off.shows(Timeframe::Week) && weekly_off.shows(Timeframe::Day));
+    fn timeframes_are_shown_under_the_row_of_their_unit() {
+        use VisibilityRow::*;
+        let tf = |count, unit| Timeframe::new(count, unit).unwrap();
+        let cases = [
+            (Timeframe::MINUTE_1, Minutes),
+            (tf(22, TimeUnit::Minute), Minutes),
+            (Timeframe::HOUR_1, Hours),
+            (tf(24, TimeUnit::Hour), Hours),
+            (Timeframe::DAY_1, Days),
+            (tf(365, TimeUnit::Day), Days),
+            (Timeframe::WEEK_1, Weeks),
+            (tf(2, TimeUnit::Month), Months),
+            (Timeframe::MONTH_1, Months),
+            (Timeframe::MONTH_3, Quarters),
+            (tf(6, TimeUnit::Month), Quarters),
+            (tf(7, TimeUnit::Month), Years),
+            (Timeframe::YEAR_1, Years),
+        ];
+        for (timeframe, row) in cases {
+            assert_eq!(VisibilityRow::of(timeframe), row, "{timeframe}");
+        }
     }
 
     #[test]
-    fn visibility_toggles_one_timeframe_and_keeps_at_least_one() {
-        let only_day = Timeframe::ALL
+    fn a_damaged_visibility_mask_shows_everywhere_and_bits_are_fixed_per_row() {
+        for damaged in [Visibility { mask: 0 }, Visibility { mask: HAS_MINUTES }] {
+            assert!(damaged.is_all());
+            assert!(every_row_shows(damaged));
+        }
+        // The saved form is stable: Day is bit 1, Week bit 2, Minutes bit 6.
+        let weekly_off = Visibility::ALL.with_row(VisibilityRow::Weeks, false);
+        assert_eq!(weekly_off.mask, 0b1111_1011);
+        assert!(!weekly_off.shows(Timeframe::WEEK_1) && weekly_off.shows(Timeframe::DAY_1));
+        let minutes_off = Visibility::ALL.with_row(VisibilityRow::Minutes, false);
+        assert_eq!(minutes_off.mask, 0b1011_1111);
+        assert!(!minutes_off.shows(Timeframe::MINUTE_1) && minutes_off.shows(Timeframe::HOUR_1));
+    }
+
+    #[test]
+    fn a_drawing_saved_visible_everywhere_before_minutes_stays_visible_on_minutes() {
+        // The old build's "every timeframe": its six bits, no Minutes bit.
+        let saved: Visibility = serde_json::from_str(r#"{"mask":63}"#).unwrap();
+        assert!(saved.is_all());
+        assert!(saved.shows(Timeframe::MINUTE_15) && saved.shows(Timeframe::YEAR_1));
+    }
+
+    #[test]
+    fn an_older_partial_mask_keeps_minutes_with_the_hours() {
+        // Shown on Day and Week only: hidden from hours, so hidden from minutes.
+        let daily_weekly: Visibility = serde_json::from_str(r#"{"mask":6}"#).unwrap();
+        assert!(daily_weekly.shows(Timeframe::DAY_1) && daily_weekly.shows(Timeframe::WEEK_1));
+        assert!(!daily_weekly.shows(Timeframe::HOUR_4) && !daily_weekly.shows(Timeframe::MINUTE_5));
+        // Shown on hours and months: shown on minutes too.
+        let intraday: Visibility = serde_json::from_str(r#"{"mask":9}"#).unwrap();
+        assert!(intraday.shows(Timeframe::HOUR_1) && intraday.shows(Timeframe::MINUTE_30));
+        assert!(!intraday.shows(Timeframe::DAY_1));
+        // Editing such a mask saves it with its Minutes bit, so the choice is kept as made.
+        let edited = daily_weekly.with_row(VisibilityRow::Minutes, true);
+        assert!(edited.shows(Timeframe::MINUTE_1) && !edited.shows(Timeframe::HOUR_1));
+        let hidden = intraday.with_row(VisibilityRow::Minutes, false);
+        assert!(!hidden.shows(Timeframe::MINUTE_1) && hidden.shows(Timeframe::HOUR_1));
+    }
+
+    #[test]
+    fn visibility_toggles_one_row_and_keeps_at_least_one() {
+        let only_day = VisibilityRow::ALL
             .iter()
-            .filter(|timeframe| **timeframe != Timeframe::Day)
-            .fold(Visibility::ALL, |visibility, timeframe| {
-                visibility.with(*timeframe, false)
+            .filter(|row| **row != VisibilityRow::Days)
+            .fold(Visibility::ALL, |visibility, row| {
+                visibility.with_row(*row, false)
             });
-        assert!(only_day.shows(Timeframe::Day));
-        assert!(!only_day.shows(Timeframe::Hour));
+        assert!(only_day.shows(Timeframe::DAY_1));
+        assert!(!only_day.shows(Timeframe::HOUR_1) && !only_day.shows(Timeframe::MINUTE_1));
         assert!(!only_day.is_all());
-        // The last visible timeframe cannot be hidden.
-        assert_eq!(only_day.with(Timeframe::Day, false), only_day);
-        assert!(only_day.with(Timeframe::Hour, true).shows(Timeframe::Hour));
+        // The last visible row cannot be hidden.
+        assert_eq!(only_day.with_row(VisibilityRow::Days, false), only_day);
+        assert!(
+            only_day
+                .with_row(VisibilityRow::Hours, true)
+                .shows(Timeframe::HOUR_1)
+        );
     }
 
     #[test]

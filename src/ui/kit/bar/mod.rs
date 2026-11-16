@@ -343,23 +343,24 @@ fn lay_out<'a, A, M>(
     }
 }
 
-/// One button as laid out: where it starts and ends along the bar (down the column), and what a
-/// click asks for.
+/// One button as laid out: where it starts and ends along the bar (down the column), what a click
+/// asks for and the popup it owns.
 #[cfg(test)]
-pub struct Placed<A> {
+pub struct Placed<A, M> {
     pub from: f32,
     pub to: f32,
     pub action: Option<A>,
+    pub menu: Option<M>,
 }
 
 /// Where every button lands in a bar `width` wide, and whether the labels showed.
 #[cfg(test)]
-pub fn geometry<A: Copy, M>(
+pub fn geometry<A: Copy, M: Copy>(
     ui: &Ui,
     left: &[Item<A, M>],
     right: &[Item<A, M>],
     width: f32,
-) -> (bool, Vec<Placed<A>>) {
+) -> (bool, Vec<Placed<A, M>>) {
     let runs = lay_out(ui, left, right, width);
     let placed = arrange(width, &runs.left, &runs.right)
         .into_iter()
@@ -368,6 +369,7 @@ pub fn geometry<A: Copy, M>(
                 from: x,
                 to: x + measured.width,
                 action: measured.button.action,
+                menu: measured.button.menu,
             }),
             Slot::Separator => None,
         })
@@ -377,7 +379,7 @@ pub fn geometry<A: Copy, M>(
 
 /// Where every button of a column lands, measured down from its top.
 #[cfg(test)]
-pub fn column_geometry<A: Copy, M>(ui: &Ui, items: &[Item<A, M>]) -> Vec<Placed<A>> {
+pub fn column_geometry<A: Copy, M: Copy>(ui: &Ui, items: &[Item<A, M>]) -> Vec<Placed<A, M>> {
     arrange_column(&measure(ui, items, false))
         .into_iter()
         .filter_map(|(y, slot)| match slot {
@@ -385,6 +387,7 @@ pub fn column_geometry<A: Copy, M>(ui: &Ui, items: &[Item<A, M>]) -> Vec<Placed<
                 from: y,
                 to: y + BUTTON,
                 action: measured.button.action,
+                menu: measured.button.menu,
             }),
             Slot::Separator => None,
         })
@@ -598,7 +601,11 @@ fn paint_button<A, M>(ui: &mut Ui, measured: &Measured<A, M>, x: f32, y: f32) ->
         icons::paint(
             painter,
             Rect::from_min_size(pos2(at, middle - 4.5), Vec2::splat(9.0)),
-            Icon::ChevronDown,
+            if menu_open {
+                Icon::ChevronUp
+            } else {
+                Icon::ChevronDown
+            },
             theme::text_secondary(),
         );
     }

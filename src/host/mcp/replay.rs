@@ -28,7 +28,7 @@ pub fn describe(command: &ReplayRequest) -> Result<Summary, McpError> {
 pub fn replay_state(workspace: &ChartWorkspace) -> ReplayResult {
     replay::replay_result(
         workspace.id(),
-        workspace.timeframe().label(),
+        &workspace.timeframe().label(),
         &workspace.replay_view(),
     )
 }
@@ -55,7 +55,7 @@ pub fn control_replay(
         })?;
     Ok(replay::replay_result(
         workspace.id(),
-        workspace.timeframe().label(),
+        &workspace.timeframe().label(),
         &view,
     ))
 }

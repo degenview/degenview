@@ -1,7 +1,8 @@
+use super::candles::plan;
 use super::catalog::Catalog;
 use super::search_rank::normalize;
-use crate::model::Kline;
-use crate::service::{MarketSource, ProviderError, SearchResult, fold_calendar, rank_results};
+use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -14,51 +15,37 @@ pub const BINANCE: Binance = Binance;
 /// The most klines one Binance request returns.
 const MAX_PER_REQUEST: usize = 1_000;
 
-/// How an interval is served: the token Binance knows and, for quarters and years, which calendar
-/// fold of monthly klines makes them, as `(seconds, months per bar)`.
-fn native_interval(interval: &str) -> (&str, Option<(i64, usize)>) {
-    match interval {
-        "3M" => ("1M", Some((7_776_000, 3))),
-        "1Y" => ("1M", Some((31_536_000, 12))),
-        other => (other, None),
-    }
-}
-
 impl MarketSource for Binance {
     fn fetch_klines(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let (native, fold) = native_interval(interval);
-        // A fold asks for one extra bar's worth of months so the oldest bar is whole.
-        let requested = match fold {
-            Some((_, months)) => (limit as usize * months + months).min(MAX_PER_REQUEST),
-            None => limit as usize,
-        };
+        let plan = plan(DataSource::Binance, timeframe)?;
+        let requested = plan.base_count(limit as usize);
+        if requested > MAX_PER_REQUEST {
+            // More finer candles than one request holds: page back from now.
+            let end_ms = crate::service::now_ms() + 1;
+            return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
+        }
         let url = format!(
-            "{BASE_URL}?symbol={}&interval={native}&limit={requested}",
-            symbol.to_uppercase()
+            "{BASE_URL}?symbol={}&interval={}&limit={requested}",
+            symbol.to_uppercase(),
+            plan.base().interval()
         );
         let body = crate::service::net::http::get_text(
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
         )?;
-        let candles = parse_klines(&body)?;
-        let Some((seconds, _)) = fold else {
-            return Ok(candles);
-        };
-        let folded = fold_calendar(&candles, seconds, candles.len() >= requested);
-        let start = folded.len().saturating_sub(limit as usize);
-        Ok(folded[start..].to_vec())
+        Ok(plan.shape(parse_klines(&body)?, requested, limit as usize))
     }
 
     fn fetch_klines_range(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         start_ms: i64,
         end_ms: i64,
         max: usize,
@@ -66,14 +53,12 @@ impl MarketSource for Binance {
         const PAGE: usize = MAX_PER_REQUEST;
         // Pages are fetched side by side: their start times follow from the interval alone.
         const PARALLEL: usize = 8;
-        let (interval, fold) = native_interval(interval);
-        let output_max = max;
-        let max = max * fold.map_or(1, |(_, months)| months);
-        let step = crate::service::interval_seconds(interval)
-            .ok_or_else(|| ProviderError::other(format!("Unknown interval {interval}")))?
-            * 1_000;
+        let plan = plan(DataSource::Binance, timeframe)?;
+        let interval = plan.base().interval();
+        let requested = plan.base_count(max);
+        let step = plan.base().nominal_ms();
         let page_ms = step * PAGE as i64;
-        let first = (end_ms - step * max as i64).max(start_ms);
+        let first = (end_ms - step * requested as i64).max(start_ms);
         let starts: Vec<i64> = (0..)
             .map(|index| first + index * page_ms)
             .take_while(|start| *start < end_ms)
@@ -84,6 +69,7 @@ impl MarketSource for Binance {
                 let handles: Vec<_> = batch
                     .iter()
                     .map(|&from| {
+                        let interval = &interval;
                         scope.spawn(move || {
                             let to = (from + page_ms).min(end_ms) - 1;
                             let url = format!(
@@ -111,15 +97,10 @@ impl MarketSource for Binance {
         }
         candles.sort_by_key(|candle| candle.open_time);
         candles.dedup_by_key(|candle| candle.open_time);
-        if candles.len() > max {
-            candles.drain(..candles.len() - max);
+        if candles.len() > requested {
+            candles.drain(..candles.len() - requested);
         }
-        if let Some((seconds, _)) = fold {
-            let folded = fold_calendar(&candles, seconds, candles.len() >= max);
-            let start = folded.len().saturating_sub(output_max);
-            return Ok(folded[start..].to_vec());
-        }
-        Ok(candles)
+        Ok(plan.shape(candles, requested, max))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -271,12 +252,46 @@ mod tests {
         );
     }
 
+    fn base_of(timeframe: &str) -> (String, usize) {
+        let plan = plan(DataSource::Binance, Timeframe::parse(timeframe).unwrap()).unwrap();
+        (plan.base().interval(), plan.base_count(500))
+    }
+
     #[test]
-    fn quarters_and_years_are_folded_from_monthly_klines() {
-        assert_eq!(native_interval("1d"), ("1d", None));
-        assert_eq!(native_interval("1M"), ("1M", None));
-        assert_eq!(native_interval("3M"), ("1M", Some((7_776_000, 3))));
-        assert_eq!(native_interval("1Y"), ("1M", Some((31_536_000, 12))));
+    fn a_native_length_is_asked_for_as_it_is() {
+        for token in [
+            "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h",
+        ] {
+            assert_eq!(base_of(token), (token.to_owned(), 500), "{token}");
+        }
+        assert_eq!(base_of("1d"), ("1d".to_owned(), 500));
+        assert_eq!(base_of("1w"), ("1w".to_owned(), 500));
+        assert_eq!(base_of("1M"), ("1M".to_owned(), 500));
+    }
+
+    #[test]
+    fn other_lengths_fold_the_coarsest_native_that_nests() {
+        // A request for 500 candles also asks for the one the start cuts.
+        assert_eq!(base_of("22m"), ("1m".to_owned(), 501 * 22));
+        assert_eq!(base_of("6m"), ("3m".to_owned(), 501 * 2));
+        assert_eq!(base_of("3h"), ("1h".to_owned(), 501 * 3));
+        assert_eq!(base_of("10h"), ("2h".to_owned(), 501 * 5));
+        assert_eq!(base_of("24h"), ("12h".to_owned(), 501 * 2));
+        // Binance's own 3d is not on the grid the other sources cut, so days are folded.
+        assert_eq!(base_of("3d"), ("1d".to_owned(), 501 * 3));
+        assert_eq!(base_of("2w"), ("1w".to_owned(), 501 * 2));
+        assert_eq!(base_of("3M"), ("1M".to_owned(), 501 * 3));
+        assert_eq!(base_of("1Y"), ("1M".to_owned(), 501 * 12));
+    }
+
+    #[test]
+    fn a_series_of_more_than_one_requests_candles_is_paged_but_its_tail_is_not() {
+        assert!(base_of("5m").1 <= MAX_PER_REQUEST);
+        assert!(base_of("22m").1 > MAX_PER_REQUEST);
+        let tail = plan(DataSource::Binance, Timeframe::parse("22m").unwrap())
+            .unwrap()
+            .base_count(crate::service::cache::TAIL_LIMIT as usize);
+        assert!(tail <= MAX_PER_REQUEST);
     }
 
     #[test]

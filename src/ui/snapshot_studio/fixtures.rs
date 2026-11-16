@@ -34,7 +34,7 @@ pub(super) fn parts(fixture: &Fixture, chart_id: u64) -> ChartParts {
         chart_id,
         symbol: "BTCUSDT".to_owned(),
         source: DataSource::Binance,
-        timeframe: Timeframe::Hour,
+        timeframe: Timeframe::HOUR_1,
         title: "BTC/USDT".to_owned(),
         candles: fixture.candles(),
         drawings: fixture.drawings(),

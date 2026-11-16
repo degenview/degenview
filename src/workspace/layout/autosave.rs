@@ -116,7 +116,7 @@ mod tests {
 
     fn snapshot(logarithmic: bool) -> LayoutSnapshot {
         LayoutSnapshot {
-            timeframe: Timeframe::Hour,
+            timeframe: Timeframe::HOUR_1,
             configs: vec![crate::model::ChartConfig {
                 id: 1,
                 symbol: "BTCUSDT".into(),

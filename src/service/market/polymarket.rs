@@ -1,7 +1,8 @@
-use crate::model::Kline;
+use crate::model::market::line;
+use crate::model::{Kline, Timeframe};
 use crate::service::{
     EventInfo, EventStats, MarketSource, ProviderError, SearchResult, downsample,
-    effective_span_days, line_chart_point_count, replace_last_price, whole_dollars,
+    replace_last_price, whole_dollars,
 };
 use serde_json::Value;
 
@@ -26,42 +27,56 @@ fn probability(raw: &Value) -> Option<f64> {
         .filter(|value| (0.0..=1.0).contains(value))
 }
 
-/// (interval token, fidelity) for the CLOB `/prices-history` endpoint.
-fn pm_window(interval: &str) -> (String, i64) {
-    let span = effective_span_days(interval);
-    let needed = line_chart_point_count(interval) * 2;
+/// The history windows the CLOB `/prices-history` endpoint takes, shortest first: its token, the
+/// minutes it covers and the finest `fidelity` (minutes between points) it allows. `max` is the
+/// whole history, but only for a fidelity of twelve hours or more; finer, it is the last month.
+const WINDOWS: [(&str, i64, i64); 6] = [
+    ("1h", 60, 1),
+    ("6h", 360, 1),
+    ("1d", 1_440, 1),
+    ("1w", 10_080, 5),
+    ("1m", 43_200, 10),
+    ("max", i64::MAX, 720),
+];
 
-    let token = if span <= 1 {
-        "1h"
-    } else if span <= 2 {
-        "1d"
-    } else if span <= 8 {
-        "1w"
-    } else if span <= 31 {
-        "1m"
-    } else {
-        "max"
-    };
-    let interval_minutes: i64 = match token {
-        "max" | "1m" => 43_200,
-        "1w" => 10_080,
-        "1d" => 1_440,
-        _ => 60,
-    };
-    let fidelity = (interval_minutes / needed as i64).max(1);
-    (token.to_owned(), fidelity)
+/// What a request for a line asks the endpoint, and how far back the line then reaches.
+#[derive(Debug, PartialEq)]
+struct PmWindow {
+    token: &'static str,
+    fidelity: i64,
+    span_ms: i64,
+}
+
+/// The window of a line at `timeframe`: a point every timeframe (`line::window` keeps that to a
+/// week), in the shortest window that holds the line's span and allows that fidelity. When none
+/// both holds the span and allows the fidelity, the longest that allows it, and the line is
+/// shorter.
+fn pm_window(timeframe: Timeframe) -> PmWindow {
+    let line = line::window(timeframe);
+    let step = line.step_minutes();
+    let allowed = || WINDOWS.iter().filter(|(_, _, floor)| *floor <= step);
+    let (token, minutes, _) = allowed()
+        .find(|(_, minutes, _)| *minutes >= line.span_ms / 60_000)
+        .or_else(|| allowed().next_back())
+        .unwrap_or(&WINDOWS[0]);
+    PmWindow {
+        token,
+        fidelity: step,
+        span_ms: line.span_ms.min(minutes.saturating_mul(60_000)),
+    }
 }
 
 impl MarketSource for Polymarket {
     fn fetch_klines(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let (window, fidelity) = pm_window(interval);
+        let window = pm_window(timeframe);
         let url = format!(
-            "{CLOB_BASE}/prices-history?market={symbol}&interval={window}&fidelity={fidelity}"
+            "{CLOB_BASE}/prices-history?market={symbol}&interval={}&fidelity={}",
+            window.token, window.fidelity
         );
         let body = crate::service::net::http::get_text(
             &url,
@@ -83,6 +98,9 @@ impl MarketSource for Polymarket {
             })
             .collect();
         points.sort_by_key(|(t, _)| *t);
+        // A window can reach back past the line (`max` is the whole history).
+        let since = crate::service::now_ms() - window.span_ms;
+        points.retain(|(t, _)| *t >= since);
 
         let candles: Vec<Kline> = points
             .into_iter()
@@ -269,16 +287,53 @@ mod tests {
         assert_eq!(artwork_for_token("1&limit=500"), Ok(None));
     }
 
+    fn window_of(timeframe: &str) -> (&'static str, i64) {
+        let window = pm_window(Timeframe::parse(timeframe).unwrap());
+        (window.token, window.fidelity)
+    }
+
     #[test]
-    fn window_matches_span() {
-        assert_eq!(
-            pm_window("1h"),
-            ("1m".to_owned(), 60),
-            "a month of hourly points"
-        );
-        assert_eq!(pm_window("1d").0, "max");
-        assert_eq!(pm_window("1w").0, "max");
-        assert_eq!(pm_window("1M").0, "max");
+    fn the_window_holds_the_span_and_the_fidelity_is_the_timeframe() {
+        assert_eq!(window_of("1h"), ("1m", 60), "a month of hourly points");
+        assert_eq!(window_of("3h"), ("1m", 180));
+        assert_eq!(window_of("12h"), ("1m", 720));
+        assert_eq!(window_of("1d"), ("max", 1_440));
+        assert_eq!(window_of("2d"), ("max", 2_880));
+        // A point is never a week and more apart.
+        assert_eq!(window_of("1w"), ("max", 10_080));
+        assert_eq!(window_of("1Y"), ("max", 10_080));
+    }
+
+    #[test]
+    fn a_short_timeframe_reaches_back_hours_or_days_at_its_own_fidelity() {
+        assert_eq!(window_of("1m"), ("1d", 1));
+        assert_eq!(window_of("5m"), ("1w", 5));
+        // The month window allows no finer than ten minutes: a 15-minute line fits it.
+        assert_eq!(window_of("15m"), ("1m", 15));
+    }
+
+    #[test]
+    fn a_fidelity_the_long_window_forbids_gets_a_shorter_line() {
+        // Two-minute points are not allowed over a week, so the line stops at a day.
+        let window = pm_window(Timeframe::parse("2m").unwrap());
+        assert_eq!((window.token, window.fidelity), ("1d", 2));
+        assert_eq!(window.span_ms, 86_400_000);
+    }
+
+    #[test]
+    fn every_timeframe_has_a_window_that_allows_its_fidelity() {
+        for timeframe in Timeframe::PRESETS {
+            let window = pm_window(timeframe);
+            let floor = WINDOWS
+                .iter()
+                .find(|(token, ..)| *token == window.token)
+                .map(|(_, _, floor)| *floor);
+            assert!(
+                floor.is_some_and(|floor| window.fidelity >= floor),
+                "{timeframe}"
+            );
+            assert!(window.span_ms > 0);
+        }
     }
 
     #[test]

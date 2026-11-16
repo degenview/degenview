@@ -10,19 +10,21 @@ use super::preview;
 use crate::model::Timeframe;
 use crate::ui::icons::Icon;
 use crate::ui::kit::bar::{self, Button, Item};
-use crate::ui::kit::{BOLD, MEDIUM, SEMIBOLD};
+use crate::ui::kit::timeframe_picker::{self, TimeframePick};
+use crate::ui::kit::{BOLD, SEMIBOLD};
 use crate::ui::shortcut;
 use eframe::egui::Ui;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BarAction {
-    SetTimeframe(Timeframe),
+    Timeframe(TimeframePick),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BarMenu {
     Market,
     Scripts,
+    Timeframe,
 }
 
 type BarItem = Item<BarAction, BarMenu>;
@@ -35,6 +37,8 @@ struct BarState {
     picker_open: bool,
     chart_visible: bool,
     market: preview::Summary,
+    /// The custom timeframes pinned in the picker.
+    pinned: Vec<Timeframe>,
 }
 
 fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
@@ -52,20 +56,18 @@ fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
     market.suffix = state.market.price.clone();
 
     let mut left = vec![Item::Button(market), Item::Separator];
-    for timeframe in Timeframe::ALL {
-        let selected = timeframe == state.market.timeframe;
-        let mut button = BarButton::new(("timeframe", timeframe.label()), timeframe.description())
-            .label(timeframe.label())
-            .enabled(preview_shown)
-            .active(selected);
-        button.quiet = !selected;
-        button.weight = if selected { SEMIBOLD } else { MEDIUM };
-        button.min_width = 34.0;
-        if !selected {
-            button.action = Some(BarAction::SetTimeframe(timeframe));
-        }
-        left.push(Item::Button(button));
-    }
+    let mut timeframe = BarButton::new("timeframe", "Timeframe")
+        .label(state.market.timeframe.label())
+        .chevron()
+        .enabled(preview_shown)
+        .with_menu(BarMenu::Timeframe);
+    timeframe.keep_label = true;
+    timeframe.weight = SEMIBOLD;
+    timeframe.access = Some(format!(
+        "Timeframe: {}. Choose another",
+        state.market.timeframe.description()
+    ));
+    left.push(Item::Button(timeframe));
     left.push(Item::Separator);
     let mut scripts = BarButton::new(
         "scripts",
@@ -88,6 +90,11 @@ impl PineStudio {
             picker_open: self.picker.is_open(),
             chart_visible: self.prefs.chart_visible,
             market: self.preview.summary(),
+            pinned: self
+                .shared
+                .lock()
+                .map(|store| store.pinned_timeframes_cached().to_vec())
+                .unwrap_or_default(),
         };
         let (left, right) = items(&state);
         let preview = &mut self.preview;
@@ -95,16 +102,50 @@ impl PineStudio {
         let cmds = &mut self.cmds;
         let scripts = &self.scripts;
         let open_id = self.open.as_ref().map(|open| open.id.as_str());
-        let actions = bar::show(ui, &left, &right, |ui, menu, response, _| match menu {
-            BarMenu::Market => preview::market_picker::market_picker(ui, preview, response),
-            BarMenu::Scripts => {
-                library::picker::show(ui, picker, scripts, open_id, response, cmds);
-            }
-        });
+        let actions = bar::show(
+            ui,
+            &left,
+            &right,
+            |ui, menu, response, actions| match menu {
+                BarMenu::Market => preview::market_picker::market_picker(ui, preview, response),
+                BarMenu::Scripts => {
+                    library::picker::show(ui, picker, scripts, open_id, response, cmds);
+                }
+                BarMenu::Timeframe => {
+                    let input = timeframe_picker::TimeframePickerInput {
+                        current: state.market.timeframe,
+                        pinned: &state.pinned,
+                        sources: &[state.market.source],
+                    };
+                    if let Some(pick) = timeframe_picker::show(ui, response, &input) {
+                        actions.push(BarAction::Timeframe(pick));
+                    }
+                }
+            },
+        );
         for action in actions {
             match action {
-                BarAction::SetTimeframe(timeframe) => self.preview.select_timeframe(timeframe),
+                BarAction::Timeframe(TimeframePick::Chart(timeframe)) => {
+                    self.preview.select_timeframe(timeframe);
+                }
+                BarAction::Timeframe(TimeframePick::ChartAndPin(timeframe)) => {
+                    self.with_pins(|store| store.pin_timeframe(timeframe));
+                    self.preview.select_timeframe(timeframe);
+                }
+                BarAction::Timeframe(TimeframePick::Unpin(timeframe)) => {
+                    self.with_pins(|store| store.unpin_timeframe(timeframe));
+                }
             }
+        }
+    }
+}
+
+impl PineStudio {
+    /// Changes the pinned timeframes, shared with the chart tabs. A preference: a write that
+    /// fails leaves the list as it was.
+    fn with_pins(&self, change: impl FnOnce(&crate::store::Store) -> rusqlite::Result<()>) {
+        if let Ok(store) = self.shared.lock() {
+            let _ = change(&store);
         }
     }
 }
@@ -112,6 +153,7 @@ impl PineStudio {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::DataSource;
     use crate::ui::kit::bar::{EDGE, HEIGHT};
     use eframe::egui::{self, Rect, pos2, vec2};
 
@@ -126,8 +168,10 @@ mod tests {
             market: preview::Summary {
                 title: "BTCUSDT".to_owned(),
                 price: Some("64,210.50  +1.20%".to_owned()),
-                timeframe: Timeframe::Day,
+                timeframe: Timeframe::DAY_1,
+                source: DataSource::Binance,
             },
+            pinned: Vec::new(),
         }
     }
 
@@ -149,23 +193,20 @@ mod tests {
     }
 
     #[test]
-    fn the_market_and_timeframes_act_only_on_a_preview_chart_that_is_shown() {
+    fn the_market_and_timeframe_act_only_on_a_preview_chart_that_is_shown() {
         for (open, visible, enabled) in [
             (true, true, true),
             (true, false, false),
             (false, true, false),
         ] {
             let (left, _) = items(&state(open, visible));
-            for button in buttons(&left) {
-                let is_preview_control = button.menu == Some(BarMenu::Market)
-                    || matches!(button.action, Some(BarAction::SetTimeframe(_)))
-                    || button
-                        .label
-                        .as_deref()
-                        .is_some_and(|l| Timeframe::ALL.iter().any(|t| t.label() == l));
-                if is_preview_control {
-                    assert_eq!(button.enabled, enabled, "{:?}", button.label);
-                }
+            let preview_controls: Vec<_> = buttons(&left)
+                .into_iter()
+                .filter(|button| matches!(button.menu, Some(BarMenu::Market | BarMenu::Timeframe)))
+                .collect();
+            assert_eq!(preview_controls.len(), 2, "the market and the timeframe");
+            for button in preview_controls {
+                assert_eq!(button.enabled, enabled, "{:?}", button.label);
             }
         }
     }
@@ -204,19 +245,17 @@ mod tests {
     }
 
     #[test]
-    fn the_current_timeframe_is_lit_and_asks_for_nothing() {
+    fn one_button_names_the_current_timeframe_and_opens_the_picker() {
         let (left, _) = items(&state(true, true));
         let timeframes: Vec<_> = buttons(&left)
             .into_iter()
-            .filter(|b| b.label.as_deref() == Some(Timeframe::Day.label()))
+            .filter(|button| button.menu == Some(BarMenu::Timeframe))
             .collect();
         assert_eq!(timeframes.len(), 1);
-        assert!(timeframes[0].active && timeframes[0].action.is_none());
-        let week = buttons(&left)
-            .into_iter()
-            .find(|b| b.label.as_deref() == Some(Timeframe::Week.label()))
-            .expect("a week button");
-        assert_eq!(week.action, Some(BarAction::SetTimeframe(Timeframe::Week)));
+        let button = timeframes[0];
+        assert_eq!(button.label.as_deref(), Some("1D"));
+        assert!(button.chevron && button.keep_label);
+        assert!(button.action.is_none(), "the picker asks, not the button");
     }
 
     #[test]

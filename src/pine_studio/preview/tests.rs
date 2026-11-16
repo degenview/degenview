@@ -78,13 +78,13 @@ fn a_new_market_or_timeframe_starts_on_autoscale_and_keeps_the_saved_zoom() {
     assert_eq!(preview.card.y_zoom(), 2.0);
 
     preview.card.place_prices_for_test(240.0, 260.0);
-    preview.select_timeframe(Timeframe::Week);
+    preview.select_timeframe(Timeframe::WEEK_1);
     assert!(preview.card.prices_are_autoscaled());
 
     // Choosing what is already shown leaves a placed range alone.
     preview.card.place_prices_for_test(240.0, 260.0);
     preview.select_market(stock);
-    preview.select_timeframe(Timeframe::Week);
+    preview.select_timeframe(Timeframe::WEEK_1);
     assert!(!preview.card.prices_are_autoscaled());
 }
 
@@ -92,7 +92,7 @@ fn a_new_market_or_timeframe_starts_on_autoscale_and_keeps_the_saved_zoom() {
 fn defaults_and_support() {
     let preview = state();
     assert_eq!(preview.market, PreviewMarket::default_market());
-    assert_eq!(preview.timeframe, Timeframe::Day);
+    assert_eq!(preview.timeframe, Timeframe::DAY_1);
     assert!(PreviewMarket::is_supported(DataSource::Alpaca));
     assert!(!PreviewMarket::is_supported(DataSource::Polymarket));
     assert!(!PreviewMarket::is_supported(DataSource::CoinMarketCap));

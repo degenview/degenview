@@ -21,6 +21,7 @@ pub mod identity;
 pub mod mcp;
 pub mod paper;
 pub mod pine;
+pub mod pinned_timeframes;
 pub mod portfolio;
 pub mod scripts;
 pub mod sync;

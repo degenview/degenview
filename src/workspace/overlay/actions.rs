@@ -395,7 +395,7 @@ mod tests {
         let ctx = egui::Context::default();
         let reopened = crate::workspace::chart::Chart::restored(
             restored.charts[0].clone(),
-            Timeframe::Day,
+            Timeframe::DAY_1,
             &ctx,
         );
         assert_eq!(reopened.overlays, chart(&workspace, a).overlays);
@@ -492,7 +492,7 @@ mod tests {
             &self,
             _: DataSource,
             symbol: &str,
-            _: &str,
+            _: Timeframe,
             _: u32,
         ) -> Result<Vec<Kline>, ProviderError> {
             if symbol == "BADUSDT" {
@@ -504,7 +504,7 @@ mod tests {
             &self,
             _: DataSource,
             _: &str,
-            _: &str,
+            _: Timeframe,
             _: i64,
         ) -> Result<Vec<Kline>, ProviderError> {
             Ok(Vec::new())

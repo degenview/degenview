@@ -41,7 +41,7 @@ mod tests {
         SavedView {
             id: 1,
             name: "BTC watch".into(),
-            timeframe: Timeframe::Hour,
+            timeframe: Timeframe::HOUR_1,
             created_at_ms: 1_000,
             charts: vec![PersistedChart {
                 id: 1,

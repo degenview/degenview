@@ -9,6 +9,7 @@
 
 use crate::format::civil_from_days;
 use crate::lock::lock;
+use crate::model::Timeframe;
 use crate::model::portfolio::PortfolioCurrency;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -347,7 +348,7 @@ fn system_now_ms() -> i64 {
 
 fn binance_btc_spot() -> Option<f64> {
     let source = crate::service::for_source(crate::model::DataSource::Binance);
-    let bars = source.fetch_klines("BTCUSDT", "1h", 1).ok()?;
+    let bars = source.fetch_klines("BTCUSDT", Timeframe::HOUR_1, 1).ok()?;
     bars.last().map(|bar| bar.close)
 }
 

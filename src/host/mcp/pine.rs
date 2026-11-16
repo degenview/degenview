@@ -302,15 +302,10 @@ pub fn list_chart_pine(
                 .chart_summaries()
                 .into_iter()
                 .find(|chart| chart.id == chart_id)
-                .map(|chart| {
-                    (
-                        chart.instrument.key(),
-                        workspace.timeframe().label().to_owned(),
-                    )
-                })
+                .map(|chart| (chart.instrument.key(), workspace.timeframe().label()))
                 .unwrap_or_default()
         },
-        |view| (view.instrument.key(), view.timeframe.label().to_owned()),
+        |view| (view.instrument.key(), view.timeframe.label()),
     );
     Ok(AppliedPineList {
         workspace_id: workspace.id().to_string(),
@@ -457,7 +452,7 @@ pub(super) fn detail_of(workspace_id: u64, view: &PineInstanceView) -> AppliedPi
         workspace_id: workspace_id.to_string(),
         chart_id: view.chart_id.to_string(),
         instrument: view.instrument.key(),
-        timeframe: view.timeframe.label().to_owned(),
+        timeframe: view.timeframe.label(),
         instance: applied_info(view),
         inputs: stored_inputs(view),
         style_overrides: view
@@ -625,7 +620,7 @@ pub(super) fn report_of(
             source_hash: crate::store::scripts::hash_source(&view.instance.source),
             script_status: ScriptStatus::Unknown,
             instrument: view.instrument.key(),
-            timeframe: view.timeframe.label().to_owned(),
+            timeframe: view.timeframe.label(),
             bar_count: run.bar_count,
             inputs: stored_inputs(view),
         }),

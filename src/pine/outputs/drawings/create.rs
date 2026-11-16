@@ -7,7 +7,7 @@ use super::coordinates::{bar_index_for_time, is_time_anchored, point_coordinates
 use super::names::size_of;
 use super::{
     Arg, CHART_POINT_TYPE, DEFAULT_COLOR, DrawingLimits, OPAQUE_BLACK, allocate, bind,
-    bind_overload, cap, parse, text, width_or,
+    bind_overload, cap, force_overlay, parse, text, width_or,
 };
 use crate::model::Kline;
 use crate::pine::outputs::{
@@ -21,10 +21,19 @@ use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::{RefKind, RuntimeValue, color_value};
 use crate::pine::syntax::token::Diagnostic;
 
-const PLAIN_LINE: [&str; 9] = [
-    "x1", "y1", "x2", "y2", "xloc", "extend", "color", "style", "width",
+const PLAIN_LINE: [&str; 10] = [
+    "x1",
+    "y1",
+    "x2",
+    "y2",
+    "xloc",
+    "extend",
+    "color",
+    "style",
+    "width",
+    "force_overlay",
 ];
-const POINT_LINE: [&str; 7] = [
+const POINT_LINE: [&str; 8] = [
     "first_point",
     "second_point",
     "xloc",
@@ -32,6 +41,7 @@ const POINT_LINE: [&str; 7] = [
     "color",
     "style",
     "width",
+    "force_overlay",
 ];
 
 pub(super) fn new_line(
@@ -112,13 +122,14 @@ pub(super) fn new_line(
                 LineExtend::None,
             ),
             time_anchored: timed,
+            force_overlay: force_overlay(&b),
         },
     );
     cap(&mut state.lines, limits.max_lines);
     Ok(RuntimeValue::Ref(RefKind::Line, id))
 }
 
-const PLAIN_LABEL: [&str; 11] = [
+const PLAIN_LABEL: [&str; 14] = [
     "x",
     "y",
     "text",
@@ -130,8 +141,11 @@ const PLAIN_LABEL: [&str; 11] = [
     "size",
     "textalign",
     "tooltip",
+    "text_font_family",
+    "force_overlay",
+    "text_formatting",
 ];
-const POINT_LABEL: [&str; 10] = [
+const POINT_LABEL: [&str; 13] = [
     "point",
     "text",
     "xloc",
@@ -142,6 +156,9 @@ const POINT_LABEL: [&str; 10] = [
     "size",
     "textalign",
     "tooltip",
+    "text_font_family",
+    "force_overlay",
+    "text_formatting",
 ];
 
 pub(super) fn new_label(
@@ -207,13 +224,14 @@ pub(super) fn new_label(
                 YLocation::Price,
             ),
             time_anchored: timed,
+            force_overlay: force_overlay(&b),
         },
     );
     cap(&mut state.labels, limits.max_labels);
     Ok(RuntimeValue::Ref(RefKind::Label, id))
 }
 
-const PLAIN_BOX: [&str; 15] = [
+const PLAIN_BOX: [&str; 19] = [
     "left",
     "top",
     "right",
@@ -229,8 +247,12 @@ const PLAIN_BOX: [&str; 15] = [
     "text_color",
     "text_halign",
     "text_valign",
+    "text_wrap",
+    "text_font_family",
+    "force_overlay",
+    "text_formatting",
 ];
-const POINT_BOX: [&str; 13] = [
+const POINT_BOX: [&str; 17] = [
     "top_left",
     "bottom_right",
     "border_color",
@@ -244,6 +266,10 @@ const POINT_BOX: [&str; 13] = [
     "text_color",
     "text_halign",
     "text_valign",
+    "text_wrap",
+    "text_font_family",
+    "force_overlay",
+    "text_formatting",
 ];
 
 pub(super) fn new_box(
@@ -338,6 +364,7 @@ pub(super) fn new_box(
                 TextAlign::Center,
             ),
             time_anchored: timed,
+            force_overlay: force_overlay(&b),
         },
     );
     cap(&mut state.boxes, limits.max_boxes);
@@ -393,6 +420,7 @@ pub(super) fn new_polyline(
             "fill_color",
             "line_style",
             "line_width",
+            "force_overlay",
         ],
     );
     let Some(RuntimeValue::Ref(RefKind::Array, array_id)) = b.get("points") else {
@@ -433,6 +461,7 @@ pub(super) fn new_polyline(
                 .get("curved")
                 .and_then(RuntimeValue::bool)
                 .unwrap_or(false),
+            force_overlay: force_overlay(&b),
         },
     );
     cap(&mut state.polylines, limits.max_polylines);

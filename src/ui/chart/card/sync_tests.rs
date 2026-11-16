@@ -56,7 +56,7 @@ struct Member {
 impl Member {
     fn new(candles: Vec<Kline>, left: f32, width: f32) -> Self {
         let mut card = ChartCard::default();
-        card.set_timeframe(Timeframe::Hour);
+        card.set_timeframe(Timeframe::HOUR_1);
         Self {
             card,
             candles,
