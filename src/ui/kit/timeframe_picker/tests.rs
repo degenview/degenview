@@ -26,11 +26,8 @@ fn labels(grid: &Grid, section: Section) -> Vec<String> {
 fn the_presets_fill_three_sections() {
     let grid = Grid::new(&[]);
     assert_eq!(labels(&grid, Section::Minutes), ["1m", "5m", "15m", "30m"]);
-    assert_eq!(labels(&grid, Section::Hours), ["1h", "4h"]);
-    assert_eq!(
-        labels(&grid, Section::DaysAndUp),
-        ["1D", "1W", "1M", "3M", "1Y"]
-    );
+    assert_eq!(labels(&grid, Section::Hours), ["1h", "4h", "8h", "12h"]);
+    assert_eq!(labels(&grid, Section::DaysAndUp), ["1D", "1W", "1M", "1Y"]);
     assert_eq!(title(Section::DaysAndUp), "Days and up");
 }
 
@@ -46,10 +43,13 @@ fn a_pinned_timeframe_joins_its_section_by_duration() {
         labels(&grid, Section::Minutes),
         ["1m", "2m", "5m", "15m", "22m", "30m"]
     );
-    assert_eq!(labels(&grid, Section::Hours), ["1h", "3h", "4h"]);
+    assert_eq!(
+        labels(&grid, Section::Hours),
+        ["1h", "3h", "4h", "8h", "12h"]
+    );
     assert_eq!(
         labels(&grid, Section::DaysAndUp),
-        ["1D", "2D", "1W", "1M", "3M", "1Y"]
+        ["1D", "2D", "1W", "1M", "1Y"]
     );
 }
 
@@ -66,29 +66,31 @@ fn a_preset_or_a_repeat_among_the_pinned_is_listed_once() {
 #[test]
 fn up_and_down_keep_the_column_and_clamp_to_the_row() {
     let grid = Grid::new(&[]);
-    // Minutes: 1m 5m 15m 30m. Hours: 1h 4h. Days and up: 1D 1W 1M 3M / 1Y.
+    // Minutes: 1m 5m 15m 30m. Hours: 1h 4h 8h 12h. Days and up: 1D 1W 1M 1Y.
+    // 1D 1W 1M 1Y.
     assert_eq!(
         grid.step(Timeframe::MINUTE_5, Step::Down),
         Some(Timeframe::HOUR_4)
     );
     assert_eq!(
-        grid.step(Timeframe::MINUTE_30, Step::Down),
-        Some(Timeframe::HOUR_4),
-        "the hours row is shorter than the column"
-    );
-    assert_eq!(
-        grid.step(Timeframe::HOUR_4, Step::Down),
-        Some(Timeframe::WEEK_1)
-    );
-    assert_eq!(
-        grid.step(Timeframe::MONTH_3, Step::Down),
-        Some(Timeframe::YEAR_1),
-        "the wrapped row's only chip"
+        grid.step(Timeframe::HOUR_12, Step::Down),
+        Some(Timeframe::YEAR_1)
     );
     assert_eq!(grid.step(Timeframe::YEAR_1, Step::Down), None);
     assert_eq!(
         grid.step(Timeframe::YEAR_1, Step::Up),
-        Some(Timeframe::DAY_1)
+        Some(Timeframe::HOUR_12)
+    );
+    let pinned = Grid::new(&[custom(22, TimeUnit::Minute)]);
+    // Minutes: 1m 5m 15m 22m / 30m.
+    assert_eq!(
+        pinned.step(Timeframe::MINUTE_15, Step::Down),
+        Some(Timeframe::MINUTE_30),
+        "the wrapped row is shorter than the column"
+    );
+    assert_eq!(
+        pinned.step(Timeframe::MINUTE_30, Step::Down),
+        Some(Timeframe::HOUR_1)
     );
     assert_eq!(grid.step(Timeframe::MINUTE_1, Step::Up), None);
 }
@@ -393,19 +395,20 @@ fn a_click_on_a_chip_charts_it_and_closes_the_picker() {
 
 #[test]
 fn the_chips_are_one_width_and_four_to_a_row() {
-    let input = Harness::input(&[], &[]);
+    let pinned = [custom(22, TimeUnit::Minute)];
+    let input = Harness::input(&pinned, &[]);
     let mut harness = Harness::new();
     harness.open(&input);
     let rect = |label: &str| harness.labels[label];
-    let first_row = ["1m", "5m", "15m", "30m"].map(rect);
+    let first_row = ["1m", "5m", "15m", "22m"].map(rect);
     for pair in first_row.windows(2) {
         assert_eq!(pair[0].width(), pair[1].width());
         assert_eq!(pair[0].top(), pair[1].top());
         assert!(pair[0].right() < pair[1].left());
     }
-    // Days and up has five presets: the fifth wraps under the first.
-    assert_eq!(rect("1Y").left(), rect("1D").left());
-    assert!(rect("1Y").top() > rect("1D").top());
+    // A pinned 22m makes five minutes: the fifth wraps under the first.
+    assert_eq!(rect("30m").left(), rect("1m").left());
+    assert!(rect("30m").top() > rect("1m").top());
 }
 
 #[test]

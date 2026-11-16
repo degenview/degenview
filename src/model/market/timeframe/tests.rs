@@ -10,14 +10,18 @@ fn presets_and_legacy_lists_are_in_order_with_their_tokens() {
     assert_eq!(
         tokens,
         [
-            "1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M", "3M", "1Y"
+            "1m", "5m", "15m", "30m", "1h", "4h", "8h", "12h", "1d", "1w", "1M", "1Y"
         ]
     );
     let legacy: Vec<_> = Timeframe::LEGACY.iter().map(|tf| tf.interval()).collect();
     assert_eq!(legacy, ["1h", "1d", "1w", "1M", "3M", "1Y"]);
     assert!(Timeframe::PRESETS.windows(2).all(|pair| pair[0] < pair[1]));
+    // Every length older builds offered is a chip, but the quarter: it is typed (`3M`) or pinned.
     for legacy in Timeframe::LEGACY {
-        assert!(Timeframe::PRESETS.contains(&legacy));
+        assert_eq!(
+            Timeframe::PRESETS.contains(&legacy),
+            legacy != Timeframe::MONTH_3
+        );
     }
 }
 
@@ -27,7 +31,7 @@ fn labels_use_lowercase_minutes_and_hours() {
     assert_eq!(
         labels,
         [
-            "1m", "5m", "15m", "30m", "1h", "4h", "1D", "1W", "1M", "3M", "1Y"
+            "1m", "5m", "15m", "30m", "1h", "4h", "8h", "12h", "1D", "1W", "1M", "1Y"
         ]
     );
     assert_eq!(tf(22, TimeUnit::Minute).to_string(), "22m");

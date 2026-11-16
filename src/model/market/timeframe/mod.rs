@@ -1,8 +1,7 @@
 //! A candle length: a count of minutes, hours, days, weeks or months.
 //!
 //! `Timeframe` is a value, not a closed list: `22m`, `3h` and `2D` are as real as `1D`.
-//! [`Timeframe::PRESETS`] are the lengths providers serve natively and the timeframe picker
-//! lists. Where a candle opens and closes is `model::market::bucket`'s business.
+//! [`Timeframe::PRESETS`] are the chips the timeframe picker lists. Where a candle opens and closes is `model::market::bucket`'s business.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
@@ -96,24 +95,27 @@ impl Timeframe {
     pub const MINUTE_30: Self = Self::preset(30, TimeUnit::Minute);
     pub const HOUR_1: Self = Self::preset(1, TimeUnit::Hour);
     pub const HOUR_4: Self = Self::preset(4, TimeUnit::Hour);
+    pub const HOUR_8: Self = Self::preset(8, TimeUnit::Hour);
+    pub const HOUR_12: Self = Self::preset(12, TimeUnit::Hour);
     pub const DAY_1: Self = Self::preset(1, TimeUnit::Day);
     pub const WEEK_1: Self = Self::preset(1, TimeUnit::Week);
     pub const MONTH_1: Self = Self::preset(1, TimeUnit::Month);
     pub const MONTH_3: Self = Self::preset(3, TimeUnit::Month);
     pub const YEAR_1: Self = Self::preset(12, TimeUnit::Month);
 
-    /// The lengths the providers serve, shortest first.
-    pub const PRESETS: [Self; 11] = [
+    /// The chips the timeframe picker offers, shortest first: four to each section's row.
+    pub const PRESETS: [Self; 12] = [
         Self::MINUTE_1,
         Self::MINUTE_5,
         Self::MINUTE_15,
         Self::MINUTE_30,
         Self::HOUR_1,
         Self::HOUR_4,
+        Self::HOUR_8,
+        Self::HOUR_12,
         Self::DAY_1,
         Self::WEEK_1,
         Self::MONTH_1,
-        Self::MONTH_3,
         Self::YEAR_1,
     ];
 
