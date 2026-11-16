@@ -804,6 +804,7 @@ mod tests {
             style: LineStyle::Solid,
             extend: LineExtend::None,
             time_anchored: false,
+            force_overlay: false,
         }
     }
 
@@ -1054,6 +1055,7 @@ mod tests {
             frame_color: None,
             frame_width: 0,
             cells,
+            force_overlay: false,
         }
     }
 
@@ -1278,6 +1280,7 @@ mod tests {
             style: LineStyle::Solid,
             width: 1,
             curved: false,
+            force_overlay: false,
         });
         assert_eq!(
             drawing_values(&output, 10, 0),

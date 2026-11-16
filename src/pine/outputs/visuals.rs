@@ -115,7 +115,7 @@ fn width(value: Option<&RuntimeValue>, default: i64) -> usize {
 }
 
 /// A boolean argument: true only when the script gave `true`.
-fn flag(value: Option<&RuntimeValue>) -> bool {
+pub(super) fn flag(value: Option<&RuntimeValue>) -> bool {
     matches!(value, Some(RuntimeValue::Bool(true)))
 }
 
