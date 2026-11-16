@@ -406,23 +406,34 @@ impl IndicatorPicker {
             title,
             theme::text_primary(),
         );
-        let field = Rect::from_min_max(
-            pos2(bar.left() + SIDEBAR, bar.top() + 12.0),
-            pos2(bar.right() - 24.0, bar.bottom() - 12.0),
+        let field = Rect::from_min_size(
+            pos2(
+                bar.left() + SIDEBAR,
+                bar.center().y - kit::search_box::HEIGHT / 2.0,
+            ),
+            vec2(
+                bar.right() - 24.0 - (bar.left() + SIDEBAR),
+                kit::search_box::HEIGHT,
+            ),
         );
         let mut field_ui = ui.new_child(egui::UiBuilder::new().max_rect(field));
         let before = self.query.clone();
         let prompt = format!("Search {total} indicators, concepts or aliases");
-        let response = kit::search_field(
+        let focus = self.focus_frames < FOCUS_FRAMES;
+        let event = kit::search_box::search_box(
             &mut field_ui,
-            search_id,
+            Icon::Magnifier,
             &mut self.query,
+            false,
             &prompt,
-            field.width(),
+            search_id,
+            focus,
         );
-        if self.focus_frames < FOCUS_FRAMES {
+        if focus {
             self.focus_frames += 1;
-            response.request_focus();
+        }
+        if event.cleared {
+            self.query.clear();
         }
         *query_changed = before != self.query;
     }
