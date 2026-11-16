@@ -214,7 +214,8 @@
 - Menu strip: `pine_studio/menu_bar/` draws File, Edit and View at the top of the editor column
   (a `Panel::top` inside `rail::show`'s remaining area, so it spans the code and the assistant and
   debugger panels). Rows are plain `Entry` data built by `file`, `edit` and `view`, drawn and sized by
-  `entry` (`fitted_menu_rows`, submenus `menu_fit_rows` inside); a row's command is a `Cmd`.
+  `entry` (`fitted_menu_rows`, submenus `menu_fit_rows` inside); a row's command is a `Cmd`. The
+  problems chip (`editor::status::ProblemsChip`) sits at the strip's right end, not under the code.
   - **Every item of every context menu in `pine_studio/` is in the strip**, except the rows of a
     list that act on that row alone (Problems, Logs, the debug panel's variables, watches and
     breakpoint list). A context menu and the strip build their rows from one function so they cannot

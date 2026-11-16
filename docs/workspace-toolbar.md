@@ -34,7 +34,9 @@ code only. It is shown whenever a script is open.
 **Pine Studio menu strip** (`pine_studio/menu_bar/`). A 28 pt strip on `theme::chrome()` (its egui
 separator the only edge) under the bar, at the top of the editor column: left of the rail, over the
 code and the assistant and debugger panels, never over the preview chart. Three flat text titles,
-File, Edit and View, with the bar's hover and lit tints; they open fitted pull-downs
+File, Edit and View, with the bar's hover and lit tints, and at its right end the editor's problems
+chip (`editor::status::ProblemsChip`; the status strip under the code keeps only the changed-line
+counts and notices, and has no Save button). The titles open fitted pull-downs
 (`kit::fitted_menu_rows`, shortcut column included) and, while one is up, pointing at another title
 opens that one. It is how every right-click menu of the studio is reached without a right-click: see
 [Pine and Pine Studio](agent-guides/pine.md#editor).

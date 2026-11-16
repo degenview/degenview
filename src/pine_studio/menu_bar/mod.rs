@@ -1,7 +1,7 @@
-//! The strip over the code editor: File, Edit and View. Every item of the studio's context menus
-//! is in one of them, with its shortcut, so nothing is reachable only by right-clicking. It sits
-//! at the top of the editor column, left of the rail, and spans the code and the assistant and
-//! debugger panels under it.
+//! The strip over the code editor: File, Edit and View, and the editor's problems at its right
+//! end. Every item of the studio's context menus is in one of the menus, with its shortcut, so
+//! nothing is reachable only by right-clicking. It sits at the top of the editor column, left of
+//! the rail, and spans the code and the assistant and debugger panels under it.
 //!
 //! While one menu is open, pointing at another title opens that one instead, as in a native menu
 //! bar. The rows are plain data (`entry`) built from the state each frame a menu is wanted; the
@@ -22,6 +22,7 @@ mod tests;
 
 use super::commands::Cmd;
 use super::editor::EditorMenuState;
+use super::editor::status::ProblemsChip;
 use crate::ui::kit::{self, size};
 use crate::ui::theme;
 use eframe::egui::{self, Id, Popup, Rect, Response, Sense, Ui, pos2, vec2};
@@ -63,6 +64,8 @@ pub(super) struct MenuBarState {
     pub editor_id: Id,
     pub file: FileState,
     pub view: ViewState,
+    /// The editor's problems, at the strip's right end.
+    pub problems: ProblemsChip,
 }
 
 /// What the strip remembers between frames about the editor's keyboard.
@@ -102,6 +105,10 @@ fn titles_and_menus(
     for (menu, response) in &titles {
         paint_title(ui, *menu, response);
     }
+    let strip = ui.max_rect();
+    state
+        .problems
+        .show(ui, strip.right() - PADDING, strip.center().y);
     let up = titles
         .iter()
         .any(|(_, response)| wanted(ui.ctx(), response));

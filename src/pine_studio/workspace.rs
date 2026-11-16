@@ -9,6 +9,7 @@ use super::debug::DebugPanel;
 use super::debug::panel as debug_panel;
 use super::drawer;
 use super::editor;
+use super::editor::status::ProblemsChip;
 use super::library::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
 use super::menu_bar::{self, FileState, MenuBarState, ViewState};
 use super::profiler::marks::ProfileColumn;
@@ -95,6 +96,7 @@ impl PineStudio {
                 drawer_open: self.prefs.drawer_open,
                 drawer_tab: self.prefs.drawer_tab,
             },
+            problems: ProblemsChip::of(&open.editor),
         })
     }
 

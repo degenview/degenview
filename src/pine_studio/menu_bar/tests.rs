@@ -4,6 +4,7 @@ use crate::model::pine::script::ScriptType;
 use crate::pine_studio::debug::PanelAction;
 use crate::pine_studio::debug::marks::{BreakpointMark, GutterEvent, MarkKind};
 use crate::pine_studio::editor::diff::ChangeKind;
+use crate::pine_studio::editor::status::ProblemsChip;
 use crate::pine_studio::editor::{EditAction, breakpoint_rows, change_rows};
 use crate::pine_studio::library::prefs::{ChartPosition, DrawerTab};
 use crate::pine_studio::profiler::Status;
@@ -624,6 +625,9 @@ impl Strip {
                 editor_id: Id::new("test-editor"),
                 file: file_state(),
                 view: view_state(),
+                problems: ProblemsChip::of(&crate::pine_studio::editor::EditorState::new(
+                    "s", "", "",
+                )),
             },
             editor: busy_editor(),
             cmds: RefCell::new(Vec::new()),
