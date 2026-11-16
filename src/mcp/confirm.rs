@@ -811,7 +811,7 @@ mod tests {
         vec![
             McpCommand::Chart(ChartCommand::SetTimeframe {
                 workspace_id: 1,
-                timeframe: crate::model::Timeframe::Day,
+                timeframe: crate::model::Timeframe::DAY_1,
             }),
             McpCommand::Pine(PineCommand::EditScript {
                 script_id: "s".into(),

@@ -13,4 +13,13 @@ impl Kline {
     pub fn is_up(&self) -> bool {
         self.close >= self.open
     }
+
+    /// Takes in a later candle of the same bar: the range widens, the close moves to its close and
+    /// the volumes add up.
+    pub fn absorb(&mut self, later: &Kline) {
+        self.high = self.high.max(later.high);
+        self.low = self.low.min(later.low);
+        self.close = later.close;
+        self.volume += later.volume;
+    }
 }

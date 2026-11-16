@@ -11,7 +11,7 @@ pub use tabs::Tab;
 
 use crate::model::market::trend::Trend;
 use crate::model::watchlist::WatchlistInstrument;
-use crate::model::{DataSource, InstrumentId};
+use crate::model::{DataSource, InstrumentId, Timeframe};
 use crate::ui::chart::picker_kit::recents::RecentMarket;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
@@ -34,7 +34,7 @@ pub struct LayoutSummary {
     pub id: u64,
     pub name: String,
     pub chart_count: usize,
-    pub timeframe: &'static str,
+    pub timeframe: Timeframe,
     /// The first few markets, as `(source, symbol)`.
     pub previews: Vec<(DataSource, String)>,
 }
@@ -247,7 +247,7 @@ mod tests {
             id: 3,
             name: "Majors".into(),
             chart_count: 2,
-            timeframe: "1D",
+            timeframe: Timeframe::DAY_1,
             previews: vec![(DataSource::Binance, "BTCUSDT".into())],
         }
     }
@@ -384,7 +384,7 @@ mod tests {
                 id: 2,
                 name: "Tech stocks".into(),
                 chart_count: 1,
-                timeframe: "4H",
+                timeframe: Timeframe::HOUR_4,
                 previews: vec![(DataSource::Alpaca, "NVDA".into())],
             },
         ];

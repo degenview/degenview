@@ -1,8 +1,6 @@
-use crate::model::Kline;
-use crate::service::{
-    MarketSource, ProviderError, SearchResult, bucket_start_ms, interval_seconds,
-    next_bucket_start_ms,
-};
+use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
+use crate::model::{Kline, Timeframe};
+use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
 
 const BASE_URL: &str = "https://api.coingecko.com/api/v3";
@@ -19,8 +17,8 @@ impl MarketSource for CoinGecko {
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
         let coin_id = symbol.to_lowercase();
-        let target = interval_seconds(interval).unwrap_or(3_600);
-        let days = market_chart_days(target, limit);
+        let target = Timeframe::parse(interval).unwrap_or(Timeframe::HOUR_1);
+        let days = market_chart_days(target.nominal_ms() / 1_000, limit);
         crate::service::net::rate_limit::coingecko().wait_for_slot();
         let url = format!("{BASE_URL}/coins/{coin_id}/market_chart?vs_currency=usd&days={days}");
         let body = crate::service::net::http::get_text(
@@ -115,14 +113,14 @@ fn parse_prices(body: &str) -> Result<Vec<(i64, f64)>, ProviderError> {
     Ok(prices)
 }
 
-/// Fold a price series into candles of `target_secs`, one candle per calendar bucket.
+/// Fold a price series into candles of `target`, one candle per calendar bucket.
 ///
 /// Each candle opens at the previous one's close, so the series is continuous and a bucket holding
 /// a single sample still gets a body (and a colour); only the first opens at its own first sample.
-fn fold_prices(prices: &[(i64, f64)], target_secs: i64) -> Vec<Kline> {
+fn fold_prices(prices: &[(i64, f64)], target: Timeframe) -> Vec<Kline> {
     let mut out: Vec<Kline> = Vec::new();
     for &(ms, price) in prices {
-        let bucket = bucket_start_ms(ms, target_secs);
+        let bucket = bucket_start_ms(target, ms);
         match out.last_mut() {
             Some(last) if last.open_time == bucket => {
                 last.high = last.high.max(price);
@@ -133,7 +131,7 @@ fn fold_prices(prices: &[(i64, f64)], target_secs: i64) -> Vec<Kline> {
                 let open = out.last().map_or(price, |previous| previous.close);
                 out.push(Kline {
                     open_time: bucket,
-                    close_time: next_bucket_start_ms(bucket, target_secs) - 1,
+                    close_time: next_bucket_start_ms(target, bucket) - 1,
                     open,
                     high: open.max(price),
                     low: open.min(price),
@@ -163,7 +161,7 @@ mod tests {
             (1_700_001_800_000, 12.0), // same hour bucket as above
             (1_700_003_600_000, 8.0),  // next hour bucket
         ];
-        let candles = fold_prices(&prices, 3_600);
+        let candles = fold_prices(&prices, Timeframe::HOUR_1);
         assert_eq!(candles.len(), 2);
         assert_eq!(candles[0].high, 12.0);
         assert_eq!(candles[0].low, 10.0);
@@ -176,7 +174,7 @@ mod tests {
 
     #[test]
     fn first_candle_opens_at_its_first_sample() {
-        let candles = fold_prices(&[(1_700_000_000_000, 10.0)], 3_600);
+        let candles = fold_prices(&[(1_700_000_000_000, 10.0)], Timeframe::HOUR_1);
         assert_eq!(candles[0].open, 10.0);
         assert_eq!(candles[0].close, 10.0);
     }
@@ -189,7 +187,7 @@ mod tests {
             (1_700_003_600_000, 9.0),
             (1_700_007_200_000, 11.0),
         ];
-        let candles = fold_prices(&prices, 3_600);
+        let candles = fold_prices(&prices, Timeframe::HOUR_1);
         assert_eq!(candles.len(), 3);
         assert!(!candles[1].is_up());
         assert_eq!((candles[1].open, candles[1].close), (10.0, 9.0));

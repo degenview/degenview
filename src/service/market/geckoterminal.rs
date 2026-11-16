@@ -1,5 +1,6 @@
-use crate::model::Kline;
-use crate::service::{ProviderError, fill_gaps, fold_calendar, interval_seconds};
+use crate::model::market::bucket;
+use crate::model::{Kline, Timeframe};
+use crate::service::ProviderError;
 use serde_json::Value;
 
 const BASE_URL: &str = "https://api.geckoterminal.com/api/v2";
@@ -27,7 +28,7 @@ struct Window {
 
 impl Window {
     fn for_interval(interval: &str, limit: usize) -> Window {
-        let target = interval_seconds(interval).unwrap_or(3_600);
+        let target = target_of(interval).nominal_ms() / 1_000;
         let span = target * limit as i64;
         let bucket = BUCKETS
             .iter()
@@ -43,6 +44,11 @@ impl Window {
             needs_aggregation: bucket.2 < target,
         }
     }
+}
+
+/// The length asked for; an interval nobody reads is hourly.
+fn target_of(interval: &str) -> Timeframe {
+    Timeframe::parse(interval).unwrap_or(Timeframe::HOUR_1)
 }
 
 /// OHLCV for an on-chain DEX pool. `pair_address` is a contract address; the
@@ -72,17 +78,17 @@ pub fn fetch_klines(
 fn shape(mut raw: Vec<Kline>, interval: &str, window: &Window, now_ms: i64) -> Vec<Kline> {
     raw.sort_by_key(|candle| candle.open_time);
     raw.dedup_by_key(|candle| candle.open_time);
-    let target = interval_seconds(interval).unwrap_or(window.bucket_secs);
+    let target = target_of(interval);
     let truncated = raw.len() >= window.fetch_limit;
-    let filled = fill_gaps(raw, window.bucket_secs * 1_000, now_ms);
+    let filled = bucket::fill_gaps(raw, window.bucket_secs * 1_000, now_ms);
     if window.needs_aggregation {
-        return fold_calendar(&filled, target, truncated);
+        return bucket::fold(&filled, target, truncated);
     }
     // A bucket closes a millisecond before the next opens, as on an exchange.
     filled
         .into_iter()
         .map(|candle| Kline {
-            close_time: candle.open_time + target * 1_000 - 1,
+            close_time: candle.open_time + target.nominal_ms() - 1,
             ..candle
         })
         .collect()

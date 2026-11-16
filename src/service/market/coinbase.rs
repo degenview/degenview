@@ -1,7 +1,8 @@
 use super::catalog::Catalog;
 use super::search_rank::normalize;
-use crate::model::Kline;
-use crate::service::{MarketSource, ProviderError, SearchResult, fold_calendar, rank_results};
+use crate::model::market::bucket;
+use crate::model::{Kline, Timeframe};
+use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -28,76 +29,43 @@ pub(crate) fn product_id(symbol: &str) -> String {
 
 struct Granularity {
     source_secs: i64,
-    target_secs: i64,
+    target: Timeframe,
     per_target: usize,
 }
 
+/// How each length Coinbase can show is made, as `(length, seconds of the candles it is folded
+/// from, those candles in one of it)`. Coinbase serves 1, 5 and 15 minutes, 1, 6 hours and 1 day;
+/// 30m and 4h are folded, as are weeks, months, quarters and years. The chart offers 1h and up; the
+/// shorter ones are what Pine's `request.security` asks for.
+const PLANS: [(Timeframe, i64, usize); 11] = [
+    (Timeframe::MINUTE_1, 60, 1),
+    (Timeframe::MINUTE_5, 300, 1),
+    (Timeframe::MINUTE_15, 900, 1),
+    (Timeframe::MINUTE_30, 900, 2),
+    (Timeframe::HOUR_1, 3_600, 1),
+    (Timeframe::HOUR_4, 3_600, 4),
+    (Timeframe::DAY_1, 86_400, 1),
+    (Timeframe::WEEK_1, 86_400, 7),
+    (Timeframe::MONTH_1, 86_400, 31),
+    (Timeframe::MONTH_3, 86_400, 92),
+    (Timeframe::YEAR_1, 86_400, 366),
+];
+
 impl Granularity {
     fn for_interval(interval: &str) -> Option<Granularity> {
-        match interval {
-            // Coinbase serves 1, 5 and 15 minutes, 1, 6 hours and 1 day; 30m and 4h are folded.
-            // The chart offers 1H and up; the shorter ones are what Pine's `request.security` asks for.
-            "1m" => Some(Granularity {
-                source_secs: 60,
-                target_secs: 60,
-                per_target: 1,
-            }),
-            "5m" => Some(Granularity {
-                source_secs: 300,
-                target_secs: 300,
-                per_target: 1,
-            }),
-            "15m" => Some(Granularity {
-                source_secs: 900,
-                target_secs: 900,
-                per_target: 1,
-            }),
-            "30m" => Some(Granularity {
-                source_secs: 900,
-                target_secs: 1_800,
-                per_target: 2,
-            }),
-            "1h" => Some(Granularity {
-                source_secs: 3_600,
-                target_secs: 3_600,
-                per_target: 1,
-            }),
-            "4h" => Some(Granularity {
-                source_secs: 3_600,
-                target_secs: 14_400,
-                per_target: 4,
-            }),
-            "1d" => Some(Granularity {
-                source_secs: 86_400,
-                target_secs: 86_400,
-                per_target: 1,
-            }),
-            "1w" => Some(Granularity {
-                source_secs: 86_400,
-                target_secs: 604_800,
-                per_target: 7,
-            }),
-            "1M" => Some(Granularity {
-                source_secs: 86_400,
-                target_secs: 2_592_000,
-                per_target: 31,
-            }),
-            "3M" => Some(Granularity {
-                source_secs: 86_400,
-                target_secs: 7_776_000,
-                per_target: 92,
-            }),
-            "1Y" => Some(Granularity {
-                source_secs: 86_400,
-                target_secs: 31_536_000,
-                per_target: 366,
-            }),
-            _ => None,
-        }
+        let target = Timeframe::parse(interval).ok()?;
+        PLANS
+            .iter()
+            .find(|(timeframe, ..)| *timeframe == target)
+            .map(|&(target, source_secs, per_target)| Granularity {
+                source_secs,
+                target,
+                per_target,
+            })
     }
 
     fn needs_aggregation(&self) -> bool {
-        self.source_secs != self.target_secs
+        self.per_target > 1
     }
 }
 
@@ -111,10 +79,7 @@ impl MarketSource for Coinbase {
         let plan = Granularity::for_interval(interval).ok_or_else(|| {
             ProviderError::Other(format!(
                 "Coinbase has no {} candles",
-                crate::model::Timeframe::ALL
-                    .iter()
-                    .find(|tf| tf.interval() == interval)
-                    .map_or(interval.to_owned(), |tf| tf.label().to_owned())
+                Timeframe::parse(interval).map_or(interval.to_owned(), Timeframe::label)
             ))
         })?;
         let id = product_id(symbol);
@@ -126,7 +91,7 @@ impl MarketSource for Coinbase {
             };
         let source = self.source_candles(&id, plan.source_secs, needed)?;
         let shown = if plan.needs_aggregation() {
-            fold_calendar(&source, plan.target_secs, source.len() >= needed)
+            bucket::fold(&source, plan.target, source.len() >= needed)
         } else {
             source
         };
@@ -158,7 +123,7 @@ impl MarketSource for Coinbase {
             needed,
         )?;
         let shown = if plan.needs_aggregation() {
-            fold_calendar(&source, plan.target_secs, source.len() >= needed)
+            bucket::fold(&source, plan.target, source.len() >= needed)
         } else {
             source
         };
@@ -422,26 +387,27 @@ mod tests {
         // A script on a one-hour chart asks for 5m intrabars and a 4h series; neither used to exist.
         for (interval, seconds) in [("1m", 60), ("5m", 300), ("15m", 900)] {
             let plan = Granularity::for_interval(interval).expect(interval);
-            assert_eq!((plan.source_secs, plan.target_secs), (seconds, seconds));
+            assert_eq!(plan.source_secs * 1_000, plan.target.nominal_ms());
+            assert_eq!(plan.source_secs, seconds);
             assert!(!plan.needs_aggregation());
         }
         let half_hour = Granularity::for_interval("30m").expect("30m");
         assert_eq!(
             (
                 half_hour.source_secs,
-                half_hour.target_secs,
+                half_hour.target,
                 half_hour.per_target
             ),
-            (900, 1_800, 2)
+            (900, Timeframe::MINUTE_30, 2)
         );
         let four_hours = Granularity::for_interval("4h").expect("4h");
         assert_eq!(
             (
                 four_hours.source_secs,
-                four_hours.target_secs,
+                four_hours.target,
                 four_hours.per_target
             ),
-            (3_600, 14_400, 4)
+            (3_600, Timeframe::HOUR_4, 4)
         );
         // Intervals Coinbase and the fold cannot make stay refused rather than approximated.
         assert!(Granularity::for_interval("2h").is_none());
@@ -468,7 +434,7 @@ mod tests {
         let hourly: Vec<Kline> = (1..=8)
             .map(|index| candle(midnight + index * hour, hour, 100.0 + index as f64))
             .collect();
-        let folded = fold_calendar(&hourly, 14_400, false);
+        let folded = bucket::fold(&hourly, Timeframe::HOUR_4, false);
         let opens: Vec<i64> = folded.iter().map(|bar| bar.open_time).collect();
         assert_eq!(opens, [midnight, midnight + 4 * hour, midnight + 8 * hour]);
         // The whole 04:00 bar: open of 04:00, close of 07:00, extremes and volume over the four.
@@ -477,7 +443,7 @@ mod tests {
         assert_eq!((whole.low, whole.high), (103.0, 108.0));
         assert_eq!(whole.volume, 4.0);
         // A page cut by the request drops the bucket it only half has.
-        let cut = fold_calendar(&hourly, 14_400, true);
+        let cut = bucket::fold(&hourly, Timeframe::HOUR_4, true);
         assert_eq!(
             cut.first().map(|bar| bar.open_time),
             Some(midnight + 4 * hour)
@@ -491,7 +457,7 @@ mod tests {
         let candles: Vec<Kline> = (0..4)
             .map(|index| candle(midnight + index * quarter, quarter, 10.0 + index as f64))
             .collect();
-        let folded = fold_calendar(&candles, 1_800, false);
+        let folded = bucket::fold(&candles, Timeframe::MINUTE_30, false);
         assert_eq!(folded.len(), 2);
         assert_eq!(folded[1].open_time, midnight + 2 * quarter);
         assert_eq!((folded[1].open, folded[1].close), (12.0, 13.5));
@@ -523,7 +489,7 @@ mod tests {
                 volume: 2.0,
             },
         ];
-        let weekly = fold_calendar(&daily, 604_800, false);
+        let weekly = bucket::fold(&daily, Timeframe::WEEK_1, false);
         assert_eq!(weekly.len(), 1);
         assert_eq!(weekly[0].open_time, monday);
         assert_eq!(weekly[0].high, 12.0);

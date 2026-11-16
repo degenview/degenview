@@ -13,6 +13,10 @@
   `every_routed_tool_has_a_permission_and_an_unmapped_name_is_not_run` fails the build), and
   `the_tool_list_and_its_permissions_are_pinned` holds the whole list.
 
+- Timeframes: `McpTimeframe` accepts the six names `1H 1D 1W 1M 3M 1Y`, and results write them the
+  same way (`McpTimeframe::name`, so the hour is `1H` although the app labels it `1h`). The app's own
+  confirmation text uses the label.
+
 ## Adding a tool
 
 In its domain (`chart`, `alert`, `pine`, `paper`, `portfolio`, `market` for watchlists, `replay`,

@@ -1,7 +1,7 @@
 //! The live Binance feed: keeping it on the workspace's charts and folding its candles in.
 
 use crate::model::market::live::{self, LiveMark};
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{DataSource, Kline, TimeUnit};
 use crate::service::market::live::BinanceLiveFeed;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
@@ -21,9 +21,9 @@ impl ChartWorkspace {
                 symbols.push(symbol);
             }
         }
-        let interval = self.timeframe.interval().to_owned();
+        let interval = self.timeframe.interval();
         // Binance streams no quarterly or yearly klines; those fold monthly candles.
-        let monthly_fold = matches!(self.timeframe, Timeframe::Quarter | Timeframe::Year);
+        let monthly_fold = self.timeframe.unit() == TimeUnit::Month && self.timeframe.count() > 1;
         let signature = (symbols, interval);
 
         let should_connect = !monthly_fold && !signature.0.is_empty();

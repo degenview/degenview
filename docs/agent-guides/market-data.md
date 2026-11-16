@@ -28,15 +28,39 @@ watchlists.
 
 ## Timeframes
 
-- Add the `Timeframe` case, its `Timeframe::interval` token (`1h`, `1d`, `1w`, `1M`, `3M`, `1Y`) and
-  display/date helpers. Every provider is asked for that token.
-- Missing interval: fold finer bars with `service::fold_calendar` (Binance boundaries: weeks from
-  Monday UTC, calendar months/quarters/years; a bar closes 1 ms before the next opens). Never
-  substitute a nearby interval. `3M`/`1Y` are real quarters/years everywhere. Binance and Alpaca fold
-  monthly bars, Coinbase and GeckoTerminal daily, CoinGecko builds from its price series. Pass
-  `truncated` when the series starts where a request stopped, to drop the partial first bucket.
-- The chart offers 1H+, but Pine's `request.security` may ask any timeframe (5m intrabars, 4h), so
-  token tables must cover minutes or the script fails with `PINE4021`. Coinbase: 1m/5m/15m native,
+- `model::Timeframe` is a value, `{ count: u16, unit: TimeUnit }` (`Minute`, `Hour`, `Day`, `Week`,
+  `Month`), not a list. Limits: minutes 1-1440, hours 1-24, days 1-365, weeks 1-52, months 1-12;
+  `Timeframe::new` refuses the rest (`TimeframeParseError`, whose messages are shown as they are).
+  Canonical form: whole hours of minutes are hours (`60m` is `1h`, `1440m` is `24h`), `24h` stays
+  apart from `1D`, and `12M` is the year. Equality, hashing and ordering (by nominal length, then
+  unit) follow that form.
+- Consts: `MINUTE_1` ... `YEAR_1`; `PRESETS` are the lengths providers serve natively, `LEGACY` the
+  six (`1h`, `1D`, `1W`, `1M`, `3M`, `1Y`) the toolbar, Pine Studio and drawing visibility offer.
+- `Timeframe::parse`: digits, then an optional unit, spaces allowed. No unit is minutes (`22` is
+  `22m`); `m` is minutes and `M` months, the rest take either case (`h d w y`); `1Y` is `12M`, `2Y`
+  is refused, seconds (`s`) are refused. It reads the old labels and provider tokens too.
+- Three spellings: `Display`/`label()` for the UI (`22m`, `3h`, `2D`, `1W`, `3M`, `1Y`), `interval()`
+  for the token every provider is asked for (`22m`, `3h`, `2d`, `1w`, `3M`, `1Y`: the legacy six are
+  byte-identical to what providers always got) and, for saved data, serde: the six `LEGACY` values
+  serialize as `"Hour"`, `"Day"`, `"Week"`, `"Month"`, `"Quarter"`, `"Year"` so older builds and
+  synced layouts decode them; anything else is its label (`"22m"`). Decoding takes both.
+  `nominal_ms()` is exact to weeks; months are 30 days, a quarter 91 and a year 365.
+- Buckets are `model::market::bucket` and nothing else cuts them (providers, chart and Pine): UTC,
+  minutes and hours restart at midnight (a `22m` day ends in a shorter bucket), days count from
+  1970-01-01, weeks start on Monday, months count from 1970-01 (so `3M` is the calendar quarter,
+  `12M` the year). A bucket closes 1 ms before the next opens.
+- Missing interval: fold finer bars with `bucket::fold(candles, timeframe, truncated)`. Never
+  substitute a nearby interval. `bucket::fold_base(target, natives)` is the coarsest native whose
+  buckets nest exactly in the target's (an intraday base must divide the day, and the target when
+  that is intraday; days nest in multiples of days and, as single days, in weeks and months; weeks
+  in weeks, months in months), or `None`. `3M`/`1Y` are real quarters/years everywhere. Binance and
+  Alpaca fold monthly bars, Coinbase and GeckoTerminal daily, CoinGecko builds from its price
+  series. Pass `truncated` when the series starts where a request stopped, to drop the partial first
+  bucket.
+- The chart offers 1h+, but Pine's `request.security` may ask any timeframe (5m intrabars, 4h), so
+  token tables must cover minutes or the script fails with `PINE4021`. Pine states lengths in
+  seconds with a 30-day month; `pine::time::bucket` turns them into a `Timeframe` (`timeframe_of`)
+  and cuts the buckets the same way; a length that is no timeframe (`30S`) floors onto the epoch. Coinbase: 1m/5m/15m native,
   folds 30m (from 15m) and 4h (from 1h); pages stop at `MAX_PAGES` (60 x 290 candles), so 5m
   intrabars reach back ~60 days.
   Alpaca: native `Nm` (1-59, `NMin`) and `Nh` (1-23, `NHour`), `1d`, `1w`, `1M`; any other token is
@@ -46,7 +70,7 @@ watchlists.
   finds the last session over a weekend; every start is clamped to `EARLIEST_MS`.
 - `service::fetch_klines` runs every provider through `service::normalize` (ascending, one candle per
   open time, finite prices, range holds open and close). GeckoTerminal lists only traded intervals;
-  `fill_gaps` adds flat zero-volume candles for even spacing. Volume units differ (base asset,
+  `bucket::fill_gaps` adds flat zero-volume candles for even spacing. Volume units differ (base asset,
   shares, USD); CoinGecko has none.
 - GeckoTerminal charts a pool's base token, the contract sorting first on chain, so a pool can read
   "USDT / MCADE"; DEXScreener (DEX search) lists the traded token first. `geckoterminal::side_for`

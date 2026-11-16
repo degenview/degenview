@@ -315,7 +315,7 @@ impl Chart {
                 return;
             }
             let result = if choices.is_empty() {
-                service::fetch_klines(source, &symbol, interval, CANDLE_LIMIT).map(|candles| {
+                service::fetch_klines(source, &symbol, &interval, CANDLE_LIMIT).map(|candles| {
                     Fetched {
                         candles,
                         series: Vec::new(),
@@ -325,7 +325,7 @@ impl Chart {
                 Fetched::from_choices(service::fetch_choices(
                     source,
                     &choices,
-                    interval,
+                    &interval,
                     CANDLE_LIMIT,
                 ))
             };
@@ -382,7 +382,7 @@ impl Chart {
             let page = service::fetch_klines_range(
                 source,
                 &asked,
-                interval,
+                &interval,
                 0,
                 end,
                 market::history::PAGE,
@@ -497,7 +497,7 @@ mod tests {
             receiver,
             source: DataSource::Binance,
             symbol: "BTCUSDT".into(),
-            timeframe: Timeframe::Hour,
+            timeframe: Timeframe::HOUR_1,
         });
         chart
     }
@@ -524,7 +524,7 @@ mod tests {
     fn an_older_page_goes_in_front_and_a_refresh_does_not_lose_it() {
         let mut chart =
             chart_awaiting_older(&[10, 11, 12], Ok(vec![candle(7, 1.0), candle(8, 1.0)]));
-        chart.receive_older(Timeframe::Hour);
+        chart.receive_older(Timeframe::HOUR_1);
         assert_eq!(open_times(&chart), vec![7, 8, 10, 11, 12]);
         assert!(chart.older_inbox.is_none());
 
@@ -597,7 +597,7 @@ mod tests {
     #[test]
     fn an_older_page_for_a_timeframe_the_chart_left_is_dropped() {
         let mut chart = chart_awaiting_older(&[10, 11], Ok(vec![candle(7, 1.0)]));
-        chart.receive_older(Timeframe::Day);
+        chart.receive_older(Timeframe::DAY_1);
         assert_eq!(open_times(&chart), vec![10, 11]);
         assert!(chart.older_inbox.is_none());
     }
@@ -605,7 +605,7 @@ mod tests {
     #[test]
     fn a_failed_older_page_is_not_retried_at_once() {
         let mut chart = chart_awaiting_older(&[10, 11], Err(ProviderError::other("offline")));
-        chart.receive_older(Timeframe::Hour);
+        chart.receive_older(Timeframe::HOUR_1);
         assert_eq!(open_times(&chart), vec![10, 11]);
         assert!(
             !chart.older.should_request(true, true, 2, Instant::now()),
@@ -616,14 +616,14 @@ mod tests {
     #[test]
     fn an_empty_older_page_is_the_start_of_history() {
         let mut chart = chart_awaiting_older(&[10, 11], Ok(Vec::new()));
-        chart.receive_older(Timeframe::Hour);
+        chart.receive_older(Timeframe::HOUR_1);
         assert!(!chart.older.should_request(true, true, 2, Instant::now()));
     }
 
     #[test]
     fn changing_the_market_forgets_the_history_behind_the_old_one() {
         let mut chart = chart_awaiting_older(&[10, 11], Ok(Vec::new()));
-        chart.receive_older(Timeframe::Hour);
+        chart.receive_older(Timeframe::HOUR_1);
         chart.reset_history();
         assert!(chart.older.should_request(true, true, 2, Instant::now()));
     }

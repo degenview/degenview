@@ -6,6 +6,7 @@
 //! they go through the bridge and run on the app thread like every other mutation.
 
 use crate::mcp::bridge::{McpError, McpReply, REQUEST_TIMEOUT};
+use crate::mcp::chart::control::McpTimeframe;
 use crate::mcp::market::{
     MAX_EDIT_MARKETS, MAX_ENTRY_PAGE, MAX_QUOTE_MARKETS, QuoteInfo, QuotesResult,
     SearchSourceError, SymbolSearchResult, WatchlistChangeResult, WatchlistCommand,
@@ -632,7 +633,7 @@ impl DegenViewMcp {
             // exactly as it does for a chart.
             crate::service::work_queue::submit_for(source, move || {
                 let _permit = permit;
-                let _ = sender.send(fetch(source, &symbol, timeframe.interval(), limit as u32));
+                let _ = sender.send(fetch(source, &symbol, &timeframe.interval(), limit as u32));
             });
         }
         let candles = match tokio::time::timeout(CANDLE_DEADLINE, receiver).await {
@@ -654,7 +655,7 @@ impl DegenViewMcp {
             workspace_id: 0,
             chart_id: 0,
             instrument: instrument.clone(),
-            timeframe: timeframe.label().to_owned(),
+            timeframe: McpTimeframe::name(timeframe),
             chart_type: crate::model::ChartType::Candles,
             older_supported: false,
             replay_ms: None,

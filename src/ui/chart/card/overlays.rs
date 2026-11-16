@@ -242,7 +242,7 @@ impl ChartCard {
     }
 
     fn bar_ms(&self) -> i64 {
-        self.timeframe.unwrap_or(Timeframe::Hour).nominal_ms()
+        self.timeframe.unwrap_or(Timeframe::HOUR_1).nominal_ms()
     }
 
     /// Resolves the overlays against `bars[start..end]`. `reference` is the main series'

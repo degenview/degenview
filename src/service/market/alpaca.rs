@@ -1,15 +1,13 @@
 use super::catalog::Catalog;
-use crate::model::Kline;
-use crate::service::{
-    MarketSource, ProviderError, SearchResult, bucket_start_ms, fold_calendar,
-    next_bucket_start_ms, rank_results,
-};
+use crate::model::market::bucket;
+use crate::model::{Kline, Timeframe};
+use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 const BARS_URL: &str = "https://data.alpaca.markets/v2/stocks";
 const DAY_MS: i64 = 86_400_000;
-const MONTH_SECS: i64 = 2_592_000;
+const MONTH_SECS: i64 = Timeframe::MONTH_1.nominal_ms() / 1_000;
 
 pub struct Alpaca;
 
@@ -39,12 +37,10 @@ pub fn test_connection(key_id: &str, secret_key: &str) -> Result<(), ProviderErr
 }
 
 /// Quarterly and yearly bars don't exist on Alpaca; they fold monthly ones.
-fn monthly_fold(interval: &str) -> Option<i64> {
-    match interval {
-        "3M" => Some(7_776_000),
-        "1Y" => Some(31_536_000),
-        _ => None,
-    }
+fn monthly_fold(interval: &str) -> Option<Timeframe> {
+    Timeframe::parse(interval)
+        .ok()
+        .filter(|timeframe| matches!(*timeframe, Timeframe::MONTH_3 | Timeframe::YEAR_1))
 }
 
 /// A bar length Alpaca serves natively: minutes (1 to 59), hours (1 to 23), a day, a week or a
@@ -125,8 +121,7 @@ impl Bar {
         let next = match self {
             Self::Month => {
                 let day_start = open_ms.div_euclid(DAY_MS) * DAY_MS;
-                let month_start = bucket_start_ms(day_start, MONTH_SECS);
-                next_bucket_start_ms(month_start, MONTH_SECS) + (open_ms - day_start)
+                bucket::next_bucket_start_ms(Timeframe::MONTH_1, day_start) + (open_ms - day_start)
             }
             _ => open_ms + self.seconds() * 1_000,
         };
@@ -148,13 +143,9 @@ impl MarketSource for Alpaca {
         interval: &str,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let fold_seconds = monthly_fold(interval);
-        let bar = Bar::parse(if fold_seconds.is_some() {
-            "1M"
-        } else {
-            interval
-        })?;
-        let requested = fold_seconds
+        let fold = monthly_fold(interval);
+        let bar = Bar::parse(if fold.is_some() { "1M" } else { interval })?;
+        let requested = fold
             .map(|_| (i64::from(limit) + 1) * 12)
             .unwrap_or(i64::from(limit));
         let bars = fetch_bars(
@@ -164,8 +155,8 @@ impl MarketSource for Alpaca {
             None,
             requested as usize,
         )?;
-        let shown = match fold_seconds {
-            Some(seconds) => fold_calendar(&bars, seconds, bars.len() >= requested as usize),
+        let shown = match fold {
+            Some(timeframe) => bucket::fold(&bars, timeframe, bars.len() >= requested as usize),
             None => bars,
         };
         let start = shown.len().saturating_sub(limit as usize);
@@ -180,21 +171,17 @@ impl MarketSource for Alpaca {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let fold_seconds = monthly_fold(interval);
-        let bar = Bar::parse(if fold_seconds.is_some() {
-            "1M"
-        } else {
-            interval
-        })?;
+        let fold = monthly_fold(interval);
+        let bar = Bar::parse(if fold.is_some() { "1M" } else { interval })?;
         // Alpaca's data starts in the 2010s; an earlier start only costs it a refusal.
         let start = start_ms.max(EARLIEST_MS);
-        let wanted = max * fold_seconds.map_or(1, |seconds| (seconds / 2_592_000) as usize + 1);
+        let wanted = max * fold.map_or(1, |timeframe| usize::from(timeframe.count()) + 1);
         let bars: Vec<Kline> = fetch_bars(symbol, bar, start, Some(end_ms), wanted)?
             .into_iter()
             .filter(|bar| bar.open_time < end_ms)
             .collect();
-        let shown = match fold_seconds {
-            Some(seconds) => fold_calendar(&bars, seconds, bars.len() >= wanted),
+        let shown = match fold {
+            Some(timeframe) => bucket::fold(&bars, timeframe, bars.len() >= wanted),
             None => bars,
         };
         let skip = shown.len().saturating_sub(max);
@@ -429,7 +416,7 @@ mod tests {
                 volume: 1.0,
             },
         ];
-        let folded = fold_calendar(&bars, 7_776_000, false);
+        let folded = bucket::fold(&bars, Timeframe::MONTH_3, false);
         assert_eq!(folded.len(), 2);
         assert_eq!(folded[0].open_time, jan);
         assert_eq!(folded[0].high, 12.0);

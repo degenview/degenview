@@ -40,12 +40,22 @@ pub enum McpTimeframe {
 impl McpTimeframe {
     pub fn timeframe(self) -> Timeframe {
         match self {
-            Self::Hour => Timeframe::Hour,
-            Self::Day => Timeframe::Day,
-            Self::Week => Timeframe::Week,
-            Self::Month => Timeframe::Month,
-            Self::Quarter => Timeframe::Quarter,
-            Self::Year => Timeframe::Year,
+            Self::Hour => Timeframe::HOUR_1,
+            Self::Day => Timeframe::DAY_1,
+            Self::Week => Timeframe::WEEK_1,
+            Self::Month => Timeframe::MONTH_1,
+            Self::Quarter => Timeframe::MONTH_3,
+            Self::Year => Timeframe::YEAR_1,
+        }
+    }
+
+    /// How a timeframe is written in tool results. Clients read back the names they send, so the
+    /// hour stays `1H` although the app now labels it `1h`.
+    pub fn name(timeframe: Timeframe) -> String {
+        if timeframe == Timeframe::HOUR_1 {
+            "1H".to_owned()
+        } else {
+            timeframe.label()
         }
     }
 }
@@ -259,7 +269,10 @@ mod tests {
             McpTimeframe::Quarter,
             McpTimeframe::Year,
         ];
-        let labels: Vec<_> = all.iter().map(|t| t.timeframe().label()).collect();
+        let labels: Vec<_> = all
+            .iter()
+            .map(|t| McpTimeframe::name(t.timeframe()))
+            .collect();
         assert_eq!(labels, ["1H", "1D", "1W", "1M", "3M", "1Y"]);
         let parsed: McpTimeframe = serde_json::from_str("\"3M\"").unwrap();
         assert_eq!(parsed, McpTimeframe::Quarter);

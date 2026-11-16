@@ -39,7 +39,7 @@ fn persisted_session_round_trips() {
         next_id: 3,
         tabs: vec![PersistedTab::Chart(PersistedWorkspace {
             id: 2,
-            timeframe: Timeframe::Hour,
+            timeframe: Timeframe::HOUR_1,
             watchlist_visible: true,
             charts: vec![PersistedChart {
                 id: 1,

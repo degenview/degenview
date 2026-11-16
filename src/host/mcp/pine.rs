@@ -2,6 +2,7 @@ use super::alert::MAX_ALERTS;
 use super::alert::alerts_unavailable;
 use crate::host::mcp::{McpTabs, confirmation};
 use crate::mcp::bridge::{McpError, McpReply};
+use crate::mcp::chart::control::McpTimeframe;
 use crate::mcp::confirm::Summary;
 use crate::mcp::pine::{InputArgs, PineCommand, ScriptToApply};
 use crate::mcp::state::McpShared;
@@ -305,12 +306,12 @@ pub fn list_chart_pine(
                 .map(|chart| {
                     (
                         chart.instrument.key(),
-                        workspace.timeframe().label().to_owned(),
+                        McpTimeframe::name(workspace.timeframe()),
                     )
                 })
                 .unwrap_or_default()
         },
-        |view| (view.instrument.key(), view.timeframe.label().to_owned()),
+        |view| (view.instrument.key(), McpTimeframe::name(view.timeframe)),
     );
     Ok(AppliedPineList {
         workspace_id: workspace.id().to_string(),
@@ -457,7 +458,7 @@ pub(super) fn detail_of(workspace_id: u64, view: &PineInstanceView) -> AppliedPi
         workspace_id: workspace_id.to_string(),
         chart_id: view.chart_id.to_string(),
         instrument: view.instrument.key(),
-        timeframe: view.timeframe.label().to_owned(),
+        timeframe: McpTimeframe::name(view.timeframe),
         instance: applied_info(view),
         inputs: stored_inputs(view),
         style_overrides: view
@@ -625,7 +626,7 @@ pub(super) fn report_of(
             source_hash: crate::store::scripts::hash_source(&view.instance.source),
             script_status: ScriptStatus::Unknown,
             instrument: view.instrument.key(),
-            timeframe: view.timeframe.label().to_owned(),
+            timeframe: McpTimeframe::name(view.timeframe),
             bar_count: run.bar_count,
             inputs: stored_inputs(view),
         }),

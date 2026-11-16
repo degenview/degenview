@@ -277,8 +277,8 @@ fn layouts(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::InstrumentId;
     use crate::model::watchlist::WatchlistInstrument;
+    use crate::model::{InstrumentId, Timeframe};
     use crate::ui::chart::picker_kit::recents::RecentMarket;
     use crate::ui::workspace::empty_state::LayoutSummary;
     use std::collections::HashMap;
@@ -308,7 +308,7 @@ mod tests {
             id: 1,
             name: "Majors".into(),
             chart_count: 2,
-            timeframe: "1D",
+            timeframe: Timeframe::DAY_1,
             previews: Vec::new(),
         }
     }

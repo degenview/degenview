@@ -534,7 +534,7 @@ fn request_newest(
             let result = worker.klines(
                 instrument.source,
                 &instrument.symbol,
-                timeframe.interval(),
+                &timeframe.interval(),
                 CANDLE_LIMIT,
             );
             let _ = sender.send(result);
@@ -563,7 +563,7 @@ fn request_older(
             let page = worker.page(
                 instrument.source,
                 &instrument.symbol,
-                timeframe.interval(),
+                &timeframe.interval(),
                 end,
             );
             let _ = sender.send(page);

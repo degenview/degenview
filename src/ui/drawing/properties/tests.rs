@@ -3,7 +3,7 @@ use super::rows::toggle_row;
 use super::*;
 use crate::format;
 use crate::model::Placement;
-use crate::model::Timeframe;
+use crate::model::VisibilityRow;
 use crate::model::drawings::style::MAX_STROKE_WIDTH;
 use crate::model::{Anchor, Caps, Drawing, Geometry, PitchforkVariant, Tool};
 use crate::store::drawing_template::DrawingTemplateStore;
@@ -377,13 +377,13 @@ fn the_dialog_never_stores_an_out_of_range_style() {
 fn visibility_edits_keep_at_least_one_timeframe() {
     let mut dialog = DrawingProperties::new(1, &drawing(Tool::Circle)).expect("dialog");
     let mut visibility = dialog.draft().visibility();
-    for timeframe in Timeframe::ALL {
-        visibility = visibility.with(timeframe, false);
+    for row in VisibilityRow::ALL {
+        visibility = visibility.with_row(row, false);
     }
     dialog.draft.set_visibility(visibility);
-    let shown = Timeframe::ALL
+    let shown = VisibilityRow::ALL
         .into_iter()
-        .filter(|timeframe| dialog.draft().visibility().shows(*timeframe))
+        .filter(|row| dialog.draft().visibility().shows_row(*row))
         .count();
     assert_eq!(shown, 1, "the last one cannot be switched off");
 }

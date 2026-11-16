@@ -53,7 +53,7 @@ struct Rig {
 impl Rig {
     fn new() -> Self {
         let mut card = ChartCard::default();
-        card.set_timeframe(Timeframe::Hour);
+        card.set_timeframe(Timeframe::HOUR_1);
         let mut rig = Self {
             ctx: egui::Context::default(),
             card,
@@ -971,7 +971,7 @@ fn gallery_of_the_bar_range() {
         let mut screen = Screen::new(SIZE);
         theme::apply(&screen.ctx, appearance);
         let mut card = ChartCard::default();
-        card.set_timeframe(Timeframe::Hour);
+        card.set_timeframe(Timeframe::HOUR_1);
         let mut selecting = true;
         card.set_pick_kind(PickKind::LogsRange);
         let picked = std::cell::Cell::new(None);
@@ -1745,7 +1745,7 @@ fn gallery_of_zoom_in() {
         let mut screen = Screen::new(SIZE);
         theme::apply(&screen.ctx, appearance);
         let mut card = ChartCard::default();
-        card.set_timeframe(Timeframe::Hour);
+        card.set_timeframe(Timeframe::HOUR_1);
         card.set_zoom_armed(true);
         let frame = |screen: &mut Screen, card: &mut ChartCard, events: Vec<egui::Event>| {
             theme::sync(&screen.ctx);

@@ -79,7 +79,7 @@ impl DataSource {
     pub fn supports_older_history(self, timeframe: crate::model::Timeframe) -> bool {
         match self {
             Self::Binance | Self::Coinbase | Self::Alpaca => true,
-            Self::DexScreener => timeframe == crate::model::Timeframe::Hour,
+            Self::DexScreener => timeframe == crate::model::Timeframe::HOUR_1,
             _ => false,
         }
     }
@@ -212,15 +212,15 @@ mod tests {
     #[test]
     fn older_pages_depend_on_the_source_and_the_timeframe() {
         use crate::model::Timeframe;
-        for timeframe in Timeframe::ALL {
+        for timeframe in Timeframe::LEGACY {
             assert!(DataSource::Binance.supports_older_history(timeframe));
             assert!(DataSource::Coinbase.supports_older_history(timeframe));
             assert!(!DataSource::CoinGecko.supports_older_history(timeframe));
             assert!(!DataSource::Kalshi.supports_older_history(timeframe));
         }
         // GeckoTerminal's free API reaches back 180 days: only hourly bars have a second page.
-        assert!(DataSource::DexScreener.supports_older_history(Timeframe::Hour));
-        assert!(!DataSource::DexScreener.supports_older_history(Timeframe::Day));
-        assert!(!DataSource::DexScreener.supports_older_history(Timeframe::Week));
+        assert!(DataSource::DexScreener.supports_older_history(Timeframe::HOUR_1));
+        assert!(!DataSource::DexScreener.supports_older_history(Timeframe::DAY_1));
+        assert!(!DataSource::DexScreener.supports_older_history(Timeframe::WEEK_1));
     }
 }

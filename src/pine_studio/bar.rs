@@ -108,7 +108,7 @@ fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
         Item::Button(market),
         Item::Separator,
     ];
-    for timeframe in Timeframe::ALL {
+    for timeframe in Timeframe::LEGACY {
         let selected = timeframe == state.market.timeframe;
         let mut button = BarButton::new(("timeframe", timeframe.label()), timeframe.description())
             .label(timeframe.label())
@@ -216,7 +216,7 @@ mod tests {
             market: preview::Summary {
                 title: "BTCUSDT".to_owned(),
                 price: Some("64,210.50  +1.20%".to_owned()),
-                timeframe: Timeframe::Day,
+                timeframe: Timeframe::DAY_1,
             },
         }
     }
@@ -261,7 +261,7 @@ mod tests {
                     || button
                         .label
                         .as_deref()
-                        .is_some_and(|l| Timeframe::ALL.iter().any(|t| t.label() == l));
+                        .is_some_and(|l| Timeframe::LEGACY.iter().any(|t| t.label() == l));
                 if is_preview_control {
                     assert_eq!(button.enabled, enabled, "{:?}", button.label);
                 }
@@ -274,15 +274,18 @@ mod tests {
         let (left, _) = items(&state(true, true));
         let timeframes: Vec<_> = buttons(&left)
             .into_iter()
-            .filter(|b| b.label.as_deref() == Some(Timeframe::Day.label()))
+            .filter(|b| b.label.as_deref() == Some(Timeframe::DAY_1.label().as_str()))
             .collect();
         assert_eq!(timeframes.len(), 1);
         assert!(timeframes[0].active && timeframes[0].action.is_none());
         let week = buttons(&left)
             .into_iter()
-            .find(|b| b.label.as_deref() == Some(Timeframe::Week.label()))
+            .find(|b| b.label.as_deref() == Some(Timeframe::WEEK_1.label().as_str()))
             .expect("a week button");
-        assert_eq!(week.action, Some(BarAction::SetTimeframe(Timeframe::Week)));
+        assert_eq!(
+            week.action,
+            Some(BarAction::SetTimeframe(Timeframe::WEEK_1))
+        );
     }
 
     #[test]

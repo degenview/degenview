@@ -205,7 +205,7 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
             .on_click(ToolbarAction::OpenIndicators),
     ));
     items.push(Item::Separator);
-    for timeframe in Timeframe::ALL {
+    for timeframe in Timeframe::LEGACY {
         let selected = timeframe == input.timeframe;
         let mut button = Button::new(("timeframe", timeframe.label()), timeframe.description());
         button.label = Some(timeframe.label().to_owned());
@@ -544,7 +544,7 @@ mod tests {
 
     fn input<'a>(layouts: &'a [(u64, String)], focused: bool) -> ToolbarInput<'a> {
         ToolbarInput {
-            timeframe: Timeframe::Day,
+            timeframe: Timeframe::DAY_1,
             layout_name: "Morning",
             unsaved: false,
             autosave: AutosaveState::default(),
@@ -749,7 +749,7 @@ mod tests {
             ToolbarAction::CompareSymbol,
             ToolbarAction::OpenIndicators,
             ToolbarAction::OpenChartSettings,
-            ToolbarAction::SetTimeframe(Timeframe::Week),
+            ToolbarAction::SetTimeframe(Timeframe::WEEK_1),
         ] {
             for width in [1400.0, 960.0] {
                 assert_eq!(click_on(&input, width, target), vec![target], "{target:?}");

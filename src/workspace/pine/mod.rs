@@ -572,10 +572,10 @@ mod tests {
             !workspace.set_timeframe_for_mcp(before, &ctx),
             "same timeframe is a no-op"
         );
-        let other = if before == Timeframe::Week {
-            Timeframe::Day
+        let other = if before == Timeframe::WEEK_1 {
+            Timeframe::DAY_1
         } else {
-            Timeframe::Week
+            Timeframe::WEEK_1
         };
         assert!(workspace.set_timeframe_for_mcp(other, &ctx));
         assert_eq!(workspace.timeframe(), other);

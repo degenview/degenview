@@ -279,6 +279,14 @@ beyond the data extrapolate at the average interval, so a drawing anchored after
 stays where it is. Changing the chart type, the timeframe or the replay position never rewrites an
 anchor; per-timeframe visibility is only a predicate on what is shown.
 
+Visibility is a `u8` mask with one fixed bit per `VisibilityRow` (Hours 0, Days 1, Weeks 2, Months 3,
+Quarters 4, Years 5, Minutes 6); a timeframe is shown under its row (`VisibilityRow::of`: minutes,
+hours, days, weeks, 1-2M Months, 3-6M Quarters, 7-12M Years), and the page lists the seven rows in
+the order Minutes, Hours, Days, Weeks, Months, Quarters, Years. Bit 7 marks a mask written with
+the Minutes bit. A mask without it was saved before minutes existed (the old "every timeframe" is
+`63`): its minutes follow its Hours bit, so such a drawing is still visible wherever it was and
+on minutes if it showed on hours. The last visible row cannot be hidden.
+
 Drawings are main-pane only. Indicator panes are separate coordinate spaces and a drawing is never
 reinterpreted as a pane value.
 

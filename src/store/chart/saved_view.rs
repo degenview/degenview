@@ -58,7 +58,7 @@ mod tests {
         SavedView {
             id,
             name: "BTC watch".into(),
-            timeframe: Timeframe::Hour,
+            timeframe: Timeframe::HOUR_1,
             created_at_ms: 1_000,
             charts: Vec::new(),
             columns: None,

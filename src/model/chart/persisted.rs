@@ -247,7 +247,8 @@ mod tests {
                     .expect("builds");
                     hidden.set_hidden(true);
                     hidden.set_visibility(
-                        crate::model::Visibility::ALL.with(crate::model::Timeframe::Week, false),
+                        crate::model::Visibility::ALL
+                            .with_row(crate::model::VisibilityRow::Weeks, false),
                     );
                     hidden
                 },

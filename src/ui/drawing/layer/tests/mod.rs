@@ -3,7 +3,7 @@
 //! counting undo steps) played by a small rig.
 
 use super::*;
-use crate::model::{DrawingStyle, Kline, Visibility};
+use crate::model::{DrawingStyle, Kline, Visibility, VisibilityRow};
 use eframe::egui::{Event, Key, Modifiers, RawInput, Sense, pos2, vec2};
 use menu::Action;
 
@@ -349,7 +349,7 @@ impl Rig {
             magnet: MagnetMode::Off,
             keep_drawing: true,
             hide_all: false,
-            timeframe: Timeframe::Day,
+            timeframe: Timeframe::DAY_1,
             modifiers: Modifiers::NONE,
             sent_modifiers: Modifiers::NONE,
             focused: true,
@@ -1013,11 +1013,11 @@ fn hidden_and_out_of_timeframe_drawings_are_neither_drawn_nor_picked() {
 
     let mut weekly = rig.last().clone();
     weekly.set_hidden(false);
-    weekly.set_visibility(Visibility::ALL.with(Timeframe::Day, false));
+    weekly.set_visibility(Visibility::ALL.with_row(VisibilityRow::Days, false));
     rig.drawings[0] = weekly;
     rig.click(at);
     assert!(rig.selected.is_empty(), "not shown on this timeframe");
-    rig.timeframe = Timeframe::Week;
+    rig.timeframe = Timeframe::WEEK_1;
     rig.click(at);
     assert_eq!(rig.selected, vec![id]);
     // Nothing was rewritten along the way.
@@ -2191,7 +2191,7 @@ fn gallery_of_the_selection_and_the_editor() {
                 let proj = projection(&rig.data, &rig.scale);
                 let mut frame = DrawingFrame::new(&rig.drawings, Tool::Cursor, None, 99)
                     .with_selection(rig.selected.clone())
-                    .with_view(Timeframe::Day, false);
+                    .with_view(Timeframe::DAY_1, false);
                 rig.layer.update(ui, &response, &proj, &mut frame);
                 rig.layer.paint(&ui.painter().clone(), &proj, &frame);
                 rig.layer.overlay(ui, &proj, &mut frame);

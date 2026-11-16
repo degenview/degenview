@@ -644,7 +644,7 @@ mod tests {
         let book = WatchlistQuoteBook::default();
         let mut workspace = ChartWorkspace::empty(
             1,
-            Timeframe::Hour,
+            Timeframe::HOUR_1,
             Arc::new(Mutex::new(WatchlistStore::new(store.clone()))),
             book.clone(),
             WatchlistQuoteCoordinator::new(book, Arc::new(|| {})),
@@ -1150,7 +1150,7 @@ mod tests {
             })
             .expect("the composer");
         assert!(url.starts_with("https://x.com/intent/post?text="), "{url}");
-        assert!(url.contains("BTCUSDT%201H%20chart"), "{url}");
+        assert!(url.contains("BTCUSDT%201h%20chart"), "{url}");
         assert!(
             url.ends_with("&url=https%3A%2F%2Fcdn.example.com%2Fs%2Fabc.png"),
             "{url}"

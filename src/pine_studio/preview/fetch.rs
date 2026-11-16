@@ -27,7 +27,7 @@ impl PreviewState {
         let market = self.market.clone();
         let interval = self.timeframe.interval();
         self.inbox = Some(work_queue::start_for(market.source, Some(ctx), move || {
-            service::fetch_klines(market.source, &market.ticker, interval, CANDLE_LIMIT)
+            service::fetch_klines(market.source, &market.ticker, &interval, CANDLE_LIMIT)
         }));
         self.loading = true;
         self.last_fetch = Some(Instant::now());

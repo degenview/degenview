@@ -395,7 +395,7 @@ mod tests {
         let ctx = egui::Context::default();
         let reopened = crate::workspace::chart::Chart::restored(
             restored.charts[0].clone(),
-            Timeframe::Day,
+            Timeframe::DAY_1,
             &ctx,
         );
         assert_eq!(reopened.overlays, chart(&workspace, a).overlays);
