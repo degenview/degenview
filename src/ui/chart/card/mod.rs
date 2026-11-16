@@ -264,6 +264,9 @@ pub struct ChartCard {
     /// Where the plot area was drawn at the last frame, in window points: what a snapshot is the
     /// size of, and what Select portion maps a selection from.
     body_rect: Rect,
+    /// How wide the price axis was at the last frame, in points (0 while no plot is drawn): the
+    /// header, drawn after the body over the plot, keeps its trade pills left of the axis.
+    axis_width: f32,
     /// How much of the plot's top the header covers: the price scale starts below it, and what
     /// anchors to the plot's top (readouts, tags) sits under it. A snapshot has no header.
     top_inset: f32,
@@ -391,6 +394,7 @@ impl Default for ChartCard {
         Self {
             appearance: ChartAppearance::default(),
             body_rect: Rect::ZERO,
+            axis_width: 0.0,
             top_inset: 0.0,
             title: None,
             series: Vec::new(),

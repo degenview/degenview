@@ -448,3 +448,99 @@ fn a_bars_colour_follows_the_reference_the_drawn_type_colours_from() {
         "no previous bar: against its own open"
     );
 }
+
+/// The x positions along a header's middle where a press lands on a SELL or BUY pill (paper or
+/// live), as `(leftmost, rightmost)`.
+fn pill_span(card: &ChartCard, width: f32) -> (f32, f32) {
+    use crate::model::IndicatorConfig;
+    use crate::ui::render_tests::Screen;
+    let _restore = theme::RestoreDefaultTheme;
+    let indicators = IndicatorConfig::default();
+    let candles = [candle(64_000.0, 64_348.0)];
+    let mut screen = Screen::new(Vec2::new(width, 60.0));
+    // A press lands within a few points of a widget by default: only its own rect counts here.
+    screen
+        .ctx
+        .all_styles_mut(|style| style.interaction.interact_radius = 0.0);
+    let mut pressed = Vec::new();
+    let mut x = 2.0;
+    while x < width {
+        let at = egui::pos2(x, 22.0);
+        let mut action = ChartCardAction::default();
+        for (pressed_now, last) in [(true, false), (false, true)] {
+            let mut events = vec![egui::Event::PointerMoved(at)];
+            events.push(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed: pressed_now,
+                modifiers: egui::Modifiers::NONE,
+            });
+            let mut said = ChartCardAction::default();
+            screen.run(events, |ui| {
+                theme::sync(ui.ctx());
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ui, |ui| {
+                        card.header(
+                            ui,
+                            "BTC-USD",
+                            DataSource::Coinbase,
+                            &indicators,
+                            &candles,
+                            false,
+                            false,
+                            &[],
+                            &mut said,
+                            1,
+                        );
+                    });
+            });
+            if last {
+                action = said;
+            }
+        }
+        if action.quick_trade.is_some() || action.live_trade.is_some() {
+            pressed.push(x);
+        }
+        x += 1.0;
+    }
+    assert!(!pressed.is_empty(), "the pills can be pressed");
+    (
+        pressed.iter().copied().fold(f32::MAX, f32::min),
+        pressed.iter().copied().fold(0.0, f32::max),
+    )
+}
+
+#[test]
+fn the_trade_pills_stay_left_of_the_price_axis() {
+    let width = 640.0;
+    let mut card = ChartCard::default();
+    card.paper.trading_enabled = true;
+    card.live.order_entry = Some(Ok(()));
+    card.live.broker_name = "Coinbase".to_owned();
+    card.live.bid = Some("74,380.32".to_owned());
+    card.live.ask = Some("74,396.74".to_owned());
+
+    // Before a plot is drawn the pills sit beside the star, as they always did.
+    let (_, beside_star) = pill_span(&card, width);
+    assert!(beside_star > width - 60.0, "{beside_star}");
+
+    // A wide and a narrow axis: the right pill ends a gap before it, whatever its width.
+    for axis in [64.0, 120.0] {
+        card.axis_width = axis;
+        let (left, right) = pill_span(&card, width);
+        assert!(
+            right <= width - axis - 8.0,
+            "axis {axis}: the pills reach x {right}, the axis starts at {}",
+            width - axis
+        );
+        assert!(
+            right > width - axis - 8.0 - 12.0,
+            "axis {axis}: the pills end close to the axis, not further left (at {right})"
+        );
+        assert!(
+            left > 108.0,
+            "the pills stay clear of the handle and the title: {left}"
+        );
+    }
+}
