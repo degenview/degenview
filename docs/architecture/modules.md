@@ -66,7 +66,7 @@ part. The children are grouped by domain, like `model/` and `ui/`:
 | --- | --- |
 | `model/` | Alerts, charts/canvas/types, drawings, indicators, instruments, layouts, paper/portfolio engines, replay, tabs, watchlists, and webhooks |
 | `pine/` | Lexer → parser → compiler → session, builtins, strategies, alerts, drawings, libraries, `request.*`, and corpus tests |
-| `pine_studio/` | The script library (registry, names, sidebar), editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
+| `pine_studio/` | The script library (registry, names, script picker), editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
 | `host/` | The stateful seams: one host per feature, bridging engines, stores, workers, and views (one directory per domain, see below) |
 | `service/` | Market providers, HTTP/WebSocket work, updater, caches, images/icons, FX, notifications, files, Keychain, quotes, webhooks, and login-item registration (see the layout below) |
 | `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, webhook persistence, and the file-backed script library (`scripts/`) |
@@ -223,7 +223,7 @@ beside the code they exercise.
 | --- | --- |
 | `ai/`, `debug/`, `profiler/` | The assistant, the debugger and the profiler: their state, host, panel, gallery pictures and `studio_tests` |
 | `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites`; the view itself is `mod.rs` (`show`, the find bar, undoable edits) with `state`, `text_view`, `completion_view`, `signature_view`, `gutter/` (`breakpoints`, `changes`, `profile`), `indent_guides`, `assists` and `status` |
-| `library/` | The script library around its file store (`store::scripts`): `registry`, `sidebar`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
+| `library/` | The script library around its file store (`store::scripts`): `registry`, `picker`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
 | `drawer/` | The drawer under the preview: `problems/`, `logs/`, the intro, `bottom_bar`, `tab_chrome` |
 | root | `mod.rs` (the manager) with `commands` (`Cmd` and running it), `open_script`, `migrate_swift`; `preview/` (`state`, `source`, `fetch`, `chart`, `market_picker`), `inputs`, `workspace`, `sheets`, `theme_preview/` |
 

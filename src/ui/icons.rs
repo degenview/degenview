@@ -10,7 +10,6 @@ use eframe::egui::{
 /// The glyph set the app draws.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Icon {
-    SidebarLeft,
     ChartLine,
     ChartLineFlat,
     ChartUptrend,
@@ -434,15 +433,6 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             circle(p(8.0, 8.0), 2.5, false);
             line(&[p(3.0, 6.0), p(4.0, 6.0)]);
             line(&[p(12.0, 10.0), p(13.0, 10.0)]);
-        }
-        Icon::SidebarLeft => {
-            painter.rect_stroke(
-                rect_of(p(1.5, 2.5), p(14.5, 13.5)),
-                round(2.5),
-                stroke,
-                StrokeKind::Middle,
-            );
-            line(&[p(6.0, 2.8), p(6.0, 13.2)]);
         }
         Icon::ChartLine | Icon::ChartLineFlat => {
             line(&[p(2.0, 2.0), p(2.0, 14.0), p(14.0, 14.0)]);
@@ -2382,7 +2372,6 @@ mod tests {
     fn every_icon_paints_shapes() {
         use Icon::*;
         let all = [
-            SidebarLeft,
             ChartLine,
             ChartLineFlat,
             ChartUptrend,

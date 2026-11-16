@@ -222,8 +222,8 @@
   `drawer_intro`), never a bare text placeholder. Inputs too (`drawer_intro::inputs`,
   `drawer_tabs_tests::inputs_fit_the_drawer` at five sizes).
 - Pine Studio with no scripts (`pine_studio::library::empty_library`): detail area `centered` +
-  `intro`, the two ways to begin as footer; sidebar list a short form with the same picture. No-match
-  search stays the small "No matches" tile. Pictures: `cargo test --lib empty_library -- --ignored`
+  `intro`, the two ways to begin as footer; the script picker's list a short form with the same
+  picture (`empty_library::short`). No-match search stays the small "No matches" tile. Pictures: `cargo test --lib empty_library -- --ignored`
   with `DEGENVIEW_GALLERY_DIR` set.
 - Problems copy button copies all problems (errors first); right-click a row copies it or just its
   message.
@@ -234,7 +234,7 @@
 
 - **Scripts edited outside the app** (a person's editor, a coding agent in the Scripts folder) reach
   the open editor via `pine_studio::library::external` (pure state machine; `mod.rs` does I/O,
-  `disk_banner` asks). Sidebar rescans every 1.5 s; the open script's metadata is read every
+  `disk_banner` asks). The library rescans every 1.5 s (`PineStudio::begin_frame`); the open script's metadata is read every
   ~400 ms (`ScriptStore::file_stamp`); a moved or settling file triggers a rescan and
   `reconcile_open`. Act only on the same text seen twice, 300 ms apart (never load half-written
   files).

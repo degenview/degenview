@@ -15,9 +15,12 @@ use super::profiler::ui::{self, TabView};
 use super::profiler::{Profile, Status};
 use super::{OpenScript, PineStudio};
 use crate::pine::syntax::token::Diagnostic;
+use crate::ui::icons::Icon;
+use crate::ui::kit;
 use crate::ui::kit::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
+use crate::ui::pine::logs_view::centered;
 use crate::ui::theme;
-use eframe::egui::{self, Id, RichText, Ui, pos2};
+use eframe::egui::{self, Id, Ui, pos2};
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 
@@ -52,14 +55,24 @@ impl PineStudio {
         } else if self.loaded && self.scripts.is_empty() {
             self.empty_library(ui);
         } else {
-            ui.centered_and_justified(|ui| {
-                ui.label(
-                    RichText::new("Select a script")
-                        .size(13.0)
-                        .color(theme::text_secondary()),
-                );
-            });
+            self.no_script_open(ui);
         }
+    }
+
+    /// Scripts exist but none is open: say so and offer the picker, which is under the bar.
+    fn no_script_open(&mut self, ui: &mut Ui) {
+        centered(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 12.0;
+            ui.label(kit::text(
+                "No script open",
+                kit::size::HEADLINE,
+                kit::SEMIBOLD,
+                theme::text_primary(),
+            ));
+            if kit::push_button(ui, Some(Icon::DocText), "Open a Script", true).clicked() {
+                self.cmds.push(Cmd::OpenScriptPicker);
+            }
+        });
     }
 
     fn empty_library(&mut self, ui: &mut Ui) {

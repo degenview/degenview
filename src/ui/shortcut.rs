@@ -271,8 +271,8 @@ pub const PREVIOUS_TAB: Shortcut = Shortcut::new(
     &[Chord::new(Key::Tab).primary().shift()],
 );
 
-/// Show or hide the Pine Studio's script list.
-pub const TOGGLE_SCRIPT_LIST: Shortcut = Shortcut::new(
+/// Open the Pine Studio's script picker.
+pub const OPEN_SCRIPT_PICKER: Shortcut = Shortcut::new(
     &[Chord::new(Key::S).control().primary()],
     &[Chord::new(Key::B).primary()],
 );
@@ -564,7 +564,7 @@ mod tests {
         ("close tab", CLOSE_TAB),
         ("next tab", NEXT_TAB),
         ("previous tab", PREVIOUS_TAB),
-        ("script list", TOGGLE_SCRIPT_LIST),
+        ("script picker", OPEN_SCRIPT_PICKER),
         ("preview chart", TOGGLE_PREVIEW_CHART),
         ("find", FIND),
         ("find next", FIND_NEXT),
@@ -643,8 +643,8 @@ mod tests {
     fn labels_follow_each_platform() {
         assert_eq!(SAVE.label_for(true), "⌘S");
         assert_eq!(SAVE.label_for(false), "Ctrl+S");
-        assert_eq!(TOGGLE_SCRIPT_LIST.label_for(true), "⌃⌘S");
-        assert_eq!(TOGGLE_SCRIPT_LIST.label_for(false), "Ctrl+B");
+        assert_eq!(OPEN_SCRIPT_PICKER.label_for(true), "⌃⌘S");
+        assert_eq!(OPEN_SCRIPT_PICKER.label_for(false), "Ctrl+B");
         assert_eq!(TOGGLE_PREVIEW_CHART.label_for(true), "⌥⌘P");
         assert_eq!(TOGGLE_PREVIEW_CHART.label_for(false), "Ctrl+Shift+P");
         assert_eq!(FIND_PREVIOUS.label_for(true), "⇧⌘G");
@@ -784,11 +784,11 @@ mod tests {
             ctrl: true,
             ..cmd()
         };
-        assert!(TOGGLE_SCRIPT_LIST.matches_for(true, Key::S, control_cmd));
+        assert!(OPEN_SCRIPT_PICKER.matches_for(true, Key::S, control_cmd));
         assert!(!SAVE.matches_for(true, Key::S, control_cmd));
         // On Windows Ctrl+S is only ever Save; the list moved to Ctrl+B.
-        assert!(!TOGGLE_SCRIPT_LIST.matches_for(false, Key::S, ctrl()));
-        assert!(TOGGLE_SCRIPT_LIST.matches_for(false, Key::B, ctrl()));
+        assert!(!OPEN_SCRIPT_PICKER.matches_for(false, Key::S, ctrl()));
+        assert!(OPEN_SCRIPT_PICKER.matches_for(false, Key::B, ctrl()));
     }
 
     #[test]

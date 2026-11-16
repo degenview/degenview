@@ -1,6 +1,8 @@
 use super::migrate_swift::parse_swift_index;
 use super::*;
 use crate::store::Store;
+use crate::ui::render_tests::{Screen, gallery_dir};
+use eframe::egui::{Event, pos2, vec2};
 use library::prefs::{ChartPosition, DrawerTab};
 use std::sync::{Arc, Mutex};
 
@@ -23,54 +25,70 @@ fn edited(tag: &str) -> (PineStudio, PathBuf, ScriptId) {
     (manager, root, id)
 }
 
-/// With `DEGENVIEW_GALLERY_DIR` set, the sidebar is written as pictures: a row selected, the
-/// button idle and under the pointer, in both themes. Without it the test does nothing, so it
-/// never touches the shared theme.
+/// Frames of the whole window with the script picker up, so the popup is seen under its button.
+fn picker_frames(
+    manager: &mut PineStudio,
+    screen: &mut Screen,
+    events: Vec<Event>,
+) -> egui::FullOutput {
+    let mut last = None;
+    for _ in 0..4 {
+        crate::ui::theme::sync(&screen.ctx);
+        last = Some(screen.run(events.clone(), |ui| {
+            manager.ui(ui, None);
+        }));
+    }
+    last.expect("a frame")
+}
+
+/// With `DEGENVIEW_GALLERY_DIR` set, the script picker is written as pictures in both themes: the
+/// list with the open script lit, a row under the pointer, every group at once, a search that
+/// finds nothing, and the short form of an empty library.
 #[test]
-fn the_sidebar_gallery() {
-    use crate::ui::render_tests::{Screen, gallery_dir};
+#[ignore = "writes images for a person to look at"]
+fn the_picker_gallery() {
     use crate::ui::theme::{self, AppTheme};
-    use eframe::egui::{Event, Pos2, vec2};
     if gallery_dir().is_none() {
         return;
     }
-    let (mut manager, root) = manager("sidebar-gallery");
+    let _theme = theme::RestoreDefaultTheme;
+    let (mut manager, root) = manager("picker-gallery");
     manager.first_load();
-    let script = manager.scripts[2].clone();
-    manager.selected_row = Some(RowKey {
-        group: group_of(&script),
-        id: script.id.clone(),
+    let first = manager.scripts[2].id.clone();
+    let favorite = manager.scripts[0].id.clone();
+    manager.with_store(|store| {
+        store.set_favorite(&favorite, true)?;
+        store.create("Shared Maths", ScriptType::Library, None, false)?;
+        Ok(())
     });
+    manager.refresh();
+    manager.open_script(&first);
     for (tag, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
-        let mut screen = Screen::new(vec2(240.0, 420.0));
+        let mut screen = Screen::new(vec2(1000.0, 760.0));
         theme::apply(&screen.ctx, appearance);
-        for (name, pointer) in [
-            ("idle", None),
-            ("hover-button", Some(Pos2::new(120.0, 420.0 - 28.0 - 24.0))),
-            ("hover-row", Some(Pos2::new(120.0, 120.0))),
-        ] {
-            let events = pointer
-                .map(|pos| vec![Event::PointerMoved(pos)])
-                .unwrap_or_default();
-            screen.run(events.clone(), |ui| manager.sidebar_ui(ui));
-            let output = screen.run(events, |ui| manager.sidebar_ui(ui));
-            screen.save(&format!("sidebar-{tag}-{name}"), output);
-        }
+        manager.picker.open();
+        let output = picker_frames(&mut manager, &mut screen, Vec::new());
+        screen.save(&format!("picker-{tag}-list"), output);
+        let hover = Event::PointerMoved(pos2(520.0, 250.0));
+        let output = picker_frames(&mut manager, &mut screen, vec![hover]);
+        screen.save(&format!("picker-{tag}-hover"), output);
+        // A right-click on a row: its menu hangs beside the popup, which stays.
+        let click = |pressed| Event::PointerButton {
+            pos: pos2(520.0, 250.0),
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        picker_frames(&mut manager, &mut screen, vec![click(true)]);
+        let output = picker_frames(&mut manager, &mut screen, vec![click(false)]);
+        screen.save(&format!("picker-{tag}-row-menu"), output);
+        assert!(manager.picker.is_open());
+        manager.picker.open();
+        picker_frames(&mut manager, &mut screen, Vec::new());
+        let typed = Event::Text("zzzz".to_owned());
+        let output = picker_frames(&mut manager, &mut screen, vec![typed]);
+        screen.save(&format!("picker-{tag}-no-matches"), output);
     }
-    // Every section at once, a favorite, and a search that finds nothing.
-    manager.scripts[0].is_favorite = true;
-    manager.scripts[1].script_type = ScriptType::Strategy;
-    manager.scripts[3].script_type = ScriptType::Library;
-    let mut screen = Screen::new(vec2(240.0, 640.0));
-    theme::apply(&screen.ctx, AppTheme::Dark);
-    screen.run(vec![], |ui| manager.sidebar_ui(ui));
-    let output = screen.run(vec![], |ui| manager.sidebar_ui(ui));
-    screen.save("sidebar-dark-sections", output);
-    manager.search = "zzzz".into();
-    screen.run(vec![], |ui| manager.sidebar_ui(ui));
-    let output = screen.run(vec![], |ui| manager.sidebar_ui(ui));
-    screen.save("sidebar-dark-no-matches", output);
-    theme::apply(&egui::Context::default(), AppTheme::Dark);
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -259,39 +277,119 @@ fn create_select_rename_delete_flow() {
         "case-insensitive conflict"
     );
     assert_eq!(
-        manager.name_problem("MINE").as_deref(),
+        manager.name_problem("MINE", None).as_deref(),
         Some("A script with that name already exists.")
     );
     assert_eq!(
-        manager.name_problem("  "),
+        manager.name_problem("  ", None),
         None,
         "empty shows no error until it is submitted"
     );
 
-    let id = manager.open.as_ref().unwrap().id.clone();
-    manager.renaming = Some(Rename {
-        row: RowKey {
-            group: Group::Indicators,
-            id: id.clone(),
-        },
-        text: "Renamed".into(),
-        error: None,
-        needs_focus: false,
-    });
-    manager.commit_rename();
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// A manager with "Mine" open and a second script, "Other", beside it.
+fn with_two_named(tag: &str) -> (PineStudio, PathBuf, ScriptId) {
+    let (mut manager, root) = manager(tag);
+    manager.first_load();
+    manager.create_script("Mine").unwrap();
+    manager.create_script("Other").unwrap();
+    manager.refresh();
+    let id = manager
+        .scripts
+        .iter()
+        .find(|script| script.name == "Mine")
+        .map(|script| script.id.clone())
+        .unwrap();
+    manager.cmds.clear();
+    manager.open_script(&id);
+    (manager, root, id)
+}
+
+#[test]
+fn renaming_a_script_changes_its_name_and_its_title() {
+    let (mut manager, root, id) = with_two_named("rename-valid");
+    manager.rename_script(&id, "Renamed").unwrap();
     assert_eq!(manager.open.as_ref().unwrap().name, "Renamed");
-    // A bad rename keeps editing and raises the alert.
-    manager.renaming = Some(Rename {
-        row: RowKey {
-            group: Group::Indicators,
-            id,
-        },
-        text: "a/b".into(),
-        error: None,
-        needs_focus: false,
-    });
-    manager.commit_rename();
-    assert!(manager.renaming.is_some() && manager.error.is_some());
+    assert_eq!(manager.title(), "Renamed");
+    assert!(
+        manager
+            .script_named(&id)
+            .is_some_and(|s| s.name == "Renamed")
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_name_another_script_has_cannot_be_taken_but_the_scripts_own_can() {
+    let (mut manager, root, id) = with_two_named("rename-conflict");
+    let taken = crate::store::scripts::ScriptStoreError::NameConflict.to_string();
+    assert_eq!(manager.name_problem("other", Some(&id)), Some(taken));
+    assert!(manager.rename_script(&id, "Other").is_err());
+    assert_eq!(manager.open.as_ref().unwrap().name, "Mine");
+    // Its own name, even in other letters, is not in the way.
+    assert_eq!(manager.name_problem("Mine", Some(&id)), None);
+    assert_eq!(manager.name_problem("MINE", Some(&id)), None);
+    manager.rename_script(&id, "Mine").unwrap();
+    assert_eq!(manager.open.as_ref().unwrap().name, "Mine");
+    // A name that is not valid is explained.
+    assert!(manager.rename_script(&id, "a/b").is_err());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_rename_sheet_starts_on_the_current_name_and_enter_takes_the_new_one() {
+    let (mut manager, root, id) = with_two_named("rename-sheet");
+    manager.run(Cmd::BeginRename(id.clone()), &egui::Context::default());
+    assert!(matches!(
+        &manager.sheet,
+        Some(Sheet::Rename { name, error: None, .. }) if name == "Mine"
+    ));
+    let ctx = egui::Context::default();
+    crate::ui::theme::install_offscreen(&ctx);
+    let frame = |manager: &mut PineStudio, events: Vec<Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                manager.ui(ui, None);
+            },
+        );
+        output.textures_delta.clear();
+    };
+    frame(&mut manager, Vec::new());
+    assert!(
+        manager.sheet.is_some(),
+        "the sheet stays up until it is answered"
+    );
+    if let Some(Sheet::Rename { name, .. }) = manager.sheet.as_mut() {
+        *name = "Renamed".to_owned();
+    }
+    let enter = Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    frame(&mut manager, vec![enter]);
+    assert!(manager.sheet.is_none());
+    assert_eq!(manager.open.as_ref().unwrap().name, "Renamed");
+    // Escape puts it away without renaming.
+    manager.run(Cmd::BeginRename(id), &ctx);
+    let escape = Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    frame(&mut manager, vec![escape]);
+    assert!(manager.sheet.is_none());
+    assert_eq!(manager.open.as_ref().unwrap().name, "Renamed");
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -310,10 +408,7 @@ fn the_window_draws_headlessly_through_selection_and_layout_changes() {
     frame(&mut manager);
     assert_eq!(manager.scripts.len(), 9);
     let first = manager.scripts[0].clone();
-    manager.cmds.push(Cmd::Select(RowKey {
-        group: Group::Indicators,
-        id: first.id,
-    }));
+    manager.cmds.push(Cmd::Select(first.id));
     frame(&mut manager);
     frame(&mut manager);
     assert!(manager.open.is_some());
@@ -325,7 +420,10 @@ fn the_window_draws_headlessly_through_selection_and_layout_changes() {
         manager.cmds.push(Cmd::SetDrawerTab(tab));
         frame(&mut manager);
     }
-    manager.cmds.push(Cmd::ToggleSidebar);
+    manager.cmds.push(Cmd::OpenScriptPicker);
+    frame(&mut manager);
+    frame(&mut manager);
+    assert!(manager.picker.is_open());
     manager.cmds.push(Cmd::ToggleChart);
     manager.cmds.push(Cmd::ToggleDrawer);
     manager.cmds.push(Cmd::NewScript);
@@ -419,10 +517,6 @@ fn a_fresh_manager_survives_its_first_load_with_the_script_open_and_selected() {
     assert_eq!(
         fresh.open.as_ref().map(|o| o.id.clone()),
         Some(script.id.clone())
-    );
-    assert_eq!(
-        fresh.selected_row.as_ref().map(|row| row.id.clone()),
-        Some(script.id)
     );
     assert!(fresh.error.is_none());
     // The editor took the caret request when it drew.

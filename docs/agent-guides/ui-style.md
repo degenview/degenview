@@ -9,7 +9,7 @@ do not restyle screens you were not asked to touch, and do not copy their older 
 - **Flat surfaces.** Faint fill (`theme::card_fill`), 1px hairline (`theme::card_border`, a clearly
   visible lighter gray, not faint), radius `kit::CARD_RADIUS` (10). Build cards with `kit::card_frame`.
   No gradients, lit top edge or drop shadows; shadows only for things floating above the app (menus,
-  popovers, dialogs). `theme::card_highlight` is not for cards.
+  popovers, dialogs).
 - **Icons stand alone.** Bare, in `theme::text_secondary()` (`text_primary()` when the row is
   selected): no tile, disc, circle, rounded square or colour behind. Cards use `kit::paint_card_badge`
   (18px, no tile); sidebars 16px icons. Exception: a brand logo (broker, data source) keeps its own
@@ -41,7 +41,7 @@ do not restyle screens you were not asked to touch, and do not copy their older 
 - **Docked panels.** Only egui's separator (`theme::border()`). Never `Frame::stroke` or painted edge lines. `show_separator_line(false)` only when deliberately replacing the separator.
 - **Menus.** `kit::menu_row`, `menu_item`, `menu_heading`, `menu_separator`, `menu_submenu` inside `kit::menu_popup` or `kit::context_popup`, after `kit::menu_scope`. Never bare egui buttons, radios, checkboxes or menu buttons. `ui.close()` for actions that dismiss; toggles keep it open.
 - **Menu sizing.** Fit to the longest row, never wider: `kit::fitted_menu` / `fitted_menu_rows` for button menus, `fitted_context_menu` for right-clicks, `menu_fit` / `menu_fit_rows` inside popups. Helpers measure dynamic menus only while open. Test fixed-width menus against `kit::menu_width_for_rows` (see `menu_widths_fit_their_rows` in `watchlist/sidebar/tests.rs`). Never guess widths with `set_min_width` or `set_width`. Check visually that the longest label ends one row inset from the edge.
-- **Buttons are neutral, never blue.** No blue accent in fills, borders, labels or outlines. Use `kit::sheet_button` (`prominent`), `kit::push_button`, footer Primary, or `theme::card_fill` / `card_border` / `card_highlight` with `text_primary`. Large sheet actions: `kit::large_prominent_button`; destructive: `kit::destructive_sheet_button`. Accent colours are for data and state, not controls. Compare new buttons with neighbouring sheets; existing accent buttons are not all audited.
+- **Buttons are neutral, never blue.** No blue accent in fills, borders, labels or outlines. Use `kit::sheet_button` (`prominent`), `kit::push_button`, footer Primary, or `theme::card_fill` / `card_border` with `text_primary`. Large sheet actions: `kit::large_prominent_button`; destructive: `kit::destructive_sheet_button`. Accent colours are for data and state, not controls. Compare new buttons with neighbouring sheets; existing accent buttons are not all audited.
 - **Links are gray.** Underlined `theme::text_secondary()` for hyperlinks and link-like text, never blue. Add no decorative accent use; do not change selection/focus colours unless asked.
 - **Dialogs.** `kit::confirm`, `kit::alert` or `kit::notice` through `ui::kit::dialog::show`; never custom modal frames or stacked full-width buttons. Layout: tinted title badge, message, close button, bottom-right Cancel/action. `Dialog::destructive` for destructive actions (red, Cancel focused), `cautious` when Enter must not approve, `body` for extra content, `leading` for a third left-side button. Tint only the badge, never blue. Large forms go in `ui::kit::sheet`. Verify in `gallery_of_the_dialogs`.
 

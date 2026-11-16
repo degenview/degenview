@@ -9,12 +9,17 @@ drawn, only while enabled). `kit::bar::HEIGHT` (44) is the height of every tab's
 their items, so switching tabs never changes the window's chrome. Button ids are scoped by the
 panel's `ui.id()`. Do not draw a tab's top controls with anything else.
 
-**Pine Studio bar.** Left: script list toggle, preview-chart position menu, preview toggle |
-market button (name, then the last price and change as quiet text; opens the market picker,
-`preview::market_picker`) | timeframe row (lit current one). The market and timeframe act on the
-preview chart and are disabled with no open script or a hidden chart. Right: assistant, profiler
-(tinted when it needs attention) and debugger, for an open script. The market and timeframe used to
-sit in a 52 pt strip over the preview chart; that strip is gone.
+**Pine Studio bar.** Left: preview-chart position menu, preview toggle | market button (name,
+then the last price and change as quiet text; opens the market picker, `preview::market_picker`) |
+timeframe row (lit current one) | script button (a document glyph, the open script's name or
+"Scripts", a chevron; `keep_label`, so the name stays when the bar narrows). The script button
+opens the script picker (`library::picker`, ⌃⌘S / Ctrl+B), the only way to list, open, rename or
+delete scripts: the sidebar that held them is gone. The picker is not egui's popup slot
+(`Popup::open(true)` over its own `Picker` state), because a row's right-click menu takes that slot
+and would close it. The market and timeframe act on the preview chart and are disabled with no open
+script or a hidden chart; the script button is always enabled. Right: assistant, profiler (tinted
+when it needs attention) and debugger, for an open script. The market and timeframe used to sit in a
+52 pt strip over the preview chart; that strip is gone.
 
 **View menu (macOS).** Between Edit and Window: Pine Studio and Portfolio
 (`NativeCommand::OpenPineStudio` / `OpenPortfolio`), each opening its one tab or showing the open

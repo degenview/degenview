@@ -1,6 +1,6 @@
 //! What the Pine Studio says while the library has no scripts: the detail area, laid out like the
 //! Logs and Profile tabs' introductions (a picture, what the manager is for, three numbered steps,
-//! an example, and the two ways to begin), and the sidebar's short form of the same.
+//! an example, and the two ways to begin), and the script picker's short form of the same.
 
 use crate::pine_studio::commands::Cmd;
 use crate::ui::icons::Icon;
@@ -53,9 +53,9 @@ pub(in crate::pine_studio) fn library(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
     });
 }
 
-/// The sidebar's list with no scripts: the picture, two lines, and the examples. The New Script
+/// The picker's list with no scripts: the picture, two lines, and the examples. The New Script
 /// button is already under the list.
-pub(in crate::pine_studio) fn sidebar(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
+pub(in crate::pine_studio) fn short(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
     ui.add_space(26.0);
     ui.vertical_centered(|ui| {
         ui.set_max_width((ui.available_width() - 40.0).max(80.0));
@@ -94,7 +94,7 @@ fn muted(text: &str) -> egui::RichText {
 fn links(ui: &mut Ui) {
     let items = [
         ("Pine Script documentation", DOCS_URL),
-        ("Community scripts", super::sidebar::COMMUNITY_URL),
+        ("Community scripts", super::picker::COMMUNITY_URL),
     ];
     let widths: Vec<f32> = items
         .iter()
@@ -275,11 +275,11 @@ mod tests {
                 let output = frames(&mut manager, &mut screen, 6);
                 screen.save(&format!("empty-library-{label}-{name}"), output);
             }
-            manager.search = "zzz".to_owned();
+            manager.picker.open();
             let mut screen = Screen::new(egui::vec2(1000.0, 640.0));
             theme::apply(&screen.ctx, app_theme);
             let output = frames(&mut manager, &mut screen, 6);
-            screen.save(&format!("empty-library-search-{name}"), output);
+            screen.save(&format!("empty-library-picker-{name}"), output);
             let _ = std::fs::remove_dir_all(root);
         }
     }

@@ -1,8 +1,9 @@
-//! The modal sheets: New Script, the delete confirmation and the error alert. Ported from
+//! The modal sheets: New Script, Rename, the delete confirmation and the error alert. Ported from
 //! `ScriptNameSheet` and the `PineStudioView` dialogs.
 
 use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, library::unsaved};
 use crate::model::alert::pine::ArmingFacts;
+use crate::model::pine::script::ScriptId;
 use crate::ui::alert::pine_editor::{self, PineAlertEditorInput, PineAlertEditorOutcome};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::sheet;
@@ -30,6 +31,12 @@ impl PineStudio {
                     error,
                     needs_focus,
                 } => self.new_script_sheet(ctx, name, error, needs_focus),
+                Sheet::Rename {
+                    id,
+                    name,
+                    error,
+                    needs_focus,
+                } => self.rename_sheet(ctx, id, name, error, needs_focus),
                 Sheet::ConfirmDelete { id, name } => self.delete_sheet(ctx, id, name),
                 Sheet::Alert(sheet) => self.alert_sheet(ctx, sheet),
             };
@@ -63,94 +70,90 @@ impl PineStudio {
     ) -> Option<Sheet> {
         // A failed create explains itself until the name is edited.
         let entered = name.clone();
-        let problem = self.name_problem(&name).or_else(|| error.clone());
-        let can_create = !name.trim().is_empty()
-            && problem.is_none()
-            && super::library::name::validate(&name).is_ok();
-        let mut cancel = false;
-        let mut create = false;
-        let field_id = egui::Id::new("pine-studio-new-name");
-        sheet::show(ctx, egui::Id::new("pine-studio-new"), SHEET_WIDTH, |ui| {
-            ui.add_space(24.0);
-            sheet::inset(ui, |ui| {
-                sheet::header(
-                    ui,
-                    Icon::AngleBrackets,
-                    "New Script",
-                    "Create a script file in your library.",
-                    theme::ACCENT,
-                );
-                ui.add_space(20.0);
-                let focused = ui.memory(|memory| memory.has_focus(field_id));
-                kit::field_frame(focused).show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        icons::inline(ui, Icon::AngleBrackets, 13.0, theme::text_secondary());
-                        let width = ui.available_width();
-                        let response = kit::plain_field(
-                            ui,
-                            field_id,
-                            &mut name,
-                            "Script name",
-                            kit::size::BODY,
-                            kit::REGULAR,
-                            width,
-                        );
-                        if std::mem::take(&mut needs_focus) {
-                            response.request_focus();
-                        }
-                    });
-                });
-                // The problem line keeps its height with or without a message, so the buttons
-                // don't jump as the name becomes valid.
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.set_min_height(16.0);
-                    if let Some(problem) = &problem {
-                        icons::inline(ui, Icon::TriangleFill, 11.0, kit::ORANGE);
-                        ui.label(kit::text(
-                            problem,
-                            kit::size::SUBHEADLINE,
-                            kit::REGULAR,
-                            theme::text_secondary(),
-                        ));
-                    }
-                });
-                ui.add_space(14.0);
-            });
-            sheet::footer(ui, |ui| {
-                if kit::sheet_button(ui, "Create", true, can_create).clicked() {
-                    create = true;
-                }
-                if kit::sheet_button(ui, "Cancel", false, true).clicked() {
-                    cancel = true;
-                }
-            });
-        });
-        if ctx.input(|i| i.key_pressed(Key::Escape)) {
-            cancel = true;
-        } else if can_create && ctx.input(|i| i.key_pressed(Key::Enter)) {
-            create = true;
-        }
-        if cancel {
-            return None;
-        }
-        if create {
-            return match self.create_script(&name) {
+        let problem = self.name_problem(&name, None).or_else(|| error.clone());
+        let can_create = name_is_usable(&name, problem.as_deref());
+        let event = name_sheet(
+            ctx,
+            &NameSheet {
+                salt: "new",
+                icon: Icon::AngleBrackets,
+                title: "New Script",
+                subtitle: "Create a script file in your library.",
+                action: "Create",
+            },
+            &mut name,
+            &mut needs_focus,
+            problem.as_deref(),
+            can_create,
+        );
+        match event {
+            NameEvent::Cancel => None,
+            NameEvent::Submit => match self.create_script(&name) {
                 Ok(()) => None,
                 Err(message) => Some(Sheet::New {
                     name,
                     error: Some(message),
                     needs_focus: true,
                 }),
-            };
+            },
+            NameEvent::Editing => Some(Sheet::New {
+                error: error.filter(|_| name == entered),
+                name,
+                needs_focus,
+            }),
         }
-        Some(Sheet::New {
-            error: error.filter(|_| name == entered),
-            name,
-            needs_focus,
-        })
+    }
+
+    fn rename_sheet(
+        &mut self,
+        ctx: &egui::Context,
+        id: ScriptId,
+        mut name: String,
+        error: Option<String>,
+        mut needs_focus: bool,
+    ) -> Option<Sheet> {
+        let Some(current) = self.script_named(&id).map(|script| script.name.clone()) else {
+            // Deleted in the Finder while the sheet was up.
+            return None;
+        };
+        let entered = name.clone();
+        let problem = self
+            .name_problem(&name, Some(&id))
+            .or_else(|| error.clone());
+        let can_rename = name_is_usable(&name, problem.as_deref());
+        let subtitle = format!("Choose a new name for \u{201c}{current}\u{201d}.");
+        let event = name_sheet(
+            ctx,
+            &NameSheet {
+                salt: "rename",
+                icon: Icon::Pencil,
+                title: "Rename Script",
+                subtitle: &subtitle,
+                action: "Rename",
+            },
+            &mut name,
+            &mut needs_focus,
+            problem.as_deref(),
+            can_rename,
+        );
+        match event {
+            NameEvent::Cancel => None,
+            NameEvent::Submit => match self.rename_script(&id, &name) {
+                Ok(()) => None,
+                Err(message) => Some(Sheet::Rename {
+                    id,
+                    name,
+                    error: Some(message),
+                    needs_focus: true,
+                }),
+            },
+            NameEvent::Editing => Some(Sheet::Rename {
+                error: error.filter(|_| name == entered),
+                id,
+                name,
+                needs_focus,
+            }),
+        }
     }
 
     /// The Create Script Alert sheet: arms the script's `alert()` calls on the focused chart.
@@ -220,5 +223,111 @@ impl PineStudio {
             return None;
         }
         Some(Sheet::ConfirmDelete { id, name })
+    }
+}
+
+/// What the sheet that asks for a script's name says.
+struct NameSheet<'a> {
+    /// Tells the sheets apart in egui's memory.
+    salt: &'static str,
+    icon: Icon,
+    title: &'a str,
+    subtitle: &'a str,
+    /// The button that takes the name.
+    action: &'a str,
+}
+
+enum NameEvent {
+    Submit,
+    Cancel,
+    Editing,
+}
+
+/// Whether `name` can be given to a script: something is typed and nothing is wrong with it.
+fn name_is_usable(name: &str, problem: Option<&str>) -> bool {
+    !name.trim().is_empty() && problem.is_none() && super::library::name::validate(name).is_ok()
+}
+
+/// The name field sheet New Script and Rename share: the field, a line for what is wrong with the
+/// name, the action and Cancel. Enter takes the name when `can_submit`, Escape cancels.
+fn name_sheet(
+    ctx: &egui::Context,
+    spec: &NameSheet,
+    name: &mut String,
+    needs_focus: &mut bool,
+    problem: Option<&str>,
+    can_submit: bool,
+) -> NameEvent {
+    let mut cancel = false;
+    let mut submit = false;
+    let field_id = egui::Id::new(("pine-studio-name-field", spec.salt));
+    sheet::show(
+        ctx,
+        egui::Id::new(("pine-studio-name", spec.salt)),
+        SHEET_WIDTH,
+        |ui| {
+            ui.add_space(24.0);
+            sheet::inset(ui, |ui| {
+                sheet::header(ui, spec.icon, spec.title, spec.subtitle, theme::ACCENT);
+                ui.add_space(20.0);
+                let focused = ui.memory(|memory| memory.has_focus(field_id));
+                kit::field_frame(focused).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        icons::inline(ui, Icon::AngleBrackets, 13.0, theme::text_secondary());
+                        let width = ui.available_width();
+                        let response = kit::plain_field(
+                            ui,
+                            field_id,
+                            name,
+                            "Script name",
+                            kit::size::BODY,
+                            kit::REGULAR,
+                            width,
+                        );
+                        if std::mem::take(needs_focus) {
+                            response.request_focus();
+                        }
+                    });
+                });
+                // The problem line keeps its height with or without a message, so the buttons
+                // don't jump as the name becomes valid.
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.set_min_height(16.0);
+                    if let Some(problem) = problem {
+                        icons::inline(ui, Icon::TriangleFill, 11.0, kit::ORANGE);
+                        ui.label(kit::text(
+                            problem,
+                            kit::size::SUBHEADLINE,
+                            kit::REGULAR,
+                            theme::text_secondary(),
+                        ));
+                    }
+                });
+                ui.add_space(14.0);
+            });
+            sheet::footer(ui, |ui| {
+                if kit::sheet_button(ui, spec.action, true, can_submit).clicked() {
+                    submit = true;
+                }
+                if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                    cancel = true;
+                }
+            });
+        },
+    );
+    if ctx.input(|i| i.key_pressed(Key::Escape)) {
+        cancel = true;
+    } else if can_submit && ctx.input(|i| i.key_pressed(Key::Enter)) {
+        submit = true;
+    }
+    if cancel {
+        NameEvent::Cancel
+    } else if submit {
+        NameEvent::Submit
+    } else {
+        NameEvent::Editing
     }
 }
