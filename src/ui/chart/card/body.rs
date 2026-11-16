@@ -359,6 +359,7 @@ impl ChartCard {
         let rect = response.rect;
         pointer.rect = Some(rect);
         self.body_rect = rect;
+        self.axis_width = 0.0;
         let style = CanvasStyle::resolve(&self.appearance.canvas);
         let full_rect = rect;
         canvas::paint_background(&painter, rect, style.fill);
@@ -427,6 +428,7 @@ impl ChartCard {
         );
         self.keep_panes_in_step(&layout);
         let plot = layout.plot;
+        self.axis_width = full_rect.max.x - plot.max.x;
         let pane_rects = &layout.pane_rects;
         let chart_hovered = ui.rect_contains_pointer(full_rect);
         let regions = self.handle_frame_input(ui, &response, &data, &layout, drawing, replay);

@@ -23,13 +23,19 @@ impl ChartCard {
         let header_width = ui.available_width();
         let price_change = self.visible_move(candles);
         // The change sits beside the price now, so the right end holds the star and little else.
+        let paper_price = if self.paper.trading_enabled {
+            candles
+                .last()
+                .map(|last| self.appearance.price_format().format(last.close))
+        } else {
+            None
+        };
+        let live_pills = self.live.pills_visible();
         let reserved = 108.0
-            + if self.paper.trading_enabled {
-                125.0
-            } else {
-                0.0
-            }
-            + if self.live.pills_visible() {
+            + paper_price.as_deref().map_or(0.0, |price_text| {
+                chart_trading::quick_trade_width(ui, price_text) + 8.0
+            })
+            + if live_pills {
                 crate::ui::broker::chart_trading::quick_trade_width(
                     ui,
                     self.live.bid.as_deref(),
@@ -38,8 +44,14 @@ impl ChartCard {
             } else {
                 0.0
             }
-            // The camera and the gap after it.
-            + 31.0;
+            // The star and the gap after it.
+            + STAR_END
+            // And what the pills need beyond the star to stay clear of the price axis.
+            + if paper_price.is_some() || live_pills {
+                (self.axis_clearance() - STAR_END).max(0.0)
+            } else {
+                0.0
+            };
         let title_block_width = (header_width - reserved).max(96.0);
         let title_content_width = title_block_width - 18.0;
         let indicator_space = if indicator_strip::has_items(indicators, self) {
@@ -284,30 +296,88 @@ impl ChartCard {
                     if favorite.clicked() {
                         action.toggle_favorite = true;
                     }
-                    if self.paper.trading_enabled
-                        && let Some(last) = candles.last()
-                    {
-                        let price_text = self.appearance.price_format().format(last.close);
-                        if let Some(side) = chart_trading::quick_trade_buttons(ui, &price_text) {
-                            action.quick_trade = Some(side);
+                    if paper_price.is_some() || self.live.pills_visible() {
+                        // The header is drawn over the plot, so the pills would cover the price
+                        // axis: move them left until they end a gap before it.
+                        let used = ui.max_rect().right() - ui.cursor().max.x;
+                        let missing = self.axis_clearance() - used;
+                        if missing > 0.0 {
+                            ui.add_space(missing);
                         }
                     }
-                    if let Some(entry) = self.live.order_entry {
-                        // Live pills: the broker's own bid and ask, never the chart's last price.
-                        if let Some(side) = crate::ui::broker::chart_trading::quick_trade_buttons(
+                    if let Some(price_text) = &paper_price
+                        && let Some(side) = pills_beside_star(
                             ui,
-                            &self.live.broker_name,
-                            self.live.bid.as_deref(),
-                            self.live.ask.as_deref(),
-                            entry,
-                        ) {
-                            action.live_trade = Some(side);
-                        }
+                            chart_trading::quick_trade_width(ui, price_text),
+                            |ui| chart_trading::quick_trade_buttons(ui, price_text),
+                        )
+                    {
+                        action.quick_trade = Some(side);
+                    }
+                    if let Some(entry) = self.live.order_entry
+                        // Live pills: the broker's own bid and ask, never the chart's last price.
+                        && let Some(side) = pills_beside_star(
+                            ui,
+                            crate::ui::broker::chart_trading::quick_trade_width(
+                                ui,
+                                self.live.bid.as_deref(),
+                                self.live.ask.as_deref(),
+                            ),
+                            |ui| {
+                                crate::ui::broker::chart_trading::quick_trade_buttons(
+                                    ui,
+                                    &self.live.broker_name,
+                                    self.live.bid.as_deref(),
+                                    self.live.ask.as_deref(),
+                                    entry,
+                                )
+                            },
+                        )
+                    {
+                        action.live_trade = Some(side);
                     }
                 });
             },
         );
     }
+}
+
+/// How far from the header's right edge the star's own room reaches: its width and the gap after.
+const STAR_END: f32 = 27.0 + 4.0;
+
+/// The gap between the trade pills and the price axis they must stay left of.
+const AXIS_GAP: f32 = 8.0;
+
+impl ChartCard {
+    /// How far from the header's right edge the trade pills must end: the price axis the header is
+    /// drawn over, and a gap. Zero before a plot has been drawn, which leaves the pills at the star.
+    fn axis_clearance(&self) -> f32 {
+        if self.axis_width > 0.0 {
+            self.axis_width + AXIS_GAP
+        } else {
+            0.0
+        }
+    }
+}
+
+/// Draws a group of quick-trade pills in the header's right-to-left end, level with the favourite
+/// star: the star is pinned to the header's top, so the pills sit at the top too, lifted until
+/// their centre meets the star's (star 27 tall at -3.5, pill 24 tall at -2.0: both centre at 10).
+/// `width` is the pills' own, so the group takes exactly its room and nothing after it is pushed.
+fn pills_beside_star<R>(
+    ui: &mut egui::Ui,
+    width: f32,
+    pills: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    ui.allocate_ui_with_layout(
+        Vec2::new(width, HEADER_HEIGHT),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            ui.add_space(-2.0);
+            pills(ui)
+        },
+    )
+    .inner
 }
 
 /// `+$67.13 (+0.10%)`, or `+0.10%` when the amount is left out (prediction markets quote

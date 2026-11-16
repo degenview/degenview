@@ -178,27 +178,43 @@ pub fn line_pill(line: &OrderLine, price_text: &str) -> Pill {
     }
 }
 
+/// Height of a header pill.
+const QUICK_TRADE_HEIGHT: f32 = 24.0;
+/// Gap between the two header pills.
+const QUICK_TRADE_GAP: f32 = 4.0;
+
+/// What a header pill says: the side and, when the broker quotes one, its price.
+fn quick_trade_text(word: &str, price: Option<&str>) -> String {
+    match price {
+        Some(price) => format!("{word}  {price}"),
+        None => word.to_owned(),
+    }
+}
+
 /// The room SELL and BUY take in the header, from the prices they show. A long price (74,396.74
 /// against 0.5412) is wider than any fixed guess, and a header that reserved too little pushed the
 /// pills out past its own edge, where they could not be clicked.
 pub fn quick_trade_width(ui: &egui::Ui, bid: Option<&str>, ask: Option<&str>) -> f32 {
     let pill = |word: &str, price: Option<&str>| {
-        let text = match price {
-            Some(price) => format!("{word}  {price}"),
-            None => word.to_owned(),
-        };
         ui.painter()
-            .layout_no_wrap(text, FontId::proportional(11.5), theme::DOWN)
+            .layout_no_wrap(
+                quick_trade_text(word, price),
+                FontId::proportional(11.5),
+                theme::DOWN,
+            )
             .size()
             .x
             + 18.0
     };
-    pill("SELL", bid) + pill("BUY", ask) + 4.0
+    pill("SELL", bid) + pill("BUY", ask) + QUICK_TRADE_GAP
 }
 
 /// SELL and BUY in the card header with the broker's own best bid and ask (not the chart's last
 /// price: they are not the same price and only the broker's can be traded). They open the ticket;
 /// nothing is placed from here. Returns the side pressed.
+///
+/// The pills are laid out left to right in a block of their own, so SELL is always the left one,
+/// even in the header's right-to-left end.
 pub fn quick_trade_buttons(
     ui: &mut egui::Ui,
     broker: &str,
@@ -206,58 +222,66 @@ pub fn quick_trade_buttons(
     ask: Option<&str>,
     entry: Result<(), Unavailable>,
 ) -> Option<Side> {
-    let mut pressed = None;
-    ui.spacing_mut().item_spacing.x = 4.0;
-    for (side, word, price, tint) in [
-        (Side::Sell, "SELL", bid, theme::DOWN),
-        (Side::Buy, "BUY", ask, theme::UP),
-    ] {
-        let text = match price {
-            Some(price) => format!("{word}  {price}"),
-            None => word.to_owned(),
-        };
-        let galley = ui
-            .painter()
-            .layout_no_wrap(text.clone(), FontId::proportional(11.5), tint);
-        let size = Vec2::new(galley.size().x + 18.0, 24.0);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        let enabled = entry.is_ok();
-        let alpha = match (enabled, response.hovered()) {
-            (false, _) => 0.06,
-            (true, true) => 0.26,
-            (true, false) => 0.14,
-        };
-        ui.painter()
-            .rect_filled(rect, 6.0, tint.gamma_multiply(alpha));
-        ui.painter().rect_stroke(
-            rect,
-            6.0,
-            egui::Stroke::new(1.0, LIVE.gamma_multiply(if enabled { 0.55 } else { 0.2 })),
-            egui::StrokeKind::Inside,
-        );
-        ui.painter().galley(
-            Pos2::new(rect.left() + 9.0, rect.center().y - galley.size().y / 2.0),
-            galley,
-            if enabled {
-                tint
+    let size = Vec2::new(quick_trade_width(ui, bid, ask), QUICK_TRADE_HEIGHT);
+    ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Min), |ui| {
+        let mut pressed = None;
+        ui.spacing_mut().item_spacing.x = QUICK_TRADE_GAP;
+        for (side, word, price, tint) in [
+            (Side::Sell, "SELL", bid, theme::DOWN),
+            (Side::Buy, "BUY", ask, theme::UP),
+        ] {
+            let text = quick_trade_text(word, price);
+            let galley = ui
+                .painter()
+                .layout_no_wrap(text, FontId::proportional(11.5), tint);
+            let size = Vec2::new(galley.size().x + 18.0, QUICK_TRADE_HEIGHT);
+            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+            let enabled = entry.is_ok();
+            let alpha = match (enabled, response.hovered()) {
+                (false, _) => 0.06,
+                (true, true) => 0.26,
+                (true, false) => 0.14,
+            };
+            ui.painter()
+                .rect_filled(rect, 6.0, tint.gamma_multiply(alpha));
+            ui.painter().rect_stroke(
+                rect,
+                6.0,
+                egui::Stroke::new(1.0, LIVE.gamma_multiply(if enabled { 0.55 } else { 0.2 })),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().galley(
+                Pos2::new(rect.left() + 9.0, rect.center().y - galley.size().y / 2.0),
+                galley,
+                if enabled {
+                    tint
+                } else {
+                    tint.gamma_multiply(0.45)
+                },
+            );
+            let help = match entry {
+                Ok(()) => format!(
+                    "Live: {} at {broker}. Opens the order ticket; nothing is sent from here.",
+                    word.to_lowercase()
+                ),
+                Err(reason) => reason.text().to_owned(),
+            };
+            // The header is drawn over the plot, whose crosshair cursor would show here.
+            let cursor = if enabled {
+                egui::CursorIcon::PointingHand
             } else {
-                tint.gamma_multiply(0.45)
-            },
-        );
-        let help = match entry {
-            Ok(()) => format!(
-                "Live: {} at {broker}. Opens the order ticket; nothing is sent from here.",
-                word.to_lowercase()
-            ),
-            Err(reason) => reason.text().to_owned(),
-        };
-        let response =
-            accessibility::label(response, format!("Live {word} at {broker}")).on_hover_text(help);
-        if enabled && response.clicked() {
-            pressed = Some(side);
+                egui::CursorIcon::NotAllowed
+            };
+            let response = accessibility::label(response, format!("Live {word} at {broker}"))
+                .on_hover_text(help)
+                .on_hover_cursor(cursor);
+            if enabled && response.clicked() {
+                pressed = Some(side);
+            }
         }
-    }
-    pressed
+        pressed
+    })
+    .inner
 }
 
 #[cfg(test)]
@@ -541,5 +565,72 @@ mod tests {
                 output.unwrap(),
             );
         }
+    }
+
+    /// Draws the live pills at the right end of a right-to-left row, the way a card header does,
+    /// and returns the pills' block, the side pressed and the cursor the frame asked for.
+    fn header_row(
+        screen: &mut Screen,
+        entry: Result<(), Unavailable>,
+        events: Vec<egui::Event>,
+    ) -> (Rect, Option<Side>, egui::CursorIcon) {
+        let mut block = Rect::NOTHING;
+        let mut pressed = None;
+        let output = screen.run(events, |ui| {
+            theme::sync(ui.ctx());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                let drawn = ui.scope(|ui| {
+                    quick_trade_buttons(ui, "Coinbase", Some("64,348.10"), Some("64,348.20"), entry)
+                });
+                block = drawn.response.rect;
+                pressed = drawn.inner;
+            });
+        });
+        (block, pressed, output.platform_output.cursor_icon)
+    }
+
+    #[test]
+    fn sell_is_the_left_pill_and_buy_the_right_even_in_a_right_to_left_row() {
+        let mut screen = Screen::new(Vec2::new(600.0, 100.0));
+        header_row(&mut screen, Ok(()), vec![]);
+        let (block, _, _) = header_row(&mut screen, Ok(()), vec![]);
+        for (x, side) in [
+            (block.left() + 10.0, Side::Sell),
+            (block.right() - 10.0, Side::Buy),
+        ] {
+            let at = Pos2::new(x, block.center().y);
+            header_row(&mut screen, Ok(()), vec![egui::Event::PointerMoved(at)]);
+            header_row(&mut screen, Ok(()), vec![button(at, true)]);
+            let (_, pressed, _) = header_row(&mut screen, Ok(()), vec![button(at, false)]);
+            assert_eq!(pressed, Some(side), "a click at x = {x}");
+        }
+    }
+
+    #[test]
+    fn the_pills_show_a_pointing_hand_and_a_blocked_one_a_not_allowed_cursor() {
+        for (entry, cursor) in [
+            (Ok(()), egui::CursorIcon::PointingHand),
+            (Err(Unavailable::NotConnected), egui::CursorIcon::NotAllowed),
+        ] {
+            let mut screen = Screen::new(Vec2::new(600.0, 100.0));
+            header_row(&mut screen, entry, vec![]);
+            let (block, _, _) = header_row(&mut screen, entry, vec![]);
+            let at = block.center();
+            header_row(&mut screen, entry, vec![egui::Event::PointerMoved(at)]);
+            let (_, _, shown) = header_row(&mut screen, entry, vec![]);
+            assert_eq!(shown, cursor);
+        }
+    }
+
+    #[test]
+    fn the_pills_take_exactly_the_width_they_report() {
+        let mut screen = Screen::new(Vec2::new(600.0, 100.0));
+        let mut reported = 0.0;
+        screen.run(vec![], |ui| {
+            reported = quick_trade_width(ui, Some("64,348.10"), Some("64,348.20"));
+        });
+        let (block, _, _) = header_row(&mut screen, Ok(()), vec![]);
+        assert!((block.width() - reported).abs() < 0.5);
+        assert_eq!(block.height(), QUICK_TRADE_HEIGHT);
     }
 }

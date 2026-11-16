@@ -29,36 +29,72 @@ pub fn quick_trade_help(side: PaperOrderSide, price_text: &str) -> String {
     format!("{} {price_text} — opens a paper order ticket", side.label())
 }
 
-/// SELL and BUY in a chart card's header: two tinted pills, each with the price an order would
-/// open at. They only open the order ticket; nothing is placed from here. Returns the side clicked.
-pub fn quick_trade_buttons(ui: &mut egui::Ui, price_text: &str) -> Option<PaperOrderSide> {
-    let mut clicked = None;
-    ui.spacing_mut().item_spacing.x = 4.0;
-    for side in [PaperOrderSide::Sell, PaperOrderSide::Buy] {
-        let tint = side_tint(side);
-        let galley = ui.painter().layout_no_wrap(
-            format!("{}  {price_text}", side.badge_text()),
-            FontId::proportional(11.5),
-            tint,
-        );
-        let size = Vec2::new(galley.size().x + 18.0, 24.0);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        let alpha = if response.hovered() { 0.24 } else { 0.14 };
+/// Height of a header pill.
+const QUICK_TRADE_HEIGHT: f32 = 24.0;
+/// Gap between the two header pills.
+const QUICK_TRADE_GAP: f32 = 4.0;
+
+/// What a header pill says: the side and the price an order would open at.
+fn quick_trade_text(side: PaperOrderSide, price_text: &str) -> String {
+    format!("{}  {price_text}", side.badge_text())
+}
+
+/// The room SELL and BUY take in a card header for `price_text`, so the header can reserve exactly
+/// that much instead of a guess a long price would overflow.
+pub fn quick_trade_width(ui: &egui::Ui, price_text: &str) -> f32 {
+    let pill = |side| {
         ui.painter()
-            .rect_filled(rect, 6.0, tint.gamma_multiply(alpha));
-        ui.painter().galley(
-            Pos2::new(rect.left() + 9.0, rect.center().y - galley.size().y / 2.0),
-            galley,
-            tint,
-        );
-        if accessibility::label(response, format!("{} at {price_text}", side.badge_text()))
-            .on_hover_text(quick_trade_help(side, price_text))
-            .clicked()
-        {
-            clicked = Some(side);
+            .layout_no_wrap(
+                quick_trade_text(side, price_text),
+                FontId::proportional(11.5),
+                side_tint(side),
+            )
+            .size()
+            .x
+            + 18.0
+    };
+    pill(PaperOrderSide::Sell) + pill(PaperOrderSide::Buy) + QUICK_TRADE_GAP
+}
+
+/// SELL and BUY in a chart card's header: two tinted pills, each with the price an order would
+/// open at. They open the order ticket; nothing is placed from here. Returns the side clicked.
+///
+/// The pills are laid out left to right in a block of their own, so SELL is always the left one,
+/// even in the header's right-to-left end.
+pub fn quick_trade_buttons(ui: &mut egui::Ui, price_text: &str) -> Option<PaperOrderSide> {
+    let size = Vec2::new(quick_trade_width(ui, price_text), QUICK_TRADE_HEIGHT);
+    ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Min), |ui| {
+        let mut clicked = None;
+        ui.spacing_mut().item_spacing.x = QUICK_TRADE_GAP;
+        for side in [PaperOrderSide::Sell, PaperOrderSide::Buy] {
+            let tint = side_tint(side);
+            let galley = ui.painter().layout_no_wrap(
+                quick_trade_text(side, price_text),
+                FontId::proportional(11.5),
+                tint,
+            );
+            let size = Vec2::new(galley.size().x + 18.0, QUICK_TRADE_HEIGHT);
+            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+            let alpha = if response.hovered() { 0.24 } else { 0.14 };
+            ui.painter()
+                .rect_filled(rect, 6.0, tint.gamma_multiply(alpha));
+            ui.painter().galley(
+                Pos2::new(rect.left() + 9.0, rect.center().y - galley.size().y / 2.0),
+                galley,
+                tint,
+            );
+            // The header is drawn over the plot, whose crosshair cursor would show here.
+            let response =
+                accessibility::label(response, format!("{} at {price_text}", side.badge_text()))
+                    .on_hover_text(quick_trade_help(side, price_text))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if response.clicked() {
+                clicked = Some(side);
+            }
         }
-    }
-    clicked
+        clicked
+    })
+    .inner
 }
 
 // MARK: Pills
@@ -730,6 +766,90 @@ mod tests {
         assert_eq!(
             quick_trade_help(PaperOrderSide::Buy, "67,432.19"),
             "Buy 67,432.19 — opens a paper order ticket"
+        );
+    }
+
+    /// Draws the pills at the right end of a right-to-left row, the way a card header does, and
+    /// returns the pills' block, the side clicked and the cursor the frame asked for.
+    fn header_row(
+        screen: &mut crate::ui::render_tests::Screen,
+        price_text: &str,
+        events: Vec<egui::Event>,
+    ) -> (Rect, Option<PaperOrderSide>, egui::CursorIcon) {
+        let mut block = Rect::NOTHING;
+        let mut clicked = None;
+        let output = screen.run(events, |ui| {
+            crate::ui::theme::sync(ui.ctx());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                let drawn = ui.scope(|ui| quick_trade_buttons(ui, price_text));
+                block = drawn.response.rect;
+                clicked = drawn.inner;
+            });
+        });
+        (block, clicked, output.platform_output.cursor_icon)
+    }
+
+    fn press(at: Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn sell_is_the_left_pill_and_buy_the_right_even_in_a_right_to_left_row() {
+        let mut screen = crate::ui::render_tests::Screen::new(Vec2::new(600.0, 100.0));
+        header_row(&mut screen, "64,348", vec![]);
+        let (block, _, _) = header_row(&mut screen, "64,348", vec![]);
+        for (x, side) in [
+            (block.left() + 10.0, PaperOrderSide::Sell),
+            (block.right() - 10.0, PaperOrderSide::Buy),
+        ] {
+            let at = Pos2::new(x, block.center().y);
+            header_row(&mut screen, "64,348", vec![egui::Event::PointerMoved(at)]);
+            header_row(&mut screen, "64,348", vec![press(at, true)]);
+            let (_, clicked, _) = header_row(&mut screen, "64,348", vec![press(at, false)]);
+            assert_eq!(clicked, Some(side), "a click at x = {x}");
+        }
+    }
+
+    #[test]
+    fn the_pills_show_a_pointing_hand() {
+        let mut screen = crate::ui::render_tests::Screen::new(Vec2::new(600.0, 100.0));
+        header_row(&mut screen, "64,348", vec![]);
+        let (block, _, _) = header_row(&mut screen, "64,348", vec![]);
+        let at = block.center();
+        header_row(&mut screen, "64,348", vec![egui::Event::PointerMoved(at)]);
+        let (_, _, cursor) = header_row(&mut screen, "64,348", vec![]);
+        assert_eq!(cursor, egui::CursorIcon::PointingHand);
+    }
+
+    #[test]
+    fn the_pills_take_exactly_the_width_they_report() {
+        let mut screen = crate::ui::render_tests::Screen::new(Vec2::new(600.0, 100.0));
+        let mut reported = 0.0;
+        screen.run(vec![], |ui| {
+            reported = quick_trade_width(ui, "64,348");
+        });
+        let (block, _, _) = header_row(&mut screen, "64,348", vec![]);
+        assert!((block.width() - reported).abs() < 0.5);
+        assert_eq!(block.height(), QUICK_TRADE_HEIGHT);
+    }
+
+    #[test]
+    fn the_width_grows_with_the_price() {
+        let mut screen = crate::ui::render_tests::Screen::new(Vec2::new(600.0, 100.0));
+        let mut widths = Vec::new();
+        screen.run(vec![], |ui| {
+            for price in ["0.54", "64,348", "64,348.12", "1,234,567.891"] {
+                widths.push(quick_trade_width(ui, price));
+            }
+        });
+        assert!(
+            widths.windows(2).all(|pair| pair[0] < pair[1]),
+            "{widths:?}"
         );
     }
 }
