@@ -124,6 +124,11 @@ fn titles_and_menus(
     }
     kept.hand_back = kept.holding && !chosen.is_empty();
     ui.ctx().data_mut(|data| data.insert_temp(kept_id(), kept));
+    if up {
+        // The menus have had Esc; the editor under them must not also act on it (close its find
+        // bar, drop its extra carets).
+        ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    }
     chosen
 }
 
@@ -132,14 +137,17 @@ fn kept_id() -> Id {
 }
 
 /// Works out whether the editor keeps the keyboard this frame and gives it back if so. Runs
-/// before the editor is drawn, so the field never sees a frame without it.
+/// before the editor is drawn, so the field never sees a frame without it. Only a keyboard nobody
+/// holds is given back: a field that took it since (the find bar, the picker's search, a sheet's
+/// name) keeps it, and the strip stops holding.
 fn keep_keyboard(ctx: &egui::Context, editor: Id, up: bool) -> KeptKeyboard {
     let mut kept: KeptKeyboard = ctx
         .data(|data| data.get_temp(kept_id()))
         .unwrap_or_default();
-    let editor_has_it = ctx.memory(|memory| memory.has_focus(editor));
-    kept.holding = up && (kept.holding || editor_has_it);
-    if kept.holding || kept.hand_back {
+    let focused = ctx.memory(|memory| memory.focused());
+    let free = focused.is_none_or(|id| id == editor);
+    kept.holding = up && free && (kept.holding || focused == Some(editor));
+    if free && (kept.holding || kept.hand_back) {
         ctx.memory_mut(|memory| memory.request_focus(editor));
     }
     kept.hand_back = false;

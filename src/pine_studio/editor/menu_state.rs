@@ -3,12 +3,12 @@
 
 use super::assists::line_edit;
 use super::diff::ChangeKind;
-use super::edit_actions::{EditAction, caret_line, history_steps, selection};
+use super::edit_actions::{EditAction, caret_line, history_steps, selection, stored_cursor};
 use super::edit_ops::Context;
 use super::navigation::caret_index;
 use super::{EditorState, text_hash};
 use crate::pine_studio::debug::marks::BreakpointMark;
-use eframe::egui;
+use eframe::egui::{self, text::CCursorRange};
 use std::ops::Range;
 
 /// The state of the Edit menu's items.
@@ -50,20 +50,34 @@ pub(super) struct Findings {
     rename: bool,
 }
 
-pub(super) type Facts = Option<((u64, Range<usize>, usize), Findings)>;
+/// The text hash, selection and caret the findings were made for.
+type FindingsKey = (u64, Range<usize>, usize);
+
+/// What the menu keeps between frames.
+#[derive(Default)]
+pub(super) struct Cache {
+    /// The scans, for the text, selection and caret they were made for.
+    findings: Option<(FindingsKey, Findings)>,
+    /// What the undo history allows, for the text and cursor it was asked about, and the pass it
+    /// was asked in: the history can change while the menu is shut, so it is asked again each time
+    /// the menu opens, not each frame it stays up.
+    history: Option<(u64, CCursorRange, u64, (bool, bool))>,
+}
 
 impl EditorState {
     /// The state of the Edit menu's items now.
     pub(in crate::pine_studio) fn menu_state(&mut self, ctx: &egui::Context) -> EditorMenuState {
         let selection = selection(ctx, self);
         let caret = caret_index(ctx, self.id).unwrap_or(0);
-        let (can_undo, can_redo) = history_steps(ctx, self);
+        let (can_undo, can_redo) = self.history(ctx);
         let found = self.findings(&selection, caret);
         let line = caret_line(&self.source, caret);
         EditorMenuState {
             can_undo,
             can_redo,
-            selection: !selection.is_empty(),
+            // Every caret copies and cuts what it has selected, not only the one egui holds.
+            selection: !selection.is_empty()
+                || self.carets.extra.iter().any(|sel| sel.anchor != sel.head),
             has_text: !self.source.is_empty(),
             can_step_matches: self.find.open && !self.find.query.is_empty(),
             can_toggle_comment: found.can_toggle_comment,
@@ -79,10 +93,32 @@ impl EditorState {
         }
     }
 
+    /// Whether there is a step to undo and one to redo. Copying the undo history is the costly part
+    /// of the menu, so it is done when the menu opens and when the text or cursor moves while it
+    /// is up.
+    fn history(&mut self, ctx: &egui::Context) -> (bool, bool) {
+        let (text, cursor, pass) = (
+            text_hash(&self.source),
+            stored_cursor(ctx, self),
+            ctx.cumulative_pass_nr(),
+        );
+        if let Some((cached_text, cached_cursor, cached_pass, steps)) = &mut self.nav.strip.history
+            && *cached_text == text
+            && *cached_cursor == cursor
+            && pass <= *cached_pass + 1
+        {
+            *cached_pass = pass;
+            return *steps;
+        }
+        let steps = history_steps(ctx, self);
+        self.nav.strip.history = Some((text, cursor, pass, steps));
+        steps
+    }
+
     /// Worked out once per text and selection, not per frame.
     fn findings(&mut self, selection: &Range<usize>, caret: usize) -> Findings {
         let key = (text_hash(&self.source), selection.clone(), caret);
-        if let Some((cached, findings)) = &self.nav.strip
+        if let Some((cached, findings)) = &self.nav.strip.findings
             && *cached == key
         {
             return *findings;
@@ -100,7 +136,7 @@ impl EditorState {
                 .is_some_and(|calls| !calls.is_empty()),
             rename: table.name_at(caret).is_some(),
         };
-        self.nav.strip = Some((key, findings));
+        self.nav.strip.findings = Some((key, findings));
         findings
     }
 }

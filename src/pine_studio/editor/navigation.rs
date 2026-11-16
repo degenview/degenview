@@ -25,7 +25,7 @@ pub(super) struct NavState {
     /// The text and caret `menu`'s name checks were made for.
     menu_key: Option<(u64, usize)>,
     /// What the Edit menu over the editor may do, for the text and selection it was worked out for.
-    pub(super) strip: menu_state::Facts,
+    pub(super) strip: menu_state::Cache,
     /// Where the context menu was opened, for a list its "Find Usages" opens.
     menu_pos: Option<egui::Pos2>,
     /// The lines a function is called on, listed after ⌘-clicking its declaration.

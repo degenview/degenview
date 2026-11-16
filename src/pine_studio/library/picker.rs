@@ -12,8 +12,13 @@ use crate::ui::shortcut;
 use crate::ui::{kit, theme};
 use eframe::egui::{self, CursorIcon, Id, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 use std::collections::HashSet;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
-/// The popup's content width; its frame adds the margin around it.
+/// The popup's content width; its frame adds the margin around it. A fixed width, as the market
+/// picker's popup (`preview::market_picker`) has: a search popup holds rows of any length, so it is
+/// not fitted to them the way a menu is.
 const WIDTH: f32 = 340.0;
 /// The most the list grows to before it scrolls.
 const LIST_MAX_HEIGHT: f32 = 380.0;
@@ -70,35 +75,58 @@ fn type_glyph(script_type: ScriptType) -> Icon {
     }
 }
 
-/// Scripts matching `query` (name or source, case-insensitive), newest first, by group.
-/// Empty groups are omitted.
-pub fn grouped(scripts: &[LocalScript], query: &str) -> Vec<(Group, Vec<LocalScript>)> {
+/// The scripts of each group as indexes into the list they were made from.
+pub type Groups = Vec<(Group, Vec<usize>)>;
+
+/// Scripts matching `query` (name or source, case-insensitive), newest first, by group. Empty
+/// groups are omitted.
+pub fn grouped(scripts: &[LocalScript], query: &str) -> Groups {
     let needle = query.trim().to_lowercase();
-    let mut matching: Vec<&LocalScript> = scripts
-        .iter()
-        .filter(|s| {
+    let mut matching: Vec<usize> = (0..scripts.len())
+        .filter(|&index| {
+            let script = &scripts[index];
             needle.is_empty()
-                || s.name.to_lowercase().contains(&needle)
-                || s.source.to_lowercase().contains(&needle)
+                || script.name.to_lowercase().contains(&needle)
+                || script.source.to_lowercase().contains(&needle)
         })
         .collect();
-    matching.sort_by_key(|s| std::cmp::Reverse(s.modified_at_ms));
+    matching.sort_by_key(|&index| std::cmp::Reverse(scripts[index].modified_at_ms));
     Group::ALL
         .iter()
         .filter_map(|&group| {
-            let rows: Vec<LocalScript> = matching
+            let rows: Vec<usize> = matching
                 .iter()
-                .filter(|s| match group {
-                    Group::Favorites => s.is_favorite,
-                    Group::Indicators => s.script_type == ScriptType::Indicator,
-                    Group::Strategies => s.script_type == ScriptType::Strategy,
-                    Group::Libraries => s.script_type == ScriptType::Library,
+                .copied()
+                .filter(|&index| {
+                    let script = &scripts[index];
+                    match group {
+                        Group::Favorites => script.is_favorite,
+                        Group::Indicators => script.script_type == ScriptType::Indicator,
+                        Group::Strategies => script.script_type == ScriptType::Strategy,
+                        Group::Libraries => script.script_type == ScriptType::Library,
+                    }
                 })
-                .map(|s| (*s).clone())
                 .collect();
             (!rows.is_empty()).then_some((group, rows))
         })
         .collect()
+}
+
+/// What `grouped` reads of a library, without its sources: when this is the same the groups are,
+/// since a script's source changes only when it is saved, which moves its modified time.
+fn signature(scripts: &[LocalScript]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    for script in scripts {
+        (
+            &script.id,
+            &script.name,
+            script.script_type,
+            script.is_favorite,
+            script.modified_at_ms,
+        )
+            .hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 /// Whether the popup is up, what is typed in its search field and which groups are folded.
@@ -108,6 +136,9 @@ pub(in crate::pine_studio) struct Picker {
     search: String,
     needs_focus: bool,
     collapsed: HashSet<Group>,
+    /// The groups for a search and a library (`signature`), kept while neither changes: matching
+    /// reads every script's source, which is not for each frame.
+    groups: Option<((String, u64), Arc<Groups>)>,
 }
 
 impl Picker {
@@ -124,6 +155,19 @@ impl Picker {
 
     pub fn close(&mut self) {
         self.open = false;
+    }
+
+    /// The groups of `scripts` for the search, worked out again only when either has changed.
+    fn groups(&mut self, scripts: &[LocalScript]) -> Arc<Groups> {
+        let key = (self.search.clone(), signature(scripts));
+        if let Some((cached, groups)) = &self.groups
+            && *cached == key
+        {
+            return Arc::clone(groups);
+        }
+        let groups = Arc::new(grouped(scripts, &self.search));
+        self.groups = Some((key, Arc::clone(&groups)));
+        groups
     }
 
     fn toggle(&mut self) {
@@ -205,6 +249,8 @@ pub(in crate::pine_studio) fn show(
     if pass.close || (dismissed && !pass.menu_open) {
         picker.close();
     }
+    // The popup has had Esc; the editor under it must not also act on it (close its find bar).
+    ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
 }
 
 fn body(
@@ -215,10 +261,10 @@ fn body(
     pass: &mut Pass,
 ) {
     ui.spacing_mut().item_spacing = Vec2::ZERO;
-    let groups = grouped(scripts, &picker.search);
+    let groups = picker.groups(scripts);
     // With no scripts there is nothing to search.
     if !scripts.is_empty() {
-        search_field(ui, picker, &groups, pass);
+        search_field(ui, picker, scripts, &groups, pass);
         ui.add_space(6.0);
     }
     egui::ScrollArea::vertical()
@@ -231,7 +277,7 @@ fn body(
             } else if groups.is_empty() {
                 no_matches(ui);
             } else {
-                list(ui, picker, groups, open_id, pass);
+                list(ui, picker, scripts, &groups, open_id, pass);
             }
         });
     ui.add_space(6.0);
@@ -242,7 +288,8 @@ fn body(
 fn search_field(
     ui: &mut Ui,
     picker: &mut Picker,
-    groups: &[(Group, Vec<LocalScript>)],
+    scripts: &[LocalScript],
+    groups: &Groups,
     pass: &mut Pass,
 ) {
     let width = ui.available_width();
@@ -262,31 +309,33 @@ fn search_field(
         && ui.input(|i| i.key_pressed(egui::Key::Enter))
         && let Some(first) = groups.first().and_then(|(_, rows)| rows.first())
     {
-        pass.run(Cmd::Select(first.id.clone()));
+        pass.run(Cmd::Select(scripts[*first].id.clone()));
     }
 }
 
 fn list(
     ui: &mut Ui,
     picker: &mut Picker,
-    groups: Vec<(Group, Vec<LocalScript>)>,
+    scripts: &[LocalScript],
+    groups: &Groups,
     open_id: Option<&str>,
     pass: &mut Pass,
 ) {
     let show_in = format!("Show in {}", crate::platform::file_manager());
-    for (index, (group, scripts)) in groups.into_iter().enumerate() {
+    for (index, (group, rows)) in groups.iter().enumerate() {
         // Sections breathe: the gap above a header separates it from the rows it closes.
         if index > 0 {
             ui.add_space(6.0);
         }
-        let collapsed = picker.collapsed.contains(&group);
-        if section_header(ui, group, scripts.len(), collapsed) && !picker.collapsed.remove(&group) {
+        let (group, collapsed) = (*group, picker.collapsed.contains(group));
+        if section_header(ui, group, rows.len(), collapsed) && !picker.collapsed.remove(&group) {
             picker.collapsed.insert(group);
         }
         if collapsed {
             continue;
         }
-        for script in &scripts {
+        for &index in rows {
+            let script = &scripts[index];
             let selected = open_id == Some(script.id.as_str());
             row(ui, group, script, selected, &show_in, pass);
         }
@@ -603,9 +652,13 @@ mod tests {
             ["Favorites", "Indicators", "Strategies"],
             "empty Libraries hidden"
         );
-        let indicators: Vec<&str> = groups[1].1.iter().map(|s| s.name.as_str()).collect();
+        let indicators: Vec<&str> = groups[1]
+            .1
+            .iter()
+            .map(|&index| scripts[index].name.as_str())
+            .collect();
         assert_eq!(indicators, ["Beta", "Alpha"]);
-        assert_eq!(groups[0].1[0].name, "Beta");
+        assert_eq!(scripts[groups[0].1[0]].name, "Beta");
     }
 
     #[test]
@@ -618,12 +671,41 @@ mod tests {
             grouped(&scripts, q)
                 .into_iter()
                 .flat_map(|(_, rows)| rows)
-                .map(|s| s.name)
+                .map(|index| scripts[index].name.clone())
                 .collect()
         };
         assert_eq!(names("ALP"), ["Alpha"]);
         assert_eq!(names("open"), ["Beta"]);
         assert_eq!(names("  "), ["Beta", "Alpha"]);
         assert!(names("zzz").is_empty());
+    }
+
+    #[test]
+    fn the_groups_are_worked_out_again_only_when_the_search_or_the_library_changes() {
+        let mut scripts = vec![
+            script("a", "Alpha", ScriptType::Indicator, false, 1, "plot(close)"),
+            script("b", "Beta", ScriptType::Indicator, false, 2, "plot(open)"),
+        ];
+        let mut picker = Picker::default();
+        let first = picker.groups(&scripts);
+        assert!(
+            Arc::ptr_eq(&first, &picker.groups(&scripts)),
+            "a frame later"
+        );
+
+        picker.search = "open".to_owned();
+        let searched = picker.groups(&scripts);
+        assert!(!Arc::ptr_eq(&first, &searched));
+        assert_eq!(searched.len(), 1);
+        assert!(Arc::ptr_eq(&searched, &picker.groups(&scripts)));
+
+        // A script saved with other text has a newer modified time; a rename or a star counts too.
+        scripts[0].source = "plot(open)".to_owned();
+        scripts[0].modified_at_ms = 9;
+        let saved = picker.groups(&scripts);
+        assert!(!Arc::ptr_eq(&searched, &saved));
+        assert_eq!(saved[0].1.len(), 2);
+        scripts[1].is_favorite = true;
+        assert!(!Arc::ptr_eq(&saved, &picker.groups(&scripts)));
     }
 }

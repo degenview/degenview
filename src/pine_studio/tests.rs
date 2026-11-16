@@ -619,6 +619,159 @@ fn opening_a_menu_keeps_the_editors_selection_so_cut_and_copy_stay_on() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+fn key_event(key: egui::Key, command: bool) -> Event {
+    Event::Key {
+        key,
+        physical_key: Some(key),
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers {
+            command,
+            mac_cmd: command && crate::ui::shortcut::is_mac(),
+            ctrl: command && !crate::ui::shortcut::is_mac(),
+            ..egui::Modifiers::NONE
+        },
+    }
+}
+
+/// A window with the editor alone under the bar (no preview chart), its text all selected so it
+/// has the keyboard, and the click and frame helpers for it.
+struct EditorWindow {
+    manager: PineStudio,
+    screen: Screen,
+    corner: egui::Pos2,
+    root: PathBuf,
+}
+
+impl EditorWindow {
+    fn new(tag: &str) -> Self {
+        let (mut manager, root, _) = edited(tag);
+        manager.prefs.chart_visible = false;
+        let size = vec2(1360.0, 860.0);
+        let mut screen = Screen::new(size);
+        settle(&mut manager, &mut screen);
+        manager.edit_command(editor::EditAction::SelectAll);
+        settle(&mut manager, &mut screen);
+        Self {
+            manager,
+            screen,
+            corner: strip_corner(size, ChartPosition::Bottom),
+            root,
+        }
+    }
+
+    fn click_title(&mut self, menu: menu_bar::Menu) -> egui::Pos2 {
+        let at = menu_bar::title_centre(menu, self.corner);
+        click_window(&mut self.manager, &mut self.screen, at);
+        at
+    }
+
+    /// Clicks the `row`th row (rows only) of the menu opened from the title at `title`.
+    fn click_row(&mut self, menu: menu_bar::Menu, title: egui::Pos2, row: usize) {
+        let at = pos2(title.x + 20.0, menu_row_y(self.corner, menu, row));
+        click_window(&mut self.manager, &mut self.screen, at);
+    }
+
+    fn frames(&mut self, events: Vec<Event>) {
+        for (index, _) in (0..3).enumerate() {
+            crate::ui::theme::sync(&self.screen.ctx);
+            let events = if index == 0 {
+                events.clone()
+            } else {
+                Vec::new()
+            };
+            self.screen.run(events, |ui| {
+                self.manager.ui(ui, None);
+            });
+        }
+    }
+
+    fn focused(&self) -> Option<egui::Id> {
+        self.screen.ctx.memory(|memory| memory.focused())
+    }
+
+    fn editor_id(&self) -> egui::Id {
+        self.manager
+            .open
+            .as_ref()
+            .expect("a script is open")
+            .editor
+            .focus_id()
+    }
+
+    fn find_open(&self) -> bool {
+        self.manager
+            .open
+            .as_ref()
+            .is_some_and(|open| open.editor.find.open)
+    }
+}
+
+impl Drop for EditorWindow {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+#[test]
+fn open_script_from_the_file_menu_leaves_the_keyboard_in_the_pickers_search() {
+    use menu_bar::Menu;
+    let mut window = EditorWindow::new("menu-open-script");
+    let before = window.manager.open.as_ref().unwrap().editor.source.clone();
+    let title = window.click_title(Menu::File);
+    window.click_row(Menu::File, title, 1);
+    window.frames(Vec::new());
+    assert!(window.manager.picker.is_open());
+    let focused = window.focused();
+    assert!(focused.is_some() && focused != Some(window.editor_id()));
+    window.frames(vec![Event::Text("zz".to_owned())]);
+    assert_eq!(
+        window.manager.open.as_ref().unwrap().editor.source,
+        before,
+        "what is typed goes to the search, not into the code"
+    );
+}
+
+#[test]
+fn find_with_the_edit_menu_up_leaves_the_keyboard_in_the_find_field() {
+    use menu_bar::Menu;
+    let mut window = EditorWindow::new("menu-find");
+    window.click_title(Menu::Edit);
+    assert_eq!(
+        window.focused(),
+        Some(window.editor_id()),
+        "held for the menu"
+    );
+    window.frames(vec![key_event(egui::Key::F, true)]);
+    window.frames(Vec::new());
+    assert!(window.find_open());
+    assert_eq!(window.focused(), Some(egui::Id::new("script-find-field")));
+}
+
+#[test]
+fn escape_that_closes_a_menu_or_the_picker_leaves_the_find_bar_open() {
+    use menu_bar::Menu;
+    let mut window = EditorWindow::new("menu-escape");
+    window.manager.edit_command(editor::EditAction::Find);
+    window.frames(Vec::new());
+    assert!(window.find_open());
+
+    window.click_title(Menu::Edit);
+    assert!(egui::Popup::is_any_open(&window.screen.ctx));
+    window.frames(vec![key_event(egui::Key::Escape, false)]);
+    assert!(
+        !egui::Popup::is_any_open(&window.screen.ctx),
+        "the menu closed"
+    );
+    assert!(window.find_open(), "and the find bar stayed");
+
+    window.manager.picker.open();
+    window.frames(Vec::new());
+    window.frames(vec![key_event(egui::Key::Escape, false)]);
+    assert!(!window.manager.picker.is_open(), "the picker closed");
+    assert!(window.find_open(), "and the find bar stayed");
+}
+
 /// With `DEGENVIEW_GALLERY_DIR` set, the whole window is written as pictures in both themes at the
 /// default and the narrowest size with each of the strip's menus open, the Edit menu with a
 /// selection and with the caret in a change, and a submenu of View and one of Edit open.

@@ -3,6 +3,7 @@
 
 use super::diff::ChangeKind;
 use super::gutter::changes::ChangeCommand;
+use super::multi_cursor::Sel;
 use super::navigation_tests::{Harness, SCRIPT, cmd, key};
 use super::*;
 use crate::pine_studio::debug::marks::{BreakpointMark, MarkKind};
@@ -195,6 +196,42 @@ fn the_menu_state_follows_the_stored_caret_not_the_keyboard() {
         crate::native_bridge::EditMenu::default(),
         "the macOS menu still wants the keyboard"
     );
+}
+
+#[test]
+fn cut_and_copy_are_on_when_an_extra_caret_has_a_selection_though_the_primary_has_none() {
+    let mut h = Harness::new("a b\nc d\n");
+    h.place(1, 1);
+    h.state.set_extra_carets(&[5]);
+    assert!(
+        !h.state.menu_state(&h.ctx).selection,
+        "bare carets have nothing to cut"
+    );
+    h.state.carets.extra = vec![Sel { anchor: 4, head: 7 }];
+    assert!(h.state.menu_state(&h.ctx).selection);
+}
+
+#[test]
+fn the_undo_history_is_read_when_the_menu_opens_and_again_after_a_gap() {
+    let mut h = Harness::new(SCRIPT);
+    h.place(0, 0);
+    type_and_settle(&mut h, "x");
+    let open = h.state.menu_state(&h.ctx);
+    assert!(open.can_undo);
+    // Still up a frame later: the same answer without asking the history again.
+    h.frame(vec![]);
+    assert_eq!(h.state.menu_state(&h.ctx).can_undo, open.can_undo);
+    // Undone with the menu shut, then opened again with the same text and cursor as before
+    // would have been (undo and redo): the history is asked, not remembered.
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    h.frame(vec![key(Key::Z, cmd())]);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    let after = h.state.menu_state(&h.ctx);
+    assert!(!after.can_undo && after.can_redo);
 }
 
 #[test]

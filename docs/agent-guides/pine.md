@@ -234,7 +234,10 @@
   - **Keyboard.** A click on the strip makes the editor surrender focus, and an unfocused
     `TextEdit` collapses its selection, which would grey out Cut and Copy as the menu opens. So the
     strip requests focus back for the editor each frame a menu is up (if the editor had it when the
-    menu opened) and the frame after a row was chosen.
+    menu opened) and the frame after a row was chosen, but only while nothing else holds the
+    keyboard: the find field, the picker's search or a sheet's field that took it keeps it. The
+    strip (and the picker) consume Esc after they have used it, so the editor under them does not
+    also close its find bar or drop its extra carets.
 
 ## Drawer tabs
 
