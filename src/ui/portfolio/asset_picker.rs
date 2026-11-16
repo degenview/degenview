@@ -400,8 +400,9 @@ fn show_body(
             state.select_provider(provider);
         }
         let searching = state.is_loading() || state.debounce.is_some();
-        let event = widgets::search_box(
+        let event = kit::search_box::search_box(
             ui,
+            Icon::Magnifier,
             &mut state.query,
             searching,
             state.tab.placeholder(),

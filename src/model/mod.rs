@@ -48,4 +48,4 @@ pub use market::instrument::InstrumentId;
 pub use market::kline::Kline;
 pub use market::pm_series::PmSeries;
 pub use market::source::DataSource;
-pub use market::timeframe::{TimeUnit, Timeframe};
+pub use market::timeframe::{Section, TimeUnit, Timeframe, TimeframeParseError};

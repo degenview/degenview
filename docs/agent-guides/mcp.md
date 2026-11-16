@@ -13,9 +13,13 @@
   `every_routed_tool_has_a_permission_and_an_unmapped_name_is_not_run` fails the build), and
   `the_tool_list_and_its_permissions_are_pinned` holds the whole list.
 
-- Timeframes: `McpTimeframe` accepts the six names `1H 1D 1W 1M 3M 1Y`, and results write them the
-  same way (`McpTimeframe::name`, so the hour is `1H` although the app labels it `1h`). The app's own
-  confirmation text uses the label.
+- Timeframes: a tool's `timeframe` is a string read by `Timeframe::parse` through
+  `chart::control::parse_timeframe`: a count and a unit (`m` minutes, `h` hours, `D` days, `W` weeks,
+  `M` months, or `1Y`; `15m`, `4h`, `1D`, `2W`, `3M`), and the old `1H` still reads. A refused one is
+  an `INVALID_ARGUMENT` with the parse message (`Seconds aren't supported`, `Minutes go from 1 to
+  1440`) and the grammar (`TIMEFRAME_GRAMMAR`, which the tool descriptions repeat). Results write the
+  app's label (`Timeframe::label`: `1h`, `22m`, `2D`). A source with no such candle builds it from
+  finer ones or the chart shows why it cannot (see [Market data](market-data.md#timeframes)).
 
 ## Adding a tool
 

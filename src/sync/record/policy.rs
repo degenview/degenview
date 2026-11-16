@@ -260,7 +260,8 @@ pub fn setting_policy(key: &str) -> SettingPolicy {
         | "drawing.prefs"
         | "snapshot.prefs"
         | "editor.prefs"
-        | "indicatorPicker.favorites" => SettingPolicy::Portable(Merge::LastWriterWins),
+        | "indicatorPicker.favorites"
+        | "timeframePicker.pinned" => SettingPolicy::Portable(Merge::LastWriterWins),
         "watchlist.flags" => SettingPolicy::Portable(Merge::ThreeWay),
         _ => SettingPolicy::Local,
     }
@@ -393,6 +394,10 @@ mod tests {
         );
         assert_eq!(
             setting_policy("indicatorPicker.favorites"),
+            SettingPolicy::Portable(Merge::LastWriterWins)
+        );
+        assert_eq!(
+            setting_policy(crate::store::pinned_timeframes::KEY),
             SettingPolicy::Portable(Merge::LastWriterWins)
         );
     }

@@ -1,8 +1,8 @@
 //! A candle length: a count of minutes, hours, days, weeks or months.
 //!
-//! `Timeframe` is a value, not a closed list: `22m`, `3h` and `2D` are as real as `1D`. The
-//! toolbar still offers [`Timeframe::LEGACY`]; [`Timeframe::PRESETS`] are the lengths providers
-//! serve natively. Where a candle opens and closes is `model::market::bucket`'s business.
+//! `Timeframe` is a value, not a closed list: `22m`, `3h` and `2D` are as real as `1D`.
+//! [`Timeframe::PRESETS`] are the lengths providers serve natively and the timeframe picker
+//! lists. Where a candle opens and closes is `model::market::bucket`'s business.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
@@ -117,8 +117,8 @@ impl Timeframe {
         Self::YEAR_1,
     ];
 
-    /// The six lengths the toolbar, Pine Studio and drawing visibility have always offered; the
-    /// ones saved data names with a variant name (see the serde impls).
+    /// The six lengths older builds offered; the ones saved data names with a variant name (see
+    /// the serde impls).
     pub const LEGACY: [Self; 6] = [
         Self::HOUR_1,
         Self::DAY_1,

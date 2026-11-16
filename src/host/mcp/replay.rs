@@ -1,6 +1,5 @@
 use crate::host::mcp::{McpTabs, confirmation};
 use crate::mcp::bridge::{McpError, McpReply};
-use crate::mcp::chart::control::McpTimeframe;
 use crate::mcp::confirm::Summary;
 use crate::mcp::replay::{self, ReplayRequest, ReplayResult};
 use crate::model::{ReplayCommand, ReplayError};
@@ -29,7 +28,7 @@ pub fn describe(command: &ReplayRequest) -> Result<Summary, McpError> {
 pub fn replay_state(workspace: &ChartWorkspace) -> ReplayResult {
     replay::replay_result(
         workspace.id(),
-        &McpTimeframe::name(workspace.timeframe()),
+        &workspace.timeframe().label(),
         &workspace.replay_view(),
     )
 }
@@ -56,7 +55,7 @@ pub fn control_replay(
         })?;
     Ok(replay::replay_result(
         workspace.id(),
-        &McpTimeframe::name(workspace.timeframe()),
+        &workspace.timeframe().label(),
         &view,
     ))
 }

@@ -1,18 +1,19 @@
 //! The small key labels of a shortcut hint ("Esc", "↑", "↵"): a rounded outline around the key's name,
-//! with the arrow keys drawn as shapes because their glyphs are not in every font.
+//! with the arrow, return and shift keys drawn as shapes because their glyphs are not in every font.
 
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM};
 use crate::ui::theme;
 use eframe::egui::{self, Rect, Sense, Stroke, Vec2};
 
-/// The arrows a keycap draws as shapes. Their font glyphs (↑ ↓ ↵) are in no font the app is
+/// The keys a keycap draws as shapes. Their font glyphs (↑ ↓ ↵ ⇧) are in no font the app is
 /// sure to have: macOS has them in its system fonts, a Linux machine shows tofu squares.
 fn keycap_icon(key: &str) -> Option<Icon> {
     match key {
         "\u{2191}" => Some(Icon::ArrowUp),
         "\u{2193}" => Some(Icon::ArrowDown),
         "\u{21b5}" => Some(Icon::Return),
+        "\u{21e7}" => Some(Icon::Shift),
         _ => None,
     }
 }

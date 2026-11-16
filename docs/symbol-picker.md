@@ -145,6 +145,9 @@ Unit tests cover the ranking, the search state, the keyboard (arrows, Return, â‡
 scopes, modes and venues, the prediction grouping and ticking, the dashboards lists and filters,
 recents and popular markets, the tab bar's fitting, the workspace replace/add/prefill behaviour
 (including a prediction market keeping its title, artwork and lines) and layout at several widths.
+The footer's key hints are `kit::hints::hint_row` and the field `kit::search_box`, shared with the
+[timeframe picker](workspace-toolbar.md#timeframe-picker).
+
 `gallery_of_the_symbol_picker` (ignored, set `DEGENVIEW_GALLERY_DIR`) writes pictures of every tab and
 mode in both appearances. Not checked: Linux and Windows windows; real Polymarket, Kalshi and
 CoinMarketCap answers in a running window; the "Open 24/7" line is a fact about crypto markets, not a

@@ -98,6 +98,7 @@ pub enum Icon {
     ArrowDown,
     /// The return key's bent arrow: down, then left.
     Return,
+    Shift,
     Pencil,
     PauseFill,
     PlayFill,
@@ -1008,6 +1009,16 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&[p(12.5, 3.0), p(12.5, 9.0), p(3.5, 9.0)]);
             line(&[p(6.5, 6.0), p(3.5, 9.0), p(6.5, 12.0)]);
         }
+        // The shift key's outline: an arrow pointing up with a short stem.
+        Icon::Shift => closed(&[
+            p(8.0, 2.4),
+            p(13.4, 8.2),
+            p(10.0, 8.2),
+            p(10.0, 13.4),
+            p(6.0, 13.4),
+            p(6.0, 8.2),
+            p(2.6, 8.2),
+        ]),
         Icon::Pencil => {
             closed(&[
                 p(10.6, 2.4),
@@ -2458,6 +2469,7 @@ mod tests {
             ArrowUp,
             ArrowDown,
             Return,
+            Shift,
             Pencil,
             PauseFill,
             PlayFill,

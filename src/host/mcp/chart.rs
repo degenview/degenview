@@ -1,6 +1,6 @@
 use crate::host::mcp::{McpTabs, confirmation};
 use crate::mcp::bridge::{McpError, McpReply};
-use crate::mcp::chart::control::{ChartChangeResult, McpTimeframe, TimeframeResult};
+use crate::mcp::chart::control::{ChartChangeResult, TimeframeResult};
 use crate::mcp::chart::drawings::{DrawingEdit, NewDrawing};
 use crate::mcp::chart::{ChartCommand, data};
 use crate::mcp::confirm::Summary;
@@ -179,7 +179,7 @@ pub fn workspace_info(workspace: &ChartWorkspace, active: bool) -> WorkspaceInfo
         title: workspace.title(),
         chart_count: workspace.chart_count(),
         active,
-        timeframe: McpTimeframe::name(workspace.timeframe()),
+        timeframe: workspace.timeframe().label(),
     }
 }
 
@@ -198,7 +198,7 @@ fn chart_info(workspace: &ChartWorkspace, chart: ChartSummary) -> ChartInfo {
         source: source_slug(chart.instrument.source).to_owned(),
         symbol: chart.instrument.symbol.clone(),
         display_symbol: chart.display_symbol,
-        timeframe: McpTimeframe::name(workspace.timeframe()),
+        timeframe: workspace.timeframe().label(),
         chart_type: if chart.is_line_chart {
             "line"
         } else {
@@ -306,7 +306,7 @@ pub fn add_chart(
             || instrument.source.display_symbol(&instrument.symbol),
             |chart| chart.display_symbol,
         ),
-        timeframe: McpTimeframe::name(workspace.timeframe()),
+        timeframe: workspace.timeframe().label(),
         status: if outcome.created {
             AddChartStatus::Created
         } else {
@@ -340,7 +340,7 @@ pub fn chart_candles(
             .source
             .supports_older_history(workspace.timeframe()),
         instrument: data.instrument,
-        timeframe: McpTimeframe::name(workspace.timeframe()),
+        timeframe: workspace.timeframe().label(),
         chart_type: data.chart_type,
         replay_ms: data.replay_ms,
         now_ms: now_ms(),
@@ -485,7 +485,7 @@ pub fn indicator_readings(
         workspace_id: workspace.id(),
         chart_id,
         instrument: data.instrument.key(),
-        timeframe: McpTimeframe::name(workspace.timeframe()),
+        timeframe: workspace.timeframe().label(),
         chart_type: data.chart_type.slug().to_owned(),
         constructed: constructed.is_some(),
         replay_ms: data.replay_ms,
@@ -509,7 +509,7 @@ pub fn session_statistics(
         workspace_id: workspace.id(),
         chart_id,
         instrument: data.instrument.key(),
-        timeframe: McpTimeframe::name(workspace.timeframe()),
+        timeframe: workspace.timeframe().label(),
         bar_ms: workspace.timeframe().nominal_ms(),
         hours: crate::model::session_stats::MarketHours::for_source(data.instrument.source),
     };
@@ -526,8 +526,8 @@ pub fn set_timeframe(
     let changed = workspace.set_timeframe_for_mcp(timeframe, ctx);
     TimeframeResult {
         workspace_id: workspace.id().to_string(),
-        timeframe: McpTimeframe::name(workspace.timeframe()),
-        previous_timeframe: McpTimeframe::name(previous),
+        timeframe: workspace.timeframe().label(),
+        previous_timeframe: previous.label(),
         status: if changed { "changed" } else { "unchanged" }.to_owned(),
         chart_count: workspace.chart_count(),
     }

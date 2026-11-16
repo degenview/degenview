@@ -37,7 +37,7 @@ watchlists.
   apart from `1D`, and `12M` is the year. Equality, hashing and ordering (by nominal length, then
   unit) follow that form.
 - Consts: `MINUTE_1` ... `YEAR_1`; `PRESETS` are the lengths providers serve natively, `LEGACY` the
-  six (`1h`, `1D`, `1W`, `1M`, `3M`, `1Y`) the toolbar, Pine Studio and drawing visibility offer.
+  six (`1h`, `1D`, `1W`, `1M`, `3M`, `1Y`) saved data names with a variant name (see serde below). The toolbar and Pine Studio offer every timeframe through the [timeframe picker](../workspace-toolbar.md#timeframe-picker).
 - `Timeframe::parse`: digits, then an optional unit, spaces allowed. No unit is minutes (`22` is
   `22m`); `m` is minutes and `M` months, the rest take either case (`h d w y`); `1Y` is `12M`, `2Y`
   is refused, seconds (`s`) are refused. It reads the old labels and provider tokens too.
@@ -60,8 +60,9 @@ watchlists.
 - **Every source serves any timeframe, or says it cannot.** `MarketSource::fetch_klines` and
   `fetch_klines_range` take a `Timeframe` (never a token string) and answer
   `ProviderError::UnsupportedInterval { provider, timeframe }`, "Polymarket has no 1m history"
-  (`is_unsupported_interval()`; decide on the variant, never the text). The UI still offers only the
-  `LEGACY` six; everything below it works for `1m`, `22m`, `3h`, `2D`, `2W`, `6M`.
+  (`is_unsupported_interval()`; decide on the variant, never the text). The timeframe picker offers the
+  presets and any timeframe typed or pinned (`1m`, `22m`, `3h`, `2D`, `2W`, `6M`), and warns before a
+  chart whose source `serves` says no.
 - **Natives live in `model::market::natives`**, one list per candle source
   (`DataSource::natives()`), so the planner a provider fetches by (`DataSource::plan`, a
   `bucket::FoldPlan`: target, base, `base_count(limit)`, `shape`) and the capability check the UI asks

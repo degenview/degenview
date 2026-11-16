@@ -8,6 +8,7 @@
 //! writer can be forgotten, at the cost of one rebuild per write.
 
 use super::Store;
+use crate::model::Timeframe;
 use crate::model::alert::pine::PineAlertSubscription;
 use crate::model::webhook::WebhookEndpoint;
 use std::cell::RefCell;
@@ -100,6 +101,8 @@ pub(crate) struct FrameCaches {
     muted_alerts: ChangeCached<HashSet<u64>>,
     /// `(delivered, attempted)` per alert event, for the Alerts window's history chips.
     webhook_summaries: ChangeCachedMap<u64, Option<(usize, usize)>>,
+    /// The timeframe picker's pinned list, which every chart toolbar and Pine Studio bar shows.
+    pinned_timeframes: ChangeCached<Vec<Timeframe>>,
 }
 
 impl Store {
@@ -136,6 +139,13 @@ impl Store {
         self.frame_caches
             .muted_alerts
             .get(self.change_stamp(), || self.muted_alerts())
+    }
+
+    /// `pinned_timeframes`, read again only after a write.
+    pub fn pinned_timeframes_cached(&self) -> Arc<Vec<Timeframe>> {
+        self.frame_caches
+            .pinned_timeframes
+            .get(self.change_stamp(), || self.pinned_timeframes())
     }
 
     /// How many of `event_id`'s webhook deliveries arrived, of how many were attempted; `None`
