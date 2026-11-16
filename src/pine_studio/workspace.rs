@@ -13,6 +13,7 @@ use super::library::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
 use super::profiler::marks::ProfileColumn;
 use super::profiler::ui::{self, TabView};
 use super::profiler::{Profile, Status};
+use super::rail::{self, RailState};
 use super::{OpenScript, PineStudio};
 use crate::pine::syntax::token::Diagnostic;
 use crate::ui::icons::Icon;
@@ -134,6 +135,7 @@ impl PineStudio {
         let profile_column = self.profiler.column(self.profiler_now.as_ref());
         let profile_status = self.profiler.status(self.profiler_now.as_ref());
         let profile_lines_match = self.profiler.lines_match(self.profiler_now.as_ref());
+        let rail_state = RailState::new(&self.prefs, profile_status.clone());
         {
             let open = &mut self.open;
             let preview = &mut self.preview;
@@ -163,15 +165,17 @@ impl PineStudio {
                 spec,
                 &mut state,
                 |ui| {
-                    editor_pane(
-                        ui,
-                        open,
-                        &shared,
-                        &cmds,
-                        &changed,
-                        profile_column.clone(),
-                        &ai_pane,
-                    )
+                    rail::show(ui, &rail_state, &cmds, |ui| {
+                        editor_pane(
+                            ui,
+                            open,
+                            &shared,
+                            &cmds,
+                            &changed,
+                            profile_column.clone(),
+                            &ai_pane,
+                        )
+                    })
                 },
                 |ui| preview_pane(ui, preview, &shared, copied_at, &side, logs, &cmds),
             );

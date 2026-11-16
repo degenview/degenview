@@ -17,6 +17,7 @@ mod migrate_swift;
 mod open_script;
 mod preview;
 pub mod profiler;
+mod rail;
 mod sheets;
 pub mod theme_preview;
 mod workspace;

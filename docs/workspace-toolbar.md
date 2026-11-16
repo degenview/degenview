@@ -6,10 +6,11 @@ button with `with_menu(key)` gets that key handed to the caller's `popup` callba
 drawn, only while enabled). `kit::bar::HEIGHT` (44) is the height of every tab's bar, on
 `theme::chrome()`; the chart's toolbar, the Portfolio's (`ui/portfolio/tab/bar.rs`, see
 [Portfolio page](portfolio-page.md)) and the Pine Studio's (`pine_studio/bar.rs`) differ only in
-their items, so switching tabs never changes the window's chrome. Button ids are scoped by the
+their items, so switching tabs never changes the window's chrome. `show_column` lays the same items
+out down a narrow rail instead (below). Button ids are scoped by the
 panel's `ui.id()`. Do not draw a tab's top controls with anything else.
 
-**Pine Studio bar.** Left: preview-chart position menu, preview toggle | market button (name,
+**Pine Studio bar.** Left: market button (name,
 then the last price and change as quiet text; opens the market picker, `preview::market_picker`) |
 timeframe row (lit current one) | script button (a document glyph, the open script's name or
 "Scripts", a chevron; `keep_label`, so the name stays when the bar narrows). The script button
@@ -17,9 +18,18 @@ opens the script picker (`library::picker`, ⌃⌘S / Ctrl+B), the only way to l
 delete scripts: the sidebar that held them is gone. The picker is not egui's popup slot
 (`Popup::open(true)` over its own `Picker` state), because a row's right-click menu takes that slot
 and would close it. The market and timeframe act on the preview chart and are disabled with no open
-script or a hidden chart; the script button is always enabled. Right: assistant, profiler (tinted
-when it needs attention) and debugger, for an open script. The market and timeframe used to sit in a
+script or a hidden chart; the script button is always enabled. The right run is empty. The market and timeframe used to sit in a
 52 pt strip over the preview chart; that strip is gone.
+
+**Pine Studio editor rail** (`pine_studio/rail.rs`). A 41 pt column (`rail::WIDTH`, a right
+`egui::Panel` on `theme::chrome()`, its egui separator the only edge) down the right of the code
+editor, drawn with `kit::bar::show_column`: the same `Button`s and `paint_button` as the bar, icon
+only, centred, with a short horizontal hairline for `Item::Separator`. Top to bottom: assistant,
+profiler (tinted when it needs attention) and debugger | preview-chart position menu (the icon
+follows the position; opens to the left of the rail) and the preview toggle. It spans the whole
+editor column (code, assistant and debugger panels) and never reaches over the preview chart, so
+with the chart left of the code it is the window's right edge, and above or below it sits beside the
+code only. It is shown whenever a script is open.
 
 **View menu (macOS).** Between Edit and Window: Pine Studio and Portfolio
 (`NativeCommand::OpenPineStudio` / `OpenPortfolio`), each opening its one tab or showing the open

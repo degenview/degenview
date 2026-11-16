@@ -176,7 +176,7 @@ the editor's Profile column or tab and a profile the user made is not disturbed.
 ## The panel (phase 2)
 
 - `ai_panel` (view), `ai_host` (`impl PineStudio`), `ai` (state), `ai_prompt` (pure text rules).
-  The toolbar's sparkles button toggles it (`prefs.ai_open`, `ai_height`); it sits under the editor
+  The sparkles button on the editor's rail toggles it (`prefs.ai_open`, `ai_height`); it sits under the editor
   and the debugger's panel, in an outer split.
 - **One conversation per open script.** Opening another script, or Start over, forgets it and stops
   any request. Only the last six turns are resent, with earlier scripts replaced by a marker; the

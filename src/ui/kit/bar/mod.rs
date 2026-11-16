@@ -5,6 +5,8 @@
 //! `A` that [`show`] returns when it is clicked, and a key `M` for the popup it owns, which the
 //! caller draws through the `popup` callback once the button is.
 //!
+//! [`show_column`] lays the same items out as a narrow vertical rail of icons instead.
+//!
 //! One engine keeps every bar the same height ([`HEIGHT`]), fill (`theme::chrome()`), spacing and
 //! tint, so a tab does not change the window's chrome when it is switched to.
 
@@ -34,6 +36,10 @@ const GAP: f32 = 2.0;
 /// Either side of a separator's hairline.
 const SEPARATOR_MARGIN: f32 = 7.0;
 const SEPARATOR_HEIGHT: f32 = 18.0;
+/// What a separator's slot takes along its run: its hairline and the margin either side.
+const SEPARATOR_SPAN: f32 = 1.0 + 2.0 * SEPARATOR_MARGIN;
+/// Between the top of a column and its first button.
+const COLUMN_INSET: f32 = 8.0;
 pub const EDGE: f32 = 10.0;
 /// The most the two clusters may crowd each other before the right one starts to drop buttons.
 const CLUSTER_GAP: f32 = 16.0;
@@ -172,7 +178,15 @@ impl<A, M> Slot<'_, A, M> {
     fn span(&self) -> f32 {
         match self {
             Slot::Button(measured) => measured.width,
-            Slot::Separator => 1.0 + 2.0 * SEPARATOR_MARGIN,
+            Slot::Separator => SEPARATOR_SPAN,
+        }
+    }
+
+    /// The room the slot takes down a column, without the gap after it.
+    fn depth(&self) -> f32 {
+        match self {
+            Slot::Button(_) => BUTTON,
+            Slot::Separator => SEPARATOR_SPAN,
         }
     }
 
@@ -283,6 +297,19 @@ fn arrange<'a, 'b, A, M>(
     placed
 }
 
+/// Where each slot of a column starts, from its top. Icon-only: the labels are never measured.
+fn arrange_column<'a, 'b, A, M>(slots: &'b [Slot<'a, A, M>]) -> Vec<(f32, &'b Slot<'a, A, M>)> {
+    let mut y = COLUMN_INSET;
+    slots
+        .iter()
+        .map(|slot| {
+            let at = y;
+            y += slot.depth() + slot.gap_after();
+            (at, slot)
+        })
+        .collect()
+}
+
 /// The two runs of a bar, measured.
 struct Runs<'a, A, M> {
     /// The labels are shown (there is room for them); only the tests ask.
@@ -316,7 +343,8 @@ fn lay_out<'a, A, M>(
     }
 }
 
-/// One button as laid out: where it starts and ends along the bar, and what a click asks for.
+/// One button as laid out: where it starts and ends along the bar (down the column), and what a
+/// click asks for.
 #[cfg(test)]
 pub struct Placed<A> {
     pub from: f32,
@@ -347,6 +375,22 @@ pub fn geometry<A: Copy, M>(
     (runs.labels, placed)
 }
 
+/// Where every button of a column lands, measured down from its top.
+#[cfg(test)]
+pub fn column_geometry<A: Copy, M>(ui: &Ui, items: &[Item<A, M>]) -> Vec<Placed<A>> {
+    arrange_column(&measure(ui, items, false))
+        .into_iter()
+        .filter_map(|(y, slot)| match slot {
+            Slot::Button(measured) => Some(Placed {
+                from: y,
+                to: y + BUTTON,
+                action: measured.button.action,
+            }),
+            Slot::Separator => None,
+        })
+        .collect()
+}
+
 /// Draws the bar over `ui`'s rectangle and returns what was clicked. `popup` draws a button's
 /// pull-down (`Button::menu`) right after the button, and may add actions of its own.
 pub fn show<A: Copy, M: Copy>(
@@ -366,6 +410,42 @@ pub fn show<A: Copy, M: Copy>(
     actions
 }
 
+/// Draws the items down the middle of `ui`'s rectangle as icons only, the way a bar would with
+/// no room for labels, and returns what was clicked. The caller fills the background. A
+/// separator is a short horizontal hairline; `popup` is called as in [`show`].
+pub fn show_column<A: Copy, M: Copy>(
+    ui: &mut Ui,
+    items: &[Item<A, M>],
+    mut popup: impl FnMut(&mut Ui, M, &Response, &mut Vec<A>),
+) -> Vec<A> {
+    let mut actions = Vec::new();
+    let column = ui.max_rect();
+    let slots = measure(ui, items, false);
+    for (y, slot) in arrange_column(&slots) {
+        let y = column.top() + y;
+        match slot {
+            Slot::Separator => {
+                // Midway between the buttons either side, which the gap after the last one skews
+                // in a row.
+                let middle = y + (SEPARATOR_SPAN - GAP) / 2.0;
+                ui.painter().rect_filled(
+                    Rect::from_center_size(
+                        pos2(column.center().x, middle),
+                        vec2(SEPARATOR_HEIGHT, 1.0),
+                    ),
+                    0.0,
+                    theme::separator(),
+                );
+            }
+            Slot::Button(measured) => {
+                let x = column.center().x - measured.width / 2.0;
+                paint_interactive(ui, measured, x, y, &mut popup, &mut actions);
+            }
+        }
+    }
+    actions
+}
+
 fn paint_slot<A: Copy, M: Copy>(
     ui: &mut Ui,
     slot: &Slot<A, M>,
@@ -374,7 +454,7 @@ fn paint_slot<A: Copy, M: Copy>(
     popup: &mut impl FnMut(&mut Ui, M, &Response, &mut Vec<A>),
     actions: &mut Vec<A>,
 ) {
-    let measured = match slot {
+    match slot {
         Slot::Separator => {
             ui.painter().rect_filled(
                 Rect::from_center_size(
@@ -384,10 +464,20 @@ fn paint_slot<A: Copy, M: Copy>(
                 0.0,
                 theme::separator(),
             );
-            return;
         }
-        Slot::Button(measured) => measured,
-    };
+        Slot::Button(measured) => paint_interactive(ui, measured, x, y, popup, actions),
+    }
+}
+
+/// A button, what its click asks for, and its pull-down.
+fn paint_interactive<A: Copy, M: Copy>(
+    ui: &mut Ui,
+    measured: &Measured<A, M>,
+    x: f32,
+    y: f32,
+    popup: &mut impl FnMut(&mut Ui, M, &Response, &mut Vec<A>),
+    actions: &mut Vec<A>,
+) {
     let response = paint_button(ui, measured, x, y);
     let button = measured.button;
     if response.clicked()

@@ -171,3 +171,128 @@ fn a_disabled_menu_button_draws_no_popup() {
     frame.textures_delta.clear();
     assert!(keys.is_empty());
 }
+
+const RAIL_WIDTH: f32 = 40.0;
+const RAIL_HEIGHT: f32 = 400.0;
+
+/// Icons only, as a rail has them: two buttons, a separator, a menu button and a disabled one.
+fn column() -> Vec<TestItem> {
+    vec![
+        Item::Button(
+            TestButton::new("one", "One")
+                .icon(Icon::Gear)
+                .label("Never shown")
+                .on_click(Act::One),
+        ),
+        Item::Button(
+            TestButton::new("two", "Two")
+                .icon(Icon::Plus)
+                .on_click(Act::Two),
+        ),
+        Item::Separator,
+        Item::Button(
+            TestButton::new("pick", "Pick")
+                .icon(Icon::Eye)
+                .with_menu(Key::Only),
+        ),
+        Item::Button(
+            TestButton::new("off", "Off")
+                .icon(Icon::Eye)
+                .enabled(false)
+                .on_click(Act::Menu),
+        ),
+    ]
+}
+
+fn column_screen() -> egui::RawInput {
+    egui::RawInput {
+        screen_rect: Some(Rect::from_min_size(
+            pos2(0.0, 0.0),
+            vec2(RAIL_WIDTH, RAIL_HEIGHT),
+        )),
+        ..Default::default()
+    }
+}
+
+fn column_placed() -> Vec<Placed<Act>> {
+    let ctx = egui::Context::default();
+    let mut out = None;
+    let mut frame = ctx.run_ui(column_screen(), |ui| {
+        out = Some(column_geometry(ui, &column()));
+    });
+    frame.textures_delta.clear();
+    out.expect("a frame")
+}
+
+#[test]
+fn a_column_stacks_its_buttons_without_overlap() {
+    let buttons = column_placed();
+    assert_eq!(buttons.len(), 4);
+    assert_eq!(buttons[0].from, COLUMN_INSET);
+    for pair in buttons.windows(2) {
+        assert!(pair[0].to <= pair[1].from, "overlap");
+    }
+    assert!(buttons.last().expect("buttons").to <= RAIL_HEIGHT);
+}
+
+#[test]
+fn a_column_separator_takes_its_span_and_nothing_else_is_spread() {
+    let buttons = column_placed();
+    assert_eq!(buttons[1].from - buttons[0].to, GAP);
+    assert_eq!(buttons[2].from - buttons[1].to, GAP + SEPARATOR_SPAN);
+    assert_eq!(buttons[3].from - buttons[2].to, GAP);
+}
+
+/// Clicks the middle of the `n`th button of the column and returns what it asked for.
+fn click_column(n: usize) -> Vec<Act> {
+    let buttons = column_placed();
+    let at = pos2(RAIL_WIDTH / 2.0, (buttons[n].from + buttons[n].to) / 2.0);
+    let ctx = egui::Context::default();
+    let press = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    let mut asked = Vec::new();
+    let mut time = 0.0;
+    for events in [
+        vec![],
+        vec![egui::Event::PointerMoved(at)],
+        vec![press(true)],
+        vec![press(false)],
+        vec![],
+    ] {
+        time += 0.1;
+        let mut raw = column_screen();
+        raw.time = Some(time);
+        raw.events = events;
+        let mut frame = ctx.run_ui(raw, |ui| {
+            asked.extend(show_column(ui, &column(), |_, _, _, _| {}));
+        });
+        frame.textures_delta.clear();
+    }
+    asked
+}
+
+#[test]
+fn a_click_in_a_column_asks_for_the_buttons_action() {
+    assert_eq!(click_column(0), vec![Act::One]);
+    assert_eq!(click_column(1), vec![Act::Two]);
+}
+
+#[test]
+fn a_disabled_button_in_a_column_never_asks_for_anything() {
+    assert!(click_column(3).is_empty());
+}
+
+#[test]
+fn a_menu_button_in_a_column_hands_its_key_to_the_popup() {
+    let ctx = egui::Context::default();
+    let mut keys = Vec::new();
+    let mut frame = ctx.run_ui(column_screen(), |ui| {
+        show_column(ui, &column(), |_, key, _, _| keys.push(key));
+    });
+    frame.textures_delta.clear();
+    assert_eq!(keys, vec![Key::Only]);
+}

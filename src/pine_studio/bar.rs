@@ -1,34 +1,26 @@
 //! The Pine Studio's bar, on the shared flat bar (`ui::kit::bar`) so it is as tall and looks like
-//! the chart's toolbar. Left to right: the preview chart's place and visibility; the market and
-//! timeframe the script is tried on (the preview chart's own controls, which used to sit over
-//! it); the script button, which opens the script picker; and at the right end the assistant,
-//! profiler and debugger, for an open script.
+//! the chart's toolbar. Left to right: the market and timeframe the script is tried on (the
+//! preview chart's own controls, which used to sit over it) and the script button, which opens
+//! the script picker. Its right end is empty: the panels and the preview chart's place are on
+//! the editor's rail (`rail`).
 
-use super::commands::Cmd;
-use super::library::{self, prefs::ChartPosition};
+use super::PineStudio;
+use super::library;
 use super::preview;
-use super::{PineStudio, ai, debug, profiler};
 use crate::model::Timeframe;
 use crate::ui::icons::Icon;
 use crate::ui::kit::bar::{self, Button, Item};
-use crate::ui::kit::header_controls;
-use crate::ui::kit::{self, BOLD, MEDIUM, SEMIBOLD};
+use crate::ui::kit::{BOLD, MEDIUM, SEMIBOLD};
 use crate::ui::shortcut;
-use eframe::egui::{self, Response, Ui};
+use eframe::egui::Ui;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BarAction {
-    ToggleChart,
-    SetPosition(ChartPosition),
     SetTimeframe(Timeframe),
-    ToggleDebugger,
-    ToggleAssistant,
-    ToggleProfiler,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BarMenu {
-    ChartPosition,
     Market,
     Scripts,
 }
@@ -42,27 +34,10 @@ struct BarState {
     script_name: Option<String>,
     picker_open: bool,
     chart_visible: bool,
-    chart_position: ChartPosition,
-    debugger_open: bool,
-    assistant_open: bool,
-    profiler: profiler::Status,
     market: preview::Summary,
 }
 
-fn position_icon(position: ChartPosition) -> Icon {
-    match position {
-        ChartPosition::Left => Icon::RectLeft,
-        ChartPosition::Top => Icon::RectTop,
-        ChartPosition::Bottom => Icon::RectBottom,
-    }
-}
-
 fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
-    let preview_toggle = shortcut::TOGGLE_PREVIEW_CHART.hint(if state.chart_visible {
-        "Hide the preview chart"
-    } else {
-        "Show the preview chart"
-    });
     // The market and timeframe act on the preview chart: there has to be one on screen.
     let script_open = state.script_name.is_some();
     let preview_shown = script_open && state.chart_visible;
@@ -76,29 +51,7 @@ fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
     market.keep_label = true;
     market.suffix = state.market.price.clone();
 
-    let mut left = vec![
-        Item::Button(
-            BarButton::new(
-                "chart-position",
-                "Where the preview chart sits next to the code",
-            )
-            .icon(position_icon(state.chart_position))
-            .with_menu(BarMenu::ChartPosition),
-        ),
-        Item::Button(
-            BarButton::new("preview-chart", preview_toggle)
-                .icon(if state.chart_visible {
-                    Icon::ChartLine
-                } else {
-                    Icon::ChartLineFlat
-                })
-                .active(state.chart_visible)
-                .on_click(BarAction::ToggleChart),
-        ),
-        Item::Separator,
-        Item::Button(market),
-        Item::Separator,
-    ];
+    let mut left = vec![Item::Button(market), Item::Separator];
     for timeframe in Timeframe::ALL {
         let selected = timeframe == state.market.timeframe;
         let mut button = BarButton::new(("timeframe", timeframe.label()), timeframe.description())
@@ -125,23 +78,7 @@ fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
     .with_menu(BarMenu::Scripts);
     scripts.keep_label = true;
     left.push(Item::Button(scripts));
-
-    let mut right = Vec::new();
-    if script_open {
-        right.push(Item::Button(ai::panel::panel_button(
-            state.assistant_open,
-            BarAction::ToggleAssistant,
-        )));
-        right.push(Item::Button(profiler::ui::toolbar_button(
-            &state.profiler,
-            BarAction::ToggleProfiler,
-        )));
-        right.push(Item::Button(debug::panel::panel_button(
-            state.debugger_open,
-            BarAction::ToggleDebugger,
-        )));
-    }
-    (left, right)
+    (left, Vec::new())
 }
 
 impl PineStudio {
@@ -150,10 +87,6 @@ impl PineStudio {
             script_name: self.open.as_ref().map(|open| open.name.clone()),
             picker_open: self.picker.is_open(),
             chart_visible: self.prefs.chart_visible,
-            chart_position: self.prefs.chart_position,
-            debugger_open: self.prefs.debug_open,
-            assistant_open: self.prefs.ai_open,
-            profiler: self.profiler.status(self.profiler_now.as_ref()),
             market: self.preview.summary(),
         };
         let (left, right) = items(&state);
@@ -162,56 +95,25 @@ impl PineStudio {
         let cmds = &mut self.cmds;
         let scripts = &self.scripts;
         let open_id = self.open.as_ref().map(|open| open.id.as_str());
-        let actions = bar::show(
-            ui,
-            &left,
-            &right,
-            |ui, menu, response, actions| match menu {
-                BarMenu::ChartPosition => {
-                    position_menu(ui, response, state.chart_position, actions);
-                }
-                BarMenu::Market => preview::market_picker::market_picker(ui, preview, response),
-                BarMenu::Scripts => {
-                    library::picker::show(ui, picker, scripts, open_id, response, cmds);
-                }
-            },
-        );
+        let actions = bar::show(ui, &left, &right, |ui, menu, response, _| match menu {
+            BarMenu::Market => preview::market_picker::market_picker(ui, preview, response),
+            BarMenu::Scripts => {
+                library::picker::show(ui, picker, scripts, open_id, response, cmds);
+            }
+        });
         for action in actions {
             match action {
-                BarAction::ToggleChart => self.cmds.push(Cmd::ToggleChart),
-                BarAction::SetPosition(position) => {
-                    self.cmds.push(Cmd::SetChartPosition(position));
-                }
                 BarAction::SetTimeframe(timeframe) => self.preview.select_timeframe(timeframe),
-                BarAction::ToggleDebugger => self.cmds.push(Cmd::ToggleDebugPanel),
-                BarAction::ToggleAssistant => self.cmds.push(Cmd::ToggleAiPanel),
-                BarAction::ToggleProfiler => self.cmds.push(Cmd::ProfilerToggle),
             }
         }
     }
-}
-
-fn position_menu(
-    ui: &mut Ui,
-    response: &Response,
-    current: ChartPosition,
-    actions: &mut Vec<BarAction>,
-) {
-    let labels: Vec<&str> = ChartPosition::ALL.iter().map(|p| p.title()).collect();
-    kit::fitted_menu(ui, response, egui::RectAlign::BOTTOM_START, &labels, |ui| {
-        for position in ChartPosition::ALL {
-            if header_controls::choice(ui, position.title(), position == current) {
-                actions.push(BarAction::SetPosition(position));
-            }
-        }
-    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ui::kit::bar::{EDGE, HEIGHT};
-    use eframe::egui::{Rect, pos2, vec2};
+    use eframe::egui::{self, Rect, pos2, vec2};
 
     /// Longer than the bar lets a label be: it is cut, and nothing else gives way.
     const LONG_NAME: &str = "Multi timeframe adaptive volatility breakout with trailing stop";
@@ -221,10 +123,6 @@ mod tests {
             script_name: script_open.then(|| "Trend Bands".to_owned()),
             picker_open: false,
             chart_visible,
-            chart_position: ChartPosition::Left,
-            debugger_open: false,
-            assistant_open: false,
-            profiler: profiler::Status::Off,
             market: preview::Summary {
                 title: "BTCUSDT".to_owned(),
                 price: Some("64,210.50  +1.20%".to_owned()),
@@ -244,19 +142,10 @@ mod tests {
     }
 
     #[test]
-    fn the_assistant_profiler_and_debugger_need_an_open_script() {
-        let (_, none) = items(&state(false, true));
-        assert!(none.is_empty());
-        let (_, some) = items(&state(true, true));
-        let actions: Vec<_> = buttons(&some).iter().map(|b| b.action).collect();
-        assert_eq!(
-            actions,
-            vec![
-                Some(BarAction::ToggleAssistant),
-                Some(BarAction::ToggleProfiler),
-                Some(BarAction::ToggleDebugger)
-            ]
-        );
+    fn the_right_end_of_the_bar_is_empty() {
+        for open in [true, false] {
+            assert!(items(&state(open, true)).1.is_empty());
+        }
     }
 
     #[test]

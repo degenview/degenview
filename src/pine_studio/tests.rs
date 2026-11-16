@@ -435,6 +435,124 @@ fn the_window_draws_headlessly_through_selection_and_layout_changes() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// One click at `at` in the whole window: the pointer arrives, goes down and comes up.
+fn click_window(manager: &mut PineStudio, screen: &mut Screen, at: egui::Pos2) {
+    let press = |pressed| Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    for events in [
+        vec![],
+        vec![Event::PointerMoved(at)],
+        vec![press(true)],
+        vec![press(false)],
+        vec![],
+    ] {
+        crate::ui::theme::sync(&screen.ctx);
+        screen.run(events, |ui| {
+            manager.ui(ui, None);
+        });
+    }
+}
+
+#[test]
+fn the_rail_moves_and_hides_the_preview_chart_and_opens_the_panels_in_the_whole_window() {
+    let (mut manager, root, _) = edited("rail-window");
+    let mut screen = Screen::new(vec2(1360.0, 860.0));
+    click_window(&mut manager, &mut screen, pos2(0.0, 0.0));
+    let button = |n| rail::button_centre(1360.0, crate::ui::kit::bar::HEIGHT, n);
+
+    // Assistant, profiler and debugger are the first three buttons.
+    click_window(&mut manager, &mut screen, button(0));
+    assert!(manager.prefs.ai_open);
+    click_window(&mut manager, &mut screen, button(2));
+    assert!(manager.prefs.debug_open);
+
+    // The position menu hangs left of the rail; its third row is "Below Code".
+    assert_eq!(manager.prefs.chart_position, ChartPosition::Left);
+    click_window(&mut manager, &mut screen, button(3));
+    let row = pos2(1360.0 - rail::WIDTH - 30.0, button(3).y - 15.0 + 75.0);
+    click_window(&mut manager, &mut screen, row);
+    assert_eq!(manager.prefs.chart_position, ChartPosition::Bottom);
+
+    assert!(manager.prefs.chart_visible);
+    click_window(&mut manager, &mut screen, button(4));
+    assert!(!manager.prefs.chart_visible);
+    click_window(&mut manager, &mut screen, button(4));
+    assert!(manager.prefs.chart_visible);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// With `DEGENVIEW_GALLERY_DIR` set, the whole window is written as pictures in both themes at the
+/// default and the narrowest size, with the preview chart at each place, with the assistant and
+/// debugger panels open under the code, and with the position menu open.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_rail() {
+    use crate::ui::theme::{self, AppTheme};
+    use debug::studio_tests::Rig;
+    if gallery_dir().is_none() {
+        return;
+    }
+    let _theme = theme::RestoreDefaultTheme;
+    let shoot = |rig: &mut Rig, screen: &mut Screen, name: &str| {
+        let mut last = None;
+        for _ in 0..4 {
+            theme::sync(&screen.ctx);
+            last = Some(screen.run(Vec::new(), |ui| {
+                rig.manager.ui(ui, None);
+            }));
+        }
+        screen.save(name, last.expect("a frame"));
+    };
+    for (theme_name, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        for (size_name, size) in [
+            ("wide", vec2(1360.0, 860.0)),
+            ("narrow", vec2(960.0, 640.0)),
+        ] {
+            let mut rig = Rig::new(&format!("rail-{size_name}-{theme_name}"));
+            let mut screen = Screen::new(size);
+            theme::apply(&screen.ctx, appearance);
+            for position in ChartPosition::ALL {
+                rig.manager.prefs.chart_position = position;
+                shoot(
+                    &mut rig,
+                    &mut screen,
+                    &format!(
+                        "rail-{size_name}-{theme_name}-{}",
+                        position.title().replace(' ', "-")
+                    ),
+                );
+            }
+            rig.manager.prefs.chart_position = ChartPosition::Left;
+            rig.manager.prefs.ai_open = true;
+            rig.manager.prefs.debug_open = true;
+            shoot(
+                &mut rig,
+                &mut screen,
+                &format!("rail-{size_name}-{theme_name}-panels"),
+            );
+            rig.manager.prefs.chart_position = ChartPosition::Bottom;
+            shoot(
+                &mut rig,
+                &mut screen,
+                &format!("rail-{size_name}-{theme_name}-panels-below"),
+            );
+            rig.manager.prefs.ai_open = false;
+            rig.manager.prefs.debug_open = false;
+            let button = rail::button_centre(size.x, crate::ui::kit::bar::HEIGHT, 3);
+            click_window(&mut rig.manager, &mut screen, button);
+            shoot(
+                &mut rig,
+                &mut screen,
+                &format!("rail-{size_name}-{theme_name}-menu"),
+            );
+        }
+    }
+}
+
 fn target(
     script_id: Option<&str>,
     library: Option<&str>,

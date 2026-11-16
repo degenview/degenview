@@ -205,6 +205,10 @@
   untouched, but such rows are wider than `columns * char_width`; take positions from the galley,
   never a column. Detection: lexer tokens in `pine_studio::editor::color_sites`. Picker edits rewrite
   from the gesture's starting text, one undo step via `UndoGesture`, never a second undo stack.
+- Editor rail: `pine_studio/rail.rs` mounts a right panel around the whole editor column (code,
+  assistant, debugger) and holds the assistant, profiler and debugger buttons, the preview chart's
+  position menu and toggle. It is drawn by `kit::bar::show_column` (the bar's buttons, vertical,
+  icon only); add a panel's button there, not to the top bar, whose right run is empty.
 - Right-click menu, ⌘-hover cue, inline rename box: `editor/navigation.rs`. An egui `Area` takes no
   focus on its first frame (only measures), so the rename field asks on the second.
 
