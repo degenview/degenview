@@ -44,7 +44,7 @@ pub fn menu(
                 .unwrap_or_default();
             let seen_id = query_id.with("seen");
             let seen = ui.data(|data| data.get_temp::<bool>(seen_id).unwrap_or(false));
-            let filter = kit::search_box::search_box(
+            let filter = kit::search_box::compact_search_box(
                 ui,
                 Icon::Magnifier,
                 &mut query,

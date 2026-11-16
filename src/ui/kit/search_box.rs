@@ -1,5 +1,7 @@
-//! The rounded search box of the pickers (the symbol picker, the portfolio's asset picker and the
-//! timeframe picker): a leading icon, the query, a busy indicator and a clear button.
+//! The rounded search box of the pickers (the symbol picker, the portfolio's asset picker, the
+//! timeframe picker and the chart-type menu): a leading icon, the query, a busy indicator and a
+//! clear button. Full pickers use [`search_box`]; the small pull-downs use [`compact_search_box`],
+//! the same box at the height of their rows.
 
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
@@ -9,6 +11,9 @@ use eframe::egui::{self, FontId, Id, Sense, Stroke, StrokeKind, Ui, vec2};
 
 /// How tall the box is, and the buttons that sit beside it in a picker's header.
 pub const HEIGHT: f32 = 36.0;
+
+/// How tall [`compact_search_box`] is: a pull-down's field, level with its rows and chips.
+pub const COMPACT_HEIGHT: f32 = 30.0;
 
 /// What happened in a [`search_box`] this frame.
 #[derive(Default)]
@@ -28,14 +33,105 @@ pub fn search_box(
     id: Id,
     focus: bool,
 ) -> SearchBoxEvent {
+    show(
+        ui,
+        Size::Regular,
+        Content {
+            icon,
+            query,
+            searching,
+            placeholder,
+            id,
+            focus,
+        },
+    )
+}
+
+/// [`search_box`] at [`COMPACT_HEIGHT`], for the pull-downs that hold a short list.
+pub fn compact_search_box(
+    ui: &mut Ui,
+    icon: Icon,
+    query: &mut String,
+    searching: bool,
+    placeholder: &str,
+    id: Id,
+    focus: bool,
+) -> SearchBoxEvent {
+    show(
+        ui,
+        Size::Compact,
+        Content {
+            icon,
+            query,
+            searching,
+            placeholder,
+            id,
+            focus,
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+enum Size {
+    Regular,
+    Compact,
+}
+
+impl Size {
+    fn height(self) -> f32 {
+        match self {
+            Self::Regular => HEIGHT,
+            Self::Compact => COMPACT_HEIGHT,
+        }
+    }
+
+    fn radius(self) -> f32 {
+        self.height() / 4.0
+    }
+
+    fn inset(self) -> f32 {
+        match self {
+            Self::Regular => 12.0,
+            Self::Compact => 10.0,
+        }
+    }
+
+    fn icon(self) -> f32 {
+        match self {
+            Self::Regular => 14.0,
+            Self::Compact => 13.0,
+        }
+    }
+}
+
+struct Content<'a> {
+    icon: Icon,
+    query: &'a mut String,
+    searching: bool,
+    placeholder: &'a str,
+    id: Id,
+    focus: bool,
+}
+
+fn show(ui: &mut Ui, box_size: Size, content: Content) -> SearchBoxEvent {
+    let Content {
+        icon,
+        query,
+        searching,
+        placeholder,
+        id,
+        focus,
+    } = content;
     let focused = ui.memory(|memory| memory.has_focus(id));
     let mut event = SearchBoxEvent::default();
     let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(vec2(width, HEIGHT), Sense::hover());
-    ui.painter().rect_filled(rect, 9.0, theme::quaternary(0.5));
+    let (rect, _) = ui.allocate_exact_size(vec2(width, box_size.height()), Sense::hover());
+    let radius = box_size.radius();
+    ui.painter()
+        .rect_filled(rect, radius, theme::quaternary(0.5));
     ui.painter().rect_stroke(
         rect,
-        9.0,
+        radius,
         Stroke::new(
             1.0,
             if focused {
@@ -48,14 +144,14 @@ pub fn search_box(
     );
     let mut inner = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(rect.shrink2(vec2(12.0, 0.0)))
+            .max_rect(rect.shrink2(vec2(box_size.inset(), 0.0)))
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     inner.spacing_mut().item_spacing.x = 8.0;
     icons::inline(
         &mut inner,
         icon,
-        14.0,
+        box_size.icon(),
         if focused {
             theme::text_primary()
         } else {
