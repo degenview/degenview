@@ -12,7 +12,7 @@ mod unpin;
 mod warning;
 
 use super::hints::{Hint, hint_row, hints_width};
-use super::search_box::search_box;
+use super::search_box::compact_search_box;
 use super::{
     HEADING_INSET, MEDIUM, MENU_FRAME_MARGIN, REGULAR, galley, menu_frame, menu_heading,
     menu_scope, menu_separator, size, tile_chip, tile_chip_text_width,
@@ -135,7 +135,7 @@ impl Body<'_> {
             state.moved = Some(to);
         }
 
-        let field = search_box(
+        let field = compact_search_box(
             ui,
             Icon::Clock,
             &mut state.query,

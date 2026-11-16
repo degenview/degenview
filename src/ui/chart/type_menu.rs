@@ -8,7 +8,7 @@ use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::theme;
 use eframe::egui::{
-    self, Align2, Color32, Id, Key, Rect, Sense, Shape, Stroke, StrokeKind, Vec2, pos2, vec2,
+    self, Align2, Color32, Id, Rect, Sense, Shape, Stroke, StrokeKind, Vec2, pos2, vec2,
 };
 
 const ROW_HEIGHT: f32 = 26.0;
@@ -42,25 +42,24 @@ pub fn menu(
             let mut query = ui
                 .data(|data| data.get_temp::<String>(query_id))
                 .unwrap_or_default();
-            let filter = kit::search_field(
+            let seen_id = query_id.with("seen");
+            let seen = ui.data(|data| data.get_temp::<bool>(seen_id).unwrap_or(false));
+            let filter = kit::search_box::compact_search_box(
                 ui,
-                query_id.with("field"),
+                Icon::Magnifier,
                 &mut query,
+                false,
                 "Search chart types",
-                ui.available_width(),
+                query_id.with("field"),
+                !seen,
             );
-            if !filter.has_focus()
-                && !ui.data(|data| {
-                    data.get_temp::<bool>(query_id.with("seen"))
-                        .unwrap_or(false)
-                })
-            {
-                filter.request_focus();
+            if filter.cleared {
+                query.clear();
             }
-            ui.data_mut(|data| data.insert_temp(query_id.with("seen"), true));
-            ui.add_space(4.0);
+            ui.data_mut(|data| data.insert_temp(seen_id, true));
+            kit::menu_separator(ui);
             let matching = matching_types(&query);
-            let enter = filter.has_focus() && ui.input(|input| input.key_pressed(Key::Enter));
+            let enter = filter.submitted;
             let mut shown_any = false;
             for group in ChartGroup::ALL {
                 let rows: Vec<ChartType> = matching
@@ -72,14 +71,7 @@ pub fn menu(
                     continue;
                 }
                 shown_any = true;
-                ui.add_space(3.0);
-                ui.label(
-                    egui::RichText::new(group.label().to_uppercase())
-                        .size(9.5)
-                        .strong()
-                        .color(theme::text_tertiary()),
-                );
-                ui.add_space(2.0);
+                kit::menu_heading(ui, group.label());
                 for kind in rows {
                     let reason = kind.unsupported_reason(source);
                     let (clicked, response) = row(ui, kind, kind == current, reason.is_none());
