@@ -86,7 +86,8 @@ opacity. Every row writes straight into the chart, which repaints at once.
 - **Buttons.** Navigation (bottom-left of the plot: zoom in, zoom out, scroll left, scroll right,
   reset view) and Pane (top-right of each script pane: move up/down, collapse/expand,
   maximize/restore, remove). Each is Always, On hover or Never. The group fades; it counts as
-  hovered while the pointer is over it, so it does not vanish under the pointer. A collapsed or
+  hovered while the pointer is over it, so it does not vanish under the pointer. The fade state is
+  kept per window, since chart ids repeat across windows. A collapsed or
   maximized pane keeps its buttons, they are its way back. Hiding them never disables the wheel,
   trackpad, drag or keyboard: the buttons drive the same viewport.
 - **Margins.** Top and bottom are a percentage of the plot's height kept free above the highest
