@@ -78,7 +78,7 @@ impl PineStudio {
         });
     }
 
-    /// What the File and View menus over the editor read, for the open script.
+    /// What the menus over the editor read, for the open script.
     fn menu_bar_state(&self, profile_status: &Status) -> Option<MenuBarState> {
         let open = self.open.as_ref()?;
         Some(MenuBarState {
@@ -96,6 +96,7 @@ impl PineStudio {
                 drawer_open: self.prefs.drawer_open,
                 drawer_tab: self.prefs.drawer_tab,
             },
+            themes: self.themes.clone(),
             problems: ProblemsChip::of(&open.editor),
         })
     }

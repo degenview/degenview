@@ -193,6 +193,7 @@ pub(super) fn show_tab(
                     PineStudioAction::OpenAlpacaSettings => AppAction::OpenAlpacaSettings,
                     PineStudioAction::OpenWebhookSettings => AppAction::OpenWebhookSettings,
                     PineStudioAction::OpenAiSettings => AppAction::OpenAiSettings,
+                    PineStudioAction::OpenEditorThemeSettings => AppAction::OpenEditorThemeSettings,
                 }));
             }
         }

@@ -485,6 +485,33 @@ fn the_rail_moves_and_hides_the_preview_chart_and_opens_the_panels_in_the_whole_
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[test]
+fn choosing_a_theme_in_the_theme_menu_makes_it_the_editors_through_the_host() {
+    use crate::model::editor_theme::{BuiltInTheme, ThemeSelection};
+    let _published = crate::ui::editor_appearance::RestorePublished;
+    let (mut manager, root) = manager("theme-menu-choose");
+    let ctx = egui::Context::default();
+    assert_eq!(manager.themes.choices().selected, ThemeSelection::Auto);
+    manager.run(
+        Cmd::SetEditorTheme(ThemeSelection::BuiltIn(BuiltInTheme::Dracula)),
+        &ctx,
+    );
+    assert_eq!(
+        manager.themes.choices().selected,
+        ThemeSelection::BuiltIn(BuiltInTheme::Dracula)
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn configure_themes_asks_the_app_for_the_editor_theme_page_of_settings() {
+    let (mut manager, root) = manager("theme-menu-configure");
+    let ctx = egui::Context::default();
+    manager.run(Cmd::OpenThemeSettings, &ctx);
+    assert_eq!(manager.actions, [PineStudioAction::OpenEditorThemeSettings]);
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// With `DEGENVIEW_GALLERY_DIR` set, the whole window is written as pictures in both themes at the
 /// default and the narrowest size, with the preview chart at each place, with the assistant and
 /// debugger panels open under the code, and with the position menu open.
@@ -774,10 +801,12 @@ fn escape_that_closes_a_menu_or_the_picker_leaves_the_find_bar_open() {
 
 /// With `DEGENVIEW_GALLERY_DIR` set, the whole window is written as pictures in both themes at the
 /// default and the narrowest size with each of the strip's menus open, the Edit menu with a
-/// selection and with the caret in a change, and a submenu of View and one of Edit open.
+/// selection and with the caret in a change, a submenu of View and one of Edit open, and the Theme
+/// menu with a saved theme of the person's own.
 #[test]
 #[ignore = "writes images for a person to look at"]
 fn gallery_of_the_menu_bar() {
+    use crate::model::editor_theme::{BuiltInTheme, ThemeSelection, ThemeSource};
     use crate::ui::theme::{self, AppTheme};
     use debug::studio_tests::Rig;
     use menu_bar::Menu;
@@ -785,13 +814,14 @@ fn gallery_of_the_menu_bar() {
         return;
     }
     let _theme = theme::RestoreDefaultTheme;
+    let _published = crate::ui::editor_appearance::RestorePublished;
     for (theme_name, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
         for (size_name, size) in [
             ("wide", vec2(1360.0, 860.0)),
             ("narrow", vec2(960.0, 640.0)),
         ] {
             // (picture, menu, a row to point at, whether to select everything first)
-            let shots: [(&str, Menu, Option<usize>, bool); 6] = [
+            let shots: [(&str, Menu, Option<usize>, bool); 7] = [
                 ("file", Menu::File, None, false),
                 ("edit-selection", Menu::Edit, None, true),
                 ("edit-change", Menu::Edit, Some(EDIT_CHANGE_ROW), false),
@@ -803,6 +833,7 @@ fn gallery_of_the_menu_bar() {
                 ),
                 ("view", Menu::View, None, false),
                 ("view-position", Menu::View, Some(VIEW_POSITION_ROW), false),
+                ("theme", Menu::Theme, None, false),
             ];
             for (name, menu, pointed, select) in shots {
                 let tag = format!("menu-bar-{size_name}-{theme_name}-{name}");
@@ -811,6 +842,16 @@ fn gallery_of_the_menu_bar() {
                 theme::apply(&screen.ctx, appearance);
                 let manager = &mut rig.manager;
                 manager.prefs.drawer_open = true;
+                if menu == Menu::Theme {
+                    // One theme worn and one with a name as long as a name may be.
+                    let source = ThemeSource::BuiltIn(BuiltInTheme::Dracula);
+                    let long = "A custom theme named as long as a name may be";
+                    manager.themes.create(long, source).expect("a theme");
+                    let worn = manager.themes.create("My Dracula", source);
+                    manager
+                        .themes
+                        .select(ThemeSelection::Custom(worn.expect("a theme")));
+                }
                 if let Some(open) = manager.open.as_mut() {
                     // A saved script with one line changed, the caret on it.
                     let source = open.editor.source.clone();
@@ -862,6 +903,7 @@ fn menu_row_y(corner: egui::Pos2, menu: menu_bar::Menu, row: usize) -> f32 {
         Menu::File => |row: usize| [3, 6, 8, 9].iter().filter(|at| row >= **at).count(),
         Menu::Edit => |row: usize| [2, 6, 9, 14, 17].iter().filter(|at| row >= **at).count(),
         Menu::View => |row: usize| [3, 5].iter().filter(|at| row >= **at).count(),
+        Menu::Theme => |row: usize| [4, 5].iter().filter(|at| row >= **at).count(),
     };
     corner.y
         + menu_bar::HEIGHT

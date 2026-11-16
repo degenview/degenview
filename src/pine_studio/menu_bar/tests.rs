@@ -1,5 +1,7 @@
 use super::entry::{self, Entry, Item};
 use super::*;
+use crate::host::editor_theme::Choices;
+use crate::model::editor_theme::{AUTOMATIC_NAME, BuiltInTheme, ThemeSelection, ThemeSource};
 use crate::model::pine::script::ScriptType;
 use crate::pine_studio::debug::PanelAction;
 use crate::pine_studio::debug::marks::{BreakpointMark, GutterEvent, MarkKind};
@@ -63,6 +65,7 @@ fn items(entries: &[Entry]) -> Vec<&Item> {
         .flat_map(|entry| match entry {
             Entry::Item(item) => vec![item],
             Entry::Submenu(submenu) => items(&submenu.entries),
+            Entry::Scroll(rows) => items(rows),
             Entry::Separator => Vec::new(),
         })
         .collect()
@@ -83,6 +86,7 @@ fn outline(entries: &[Entry]) -> Vec<String> {
             Entry::Item(item) => item.label.clone(),
             Entry::Separator => "|".to_owned(),
             Entry::Submenu(submenu) => format!("{} >", submenu.label),
+            Entry::Scroll(rows) => format!("[{}]", outline(rows).join(", ")),
         })
         .collect()
 }
@@ -530,7 +534,134 @@ fn the_position_and_drawer_tab_submenus_check_the_current_choice_and_ask_to_chan
     }
 }
 
+// MARK: Theme
+
+fn choices() -> Choices {
+    Choices {
+        selected: ThemeSelection::Auto,
+        customs: vec![(1_730_000_000_001, "My Dracula".to_owned())],
+    }
+}
+
+#[test]
+fn the_theme_menu_lists_what_settings_lists_then_the_way_to_settings() {
+    let entries = themes::entries(&choices());
+    assert_eq!(
+        outline(&entries),
+        [
+            "[Automatic, Dark, Light, Dracula, |, My Dracula]",
+            "|",
+            "Configure Themes…"
+        ]
+    );
+    let names: Vec<_> = items(&entries)
+        .into_iter()
+        .map(|item| item.label.as_str())
+        .collect();
+    let mut settings = vec![AUTOMATIC_NAME];
+    settings.extend(BuiltInTheme::ALL.map(BuiltInTheme::name));
+    assert_eq!(&names[..4], settings);
+}
+
+#[test]
+fn with_no_themes_of_ones_own_the_menu_has_no_second_group() {
+    let entries = themes::entries(&Choices {
+        selected: ThemeSelection::Auto,
+        customs: Vec::new(),
+    });
+    assert_eq!(
+        outline(&entries),
+        [
+            "[Automatic, Dark, Light, Dracula]",
+            "|",
+            "Configure Themes…"
+        ]
+    );
+}
+
+#[test]
+fn the_theme_worn_is_the_only_one_checked_and_every_row_asks_to_wear_its_theme() {
+    let worn = [
+        ThemeSelection::Auto,
+        ThemeSelection::BuiltIn(BuiltInTheme::Light),
+        ThemeSelection::Custom(1_730_000_000_001),
+    ];
+    for selected in worn {
+        let entries = themes::entries(&Choices {
+            selected,
+            ..choices()
+        });
+        let rows = items(&entries);
+        let checked: Vec<_> = rows
+            .iter()
+            .filter(|row| row.checked)
+            .map(|row| &row.command)
+            .collect();
+        assert!(
+            matches!(checked.as_slice(), [Cmd::SetEditorTheme(chosen)] if *chosen == selected),
+            "{selected:?}"
+        );
+    }
+    let entries = themes::entries(&choices());
+    assert!(matches!(
+        item(&entries, "Dracula").command,
+        Cmd::SetEditorTheme(ThemeSelection::BuiltIn(BuiltInTheme::Dracula))
+    ));
+    assert!(matches!(
+        item(&entries, "My Dracula").command,
+        Cmd::SetEditorTheme(ThemeSelection::Custom(1_730_000_000_001))
+    ));
+    assert!(matches!(
+        item(&entries, "Configure Themes…").command,
+        Cmd::OpenThemeSettings
+    ));
+    assert!(!item(&entries, "Configure Themes…").checked);
+}
+
+#[test]
+fn a_long_list_of_themes_scrolls_instead_of_growing_past_the_menu_height() {
+    let _published = crate::ui::editor_appearance::RestorePublished;
+    let mut strip = Strip::new();
+    for index in 0..60 {
+        let name = format!("Theme {index} named as long as a name may be");
+        strip
+            .state
+            .themes
+            .create(&name, ThemeSource::BuiltIn(BuiltInTheme::Dark))
+            .expect("a theme");
+    }
+    let theme = strip.at(Menu::Theme);
+    strip.click(theme);
+    let (_, popup) = *strip
+        .popups
+        .iter()
+        .find(|(menu, _)| *menu == Menu::Theme)
+        .unwrap();
+    let rect = strip
+        .ctx
+        .memory(|memory| memory.area_rect(popup))
+        .expect("the menu is up");
+    assert!(
+        rect.height() <= kit::MENU_MAX_HEIGHT + 60.0,
+        "{} points tall",
+        rect.height()
+    );
+    assert!(rect.width() <= 360.0 + 1.0, "{} points wide", rect.width());
+    assert!(rect.height() > 200.0, "{} points tall", rect.height());
+}
+
 // MARK: Sizing
+
+/// `entries` with the rows of every scrolling block in place of the block.
+fn flat(entries: &[Entry]) -> Vec<&Entry> {
+    entries
+        .iter()
+        .flat_map(|entry| match entry {
+            Entry::Scroll(rows) => flat(rows),
+            other => vec![other],
+        })
+        .collect()
+}
 
 /// What a row needs to be seen whole: the icon's column, the label, the shortcut and a gap before
 /// it, and room at the end (a submenu's chevron takes more).
@@ -561,6 +692,7 @@ fn each_menu_is_as_wide_as_its_longest_row_and_no_wider() {
         ("file", file::entries(&file_state())),
         ("edit", edit::entries(&busy_editor())),
         ("view", view::entries(&view)),
+        ("theme", themes::entries(&choices())),
     ];
     let mut checked = 0;
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -569,11 +701,11 @@ fn each_menu_is_as_wide_as_its_longest_row_and_no_wider() {
             let width = kit::menu_width_for_rows(ui, &entry::as_rows(&measured), 0.0)
                 - kit::MENU_FRAME_MARGIN;
             let mut widest: f32 = 0.0;
-            for entry in entries {
+            for entry in flat(entries) {
                 let need = match entry {
                     Entry::Item(item) => needed(ui, &item.label, item.shortcut.as_deref(), false),
                     Entry::Submenu(submenu) => needed(ui, &submenu.label, None, true),
-                    Entry::Separator => continue,
+                    Entry::Separator | Entry::Scroll(_) => continue,
                 };
                 assert!(
                     need <= width,
@@ -625,6 +757,7 @@ impl Strip {
                 editor_id: Id::new("test-editor"),
                 file: file_state(),
                 view: view_state(),
+                themes: EditorThemeHost::default(),
                 problems: ProblemsChip::of(&crate::pine_studio::editor::EditorState::new(
                     "s", "", "",
                 )),
@@ -733,6 +866,9 @@ fn pointing_at_another_title_while_a_menu_is_up_opens_that_one() {
     let view = strip.at(Menu::View);
     strip.hover(view);
     assert_eq!(strip.open(), Some(Menu::View));
+    let theme = strip.at(Menu::Theme);
+    strip.hover(theme);
+    assert_eq!(strip.open(), Some(Menu::Theme));
     strip.hover(file);
     assert_eq!(strip.open(), Some(Menu::File));
 }
@@ -779,6 +915,34 @@ fn choosing_a_row_asks_for_its_command_and_closes_the_menu() {
     // The first row is New Script…, under the title and the menu's margin.
     strip.click(egui::pos2(file.x + 20.0, HEIGHT + 4.0 + 5.0 + 12.0));
     assert!(matches!(strip.cmds.borrow().as_slice(), [Cmd::NewScript]));
+    assert_eq!(strip.open(), None);
+}
+
+#[test]
+fn choosing_a_theme_or_configure_in_the_theme_menu_asks_for_it_and_closes_the_menu() {
+    let mut strip = Strip::new();
+    let theme = strip.at(Menu::Theme);
+    strip.click(theme);
+    assert_eq!(strip.open(), Some(Menu::Theme));
+    // The second row is Dark: Automatic is first, under the title and the menu's margin.
+    let first = HEIGHT + 4.0 + 5.0 + 12.0;
+    strip.click(egui::pos2(theme.x, first + 24.0));
+    assert!(matches!(
+        strip.cmds.borrow().as_slice(),
+        [Cmd::SetEditorTheme(ThemeSelection::BuiltIn(
+            BuiltInTheme::Dark
+        ))]
+    ));
+    assert_eq!(strip.open(), None);
+
+    strip.cmds.borrow_mut().clear();
+    strip.click(theme);
+    // Configure Themes… comes after the four themes and a separator.
+    strip.click(egui::pos2(theme.x, first + 4.0 * 24.0 + 9.0));
+    assert!(matches!(
+        strip.cmds.borrow().as_slice(),
+        [Cmd::OpenThemeSettings]
+    ));
     assert_eq!(strip.open(), None);
 }
 

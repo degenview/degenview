@@ -39,6 +39,7 @@ impl DegenViewApp {
         let slot = TabSlot::new(TabContent::Pine(Box::new(PineStudio::new(
             id,
             self.store.clone(),
+            self.editor_themes.clone(),
         ))));
         self.tabs.register(slot, None);
     }

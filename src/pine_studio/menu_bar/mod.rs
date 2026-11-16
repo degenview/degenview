@@ -1,5 +1,5 @@
-//! The strip over the code editor: File, Edit and View, and the editor's problems at its right
-//! end. Every item of the studio's context menus is in one of the menus, with its shortcut, so
+//! The strip over the code editor: File, Edit, View and Theme, and the editor's problems at its
+//! right end. Every item of the studio's context menus is in one of the menus, with its shortcut, so
 //! nothing is reachable only by right-clicking. It sits at the top of the editor column, left of
 //! the rail, and spans the code and the assistant and debugger panels under it.
 //!
@@ -15,6 +15,7 @@
 mod edit;
 mod entry;
 mod file;
+mod themes;
 mod view;
 
 #[cfg(test)]
@@ -23,6 +24,7 @@ mod tests;
 use super::commands::Cmd;
 use super::editor::EditorMenuState;
 use super::editor::status::ProblemsChip;
+use crate::host::editor_theme::EditorThemeHost;
 use crate::ui::kit::{self, size};
 use crate::ui::theme;
 use eframe::egui::{self, Id, Popup, Rect, Response, Sense, Ui, pos2, vec2};
@@ -44,16 +46,18 @@ pub(super) enum Menu {
     File,
     Edit,
     View,
+    Theme,
 }
 
 impl Menu {
-    const ALL: [Self; 3] = [Self::File, Self::Edit, Self::View];
+    const ALL: [Self; 4] = [Self::File, Self::Edit, Self::View, Self::Theme];
 
     fn title(self) -> &'static str {
         match self {
             Self::File => "File",
             Self::Edit => "Edit",
             Self::View => "View",
+            Self::Theme => "Theme",
         }
     }
 }
@@ -64,6 +68,8 @@ pub(super) struct MenuBarState {
     pub editor_id: Id,
     pub file: FileState,
     pub view: ViewState,
+    /// The editor's themes, read for the Theme menu only while it is up.
+    pub themes: EditorThemeHost,
     /// The editor's problems, at the strip's right end.
     pub problems: ProblemsChip,
 }
@@ -126,6 +132,7 @@ fn titles_and_menus(
                 .map(|editor| edit::entries(&editor()))
                 .unwrap_or_default(),
             Menu::View => view::entries(&state.view),
+            Menu::Theme => themes::entries(&state.themes.choices()),
         };
         show_menu(ui, response, entries, &mut chosen);
     }
@@ -161,7 +168,7 @@ fn keep_keyboard(ctx: &egui::Context, editor: Id, up: bool) -> KeptKeyboard {
     kept
 }
 
-/// The three titles side by side from the strip's left edge.
+/// The titles side by side from the strip's left edge.
 fn place_titles(ui: &mut Ui) -> Vec<(Menu, Response)> {
     let strip = ui.max_rect();
     let top = strip.center().y - BUTTON_HEIGHT / 2.0;

@@ -4,6 +4,7 @@
 use super::library::prefs::{ChartPosition, DrawerTab};
 use super::library::registry::LibraryRegistry;
 use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, ai, debug, editor, library};
+use crate::model::editor_theme::ThemeSelection;
 use crate::model::pine::script::{ScriptId, ScriptType};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
@@ -59,6 +60,10 @@ pub(crate) enum Cmd {
     /// Show a one-based line of the open script.
     RevealLine(usize),
     OpenAlpacaSettings,
+    /// Make a theme the editor's, in every window.
+    SetEditorTheme(ThemeSelection),
+    /// Open Settings on the page that edits the editor's themes.
+    OpenThemeSettings,
 }
 
 impl PineStudio {
@@ -188,6 +193,8 @@ impl PineStudio {
                 }
             }
             Cmd::OpenAlpacaSettings => self.actions.push(PineStudioAction::OpenAlpacaSettings),
+            Cmd::SetEditorTheme(selection) => self.themes.select(selection),
+            Cmd::OpenThemeSettings => self.actions.push(PineStudioAction::OpenEditorThemeSettings),
         }
         let _ = ctx;
     }

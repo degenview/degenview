@@ -23,6 +23,7 @@ mod sheets;
 pub mod theme_preview;
 mod workspace;
 
+use crate::host::editor_theme::EditorThemeHost;
 use crate::model::pine::instance::{PineInstance, StoredInput};
 use crate::model::pine::script::{
     CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType, now_ms,
@@ -74,6 +75,8 @@ pub enum PineStudioAction {
     OpenWebhookSettings,
     /// Open Settings on the AI Assistant page.
     OpenAiSettings,
+    /// Open Settings on the Pine Studio page, where the editor's themes are.
+    OpenEditorThemeSettings,
 }
 
 /// The focused chart a script alert would watch: its market and timeframe.
@@ -180,11 +183,16 @@ pub struct PineStudio {
     pub(crate) problems_copied: Option<Instant>,
     actions: Vec<PineStudioAction>,
     export: Option<Pending<(ScriptId, Option<PathBuf>)>>,
+    /// The editor's themes, which the Theme menu lists and chooses from.
+    themes: EditorThemeHost,
 }
 
 impl PineStudio {
-    pub fn new(id: u64, shared: SharedStore) -> Self {
-        Self::with_script_store(id, shared, ScriptStore::default_location())
+    pub fn new(id: u64, shared: SharedStore, themes: EditorThemeHost) -> Self {
+        Self {
+            themes,
+            ..Self::with_script_store(id, shared, ScriptStore::default_location())
+        }
     }
 
     pub fn with_script_store(
@@ -219,6 +227,8 @@ impl PineStudio {
             actions: Vec::new(),
             export: None,
             problems_copied: None,
+            // A placeholder that publishes nothing; the app's host comes through `new`.
+            themes: EditorThemeHost::default(),
         }
     }
 

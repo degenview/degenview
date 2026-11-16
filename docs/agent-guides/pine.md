@@ -211,11 +211,20 @@
   icon only); add a panel's button there, not to the top bar, whose right run is empty.
 - Right-click menu, ⌘-hover cue, inline rename box: `editor/navigation.rs`. An egui `Area` takes no
   focus on its first frame (only measures), so the rename field asks on the second.
-- Menu strip: `pine_studio/menu_bar/` draws File, Edit and View at the top of the editor column
-  (a `Panel::top` inside `rail::show`'s remaining area, so it spans the code and the assistant and
-  debugger panels). Rows are plain `Entry` data built by `file`, `edit` and `view`, drawn and sized by
-  `entry` (`fitted_menu_rows`, submenus `menu_fit_rows` inside); a row's command is a `Cmd`. The
-  problems chip (`editor::status::ProblemsChip`) sits at the strip's right end, not under the code.
+- Menu strip: `pine_studio/menu_bar/` draws File, Edit, View and Theme at the top of the editor
+  column (a `Panel::top` inside `rail::show`'s remaining area, so it spans the code and the assistant
+  and debugger panels). Rows are plain `Entry` data built by `file`, `edit`, `view` and `themes`,
+  drawn and sized by `entry` (`fitted_menu_rows`, submenus `menu_fit_rows` inside; an `Entry::Scroll`
+  block scrolls past `kit::MENU_MAX_HEIGHT`); a row's command is a `Cmd`. The problems chip
+  (`editor::status::ProblemsChip`) sits at the strip's right end, not under the code.
+  - **Theme menu** (`themes.rs`): Automatic, the built-in themes and the person's own, as Settings'
+    tiles list them, the one worn checked, then "Configure Themes…". The studio holds the app's
+    `host::editor_theme::EditorThemeHost` (`PineStudio::new` takes it; `with_script_store`, for tests,
+    a placeholder that publishes nothing). The rows come from `EditorThemeHost::choices()` (the worn
+    theme and the custom names, no colours), read only while the menu is up. `Cmd::SetEditorTheme`
+    runs `EditorThemeHost::select`, the same call as a Settings tile, so every window repaints;
+    `Cmd::OpenThemeSettings` pushes `PineStudioAction::OpenEditorThemeSettings`, which the app turns
+    into `SettingsHost::open_editor_themes` (the Pine Studio page).
   - **Every item of every context menu in `pine_studio/` is in the strip**, except the rows of a
     list that act on that row alone (Problems, Logs, the debug panel's variables, watches and
     breakpoint list). A context menu and the strip build their rows from one function so they cannot

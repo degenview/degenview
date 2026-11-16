@@ -99,6 +99,14 @@ pub struct View {
     pub notice: Option<String>,
 }
 
+/// What a menu of themes needs: the theme worn and the names of the custom ones, in the order
+/// Settings lists them. Far smaller than a [`View`], which copies every custom theme's colours.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Choices {
+    pub selected: ThemeSelection,
+    pub customs: Vec<(ThemeId, String)>,
+}
+
 /// A custom theme as a tile and an editor need it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CustomTheme {
@@ -514,6 +522,20 @@ impl EditorThemeHost {
                 .unwrap_or_else(|| Arc::new(family_list(std::iter::empty()))),
             unwritable: inner.themes_unwritable.clone(),
             notice: inner.notice.clone(),
+        }
+    }
+
+    /// The themes to pick from and the one worn, for a menu.
+    pub fn choices(&self) -> Choices {
+        let inner = self.lock();
+        Choices {
+            selected: inner.selection(),
+            customs: inner
+                .book
+                .saved()
+                .iter()
+                .map(|theme| (theme.id, theme.name.clone()))
+                .collect(),
         }
     }
 

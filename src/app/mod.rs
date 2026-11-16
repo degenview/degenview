@@ -80,6 +80,8 @@ enum AppAction {
     OpenAiSettings,
     /// Open Settings on the Snapshots page.
     OpenSnapshotSettings,
+    /// Open Settings on the Pine Studio page, where the editor's themes are.
+    OpenEditorThemeSettings,
     OpenAlerts,
     /// The price-alert sheet in a chart window saved an alert.
     SavePriceAlert {
@@ -354,6 +356,7 @@ impl DegenViewApp {
                         Some(TabSlot::new(TabContent::Pine(Box::new(PineStudio::new(
                             id,
                             store.clone(),
+                            editor_themes.clone(),
                         )))))
                     }
                     PersistedTab::Special(_) | PersistedTab::Unknown(_) => None,

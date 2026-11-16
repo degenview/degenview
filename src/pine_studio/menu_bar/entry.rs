@@ -1,16 +1,19 @@
 //! The rows of a menu as plain data, and how they are drawn. Each menu builds its entries from
-//! the state of the studio (`file`, `edit`, `view`); drawing and sizing live here, once.
+//! the state of the studio (`file`, `edit`, `view`, `theme`); drawing and sizing live here, once.
 
 use crate::pine_studio::commands::Cmd;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, MenuRow};
 use crate::ui::shortcut::Shortcut;
-use eframe::egui::Ui;
+use eframe::egui::{self, Ui};
 
 pub(super) enum Entry {
     Item(Item),
     Separator,
     Submenu(Submenu),
+    /// Rows that scroll once they are taller than a pull-down may be, with the menu as wide as
+    /// they need.
+    Scroll(Vec<Entry>),
 }
 
 /// A row that asks for `command` when chosen.
@@ -122,10 +125,11 @@ pub(super) fn grouped(groups: Vec<Vec<Entry>>) -> Vec<Entry> {
 pub(super) fn measured(entries: &[Entry]) -> Vec<(String, Option<String>)> {
     entries
         .iter()
-        .filter_map(|entry| match entry {
-            Entry::Item(item) => Some((item.label.clone(), item.shortcut.clone())),
-            Entry::Submenu(submenu) => Some((submenu.label.clone(), None)),
-            Entry::Separator => None,
+        .flat_map(|entry| match entry {
+            Entry::Item(item) => vec![(item.label.clone(), item.shortcut.clone())],
+            Entry::Submenu(submenu) => vec![(submenu.label.clone(), None)],
+            Entry::Scroll(rows) => measured(rows),
+            Entry::Separator => Vec::new(),
         })
         .collect()
 }
@@ -143,6 +147,12 @@ pub(super) fn show(ui: &mut Ui, entries: Vec<Entry>, chosen: &mut Vec<Cmd>) {
     for entry in entries {
         match entry {
             Entry::Separator => kit::menu_separator(ui),
+            Entry::Scroll(rows) => {
+                egui::ScrollArea::vertical()
+                    .max_height(kit::MENU_MAX_HEIGHT)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| show(ui, rows, chosen));
+            }
             Entry::Item(item) => {
                 let row = kit::menu_row(
                     ui,
