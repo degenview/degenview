@@ -197,7 +197,16 @@ pub fn pane_fits(pane: Rect, right: f32) -> bool {
 /// than pops, and stays up while the pointer is on one of its own buttons.
 fn fade(ui: &Ui, id: Id, visibility: ButtonVisibility, hovered: bool) -> f32 {
     ui.ctx()
-        .animate_bool_with_time(id.with("fade"), visibility.wanted(hovered), FADE)
+        .animate_bool_with_time(fade_id(ui, id), visibility.wanted(hovered), FADE)
+}
+
+/// The animation key of a group's fade. Chart ids restart at 1 in every workspace, so charts in
+/// different windows share `id`; every window is a viewport of one context, whose animation store
+/// they share while each keeps its own clock. Without the viewport in the key, a repaint of
+/// another window's chart (hovered or not) reads as negative elapsed time here and snaps the
+/// fade to hidden.
+fn fade_id(ui: &Ui, id: Id) -> Id {
+    id.with(("fade", ui.ctx().viewport_id()))
 }
 
 fn paint_group(ui: &Ui, pill: Rect, opacity: f32) {
@@ -470,6 +479,46 @@ mod tests {
             });
             assert_eq!(clicked, expected, "{visibility:?}");
         }
+    }
+
+    #[test]
+    fn a_group_keeps_its_fade_when_another_windows_chart_with_the_same_id_repaints() {
+        use egui::{RawInput, ViewportId};
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, vec2(900.0, 700.0));
+        let other = ViewportId::from_hash_of("other window");
+        let id = Id::new(("nav-buttons", 1_u64));
+        let frame = |viewport, time, hovered| {
+            let mut opacity = 0.0;
+            let input = RawInput {
+                viewport_id: viewport,
+                viewports: std::iter::once((viewport, egui::ViewportInfo::default())).collect(),
+                screen_rect: Some(screen),
+                time: Some(time),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                opacity = fade(ui, id, ButtonVisibility::OnHover, hovered);
+            });
+            output.textures_delta.clear();
+            opacity
+        };
+        // The window under the pointer is fully faded in.
+        let mut time = 3.0;
+        for _ in 0..10 {
+            time += 0.1;
+            frame(ViewportId::ROOT, time, true);
+        }
+        assert_eq!(frame(ViewportId::ROOT, time + 0.1, true), 1.0);
+        // The other window, opened earlier so its clock reads far higher, repaints its own chart
+        // with the same id; the pointer rests still on the first window.
+        frame(other, 500.0, false);
+        time += 0.2;
+        let opacity = frame(ViewportId::ROOT, time, true);
+        assert!(
+            opacity > 0.99,
+            "another window's repaint made the group flicker: {opacity}"
+        );
     }
 
     #[test]
