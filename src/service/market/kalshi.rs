@@ -1,7 +1,8 @@
-use crate::model::Kline;
+use crate::model::market::line;
+use crate::model::{Kline, Timeframe};
 use crate::service::{
     EventInfo, EventStats, MarketSource, ProviderError, SearchResult, downsample,
-    effective_span_days, replace_last_price, whole_dollars,
+    replace_last_price, whole_dollars,
 };
 use serde_json::Value;
 use std::sync::{Mutex, OnceLock};
@@ -28,17 +29,21 @@ fn probability(raw: &Value) -> Option<f64> {
         .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
 }
 
-/// (period minutes, span seconds) for the candlestick endpoint.
-fn kalshi_window(interval: &str) -> (i64, i64) {
-    let span = effective_span_days(interval);
-    let period = if span <= 2 {
-        1
-    } else if span <= 120 {
-        60
-    } else {
-        1_440
-    };
-    (period, span * 86_400)
+/// The candlestick periods Kalshi serves, in minutes.
+const PERIODS: [i64; 3] = [1, 60, 1_440];
+
+/// `(period minutes, span seconds)` for the candlestick endpoint at `timeframe`: the longest
+/// period that is no longer than a point of the line (`line::window`), and the line's span, cut
+/// to the points that period gives a line of a thousand.
+fn kalshi_window(timeframe: Timeframe) -> (i64, i64) {
+    let window = line::window(timeframe);
+    let period = PERIODS
+        .into_iter()
+        .rev()
+        .find(|period| *period <= window.step_minutes())
+        .unwrap_or(PERIODS[0]);
+    let span_ms = window.span_ms.min(period * 60_000 * line::MAX_POINTS);
+    (period, span_ms / 1_000)
 }
 
 type SeriesStore = Mutex<Option<(Instant, Vec<Series>)>>;
@@ -162,13 +167,13 @@ impl MarketSource for Kalshi {
     fn fetch_klines(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
         let (series, market) = symbol
             .split_once('/')
             .ok_or_else(|| ProviderError::other("Unrecognized Kalshi market id"))?;
-        let (period, span) = kalshi_window(interval);
+        let (period, span) = kalshi_window(timeframe);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| ProviderError::other("System clock is before the epoch"))?
@@ -369,11 +374,28 @@ fn fetch_current_ask(market: &str) -> Option<f64> {
 mod tests {
     use super::*;
 
+    fn window_of(timeframe: &str) -> (i64, i64) {
+        kalshi_window(Timeframe::parse(timeframe).unwrap())
+    }
+
     #[test]
-    fn window_uses_period_steps() {
-        assert_eq!(kalshi_window("1h"), (60, 30 * 86_400));
-        assert_eq!(kalshi_window("1d"), (60, 60 * 86_400));
-        assert_eq!(kalshi_window("1Y"), (1_440, 364 * 86_400));
+    fn the_period_is_the_longest_that_fits_a_point_of_the_line() {
+        assert_eq!(window_of("1h"), (60, 30 * 86_400));
+        assert_eq!(window_of("3h"), (60, 30 * 86_400));
+        assert_eq!(window_of("1d"), (1_440, 60 * 86_400));
+        assert_eq!(window_of("1Y"), (1_440, 364 * 86_400));
+        // Between the periods the finer one serves, over fewer hours.
+        assert_eq!(window_of("22m"), (1, 1_000 * 60));
+        assert_eq!(window_of("1m"), (1, 1_000 * 60));
+    }
+
+    #[test]
+    fn every_timeframe_has_a_period_and_a_span() {
+        for timeframe in Timeframe::PRESETS {
+            let (period, span) = kalshi_window(timeframe);
+            assert!(PERIODS.contains(&period), "{timeframe}");
+            assert!(span >= period * 60, "{timeframe}");
+        }
     }
 
     #[test]

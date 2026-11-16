@@ -16,8 +16,9 @@ pub enum OverlayStatus {
     Ready,
     /// The last request failed. Candles from before it, if any, are kept.
     Error(Arc<str>),
-    /// The overlay cannot be drawn on this chart, and why ("Same market as the chart").
-    Blocked(&'static str),
+    /// The overlay cannot be drawn on this chart, and why ("Same market as the chart", "Kalshi has
+    /// no 1m history"). Asking again would not change it, so it is not retried.
+    Blocked(Arc<str>),
 }
 
 /// One overlay market's candles and their state, cheap to clone.

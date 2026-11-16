@@ -492,7 +492,7 @@ mod tests {
             &self,
             _: DataSource,
             symbol: &str,
-            _: &str,
+            _: Timeframe,
             _: u32,
         ) -> Result<Vec<Kline>, ProviderError> {
             if symbol == "BADUSDT" {
@@ -504,7 +504,7 @@ mod tests {
             &self,
             _: DataSource,
             _: &str,
-            _: &str,
+            _: Timeframe,
             _: i64,
         ) -> Result<Vec<Kline>, ProviderError> {
             Ok(Vec::new())

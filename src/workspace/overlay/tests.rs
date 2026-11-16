@@ -48,7 +48,7 @@ impl OverlayBackend for Fake {
         &self,
         _: DataSource,
         symbol: &str,
-        _: &str,
+        _: Timeframe,
         _: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
         self.calls.lock().unwrap().push(format!("klines {symbol}"));
@@ -64,7 +64,7 @@ impl OverlayBackend for Fake {
         &self,
         _: DataSource,
         symbol: &str,
-        _: &str,
+        _: Timeframe,
         end: i64,
     ) -> Result<Vec<Kline>, ProviderError> {
         self.calls
@@ -245,6 +245,48 @@ fn one_failing_market_does_not_touch_the_others_and_is_retried_later() {
 }
 
 #[test]
+fn a_market_the_source_cannot_chart_at_this_timeframe_is_blocked_and_not_asked_again() {
+    let (mut hub, fake) = hub();
+    let now = Instant::now();
+    fake.answer(
+        "ETHUSDT",
+        Err(ProviderError::unsupported(
+            DataSource::Binance,
+            Timeframe::HOUR_1,
+        )),
+    );
+    frame(&mut hub, 1, &overlays(&["ETHUSDT"]), now);
+    fake.run_jobs();
+    hub.poll(Timeframe::HOUR_1, &egui::Context::default(), now);
+    assert_eq!(
+        hub.feed(&market("ETHUSDT")).unwrap().status,
+        OverlayStatus::Blocked("Binance has no 1h history".into())
+    );
+
+    // Neither the back-off of an error nor the refresh period asks again.
+    for wait in [6, 30, 600] {
+        hub.poll(
+            Timeframe::HOUR_1,
+            &egui::Context::default(),
+            now + Duration::from_secs(wait),
+        );
+    }
+    assert_eq!(fake.pending(), 0);
+    assert_eq!(fake.calls(), ["klines ETHUSDT"]);
+
+    // Another timeframe is another question.
+    fake.answer("ETHUSDT", Ok(vec![candle(10 * HOUR, 3.0)]));
+    let later = now + Duration::from_secs(601);
+    hub.poll(Timeframe::DAY_1, &egui::Context::default(), later);
+    fake.run_jobs();
+    hub.poll(Timeframe::DAY_1, &egui::Context::default(), later);
+    assert_eq!(
+        hub.feed(&market("ETHUSDT")).unwrap().status,
+        OverlayStatus::Ready
+    );
+}
+
+#[test]
 fn refreshing_slows_down_as_more_markets_are_active() {
     assert_eq!(
         refresh_after(DataSource::Binance, 1),
@@ -336,18 +378,36 @@ fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
     let sol_before = hub.feed(&market("SOLUSDT")).unwrap();
 
     // The forming bar is replaced; a new bar is appended.
-    hub.apply_live("ETHUSDT", &candle(11 * HOUR, 5.0), now);
+    hub.apply_live(
+        Timeframe::HOUR_1,
+        Timeframe::HOUR_1,
+        "ETHUSDT",
+        &candle(11 * HOUR, 5.0),
+        now,
+    );
     let eth = hub.feed(&market("ETHUSDT")).unwrap();
     assert_eq!(eth.candles.last().unwrap().close, 5.0);
     assert_eq!(eth.candles.len(), 2);
-    hub.apply_live("ethusdt", &candle(12 * HOUR, 6.0), now);
+    hub.apply_live(
+        Timeframe::HOUR_1,
+        Timeframe::HOUR_1,
+        "ethusdt",
+        &candle(12 * HOUR, 6.0),
+        now,
+    );
     assert_eq!(hub.feed(&market("ETHUSDT")).unwrap().candles.len(), 3);
     assert!(hub.version() > before);
 
     let sol_after = hub.feed(&market("SOLUSDT")).unwrap();
     assert_eq!(sol_after.revision, sol_before.revision);
     // A bar older than the newest is ignored.
-    hub.apply_live("ETHUSDT", &candle(5 * HOUR, 9.0), now);
+    hub.apply_live(
+        Timeframe::HOUR_1,
+        Timeframe::HOUR_1,
+        "ETHUSDT",
+        &candle(5 * HOUR, 9.0),
+        now,
+    );
     assert_eq!(hub.feed(&market("ETHUSDT")).unwrap().candles.len(), 3);
 }
 
@@ -382,6 +442,8 @@ fn last_close(hub: &OverlayHub) -> f64 {
 fn a_refresh_does_not_undo_a_live_candle_that_arrived_while_it_was_out() {
     let (mut hub, fake, begun) = refreshing_hub();
     hub.apply_live(
+        Timeframe::HOUR_1,
+        Timeframe::HOUR_1,
         "ETHUSDT",
         &candle(11 * HOUR, 7.5),
         begun + Duration::from_secs(1),
@@ -399,6 +461,8 @@ fn a_refresh_does_not_undo_a_live_candle_that_arrived_while_it_was_out() {
 fn a_refresh_updates_the_forming_bar_once_the_socket_went_quiet() {
     let (mut hub, fake, begun) = refreshing_hub();
     hub.apply_live(
+        Timeframe::HOUR_1,
+        Timeframe::HOUR_1,
         "ETHUSDT",
         &candle(11 * HOUR, 7.5),
         begun - Duration::from_secs(3),
@@ -490,4 +554,59 @@ fn hundreds_of_markets_are_held_without_a_cap() {
     assert_eq!(fake.pending(), MAX_IN_FLIGHT);
     hub.forget_chart(1);
     assert_eq!(hub.series_count(), 0);
+}
+
+#[test]
+fn a_live_kline_of_a_finer_length_is_folded_into_each_holders_candles() {
+    let (mut hub, fake) = hub();
+    let now = Instant::now();
+    frame(&mut hub, 1, &overlays(&["ETHUSDT"]), now);
+    fake.run_jobs();
+    hub.poll(Timeframe::HOUR_1, &egui::Context::default(), now);
+    let two_hours = Timeframe::parse("2h").unwrap();
+    hub.poll(two_hours, &egui::Context::default(), now);
+    fake.answer("ETHUSDT", Ok(vec![candle(10 * HOUR, 1.0)]));
+    hub.poll(
+        two_hours,
+        &egui::Context::default(),
+        now + Duration::from_secs(1),
+    );
+    fake.run_jobs();
+    hub.poll(
+        two_hours,
+        &egui::Context::default(),
+        now + Duration::from_secs(2),
+    );
+
+    // The 12:00 two-hour candle takes the hourly klines at 12:00 and 13:00, counted once each.
+    let live = |open: i64, close: f64, volume: f64| Kline {
+        volume,
+        ..candle(open, close)
+    };
+    let when = now + Duration::from_secs(3);
+    hub.apply_live(
+        two_hours,
+        Timeframe::HOUR_1,
+        "ETHUSDT",
+        &live(12 * HOUR, 5.0, 1.0),
+        when,
+    );
+    hub.apply_live(
+        two_hours,
+        Timeframe::HOUR_1,
+        "ETHUSDT",
+        &live(12 * HOUR, 6.0, 2.0),
+        when,
+    );
+    hub.apply_live(
+        two_hours,
+        Timeframe::HOUR_1,
+        "ETHUSDT",
+        &live(13 * HOUR, 7.0, 4.0),
+        when,
+    );
+    let eth = hub.feed(&market("ETHUSDT")).unwrap();
+    let forming = eth.candles.last().unwrap();
+    assert_eq!(forming.open_time, 12 * HOUR);
+    assert_eq!((forming.close, forming.volume), (7.0, 6.0));
 }

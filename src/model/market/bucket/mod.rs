@@ -17,6 +17,10 @@
 use crate::format::{civil_from_days, days_from_civil};
 use crate::model::{Kline, TimeUnit, Timeframe};
 
+mod plan;
+
+pub use plan::FoldPlan;
+
 const DAY_MS: i64 = 86_400_000;
 /// Day 0 (1970-01-01) was a Thursday: Monday 1969-12-29 is three days before it.
 const DAYS_BEFORE_FIRST_MONDAY: i64 = 3;

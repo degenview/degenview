@@ -1,7 +1,7 @@
 use crate::model::market::cmc::{
     ALTCOIN_HISTORICAL, ALTCOIN_LATEST, CHART_TYPES, FEAR_GREED_HISTORICAL, FEAR_GREED_LATEST,
 };
-use crate::model::{DataSource, Kline};
+use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult, downsample};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -245,7 +245,7 @@ impl MarketSource for CoinMarketCap {
     fn fetch_klines(
         &self,
         symbol: &str,
-        _interval: &str,
+        _timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
         let key = api_key();

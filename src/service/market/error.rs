@@ -2,6 +2,7 @@
 //! chart, the symbol picker and MCP show; code decides on the variant, never on the text.
 
 use super::alpaca::MISSING_KEY;
+use crate::model::{DataSource, Timeframe};
 use crate::service::net::http;
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -24,6 +25,12 @@ pub enum ProviderError {
     /// The provider has nothing for this market, interval or range, or refused it in its own words.
     #[error("{0}")]
     Other(String),
+    /// No candle of the source reaches this timeframe: it is never answered with a nearby one.
+    #[error("{} has no {timeframe} history", .provider.display_name())]
+    UnsupportedInterval {
+        provider: DataSource,
+        timeframe: Timeframe,
+    },
 }
 
 impl ProviderError {
@@ -34,6 +41,19 @@ impl ProviderError {
 
     pub fn other(message: impl Into<String>) -> Self {
         Self::Other(message.into())
+    }
+
+    /// `provider` cannot chart `timeframe`.
+    pub fn unsupported(provider: DataSource, timeframe: Timeframe) -> Self {
+        Self::UnsupportedInterval {
+            provider,
+            timeframe,
+        }
+    }
+
+    /// The source cannot chart the timeframe, so asking again at it is no use.
+    pub fn is_unsupported_interval(&self) -> bool {
+        matches!(self, Self::UnsupportedInterval { .. })
     }
 
     /// The provider said too many requests (HTTP 429).
@@ -75,6 +95,20 @@ mod tests {
             ProviderError::other("No CoinMarketCap data").to_string(),
             "No CoinMarketCap data"
         );
+        assert_eq!(
+            ProviderError::unsupported(DataSource::Polymarket, Timeframe::MINUTE_1).to_string(),
+            "Polymarket has no 1m history"
+        );
+    }
+
+    #[test]
+    fn only_an_unsupported_interval_is_one() {
+        let unsupported = ProviderError::unsupported(DataSource::CoinGecko, Timeframe::MINUTE_1);
+        assert!(unsupported.is_unsupported_interval());
+        assert!(!unsupported.is_rate_limited());
+        // A message that happens to read like one is not.
+        assert!(!ProviderError::other("CoinGecko has no 1m history").is_unsupported_interval());
+        assert!(!ProviderError::MissingKey.is_unsupported_interval());
     }
 
     #[test]

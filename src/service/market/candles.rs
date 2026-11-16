@@ -1,7 +1,16 @@
 //! Candle clean-up shared by every provider, so one market looks the same whichever source serves
 //! it. Bucket boundaries, folds and gap filling are `model::market::bucket`.
 
-use crate::model::Kline;
+use crate::model::market::bucket::FoldPlan;
+use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::ProviderError;
+
+/// How `source` makes `timeframe` from the candles it has, or the error that it cannot.
+pub(crate) fn plan(source: DataSource, timeframe: Timeframe) -> Result<FoldPlan, ProviderError> {
+    source
+        .plan(timeframe)
+        .ok_or_else(|| ProviderError::unsupported(source, timeframe))
+}
 
 /// What every provider's candles pass through: ascending by open time, one candle per open time
 /// (the later one wins), no non-finite prices, and a range that holds its own open and close.
@@ -80,6 +89,46 @@ mod tests {
         assert!(repaired.high >= repaired.open && repaired.high >= repaired.close);
     }
 
+    /// Lengths a user may pick, short to long, odd ones among them.
+    const TABLE: [&str; 15] = [
+        "1m", "2m", "3m", "5m", "7m", "22m", "30m", "1h", "3h", "24h", "1D", "3D", "1W", "1M", "1Y",
+    ];
+
+    #[test]
+    fn a_candle_sources_planner_agrees_with_what_it_serves() {
+        for source in [
+            DataSource::Binance,
+            DataSource::Coinbase,
+            DataSource::Alpaca,
+            DataSource::DexScreener,
+        ] {
+            for text in TABLE {
+                let timeframe = Timeframe::parse(text).unwrap();
+                match plan(source, timeframe) {
+                    Ok(plan) => assert!(source.serves(timeframe), "{source:?} {text}: {plan:?}"),
+                    Err(error) => {
+                        assert!(!source.serves(timeframe), "{source:?} {text}");
+                        assert_eq!(error, ProviderError::unsupported(source, timeframe));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn coingecko_refuses_what_it_does_not_serve_before_any_request() {
+        for text in TABLE {
+            let timeframe = Timeframe::parse(text).unwrap();
+            if DataSource::CoinGecko.serves(timeframe) {
+                continue;
+            }
+            let error = crate::service::for_source(DataSource::CoinGecko)
+                .fetch_klines("bitcoin", timeframe, 10)
+                .unwrap_err();
+            assert!(error.is_unsupported_interval(), "{text}: {error}");
+        }
+    }
+
     /// Fetches ETH from Binance, Coinbase and a Uniswap pool and compares their buckets. Run with
     /// `cargo test --release --lib live_sources_cut -- --ignored --nocapture`.
     #[test]
@@ -87,7 +136,9 @@ mod tests {
     fn live_sources_cut_the_same_buckets() {
         use crate::model::DataSource::{Binance, Coinbase, DexScreener};
         let pool = "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640";
-        for interval in ["1h", "1d", "1w", "1M", "3M", "1Y"] {
+        let odd = ["5m", "22m", "3h", "4h", "2D", "3D", "2W", "6M"]
+            .map(|text| Timeframe::parse(text).expect("a timeframe"));
+        for interval in Timeframe::LEGACY.into_iter().chain(odd) {
             let fetch = |source, symbol: &str| {
                 crate::service::fetch_klines(source, symbol, interval, 500)
                     .map_err(|error| format!("{source:?} {interval}: {error}"))

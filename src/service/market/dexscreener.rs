@@ -1,4 +1,4 @@
-use crate::model::Kline;
+use crate::model::{Kline, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -15,21 +15,21 @@ impl MarketSource for DexScreener {
     fn fetch_klines(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        super::geckoterminal::fetch_klines(symbol, interval, limit)
+        super::geckoterminal::fetch_klines(symbol, timeframe, limit)
     }
 
     fn fetch_klines_range(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         start_ms: i64,
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        super::geckoterminal::fetch_klines_range(symbol, interval, start_ms, end_ms, max)
+        super::geckoterminal::fetch_klines_range(symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {

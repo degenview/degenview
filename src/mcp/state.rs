@@ -28,10 +28,15 @@ pub type ScriptLocator = Box<dyn Fn() -> Option<ScriptStore> + Send + Sync>;
 pub type MarketSearch =
     Arc<dyn Fn(DataSource, &str) -> Result<Vec<SearchResult>, ProviderError> + Send + Sync>;
 
-/// Fetches candles from a provider: `(source, symbol, interval token, limit)`. Replaceable so
+/// Fetches candles from a provider: `(source, symbol, timeframe, limit)`. Replaceable so
 /// tests never reach the network.
 pub type CandleFetch = Arc<
-    dyn Fn(DataSource, &str, &str, u32) -> Result<Vec<crate::model::Kline>, ProviderError>
+    dyn Fn(
+            DataSource,
+            &str,
+            crate::model::Timeframe,
+            u32,
+        ) -> Result<Vec<crate::model::Kline>, ProviderError>
         + Send
         + Sync,
 >;

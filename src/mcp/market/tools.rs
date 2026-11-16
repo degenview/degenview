@@ -633,7 +633,7 @@ impl DegenViewMcp {
             // exactly as it does for a chart.
             crate::service::work_queue::submit_for(source, move || {
                 let _permit = permit;
-                let _ = sender.send(fetch(source, &symbol, &timeframe.interval(), limit as u32));
+                let _ = sender.send(fetch(source, &symbol, timeframe, limit as u32));
             });
         }
         let candles = match tokio::time::timeout(CANDLE_DEADLINE, receiver).await {

@@ -75,7 +75,7 @@ impl KlineSecurityDataProvider {
         let candles = crate::service::fetch_klines_range(
             source,
             &symbol,
-            &base.interval(),
+            base,
             start,
             chart.end_ms,
             MAX_INTRABAR_CANDLES,
@@ -95,14 +95,14 @@ impl KlineSecurityDataProvider {
         // are fetched and the chart's own builders make the bars.
         let (plain, modifier) = ticker::split(&key.symbol);
         let (source, symbol) = resolve_symbol(plain)?;
-        let interval = resolve_interval(key.interval)?;
+        let timeframe = timeframe_of(key.interval)?;
         // Enough candles for the chart's span plus the expression's own lookback, up to the
         // service's page.
         let limit = chart.map_or(500, |chart| {
             let covering = (chart.end_ms - chart.start_ms) / (key.interval as i64 * 1_000).max(1);
             (covering + 300).clamp(500, 1_000) as u32
         });
-        let candles = crate::service::fetch_klines(source, &symbol, interval, limit).ok()?;
+        let candles = crate::service::fetch_klines(source, &symbol, timeframe, limit).ok()?;
         Some(construct(modifier, candles))
     }
 }
@@ -169,28 +169,6 @@ fn source_for_slug(slug: &str) -> Option<DataSource> {
         "CMC" => Some(DataSource::CoinMarketCap),
         _ => None,
     }
-}
-
-/// The kline-service interval token for a bar length in seconds. None for a length the service does
-/// not serve directly.
-fn resolve_interval(seconds: f64) -> Option<&'static str> {
-    const TOKENS: &[(f64, &str)] = &[
-        (60.0, "1m"),
-        (300.0, "5m"),
-        (900.0, "15m"),
-        (1_800.0, "30m"),
-        (3_600.0, "1h"),
-        (14_400.0, "4h"),
-        (86_400.0, "1d"),
-        (604_800.0, "1w"),
-        (2_592_000.0, "1M"),
-        (7_776_000.0, "3M"),
-        (31_536_000.0, "1Y"),
-    ];
-    TOKENS
-        .iter()
-        .find(|(length, _)| (*length - seconds).abs() < 0.5)
-        .map(|(_, token)| *token)
 }
 
 /// Compiles `source` and runs it once over every bar (historical phase) with the user's input
@@ -393,15 +371,6 @@ mod tests {
             Some((DataSource::Coinbase, "BTC-USD".to_owned()))
         );
         assert_eq!(resolve_symbol("NOPE:ETHUSDT"), None);
-    }
-
-    #[test]
-    fn security_intervals_map_to_kline_tokens() {
-        assert_eq!(resolve_interval(60.0), Some("1m"));
-        assert_eq!(resolve_interval(3_600.0), Some("1h"));
-        assert_eq!(resolve_interval(86_400.0), Some("1d"));
-        assert_eq!(resolve_interval(2_592_000.0), Some("1M"));
-        assert_eq!(resolve_interval(120.0), None); // 2m is not served directly
     }
 }
 

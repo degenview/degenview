@@ -568,3 +568,92 @@ fn an_endless_silence_is_not_filled() {
     let before = candles.len();
     assert_eq!(fill_gaps(candles, HOUR_MS, day(2024, 1, 1)).len(), before);
 }
+
+fn plan(target: Timeframe, natives: &[Timeframe]) -> FoldPlan {
+    FoldPlan::new(target, natives).unwrap()
+}
+
+const SOME_NATIVES: [Timeframe; 4] = [
+    Timeframe::MINUTE_1,
+    Timeframe::HOUR_1,
+    Timeframe::DAY_1,
+    Timeframe::MONTH_1,
+];
+
+#[test]
+fn a_native_target_is_asked_for_as_it_is() {
+    let plan = plan(Timeframe::HOUR_1, &SOME_NATIVES);
+    assert!(plan.is_native());
+    assert_eq!(
+        (plan.target(), plan.base()),
+        (Timeframe::HOUR_1, Timeframe::HOUR_1)
+    );
+    assert_eq!(plan.per_target(), 1);
+    assert_eq!(plan.base_count(500), 500);
+}
+
+#[test]
+fn a_folded_target_asks_for_one_more_buckets_worth_than_it_shows() {
+    let odd = plan(tf(22, TimeUnit::Minute), &SOME_NATIVES);
+    assert!(!odd.is_native());
+    assert_eq!((odd.base(), odd.per_target()), (Timeframe::MINUTE_1, 22));
+    assert_eq!(odd.base_count(500), 501 * 22);
+    let three_hours = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES);
+    assert_eq!(three_hours.base_count(100), 101 * 3);
+}
+
+#[test]
+fn a_calendar_bucket_is_counted_at_its_longest() {
+    // A week is seven days, a month at most 31, a quarter 93 and a year 372 (so a leap year fits).
+    assert_eq!(plan(Timeframe::WEEK_1, &SOME_NATIVES).per_target(), 7);
+    assert_eq!(plan(tf(2, TimeUnit::Day), &SOME_NATIVES).per_target(), 2);
+    let days = [Timeframe::DAY_1];
+    assert_eq!(plan(Timeframe::MONTH_1, &days).per_target(), 31);
+    assert_eq!(plan(Timeframe::MONTH_3, &days).per_target(), 93);
+    assert_eq!(plan(Timeframe::YEAR_1, &days).per_target(), 372);
+    // Months of months are exact.
+    assert_eq!(
+        plan(Timeframe::MONTH_3, &SOME_NATIVES).base(),
+        Timeframe::MONTH_1
+    );
+    let months = [Timeframe::MONTH_1];
+    assert_eq!(plan(Timeframe::MONTH_3, &months).per_target(), 3);
+    assert_eq!(plan(Timeframe::YEAR_1, &months).per_target(), 12);
+}
+
+#[test]
+fn nothing_nests_nothing_plans() {
+    assert_eq!(FoldPlan::new(Timeframe::HOUR_1, &[Timeframe::DAY_1]), None);
+    assert_eq!(FoldPlan::new(Timeframe::HOUR_1, &[]), None);
+}
+
+#[test]
+fn a_native_answer_is_trimmed_to_the_newest_candles() {
+    let hours = series(0, HOUR_MS, 10);
+    let shown = plan(Timeframe::HOUR_1, &SOME_NATIVES).shape(hours, 10, 4);
+    assert_eq!(
+        opens(&shown),
+        [6 * HOUR_MS, 7 * HOUR_MS, 8 * HOUR_MS, 9 * HOUR_MS]
+    );
+}
+
+#[test]
+fn a_folded_answer_that_fills_the_request_loses_the_fragment_it_cut() {
+    let target = tf(3, TimeUnit::Hour);
+    let plan = plan(target, &SOME_NATIVES);
+    // Hours 1 to 8: the 00:00 bucket has only its last two hours, the 06:00 one its first three.
+    let hourly = series(HOUR_MS, HOUR_MS, 8);
+    let full = plan.shape(hourly.clone(), 8, 10);
+    assert_eq!(opens(&full), [3 * HOUR_MS, 6 * HOUR_MS]);
+    // An answer shorter than the request began where the market did: its first bucket stays.
+    let short = plan.shape(hourly, 20, 10);
+    assert_eq!(opens(&short), [0, 3 * HOUR_MS, 6 * HOUR_MS]);
+}
+
+#[test]
+fn a_folded_answer_is_trimmed_after_folding() {
+    let hourly = series(0, HOUR_MS, 24);
+    let shown = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES).shape(hourly, 100, 3);
+    assert_eq!(opens(&shown), [15 * HOUR_MS, 18 * HOUR_MS, 21 * HOUR_MS]);
+    assert_eq!(shown[0].close_time, 18 * HOUR_MS - 1);
+}

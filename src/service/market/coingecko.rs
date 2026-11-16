@@ -1,5 +1,6 @@
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
-use crate::model::{Kline, Timeframe};
+use crate::model::market::samples;
+use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
 
@@ -13,12 +14,12 @@ impl MarketSource for CoinGecko {
     fn fetch_klines(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
         let coin_id = symbol.to_lowercase();
-        let target = Timeframe::parse(interval).unwrap_or(Timeframe::HOUR_1);
-        let days = market_chart_days(target.nominal_ms() / 1_000, limit);
+        let days = samples::chart_days(timeframe, limit)
+            .ok_or_else(|| ProviderError::unsupported(DataSource::CoinGecko, timeframe))?;
         crate::service::net::rate_limit::coingecko().wait_for_slot();
         let url = format!("{BASE_URL}/coins/{coin_id}/market_chart?vs_currency=usd&days={days}");
         let body = crate::service::net::http::get_text(
@@ -27,7 +28,7 @@ impl MarketSource for CoinGecko {
             crate::service::net::http::Retry::Never,
         )?;
         let prices = parse_prices(&body)?;
-        let candles = fold_prices(&prices, target);
+        let candles = fold_prices(&prices, timeframe);
         let start = candles.len().saturating_sub(limit as usize);
         Ok(candles[start..].to_vec())
     }
@@ -64,28 +65,6 @@ impl MarketSource for CoinGecko {
             ));
         }
         Ok(results.into_iter().take(20).collect())
-    }
-}
-
-/// Days of `/market_chart` history that can build the requested candles. Bounded
-/// by the deepest tier whose samples are still fine enough to fold into a candle.
-fn market_chart_days(target_secs: i64, limit: u32) -> i64 {
-    let deepest = (i64::from(limit) * target_secs + 86_399) / 86_400;
-    let tier = [1, 90, 365]
-        .into_iter()
-        .filter(|days| sample_step(*days) <= target_secs)
-        .max()
-        .unwrap_or(1);
-    deepest.min(tier).clamp(1, 365)
-}
-
-fn sample_step(days: i64) -> i64 {
-    if days <= 1 {
-        300
-    } else if days <= 90 {
-        3_600
-    } else {
-        86_400
     }
 }
 
@@ -149,9 +128,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn window_tracks_interval_and_limit() {
-        assert_eq!(market_chart_days(3_600, 500), 21);
-        assert_eq!(market_chart_days(86_400, 500), 365);
+    fn a_length_the_samples_cannot_build_is_refused_before_any_request() {
+        for timeframe in [Timeframe::MINUTE_1, Timeframe::parse("22m").unwrap()] {
+            let error = COINGECKO
+                .fetch_klines("bitcoin", timeframe, 100)
+                .unwrap_err();
+            assert_eq!(
+                error,
+                ProviderError::unsupported(DataSource::CoinGecko, timeframe)
+            );
+        }
     }
 
     #[test]

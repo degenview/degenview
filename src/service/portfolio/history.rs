@@ -6,7 +6,6 @@
 //! frame, like the quote feed.
 
 use crate::lock::lock;
-use crate::model::DataSource;
 use crate::model::Kline;
 use crate::model::portfolio::accounting::{holdings, unique_assets};
 use crate::model::portfolio::history::{
@@ -16,6 +15,7 @@ use crate::model::portfolio::history::{
 use crate::model::portfolio::{
     Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioSnapshot, PortfolioTransaction,
 };
+use crate::model::{DataSource, Timeframe};
 use crate::service::portfolio::quotes::PortfolioFxRates;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
@@ -57,12 +57,13 @@ pub(crate) fn daily_bars(asset: &PortfolioAsset, start_ms: i64, now_ms: i64) -> 
     let first = start_ms - LOOKBACK_MS;
     let wanted = days(now_ms - first);
     let symbol = market_symbol(asset);
-    let recent = |limit: u32| crate::service::fetch_klines(asset.source, &symbol, "1d", limit);
+    let recent =
+        |limit: u32| crate::service::fetch_klines(asset.source, &symbol, Timeframe::DAY_1, limit);
     let mut bars = if wanted > MAX_BARS {
         crate::service::fetch_klines_range(
             asset.source,
             &symbol,
-            "1d",
+            Timeframe::DAY_1,
             first - DAY_MS,
             now_ms + DAY_MS,
             wanted as usize,
@@ -81,13 +82,13 @@ pub(crate) fn daily_bars(asset: &PortfolioAsset, start_ms: i64, now_ms: i64) -> 
 /// The last day of fine candles. Alpaca has no 15-minute timeframe, so it is sampled hourly.
 fn intraday_bars(asset: &PortfolioAsset) -> Option<IntradayBars> {
     let hourly = asset.source == DataSource::Alpaca;
-    let (interval, limit, span_ms) = if hourly {
-        ("1h", 48, 3_600_000)
+    let (timeframe, limit, span_ms) = if hourly {
+        (Timeframe::HOUR_1, 48, 3_600_000)
     } else {
-        ("15m", 120, 900_000)
+        (Timeframe::MINUTE_15, 120, 900_000)
     };
     let mut bars =
-        crate::service::fetch_klines(asset.source, &market_symbol(asset), interval, limit).ok()?;
+        crate::service::fetch_klines(asset.source, &market_symbol(asset), timeframe, limit).ok()?;
     if bars.is_empty() {
         return None;
     }

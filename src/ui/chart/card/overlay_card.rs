@@ -416,11 +416,11 @@ impl ChartCard {
             overlay.name(),
             overlay.instrument.source.display_name()
         );
-        let status = match row.line.state {
+        let status = match &row.line.state {
             LineState::Waiting => Some("waiting to load".to_owned()),
             LineState::NoOverlap => Some("no data in view".to_owned()),
             LineState::NoBaseline => Some("nothing to start from yet".to_owned()),
-            LineState::Blocked(reason) => Some(reason.to_lowercase()),
+            LineState::Blocked(reason) => Some(reason.to_string()),
             LineState::Unsupported => Some("not available on price-based chart types".to_owned()),
             LineState::Hidden | LineState::Drawn => None,
         };

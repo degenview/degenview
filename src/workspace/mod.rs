@@ -565,10 +565,7 @@ impl ChartWorkspace {
             chart.receive_fetch();
             chart.receive_older(timeframe);
             chart.request_older(timeframe, &ctx);
-            if chart.is_market()
-                && chart.inbox.is_none()
-                && chart.last_fetch.elapsed() >= chart.refresh_after()
-            {
+            if chart.refresh_due() {
                 chart.fetch(timeframe, &ctx);
             }
         }

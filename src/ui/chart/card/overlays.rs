@@ -62,7 +62,7 @@ struct MemoKey {
 }
 
 /// Why an overlay is or is not on the chart right now.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum LineState {
     Drawn,
     Hidden,
@@ -73,7 +73,7 @@ pub(super) enum LineState {
     /// Rebasing needs a reference price the chart does not have.
     NoBaseline,
     /// The overlay cannot be drawn on this chart, and why.
-    Blocked(&'static str),
+    Blocked(Arc<str>),
     /// Price-based chart types have no shared time axis.
     Unsupported,
 }
@@ -318,8 +318,8 @@ impl ChartCard {
             .map(|((overlay, feed, values), mapping)| {
                 let state = if !supported {
                     LineState::Unsupported
-                } else if let OverlayStatus::Blocked(reason) = feed.status {
-                    LineState::Blocked(reason)
+                } else if let OverlayStatus::Blocked(reason) = &feed.status {
+                    LineState::Blocked(Arc::clone(reason))
                 } else if !overlay.visible {
                     LineState::Hidden
                 } else if feed.candles.is_empty() {

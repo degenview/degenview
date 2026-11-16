@@ -695,10 +695,10 @@ fn candles_of_any_market_come_from_the_provider_with_no_chart() {
         let seen = seen.clone();
         harness
             .shared
-            .set_candle_fetch(Arc::new(move |source, symbol, interval, limit| {
+            .set_candle_fetch(Arc::new(move |source, symbol, timeframe, limit| {
                 seen.lock()
                     .unwrap()
-                    .push(format!("{source:?} {symbol} {interval} {limit}"));
+                    .push(format!("{source:?} {symbol} {timeframe} {limit}"));
                 Ok((0..5).map(|day| bar(day, 100.0 + day as f64)).collect())
             }));
     }
@@ -710,7 +710,7 @@ fn candles_of_any_market_come_from_the_provider_with_no_chart() {
     );
     assert_eq!(result["isError"], json!(false), "{result}");
     let out = &result["structuredContent"];
-    assert_eq!(*seen.lock().unwrap(), ["Binance BTCUSDT 1d 3"]);
+    assert_eq!(*seen.lock().unwrap(), ["Binance BTCUSDT 1D 3"]);
     assert_eq!(out["instrument"], "BINANCE:BTCUSDT");
     assert_eq!(out["timeframe"], "1D");
     assert_eq!(

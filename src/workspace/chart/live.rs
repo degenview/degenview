@@ -1,7 +1,7 @@
 //! The live Binance feed: keeping it on the workspace's charts and folding its candles in.
 
-use crate::model::market::live::{self, LiveMark};
-use crate::model::{DataSource, Kline, TimeUnit};
+use crate::model::market::live::LiveMark;
+use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::market::live::BinanceLiveFeed;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
@@ -21,25 +21,22 @@ impl ChartWorkspace {
                 symbols.push(symbol);
             }
         }
-        let interval = self.timeframe.interval();
-        // Binance streams no quarterly or yearly klines; those fold monthly candles.
-        let monthly_fold = self.timeframe.unit() == TimeUnit::Month && self.timeframe.count() > 1;
-        let signature = (symbols, interval);
-
-        let should_connect = !monthly_fold && !signature.0.is_empty();
-        let needs_change = match &self.live_feed {
-            Some(feed) => feed.signature() != &signature || !should_connect,
-            None => should_connect,
+        // The stream is of the candle length Binance serves the timeframe from (one-minute klines
+        // for a 22-minute chart, monthly ones for a quarter); a timeframe it cannot reach has none.
+        let base = DataSource::Binance
+            .plan(self.timeframe)
+            .map(|plan| plan.base())
+            .filter(|_| !symbols.is_empty());
+        let wanted = base.map(|base| (symbols, base.interval()));
+        let changed = match (&self.live_feed, &wanted) {
+            (Some(feed), Some(wanted)) => feed.signature() != wanted,
+            (None, None) => false,
+            _ => true,
         };
-        if needs_change {
-            self.live_feed = None;
-            if should_connect {
-                self.live_feed = Some(BinanceLiveFeed::connect(
-                    signature.0.clone(),
-                    signature.1.clone(),
-                    ctx.clone(),
-                ));
-            }
+        if changed {
+            self.live_feed = wanted.map(|(symbols, interval)| {
+                BinanceLiveFeed::connect(symbols, interval, ctx.clone())
+            });
         }
 
         let updates = self
@@ -47,19 +44,29 @@ impl ChartWorkspace {
             .as_ref()
             .map(|feed| feed.inbox.drain())
             .unwrap_or_default();
+        let Some(base) = base else {
+            return;
+        };
         let now = Instant::now();
         for (symbol, kline) in updates {
-            self.overlay_hub.apply_live(&symbol, &kline, now);
-            self.apply_live_kline(&symbol, kline, now);
+            self.overlay_hub
+                .apply_live(self.timeframe, base, &symbol, &kline, now);
+            self.apply_live_kline(base, &symbol, kline, now);
         }
     }
 
-    fn apply_live_kline(&mut self, symbol: &str, kline: Kline, now: Instant) {
+    /// Every chart of `symbol` takes the kline of `base` candles, whatever else it shows.
+    fn apply_live_kline(&mut self, base: Timeframe, symbol: &str, kline: Kline, now: Instant) {
+        let timeframe = self.timeframe;
         for chart in self.charts.iter_mut().filter(|chart| {
             chart.source == DataSource::Binance && chart.symbol.eq_ignore_ascii_case(symbol)
         }) {
-            if live::apply_live(&mut chart.candles, kline.clone()) {
-                chart.live = Some(LiveMark::new(kline.open_time, now));
+            if let Some(open_time) =
+                chart
+                    .live_fold
+                    .apply(timeframe, base, &mut chart.candles, kline.clone())
+            {
+                chart.live = Some(LiveMark::new(open_time, now));
                 chart.last_data_ms = Some(crate::model::watchlist::now_ms());
             }
         }
@@ -84,7 +91,8 @@ mod tests {
         other.candles = vec![candle(1, 1.0)];
         workspace.charts.push(other);
 
-        workspace.apply_live_kline("btcusdt", candle(2, 5.0), Instant::now());
+        let base = workspace.timeframe;
+        workspace.apply_live_kline(base, "btcusdt", candle(2, 5.0), Instant::now());
 
         let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
         assert_eq!(lens, [2, 2, 1]);
@@ -98,12 +106,93 @@ mod tests {
         chart.candles = vec![candle(1, 1.0), candle(2, 2.0)];
         workspace.charts.push(chart);
 
-        workspace.apply_live_kline("BTCUSDT", candle(1, 9.0), Instant::now());
+        let base = workspace.timeframe;
+        workspace.apply_live_kline(base, "BTCUSDT", candle(1, 9.0), Instant::now());
 
         assert_eq!(
             workspace.charts[0].candles,
             [candle(1, 1.0), candle(2, 2.0)]
         );
         assert!(workspace.charts[0].live.is_none());
+    }
+
+    #[test]
+    fn every_chart_of_the_symbol_folds_the_base_klines_into_its_own_bucket() {
+        let minute = 60_000;
+        let mut workspace = empty_workspace(1);
+        workspace.timeframe = Timeframe::parse("5m").unwrap();
+        for id in 1..=2 {
+            workspace
+                .charts
+                .push(Chart::blank(id, "BTCUSDT", DataSource::Binance));
+        }
+        let live = |open: i64, volume: f64| Kline {
+            volume,
+            ..candle(open, 5.0)
+        };
+
+        for kline in [live(0, 1.0), live(0, 2.0), live(minute, 3.0)] {
+            workspace.apply_live_kline(Timeframe::MINUTE_1, "BTCUSDT", kline, Instant::now());
+        }
+
+        for chart in &workspace.charts {
+            assert_eq!(chart.candles.len(), 1);
+            assert_eq!(
+                chart.candles[0].volume, 5.0,
+                "each bar once, each chart its own"
+            );
+            assert_eq!(
+                chart.live.map(|mark| mark.guard_for(Instant::now())),
+                Some(None)
+            );
+        }
+    }
+
+    #[test]
+    fn a_refresh_that_replaces_the_forming_bucket_makes_the_next_live_kline_start_from_it() {
+        let mut workspace = empty_workspace(1);
+        workspace.timeframe = Timeframe::parse("5m").unwrap();
+        workspace
+            .charts
+            .push(Chart::blank(1, "BTCUSDT", DataSource::Binance));
+        let mut kline = candle(0, 5.0);
+        kline.volume = 4.0;
+        workspace.apply_live_kline(
+            Timeframe::MINUTE_1,
+            "BTCUSDT",
+            kline.clone(),
+            Instant::now(),
+        );
+
+        // A refresh with no live guard replaces the candle: the socket's account is dropped.
+        let chart = &mut workspace.charts[0];
+        chart.live = None;
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let fetched = Kline {
+            volume: 10.0,
+            close_time: 5 * 60_000 - 1,
+            ..candle(0, 5.0)
+        };
+        sender
+            .send(Ok(crate::workspace::chart::Fetched {
+                candles: vec![fetched],
+                series: Vec::new(),
+            }))
+            .unwrap();
+        chart.inbox = Some(receiver);
+        chart.receive_fetch();
+
+        // The bar already counted in the refresh's volume adds only what it trades from here.
+        kline.volume = 4.5;
+        workspace.apply_live_kline(
+            Timeframe::MINUTE_1,
+            "BTCUSDT",
+            kline.clone(),
+            Instant::now(),
+        );
+        assert_eq!(workspace.charts[0].candles[0].volume, 10.0);
+        kline.volume = 5.0;
+        workspace.apply_live_kline(Timeframe::MINUTE_1, "BTCUSDT", kline, Instant::now());
+        assert_eq!(workspace.charts[0].candles[0].volume, 10.5);
     }
 }

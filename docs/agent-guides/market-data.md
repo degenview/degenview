@@ -5,6 +5,8 @@
 1. `model::market::source::DataSource` metadata: display name, watchlist slug, prediction-market flag,
    volume support, line/candle mode.
 2. Implement `service::MarketSource`; `search_tickers` if supported; a parser for a new kline shape.
+   Declare its candle lengths in `model::market::natives` and plan every request through
+   `DataSource::plan` (see Timeframes), so `serves` and the fetch agree.
 3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active
    markets (Kalshi cannot).
 4. Add to the symbol picker (`ui::chart::symbol_picker`, Predictions tab) via `is_prediction_market()`, not provider matching.
@@ -53,21 +55,48 @@ watchlists.
   substitute a nearby interval. `bucket::fold_base(target, natives)` is the coarsest native whose
   buckets nest exactly in the target's (an intraday base must divide the day, and the target when
   that is intraday; days nest in multiples of days and, as single days, in weeks and months; weeks
-  in weeks, months in months), or `None`. `3M`/`1Y` are real quarters/years everywhere. Binance and
-  Alpaca fold monthly bars, Coinbase and GeckoTerminal daily, CoinGecko builds from its price
-  series. Pass `truncated` when the series starts where a request stopped, to drop the partial first
-  bucket.
-- The chart offers 1h+, but Pine's `request.security` may ask any timeframe (5m intrabars, 4h), so
-  token tables must cover minutes or the script fails with `PINE4021`. Pine states lengths in
-  seconds with a 30-day month; `pine::time::bucket` turns them into a `Timeframe` (`timeframe_of`)
-  and cuts the buckets the same way; a length that is no timeframe (`30S`) floors onto the epoch. Coinbase: 1m/5m/15m native,
-  folds 30m (from 15m) and 4h (from 1h); pages stop at `MAX_PAGES` (60 x 290 candles), so 5m
-  intrabars reach back ~60 days.
-  Alpaca: native `Nm` (1-59, `NMin`) and `Nh` (1-23, `NHour`), `1d`, `1w`, `1M`; any other token is
-  `ProviderError::Other("Alpaca has no <interval> candles")`, never daily bars. A bar closes 1 ms
-  before the next opens (days, weeks, months keep Alpaca's New York midnight offset, so an hour off
-  across a clock change). Intraday fetches look back at least 7 days, so a tail refresh (4 bars)
-  finds the last session over a weekend; every start is clamped to `EARLIEST_MS`.
+  in weeks, months in months), or `None`. `3M`/`1Y` are real quarters/years everywhere. Pass
+  `truncated` when the series starts where a request stopped, to drop the partial first bucket.
+- **Every source serves any timeframe, or says it cannot.** `MarketSource::fetch_klines` and
+  `fetch_klines_range` take a `Timeframe` (never a token string) and answer
+  `ProviderError::UnsupportedInterval { provider, timeframe }`, "Polymarket has no 1m history"
+  (`is_unsupported_interval()`; decide on the variant, never the text). The UI still offers only the
+  `LEGACY` six; everything below it works for `1m`, `22m`, `3h`, `2D`, `2W`, `6M`.
+- **Natives live in `model::market::natives`**, one list per candle source
+  (`DataSource::natives()`), so the planner a provider fetches by (`DataSource::plan`, a
+  `bucket::FoldPlan`: target, base, `base_count(limit)`, `shape`) and the capability check the UI asks
+  (`DataSource::serves`) read one source of truth; `model` cannot import `service`. A plan asks for
+  `(limit + 1) × per_target` base candles (the extra bucket is the fragment the request's start cuts),
+  capped by the provider's own limit and paging, folds with `truncated` set when the answer filled
+  the request, and trims to `limit`. A cap gives fewer bars, never other ones.
+
+  | Source | Natives | Notes |
+  | --- | --- | --- |
+  | Binance | 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1D 1W 1M | 1000 per request, paged in parallel (`fetch_klines` pages when a fold needs more). Its `3d` is left out: Binance's 3d bars start on a day that is not a multiple of three since 1970-01-01 (checked against the API), so 3D folds from 1D. Weeks start Monday, as here. Folded series are cached (`cache::policy(source, timeframe)`) and refreshed by their tail |
+  | Coinbase | 1m 5m 15m 1h 6h 1D | `MAX_PAGES` x 290 candles caps a request (a 5m series reaches back ~60 days) |
+  | Alpaca | 1m 5m 15m 30m 1h 1D 1W 1M | Alpaca also has `3Hour`, `4Min`, `2Month` and so on, but it does not say where those start; only lengths that divide the hour are used (an hour's start is the same in UTC and New York), the rest fold. Days, weeks and months keep Alpaca's New York-midnight stamps; a fold re-anchors them on UTC. Stocks fold intraday buckets from UTC midnight, not the session open. 10,000 bars per request |
+  | DEXScreener (GeckoTerminal) | 1m 5m 15m 1h 4h 12h 1D | 1,000 per request; empty buckets are filled flat (`bucket::fill_gaps`) before a fold |
+  | CoinGecko | none: prices, `model::market::samples` | `/market_chart` samples are 5 minutes for 1 day, hourly to 90 days, daily to 365; a candle is built from samples so the spacing must divide the candle: `chart_days(timeframe, limit)` is the days to ask for, or `None` (1m, and any length that is not a whole number of five minutes: 7m, 22m) |
+  | Polymarket, Kalshi | lines: `model::market::line` | any timeframe: a point per timeframe (a week at most) over 60 candles, between a month and a year, at most 1,000 points (a 1m line reaches back 16 hours). Polymarket: the shortest `prices-history` window that holds the span and allows `fidelity` = the point spacing (`1w` allows 5 minutes, `1m` 10, `max` is the whole history only from 12 hours; where none holds the span and allows the fidelity the line is shorter). Kalshi: the longest of 1, 60 and 1,440 minutes that is no longer than a point, over at most 1,000 of it |
+  | CoinMarketCap | none | ignores the timeframe |
+
+- Alpaca bars close 1 ms before the next opens (days, weeks and months keep the New York midnight
+  offset, so an hour off across a clock change). Intraday fetches look back at least 7 days, so a
+  tail refresh (4 bars) finds the last session over a weekend; every start is clamped to
+  `EARLIEST_MS`. A request is at most 10,000 bars, so a `22m` series from 1-minute bars is shorter
+  than 500.
+- **Older history** (`DataSource::supports_older_history`): Binance, Coinbase and Alpaca page back at
+  any length. GeckoTerminal's free API reaches back 180 days, so it pages (one page of base candles,
+  folded) only while a page of the base candle (1,000 of them) is shorter than that: bases up to 4h
+  (1h, 3h and 4h charts yes; 12h, 1D, 1W and 1M, whose first fetch already reaches the cap, no). A
+  401 on `before_timestamp` is the end of history.
+- The chart offers 1h+, but Pine's `request.security` may ask any timeframe (5m intrabars, 4h):
+  `timeframe_of` turns Pine's seconds into a `Timeframe` and the provider folds it, so an odd length
+  no longer fails with `PINE4021`/`PINE4022`; a length under a minute, or that is no timeframe
+  (`30S`), still does. Pine states lengths in seconds with a 30-day month; `pine::time::bucket` cuts
+  the buckets the same way as everything else, a length that is no timeframe flooring onto the epoch.
+  `request.security_lower_tf` intrabars are folded in the Pine host from the coarsest of its own
+  base list that nests (`INTRABAR_BASES`), bounded by `MAX_INTRABAR_CANDLES` base candles.
 - `service::fetch_klines` runs every provider through `service::normalize` (ascending, one candle per
   open time, finite prices, range holds open and close). GeckoTerminal lists only traded intervals;
   `bucket::fill_gaps` adds flat zero-volume candles for even spacing. Volume units differ (base asset,
@@ -77,12 +106,14 @@ watchlists.
   reads the pool's token symbols once, remembers, and asks `token=quote` when the base is a stablecoin
   or wrapped native coin (`QUOTE_ASSETS`) and the quote is not; else base. Without it the chart shows
   the stablecoin at ~$1. Unreadable tokens: base, unremembered.
-- Prediction markets use `effective_span_days` and `line_chart_point_count` in `service/mod.rs`.
+- Prediction-market lines: `model::market::line::window(timeframe)` (span and point spacing), read by
+  `polymarket::pm_window` and `kalshi::kalshi_window`; the table above has the rules.
 
 ## Caches and live data
 
-- `service::cache::fetch`: slow providers' candles in memory by `(source, symbol, interval)`
-  (`cache::policy` lists them and TTLs); refreshes a held series with only its last `TAIL_LIMIT`
+- `service::cache::fetch`: slow providers' candles in memory by `(source, symbol, timeframe)`
+  (`cache::policy(source, timeframe)` lists them and TTLs: Binance only for a folded timeframe, where
+  a series takes a dozen requests); refreshes a held series with only its last `TAIL_LIMIT`
   candles; concurrent requests for one series share one call. Add a provider to `policy` only if a
   whole fetch is slow; its `fetch_klines` must honour a small `limit` cheaply. `service::net::rate_limit`
   spaces CoinGecko and GeckoTerminal; `work_queue::submit_for` gives each its own worker; submit chart
@@ -94,12 +125,25 @@ watchlists.
   disabled in tests.
 - `service::image::icon` keys by `"<source>:<ticker>"`, never chart id: static CDN (unthrottled HEAD), then
   rate-limited CoinGecko search, then a letter monogram.
-- One `BinanceLiveFeed` per workspace: updates the forming candle, reconnects with backoff. Charts
-  and compared markets fold a live kline with `model::market::live::apply_live` only (replace the
-  newest bar or append; a kline older than the newest is dropped, so candles stay ascending), and
-  every chart of the symbol takes it. A current-or-newer WebSocket bar beats an older REST snapshot
-  (`live::merge_fetched`) only if the socket delivered after that request began (`LiveMark::guard_for`):
-  when it goes quiet, REST refreshes update the forming bar again.
+- One `BinanceLiveFeed` per workspace: updates the forming candle, reconnects with backoff. It streams
+  the *base* candle the timeframe is served from (`DataSource::Binance.plan(timeframe).base()`:
+  `@kline_1m` for a 22-minute chart, `@kline_1M` for `3M` and `1Y`; none for a timeframe Binance cannot
+  reach). Charts and compared markets fold a live kline with `model::market::live::LiveFold::apply`
+  only, and every chart of the symbol takes it. For the timeframe's own length that is
+  `apply_live` (replace the newest bar or append; a kline older than the newest is dropped, so candles
+  stay ascending). For a folded one the forming bucket is rebuilt from the latest state of each base
+  bar it holds (a kline is a running total, resent until its bar closes, so adding would double
+  count): the bucket's open, range and volume from before the socket's first kline are what the
+  chart held then (its already-open bar counts only from there on), and the bucket cuts where
+  `bucket` does (a `22m` day's last bucket closes at midnight). A chart and an overlay series each
+  keep their own `LiveFold`, reset when a REST answer replaces the forming bucket or the market or
+  timeframe changes. A current-or-newer WebSocket bar beats an older REST snapshot
+  (`live::merge_fetched`) only if the socket delivered after that request began
+  (`LiveMark::guard_for`, carrying the bucket's open time): when it goes quiet, REST refreshes update
+  the forming bar again.
+- A chart whose last answer was `UnsupportedInterval` shows it in the usual error slot and is not
+  refreshed again (`Chart::refresh_due`) until its market or the timeframe changes, which fetch at
+  once. An overlay market becomes `OverlayStatus::Blocked(text)` and is not retried either.
 - `service::cache::fetch`: a failed tail refresh falls back to the whole fetch, except a rate limit,
   which is returned.
 - Visible watchlists share one Coinbase ticker socket (last trade, 24-hour open, volume); Coinbase
