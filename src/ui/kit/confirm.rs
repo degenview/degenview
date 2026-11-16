@@ -76,9 +76,19 @@ pub struct Notice<'a> {
 /// A one-button dialog that only informs ("Already in Watchlist"). Enter, Escape, the button, the
 /// close button or a click outside all dismiss it. Returns true on the frame it is dismissed.
 pub fn notice(ctx: &egui::Context, id: Id, spec: &Notice) -> bool {
+    notice_with(ctx, id, spec, |_| {})
+}
+
+/// `notice` with a `body` drawn under the message (the raw error behind it).
+pub fn notice_with(
+    ctx: &egui::Context,
+    id: Id,
+    spec: &Notice,
+    body: impl FnOnce(&mut egui::Ui),
+) -> bool {
     let mut dialog = Dialog::new(spec.icon, spec.tint, spec.title, spec.message, "OK");
     dialog.dismiss = "";
-    dialog::show(ctx, id, &dialog, |_| {}).is_some()
+    dialog::show(ctx, id, &dialog, body).is_some()
 }
 
 #[cfg(test)]

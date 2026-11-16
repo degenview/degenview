@@ -109,7 +109,13 @@
   inferred, not measured; never run on real multi-display sleep.
 - Window grouping is not persisted: restore puts all tabs in one window, sorted by old window and
   strip position. `PersistedTab` is untagged so old chart rows stay compatible; special tabs need
-  `kind`.
+  `kind`. A row with a numeric `id` that this version cannot read (a kind a newer build added, e.g.
+  after an rc → stable downgrade) decodes as `PersistedTab::Unknown`, is not restored, and is
+  written back verbatim after the open tabs (`SessionState::kept`); new tab ids start above it.
+  Without this, `replace_documents`' strict read failed every save forever.
+- A failed session save shows one dismissible notice in the focused window (raw error as
+  selectable detail); the 10 s save keeps retrying silently, and only a different error, or one
+  after a successful save, shows again.
 - New/first-launch tabs are empty (`ChartWorkspace::empty`); only opening a watchlist market seeds a
   chart. Cache empty-page database/Keychain reads per visit, not per frame.
 - Snapshot choices (`snapshot.prefs` in the `setting` table: host, trading overlays, scale, the
