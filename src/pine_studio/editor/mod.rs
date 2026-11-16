@@ -47,8 +47,10 @@ use syntax::Span;
 mod assists;
 mod carets;
 mod completion_view;
+mod edit_actions;
 mod gutter;
 mod indent_guides;
+mod menu_state;
 mod navigation;
 mod signature_view;
 mod state;
@@ -58,17 +60,22 @@ mod text_view;
 
 use assists::apply_assists;
 use completion_view::{completion_keys, update_completion};
+pub use edit_actions::EditAction;
 use gutter::breakpoints::breakpoint_gutter;
+pub(in crate::pine_studio) use gutter::breakpoints::breakpoint_rows;
 use gutter::changes::change_gutter;
+pub(in crate::pine_studio) use gutter::changes::change_rows;
 use gutter::profile::{PROFILE_WIDTH, profile_gutter};
 use gutter::{gutter_width, paint_gutter};
-pub use navigation::EditAction;
+pub(in crate::pine_studio) use menu_state::EditorMenuState;
 use signature_view::draw_signature;
 use status::status_bar;
 use text_view::text_view;
 
 #[cfg(test)]
 mod appearance_tests;
+#[cfg(test)]
+mod edit_actions_tests;
 #[cfg(test)]
 mod navigation_tests;
 #[cfg(test)]
@@ -199,7 +206,6 @@ struct CompletionView {
 pub struct EditorOutput {
     /// The text changed this frame: compile it.
     pub changed: bool,
-    pub save: bool,
     /// Clicks in the breakpoint column.
     pub gutter: Vec<GutterEvent>,
     /// Where the text is drawn: right of the profile column and the gutter.
@@ -263,7 +269,7 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     let mut edited = completion_keys(ui.ctx(), state);
     navigation::keys(ui.ctx(), state);
     navigation::call_list_keys(ui.ctx(), state);
-    navigation::edit_menu(ui.ctx(), state);
+    edited |= navigation::edit_menu(ui.ctx(), state);
     edited |= carets::apply(ui.ctx(), state, text_area);
     edited |= apply_assists(ui.ctx(), state);
     let rows = text_view(ui, state, text_area, &look, &font, &mut edited);
@@ -297,7 +303,7 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
         ui.ctx().request_repaint_after(DRAFT_DELAY);
     }
 
-    output.save = status_bar(ui, bar, state, &changes);
+    status_bar(ui, bar, state, &changes);
     output
 }
 
@@ -312,28 +318,32 @@ fn handle_find_shortcuts(ctx: &egui::Context, state: &mut EditorState) {
         )
     });
     if open {
-        // Like Xcode: Find with a single-line selection searches for that text.
-        let selected = TextEditState::load(ctx, state.id)
-            .and_then(|edit| edit.cursor.char_range())
-            .map(|range| {
-                let (a, b) = (range.primary.index.0, range.secondary.index.0);
-                state
-                    .source
-                    .chars()
-                    .skip(a.min(b))
-                    .take(a.abs_diff(b))
-                    .collect::<String>()
-            })
-            .filter(|text| !text.is_empty() && !text.contains('\n'));
-        if let Some(text) = selected {
-            state.find.query = text;
-            state.find.current = 0;
-        }
-        state.find.open = true;
-        state.find.needs_focus = true;
+        open_find(ctx, state);
     } else if (next || previous) && state.find.open {
         step_match(state, next);
     }
+}
+
+/// Opens the find bar. Like Xcode: Find with a single-line selection searches for that text.
+fn open_find(ctx: &egui::Context, state: &mut EditorState) {
+    let selected = TextEditState::load(ctx, state.id)
+        .and_then(|edit| edit.cursor.char_range())
+        .map(|range| {
+            let (a, b) = (range.primary.index.0, range.secondary.index.0);
+            state
+                .source
+                .chars()
+                .skip(a.min(b))
+                .take(a.abs_diff(b))
+                .collect::<String>()
+        })
+        .filter(|text| !text.is_empty() && !text.contains('\n'));
+    if let Some(text) = selected {
+        state.find.query = text;
+        state.find.current = 0;
+    }
+    state.find.open = true;
+    state.find.needs_focus = true;
 }
 
 fn step_match(state: &mut EditorState, forward: bool) {

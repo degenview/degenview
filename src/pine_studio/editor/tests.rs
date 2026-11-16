@@ -103,8 +103,7 @@ fn the_editor_draws_headlessly_with_problems_and_a_jump() {
             state.reveal(&d);
         }
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            let result = show(ui, &mut state);
-            assert!(!result.save);
+            show(ui, &mut state);
         });
         output.textures_delta.clear();
     }

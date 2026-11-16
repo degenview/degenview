@@ -38,7 +38,7 @@ pub const BUNDLED: [Demo; 9] = [
 /// added. Existing scripts are never touched.
 pub fn add_missing(store: &mut ScriptStore) -> Result<usize, ScriptStoreError> {
     let mut added = 0;
-    // The sidebar lists newest first, so adding in reverse leaves the demos alphabetical.
+    // The script picker lists newest first, so adding in reverse leaves the demos alphabetical.
     for demo in BUNDLED.iter().rev() {
         match store.create(
             demo.name,

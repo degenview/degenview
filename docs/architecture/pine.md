@@ -39,7 +39,7 @@ frozen copy of the preview's bars and talks to the UI through bounded channels. 
 ## Pine Studio
 
 Scripts are file-backed (`Scripts/*.pine` plus `ScriptMetadata/`) with stable ids in extended
-attributes. The manager owns the sidebar, editor, preview split, and Inputs/Report/Problems drawer;
+attributes. The manager owns the script picker, editor, preview split, and Inputs/Report/Problems drawer;
 the views queue `Cmd`s that it runs after the frame (`pine_studio/commands.rs`), the open script
 and edits made outside the app are `open_script.rs`, and the Swift app's scripts and preview inputs
 come across through `migrate_swift.rs`.

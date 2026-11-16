@@ -124,6 +124,13 @@ impl SettingsHost {
         self.open = true;
     }
 
+    /// Opens Settings on the Pine Studio page, where the editor's themes are (the Pine Studio's
+    /// Theme menu, "Configure Themes…").
+    pub fn open_editor_themes(&mut self) {
+        self.state.section = crate::ui::settings::window::SettingsSection::PineStudio;
+        self.open = true;
+    }
+
     /// Opens Settings on the Webhooks page (an alert editor's "Add in Settings").
     pub fn open_webhooks(&mut self) {
         self.state.section = crate::ui::settings::window::SettingsSection::Webhooks;

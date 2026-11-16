@@ -694,3 +694,46 @@ fn restore_undoes_a_session_of_edits() {
     assert_eq!(host.theme(id).unwrap(), before);
     assert_eq!(*current(), Appearance::of(BuiltInTheme::Dark));
 }
+
+#[test]
+fn choices_name_the_worn_theme_and_the_custom_ones_in_settings_order() {
+    let _theme = RestoreDefaultTheme;
+    let _published = RestorePublished;
+    let (host, _store) = host();
+    assert_eq!(
+        host.choices(),
+        Choices {
+            selected: ThemeSelection::Auto,
+            customs: Vec::new(),
+        }
+    );
+    let first = host
+        .create("First", ThemeSource::BuiltIn(BuiltInTheme::Dracula))
+        .unwrap();
+    let second = host
+        .create("Second", ThemeSource::BuiltIn(BuiltInTheme::Light))
+        .unwrap();
+    host.select(ThemeSelection::Custom(second));
+    let choices = host.choices();
+    assert_eq!(choices.selected, ThemeSelection::Custom(second));
+    assert_eq!(
+        choices.customs,
+        [(first, "First".to_owned()), (second, "Second".to_owned())]
+    );
+    let view = host.view();
+    let in_view: Vec<_> = view
+        .customs
+        .iter()
+        .map(|custom| (custom.theme.id, custom.theme.name.clone()))
+        .collect();
+    assert_eq!(choices.customs, in_view, "the order Settings lists them in");
+}
+
+#[test]
+fn choices_fall_back_to_automatic_for_a_theme_that_is_not_here() {
+    let _theme = RestoreDefaultTheme;
+    let _published = RestorePublished;
+    let (host, _store) = host();
+    host.select(ThemeSelection::Custom(42));
+    assert_eq!(host.choices().selected, ThemeSelection::Auto);
+}

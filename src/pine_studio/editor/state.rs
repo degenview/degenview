@@ -63,6 +63,11 @@ impl EditorState {
         }
     }
 
+    /// The text field's id, for whatever hands the keyboard back to it.
+    pub(in crate::pine_studio) fn focus_id(&self) -> Id {
+        self.id
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.source != self.saved_source
     }
@@ -251,8 +256,8 @@ impl EditorState {
         self.jump_to
     }
 
-    /// Marks the editor as a sample: everything of the editor, minus the Save button, since there is
-    /// no script behind it.
+    /// Marks the editor as a sample: everything of the editor, minus the colour picker, since there
+    /// is no script behind it.
     pub fn sampled(mut self) -> Self {
         self.sample = true;
         self

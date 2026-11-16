@@ -1,8 +1,8 @@
 # Editor themes
 
 What the Pine editor looks like: the colour of every kind of text and of the surfaces around it, and
-the font the code is set in. Settings ▸ Pine Studio chooses and edits them; every window's editor
-follows at once.
+the font the code is set in. Settings ▸ Pine Studio chooses and edits them, and the Pine Studio's
+**Theme** menu (in the strip over the editor) chooses one; every window's editor follows at once.
 
 **Status.** Built-in Dark, Light and Dracula; custom themes (create, duplicate, rename, delete,
 edit, import, export); typography (font family, size, line height) with **JetBrains Mono built in and
@@ -276,6 +276,18 @@ typography value is checked on its own, and a bad one is skipped and reported (n
 equal to the base's are dropped, so the imported theme overrides only what differs. **An import never
 replaces a theme**: it gets a new id and the first free name (`Name 2`), and it is worn once imported.
 Where there are no file dialogs (Windows) Import is not offered and Export writes to the downloads folder.
+
+## The Theme menu
+
+The Pine Studio's menu strip has a Theme menu (`pine_studio/menu_bar/themes.rs`) with the same choices as
+Settings' tiles, in the same order and under the same names: Automatic, Dark, Light, Dracula, then (after a
+separator) your own themes, the one worn checked. Choosing a row calls `EditorThemeHost::select`, as a
+tile does, so it is one path: every window repaints and the choice is saved after the usual pause. The
+rows come from `EditorThemeHost::choices()`, which copies the worn theme and the custom names and none of
+the colours, and is read only while the menu is open. The list scrolls past 320 points and a long name is cut
+at the menu's widest (360). Under a separator, "Configure Themes…" opens Settings on the Pine Studio page
+(`PineStudioAction::OpenEditorThemeSettings`). The menu offers no create, rename or delete: those are on the page.
+Pictures: `gallery_of_the_menu_bar` (`pine_studio/tests.rs`).
 
 ## The page
 

@@ -3,19 +3,20 @@
 use super::*;
 use eframe::egui::PointerButton;
 
-const SCRIPT: &str = "//@version=6\nindicator(\"T\")\nlen = 14\nplot(ta.sma(close, len))\n";
+pub(super) const SCRIPT: &str =
+    "//@version=6\nindicator(\"T\")\nlen = 14\nplot(ta.sma(close, len))\n";
 
-struct Harness {
-    ctx: egui::Context,
-    state: EditorState,
-    time: f64,
-    focused: bool,
+pub(super) struct Harness {
+    pub(super) ctx: egui::Context,
+    pub(super) state: EditorState,
+    pub(super) time: f64,
+    pub(super) focused: bool,
     area: Rect,
     char_width: f32,
     row_height: f32,
 }
 
-fn cmd() -> Modifiers {
+pub(super) fn cmd() -> Modifiers {
     let mac = shortcut::is_mac();
     Modifiers {
         command: true,
@@ -32,7 +33,7 @@ fn alt() -> Modifiers {
     }
 }
 
-fn key(key: Key, modifiers: Modifiers) -> Event {
+pub(super) fn key(key: Key, modifiers: Modifiers) -> Event {
     Event::Key {
         key,
         physical_key: Some(key),
@@ -43,7 +44,7 @@ fn key(key: Key, modifiers: Modifiers) -> Event {
 }
 
 impl Harness {
-    fn new(source: &str) -> Self {
+    pub(super) fn new(source: &str) -> Self {
         let mut harness = Self {
             ctx: egui::Context::default(),
             state: EditorState::new("nav", source, source),
@@ -77,7 +78,7 @@ impl Harness {
         harness
     }
 
-    fn frame(&mut self, events: Vec<Event>) {
+    pub(super) fn frame(&mut self, events: Vec<Event>) {
         self.time += 0.05;
         let raw = egui::RawInput {
             time: Some(self.time),
@@ -104,7 +105,7 @@ impl Harness {
         )
     }
 
-    fn index(&self, line: usize, column: usize) -> usize {
+    pub(super) fn index(&self, line: usize, column: usize) -> usize {
         self.state
             .source
             .split('\n')
@@ -114,7 +115,7 @@ impl Harness {
             + column
     }
 
-    fn place(&mut self, anchor: usize, head: usize) {
+    pub(super) fn place(&mut self, anchor: usize, head: usize) {
         let mut edit_state = TextEditState::load(&self.ctx, self.state.id).unwrap_or_default();
         edit_state.cursor.set_char_range(Some(CCursorRange::two(
             CCursor::new(anchor),
@@ -124,7 +125,7 @@ impl Harness {
         self.frame(vec![]);
     }
 
-    fn primary(&self) -> (usize, usize) {
+    pub(super) fn primary(&self) -> (usize, usize) {
         let range = TextEditState::load(&self.ctx, self.state.id)
             .and_then(|s| s.cursor.char_range())
             .expect("a cursor");
@@ -148,7 +149,7 @@ impl Harness {
         self.frame(vec![]);
     }
 
-    fn type_text(&mut self, text: &str) {
+    pub(super) fn type_text(&mut self, text: &str) {
         self.frame(vec![Event::Text(text.to_owned())]);
     }
 }

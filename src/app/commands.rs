@@ -130,6 +130,9 @@ impl DegenViewApp {
                 AppAction::OpenSnapshotSettings => {
                     self.open_settings_page(ctx, SettingsHost::open_snapshots);
                 }
+                AppAction::OpenEditorThemeSettings => {
+                    self.open_settings_page(ctx, SettingsHost::open_editor_themes);
+                }
                 AppAction::OpenAlerts => self.alerts.open_window(ctx),
                 AppAction::SavePriceAlert { alert, baseline } => {
                     if let Ok(store) = self.store.lock() {

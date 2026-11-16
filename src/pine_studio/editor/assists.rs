@@ -2,7 +2,7 @@
 //! before the text field sees them.
 
 use super::edit_ops::{Context, Edit};
-use super::{EditorState, edit_ops};
+use super::{EditAction, EditorState, edit_ops};
 use crate::ui::shortcut;
 use eframe::egui::{
     self, Event, Key, Modifiers,
@@ -82,17 +82,46 @@ fn key_edit(
         Key::Tab if plain && !modifiers.shift => Some(edit_ops::indent(&context)),
         Key::Tab if plain && modifiers.shift => edit_ops::outdent(&context),
         Key::Backspace if plain && !modifiers.shift => edit_ops::backspace(&context),
-        Key::Slash if chord(shortcut::TOGGLE_COMMENT) => edit_ops::toggle_comment(&context),
+        Key::Slash if chord(shortcut::TOGGLE_COMMENT) => {
+            line_edit(&context, EditAction::ToggleComment)
+        }
         Key::ArrowUp | Key::ArrowDown => {
             let down = key == Key::ArrowDown;
             if chord(shortcut::DUPLICATE_LINE_UP) || chord(shortcut::DUPLICATE_LINE_DOWN) {
-                edit_ops::duplicate(&context, down)
+                line_edit(
+                    &context,
+                    if down {
+                        EditAction::DuplicateLineDown
+                    } else {
+                        EditAction::DuplicateLineUp
+                    },
+                )
             } else if chord(shortcut::MOVE_LINE_UP) || chord(shortcut::MOVE_LINE_DOWN) {
-                edit_ops::move_lines(&context, down)
+                line_edit(
+                    &context,
+                    if down {
+                        EditAction::MoveLineDown
+                    } else {
+                        EditAction::MoveLineUp
+                    },
+                )
             } else {
                 None
             }
         }
+        _ => None,
+    }
+}
+
+/// The edit a line command makes: what the keyboard shortcut and the Edit menu both run. `None`
+/// when there is nothing to do (no line to move into) or `action` is not a line command.
+pub(super) fn line_edit(context: &Context, action: EditAction) -> Option<Edit> {
+    match action {
+        EditAction::ToggleComment => edit_ops::toggle_comment(context),
+        EditAction::DuplicateLineUp => edit_ops::duplicate(context, false),
+        EditAction::DuplicateLineDown => edit_ops::duplicate(context, true),
+        EditAction::MoveLineUp => edit_ops::move_lines(context, false),
+        EditAction::MoveLineDown => edit_ops::move_lines(context, true),
         _ => None,
     }
 }

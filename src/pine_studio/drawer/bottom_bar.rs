@@ -1,6 +1,6 @@
-//! The bar pinned to the bottom of each Pine Studio pane (the sidebar's community link, the
-//! preview's drawer tabs, the editor's status and Save): one height, one fill, one hairline, so
-//! the three read as a single strip across the window.
+//! The bar pinned to the bottom of each Pine Studio pane (the preview's drawer tabs, the editor's
+//! status and Save): one height, one fill, one hairline, so the two read as a single strip across
+//! the window.
 
 use crate::ui::theme;
 use eframe::egui::{Rect, Stroke, Ui, pos2};

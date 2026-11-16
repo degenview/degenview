@@ -3,8 +3,8 @@
 
 use super::library::prefs::{ChartPosition, DrawerTab};
 use super::library::registry::LibraryRegistry;
-use super::library::sidebar::{Rename, RowKey};
-use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, ai, debug, group_of, library};
+use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, ai, debug, editor, library};
+use crate::model::editor_theme::ThemeSelection;
 use crate::model::pine::script::{ScriptId, ScriptType};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
@@ -19,11 +19,12 @@ pub(crate) enum Cmd {
     DiskReload,
     /// ... or keep the typing.
     DiskKeep,
-    Select(RowKey),
+    Select(ScriptId),
+    /// Show the script picker under the bar's script button.
+    OpenScriptPicker,
     ToggleFavorite(ScriptId),
-    BeginRename(RowKey),
-    CommitRename,
-    CancelRename,
+    /// Ask for a new name for the script in the Rename sheet.
+    BeginRename(ScriptId),
     Duplicate(ScriptId),
     RevealFile(ScriptId),
     Export(ScriptId),
@@ -33,8 +34,9 @@ pub(crate) enum Cmd {
     AddToChart(ScriptId),
     CreateAlert(ScriptId),
     Save,
+    /// An item of an Edit menu, run by the editor on its next frame.
+    Edit(editor::EditAction),
     Reveal(crate::pine::syntax::token::Diagnostic),
-    ToggleSidebar,
     ToggleChart,
     SetChartPosition(ChartPosition),
     SetDrawerTab(DrawerTab),
@@ -58,6 +60,10 @@ pub(crate) enum Cmd {
     /// Show a one-based line of the open script.
     RevealLine(usize),
     OpenAlpacaSettings,
+    /// Make a theme the editor's, in every window.
+    SetEditorTheme(ThemeSelection),
+    /// Open Settings on the page that edits the editor's themes.
+    OpenThemeSettings,
 }
 
 impl PineStudio {
@@ -70,37 +76,31 @@ impl PineStudio {
 
     pub(super) fn run(&mut self, cmd: Cmd, ctx: &egui::Context) {
         match cmd {
-            Cmd::Select(key) => {
-                self.renaming = None;
-                let id = key.id.clone();
-                self.selected_row = Some(key);
+            Cmd::Select(id) => {
                 if self.open.as_ref().map(|o| o.id.as_str()) != Some(id.as_str()) {
                     self.open_script(&id);
                 }
             }
+            Cmd::OpenScriptPicker => self.picker.open(),
             Cmd::ToggleFavorite(id) => {
                 let favorite = self.script_named(&id).is_some_and(|s| s.is_favorite);
                 self.with_store(|store| store.set_favorite(&id, !favorite));
                 self.refresh();
             }
-            Cmd::BeginRename(key) => {
-                if let Some(script) = self.script_named(&key.id) {
-                    self.renaming = Some(Rename {
-                        row: key.clone(),
-                        text: script.name.clone(),
+            Cmd::BeginRename(id) => {
+                if let Some(script) = self.script_named(&id) {
+                    self.sheet = Some(Sheet::Rename {
+                        name: script.name.clone(),
+                        id,
                         error: None,
                         needs_focus: true,
                     });
-                    self.selected_row = Some(key);
                 }
             }
-            Cmd::CommitRename => self.commit_rename(),
-            Cmd::CancelRename => self.renaming = None,
             Cmd::Duplicate(id) => {
                 if let Some(copy) = self.with_store(|store| store.duplicate(&id)) {
                     self.refresh();
-                    let group = group_of(&copy);
-                    self.cmds.push(Cmd::Select(RowKey { group, id: copy.id }));
+                    self.cmds.push(Cmd::Select(copy.id));
                 }
             }
             Cmd::RevealFile(id) => {
@@ -139,6 +139,11 @@ impl PineStudio {
             }
             Cmd::CreateAlert(id) => self.open_alert_sheet(&id),
             Cmd::Save => self.save_open(),
+            Cmd::Edit(action) => {
+                self.edit_command(action);
+                // The editor runs it at the start of its next frame, which nothing else asks for.
+                ctx.request_repaint();
+            }
             Cmd::DiskReload => {
                 let text = self
                     .open
@@ -164,7 +169,6 @@ impl PineStudio {
                     ctx.request_repaint();
                 }
             }
-            Cmd::ToggleSidebar => self.prefs.sidebar_visible = !self.prefs.sidebar_visible,
             Cmd::ToggleChart => self.prefs.chart_visible = !self.prefs.chart_visible,
             Cmd::SetChartPosition(position) => self.prefs.chart_position = position,
             Cmd::SetDrawerTab(tab) => {
@@ -189,6 +193,8 @@ impl PineStudio {
                 }
             }
             Cmd::OpenAlpacaSettings => self.actions.push(PineStudioAction::OpenAlpacaSettings),
+            Cmd::SetEditorTheme(selection) => self.themes.select(selection),
+            Cmd::OpenThemeSettings => self.actions.push(PineStudioAction::OpenEditorThemeSettings),
         }
         let _ = ctx;
     }
@@ -261,30 +267,14 @@ impl PineStudio {
         })));
     }
 
-    pub(super) fn commit_rename(&mut self) {
-        let Some(rename) = self.renaming.take() else {
-            return;
-        };
-        let current = self.script_named(&rename.row.id).map(|s| s.name.clone());
-        if current.as_deref() == Some(rename.text.trim()) {
-            return;
-        }
-        let id = rename.row.id.clone();
+    /// Gives the script a new name; the message is what the Rename sheet says when it cannot.
+    pub(crate) fn rename_script(&mut self, id: &str, name: &str) -> Result<(), String> {
         let Some(store) = self.script_store.as_mut() else {
-            return;
+            return Err("The scripts folder isn't available.".to_owned());
         };
-        match store.rename(&id, &rename.text) {
-            Ok(_) => self.refresh(),
-            Err(error) => {
-                // An invalid commit shows the alert and stays in edit mode.
-                self.error = Some(error.to_string());
-                self.renaming = Some(Rename {
-                    error: Some(error.to_string()),
-                    needs_focus: true,
-                    ..rename
-                });
-            }
-        }
+        store.rename(id, name).map_err(|error| error.to_string())?;
+        self.refresh();
+        Ok(())
     }
 
     pub(super) fn save_open(&mut self) {
@@ -345,11 +335,7 @@ impl PineStudio {
         match store.create(name, ScriptType::Indicator, None, false) {
             Ok(script) => {
                 self.refresh();
-                let group = group_of(&script);
-                self.cmds.push(Cmd::Select(RowKey {
-                    group,
-                    id: script.id,
-                }));
+                self.cmds.push(Cmd::Select(script.id));
                 Ok(())
             }
             Err(error) => Err(error.to_string()),
@@ -381,13 +367,17 @@ impl PineStudio {
         }));
     }
 
-    pub(crate) fn name_problem(&self, raw: &str) -> Option<String> {
+    /// What is wrong with `raw` as a script's name, if anything. `renaming` is the script being
+    /// renamed: its own name is not taken.
+    pub(crate) fn name_problem(&self, raw: &str, renaming: Option<&str>) -> Option<String> {
         match library::name::validate(raw) {
             Err(error) => (!raw.trim().is_empty()).then(|| error.to_string()),
             Ok(clean) => self
                 .scripts
                 .iter()
-                .any(|s| s.name.to_lowercase() == clean.to_lowercase())
+                .any(|s| {
+                    s.name.to_lowercase() == clean.to_lowercase() && Some(s.id.as_str()) != renaming
+                })
                 .then(|| crate::store::scripts::ScriptStoreError::NameConflict.to_string()),
         }
     }

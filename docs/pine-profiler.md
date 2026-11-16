@@ -11,8 +11,8 @@ is described exactly, so a number on screen has one meaning.
 
 ## Using it
 
-1. Open a script in the Pine Studio and click the profiler button in the toolbar (the stopwatch,
-   next to the debugger's). The profiler is **off** by default and costs nothing while off.
+1. Open a script in the Pine Studio and click the profiler button on the editor's rail (the stopwatch,
+   between the assistant's and the debugger's). The profiler is **off** by default and costs nothing while off.
 2. Turning it on runs the script once on the preview chart's bars, on a thread of its own. The button
    reads *Profiling…* with a progress count, then *Profile ready*.
 3. The editor gains a narrow column beside the line numbers: a bar per measured line, its share of the
@@ -113,7 +113,7 @@ script does with the candles afterwards is timed like anything else.
 
 ## In the window
 
-* **Toolbar** (right side, between the debugger's bug and the preview chart's buttons): the stopwatch
+* **Editor rail** (right edge of the code, between the assistant's sparkles and the debugger's bug): the stopwatch
   turns the profiler on and off (⌥⌘R, Ctrl+Alt+R elsewhere). It is the primary text colour while the
   profiler is on (never blue) and the secondary one while off, amber when the profile is partial or
   out of date, red when it failed, and its tooltip says which.

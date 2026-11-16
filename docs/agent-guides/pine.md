@@ -205,8 +205,49 @@
   untouched, but such rows are wider than `columns * char_width`; take positions from the galley,
   never a column. Detection: lexer tokens in `pine_studio::editor::color_sites`. Picker edits rewrite
   from the gesture's starting text, one undo step via `UndoGesture`, never a second undo stack.
+- Editor rail: `pine_studio/rail.rs` mounts a right panel around the whole editor column (code,
+  assistant, debugger) and holds the assistant, profiler and debugger buttons, the preview chart's
+  position menu and toggle. It is drawn by `kit::bar::show_column` (the bar's buttons, vertical,
+  icon only); add a panel's button there, not to the top bar, whose right run is empty.
 - Right-click menu, ⌘-hover cue, inline rename box: `editor/navigation.rs`. An egui `Area` takes no
   focus on its first frame (only measures), so the rename field asks on the second.
+- Menu strip: `pine_studio/menu_bar/` draws File, Edit, View and Theme at the top of the editor
+  column (a `Panel::top` inside `rail::show`'s remaining area, so it spans the code and the assistant
+  and debugger panels). Rows are plain `Entry` data built by `file`, `edit`, `view` and `themes`,
+  drawn and sized by `entry` (`fitted_menu_rows`, submenus `menu_fit_rows` inside; an `Entry::Scroll`
+  block scrolls past `kit::MENU_MAX_HEIGHT`); a row's command is a `Cmd`. The problems chip
+  (`editor::status::ProblemsChip`) sits at the strip's right end, not under the code.
+  - **Theme menu** (`themes.rs`): Automatic, the built-in themes and the person's own, as Settings'
+    tiles list them, the one worn checked, then "Configure Themes…". The studio holds the app's
+    `host::editor_theme::EditorThemeHost` (`PineStudio::new` takes it; `with_script_store`, for tests,
+    a placeholder that publishes nothing). The rows come from `EditorThemeHost::choices()` (the worn
+    theme and the custom names, no colours), read only while the menu is up. `Cmd::SetEditorTheme`
+    runs `EditorThemeHost::select`, the same call as a Settings tile, so every window repaints;
+    `Cmd::OpenThemeSettings` pushes `PineStudioAction::OpenEditorThemeSettings`, which the app turns
+    into `SettingsHost::open_editor_themes` (the Pine Studio page).
+  - **Every item of every context menu in `pine_studio/` is in the strip**, except the rows of a
+    list that act on that row alone (Problems, Logs, the debug panel's variables, watches and
+    breakpoint list). A context menu and the strip build their rows from one function so they cannot
+    drift: `library::script_actions` (picker row menu and File), `editor::breakpoint_rows` and
+    `change_rows` (the gutters' menus and Edit's Breakpoint and Change submenus). A new item goes
+    into that function, not into a copy.
+  - **Edit-menu actions** are `editor::EditAction` (`edit_actions.rs`), requested with
+    `EditorState::request_edit` (`Cmd::Edit` from the strip, the app from the macOS menu) and run at
+    the start of the editor's next frame. Undo and Redo step egui's own `TextEditState` undoer the
+    way ⌘Z does (feed the text, then `undo`/`redo`): there is never a second history. Toggle
+    Comment, Duplicate and Move Line call `assists::line_edit`, the function the keys use.
+  - **`EditorState::menu_state`** is the Edit menu's enablement. It reads the *stored* caret and
+    selection, never the keyboard focus (the native menu's `update_menu` is gated on focus and is
+    left alone). Called only while the Edit menu is up: undo availability clones the history.
+    What costs a scan of the text (declaration, usages, whether a line can move) is cached by text
+    hash, selection and caret.
+  - **Keyboard.** A click on the strip makes the editor surrender focus, and an unfocused
+    `TextEdit` collapses its selection, which would grey out Cut and Copy as the menu opens. So the
+    strip requests focus back for the editor each frame a menu is up (if the editor had it when the
+    menu opened) and the frame after a row was chosen, but only while nothing else holds the
+    keyboard: the find field, the picker's search or a sheet's field that took it keeps it. The
+    strip (and the picker) consume Esc after they have used it, so the editor under them does not
+    also close its find bar or drop its extra carets.
 
 ## Drawer tabs
 
@@ -222,8 +263,8 @@
   `drawer_intro`), never a bare text placeholder. Inputs too (`drawer_intro::inputs`,
   `drawer_tabs_tests::inputs_fit_the_drawer` at five sizes).
 - Pine Studio with no scripts (`pine_studio::library::empty_library`): detail area `centered` +
-  `intro`, the two ways to begin as footer; sidebar list a short form with the same picture. No-match
-  search stays the small "No matches" tile. Pictures: `cargo test --lib empty_library -- --ignored`
+  `intro`, the two ways to begin as footer; the script picker's list a short form with the same
+  picture (`empty_library::short`). No-match search stays the small "No matches" tile. Pictures: `cargo test --lib empty_library -- --ignored`
   with `DEGENVIEW_GALLERY_DIR` set.
 - Problems copy button copies all problems (errors first); right-click a row copies it or just its
   message.
@@ -234,7 +275,7 @@
 
 - **Scripts edited outside the app** (a person's editor, a coding agent in the Scripts folder) reach
   the open editor via `pine_studio::library::external` (pure state machine; `mod.rs` does I/O,
-  `disk_banner` asks). Sidebar rescans every 1.5 s; the open script's metadata is read every
+  `disk_banner` asks). The library rescans every 1.5 s (`PineStudio::begin_frame`); the open script's metadata is read every
   ~400 ms (`ScriptStore::file_stamp`); a moved or settling file triggers a rescan and
   `reconcile_open`. Act only on the same text seen twice, 300 ms apart (never load half-written
   files).

@@ -13,7 +13,7 @@ an expression. Everything below follows from that.
 1. Click a line number, or press the breakpoint key with the caret on a line, to set a breakpoint.
    A line with no code (a blank, a comment, the rest of a multi-line statement, `indicator()`, a
    function header, a `type`) is refused with the reason.
-2. Open the debugger panel under the editor (the bug button at the top right; starting a session
+2. Open the debugger panel under the editor (the bug button on the editor's rail, at the right edge of the code; starting a session
    from the keyboard opens it too). Its top row holds the controls: ▶ continue or start, ⏸ pause,
    step over, into, out, step bar, restart and stop, then a separator and what the session is doing
    ("Paused on a breakpoint at line 5"). ▶ runs the script on the preview chart's bars to the first

@@ -105,6 +105,7 @@ fn key_name(key: Key) -> &'static str {
         Key::Space => "Space",
         Key::Escape => "Esc",
         Key::Period => ".",
+        Key::A => "A",
         Key::R => "R",
         Key::B => "B",
         Key::C => "C",
@@ -271,8 +272,8 @@ pub const PREVIOUS_TAB: Shortcut = Shortcut::new(
     &[Chord::new(Key::Tab).primary().shift()],
 );
 
-/// Show or hide the Pine Studio's script list.
-pub const TOGGLE_SCRIPT_LIST: Shortcut = Shortcut::new(
+/// Open the Pine Studio's script picker.
+pub const OPEN_SCRIPT_PICKER: Shortcut = Shortcut::new(
     &[Chord::new(Key::S).control().primary()],
     &[Chord::new(Key::B).primary()],
 );
@@ -441,6 +442,13 @@ pub const PASTE: Shortcut = Shortcut::new(
     &[Chord::new(Key::V).primary()],
 );
 
+/// Selects all the text of the code editor (the text field answers the key itself; the chord is
+/// here so the menus print the real binding).
+pub const SELECT_ALL: Shortcut = Shortcut::new(
+    &[Chord::new(Key::A).primary()],
+    &[Chord::new(Key::A).primary()],
+);
+
 /// Arms a line tool: Alt (Option on a Mac) and a letter, as on TradingView. The J of the
 /// horizontal ray is TradingView's default, which none of its help pages states.
 pub const TOOL_TREND_LINE: Shortcut =
@@ -546,7 +554,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 53] = [
+    const ALL: [(&str, Shortcut); 54] = [
         ("debug continue", DEBUG_CONTINUE),
         ("debug pause", DEBUG_PAUSE),
         ("debug step over", DEBUG_STEP_OVER),
@@ -564,7 +572,7 @@ mod tests {
         ("close tab", CLOSE_TAB),
         ("next tab", NEXT_TAB),
         ("previous tab", PREVIOUS_TAB),
-        ("script list", TOGGLE_SCRIPT_LIST),
+        ("script picker", OPEN_SCRIPT_PICKER),
         ("preview chart", TOGGLE_PREVIEW_CHART),
         ("find", FIND),
         ("find next", FIND_NEXT),
@@ -585,6 +593,7 @@ mod tests {
         ("cut", CUT),
         ("copy", COPY),
         ("paste", PASTE),
+        ("select all", SELECT_ALL),
         ("symbol search", SYMBOL_SEARCH),
         ("hide drawings", HIDE_DRAWINGS),
         ("snapshot download", SNAPSHOT_DOWNLOAD),
@@ -643,8 +652,8 @@ mod tests {
     fn labels_follow_each_platform() {
         assert_eq!(SAVE.label_for(true), "⌘S");
         assert_eq!(SAVE.label_for(false), "Ctrl+S");
-        assert_eq!(TOGGLE_SCRIPT_LIST.label_for(true), "⌃⌘S");
-        assert_eq!(TOGGLE_SCRIPT_LIST.label_for(false), "Ctrl+B");
+        assert_eq!(OPEN_SCRIPT_PICKER.label_for(true), "⌃⌘S");
+        assert_eq!(OPEN_SCRIPT_PICKER.label_for(false), "Ctrl+B");
         assert_eq!(TOGGLE_PREVIEW_CHART.label_for(true), "⌥⌘P");
         assert_eq!(TOGGLE_PREVIEW_CHART.label_for(false), "Ctrl+Shift+P");
         assert_eq!(FIND_PREVIOUS.label_for(true), "⇧⌘G");
@@ -711,6 +720,8 @@ mod tests {
         assert_eq!(ADD_CURSOR_BELOW.label_for(false), "Ctrl+Alt+↓");
         assert_eq!(CUT.label_for(true), "⌘X");
         assert_eq!(CUT.label_for(false), "Ctrl+X");
+        assert_eq!(SELECT_ALL.label_for(true), "⌘A");
+        assert_eq!(SELECT_ALL.label_for(false), "Ctrl+A");
         assert_eq!(GO_TO_DEFINITION.label_for(true), "⌃⌘J");
         assert_eq!(GO_TO_DEFINITION.label_for(false), "F12");
         assert_eq!(RENAME_SYMBOL.label_for(true), "⌃⌘E");
@@ -784,11 +795,11 @@ mod tests {
             ctrl: true,
             ..cmd()
         };
-        assert!(TOGGLE_SCRIPT_LIST.matches_for(true, Key::S, control_cmd));
+        assert!(OPEN_SCRIPT_PICKER.matches_for(true, Key::S, control_cmd));
         assert!(!SAVE.matches_for(true, Key::S, control_cmd));
         // On Windows Ctrl+S is only ever Save; the list moved to Ctrl+B.
-        assert!(!TOGGLE_SCRIPT_LIST.matches_for(false, Key::S, ctrl()));
-        assert!(TOGGLE_SCRIPT_LIST.matches_for(false, Key::B, ctrl()));
+        assert!(!OPEN_SCRIPT_PICKER.matches_for(false, Key::S, ctrl()));
+        assert!(OPEN_SCRIPT_PICKER.matches_for(false, Key::B, ctrl()));
     }
 
     #[test]

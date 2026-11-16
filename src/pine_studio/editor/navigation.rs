@@ -24,6 +24,8 @@ pub(super) struct NavState {
     menu: EditMenu,
     /// The text and caret `menu`'s name checks were made for.
     menu_key: Option<(u64, usize)>,
+    /// What the Edit menu over the editor may do, for the text and selection it was worked out for.
+    pub(super) strip: menu_state::Cache,
     /// Where the context menu was opened, for a list its "Find Usages" opens.
     menu_pos: Option<egui::Pos2>,
     /// The lines a function is called on, listed after ⌘-clicking its declaration.
@@ -46,16 +48,6 @@ pub(super) struct CallList {
     /// Esc and Enter, taken before the text field could see them and acted on when it is drawn.
     escape: bool,
     enter: bool,
-}
-
-/// What the macOS Edit menu asks of the editor.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EditAction {
-    Cut,
-    Copy,
-    Paste,
-    GoToDefinition,
-    Rename,
 }
 
 pub(super) struct RenameBox {
@@ -282,7 +274,7 @@ impl EditorState {
 
 /// Cut, Copy or Paste: the platform answers with the matching event next frame, which the text
 /// field (or `carets`) handles like the key.
-fn clipboard(ctx: &egui::Context, state: &EditorState, action: EditAction) {
+pub(super) fn clipboard(ctx: &egui::Context, state: &EditorState, action: EditAction) {
     ctx.send_viewport_cmd(match action {
         EditAction::Cut => egui::ViewportCommand::RequestCut,
         EditAction::Copy => egui::ViewportCommand::RequestCopy,
@@ -291,26 +283,16 @@ fn clipboard(ctx: &egui::Context, state: &EditorState, action: EditAction) {
     ctx.memory_mut(|memory| memory.request_focus(state.id));
 }
 
-/// The Edit menu's side of a frame: runs the item chosen since the last one, then works out what
-/// the menu may do next. The items are on only while this editor has the keyboard.
-pub(super) fn edit_menu(ctx: &egui::Context, state: &mut EditorState) {
+/// The Edit menus' side of a frame: runs the item chosen since the last one, then works out what
+/// the native menu may do next. Its items are on only while this editor has the keyboard. Returns
+/// whether the item changed the text.
+pub(super) fn edit_menu(ctx: &egui::Context, state: &mut EditorState) -> bool {
+    let changed = state
+        .nav
+        .pending
+        .take()
+        .is_some_and(|action| edit_actions::run(ctx, state, action));
     let caret = caret_index(ctx, state.id);
-    if let Some(action) = state.nav.pending.take() {
-        match action {
-            EditAction::Cut | EditAction::Copy | EditAction::Paste => clipboard(ctx, state, action),
-            EditAction::GoToDefinition => {
-                if let Some(caret) = caret {
-                    state.go_to_definition(ctx, caret);
-                }
-            }
-            EditAction::Rename => {
-                if let Some(caret) = caret {
-                    state.begin_rename(caret);
-                }
-            }
-        }
-        ctx.request_repaint();
-    }
     let viewport_focused = ctx.input(|input| input.focused);
     let focused = ctx.memory(|memory| memory.has_focus(state.id)) && viewport_focused;
     update_menu(ctx, state, caret.filter(|_| focused));
@@ -320,6 +302,7 @@ pub(super) fn edit_menu(ctx: &egui::Context, state: &mut EditorState) {
     if viewport_focused {
         crate::native_bridge::set_edit_menu(state.nav.menu);
     }
+    changed
 }
 
 /// Works out what the Edit menu may do; `caret` is `None` unless this editor has the keyboard.
@@ -345,7 +328,7 @@ fn update_menu(ctx: &egui::Context, state: &mut EditorState, caret: Option<usize
     }
 }
 
-fn caret_index(ctx: &egui::Context, id: Id) -> Option<usize> {
+pub(super) fn caret_index(ctx: &egui::Context, id: Id) -> Option<usize> {
     TextEditState::load(ctx, id)?
         .cursor
         .char_range()

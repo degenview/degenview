@@ -1,12 +1,16 @@
-//! The status strip under the text: the problems chip and the Save button.
+//! The problems chip (drawn at the right end of the menu strip over the editor) and the status
+//! strip under the text: the changed-line counts and notices. Saving is ⌘S or File ▸ Save.
 
 use super::EditorState;
 use super::diff::DiffSnapshot;
 use crate::model::pine::script::CompileStatus;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::icons::{self, Icon};
-use crate::ui::{shortcut, theme};
-use eframe::egui::{self, Align, Color32, Rect, RichText, Ui, UiBuilder, Vec2};
+use crate::ui::kit::{self, size};
+use crate::ui::theme;
+use eframe::egui::{
+    self, Align, Color32, Rect, Response, RichText, Sense, Ui, UiBuilder, Vec2, pos2, vec2,
+};
 
 /// "No problems", "1 warning", "2 errors" — the chip's text and look.
 pub fn status_chip(status: CompileStatus, diagnostics: &[Diagnostic]) -> (Icon, Color32, String) {
@@ -57,34 +61,72 @@ pub fn status_chip_with_runtime(
     status_chip(status, diagnostics)
 }
 
-/// The chip and the Save button. Returns whether Save was clicked.
-pub(super) fn status_bar(
-    ui: &mut Ui,
-    bar: Rect,
-    state: &EditorState,
-    changes: &DiffSnapshot,
-) -> bool {
+/// "No problems", "1 warning", "2 errors" for the editor's text, with what hovering it says.
+pub struct ProblemsChip {
+    icon: Icon,
+    color: Color32,
+    text: String,
+    hover: String,
+}
+
+/// Room between the chip's icon and its text.
+const CHIP_GAP: f32 = 5.0;
+const CHIP_ICON: f32 = 12.0;
+
+impl ProblemsChip {
+    pub fn of(state: &EditorState) -> Self {
+        let (icon, color, text) =
+            status_chip_with_runtime(state.status, &state.diagnostics, &state.runtime_problems);
+        let hover = match state.runtime_problems.first() {
+            Some(failure) => format!("The script failed when it ran: {}", failure.message),
+            None => "Compile status of the code in the editor".to_owned(),
+        };
+        Self {
+            icon,
+            color,
+            text,
+            hover,
+        }
+    }
+
+    /// Draws the chip ending at `right`, centred on `centre_y`.
+    pub fn show(&self, ui: &mut Ui, right: f32, centre_y: f32) -> Response {
+        let text = kit::galley(
+            ui,
+            &self.text,
+            size::CALLOUT,
+            kit::REGULAR,
+            self.color,
+            f32::INFINITY,
+        );
+        let width = CHIP_ICON + CHIP_GAP + text.size().x;
+        let rect = Rect::from_min_size(
+            pos2(right - width, centre_y - text.size().y.max(CHIP_ICON) / 2.0),
+            vec2(width, text.size().y.max(CHIP_ICON)),
+        );
+        let icon = Rect::from_center_size(
+            pos2(rect.left() + CHIP_ICON / 2.0, centre_y),
+            Vec2::splat(CHIP_ICON),
+        );
+        icons::paint(ui.painter(), icon, self.icon, self.color);
+        let at = pos2(icon.right() + CHIP_GAP, centre_y - text.size().y / 2.0);
+        ui.painter().galley(at, text, self.color);
+        ui.interact(rect, ui.id().with("problems-chip"), Sense::hover())
+            .on_hover_text(self.hover.as_str())
+    }
+}
+
+/// The changed-line counts and the latest notice.
+pub(super) fn status_bar(ui: &mut Ui, bar: Rect, state: &EditorState, changes: &DiffSnapshot) {
     crate::pine_studio::drawer::bottom_bar::paint(ui, bar);
-    let mut save = false;
     let mut inner = ui.new_child(
         UiBuilder::new()
             .max_rect(bar.shrink2(Vec2::new(12.0, 0.0)))
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    let (icon, color, text) =
-        status_chip_with_runtime(state.status, &state.diagnostics, &state.runtime_problems);
     inner.spacing_mut().item_spacing.x = 5.0;
-    icons::inline(&mut inner, icon, 12.0, color);
-    let hover = match state.runtime_problems.first() {
-        Some(failure) => format!("The script failed when it ran: {}", failure.message),
-        None => "Compile status of the code in the editor".to_owned(),
-    };
-    inner
-        .label(egui::RichText::new(text).size(10.0).color(color))
-        .on_hover_text(hover);
     if !changes.is_clean() {
         let (added, removed) = (changes.lines_added(), changes.lines_removed());
-        inner.add_space(6.0);
         inner
             .label(
                 RichText::new(format!("+{added}"))
@@ -115,19 +157,4 @@ pub(super) fn status_bar(
         );
         inner.ctx().request_repaint_after(left);
     }
-    if !state.sample {
-        inner.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-            // egui never draws a button under `interact_size.y`, so the bar lowers it.
-            ui.spacing_mut().interact_size.y = 20.0;
-            let button = egui::Button::new(egui::RichText::new("Save").size(12.0));
-            if ui
-                .add(button)
-                .on_hover_text(shortcut::SAVE.hint("Save the script"))
-                .clicked()
-            {
-                save = true;
-            }
-        });
-    }
-    save
 }

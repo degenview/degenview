@@ -6,16 +6,43 @@ button with `with_menu(key)` gets that key handed to the caller's `popup` callba
 drawn, only while enabled). `kit::bar::HEIGHT` (44) is the height of every tab's bar, on
 `theme::chrome()`; the chart's toolbar, the Portfolio's (`ui/portfolio/tab/bar.rs`, see
 [Portfolio page](portfolio-page.md)) and the Pine Studio's (`pine_studio/bar.rs`) differ only in
-their items, so switching tabs never changes the window's chrome. Button ids are scoped by the
+their items, so switching tabs never changes the window's chrome. `show_column` lays the same items
+out down a narrow rail instead (below). Button ids are scoped by the
 panel's `ui.id()`. Do not draw a tab's top controls with anything else.
 
-**Pine Studio bar.** Left: script list toggle, preview-chart position menu, preview toggle |
-market button (name, then the last price and change as quiet text; opens the market picker,
-`preview::market_picker`) | timeframe dropdown (the same [picker](#timeframe-picker) as the chart
-toolbar's; its warning line looks at the preview chart's source). The market and timeframe act on the
-preview chart and are disabled with no open script or a hidden chart. Right: assistant, profiler
-(tinted when it needs attention) and debugger, for an open script. The market and timeframe used to
-sit in a 52 pt strip over the preview chart; that strip is gone.
+**Pine Studio bar.** Left: market button (name,
+then the last price and change as quiet text; opens the market picker, `preview::market_picker`) |
+timeframe dropdown (the same [picker](#timeframe-picker) as the chart
+toolbar's; its warning line looks at the preview chart's source) | script button (a document glyph, the open script's name or
+"Scripts", a chevron; `keep_label`, so the name stays when the bar narrows). The script button
+opens the script picker (`library::picker`, ⌃⌘S / Ctrl+B), the only way to list, open, rename or
+delete scripts: the sidebar that held them is gone. The picker is not egui's popup slot
+(`Popup::open(true)` over its own `Picker` state), because a row's right-click menu takes that slot
+and would close it. The market and timeframe act on the preview chart and are disabled with no open
+script or a hidden chart; the script button is always enabled. The right run is empty. The market and timeframe used to sit in a
+52 pt strip over the preview chart; that strip is gone.
+
+**Pine Studio editor rail** (`pine_studio/rail.rs`). A 41 pt column (`rail::WIDTH`, a right
+`egui::Panel` on `theme::chrome()`, its egui separator the only edge) down the right of the code
+editor, drawn with `kit::bar::show_column`: the same `Button`s and `paint_button` as the bar, icon
+only, centred, with a short horizontal hairline for `Item::Separator`. Top to bottom: assistant,
+profiler (tinted when it needs attention) and debugger | preview-chart position menu (the icon
+follows the position; opens to the left of the rail) and the preview toggle. It spans the whole
+editor column (code, assistant and debugger panels) and never reaches over the preview chart, so
+with the chart left of the code it is the window's right edge, and above or below it sits beside the
+code only. It is shown whenever a script is open.
+
+**Pine Studio menu strip** (`pine_studio/menu_bar/`). A 28 pt strip on `theme::chrome()` (its egui
+separator the only edge) under the bar, at the top of the editor column: left of the rail, over the
+code and the assistant and debugger panels, never over the preview chart. Three flat text titles,
+File, Edit, View and Theme, with the bar's hover and lit tints, and at its right end the editor's problems
+chip (`editor::status::ProblemsChip`; the status strip under the code keeps only the changed-line
+counts and notices, and has no Save button). The titles open fitted pull-downs
+(`kit::fitted_menu_rows`, shortcut column included) and, while one is up, pointing at another title
+opens that one. Theme lists the editor's themes (Automatic, the built-ins, your own; the worn one
+checked, the list scrolling when long) and ends in "Configure Themes…", which opens Settings on the
+Pine Studio page. It is how every right-click menu of the studio is reached without a right-click: see
+[Pine and Pine Studio](agent-guides/pine.md#editor).
 
 **View menu (macOS).** Between Edit and Window: Pine Studio and Portfolio
 (`NativeCommand::OpenPineStudio` / `OpenPortfolio`), each opening its one tab or showing the open

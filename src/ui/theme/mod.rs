@@ -469,14 +469,6 @@ pub fn card_border(hovered: bool) -> Color32 {
     ink(if hovered { 40 } else { 30 })
 }
 
-/// The 1px line along a card's top edge that reads as light falling on it from above.
-pub fn card_highlight() -> Color32 {
-    pick(
-        Color32::from_white_alpha(26),
-        Color32::from_white_alpha(200),
-    )
-}
-
 /// An inset well, darker than the card it sits on: the off track of a switch.
 pub fn well_fill() -> Color32 {
     pick(Color32::from_black_alpha(70), ink(26))
@@ -758,7 +750,7 @@ mod tests {
     fn a_hovered_card_is_lifted_above_a_resting_one() {
         assert!(card_fill(true).a() > card_fill(false).a());
         assert!(card_border(true).a() > card_border(false).a());
-        assert!(card_fill(false).a() > 0 && card_highlight().a() > 0);
+        assert!(card_fill(false).a() > 0);
     }
 
     #[test]

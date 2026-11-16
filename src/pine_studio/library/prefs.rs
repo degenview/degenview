@@ -42,9 +42,6 @@ pub enum DrawerTab {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct LayoutPrefs {
-    pub sidebar_visible: bool,
-    /// 0 means the default width.
-    pub sidebar_width: f32,
     pub chart_visible: bool,
     pub chart_position: ChartPosition,
     pub chart_width: f32,
@@ -70,8 +67,6 @@ pub struct LayoutPrefs {
 impl Default for LayoutPrefs {
     fn default() -> Self {
         Self {
-            sidebar_visible: true,
-            sidebar_width: 0.0,
             chart_visible: true,
             chart_position: ChartPosition::Left,
             chart_width: 0.0,
@@ -117,7 +112,7 @@ mod tests {
         let store: SharedStore = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
         assert_eq!(LayoutPrefs::load(&store), LayoutPrefs::default());
         let prefs = LayoutPrefs {
-            sidebar_visible: false,
+            chart_visible: false,
             chart_position: ChartPosition::Bottom,
             drawer_tab: DrawerTab::Problems,
             selected_script_id: Some("abc".into()),
@@ -133,10 +128,31 @@ mod tests {
         store
             .lock()
             .unwrap()
-            .set_setting(KEY, &serde_json::json!({ "sidebarVisible": false }))
+            .set_setting(KEY, &serde_json::json!({ "chartVisible": false }))
             .unwrap();
         let prefs = LayoutPrefs::load(&store);
-        assert!(!prefs.sidebar_visible);
+        assert!(!prefs.chart_visible);
         assert!(prefs.drawer_open);
+    }
+
+    #[test]
+    fn rows_saved_with_the_script_list_sidebar_still_load() {
+        let store: SharedStore = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
+        store
+            .lock()
+            .unwrap()
+            .set_setting(
+                KEY,
+                &serde_json::json!({
+                    "sidebarVisible": false,
+                    "sidebarWidth": 301.5,
+                    "chartPosition": "bottom",
+                    "selectedScriptId": "abc",
+                }),
+            )
+            .unwrap();
+        let prefs = LayoutPrefs::load(&store);
+        assert_eq!(prefs.chart_position, ChartPosition::Bottom);
+        assert_eq!(prefs.selected_script_id.as_deref(), Some("abc"));
     }
 }

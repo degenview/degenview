@@ -1,9 +1,9 @@
 //! The Pine Studio window: file-backed Pine script library, editor, preview chart and drawer.
 //! A port of DegenView's `PineStudioView` and its view models.
 //!
-//! Layout (see `workspace.rs`): a sidebar with the script list, and for the selected script a
-//! split between the code editor and the preview chart, with the Inputs / Report / Problems
-//! drawer under the chart.
+//! Layout (see `workspace.rs`): the bar's script button opens the script picker, and for the
+//! open script the window is a split between the code editor and the preview chart, with the
+//! Inputs / Report / Problems drawer under the chart.
 
 pub mod ai;
 mod bar;
@@ -13,14 +13,17 @@ pub mod drawer;
 pub mod editor;
 pub mod inputs;
 pub mod library;
+mod menu_bar;
 mod migrate_swift;
 mod open_script;
 mod preview;
 pub mod profiler;
+mod rail;
 mod sheets;
 pub mod theme_preview;
 mod workspace;
 
+use crate::host::editor_theme::EditorThemeHost;
 use crate::model::pine::instance::{PineInstance, StoredInput};
 use crate::model::pine::script::{
     CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType, now_ms,
@@ -30,19 +33,17 @@ use crate::pine::syntax::token::Limits;
 use crate::service::work_queue::Pending;
 use crate::store::SharedStore;
 use crate::store::scripts::ScriptStore;
-use crate::ui::kit::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::shortcut;
 use crate::ui::theme;
 use commands::Cmd;
 use editor::EditorState;
-use eframe::egui::{self, Id, Ui};
+use eframe::egui::{self, Ui};
+use library::picker::Picker;
 use library::prefs::LayoutPrefs;
 use library::registry::LibraryRegistry;
-use library::sidebar::{Group, Rename, RowKey};
 pub use library::unsaved::{ExitDecision, ExitReason};
 use library::unsaved::{ExitPrompt, UnsavedChoice, UnsavedScript};
 use migrate_swift::swift_scripts_dir;
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -74,6 +75,8 @@ pub enum PineStudioAction {
     OpenWebhookSettings,
     /// Open Settings on the AI Assistant page.
     OpenAiSettings,
+    /// Open Settings on the Pine Studio page, where the editor's themes are.
+    OpenEditorThemeSettings,
 }
 
 /// The focused chart a script alert would watch: its market and timeframe.
@@ -120,6 +123,12 @@ pub(crate) enum Sheet {
         error: Option<String>,
         needs_focus: bool,
     },
+    Rename {
+        id: ScriptId,
+        name: String,
+        error: Option<String>,
+        needs_focus: bool,
+    },
     ConfirmDelete {
         id: ScriptId,
         name: String,
@@ -148,11 +157,8 @@ pub struct PineStudio {
     last_scan: Instant,
     pub(crate) prefs: LayoutPrefs,
     saved_prefs: LayoutPrefs,
-    pub(crate) search: String,
-    pub(crate) collapsed: HashSet<Group>,
-    pub(crate) selected_row: Option<RowKey>,
-    pub(crate) renaming: Option<Rename>,
-    pub(crate) last_click: Option<(RowKey, Instant)>,
+    /// The popup under the bar's script button.
+    picker: Picker,
     pub(crate) open: Option<OpenScript>,
     pub(crate) sheet: Option<Sheet>,
     /// "Save changes?" over a tab close or a quit, while it waits for an answer.
@@ -177,11 +183,16 @@ pub struct PineStudio {
     pub(crate) problems_copied: Option<Instant>,
     actions: Vec<PineStudioAction>,
     export: Option<Pending<(ScriptId, Option<PathBuf>)>>,
+    /// The editor's themes, which the Theme menu lists and chooses from.
+    themes: EditorThemeHost,
 }
 
 impl PineStudio {
-    pub fn new(id: u64, shared: SharedStore) -> Self {
-        Self::with_script_store(id, shared, ScriptStore::default_location())
+    pub fn new(id: u64, shared: SharedStore, themes: EditorThemeHost) -> Self {
+        Self {
+            themes,
+            ..Self::with_script_store(id, shared, ScriptStore::default_location())
+        }
     }
 
     pub fn with_script_store(
@@ -205,11 +216,7 @@ impl PineStudio {
             last_scan: Instant::now(),
             saved_prefs: prefs.clone(),
             prefs,
-            search: String::new(),
-            collapsed: HashSet::new(),
-            selected_row: None,
-            renaming: None,
-            last_click: None,
+            picker: Picker::default(),
             open: None,
             sheet: None,
             exit_prompt: None,
@@ -220,6 +227,8 @@ impl PineStudio {
             actions: Vec::new(),
             export: None,
             problems_copied: None,
+            // A placeholder that publishes nothing; the app's host comes through `new`.
+            themes: EditorThemeHost::default(),
         }
     }
 
@@ -448,7 +457,7 @@ impl PineStudio {
         self.sync_logs_range();
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme::background()))
-            .show(ui, |ui| self.root(ui));
+            .show(ui, |ui| self.detail_ui(ui));
 
         self.sheets_ui(&ctx);
         self.apply_cmds(&ctx);
@@ -495,10 +504,10 @@ impl PineStudio {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
-        let (save, sidebar, chart, new_script) = ctx.input(|i| {
+        let (save, picker, chart, new_script) = ctx.input(|i| {
             (
                 shortcut::SAVE.peek(i),
-                shortcut::TOGGLE_SCRIPT_LIST.peek(i),
+                shortcut::OPEN_SCRIPT_PICKER.peek(i),
                 shortcut::TOGGLE_PREVIEW_CHART.peek(i),
                 // macOS owns New Script in its File menu (`NativeCommand::NewScript`).
                 !shortcut::is_mac() && shortcut::NEW_SCRIPT.peek(i),
@@ -510,8 +519,8 @@ impl PineStudio {
         if save && self.open.is_some() {
             self.cmds.push(Cmd::Save);
         }
-        if sidebar {
-            self.cmds.push(Cmd::ToggleSidebar);
+        if picker {
+            self.cmds.push(Cmd::OpenScriptPicker);
         }
         if chart {
             self.cmds.push(Cmd::ToggleChart);
@@ -543,33 +552,6 @@ impl PineStudio {
             self.prefs.save(&self.shared);
             self.saved_prefs = self.prefs.clone();
         }
-    }
-
-    fn root(&mut self, ui: &mut Ui) {
-        let spec = SplitSpec {
-            axis: Axis::Horizontal,
-            secondary_first: true,
-            min_primary: 420.0,
-            min_secondary: 200.0,
-            max_secondary: 320.0,
-            default: DefaultLength::Points(240.0),
-        };
-        let mut state = SplitState {
-            length: self.prefs.sidebar_width,
-            visible: self.prefs.sidebar_visible,
-        };
-        let id = Id::new(("pine-studio-root", self.id));
-        let this = std::cell::RefCell::new(&mut *self);
-        split::show(
-            ui,
-            id,
-            spec,
-            &mut state,
-            |ui| this.borrow_mut().detail_ui(ui),
-            |ui| this.borrow_mut().sidebar_ui(ui),
-        );
-        let _ = this;
-        self.prefs.sidebar_width = state.length;
     }
 
     // MARK: Store
@@ -622,13 +604,8 @@ impl PineStudio {
         self.import_swift_inputs();
         // Reopen where the user left off.
         if let Some(id) = self.prefs.selected_script_id.clone()
-            && let Some(script) = self.scripts.iter().find(|s| s.id == id)
+            && self.scripts.iter().any(|s| s.id == id)
         {
-            let group = group_of(script);
-            self.selected_row = Some(RowKey {
-                group,
-                id: id.clone(),
-            });
             self.open_script(&id);
         }
     }
@@ -654,14 +631,6 @@ impl PineStudio {
 
     pub(crate) fn script_named(&self, id: &str) -> Option<&LocalScript> {
         self.scripts.iter().find(|s| s.id == id)
-    }
-}
-
-fn group_of(script: &LocalScript) -> Group {
-    match script.script_type {
-        ScriptType::Indicator => Group::Indicators,
-        ScriptType::Strategy => Group::Strategies,
-        ScriptType::Library => Group::Libraries,
     }
 }
 

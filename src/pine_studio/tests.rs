@@ -1,6 +1,8 @@
 use super::migrate_swift::parse_swift_index;
 use super::*;
 use crate::store::Store;
+use crate::ui::render_tests::{Screen, gallery_dir};
+use eframe::egui::{Event, pos2, vec2};
 use library::prefs::{ChartPosition, DrawerTab};
 use std::sync::{Arc, Mutex};
 
@@ -23,54 +25,70 @@ fn edited(tag: &str) -> (PineStudio, PathBuf, ScriptId) {
     (manager, root, id)
 }
 
-/// With `DEGENVIEW_GALLERY_DIR` set, the sidebar is written as pictures: a row selected, the
-/// button idle and under the pointer, in both themes. Without it the test does nothing, so it
-/// never touches the shared theme.
+/// Frames of the whole window with the script picker up, so the popup is seen under its button.
+fn picker_frames(
+    manager: &mut PineStudio,
+    screen: &mut Screen,
+    events: Vec<Event>,
+) -> egui::FullOutput {
+    let mut last = None;
+    for _ in 0..4 {
+        crate::ui::theme::sync(&screen.ctx);
+        last = Some(screen.run(events.clone(), |ui| {
+            manager.ui(ui, None);
+        }));
+    }
+    last.expect("a frame")
+}
+
+/// With `DEGENVIEW_GALLERY_DIR` set, the script picker is written as pictures in both themes: the
+/// list with the open script lit, a row under the pointer, every group at once, a search that
+/// finds nothing, and the short form of an empty library.
 #[test]
-fn the_sidebar_gallery() {
-    use crate::ui::render_tests::{Screen, gallery_dir};
+#[ignore = "writes images for a person to look at"]
+fn the_picker_gallery() {
     use crate::ui::theme::{self, AppTheme};
-    use eframe::egui::{Event, Pos2, vec2};
     if gallery_dir().is_none() {
         return;
     }
-    let (mut manager, root) = manager("sidebar-gallery");
+    let _theme = theme::RestoreDefaultTheme;
+    let (mut manager, root) = manager("picker-gallery");
     manager.first_load();
-    let script = manager.scripts[2].clone();
-    manager.selected_row = Some(RowKey {
-        group: group_of(&script),
-        id: script.id.clone(),
+    let first = manager.scripts[2].id.clone();
+    let favorite = manager.scripts[0].id.clone();
+    manager.with_store(|store| {
+        store.set_favorite(&favorite, true)?;
+        store.create("Shared Maths", ScriptType::Library, None, false)?;
+        Ok(())
     });
+    manager.refresh();
+    manager.open_script(&first);
     for (tag, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
-        let mut screen = Screen::new(vec2(240.0, 420.0));
+        let mut screen = Screen::new(vec2(1000.0, 760.0));
         theme::apply(&screen.ctx, appearance);
-        for (name, pointer) in [
-            ("idle", None),
-            ("hover-button", Some(Pos2::new(120.0, 420.0 - 28.0 - 24.0))),
-            ("hover-row", Some(Pos2::new(120.0, 120.0))),
-        ] {
-            let events = pointer
-                .map(|pos| vec![Event::PointerMoved(pos)])
-                .unwrap_or_default();
-            screen.run(events.clone(), |ui| manager.sidebar_ui(ui));
-            let output = screen.run(events, |ui| manager.sidebar_ui(ui));
-            screen.save(&format!("sidebar-{tag}-{name}"), output);
-        }
+        manager.picker.open();
+        let output = picker_frames(&mut manager, &mut screen, Vec::new());
+        screen.save(&format!("picker-{tag}-list"), output);
+        let hover = Event::PointerMoved(pos2(520.0, 250.0));
+        let output = picker_frames(&mut manager, &mut screen, vec![hover]);
+        screen.save(&format!("picker-{tag}-hover"), output);
+        // A right-click on a row: its menu hangs beside the popup, which stays.
+        let click = |pressed| Event::PointerButton {
+            pos: pos2(520.0, 250.0),
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        picker_frames(&mut manager, &mut screen, vec![click(true)]);
+        let output = picker_frames(&mut manager, &mut screen, vec![click(false)]);
+        screen.save(&format!("picker-{tag}-row-menu"), output);
+        assert!(manager.picker.is_open());
+        manager.picker.open();
+        picker_frames(&mut manager, &mut screen, Vec::new());
+        let typed = Event::Text("zzzz".to_owned());
+        let output = picker_frames(&mut manager, &mut screen, vec![typed]);
+        screen.save(&format!("picker-{tag}-no-matches"), output);
     }
-    // Every section at once, a favorite, and a search that finds nothing.
-    manager.scripts[0].is_favorite = true;
-    manager.scripts[1].script_type = ScriptType::Strategy;
-    manager.scripts[3].script_type = ScriptType::Library;
-    let mut screen = Screen::new(vec2(240.0, 640.0));
-    theme::apply(&screen.ctx, AppTheme::Dark);
-    screen.run(vec![], |ui| manager.sidebar_ui(ui));
-    let output = screen.run(vec![], |ui| manager.sidebar_ui(ui));
-    screen.save("sidebar-dark-sections", output);
-    manager.search = "zzzz".into();
-    screen.run(vec![], |ui| manager.sidebar_ui(ui));
-    let output = screen.run(vec![], |ui| manager.sidebar_ui(ui));
-    screen.save("sidebar-dark-no-matches", output);
-    theme::apply(&egui::Context::default(), AppTheme::Dark);
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -259,39 +277,119 @@ fn create_select_rename_delete_flow() {
         "case-insensitive conflict"
     );
     assert_eq!(
-        manager.name_problem("MINE").as_deref(),
+        manager.name_problem("MINE", None).as_deref(),
         Some("A script with that name already exists.")
     );
     assert_eq!(
-        manager.name_problem("  "),
+        manager.name_problem("  ", None),
         None,
         "empty shows no error until it is submitted"
     );
 
-    let id = manager.open.as_ref().unwrap().id.clone();
-    manager.renaming = Some(Rename {
-        row: RowKey {
-            group: Group::Indicators,
-            id: id.clone(),
-        },
-        text: "Renamed".into(),
-        error: None,
-        needs_focus: false,
-    });
-    manager.commit_rename();
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// A manager with "Mine" open and a second script, "Other", beside it.
+fn with_two_named(tag: &str) -> (PineStudio, PathBuf, ScriptId) {
+    let (mut manager, root) = manager(tag);
+    manager.first_load();
+    manager.create_script("Mine").unwrap();
+    manager.create_script("Other").unwrap();
+    manager.refresh();
+    let id = manager
+        .scripts
+        .iter()
+        .find(|script| script.name == "Mine")
+        .map(|script| script.id.clone())
+        .unwrap();
+    manager.cmds.clear();
+    manager.open_script(&id);
+    (manager, root, id)
+}
+
+#[test]
+fn renaming_a_script_changes_its_name_and_its_title() {
+    let (mut manager, root, id) = with_two_named("rename-valid");
+    manager.rename_script(&id, "Renamed").unwrap();
     assert_eq!(manager.open.as_ref().unwrap().name, "Renamed");
-    // A bad rename keeps editing and raises the alert.
-    manager.renaming = Some(Rename {
-        row: RowKey {
-            group: Group::Indicators,
-            id,
-        },
-        text: "a/b".into(),
-        error: None,
-        needs_focus: false,
-    });
-    manager.commit_rename();
-    assert!(manager.renaming.is_some() && manager.error.is_some());
+    assert_eq!(manager.title(), "Renamed");
+    assert!(
+        manager
+            .script_named(&id)
+            .is_some_and(|s| s.name == "Renamed")
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_name_another_script_has_cannot_be_taken_but_the_scripts_own_can() {
+    let (mut manager, root, id) = with_two_named("rename-conflict");
+    let taken = crate::store::scripts::ScriptStoreError::NameConflict.to_string();
+    assert_eq!(manager.name_problem("other", Some(&id)), Some(taken));
+    assert!(manager.rename_script(&id, "Other").is_err());
+    assert_eq!(manager.open.as_ref().unwrap().name, "Mine");
+    // Its own name, even in other letters, is not in the way.
+    assert_eq!(manager.name_problem("Mine", Some(&id)), None);
+    assert_eq!(manager.name_problem("MINE", Some(&id)), None);
+    manager.rename_script(&id, "Mine").unwrap();
+    assert_eq!(manager.open.as_ref().unwrap().name, "Mine");
+    // A name that is not valid is explained.
+    assert!(manager.rename_script(&id, "a/b").is_err());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_rename_sheet_starts_on_the_current_name_and_enter_takes_the_new_one() {
+    let (mut manager, root, id) = with_two_named("rename-sheet");
+    manager.run(Cmd::BeginRename(id.clone()), &egui::Context::default());
+    assert!(matches!(
+        &manager.sheet,
+        Some(Sheet::Rename { name, error: None, .. }) if name == "Mine"
+    ));
+    let ctx = egui::Context::default();
+    crate::ui::theme::install_offscreen(&ctx);
+    let frame = |manager: &mut PineStudio, events: Vec<Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                manager.ui(ui, None);
+            },
+        );
+        output.textures_delta.clear();
+    };
+    frame(&mut manager, Vec::new());
+    assert!(
+        manager.sheet.is_some(),
+        "the sheet stays up until it is answered"
+    );
+    if let Some(Sheet::Rename { name, .. }) = manager.sheet.as_mut() {
+        *name = "Renamed".to_owned();
+    }
+    let enter = Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    frame(&mut manager, vec![enter]);
+    assert!(manager.sheet.is_none());
+    assert_eq!(manager.open.as_ref().unwrap().name, "Renamed");
+    // Escape puts it away without renaming.
+    manager.run(Cmd::BeginRename(id), &ctx);
+    let escape = Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    frame(&mut manager, vec![escape]);
+    assert!(manager.sheet.is_none());
+    assert_eq!(manager.open.as_ref().unwrap().name, "Renamed");
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -310,10 +408,7 @@ fn the_window_draws_headlessly_through_selection_and_layout_changes() {
     frame(&mut manager);
     assert_eq!(manager.scripts.len(), 9);
     let first = manager.scripts[0].clone();
-    manager.cmds.push(Cmd::Select(RowKey {
-        group: Group::Indicators,
-        id: first.id,
-    }));
+    manager.cmds.push(Cmd::Select(first.id));
     frame(&mut manager);
     frame(&mut manager);
     assert!(manager.open.is_some());
@@ -325,7 +420,10 @@ fn the_window_draws_headlessly_through_selection_and_layout_changes() {
         manager.cmds.push(Cmd::SetDrawerTab(tab));
         frame(&mut manager);
     }
-    manager.cmds.push(Cmd::ToggleSidebar);
+    manager.cmds.push(Cmd::OpenScriptPicker);
+    frame(&mut manager);
+    frame(&mut manager);
+    assert!(manager.picker.is_open());
     manager.cmds.push(Cmd::ToggleChart);
     manager.cmds.push(Cmd::ToggleDrawer);
     manager.cmds.push(Cmd::NewScript);
@@ -335,6 +433,485 @@ fn the_window_draws_headlessly_through_selection_and_layout_changes() {
     manager.error = Some("boom".into());
     frame(&mut manager);
     let _ = std::fs::remove_dir_all(root);
+}
+
+/// One click at `at` in the whole window: the pointer arrives, goes down and comes up.
+fn click_window(manager: &mut PineStudio, screen: &mut Screen, at: egui::Pos2) {
+    let press = |pressed| Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    for events in [
+        vec![],
+        vec![Event::PointerMoved(at)],
+        vec![press(true)],
+        vec![press(false)],
+        vec![],
+    ] {
+        crate::ui::theme::sync(&screen.ctx);
+        screen.run(events, |ui| {
+            manager.ui(ui, None);
+        });
+    }
+}
+
+#[test]
+fn the_rail_moves_and_hides_the_preview_chart_and_opens_the_panels_in_the_whole_window() {
+    let (mut manager, root, _) = edited("rail-window");
+    let mut screen = Screen::new(vec2(1360.0, 860.0));
+    click_window(&mut manager, &mut screen, pos2(0.0, 0.0));
+    let button = |n| rail::button_centre(1360.0, crate::ui::kit::bar::HEIGHT, n);
+
+    // Assistant, profiler and debugger are the first three buttons.
+    click_window(&mut manager, &mut screen, button(0));
+    assert!(manager.prefs.ai_open);
+    click_window(&mut manager, &mut screen, button(2));
+    assert!(manager.prefs.debug_open);
+
+    // The position menu hangs left of the rail; its third row is "Below Code".
+    assert_eq!(manager.prefs.chart_position, ChartPosition::Left);
+    click_window(&mut manager, &mut screen, button(3));
+    let row = pos2(1360.0 - rail::WIDTH - 30.0, button(3).y - 15.0 + 75.0);
+    click_window(&mut manager, &mut screen, row);
+    assert_eq!(manager.prefs.chart_position, ChartPosition::Bottom);
+
+    assert!(manager.prefs.chart_visible);
+    click_window(&mut manager, &mut screen, button(4));
+    assert!(!manager.prefs.chart_visible);
+    click_window(&mut manager, &mut screen, button(4));
+    assert!(manager.prefs.chart_visible);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn choosing_a_theme_in_the_theme_menu_makes_it_the_editors_through_the_host() {
+    use crate::model::editor_theme::{BuiltInTheme, ThemeSelection};
+    let _published = crate::ui::editor_appearance::RestorePublished;
+    let (mut manager, root) = manager("theme-menu-choose");
+    let ctx = egui::Context::default();
+    assert_eq!(manager.themes.choices().selected, ThemeSelection::Auto);
+    manager.run(
+        Cmd::SetEditorTheme(ThemeSelection::BuiltIn(BuiltInTheme::Dracula)),
+        &ctx,
+    );
+    assert_eq!(
+        manager.themes.choices().selected,
+        ThemeSelection::BuiltIn(BuiltInTheme::Dracula)
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn configure_themes_asks_the_app_for_the_editor_theme_page_of_settings() {
+    let (mut manager, root) = manager("theme-menu-configure");
+    let ctx = egui::Context::default();
+    manager.run(Cmd::OpenThemeSettings, &ctx);
+    assert_eq!(manager.actions, [PineStudioAction::OpenEditorThemeSettings]);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// With `DEGENVIEW_GALLERY_DIR` set, the whole window is written as pictures in both themes at the
+/// default and the narrowest size, with the preview chart at each place, with the assistant and
+/// debugger panels open under the code, and with the position menu open.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_rail() {
+    use crate::ui::theme::{self, AppTheme};
+    use debug::studio_tests::Rig;
+    if gallery_dir().is_none() {
+        return;
+    }
+    let _theme = theme::RestoreDefaultTheme;
+    let shoot = |rig: &mut Rig, screen: &mut Screen, name: &str| {
+        let mut last = None;
+        for _ in 0..4 {
+            theme::sync(&screen.ctx);
+            last = Some(screen.run(Vec::new(), |ui| {
+                rig.manager.ui(ui, None);
+            }));
+        }
+        screen.save(name, last.expect("a frame"));
+    };
+    for (theme_name, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        for (size_name, size) in [
+            ("wide", vec2(1360.0, 860.0)),
+            ("narrow", vec2(960.0, 640.0)),
+        ] {
+            let mut rig = Rig::new(&format!("rail-{size_name}-{theme_name}"));
+            let mut screen = Screen::new(size);
+            theme::apply(&screen.ctx, appearance);
+            for position in ChartPosition::ALL {
+                rig.manager.prefs.chart_position = position;
+                shoot(
+                    &mut rig,
+                    &mut screen,
+                    &format!(
+                        "rail-{size_name}-{theme_name}-{}",
+                        position.title().replace(' ', "-")
+                    ),
+                );
+            }
+            rig.manager.prefs.chart_position = ChartPosition::Left;
+            rig.manager.prefs.ai_open = true;
+            rig.manager.prefs.debug_open = true;
+            shoot(
+                &mut rig,
+                &mut screen,
+                &format!("rail-{size_name}-{theme_name}-panels"),
+            );
+            rig.manager.prefs.chart_position = ChartPosition::Bottom;
+            shoot(
+                &mut rig,
+                &mut screen,
+                &format!("rail-{size_name}-{theme_name}-panels-below"),
+            );
+            rig.manager.prefs.ai_open = false;
+            rig.manager.prefs.debug_open = false;
+            let button = rail::button_centre(size.x, crate::ui::kit::bar::HEIGHT, 3);
+            click_window(&mut rig.manager, &mut screen, button);
+            shoot(
+                &mut rig,
+                &mut screen,
+                &format!("rail-{size_name}-{theme_name}-menu"),
+            );
+        }
+    }
+}
+
+/// Where the menu strip starts in the window: under the bar, at the editor's left edge, which is
+/// half way across with the preview chart at its left.
+fn strip_corner(size: egui::Vec2, position: ChartPosition) -> egui::Pos2 {
+    let left = if position == ChartPosition::Left {
+        size.x / 2.0
+    } else {
+        0.0
+    };
+    pos2(left, crate::ui::kit::bar::HEIGHT)
+}
+
+/// Frames of the whole window, the pointer left where it is.
+fn settle(manager: &mut PineStudio, screen: &mut Screen) -> egui::FullOutput {
+    let mut last = None;
+    for _ in 0..4 {
+        crate::ui::theme::sync(&screen.ctx);
+        last = Some(screen.run(Vec::new(), |ui| {
+            manager.ui(ui, None);
+        }));
+    }
+    last.expect("a frame")
+}
+
+fn hover_window(manager: &mut PineStudio, screen: &mut Screen, at: egui::Pos2) {
+    for _ in 0..2 {
+        crate::ui::theme::sync(&screen.ctx);
+        screen.run(vec![Event::PointerMoved(at)], |ui| {
+            manager.ui(ui, None);
+        });
+    }
+}
+
+#[test]
+fn opening_a_menu_keeps_the_editors_selection_so_cut_and_copy_stay_on() {
+    use menu_bar::Menu;
+    let (mut manager, root, _) = edited("menu-keeps-selection");
+    manager.prefs.chart_visible = false;
+    let size = vec2(1360.0, 860.0);
+    let mut screen = Screen::new(size);
+    settle(&mut manager, &mut screen);
+    manager.edit_command(editor::EditAction::SelectAll);
+    settle(&mut manager, &mut screen);
+    let ctx = screen.ctx.clone();
+    let selected = |manager: &mut PineStudio| {
+        manager
+            .open
+            .as_mut()
+            .map(|open| open.editor.menu_state(&ctx).selection)
+    };
+    assert_eq!(selected(&mut manager), Some(true));
+
+    let corner = strip_corner(size, ChartPosition::Bottom);
+    click_window(
+        &mut manager,
+        &mut screen,
+        menu_bar::title_centre(Menu::Edit, corner),
+    );
+    settle(&mut manager, &mut screen);
+    assert_eq!(
+        selected(&mut manager),
+        Some(true),
+        "the click on the strip must not collapse the selection"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn key_event(key: egui::Key, command: bool) -> Event {
+    Event::Key {
+        key,
+        physical_key: Some(key),
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers {
+            command,
+            mac_cmd: command && crate::ui::shortcut::is_mac(),
+            ctrl: command && !crate::ui::shortcut::is_mac(),
+            ..egui::Modifiers::NONE
+        },
+    }
+}
+
+/// A window with the editor alone under the bar (no preview chart), its text all selected so it
+/// has the keyboard, and the click and frame helpers for it.
+struct EditorWindow {
+    manager: PineStudio,
+    screen: Screen,
+    corner: egui::Pos2,
+    root: PathBuf,
+}
+
+impl EditorWindow {
+    fn new(tag: &str) -> Self {
+        let (mut manager, root, _) = edited(tag);
+        manager.prefs.chart_visible = false;
+        let size = vec2(1360.0, 860.0);
+        let mut screen = Screen::new(size);
+        settle(&mut manager, &mut screen);
+        manager.edit_command(editor::EditAction::SelectAll);
+        settle(&mut manager, &mut screen);
+        Self {
+            manager,
+            screen,
+            corner: strip_corner(size, ChartPosition::Bottom),
+            root,
+        }
+    }
+
+    fn click_title(&mut self, menu: menu_bar::Menu) -> egui::Pos2 {
+        let at = menu_bar::title_centre(menu, self.corner);
+        click_window(&mut self.manager, &mut self.screen, at);
+        at
+    }
+
+    /// Clicks the `row`th row (rows only) of the menu opened from the title at `title`.
+    fn click_row(&mut self, menu: menu_bar::Menu, title: egui::Pos2, row: usize) {
+        let at = pos2(title.x + 20.0, menu_row_y(self.corner, menu, row));
+        click_window(&mut self.manager, &mut self.screen, at);
+    }
+
+    fn frames(&mut self, events: Vec<Event>) {
+        for (index, _) in (0..3).enumerate() {
+            crate::ui::theme::sync(&self.screen.ctx);
+            let events = if index == 0 {
+                events.clone()
+            } else {
+                Vec::new()
+            };
+            self.screen.run(events, |ui| {
+                self.manager.ui(ui, None);
+            });
+        }
+    }
+
+    fn focused(&self) -> Option<egui::Id> {
+        self.screen.ctx.memory(|memory| memory.focused())
+    }
+
+    fn editor_id(&self) -> egui::Id {
+        self.manager
+            .open
+            .as_ref()
+            .expect("a script is open")
+            .editor
+            .focus_id()
+    }
+
+    fn find_open(&self) -> bool {
+        self.manager
+            .open
+            .as_ref()
+            .is_some_and(|open| open.editor.find.open)
+    }
+}
+
+impl Drop for EditorWindow {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+#[test]
+fn open_script_from_the_file_menu_leaves_the_keyboard_in_the_pickers_search() {
+    use menu_bar::Menu;
+    let mut window = EditorWindow::new("menu-open-script");
+    let before = window.manager.open.as_ref().unwrap().editor.source.clone();
+    let title = window.click_title(Menu::File);
+    window.click_row(Menu::File, title, 1);
+    window.frames(Vec::new());
+    assert!(window.manager.picker.is_open());
+    let focused = window.focused();
+    assert!(focused.is_some() && focused != Some(window.editor_id()));
+    window.frames(vec![Event::Text("zz".to_owned())]);
+    assert_eq!(
+        window.manager.open.as_ref().unwrap().editor.source,
+        before,
+        "what is typed goes to the search, not into the code"
+    );
+}
+
+#[test]
+fn find_with_the_edit_menu_up_leaves_the_keyboard_in_the_find_field() {
+    use menu_bar::Menu;
+    let mut window = EditorWindow::new("menu-find");
+    window.click_title(Menu::Edit);
+    assert_eq!(
+        window.focused(),
+        Some(window.editor_id()),
+        "held for the menu"
+    );
+    window.frames(vec![key_event(egui::Key::F, true)]);
+    window.frames(Vec::new());
+    assert!(window.find_open());
+    assert_eq!(window.focused(), Some(egui::Id::new("script-find-field")));
+}
+
+#[test]
+fn escape_that_closes_a_menu_or_the_picker_leaves_the_find_bar_open() {
+    use menu_bar::Menu;
+    let mut window = EditorWindow::new("menu-escape");
+    window.manager.edit_command(editor::EditAction::Find);
+    window.frames(Vec::new());
+    assert!(window.find_open());
+
+    window.click_title(Menu::Edit);
+    assert!(egui::Popup::is_any_open(&window.screen.ctx));
+    window.frames(vec![key_event(egui::Key::Escape, false)]);
+    assert!(
+        !egui::Popup::is_any_open(&window.screen.ctx),
+        "the menu closed"
+    );
+    assert!(window.find_open(), "and the find bar stayed");
+
+    window.manager.picker.open();
+    window.frames(Vec::new());
+    window.frames(vec![key_event(egui::Key::Escape, false)]);
+    assert!(!window.manager.picker.is_open(), "the picker closed");
+    assert!(window.find_open(), "and the find bar stayed");
+}
+
+/// With `DEGENVIEW_GALLERY_DIR` set, the whole window is written as pictures in both themes at the
+/// default and the narrowest size with each of the strip's menus open, the Edit menu with a
+/// selection and with the caret in a change, a submenu of View and one of Edit open, and the Theme
+/// menu with a saved theme of the person's own.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_menu_bar() {
+    use crate::model::editor_theme::{BuiltInTheme, ThemeSelection, ThemeSource};
+    use crate::ui::theme::{self, AppTheme};
+    use debug::studio_tests::Rig;
+    use menu_bar::Menu;
+    if gallery_dir().is_none() {
+        return;
+    }
+    let _theme = theme::RestoreDefaultTheme;
+    let _published = crate::ui::editor_appearance::RestorePublished;
+    for (theme_name, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        for (size_name, size) in [
+            ("wide", vec2(1360.0, 860.0)),
+            ("narrow", vec2(960.0, 640.0)),
+        ] {
+            // (picture, menu, a row to point at, whether to select everything first)
+            let shots: [(&str, Menu, Option<usize>, bool); 7] = [
+                ("file", Menu::File, None, false),
+                ("edit-selection", Menu::Edit, None, true),
+                ("edit-change", Menu::Edit, Some(EDIT_CHANGE_ROW), false),
+                (
+                    "edit-breakpoint",
+                    Menu::Edit,
+                    Some(EDIT_CHANGE_ROW - 1),
+                    false,
+                ),
+                ("view", Menu::View, None, false),
+                ("view-position", Menu::View, Some(VIEW_POSITION_ROW), false),
+                ("theme", Menu::Theme, None, false),
+            ];
+            for (name, menu, pointed, select) in shots {
+                let tag = format!("menu-bar-{size_name}-{theme_name}-{name}");
+                let mut rig = Rig::new(&tag);
+                let mut screen = Screen::new(size);
+                theme::apply(&screen.ctx, appearance);
+                let manager = &mut rig.manager;
+                manager.prefs.drawer_open = true;
+                if menu == Menu::Theme {
+                    // One theme worn and one with a name as long as a name may be.
+                    let source = ThemeSource::BuiltIn(BuiltInTheme::Dracula);
+                    let long = "A custom theme named as long as a name may be";
+                    manager.themes.create(long, source).expect("a theme");
+                    let worn = manager.themes.create("My Dracula", source);
+                    manager
+                        .themes
+                        .select(ThemeSelection::Custom(worn.expect("a theme")));
+                }
+                if let Some(open) = manager.open.as_mut() {
+                    // A saved script with one line changed, the caret on it.
+                    let source = open.editor.source.clone();
+                    open.editor.replace_source(&source, true);
+                    open.editor.source =
+                        source.replace("value = calculate(close)", "value = calculate(open)");
+                }
+                settle(manager, &mut screen);
+                if select {
+                    manager.edit_command(editor::EditAction::SelectAll);
+                } else if let Some(open) = manager.open.as_mut() {
+                    let at = open
+                        .editor
+                        .source
+                        .find("value = calculate(open)")
+                        .unwrap_or(0);
+                    open.editor.place_caret(&screen.ctx, at);
+                    // Hands the keyboard to the editor, as a click in the text would.
+                    manager.edit_command(editor::EditAction::FindNext);
+                }
+                settle(manager, &mut screen);
+                let corner = strip_corner(size, ChartPosition::Left);
+                let title = menu_bar::title_centre(menu, corner);
+                click_window(manager, &mut screen, title);
+                if let Some(row) = pointed {
+                    let x = title.x + 20.0;
+                    hover_window(manager, &mut screen, pos2(x, menu_row_y(corner, menu, row)));
+                }
+                let output = settle(manager, &mut screen);
+                screen.save(&tag, output);
+            }
+        }
+    }
+}
+
+/// The Edit menu's row that opens the change submenu, and the one above it (Breakpoint), counted
+/// as rows without the separators.
+const EDIT_CHANGE_ROW: usize = 18;
+/// The View menu's Preview Chart row.
+const VIEW_POSITION_ROW: usize = 3;
+
+/// The middle of the `row`th row of `menu` (counting rows, not separators), for a menu opened from
+/// the strip at `corner`: a gap under the strip, the menu's margin, 24 points a row and 9 a
+/// separator.
+fn menu_row_y(corner: egui::Pos2, menu: menu_bar::Menu, row: usize) -> f32 {
+    use menu_bar::Menu;
+    // How many separators come before each row, by menu.
+    let separators = match menu {
+        Menu::File => |row: usize| [3, 6, 8, 9].iter().filter(|at| row >= **at).count(),
+        Menu::Edit => |row: usize| [2, 6, 9, 14, 17].iter().filter(|at| row >= **at).count(),
+        Menu::View => |row: usize| [3, 5].iter().filter(|at| row >= **at).count(),
+        Menu::Theme => |row: usize| [4, 5].iter().filter(|at| row >= **at).count(),
+    };
+    corner.y
+        + menu_bar::HEIGHT
+        + 4.0
+        + 5.0
+        + row as f32 * 24.0
+        + separators(row) as f32 * 9.0
+        + 12.0
 }
 
 fn target(
@@ -419,10 +996,6 @@ fn a_fresh_manager_survives_its_first_load_with_the_script_open_and_selected() {
     assert_eq!(
         fresh.open.as_ref().map(|o| o.id.clone()),
         Some(script.id.clone())
-    );
-    assert_eq!(
-        fresh.selected_row.as_ref().map(|row| row.id.clone()),
-        Some(script.id)
     );
     assert!(fresh.error.is_none());
     // The editor took the caret request when it drew.
