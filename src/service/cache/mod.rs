@@ -1,4 +1,4 @@
-//! Candles held in memory by `(source, symbol, interval)`, in front of the slow providers.
+//! Candles held in memory by `(source, symbol, timeframe)`, in front of the slow providers.
 //!
 //! A refresh is not a download: a held series is brought up to date by asking for its last few
 //! candles only (`TAIL_LIMIT`), which turns Coinbase's weekly fold (a dozen paged requests) and
@@ -10,7 +10,7 @@ pub mod control;
 pub mod disk;
 pub mod lookup;
 
-use crate::model::{DataSource, Kline};
+use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::ProviderError;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -31,13 +31,16 @@ pub struct Policy {
     pub fresh: Duration,
 }
 
-/// The sources whose candles are worth holding, and for how long they are served as they are.
-/// Binance answers in one cheap request and has a live feed, and the line charts are small.
-pub fn policy(source: DataSource) -> Option<Policy> {
+/// The series worth holding, and for how long they are served as they are. Binance answers a
+/// length of its own in one cheap request and has a live feed; folded from a finer one, a series
+/// can take a dozen requests, so it is held and refreshed by its tail like the other folds. The
+/// line charts are small.
+pub fn policy(source: DataSource, timeframe: Timeframe) -> Option<Policy> {
     let fresh = match source {
         DataSource::CoinGecko => 120,
         DataSource::DexScreener => 30,
         DataSource::Coinbase | DataSource::Alpaca => 0,
+        DataSource::Binance if source.plan(timeframe).is_some_and(|plan| !plan.is_native()) => 0,
         _ => return None,
     };
     Some(Policy {
@@ -63,8 +66,8 @@ fn held() -> &'static Mutex<Held> {
     HELD.get_or_init(Mutex::default)
 }
 
-fn key(source: DataSource, symbol: &str, interval: &str) -> String {
-    format!("{source:?}:{}:{interval}", symbol.to_lowercase())
+fn key(source: DataSource, symbol: &str, timeframe: Timeframe) -> String {
+    format!("{source:?}:{}:{timeframe}", symbol.to_lowercase())
 }
 
 /// The newest `limit` candles of `candles`.
@@ -87,7 +90,7 @@ fn patched(candles: &[Kline], tail: &[Kline]) -> Option<Vec<Kline>> {
     Some(merged)
 }
 
-/// Candles for `source`/`symbol`/`interval` through `fetch`, which asks the provider for a `limit`.
+/// Candles for `source`/`symbol`/`timeframe` through `fetch`, which asks the provider for a `limit`.
 ///
 /// Fresh candles are served as they are; older ones are patched with `fetch(TAIL_LIMIT)`; anything
 /// else, or a tail that failed for any reason but a rate limit, is fetched whole. Calls for one
@@ -95,12 +98,12 @@ fn patched(candles: &[Kline], tail: &[Kline]) -> Option<Vec<Kline>> {
 pub fn fetch(
     source: DataSource,
     symbol: &str,
-    interval: &str,
+    timeframe: Timeframe,
     limit: u32,
     policy: Policy,
     fetch: impl Fn(u32) -> Result<Vec<Kline>, ProviderError>,
 ) -> Result<Vec<Kline>, ProviderError> {
-    let key = key(source, symbol, interval);
+    let key = key(source, symbol, timeframe);
     let flight = {
         let mut held = held()
             .lock()
@@ -258,18 +261,18 @@ mod tests {
             })
         };
         let source = DataSource::Coinbase;
-        let first = fetch(source, "patch-test", "1h", 10, LONG, provider).unwrap();
+        let first = fetch(source, "patch-test", Timeframe::HOUR_1, 10, LONG, provider).unwrap();
         assert_eq!(first.len(), 10);
         // Served from memory.
-        fetch(source, "patch-test", "1h", 10, LONG, provider).unwrap();
+        fetch(source, "patch-test", Timeframe::HOUR_1, 10, LONG, provider).unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         // No longer fresh: only the tail is asked for, and the series keeps its length.
-        let patched = fetch(source, "patch-test", "1h", 10, STALE, provider).unwrap();
+        let patched = fetch(source, "patch-test", Timeframe::HOUR_1, 10, STALE, provider).unwrap();
         assert_eq!(*asked.lock().unwrap(), [10, TAIL_LIMIT]);
         assert_eq!(patched.len(), 10);
         assert_eq!(patched.last().unwrap().open_time, 110);
         // More than was held needs a whole fetch.
-        fetch(source, "patch-test", "1h", 50, LONG, provider).unwrap();
+        fetch(source, "patch-test", Timeframe::HOUR_1, 50, LONG, provider).unwrap();
         assert_eq!(*asked.lock().unwrap(), [10, TAIL_LIMIT, 50]);
     }
 
@@ -284,8 +287,24 @@ mod tests {
                 series(0..10)
             })
         };
-        fetch(DataSource::Alpaca, "gap-test", "1d", 10, STALE, provider).unwrap();
-        fetch(DataSource::Alpaca, "gap-test", "1d", 10, STALE, provider).unwrap();
+        fetch(
+            DataSource::Alpaca,
+            "gap-test",
+            Timeframe::DAY_1,
+            10,
+            STALE,
+            provider,
+        )
+        .unwrap();
+        fetch(
+            DataSource::Alpaca,
+            "gap-test",
+            Timeframe::DAY_1,
+            10,
+            STALE,
+            provider,
+        )
+        .unwrap();
         assert_eq!(*asked.lock().unwrap(), [10, TAIL_LIMIT, 10]);
     }
 
@@ -303,7 +322,7 @@ mod tests {
         fetch(
             DataSource::Alpaca,
             "tail-error-test",
-            "1h",
+            Timeframe::HOUR_1,
             10,
             STALE,
             provider,
@@ -312,7 +331,7 @@ mod tests {
         let refreshed = fetch(
             DataSource::Alpaca,
             "tail-error-test",
-            "1h",
+            Timeframe::HOUR_1,
             10,
             STALE,
             provider,
@@ -335,7 +354,7 @@ mod tests {
         fetch(
             DataSource::Coinbase,
             "tail-limit-test",
-            "1h",
+            Timeframe::HOUR_1,
             10,
             STALE,
             provider,
@@ -344,7 +363,7 @@ mod tests {
         let refreshed = fetch(
             DataSource::Coinbase,
             "tail-limit-test",
-            "1h",
+            Timeframe::HOUR_1,
             10,
             STALE,
             provider,
@@ -356,9 +375,27 @@ mod tests {
     #[test]
     fn a_failed_refresh_is_an_error_not_a_stale_answer() {
         let ok = |_: u32| Ok(series(0..10));
-        fetch(DataSource::Coinbase, "error-test", "1h", 10, STALE, ok).unwrap();
+        fetch(
+            DataSource::Coinbase,
+            "error-test",
+            Timeframe::HOUR_1,
+            10,
+            STALE,
+            ok,
+        )
+        .unwrap();
         let broken = |_: u32| Err(ProviderError::from(http::Error::Network("down".to_owned())));
-        assert!(fetch(DataSource::Coinbase, "error-test", "1h", 10, STALE, broken).is_err());
+        assert!(
+            fetch(
+                DataSource::Coinbase,
+                "error-test",
+                Timeframe::HOUR_1,
+                10,
+                STALE,
+                broken
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -371,7 +408,7 @@ mod tests {
                     fetch(
                         DataSource::DexScreener,
                         "flight-test",
-                        "1h",
+                        Timeframe::HOUR_1,
                         10,
                         LONG,
                         |_| {
@@ -401,7 +438,7 @@ mod tests {
         fetch(
             DataSource::CoinGecko,
             "clear-test",
-            "1d",
+            Timeframe::DAY_1,
             10,
             LONG,
             provider,
@@ -412,7 +449,7 @@ mod tests {
         fetch(
             DataSource::CoinGecko,
             "clear-test",
-            "1d",
+            Timeframe::DAY_1,
             10,
             LONG,
             provider,
@@ -423,8 +460,36 @@ mod tests {
 
     #[test]
     fn only_the_slow_providers_are_cached() {
-        assert!(policy(DataSource::Binance).is_none());
-        assert!(policy(DataSource::Polymarket).is_none());
-        assert!(policy(DataSource::DexScreener).is_some());
+        assert!(policy(DataSource::Binance, Timeframe::HOUR_1).is_none());
+        assert!(policy(DataSource::Polymarket, Timeframe::HOUR_1).is_none());
+        assert!(policy(DataSource::DexScreener, Timeframe::HOUR_1).is_some());
+    }
+
+    #[test]
+    fn binance_is_cached_only_where_a_series_is_folded_from_finer_candles() {
+        for native in ["1m", "1h", "4h", "1d", "1w", "1M"] {
+            let timeframe = Timeframe::parse(native).unwrap();
+            assert!(policy(DataSource::Binance, timeframe).is_none(), "{native}");
+        }
+        for folded in ["22m", "3h", "3d", "2w", "3M", "1Y"] {
+            let timeframe = Timeframe::parse(folded).unwrap();
+            assert!(policy(DataSource::Binance, timeframe).is_some(), "{folded}");
+        }
+    }
+
+    #[test]
+    fn a_series_is_held_per_timeframe() {
+        let key_of = |timeframe| key(DataSource::Coinbase, "BTC-USD", timeframe);
+        assert_eq!(key_of(Timeframe::DAY_1), key_of(Timeframe::DAY_1));
+        assert_ne!(key_of(Timeframe::DAY_1), key_of(Timeframe::HOUR_1));
+        // Lengths of one duration are two series: a calendar day is not 24 hours.
+        assert_ne!(
+            key_of(Timeframe::DAY_1),
+            key_of(Timeframe::parse("24h").unwrap())
+        );
+        assert_ne!(
+            key_of(Timeframe::parse("22m").unwrap()),
+            key_of(Timeframe::parse("2m").unwrap())
+        );
     }
 }

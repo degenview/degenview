@@ -1,6 +1,7 @@
-//! Capsules: status badges, icon chips, counts and quick-value pills.
+//! Capsules: status badges, icon chips, counts and quick-value pills; and the rounded-rectangle
+//! chips of a grid of choices.
 
-use super::{MEDIUM, SEMIBOLD, Tone, digits, galley, primary, size};
+use super::{MEDIUM, REGULAR, SEMIBOLD, Tone, digits, galley, primary, size};
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
 use eframe::egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
@@ -159,5 +160,67 @@ pub fn value_chip(ui: &mut Ui, label: &str, selected: bool) -> egui::Response {
     ui.painter().rect_filled(rect, size.y / 2.0, fill);
     ui.painter()
         .galley(rect.center() - text.size() / 2.0, text, color);
+    response
+}
+
+const TILE_RADIUS: f32 = 6.0;
+
+/// How wide `label` is inside a [`tile_chip`], at its widest weight; a grid sizes its chips from
+/// the widest of its labels.
+pub fn tile_chip_text_width(ui: &Ui, label: &str) -> f32 {
+    galley(
+        ui,
+        label,
+        size::BODY,
+        SEMIBOLD,
+        Color32::PLACEHOLDER,
+        f32::INFINITY,
+    )
+    .size()
+    .x
+}
+
+/// One choice of a grid: a rounded rectangle of exactly `extent` with a hairline border, the label
+/// centred. `selected` is the choice made (lit, semibold); `highlighted` is the keyboard's place,
+/// drawn like a hover.
+pub fn tile_chip(
+    ui: &mut Ui,
+    extent: Vec2,
+    label: &str,
+    selected: bool,
+    highlighted: bool,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(extent, Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label)
+    });
+    let lit = response.hovered() || highlighted;
+    let fill = if selected {
+        theme::selected_tint(lit)
+    } else {
+        theme::card_fill(lit)
+    };
+    let painter = ui.painter();
+    painter.rect_filled(rect, TILE_RADIUS, fill);
+    painter.rect_stroke(
+        rect,
+        TILE_RADIUS,
+        Stroke::new(1.0, theme::card_border(lit)),
+        StrokeKind::Inside,
+    );
+    let text = galley(
+        ui,
+        label,
+        size::BODY,
+        if selected { SEMIBOLD } else { REGULAR },
+        theme::text_primary(),
+        f32::INFINITY,
+    );
+    ui.painter().galley(
+        rect.center() - text.size() / 2.0,
+        text,
+        theme::text_primary(),
+    );
     response
 }

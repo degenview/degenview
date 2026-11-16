@@ -101,7 +101,7 @@ pub struct WorkspaceInfo {
     pub chart_count: usize,
     /// Whether this is the workspace whose window last had focus.
     pub active: bool,
-    /// The timeframe every chart in the workspace uses (`1H`, `1D`, `1W`, `1M`, `3M`, `1Y`).
+    /// The timeframe every chart in the workspace uses (`1h`, `22m`, `1D`, `2W`, `3M`, `1Y`, ...).
     pub timeframe: String,
 }
 

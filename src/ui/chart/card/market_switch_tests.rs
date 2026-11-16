@@ -31,7 +31,7 @@ fn aapl(count: usize) -> Vec<Kline> {
 
 fn harness(source: DataSource, candles: Vec<Kline>) -> Harness {
     let mut harness = Harness::new(ChartCanvas::default());
-    harness.card.set_timeframe(Timeframe::Day);
+    harness.card.set_timeframe(Timeframe::DAY_1);
     harness.source = source;
     harness.candles = candles;
     harness

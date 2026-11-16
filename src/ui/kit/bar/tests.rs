@@ -56,7 +56,7 @@ fn screen(width: f32) -> egui::RawInput {
     }
 }
 
-fn geometry_at(width: f32) -> (bool, Vec<Placed<Act>>) {
+fn geometry_at(width: f32) -> (bool, Vec<Placed<Act, Key>>) {
     let ctx = egui::Context::default();
     let mut out = None;
     let mut frame = ctx.run_ui(screen(width), |ui| {

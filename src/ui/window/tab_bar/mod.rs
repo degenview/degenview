@@ -72,7 +72,7 @@ pub struct TabView {
     /// (the portfolio, Pine Studio, a blank tab) shows its glyph and `title`.
     pub chart: Option<TabChart>,
     /// The timeframe shown in the hover text.
-    pub timeframe: &'static str,
+    pub timeframe: String,
     /// The Tab Linking colour the tab is tagged with, shown as a dot on its logo.
     pub link: Option<crate::model::tab::link::LinkColor>,
     /// A chart tab can be linked (the portfolio and Pine Studio cannot): its menu has the section.
@@ -545,7 +545,7 @@ impl TabBar<'_> {
                 let quote = self
                     .quotes
                     .get(&InstrumentId::new(chart.source, &chart.symbol));
-                ui.label(tab::title::tooltip(chart, quote.as_ref(), tab.timeframe));
+                ui.label(tab::title::tooltip(chart, quote.as_ref(), &tab.timeframe));
                 if let Some(link) = tab.link {
                     // Said in words too: a dot's colour alone is not enough.
                     ui.label(format!(

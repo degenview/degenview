@@ -227,7 +227,7 @@ impl ChartWorkspace {
         if let Some(card) = item.card {
             let mut workspace = Self::empty(
                 id,
-                Timeframe::Day,
+                Timeframe::DAY_1,
                 watchlist,
                 quote_book,
                 quote_coordinator,
@@ -241,7 +241,7 @@ impl ChartWorkspace {
             id,
             &item.instrument.symbol,
             item.instrument.source,
-            Timeframe::Day,
+            Timeframe::DAY_1,
             watchlist,
             quote_book,
             quote_coordinator,
@@ -565,10 +565,7 @@ impl ChartWorkspace {
             chart.receive_fetch();
             chart.receive_older(timeframe);
             chart.request_older(timeframe, &ctx);
-            if chart.is_market()
-                && chart.inbox.is_none()
-                && chart.last_fetch.elapsed() >= chart.refresh_after()
-            {
+            if chart.refresh_due() {
                 chart.fetch(timeframe, &ctx);
             }
         }
@@ -811,7 +808,7 @@ mod tests {
     fn persisted_workspace_round_trips() {
         let saved = PersistedWorkspace {
             id: 7,
-            timeframe: Timeframe::Hour,
+            timeframe: Timeframe::HOUR_1,
             watchlist_visible: false,
             charts: vec![
                 PersistedChart {

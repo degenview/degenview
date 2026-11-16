@@ -41,12 +41,12 @@ impl PreviewState {
                         .collect::<Vec<_>>(),
                     store
                         .setting::<Timeframe>(TIMEFRAME_KEY)
-                        .unwrap_or(Timeframe::Day),
+                        .unwrap_or(Timeframe::DAY_1),
                     store.setting::<usize>(CANDLE_KEY),
                     store.setting::<f64>(YZOOM_KEY),
                 )
             })
-            .unwrap_or_else(|_| (Vec::new(), Timeframe::Day, None, None));
+            .unwrap_or_else(|_| (Vec::new(), Timeframe::DAY_1, None, None));
         let mut card = ChartCard::default();
         // A script preview has no price-scale menu: its scale is always plain.
         card.set_scale_menu(false);

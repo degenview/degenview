@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn layout_snapshot_round_trips() {
         let snapshot = LayoutSnapshot {
-            timeframe: Timeframe::Hour,
+            timeframe: Timeframe::HOUR_1,
             configs: vec![
                 ChartConfig {
                     id: 1,
@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn a_chart_type_change_is_a_layout_change_and_a_restyle_is_too() {
         let base = LayoutSnapshot {
-            timeframe: Timeframe::Hour,
+            timeframe: Timeframe::HOUR_1,
             configs: vec![ChartConfig {
                 id: 1,
                 symbol: "BTCUSDT".into(),

@@ -7,10 +7,10 @@
 //! frame; a result never arrives over a channel the card has to drain.
 
 use crate::lock::lock;
-use crate::model::Kline;
 use crate::model::portfolio::PortfolioAsset;
 use crate::model::portfolio::card::AssetMove;
 use crate::model::portfolio::history::DAY_MS;
+use crate::model::{Kline, Timeframe};
 use crate::service::portfolio::history::{daily_bars, fetch_all, market_symbol};
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
@@ -170,9 +170,13 @@ fn key_for(request: &MoveRequest, now_ms: i64) -> Key {
 fn candle_move(asset: &PortfolioAsset, since_ms: i64, now_ms: i64) -> Option<AssetMove> {
     let bars = if now_ms - since_ms <= HOURLY_SPAN_MS {
         let hours = ((now_ms - since_ms).max(0) / HOUR_MS) as u32 + 4;
-        let mut bars =
-            crate::service::fetch_klines(asset.source, &market_symbol(asset), "1h", hours)
-                .unwrap_or_default();
+        let mut bars = crate::service::fetch_klines(
+            asset.source,
+            &market_symbol(asset),
+            Timeframe::HOUR_1,
+            hours,
+        )
+        .unwrap_or_default();
         bars.sort_by_key(|bar| bar.open_time);
         bars
     } else {

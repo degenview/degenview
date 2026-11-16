@@ -1,7 +1,9 @@
+use super::candles::plan;
 use super::catalog::Catalog;
 use super::search_rank::normalize;
-use crate::model::Kline;
-use crate::service::{MarketSource, ProviderError, SearchResult, fold_calendar, rank_results};
+use crate::model::market::bucket::FoldPlan;
+use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -26,78 +28,16 @@ pub(crate) fn product_id(symbol: &str) -> String {
     }
 }
 
-struct Granularity {
-    source_secs: i64,
-    target_secs: i64,
-    per_target: usize,
-}
+/// The most candles a request can page back to: `MAX_PAGES` pages of `PAGE_BUCKETS`.
+const MAX_CANDLES: usize = PAGE_BUCKETS as usize * MAX_PAGES;
 
-impl Granularity {
-    fn for_interval(interval: &str) -> Option<Granularity> {
-        match interval {
-            // Coinbase serves 1, 5 and 15 minutes, 1, 6 hours and 1 day; 30m and 4h are folded.
-            // The chart offers 1H and up; the shorter ones are what Pine's `request.security` asks for.
-            "1m" => Some(Granularity {
-                source_secs: 60,
-                target_secs: 60,
-                per_target: 1,
-            }),
-            "5m" => Some(Granularity {
-                source_secs: 300,
-                target_secs: 300,
-                per_target: 1,
-            }),
-            "15m" => Some(Granularity {
-                source_secs: 900,
-                target_secs: 900,
-                per_target: 1,
-            }),
-            "30m" => Some(Granularity {
-                source_secs: 900,
-                target_secs: 1_800,
-                per_target: 2,
-            }),
-            "1h" => Some(Granularity {
-                source_secs: 3_600,
-                target_secs: 3_600,
-                per_target: 1,
-            }),
-            "4h" => Some(Granularity {
-                source_secs: 3_600,
-                target_secs: 14_400,
-                per_target: 4,
-            }),
-            "1d" => Some(Granularity {
-                source_secs: 86_400,
-                target_secs: 86_400,
-                per_target: 1,
-            }),
-            "1w" => Some(Granularity {
-                source_secs: 86_400,
-                target_secs: 604_800,
-                per_target: 7,
-            }),
-            "1M" => Some(Granularity {
-                source_secs: 86_400,
-                target_secs: 2_592_000,
-                per_target: 31,
-            }),
-            "3M" => Some(Granularity {
-                source_secs: 86_400,
-                target_secs: 7_776_000,
-                per_target: 92,
-            }),
-            "1Y" => Some(Granularity {
-                source_secs: 86_400,
-                target_secs: 31_536_000,
-                per_target: 366,
-            }),
-            _ => None,
-        }
-    }
-
-    fn needs_aggregation(&self) -> bool {
-        self.source_secs != self.target_secs
+impl Coinbase {
+    /// The candles to ask for to end with `limit` of `plan`'s target, and how many seconds each
+    /// lasts. A request is capped at what the paging can reach: a longer one gives fewer candles
+    /// (a 5-minute chart of a year reaches back about two months), never other ones.
+    fn request(plan: FoldPlan, limit: usize) -> (i64, usize) {
+        let seconds = plan.base().nominal_ms() / 1_000;
+        (seconds, plan.base_count(limit).min(MAX_CANDLES))
     }
 }
 
@@ -105,65 +45,28 @@ impl MarketSource for Coinbase {
     fn fetch_klines(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = Granularity::for_interval(interval).ok_or_else(|| {
-            ProviderError::Other(format!(
-                "Coinbase has no {} candles",
-                crate::model::Timeframe::ALL
-                    .iter()
-                    .find(|tf| tf.interval() == interval)
-                    .map_or(interval.to_owned(), |tf| tf.label().to_owned())
-            ))
-        })?;
-        let id = product_id(symbol);
-        let needed = limit as usize * plan.per_target
-            + if plan.needs_aggregation() {
-                plan.per_target
-            } else {
-                0
-            };
-        let source = self.source_candles(&id, plan.source_secs, needed)?;
-        let shown = if plan.needs_aggregation() {
-            fold_calendar(&source, plan.target_secs, source.len() >= needed)
-        } else {
-            source
-        };
-        let start = shown.len().saturating_sub(limit as usize);
-        Ok(shown[start..].to_vec())
+        let plan = plan(DataSource::Coinbase, timeframe)?;
+        let (seconds, needed) = Self::request(plan, limit as usize);
+        let source = self.source_candles(&product_id(symbol), seconds, needed)?;
+        Ok(plan.shape(source, needed, limit as usize))
     }
 
     fn fetch_klines_range(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         start_ms: i64,
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = Granularity::for_interval(interval)
-            .ok_or_else(|| ProviderError::other(format!("Coinbase has no {interval} candles")))?;
-        let needed = max * plan.per_target
-            + if plan.needs_aggregation() {
-                plan.per_target
-            } else {
-                0
-            };
-        let source = self.source_candles_before(
-            &product_id(symbol),
-            plan.source_secs,
-            start_ms,
-            end_ms,
-            needed,
-        )?;
-        let shown = if plan.needs_aggregation() {
-            fold_calendar(&source, plan.target_secs, source.len() >= needed)
-        } else {
-            source
-        };
-        let start = shown.len().saturating_sub(max);
-        Ok(shown[start..].to_vec())
+        let plan = plan(DataSource::Coinbase, timeframe)?;
+        let (seconds, needed) = Self::request(plan, max);
+        let source =
+            self.source_candles_before(&product_id(symbol), seconds, start_ms, end_ms, needed)?;
+        Ok(plan.shape(source, needed, max))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -387,6 +290,7 @@ mod tests {
     }
 
     use super::*;
+    use crate::model::market::bucket;
 
     #[test]
     fn a_product_is_found_however_it_is_separated() {
@@ -417,35 +321,42 @@ mod tests {
         assert_eq!(product_id("BTC-USD"), "BTC-USD");
     }
 
+    fn request(timeframe: &str, limit: usize) -> (i64, usize) {
+        let plan = plan(DataSource::Coinbase, Timeframe::parse(timeframe).unwrap()).unwrap();
+        Coinbase::request(plan, limit)
+    }
+
     #[test]
-    fn minute_intervals_are_native_and_30m_and_4h_are_folded() {
-        // A script on a one-hour chart asks for 5m intrabars and a 4h series; neither used to exist.
-        for (interval, seconds) in [("1m", 60), ("5m", 300), ("15m", 900)] {
-            let plan = Granularity::for_interval(interval).expect(interval);
-            assert_eq!((plan.source_secs, plan.target_secs), (seconds, seconds));
-            assert!(!plan.needs_aggregation());
+    fn coinbases_granularities_are_asked_for_as_they_are() {
+        for (token, seconds) in [
+            ("1m", 60),
+            ("5m", 300),
+            ("15m", 900),
+            ("1h", 3_600),
+            ("6h", 21_600),
+            ("1d", 86_400),
+        ] {
+            assert_eq!(request(token, 300), (seconds, 300), "{token}");
         }
-        let half_hour = Granularity::for_interval("30m").expect("30m");
-        assert_eq!(
-            (
-                half_hour.source_secs,
-                half_hour.target_secs,
-                half_hour.per_target
-            ),
-            (900, 1_800, 2)
-        );
-        let four_hours = Granularity::for_interval("4h").expect("4h");
-        assert_eq!(
-            (
-                four_hours.source_secs,
-                four_hours.target_secs,
-                four_hours.per_target
-            ),
-            (3_600, 14_400, 4)
-        );
-        // Intervals Coinbase and the fold cannot make stay refused rather than approximated.
-        assert!(Granularity::for_interval("2h").is_none());
-        assert!(Granularity::for_interval("3m").is_none());
+    }
+
+    #[test]
+    fn other_lengths_fold_the_coarsest_granularity_that_nests() {
+        // One extra candle's worth is asked for, the fragment the request's start cuts.
+        assert_eq!(request("30m", 100), (900, 101 * 2));
+        assert_eq!(request("4h", 100), (3_600, 101 * 4));
+        assert_eq!(request("2h", 100), (3_600, 101 * 2));
+        assert_eq!(request("12h", 100), (21_600, 101 * 2));
+        assert_eq!(request("22m", 100), (60, 101 * 22));
+        assert_eq!(request("1w", 100), (86_400, 101 * 7));
+        assert_eq!(request("2d", 100), (86_400, 101 * 2));
+        assert_eq!(request("3M", 100), (86_400, 101 * 93));
+    }
+
+    #[test]
+    fn a_request_is_capped_at_what_the_paging_reaches() {
+        assert_eq!(request("5m", 500).1, 500);
+        assert_eq!(request("22m", 1_000), (60, MAX_CANDLES));
     }
 
     fn candle(open_time: i64, length_ms: i64, price: f64) -> Kline {
@@ -468,7 +379,7 @@ mod tests {
         let hourly: Vec<Kline> = (1..=8)
             .map(|index| candle(midnight + index * hour, hour, 100.0 + index as f64))
             .collect();
-        let folded = fold_calendar(&hourly, 14_400, false);
+        let folded = bucket::fold(&hourly, Timeframe::HOUR_4, false);
         let opens: Vec<i64> = folded.iter().map(|bar| bar.open_time).collect();
         assert_eq!(opens, [midnight, midnight + 4 * hour, midnight + 8 * hour]);
         // The whole 04:00 bar: open of 04:00, close of 07:00, extremes and volume over the four.
@@ -477,7 +388,7 @@ mod tests {
         assert_eq!((whole.low, whole.high), (103.0, 108.0));
         assert_eq!(whole.volume, 4.0);
         // A page cut by the request drops the bucket it only half has.
-        let cut = fold_calendar(&hourly, 14_400, true);
+        let cut = bucket::fold(&hourly, Timeframe::HOUR_4, true);
         assert_eq!(
             cut.first().map(|bar| bar.open_time),
             Some(midnight + 4 * hour)
@@ -491,7 +402,7 @@ mod tests {
         let candles: Vec<Kline> = (0..4)
             .map(|index| candle(midnight + index * quarter, quarter, 10.0 + index as f64))
             .collect();
-        let folded = fold_calendar(&candles, 1_800, false);
+        let folded = bucket::fold(&candles, Timeframe::MINUTE_30, false);
         assert_eq!(folded.len(), 2);
         assert_eq!(folded[1].open_time, midnight + 2 * quarter);
         assert_eq!((folded[1].open, folded[1].close), (12.0, 13.5));
@@ -523,7 +434,7 @@ mod tests {
                 volume: 2.0,
             },
         ];
-        let weekly = fold_calendar(&daily, 604_800, false);
+        let weekly = bucket::fold(&daily, Timeframe::WEEK_1, false);
         assert_eq!(weekly.len(), 1);
         assert_eq!(weekly[0].open_time, monday);
         assert_eq!(weekly[0].high, 12.0);

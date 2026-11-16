@@ -288,7 +288,7 @@ impl ChartCard {
             let mut layer = DrawingLayer::default();
             layer.set_open_notes(input.open_notes);
             let mut drawing = DrawingFrame::new(input.drawings, Tool::Cursor, None, 1).with_view(
-                self.timeframe.unwrap_or(Timeframe::Day),
+                self.timeframe.unwrap_or(Timeframe::DAY_1),
                 input.hide_all_drawings,
             );
             let mut overlays = SnapshotOverlays {

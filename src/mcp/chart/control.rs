@@ -20,34 +20,17 @@ pub const SET_TIMEFRAME: &str = "degenview_set_timeframe";
 pub const SET_CHART_TYPE: &str = "degenview_set_chart_type";
 pub const REMOVE_CHART: &str = "degenview_remove_chart";
 
-/// The timeframes a workspace offers, as its toolbar labels them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
-pub enum McpTimeframe {
-    #[serde(rename = "1H")]
-    Hour,
-    #[serde(rename = "1D")]
-    Day,
-    #[serde(rename = "1W")]
-    Week,
-    #[serde(rename = "1M")]
-    Month,
-    #[serde(rename = "3M")]
-    Quarter,
-    #[serde(rename = "1Y")]
-    Year,
-}
+/// How a timeframe is written in a tool's arguments, for the descriptions and the schema.
+pub const TIMEFRAME_GRAMMAR: &str = "a count and a unit: m minutes, h hours, D days, W weeks, M months, or 1Y; e.g. 15m, 4h, 1D, 2W, 3M. Seconds are not offered";
 
-impl McpTimeframe {
-    pub fn timeframe(self) -> Timeframe {
-        match self {
-            Self::Hour => Timeframe::Hour,
-            Self::Day => Timeframe::Day,
-            Self::Week => Timeframe::Week,
-            Self::Month => Timeframe::Month,
-            Self::Quarter => Timeframe::Quarter,
-            Self::Year => Timeframe::Year,
-        }
-    }
+/// The timeframe a tool argument names (`15m`, `4h`, `1D`, `1H`, `3M`, `1Y`, ...), or the tool
+/// error that says what is accepted.
+pub fn parse_timeframe(text: &str) -> Result<Timeframe, CallToolResult> {
+    Timeframe::parse(text).map_err(|error| {
+        invalid(format!(
+            "{text:?} is not a timeframe: {error}. A timeframe is {TIMEFRAME_GRAMMAR}"
+        ))
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
@@ -80,7 +63,10 @@ pub struct SetTimeframeParams {
     /// A `workspace_id` from `degenview_list_workspaces`. Every chart in it changes.
     #[schemars(length(max = 20))]
     pub workspace_id: String,
-    pub timeframe: McpTimeframe,
+    /// The bar length: a count and a unit (m minutes, h hours, D days, W weeks, M months, or 1Y),
+    /// for example 15m, 4h, 1D, 2W, 3M.
+    #[schemars(length(min = 1, max = 16))]
+    pub timeframe: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -120,7 +106,7 @@ pub fn chart_type_named(slug: &str) -> Option<ChartType> {
 impl DegenViewMcp {
     #[tool(
         name = "degenview_set_timeframe",
-        description = "Move a workspace to another timeframe (1H, 1D, 1W, 1M, 3M, 1Y). The timeframe belongs to the workspace, so every chart in it reloads its candles for the new bar length and goes back to the newest bars; replay re-bases. Candles and indicators read right after may still be loading: check the charts' `status` in degenview_list_charts. Answers `unchanged` when the workspace already uses it.",
+        description = "Move a workspace to another timeframe (a count and unit: m minutes, h hours, D days, W weeks, M months, or 1Y; e.g. 15m, 4h, 1D, 2W, 3M). A source that has no such candle builds it from finer ones, or refuses the chart with its reason. The timeframe belongs to the workspace, so every chart in it reloads its candles for the new bar length and goes back to the newest bars; replay re-bases. Candles and indicators read right after may still be loading: check the charts' `status` in degenview_list_charts. Answers `unchanged` when the workspace already uses it.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -134,6 +120,7 @@ impl DegenViewMcp {
         Parameters(params): Parameters<SetTimeframeParams>,
     ) -> Result<Json<TimeframeResult>, CallToolResult> {
         let workspace_id = parse_workspace_id(&params.workspace_id)?;
+        let timeframe = parse_timeframe(&params.timeframe)?;
         match self
             .bridge
             .call(
@@ -141,7 +128,7 @@ impl DegenViewMcp {
                 Permission::ChartsViewWrite,
                 ChartCommand::SetTimeframe {
                     workspace_id,
-                    timeframe: params.timeframe.timeframe(),
+                    timeframe,
                 },
                 REQUEST_TIMEOUT,
             )
@@ -249,20 +236,42 @@ mod tests {
         assert_eq!(chart_type_named(""), None);
     }
 
+    fn message(text: &str) -> String {
+        let result = parse_timeframe(text).expect_err("not a timeframe");
+        format!("{:?}", result.content)
+    }
+
     #[test]
-    fn timeframes_map_to_the_toolbar_ones() {
-        let all = [
-            McpTimeframe::Hour,
-            McpTimeframe::Day,
-            McpTimeframe::Week,
-            McpTimeframe::Month,
-            McpTimeframe::Quarter,
-            McpTimeframe::Year,
-        ];
-        let labels: Vec<_> = all.iter().map(|t| t.timeframe().label()).collect();
-        assert_eq!(labels, ["1H", "1D", "1W", "1M", "3M", "1Y"]);
-        let parsed: McpTimeframe = serde_json::from_str("\"3M\"").unwrap();
-        assert_eq!(parsed, McpTimeframe::Quarter);
-        assert!(serde_json::from_str::<McpTimeframe>("\"4h\"").is_err());
+    fn timeframes_are_read_as_a_count_and_a_unit() {
+        for (text, expected) in [
+            ("1H", Timeframe::HOUR_1),
+            ("1h", Timeframe::HOUR_1),
+            ("1D", Timeframe::DAY_1),
+            ("1W", Timeframe::WEEK_1),
+            ("1M", Timeframe::MONTH_1),
+            ("3M", Timeframe::MONTH_3),
+            ("1Y", Timeframe::YEAR_1),
+            ("15m", Timeframe::MINUTE_15),
+            ("4h", Timeframe::HOUR_4),
+        ] {
+            assert_eq!(parse_timeframe(text).ok(), Some(expected), "{text}");
+        }
+        assert_eq!(
+            parse_timeframe("22m").ok().map(|t| t.label()),
+            Some("22m".to_owned())
+        );
+        assert_eq!(
+            parse_timeframe("2D").ok().map(|t| t.label()),
+            Some("2D".to_owned())
+        );
+    }
+
+    #[test]
+    fn what_is_no_timeframe_is_refused_with_the_reason_and_the_grammar() {
+        assert!(message("30s").contains("Seconds aren't supported"));
+        assert!(message("0m").contains("can't be zero"));
+        assert!(message("2000m").contains("Minutes go from 1 to 1440"));
+        assert!(message("soon").contains("a count and a unit"));
+        assert!(message("").contains("m minutes, h hours"));
     }
 }

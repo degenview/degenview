@@ -27,7 +27,7 @@ pub(super) fn empty_workspace(id: u64) -> ChartWorkspace {
     let book = WatchlistQuoteBook::default();
     ChartWorkspace::empty(
         id,
-        Timeframe::Day,
+        Timeframe::DAY_1,
         Arc::new(Mutex::new(WatchlistStore::new(store.clone()))),
         book.clone(),
         WatchlistQuoteCoordinator::new(book, Arc::new(|| {})),

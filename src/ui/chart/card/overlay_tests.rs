@@ -224,7 +224,7 @@ fn the_overlay_of_the_charts_own_market_is_kept_but_not_drawn() {
     let mut chart = harness(&[("ETHUSDT", market(300, |n| 10.0 + n as f64))]);
     let list = chart.card.overlay_list().clone();
     let mut blocked = feed(market(300, |n| 10.0 + n as f64));
-    blocked.status = OverlayStatus::Blocked("Same market as the chart");
+    blocked.status = OverlayStatus::Blocked("Same market as the chart".into());
     chart
         .card
         .set_overlays(list, vec![blocked], 2, DataSource::Binance, "ETHUSDT");

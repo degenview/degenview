@@ -160,7 +160,7 @@ impl ChartWorkspace {
                 id: view.id,
                 name: view.name.clone(),
                 chart_count: view.charts.len(),
-                timeframe: view.timeframe.label(),
+                timeframe: view.timeframe,
                 previews: view
                     .charts
                     .iter()

@@ -242,6 +242,10 @@ pub(super) fn menu_item_marked_response(
     (response.clicked(), response)
 }
 
+/// How far in from a menu's edge a heading's text starts; what sits under a heading lines up
+/// with it.
+pub const HEADING_INSET: f32 = 14.0;
+
 /// A small label over a group of menu rows ("My templates"): not a row, never focused or clicked.
 pub fn menu_heading(ui: &mut Ui, text: &str) {
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
@@ -252,11 +256,11 @@ pub fn menu_heading(ui: &mut Ui, text: &str) {
         size::CAPTION,
         SEMIBOLD,
         color,
-        rect.width() - 28.0,
+        rect.width() - 2.0 * HEADING_INSET,
     );
     ui.painter().galley(
         pos2(
-            rect.left() + 14.0,
+            rect.left() + HEADING_INSET,
             rect.center().y - label.size().y / 2.0 + 2.0,
         ),
         label,

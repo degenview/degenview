@@ -3,8 +3,8 @@
 //! response shapes are covered without a network.
 
 use super::engine::Outcome;
-use crate::model::DataSource;
 use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
+use crate::model::{DataSource, Timeframe};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -300,26 +300,30 @@ fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
     let mut outcome = Outcome::default();
     let mut streak = 0;
     for (index, request) in requests.iter().enumerate() {
-        let series =
-            match crate::service::fetch_klines(source, &request.symbol, "1h", PREDICTION_POINTS) {
-                Ok(series) => {
-                    streak = 0;
-                    series
+        let series = match crate::service::fetch_klines(
+            source,
+            &request.symbol,
+            Timeframe::HOUR_1,
+            PREDICTION_POINTS,
+        ) {
+            Ok(series) => {
+                streak = 0;
+                series
+            }
+            Err(error) => {
+                streak += 1;
+                let stop = streak >= CONSECUTIVE_FAILURES;
+                let upto = if stop { requests.len() } else { index + 1 };
+                outcome.failed.push((
+                    symbols_of(&requests[index..upto]),
+                    QuoteFailure::Failed(error.to_string()),
+                ));
+                if stop {
+                    break;
                 }
-                Err(error) => {
-                    streak += 1;
-                    let stop = streak >= CONSECUTIVE_FAILURES;
-                    let upto = if stop { requests.len() } else { index + 1 };
-                    outcome.failed.push((
-                        symbols_of(&requests[index..upto]),
-                        QuoteFailure::Failed(error.to_string()),
-                    ));
-                    if stop {
-                        break;
-                    }
-                    continue;
-                }
-            };
+                continue;
+            }
+        };
         if let (Some(before), Some(last)) = (day_before(&series), series.last()) {
             outcome.quotes.insert(
                 request.symbol.clone(),

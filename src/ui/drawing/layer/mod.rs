@@ -155,7 +155,7 @@ impl<'a> DrawingFrame<'a> {
             tool,
             selected: selected.into_iter().collect(),
             next_id,
-            timeframe: Timeframe::Day,
+            timeframe: Timeframe::DAY_1,
             magnet: MagnetMode::Off,
             hide_all: false,
             keep_drawing: true,

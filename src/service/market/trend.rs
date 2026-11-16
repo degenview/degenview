@@ -118,7 +118,7 @@ impl TrendLoader {
         service::fetch_klines(
             instrument.source,
             &instrument.api_symbol(),
-            Timeframe::Day.interval(),
+            Timeframe::DAY_1,
             self.days + 1,
         )
         .map(|candles| trend::closes_within(&candles, self.days))

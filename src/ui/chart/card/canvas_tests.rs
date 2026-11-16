@@ -96,7 +96,7 @@ impl Harness {
     pub(super) fn new(canvas: ChartCanvas) -> Self {
         let mut card = ChartCard::default();
         card.appearance_mut().canvas = canvas;
-        card.set_timeframe(Timeframe::Hour);
+        card.set_timeframe(Timeframe::HOUR_1);
         Self {
             ctx: egui::Context::default(),
             card,
@@ -135,7 +135,7 @@ impl Harness {
         let (indicators, drawings) = (&self.indicators, &self.drawings);
         let mut output = self.ctx.run_ui(input, |ui| {
             let mut drawing = DrawingFrame::new(drawings, crate::model::Tool::Cursor, None, 1)
-                .with_view(Timeframe::Hour, false);
+                .with_view(Timeframe::HOUR_1, false);
             let mut replay = ReplayChartFrame {
                 selecting: false,
                 active: replay_active,
@@ -853,7 +853,7 @@ fn the_watermark_names_the_market_timeframe_and_source_and_sits_behind_the_candl
         drawn
             .texts
             .iter()
-            .any(|(_, text, _)| text.contains("1H") && text.contains("Binance")),
+            .any(|(_, text, _)| text.contains("1h") && text.contains("Binance")),
         "{:?}",
         drawn
             .texts

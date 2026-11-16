@@ -174,11 +174,12 @@ fn inputs_path() -> Option<std::path::PathBuf> {
 }
 
 /// What the toolbar shows of the preview chart: its market, the last price with the change over
-/// what is visible, and the timeframe.
+/// what is visible, the timeframe, and where the candles come from.
 pub(super) struct Summary {
     pub title: String,
     pub price: Option<String>,
     pub timeframe: Timeframe,
+    pub source: DataSource,
 }
 
 impl PreviewState {
@@ -194,6 +195,7 @@ impl PreviewState {
                 .price_line()
                 .map(|(price, change)| format!("{price}  {}", signed_percent(change))),
             timeframe: self.timeframe,
+            source: self.market.source,
         }
     }
 }

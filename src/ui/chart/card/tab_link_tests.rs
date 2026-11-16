@@ -71,7 +71,7 @@ impl Tabs {
         let [first, second] = bars;
         let tab = |candles, left, width| {
             let mut card = ChartCard::default();
-            card.set_timeframe(Timeframe::Hour);
+            card.set_timeframe(Timeframe::HOUR_1);
             Tab {
                 card,
                 candles,
@@ -173,7 +173,7 @@ impl Tabs {
                 tab: index as u64 + 1,
                 color: Some(LinkColor::Orange),
                 market: None,
-                timeframe: Timeframe::Hour,
+                timeframe: Timeframe::HOUR_1,
             })
             .collect();
         let mut signals = Vec::new();

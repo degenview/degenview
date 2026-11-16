@@ -20,9 +20,6 @@ use crate::pine::logs::LogRequest;
 use crate::pine::syntax::ast::{Argument, Expression, Statement};
 use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, SourceRange};
 use crate::pine::time;
-use crate::pine::time::calendar;
-
-const MILLIS_PER_DAY: i64 = 86_400_000;
 
 /// How many `request.*` expressions may contain one another.
 const SECURITY_NESTING_LIMIT: usize = 3;
@@ -469,7 +466,7 @@ impl Session {
             return Ok(());
         };
         for candle in candles.iter() {
-            if bucket_end(candle.open_time, request.interval) > before {
+            if time::bucket::end(candle.open_time, request.interval) > before {
                 break;
             }
             site.last_result = self.evaluate_higher_timeframe(site, candle, request, true)?;
@@ -496,7 +493,7 @@ impl Session {
         if !state.is_warmed_up {
             self.warm_up(&mut state, request, bar.open_time)?;
         }
-        let start = bucket_start(bar.open_time, request.interval);
+        let start = time::bucket::start(bar.open_time, request.interval);
         let mut fresh = false;
         if state.bucket != Some(start) {
             // The chart skipped the bucket's last bar, so complete it now.
@@ -517,7 +514,7 @@ impl Session {
         }
         developing.push(bar.clone());
         let developing = fold_one(&developing, request.interval);
-        let end = bucket_end(start, request.interval);
+        let end = time::bucket::end(start, request.interval);
         let closes_bucket = bar.open_time + (self.bar_seconds * 1000.0).round() as i64 >= end;
         let confirmed = context.flags.is_confirmed;
 
@@ -571,7 +568,7 @@ impl Session {
             let chart_close = bar.open_time + (self.bar_seconds * 1000.0).round() as i64;
             while state.completed_candles < candles.len() {
                 let candle = &candles[state.completed_candles];
-                if bucket_end(candle.open_time, request.interval) > chart_close {
+                if time::bucket::end(candle.open_time, request.interval) > chart_close {
                     break;
                 }
                 state.last_result =
@@ -811,51 +808,17 @@ fn unserved_symbol_message(name: &str) -> String {
     }
 }
 
-/// The start of the calendar bucket that contains `open_time`, for a bar length in seconds.
-pub(in crate::pine) fn bucket_start(open_time: i64, interval_seconds: f64) -> i64 {
-    if interval_seconds < 604_800.0 {
-        let ms = (interval_seconds * 1000.0).round() as i64;
-        return open_time.div_euclid(ms) * ms;
-    }
-    let components = calendar::components(open_time);
-    if interval_seconds < 2_419_200.0 {
-        // A week: Monday 00:00 UTC (Pine's `dayofweek` is Sunday = 1 … Saturday = 7).
-        let days = open_time.div_euclid(MILLIS_PER_DAY);
-        let days_back = (components.weekday - 2).rem_euclid(7);
-        (days - days_back) * MILLIS_PER_DAY
-    } else {
-        // A month (and coarser): the first of the month 00:00 UTC.
-        calendar::make(components.year, components.month, 1, 0, 0, 0, 0).unwrap_or(open_time)
-    }
-}
-
-/// End of the bucket that opens at `start`.
-pub(in crate::pine) fn bucket_end(start: i64, interval_seconds: f64) -> i64 {
-    if interval_seconds >= 2_419_200.0 {
-        let later = start + (interval_seconds * 1.2 * 1000.0).round() as i64;
-        bucket_start(later, interval_seconds)
-    } else {
-        start + (interval_seconds * 1000.0).round() as i64
-    }
-}
-
-/// Folds candles (which share one bucket) into a single higher-timeframe candle.
+/// Folds candles (which share one bucket) into a single higher-timeframe candle, closing where the
+/// bucket ends.
 fn fold_one(candles: &[Kline], interval_seconds: f64) -> Kline {
-    let start = bucket_start(candles[0].open_time, interval_seconds);
+    let start = time::bucket::start(candles[0].open_time, interval_seconds);
     let mut folded = Kline {
         open_time: start,
-        close_time: bucket_end(start, interval_seconds),
-        open: candles[0].open,
-        high: candles[0].high,
-        low: candles[0].low,
-        close: candles[0].close,
-        volume: candles[0].volume,
+        close_time: time::bucket::end(start, interval_seconds),
+        ..candles[0].clone()
     };
     for candle in &candles[1..] {
-        folded.high = folded.high.max(candle.high);
-        folded.low = folded.low.min(candle.low);
-        folded.close = candle.close;
-        folded.volume += candle.volume;
+        folded.absorb(candle);
     }
     folded
 }
@@ -996,21 +959,26 @@ mod tests {
     }
 
     #[test]
-    fn bucket_start_and_end_fold_sub_day() {
-        // 1h buckets at a 1h boundary.
-        assert_eq!(bucket_start(7_300_000, 3600.0), 7_200_000);
-        assert_eq!(bucket_end(3_600_000, 3600.0), 7_200_000);
-        // 4h buckets floor to the 4h grid.
-        assert_eq!(bucket_start(7_200_000, 14_400.0), 0);
-    }
-
-    #[test]
     fn fold_one_takes_open_high_low_close_and_sums_volume() {
         let folded = fold_one(&[bar(3_600_000, 10.0), bar(7_200_000, 12.0)], 14_400.0);
         assert_eq!(folded.open, 10.0);
         assert_eq!(folded.close, 12.0);
         assert_eq!(folded.volume, 2.0);
         assert_eq!(folded.open_time, 0);
+    }
+
+    #[test]
+    fn fold_one_of_a_quarter_spans_the_calendar_quarter() {
+        let february = time::calendar::make(2024, 2, 10, 0, 0, 0, 0).unwrap();
+        let folded = fold_one(&[bar(february, 10.0)], 7_776_000.0);
+        assert_eq!(
+            folded.open_time,
+            time::calendar::make(2024, 1, 1, 0, 0, 0, 0).unwrap()
+        );
+        assert_eq!(
+            folded.close_time,
+            time::calendar::make(2024, 4, 1, 0, 0, 0, 0).unwrap()
+        );
     }
 
     #[test]
@@ -1094,21 +1062,6 @@ mod tests {
             vec![RuntimeValue::Ref(RefKind::Array, cycle_handle)],
             "a cycle survives the copy"
         );
-    }
-
-    #[test]
-    fn week_and_month_buckets_use_the_calendar() {
-        // A Thursday: 2024-01-11 12:00:00 UTC.
-        let thursday = calendar::make(2024, 1, 11, 12, 0, 0, 0).unwrap();
-        // The week (Mon) containing it starts Monday 2024-01-08.
-        let monday = calendar::make(2024, 1, 8, 0, 0, 0, 0).unwrap();
-        assert_eq!(bucket_start(thursday, 604_800.0), monday);
-        // A month bucket is the first of the month.
-        let first = calendar::make(2024, 1, 1, 0, 0, 0, 0).unwrap();
-        assert_eq!(bucket_start(thursday, 2_592_000.0), first);
-        // bucket_end for a month is the next month's start.
-        let february = calendar::make(2024, 2, 1, 0, 0, 0, 0).unwrap();
-        assert_eq!(bucket_end(first, 2_592_000.0), february);
     }
 
     use crate::pine::compiler::program::{BarEvent, BarPhase, SymbolInfo};

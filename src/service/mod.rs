@@ -18,8 +18,8 @@ pub mod work_queue;
 pub use market::alpaca::test_connection as alpaca_test_connection;
 pub use market::error::ProviderError;
 
-use crate::model::{DataSource, Kline, PmSeries};
-pub(crate) use market::candles::{fill_gaps, fold_calendar, next_bucket_start_ms, normalize};
+use crate::model::{DataSource, Kline, PmSeries, Timeframe};
+pub(crate) use market::candles::normalize;
 pub(crate) use market::search_rank::rank_results;
 
 /// A search hit on one provider: a display label, the provider's own id, and the
@@ -149,7 +149,7 @@ pub trait MarketSource {
     fn fetch_klines(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError>;
 
@@ -158,12 +158,12 @@ pub trait MarketSource {
     fn fetch_klines_range(
         &self,
         symbol: &str,
-        interval: &str,
+        timeframe: Timeframe,
         start_ms: i64,
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let _ = (symbol, interval, start_ms, end_ms, max);
+        let _ = (symbol, timeframe, start_ms, end_ms, max);
         Err(ProviderError::other(
             "This source cannot serve a time range of candles.",
         ))
@@ -188,21 +188,23 @@ pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
     }
 }
 
-/// Fetch candles from the provider behind `source`, oldest first.
+/// Fetch candles of `timeframe` from the provider behind `source`, oldest first. A source folds
+/// finer candles for a length it lacks and answers `ProviderError::UnsupportedInterval` when it
+/// cannot reach it, never a nearby one.
 pub fn fetch_klines(
     source: DataSource,
     symbol: &str,
-    interval: &str,
+    timeframe: Timeframe,
     limit: u32,
 ) -> Result<Vec<Kline>, ProviderError> {
     let provider = for_source(source);
     let fetch = |limit: u32| {
         provider
-            .fetch_klines(symbol, interval, limit)
+            .fetch_klines(symbol, timeframe, limit)
             .map(normalize)
     };
-    match cache::policy(source) {
-        Some(policy) => cache::fetch(source, symbol, interval, limit, policy, fetch),
+    match cache::policy(source, timeframe) {
+        Some(policy) => cache::fetch(source, symbol, timeframe, limit, policy, fetch),
         None => fetch(limit),
     }
 }
@@ -211,13 +213,13 @@ pub fn fetch_klines(
 pub fn fetch_klines_range(
     source: DataSource,
     symbol: &str,
-    interval: &str,
+    timeframe: Timeframe,
     start_ms: i64,
     end_ms: i64,
     max: usize,
 ) -> Result<Vec<Kline>, ProviderError> {
     for_source(source)
-        .fetch_klines_range(symbol, interval, start_ms, end_ms, max)
+        .fetch_klines_range(symbol, timeframe, start_ms, end_ms, max)
         .map(normalize)
 }
 
@@ -229,7 +231,7 @@ const CHOICE_FETCH_PARALLELISM: usize = 6;
 pub fn fetch_choices(
     source: DataSource,
     choices: &[PmSeries],
-    interval: &str,
+    timeframe: Timeframe,
     limit: u32,
 ) -> Vec<(String, Vec<Kline>)> {
     let mut histories = Vec::with_capacity(choices.len());
@@ -239,7 +241,7 @@ pub fn fetch_choices(
                 .iter()
                 .map(|choice| {
                     scope.spawn(|| {
-                        fetch_klines(source, &choice.token_id, interval, limit).unwrap_or_default()
+                        fetch_klines(source, &choice.token_id, timeframe, limit).unwrap_or_default()
                     })
                 })
                 .collect();
@@ -269,80 +271,11 @@ pub fn trending(source: DataSource, limit: usize) -> Result<Vec<SearchResult>, P
     }
 }
 
-/// Binance-style interval token → seconds.
-pub(crate) fn interval_seconds(token: &str) -> Option<i64> {
-    match token {
-        "1m" => Some(60),
-        "5m" => Some(300),
-        "15m" => Some(900),
-        "30m" => Some(1_800),
-        "1h" => Some(3_600),
-        "4h" => Some(14_400),
-        "1d" => Some(86_400),
-        "1w" => Some(604_800),
-        "1M" => Some(2_592_000),
-        "3M" => Some(7_776_000),
-        "1Y" => Some(31_536_000),
-        _ => None,
-    }
-}
-
 /// Milliseconds since the Unix epoch, now.
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_millis() as i64)
-}
-
-/// Open time of the calendar bucket that contains `epoch_ms`. Sub-week intervals
-/// floor onto the epoch; weeks start on Monday and months/quarters/years on their
-/// calendar start, matching Binance's candle boundaries.
-pub(crate) fn bucket_start_ms(epoch_ms: i64, interval_secs: i64) -> i64 {
-    if interval_secs < 604_800 {
-        return epoch_ms.div_euclid(interval_secs * 1_000) * interval_secs * 1_000;
-    }
-    let days = epoch_ms.div_euclid(86_400_000);
-    if interval_secs < 2_419_200 {
-        // Week, starting Monday.
-        let monday_days = (days - 4).div_euclid(7) * 7 + 4;
-        return monday_days * 86_400_000;
-    }
-    let (year, month, _) = crate::format::civil_from_days(days);
-    let (target_year, target_month) = if interval_secs < 7_000_000 {
-        (year, month)
-    } else if interval_secs < 30_000_000 {
-        (year, (month - 1) / 3 * 3 + 1)
-    } else {
-        (year, 1)
-    };
-    crate::format::days_from_civil(target_year, target_month, 1) * 86_400_000
-}
-
-/// Span a prediction-market line chart covers at an interval, in days. The hourly chart reaches
-/// back a month, as hourly points: two days left it a flat stub on a market older than that.
-pub(crate) fn effective_span_days(interval: &str) -> i64 {
-    match interval {
-        "1h" => 30,
-        "1d" => 60,
-        "1w" => 182,
-        "1M" => 360,
-        "3M" => 90,
-        "1Y" => 364,
-        _ => 60,
-    }
-}
-
-/// Points a prediction-market line chart draws at an interval.
-pub(crate) fn line_chart_point_count(interval: &str) -> usize {
-    match interval {
-        "1h" => 360,
-        "1d" => 60,
-        "1w" => 26,
-        "1M" => 12,
-        "3M" => 90,
-        "1Y" => 52,
-        _ => 60,
-    }
 }
 
 /// Thin to at most `count` points by uniform stride, always keeping the newest one.

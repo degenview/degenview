@@ -326,7 +326,7 @@ fn the_styled_look_names_the_market_and_the_chart_look_does_not() {
         styled_words.contains(&"BTC/USDT".to_owned()),
         "{styled_words:?}"
     );
-    assert!(styled_words.contains(&"BINANCE · 1H".to_owned()));
+    assert!(styled_words.contains(&"BINANCE · 1h".to_owned()));
     let chart_words = texts(&painted(&capture, &cards, &plain(), 1.0));
     assert!(!chart_words.contains(&"BTC/USDT".to_owned()));
     assert!(!chart_words.contains(&"DegenView".to_owned()));

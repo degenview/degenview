@@ -4,6 +4,7 @@
 //! Time zones are UTC, fixed offsets (`UTC+3`, `GMT-05:30`) and the named zones of
 //! [`timezone`](timezone), which carry their daylight-saving rules; any other name reads as UTC.
 
+pub mod bucket;
 pub mod calendar;
 pub mod timestamp;
 pub mod timezone;

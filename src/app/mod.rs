@@ -312,7 +312,7 @@ impl DegenViewApp {
                 vec![TabSlot::new(TabContent::Chart(Box::new(
                     ChartWorkspace::empty(
                         first_id,
-                        Timeframe::Day,
+                        Timeframe::DAY_1,
                         Arc::clone(&watchlist),
                         quote_book.clone(),
                         quote_coordinator.clone(),

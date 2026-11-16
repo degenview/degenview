@@ -1085,7 +1085,7 @@ fn stub_app(
             Ok(McpReply::Timeframe(
                 crate::mcp::chart::control::TimeframeResult {
                     workspace_id: "1".into(),
-                    timeframe: timeframe.label().into(),
+                    timeframe: timeframe.label(),
                     previous_timeframe: "1D".into(),
                     status: "changed".into(),
                     chart_count: 1,

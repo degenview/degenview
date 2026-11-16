@@ -3,7 +3,7 @@
 //! own changes never touch the data or a script's run.
 
 use super::*;
-use crate::model::drawings::style::Visibility;
+use crate::model::drawings::style::{Visibility, VisibilityRow};
 use crate::model::{Anchor, ChartType, Drawing, IndicatorConfig, Placement, Tool};
 use crate::ui::replay::overlay::ReplayChartFrame;
 use eframe::egui::epaint::ClippedShape;
@@ -71,7 +71,7 @@ struct Chart {
 impl Chart {
     fn new() -> Self {
         let mut card = ChartCard::default();
-        card.set_timeframe(Timeframe::Hour);
+        card.set_timeframe(Timeframe::HOUR_1);
         Self {
             ctx: egui::Context::default(),
             card,
@@ -79,7 +79,7 @@ impl Chart {
             scale_mode: PriceScaleMode::Regular,
             tool: Tool::Cursor,
             hide_all: false,
-            timeframe: Timeframe::Hour,
+            timeframe: Timeframe::HOUR_1,
             selected: Vec::new(),
         }
     }
@@ -403,7 +403,7 @@ fn hide_all_and_a_timeframe_it_is_not_shown_on_paint_nothing() {
     let mut chart = Chart::new();
     let bare = chart.draw(&[]);
     let mut weekly_only = drawing(Tool::Rectangle, 1);
-    weekly_only.set_visibility(Visibility::ALL.with(Timeframe::Hour, false));
+    weekly_only.set_visibility(Visibility::ALL.with_row(VisibilityRow::Hours, false));
     let shown = [drawing(Tool::Rectangle, 1)];
     assert!(!gained(&bare, &chart.draw(&shown)).is_empty());
 
@@ -412,12 +412,12 @@ fn hide_all_and_a_timeframe_it_is_not_shown_on_paint_nothing() {
     chart.hide_all = false;
 
     assert!(gained(&bare, &chart.draw(std::slice::from_ref(&weekly_only))).is_empty());
-    chart.timeframe = Timeframe::Week;
+    chart.timeframe = Timeframe::WEEK_1;
     assert!(!gained(&bare, &chart.draw(std::slice::from_ref(&weekly_only))).is_empty());
 
     let mut hidden = drawing(Tool::Rectangle, 1);
     hidden.set_hidden(true);
-    chart.timeframe = Timeframe::Hour;
+    chart.timeframe = Timeframe::HOUR_1;
     assert!(gained(&bare, &chart.draw(std::slice::from_ref(&hidden))).is_empty());
 }
 

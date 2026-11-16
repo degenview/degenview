@@ -375,7 +375,7 @@ pub fn health(status: Option<&OverlayStatus>, price_based: bool) -> Health {
     }
     match status {
         Some(OverlayStatus::Error(message)) => Health::Problem(format!("Couldn't load: {message}")),
-        Some(OverlayStatus::Blocked(reason)) => Health::Problem((*reason).to_owned()),
+        Some(OverlayStatus::Blocked(reason)) => Health::Problem(reason.to_string()),
         Some(OverlayStatus::Loading) => Health::Note("Loading…".to_owned()),
         Some(OverlayStatus::Queued) => Health::Note("Waiting to load".to_owned()),
         Some(OverlayStatus::Ready) | None => Health::Fine,
@@ -744,7 +744,7 @@ mod tests {
         );
         assert_eq!(
             health(
-                Some(&OverlayStatus::Blocked("Same market as the chart")),
+                Some(&OverlayStatus::Blocked("Same market as the chart".into())),
                 false
             ),
             Health::Problem("Same market as the chart".into())
