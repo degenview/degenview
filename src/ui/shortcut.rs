@@ -105,6 +105,7 @@ fn key_name(key: Key) -> &'static str {
         Key::Space => "Space",
         Key::Escape => "Esc",
         Key::Period => ".",
+        Key::A => "A",
         Key::R => "R",
         Key::B => "B",
         Key::C => "C",
@@ -441,6 +442,13 @@ pub const PASTE: Shortcut = Shortcut::new(
     &[Chord::new(Key::V).primary()],
 );
 
+/// Selects all the text of the code editor (the text field answers the key itself; the chord is
+/// here so the menus print the real binding).
+pub const SELECT_ALL: Shortcut = Shortcut::new(
+    &[Chord::new(Key::A).primary()],
+    &[Chord::new(Key::A).primary()],
+);
+
 /// Arms a line tool: Alt (Option on a Mac) and a letter, as on TradingView. The J of the
 /// horizontal ray is TradingView's default, which none of its help pages states.
 pub const TOOL_TREND_LINE: Shortcut =
@@ -546,7 +554,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 53] = [
+    const ALL: [(&str, Shortcut); 54] = [
         ("debug continue", DEBUG_CONTINUE),
         ("debug pause", DEBUG_PAUSE),
         ("debug step over", DEBUG_STEP_OVER),
@@ -585,6 +593,7 @@ mod tests {
         ("cut", CUT),
         ("copy", COPY),
         ("paste", PASTE),
+        ("select all", SELECT_ALL),
         ("symbol search", SYMBOL_SEARCH),
         ("hide drawings", HIDE_DRAWINGS),
         ("snapshot download", SNAPSHOT_DOWNLOAD),
@@ -711,6 +720,8 @@ mod tests {
         assert_eq!(ADD_CURSOR_BELOW.label_for(false), "Ctrl+Alt+↓");
         assert_eq!(CUT.label_for(true), "⌘X");
         assert_eq!(CUT.label_for(false), "Ctrl+X");
+        assert_eq!(SELECT_ALL.label_for(true), "⌘A");
+        assert_eq!(SELECT_ALL.label_for(false), "Ctrl+A");
         assert_eq!(GO_TO_DEFINITION.label_for(true), "⌃⌘J");
         assert_eq!(GO_TO_DEFINITION.label_for(false), "F12");
         assert_eq!(RENAME_SYMBOL.label_for(true), "⌃⌘E");

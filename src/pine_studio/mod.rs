@@ -13,6 +13,7 @@ pub mod drawer;
 pub mod editor;
 pub mod inputs;
 pub mod library;
+mod menu_bar;
 mod migrate_swift;
 mod open_script;
 mod preview;

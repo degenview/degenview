@@ -553,6 +553,172 @@ fn gallery_of_the_rail() {
     }
 }
 
+/// Where the menu strip starts in the window: under the bar, at the editor's left edge, which is
+/// half way across with the preview chart at its left.
+fn strip_corner(size: egui::Vec2, position: ChartPosition) -> egui::Pos2 {
+    let left = if position == ChartPosition::Left {
+        size.x / 2.0
+    } else {
+        0.0
+    };
+    pos2(left, crate::ui::kit::bar::HEIGHT)
+}
+
+/// Frames of the whole window, the pointer left where it is.
+fn settle(manager: &mut PineStudio, screen: &mut Screen) -> egui::FullOutput {
+    let mut last = None;
+    for _ in 0..4 {
+        crate::ui::theme::sync(&screen.ctx);
+        last = Some(screen.run(Vec::new(), |ui| {
+            manager.ui(ui, None);
+        }));
+    }
+    last.expect("a frame")
+}
+
+fn hover_window(manager: &mut PineStudio, screen: &mut Screen, at: egui::Pos2) {
+    for _ in 0..2 {
+        crate::ui::theme::sync(&screen.ctx);
+        screen.run(vec![Event::PointerMoved(at)], |ui| {
+            manager.ui(ui, None);
+        });
+    }
+}
+
+#[test]
+fn opening_a_menu_keeps_the_editors_selection_so_cut_and_copy_stay_on() {
+    use menu_bar::Menu;
+    let (mut manager, root, _) = edited("menu-keeps-selection");
+    manager.prefs.chart_visible = false;
+    let size = vec2(1360.0, 860.0);
+    let mut screen = Screen::new(size);
+    settle(&mut manager, &mut screen);
+    manager.edit_command(editor::EditAction::SelectAll);
+    settle(&mut manager, &mut screen);
+    let ctx = screen.ctx.clone();
+    let selected = |manager: &mut PineStudio| {
+        manager
+            .open
+            .as_mut()
+            .map(|open| open.editor.menu_state(&ctx).selection)
+    };
+    assert_eq!(selected(&mut manager), Some(true));
+
+    let corner = strip_corner(size, ChartPosition::Bottom);
+    click_window(
+        &mut manager,
+        &mut screen,
+        menu_bar::title_centre(Menu::Edit, corner),
+    );
+    settle(&mut manager, &mut screen);
+    assert_eq!(
+        selected(&mut manager),
+        Some(true),
+        "the click on the strip must not collapse the selection"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// With `DEGENVIEW_GALLERY_DIR` set, the whole window is written as pictures in both themes at the
+/// default and the narrowest size with each of the strip's menus open, the Edit menu with a
+/// selection and with the caret in a change, and a submenu of View and one of Edit open.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_menu_bar() {
+    use crate::ui::theme::{self, AppTheme};
+    use debug::studio_tests::Rig;
+    use menu_bar::Menu;
+    if gallery_dir().is_none() {
+        return;
+    }
+    let _theme = theme::RestoreDefaultTheme;
+    for (theme_name, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        for (size_name, size) in [
+            ("wide", vec2(1360.0, 860.0)),
+            ("narrow", vec2(960.0, 640.0)),
+        ] {
+            // (picture, menu, a row to point at, whether to select everything first)
+            let shots: [(&str, Menu, Option<usize>, bool); 6] = [
+                ("file", Menu::File, None, false),
+                ("edit-selection", Menu::Edit, None, true),
+                ("edit-change", Menu::Edit, Some(EDIT_CHANGE_ROW), false),
+                (
+                    "edit-breakpoint",
+                    Menu::Edit,
+                    Some(EDIT_CHANGE_ROW - 1),
+                    false,
+                ),
+                ("view", Menu::View, None, false),
+                ("view-position", Menu::View, Some(VIEW_POSITION_ROW), false),
+            ];
+            for (name, menu, pointed, select) in shots {
+                let tag = format!("menu-bar-{size_name}-{theme_name}-{name}");
+                let mut rig = Rig::new(&tag);
+                let mut screen = Screen::new(size);
+                theme::apply(&screen.ctx, appearance);
+                let manager = &mut rig.manager;
+                manager.prefs.drawer_open = true;
+                if let Some(open) = manager.open.as_mut() {
+                    // A saved script with one line changed, the caret on it.
+                    let source = open.editor.source.clone();
+                    open.editor.replace_source(&source, true);
+                    open.editor.source =
+                        source.replace("value = calculate(close)", "value = calculate(open)");
+                }
+                settle(manager, &mut screen);
+                if select {
+                    manager.edit_command(editor::EditAction::SelectAll);
+                } else if let Some(open) = manager.open.as_mut() {
+                    let at = open
+                        .editor
+                        .source
+                        .find("value = calculate(open)")
+                        .unwrap_or(0);
+                    open.editor.place_caret(&screen.ctx, at);
+                    // Hands the keyboard to the editor, as a click in the text would.
+                    manager.edit_command(editor::EditAction::FindNext);
+                }
+                settle(manager, &mut screen);
+                let corner = strip_corner(size, ChartPosition::Left);
+                let title = menu_bar::title_centre(menu, corner);
+                click_window(manager, &mut screen, title);
+                if let Some(row) = pointed {
+                    let x = title.x + 20.0;
+                    hover_window(manager, &mut screen, pos2(x, menu_row_y(corner, menu, row)));
+                }
+                let output = settle(manager, &mut screen);
+                screen.save(&tag, output);
+            }
+        }
+    }
+}
+
+/// The Edit menu's row that opens the change submenu, and the one above it (Breakpoint), counted
+/// as rows without the separators.
+const EDIT_CHANGE_ROW: usize = 18;
+/// The View menu's Preview Chart row.
+const VIEW_POSITION_ROW: usize = 3;
+
+/// The middle of the `row`th row of `menu` (counting rows, not separators), for a menu opened from
+/// the strip at `corner`: a gap under the strip, the menu's margin, 24 points a row and 9 a
+/// separator.
+fn menu_row_y(corner: egui::Pos2, menu: menu_bar::Menu, row: usize) -> f32 {
+    use menu_bar::Menu;
+    // How many separators come before each row, by menu.
+    let separators = match menu {
+        Menu::File => |row: usize| [3, 6, 8, 9].iter().filter(|at| row >= **at).count(),
+        Menu::Edit => |row: usize| [2, 6, 9, 14, 17].iter().filter(|at| row >= **at).count(),
+        Menu::View => |row: usize| [3, 5].iter().filter(|at| row >= **at).count(),
+    };
+    corner.y
+        + menu_bar::HEIGHT
+        + 4.0
+        + 5.0
+        + row as f32 * 24.0
+        + separators(row) as f32 * 9.0
+        + 12.0
+}
+
 fn target(
     script_id: Option<&str>,
     library: Option<&str>,

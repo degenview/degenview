@@ -10,6 +10,7 @@ use super::debug::panel as debug_panel;
 use super::drawer;
 use super::editor;
 use super::library::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
+use super::menu_bar::{self, FileState, MenuBarState, ViewState};
 use super::profiler::marks::ProfileColumn;
 use super::profiler::ui::{self, TabView};
 use super::profiler::{Profile, Status};
@@ -76,6 +77,27 @@ impl PineStudio {
         });
     }
 
+    /// What the File and View menus over the editor read, for the open script.
+    fn menu_bar_state(&self, profile_status: &Status) -> Option<MenuBarState> {
+        let open = self.open.as_ref()?;
+        Some(MenuBarState {
+            editor_id: open.editor.focus_id(),
+            file: FileState {
+                id: open.id.clone(),
+                favorite: self
+                    .script_named(&open.id)
+                    .is_some_and(|script| script.is_favorite),
+                script_type: open.script_type,
+                dirty: open.editor.is_dirty(),
+            },
+            view: ViewState {
+                panels: RailState::new(&self.prefs, profile_status.clone()),
+                drawer_open: self.prefs.drawer_open,
+                drawer_tab: self.prefs.drawer_tab,
+            },
+        })
+    }
+
     fn empty_library(&mut self, ui: &mut Ui) {
         super::library::empty_library::library(ui, &mut self.cmds);
     }
@@ -135,7 +157,9 @@ impl PineStudio {
         let profile_column = self.profiler.column(self.profiler_now.as_ref());
         let profile_status = self.profiler.status(self.profiler_now.as_ref());
         let profile_lines_match = self.profiler.lines_match(self.profiler_now.as_ref());
-        let rail_state = RailState::new(&self.prefs, profile_status.clone());
+        let Some(menu_state) = self.menu_bar_state(&profile_status) else {
+            return;
+        };
         {
             let open = &mut self.open;
             let preview = &mut self.preview;
@@ -165,7 +189,18 @@ impl PineStudio {
                 spec,
                 &mut state,
                 |ui| {
-                    rail::show(ui, &rail_state, &cmds, |ui| {
+                    rail::show(ui, &menu_state.view.panels, &cmds, |ui| {
+                        let ctx = ui.ctx().clone();
+                        menu_bar::show(
+                            ui,
+                            &menu_state,
+                            || {
+                                open.as_mut()
+                                    .map(|open| open.editor.menu_state(&ctx))
+                                    .unwrap_or_default()
+                            },
+                            &cmds,
+                        );
                         editor_pane(
                             ui,
                             open,

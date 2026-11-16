@@ -156,6 +156,15 @@ impl DiffSnapshot {
         from..to.max(from)
     }
 
+    /// The change the zero-based current line `line` is in: the lines an added or modified change
+    /// holds, or the line a deleted change sits above.
+    pub fn hunk_at(&self, line: usize) -> Option<&DiffHunk> {
+        self.hunks.iter().find(|hunk| match hunk.kind {
+            ChangeKind::Deleted => hunk.new_lines.start == line,
+            ChangeKind::Added | ChangeKind::Modified => hunk.new_lines.contains(&line),
+        })
+    }
+
     /// Index of the hunk that is the same change as `wanted`, wherever it sits now.
     pub fn find(&self, wanted: &DiffHunk) -> Option<usize> {
         self.hunks.iter().position(|h| h.same_change(wanted))
@@ -569,6 +578,24 @@ mod tests {
         // A deleted hunk shows with the line it sits above.
         assert_eq!(snapshot.in_view(50, 50).len(), 1);
         assert!(snapshot.in_view(30, 40).is_empty());
+    }
+
+    #[test]
+    fn hunk_at_finds_the_change_a_line_is_in() {
+        let saved: String = (0..100).map(|i| format!("l{i}\n")).collect();
+        let current = saved.replace("l10\n", "L10\n").replace("l50\n", "");
+        let snapshot = DiffSnapshot::compute(&saved, &current);
+        assert_eq!(
+            snapshot.hunk_at(10).map(|h| h.kind),
+            Some(ChangeKind::Modified)
+        );
+        // The deleted lines sit above the line that followed them.
+        assert_eq!(
+            snapshot.hunk_at(50).map(|h| h.kind),
+            Some(ChangeKind::Deleted)
+        );
+        assert!(snapshot.hunk_at(11).is_none());
+        assert!(snapshot.hunk_at(49).is_none());
     }
 
     // MARK: Revert

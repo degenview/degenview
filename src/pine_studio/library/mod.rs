@@ -9,4 +9,5 @@ pub mod name;
 pub(in crate::pine_studio) mod picker;
 pub mod prefs;
 pub mod registry;
+pub(in crate::pine_studio) mod script_actions;
 pub(in crate::pine_studio) mod unsaved;

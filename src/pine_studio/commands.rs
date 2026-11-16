@@ -3,7 +3,7 @@
 
 use super::library::prefs::{ChartPosition, DrawerTab};
 use super::library::registry::LibraryRegistry;
-use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, ai, debug, library};
+use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, ai, debug, editor, library};
 use crate::model::pine::script::{ScriptId, ScriptType};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
@@ -33,6 +33,8 @@ pub(crate) enum Cmd {
     AddToChart(ScriptId),
     CreateAlert(ScriptId),
     Save,
+    /// An item of an Edit menu, run by the editor on its next frame.
+    Edit(editor::EditAction),
     Reveal(crate::pine::syntax::token::Diagnostic),
     ToggleChart,
     SetChartPosition(ChartPosition),
@@ -132,6 +134,11 @@ impl PineStudio {
             }
             Cmd::CreateAlert(id) => self.open_alert_sheet(&id),
             Cmd::Save => self.save_open(),
+            Cmd::Edit(action) => {
+                self.edit_command(action);
+                // The editor runs it at the start of its next frame, which nothing else asks for.
+                ctx.request_repaint();
+            }
             Cmd::DiskReload => {
                 let text = self
                     .open

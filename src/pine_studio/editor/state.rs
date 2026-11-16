@@ -63,6 +63,11 @@ impl EditorState {
         }
     }
 
+    /// The text field's id, for whatever hands the keyboard back to it.
+    pub(in crate::pine_studio) fn focus_id(&self) -> Id {
+        self.id
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.source != self.saved_source
     }

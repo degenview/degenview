@@ -31,6 +31,14 @@ editor column (code, assistant and debugger panels) and never reaches over the p
 with the chart left of the code it is the window's right edge, and above or below it sits beside the
 code only. It is shown whenever a script is open.
 
+**Pine Studio menu strip** (`pine_studio/menu_bar/`). A 28 pt strip on `theme::chrome()` (its egui
+separator the only edge) under the bar, at the top of the editor column: left of the rail, over the
+code and the assistant and debugger panels, never over the preview chart. Three flat text titles,
+File, Edit and View, with the bar's hover and lit tints; they open fitted pull-downs
+(`kit::fitted_menu_rows`, shortcut column included) and, while one is up, pointing at another title
+opens that one. It is how every right-click menu of the studio is reached without a right-click: see
+[Pine and Pine Studio](agent-guides/pine.md#editor).
+
 **View menu (macOS).** Between Edit and Window: Pine Studio and Portfolio
 (`NativeCommand::OpenPineStudio` / `OpenPortfolio`), each opening its one tab or showing the open
 one, like the chart toolbar's two buttons, which stay. Windows and Linux have no menu bar; the

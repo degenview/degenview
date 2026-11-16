@@ -50,11 +50,11 @@ type RailButton = Button<RailAction, RailMenu>;
 
 /// What the rail shows, from the studio's state.
 pub(super) struct RailState {
-    chart_visible: bool,
-    chart_position: ChartPosition,
-    debugger_open: bool,
-    assistant_open: bool,
-    profiler: profiler::Status,
+    pub(super) chart_visible: bool,
+    pub(super) chart_position: ChartPosition,
+    pub(super) debugger_open: bool,
+    pub(super) assistant_open: bool,
+    pub(super) profiler: profiler::Status,
 }
 
 impl RailState {
@@ -72,7 +72,7 @@ impl RailState {
 #[cfg(test)]
 impl RailState {
     /// The preview chart shown at the left, every panel closed, the profiler off.
-    fn idle() -> Self {
+    pub(in crate::pine_studio) fn idle() -> Self {
         Self {
             chart_visible: true,
             chart_position: ChartPosition::Left,

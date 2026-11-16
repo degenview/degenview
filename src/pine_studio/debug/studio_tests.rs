@@ -780,7 +780,8 @@ fn long_script() -> String {
 fn small_window(rig: &mut Rig) {
     rig.screen = Some(egui::Rect::from_min_size(
         egui::Pos2::ZERO,
-        egui::vec2(900.0, 500.0),
+        // Tall enough that the menu strip over the editor leaves the first lines well inside it.
+        egui::vec2(900.0, 540.0),
     ));
     // The test's clock does not move, so a scroll that animates would never get anywhere.
     for theme in [egui::Theme::Dark, egui::Theme::Light] {

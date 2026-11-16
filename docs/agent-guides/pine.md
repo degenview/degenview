@@ -211,6 +211,30 @@
   icon only); add a panel's button there, not to the top bar, whose right run is empty.
 - Right-click menu, ⌘-hover cue, inline rename box: `editor/navigation.rs`. An egui `Area` takes no
   focus on its first frame (only measures), so the rename field asks on the second.
+- Menu strip: `pine_studio/menu_bar/` draws File, Edit and View at the top of the editor column
+  (a `Panel::top` inside `rail::show`'s remaining area, so it spans the code and the assistant and
+  debugger panels). Rows are plain `Entry` data built by `file`, `edit` and `view`, drawn and sized by
+  `entry` (`fitted_menu_rows`, submenus `menu_fit_rows` inside); a row's command is a `Cmd`.
+  - **Every item of every context menu in `pine_studio/` is in the strip**, except the rows of a
+    list that act on that row alone (Problems, Logs, the debug panel's variables, watches and
+    breakpoint list). A context menu and the strip build their rows from one function so they cannot
+    drift: `library::script_actions` (picker row menu and File), `editor::breakpoint_rows` and
+    `change_rows` (the gutters' menus and Edit's Breakpoint and Change submenus). A new item goes
+    into that function, not into a copy.
+  - **Edit-menu actions** are `editor::EditAction` (`edit_actions.rs`), requested with
+    `EditorState::request_edit` (`Cmd::Edit` from the strip, the app from the macOS menu) and run at
+    the start of the editor's next frame. Undo and Redo step egui's own `TextEditState` undoer the
+    way ⌘Z does (feed the text, then `undo`/`redo`): there is never a second history. Toggle
+    Comment, Duplicate and Move Line call `assists::line_edit`, the function the keys use.
+  - **`EditorState::menu_state`** is the Edit menu's enablement. It reads the *stored* caret and
+    selection, never the keyboard focus (the native menu's `update_menu` is gated on focus and is
+    left alone). Called only while the Edit menu is up: undo availability clones the history.
+    What costs a scan of the text (declaration, usages, whether a line can move) is cached by text
+    hash, selection and caret.
+  - **Keyboard.** A click on the strip makes the editor surrender focus, and an unfocused
+    `TextEdit` collapses its selection, which would grey out Cut and Copy as the menu opens. So the
+    strip requests focus back for the editor each frame a menu is up (if the editor had it when the
+    menu opened) and the frame after a row was chosen.
 
 ## Drawer tabs
 

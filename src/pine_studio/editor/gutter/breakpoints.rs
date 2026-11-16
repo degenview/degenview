@@ -102,6 +102,80 @@ pub(in crate::pine_studio::editor) fn paint_stop_arrow(
     }
 }
 
+/// A row of a line's breakpoint menu: the gutter's right-click menu and the Edit menu over the
+/// editor list the same ones.
+pub(in crate::pine_studio) struct BreakpointRow {
+    pub icon: Icon,
+    pub label: &'static str,
+    pub destructive: bool,
+    pub event: GutterEvent,
+}
+
+/// What can be done to the breakpoint of one-based `line`, which has `mark` if it has one.
+pub(in crate::pine_studio) fn breakpoint_rows(
+    line: usize,
+    mark: Option<&BreakpointMark>,
+) -> Vec<BreakpointRow> {
+    let row = |icon, label, destructive, event| BreakpointRow {
+        icon,
+        label,
+        destructive,
+        event,
+    };
+    match mark {
+        Some(mark) => {
+            let (icon, label) = if mark.enabled {
+                (Icon::EyeSlash, "Disable Breakpoint")
+            } else {
+                (Icon::Eye, "Enable Breakpoint")
+            };
+            vec![
+                row(
+                    Icon::Pencil,
+                    "Edit Breakpoint…",
+                    false,
+                    GutterEvent::Edit { line },
+                ),
+                row(
+                    icon,
+                    label,
+                    false,
+                    GutterEvent::SetEnabled {
+                        line,
+                        enabled: !mark.enabled,
+                    },
+                ),
+                row(
+                    Icon::Trash,
+                    "Remove Breakpoint",
+                    true,
+                    GutterEvent::Toggle { line },
+                ),
+            ]
+        }
+        None => vec![
+            row(
+                Icon::Plus,
+                "Add Breakpoint",
+                false,
+                GutterEvent::Toggle { line },
+            ),
+            row(
+                Icon::Pencil,
+                "Add Conditional Breakpoint…",
+                false,
+                GutterEvent::Edit { line },
+            ),
+            row(
+                Icon::Code,
+                "Add Logpoint…",
+                false,
+                GutterEvent::AddLogpoint { line },
+            ),
+        ],
+    }
+}
+
 /// The breakpoint column: a click on a line (its number or the marker beside it) sets or clears its
 /// breakpoint, and a right-click opens that breakpoint's menu. Painted over by `paint_gutter`.
 pub(in crate::pine_studio::editor) fn breakpoint_gutter(
@@ -157,66 +231,15 @@ pub(in crate::pine_studio::editor) fn breakpoint_gutter(
         egui::Popup::context_menu(&response)
             .frame(kit::menu_frame())
             .show(|ui| {
-                kit::menu_fit(
-                    ui,
-                    if mark.is_some() {
-                        &[
-                            "Edit Breakpoint…",
-                            "Disable Breakpoint",
-                            "Remove Breakpoint",
-                        ]
-                    } else {
-                        &[
-                            "Add Breakpoint",
-                            "Add Conditional Breakpoint…",
-                            "Add Logpoint…",
-                        ]
-                    },
-                );
+                let rows = breakpoint_rows(line, mark.as_ref());
+                let labels: Vec<&str> = rows.iter().map(|row| row.label).collect();
+                kit::menu_fit(ui, &labels);
                 ui.spacing_mut().item_spacing.y = 0.0;
                 kit::menu_heading(ui, &format!("Line {line}"));
-                match mark {
-                    Some(mark) => {
-                        if kit::menu_item(ui, Icon::Pencil, "Edit Breakpoint…", true, false) {
-                            events.push(GutterEvent::Edit { line });
-                            ui.close();
-                        }
-                        let (icon, label) = if mark.enabled {
-                            (Icon::EyeSlash, "Disable Breakpoint")
-                        } else {
-                            (Icon::Eye, "Enable Breakpoint")
-                        };
-                        if kit::menu_item(ui, icon, label, true, false) {
-                            events.push(GutterEvent::SetEnabled {
-                                line,
-                                enabled: !mark.enabled,
-                            });
-                            ui.close();
-                        }
-                        if kit::menu_item(ui, Icon::Trash, "Remove Breakpoint", true, true) {
-                            events.push(GutterEvent::Toggle { line });
-                            ui.close();
-                        }
-                    }
-                    None => {
-                        if kit::menu_item(ui, Icon::Plus, "Add Breakpoint", true, false) {
-                            events.push(GutterEvent::Toggle { line });
-                            ui.close();
-                        }
-                        if kit::menu_item(
-                            ui,
-                            Icon::Pencil,
-                            "Add Conditional Breakpoint…",
-                            true,
-                            false,
-                        ) {
-                            events.push(GutterEvent::Edit { line });
-                            ui.close();
-                        }
-                        if kit::menu_item(ui, Icon::Code, "Add Logpoint…", true, false) {
-                            events.push(GutterEvent::AddLogpoint { line });
-                            ui.close();
-                        }
+                for row in rows {
+                    if kit::menu_item(ui, row.icon, row.label, true, row.destructive) {
+                        events.push(row.event);
+                        ui.close();
                     }
                 }
             });

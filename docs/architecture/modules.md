@@ -222,10 +222,10 @@ beside the code they exercise.
 | Directory | Holds |
 | --- | --- |
 | `ai/`, `debug/`, `profiler/` | The assistant, the debugger and the profiler: their state, host, panel, gallery pictures and `studio_tests` |
-| `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites`; the view itself is `mod.rs` (`show`, the find bar, undoable edits) with `state`, `text_view`, `completion_view`, `signature_view`, `gutter/` (`breakpoints`, `changes`, `profile`), `indent_guides`, `assists` and `status` |
-| `library/` | The script library around its file store (`store::scripts`): `registry`, `picker`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
+| `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites`; the view itself is `mod.rs` (`show`, the find bar, undoable edits) with `state`, `text_view`, `completion_view`, `signature_view`, `gutter/` (`breakpoints`, `changes`, `profile`), `indent_guides`, `assists`, `navigation` (go to definition, the right-click menu, rename), `edit_actions` (`EditAction`: what the Edit menus ask for, and running it), `menu_state` (what the Edit menu may do) and `status` |
+| `library/` | The script library around its file store (`store::scripts`): `registry`, `picker`, `script_actions` (the rows of a script's menu, shared by the picker and the File menu), `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
 | `drawer/` | The drawer under the preview: `problems/`, `logs/`, the intro, `bottom_bar`, `tab_chrome` |
-| root | `mod.rs` (the manager) with `commands` (`Cmd` and running it), `bar` (the top bar), `rail` (the editor's right rail), `open_script`, `migrate_swift`; `preview/` (`state`, `source`, `fetch`, `chart`, `market_picker`), `inputs`, `workspace`, `sheets`, `theme_preview/` |
+| root | `mod.rs` (the manager) with `commands` (`Cmd` and running it), `bar` (the top bar), `rail` (the editor's right rail), `menu_bar/` (File, Edit and View over the editor: `entry`, `file`, `edit`, `view`), `open_script`, `migrate_swift`; `preview/` (`state`, `source`, `fetch`, `chart`, `market_picker`), `inputs`, `workspace`, `sheets`, `theme_preview/` |
 
 ## `ui/` layout
 

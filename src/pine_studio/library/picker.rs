@@ -4,6 +4,7 @@
 //! popup; the menu's Rename opens a sheet, never an inline box.
 
 use super::empty_library;
+use super::script_actions::script_groups;
 use crate::model::pine::script::{LocalScript, ScriptType};
 use crate::pine_studio::commands::Cmd;
 use crate::ui::icons::{self, Icon};
@@ -470,81 +471,29 @@ fn row_menu(
     show_in: &str,
     pass: &mut Pass,
 ) {
-    let favorite = if script.is_favorite {
-        "Remove Favorite"
-    } else {
-        "Favorite"
-    };
-    let on_chart = script.script_type != ScriptType::Library;
-    let mut rows = vec![
-        (favorite, None),
-        ("Rename", None),
-        ("Duplicate", None),
-        (show_in, None),
-        ("Export…", None),
-    ];
-    if on_chart {
-        rows.extend([("Add to Chart", None), ("Create Alert", None)]);
-    }
-    rows.push(("Delete", None));
+    let groups = script_groups(script.script_type, script.is_favorite, show_in);
+    let rows: Vec<(&str, Option<&str>)> = groups
+        .iter()
+        .flatten()
+        .map(|row| (row.label, None))
+        .collect();
     let shown = kit::fitted_context_menu(ui, response, &rows, |ui| {
-        let id = &script.id;
-        if kit::menu_item(
-            ui,
-            if script.is_favorite {
-                Icon::Star
-            } else {
-                Icon::StarFill
-            },
-            favorite,
-            true,
-            false,
-        ) {
-            pass.keep_open(Cmd::ToggleFavorite(id.clone()));
-            ui.close();
-        }
-        let mut item = |ui: &mut Ui, icon: Icon, label: &str, destructive: bool, cmd: Cmd| {
-            if kit::menu_item(ui, icon, label, true, destructive) {
-                pass.run(cmd);
-                ui.close();
+        for (index, group) in groups.iter().enumerate() {
+            if index > 0 {
+                kit::menu_separator(ui);
             }
-        };
-        item(
-            ui,
-            Icon::Pencil,
-            "Rename",
-            false,
-            Cmd::BeginRename(id.clone()),
-        );
-        item(
-            ui,
-            Icon::CopyDoc,
-            "Duplicate",
-            false,
-            Cmd::Duplicate(id.clone()),
-        );
-        kit::menu_separator(ui);
-        item(ui, Icon::Books, show_in, false, Cmd::RevealFile(id.clone()));
-        item(ui, Icon::ShareUp, "Export…", false, Cmd::Export(id.clone()));
-        if on_chart {
-            kit::menu_separator(ui);
-            item(
-                ui,
-                Icon::ChartLine,
-                "Add to Chart",
-                false,
-                Cmd::AddToChart(id.clone()),
-            );
-            item(
-                ui,
-                Icon::Bell,
-                "Create Alert",
-                false,
-                Cmd::CreateAlert(id.clone()),
-            );
+            for row in group {
+                if kit::menu_item(ui, row.icon, row.label, true, row.destructive) {
+                    let command = row.action.command(&script.id);
+                    if row.action.stays_in_list() {
+                        pass.keep_open(command);
+                    } else {
+                        pass.run(command);
+                    }
+                    ui.close();
+                }
+            }
         }
-        kit::menu_separator(ui);
-        item(ui, Icon::Trash, "Delete", true, Cmd::AskDelete(id.clone()));
     });
     pass.menu_open |= shown.is_some();
 }

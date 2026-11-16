@@ -11,13 +11,73 @@ use crate::ui::icons::Icon;
 use crate::ui::{accessibility, kit, theme};
 use eframe::egui::{self, Color32, Rect, Sense, Shape, Stroke, Ui, Vec2};
 
-/// What a context-menu row on a change asks for.
-#[derive(Clone, Copy)]
-enum ChangeCommand {
+/// What a menu row on a change asks for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChangeCommand {
     Show,
     Revert,
     CopyOriginal,
     CopyCurrent,
+}
+
+/// A row of a change's menu: the change column's right-click menu and the Edit menu over the
+/// editor list the same ones.
+pub(in crate::pine_studio) struct ChangeRow {
+    pub icon: Icon,
+    pub label: &'static str,
+    pub command: ChangeCommand,
+}
+
+/// What can be done to a change of `kind`; the words follow what the change is.
+pub(in crate::pine_studio) fn change_rows(kind: ChangeKind) -> Vec<ChangeRow> {
+    let (show, revert, original, current) = match kind {
+        ChangeKind::Added => (
+            "Show Changes",
+            "Revert Added Lines",
+            None,
+            Some("Copy Current Lines"),
+        ),
+        ChangeKind::Deleted => (
+            "Show Deleted Lines",
+            "Restore Deleted Lines",
+            Some("Copy Original Lines"),
+            None,
+        ),
+        ChangeKind::Modified => (
+            "Compare Changes",
+            "Revert Change",
+            Some("Copy Original"),
+            Some("Copy Current"),
+        ),
+    };
+    let row = |icon, label, command| ChangeRow {
+        icon,
+        label,
+        command,
+    };
+    let mut rows = vec![
+        row(Icon::Eye, show, ChangeCommand::Show),
+        row(Icon::Undo, revert, ChangeCommand::Revert),
+    ];
+    rows.extend(original.map(|label| row(Icon::CopyDoc, label, ChangeCommand::CopyOriginal)));
+    rows.extend(current.map(|label| row(Icon::CopyDoc, label, ChangeCommand::CopyCurrent)));
+    rows
+}
+
+/// Does what a change's menu row asks. Returns whether the text changed.
+pub(in crate::pine_studio::editor) fn run_change(
+    ctx: &egui::Context,
+    state: &mut EditorState,
+    hunk: DiffHunk,
+    command: ChangeCommand,
+) -> bool {
+    match command {
+        ChangeCommand::Show => state.preview = Some(hunk),
+        ChangeCommand::Revert => return apply_hunk_edit(ctx, state, &hunk),
+        ChangeCommand::CopyOriginal => ctx.copy_text(hunk.old_text),
+        ChangeCommand::CopyCurrent => ctx.copy_text(hunk.new_text),
+    }
+    false
 }
 
 /// "Line 12", "Lines 18–20": a lines label starting a sentence.
@@ -185,47 +245,13 @@ pub(in crate::pine_studio::editor) fn change_gutter(
         egui::Popup::context_menu(&response)
             .frame(kit::menu_frame())
             .show(|ui| {
-                ui.set_width(200.0);
+                let rows = change_rows(hunk.kind);
+                let labels: Vec<&str> = rows.iter().map(|row| row.label).collect();
+                kit::menu_fit(ui, &labels);
                 ui.spacing_mut().item_spacing.y = 0.0;
-                let (show, revert, original, current) = match hunk.kind {
-                    ChangeKind::Added => (
-                        "Show Changes",
-                        "Revert Added Lines",
-                        None,
-                        Some("Copy Current Lines"),
-                    ),
-                    ChangeKind::Deleted => (
-                        "Show Deleted Lines",
-                        "Restore Deleted Lines",
-                        Some("Copy Original Lines"),
-                        None,
-                    ),
-                    ChangeKind::Modified => (
-                        "Compare Changes",
-                        "Revert Change",
-                        Some("Copy Original"),
-                        Some("Copy Current"),
-                    ),
-                };
-                let rows = [
-                    (Icon::Eye, show, Some(ChangeCommand::Show)),
-                    (Icon::Undo, revert, Some(ChangeCommand::Revert)),
-                    (
-                        Icon::CopyDoc,
-                        original.unwrap_or(""),
-                        original.map(|_| ChangeCommand::CopyOriginal),
-                    ),
-                    (
-                        Icon::CopyDoc,
-                        current.unwrap_or(""),
-                        current.map(|_| ChangeCommand::CopyCurrent),
-                    ),
-                ];
-                for (icon, label, chosen) in rows {
-                    if let Some(chosen) = chosen
-                        && kit::menu_item(ui, icon, label, true, false)
-                    {
-                        command = Some((hunk.clone(), chosen));
+                for row in rows {
+                    if kit::menu_item(ui, row.icon, row.label, true, false) {
+                        command = Some((hunk.clone(), row.command));
                         ui.close();
                     }
                 }
@@ -234,12 +260,7 @@ pub(in crate::pine_studio::editor) fn change_gutter(
 
     let mut edited = false;
     if let Some((hunk, chosen)) = command {
-        match chosen {
-            ChangeCommand::Show => state.preview = Some(hunk),
-            ChangeCommand::Revert => edited |= apply_hunk_edit(&ctx, state, &hunk),
-            ChangeCommand::CopyOriginal => ctx.copy_text(hunk.old_text),
-            ChangeCommand::CopyCurrent => ctx.copy_text(hunk.new_text),
-        }
+        edited |= run_change(&ctx, state, hunk, chosen);
     }
 
     // The open comparison follows its change through edits elsewhere and closes when the change
