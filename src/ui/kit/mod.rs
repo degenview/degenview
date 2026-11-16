@@ -43,7 +43,7 @@ pub use button::{
     sheet_button, tinted_button,
 };
 pub use card::{CARD_RADIUS, card_frame, divider, paint_card_badge, paint_well, panel_divider};
-pub use confirm::{Alert, Confirm, ConfirmOutcome, Notice, alert, confirm, notice};
+pub use confirm::{Alert, Confirm, ConfirmOutcome, Notice, alert, confirm, notice, notice_with};
 pub use field::{FIELD_HEIGHT, field, field_frame, input_frame, plain_field, search_field};
 pub use form::{
     Segment, StepDirection, color_well, paint_switch, segmented, segmented_filling, segments,
