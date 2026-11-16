@@ -1,5 +1,5 @@
 //! The chart window's toolbar, on the shared flat bar (`ui::kit::bar`). Left to right: the symbol
-//! of the focused chart, the chart type, Indicators, the timeframe, Replay and Alert (the last two
+//! of the focused chart, the timeframe, Indicators, the chart type, Replay and Alert (the last two
 //! icon only), Undo and Redo, in groups divided by separators. On the right: the layout menu,
 //! chart settings, the snapshot menu, Portfolio, Pine Studio and the watchlist toggle. The replay
 //! bar under it (`replay_bar.rs`) uses the same flat style. The symbol, chart type, Indicators and
@@ -210,16 +210,18 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
             .on_click(ToolbarAction::CompareSymbol),
     ));
     items.push(Item::Separator);
-    let chart_type = input
-        .chart
-        .map_or(ChartType::Candles, |chart| chart.chart_type);
-    let mut type_button = Button::new("chart-type", format!("Chart type: {}", chart_type.label()))
-        .enabled(input.chart.is_some_and(|chart| chart.chart_types));
-    type_button.glyph = Some(Glyph::Custom(Arc::new(move |painter, rect, color| {
-        type_menu::glyph(painter, rect, chart_type, color);
-    })));
-    type_button.menu = Some(Menu::ChartType);
-    items.push(Item::Button(type_button));
+    // One button for the tab's timeframe; its popover lists the presets and the pinned ones.
+    let mut timeframe = Button::new("timeframe", "Timeframe")
+        .label(input.timeframe.label())
+        .chevron()
+        .with_menu(Menu::Timeframe);
+    timeframe.keep_label = true;
+    timeframe.weight = SEMIBOLD;
+    timeframe.access = Some(format!(
+        "Timeframe: {}. Choose another",
+        input.timeframe.description()
+    ));
+    items.push(Item::Button(timeframe));
     items.push(Item::Separator);
     let indicators_tip = if input.chart.is_some_and(|chart| !chart.indicators) {
         "Indicators: this chart takes none"
@@ -234,18 +236,16 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
             .on_click(ToolbarAction::OpenIndicators),
     ));
     items.push(Item::Separator);
-    // One button for the tab's timeframe; its popover lists the presets and the pinned ones.
-    let mut timeframe = Button::new("timeframe", "Timeframe")
-        .label(input.timeframe.label())
-        .chevron()
-        .with_menu(Menu::Timeframe);
-    timeframe.keep_label = true;
-    timeframe.weight = SEMIBOLD;
-    timeframe.access = Some(format!(
-        "Timeframe: {}. Choose another",
-        input.timeframe.description()
-    ));
-    items.push(Item::Button(timeframe));
+    let chart_type = input
+        .chart
+        .map_or(ChartType::Candles, |chart| chart.chart_type);
+    let mut type_button = Button::new("chart-type", format!("Chart type: {}", chart_type.label()))
+        .enabled(input.chart.is_some_and(|chart| chart.chart_types));
+    type_button.glyph = Some(Glyph::Custom(Arc::new(move |painter, rect, color| {
+        type_menu::glyph(painter, rect, chart_type, color);
+    })));
+    type_button.menu = Some(Menu::ChartType);
+    items.push(Item::Button(type_button));
     items.push(Item::Separator);
 
     let mut replay = Button::new(
@@ -1068,7 +1068,7 @@ mod tests {
         let at = centre_of(&input, width, ToolbarAction::OpenIndicators);
         let _ = at;
         let (_, buttons) = layout_at(&input, width);
-        // The left run is symbol | chart type | Indicators | timeframe | Replay, Alert | undo, redo; a
+        // The left run is symbol | timeframe | Indicators | chart type | Replay, Alert | undo, redo; a
         // separator is the only gap wider than a button gap.
         let left_run: Vec<_> = buttons.iter().filter(|button| button.0 < 700.0).collect();
         let starts: Vec<usize> = std::iter::once(0)
@@ -1080,7 +1080,7 @@ mod tests {
                     .map(|(at, _)| at + 1),
             )
             .collect();
-        let type_button = *left_run[starts[1]];
+        let type_button = *left_run[starts[3]];
         assert!(
             type_button.2.is_none(),
             "the chart-type button opens a menu"
