@@ -367,6 +367,31 @@ fn a_new_timeframe_discards_the_candles_and_a_late_answer_for_the_old_one() {
 }
 
 #[test]
+fn an_overlay_spelled_any_way_the_source_takes_streams_and_takes_the_bar_by_its_canonical_name() {
+    let (mut hub, fake) = hub();
+    let now = Instant::now();
+    let main = InstrumentId::new(DataSource::Okx, "ETH-USDT");
+    let alias = InstrumentId::new(DataSource::Okx, "btc");
+    let mut list = OverlayList::new();
+    list.add(&main, alias.clone(), None);
+    frame(&mut hub, 1, &list, now);
+    fake.run_jobs();
+    hub.poll(Timeframe::HOUR_1, &egui::Context::default(), now);
+
+    // The feed streams and names the market as OKX does.
+    assert_eq!(hub.streamed_symbols(DataSource::Okx), ["BTC-USDT"]);
+    hub.apply_live(
+        DataSource::Okx,
+        Timeframe::HOUR_1,
+        Timeframe::HOUR_1,
+        "BTC-USDT",
+        &candle(11 * HOUR, 5.0),
+        now,
+    );
+    assert_eq!(hub.feed(&alias).unwrap().candles.last().unwrap().close, 5.0);
+}
+
+#[test]
 fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
     let (mut hub, fake) = hub();
     let now = Instant::now();
