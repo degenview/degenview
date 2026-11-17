@@ -350,6 +350,8 @@ mod tests {
             "scripts.demosSeeded",
             "addTicker.recentMarkets",
             "paper.selectedAccountID",
+            // Whether this Mac plays a sound on a paper fill.
+            "paper.prefs",
             // Live trading: orders sent and not yet confirmed at one broker on this Mac, and
             // the choices about how to trade there. Another Mac must never act on either.
             "broker.pending",

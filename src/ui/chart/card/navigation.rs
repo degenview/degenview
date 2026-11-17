@@ -97,6 +97,8 @@ pub(super) struct Navigation<'a> {
     pub shown: Option<PriceRange>,
     pub total: usize,
     pub slot_width: f32,
+    /// The free slots past the newest bar that share the plot with the bars shown.
+    pub reserved: usize,
     /// The height the price scale spans: the plot's, less the part the header covers.
     pub scale_height: f32,
     pub logarithmic: bool,
@@ -179,18 +181,73 @@ impl ChartCard {
         self.newest_bar = newest;
     }
 
-    /// The wheel zooms; a sideways swipe scrolls through time.
+    /// The wheel zooms the bars about the right edge; Ctrl/⌘ with the wheel, and a pinch, zoom
+    /// them about the pointer; either over the price axis stretches the price range, as dragging
+    /// the axis does. A sideways swipe scrolls through time.
     fn scroll_and_zoom(&mut self, ui: &egui::Ui, nav: &Navigation<'_>) {
-        let delta = ui.input(|input| input.smooth_scroll_delta);
+        let (delta, pinch) = ui.input(|input| (input.smooth_scroll_delta, input.zoom_delta()));
+        let pointer = nav.response.hover_pos();
+        let on_price_axis = nav.shown.is_some()
+            && pointer.is_some_and(|point| nav.regions.of(point) == Region::PriceAxis);
         if delta.x.abs() > delta.y.abs() {
             // Swiping right moves the chart right, as dragging does.
             let bars = f64::from(delta.x) / f64::from(nav.slot_width.max(1.0));
             self.viewport.horizontal.scroll_by(bars, nav.total);
         } else if delta.y != 0.0 {
             let factor = (1.0 - delta.y * 0.004).clamp(0.5, 2.0);
-            let next = (self.viewport.horizontal.visible as f32 * factor).round() as usize;
-            self.viewport.horizontal.set_visible(next, nav.total);
+            if on_price_axis {
+                self.stretch_prices(factor, nav);
+            } else {
+                self.zoom_by(factor, 1.0, nav);
+            }
         }
+        // egui reads Ctrl/⌘ with the wheel, and a trackpad pinch, as a zoom factor and leaves the
+        // scroll delta empty: spreading (above 1) shows fewer bars.
+        if pinch.is_finite() && pinch > 0.0 && pinch != 1.0 {
+            let factor = (1.0 / pinch).clamp(0.5, 2.0);
+            if on_price_axis {
+                self.stretch_prices(factor, nav);
+            } else {
+                self.zoom_by(factor, self.pointer_anchor(pointer, nav), nav);
+            }
+        }
+    }
+
+    /// Where the pointer is across the plot, 0 at its left edge and 1 at its right; off the plot
+    /// the right edge.
+    fn pointer_anchor(&self, pointer: Option<Pos2>, nav: &Navigation<'_>) -> f64 {
+        let plot = nav.regions.plot;
+        pointer.map_or(1.0, |point| {
+            f64::from((point.x - plot.left()) / plot.width().max(1.0))
+        })
+    }
+
+    /// Shows `factor` times the bars, the slot at `anchor` (a fraction of the plot's width)
+    /// staying where it is.
+    fn zoom_by(&mut self, factor: f32, anchor: f64, nav: &Navigation<'_>) {
+        let horizontal = &mut self.viewport.horizontal;
+        // The bars shown are whole, so a smooth scroll of less than one bar a frame would round
+        // away: the unrounded count is kept while it still is the one shown.
+        let from = if self.zoom_exact.round() as usize == horizontal.visible {
+            self.zoom_exact
+        } else {
+            horizontal.visible as f64
+        };
+        let wanted = from * f64::from(factor);
+        horizontal.zoom_at(wanted.round() as usize, anchor, nav.reserved, nav.total);
+        self.zoom_exact = if wanted.round() as usize == horizontal.visible {
+            wanted
+        } else {
+            horizontal.visible as f64
+        };
+    }
+
+    /// Shows `factor` times the price range about its centre, as dragging the price axis does.
+    fn stretch_prices(&mut self, factor: f32, nav: &Navigation<'_>) {
+        let from = self.viewport.vertical;
+        self.viewport
+            .vertical
+            .stretch(&from, f64::from(factor), nav.logarithmic);
     }
 
     fn begin_gesture(&mut self, nav: &Navigation<'_>, region: Region) {

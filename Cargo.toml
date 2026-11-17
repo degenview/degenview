@@ -91,11 +91,12 @@ rfd = { version = "0.18", default-features = false, features = ["xdg-portal"] }
 # protocol only.
 x11rb = { version = "0.14", default-features = false }
 
+# `Win32_Media_Audio`: `PlaySoundW` for `service::sound`.
 # Secret storage on Windows: Credential Manager (`service::keychain::windows_credentials`) and DPAPI for the MCP
 # TLS key file (`mcp::transport::tls_protect`). Already in the tree (eframe, mio, tokio); generated bindings,
 # no dependencies of its own.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", default-features = false, features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_Security_Cryptography", "Win32_System_Registry"] }
+windows-sys = { version = "0.61.2", default-features = false, features = ["Win32_Foundation", "Win32_Media_Audio", "Win32_Security_Credentials", "Win32_Security_Cryptography", "Win32_System_Registry"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
@@ -117,6 +118,7 @@ objc2-app-kit = { version = "0.3.2", features = [
     "NSPasteboard",
     "NSResponder",
     "NSScreen",
+    "NSSound",
     "NSView",
     "NSWindow",
 ] }
