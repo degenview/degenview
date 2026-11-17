@@ -38,10 +38,10 @@ and back, so a viewport *is* a time range.
 
 - **Position** is the time at the right edge. At the newest bar it is the end of that bar, so
   charts of any interval agree on "now" and the margin (a presentation setting) never enters.
-- **Zoom** is how many bars span the range. The time-axis drag and the zoom buttons keep the right
-  edge, so they never move the position. The wheel, Ctrl/⌘ with the wheel and a pinch zoom about
-  the pointer ([chart navigation](chart-navigation.md)): the right edge moves with them, so such a
-  zoom is a pan as well, and `HorizontalChange` records both (`moved` and `zoom`).
+- **Zoom** is how many bars span the range. The wheel, the time-axis drag and the zoom buttons keep the right
+  edge, so they never move the position. Ctrl/⌘ with the wheel and a pinch zoom about the pointer
+  ([chart navigation](chart-navigation.md)): the right edge moves with them, so such a zoom is a
+  pan as well, and `HorizontalChange` records both (`moved` and `zoom`).
 
 `TimeAxis` interpolates between a bar's open and the next open: a weekend inside a stock chart is
 one slot wide, so the map is continuous and strictly increasing and a chart never oscillates
