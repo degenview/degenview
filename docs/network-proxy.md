@@ -108,17 +108,27 @@ registry call (`os/registry.rs`) is `cfg(windows)`.
   save made just before the window closes still takes effect. What the page should say (a password
   the storage refused) waits in `proxy::take_report` until the window is next drawn.
 
+- **Live trading** (`degenview-brokers`, an external pinned crate with its own HTTP client and
+  WebSocket) is routed through `proxy::BrokerNetwork` (`proxy/broker.rs`), which `host::broker`
+  gives the crate in `Env::with_network`. The crate asks `route(url)` before every request and
+  rebuilds its agent only when the answer changes; `route` is `route_for_url` (the same decision
+  `config_builder_for` makes) mapped by the pure `to_broker_route`. Its account stream opens the
+  socket with `dial` (the live-feed tunnel, so the same HTTP `CONNECT` and SOCKS5 limits: no SOCKS4
+  or `https://` proxy for the stream, whose error says so) and checks the route about once a
+  second, reconnecting after a change. The crate never reads `*_PROXY` variables itself. A
+  `dev-mock-broker` loopback exchange is local, so it stays direct. Tested against in-process fake
+  proxies in the crate and for the mapping and the routing decisions here; **not exercised**
+  against a real exchange through a real proxy.
+
 ## Not covered
 
-- **`degenview-brokers`** (live trading) is an external pinned crate with its own HTTP client; it
-  does not follow this setting yet. The page says so.
 - CloudKit (iCloud Sync) uses the system's networking and its own proxy handling.
 - PAC scripts and WPAD; per-host proxy rules beyond the no-proxy list.
 
 ## Verified and not
 
 Unit-tested: resolution order, env and OS parsers, bypass rules, the tunnels against fake proxies,
-the setting round trip, the page's rules, and that no agent bypasses the proxy setting (`config_builder_for` / `get_for`). Looked at in a
+the setting round trip, the page's rules, the broker route mapping, and that no agent bypasses the proxy setting (`config_builder_for` / `get_for`). Looked at in a
 picture: the Network page in System, Manual and Off, both themes. **Not exercised**: a real Windows
 machine (the registry reader is only type-checked there), Karing, a real HTTP/SOCKS proxy end to end
 against a market provider, and a live WebSocket feed through a proxy.

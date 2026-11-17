@@ -1,10 +1,12 @@
 //! Network proxy support. One setting, [`ProxyConfig`], says whether DegenView follows the
 //! system's proxy (the default), uses one the user typed, or connects directly. [`resolve`]
 //! turns it into the proxy in force and where it came from, [`current`] keeps that for the whole
-//! process and rebuilds the HTTP agents when it changes, and [`tunnel`] carries the WebSocket
-//! live feeds through the same proxy. See `docs/network-proxy.md`.
+//! process and rebuilds the HTTP agents when it changes, [`tunnel`] carries the WebSocket
+//! live feeds through the same proxy, and [`BrokerNetwork`] gives the same decisions to the
+//! `degenview-brokers` crate for live trading. See `docs/network-proxy.md`.
 
 mod applier;
+mod broker;
 mod bypass;
 mod config;
 mod current;
@@ -18,9 +20,12 @@ mod tests;
 pub(crate) use tests::AppliedProxy;
 
 pub use applier::{ApplyReport, PasswordChange, submit, take_report};
+pub use broker::BrokerNetwork;
 pub use config::{Protocol, ProxyConfig, ProxyMode};
 pub use current::{Active, Status, apply, config_builder_for, follow, init, status};
-pub(in crate::service) use current::{generation, host_of, refresh_if_stale, route, snapshot};
+pub(in crate::service) use current::{
+    generation, host_of, refresh_if_stale, route, route_for_url, snapshot,
+};
 pub(in crate::service) use tunnel::dial;
 
 use os::SystemProxy;

@@ -257,16 +257,21 @@ pub(in crate::service) fn host_of(url: &str) -> Option<String> {
     uri.host().map(str::to_owned)
 }
 
+/// The proxy a request to `url` goes through; `None` when it goes direct. A URL that has no host
+/// (one `ureq` will reject itself) gets the proxy in force. Called on a worker about to connect,
+/// so it may refresh the system's proxy first.
+pub(in crate::service) fn route_for_url(url: &str) -> Option<Resolved> {
+    refresh_if_stale();
+    match host_of(url) {
+        Some(host) => route(&host),
+        None => snapshot().proxy,
+    }
+}
+
 /// A `ureq` config for requests to `url`: through the proxy in force, unless it skips the host.
 /// Every agent is built from this or from `FollowingAgent::get_for`, never from
 /// `ureq::Agent::config_builder()`, so no request ignores the setting. Called on a worker about
 /// to connect, so it may refresh the system's proxy first.
 pub fn config_builder_for(url: &str) -> ureq::config::ConfigBuilder<ureq::typestate::AgentScope> {
-    refresh_if_stale();
-    let proxy = match host_of(url) {
-        Some(host) => route(&host),
-        // Not a URL `ureq` will accept; it reports that itself.
-        None => snapshot().proxy,
-    };
-    ureq::Agent::config_builder().proxy(proxy.map(|resolved| resolved.proxy))
+    ureq::Agent::config_builder().proxy(route_for_url(url).map(|resolved| resolved.proxy))
 }

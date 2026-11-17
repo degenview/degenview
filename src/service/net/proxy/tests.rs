@@ -344,7 +344,7 @@ fn describe_names_the_server_and_a_non_http_protocol() {
     );
 }
 
-/// The agents every request uses are built from `net::config_builder`, so none ignores the
+/// The agents every request uses are built from `config_builder_for`, so none ignores the
 /// proxy setting: nothing outside `service/net` may start from `ureq`'s own builder.
 #[test]
 fn no_agent_is_built_without_the_proxy_setting() {

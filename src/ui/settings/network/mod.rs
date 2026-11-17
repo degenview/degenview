@@ -256,7 +256,7 @@ pub fn body(
         theme::text_secondary(),
         "What goes through the proxy",
         Some(
-            "Market data, live price feeds, updates, link previews, webhooks, AI requests and chart sharing. Connections to a broker for live trading connect directly for now.",
+            "Market data, live price feeds, updates, link previews, webhooks, AI requests, chart sharing and live trading.",
         ),
         None,
     );
