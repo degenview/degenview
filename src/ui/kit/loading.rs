@@ -9,6 +9,7 @@
 //! The candles are a fixed deterministic series, so the picture is a pure function of the clock:
 //! no state is kept between frames, and any two indicators on screen show the same market.
 
+use crate::i18n::tr;
 use crate::ui::accessibility;
 use crate::ui::kit::{self, REGULAR};
 use crate::ui::theme;
@@ -303,7 +304,7 @@ impl Widget for LoadingIndicator {
     fn ui(self, ui: &mut Ui) -> Response {
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(self.size), Sense::hover());
         self.paint_at(ui, rect);
-        accessibility::label_as(response, WidgetType::ProgressIndicator, "Loading")
+        accessibility::label_as(response, WidgetType::ProgressIndicator, tr!("Loading"))
     }
 }
 

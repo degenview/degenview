@@ -12,6 +12,7 @@
 
 use super::studio::StudioSession;
 use super::*;
+use crate::i18n::tr;
 use crate::model::Tool;
 use crate::model::chart::snapshot::selection::{self, MIN_SIDE};
 use crate::ui::snapshot_studio::capture::{
@@ -143,11 +144,11 @@ impl ChartWorkspace {
     /// take it from each other.
     pub(in crate::workspace) fn begin_portion_selection(&mut self) {
         if self.snapshot_busy() {
-            self.say("A snapshot is already being made.", true);
+            self.say(tr!("A snapshot is already being made."), true);
             return;
         }
         if self.market_charts() == 0 {
-            self.say("There is no chart to take a picture of yet.", true);
+            self.say(tr!("There is no chart to take a picture of yet."), true);
             return;
         }
         self.tools.disarm();

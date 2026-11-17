@@ -12,6 +12,7 @@
 //! and a `cautious` one starts with no focus at all (Enter does nothing until Tab), so a stray Enter
 //! never destroys or approves anything.
 
+use crate::i18n::tr;
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
@@ -73,7 +74,7 @@ impl<'a> Dialog<'a> {
             title,
             message,
             accept,
-            dismiss: "Cancel",
+            dismiss: tr!("Cancel"),
             leading: None,
             destructive: false,
             cautious: false,
@@ -297,7 +298,7 @@ fn start_on(ctx: &egui::Context, id: Id, first: Option<Id>) -> bool {
 fn close_button(ui: &mut Ui, id: Id, rect: Rect) -> Response {
     // Escape closes too, so the Tab order is the buttons alone.
     let response = ui.interact(rect, id, Sense::CLICK);
-    let response = accessibility::label(response, "Close").on_hover_text("Close");
+    let response = accessibility::label(response, tr!("Close")).on_hover_text(tr!("Close"));
     if response.hovered() || response.has_focus() {
         ui.painter().rect_filled(
             rect,

@@ -6,6 +6,7 @@ pub(in crate::workspace) mod tool_rail;
 pub(in crate::workspace) mod tools;
 
 use super::ChartWorkspace;
+use crate::i18n::{tr, tr_n};
 use crate::model::drawings::market::MarketDrawings;
 use crate::model::{Drawing, DrawingCommand};
 use crate::store::drawing_template::DrawingTemplateStore;
@@ -206,18 +207,19 @@ impl ChartWorkspace {
             self.tools.confirm_remove = None;
             return;
         }
-        let message = format!(
-            "{count} drawing{} will be removed from this chart. You can undo it.",
-            if count == 1 { "" } else { "s" }
+        let message = tr_n!(
+            count,
+            "{count} drawing will be removed from this chart. You can undo it.",
+            "{count} drawings will be removed from this chart. You can undo it."
         );
         let result = crate::ui::kit::confirm(
             ctx,
             egui::Id::new("remove-drawings"),
             &crate::ui::kit::Confirm {
                 icon: crate::ui::icons::Icon::Trash,
-                title: "Remove all drawings?",
+                title: tr!("Remove all drawings?"),
                 message: &message,
-                destructive: "Remove All",
+                destructive: tr!("Remove All"),
             },
         );
         match result {

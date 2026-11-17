@@ -1,6 +1,7 @@
 //! Replay: the bar, its timeline, and starting, stepping and stopping it.
 
 use super::ChartWorkspace;
+use crate::i18n::tr;
 use crate::model::{
     ClockCommand, ReplayCommand, ReplayEngine, ReplayError, ReplayInterval, ReplayStart,
     ReplayStatus, ReplayView,
@@ -187,17 +188,17 @@ impl ChartWorkspace {
         if timeline.is_empty() {
             self.replay.engine.stop();
             self.say(
-                format!(
-                    "Replay stopped: no {} history to replay.",
-                    self.timeframe.label()
+                tr!(
+                    "Replay stopped: no {timeframe} history to replay.",
+                    timeframe = self.timeframe.label()
                 ),
                 true,
             );
         } else if !self.replay.engine.rebase(timeline) {
             self.say(
-                format!(
-                    "{} history starts after the replay position, so the replay moved to its first bar.",
-                    self.timeframe.label()
+                tr!(
+                    "{timeframe} history starts after the replay position, so the replay moved to its first bar.",
+                    timeframe = self.timeframe.label()
                 ),
                 false,
             );

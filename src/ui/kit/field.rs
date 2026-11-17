@@ -2,6 +2,7 @@
 //! frameless field.
 
 use super::{MEDIUM, REGULAR, primary, size, text};
+use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
 use eframe::egui::{self, FontId, Id, Sense, Stroke, StrokeKind, Ui, text::LayoutJob, vec2};
@@ -53,7 +54,7 @@ pub fn search_field(
             Icon::XmarkCircleFill,
             18.0,
             theme::text_secondary(),
-            "Clear search",
+            tr!("Clear search"),
         )
         .clicked()
     {
@@ -183,9 +184,9 @@ pub fn field(
             );
             if secret {
                 let (icon, tip) = if revealed {
-                    (Icon::EyeSlash, format!("Hide {title}"))
+                    (Icon::EyeSlash, tr!("Hide {title}", title = title))
                 } else {
-                    (Icon::Eye, format!("Show {title}"))
+                    (Icon::Eye, tr!("Show {title}", title = title))
                 };
                 if icons::button(ui, icon, 22.0, theme::text_secondary(), &tip).clicked() {
                     revealed = !revealed;

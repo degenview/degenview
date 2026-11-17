@@ -1,5 +1,6 @@
 //! The chips the picker lists, and how the arrow keys move between them. Pure: no drawing.
 
+use crate::i18n::tr;
 use crate::model::{Section, Timeframe};
 
 /// Chips in one row.
@@ -96,8 +97,8 @@ impl Grid {
 /// A section's heading.
 pub(super) fn title(section: Section) -> &'static str {
     match section {
-        Section::Minutes => "Minutes",
-        Section::Hours => "Hours",
-        Section::DaysAndUp => "Days and up",
+        Section::Minutes => tr!("Minutes"),
+        Section::Hours => tr!("Hours"),
+        Section::DaysAndUp => tr!("Days and up"),
     }
 }

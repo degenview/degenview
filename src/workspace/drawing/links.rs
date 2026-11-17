@@ -5,6 +5,7 @@
 //! nothing is contacted until the user presses Preview on a card and, once, agrees to it. Opening a link is always a deliberate click. The fetch runs on a worker of its own and
 //! its answer is written to the card as one undoable change, so it syncs like any edit.
 
+use crate::i18n::tr;
 use crate::model::annotation::image_content::Content;
 use crate::model::annotation::link_card::{ContentPrefs, Link, LinkCard, LinkMeta};
 use crate::model::{DrawingCommand, Geometry, Tool};
@@ -203,7 +204,7 @@ impl ChartWorkspace {
             LinkRequest::Open => ctx.open_url(egui::OpenUrl::new_tab(card.link.url())),
             LinkRequest::Copy => {
                 ctx.copy_text(card.link.url());
-                self.say("Copied the link.", false);
+                self.say(tr!("Copied the link."), false);
             }
             LinkRequest::Replace => {
                 self.content.links.sheet = Some(Sheet {
@@ -242,14 +243,14 @@ impl ChartWorkspace {
             })
             .unwrap_or(false);
         if !saved {
-            self.say("The choice could not be saved.", true);
+            self.say(tr!("The choice could not be saved."), true);
         }
     }
 
     /// Asks the service for the preview of one card, on a worker. One at a time.
     fn start_fetch(&mut self, ctx: &egui::Context, chart_id: u64, drawing_id: u64) {
         if self.content.links.inbox.is_some() {
-            self.say("A preview is already being fetched.", true);
+            self.say(tr!("A preview is already being fetched."), true);
             return;
         }
         let Some(drawing) = self.card_drawing(chart_id, drawing_id) else {
@@ -261,7 +262,7 @@ impl ChartWorkspace {
         let link = card.link.clone();
         let (sender, receiver) = mpsc::channel();
         self.content.links.inbox = Some(receiver);
-        self.say("Fetching the preview…", false);
+        self.say(tr!("Fetching the preview…"), false);
         let ctx = ctx.clone();
         let store = self.store.clone();
         work_queue::LINKS.submit(move || {
@@ -329,6 +330,6 @@ impl ChartWorkspace {
                 drawing,
             }],
         );
-        self.say("Fetched the preview.", false);
+        self.say(tr!("Fetched the preview."), false);
     }
 }

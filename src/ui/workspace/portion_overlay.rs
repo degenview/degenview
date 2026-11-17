@@ -5,6 +5,7 @@
 //! shadow, and nothing blue; the border is the label colour so it reads on a dark and a light
 //! chart alike.
 
+use crate::i18n::tr;
 use crate::ui::{kit, theme};
 use eframe::egui::{
     self, Align2, Color32, Context, CornerRadius, Id, Order, Painter, Rect, Response, Sense,
@@ -24,7 +25,9 @@ fn idle_dim() -> Color32 {
     Color32::from_black_alpha(if theme::is_light() { 28 } else { 46 })
 }
 /// What the hint says.
-pub const HINT: &str = "Drag to select an area · Esc to cancel";
+pub fn hint() -> &'static str {
+    tr!("Drag to select an area · Esc to cancel")
+}
 /// How far under the top of the charts' plots the hint sits (below their headers).
 const HINT_TOP: f32 = 14.0;
 
@@ -91,7 +94,7 @@ fn paint_idle(painter: &Painter, grid: Rect, plots: Rect) {
     painter.rect_filled(grid, 0.0, idle_dim());
     let galley = kit::galley_on(
         painter,
-        HINT,
+        hint(),
         kit::size::CAPTION,
         kit::REGULAR,
         theme::text_primary(),

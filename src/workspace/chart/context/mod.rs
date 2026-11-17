@@ -9,6 +9,7 @@
 //! snapshot is checked against the live workspace first, and a stale one is refused with a
 //! message.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::alert::AlertCondition;
 use crate::model::chart;
 use crate::model::chart::clipboard::DrawingClip;
@@ -423,9 +424,9 @@ impl ChartWorkspace {
                     Some(price) => {
                         let text = format.plain(price);
                         ctx.copy_text(text.clone());
-                        self.say(format!("Copied {text}"), false);
+                        self.say(tr!("Copied {text}", text = text), false);
                     }
-                    None => self.say("There is no price at that point.", true),
+                    None => self.say(tr!("There is no price at that point."), true),
                 }
             }
             Command::Paste => self.paste(ctx, &context),
@@ -468,7 +469,7 @@ impl ChartWorkspace {
                 let store = self.store.clone();
                 let card = &mut self.charts[index].chart;
                 match self.context.templates.apply(&store, id, card) {
-                    Ok(name) => self.say(format!("Applied the template “{name}”."), false),
+                    Ok(name) => self.say(tr!("Applied the template “{name}”.", name = name), false),
                     Err(message) => self.say(message, true),
                 }
             }
@@ -585,15 +586,15 @@ impl ChartWorkspace {
         };
         let chart = &self.charts[index];
         if !chart.is_market() || !ui::supports_alerts(chart.source) {
-            self.say("Alerts are not available for this chart.", true);
+            self.say(tr!("Alerts are not available for this chart."), true);
             return;
         }
         if self.replay.is_active() {
-            self.say("Alerts are not available during replay.", true);
+            self.say(tr!("Alerts are not available during replay."), true);
             return;
         }
         let Some(price) = price.filter(|price| price.is_finite()) else {
-            self.say("There is no price at that point.", true);
+            self.say(tr!("There is no price at that point."), true);
             return;
         };
         let last = chart.candles.last().map(|candle| candle.close);
@@ -614,12 +615,12 @@ impl ChartWorkspace {
         price: f64,
     ) {
         if self.replay.is_active() {
-            self.say("Paper orders are not available during replay.", true);
+            self.say(tr!("Paper orders are not available during replay."), true);
             return;
         }
         let chart = &self.charts[index];
         if Self::paper_access(chart) == PaperAccess::Unsupported {
-            self.say("Paper trading is not available for this chart.", true);
+            self.say(tr!("Paper trading is not available for this chart."), true);
             return;
         }
         let price = price
@@ -701,10 +702,7 @@ impl ChartWorkspace {
         ctx.copy_text(clip.encode());
         ctx.data_mut(|data| data.insert_temp(clip_id(), clip));
         self.say(
-            format!(
-                "Copied {count} drawing{}.",
-                if count == 1 { "" } else { "s" }
-            ),
+            tr_n!(count, "Copied {count} drawing.", "Copied {count} drawings."),
             false,
         );
     }
@@ -749,7 +747,7 @@ impl ChartWorkspace {
     /// Paste from the menu: the copy waiting in the app clipboard, at the clicked point.
     fn paste(&mut self, ctx: &Context, context: &ChartContext) {
         let Some(clip) = stored_clip(ctx) else {
-            self.say("There are no copied drawings to paste.", true);
+            self.say(tr!("There are no copied drawings to paste."), true);
             return;
         };
         let at = context
@@ -794,10 +792,7 @@ impl ChartWorkspace {
         self.tools.reveal_all();
         self.tools.select(chart_id, ids);
         self.say(
-            format!(
-                "Pasted {count} drawing{}.",
-                if count == 1 { "" } else { "s" }
-            ),
+            tr_n!(count, "Pasted {count} drawing.", "Pasted {count} drawings."),
             false,
         );
     }
@@ -892,7 +887,7 @@ impl ChartWorkspace {
     /// last price, as for "Add alert at this price". State, frequency, note and webhooks stay.
     fn move_alert(&mut self, index: usize, moved: ui::AlertMove) -> Option<WorkspaceAction> {
         if self.replay.is_engaged() {
-            self.say("Alerts are not available during replay.", true);
+            self.say(tr!("Alerts are not available during replay."), true);
             return None;
         }
         let chart = &self.charts[index];
@@ -907,7 +902,7 @@ impl ChartWorkspace {
             .find(|alert| alert.id == moved.id && alert.asset.instrument == market)?;
         let Some(rate) = self.alerts.usd_rate(alert.currency) else {
             self.say(
-                "The exchange rate for this alert is not available yet.",
+                tr!("The exchange rate for this alert is not available yet."),
                 true,
             );
             return None;
@@ -1189,23 +1184,32 @@ impl ChartWorkspace {
             self.context.confirm_remove_indicators = None;
             return;
         }
-        let including = match compared {
-            0 => String::new(),
-            1 => ", the compared symbol included,".to_owned(),
-            n => format!(", the {n} compared symbols included,"),
+        let message = match compared {
+            0 => tr_n!(
+                count,
+                "{count} indicator will be removed from this chart. Saved scripts are kept, and you can undo it.",
+                "{count} indicators will be removed from this chart. Saved scripts are kept, and you can undo it."
+            ),
+            1 => tr_n!(
+                count,
+                "{count} indicator, the compared symbol included, will be removed from this chart. Saved scripts are kept, and you can undo it.",
+                "{count} indicators, the compared symbol included, will be removed from this chart. Saved scripts are kept, and you can undo it."
+            ),
+            n => tr_n!(
+                count,
+                "{count} indicator, the {compared} compared symbols included, will be removed from this chart. Saved scripts are kept, and you can undo it.",
+                "{count} indicators, the {compared} compared symbols included, will be removed from this chart. Saved scripts are kept, and you can undo it.",
+                compared = n
+            ),
         };
-        let message = format!(
-            "{}{including} will be removed from this chart. Saved scripts are kept, and you can undo it.",
-            chart::context::remove_indicators_label(count).trim_start_matches("Remove ")
-        );
         let result = ui::kit::confirm(
             ctx,
             Id::new(("remove-indicators", self.id)),
             &ui::kit::Confirm {
                 icon: ui::icons::Icon::Trash,
-                title: "Remove all indicators?",
+                title: tr!("Remove all indicators?"),
                 message: &message,
-                destructive: "Remove All",
+                destructive: tr!("Remove All"),
             },
         );
         match result {

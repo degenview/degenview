@@ -5,6 +5,7 @@
 //! the view. The pane's options (levels, search flags) are remembered in the `pineLogs.prefs`
 //! setting, local to the machine; the messages themselves are never stored or synced.
 
+use crate::i18n::tr;
 use crate::model::pine::instance::PineInstance;
 use crate::model::pine::logs_view::{LogsPrefs, SourceTarget};
 use crate::pine::logs::{LogEvent, LogHistory};
@@ -72,9 +73,9 @@ fn source_target(instance: &PineInstance, event: &LogEvent) -> Result<SourceTarg
             offset,
             ran_source: Some(instance.source.clone()),
         }),
-        (None, None) => {
-            Err("This script was not added from a saved script, so there is no source to open.")
-        }
+        (None, None) => Err(tr!(
+            "This script was not added from a saved script, so there is no source to open."
+        )),
     }
 }
 
@@ -233,10 +234,10 @@ impl ChartWorkspace {
         match chart.chart.scroll_to_time(time_ms, candles) {
             Scrolled::Done => {}
             Scrolled::BeforeHistory => self.say(
-                "That bar is older than the candles this chart holds, so it went to the oldest bar.",
+                tr!("That bar is older than the candles this chart holds, so it went to the oldest bar."),
                 false,
             ),
-            Scrolled::NoBars => self.say("The chart has no bars to scroll to.", true),
+            Scrolled::NoBars => self.say(tr!("The chart has no bars to scroll to."), true),
         }
     }
 
