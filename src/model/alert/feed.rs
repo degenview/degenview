@@ -2,6 +2,8 @@
 //! how many are unseen, and the history bucketed under day headings.
 
 use crate::format::civil_from_days;
+use crate::i18n::calendar::{month_name, weekday_name};
+use crate::i18n::tr;
 use crate::model::alert::AlertDomainEvent;
 use std::collections::HashSet;
 
@@ -92,29 +94,6 @@ pub struct DaySection<T> {
     pub items: Vec<T>,
 }
 
-const WEEKDAYS: [&str; 7] = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-];
-const MONTHS: [&str; 12] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-];
 const DAY_MS: i64 = 86_400_000;
 
 /// Buckets time-stamped items under "Today", "Yesterday" and dated headings, newest day
@@ -150,21 +129,33 @@ pub fn day_sections<T>(
 
 fn day_title(day_start_ms: i64, today_start_ms: i64, offset_ms: i64) -> String {
     if day_start_ms == today_start_ms {
-        return "Today".to_owned();
+        return tr!("Today").to_owned();
     }
     if day_start_ms == today_start_ms - DAY_MS {
-        return "Yesterday".to_owned();
+        return tr!("Yesterday").to_owned();
     }
     let days = (day_start_ms + offset_ms).div_euclid(DAY_MS);
     let (year, month, day) = civil_from_days(days);
     let (today_year, ..) = civil_from_days((today_start_ms + offset_ms).div_euclid(DAY_MS));
     // 1970-01-01 was a Thursday; Monday = 0.
-    let weekday = WEEKDAYS[(days + 3).rem_euclid(7) as usize];
-    let mut title = format!("{weekday}, {} {day}", MONTHS[(month - 1) as usize]);
+    let weekday = weekday_name((days + 3).rem_euclid(7) as usize);
+    let month = month_name(month);
     if year != today_year {
-        title.push_str(&format!(", {year}"));
+        tr!(
+            "{weekday}, {month} {day}, {year}",
+            weekday = weekday,
+            month = month,
+            day = day,
+            year = year
+        )
+    } else {
+        tr!(
+            "{weekday}, {month} {day}",
+            weekday = weekday,
+            month = month,
+            day = day
+        )
     }
-    title
 }
 
 #[cfg(test)]

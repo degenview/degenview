@@ -36,9 +36,9 @@ impl TabTitleStyle {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Full => "Symbol, price and layout",
-            Self::SymbolOnly => "Symbol only",
-            Self::LayoutOnly => "Layout name only",
+            Self::Full => crate::i18n::tr!("Symbol, price and layout"),
+            Self::SymbolOnly => crate::i18n::tr!("Symbol only"),
+            Self::LayoutOnly => crate::i18n::tr!("Layout name only"),
         }
     }
 }

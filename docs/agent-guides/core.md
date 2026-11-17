@@ -60,6 +60,7 @@ Finder-launchable app: `./tools/bundle.sh`, then open `target/DegenView.app`. Bi
 - Unit tests cover engines, parsing, layout, storage and policy. Manually verify affected UI; outside Pine Studio no complete GUI pass has been done.
 - Tests disable Keychain. Launch dev builds with `DEGENVIEW_NO_KEYCHAIN=1` to avoid signing prompts. The MCP credential seal is always off in debug and ignores this variable in release.
 - Optional cache override: `DEGENVIEW_CACHE_DIR=<scratch-dir>`.
+- `DEGENVIEW_LOCALE=<tag>` names the interface language for one run (`en-XA` is the pseudo-locale that shows clipped and untranslated text); see [Localization](../localization.md).
 - Live provider tests need `DEGENVIEW_ALPACA_KEY_ID`, `DEGENVIEW_ALPACA_SECRET_KEY`, or `DEGENVIEW_CMC_API_KEY`.
 
 ## Naming

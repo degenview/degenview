@@ -368,6 +368,9 @@ mod tests {
             // Which parts of a chart a Tab Linking colour keeps in step; the tabs' colours are in
             // the `tab` table, which is local too.
             "tab.link_toggles",
+            // The language is chosen per Mac, like the system's own: a Mac set to another
+            // language is not moved by this one.
+            "language",
         ] {
             assert_eq!(setting_policy(key), SettingPolicy::Local, "{key}");
         }

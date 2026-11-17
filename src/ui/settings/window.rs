@@ -73,7 +73,7 @@ impl SettingsSection {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Appearance => "Appearance",
+            Self::Appearance => crate::i18n::tr!("Appearance"),
             Self::PineStudio => "Pine Studio",
             Self::Alpaca => "Alpaca",
             Self::Brokers => "Brokers",
@@ -140,6 +140,8 @@ pub enum SettingsAction {
     SetTheme(crate::ui::theme::AppTheme),
     /// A tab title style on the Appearance page was picked (or restored to the default).
     SetTabTitleStyle(crate::model::tab::title::TabTitleStyle),
+    /// A language on the Appearance page was picked.
+    SetLanguage(crate::i18n::Preference),
     /// A switch on the Notifications page changed: the whole new settings value.
     UpdateNotifications(AlertNotificationSettings),
     /// The paper-trading card on the Notifications page changed.
@@ -415,7 +417,7 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Choose how DegenView looks across every window and chart.",
+                crate::i18n::tr!("Choose how DegenView looks across every window and chart."),
                 |ui| {
                     if let Some(theme) =
                         crate::ui::settings::appearance::body(ui, crate::ui::theme::choice())
@@ -427,6 +429,11 @@ pub fn show(
                         crate::ui::settings::appearance::tabs(ui, input.tab_title_style)
                     {
                         actions.push(SettingsAction::SetTabTitleStyle(style));
+                    }
+                    if let Some(language) =
+                        crate::ui::settings::appearance::language(ui, crate::i18n::preference())
+                    {
+                        actions.push(SettingsAction::SetLanguage(language));
                     }
                 },
             );
@@ -1026,6 +1033,52 @@ mod tests {
                     "{section:?} at {width}: {height}"
                 );
             }
+        }
+    }
+
+    /// The Appearance page in the pseudo-locale, with its language card: every word of it is put
+    /// through `tr!`, so none shows without accents and brackets, and the longer text fits.
+    #[test]
+    fn the_appearance_page_draws_in_the_pseudo_locale() {
+        use crate::i18n::{Locale, Preference, with_locale};
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        let _theme = crate::ui::theme::RestoreDefaultTheme;
+        // Taller than the window, so the language card at the foot of the page is in the picture.
+        let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, -320.0));
+        theme::apply(&screen.ctx, crate::ui::theme::AppTheme::Dark);
+        let mut chosen = None;
+        let mut last = None;
+        with_locale(Locale::Pseudo, || {
+            for _ in 0..3 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let mut page = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
+                    page_shell(
+                        &mut page,
+                        SettingsSection::Appearance,
+                        crate::i18n::tr!(
+                            "Choose how DegenView looks across every window and chart."
+                        ),
+                        |ui| {
+                            crate::ui::settings::appearance::body(ui, theme::choice());
+                            ui.add_space(22.0);
+                            crate::ui::settings::appearance::tabs(
+                                ui,
+                                crate::model::tab::title::TabTitleStyle::Full,
+                            );
+                            chosen = crate::ui::settings::appearance::language(
+                                ui,
+                                Preference::Fixed(Locale::Pseudo),
+                            );
+                        },
+                    );
+                }));
+            }
+            assert!(SettingsSection::Appearance.title().starts_with('['));
+        });
+        // Nothing was clicked.
+        assert_eq!(chosen, None);
+        if gallery_dir().is_some() {
+            screen.save("settings-appearance-pseudo", last.expect("a frame"));
         }
     }
 

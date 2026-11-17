@@ -150,28 +150,13 @@ fn picker(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, range: Option<(i6
         });
 }
 
-const MONTHS: [&str; 12] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-];
-
 fn calendar_header(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, lo: i64, hi: i64) {
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new(format!(
-                "{} {}",
-                MONTHS[(state.display_month - 1) as usize],
-                state.display_year
+            RichText::new(crate::i18n::tr!(
+                "{month} {year}",
+                month = crate::i18n::calendar::month_name(state.display_month),
+                year = state.display_year
             ))
             .strong()
             .size(14.0),

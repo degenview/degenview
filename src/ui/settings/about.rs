@@ -26,10 +26,6 @@ const BADGE_SPACING: f32 = 12.0;
 /// How long "Copied" shows after the build summary goes to the clipboard.
 const COPIED_FOR: Duration = Duration::from_millis(1_600);
 
-const MONTHS: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
 /// When the running executable was built, as epoch milliseconds: its modification time, unless
 /// that is older than the build itself (`build.rs` stamps it), as in a Flatpak, which installs
 /// every file dated 1 Jan 1970.
@@ -58,9 +54,11 @@ fn pick_build_time(modified: Option<i64>, compiled: Option<i64>) -> Option<i64> 
 pub fn date_label(ms: i64) -> String {
     let local = ms + crate::service::system::timezone::local_utc_offset_secs(ms) * 1_000;
     let (year, month, day) = civil_from_days(local.div_euclid(86_400_000));
-    format!(
-        "{day} {} {year}",
-        MONTHS[(month as usize).saturating_sub(1).min(11)]
+    crate::i18n::tr!(
+        "{day} {month} {year}",
+        day = day,
+        month = crate::i18n::calendar::month_abbreviation(month),
+        year = year
     )
 }
 
