@@ -30,7 +30,7 @@ No account. No subscription.
 
 ### Markets
 
-- **Crypto** from Binance, Coinbase, OKX, Kraken, CoinGecko and on-chain DEX pairs, searchable side by side.
+- **Crypto** from Binance, Coinbase, OKX, Kraken, Bybit, CoinGecko and on-chain DEX pairs, searchable side by side.
 - **US stocks and ETFs** through Alpaca. A free key is all you need.
 - **Prediction markets** from Polymarket and Kalshi, charted as probabilities.
 - **Market-wide gauges** such as Crypto Fear and Greed and Altcoin Season.

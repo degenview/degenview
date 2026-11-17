@@ -31,11 +31,12 @@ const US_EXCHANGES: [&str; 7] = [
     "NYSEAMERICAN",
 ];
 
-const SOURCES: [DataSource; 10] = [
+const SOURCES: [DataSource; 11] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
     DataSource::Kraken,
+    DataSource::Bybit,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -279,13 +280,13 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
     };
 
     match source {
-        DataSource::Binance => {
+        DataSource::Binance | DataSource::Bybit => {
             let symbol = rest.to_uppercase();
             if !(3..=20).contains(&symbol.len()) || !symbol.chars().all(is_upper_alphanumeric) {
-                return Err(
-                    "Not a Binance spot symbol (perpetuals and futures aren't supported)"
-                        .to_owned(),
-                );
+                return Err(format!(
+                    "Not a {} spot symbol (perpetuals and futures aren't supported)",
+                    source.display_name()
+                ));
             }
             Ok(item(source, &symbol, &symbol, &symbol))
         }
@@ -585,6 +586,24 @@ mod tests {
         assert_eq!(
             reasons,
             ["OKX spot markets are written BASE-QUOTE, like BTC-USDT"; 2]
+        );
+    }
+
+    #[test]
+    fn bybit_rows_are_spot_symbols_written_without_a_separator() {
+        let parsed = parse("BYBIT:btcusdt\nBYBIT:BTCUSDT.P\nBYBIT:BTC-USDT");
+        assert_eq!(parsed.rows.len(), 1);
+        let Row::Instrument(item) = &parsed.rows[0] else {
+            panic!("an instrument");
+        };
+        assert_eq!(item.instrument.key(), "BYBIT:BTCUSDT");
+        assert_eq!(
+            parsed
+                .skipped
+                .iter()
+                .map(|skipped| skipped.reason.as_str())
+                .collect::<Vec<_>>(),
+            ["Not a Bybit spot symbol (perpetuals and futures aren't supported)"; 2]
         );
     }
 

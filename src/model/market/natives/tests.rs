@@ -11,11 +11,12 @@ const TABLE: [&str; 24] = [
     "3D", "5D", "1W", "2W", "1M", "2M", "3M", "6M", "1Y",
 ];
 
-const CANDLE_SOURCES: [DataSource; 6] = [
+const CANDLE_SOURCES: [DataSource; 7] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
     DataSource::Kraken,
+    DataSource::Bybit,
     DataSource::Alpaca,
     DataSource::DexScreener,
 ];
@@ -54,6 +55,25 @@ fn okx_folds_what_it_cuts_off_the_utc_grid_and_the_year() {
     assert_eq!(base("22m").as_deref(), Some("1m"));
     for text in TABLE {
         assert!(DataSource::Okx.serves(tf(text)), "{text}");
+    }
+}
+
+#[test]
+fn bybit_has_every_bar_on_our_grid_and_folds_quarters_and_years_from_months() {
+    let base = |text: &str| {
+        DataSource::Bybit
+            .plan(tf(text))
+            .map(|plan| plan.base().label())
+    };
+    for text in ["3M", "1Y", "2M", "6M"] {
+        assert_eq!(base(text).as_deref(), Some("1M"), "{text}");
+    }
+    assert_eq!(base("12h").as_deref(), Some("12h"));
+    assert_eq!(base("8h").as_deref(), Some("4h"));
+    assert_eq!(base("3D").as_deref(), Some("1D"));
+    assert_eq!(base("2W").as_deref(), Some("1W"));
+    for text in TABLE {
+        assert!(DataSource::Bybit.serves(tf(text)), "{text}");
     }
 }
 
@@ -215,6 +235,7 @@ fn exchanges_page_back_at_any_length() {
         DataSource::Binance,
         DataSource::Coinbase,
         DataSource::Okx,
+        DataSource::Bybit,
         DataSource::Alpaca,
     ] {
         for text in TABLE {

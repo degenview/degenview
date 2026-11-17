@@ -7,8 +7,9 @@
 
 use super::candles::plan;
 use super::catalog::Catalog;
+use super::paging::Paging;
 use super::search_rank::normalize;
-use crate::model::market::bucket::{FoldPlan, next_bucket_start_ms};
+use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
@@ -22,14 +23,13 @@ pub struct Okx;
 
 pub const OKX: Okx = Okx;
 
-/// The most rows one candle request returns.
-const PAGE: usize = 300;
-/// How many pages one request pages back: a 22-minute chart of 500 candles is 37.
-const MAX_PAGES: usize = 120;
-/// The most base candles one request pages back to.
-const MAX_CANDLES: usize = PAGE * MAX_PAGES;
-/// Between history pages: its limit is 20 requests per 2 seconds per IP.
-const PAGE_PAUSE: Duration = Duration::from_millis(100);
+/// 300 rows a request, 120 pages (a 22-minute chart of 500 candles is 37), and a pause between
+/// them for its 20 requests per 2 seconds per IP.
+const PAGING: Paging = Paging {
+    page: 300,
+    max_pages: 120,
+    pause: Duration::from_millis(100),
+};
 
 /// OKX's bar token for a candle length it serves itself: `5m`, `4H`, and the `utc` bars from six
 /// hours up (`6Hutc`, `1Dutc`, `1Wutc`, `1Mutc`, `3Mutc`), because its plain ones are cut at UTC+8
@@ -60,8 +60,8 @@ impl MarketSource for Okx {
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Okx, timeframe)?;
-        let requested = base_candles(plan, limit as usize);
-        if requested > PAGE {
+        let requested = PAGING.requested(plan, limit as usize);
+        if requested > PAGING.page {
             // More base candles than one request holds: page back from now.
             let end_ms = crate::service::now_ms() + 1;
             return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
@@ -85,9 +85,9 @@ impl MarketSource for Okx {
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Okx, timeframe)?;
-        let requested = base_candles(plan, max);
+        let requested = PAGING.requested(plan, max);
         let id = instrument_id(symbol);
-        let candles = page_back(start_ms, end_ms, requested, |after, wanted| {
+        let candles = PAGING.back(start_ms, end_ms, requested, |after, wanted| {
             fetch_page("history-candles", &id, plan.base(), wanted, Some(after))
         })?;
         Ok(plan.shape(candles, requested, max))
@@ -103,54 +103,6 @@ impl MarketSource for Okx {
         let results = matching_pairs(&pairs, &needle);
         Ok(rank_results(results, query).into_iter().take(20).collect())
     }
-}
-
-/// The base candles to ask for to end with `limit` candles of `plan`'s target: what the fold needs,
-/// at most what the paging reaches. Capped here, before the answer is folded, because a short
-/// answer is read as the start of the market's history and its first fold is kept: a request the
-/// paging cut short must come back as long as it asked for, so that fragment is dropped.
-fn base_candles(plan: FoldPlan, limit: usize) -> usize {
-    plan.base_count(limit).min(MAX_CANDLES)
-}
-
-/// The newest `requested` candles that open in `[start_ms, end_ms)`, oldest first, paged back from
-/// `end_ms`. `fetch(after, wanted)` answers up to `wanted` candles older than `after`, oldest
-/// first; a short page is the start of the market's history.
-fn page_back(
-    start_ms: i64,
-    end_ms: i64,
-    requested: usize,
-    mut fetch: impl FnMut(i64, usize) -> Result<Vec<Kline>, ProviderError>,
-) -> Result<Vec<Kline>, ProviderError> {
-    let mut candles: Vec<Kline> = Vec::new();
-    let mut after = end_ms;
-    for page in 0..MAX_PAGES {
-        if candles.len() >= requested || after <= start_ms {
-            break;
-        }
-        if page > 0 {
-            std::thread::sleep(PAGE_PAUSE);
-        }
-        let wanted = (requested - candles.len()).min(PAGE);
-        let batch = fetch(after, wanted)?;
-        let exhausted = batch.len() < wanted;
-        let batch: Vec<Kline> = batch
-            .into_iter()
-            .filter(|candle| candle.open_time >= start_ms && candle.open_time < after)
-            .collect();
-        let Some(oldest) = batch.first().map(|candle| candle.open_time) else {
-            break;
-        };
-        after = oldest;
-        candles.splice(0..0, batch);
-        if exhausted {
-            break;
-        }
-    }
-    if candles.len() > requested {
-        candles.drain(..candles.len() - requested);
-    }
-    Ok(candles)
 }
 
 fn fetch_page(
@@ -367,66 +319,6 @@ mod tests {
         assert!(parse_candles(bad_field, Timeframe::HOUR_1).is_err());
     }
 
-    fn candle(open_time: i64) -> Kline {
-        Kline {
-            open_time,
-            close_time: open_time + 59,
-            open: 1.0,
-            high: 1.0,
-            low: 1.0,
-            close: 1.0,
-            volume: 1.0,
-        }
-    }
-
-    /// A market with one candle per 60 ms from 0 to `last`, answering as OKX's history does.
-    fn history(last: i64) -> impl FnMut(i64, usize) -> Result<Vec<Kline>, ProviderError> {
-        move |after, wanted| {
-            let mut newest_first: Vec<Kline> = (0..=last / 60)
-                .rev()
-                .map(|index| candle(index * 60))
-                .filter(|candle| candle.open_time < after)
-                .take(wanted)
-                .collect();
-            newest_first.reverse();
-            Ok(newest_first)
-        }
-    }
-
-    #[test]
-    fn pages_back_until_it_has_what_was_asked() {
-        let candles = page_back(0, 700 * 60, 650, history(699 * 60)).unwrap();
-        assert_eq!(candles.len(), 650);
-        assert_eq!(candles[0].open_time, 50 * 60);
-        assert_eq!(candles.last().unwrap().open_time, 699 * 60);
-        assert!(
-            candles
-                .windows(2)
-                .all(|pair| pair[0].open_time < pair[1].open_time)
-        );
-    }
-
-    #[test]
-    fn a_short_page_is_the_start_of_history() {
-        let candles = page_back(0, 1_000 * 60, 900, history(99 * 60)).unwrap();
-        assert_eq!(candles.len(), 100);
-        assert_eq!(candles[0].open_time, 0);
-    }
-
-    #[test]
-    fn nothing_before_the_start_is_kept_or_asked_for() {
-        let mut asked = Vec::new();
-        let mut inner = history(699 * 60);
-        let candles = page_back(300 * 60, 700 * 60, 1_000, |after, wanted| {
-            asked.push(after);
-            inner(after, wanted)
-        })
-        .unwrap();
-        assert_eq!(candles[0].open_time, 300 * 60);
-        assert_eq!(candles.len(), 400);
-        assert_eq!(asked, [700 * 60, 400 * 60]);
-    }
-
     /// Run with `cargo test --lib okx::tests::live -- --ignored --nocapture`.
     #[test]
     #[ignore = "needs the network"]
@@ -461,65 +353,6 @@ mod tests {
             error.to_string(),
             "OKX: Instrument ID, Instrument ID code, or Spread ID doesn't exist."
         );
-    }
-
-    const MINUTE: i64 = 60_000;
-
-    /// `count` one-minute candles of volume 1 that end at `end_ms`, oldest first.
-    fn minutes_ending(end_ms: i64, count: usize) -> Vec<Kline> {
-        (0..count as i64)
-            .rev()
-            .map(|index| {
-                let open_time = end_ms - (index + 1) * MINUTE;
-                Kline {
-                    open_time,
-                    close_time: open_time + MINUTE - 1,
-                    open: 1.0,
-                    high: 1.0,
-                    low: 1.0,
-                    close: 1.0,
-                    volume: 1.0,
-                }
-            })
-            .collect()
-    }
-
-    /// Noon UTC on 2026-11-16.
-    const NOON: i64 = 1_794_830_400_000;
-
-    #[test]
-    fn a_request_is_capped_at_what_the_paging_reaches() {
-        let plan = |text: &str| plan(DataSource::Okx, Timeframe::parse(text).unwrap()).unwrap();
-        assert_eq!(base_candles(plan("79m"), 500), MAX_CANDLES);
-        assert_eq!(base_candles(plan("1h"), 500), 500);
-        assert_eq!(base_candles(plan("22m"), 500), 501 * 22);
-    }
-
-    #[test]
-    fn an_answer_cut_by_the_paging_cap_loses_its_first_fragment() {
-        // 500 candles of 79 minutes is 39,579 one-minute candles; paging reaches 36,000. The
-        // oldest of them, at 12:00, is nine minutes into a bucket that began at 11:51.
-        let plan = plan(DataSource::Okx, Timeframe::parse("79m").unwrap()).unwrap();
-        let candles = minutes_ending(NOON, MAX_CANDLES);
-        let shown = plan.shape(candles, base_candles(plan, 500), 500);
-        assert_eq!(shown.first().map(|candle| candle.volume), Some(79.0));
-        // The last bucket of each day (18 minutes) and the one forming at noon are short by design.
-        assert!(shown.iter().all(|candle| candle.volume <= 79.0));
-    }
-
-    #[test]
-    fn a_market_that_began_inside_the_cap_keeps_its_first_candle_as_it_is() {
-        let plan = plan(DataSource::Okx, Timeframe::parse("79m").unwrap()).unwrap();
-        // Listed at 12:00 with a thousand minutes of history: the first bucket is genuinely short.
-        let candles = minutes_ending(NOON + 1_000 * MINUTE, 1_000);
-        let shown = plan.shape(candles, base_candles(plan, 500), 500);
-        assert!(shown.first().is_some_and(|candle| candle.volume < 79.0));
-    }
-
-    #[test]
-    fn a_failed_page_is_the_answer() {
-        let error = page_back(0, 600, 10, |_, _| Err(ProviderError::other("down")));
-        assert_eq!(error, Err(ProviderError::other("down")));
     }
 
     #[test]

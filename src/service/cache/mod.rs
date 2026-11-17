@@ -41,7 +41,11 @@ pub fn policy(source: DataSource, timeframe: Timeframe) -> Option<Policy> {
         DataSource::CoinGecko => 120,
         DataSource::DexScreener => 30,
         DataSource::Coinbase | DataSource::Okx | DataSource::Alpaca => 0,
-        DataSource::Binance if source.plan(timeframe).is_some_and(|plan| !plan.is_native()) => 0,
+        DataSource::Binance | DataSource::Bybit
+            if source.plan(timeframe).is_some_and(|plan| !plan.is_native()) =>
+        {
+            0
+        }
         _ => return None,
     };
     Some(Policy {

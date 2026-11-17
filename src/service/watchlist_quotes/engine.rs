@@ -759,11 +759,12 @@ impl Engine {
     }
 }
 
-const ALL_SOURCES: [DataSource; 10] = [
+const ALL_SOURCES: [DataSource; 11] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
     DataSource::Kraken,
+    DataSource::Bybit,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,

@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 mod binance;
+mod bybit;
 mod kraken;
 mod okx;
 
@@ -74,6 +75,10 @@ impl LiveFeed {
             DataSource::Kraken => (
                 kraken::session(&symbols, base)?,
                 Box::new(move |text| kraken::parse_kline(text, base)),
+            ),
+            DataSource::Bybit => (
+                bybit::session(&symbols, base)?,
+                Box::new(bybit::parse_kline),
             ),
             _ => return None,
         };
@@ -218,6 +223,38 @@ mod tests {
             assert!(std::time::Instant::now() < deadline, "no candle in 60 s");
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
+    }
+
+    /// Run with `cargo test --lib live::tests::live_bybit -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_bybit_streams_the_forming_candle_of_every_market_asked_for_even_beside_an_unknown_one()
+    {
+        let feed = LiveFeed::connect(
+            DataSource::Bybit,
+            vec![
+                "NOPEUSDT".to_owned(),
+                "BTCUSDT".to_owned(),
+                "eth/usdt".to_owned(),
+            ],
+            Timeframe::MINUTE_1,
+            egui::Context::default(),
+        )
+        .expect("Bybit streams one-minute candles");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let mut seen = std::collections::BTreeSet::new();
+        while seen.len() < 2 {
+            for (symbol, kline) in feed.inbox.drain() {
+                assert!(kline.close > 0.0 && kline.close_time > kline.open_time);
+                seen.insert(symbol);
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "only {seen:?} in 60 s"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        assert_eq!(seen.into_iter().collect::<Vec<_>>(), ["BTCUSDT", "ETHUSDT"]);
     }
 
     #[test]

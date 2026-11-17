@@ -18,7 +18,7 @@ pub(super) fn session(symbols: &[String], base: Timeframe) -> Session {
         url: format!("wss://{HOST}/stream?streams={streams}"),
         host: HOST.to_owned(),
         port: 443,
-        subscribe: None,
+        subscribe: Vec::new(),
         max_data_silence: Duration::from_secs(60),
         keepalive: Keepalive::Frame,
     }
@@ -64,7 +64,7 @@ mod tests {
             session.url,
             "wss://stream.binance.com/stream?streams=btcusdt@kline_1h/ethusdt@kline_1h"
         );
-        assert_eq!(session.subscribe, None);
+        assert!(session.subscribe.is_empty());
     }
 
     #[test]

@@ -22,7 +22,7 @@ pub(super) fn session(products: &[String]) -> Session {
         url: format!("wss://{HOST}/v2"),
         host: HOST.to_owned(),
         port: 443,
-        subscribe: Some(subscribe.to_string()),
+        subscribe: vec![subscribe.to_string()],
         max_data_silence: Duration::from_secs(30),
         keepalive: Keepalive::Frame,
     }
@@ -72,7 +72,7 @@ mod tests {
     fn one_message_subscribes_every_product() {
         let session = session(&["BTC/USD".into(), "ETH/EUR".into()]);
         assert_eq!(session.url, "wss://ws.kraken.com/v2");
-        let message: Value = serde_json::from_str(&session.subscribe.unwrap()).unwrap();
+        let message: Value = serde_json::from_str(&session.subscribe[0]).unwrap();
         assert_eq!(
             message,
             json!({"method": "subscribe", "params": {

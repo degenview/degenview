@@ -29,7 +29,7 @@ pub(super) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
         url: format!("wss://{HOST}/v2"),
         host: HOST.to_owned(),
         port: 443,
-        subscribe: Some(subscribe.to_string()),
+        subscribe: vec![subscribe.to_string()],
         max_data_silence: Duration::from_secs(30),
         keepalive: Keepalive::Frame,
     })
@@ -69,7 +69,7 @@ mod tests {
     fn one_message_subscribes_every_market_to_the_interval_of_the_base_candle() {
         let session = session(&["btc/usd".into(), "XDG/EUR".into()], Timeframe::DAY_1).unwrap();
         assert_eq!(session.url, "wss://ws.kraken.com/v2");
-        let message: Value = serde_json::from_str(&session.subscribe.unwrap()).unwrap();
+        let message: Value = serde_json::from_str(&session.subscribe[0]).unwrap();
         assert_eq!(
             message,
             json!({"method": "subscribe", "params": {

@@ -1,6 +1,7 @@
 //! One shared ticker socket per streamed source, for every market a visible watchlist shows of
 //! it. The ticker carries the last trade plus the 24h open and volume, which is all a row needs.
 
+mod bybit;
 mod coinbase;
 mod kraken;
 mod okx;
@@ -40,6 +41,7 @@ impl QuoteSocket {
             DataSource::Coinbase => (coinbase::session(&products), coinbase::parse_tick),
             DataSource::Okx => (okx::session(&products), okx::parse_tick),
             DataSource::Kraken => (kraken::session(&products), kraken::parse_tick),
+            DataSource::Bybit => (bybit::session(&products), bybit::parse_tick),
             _ => return None,
         };
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -102,6 +104,25 @@ mod tests {
             .expect("a tick in 30 s");
         assert_eq!(tick.source, DataSource::Kraken);
         assert!(["BTC/USD", "ETH/USD"].contains(&tick.product_id.as_str()));
+        assert!(tick.quote.price > 0.0 && tick.quote.previous_day_price.is_some());
+    }
+
+    /// Run with `cargo test --lib quote_stream::tests::live_bybit -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_bybit_streams_a_ticker_beside_an_unknown_product() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let _socket = QuoteSocket::connect(
+            DataSource::Bybit,
+            vec!["NOPEUSDT".to_owned(), "BTCUSDT".to_owned()],
+            sender,
+        )
+        .expect("Bybit has a ticker socket");
+        let tick = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("a tick in 30 s");
+        assert_eq!(tick.source, DataSource::Bybit);
+        assert_eq!(tick.product_id, "BTCUSDT");
         assert!(tick.quote.price > 0.0 && tick.quote.previous_day_price.is_some());
     }
 

@@ -20,11 +20,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub const DEBOUNCE: Duration = Duration::from_millis(300);
-pub const CRYPTO_SOURCES: [DataSource; 6] = [
+pub const CRYPTO_SOURCES: [DataSource; 7] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
     DataSource::Kraken,
+    DataSource::Bybit,
     DataSource::CoinGecko,
     DataSource::DexScreener,
 ];
@@ -600,7 +601,9 @@ mod tests {
                     hit(source, "BTC/USDT", "BTCUSDT"),
                     hit(source, "WBTC/USDT", "WBTCUSDT"),
                 ]),
-                DataSource::Coinbase | DataSource::Okx | DataSource::Kraken => Ok(vec![]),
+                DataSource::Coinbase | DataSource::Okx | DataSource::Kraken | DataSource::Bybit => {
+                    Ok(vec![])
+                }
                 DataSource::CoinGecko => Err(ProviderError::other("rate limited")),
                 _ => Ok(vec![hit(source, "BTC/WETH", "0xabc")]),
             }
@@ -635,7 +638,7 @@ mod tests {
         wait(&mut state);
         assert_eq!(
             calls.lock().unwrap().len(),
-            6,
+            7,
             "one request per crypto source"
         );
         assert!(
@@ -670,8 +673,9 @@ mod tests {
         assert!(state.results()[1].1.as_ref().is_ok_and(Vec::is_empty));
         assert!(state.results()[2].1.as_ref().is_ok_and(Vec::is_empty));
         assert!(state.results()[3].1.as_ref().is_ok_and(Vec::is_empty));
+        assert!(state.results()[4].1.as_ref().is_ok_and(Vec::is_empty));
         assert_eq!(
-            state.results()[4].1.as_ref().err(),
+            state.results()[5].1.as_ref().err(),
             Some(&ProviderError::other("rate limited"))
         );
     }

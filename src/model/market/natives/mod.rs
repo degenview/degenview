@@ -68,6 +68,25 @@ const OKX: [Timeframe; 14] = [
     Timeframe::MONTH_3,
 ];
 
+/// Bybit's kline intervals: 1, 3, 5, 15, 30, 60, 120, 240, 360 and 720 minutes, `D`, `W` and `M`.
+/// All of them are cut where this app cuts: days at UTC midnight, weeks on Monday and months on
+/// the calendar, so the quarter and the year fold from months.
+const BYBIT: [Timeframe; 13] = [
+    minutes(1),
+    minutes(3),
+    minutes(5),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(2),
+    hours(4),
+    hours(6),
+    hours(12),
+    Timeframe::DAY_1,
+    Timeframe::WEEK_1,
+    Timeframe::MONTH_1,
+];
+
 /// Kraken's OHLC intervals in minutes: 1, 5, 15, 30, 60, 240 and 1440. Left out: its week
 /// (`10080`) starts on a Thursday and its `21600` is a 15-day length counted from 1970-01-01, so
 /// weeks, months and years fold from days.
@@ -136,6 +155,7 @@ impl DataSource {
             Self::Coinbase => &COINBASE,
             Self::Okx => &OKX,
             Self::Kraken => &KRAKEN,
+            Self::Bybit => &BYBIT,
             Self::Alpaca => &ALPACA,
             Self::DexScreener => &GECKOTERMINAL,
             Self::CoinGecko | Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => &[],
@@ -156,6 +176,7 @@ impl DataSource {
             | Self::Coinbase
             | Self::Okx
             | Self::Kraken
+            | Self::Bybit
             | Self::Alpaca
             | Self::DexScreener => self.plan(timeframe).is_some(),
             Self::CoinGecko => samples::chart_days(timeframe, 1).is_some(),
@@ -168,7 +189,7 @@ impl DataSource {
     /// 180 days: a page of its base candles that already spans that has no older one.
     pub fn supports_older_history(self, timeframe: Timeframe) -> bool {
         match self {
-            Self::Binance | Self::Coinbase | Self::Okx | Self::Alpaca => true,
+            Self::Binance | Self::Coinbase | Self::Okx | Self::Bybit | Self::Alpaca => true,
             Self::DexScreener => self.plan(timeframe).is_some_and(|plan| {
                 let page_days = plan.base().nominal_ms() * GECKOTERMINAL_PAGE as i64 / 86_400_000;
                 page_days < GECKOTERMINAL_HISTORY_DAYS

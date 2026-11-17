@@ -16,7 +16,7 @@ pub(super) fn session(products: &[String]) -> Session {
         url: format!("wss://{HOST}"),
         host: HOST.to_owned(),
         port: 443,
-        subscribe: Some(subscription(products)),
+        subscribe: vec![subscription(products)],
         max_data_silence: Duration::from_secs(15),
         keepalive: Keepalive::Frame,
     }
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn subscribes_to_ticker_and_heartbeat() {
         let session = session(&["BTC-USD".into(), "ETH-USD".into()]);
-        let message: Value = serde_json::from_str(&session.subscribe.unwrap()).unwrap();
+        let message: Value = serde_json::from_str(&session.subscribe[0]).unwrap();
         assert_eq!(message["type"], "subscribe");
         assert_eq!(message["product_ids"][1], "ETH-USD");
         assert_eq!(message["channels"], json!(["ticker", "heartbeat"]));

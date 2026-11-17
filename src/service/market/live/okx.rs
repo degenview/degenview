@@ -20,7 +20,7 @@ pub(super) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
         url: format!("wss://{HOST}/ws/v5/business"),
         host: HOST.to_owned(),
         port: 443,
-        subscribe: Some(json!({"op": "subscribe", "args": args}).to_string()),
+        subscribe: vec![json!({"op": "subscribe", "args": args}).to_string()],
         // A candle channel pushes every few seconds; the heartbeat answers say the socket is alive.
         max_data_silence: Duration::from_secs(120),
         keepalive: Keepalive::Text {
@@ -47,7 +47,7 @@ mod tests {
     fn one_message_subscribes_every_market_to_the_bar_of_the_base_candle() {
         let session = session(&["btc-usdt".into(), "ETH-USDT".into()], Timeframe::DAY_1).unwrap();
         assert_eq!(session.url, "wss://ws.okx.com/ws/v5/business");
-        let message: Value = serde_json::from_str(&session.subscribe.unwrap()).unwrap();
+        let message: Value = serde_json::from_str(&session.subscribe[0]).unwrap();
         assert_eq!(message["op"], "subscribe");
         assert_eq!(
             message["args"],

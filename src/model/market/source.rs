@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A market data provider. The symbol alone never identifies a market: `BTCUSDT`
-/// on Binance, `BTC-USD` on Coinbase, `BTC-USDT` on OKX and `BTC/USD` on Kraken are different
+/// on Binance and Bybit (the same name on both: they are still two markets), `BTC-USD` on Coinbase, `BTC-USDT` on OKX and `BTC/USD` on Kraken are different
 /// instruments.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -10,6 +10,7 @@ pub enum DataSource {
     Coinbase,
     Okx,
     Kraken,
+    Bybit,
     CoinGecko,
     DexScreener,
     Alpaca,
@@ -25,6 +26,7 @@ impl DataSource {
             Self::Coinbase => "Coinbase",
             Self::Okx => "OKX",
             Self::Kraken => "Kraken",
+            Self::Bybit => "Bybit",
             Self::CoinGecko => "CoinGecko",
             Self::DexScreener => "DEXScreener",
             Self::Alpaca => "Alpaca (IEX)",
@@ -41,6 +43,7 @@ impl DataSource {
             Self::Coinbase => "COINBASE",
             Self::Okx => "OKX",
             Self::Kraken => "KRAKEN",
+            Self::Bybit => "BYBIT",
             Self::CoinGecko => "COINGECKO",
             Self::DexScreener => "DEXSCREENER",
             Self::Alpaca => "ALPACA",
@@ -52,11 +55,12 @@ impl DataSource {
 
     /// The source a `watchlist_slug` names, in any case.
     pub fn from_watchlist_slug(slug: &str) -> Option<Self> {
-        const ALL: [DataSource; 10] = [
+        const ALL: [DataSource; 11] = [
             DataSource::Binance,
             DataSource::Coinbase,
             DataSource::Okx,
             DataSource::Kraken,
+            DataSource::Bybit,
             DataSource::CoinGecko,
             DataSource::DexScreener,
             DataSource::Alpaca,
@@ -70,12 +74,20 @@ impl DataSource {
 
     /// The sources whose forming candle a chart takes from a socket instead of waiting for the
     /// next refresh.
-    pub const CANDLE_STREAMS: [DataSource; 3] =
-        [DataSource::Binance, DataSource::Okx, DataSource::Kraken];
+    pub const CANDLE_STREAMS: [DataSource; 4] = [
+        DataSource::Binance,
+        DataSource::Okx,
+        DataSource::Kraken,
+        DataSource::Bybit,
+    ];
 
     /// The sources whose watchlist prices come from a shared ticker socket, REST filling in.
-    pub const QUOTE_STREAMS: [DataSource; 3] =
-        [DataSource::Coinbase, DataSource::Okx, DataSource::Kraken];
+    pub const QUOTE_STREAMS: [DataSource; 4] = [
+        DataSource::Coinbase,
+        DataSource::Okx,
+        DataSource::Kraken,
+        DataSource::Bybit,
+    ];
 
     /// Whether watchlist prices of this source come from a ticker socket.
     pub fn streams_quotes(self) -> bool {
@@ -96,6 +108,7 @@ impl DataSource {
                 | Self::Coinbase
                 | Self::Okx
                 | Self::Kraken
+                | Self::Bybit
                 | Self::DexScreener
                 | Self::Alpaca
         )
@@ -122,6 +135,7 @@ impl DataSource {
             | Self::Coinbase
             | Self::Okx
             | Self::Kraken
+            | Self::Bybit
             | Self::CoinGecko
             | Self::Alpaca => raw.to_uppercase(),
             Self::CoinMarketCap => super::cmc::title(raw).to_owned(),
@@ -137,7 +151,7 @@ impl DataSource {
         let head = upper.split(['/', '-', ' ']).next().unwrap_or(&upper);
         match self {
             // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
-            Self::Binance => split_binance_pair(head)
+            Self::Binance | Self::Bybit => split_binance_pair(head)
                 .map(|(base, _)| base)
                 .filter(|base| base.len() > 1)
                 .unwrap_or(head),
@@ -154,7 +168,9 @@ impl DataSource {
     pub fn quote_asset(self, symbol: &str) -> Option<String> {
         let upper = symbol.trim().to_uppercase();
         match self {
-            Self::Binance => split_binance_pair(&upper).map(|(_, quote)| quote.to_owned()),
+            Self::Binance | Self::Bybit => {
+                split_binance_pair(&upper).map(|(_, quote)| quote.to_owned())
+            }
             Self::Kraken => {
                 let (base, quote) = upper.split_once('/')?;
                 (!base.is_empty() && !quote.is_empty() && !quote.contains(['-', '/', ' ']))
@@ -210,6 +226,8 @@ mod tests {
         // A perpetual swap's id has three parts: not a spot pair.
         assert_eq!(Okx.quote_asset("BTC-USDT-SWAP"), None);
         assert_eq!(Binance.quote_asset("adaeur").as_deref(), Some("EUR"));
+        assert_eq!(Bybit.quote_asset("adaeur").as_deref(), Some("EUR"));
+        assert_eq!(Bybit.quote_asset("SOL"), None);
         assert_eq!(Binance.quote_asset("SOL"), None);
         assert_eq!(Coinbase.quote_asset("BTC"), None);
         assert_eq!(Alpaca.quote_asset("BRK-B"), None);
@@ -221,6 +239,7 @@ mod tests {
     #[test]
     fn markets_are_named_as_their_exchange_names_them() {
         assert_eq!(DataSource::Binance.display_symbol("btcusdt"), "BTCUSDT");
+        assert_eq!(DataSource::Bybit.display_symbol("btcusdt"), "BTCUSDT");
         assert_eq!(DataSource::Binance.display_symbol("BTC"), "BTC");
         assert_eq!(DataSource::Coinbase.display_symbol("btc-usd"), "BTC-USD");
         assert_eq!(DataSource::Okx.display_symbol("btc-usdt"), "BTC-USDT");
@@ -235,6 +254,8 @@ mod tests {
         let base = |source: DataSource, symbol| source.base_asset(symbol);
         assert_eq!(base(DataSource::Binance, "BTCUSDT"), "BTC");
         assert_eq!(base(DataSource::Binance, "BTCFDUSD"), "BTC");
+        assert_eq!(base(DataSource::Bybit, "ethusdc"), "ETH");
+        assert_eq!(base(DataSource::Bybit, "WBTC"), "WBTC");
         assert_eq!(base(DataSource::Binance, "ETHBTC"), "ETH");
         assert_eq!(base(DataSource::Binance, "BTC"), "BTC");
         assert_eq!(base(DataSource::Binance, "WBTC"), "WBTC");
@@ -252,6 +273,7 @@ mod tests {
         assert!(DataSource::Alpaca.provides_volume());
         assert!(DataSource::Okx.provides_volume());
         assert!(DataSource::Kraken.provides_volume());
+        assert!(DataSource::Bybit.provides_volume());
         assert!(!DataSource::CoinGecko.provides_volume());
         assert!(!DataSource::Polymarket.provides_volume());
         assert!(!DataSource::CoinMarketCap.provides_volume());

@@ -20,7 +20,7 @@ pub(super) fn session(products: &[String]) -> Session {
         url: format!("wss://{HOST}/ws/v5/public"),
         host: HOST.to_owned(),
         port: 443,
-        subscribe: Some(json!({"op": "subscribe", "args": args}).to_string()),
+        subscribe: vec![json!({"op": "subscribe", "args": args}).to_string()],
         // A thin market's ticker is quiet for minutes: the heartbeat answers say the socket is
         // alive, and REST refreshes a product the socket stays quiet about.
         max_data_silence: Duration::from_secs(600),
@@ -52,7 +52,7 @@ mod tests {
     fn one_message_subscribes_every_product() {
         let session = session(&["BTC-USDT".into(), "ETH-USDT".into()]);
         assert_eq!(session.url, "wss://ws.okx.com/ws/v5/public");
-        let message: Value = serde_json::from_str(&session.subscribe.unwrap()).unwrap();
+        let message: Value = serde_json::from_str(&session.subscribe[0]).unwrap();
         assert_eq!(message["op"], "subscribe");
         assert_eq!(
             message["args"],

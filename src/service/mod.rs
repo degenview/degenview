@@ -181,6 +181,7 @@ pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
         DataSource::Coinbase => &market::coinbase::COINBASE,
         DataSource::Okx => &market::okx::OKX,
         DataSource::Kraken => &market::kraken::KRAKEN,
+        DataSource::Bybit => &market::bybit::BYBIT,
         DataSource::CoinGecko => &market::coingecko::COINGECKO,
         DataSource::DexScreener => &market::dexscreener::DEXSCREENER,
         DataSource::Alpaca => &market::alpaca::ALPACA,

@@ -66,7 +66,9 @@ pub enum Keepalive {
     /// A WebSocket ping frame, answered by a pong frame.
     Frame,
     /// A text message answered by a text message, for servers that define their own heartbeat
-    /// (OKX: `"ping"` and `"pong"`). The answer is not data.
+    /// (OKX: `"ping"` and `"pong"`; Bybit: `{"op":"ping"}` and a JSON answer that starts
+    /// `{"success":true,"ret_msg":"pong"`). An answer is a message that begins with `pong`, and is
+    /// not data.
     Text {
         ping: &'static str,
         pong: &'static str,
@@ -106,7 +108,7 @@ impl Health {
                 self.ping_sent = None;
                 Ok(None)
             }
-            Ok(Message::Text(text)) if matches!(self.keepalive, Keepalive::Text { pong, .. } if text.as_str() == pong) =>
+            Ok(Message::Text(text)) if matches!(self.keepalive, Keepalive::Text { pong, .. } if text.as_str().starts_with(pong)) =>
             {
                 self.last_message = Instant::now();
                 self.ping_sent = None;
@@ -195,8 +197,9 @@ pub struct Session {
     pub url: String,
     pub host: String,
     pub port: u16,
-    /// Sent once after every (re)connect; `None` for a feed that subscribes through its URL.
-    pub subscribe: Option<String>,
+    /// Sent in order, one message each, after every (re)connect; empty for a feed that subscribes
+    /// through its URL.
+    pub subscribe: Vec<String>,
     pub max_data_silence: Duration,
     pub keepalive: Keepalive,
 }
@@ -209,9 +212,10 @@ impl Session {
         let mut backoff = Backoff::new();
         while !shutdown.load(Ordering::Acquire) {
             if let Ok(mut socket) = connect(&self.url, &self.host, self.port) {
-                let subscribed = self.subscribe.as_ref().is_none_or(|message| {
-                    socket.send(Message::Text(message.as_str().into())).is_ok()
-                });
+                let subscribed = self
+                    .subscribe
+                    .iter()
+                    .all(|message| socket.send(Message::Text(message.as_str().into())).is_ok());
                 if subscribed {
                     let mut health = Health::new(self.max_data_silence, self.keepalive);
                     while !shutdown.load(Ordering::Acquire) {
@@ -251,14 +255,20 @@ mod tests {
         assert_eq!(jittered(Duration::from_secs(4), 50), Duration::from_secs(5));
     }
 
-    /// A server that reads one message, answers `replies`, then lingers so the client stays up.
-    fn serve(replies: &'static [&'static str]) -> (u16, std::thread::JoinHandle<String>) {
+    /// A server that reads `messages` messages, answers `replies`, then lingers so the client stays
+    /// up. It returns what it read.
+    fn serve_many(
+        messages: usize,
+        replies: &'static [&'static str],
+    ) -> (u16, std::thread::JoinHandle<Vec<String>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let handle = std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
             let mut socket = tungstenite::accept(stream).unwrap();
-            let received = socket.read().unwrap().into_text().unwrap().to_string();
+            let received: Vec<String> = (0..messages)
+                .map(|_| socket.read().unwrap().into_text().unwrap().to_string())
+                .collect();
             for reply in replies {
                 socket.send(Message::Text((*reply).into())).unwrap();
             }
@@ -268,6 +278,27 @@ mod tests {
         (port, handle)
     }
 
+    fn serve(replies: &'static [&'static str]) -> (u16, std::thread::JoinHandle<String>) {
+        let (port, server) = serve_many(1, replies);
+        let handle = std::thread::spawn(move || server.join().unwrap().remove(0));
+        (port, handle)
+    }
+
+    #[test]
+    fn a_session_sends_every_subscribe_message_in_order_after_each_connect() {
+        let (port, server) = serve_many(3, &["tick"]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["one".to_owned(), "two".to_owned(), "three".to_owned()],
+            max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Frame,
+        };
+        session.run(&AtomicBool::new(false), |_| false);
+        assert_eq!(server.join().unwrap(), ["one", "two", "three"]);
+    }
+
     #[test]
     fn a_session_subscribes_and_hands_over_what_it_reads() {
         let (port, server) = serve(&["tick"]);
@@ -275,7 +306,7 @@ mod tests {
             url: format!("ws://127.0.0.1:{port}"),
             host: "127.0.0.1".to_owned(),
             port,
-            subscribe: Some("subscribe".to_owned()),
+            subscribe: vec!["subscribe".to_owned()],
             max_data_silence: Duration::from_secs(60),
             keepalive: Keepalive::Frame,
         };
@@ -295,7 +326,7 @@ mod tests {
             url: format!("ws://127.0.0.1:{port}"),
             host: "127.0.0.1".to_owned(),
             port,
-            subscribe: Some("subscribe".to_owned()),
+            subscribe: vec!["subscribe".to_owned()],
             max_data_silence: Duration::from_secs(60),
             keepalive: Keepalive::Text {
                 ping: "ping",
@@ -308,6 +339,33 @@ mod tests {
             false
         });
         assert_eq!(seen, ["tick"]);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn a_text_heartbeat_answer_is_recognised_by_its_start() {
+        // Bybit's pong carries the connection id, so only its beginning is fixed.
+        let (port, server) = serve(&[
+            r#"{"success":true,"ret_msg":"pong","conn_id":"abc-1","op":"ping"}"#,
+            r#"{"topic":"tickers.BTCUSDT","data":{}}"#,
+        ]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["subscribe".to_owned()],
+            max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Text {
+                ping: r#"{"op":"ping"}"#,
+                pong: r#"{"success":true,"ret_msg":"pong""#,
+            },
+        };
+        let mut seen = Vec::new();
+        session.run(&AtomicBool::new(false), |text| {
+            seen.push(text.to_owned());
+            false
+        });
+        assert_eq!(seen, [r#"{"topic":"tickers.BTCUSDT","data":{}}"#]);
         server.join().unwrap();
     }
 

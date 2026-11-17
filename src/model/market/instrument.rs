@@ -35,8 +35,8 @@ impl InstrumentId {
     /// USDT); Kraken's are `BASE/QUOTE` (USD) in the common tickers, never the legacy `XBT`.
     pub fn api_symbol(&self) -> String {
         match self.source {
-            DataSource::Binance => {
-                let upper = self.symbol.to_uppercase().replace('/', "");
+            DataSource::Binance | DataSource::Bybit => {
+                let upper = self.symbol.to_uppercase().replace(['/', '-'], "");
                 // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
                 if crate::model::market::source::split_binance_pair(&upper)
                     .is_some_and(|(base, _)| base.len() > 1)
@@ -88,9 +88,11 @@ impl InstrumentId {
 
     fn normalized(symbol: &str, source: DataSource) -> String {
         match source {
-            DataSource::Binance | DataSource::Coinbase | DataSource::Okx | DataSource::Kraken => {
-                Self::new(source, symbol).api_symbol()
-            }
+            DataSource::Binance
+            | DataSource::Bybit
+            | DataSource::Coinbase
+            | DataSource::Okx
+            | DataSource::Kraken => Self::new(source, symbol).api_symbol(),
             DataSource::Alpaca => symbol.to_uppercase(),
             DataSource::CoinGecko => symbol.to_lowercase(),
             _ => symbol.to_owned(),
@@ -130,6 +132,9 @@ mod tests {
                 "COINBASE:ETH-USD",
                 "{symbol}"
             );
+        }
+        for symbol in ["BTC", "btc", "BTCUSDT", "btc-usdt", "BTC/USDT"] {
+            assert_eq!(key(DataSource::Bybit, symbol), "BYBIT:BTCUSDT", "{symbol}");
         }
         for symbol in ["BTC", "btc-usdt", "BTC/USDT", "BTC-USDT"] {
             assert_eq!(key(DataSource::Okx, symbol), "OKX:BTC-USDT", "{symbol}");

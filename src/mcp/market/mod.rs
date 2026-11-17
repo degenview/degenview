@@ -83,6 +83,7 @@ pub fn source_id(source: DataSource) -> &'static str {
         DataSource::Coinbase => "coinbase",
         DataSource::Okx => "okx",
         DataSource::Kraken => "kraken",
+        DataSource::Bybit => "bybit",
         DataSource::CoinGecko => "coingecko",
         DataSource::DexScreener => "dexscreener",
         DataSource::Alpaca => "alpaca",

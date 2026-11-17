@@ -1,5 +1,6 @@
 pub(in crate::service) mod alpaca;
 pub(in crate::service) mod binance;
+pub(in crate::service) mod bybit;
 pub(in crate::service) mod candles;
 pub mod catalog;
 pub mod cmc;
@@ -13,6 +14,7 @@ pub(in crate::service) mod kalshi;
 pub(in crate::service) mod kraken;
 pub mod live;
 pub(in crate::service) mod okx;
+pub(in crate::service) mod paging;
 pub(in crate::service) mod polymarket;
 pub mod search_rank;
 pub mod trend;
