@@ -92,7 +92,7 @@ fn is_symbol(symbol: &str) -> bool {
     !symbol.is_empty() && !symbol.contains(char::is_whitespace)
 }
 
-/// A venue's name is one short word: letters and digits, like `OKX` or `HKEX`.
+/// A venue's name is one short word: letters and digits, like `KUCOIN` or `HKEX`.
 fn looks_like_venue(prefix: &str) -> bool {
     (2..=MAX_PREFIX_CHARS).contains(&prefix.chars().count())
         && prefix
