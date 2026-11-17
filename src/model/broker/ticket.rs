@@ -3,6 +3,7 @@
 //! means, what is wrong with it, what it would cost) are the crate's `model::ticket`, and each
 //! reason it reports is a value; this module says them. Exact: nothing is rounded to read better.
 
+use crate::i18n::tr;
 use degenview_brokers::model::edit::{EditBlock, edit_block};
 use degenview_brokers::model::reducer::{Notice, NoticeKind};
 use degenview_brokers::model::ticket::{TicketField, TicketIssue, TicketProblem};
@@ -13,28 +14,31 @@ use degenview_brokers::{
 /// What a problem with the typed ticket says, next to the field it concerns.
 pub fn issue_text(issue: &TicketIssue) -> String {
     match &issue.problem {
-        TicketProblem::Missing => format!(
-            "Enter {}.",
-            match issue.field {
-                TicketField::Size => "a size",
-                TicketField::Price => "a price",
-                TicketField::StopPrice => "a stop price",
-                TicketField::LimitPrice => "a limit price",
-                TicketField::TimeInForce => "a time in force",
-                TicketField::Type => "an order type",
-            }
-        ),
-        TicketProblem::NotANumber => "That is not a number.".to_owned(),
+        TicketProblem::Missing => match issue.field {
+            TicketField::Size => tr!("Enter a size."),
+            TicketField::Price => tr!("Enter a price."),
+            TicketField::StopPrice => tr!("Enter a stop price."),
+            TicketField::LimitPrice => tr!("Enter a limit price."),
+            TicketField::TimeInForce => tr!("Enter a time in force."),
+            TicketField::Type => tr!("Enter an order type."),
+        }
+        .to_owned(),
+        TicketProblem::NotANumber => tr!("That is not a number.").to_owned(),
         TicketProblem::NoStopReference => {
-            "There is no current price to compare the stop with yet.".to_owned()
+            tr!("There is no current price to compare the stop with yet.").to_owned()
         }
         TicketProblem::Rule(found) => found.to_string(),
-        TicketProblem::Funds(short) => format!(
-            "You have {} {} available; this needs {}{}.",
-            display(short.available),
-            short.asset,
-            if short.estimated { "about " } else { "" },
-            display(short.needed),
+        TicketProblem::Funds(short) if short.estimated => tr!(
+            "You have {available} {asset} available; this needs about {needed}.",
+            available = display(short.available),
+            asset = short.asset,
+            needed = display(short.needed),
+        ),
+        TicketProblem::Funds(short) => tr!(
+            "You have {available} {asset} available; this needs {needed}.",
+            available = display(short.available),
+            asset = short.asset,
+            needed = display(short.needed),
         ),
     }
 }
@@ -94,8 +98,8 @@ pub struct NoticeText {
 pub fn notice_text(notice: &Notice, broker: &str, spec: Option<&ProductSpec>) -> NoticeText {
     let order: &LiveOrder = &notice.order;
     let side = match order.side {
-        Side::Buy => "Buy",
-        Side::Sell => "Sell",
+        Side::Buy => tr!("Buy"),
+        Side::Sell => tr!("Sell"),
     };
     let base = spec.map_or("", |s| s.base.as_str());
     let size = match order.size {
@@ -109,23 +113,41 @@ pub fn notice_text(notice: &Notice, broker: &str, spec: Option<&ProductSpec>) ->
         .to_owned(),
         None => String::new(),
     };
-    let price = order
-        .average_price
-        .or(order.limit_price)
-        .map_or(String::new(), |p| format!(" at {}", display(p)));
-    let what = format!("{side} {size} {}{price} on {broker}", order.product).replace("  ", " ");
+    let market = &order.product;
+    let what = match order.average_price.or(order.limit_price) {
+        Some(price) => tr!(
+            "{side} {size} {market} at {price} on {broker}",
+            side = side,
+            size = size,
+            market = market,
+            price = display(price),
+            broker = broker,
+        ),
+        None => tr!(
+            "{side} {size} {market} on {broker}",
+            side = side,
+            size = size,
+            market = market,
+            broker = broker,
+        ),
+    }
+    .replace("  ", " ");
     let (title, error) = match notice.kind {
-        NoticeKind::Accepted => ("Order placed", false),
-        NoticeKind::PartiallyFilled => ("Order partly filled", false),
-        NoticeKind::Filled => ("Order filled", false),
-        NoticeKind::Cancelled => ("Order cancelled", false),
-        NoticeKind::Rejected => ("Order rejected", true),
-        NoticeKind::Expired => ("Order expired", false),
+        NoticeKind::Accepted => (tr!("Order placed"), false),
+        NoticeKind::PartiallyFilled => (tr!("Order partly filled"), false),
+        NoticeKind::Filled => (tr!("Order filled"), false),
+        NoticeKind::Cancelled => (tr!("Order cancelled"), false),
+        NoticeKind::Rejected => (tr!("Order rejected"), true),
+        NoticeKind::Expired => (tr!("Order expired"), false),
     };
     let body = match (&order.reason, notice.kind) {
         (Some(reason), NoticeKind::Rejected | NoticeKind::Cancelled) => format!("{what}. {reason}"),
         (_, NoticeKind::PartiallyFilled) => {
-            format!("{what}: {} filled.", display(order.filled_size))
+            tr!(
+                "{what}: {filled} filled.",
+                what = what,
+                filled = display(order.filled_size)
+            )
         }
         _ => what,
     };
@@ -149,15 +171,15 @@ pub fn notice_text(notice: &Notice, broker: &str, spec: Option<&ProductSpec>) ->
 /// How an order's status reads.
 pub fn status_label(status: OrderStatus) -> (&'static str, StatusTone) {
     match status {
-        OrderStatus::Pending => ("Pending", StatusTone::Neutral),
-        OrderStatus::Open => ("Open", StatusTone::Good),
-        OrderStatus::CancelQueued => ("Cancelling", StatusTone::Warning),
-        OrderStatus::EditQueued => ("Updating", StatusTone::Warning),
-        OrderStatus::Filled => ("Filled", StatusTone::Good),
-        OrderStatus::Cancelled => ("Cancelled", StatusTone::Neutral),
-        OrderStatus::Expired => ("Expired", StatusTone::Neutral),
-        OrderStatus::Failed => ("Rejected", StatusTone::Bad),
-        OrderStatus::Unknown => ("Unknown", StatusTone::Warning),
+        OrderStatus::Pending => (tr!("Pending"), StatusTone::Neutral),
+        OrderStatus::Open => (tr!("Open"), StatusTone::Good),
+        OrderStatus::CancelQueued => (tr!("Cancelling"), StatusTone::Warning),
+        OrderStatus::EditQueued => (tr!("Updating"), StatusTone::Warning),
+        OrderStatus::Filled => (tr!("Filled"), StatusTone::Good),
+        OrderStatus::Cancelled => (tr!("Cancelled"), StatusTone::Neutral),
+        OrderStatus::Expired => (tr!("Expired"), StatusTone::Neutral),
+        OrderStatus::Failed => (tr!("Rejected"), StatusTone::Bad),
+        OrderStatus::Unknown => (tr!("Unknown"), StatusTone::Warning),
     }
 }
 
@@ -177,12 +199,14 @@ pub fn edit_blocker(
     cancelling: bool,
 ) -> Option<&'static str> {
     edit_block(order, caps, cancelling).map(|block| match block {
-        EditBlock::NotOpen => "Only open orders can be edited.",
-        EditBlock::Cancelling => "A cancel is in progress for this order.",
-        EditBlock::TypeNotEditable => "This type of order cannot be edited.",
-        EditBlock::SizedByAmount => "Orders sized by an amount to spend cannot be edited.",
-        EditBlock::NotSupported => "This broker does not support editing this market's orders.",
-        EditBlock::RulesNotRead => "The market's rules have not been read yet.",
+        EditBlock::NotOpen => tr!("Only open orders can be edited."),
+        EditBlock::Cancelling => tr!("A cancel is in progress for this order."),
+        EditBlock::TypeNotEditable => tr!("This type of order cannot be edited."),
+        EditBlock::SizedByAmount => tr!("Orders sized by an amount to spend cannot be edited."),
+        EditBlock::NotSupported => {
+            tr!("This broker does not support editing this market's orders.")
+        }
+        EditBlock::RulesNotRead => tr!("The market's rules have not been read yet."),
     })
 }
 
@@ -190,7 +214,7 @@ pub fn edit_blocker(
 pub fn size_text(order: &LiveOrder) -> String {
     match order.size {
         Some(OrderSize::Base(size)) => display(size),
-        Some(OrderSize::Quote(amount)) => format!("{} (spend)", display(amount)),
+        Some(OrderSize::Quote(amount)) => tr!("{amount} (spend)", amount = display(amount)),
         None => "—".to_owned(),
     }
 }
@@ -198,12 +222,13 @@ pub fn size_text(order: &LiveOrder) -> String {
 /// The type column.
 pub fn type_label(order: &LiveOrder) -> String {
     match order.order_type {
-        OrderType::Market => "Market".to_owned(),
-        OrderType::Limit if order.post_only => "Limit, post-only".to_owned(),
-        OrderType::Limit => "Limit".to_owned(),
-        OrderType::StopLimit => "Stop-limit".to_owned(),
-        OrderType::Other => "Other".to_owned(),
+        OrderType::Market => tr!("Market"),
+        OrderType::Limit if order.post_only => tr!("Limit, post-only"),
+        OrderType::Limit => tr!("Limit"),
+        OrderType::StopLimit => tr!("Stop-limit"),
+        OrderType::Other => tr!("Other"),
     }
+    .to_owned()
 }
 
 #[cfg(test)]

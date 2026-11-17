@@ -14,6 +14,7 @@
 //! TradingView compatibility is best effort: exchange prefixes DegenView has no
 //! provider for are reported as skipped, never guessed at.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::market::venue::{self, VenueQuery};
 use crate::model::watchlist::{
     MAX_NAME_CHARS, Watchlist, WatchlistEntry, WatchlistError, WatchlistInstrument,
@@ -65,25 +66,29 @@ pub struct ImportReport {
 
 impl ImportReport {
     pub fn summary(&self) -> String {
-        let plural = |count: usize| if count == 1 { "" } else { "s" };
-        let mut parts = vec![format!("Added {} symbol{}", self.added, plural(self.added))];
+        let mut parts = vec![tr_n!(
+            self.added,
+            "Added {count} symbol",
+            "Added {count} symbols"
+        )];
         if self.sections_added > 0 {
-            parts.push(format!(
-                "{} section{}",
+            parts.push(tr_n!(
                 self.sections_added,
-                plural(self.sections_added)
+                "{count} section",
+                "{count} sections"
             ));
         }
         if self.duplicates > 0 {
-            parts.push(format!("{} already in the list", self.duplicates));
+            parts.push(tr!("{count} already in the list", count = self.duplicates));
         }
         let skipped = self.skipped.len() + self.skipped_not_shown;
         if skipped > 0 {
-            parts.push(format!("{skipped} skipped"));
+            parts.push(tr!("{skipped} skipped", skipped = skipped));
         }
         if self.truncated {
-            parts.push("stopped early: too much to import".to_owned());
+            parts.push(tr!("stopped early: too much to import").to_owned());
         }
+        // A list of short phrases, the separator is not part of any sentence.
         parts.join(", ")
     }
 }

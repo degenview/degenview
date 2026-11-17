@@ -462,7 +462,7 @@ fn weekday_strip(ui: &mut Ui, set: &mut WeekdaySet) {
         };
         let galley = kit::galley(
             ui,
-            WeekdaySet::NAMES[day],
+            WeekdaySet::display_name(day),
             kit::size::SUBHEADLINE,
             weight,
             color,

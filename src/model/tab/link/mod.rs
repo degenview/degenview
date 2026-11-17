@@ -25,6 +25,7 @@
 //! without defining them): Time is the position (the time at the right edge of the chart) and
 //! Date range is the zoom (the span of time shown), which is what [`ChartSyncSettings`] already
 //! calls them; both on gives the same time range.
+use crate::i18n::tr;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -63,17 +64,17 @@ impl LinkColor {
         Self::Violet,
     ];
 
-    pub const fn title(self) -> &'static str {
+    pub fn title(self) -> &'static str {
         match self {
-            Self::Red => "Red",
-            Self::Green => "Green",
-            Self::Blue => "Blue",
-            Self::Yellow => "Yellow",
-            Self::Orange => "Orange",
-            Self::Cyan => "Cyan",
-            Self::Purple => "Purple",
-            Self::Pink => "Pink",
-            Self::Violet => "Violet",
+            Self::Red => tr!("Red"),
+            Self::Green => tr!("Green"),
+            Self::Blue => tr!("Blue"),
+            Self::Yellow => tr!("Yellow"),
+            Self::Orange => tr!("Orange"),
+            Self::Cyan => tr!("Cyan"),
+            Self::Purple => tr!("Purple"),
+            Self::Pink => tr!("Pink"),
+            Self::Violet => tr!("Violet"),
         }
     }
 

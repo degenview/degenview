@@ -56,7 +56,7 @@ impl Row {
         })
     }
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
             Self::Take(action) => action.label(),
             Self::SelectPortion => SELECT_PORTION_LABEL,

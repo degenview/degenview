@@ -1196,7 +1196,7 @@ impl ChartWorkspace {
         };
         let message = format!(
             "{}{including} will be removed from this chart. Saved scripts are kept, and you can undo it.",
-            chart::context::remove_indicators_label(count).trim_start_matches("Remove ")
+            chart::context::indicators_count_text(count)
         );
         let result = ui::kit::confirm(
             ctx,

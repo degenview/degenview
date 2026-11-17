@@ -9,6 +9,7 @@
 //! port, and only X's own hosts, so a pasted link can never point the app, or the preview fetch,
 //! anywhere else.
 
+use crate::i18n::{tr, tr_c};
 use serde::{Deserialize, Serialize};
 
 /// The longest link accepted, in bytes.
@@ -46,15 +47,15 @@ pub enum LinkError {
 }
 
 impl LinkError {
-    pub const fn message(self) -> &'static str {
+    pub fn message(self) -> &'static str {
         match self {
-            Self::Empty => "Paste a link.",
-            Self::TooLong => "That link is too long.",
-            Self::Malformed => "That is not a valid link.",
-            Self::Scheme => "Only https links are supported.",
-            Self::Authority => "Links with a user name or port are not supported.",
-            Self::Host => "That link is not from X.",
-            Self::Path => "That link does not point to a single post.",
+            Self::Empty => tr!("Paste a link."),
+            Self::TooLong => tr!("That link is too long."),
+            Self::Malformed => tr!("That is not a valid link."),
+            Self::Scheme => tr!("Only https links are supported."),
+            Self::Authority => tr!("Links with a user name or port are not supported."),
+            Self::Host => tr!("That link is not from X."),
+            Self::Path => tr!("That link does not point to a single post."),
         }
     }
 }
@@ -86,7 +87,7 @@ impl Link {
     pub fn headline(&self) -> String {
         match &self.handle {
             Some(handle) => format!("@{handle}"),
-            None => "Post".to_owned(),
+            None => tr_c!("a post on X", "Post").to_owned(),
         }
     }
 }

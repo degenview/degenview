@@ -16,14 +16,14 @@ impl ColorKey {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Self::Syntax(role) => role.label(),
             Self::Surface(surface) => surface.label(),
         }
     }
 
-    pub const fn hint(self) -> &'static str {
+    pub fn hint(self) -> &'static str {
         match self {
             Self::Syntax(role) => role.hint(),
             Self::Surface(surface) => surface.hint(),

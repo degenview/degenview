@@ -1,5 +1,6 @@
 pub mod catalog;
 
+use crate::i18n::{tr, tr_c};
 use crate::model::Kline;
 use serde::{Deserialize, Serialize};
 
@@ -98,6 +99,8 @@ impl BuiltIn {
         }
     }
 
+    /// The name in English, in every language: MCP clients are told it. A screen shows
+    /// [`Self::display_title`].
     pub fn menu_title(self) -> &'static str {
         match self {
             Self::Volume => "Volume",
@@ -105,6 +108,17 @@ impl BuiltIn {
             Self::Ema => "EMA",
             Self::Bollinger => "Bollinger Bands",
             Self::TrendFlips => "Trend Flips",
+        }
+    }
+
+    /// [`Self::menu_title`] in the language in use, for a screen.
+    pub fn display_title(self) -> &'static str {
+        match self {
+            Self::Volume => tr!("Volume"),
+            Self::Rsi => "RSI",
+            Self::Ema => "EMA",
+            Self::Bollinger => tr!("Bollinger Bands"),
+            Self::TrendFlips => tr!("Trend Flips"),
         }
     }
 
@@ -123,11 +137,11 @@ impl BuiltIn {
 
     pub fn chip_title(self, config: &IndicatorConfig) -> String {
         match self {
-            Self::Volume => "Vol".into(),
+            Self::Volume => tr_c!("indicator chip", "Vol").into(),
             Self::Rsi => format!("RSI {RSI_PERIOD}"),
             Self::Ema => format!("EMA {}", config.ema_period),
             Self::Bollinger => "BB".into(),
-            Self::TrendFlips => "Trend Flips".into(),
+            Self::TrendFlips => tr!("Trend Flips").into(),
         }
     }
 

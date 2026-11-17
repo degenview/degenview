@@ -281,7 +281,11 @@ impl TableData {
 
     /// A short description for lists: "3 × 4 table".
     pub fn summary(&self) -> String {
-        format!("{} × {} table", self.row_count(), self.column_count())
+        crate::i18n::tr!(
+            "{rows} × {columns} table",
+            rows = self.row_count(),
+            columns = self.column_count()
+        )
     }
 }
 

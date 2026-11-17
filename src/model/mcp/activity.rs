@@ -5,6 +5,7 @@
 //! [`AUDIT_LOG_LIMIT`](crate::model::mcp::AUDIT_LOG_LIMIT) rows, so filtering them all on every
 //! frame costs microseconds and needs no query, no cache and no store access.
 
+use crate::i18n::tr;
 use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -60,15 +61,15 @@ impl McpActivityStatus {
     /// The word on a row's tag and in the filter.
     pub fn label(self) -> &'static str {
         match self {
-            Self::Done => "Done",
-            Self::Failed => "Failed",
-            Self::Denied => "Denied",
-            Self::Held => "Held",
-            Self::Approved => "Approved",
-            Self::Declined => "Declined",
-            Self::Expired => "Expired",
-            Self::Cancelled => "Cancelled",
-            Self::RateLimited => "Limited",
+            Self::Done => tr!("Done"),
+            Self::Failed => tr!("Failed"),
+            Self::Denied => tr!("Denied"),
+            Self::Held => tr!("Held"),
+            Self::Approved => tr!("Approved"),
+            Self::Declined => tr!("Declined"),
+            Self::Expired => tr!("Expired"),
+            Self::Cancelled => tr!("Cancelled"),
+            Self::RateLimited => tr!("Limited"),
         }
     }
 }
@@ -127,12 +128,12 @@ impl McpActivityRange {
     /// The preset's name in the filter.
     pub fn label(self) -> &'static str {
         match self {
-            Self::Any => "Any time",
-            Self::LastHour => "Last hour",
-            Self::Today => "Today",
-            Self::Last24Hours => "Last 24 hours",
-            Self::Last7Days => "Last 7 days",
-            Self::Custom { .. } => "Custom range…",
+            Self::Any => tr!("Any time"),
+            Self::LastHour => tr!("Last hour"),
+            Self::Today => tr!("Today"),
+            Self::Last24Hours => tr!("Last 24 hours"),
+            Self::Last7Days => tr!("Last 7 days"),
+            Self::Custom { .. } => tr!("Custom range…"),
         }
     }
 
@@ -274,7 +275,7 @@ pub fn clients_in(entries: &[McpAuditEntry]) -> Vec<McpActivityClient> {
             McpActivityClient {
                 id: id.to_owned(),
                 label: if name.trim().is_empty() {
-                    "Unnamed client".to_owned()
+                    tr!("Unnamed client").to_owned()
                 } else {
                     name.clone()
                 },

@@ -66,7 +66,13 @@ pub fn show(
                     (Icon::Calendar, "Not on this timeframe")
                 }
             };
-            callout(ui, icon, kit::Tone::Warning.dot(), title, reason.text());
+            callout(
+                ui,
+                icon,
+                kit::Tone::Warning.dot(),
+                title,
+                reason.display_text(),
+            );
             None
         }
         Some(Ok(stats)) => answer_cards(ui, stats, setting),
@@ -98,7 +104,7 @@ fn answer_cards(ui: &mut Ui, stats: &Stats, setting: &Setting) -> Option<Request
             Note::BoundaryOpen => kit::Tone::Warning.dot(),
             Note::NoGaps => theme::text_secondary(),
         };
-        callout(ui, Icon::Triangle, tint, note.title(), note.text());
+        callout(ui, Icon::Triangle, tint, note.title(), note.display_text());
     }
     footer(ui, stats, setting);
     request
@@ -108,8 +114,8 @@ fn estimate_card(ui: &mut Ui, stats: &Stats) {
     card(ui, |ui| {
         let sentence = format!(
             "{} on {}",
-            stats.outcome.question(),
-            stats.filter.describe()
+            stats.outcome.display_question(),
+            stats.filter.display_describe()
         );
         paragraph(
             ui,
@@ -250,7 +256,7 @@ fn empty(ui: &mut Ui, stats: &Stats, setting: &Setting) -> Option<Request> {
                 theme::text_primary(),
             ));
             let detail = if stats.notes.contains(&Note::NoGaps) {
-                Note::NoGaps.text()
+                Note::NoGaps.display_text()
             } else if setting.narrowed {
                 "No day in these bars matches every condition. Loosen one, or load more history."
             } else {
