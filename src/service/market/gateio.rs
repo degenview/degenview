@@ -8,7 +8,7 @@ use super::candles::plan;
 use super::catalog::Catalog;
 use super::paging::Paging;
 use super::search_rank::normalize;
-use crate::model::market::bucket::next_bucket_start_ms;
+use crate::model::market::bucket::{FoldPlan, next_bucket_start_ms};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
@@ -39,6 +39,38 @@ fn reach_left(now_ms: i64, after_ms: i64, base: Timeframe) -> usize {
     let step = base.nominal_ms().max(1);
     let points_ago = ((now_ms - after_ms).max(0) / step) as usize + 1;
     PAGING.max_candles.saturating_sub(points_ago)
+}
+
+/// The newest `max` candles of `plan`'s target that open in `[start_ms, end_ms)`, paged back from
+/// `end_ms`. `fetch(to, limit)` answers up to `limit` base candles that open at `to` (seconds) or
+/// before, oldest first.
+fn collect(
+    plan: FoldPlan,
+    now_ms: i64,
+    start_ms: i64,
+    end_ms: i64,
+    max: usize,
+    mut fetch: impl FnMut(i64, usize) -> Result<Vec<Kline>, ProviderError>,
+) -> Result<Vec<Kline>, ProviderError> {
+    // What cannot be reached is not asked for: an answer that fills this is one the reach cut
+    // short, so its oldest fold is dropped as a fragment; a shorter one is the market's start.
+    let requested = PAGING
+        .requested(plan, max)
+        .min(reach_left(now_ms, end_ms, plan.base()));
+    if requested == 0 {
+        return Ok(Vec::new());
+    }
+    let candles = PAGING.back(start_ms, end_ms, requested, |after, wanted| {
+        // A gap in the candles moves `after` back past what was counted: never ask Gate.io for
+        // more than it reaches (HTTP 400), the end of history is an empty answer.
+        let wanted = wanted.min(reach_left(now_ms, after, plan.base()));
+        if wanted == 0 {
+            return Ok(Vec::new());
+        }
+        // `to` includes the candle that opens at it, in seconds; `after` is exclusive.
+        fetch((after - 1) / 1_000, wanted)
+    })?;
+    Ok(plan.shape(candles, requested, max))
 }
 
 /// Gate.io's `interval` for a candle length it serves itself: `1m`, `4h`, `1d`, `7d` (weeks,
@@ -96,20 +128,15 @@ impl MarketSource for Gate {
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Gate, timeframe)?;
-        let requested = PAGING.requested(plan, max);
         let id = pair_id(symbol);
-        let now_ms = crate::service::now_ms();
-        let candles = PAGING.back(start_ms, end_ms, requested, |after, wanted| {
-            // Past what Gate.io reaches back to there is nothing to ask for: the end of history,
-            // not an error to be retried.
-            let wanted = wanted.min(reach_left(now_ms, after, plan.base()));
-            if wanted == 0 {
-                return Ok(Vec::new());
-            }
-            // `to` includes the candle that opens at it, in seconds; `after` is exclusive.
-            fetch_page(&id, plan.base(), wanted, Some((after - 1) / 1_000))
-        })?;
-        Ok(plan.shape(candles, requested, max))
+        collect(
+            plan,
+            crate::service::now_ms(),
+            start_ms,
+            end_ms,
+            max,
+            |to_s, limit| fetch_page(&id, plan.base(), limit, Some(to_s)),
+        )
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -308,6 +335,144 @@ mod tests {
         assert_eq!(reach_left(now, now - 20_000 * hour, base), 0);
         // A cursor in the future (a clock that is behind) has all of it.
         assert_eq!(reach_left(now, now + hour, base), 8_899);
+    }
+
+    /// 12:00:30 UTC on 2026-11-16: the forming one-minute candle opened at 12:00:00.
+    const NOW_MS: i64 = 1_794_830_430_000;
+    const MINUTE: i64 = 60_000;
+
+    /// A fake Gate.io: a market whose one-minute candles (volume 1) reach back `depth` minutes
+    /// from the forming one, answering `fetch(to, limit)` as the API does and refusing, as the
+    /// real service does with a 400, a request that reaches 9,000 points back from now.
+    struct Fake {
+        depth: i64,
+        now: i64,
+        asked: std::cell::Cell<usize>,
+    }
+
+    impl Fake {
+        fn new(depth: i64) -> Self {
+            Self::at(depth, NOW_MS)
+        }
+
+        /// The same market `now` milliseconds into the day: where the reach ends moves with it.
+        fn at(depth: i64, now: i64) -> Self {
+            Self {
+                depth,
+                now,
+                asked: std::cell::Cell::new(0),
+            }
+        }
+
+        fn answer(&self, to_s: i64, limit: usize) -> Result<Vec<Kline>, ProviderError> {
+            self.asked.set(self.asked.get() + 1);
+            let newest = self.now / MINUTE * MINUTE;
+            let oldest = newest - (self.depth - 1) * MINUTE;
+            let points_ago = (self.now - to_s * 1_000) / MINUTE + limit as i64;
+            assert!(
+                points_ago <= 9_000,
+                "Gate.io refuses: too long ago ({points_ago})"
+            );
+            let last = (to_s * 1_000 / MINUTE * MINUTE).min(newest);
+            Ok((0..limit as i64)
+                .rev()
+                .map(|back| last - back * MINUTE)
+                .filter(|open| *open >= oldest)
+                .map(|open_time| Kline {
+                    open_time,
+                    close_time: open_time + MINUTE - 1,
+                    open: 1.0,
+                    high: 1.0,
+                    low: 1.0,
+                    close: 1.0,
+                    volume: 1.0,
+                })
+                .collect())
+        }
+    }
+
+    /// Whether `candle` holds every minute of its bucket: nothing was cut off it.
+    fn is_whole(candle: &Kline, base: Timeframe) -> bool {
+        (candle.volume * MINUTE as f64) as i64
+            == next_bucket_start_ms(base, candle.open_time) - candle.open_time
+    }
+
+    #[test]
+    fn a_22_minute_chart_cut_short_by_the_reach_drops_its_partial_first_candle() {
+        let target = Timeframe::parse("22m").unwrap();
+        let plan = plan(DataSource::Gate, target).unwrap();
+        // Where the reach ends against the 22-minute grid depends on the minute it is asked in.
+        for minute in 0..22 {
+            let now = NOW_MS + minute * MINUTE;
+            let market = Fake::at(20_000, now);
+            let shown = collect(plan, now, 0, now + 1, 500, |to, limit| {
+                market.answer(to, limit)
+            })
+            .expect("candles");
+            assert!(shown.len() > 300, "{}", shown.len());
+            assert!(
+                is_whole(&shown[0], target),
+                "minute {minute}: the oldest candle holds {} minutes of {}",
+                shown[0].volume,
+                (next_bucket_start_ms(target, shown[0].open_time) - shown[0].open_time) / MINUTE
+            );
+        }
+    }
+
+    #[test]
+    fn an_older_page_near_the_reach_is_cut_short_and_the_one_after_it_is_empty() {
+        let target = Timeframe::parse("22m").unwrap();
+        let plan = plan(DataSource::Gate, target).unwrap();
+        let market = Fake::new(20_000);
+        let newest = NOW_MS / MINUTE * MINUTE;
+        let end = newest - 8_400 * MINUTE;
+        let page = collect(plan, NOW_MS, 0, end, 1_000, |to, limit| {
+            market.answer(to, limit)
+        })
+        .expect("an older page");
+        assert!(!page.is_empty());
+        assert!(is_whole(&page[0], target), "{}", page[0].volume);
+
+        let asked = market.asked.get();
+        let end = newest - 8_899 * MINUTE;
+        let past = collect(plan, NOW_MS, 0, end, 1_000, |to, limit| {
+            market.answer(to, limit)
+        })
+        .expect("nothing past the reach");
+        assert!(past.is_empty());
+        assert_eq!(
+            market.asked.get(),
+            asked,
+            "no request is made past the reach"
+        );
+    }
+
+    #[test]
+    fn a_market_that_began_inside_the_reach_keeps_its_first_candle_as_it_is() {
+        let target = Timeframe::parse("22m").unwrap();
+        let plan = plan(DataSource::Gate, target).unwrap();
+        let market = Fake::new(3_000);
+        let shown = collect(plan, NOW_MS, 0, NOW_MS + 1, 500, |to, limit| {
+            market.answer(to, limit)
+        })
+        .expect("candles");
+        // Listed 3,000 minutes ago: its first bucket is genuinely short.
+        assert!(!is_whole(&shown[0], target), "{}", shown[0].volume);
+    }
+
+    #[test]
+    fn a_native_length_reaches_as_far_back_as_gate_lets_it() {
+        let one = plan(DataSource::Gate, Timeframe::MINUTE_1).unwrap();
+        let market = Fake::new(20_000);
+        let all = collect(one, NOW_MS, 0, NOW_MS + 1, 8_900, |to, limit| {
+            market.answer(to, limit)
+        })
+        .expect("candles");
+        assert_eq!(all.len(), 8_899);
+        assert!(
+            all.windows(2)
+                .all(|pair| pair[0].open_time < pair[1].open_time)
+        );
     }
 
     #[test]
