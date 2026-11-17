@@ -736,38 +736,71 @@ fn the_local_rule_comes_from_every_source() {
 
 // MARK: Redirects
 
-/// Answers one request per entry of `replies` on a local port, returning what it was asked, and
-/// stops waiting for more after two seconds.
-fn origin(replies: Vec<String>) -> (u16, std::thread::JoinHandle<Vec<String>>) {
+/// A fake server running on its own thread, which waits for connections until it is finished.
+/// There is no timer: a test may wait a long while for `AppliedProxy`'s lock after starting its
+/// servers, and a server that gave up by then would be refusing connections.
+struct Served {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: std::thread::JoinHandle<Vec<String>>,
+}
+
+impl Served {
+    /// Stops the server and returns the heads of the requests it was sent.
+    fn finish(self) -> Vec<String> {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.thread.join().unwrap()
+    }
+}
+
+/// Reads one request head and answers it with `reply`, returning the head.
+fn exchange(stream: &mut std::net::TcpStream, reply: &str) -> String {
     use std::io::{Read, Write};
+    stream.set_nonblocking(false).unwrap();
+    let mut head = Vec::new();
+    let mut byte = [0_u8; 1];
+    while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).is_ok_and(|n| n > 0) {
+        head.push(byte[0]);
+    }
+    let _ = stream.write_all(reply.as_bytes());
+    String::from_utf8_lossy(&head).into_owned()
+}
+
+/// Runs `serve` for each connection that arrives on a local port, until finished.
+fn serve_connections(
+    mut serve: impl FnMut(std::net::TcpStream, &mut Vec<String>) -> bool + Send + 'static,
+) -> (u16, Served) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = std::sync::Arc::clone(&stop);
     let thread = std::thread::spawn(move || {
         let mut heads = Vec::new();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        for reply in replies {
-            let mut stream = loop {
-                match listener.accept() {
-                    Ok((stream, _)) => break stream,
-                    Err(_) if std::time::Instant::now() < deadline => {
-                        std::thread::sleep(std::time::Duration::from_millis(5));
+        while !flag.load(std::sync::atomic::Ordering::SeqCst) {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    if !serve(stream, &mut heads) {
+                        break;
                     }
-                    Err(_) => return heads,
                 }
-            };
-            stream.set_nonblocking(false).unwrap();
-            let mut head = Vec::new();
-            let mut byte = [0_u8; 1];
-            while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).is_ok_and(|n| n > 0) {
-                head.push(byte[0]);
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(2)),
             }
-            heads.push(String::from_utf8_lossy(&head).into_owned());
-            let _ = stream.write_all(reply.as_bytes());
         }
         heads
     });
-    (port, thread)
+    (port, Served { stop, thread })
+}
+
+/// Answers one request per entry of `replies`, in order, then stops.
+fn origin(replies: Vec<String>) -> (u16, Served) {
+    let mut replies = replies.into_iter();
+    serve_connections(move |mut stream, heads| {
+        let Some(reply) = replies.next() else {
+            return false;
+        };
+        heads.push(exchange(&mut stream, &reply));
+        true
+    })
 }
 
 fn redirect(location: &str) -> String {
@@ -783,38 +816,17 @@ fn answer(body: &str) -> String {
     )
 }
 
-/// A fake HTTP proxy that tunnels every `CONNECT` and answers the request inside with
-/// `redirect`, for two seconds; returns every request head it saw.
-fn redirecting_proxy(location: String) -> (u16, std::thread::JoinHandle<Vec<String>>) {
-    use std::io::{Read, Write};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let thread = std::thread::spawn(move || {
-        let mut heads = Vec::new();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while std::time::Instant::now() < deadline {
-            let Ok((mut stream, _)) = listener.accept() else {
-                std::thread::sleep(std::time::Duration::from_millis(5));
-                continue;
-            };
-            stream.set_nonblocking(false).unwrap();
-            for reply in [
-                "HTTP/1.1 200 Connection established\r\n\r\n".to_owned(),
-                redirect(&location),
-            ] {
-                let mut head = Vec::new();
-                let mut byte = [0_u8; 1];
-                while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).is_ok_and(|n| n > 0) {
-                    head.push(byte[0]);
-                }
-                heads.push(String::from_utf8_lossy(&head).into_owned());
-                let _ = stream.write_all(reply.as_bytes());
-            }
-        }
-        heads
-    });
-    (port, thread)
+/// A fake HTTP proxy that tunnels every `CONNECT` and answers the request inside with a redirect
+/// to `location`; `finish` returns every request head it saw.
+fn redirecting_proxy(location: String) -> (u16, Served) {
+    serve_connections(move |mut stream, heads| {
+        heads.push(exchange(
+            &mut stream,
+            "HTTP/1.1 200 Connection established\r\n\r\n",
+        ));
+        heads.push(exchange(&mut stream, &redirect(&location)));
+        true
+    })
 }
 
 /// A public page that redirects to this machine must not carry that request to the proxy: the
@@ -833,13 +845,13 @@ fn a_redirect_to_a_local_address_is_not_sent_through_the_proxy() {
     )
     .unwrap();
     assert_eq!(body, "internal");
-    let proxied = proxy_thread.join().unwrap();
+    let proxied = proxy_thread.finish();
     assert_eq!(proxied.len(), 2, "one CONNECT and its GET: {proxied:?}");
     assert!(
         proxied[0].starts_with("CONNECT public.test:80"),
         "{proxied:?}"
     );
-    let asked = origin_thread.join().unwrap();
+    let asked = origin_thread.finish();
     assert!(asked[0].starts_with("GET /secret HTTP/1.1"), "{asked:?}");
     assert!(
         !asked[0].to_ascii_lowercase().contains("x-api-key"),
@@ -864,7 +876,7 @@ fn a_redirect_from_a_local_address_to_a_public_host_uses_the_proxy() {
     assert_eq!(body, "proxy");
     let heads = proxy_thread.join().unwrap();
     assert!(heads[0].starts_with("CONNECT public.test:80"), "{heads:?}");
-    assert!(origin_thread.join().unwrap()[0].starts_with("GET /start"));
+    assert!(origin_thread.finish()[0].starts_with("GET /start"));
 }
 
 #[test]
@@ -881,7 +893,7 @@ fn redirects_are_followed_up_to_a_limit_and_headers_stay_on_their_host() {
         http::get_text(&url, &[("X-Api-Key", "k")], Retry::Never).unwrap(),
         "done"
     );
-    let asked = thread.join().unwrap();
+    let asked = thread.finish();
     assert!(asked[1].starts_with("GET /a/next HTTP/1.1"), "{asked:?}");
     assert!(
         asked[1].to_ascii_lowercase().contains("x-api-key"),
@@ -894,7 +906,11 @@ fn redirects_are_followed_up_to_a_limit_and_headers_stay_on_their_host() {
         matches!(&result, Err(Error::Network(text)) if text.contains("redirect")),
         "{result:?}"
     );
-    thread.join().unwrap();
+    assert_eq!(
+        thread.finish().len(),
+        6,
+        "the first request and five redirects"
+    );
 }
 
 /// A redirect to a parent path reaches the server as the path it names, not with dot segments.
@@ -908,6 +924,6 @@ fn a_parent_relative_redirect_requests_the_resolved_path() {
     let (port, thread) = origin(vec![redirect("../final"), answer("done")]);
     let url = format!("http://127.0.0.1:{port}/a/start");
     assert_eq!(http::get_text(&url, &[], Retry::Never).unwrap(), "done");
-    let asked = thread.join().unwrap();
+    let asked = thread.finish();
     assert!(asked[1].starts_with("GET /final HTTP/1.1"), "{asked:?}");
 }
