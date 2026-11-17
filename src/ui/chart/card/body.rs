@@ -203,6 +203,7 @@ impl ChartCard {
                 .map(|view| PriceRange::new(view.scale.minimum, view.scale.maximum)),
             total: bars.len(),
             slot_width: self.slot_width(self.framing(), plot),
+            reserved: self.reserved_slots_with(self.framing().extent),
             scale_height: view
                 .as_ref()
                 .map_or_else(|| plot.height(), |view| view.scale.height),
