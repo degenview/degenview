@@ -339,6 +339,9 @@ pub struct ChartCard {
     /// The Zoom In tool: armed state, the rectangle being dragged, the views to zoom out to.
     /// View state, never saved.
     zoom: zoom_rect::ZoomTool,
+    /// The bars the wheel or a pinch asked to show, before rounding to whole bars, so slow smooth
+    /// scrolling adds up. Meaningful only while it rounds to what the viewport shows.
+    zoom_exact: f64,
     /// The workspace's Select portion mode is on: the pointer is the selection's, not the
     /// chart's. View state, never saved.
     snapshot_select: bool,
@@ -426,6 +429,7 @@ impl Default for ChartCard {
             logs_range: None,
             scroll_from: None,
             zoom: zoom_rect::ZoomTool::default(),
+            zoom_exact: 0.0,
             snapshot_select: false,
             arrivals: 0,
             series_epoch: 0,
