@@ -1,6 +1,7 @@
 use super::DegenViewApp;
 use super::tabs::TabContent;
 use crate::service::alert::macos_notifications;
+use crate::service::sound::SystemSounder;
 use eframe::egui;
 use std::sync::Arc;
 use std::time::Instant;
@@ -55,6 +56,12 @@ impl DegenViewApp {
                 |_, _| {},
             );
         }
+    }
+
+    /// Plays the fill sound for paper orders this Mac filled since the last frame. A burst of fills
+    /// is one sound, and one the user muted is none.
+    pub(super) fn tick_paper_sound(&self) {
+        crate::lock::lock(&self.paper).announce_fills(&SystemSounder);
     }
 
     /// Quits, but first lets each Pine Studio window ask about its unsaved scripts, one window

@@ -6,6 +6,7 @@ pub mod engine;
 pub mod export;
 pub mod format;
 pub mod integrity;
+pub mod prefs;
 pub mod ticket;
 
 use std::collections::HashMap;

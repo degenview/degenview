@@ -6,13 +6,15 @@
 //! result, while still refusing all writes after an initial load failure.
 
 use crate::model::paper::engine::PaperTradingEngine;
+use crate::model::paper::prefs::{KEY as PREFS_KEY, PaperPrefs};
 use crate::model::paper::{
     PaperAccountMetrics, PaperAccountSettings, PaperCurrency, PaperOrderChanges, PaperOrderRequest,
     PaperOrderSide, PaperOrderType, PaperPosition, PaperQuote, PaperTimeInForce, PaperTradingError,
     PaperTradingSnapshot,
 };
-use crate::store::SharedStore;
+use crate::service::sound::{Sound, Sounder};
 use crate::store::sync::Elsewhere;
+use crate::store::{SharedStore, Store};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
@@ -41,6 +43,11 @@ pub struct PaperHost {
     /// Counts every change to what the panel lists (orders, positions, history, accounts), not a
     /// quote tick, so a view built from the snapshot is rebuilt only when it could differ.
     revision: u64,
+    /// How the user wants paper trading to behave on this Mac.
+    prefs: PaperPrefs,
+    /// Fills this Mac made since [`Self::drain_fills`] last ran: from its own quotes and the
+    /// user's own actions, never from a reload of what another Mac or the background agent wrote.
+    unheard_fills: usize,
 }
 
 /// Whether two snapshots hold the same accounts and history, ignoring the transient quotes.
@@ -53,6 +60,16 @@ fn same_ledger(a: &PaperTradingSnapshot, b: &PaperTradingSnapshot) -> bool {
         && a.order_events == b.order_events
         && a.closed_trades == b.closed_trades
         && a.journal == b.journal
+}
+
+/// How many fills `after` holds that `before` did not.
+fn new_fills(before: &PaperTradingSnapshot, after: &PaperTradingSnapshot) -> usize {
+    let known: HashSet<u64> = before.fills.iter().map(|fill| fill.id).collect();
+    after
+        .fills
+        .iter()
+        .filter(|fill| !known.contains(&fill.id))
+        .count()
 }
 
 /// Refuses a snapshot whose rows disagree with each other.
@@ -70,6 +87,11 @@ fn check_integrity(snapshot: &PaperTradingSnapshot) -> Result<(), PaperHostError
 
 impl PaperHost {
     pub fn load(store: SharedStore) -> Self {
+        let prefs = store
+            .lock()
+            .ok()
+            .and_then(|store| store.setting(PREFS_KEY))
+            .unwrap_or_default();
         let loaded = store
             .lock()
             .map_err(|_| PaperHostError::StoreUnavailable)
@@ -91,6 +113,8 @@ impl PaperHost {
                     last_error: None,
                     elsewhere: HashMap::new(),
                     revision: 0,
+                    prefs,
+                    unheard_fills: 0,
                 };
                 host.refresh_ownership();
                 host
@@ -102,6 +126,8 @@ impl PaperHost {
                 last_error: Some(error),
                 elsewhere: HashMap::new(),
                 revision: 0,
+                prefs,
+                unheard_fills: 0,
             },
         }
     }
@@ -174,6 +200,30 @@ impl PaperHost {
     /// Changes whenever the lists the panel shows could differ; not on a quote tick.
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    pub fn prefs(&self) -> PaperPrefs {
+        self.prefs
+    }
+
+    /// Applies the choices and saves them through `store`, which the caller already holds (the
+    /// Settings page draws under its lock). They apply even when the save fails.
+    pub fn set_prefs(&mut self, store: &Store, prefs: PaperPrefs) -> rusqlite::Result<()> {
+        self.prefs = prefs;
+        store.set_setting(PREFS_KEY, &prefs)
+    }
+
+    /// Takes the number of fills this Mac made since the last call.
+    pub fn drain_fills(&mut self) -> usize {
+        std::mem::take(&mut self.unheard_fills)
+    }
+
+    /// Plays the fill sound once for everything filled since the last call, however many fills a
+    /// burst held, unless the user turned it off.
+    pub fn announce_fills(&mut self, sounder: &dyn Sounder) {
+        if self.drain_fills() > 0 && self.prefs.fill_sound {
+            sounder.play(Sound::OrderFilled);
+        }
     }
 
     pub fn load_failed(&self) -> bool {
@@ -370,6 +420,7 @@ impl PaperHost {
                 return Err(error);
             }
             self.revision = self.revision.wrapping_add(1);
+            self.unheard_fills += new_fills(self.engine.snapshot(), candidate.snapshot());
         }
 
         self.engine = candidate;
@@ -529,6 +580,7 @@ impl PaperHost {
             self.elsewhere.remove(&id);
         }
 
+        self.unheard_fills += new_fills(self.engine.snapshot(), candidate.snapshot());
         self.engine = candidate;
         self.revision = self.revision.wrapping_add(1);
         match result {
