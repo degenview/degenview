@@ -166,10 +166,11 @@ impl DataSource {
         let head = upper.split(['/', '-', ' ', '_']).next().unwrap_or(&upper);
         match self {
             // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
-            Self::Binance | Self::Bybit | Self::Mexc => split_binance_pair(head)
+            Self::Binance | Self::Bybit => split_binance_pair(head)
                 .map(|(base, _)| base)
                 .filter(|base| base.len() > 1)
                 .unwrap_or(head),
+            Self::Mexc => split_mexc_pair(head).map(|(base, _)| base).unwrap_or(head),
             _ => head,
         }
         .to_owned()
@@ -183,9 +184,10 @@ impl DataSource {
     pub fn quote_asset(self, symbol: &str) -> Option<String> {
         let upper = symbol.trim().to_uppercase();
         match self {
-            Self::Binance | Self::Bybit | Self::Mexc => {
+            Self::Binance | Self::Bybit => {
                 split_binance_pair(&upper).map(|(_, quote)| quote.to_owned())
             }
+            Self::Mexc => split_mexc_pair(&upper).map(|(_, quote)| quote.to_owned()),
             Self::Kraken => {
                 let (base, quote) = upper.split_once('/')?;
                 (!base.is_empty() && !quote.is_empty() && !quote.contains(['-', '/', ' ']))
@@ -234,6 +236,26 @@ pub fn split_binance_pair(symbol: &str) -> Option<(&str, &'static str)> {
     })
 }
 
+/// Quote assets MEXC's spot catalog ends its ids in, the dollar stablecoins first.
+const MEXC_QUOTES: [&str; 9] = [
+    "USDT", "USDC", "USD1", "USDE", "USDF", "EUR", "BRL", "ETH", "BTC",
+];
+
+/// How many of [`MEXC_QUOTES`] are dollar stablecoins: a one-letter base is a real asset there
+/// (`SUSDT`), where before another quote it is a wrapped one (`WBTC` is not W/BTC).
+const MEXC_STABLE_QUOTES: usize = 5;
+
+/// Splits an upper-case MEXC id like `BTCUSD1` into `("BTC", "USD1")`, or `None` when no quote of
+/// its catalog ends it (a bare asset such as `SOL` or `WBTC`).
+pub fn split_mexc_pair(symbol: &str) -> Option<(&str, &'static str)> {
+    MEXC_QUOTES.iter().enumerate().find_map(|(index, quote)| {
+        symbol
+            .strip_suffix(quote)
+            .filter(|base| base.len() > usize::from(index >= MEXC_STABLE_QUOTES))
+            .map(|base| (base, *quote))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -250,6 +272,9 @@ mod tests {
         assert_eq!(Binance.quote_asset("adaeur").as_deref(), Some("EUR"));
         assert_eq!(Bybit.quote_asset("adaeur").as_deref(), Some("EUR"));
         assert_eq!(Mexc.quote_asset("adausdc").as_deref(), Some("USDC"));
+        assert_eq!(Mexc.quote_asset("BTCUSD1").as_deref(), Some("USD1"));
+        assert_eq!(Mexc.quote_asset("SUSDT").as_deref(), Some("USDT"));
+        assert_eq!(Mexc.quote_asset("WBTC"), None);
         assert_eq!(Bybit.quote_asset("SOL"), None);
         assert_eq!(Binance.quote_asset("SOL"), None);
         assert_eq!(Coinbase.quote_asset("BTC"), None);
@@ -290,6 +315,9 @@ mod tests {
         assert_eq!(base(DataSource::Kraken, "sol/usd"), "SOL");
         assert_eq!(base(DataSource::Gate, "eth_usdt"), "ETH");
         assert_eq!(base(DataSource::Mexc, "solusdt"), "SOL");
+        assert_eq!(base(DataSource::Mexc, "BTCUSD1"), "BTC");
+        assert_eq!(base(DataSource::Mexc, "susdt"), "S");
+        assert_eq!(base(DataSource::Mexc, "WBTC"), "WBTC");
         assert_eq!(base(DataSource::Gate, "BTC3L_USDT"), "BTC3L");
         assert_eq!(base(DataSource::Alpaca, "AAPL — Apple Inc."), "AAPL");
         assert_eq!(base(DataSource::DexScreener, "PEPE/WETH"), "PEPE");

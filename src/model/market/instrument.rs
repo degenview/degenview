@@ -35,7 +35,16 @@ impl InstrumentId {
     /// USDT); Kraken's are `BASE/QUOTE` (USD) in the common tickers, never the legacy `XBT`.
     pub fn api_symbol(&self) -> String {
         match self.source {
-            DataSource::Binance | DataSource::Bybit | DataSource::Mexc => {
+            DataSource::Mexc => {
+                let upper = self.symbol.to_uppercase().replace(['/', '-', '_', ' '], "");
+                // Its own quotes (`USD1`, `USDE`), and a one-letter base is a real asset (`S`).
+                if crate::model::market::source::split_mexc_pair(&upper).is_some() {
+                    upper
+                } else {
+                    format!("{upper}USDT")
+                }
+            }
+            DataSource::Binance | DataSource::Bybit => {
                 let upper = self.symbol.to_uppercase().replace(['/', '-'], "");
                 // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
                 if crate::model::market::source::split_binance_pair(&upper)
@@ -151,6 +160,26 @@ mod tests {
         }
         for symbol in ["BTC", "btcusdt", "btc-usdt", "BTC/USDT"] {
             assert_eq!(key(DataSource::Mexc, symbol), "MEXC:BTCUSDT", "{symbol}");
+        }
+        // Ids MEXC lists as they are: a quote that is not Binance's, a one-letter base.
+        for (symbol, id) in [
+            ("BTCUSD1", "BTCUSD1"),
+            ("btc/usd1", "BTCUSD1"),
+            ("SUSDT", "SUSDT"),
+            ("s-usdt", "SUSDT"),
+            ("ETHUSDE", "ETHUSDE"),
+            ("ETHBTC", "ETHBTC"),
+            ("SOLEUR", "SOLEUR"),
+            // A bare asset is quoted in USDT, a wrapped one included.
+            ("WBTC", "WBTCUSDT"),
+            ("S", "SUSDT"),
+            ("USD1", "USD1USDT"),
+        ] {
+            assert_eq!(
+                key(DataSource::Mexc, symbol),
+                format!("MEXC:{id}"),
+                "{symbol}"
+            );
         }
         for symbol in ["BTC", "btc-usdt", "BTC/USDT", "BTC-USDT"] {
             assert_eq!(key(DataSource::Okx, symbol), "OKX:BTC-USDT", "{symbol}");
