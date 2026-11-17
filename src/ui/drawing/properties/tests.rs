@@ -566,3 +566,84 @@ fn gallery_of_the_new_pages() {
         screen.save(name, last.expect("a frame"));
     }
 }
+
+/// Every word a frame writes.
+fn words(output: &egui::FullOutput) -> Vec<String> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(text) => out.push(text.galley.text().to_owned()),
+            egui::Shape::Vec(inner) => inner.iter().for_each(|shape| walk(shape, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in &output.shapes {
+        walk(&clipped.shape, &mut out);
+    }
+    out
+}
+
+/// The dialog's pages in the pseudo-locale, in both themes: their words come through `tr!`, so
+/// none shows without brackets, and the longer text fits the sheet. With `DEGENVIEW_GALLERY_DIR`
+/// set the pictures are written out to look at.
+#[test]
+fn the_dialog_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, tr, with_locale};
+    use crate::ui::render_tests::{Screen, gallery_dir};
+    use crate::ui::theme::{AppTheme, RestoreDefaultTheme};
+    let _theme = RestoreDefaultTheme;
+    with_locale(Locale::Pseudo, || {
+        for (name, tool, tab, expected) in [
+            (
+                "trend-line-style",
+                Tool::TrendLine,
+                Tab::Style,
+                vec![tr!("Template"), tr!("Thickness"), tr!("Arrowheads")],
+            ),
+            (
+                "long-inputs",
+                Tool::LongPosition,
+                Tab::Inputs,
+                vec![tr!("Account"), tr!("Lot size"), tr!("Leverage")],
+            ),
+            (
+                "fib-levels",
+                Tool::FibRetracement,
+                Tab::Levels,
+                vec![tr!("Restore defaults"), tr!("Add level")],
+            ),
+            (
+                "text",
+                Tool::Rectangle,
+                Tab::Text,
+                vec![tr!("Font"), tr!("Text color"), tr!("Bold")],
+            ),
+        ] {
+            for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+                let mut dialog = DrawingProperties::new(1, &drawing(tool)).expect("dialog");
+                dialog.tab = tab;
+                let mut store = templates();
+                let mut screen = Screen::new(vec2(900.0, 900.0));
+                crate::ui::theme::apply(&screen.ctx, app_theme);
+                let mut last = None;
+                for _ in 0..4 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        dialog.show(ui.ctx(), &mut store);
+                    }));
+                }
+                let last = last.expect("a frame");
+                let shown = words(&last);
+                for word in expected.iter().chain(&[tr!("OK"), tr!("Cancel")]) {
+                    assert!(word.starts_with('['), "{word} is not in the pseudo-locale");
+                    assert!(
+                        shown.iter().any(|text| text == word),
+                        "{name} {theme_name}: {word} is not drawn: {shown:?}"
+                    );
+                }
+                if gallery_dir().is_some() {
+                    screen.save(&format!("drawing-dialog-pseudo-{name}-{theme_name}"), last);
+                }
+            }
+        }
+    });
+}

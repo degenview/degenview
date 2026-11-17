@@ -10,6 +10,7 @@
 use super::Projection;
 use super::fib_shapes::{LABEL_GAP, OFF_PLOT, fan_labels, fib_style, look, styled};
 use super::shape::{Band, LabelLook, LabelPlace, PivotLabel, Screen, Styled, vertex_handles};
+use crate::i18n::tr;
 use crate::model::chart::kind::Rgba;
 use crate::model::drawings::style::DrawingStyle;
 use crate::model::fib;
@@ -446,7 +447,7 @@ fn readout(
     let mut labels = vec![
         plain(
             pos2(center.x, boxed.bottom() + LABEL_GAP),
-            format!("{} bars", format_ratio(bars.abs(), 1)),
+            tr!("{bars} bars", bars = format_ratio(bars.abs(), 1)),
             vec2(0.0, -1.0),
         ),
         plain(

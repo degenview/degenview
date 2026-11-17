@@ -2,6 +2,7 @@
 //! (`Pos2`) so it is independent of the drawing model: `chart_card` projects
 //! anchors through its time/price scales and hands the results to these helpers.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::{Anchor, Kline, PriceFormat};
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2};
@@ -101,11 +102,7 @@ impl RulerReadout {
     }
 
     pub fn bars_text(&self) -> String {
-        if self.bars == 1 {
-            "1 bar".into()
-        } else {
-            format!("{} bars", self.bars)
-        }
+        tr_n!(self.bars, "{count} bar", "{count} bars")
     }
 
     /// Empty under a minute, which the smallest candle still outlasts.
@@ -119,7 +116,11 @@ impl RulerReadout {
         if duration.is_empty() {
             self.bars_text()
         } else {
-            format!("{} · {duration}", self.bars_text())
+            tr!(
+                "{bars} · {duration}",
+                bars = self.bars_text(),
+                duration = duration
+            )
         }
     }
 }
@@ -192,7 +193,10 @@ impl ArrowReadout {
         }
         let mut shape = Vec::new();
         if stats.distance {
-            shape.push(format!("{:+} periods", self.periods));
+            shape.push(tr!(
+                "{periods} periods",
+                periods = format!("{:+}", self.periods)
+            ));
         }
         if stats.angle {
             shape.push(format!("{:.0}°", self.angle_deg));
@@ -212,11 +216,11 @@ pub fn duration(secs: i64) -> String {
     }
     let (days, hours, mins) = (minutes / 1440, (minutes / 60) % 24, minutes % 60);
     match (days, hours, mins) {
-        (0, 0, m) => format!("{m}m"),
-        (0, h, 0) => format!("{h}h"),
-        (0, h, m) => format!("{h}h {m}m"),
-        (d, 0, _) => format!("{d}d"),
-        (d, h, _) => format!("{d}d {h}h"),
+        (0, 0, m) => tr!("{minutes}m", minutes = m),
+        (0, h, 0) => tr!("{hours}h", hours = h),
+        (0, h, m) => tr!("{hours}h {minutes}m", hours = h, minutes = m),
+        (d, 0, _) => tr!("{days}d", days = d),
+        (d, h, _) => tr!("{days}d {hours}h", days = d, hours = h),
     }
 }
 

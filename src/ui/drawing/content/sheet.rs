@@ -3,6 +3,7 @@
 //! only asks: the workspace reads the picture, checks it and stores it (off the UI thread), and the
 //! sheet shows what it is doing and why a picture was refused.
 
+use crate::i18n::tr;
 use crate::model::annotation::link_card::{FETCH_HOST, Link, LinkError, SERVICE};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, size};
@@ -42,8 +43,8 @@ pub fn show_image(ctx: &egui::Context, view: &ImageSheet) -> ImageSheetAction {
             sheet::header(
                 ui,
                 Icon::ImageTool,
-                "Add image",
-                "A PNG or JPEG, scaled to fit and kept with your drawings",
+                tr!("Add image"),
+                tr!("A PNG or JPEG, scaled to fit and kept with your drawings"),
                 kit::ACCENT,
             );
             ui.add_space(18.0);
@@ -51,15 +52,20 @@ pub fn show_image(ctx: &egui::Context, view: &ImageSheet) -> ImageSheetAction {
             ui.add_space(14.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                if kit::push_button(ui, Some(Icon::ImageTool), "Choose file…", !view.working)
-                    .clicked()
+                if kit::push_button(
+                    ui,
+                    Some(Icon::ImageTool),
+                    tr!("Choose file…"),
+                    !view.working,
+                )
+                .clicked()
                 {
                     action = ImageSheetAction::Choose;
                 }
                 if kit::push_button(
                     ui,
                     Some(Icon::Clipboard),
-                    "Paste from clipboard",
+                    tr!("Paste from clipboard"),
                     !view.working,
                 )
                 .clicked()
@@ -69,7 +75,7 @@ pub fn show_image(ctx: &egui::Context, view: &ImageSheet) -> ImageSheetAction {
             });
             ui.add_space(10.0);
             let (text, color) = match (view.working, view.error) {
-                (true, _) => (Some("Reading the picture…"), theme::text_secondary()),
+                (true, _) => (Some(tr!("Reading the picture…")), theme::text_secondary()),
                 (false, Some(error)) => (Some(error), kit::RED),
                 (false, None) => (None, theme::text_secondary()),
             };
@@ -79,7 +85,7 @@ pub fn show_image(ctx: &egui::Context, view: &ImageSheet) -> ImageSheetAction {
         });
         ui.add_space(18.0);
         sheet::footer(ui, |ui| {
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                 action = ImageSheetAction::Close;
             }
         });
@@ -120,11 +126,14 @@ pub fn check_link(text: &str) -> Result<Link, Option<LinkError>> {
 pub fn show_link(ctx: &egui::Context, view: LinkSheet) -> LinkSheetAction {
     let mut action = LinkSheetAction::None;
     let (title, subtitle) = if view.replacing {
-        ("Replace link", "Paste the link of another post on X.")
+        (
+            tr!("Replace link"),
+            tr!("Paste the link of another post on X."),
+        )
     } else {
         (
-            "Add post",
-            "Paste the link of a post on X. It is placed at the time it was posted.",
+            tr!("Add post"),
+            tr!("Paste the link of a post on X. It is placed at the time it was posted."),
         )
     };
     let hint = "https://x.com/name/status/…";
@@ -157,7 +166,7 @@ pub fn show_link(ctx: &egui::Context, view: LinkSheet) -> LinkSheetAction {
                 ),
                 Err(Some(error)) => (error.message().to_owned(), kit::RED),
                 Err(None) => (
-                    "Nothing is contacted: the card shows what the link says.".to_owned(),
+                    tr!("Nothing is contacted: the card shows what the link says.").to_owned(),
                     theme::text_secondary(),
                 ),
             };
@@ -165,13 +174,17 @@ pub fn show_link(ctx: &egui::Context, view: LinkSheet) -> LinkSheetAction {
         });
         ui.add_space(18.0);
         sheet::footer(ui, |ui| {
-            let label = if view.replacing { "Replace" } else { "Add" };
+            let label = if view.replacing {
+                tr!("Replace")
+            } else {
+                tr!("Add")
+            };
             if kit::sheet_button(ui, label, true, checked.is_ok()).clicked()
                 && let Ok(link) = &checked
             {
                 action = LinkSheetAction::Confirm(link.clone());
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                 action = LinkSheetAction::Close;
             }
         });
@@ -204,15 +217,15 @@ pub fn show_consent(ctx: &egui::Context) -> ConsentAction {
             sheet::header(
                 ui,
                 Icon::XLogo,
-                &format!("Fetch previews from {SERVICE}?"),
-                "Only when you ask, for the one link you chose",
+                &tr!("Fetch previews from {service}?", service = SERVICE),
+                tr!("Only when you ask, for the one link you chose"),
                 kit::ACCENT,
             );
             ui.add_space(14.0);
             ui.label(kit::text(
-                format!(
-                    "To show its text and the author's picture, DegenView sends this post's link to {}, asks X's embed service for the author's picture and downloads it from X's image server. The few lines and the picture it gets back are kept on the card. Nothing else is sent: no account, no cookies, nothing about your charts.",
-                    FETCH_HOST
+                tr!(
+                    "To show its text and the author's picture, DegenView sends this post's link to {host}, asks X's embed service for the author's picture and downloads it from X's image server. The few lines and the picture it gets back are kept on the card. Nothing else is sent: no account, no cookies, nothing about your charts.",
+                    host = FETCH_HOST
                 ),
                 size::SUBHEADLINE,
                 REGULAR,
@@ -221,10 +234,10 @@ pub fn show_consent(ctx: &egui::Context) -> ConsentAction {
         });
         ui.add_space(18.0);
         sheet::footer(ui, |ui| {
-            if kit::sheet_button(ui, "Allow", true, true).clicked() {
+            if kit::sheet_button(ui, tr!("Allow"), true, true).clicked() {
                 action = ConsentAction::Allow;
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                 action = ConsentAction::Cancel;
             }
         });
@@ -270,9 +283,9 @@ fn drop_zone(ui: &mut egui::Ui, view: &ImageSheet) {
         rect.center() + vec2(0.0, 18.0),
         Align2::CENTER_CENTER,
         if view.dragging {
-            "Drop to add the picture"
+            tr!("Drop to add the picture")
         } else {
-            "Or drop a picture on the chart"
+            tr!("Or drop a picture on the chart")
         },
         egui::FontId::proportional(13.0),
         if view.dragging {
