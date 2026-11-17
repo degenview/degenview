@@ -233,7 +233,7 @@ pub static UPDATES: WorkQueue = WorkQueue::new(1);
 pub static SNAPSHOTS: WorkQueue = WorkQueue::new(2);
 
 /// Rate-limited providers get a worker each: a request sleeping until its slot comes (seconds, for
-/// CoinGecko and GeckoTerminal) must not hold one of the general workers that fetch other charts'
+/// CoinGecko, GeckoTerminal and Kraken) must not hold one of the general workers that fetch other charts'
 /// candles. One worker matches the limiter, which lets one request through at a time anyway.
 static COINGECKO_LANE: WorkQueue = WorkQueue::new(1);
 
@@ -241,6 +241,7 @@ static COINGECKO_LANE: WorkQueue = WorkQueue::new(1);
 /// a busy chart; a rate-limited provider's search still takes that provider's lane.
 static SEARCHES: WorkQueue = WorkQueue::new(4);
 static GECKOTERMINAL_LANE: WorkQueue = WorkQueue::new(1);
+static KRAKEN_LANE: WorkQueue = WorkQueue::new(1);
 
 pub fn submit(job: impl FnOnce() + Send + 'static) {
     QUEUE.submit(job);
@@ -260,6 +261,7 @@ fn lane(source: crate::model::DataSource) -> &'static WorkQueue {
     match source {
         DataSource::CoinGecko => &COINGECKO_LANE,
         DataSource::DexScreener => &GECKOTERMINAL_LANE,
+        DataSource::Kraken => &KRAKEN_LANE,
         _ => &QUEUE,
     }
 }
@@ -416,5 +418,60 @@ mod tests {
         did_run
             .recv_timeout(Duration::from_secs(5))
             .expect("the job ran to its end");
+    }
+
+    #[test]
+    fn every_rate_limited_provider_has_a_lane_of_its_own() {
+        use crate::model::DataSource;
+        let lanes: Vec<*const WorkQueue> = [
+            DataSource::CoinGecko,
+            DataSource::DexScreener,
+            DataSource::Kraken,
+        ]
+        .map(|source| lane(source) as *const WorkQueue)
+        .to_vec();
+        for (index, queue) in lanes.iter().enumerate() {
+            assert!(
+                !std::ptr::eq(*queue, &QUEUE),
+                "lane {index} is the general one"
+            );
+            assert!(
+                !std::ptr::eq(*queue, &SEARCHES),
+                "lane {index} is the search one"
+            );
+            assert!(
+                lanes
+                    .iter()
+                    .filter(|other| std::ptr::eq(**other, *queue))
+                    .count()
+                    == 1,
+                "lane {index} is shared"
+            );
+        }
+        // An unlimited provider keeps the general workers, and its searches the search ones.
+        assert!(std::ptr::eq(lane(DataSource::Binance), &QUEUE));
+    }
+
+    #[test]
+    fn a_throttled_kraken_does_not_hold_the_workers_that_fetch_other_charts() {
+        // Five requests asleep on Kraken's limiter, as many as the general workers and one more.
+        for _ in 0..5 {
+            submit_for(crate::model::DataSource::Kraken, || {
+                std::thread::sleep(Duration::from_millis(600));
+            });
+        }
+        let (done, finished) = mpsc::channel::<()>();
+        let started = Instant::now();
+        submit(move || {
+            let _ = done.send(());
+        });
+        finished
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the unrelated job ran");
+        assert!(
+            started.elapsed() < Duration::from_millis(300),
+            "an unrelated job waited {:?} behind Kraken's requests",
+            started.elapsed()
+        );
     }
 }

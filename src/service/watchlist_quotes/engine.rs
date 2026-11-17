@@ -36,6 +36,9 @@ pub struct Config {
     pub stream_fallback_delay_ms: i64,
     /// ...and any product the socket has been quiet about is refreshed from REST this often.
     pub stream_refresh_ms: i64,
+    /// A REST refresh of a streamed market that gives no price a day ago borrows the one its last
+    /// tick gave, for this long: a quiet market keeps its change instead of losing it every refresh.
+    pub stream_reference_ms: i64,
     pub chain_lookups_per_round: usize,
 }
 
@@ -49,6 +52,7 @@ impl Default for Config {
             idle_grace_ms: 600_000,
             stream_fallback_delay_ms: 6_000,
             stream_refresh_ms: 30_000,
+            stream_reference_ms: 600_000,
             chain_lookups_per_round: 5,
         }
     }
@@ -162,6 +166,9 @@ pub struct Engine {
     stream_products: HashMap<DataSource, HashMap<String, String>>,
     /// When each streamed market was first asked for, by instrument key.
     stream_subscribed_at: HashMap<String, i64>,
+    /// The price a day ago the last tick of each streamed market gave, and when: instrument key ->
+    /// (price, time).
+    stream_references: HashMap<String, (f64, i64)>,
     /// When each remembered market stopped being asked for (see `Config::idle_grace_ms`).
     idle_since: HashMap<String, i64>,
     last_prune_ms: i64,
@@ -181,6 +188,7 @@ impl Engine {
             unresolved_chains: HashSet::new(),
             stream_products: HashMap::new(),
             stream_subscribed_at: HashMap::new(),
+            stream_references: HashMap::new(),
             idle_since: HashMap::new(),
             last_prune_ms: i64::MIN / 2,
         }
@@ -391,6 +399,7 @@ impl Engine {
             .chain(self.received.keys())
             .chain(self.rejected.keys())
             .chain(self.stream_subscribed_at.keys())
+            .chain(self.stream_references.keys())
             .chain(self.unresolved_chains.iter())
             .cloned()
             .collect();
@@ -416,6 +425,7 @@ impl Engine {
             self.received.remove(key);
             self.rejected.remove(key);
             self.stream_subscribed_at.remove(key);
+            self.stream_references.remove(key);
             self.unresolved_chains.remove(key);
         }
         self.book.remove(&expired);
@@ -427,6 +437,7 @@ impl Engine {
             + self.received.len()
             + self.rejected.len()
             + self.stream_subscribed_at.len()
+            + self.stream_references.len()
             + self.unresolved_chains.len()
             + self.idle_since.len()
     }
@@ -593,7 +604,11 @@ impl Engine {
 
         for (key, request) in &planned.requests {
             if let Some(quote) = outcome.quotes.get(&request.symbol) {
-                updates.insert(key.clone(), WatchlistQuote::from_source(source, quote, now));
+                let quote = self.with_stream_reference(source, key, *quote, now);
+                updates.insert(
+                    key.clone(),
+                    WatchlistQuote::from_source(source, &quote, now),
+                );
                 self.received.insert(key.clone(), now);
                 self.rejected.remove(key);
             } else if let Some(failure) = failed.get(request.symbol.as_str()) {
@@ -629,6 +644,29 @@ impl Engine {
             self.known.insert(key.clone(), quote.clone());
         }
         self.book.apply(updates);
+    }
+
+    /// `quote` of a streamed market with the price a day ago its last tick gave, when REST gives
+    /// none and that tick is recent enough to still say what a day ago was.
+    fn with_stream_reference(
+        &self,
+        source: DataSource,
+        key: &str,
+        quote: SourceQuote,
+        now: i64,
+    ) -> SourceQuote {
+        if quote.previous_day_price.is_some() || !source.streams_quotes() {
+            return quote;
+        }
+        let reference = self
+            .stream_references
+            .get(key)
+            .filter(|(_, taken)| now - taken <= self.config.stream_reference_ms)
+            .map(|(price, _)| *price);
+        SourceQuote {
+            previous_day_price: reference,
+            ..quote
+        }
     }
 
     /// The last known price, marked stale; or an unavailable quote if there never was one.
@@ -695,6 +733,9 @@ impl Engine {
             else {
                 continue;
             };
+            if let Some(reference) = tick.quote.previous_day_price {
+                self.stream_references.insert(key.clone(), (reference, now));
+            }
             latest.insert(
                 key.clone(),
                 WatchlistQuote::from_source(tick.source, &tick.quote, now),
@@ -930,6 +971,8 @@ mod tests {
         limit_after: Mutex<Option<usize>>,
         calls: Mutex<Vec<(DataSource, Vec<String>)>>,
         chains: Mutex<HashMap<String, String>>,
+        /// Answers carry no price a day ago, as Kraken's REST ticker does not.
+        without_reference: Mutex<bool>,
     }
 
     impl FakeProvider {
@@ -991,7 +1034,8 @@ mod tests {
                                 r.symbol.clone(),
                                 SourceQuote {
                                     price: *price,
-                                    previous_day_price: Some(*price / 2.0),
+                                    previous_day_price: (!*self.without_reference.lock().unwrap())
+                                        .then_some(*price / 2.0),
                                     ..SourceQuote::default()
                                 },
                             )
@@ -1607,6 +1651,58 @@ mod tests {
                 .stream_products(DataSource::Coinbase)
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_rest_refresh_of_a_streamed_market_keeps_the_sockets_reference_for_a_while() {
+        let (engine, book, provider) = setup();
+        *provider.without_reference.lock().unwrap() = true;
+        provider.price("BTC-USD", 110.0);
+        let btc = id(DataSource::Coinbase, "BTC-USD");
+        lock(&engine).update(1, vec![btc.clone()], true, T0);
+        lock(&engine).receive_ticks(vec![tick("BTC-USD", 105.0, Some(100.0))], T0 + 7_000);
+
+        // The socket goes quiet; REST brings a new price and no price a day ago: the change is
+        // still measured against the reference the socket gave.
+        round(&engine, &provider, T0 + 37_000);
+        let quote = book.get(&btc).unwrap();
+        assert_eq!(quote.last, Some(110.0));
+        assert!((quote.change_percent.unwrap() - 10.0).abs() < 1e-9);
+
+        // Ten minutes on with no tick, the reference is too old to say what a day ago was.
+        lock(&engine).update(1, vec![btc.clone()], true, T0 + 700_000);
+        round(&engine, &provider, T0 + 700_000);
+        let quote = book.get(&btc).unwrap();
+        assert_eq!(quote.last, Some(110.0));
+        assert_eq!(quote.change_percent, None);
+    }
+
+    #[test]
+    fn a_streamed_market_the_socket_never_answered_has_no_change_from_rest() {
+        let (engine, book, provider) = setup();
+        *provider.without_reference.lock().unwrap() = true;
+        provider.price("ETH-USD", 50.0);
+        let eth = id(DataSource::Coinbase, "ETH-USD");
+        lock(&engine).update(1, vec![eth.clone()], true, T0);
+        round(&engine, &provider, T0 + 6_000);
+        let quote = book.get(&eth).unwrap();
+        assert_eq!(quote.last, Some(50.0));
+        assert_eq!(quote.change, None);
+    }
+
+    #[test]
+    fn a_reference_is_forgotten_with_its_market() {
+        let (engine, _book, _provider) = setup();
+        let btc = id(DataSource::Coinbase, "BTC-USD");
+        lock(&engine).update(1, vec![btc], true, T0);
+        lock(&engine).receive_ticks(vec![tick("BTC-USD", 105.0, Some(100.0))], T0 + 1_000);
+        assert!(lock(&engine).remembered_markets() > 0);
+
+        // Nobody asks for it any more: marked idle, then forgotten once the grace has passed.
+        let grace = Config::default().idle_grace_ms;
+        lock(&engine).update(1, Vec::new(), true, T0 + 10_000);
+        lock(&engine).expire_leases(T0 + 10_000 + grace + 1);
+        assert_eq!(lock(&engine).remembered_markets(), 0);
     }
 
     #[test]

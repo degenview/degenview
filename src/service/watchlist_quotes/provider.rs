@@ -171,7 +171,10 @@ fn kraken(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
         .iter()
         .map(|request| request.symbol.as_str())
         .collect();
-    crate::service::net::rate_limit::kraken().wait_for_slot();
+    // No wait for Kraken's one-a-second slot here: a round joins every source's request before
+    // anything is applied, so a sleeping Kraken call (up to `ISOLATION_BUDGET` of them while a
+    // refused pair is isolated) would hold back every other source's prices. A round is one call
+    // and Kraken's own refusal backs the source off.
     let body = get(
         DataSource::Kraken,
         &format!("{KRAKEN_URL}/Ticker?pair={}", pairs.join(",")),
@@ -440,9 +443,11 @@ pub fn kraken_volume(pair: &str, base_volume: f64, vwap: f64) -> (f64, VolumeKin
     }
 }
 
-/// `/Ticker?pair=BTC/USD,…`: the last trade `c[0]`, today's UTC open `o` (Kraken's REST has no
-/// rolling 24h open: the ticker socket's change replaces it once it answers), the 24h volume
-/// `v[1]` and vwap `p[1]`. A refusal of the call is the provider's own code.
+/// `/Ticker?pair=BTC/USD,…`: the last trade `c[0]`, the 24h volume `v[1]` and vwap `p[1]`. Its
+/// `o` is the UTC day's open, not what the price was a day ago, and Kraken's REST has no rolling
+/// 24h open, so no change is reported: the ticker socket's `change` gives it, and the engine keeps
+/// that reference for a REST refresh of a market the socket has gone quiet about. A refusal of the
+/// call is the provider's own code.
 pub fn parse_kraken(
     body: &str,
     requests: &[QuoteRequest],
@@ -481,7 +486,6 @@ pub fn parse_kraken(
         };
         let mut quote = SourceQuote {
             price,
-            previous_day_price: number(ticker.get("o")).filter(|open| *open > 0.0),
             timestamp_ms: Some(crate::model::watchlist::now_ms()),
             ..SourceQuote::default()
         };
@@ -847,7 +851,8 @@ mod tests {
         assert_eq!(quotes.len(), 2, "priceless and unlisted pairs are left out");
         let btc = &quotes["BTC/USD"];
         assert_eq!(btc.price, 64_297.1);
-        assert_eq!(btc.previous_day_price, Some(64_813.7));
+        // `o` is the UTC day's open, not what the price was a day ago: no change is reported.
+        assert_eq!(btc.previous_day_price, None);
         assert_eq!(
             (btc.volume_24h, btc.volume_kind),
             (Some(4526.9 * 64_719.4), Some(VolumeKind::QuoteCurrency))
