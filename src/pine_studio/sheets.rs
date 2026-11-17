@@ -2,6 +2,7 @@
 //! `ScriptNameSheet` and the `PineStudioView` dialogs.
 
 use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, library::unsaved};
+use crate::i18n::tr;
 use crate::model::alert::pine::ArmingFacts;
 use crate::model::pine::script::ScriptId;
 use crate::ui::alert::pine_editor::{self, PineAlertEditorInput, PineAlertEditorOutcome};
@@ -53,7 +54,7 @@ impl PineStudio {
                 ui.add_space(22.0);
             });
             sheet::footer(ui, |ui| {
-                dismiss = kit::sheet_button(ui, "OK", true, true).clicked();
+                dismiss = kit::sheet_button(ui, tr!("OK"), true, true).clicked();
             });
         });
         if dismiss || ctx.input(|i| i.key_pressed(Key::Enter) || i.key_pressed(Key::Escape)) {
@@ -77,9 +78,9 @@ impl PineStudio {
             &NameSheet {
                 salt: "new",
                 icon: Icon::AngleBrackets,
-                title: "New Script",
-                subtitle: "Create a script file in your library.",
-                action: "Create",
+                title: tr!("New Script"),
+                subtitle: tr!("Create a script file in your library."),
+                action: tr!("Create"),
             },
             &mut name,
             &mut needs_focus,
@@ -121,15 +122,18 @@ impl PineStudio {
             .name_problem(&name, Some(&id))
             .or_else(|| error.clone());
         let can_rename = name_is_usable(&name, problem.as_deref());
-        let subtitle = format!("Choose a new name for \u{201c}{current}\u{201d}.");
+        let subtitle = tr!(
+            "Choose a new name for \u{201c}{name}\u{201d}.",
+            name = current
+        );
         let event = name_sheet(
             ctx,
             &NameSheet {
                 salt: "rename",
                 icon: Icon::Pencil,
-                title: "Rename Script",
+                title: tr!("Rename Script"),
                 subtitle: &subtitle,
-                action: "Rename",
+                action: tr!("Rename"),
             },
             &mut name,
             &mut needs_focus,
@@ -204,15 +208,15 @@ impl PineStudio {
     }
 
     fn delete_sheet(&mut self, ctx: &egui::Context, id: String, name: String) -> Option<Sheet> {
-        let title = format!("Delete \"{name}\"?");
+        let title = tr!("Delete \"{name}\"?", name = name);
         let result = kit::confirm(
             ctx,
             egui::Id::new("pine-studio-delete"),
             &Confirm {
                 icon: Icon::Trash,
                 title: &title,
-                message: "The script file will be moved to the Trash.",
-                destructive: "Delete Script",
+                message: tr!("The script file will be moved to the Trash."),
+                destructive: tr!("Delete Script"),
             },
         );
         if result == Some(ConfirmOutcome::Confirmed) {
@@ -281,7 +285,7 @@ fn name_sheet(
                             ui,
                             field_id,
                             name,
-                            "Script name",
+                            tr!("Script name"),
                             kit::size::BODY,
                             kit::REGULAR,
                             width,
@@ -312,7 +316,7 @@ fn name_sheet(
                 if kit::sheet_button(ui, spec.action, true, can_submit).clicked() {
                     submit = true;
                 }
-                if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                     cancel = true;
                 }
             });

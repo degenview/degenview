@@ -1,6 +1,7 @@
 //! The File menu: new, open and save, and what can be done to the open script.
 
 use super::entry::{Entry, Item, grouped};
+use crate::i18n::tr;
 use crate::model::pine::script::{ScriptId, ScriptType};
 use crate::pine_studio::commands::Cmd;
 use crate::pine_studio::library::script_actions::script_groups;
@@ -17,17 +18,20 @@ pub(in crate::pine_studio) struct FileState {
 }
 
 pub(super) fn entries(state: &FileState) -> Vec<Entry> {
-    let show_in = format!("Show in {}", crate::platform::file_manager());
+    let show_in = tr!(
+        "Show in {file_manager}",
+        file_manager = crate::platform::file_manager()
+    );
     let mut groups = vec![vec![
-        Item::new("New Script…", Cmd::NewScript)
+        Item::new(tr!("New Script…"), Cmd::NewScript)
             .icon(Icon::Plus)
             .shortcut(&shortcut::NEW_SCRIPT)
             .into(),
-        Item::new("Open Script…", Cmd::OpenScriptPicker)
+        Item::new(tr!("Open Script…"), Cmd::OpenScriptPicker)
             .icon(Icon::DocText)
             .shortcut(&shortcut::OPEN_SCRIPT_PICKER)
             .into(),
-        Item::new("Save", Cmd::Save)
+        Item::new(tr!("Save"), Cmd::Save)
             .icon(Icon::Download)
             .shortcut(&shortcut::SAVE)
             .enabled(state.dirty)
@@ -52,7 +56,7 @@ pub(super) fn entries(state: &FileState) -> Vec<Entry> {
     let delete = per_script.pop();
     groups.extend(per_script);
     groups.push(vec![
-        Item::new("Add Example Scripts", Cmd::AddExamples)
+        Item::new(tr!("Add Example Scripts"), Cmd::AddExamples)
             .icon(Icon::Layers)
             .into(),
     ]);

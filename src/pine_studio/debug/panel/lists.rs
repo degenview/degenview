@@ -2,6 +2,7 @@
 
 use eframe::egui::{self, Align, Align2, FontId, Id, Layout, Rect, Sense, Stroke, Ui, pos2, vec2};
 
+use crate::i18n::{tr, tr_c};
 use crate::pine::debug::{
     BreakpointState, FrameKind, Template, Variable, WatchRow, Watched, parse_expression,
 };
@@ -20,8 +21,8 @@ pub fn call_stack(ui: &mut Ui, panel: &DebugPanel, actions: &mut Vec<PanelAction
     let Some(shown) = panel.shown.as_ref() else {
         placeholder(
             ui,
-            "No call stack",
-            "It shows who called whom when the script is stopped.",
+            tr!("No call stack"),
+            tr!("It shows who called whom when the script is stopped."),
         );
         return;
     };
@@ -53,7 +54,7 @@ pub fn call_stack(ui: &mut Ui, panel: &DebugPanel, actions: &mut Vec<PanelAction
         let library = matches!(frame.kind, FrameKind::Library { .. });
         let line = frame
             .location
-            .map(|location| format!("line {}", location.line))
+            .map(|location| tr!("line {line}", line = location.line))
             .unwrap_or_default();
         let line_galley = kit::galley(
             ui,
@@ -94,11 +95,15 @@ pub fn call_stack(ui: &mut Ui, panel: &DebugPanel, actions: &mut Vec<PanelAction
             theme::text_primary(),
         );
         let response = response.on_hover_text(match frame.kind {
-            FrameKind::Library { .. } => "A library function: it is stepped over, not into.",
-            FrameKind::Security { .. } => {
-                "The expression of a request.security() runs on its own bars, in its own state."
+            FrameKind::Library { .. } => {
+                tr!("A library function: it is stepped over, not into.")
             }
-            _ => "Show this frame's variables and watches",
+            FrameKind::Security { .. } => {
+                tr!(
+                    "The expression of a request.security() runs on its own bars, in its own state."
+                )
+            }
+            _ => tr!("Show this frame's variables and watches"),
         });
         if response.clicked() {
             actions.push(PanelAction::SelectFrame(frame.index));
@@ -141,15 +146,15 @@ pub fn watches(
             ui,
             id,
             &mut state.watch_input,
-            "Add expression, e.g. close - open",
+            tr!("Add expression, e.g. close - open"),
             width,
             true,
         );
         let ready = !state.watch_input.trim().is_empty();
         let entered =
             response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) && ready;
-        let clicked = kit::push_button(ui, None, "Add", ready)
-            .on_hover_text("Watch this expression")
+        let clicked = kit::push_button(ui, None, tr!("Add"), ready)
+            .on_hover_text(tr!("Watch this expression"))
             .clicked();
         if (entered || clicked) && ready {
             actions.push(PanelAction::AddWatch(std::mem::take(
@@ -173,7 +178,7 @@ fn watch_editor(ui: &mut Ui, index: usize, state: &mut PanelUi, actions: &mut Ve
         ui.add_space(8.0);
         let width = ui.available_width() - 8.0;
         let id = ui.id().with(("edit-watch", index));
-        let response = text_field(ui, id, text, "Expression", width, true);
+        let response = text_field(ui, id, text, tr!("Expression"), width, true);
         if !response.has_focus() && !response.lost_focus() {
             response.request_focus();
         }
@@ -327,7 +332,7 @@ fn watch_row(
             Icon::Xmark,
             20.0,
             theme::text_secondary(),
-            "Remove watch",
+            tr!("Remove watch"),
         )
         .clicked()
         {
@@ -338,7 +343,7 @@ fn watch_row(
             Icon::Pencil,
             20.0,
             theme::text_secondary(),
-            "Edit expression",
+            tr!("Edit expression"),
         )
         .clicked()
         {
@@ -348,32 +353,30 @@ fn watch_row(
     egui::Popup::context_menu(&response)
         .frame(kit::menu_frame())
         .show(|ui| {
-            kit::menu_fit(
-                ui,
-                &[
-                    "Edit Expression",
-                    "Copy Expression",
-                    "Copy Value",
-                    "Remove Watch",
-                ],
+            let (edit, copy_expression, copy_value, remove) = (
+                tr!("Edit Expression"),
+                tr!("Copy Expression"),
+                tr!("Copy Value"),
+                tr!("Remove Watch"),
             );
+            kit::menu_fit(ui, &[edit, copy_expression, copy_value, remove]);
             ui.spacing_mut().item_spacing.y = 0.0;
-            if kit::menu_item(ui, Icon::Pencil, "Edit Expression", true, false) {
+            if kit::menu_item(ui, Icon::Pencil, edit, true, false) {
                 state.editing_watch = Some((index, text.to_owned()));
                 ui.close();
             }
-            if kit::menu_item(ui, Icon::CopyDoc, "Copy Expression", true, false) {
+            if kit::menu_item(ui, Icon::CopyDoc, copy_expression, true, false) {
                 ui.ctx().copy_text(text.to_owned());
                 ui.close();
             }
             if let Some(variable) = &value
                 && !failed
-                && kit::menu_item(ui, Icon::CopyDoc, "Copy Value", true, false)
+                && kit::menu_item(ui, Icon::CopyDoc, copy_value, true, false)
             {
                 ui.ctx().copy_text(variable.full.clone());
                 ui.close();
             }
-            if kit::menu_item(ui, Icon::Trash, "Remove Watch", true, true) {
+            if kit::menu_item(ui, Icon::Trash, remove, true, true) {
                 actions.push(PanelAction::RemoveWatch(index));
                 ui.close();
             }
@@ -399,8 +402,10 @@ pub fn breakpoints(
     if panel.state.breakpoints.is_empty() {
         placeholder(
             ui,
-            "No breakpoints",
-            "Click a line number to stop there, or press the breakpoint key on the caret's line.",
+            tr!("No breakpoints"),
+            tr!(
+                "Click a line number to stop there, or press the breakpoint key on the caret's line."
+            ),
         );
         return;
     }
@@ -424,9 +429,9 @@ fn hits_text(rule: crate::pine::debug::HitRule) -> Option<String> {
     use crate::pine::debug::HitRule;
     match rule {
         HitRule::Always => None,
-        HitRule::Equals(n) => Some(format!("hit #{n}")),
-        HitRule::EveryNth(n) => Some(format!("every {n}")),
-        HitRule::GreaterThan(n) => Some(format!("after {n}")),
+        HitRule::Equals(n) => Some(tr!("hit #{n}", n = n)),
+        HitRule::EveryNth(n) => Some(tr!("every {n}", n = n)),
+        HitRule::GreaterThan(n) => Some(tr!("after {n}", n = n)),
     }
 }
 
@@ -442,7 +447,7 @@ fn breakpoint_row(
     let spec = &stored.spec;
     let problem = match status {
         _ if stored.unresolved => {
-            Some("Its line was deleted. Remove it, or set it again.".to_owned())
+            Some(tr!("Its line was deleted. Remove it, or set it again.").to_owned())
         }
         Some(BreakpointState::Unresolved(reason)) => Some(reason.clone()),
         Some(BreakpointState::Invalid(reason)) => Some(reason.clone()),
@@ -494,9 +499,9 @@ fn breakpoint_row(
             .circle_stroke(dot, 4.2, Stroke::new(1.4, color));
     }
     let toggle = toggle.on_hover_text(if spec.enabled {
-        "Disable breakpoint"
+        tr!("Disable breakpoint")
     } else {
-        "Enable breakpoint"
+        tr!("Enable breakpoint")
     });
     if toggle.clicked() {
         actions.push(PanelAction::SetBreakpointEnabled {
@@ -509,7 +514,7 @@ fn breakpoint_row(
     let mut x = rect.left() + 32.0;
     let title = kit::galley(
         ui,
-        &format!("Line {}", spec.line),
+        &tr!("Line {line}", line = spec.line),
         kit::size::BODY - 0.5,
         kit::SEMIBOLD,
         if spec.enabled {
@@ -527,7 +532,13 @@ fn breakpoint_row(
     );
     x += title_width + 8.0;
     if spec.log_message.is_some() {
-        x = pill(ui, x, center_y, "log", theme::syntax::function()) + 4.0;
+        x = pill(
+            ui,
+            x,
+            center_y,
+            tr_c!("logpoint tag", "log"),
+            theme::syntax::function(),
+        ) + 4.0;
     }
     if spec.condition.is_some() {
         x = pill(ui, x, center_y, "if", theme::syntax::number()) + 4.0;
@@ -591,7 +602,7 @@ fn breakpoint_row(
             Icon::Xmark,
             20.0,
             theme::text_secondary(),
-            "Remove breakpoint",
+            tr!("Remove breakpoint"),
         )
         .clicked()
         {
@@ -602,38 +613,37 @@ fn breakpoint_row(
             Icon::Pencil,
             20.0,
             theme::text_secondary(),
-            "Edit breakpoint",
+            tr!("Edit breakpoint"),
         )
         .clicked()
         {
             state.toggle_editor(stored);
         }
     }
-    let response = response.on_hover_text("Show this line");
+    let response = response.on_hover_text(tr!("Show this line"));
     if response.clicked() && !stored.unresolved {
         actions.push(PanelAction::GotoLine(spec.line));
     }
     egui::Popup::context_menu(&response)
         .frame(kit::menu_frame())
         .show(|ui| {
-            kit::menu_fit(
-                ui,
-                &[
-                    "Edit Breakpoint…",
-                    "Disable Breakpoint",
-                    "Remove Breakpoint",
-                    "Remove All Breakpoints",
-                ],
+            let (edit, disable, enable, remove, remove_all) = (
+                tr!("Edit Breakpoint…"),
+                tr!("Disable Breakpoint"),
+                tr!("Enable Breakpoint"),
+                tr!("Remove Breakpoint"),
+                tr!("Remove All Breakpoints"),
             );
+            kit::menu_fit(ui, &[edit, disable, remove, remove_all]);
             ui.spacing_mut().item_spacing.y = 0.0;
-            if kit::menu_item(ui, Icon::Pencil, "Edit Breakpoint…", true, false) {
+            if kit::menu_item(ui, Icon::Pencil, edit, true, false) {
                 state.toggle_editor(stored);
                 ui.close();
             }
             let (icon, label) = if spec.enabled {
-                (Icon::EyeSlash, "Disable Breakpoint")
+                (Icon::EyeSlash, disable)
             } else {
-                (Icon::Eye, "Enable Breakpoint")
+                (Icon::Eye, enable)
             };
             if kit::menu_item(ui, icon, label, true, false) {
                 actions.push(PanelAction::SetBreakpointEnabled {
@@ -642,12 +652,12 @@ fn breakpoint_row(
                 });
                 ui.close();
             }
-            if kit::menu_item(ui, Icon::Trash, "Remove Breakpoint", true, true) {
+            if kit::menu_item(ui, Icon::Trash, remove, true, true) {
                 actions.push(PanelAction::RemoveBreakpoint(spec.id));
                 ui.close();
             }
             kit::menu_separator(ui);
-            if kit::menu_item(ui, Icon::Trash, "Remove All Breakpoints", true, true) {
+            if kit::menu_item(ui, Icon::Trash, remove_all, true, true) {
                 actions.push(PanelAction::RemoveAllBreakpoints);
                 ui.close();
             }
@@ -668,13 +678,13 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
             let width = ui.available_width();
 
             // Condition.
-            label(ui, "Condition");
-            hint(ui, "Stops only when this Pine expression is true.");
+            label(ui, tr!("Condition"));
+            hint(ui, tr!("Stops only when this Pine expression is true."));
             text_field(
                 ui,
                 ui.id().with(("bp-condition", id)),
                 &mut editor.condition,
-                "e.g. bar_index > 100 and close > open",
+                tr!("e.g. bar_index > 100 and close > open"),
                 width,
                 true,
             );
@@ -686,10 +696,10 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
 
             // Hit count.
             ui.add_space(8.0);
-            label(ui, "Hit count");
+            label(ui, tr!("Hit count"));
             hint(
                 ui,
-                "Hits are the times the condition held, counted across bars.",
+                tr!("Hits are the times the condition held, counted across bars."),
             );
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
@@ -709,7 +719,7 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
                         ui,
                         ui.id().with(("bp-count", id)),
                         &mut editor.count,
-                        "n",
+                        tr_c!("hit count field", "n"),
                         56.0,
                         true,
                     );
@@ -719,7 +729,7 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
                 if editor.count.trim().parse::<u64>().is_ok_and(|n| n >= 1) {
                     hint(ui, &hit_sentence(editor.hit, editor.count.trim()));
                 } else {
-                    problem(ui, "Enter a whole number, 1 or more.");
+                    problem(ui, tr!("Enter a whole number, 1 or more."));
                 }
             }
 
@@ -727,13 +737,10 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                kit::switch(
-                    ui,
-                    &mut editor.is_logpoint,
-                    "Log a message instead of stopping",
-                );
+                let log_instead = tr!("Log a message instead of stopping");
+                kit::switch(ui, &mut editor.is_logpoint, log_instead);
                 ui.label(kit::text(
-                    "Log a message instead of stopping",
+                    log_instead,
                     kit::size::BODY,
                     kit::REGULAR,
                     theme::text_primary(),
@@ -742,7 +749,12 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
             if editor.is_logpoint {
                 hint(
                     ui,
-                    "Goes to the Logs tab. {expression} shows its value; {{ and }} are braces.",
+                    &tr!(
+                        "Goes to the Logs tab. {example} shows its value; {open} and {close} are braces.",
+                        example = "{expression}",
+                        open = "{{",
+                        close = "}}"
+                    ),
                 );
                 text_field(
                     ui,
@@ -759,7 +771,7 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
                 } else if editor.message.is_empty() {
                     hint(
                         ui,
-                        "Type a message; until then the breakpoint stops as usual.",
+                        tr!("Type a message; until then the breakpoint stops as usual."),
                     );
                 }
             }
@@ -790,10 +802,13 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
 /// What a hit rule means with its number, as a sentence.
 fn hit_sentence(kind: HitKind, n: &str) -> String {
     match kind {
-        HitKind::Always => "Stops every time the condition holds.".to_owned(),
-        HitKind::Equals => format!("Stops on hit number {n} only."),
-        HitKind::EveryNth => format!("Stops on every {} hit.", ordinal(n)),
-        HitKind::GreaterThan => format!("Stops on every hit after the {}.", ordinal(n)),
+        HitKind::Always => tr!("Stops every time the condition holds.").to_owned(),
+        HitKind::Equals => tr!("Stops on hit number {n} only.", n = n),
+        HitKind::EveryNth => tr!("Stops on every {ordinal} hit.", ordinal = ordinal(n)),
+        HitKind::GreaterThan => tr!(
+            "Stops on every hit after the {ordinal}.",
+            ordinal = ordinal(n)
+        ),
     }
 }
 
@@ -849,8 +864,8 @@ pub fn console(
     if panel.console.is_empty() {
         placeholder(
             ui,
-            "Evaluate Pine expressions",
-            "Stop the script, then type one: close[1], bar_index % 5 == 0, myArray.size().",
+            tr!("Evaluate Pine expressions"),
+            tr!("Stop the script, then type one: close[1], bar_index % 5 == 0, myArray.size()."),
         );
     }
     for line in &panel.console {
@@ -912,7 +927,14 @@ pub fn console(
         ui.add_space(8.0);
         let width = ui.available_width() - 8.0 - 24.0;
         let id = ui.id().with("console-input");
-        let response = text_field(ui, id, &mut state.console_input, "Evaluate…", width, true);
+        let response = text_field(
+            ui,
+            id,
+            &mut state.console_input,
+            tr!("Evaluate…"),
+            width,
+            true,
+        );
         let enter = response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
         if enter && !state.console_input.trim().is_empty() {
             actions.push(PanelAction::Evaluate(std::mem::take(
@@ -920,7 +942,8 @@ pub fn console(
             )));
             response.request_focus();
         }
-        if !panel.console.is_empty() && icon_button(ui, Icon::Trash, true, "Clear the console") {
+        if !panel.console.is_empty() && icon_button(ui, Icon::Trash, true, tr!("Clear the console"))
+        {
             actions.push(PanelAction::ClearConsole);
         }
     });

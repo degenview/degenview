@@ -7,6 +7,7 @@
 use super::PineStudio;
 use super::library;
 use super::preview;
+use crate::i18n::tr;
 use crate::model::Timeframe;
 use crate::ui::icons::Icon;
 use crate::ui::kit::bar::{self, Button, Item};
@@ -46,7 +47,7 @@ fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
     let script_open = state.script_name.is_some();
     let preview_shown = script_open && state.chart_visible;
 
-    let mut market = BarButton::new("market", "Choose the market to test on")
+    let mut market = BarButton::new("market", tr!("Choose the market to test on"))
         .icon(Icon::Magnifier)
         .label(state.market.title.as_str())
         .enabled(preview_shown)
@@ -56,25 +57,25 @@ fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
     market.suffix = state.market.price.clone();
 
     let mut left = vec![Item::Button(market), Item::Separator];
-    let mut timeframe = BarButton::new("timeframe", "Timeframe")
+    let mut timeframe = BarButton::new("timeframe", tr!("Timeframe"))
         .label(state.market.timeframe.label())
         .chevron()
         .enabled(preview_shown)
         .with_menu(BarMenu::Timeframe);
     timeframe.keep_label = true;
     timeframe.weight = SEMIBOLD;
-    timeframe.access = Some(format!(
-        "Timeframe: {}. Choose another",
-        state.market.timeframe.description()
+    timeframe.access = Some(tr!(
+        "Timeframe: {description}. Choose another",
+        description = state.market.timeframe.description()
     ));
     left.push(Item::Button(timeframe));
     left.push(Item::Separator);
     let mut scripts = BarButton::new(
         "scripts",
-        shortcut::OPEN_SCRIPT_PICKER.hint("Open a script"),
+        shortcut::OPEN_SCRIPT_PICKER.hint(tr!("Open a script")),
     )
     .icon(Icon::DocText)
-    .label(state.script_name.as_deref().unwrap_or("Scripts"))
+    .label(state.script_name.as_deref().unwrap_or(tr!("Scripts")))
     .active(state.picker_open)
     .chevron()
     .with_menu(BarMenu::Scripts);

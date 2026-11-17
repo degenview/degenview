@@ -15,6 +15,7 @@ use eframe::egui::{
 
 use super::marks::{HotRow, ProfileMarks, SummaryGroup, SummaryRow, count};
 use super::{Profile, Status};
+use crate::i18n::tr;
 use crate::pine::profile::RegionKind;
 use crate::pine_studio::drawer::tab_chrome::{
     self as chrome, BUTTON, banner, caption, card, hairline,
@@ -84,14 +85,18 @@ pub fn describe(status: &Status) -> Description {
     };
     match status {
         Status::Off => Description {
-            label: "Profiler off".to_owned(),
+            label: tr!("Profiler off").to_owned(),
             tone: Tone::Quiet,
             action: None,
             button: "",
         },
-        Status::Idle => run("Not profiled yet", Tone::Quiet, "Run the profiler"),
+        Status::Idle => run(
+            tr!("Not profiled yet"),
+            Tone::Quiet,
+            tr!("Run the profiler"),
+        ),
         Status::Waiting(_) => Description {
-            label: "Waiting for the chart\u{2026}".to_owned(),
+            label: tr!("Waiting for the chart…").to_owned(),
             tone: Tone::Quiet,
             action: None,
             button: "",
@@ -102,22 +107,26 @@ pub fn describe(status: &Status) -> Description {
             cancelling,
         } => Description {
             label: if *cancelling {
-                "Cancelling\u{2026}".to_owned()
+                tr!("Cancelling…").to_owned()
             } else {
-                format!(
-                    "Profiling\u{2026} {} of {} bars",
-                    count(*done),
-                    count(*total)
+                tr!(
+                    "Profiling… {done} of {total} bars",
+                    done = count(*done),
+                    total = count(*total)
                 )
             },
             tone: Tone::Active,
             action: (!*cancelling).then_some(Action::Cancel),
-            button: "Cancel profiling; what was measured so far is kept",
+            button: tr!("Cancel profiling; what was measured so far is kept"),
         },
-        Status::Ready => run("Profile ready", Tone::Good, "Profile again"),
-        Status::Partial => run("Partial profile", Tone::Caution, "Profile again"),
-        Status::Stale => run("Profile out of date", Tone::Caution, "Profile again"),
-        Status::Failed(_) => run("Profile failed", Tone::Bad, "Try again"),
+        Status::Ready => run(tr!("Profile ready"), Tone::Good, tr!("Profile again")),
+        Status::Partial => run(tr!("Partial profile"), Tone::Caution, tr!("Profile again")),
+        Status::Stale => run(
+            tr!("Profile out of date"),
+            Tone::Caution,
+            tr!("Profile again"),
+        ),
+        Status::Failed(_) => run(tr!("Profile failed"), Tone::Bad, tr!("Try again")),
     }
 }
 
@@ -131,12 +140,13 @@ pub fn toolbar_button<A, M>(status: &Status, on_click: A) -> bar::Button<A, M> {
     let tip = if on {
         format!(
             "{}\n{}",
-            shortcut::PROFILER_TOGGLE.hint("Turn the profiler off"),
+            shortcut::PROFILER_TOGGLE.hint(tr!("Turn the profiler off")),
             description.label
         )
     } else {
-        shortcut::PROFILER_TOGGLE
-            .hint("Turn the profiler on: see which lines of the script take the time")
+        shortcut::PROFILER_TOGGLE.hint(tr!(
+            "Turn the profiler on: see which lines of the script take the time"
+        ))
     };
     let mut button = bar::Button::new("profiler", tip)
         .icon(Icon::Gauge)
@@ -199,23 +209,23 @@ pub fn tab(ui: &mut Ui, view: &TabView<'_>) -> Vec<Action> {
         (Status::Running { done, total, .. }, _) => running(ui, *done, *total, &mut actions),
         (Status::Idle, None) => message(
             ui,
-            "Ready to profile",
-            "Runs the script once on the preview chart's bars and times every line.",
-            Some(("Run profile", Icon::PlayCircle)),
+            tr!("Ready to profile"),
+            tr!("Runs the script once on the preview chart's bars and times every line."),
+            Some((tr!("Run profile"), Icon::PlayCircle)),
             &mut actions,
         ),
         (Status::Waiting(why), None) => {
-            message(ui, "Waiting for the chart", why, None, &mut actions);
+            message(ui, tr!("Waiting for the chart"), why, None, &mut actions);
         }
         (Status::Failed(why), None) => message(
             ui,
-            "This script could not be profiled",
+            tr!("This script could not be profiled"),
             why,
-            Some(("Try again", Icon::Repeat)),
+            Some((tr!("Try again"), Icon::Repeat)),
             &mut actions,
         ),
         (_, Some(profile)) => result(ui, view, profile, &mut actions),
-        (_, None) => message(ui, "Nothing profiled yet", "", None, &mut actions),
+        (_, None) => message(ui, tr!("Nothing profiled yet"), "", None, &mut actions),
     }
     actions
 }
@@ -267,24 +277,26 @@ fn introduction(ui: &mut Ui, actions: &mut Vec<Action>) {
     centered(ui, |ui| {
         intro(
             ui,
-            "Find what makes a script slow",
-            "See where its time goes, line by line.",
+            tr!("Find what makes a script slow"),
+            tr!("See where its time goes, line by line."),
             |ui| {
                 step(ui, 1, |ui| {
-                    ui.label(muted("Turn the profiler on with the stopwatch."));
+                    ui.label(muted(tr!("Turn the profiler on with the stopwatch.")));
                 });
                 step(ui, 2, |ui| {
-                    ui.label(muted("It runs the script on the preview chart's bars."));
+                    ui.label(muted(tr!(
+                        "It runs the script on the preview chart's bars."
+                    )));
                 });
                 step(ui, 3, |ui| {
-                    ui.label(muted("Bars and shares appear beside the code."));
+                    ui.label(muted(tr!("Bars and shares appear beside the code.")));
                 });
             },
             example,
             illustration,
             |ui| {
                 ui.add_space(14.0);
-                if kit::push_button(ui, Some(Icon::Gauge), "Start profiling", true).clicked() {
+                if kit::push_button(ui, Some(Icon::Gauge), tr!("Start profiling"), true).clicked() {
                     actions.push(Action::Toggle);
                 }
             },
@@ -323,7 +335,7 @@ fn message(
 fn running(ui: &mut Ui, done: u64, total: u64, actions: &mut Vec<Action>) {
     centered(ui, |ui| {
         ui.label(kit::text(
-            "Profiling\u{2026}",
+            tr!("Profiling…"),
             kit::size::HEADLINE,
             kit::SEMIBOLD,
             theme::text_primary(),
@@ -342,9 +354,13 @@ fn running(ui: &mut Ui, done: u64, total: u64, actions: &mut Vec<Action>) {
             kit::ACCENT,
         );
         ui.add_space(6.0);
-        ui.label(muted(&format!("{} of {} bars", count(done), count(total))));
+        ui.label(muted(&tr!(
+            "{done} of {total} bars",
+            done = count(done),
+            total = count(total)
+        )));
         ui.add_space(10.0);
-        if kit::push_button(ui, Some(Icon::Xmark), "Cancel", true).clicked() {
+        if kit::push_button(ui, Some(Icon::Xmark), tr!("Cancel"), true).clicked() {
             actions.push(Action::Cancel);
         }
     });
@@ -363,16 +379,18 @@ fn result(ui: &mut Ui, view: &TabView<'_>, profile: &Profile, actions: &mut Vec<
             banner(
                 ui,
                 if fresh.navigable {
-                    "This profile is of earlier inputs or data. Its lines still match the editor."
+                    tr!(
+                        "This profile is of earlier inputs or data. Its lines still match the editor."
+                    )
                 } else {
-                    "This profile is of earlier text. Its lines no longer match the editor."
+                    tr!("This profile is of earlier text. Its lines no longer match the editor.")
                 },
             );
         }
         totals(ui, &profile.marks, fresh);
         ui.add_space(16.0);
         let hottest_lines = |ui: &mut Ui, actions: &mut Vec<Action>| {
-            caption(ui, "Hottest lines");
+            caption(ui, tr!("Hottest lines"));
             hottest(ui, profile, fresh, actions);
         };
         let groups = |ui: &mut Ui, actions: &mut Vec<Action>, first: bool| {
@@ -437,12 +455,17 @@ fn totals(ui: &mut Ui, marks: &ProfileMarks, fresh: Freshness) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         for (icon, tint, label, value) in [
-            (Icon::Clock, kit::ACCENT, "Total time", &marks.totals.time),
-            (Icon::BarChart, kit::GREEN, "Bars", &marks.totals.bars),
+            (
+                Icon::Clock,
+                kit::ACCENT,
+                tr!("Total time"),
+                &marks.totals.time,
+            ),
+            (Icon::BarChart, kit::GREEN, tr!("Bars"), &marks.totals.bars),
             (
                 Icon::Repeat,
                 kit::ORANGE,
-                "Executions",
+                tr!("Executions"),
                 &marks.totals.executions,
             ),
         ] {
@@ -505,7 +528,7 @@ fn totals(ui: &mut Ui, marks: &ProfileMarks, fresh: Freshness) {
 
 fn hottest(ui: &mut Ui, profile: &Profile, fresh: Freshness, actions: &mut Vec<Action>) {
     if profile.marks.hot.is_empty() {
-        ui.label(muted("No line took a measurable share of the time."));
+        ui.label(muted(tr!("No line took a measurable share of the time.")));
         return;
     }
     card(ui, |ui| {
@@ -534,7 +557,11 @@ fn hot_row(ui: &mut Ui, row: &HotRow, fresh: Freshness) -> egui::Response {
     );
     let response = crate::ui::accessibility::label(
         response,
-        format!("Line {}, {} of line time", row.line, row.line_time),
+        tr!(
+            "Line {line}, {time} of line time",
+            line = row.line,
+            time = row.line_time
+        ),
     );
     if navigable && response.hovered() {
         ui.painter().rect_filled(rect, 6.0, theme::ink(10));

@@ -4,6 +4,7 @@
 
 use super::diff::{ChangeKind, DiffHunk};
 use super::syntax;
+use crate::i18n::tr;
 use crate::ui::{
     accessibility, editor_appearance,
     icons::Icon,
@@ -27,39 +28,42 @@ pub enum PreviewEvent {
     Step(bool),
 }
 
-/// "line 4", "lines 4–6" for a zero-based half-open range.
-pub fn lines_label(range: &std::ops::Range<usize>) -> String {
-    match range.len() {
-        0 => String::new(),
-        1 => format!("line {}", range.start + 1),
-        _ => format!("lines {}–{}", range.start + 1, range.end),
-    }
+/// Whether a zero-based half-open range of lines is one line (or none), said "line 4" rather than
+/// "lines 4–6".
+pub fn is_single_line(range: &std::ops::Range<usize>) -> bool {
+    range.len() <= 1
 }
 
 pub fn title(hunk: &DiffHunk) -> String {
+    let (first, last) = (hunk.new_lines.start + 1, hunk.new_lines.end);
+    let single = is_single_line(&hunk.new_lines);
     match hunk.kind {
-        ChangeKind::Added => format!("Added {}", lines_label(&hunk.new_lines)),
-        ChangeKind::Modified => format!("Modified {}", lines_label(&hunk.new_lines)),
-        ChangeKind::Deleted if hunk.new_lines.start == 0 => "Deleted at the start".to_owned(),
-        ChangeKind::Deleted => format!("Deleted after line {}", hunk.new_lines.start),
+        ChangeKind::Added if single => tr!("Added line {line}", line = first),
+        ChangeKind::Added => tr!("Added lines {first}–{last}", first = first, last = last),
+        ChangeKind::Modified if single => tr!("Modified line {line}", line = first),
+        ChangeKind::Modified => tr!("Modified lines {first}–{last}", first = first, last = last),
+        ChangeKind::Deleted if hunk.new_lines.start == 0 => tr!("Deleted at the start").to_owned(),
+        ChangeKind::Deleted => tr!("Deleted after line {line}", line = hunk.new_lines.start),
     }
 }
 
 /// The primary action's wording, also the context menu's.
 pub fn action_label(kind: ChangeKind) -> &'static str {
     match kind {
-        ChangeKind::Added => "Revert Added Lines",
-        ChangeKind::Deleted => "Restore Lines",
-        ChangeKind::Modified => "Revert Change",
+        ChangeKind::Added => tr!("Revert Added Lines"),
+        ChangeKind::Deleted => tr!("Restore Lines"),
+        ChangeKind::Modified => tr!("Revert Change"),
     }
 }
 
 /// What the action does, said in words under the lines.
 fn explanation(kind: ChangeKind) -> &'static str {
     match kind {
-        ChangeKind::Added => "Reverting removes these lines; the rest of the script is untouched.",
-        ChangeKind::Deleted => "Restoring puts these lines back where they were deleted.",
-        ChangeKind::Modified => "Reverting replaces the current lines with the saved ones.",
+        ChangeKind::Added => {
+            tr!("Reverting removes these lines; the rest of the script is untouched.")
+        }
+        ChangeKind::Deleted => tr!("Restoring puts these lines back where they were deleted."),
+        ChangeKind::Modified => tr!("Reverting replaces the current lines with the saved ones."),
     }
 }
 
@@ -89,14 +93,18 @@ pub fn show(
                             .on_hover_text(label)
                             .clicked()
                     };
-                    if step(ui, "›", "Next Change") {
+                    if step(ui, "›", tr!("Next Change")) {
                         event = PreviewEvent::Step(true);
                     }
-                    if step(ui, "‹", "Previous Change") {
+                    if step(ui, "‹", tr!("Previous Change")) {
                         event = PreviewEvent::Step(false);
                     }
                     ui.label(kit::text(
-                        format!("{} of {}", position.0 + 1, position.1),
+                        tr!(
+                            "{position} of {total}",
+                            position = position.0 + 1,
+                            total = position.1
+                        ),
                         kit::size::SUBHEADLINE,
                         400.0,
                         theme::text_secondary(),
@@ -112,7 +120,7 @@ pub fn show(
                 if hunk.kind != ChangeKind::Added {
                     block(
                         ui,
-                        "SAVED",
+                        tr!("SAVED"),
                         &hunk.old_text,
                         hunk.old_lines.start,
                         '−',
@@ -122,7 +130,7 @@ pub fn show(
                 if hunk.kind != ChangeKind::Deleted {
                     block(
                         ui,
-                        "CURRENT",
+                        tr!("CURRENT"),
                         &hunk.new_text,
                         hunk.new_lines.start,
                         '+',
@@ -141,7 +149,7 @@ pub fn show(
                 event = PreviewEvent::Apply;
             }
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                if kit::push_button(ui, None, "Close", true).clicked() {
+                if kit::push_button(ui, None, tr!("Close"), true).clicked() {
                     event = PreviewEvent::Dismiss;
                 }
             });

@@ -98,6 +98,19 @@ impl Scene<'_> {
 #[test]
 #[ignore = "writes images for a person to look at"]
 fn gallery_of_the_assistant() {
+    shoot_the_assistant("");
+}
+
+/// The same pictures in the pseudo-locale, to see the longer text fit.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_assistant_in_the_pseudo_locale() {
+    crate::i18n::with_locale(crate::i18n::Locale::Pseudo, || {
+        shoot_the_assistant("-pseudo");
+    });
+}
+
+fn shoot_the_assistant(suffix: &str) {
     if gallery_dir().is_none() {
         return;
     }
@@ -112,7 +125,7 @@ fn gallery_of_the_assistant() {
                 rig: &mut rig,
                 screen,
                 last: None,
-                name: format!("{layout}-{theme_name}"),
+                name: format!("{layout}-{theme_name}{suffix}"),
             };
 
             // No key yet: the panel says so and offers Settings.

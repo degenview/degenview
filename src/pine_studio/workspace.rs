@@ -17,6 +17,7 @@ use super::profiler::ui::{self, TabView};
 use super::profiler::{Profile, Status};
 use super::rail::{self, RailState};
 use super::{OpenScript, PineStudio};
+use crate::i18n::tr;
 use crate::pine::syntax::token::Diagnostic;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -67,12 +68,12 @@ impl PineStudio {
         centered(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 12.0;
             ui.label(kit::text(
-                "No script open",
+                tr!("No script open"),
                 kit::size::HEADLINE,
                 kit::SEMIBOLD,
                 theme::text_primary(),
             ));
-            if kit::push_button(ui, Some(Icon::DocText), "Open a Script", true).clicked() {
+            if kit::push_button(ui, Some(Icon::DocText), tr!("Open a Script"), true).clicked() {
                 self.cmds.push(Cmd::OpenScriptPicker);
             }
         });
