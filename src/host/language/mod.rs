@@ -1,6 +1,8 @@
 //! The interface language: reads the saved choice at startup, and applies and saves a new one from
 //! Settings. `i18n` holds the language in use; this is what chooses it.
 
+use std::time::{Duration, Instant};
+
 use crate::i18n::tr;
 use crate::i18n::{self, Locale, Preference};
 use crate::service::system::language;
@@ -13,6 +15,48 @@ pub const FORCE_ENV: &str = "DEGENVIEW_LOCALE";
 /// Puts the saved language in use. Before the first window draws.
 pub fn init(store: &Store) {
     apply(store.language_preference());
+}
+
+/// How a process that is not the app keeps up with the language chosen in Settings: the alert
+/// agent has no window to change it, so it reads the saved choice every couple of seconds and
+/// applies it when it changed. Reads only; the app is the one that writes the setting.
+pub struct Follower {
+    applied: Preference,
+    checked: Instant,
+}
+
+impl Follower {
+    const EVERY: Duration = Duration::from_secs(2);
+
+    /// Puts the saved language in use, as `init` does, and starts following it.
+    pub fn start(store: &Store) -> Self {
+        init(store);
+        Self {
+            applied: store.language_preference(),
+            checked: Instant::now(),
+        }
+    }
+
+    /// Applies the saved language when it is not the one in use. Cheap to call every tick.
+    pub fn follow(&mut self, store: &Store) {
+        if let Some(preference) = self.changed(store, Instant::now()) {
+            apply(preference);
+        }
+    }
+
+    /// The saved choice when it differs from the one applied, looked at no more often than
+    /// `EVERY`.
+    fn changed(&mut self, store: &Store, now: Instant) -> Option<Preference> {
+        if now.saturating_duration_since(self.checked) < Self::EVERY {
+            return None;
+        }
+        self.checked = now;
+        let saved = store.language_preference();
+        (saved != self.applied).then(|| {
+            self.applied = saved;
+            saved
+        })
+    }
 }
 
 /// Puts `preference` in use and saves it. The language is applied even when the save fails, so
@@ -65,5 +109,33 @@ mod tests {
         choose(&store, Preference::System).expect("saves");
         assert_eq!(i18n::preference(), Preference::System);
         assert_eq!(i18n::current(), Locale::ENGLISH);
+    }
+
+    #[test]
+    fn a_follower_sees_a_change_made_in_the_app_and_not_before_it_is_due() {
+        let store = Store::open_in_memory().expect("store");
+        let mut follower = Follower {
+            applied: Preference::System,
+            checked: Instant::now(),
+        };
+        let later = follower.checked + Follower::EVERY;
+        let fixed = Preference::Fixed(Locale::PSEUDO);
+
+        store.set_language_preference(fixed).expect("save");
+        // Too soon: nothing is read.
+        let soon = follower.checked + Follower::EVERY / 2;
+        assert_eq!(follower.changed(&store, soon), None);
+        // Due: the new choice is reported once, then it is the one applied.
+        assert_eq!(follower.changed(&store, later), Some(fixed));
+        let after = later + Follower::EVERY;
+        assert_eq!(follower.changed(&store, after), None);
+
+        store
+            .set_language_preference(Preference::System)
+            .expect("save");
+        assert_eq!(
+            follower.changed(&store, after + Follower::EVERY),
+            Some(Preference::System)
+        );
     }
 }
