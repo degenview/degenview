@@ -1,0 +1,163 @@
+use crate::lock::lock;
+use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::net::ws::Session;
+use eframe::egui;
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+mod binance;
+
+/// The most bars the inbox keeps. A feed nobody reads for days (a background tab, a hidden
+/// window) still sees one new bar per symbol per interval, so this is only a backstop.
+const INBOX_CAPACITY: usize = 4096;
+
+/// What a live feed has received and the workspace has not applied yet: the latest update of each
+/// `(bar, symbol)`. A kline stream resends the forming bar every second or two, and applying the
+/// last of those is the same as applying all of them, so the queue never grows with time. A plain
+/// channel did: it is only drained while the workspace is painted, and a tab left in the
+/// background kept every update for as long as the app ran.
+#[derive(Default)]
+pub struct LiveInbox {
+    latest: Mutex<BTreeMap<(i64, String), Kline>>,
+}
+
+impl LiveInbox {
+    fn push(&self, symbol: String, kline: Kline) {
+        let mut latest = lock(&self.latest);
+        latest.insert((kline.open_time, symbol), kline);
+        while latest.len() > INBOX_CAPACITY {
+            latest.pop_first();
+        }
+    }
+
+    /// Everything received since the last call, oldest bar first.
+    pub fn drain(&self) -> Vec<(String, Kline)> {
+        let mut latest = lock(&self.latest);
+        std::mem::take(&mut *latest)
+            .into_iter()
+            .map(|((_, symbol), kline)| (symbol, kline))
+            .collect()
+    }
+}
+
+/// Turns one text message of an exchange's stream into `(symbol, kline)`.
+type Parser = fn(&str) -> Option<(String, Kline)>;
+
+/// A kline feed for one workspace's charts of one source: a background thread that reconnects
+/// with backoff and puts `(symbol, kline)` updates in the inbox.
+pub struct LiveFeed {
+    pub inbox: Arc<LiveInbox>,
+    signature: (Vec<String>, Timeframe),
+    shutdown: Arc<AtomicBool>,
+}
+
+impl LiveFeed {
+    /// Opens the stream of `base` candles for `symbols`; `None` when `source` streams none.
+    pub fn connect(
+        source: DataSource,
+        symbols: Vec<String>,
+        base: Timeframe,
+        ctx: egui::Context,
+    ) -> Option<Self> {
+        let (session, parse): (Session, Parser) = match source {
+            DataSource::Binance => (binance::session(&symbols, base), binance::parse_kline),
+            _ => return None,
+        };
+        let inbox = Arc::new(LiveInbox::default());
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let thread_shutdown = Arc::clone(&shutdown);
+        let thread_inbox = Arc::clone(&inbox);
+        std::thread::spawn(move || {
+            session.run(&thread_shutdown, |text| {
+                if let Some((symbol, kline)) = parse(text) {
+                    thread_inbox.push(symbol, kline);
+                    ctx.request_repaint();
+                }
+                true
+            });
+        });
+        Some(Self {
+            inbox,
+            signature: (symbols, base),
+            shutdown,
+        })
+    }
+
+    /// The symbols and candle length this feed was opened for, so the owner can tell when a
+    /// reconnect is needed.
+    pub fn signature(&self) -> &(Vec<String>, Timeframe) {
+        &self.signature
+    }
+}
+
+impl Drop for LiveFeed {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Release);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kline(open_time: i64, close: f64) -> Kline {
+        Kline {
+            open_time,
+            close_time: open_time + 3_599_999,
+            open: 1.0,
+            high: 2.0,
+            low: 0.5,
+            close,
+            volume: 1.0,
+        }
+    }
+
+    #[test]
+    fn the_inbox_keeps_only_the_latest_update_of_a_bar() {
+        let inbox = LiveInbox::default();
+        for tick in 0..10_000 {
+            inbox.push("BTCUSDT".into(), kline(1_000, f64::from(tick)));
+        }
+        let drained = inbox.drain();
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0].1.close, 9_999.0);
+        assert!(inbox.drain().is_empty());
+    }
+
+    #[test]
+    fn the_inbox_hands_over_older_bars_first() {
+        let inbox = LiveInbox::default();
+        inbox.push("ETHUSDT".into(), kline(2_000, 1.0));
+        inbox.push("BTCUSDT".into(), kline(2_000, 2.0));
+        inbox.push("BTCUSDT".into(), kline(1_000, 3.0));
+        let order: Vec<_> = inbox
+            .drain()
+            .into_iter()
+            .map(|(symbol, kline)| (kline.open_time, symbol))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                (1_000, "BTCUSDT".to_string()),
+                (2_000, "BTCUSDT".to_string()),
+                (2_000, "ETHUSDT".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unread_inbox_stops_growing_at_its_capacity() {
+        let inbox = LiveInbox::default();
+        for bar in 0..(INBOX_CAPACITY as i64 + 500) {
+            inbox.push("BTCUSDT".into(), kline(bar * 3_600_000, 1.0));
+        }
+        let drained = inbox.drain();
+        assert_eq!(drained.len(), INBOX_CAPACITY);
+        // The newest bars survive.
+        assert_eq!(
+            drained.last().unwrap().1.open_time,
+            (INBOX_CAPACITY as i64 + 499) * 3_600_000
+        );
+    }
+}

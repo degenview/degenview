@@ -1,47 +1,62 @@
-//! The live Binance feed: keeping it on the workspace's charts and folding its candles in.
+//! The live candle feeds: one per streamed source on the workspace, folding its candles into the
+//! charts.
 
 use crate::model::market::live::LiveMark;
 use crate::model::{DataSource, Kline, Timeframe};
-use crate::service::market::live::BinanceLiveFeed;
+use crate::service::market::live::LiveFeed;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
 use std::time::Instant;
 
 impl ChartWorkspace {
-    pub(in crate::workspace) fn update_live_feed(&mut self, ctx: &egui::Context) {
+    pub(in crate::workspace) fn update_live_feeds(&mut self, ctx: &egui::Context) {
+        for source in DataSource::CANDLE_STREAMS {
+            self.update_live_feed(source, ctx);
+        }
+    }
+
+    fn update_live_feed(&mut self, source: DataSource, ctx: &egui::Context) {
         let mut symbols: Vec<String> = self
             .charts
             .iter()
-            .filter(|chart| chart.is_market() && chart.source == DataSource::Binance)
+            .filter(|chart| chart.is_market() && chart.source == source)
             .map(|chart| chart.symbol.to_uppercase())
             .collect();
         // The markets compared on a chart stream too, once however many overlays name them.
-        for symbol in self.overlay_hub.binance_symbols() {
+        for symbol in self.overlay_hub.streamed_symbols(source) {
             if !symbols.contains(&symbol) {
                 symbols.push(symbol);
             }
         }
-        // The stream is of the candle length Binance serves the timeframe from (one-minute klines
-        // for a 22-minute chart, monthly ones for a quarter); a timeframe it cannot reach has none.
-        let base = DataSource::Binance
+        // The stream is of the candle length the source serves the timeframe from (one-minute
+        // klines for a 22-minute chart, monthly ones for a quarter); a timeframe it cannot reach
+        // has none.
+        let base = source
             .plan(self.timeframe)
             .map(|plan| plan.base())
             .filter(|_| !symbols.is_empty());
-        let wanted = base.map(|base| (symbols, base.interval()));
-        let changed = match (&self.live_feed, &wanted) {
+        let wanted = base.map(|base| (symbols, base));
+        let changed = match (self.live_feeds.get(&source), &wanted) {
             (Some(feed), Some(wanted)) => feed.signature() != wanted,
             (None, None) => false,
             _ => true,
         };
         if changed {
-            self.live_feed = wanted.map(|(symbols, interval)| {
-                BinanceLiveFeed::connect(symbols, interval, ctx.clone())
-            });
+            let feed = wanted
+                .and_then(|(symbols, base)| LiveFeed::connect(source, symbols, base, ctx.clone()));
+            match feed {
+                Some(feed) => {
+                    self.live_feeds.insert(source, feed);
+                }
+                None => {
+                    self.live_feeds.remove(&source);
+                }
+            }
         }
 
         let updates = self
-            .live_feed
-            .as_ref()
+            .live_feeds
+            .get(&source)
             .map(|feed| feed.inbox.drain())
             .unwrap_or_default();
         let Some(base) = base else {
@@ -50,17 +65,27 @@ impl ChartWorkspace {
         let now = Instant::now();
         for (symbol, kline) in updates {
             self.overlay_hub
-                .apply_live(self.timeframe, base, &symbol, &kline, now);
-            self.apply_live_kline(base, &symbol, kline, now);
+                .apply_live(source, self.timeframe, base, &symbol, &kline, now);
+            self.apply_live_kline(source, base, &symbol, kline, now);
         }
     }
 
-    /// Every chart of `symbol` takes the kline of `base` candles, whatever else it shows.
-    fn apply_live_kline(&mut self, base: Timeframe, symbol: &str, kline: Kline, now: Instant) {
+    /// Every chart of `symbol` on `source` takes the kline of `base` candles, whatever else it
+    /// shows.
+    fn apply_live_kline(
+        &mut self,
+        source: DataSource,
+        base: Timeframe,
+        symbol: &str,
+        kline: Kline,
+        now: Instant,
+    ) {
         let timeframe = self.timeframe;
-        for chart in self.charts.iter_mut().filter(|chart| {
-            chart.source == DataSource::Binance && chart.symbol.eq_ignore_ascii_case(symbol)
-        }) {
+        for chart in self
+            .charts
+            .iter_mut()
+            .filter(|chart| chart.source == source && chart.symbol.eq_ignore_ascii_case(symbol))
+        {
             if let Some(open_time) =
                 chart
                     .live_fold
@@ -92,7 +117,13 @@ mod tests {
         workspace.charts.push(other);
 
         let base = workspace.timeframe;
-        workspace.apply_live_kline(base, "btcusdt", candle(2, 5.0), Instant::now());
+        workspace.apply_live_kline(
+            DataSource::Binance,
+            base,
+            "btcusdt",
+            candle(2, 5.0),
+            Instant::now(),
+        );
 
         let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
         assert_eq!(lens, [2, 2, 1]);
@@ -107,7 +138,13 @@ mod tests {
         workspace.charts.push(chart);
 
         let base = workspace.timeframe;
-        workspace.apply_live_kline(base, "BTCUSDT", candle(1, 9.0), Instant::now());
+        workspace.apply_live_kline(
+            DataSource::Binance,
+            base,
+            "BTCUSDT",
+            candle(1, 9.0),
+            Instant::now(),
+        );
 
         assert_eq!(
             workspace.charts[0].candles,
@@ -132,7 +169,13 @@ mod tests {
         };
 
         for kline in [live(0, 1.0), live(0, 2.0), live(minute, 3.0)] {
-            workspace.apply_live_kline(Timeframe::MINUTE_1, "BTCUSDT", kline, Instant::now());
+            workspace.apply_live_kline(
+                DataSource::Binance,
+                Timeframe::MINUTE_1,
+                "BTCUSDT",
+                kline,
+                Instant::now(),
+            );
         }
 
         for chart in &workspace.charts {
@@ -158,6 +201,7 @@ mod tests {
         let mut kline = candle(0, 5.0);
         kline.volume = 4.0;
         workspace.apply_live_kline(
+            DataSource::Binance,
             Timeframe::MINUTE_1,
             "BTCUSDT",
             kline.clone(),
@@ -185,6 +229,7 @@ mod tests {
         // The bar already counted in the refresh's volume adds only what it trades from here.
         kline.volume = 4.5;
         workspace.apply_live_kline(
+            DataSource::Binance,
             Timeframe::MINUTE_1,
             "BTCUSDT",
             kline.clone(),
@@ -192,7 +237,13 @@ mod tests {
         );
         assert_eq!(workspace.charts[0].candles[0].volume, 10.0);
         kline.volume = 5.0;
-        workspace.apply_live_kline(Timeframe::MINUTE_1, "BTCUSDT", kline, Instant::now());
+        workspace.apply_live_kline(
+            DataSource::Binance,
+            Timeframe::MINUTE_1,
+            "BTCUSDT",
+            kline,
+            Instant::now(),
+        );
         assert_eq!(workspace.charts[0].candles[0].volume, 10.5);
     }
 }

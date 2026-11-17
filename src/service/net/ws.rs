@@ -166,6 +166,51 @@ impl Backoff {
     }
 }
 
+/// One feed's connection: where it connects, what it subscribes to and how it is kept alive.
+pub struct Session {
+    pub url: String,
+    pub host: String,
+    pub port: u16,
+    /// Sent once after every (re)connect; `None` for a feed that subscribes through its URL.
+    pub subscribe: Option<String>,
+    pub max_data_silence: Duration,
+}
+
+impl Session {
+    /// Connects, subscribes and reads until `shutdown`, reconnecting with backoff whenever the
+    /// socket fails. Every text message goes to `on_text`; it answers whether to keep reading
+    /// (`false` when nobody is listening any more).
+    pub fn run(&self, shutdown: &AtomicBool, mut on_text: impl FnMut(&str) -> bool) {
+        let mut backoff = Backoff::new();
+        while !shutdown.load(Ordering::Acquire) {
+            if let Ok(mut socket) = connect(&self.url, &self.host, self.port) {
+                let subscribed = self.subscribe.as_ref().is_none_or(|message| {
+                    socket.send(Message::Text(message.as_str().into())).is_ok()
+                });
+                if subscribed {
+                    let mut health = Health::new(self.max_data_silence);
+                    while !shutdown.load(Ordering::Acquire) {
+                        match health.read(&mut socket) {
+                            Ok(Some(Message::Text(text))) => {
+                                backoff.reset();
+                                if !on_text(text.as_str()) {
+                                    return;
+                                }
+                            }
+                            Ok(Some(Message::Close(_))) | Err(_) => break,
+                            Ok(_) => {}
+                        }
+                    }
+                }
+            }
+            if shutdown.load(Ordering::Acquire) {
+                return;
+            }
+            backoff.wait(shutdown);
+        }
+    }
+}
+
 fn jittered(delay: Duration, random: u32) -> Duration {
     delay.mul_f64((75 + random % 51) as f64 / 100.0)
 }
@@ -179,6 +224,42 @@ mod tests {
     fn reconnect_delay_has_bounded_jitter() {
         assert_eq!(jittered(Duration::from_secs(4), 0), Duration::from_secs(3));
         assert_eq!(jittered(Duration::from_secs(4), 50), Duration::from_secs(5));
+    }
+
+    /// A server that reads one message, answers `replies`, then lingers so the client stays up.
+    fn serve(replies: &'static [&'static str]) -> (u16, std::thread::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            let received = socket.read().unwrap().into_text().unwrap().to_string();
+            for reply in replies {
+                socket.send(Message::Text((*reply).into())).unwrap();
+            }
+            std::thread::sleep(Duration::from_millis(300));
+            received
+        });
+        (port, handle)
+    }
+
+    #[test]
+    fn a_session_subscribes_and_hands_over_what_it_reads() {
+        let (port, server) = serve(&["tick"]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: Some("subscribe".to_owned()),
+            max_data_silence: Duration::from_secs(60),
+        };
+        let mut seen = Vec::new();
+        session.run(&AtomicBool::new(false), |text| {
+            seen.push(text.to_owned());
+            false
+        });
+        assert_eq!(seen, ["tick"]);
+        assert_eq!(server.join().unwrap(), "subscribe");
     }
 
     #[test]

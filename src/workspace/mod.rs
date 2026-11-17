@@ -10,7 +10,7 @@ use crate::model::{
     BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, InstrumentId,
     Timeframe,
 };
-use crate::service::market::live::BinanceLiveFeed;
+use crate::service::market::live::LiveFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use crate::store::SharedStore;
 use crate::store::watchlist::WatchlistStore;
@@ -162,7 +162,7 @@ pub struct ChartWorkspace {
     symbol_picker: SymbolPicker,
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
     card_env: Option<PortfolioCardEnv>,
-    live_feed: Option<BinanceLiveFeed>,
+    live_feeds: HashMap<DataSource, LiveFeed>,
     /// The candles of every overlay market on this workspace's charts, fetched once per market.
     overlay_hub: overlay::OverlayHub,
     settings_chart: Option<u64>,
@@ -299,7 +299,7 @@ impl ChartWorkspace {
             indicator_picker: IndicatorPicker::new(Some(store.clone())),
             symbol_picker: SymbolPicker::new(store.clone()),
             card_env: None,
-            live_feed: None,
+            live_feeds: HashMap::new(),
             overlay_hub: overlay::OverlayHub::new(),
             settings_chart: None,
             script_popover: None,
@@ -572,7 +572,7 @@ impl ChartWorkspace {
 
         self.tick_link_probation(&ctx);
         self.tick_overlays(&ctx);
-        self.update_live_feed(&ctx);
+        self.update_live_feeds(&ctx);
         {
             let mut host = lock(paper);
             self.sync_paper_quotes(&mut host);

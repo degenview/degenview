@@ -21,7 +21,7 @@ every six hours, then exposes availability, byte progress, failure, and restart 
   asks for a repaint when it ends. Picker searches go through `start_search` (CoinGecko and
   GeckoTerminal on their rate-limit lanes, the rest on search workers apart from candle fetches);
   other provider requests through `start_for`; dialogs and Keychain reads use `SNAPSHOTS`.
-- `BinanceLiveFeed`, `WatchlistQuoteCoordinator`, and Coinbase's ticker socket own reconnecting
+- `LiveFeed` (candle sockets), `WatchlistQuoteCoordinator` and its ticker sockets own reconnecting
   threads and channels. Hidden/occluded workspaces suspend feeds.
 - App-wide state uses `Arc<Mutex<...>>`, held by the app's parts, which hand each window callback
   one cheap `Clone` handle (see [Modules](modules.md)); per-tab content is `Arc<Mutex<TabContent>>`.

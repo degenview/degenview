@@ -59,6 +59,18 @@ impl DataSource {
             .find(|source| source.watchlist_slug().eq_ignore_ascii_case(slug))
     }
 
+    /// The sources whose forming candle a chart takes from a socket instead of waiting for the
+    /// next refresh.
+    pub const CANDLE_STREAMS: [DataSource; 1] = [DataSource::Binance];
+
+    /// The sources whose watchlist prices come from a shared ticker socket, REST filling in.
+    pub const QUOTE_STREAMS: [DataSource; 1] = [DataSource::Coinbase];
+
+    /// Whether watchlist prices of this source come from a ticker socket.
+    pub fn streams_quotes(self) -> bool {
+        Self::QUOTE_STREAMS.contains(&self)
+    }
+
     /// Whether this source quotes probabilities in 0…1, charted as lines.
     pub fn is_prediction_market(self) -> bool {
         matches!(self, Self::Polymarket | Self::Kalshi)

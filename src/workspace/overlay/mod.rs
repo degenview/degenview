@@ -420,10 +420,11 @@ impl OverlayHub {
         }
     }
 
-    /// A live Binance kline of `base` candles for `symbol`: every overlay market on that symbol
-    /// folds it into its candles of `timeframe`.
+    /// A live kline of `base` candles for `symbol` on `source`: every overlay market on that
+    /// symbol folds it into its candles of `timeframe`.
     pub(super) fn apply_live(
         &mut self,
+        source: DataSource,
         timeframe: Timeframe,
         base: Timeframe,
         symbol: &str,
@@ -431,7 +432,7 @@ impl OverlayHub {
         now: Instant,
     ) {
         for series in self.series.values_mut() {
-            if series.instrument.source != DataSource::Binance
+            if series.instrument.source != source
                 || !series.instrument.symbol.eq_ignore_ascii_case(symbol)
             {
                 continue;
@@ -451,12 +452,12 @@ impl OverlayHub {
         }
     }
 
-    /// The Binance symbols the live feed should also stream: shown overlay markets.
-    pub(super) fn binance_symbols(&self) -> Vec<String> {
+    /// The `source` symbols the live feed should also stream: shown overlay markets.
+    pub(super) fn streamed_symbols(&self, source: DataSource) -> Vec<String> {
         let mut symbols: Vec<String> = self
             .series
             .values()
-            .filter(|series| series.instrument.source == DataSource::Binance && series.shown())
+            .filter(|series| series.instrument.source == source && series.shown())
             .map(|series| series.instrument.symbol.to_uppercase())
             .collect();
         symbols.sort();
