@@ -7,6 +7,7 @@
 //! stars. Underscores are never emphasis, because `plot_color` in prose must stay `plot_color`.
 //! `parse` is pure and tested; `show` draws it.
 
+use crate::i18n::tr;
 use crate::pine_studio::editor::syntax;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{editor_appearance, kit, theme};
@@ -553,12 +554,12 @@ fn code_block(ui: &mut Ui, id: Id, lang: &str, text: &str, closed: bool) {
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 0.0);
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
-                let label = if lang.is_empty() { "code" } else { lang };
+                let label = if lang.is_empty() { tr!("code") } else { lang };
                 ui.label(kit::text(
                     if closed {
                         label.to_owned()
                     } else {
-                        format!("{label} …")
+                        tr!("{label} …", label = label)
                     },
                     kit::size::CAPTION + 0.5,
                     kit::MEDIUM,
@@ -567,9 +568,9 @@ fn code_block(ui: &mut Ui, id: Id, lang: &str, text: &str, closed: bool) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(4.0);
                     let (icon, tip, color) = if just_copied {
-                        (Icon::Check, "Copied", kit::GREEN)
+                        (Icon::Check, tr!("Copied"), kit::GREEN)
                     } else {
-                        (Icon::CopyDoc, "Copy code", theme::text_secondary())
+                        (Icon::CopyDoc, tr!("Copy code"), theme::text_secondary())
                     };
                     if icons::button(ui, icon, 24.0, color, tip).clicked() {
                         ui.ctx().copy_text(text.to_owned());

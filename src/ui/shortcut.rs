@@ -6,6 +6,7 @@
 //! [`Shortcut::pressed`] and show [`Shortcut::label`] / [`Shortcut::hint`], so the key that works
 //! and the key the UI names can never drift apart.
 
+use crate::i18n::tr;
 use eframe::egui::{Event, InputState, Key, Modifiers};
 
 /// One key combination. On macOS `primary` is ⌘ and `control` is ⌃; elsewhere either one means Ctrl.
@@ -220,7 +221,7 @@ impl Shortcut {
 
     /// `text` with the chord appended: "Save the script (⌘S)".
     pub fn hint(&self, text: &str) -> String {
-        format!("{text} ({})", self.label())
+        tr!("{text} ({shortcut})", text = text, shortcut = self.label())
     }
 }
 

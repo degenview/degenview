@@ -3,6 +3,7 @@
 use super::EmptyStateAction;
 use super::EmptyStateInput;
 use super::tiles::{self, Frame, Market};
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -61,10 +62,10 @@ impl Tab {
 
     pub fn title(self) -> &'static str {
         match self {
-            Tab::Recent => "Recent",
-            Tab::Favorites => "Favorites",
-            Tab::Suggestions => "Suggestions",
-            Tab::Layouts => "Layouts",
+            Tab::Recent => tr!("Recent"),
+            Tab::Favorites => tr!("Favorites"),
+            Tab::Suggestions => tr!("Suggestions"),
+            Tab::Layouts => tr!("Layouts"),
         }
     }
 
@@ -103,7 +104,11 @@ pub fn show(ui: &mut Ui, tab: Tab, input: &EmptyStateInput, frame: &mut Frame) {
 
 fn recent(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
     if input.recents.is_empty() {
-        tiles::note(ui, Icon::ClockArrow, "Markets you open will show up here.");
+        tiles::note(
+            ui,
+            Icon::ClockArrow,
+            tr!("Markets you open will show up here."),
+        );
         return;
     }
     // The list takes the room the page has left under it, less a few rows, never fewer than
@@ -131,8 +136,8 @@ fn recent(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
                 },
                 frame,
             );
-            kit::fitted_context_menu(ui, &response, &[("Remove from Recent", None)], |ui| {
-                if kit::menu_item(ui, Icon::Trash, "Remove from Recent", true, false) {
+            kit::fitted_context_menu(ui, &response, &[(tr!("Remove from Recent"), None)], |ui| {
+                if kit::menu_item(ui, Icon::Trash, tr!("Remove from Recent"), true, false) {
                     frame.actions.push(EmptyStateAction::RemoveRecent(index));
                     ui.close();
                 }
@@ -143,7 +148,7 @@ fn recent(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
         },
     );
     ui.add_space(12.0);
-    if tiles::link_row(ui, "Clear") {
+    if tiles::link_row(ui, tr!("Clear")) {
         frame.actions.push(EmptyStateAction::ClearRecents);
     }
 }
@@ -153,7 +158,7 @@ fn favorites(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
         tiles::note(
             ui,
             Icon::Star,
-            "Star a market in the watchlist and it will show up here.",
+            tr!("Star a market in the watchlist and it will show up here."),
         );
         return;
     }
@@ -254,7 +259,7 @@ fn layouts(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
         tiles::note(
             ui,
             Icon::Books,
-            "Save a layout from the layout menu and it will show up here.",
+            tr!("Save a layout from the layout menu and it will show up here."),
         );
         return;
     }

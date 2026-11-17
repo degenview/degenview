@@ -6,6 +6,7 @@ pub(in crate::workspace) mod session;
 use super::chart::Chart;
 use super::drawing::merge_remote_markets;
 use super::layout::autosave::AutosaveState;
+use crate::i18n::tr;
 
 use super::{ChartWorkspace, PersistedChart, PersistedWorkspace};
 use crate::model::watchlist::{new_id, now_ms};
@@ -193,7 +194,10 @@ impl ChartWorkspace {
     pub(super) fn open_name_prompt(&mut self, prompt: NamePrompt, ctx: &egui::Context) {
         let base = self.layout.active_view_name.clone();
         self.layout.prompt_name = match prompt {
-            NamePrompt::Copy => format!("{} copy", base.as_deref().unwrap_or("My Chart")),
+            NamePrompt::Copy => tr!(
+                "{name} copy",
+                name = base.as_deref().unwrap_or(tr!("My Chart"))
+            ),
             NamePrompt::Rename => base.unwrap_or_default(),
             NamePrompt::Save { .. } => String::new(),
         };
@@ -228,7 +232,11 @@ impl ChartWorkspace {
             }
             Err(error) => {
                 if report {
-                    self.layout.error = Some(format!("Couldn’t save “{}”: {error}", existing.name));
+                    self.layout.error = Some(tr!(
+                        "Couldn’t save “{layout}”: {error}",
+                        layout = existing.name,
+                        error = error
+                    ));
                 }
                 false
             }
@@ -248,7 +256,7 @@ impl ChartWorkspace {
                 true
             }
             Err(error) => {
-                self.layout.error = Some(format!("Couldn’t save the layout: {error}"));
+                self.layout.error = Some(tr!("Couldn’t save the layout: {error}", error = error));
                 false
             }
         }
@@ -354,7 +362,7 @@ impl ChartWorkspace {
         match self.update_active_view(|view| view.name = renamed) {
             Ok(()) => self.layout.active_view_name = Some(name),
             Err(error) => {
-                self.layout.error = Some(format!("Couldn’t rename the layout: {error}"));
+                self.layout.error = Some(tr!("Couldn’t rename the layout: {error}", error = error));
             }
         }
     }
@@ -372,7 +380,7 @@ impl ChartWorkspace {
                     .map_err(|error| error.to_string())
             });
         if let Err(error) = result {
-            self.layout.error = Some(format!("Couldn’t delete the layout: {error}"));
+            self.layout.error = Some(tr!("Couldn’t delete the layout: {error}", error = error));
             return;
         }
         // The tab keeps its charts and becomes unnamed.
@@ -456,7 +464,7 @@ impl ChartWorkspace {
             .layout
             .active_view_name
             .clone()
-            .unwrap_or_else(|| "Unnamed".to_owned());
+            .unwrap_or_else(|| tr!("Unnamed").to_owned());
         match layout_prompts::show_unsaved(ctx, &name) {
             Some(UnsavedChoice::Save) => {
                 if self.layout.active_view_id.is_none() {

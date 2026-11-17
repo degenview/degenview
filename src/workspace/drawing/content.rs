@@ -9,6 +9,7 @@
 //! the picture of a drawing being replaced. Nothing is created until the picture is stored, so a
 //! refused picture leaves no drawing, no undo step and nothing to sync.
 
+use crate::i18n::tr;
 use crate::model::Tool;
 use crate::model::annotation::image_content::{Content, ImageContent, MAX_NAME_CHARS};
 use crate::service::annotation::asset_host;
@@ -154,7 +155,7 @@ pub(in crate::workspace) fn display_name(file_name: &str) -> String {
 /// Reads, checks, stores and decodes one picture. Runs on a worker.
 fn work(source: Source, store: &SharedStore) -> Outcome {
     let (bytes, name) = match source {
-        Source::Panel => match file_dialog::choose_image("Choose a picture") {
+        Source::Panel => match file_dialog::choose_image(tr!("Choose a picture")) {
             Ok(Some(path)) => match ingest::read_file(&path) {
                 Ok(bytes) => (bytes, display_name(&path.to_string_lossy())),
                 Err(error) => return Outcome::Failed(error.message().to_owned()),
@@ -164,7 +165,9 @@ fn work(source: Source, store: &SharedStore) -> Outcome {
         },
         Source::Clipboard => match crate::native_bridge::clipboard_picture() {
             Some(bytes) => (bytes, "Pasted image".to_owned()),
-            None => return Outcome::Failed("There is no picture on the clipboard.".to_owned()),
+            None => {
+                return Outcome::Failed(tr!("There is no picture on the clipboard.").to_owned());
+            }
         },
         Source::Path(path) => match ingest::read_file(&path) {
             Ok(bytes) => (bytes, display_name(&path.to_string_lossy())),
@@ -180,11 +183,11 @@ fn work(source: Source, store: &SharedStore) -> Outcome {
     };
     let stored = store
         .lock()
-        .map_err(|_| "The library is busy.".to_owned())
+        .map_err(|_| tr!("The library is busy.").to_owned())
         .and_then(|store| {
             store
                 .put_asset(&StoredAsset::from_ingested(&picture))
-                .map_err(|error| format!("The picture could not be saved: {error}"))
+                .map_err(|error| tr!("The picture could not be saved: {error}", error = error))
         });
     if let Err(message) = stored {
         return Outcome::Failed(message);
@@ -276,7 +279,7 @@ impl ChartWorkspace {
             Ok(outcome) => outcome,
             Err(mpsc::TryRecvError::Empty) => return,
             Err(mpsc::TryRecvError::Disconnected) => {
-                Outcome::Failed("The picture could not be read.".to_owned())
+                Outcome::Failed(tr!("The picture could not be read.").to_owned())
             }
         };
         self.content.inbox = None;
@@ -380,9 +383,9 @@ impl ChartWorkspace {
         match asset_host::host(ctx).and_then(|host| host.ready(asset)) {
             Some(pixels) => {
                 ctx.copy_image((*pixels).clone());
-                self.say("Copied the image.", false);
+                self.say(tr!("Copied the image."), false);
             }
-            None => self.say("That image is not available to copy yet.", true),
+            None => self.say(tr!("That image is not available to copy yet."), true),
         }
     }
 }

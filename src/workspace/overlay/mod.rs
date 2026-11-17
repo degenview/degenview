@@ -18,6 +18,7 @@
 pub(in crate::workspace) mod actions;
 
 use super::chart::CANDLE_LIMIT;
+use crate::i18n::tr;
 use crate::model::market;
 use crate::model::market::history::OlderHistory;
 use crate::model::market::live::{self, LiveFold, LiveMark};
@@ -503,7 +504,8 @@ impl super::ChartWorkspace {
                         .feed(&overlay.instrument)
                         .unwrap_or_else(|| OverlayFeed::empty(OverlayStatus::Queued));
                     if overlay.instrument.key() == main {
-                        feed.status = OverlayStatus::Blocked("Same market as the chart".into());
+                        feed.status =
+                            OverlayStatus::Blocked(tr!("Same market as the chart").into());
                     }
                     feed
                 })
@@ -598,9 +600,9 @@ fn receive_fetch(series: &mut Series, now: Instant) -> bool {
     let result = match receiver.try_recv() {
         Ok(result) => result,
         Err(mpsc::TryRecvError::Empty) => return false,
-        Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::other(
-            "The request stopped before it answered",
-        )),
+        Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::other(tr!(
+            "The request stopped before it answered"
+        ))),
     };
     series.inbox = None;
     match result {
@@ -643,7 +645,7 @@ fn receive_older(series: &mut Series, now: Instant) -> bool {
         Ok(result) => result,
         Err(mpsc::TryRecvError::Empty) => return false,
         Err(mpsc::TryRecvError::Disconnected) => {
-            Err(ProviderError::other("Older candles stopped loading"))
+            Err(ProviderError::other(tr!("Older candles stopped loading")))
         }
     };
     series.older_inbox = None;

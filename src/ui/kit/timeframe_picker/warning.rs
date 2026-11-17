@@ -1,5 +1,6 @@
 //! The line that says a chart of the tab cannot draw the highlighted timeframe.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::{DataSource, Timeframe};
 
 /// "CoinGecko can't chart 1m", naming up to two sources and counting more; `None` when every
@@ -15,12 +16,25 @@ pub(super) fn cannot_chart(sources: &[DataSource], timeframe: Timeframe) -> Opti
 }
 
 fn sentence(refusing: &[DataSource], timeframe: Timeframe) -> String {
-    let who = match refusing {
-        [one] => one.display_name().to_owned(),
-        [first, second] => format!("{} and {}", first.display_name(), second.display_name()),
-        many => format!("{} sources", many.len()),
-    };
-    format!("{who} can't chart {timeframe}")
+    match refusing {
+        [one] => tr!(
+            "{source} can't chart {timeframe}",
+            source = one.display_name(),
+            timeframe = timeframe
+        ),
+        [first, second] => tr!(
+            "{first} and {second} can't chart {timeframe}",
+            first = first.display_name(),
+            second = second.display_name(),
+            timeframe = timeframe
+        ),
+        many => tr_n!(
+            many.len(),
+            "{count} source can't chart {timeframe}",
+            "{count} sources can't chart {timeframe}",
+            timeframe = timeframe
+        ),
+    }
 }
 
 #[cfg(test)]

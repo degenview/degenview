@@ -2,6 +2,7 @@
 //! after six seconds or on ✕. One slot, so a newer alert replaces an older one rather than
 //! stacking.
 
+use crate::i18n::tr;
 use crate::model::alert::notification::banners_enabled;
 use crate::model::alert::{AlertNotificationSettings, AlertTriggerEvent};
 use crate::ui::icons::{self, Icon};
@@ -32,10 +33,10 @@ pub struct AlertBannerState {
 
 /// "BTC reached $70,000.00".
 pub fn price_banner_text(event: &AlertTriggerEvent) -> String {
-    format!(
-        "{} reached {}",
-        event.asset.symbol,
-        event.currency.format_price(event.target)
+    tr!(
+        "{symbol} reached {price}",
+        symbol = event.asset.symbol,
+        price = event.currency.format_price(event.target)
     )
 }
 
@@ -140,8 +141,14 @@ fn capsule(ui: &mut egui::Ui, banner: &Banner) -> bool {
                     kit::REGULAR,
                     theme::text_primary(),
                 ));
-                if icons::button(ui, Icon::Xmark, 18.0, theme::text_secondary(), "Dismiss")
-                    .clicked()
+                if icons::button(
+                    ui,
+                    Icon::Xmark,
+                    18.0,
+                    theme::text_secondary(),
+                    tr!("Dismiss"),
+                )
+                .clicked()
                 {
                     dismissed = true;
                 }

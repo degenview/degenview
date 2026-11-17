@@ -3,6 +3,7 @@
 //! `AlertCenterAction`s; the host owns the alert store, the editor sheet and the
 //! "seen" bookkeeping (`UnseenAlerts`).
 
+use crate::i18n::{tr, tr_n};
 use crate::model::alert::AlertNotificationPermission;
 use crate::model::alert::feed::day_sections;
 use crate::model::alert::{
@@ -41,12 +42,12 @@ impl AlertTab {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Active => "Active",
-            Self::Triggered => "Triggered",
-            Self::Paused => "Paused",
-            Self::All => "All",
-            Self::History => "History",
-            Self::Scripts => "Scripts",
+            Self::Active => tr!("Active"),
+            Self::Triggered => tr!("Triggered"),
+            Self::Paused => tr!("Paused"),
+            Self::All => tr!("All"),
+            Self::History => tr!("History"),
+            Self::Scripts => tr!("Scripts"),
         }
     }
 
@@ -170,18 +171,22 @@ pub fn tab_count(tab: AlertTab, input: &AlertCenterInput) -> usize {
 pub fn summary(alerts: &[PriceAlert]) -> String {
     let count = |state| alerts.iter().filter(|alert| alert.state == state).count();
     let parts: Vec<String> = [
-        (AlertState::Active, "active"),
-        (AlertState::Triggered, "triggered"),
-        (AlertState::Paused, "paused"),
+        (AlertState::Active, 0),
+        (AlertState::Triggered, 1),
+        (AlertState::Paused, 2),
     ]
     .into_iter()
-    .filter_map(|(state, word)| {
+    .filter_map(|(state, kind)| {
         let n = count(state);
-        (n > 0).then(|| format!("{n} {word}"))
+        (n > 0).then(|| match kind {
+            0 => tr!("{count} active", count = n),
+            1 => tr!("{count} triggered", count = n),
+            _ => tr!("{count} paused", count = n),
+        })
     })
     .collect();
     if parts.is_empty() {
-        "No price alerts yet".to_owned()
+        tr!("No price alerts yet").to_owned()
     } else {
         parts.join(" · ")
     }
@@ -205,30 +210,30 @@ pub fn last_fired_by_rule(history: &[AlertTriggerEvent]) -> HashMap<AlertId, &Al
 pub fn status(alert: &PriceAlert, quote_is_fresh: bool) -> (&'static str, Tone, &'static str) {
     match alert.state {
         AlertState::Active if !alert.armed => (
-            "Re-arming",
+            tr!("Re-arming"),
             Tone::Warning,
-            "Waiting for the price to move back across the level before it can fire again.",
+            tr!("Waiting for the price to move back across the level before it can fire again."),
         ),
         AlertState::Active if !quote_is_fresh => (
-            "Waiting for data",
+            tr!("Waiting for data"),
             Tone::Warning,
-            "Waiting for current market data.",
+            tr!("Waiting for current market data."),
         ),
-        AlertState::Active => ("Active", Tone::Good, "Watching the market."),
+        AlertState::Active => (tr!("Active"), Tone::Good, tr!("Watching the market.")),
         AlertState::Paused => (
-            "Paused",
+            tr!("Paused"),
             Tone::Neutral,
-            "Paused. It will not fire until resumed.",
+            tr!("Paused. It will not fire until resumed."),
         ),
         AlertState::Triggered => (
-            "Triggered",
+            tr!("Triggered"),
             Tone::Warning,
-            "Fired. Re-enable it to watch again.",
+            tr!("Fired. Re-enable it to watch again."),
         ),
         AlertState::Unsupported => (
-            "Unsupported",
+            tr!("Unsupported"),
             Tone::Bad,
-            "This rule type is not supported by this version.",
+            tr!("This rule type is not supported by this version."),
         ),
     }
 }
@@ -241,9 +246,11 @@ pub fn status_here(
 ) -> (&'static str, Tone, &'static str) {
     if muted && alert.state == AlertState::Active {
         return (
-            "Not watching here",
+            tr!("Not watching here"),
             Tone::Neutral,
-            "This alert came from another Mac and is switched off on this one, so it notifies from one Mac only. Choose Watch on This Mac to turn it on here too.",
+            tr!(
+                "This alert came from another Mac and is switched off on this one, so it notifies from one Mac only. Choose Watch on This Mac to turn it on here too."
+            ),
         );
     }
     status(alert, quote_is_fresh)
@@ -251,9 +258,9 @@ pub fn status_here(
 
 pub fn toggle_title(state: AlertState) -> &'static str {
     match state {
-        AlertState::Active => "Pause",
-        AlertState::Triggered => "Re-enable",
-        _ => "Resume",
+        AlertState::Active => tr!("Pause"),
+        AlertState::Triggered => tr!("Re-enable"),
+        _ => tr!("Resume"),
     }
 }
 
@@ -274,9 +281,9 @@ pub fn secondary_text(
     if alert.state == AlertState::Triggered
         && let Some(event) = last_fired
     {
-        return Some(format!(
-            "Fired {}",
-            relative_time(now_ms, event.timestamp_ms)
+        return Some(tr!(
+            "Fired {time}",
+            time = relative_time(now_ms, event.timestamp_ms)
         ));
     }
     if alert.state != AlertState::Active {
@@ -288,9 +295,9 @@ pub fn secondary_text(
     }
     let away = (target - price).abs() / price * 100.0;
     Some(if away < 10.0 {
-        format!("{away:.1}% away")
+        tr!("{away}% away", away = format!("{away:.1}"))
     } else {
-        format!("{away:.0}% away")
+        tr!("{away}% away", away = format!("{away:.0}"))
     })
 }
 
@@ -301,35 +308,40 @@ pub fn condition_chip(condition: &AlertCondition) -> (&'static str, String, Opti
         format!("{}%", text.trim_end_matches('0').trim_end_matches('.'))
     };
     match condition {
-        AlertCondition::CrossesAbove { .. } => ("↗", "Crosses above".to_owned(), Some(true)),
-        AlertCondition::CrossesBelow { .. } => ("↘", "Crosses below".to_owned(), Some(false)),
-        AlertCondition::RisesBy { percent: p, .. } => {
-            ("↑", format!("Rises {}", percent(*p)), Some(true))
-        }
-        AlertCondition::FallsBy { percent: p, .. } => {
-            ("↓", format!("Falls {}", percent(*p)), Some(false))
-        }
-        AlertCondition::Unsupported { .. } => ("?", "Unsupported".to_owned(), None),
+        AlertCondition::CrossesAbove { .. } => ("↗", tr!("Crosses above").to_owned(), Some(true)),
+        AlertCondition::CrossesBelow { .. } => ("↘", tr!("Crosses below").to_owned(), Some(false)),
+        AlertCondition::RisesBy { percent: p, .. } => (
+            "↑",
+            tr!("Rises {percent}", percent = percent(*p)),
+            Some(true),
+        ),
+        AlertCondition::FallsBy { percent: p, .. } => (
+            "↓",
+            tr!("Falls {percent}", percent = percent(*p)),
+            Some(false),
+        ),
+        AlertCondition::Unsupported { .. } => ("?", tr!("Unsupported").to_owned(), None),
     }
 }
 
 /// A trigger record carries no condition, so a deleted rule's direction is read off the prices.
 pub fn crossed_chip(observed: f64, target: f64) -> (&'static str, String, Option<bool>) {
     if observed >= target {
-        ("↗", "Crossed above".to_owned(), Some(true))
+        ("↗", tr!("Crossed above").to_owned(), Some(true))
     } else {
-        ("↘", "Crossed below".to_owned(), Some(false))
+        ("↘", tr!("Crossed below").to_owned(), Some(false))
     }
 }
 
 /// The sentence under the history list.
 pub fn history_note(count: usize) -> String {
     if count == 0 {
-        "Every time an alert fires it is logged here.".to_owned()
+        tr!("Every time an alert fires it is logged here.").to_owned()
     } else {
-        format!(
-            "{count} {} logged. Clearing history keeps your alerts.",
-            if count == 1 { "trigger" } else { "triggers" }
+        tr_n!(
+            count,
+            "{count} trigger logged. Clearing history keeps your alerts.",
+            "{count} triggers logged. Clearing history keeps your alerts."
         )
     }
 }
@@ -339,15 +351,15 @@ pub fn runtime_badge(health: &AlertRuntimeHealth) -> (&'static str, Tone, &'stat
         && health.owner == crate::model::alert::AlertRuntimeOwner::Agent
     {
         (
-            "Background agent active",
+            tr!("Background agent active"),
             Tone::Good,
-            "Alerts keep being checked when DegenView is closed.",
+            tr!("Alerts keep being checked when DegenView is closed."),
         )
     } else {
         (
-            "Foreground evaluation only",
+            tr!("Foreground evaluation only"),
             Tone::Warning,
-            "Alerts are only checked while DegenView is open.",
+            tr!("Alerts are only checked while DegenView is open."),
         )
     }
 }
@@ -358,32 +370,35 @@ pub fn empty_message(
     any_in_tab: bool,
 ) -> (&'static str, &'static str) {
     if searching && any_in_tab {
-        return ("No Results", "Check the spelling or try a new search.");
+        return (
+            tr!("No Results"),
+            tr!("Check the spelling or try a new search."),
+        );
     }
     match tab {
         AlertTab::Active => (
-            "No Active Alerts",
-            "Click the bell on a chart to alert on a price.",
+            tr!("No Active Alerts"),
+            tr!("Click the bell on a chart to alert on a price."),
         ),
         AlertTab::Triggered => (
-            "Nothing Triggered",
-            "An alert that fires once waits here until you re-enable it.",
+            tr!("Nothing Triggered"),
+            tr!("An alert that fires once waits here until you re-enable it."),
         ),
         AlertTab::Paused => (
-            "Nothing Paused",
-            "Paused alerts wait here until you resume them.",
+            tr!("Nothing Paused"),
+            tr!("Paused alerts wait here until you resume them."),
         ),
         AlertTab::All => (
-            "No Alerts",
-            "Click the bell on a chart to alert on a price.",
+            tr!("No Alerts"),
+            tr!("Click the bell on a chart to alert on a price."),
         ),
         AlertTab::History => (
-            "No Trigger History",
-            "Every time an alert fires it is logged here.",
+            tr!("No Trigger History"),
+            tr!("Every time an alert fires it is logged here."),
         ),
         AlertTab::Scripts => (
-            "No Script Alerts",
-            "Alerts raised by your Pine scripts appear here.",
+            tr!("No Script Alerts"),
+            tr!("Alerts raised by your Pine scripts appear here."),
         ),
     }
 }
@@ -434,7 +449,10 @@ pub fn show(
     if let Some(error) = input.load_error {
         ui.add_space(24.0);
         padded(ui, |ui| {
-            ui.colored_label(theme::ORANGE, format!("Alerts unavailable: {error}"));
+            ui.colored_label(
+                theme::ORANGE,
+                tr!("Alerts unavailable: {error}", error = error),
+            );
         });
         return actions;
     }
@@ -496,7 +514,7 @@ fn header(
             &mut field,
             Id::new(SEARCH_ID),
             &mut state.search,
-            "Search asset or name",
+            tr!("Search asset or name"),
             260.0,
         );
         let (badge_text, tone, help) = runtime_badge(input.health);
@@ -510,7 +528,7 @@ fn header(
         let width = runtime.left() - 12.0 - left;
         let title = kit::galley(
             ui,
-            "Alerts",
+            tr!("Alerts"),
             kit::size::TITLE2 + 1.0,
             kit::SEMIBOLD,
             theme::text_primary(),
@@ -553,12 +571,11 @@ fn header(
                 ui,
                 Icon::BellSlash,
                 kit::ORANGE,
-                "Notifications are turned off",
-                Some(
-                    "Alerts still fire and are logged here, but macOS will not show them. \
-                     Allow DegenView in System Settings.",
-                ),
-                Some("Open Settings"),
+                tr!("Notifications are turned off"),
+                Some(tr!(
+                    "Alerts still fire and are logged here, but macOS will not show them. Allow DegenView in System Settings."
+                )),
+                Some(tr!("Open Settings")),
             ) {
                 actions.push(AlertCenterAction::OpenNotificationSettings);
             }
@@ -576,8 +593,8 @@ fn empty_page(ui: &mut egui::Ui, tab: AlertTab, search: &str, any_in_tab: bool, 
             ui,
             rect,
             Icon::Magnifier,
-            &format!("No Results for “{query}”"),
-            "Check the spelling or try a new search.",
+            &tr!("No Results for “{query}”", query = query),
+            tr!("Check the spelling or try a new search."),
         );
     } else {
         let (title, detail) = empty_message(tab, false, any_in_tab);
@@ -764,7 +781,15 @@ pub(in crate::ui) fn more_button(
     labels: &[&str],
     items: impl FnOnce(&mut egui::Ui),
 ) {
-    let response = kit::hover_button(ui, rect, id, Icon::Ellipsis, "More actions", true, true);
+    let response = kit::hover_button(
+        ui,
+        rect,
+        id,
+        Icon::Ellipsis,
+        tr!("More actions"),
+        true,
+        true,
+    );
     kit::fitted_menu(ui, &response, egui::RectAlign::BOTTOM_END, labels, items);
 }
 
@@ -825,7 +850,7 @@ fn rule_menu(
     } else {
         Icon::PlayFill
     };
-    if kit::menu_item(ui, Icon::Pencil, "Edit…", true, false) {
+    if kit::menu_item(ui, Icon::Pencil, tr!("Edit…"), true, false) {
         actions.push(AlertCenterAction::Edit(alert.id));
         ui.close();
     }
@@ -842,9 +867,9 @@ fn rule_menu(
     // `watch` is `Some(currently watched here)` while iCloud Sync is on.
     if let Some(watched) = watch {
         let (icon, title) = if watched {
-            (Icon::EyeSlash, "Stop Watching on This Mac")
+            (Icon::EyeSlash, tr!("Stop Watching on This Mac"))
         } else {
-            (Icon::Eye, "Watch on This Mac")
+            (Icon::Eye, tr!("Watch on This Mac"))
         };
         if kit::menu_item(
             ui,
@@ -857,12 +882,12 @@ fn rule_menu(
             ui.close();
         }
     }
-    if kit::menu_item(ui, Icon::CopyDoc, "Duplicate", true, false) {
+    if kit::menu_item(ui, Icon::CopyDoc, tr!("Duplicate"), true, false) {
         actions.push(AlertCenterAction::Duplicate(alert.id));
         ui.close();
     }
     kit::menu_separator(ui);
-    if kit::menu_item(ui, Icon::Trash, "Delete…", true, true) {
+    if kit::menu_item(ui, Icon::Trash, tr!("Delete…"), true, true) {
         state.pending_delete = Some(alert.id);
         ui.close();
     }
@@ -902,16 +927,16 @@ fn rule_row(
     let more = Rect::from_min_size(Pos2::new(right - 26.0, center_y - 13.0), Vec2::splat(26.0));
     let watch = input.sync_enabled.then(|| !input.muted.contains(&alert.id));
     let watch_label = match watch {
-        Some(true) => "Stop Watching on This Mac",
-        Some(false) => "Watch on This Mac",
-        None => "Edit\u{2026}",
+        Some(true) => tr!("Stop Watching on This Mac"),
+        Some(false) => tr!("Watch on This Mac"),
+        None => tr!("Edit\u{2026}"),
     };
     let labels = [
-        "Edit\u{2026}",
+        tr!("Edit\u{2026}"),
         toggle_title(alert.state),
         watch_label,
-        "Duplicate",
-        "Delete\u{2026}",
+        tr!("Duplicate"),
+        tr!("Delete\u{2026}"),
     ];
     more_button(ui, more, Id::new(("alert-more", alert.id)), &labels, |ui| {
         rule_menu(ui, state, alert, watch, actions);
@@ -941,7 +966,7 @@ fn rule_row(
         edit,
         Id::new(("alert-edit", alert.id)),
         Icon::Pencil,
-        "Edit",
+        tr!("Edit"),
         hovered,
         true,
     )
@@ -977,7 +1002,10 @@ fn rule_row(
         );
         let _ = ui
             .interact(column, Id::new(("alert-target", alert.id)), Sense::hover())
-            .on_hover_text(format!("Now {}", alert.currency.format_price(price)));
+            .on_hover_text(tr!(
+                "Now {price}",
+                price = alert.currency.format_price(price)
+            ));
     }
     right -= 132.0 + 12.0;
 
@@ -1004,9 +1032,9 @@ fn rule_row(
         &caption,
         |ui, at, _| {
             let (frequency, tip) = if alert.frequency == AlertFrequency::Once {
-                (Icon::OneCircle, "Triggers once")
+                (Icon::OneCircle, tr!("Triggers once"))
             } else {
-                (Icon::Repeat, "Triggers every time")
+                (Icon::Repeat, tr!("Triggers every time"))
             };
             let mut width = mark(ui, at, frequency, Id::new(("alert-frequency", id)), tip);
             if !alert.webhook_endpoint_ids.is_empty() {
@@ -1016,9 +1044,10 @@ fn rule_row(
                     at + Vec2::new(width, 0.0),
                     Icon::ArrowUpRightSquare,
                     Id::new(("alert-webhooks", id)),
-                    &format!(
-                        "Posts to {count} webhook{}",
-                        if count == 1 { "" } else { "s" }
+                    &tr_n!(
+                        count,
+                        "Posts to {count} webhook",
+                        "Posts to {count} webhooks"
                     ),
                 );
             }
@@ -1029,9 +1058,12 @@ fn rule_row(
     if response.double_clicked() {
         actions.push(AlertCenterAction::Edit(alert.id));
     }
-    let spoken = format!(
-        "{} alert: {} {}, {}",
-        alert.asset.symbol, chip.1, target, status_text,
+    let spoken = tr!(
+        "{symbol} alert: {condition} {target}, {status}",
+        symbol = alert.asset.symbol,
+        condition = chip.1,
+        target = target,
+        status = status_text
     );
     let response = accessibility::label(response, spoken);
     egui::Popup::context_menu(&response)
@@ -1081,9 +1113,9 @@ fn history_view(ui: &mut egui::Ui, state: &mut AlertCenterState, input: &AlertCe
         Icon::ClockArrow,
         &history_note(input.history.len()),
         Icon::Trash,
-        "Clear History",
+        tr!("Clear History"),
         !input.history.is_empty(),
-        "Remove every logged trigger, not just the ones matching the search",
+        tr!("Remove every logged trigger, not just the ones matching the search"),
     ) {
         state.confirming_clear = true;
     }
@@ -1098,7 +1130,14 @@ pub fn webhook_chip(delivered: usize, total: usize) -> (String, Tone) {
     } else {
         Tone::Warning
     };
-    (format!("Webhooks {delivered}/{total} delivered"), tone)
+    (
+        tr!(
+            "Webhooks {delivered}/{total} delivered",
+            delivered = delivered,
+            total = total
+        ),
+        tone,
+    )
 }
 
 fn history_row(
@@ -1129,9 +1168,9 @@ fn history_row(
         right,
         center_y,
         &event.currency.format_price(event.observed_value),
-        Some(&format!(
-            "Target {}",
-            event.currency.format_price(event.target)
+        Some(&tr!(
+            "Target {price}",
+            price = event.currency.format_price(event.target)
         )),
         kit::SEMIBOLD,
     );
@@ -1173,7 +1212,7 @@ fn history_row(
                     .delivery
                     .error
                     .as_deref()
-                    .unwrap_or("The notification could not be delivered."),
+                    .unwrap_or(tr!("The notification could not be delivered.")),
             );
         left = warning.left();
     }
@@ -1195,13 +1234,13 @@ fn history_row(
             if event.origin != AlertEventOrigin::CatchUp {
                 return 0.0;
             }
-            let width = kit::chip_size(ui, "Delayed").x;
+            let width = kit::chip_size(ui, tr!("Delayed")).x;
             let placed = kit::paint_chip(
                 ui,
                 at.x + width,
                 at.y,
                 Icon::ClockBadge,
-                "Delayed",
+                tr!("Delayed"),
                 kit::ORANGE,
             );
             let _ = ui
@@ -1210,7 +1249,9 @@ fn history_row(
                     Id::new(("alert-event-delayed", event_id)),
                     Sense::hover(),
                 )
-                .on_hover_text("Seen late: the price crossed while DegenView was not watching.");
+                .on_hover_text(tr!(
+                    "Seen late: the price crossed while DegenView was not watching."
+                ));
             width + 6.0
         },
     );
@@ -1229,18 +1270,18 @@ fn delete_dialog(
         state.pending_delete = None;
         return;
     };
-    let message = format!(
-        "The {} alert is removed. Its trigger history is kept.",
-        alert.asset.symbol
+    let message = tr!(
+        "The {symbol} alert is removed. Its trigger history is kept.",
+        symbol = alert.asset.symbol
     );
     match kit::confirm(
         ctx,
         Id::new("alert-delete"),
         &kit::Confirm {
             icon: Icon::Trash,
-            title: "Delete this alert?",
+            title: tr!("Delete this alert?"),
             message: &message,
-            destructive: "Delete",
+            destructive: tr!("Delete"),
         },
     ) {
         Some(kit::ConfirmOutcome::Confirmed) => {
@@ -1265,9 +1306,9 @@ fn clear_dialog(
         Id::new("alert-clear"),
         &kit::Confirm {
             icon: Icon::Trash,
-            title: "Clear all trigger history?",
-            message: "This can't be undone. Your alerts are kept.",
-            destructive: "Clear History",
+            title: tr!("Clear all trigger history?"),
+            message: tr!("This can't be undone. Your alerts are kept."),
+            destructive: tr!("Clear History"),
         },
     ) {
         Some(kit::ConfirmOutcome::Confirmed) => {

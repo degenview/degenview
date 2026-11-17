@@ -3,6 +3,7 @@
 //! clear button. Full pickers use [`search_box`]; the small pull-downs use [`compact_search_box`],
 //! the same box at the height of their rows.
 
+use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{size, text};
@@ -184,7 +185,7 @@ fn show(ui: &mut Ui, box_size: Size, content: Content) -> SearchBoxEvent {
             Icon::XmarkCircleFill,
             22.0,
             theme::text_tertiary(),
-            "Clear search",
+            tr!("Clear search"),
         )
         .clicked()
     {

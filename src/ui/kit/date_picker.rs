@@ -7,6 +7,7 @@
 //! tested; only `show` paints.
 
 use crate::format::{civil_from_days, days_from_civil};
+use crate::i18n::tr;
 use crate::model::portfolio::editor::{date_text, parse_date_text};
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
@@ -189,7 +190,7 @@ pub fn show(
         Icon::Calendar,
         theme::text_secondary(),
     );
-    let response = accessibility::label(response, format!("Date and time, {label}"));
+    let response = accessibility::label(response, tr!("Date and time, {label}", label = label));
     show_popover(ui, id, &response, text, utc_offset_secs)
 }
 
@@ -396,7 +397,7 @@ fn popover(
     let (time_row, _) = ui.allocate_exact_size(vec2(POPOVER_WIDTH, 30.0), Sense::hover());
     let label = kit::galley(
         ui,
-        "Time",
+        tr!("Time"),
         kit::size::BODY,
         REGULAR,
         theme::text_secondary(),
@@ -450,7 +451,7 @@ fn popover(
         .on_hover_cursor(CursorIcon::PointingHand);
     let now_label = kit::galley(
         ui,
-        "Now",
+        tr!("Now"),
         kit::size::BODY,
         MEDIUM,
         theme::SYSTEM_ACCENT,

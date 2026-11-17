@@ -6,6 +6,7 @@
 //! nothing to list. It owns nothing of the messages: they are lent for the frame, and what the
 //! person asks for is returned as a [`LogsAction`]. Only the rows on screen are laid out.
 
+use crate::i18n::tr;
 use crate::model::pine::logs_view::{
     BarRange, FilteredLogs, LogFilter, LogsPrefs, MAX_HIGHLIGHTS, RowHeights, estimated_height,
     iso_utc,
@@ -168,7 +169,7 @@ fn title(
         |ui| {
             ui.add_space(16.0);
             ui.label(kit::text(
-                "Pine logs",
+                tr!("Pine logs"),
                 kit::size::HEADLINE,
                 kit::SEMIBOLD,
                 theme::text_primary(),
@@ -180,7 +181,7 @@ fn title(
                     Icon::Xmark,
                     BUTTON,
                     theme::text_secondary(),
-                    "Close Pine logs",
+                    tr!("Close Pine logs"),
                 );
                 if close.clicked() {
                     actions.push(LogsAction::Close);
@@ -239,7 +240,7 @@ fn toolbar(ui: &mut Ui, state: &mut LogsState, feed: Option<&Feed>, actions: &mu
                     } else {
                         theme::text_secondary()
                     },
-                    "Filter levels",
+                    tr!("Filter levels"),
                 );
                 if filtered {
                     ui.painter().circle_filled(
@@ -252,9 +253,9 @@ fn toolbar(ui: &mut Ui, state: &mut LogsState, feed: Option<&Feed>, actions: &mu
 
                 let logging = feed.is_none_or(|feed| feed.logging);
                 let (icon, tip) = if logging {
-                    (Icon::PauseCircle, "Disable logging")
+                    (Icon::PauseCircle, tr!("Disable logging"))
                 } else {
-                    (Icon::PlayCircle, "Enable logging")
+                    (Icon::PlayCircle, tr!("Enable logging"))
                 };
                 let tint = if logging {
                     theme::text_secondary()
@@ -277,12 +278,12 @@ fn toolbar(ui: &mut Ui, state: &mut LogsState, feed: Option<&Feed>, actions: &mu
 fn levels_menu(button: &egui::Response, state: &mut LogsState) {
     kit::menu_popup(button).show(|ui| {
         kit::menu_scope(ui, 0.0);
-        kit::menu_fit(ui, &["Warning", "Levels"]);
-        kit::menu_heading(ui, "Levels");
+        kit::menu_fit(ui, &[tr!("Warning"), tr!("Levels")]);
+        kit::menu_heading(ui, tr!("Levels"));
         for (level, label) in [
-            (LogLevel::Info, "Info"),
-            (LogLevel::Warning, "Warning"),
-            (LogLevel::Error, "Error"),
+            (LogLevel::Info, tr!("Info")),
+            (LogLevel::Warning, tr!("Warning")),
+            (LogLevel::Error, tr!("Error")),
         ] {
             let mut row = kit::MenuRow::new(label);
             row.checked = state.filter.levels.shows(level);
@@ -352,7 +353,8 @@ fn search_field(ui: &mut Ui, state: &mut LogsState, width: f32) {
     };
     if !state.filter.query.is_empty() {
         let (slot, clear) = slot(ui, 20.0, "clear");
-        let clear = accessibility::label(clear, "Clear search").on_hover_text("Clear search");
+        let clear =
+            accessibility::label(clear, tr!("Clear search")).on_hover_text(tr!("Clear search"));
         if clear.hovered() {
             ui.painter().rect_filled(slot, 10.0, theme::ink(18));
         }
@@ -370,9 +372,19 @@ fn search_field(ui: &mut Ui, state: &mut LogsState, width: f32) {
     if in_use && well.width() >= 200.0 {
         let options = &mut state.filter.options;
         for (label, tip, flag, key) in [
-            (".*", "Use regular expression", &mut options.regex, "regex"),
-            ("ab", "Match whole word", &mut options.whole_word, "word"),
-            ("Aa", "Match case", &mut options.match_case, "case"),
+            (
+                ".*",
+                tr!("Use regular expression"),
+                &mut options.regex,
+                "regex",
+            ),
+            (
+                "ab",
+                tr!("Match whole word"),
+                &mut options.whole_word,
+                "word",
+            ),
+            ("Aa", tr!("Match case"), &mut options.match_case, "case"),
         ] {
             let (slot, response) = slot(ui, 22.0, key);
             let response = accessibility::label(response, tip).on_hover_text(tip);
@@ -405,7 +417,7 @@ fn search_field(ui: &mut Ui, state: &mut LogsState, width: f32) {
     let edit = egui::TextEdit::singleline(&mut state.filter.query)
         .id(id)
         .frame(egui::Frame::NONE)
-        .hint_text("Search")
+        .hint_text(tr!("Search"))
         .font(egui::FontId::proportional(kit::size::BODY))
         .margin(egui::Margin::ZERO)
         .vertical_align(Align::Center)
@@ -413,9 +425,9 @@ fn search_field(ui: &mut Ui, state: &mut LogsState, width: f32) {
     // In a child of its own: `put` would move the toolbar's cursor to the field's end.
     let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(field));
     let response = inner.add(edit);
-    accessibility::label(response, "Search logs");
+    accessibility::label(response, tr!("Search logs"));
     if invalid {
-        hover.on_hover_text("Not a regular expression this search can read.");
+        hover.on_hover_text(tr!("Not a regular expression this search can read."));
     }
     // Escape leaves the field, and keeps what was typed.
     if focused && ui.input(|input| input.key_pressed(egui::Key::Escape)) {
@@ -428,20 +440,22 @@ fn search_field(ui: &mut Ui, state: &mut LogsState, width: f32) {
 /// The range pill's words: what it asks while it waits for the drag, what is kept, or "All bars".
 fn range_label(state: &LogsState) -> String {
     if state.picking {
-        return "Drag on the chart".to_owned();
+        return tr!("Drag on the chart").to_owned();
     }
     let Some(range) = state.filter.range else {
-        return "All bars".to_owned();
+        return tr!("All bars").to_owned();
     };
     let from = time_text::compact_text(range.from_ms);
     if range.from_ms == range.to_ms {
-        return format!("Bar {from}");
+        return tr!("Bar {time}", time = from);
     }
     let to = time_text::compact_text(range.to_ms);
     // "Oct 9, 14:03 – 14:45" when both ends are on one day.
     match (from.split_once(", "), to.split_once(", ")) {
-        (Some((day, _)), Some((other, time))) if day == other => format!("{from} – {time}"),
-        _ => format!("{from} – {to}"),
+        (Some((day, _)), Some((other, time))) if day == other => {
+            tr!("{from} – {to}", from = from, to = time)
+        }
+        _ => tr!("{from} – {to}", from = from, to = to),
     }
 }
 
@@ -484,11 +498,11 @@ fn range_pill(
     let set = state.filter.range.is_some() && !picking;
     let (rect, response) = ui.allocate_exact_size(vec2(width, FIELD_HEIGHT), Sense::click());
     let tooltip = if picking {
-        "Drag across the bars on the chart (Esc cancels)"
+        tr!("Drag across the bars on the chart (Esc cancels)")
     } else if set {
-        "Showing messages written on these bars"
+        tr!("Showing messages written on these bars")
     } else {
-        "Show only messages written on bars you drag over on the chart"
+        tr!("Show only messages written on bars you drag over on the chart")
     };
     let response = accessibility::label(response.on_hover_text(tooltip), tooltip);
     if response.hovered() {
@@ -553,8 +567,8 @@ fn range_pill(
         let cross =
             Rect::from_center_size(pos2(rect.right() - 14.0, rect.center().y), vec2(18.0, 18.0));
         let hit = ui.interact(cross, id.with("clear"), Sense::click());
-        let hit =
-            accessibility::label(hit, "Remove the bar range").on_hover_text("Remove the bar range");
+        let hit = accessibility::label(hit, tr!("Remove the bar range"))
+            .on_hover_text(tr!("Remove the bar range"));
         if hit.hovered() {
             ui.painter()
                 .circle_filled(cross.center(), 8.0, theme::ink(18));
@@ -733,11 +747,11 @@ fn list(
         ui.painter().text(
             pos2(pill.left() + 30.0, pill.center().y),
             egui::Align2::LEFT_CENTER,
-            "Latest",
+            tr!("Latest"),
             FontId::proportional(11.5),
             color,
         );
-        if accessibility::label(response, "Scroll to the latest message").clicked() {
+        if accessibility::label(response, tr!("Scroll to the latest message")).clicked() {
             state.jump_to_latest = true;
             ui.ctx().request_repaint();
         }
@@ -813,10 +827,10 @@ fn row_galley(ui: &Ui, event: &LogEvent, filtered: &FilteredLogs, width: f32) ->
 fn row_buttons(ui: &mut Ui, row: Rect, sequence: u64, actions: &mut Vec<LogsAction>) {
     let size = 22.0;
     for (slot, (icon, tip, action)) in [
-        (Icon::Code, "Source code", LogsAction::Source(sequence)),
+        (Icon::Code, tr!("Source code"), LogsAction::Source(sequence)),
         (
             Icon::ScrollToBar,
-            "Scroll to bar",
+            tr!("Scroll to bar"),
             LogsAction::ScrollToBar(sequence),
         ),
     ]
@@ -857,34 +871,34 @@ fn row_buttons(ui: &mut Ui, row: Rect, sequence: u64, actions: &mut Vec<LogsActi
 }
 
 fn row_menu(ui: &Ui, response: &egui::Response, event: &LogEvent, actions: &mut Vec<LogsAction>) {
-    const ROWS: [(&str, Option<&str>); 5] = [
-        ("Source code", None),
-        ("Scroll to bar", None),
-        ("Copy message", None),
-        ("Copy with time", None),
-        ("Clear logs", None),
+    let rows: [(&str, Option<&str>); 5] = [
+        (tr!("Source code"), None),
+        (tr!("Scroll to bar"), None),
+        (tr!("Copy message"), None),
+        (tr!("Copy with time"), None),
+        (tr!("Clear logs"), None),
     ];
-    kit::fitted_context_menu(ui, response, &ROWS, |ui| {
-        if kit::menu_item(ui, Icon::Code, "Source code", true, false) {
+    kit::fitted_context_menu(ui, response, &rows, |ui| {
+        if kit::menu_item(ui, Icon::Code, tr!("Source code"), true, false) {
             actions.push(LogsAction::Source(event.sequence));
             ui.close();
         }
-        if kit::menu_item(ui, Icon::ScrollToBar, "Scroll to bar", true, false) {
+        if kit::menu_item(ui, Icon::ScrollToBar, tr!("Scroll to bar"), true, false) {
             actions.push(LogsAction::ScrollToBar(event.sequence));
             ui.close();
         }
         kit::menu_separator(ui);
-        if kit::menu_item(ui, Icon::CopyDoc, "Copy message", true, false) {
+        if kit::menu_item(ui, Icon::CopyDoc, tr!("Copy message"), true, false) {
             ui.ctx().copy_text(event.message.clone());
             ui.close();
         }
-        if kit::menu_item(ui, Icon::CopyDoc, "Copy with time", true, false) {
+        if kit::menu_item(ui, Icon::CopyDoc, tr!("Copy with time"), true, false) {
             ui.ctx()
                 .copy_text(format!("{} {}", iso_utc(event.time_ms), event.message));
             ui.close();
         }
         kit::menu_separator(ui);
-        if kit::menu_item(ui, Icon::Trash, "Clear logs", true, true) {
+        if kit::menu_item(ui, Icon::Trash, tr!("Clear logs"), true, true) {
             actions.push(LogsAction::Clear);
             ui.close();
         }
@@ -895,20 +909,23 @@ fn row_menu(ui: &Ui, response: &egui::Response, event: &LogEvent, actions: &mut 
 
 fn no_script(ui: &mut Ui) {
     centered(ui, |ui| {
-        heading(ui, "No scripts on this chart");
+        heading(ui, tr!("No scripts on this chart"));
         detail(
             ui,
-            "Add a Pine script that calls the log functions and its messages appear here.",
+            tr!("Add a Pine script that calls the log functions and its messages appear here."),
         );
     });
 }
 
 fn no_results(ui: &mut Ui, state: &mut LogsState) {
     centered(ui, |ui| {
-        heading(ui, "No matching messages");
-        detail(ui, "No message passes the level, date and search filters.");
+        heading(ui, tr!("No matching messages"));
+        detail(
+            ui,
+            tr!("No message passes the level, date and search filters."),
+        );
         ui.add_space(10.0);
-        if kit::push_button(ui, None, "Clear filters", true).clicked() {
+        if kit::push_button(ui, None, tr!("Clear filters"), true).clicked() {
             state.clear_filters();
         }
     });
@@ -916,13 +933,13 @@ fn no_results(ui: &mut Ui, state: &mut LogsState) {
 
 fn logging_off(ui: &mut Ui, script: u64, actions: &mut Vec<LogsAction>) {
     centered(ui, |ui| {
-        heading(ui, "Logging is disabled");
+        heading(ui, tr!("Logging is disabled"));
         detail(
             ui,
-            "Messages the script writes in realtime are not kept while logging is off.",
+            tr!("Messages the script writes in realtime are not kept while logging is off."),
         );
         ui.add_space(10.0);
-        if kit::push_button(ui, Some(Icon::PlayCircle), "Enable logging", true).clicked() {
+        if kit::push_button(ui, Some(Icon::PlayCircle), tr!("Enable logging"), true).clicked() {
             actions.push(LogsAction::SetLogging(script, true));
         }
     });
@@ -932,18 +949,28 @@ fn onboarding(ui: &mut Ui) {
     centered(ui, |ui| {
         intro(
             ui,
-            "How to work with logs",
-            "See what your script does, bar by bar.",
+            tr!("How to work with logs"),
+            tr!("See what your script does, bar by bar."),
             |ui| {
                 step(ui, 1, |ui| {
-                    ui.label(muted("Add the indicator to the chart."));
+                    ui.label(muted(tr!("Add the indicator to the chart.")));
                 });
                 step(ui, 2, |ui| {
-                    ui.label(muted("Use the "));
+                    // The link sits inside the sentence: the words around it come from one
+                    // message, the linked ones between angle brackets.
+                    let sentence = tr!("Use the <log functions>.");
+                    let (before, linked, after) = sentence
+                        .split_once('<')
+                        .and_then(|(before, rest)| {
+                            let (linked, after) = rest.split_once('>')?;
+                            Some((before, linked, after))
+                        })
+                        .unwrap_or(("", sentence, ""));
+                    ui.label(muted(before));
                     let link = ui.add(
                         egui::Label::new(
                             kit::text(
-                                "log functions",
+                                linked,
                                 kit::size::SUBHEADLINE,
                                 kit::MEDIUM,
                                 theme::text_secondary(),
@@ -958,10 +985,10 @@ fn onboarding(ui: &mut Ui) {
                     {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(DOCS_URL));
                     }
-                    ui.label(muted("."));
+                    ui.label(muted(after));
                 });
                 step(ui, 3, |ui| {
-                    ui.label(muted("Enable logging."));
+                    ui.label(muted(tr!("Enable logging.")));
                 });
             },
             example,

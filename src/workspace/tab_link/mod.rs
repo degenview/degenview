@@ -8,6 +8,7 @@
 
 use super::ChartWorkspace;
 use crate::host::tab::link::TabLinkHost;
+use crate::i18n::tr;
 use crate::model::InstrumentId;
 use crate::model::chart::sync::{ChartSyncSettings, SyncHub};
 use crate::model::tab::link::{LinkKind, LinkOutbox, LinkSignal, Member};
@@ -246,9 +247,10 @@ impl ChartWorkspace {
             // Not announced: this is putting back what the tab had, not a choice of the user's.
             self.switch_chart_outside_undo(chart_id, &previous, ctx);
             self.say(
-                format!(
-                    "Couldn\u{2019}t load {}. This tab kept {}.",
-                    market.symbol, previous.name
+                tr!(
+                    "Couldn\u{2019}t load {symbol}. This tab kept {previous}.",
+                    symbol = market.symbol,
+                    previous = previous.name
                 ),
                 true,
             );

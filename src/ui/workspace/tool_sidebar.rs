@@ -1,6 +1,7 @@
 //! The vertical tool strip down the left edge of a chart window (Swift `ToolSidebar`): the
 //! drawing tools at the top; Paper Trading and the alerts bell at the bottom.
 
+use crate::i18n::tr;
 use crate::model::{ChartSyncSettings, MagnetMode, Tool, ToolGroup};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, shortcut, theme};
@@ -189,26 +190,28 @@ impl Menu {
 
     fn corner_label(self) -> &'static str {
         match self {
-            Self::Lines => "More lines, channels and pitchforks",
-            Self::Fib => "More Fibonacci and Gann tools",
-            Self::Patterns => "More chart patterns, Elliott waves and cycles",
-            Self::Forecast => "More forecasting, volume and measurement tools",
-            Self::Shapes => "More brushes, arrows and shapes",
-            Self::Notes => "More text and notes",
+            Self::Lines => tr!("More lines, channels and pitchforks"),
+            Self::Fib => tr!("More Fibonacci and Gann tools"),
+            Self::Patterns => tr!("More chart patterns, Elliott waves and cycles"),
+            Self::Forecast => tr!("More forecasting, volume and measurement tools"),
+            Self::Shapes => tr!("More brushes, arrows and shapes"),
+            Self::Notes => tr!("More text and notes"),
         }
     }
 }
 
-const SLOTS: [Slot; 8] = [
-    Slot::Tool(Tool::Cursor, Icon::Plus, "Crosshair"),
-    Slot::Menu(Menu::Lines),
-    Slot::Menu(Menu::Fib),
-    Slot::Menu(Menu::Patterns),
-    Slot::Menu(Menu::Forecast),
-    Slot::Menu(Menu::Shapes),
-    Slot::Menu(Menu::Notes),
-    Slot::Tool(Tool::Ruler, Icon::Ruler, "Ruler"),
-];
+fn slots() -> [Slot; 8] {
+    [
+        Slot::Tool(Tool::Cursor, Icon::Plus, tr!("Crosshair")),
+        Slot::Menu(Menu::Lines),
+        Slot::Menu(Menu::Fib),
+        Slot::Menu(Menu::Patterns),
+        Slot::Menu(Menu::Forecast),
+        Slot::Menu(Menu::Shapes),
+        Slot::Menu(Menu::Notes),
+        Slot::Tool(Tool::Ruler, Icon::Ruler, tr!("Ruler")),
+    ]
+}
 
 /// The height of one row of a menu.
 const ROW_HEIGHT: f32 = 30.0;
@@ -315,7 +318,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
 
     let x = strip.center().x - BUTTON / 2.0;
     let mut y = strip.top() + 10.0;
-    for slot in SLOTS {
+    for slot in slots() {
         let rect = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
         match slot {
             Slot::Tool(tool, icon, label) => {
@@ -370,14 +373,20 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         Active::Off
     };
     if rect.bottom() <= limit
-        && tile_button(ui, rect, &zoom(Icon::ZoomIn, "Zoom in", lit), strip.right()).clicked()
+        && tile_button(
+            ui,
+            rect,
+            &zoom(Icon::ZoomIn, tr!("Zoom in"), lit),
+            strip.right(),
+        )
+        .clicked()
     {
         actions.push(ToolSidebarAction::ToggleZoomIn);
     }
     y += BUTTON + SPACING;
     if input.can_zoom_out && y + BUTTON <= limit {
         let rect = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
-        let tile = zoom(Icon::ZoomOut, "Zoom out", Active::Off);
+        let tile = zoom(Icon::ZoomOut, tr!("Zoom out"), Active::Off);
         if tile_button(ui, rect, &tile, strip.right()).clicked() {
             actions.push(ToolSidebarAction::ZoomOut);
         }
@@ -414,7 +423,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         (
             toggle(
                 Icon::Magnet,
-                "Magnet",
+                tr!("Magnet"),
                 input.magnet.label(),
                 "magnet",
                 input.magnet != MagnetMode::Off,
@@ -430,11 +439,11 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         (
             toggle(
                 Icon::KeepDrawing,
-                "Keep drawing",
+                tr!("Keep drawing"),
                 if input.keep_drawing {
-                    "Keep drawing: on (stay on the tool)"
+                    tr!("Keep drawing: on (stay on the tool)")
                 } else {
-                    "Keep drawing: off (back to the crosshair)"
+                    tr!("Keep drawing: off (back to the crosshair)")
                 },
                 "keep",
                 input.keep_drawing,
@@ -450,11 +459,11 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
                 } else {
                     Icon::LockOpen
                 },
-                "Lock all drawings",
+                tr!("Lock all drawings"),
                 if input.all_locked {
-                    "Unlock all drawings"
+                    tr!("Unlock all drawings")
                 } else {
-                    "Lock all drawings"
+                    tr!("Lock all drawings")
                 },
                 "lock",
                 input.all_locked,
@@ -470,11 +479,11 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
                 } else {
                     Icon::Eye
                 },
-                "Hide all drawings",
+                tr!("Hide all drawings"),
                 if input.hide_all {
-                    "Show all drawings"
+                    tr!("Show all drawings")
                 } else {
-                    "Hide all drawings"
+                    tr!("Hide all drawings")
                 },
                 "hide",
                 input.hide_all,
@@ -515,9 +524,12 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
     let mut y = strip.bottom() - 10.0 - BUTTON;
     let bell = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
     let bell_label = if input.unseen_alerts > 0 {
-        format!("View Price Alerts, {} new", input.unseen_alerts)
+        tr!(
+            "View Price Alerts, {count} new",
+            count = input.unseen_alerts
+        )
     } else {
-        "View Price Alerts".to_owned()
+        tr!("View Price Alerts").to_owned()
     };
     if tile_button(
         ui,
@@ -525,7 +537,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         &Tile {
             icon: Icon::Bell,
             label: &bell_label,
-            tooltip: "View Price Alerts",
+            tooltip: tr!("View Price Alerts"),
             active: Active::Off,
             tint: None,
             enabled: true,
@@ -557,14 +569,14 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         &Tile {
             icon: Icon::ArrowLeftRight,
             label: if input.paper_open {
-                "Hide Paper Trading panel"
+                tr!("Hide Paper Trading panel")
             } else {
-                "Show Paper Trading panel"
+                tr!("Show Paper Trading panel")
             },
             tooltip: if input.paper_open {
-                "Hide Paper Trading"
+                tr!("Hide Paper Trading")
             } else {
-                "Paper Trading"
+                tr!("Paper Trading")
             },
             active: if input.paper_open {
                 Active::Tinted

@@ -300,6 +300,65 @@ fn reopening_a_dialog_asks_for_the_focus_again() {
     assert!(rig.focused("dismiss"), "it starts on Cancel again");
 }
 
+/// A dialog in the pseudo-locale: the longer title, message and buttons still fit and wrap inside
+/// it, and its own words (Cancel, Close) went through `tr!`.
+#[test]
+fn a_dialog_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, tr, with_locale};
+    use crate::ui::kit::painted;
+    use crate::ui::render_tests::{Screen, gallery_dir};
+    let _restore = theme::RestoreDefaultTheme;
+    let themes: &[(&str, theme::AppTheme)] = if gallery_dir().is_some() {
+        &[
+            ("dark", theme::AppTheme::Dark),
+            ("light", theme::AppTheme::Light),
+        ]
+    } else {
+        &[("dark", theme::AppTheme::Dark)]
+    };
+    with_locale(Locale::Pseudo, || {
+        let dialog = Dialog {
+            destructive: true,
+            ..Dialog::new(
+                Icon::Trash,
+                kit::RED,
+                tr!("Remove all indicators?"),
+                tr!("The chart leaves this tab. You can add it again from the symbol search."),
+                tr!("Remove All"),
+            )
+        };
+        for (name, app_theme) in themes {
+            let mut screen = Screen::new(vec2(560.0, 300.0));
+            theme::apply(&screen.ctx, *app_theme);
+            let mut last = None;
+            for _ in 0..5 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    show(ui.ctx(), Id::new(ID), &dialog, |_| {});
+                }));
+            }
+            let frame = last.expect("ran");
+            let texts = painted::texts(&frame);
+            for word in [
+                tr!("Cancel"),
+                tr!("Remove All"),
+                tr!("Remove all indicators?"),
+            ] {
+                assert!(
+                    texts.iter().any(|text| text == word),
+                    "{name}: no {word:?} in {texts:?}"
+                );
+            }
+            assert_eq!(
+                painted::untranslated(&texts, &[]),
+                Vec::<&str>::new(),
+                "{name}: text that did not go through tr!"
+            );
+            screen.save(&format!("dialog-pseudo-{name}"), frame);
+            theme::apply(&screen.ctx, theme::AppTheme::Dark);
+        }
+    });
+}
+
 /// Pictures of the dialogs: destructive short and long, an action that asks a question, a notice,
 /// a disabled action and the three-button save prompt, in both themes.
 #[test]

@@ -6,6 +6,7 @@
 //! it should draw, then acts on what the card reports. Nothing here places or changes an order: it
 //! opens the ticket, the edit sheet or the cancel question, each of which shows what will be sent.
 
+use crate::i18n::tr;
 use std::sync::Arc;
 
 use degenview_brokers::{Decimal, MarketRef, Side};
@@ -82,7 +83,7 @@ impl ChartWorkspace {
         let review_closed = replay && self.trade.sheet.close_review();
         if (replay && self.trade.broker_panel.close_order_entry()) || review_closed {
             self.say(
-                "A replay started, so the live order was closed unsent.",
+                tr!("A replay started, so the live order was closed unsent."),
                 true,
             );
         }
@@ -181,7 +182,7 @@ impl ChartWorkspace {
         request: LiveOrderRequest,
     ) {
         let Some((backend, prefs)) = self.active_broker() else {
-            self.say("Choose a broker in the trading panel first.", true);
+            self.say(tr!("Choose a broker in the trading panel first."), true);
             return;
         };
         let market = Self::broker_market(&self.charts[chart_index]);
@@ -243,7 +244,7 @@ impl ChartWorkspace {
             .broker_panel
             .begin_edit(backend.broker_commands(), order, price)
         {
-            self.say("That order is no longer working.", true);
+            self.say(tr!("That order is no longer working."), true);
         }
     }
 

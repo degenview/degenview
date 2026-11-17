@@ -9,6 +9,7 @@ mod tiles;
 
 pub use tabs::Tab;
 
+use crate::i18n::tr;
 use crate::model::market::trend::Trend;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, InstrumentId, Timeframe};
@@ -136,7 +137,7 @@ fn centred<R>(ui: &mut Ui, width: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
 fn hero(ui: &mut Ui, has_history: bool) {
     centred_line(
         ui,
-        "Start a new chart",
+        tr!("Start a new chart"),
         size::TITLE2 + 11.0,
         SEMIBOLD,
         theme::text_primary(),
@@ -145,9 +146,9 @@ fn hero(ui: &mut Ui, has_history: bool) {
     centred_line(
         ui,
         if has_history {
-            "Search a market, or pick up where you left off."
+            tr!("Search a market, or pick up where you left off.")
         } else {
-            "Search crypto, stocks and prediction markets."
+            tr!("Search crypto, stocks and prediction markets.")
         },
         size::BODY + 2.0,
         REGULAR,
@@ -170,8 +171,8 @@ fn centred_line(ui: &mut Ui, text: &str, font: f32, weight: f32, color: Color32)
 fn launcher(ui: &mut Ui) -> egui::Response {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), LAUNCHER_HEIGHT), Sense::click());
-    let response = crate::ui::accessibility::label(response, "Search markets")
-        .on_hover_text("Search markets")
+    let response = crate::ui::accessibility::label(response, tr!("Search markets"))
+        .on_hover_text(tr!("Search markets"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
     tiles::surface(ui, rect, rect.height() / 2.0, hovered);
@@ -204,7 +205,7 @@ fn launcher(ui: &mut Ui) -> egui::Response {
     );
     let prompt = kit::galley(
         ui,
-        "Search crypto, stocks, prediction markets…",
+        tr!("Search crypto, stocks, prediction markets…"),
         size::BODY + 2.0,
         REGULAR,
         theme::text_secondary(),

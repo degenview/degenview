@@ -24,6 +24,8 @@ pub mod loading;
 pub mod markdown_view;
 mod menu;
 mod page;
+#[cfg(test)]
+pub(crate) mod painted;
 mod palette;
 mod pill;
 pub mod popover;

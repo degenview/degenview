@@ -10,6 +10,7 @@
 //! workspace acts. Which pills are open is the card's (`ChartCard::alert_open`), so a snapshot
 //! shows what the chart shows.
 
+use crate::i18n::tr;
 use crate::model::PriceFormat;
 use crate::model::alert::AlertId;
 use crate::model::alert::line::{AlertLine, above_after_drag, dropped_level};
@@ -111,9 +112,17 @@ fn caption(line: &AlertLine, format: PriceFormat) -> String {
         (true, false) => "↓",
     };
     if line.paused {
-        format!("Alert {direction} {price} · paused")
+        tr!(
+            "Alert {direction} {price} · paused",
+            direction = direction,
+            price = price
+        )
     } else {
-        format!("Alert {direction} {price}")
+        tr!(
+            "Alert {direction} {price}",
+            direction = direction,
+            price = price
+        )
     }
 }
 
@@ -453,14 +462,11 @@ pub(in crate::ui) fn show(
         let caption = caption(line, format);
         let handle = accessibility::label(
             ui.interact(placed.handle, id.with("handle"), sense),
-            format!(
-                "{} details, {caption}",
-                if placed.pill.is_some() {
-                    "Hide"
-                } else {
-                    "Show"
-                }
-            ),
+            if placed.pill.is_some() {
+                tr!("Hide details, {caption}", caption = caption)
+            } else {
+                tr!("Show details, {caption}", caption = caption)
+            },
         );
         let body = placed
             .pill
@@ -469,7 +475,7 @@ pub(in crate::ui) fn show(
         let bin = placed.pill.as_ref().map(|pill| {
             accessibility::label(
                 ui.interact(pill.bin, id.with("bin"), Sense::click()),
-                format!("Delete alert at {}", format.format(line.price)),
+                tr!("Delete alert at {price}", price = format.format(line.price)),
             )
         });
 
@@ -482,11 +488,17 @@ pub(in crate::ui) fn show(
 
         let tips = if line.editable {
             (
-                "Drag to change the price · right-click for options",
-                " · drag to change the price",
+                tr!("Drag to change the price · right-click for options"),
+                (
+                    tr!("Hide details · drag to change the price"),
+                    tr!("Show details · drag to change the price"),
+                ),
             )
         } else {
-            ("Right-click for options", "")
+            (
+                tr!("Right-click for options"),
+                (tr!("Hide details"), tr!("Show details")),
+            )
         };
         let mut handle = handle;
         let mut body = body;
@@ -498,15 +510,11 @@ pub(in crate::ui) fn show(
             ui.ctx().set_cursor_icon(CursorIcon::ResizeVertical);
         }
         if !handle.dragged() {
-            handle = handle.on_hover_text(format!(
-                "{}{}",
-                if placed.pill.is_some() {
-                    "Hide details"
-                } else {
-                    "Show details"
-                },
-                tips.1
-            ));
+            handle = handle.on_hover_text(if placed.pill.is_some() {
+                tips.1.0
+            } else {
+                tips.1.1
+            });
         }
         if let Some(response) = body.take() {
             body = Some(if response.dragged() {
@@ -515,7 +523,7 @@ pub(in crate::ui) fn show(
                 response.on_hover_text(tips.0)
             });
         }
-        let bin = bin.map(|response| response.on_hover_text("Delete alert"));
+        let bin = bin.map(|response| response.on_hover_text(tr!("Delete alert")));
 
         if line.editable {
             follow_drag(ui, &handle, id, line, scale, plot, market, &mut shown, now);
