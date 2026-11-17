@@ -18,7 +18,7 @@ impl InstrumentId {
     }
 
     /// Stable identity for equality, flags, list membership, quote lookup and sync merging:
-    /// the market, however it was spelled. Binance and Coinbase spellings that the provider
+    /// the market, however it was spelled. Binance, Coinbase and OKX spellings that the provider
     /// takes as one market (`BTC`, `btcusdt`, `BTC/USDT`; `ETH`, `ETH/USD`, `eth-usd`) share a
     /// key, because it is built from `api_symbol`. Otherwise case-insensitive where the
     /// provider is: DEX addresses and prediction-market ids are case-sensitive.
@@ -31,7 +31,7 @@ impl InstrumentId {
     }
 
     /// The id the provider's API takes. A bare Binance asset (`BTC`) is quoted in
-    /// USDT, and Coinbase ids are `BASE-QUOTE`.
+    /// USDT, Coinbase ids are `BASE-QUOTE` (a bare asset is quoted in USD) and so are OKX's (in USDT).
     pub fn api_symbol(&self) -> String {
         match self.source {
             DataSource::Binance => {
@@ -45,10 +45,12 @@ impl InstrumentId {
                     format!("{upper}USDT")
                 }
             }
-            DataSource::Coinbase => {
+            DataSource::Coinbase | DataSource::Okx => {
                 let id = self.symbol.to_uppercase().replace('/', "-");
                 if id.contains('-') {
                     id
+                } else if self.source == DataSource::Okx {
+                    format!("{id}-USDT")
                 } else {
                     format!("{id}-USD")
                 }
@@ -74,7 +76,9 @@ impl InstrumentId {
 
     fn normalized(symbol: &str, source: DataSource) -> String {
         match source {
-            DataSource::Binance | DataSource::Coinbase => Self::new(source, symbol).api_symbol(),
+            DataSource::Binance | DataSource::Coinbase | DataSource::Okx => {
+                Self::new(source, symbol).api_symbol()
+            }
             DataSource::Alpaca => symbol.to_uppercase(),
             DataSource::CoinGecko => symbol.to_lowercase(),
             _ => symbol.to_owned(),
@@ -114,6 +118,9 @@ mod tests {
                 "COINBASE:ETH-USD",
                 "{symbol}"
             );
+        }
+        for symbol in ["BTC", "btc-usdt", "BTC/USDT", "BTC-USDT"] {
+            assert_eq!(key(DataSource::Okx, symbol), "OKX:BTC-USDT", "{symbol}");
         }
         // A different quote is a different market.
         assert_ne!(

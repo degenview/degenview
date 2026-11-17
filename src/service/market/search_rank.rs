@@ -95,13 +95,14 @@ impl Key {
     }
 }
 
-/// An exchange's main dollar quote first (USDT on Binance, USD on Coinbase), then the other dollar
+/// An exchange's main dollar quote first (USDT on Binance and OKX, USD on Coinbase), then the other dollar
 /// quotes in their own order; a hit with no quote (a coin, a share) after the exchange pairs;
 /// other quotes last.
 fn quote_order(result: &SearchResult) -> usize {
     let home = match result.source {
         DataSource::Binance => Some("USDT"),
         DataSource::Coinbase => Some("USD"),
+        DataSource::Okx => Some("USDT"),
         _ => None,
     };
     match result.quote.as_deref() {

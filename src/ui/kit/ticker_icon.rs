@@ -16,7 +16,7 @@ pub fn ticker_icon(ui: &Ui, rect: Rect, symbol: &str, source: DataSource) {
     }
     let base = source.base_asset(symbol);
     let lookup = match source {
-        DataSource::Binance | DataSource::Coinbase | DataSource::CoinGecko => {
+        DataSource::Binance | DataSource::Coinbase | DataSource::Okx | DataSource::CoinGecko => {
             Some((DataSource::Binance, format!("{base}USDT")))
         }
         DataSource::Alpaca => Some((DataSource::Alpaca, base.clone())),

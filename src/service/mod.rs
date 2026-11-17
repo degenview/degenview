@@ -179,6 +179,7 @@ pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
     match source {
         DataSource::Binance => &market::binance::BINANCE,
         DataSource::Coinbase => &market::coinbase::COINBASE,
+        DataSource::Okx => &market::okx::OKX,
         DataSource::CoinGecko => &market::coingecko::COINGECKO,
         DataSource::DexScreener => &market::dexscreener::DEXSCREENER,
         DataSource::Alpaca => &market::alpaca::ALPACA,

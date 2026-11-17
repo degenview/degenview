@@ -25,9 +25,10 @@ const RELATED_LIMIT: usize = 6;
 
 /// The markets the picker lists, in the order the providers are asked (and so the order exchanges
 /// that list the same market appear in).
-pub const PROVIDERS: [DataSource; 5] = [
+pub const PROVIDERS: [DataSource; 6] = [
     DataSource::Binance,
     DataSource::Coinbase,
+    DataSource::Okx,
     DataSource::DexScreener,
     DataSource::CoinGecko,
     DataSource::Alpaca,
@@ -154,7 +155,7 @@ pub fn market_kind(source: DataSource) -> &'static str {
 /// How a market trades, for the "also trades as" column.
 pub fn trading_kind(source: DataSource) -> &'static str {
     match source {
-        DataSource::Binance | DataSource::Coinbase => "Spot",
+        DataSource::Binance | DataSource::Coinbase | DataSource::Okx => "Spot",
         DataSource::DexScreener => "DEX",
         DataSource::CoinGecko => "Aggregate",
         DataSource::Alpaca => "Stock",
@@ -369,19 +370,20 @@ fn same(a: &SearchResult, b: &SearchResult) -> bool {
 
 /// Every dollar market of `asset` on the exchanges whose lists are held locally.
 fn related_markets(asset: &str) -> Vec<SearchResult> {
-    let groups: Vec<Vec<SearchResult>> = [DataSource::Binance, DataSource::Coinbase]
-        .into_iter()
-        .map(|source| {
-            service::search(source, asset)
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|hit| {
-                    hit.base_asset().eq_ignore_ascii_case(asset)
-                        && hit.quote.as_deref().is_some_and(is_dollar_quote)
-                })
-                .collect()
-        })
-        .collect();
+    let groups: Vec<Vec<SearchResult>> =
+        [DataSource::Binance, DataSource::Coinbase, DataSource::Okx]
+            .into_iter()
+            .map(|source| {
+                service::search(source, asset)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|hit| {
+                        hit.base_asset().eq_ignore_ascii_case(asset)
+                            && hit.quote.as_deref().is_some_and(is_dollar_quote)
+                    })
+                    .collect()
+            })
+            .collect();
     search_rank::merge_ranked(groups, asset)
         .into_iter()
         .take(RELATED_LIMIT + 1)
@@ -470,6 +472,7 @@ mod tests {
         }
         for source in [
             DataSource::Coinbase,
+            DataSource::Okx,
             DataSource::DexScreener,
             DataSource::CoinGecko,
         ] {

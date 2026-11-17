@@ -11,6 +11,7 @@ pub mod fx_rates;
 pub(in crate::service) mod geckoterminal;
 pub(in crate::service) mod kalshi;
 pub mod live;
+pub(in crate::service) mod okx;
 pub(in crate::service) mod polymarket;
 pub mod search_rank;
 pub mod trend;

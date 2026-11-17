@@ -131,6 +131,7 @@ pub fn required_permission(tool: &str) -> Option<Permission> {
 pub enum McpSource {
     Binance,
     Coinbase,
+    Okx,
     Coingecko,
     Dexscreener,
     Alpaca,
@@ -141,6 +142,7 @@ impl McpSource {
         match self {
             Self::Binance => DataSource::Binance,
             Self::Coinbase => DataSource::Coinbase,
+            Self::Okx => DataSource::Okx,
             Self::Coingecko => DataSource::CoinGecko,
             Self::Dexscreener => DataSource::DexScreener,
             Self::Alpaca => DataSource::Alpaca,

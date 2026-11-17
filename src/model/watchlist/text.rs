@@ -31,9 +31,10 @@ const US_EXCHANGES: [&str; 7] = [
     "NYSEAMERICAN",
 ];
 
-const SOURCES: [DataSource; 8] = [
+const SOURCES: [DataSource; 9] = [
     DataSource::Binance,
     DataSource::Coinbase,
+    DataSource::Okx,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -287,7 +288,7 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
             }
             Ok(item(source, &symbol, &symbol, &symbol))
         }
-        DataSource::Coinbase => {
+        DataSource::Coinbase | DataSource::Okx => {
             let symbol = rest.to_uppercase();
             let valid = symbol.split_once('-').is_some_and(|(base, quote)| {
                 [base, quote]
@@ -295,7 +296,11 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
                     .all(|part| !part.is_empty() && part.chars().all(is_upper_alphanumeric))
             });
             if !valid {
-                return Err("Coinbase products are written BASE-QUOTE, like BTC-USD".to_owned());
+                return Err(match source {
+                    DataSource::Okx => "OKX spot markets are written BASE-QUOTE, like BTC-USDT",
+                    _ => "Coinbase products are written BASE-QUOTE, like BTC-USD",
+                }
+                .to_owned());
             }
             Ok(item(source, &symbol, &symbol.replace('-', "/"), &symbol))
         }
@@ -547,6 +552,26 @@ mod tests {
                 (8, "Not a US stock ticker"),
                 (9, "Missing symbol"),
             ]
+        );
+    }
+
+    #[test]
+    fn okx_rows_are_spot_pairs_written_base_dash_quote() {
+        let parsed = parse("OKX:btc-usdt\nOKX:BTCUSDT\nOKX:BTC-USDT-SWAP");
+        assert_eq!(parsed.rows.len(), 1);
+        let Row::Instrument(item) = &parsed.rows[0] else {
+            panic!("an instrument");
+        };
+        assert_eq!(item.instrument.key(), "OKX:BTC-USDT");
+        assert_eq!(item.name, "BTC/USDT");
+        let reasons: Vec<&str> = parsed
+            .skipped
+            .iter()
+            .map(|skipped| skipped.reason.as_str())
+            .collect();
+        assert_eq!(
+            reasons,
+            ["OKX spot markets are written BASE-QUOTE, like BTC-USDT"; 2]
         );
     }
 

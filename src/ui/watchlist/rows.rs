@@ -58,7 +58,9 @@ pub fn icon_base_symbol(item: &WatchlistInstrument) -> String {
                 .unwrap_or(&upper)
                 .to_owned()
         }
-        DataSource::Coinbase => symbol.split('-').next().unwrap_or(symbol).to_uppercase(),
+        DataSource::Coinbase | DataSource::Okx => {
+            symbol.split('-').next().unwrap_or(symbol).to_uppercase()
+        }
         DataSource::CoinGecko | DataSource::DexScreener => item
             .label
             .split('/')

@@ -81,6 +81,7 @@ pub fn source_id(source: DataSource) -> &'static str {
     match source {
         DataSource::Binance => "binance",
         DataSource::Coinbase => "coinbase",
+        DataSource::Okx => "okx",
         DataSource::CoinGecko => "coingecko",
         DataSource::DexScreener => "dexscreener",
         DataSource::Alpaca => "alpaca",

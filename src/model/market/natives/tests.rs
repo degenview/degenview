@@ -11,9 +11,10 @@ const TABLE: [&str; 24] = [
     "3D", "5D", "1W", "2W", "1M", "2M", "3M", "6M", "1Y",
 ];
 
-const CANDLE_SOURCES: [DataSource; 4] = [
+const CANDLE_SOURCES: [DataSource; 5] = [
     DataSource::Binance,
     DataSource::Coinbase,
+    DataSource::Okx,
     DataSource::Alpaca,
     DataSource::DexScreener,
 ];
@@ -33,6 +34,25 @@ fn every_native_is_its_own_base_and_lists_are_shortest_first() {
                 "{source:?} {native}"
             );
         }
+    }
+}
+
+#[test]
+fn okx_folds_what_it_cuts_off_the_utc_grid_and_the_year() {
+    let base = |text: &str| {
+        DataSource::Okx
+            .plan(tf(text))
+            .map(|plan| plan.base().label())
+    };
+    // Its own 2D and 3D are counted from days that are not ours, so days are folded.
+    assert_eq!(base("2D").as_deref(), Some("1D"));
+    assert_eq!(base("3D").as_deref(), Some("1D"));
+    // It has no 8-hour bar, and no year.
+    assert_eq!(base("8h").as_deref(), Some("4h"));
+    assert_eq!(base("1Y").as_deref(), Some("3M"));
+    assert_eq!(base("22m").as_deref(), Some("1m"));
+    for text in TABLE {
+        assert!(DataSource::Okx.serves(tf(text)), "{text}");
     }
 }
 
@@ -163,6 +183,7 @@ fn exchanges_page_back_at_any_length() {
     for source in [
         DataSource::Binance,
         DataSource::Coinbase,
+        DataSource::Okx,
         DataSource::Alpaca,
     ] {
         for text in TABLE {

@@ -46,6 +46,28 @@ const BINANCE: [Timeframe; 14] = [
     Timeframe::MONTH_1,
 ];
 
+/// OKX's candle bars. Its plain `6H`, `12H`, `1D`, `1W`, `1M` and `3M` are cut at UTC+8
+/// midnight, so the `utc` bars are the ones used: they are cut as everything else is. Left out:
+/// `8H` (OKX has no such bar), `2D` and `3D` (counted from a day that is not a multiple of the
+/// length since 1970-01-01, as Binance's `3d` is: they fold from days) and the year (it folds from
+/// the quarter).
+const OKX: [Timeframe; 14] = [
+    minutes(1),
+    minutes(3),
+    minutes(5),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(2),
+    hours(4),
+    hours(6),
+    hours(12),
+    Timeframe::DAY_1,
+    Timeframe::WEEK_1,
+    Timeframe::MONTH_1,
+    Timeframe::MONTH_3,
+];
+
 /// Coinbase's granularities: 60, 300, 900, 3600, 21600 and 86400 seconds.
 const COINBASE: [Timeframe; 6] = [
     minutes(1),
@@ -95,6 +117,7 @@ impl DataSource {
         match self {
             Self::Binance => &BINANCE,
             Self::Coinbase => &COINBASE,
+            Self::Okx => &OKX,
             Self::Alpaca => &ALPACA,
             Self::DexScreener => &GECKOTERMINAL,
             Self::CoinGecko | Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => &[],
@@ -111,7 +134,7 @@ impl DataSource {
     /// samples are fine enough, or the source draws a line that follows any timeframe.
     pub fn serves(self, timeframe: Timeframe) -> bool {
         match self {
-            Self::Binance | Self::Coinbase | Self::Alpaca | Self::DexScreener => {
+            Self::Binance | Self::Coinbase | Self::Okx | Self::Alpaca | Self::DexScreener => {
                 self.plan(timeframe).is_some()
             }
             Self::CoinGecko => samples::chart_days(timeframe, 1).is_some(),
@@ -124,7 +147,7 @@ impl DataSource {
     /// 180 days: a page of its base candles that already spans that has no older one.
     pub fn supports_older_history(self, timeframe: Timeframe) -> bool {
         match self {
-            Self::Binance | Self::Coinbase | Self::Alpaca => true,
+            Self::Binance | Self::Coinbase | Self::Okx | Self::Alpaca => true,
             Self::DexScreener => self.plan(timeframe).is_some_and(|plan| {
                 let page_days = plan.base().nominal_ms() * GECKOTERMINAL_PAGE as i64 / 86_400_000;
                 page_days < GECKOTERMINAL_HISTORY_DAYS

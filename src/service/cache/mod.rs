@@ -33,13 +33,14 @@ pub struct Policy {
 
 /// The series worth holding, and for how long they are served as they are. Binance answers a
 /// length of its own in one cheap request and has a live feed; folded from a finer one, a series
-/// can take a dozen requests, so it is held and refreshed by its tail like the other folds. The
+/// can take a dozen requests, so it is held and refreshed by its tail like the other folds. OKX
+/// answers 300 candles a request, so even a chart of its own length takes two. The
 /// line charts are small.
 pub fn policy(source: DataSource, timeframe: Timeframe) -> Option<Policy> {
     let fresh = match source {
         DataSource::CoinGecko => 120,
         DataSource::DexScreener => 30,
-        DataSource::Coinbase | DataSource::Alpaca => 0,
+        DataSource::Coinbase | DataSource::Okx | DataSource::Alpaca => 0,
         DataSource::Binance if source.plan(timeframe).is_some_and(|plan| !plan.is_native()) => 0,
         _ => return None,
     };

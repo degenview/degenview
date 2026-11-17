@@ -74,6 +74,7 @@ watchlists.
   | Source | Natives | Notes |
   | --- | --- | --- |
   | Binance | 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1D 1W 1M | 1000 per request, paged in parallel (`fetch_klines` pages when a fold needs more). Its `3d` is left out: Binance's 3d bars start on a day that is not a multiple of three since 1970-01-01 (checked against the API), so 3D folds from 1D. Weeks start Monday, as here. Folded series are cached (`cache::policy(source, timeframe)`) and refreshed by their tail |
+  | OKX | 1m 3m 5m 15m 30m 1H 2H 4H 6H 12H 1D 1W 1M 3M | Public API, no key. Asked as `…utc` bars from 6H up (its plain ones are cut at UTC+8). Left out: `8H` (no such bar), `2D`/`3D` (counted from a day that is not a multiple of the length since 1970-01-01, like Binance's `3d`: fold from 1D) and the year (folds from `3Mutc`). 300 per request: `/market/candles` for the newest, `/market/history-candles` with an `after` cursor for older (20 requests per 2 s, so pages are spaced 100 ms). Spot only. Held and tail-refreshed (`cache::policy`) |
   | Coinbase | 1m 5m 15m 1h 6h 1D | `MAX_PAGES` x 290 candles caps a request (a 5m series reaches back ~60 days) |
   | Alpaca | 1m 5m 15m 30m 1h 1D 1W 1M | Alpaca also has `3Hour`, `4Min`, `2Month` and so on, but it does not say where those start; only lengths that divide the hour are used (an hour's start is the same in UTC and New York), the rest fold. Days, weeks and months keep Alpaca's New York-midnight stamps; a fold re-anchors them on UTC. Stocks fold intraday buckets from UTC midnight, not the session open. 10,000 bars per request |
   | DEXScreener (GeckoTerminal) | 1m 5m 15m 1h 4h 12h 1D | 1,000 per request; empty buckets are filled flat (`bucket::fill_gaps`) before a fold |
@@ -86,7 +87,7 @@ watchlists.
   tail refresh (4 bars) finds the last session over a weekend; every start is clamped to
   `EARLIEST_MS`. A request is at most 10,000 bars, so a `22m` series from 1-minute bars is shorter
   than 500.
-- **Older history** (`DataSource::supports_older_history`): Binance, Coinbase and Alpaca page back at
+- **Older history** (`DataSource::supports_older_history`): Binance, Coinbase, OKX and Alpaca page back at
   any length. GeckoTerminal's free API reaches back 180 days, so it pages (one page of base candles,
   folded) only while a page of the base candle (1,000 of them) is shorter than that: bases up to 4h
   (1h, 3h and 4h charts yes; 12h, 1D, 1W and 1M, whose first fetch already reaches the cap, no). A

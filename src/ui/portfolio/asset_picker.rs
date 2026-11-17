@@ -20,9 +20,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub const DEBOUNCE: Duration = Duration::from_millis(300);
-pub const CRYPTO_SOURCES: [DataSource; 4] = [
+pub const CRYPTO_SOURCES: [DataSource; 5] = [
     DataSource::Binance,
     DataSource::Coinbase,
+    DataSource::Okx,
     DataSource::CoinGecko,
     DataSource::DexScreener,
 ];
@@ -598,7 +599,7 @@ mod tests {
                     hit(source, "BTC/USDT", "BTCUSDT"),
                     hit(source, "WBTC/USDT", "WBTCUSDT"),
                 ]),
-                DataSource::Coinbase => Ok(vec![]),
+                DataSource::Coinbase | DataSource::Okx => Ok(vec![]),
                 DataSource::CoinGecko => Err(ProviderError::other("rate limited")),
                 _ => Ok(vec![hit(source, "BTC/WETH", "0xabc")]),
             }
@@ -633,7 +634,7 @@ mod tests {
         wait(&mut state);
         assert_eq!(
             calls.lock().unwrap().len(),
-            4,
+            5,
             "one request per crypto source"
         );
         assert!(
@@ -666,8 +667,9 @@ mod tests {
             "the exact base ranks first"
         );
         assert!(state.results()[1].1.as_ref().is_ok_and(Vec::is_empty));
+        assert!(state.results()[2].1.as_ref().is_ok_and(Vec::is_empty));
         assert_eq!(
-            state.results()[2].1.as_ref().err(),
+            state.results()[3].1.as_ref().err(),
             Some(&ProviderError::other("rate limited"))
         );
     }

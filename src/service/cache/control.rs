@@ -4,7 +4,7 @@ use super::disk::{self, CacheStats, ClearOutcome, Limits};
 use super::lookup;
 use crate::service::{
     image::{icon, loader},
-    market::{alpaca, binance, coinbase},
+    market::{alpaca, binance, coinbase, okx},
     work_queue,
 };
 use eframe::egui;
@@ -51,6 +51,7 @@ fn clear_memory() {
     lookup::shared().clear_memory();
     binance::clear_catalog();
     coinbase::clear_catalog();
+    okx::clear_catalog();
     alpaca::clear_catalog();
     loader::clear_memory();
 }
