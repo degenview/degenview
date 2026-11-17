@@ -1,9 +1,9 @@
-//! Standard base64 (RFC 4648, padded): MCP image blocks, the CloudKit bridge's binary fields and
-//! a proxy's `Basic` sign-in all use this one encoding.
+//! Text encodings of bytes. Standard base64 (RFC 4648, padded): MCP image blocks, the CloudKit
+//! bridge's binary fields, stored pictures and a proxy's `Basic` sign-in all use this one.
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-pub fn encode(bytes: &[u8]) -> String {
+pub fn base64_encode(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let n = (u32::from(chunk[0]) << 16)
@@ -26,7 +26,7 @@ pub fn encode(bytes: &[u8]) -> String {
 }
 
 /// The bytes of `text`, or `None` when it holds a character outside the alphabet.
-pub fn decode(text: &str) -> Option<Vec<u8>> {
+pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(text.len() / 4 * 3);
     let mut buffer = 0u32;
     let mut bits = 0;
@@ -47,35 +47,4 @@ pub fn decode(text: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn round_trips_every_length_and_byte() {
-        for len in 0..40 {
-            let data: Vec<u8> = (0..len).map(|n| (n * 37 + 11) as u8).collect();
-            assert_eq!(decode(&encode(&data)).unwrap(), data, "{len}");
-        }
-        let all: Vec<u8> = (0..=255).collect();
-        assert_eq!(decode(&encode(&all)).unwrap(), all);
-    }
-
-    #[test]
-    fn matches_the_rfc_vectors() {
-        for (input, expected) in [
-            ("", ""),
-            ("f", "Zg=="),
-            ("fo", "Zm8="),
-            ("foo", "Zm9v"),
-            ("foob", "Zm9vYg=="),
-            ("fooba", "Zm9vYmE="),
-            ("foobar", "Zm9vYmFy"),
-            ("user:pass", "dXNlcjpwYXNz"),
-        ] {
-            assert_eq!(encode(input.as_bytes()), expected, "{input:?}");
-        }
-        assert_eq!(encode(&[0xFF, 0xEE, 0xDD]), "/+7d");
-        assert_eq!(decode("Zm9vYmE=").unwrap(), b"fooba");
-        assert!(decode("not base64!").is_none());
-    }
-}
+mod tests;

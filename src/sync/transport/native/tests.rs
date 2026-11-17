@@ -1,5 +1,6 @@
 use super::*;
 use crate::lock::lock;
+use crate::model::encoding::{base64_decode, base64_encode};
 use crate::sync::record::policy::EntityKind;
 use std::sync::Mutex;
 
@@ -62,7 +63,7 @@ fn a_stage_command_carries_the_account_the_data_is_bound_to() {
     assert_eq!(changes[0]["record_name"], "watchlist.7");
     assert_eq!(changes[0]["entity_type"], "watchlist");
     assert_eq!(
-        crate::base64::decode(changes[0]["payload"].as_str().unwrap()).unwrap(),
+        base64_decode(changes[0]["payload"].as_str().unwrap()).unwrap(),
         b"{\"id\":7}"
     );
     assert_eq!(changes[0]["system_fields"], "CQ==");
@@ -72,7 +73,7 @@ fn a_stage_command_carries_the_account_the_data_is_bound_to() {
 
 #[test]
 fn every_event_kind_decodes() {
-    let b = |s: &str| crate::base64::encode(s.as_bytes());
+    let b = |s: &str| base64_encode(s.as_bytes());
     let cases = [
         (r#"{"event":"ready"}"#, TransportEvent::Ready),
         (
@@ -138,7 +139,7 @@ fn every_event_kind_decodes() {
 
 #[test]
 fn fetched_and_sent_events_carry_records_and_failures() {
-    let b = |s: &str| crate::base64::encode(s.as_bytes());
+    let b = |s: &str| base64_encode(s.as_bytes());
     let fetched = format!(
         r#"{{"event":"fetched","records":[{{"name":"watchlist.1","schema_version":1,"revision":3,
         "origin_device":"d","modified_ms":9,"payload":"{}","system_fields":"{}"}}],"deletions":["watchlist.2"]}}"#,

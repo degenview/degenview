@@ -4,6 +4,7 @@
 //! or without a user name and password. SOCKS4 and HTTPS proxies are not spoken here.
 
 use super::{Resolved, refresh_if_stale, route};
+use crate::model::encoding::base64_encode;
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, TcpStream, ToSocketAddrs};
 use std::time::Duration;
@@ -88,7 +89,7 @@ fn http_connect(
     let authority = format!("{}:{port}", super::spec::bracketed(host));
     let mut request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n");
     if let Some((user, password)) = credentials {
-        let token = crate::base64::encode(format!("{user}:{password}").as_bytes());
+        let token = base64_encode(format!("{user}:{password}").as_bytes());
         request.push_str(&format!("Proxy-Authorization: Basic {token}\r\n"));
     }
     request.push_str("\r\n");

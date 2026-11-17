@@ -11,6 +11,7 @@ use crate::mcp::tools::{
     Caller, DegenViewMcp, failure, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::model::chart::snapshot::SnapshotScale;
+use crate::model::encoding::base64_encode;
 use crate::model::mcp::Permission;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
@@ -153,7 +154,7 @@ impl DegenViewMcp {
                         "bytes": png.len(),
                     });
                     return Ok(CallToolResult::success(vec![
-                        ContentBlock::image(crate::base64::encode(&png), "image/png"),
+                        ContentBlock::image(base64_encode(&png), "image/png"),
                         ContentBlock::text(meta.to_string()),
                     ]));
                 }

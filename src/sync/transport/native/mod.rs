@@ -10,6 +10,7 @@ use super::{
     SentSaved, StagedChange, StagedOp, SyncTransport, TransportCommand, TransportEvent,
     TransportFactory, ZoneEvent,
 };
+use crate::model::encoding::{base64_decode, base64_encode};
 use crate::service::system::entitlements::{icloud_environment, read_self};
 #[cfg(test)]
 use crate::sync::record::{RecordName, SyncRecord};
@@ -25,7 +26,7 @@ pub const ABI_VERSION: u32 = 1;
 fn optional_b64(bytes: &Option<Vec<u8>>) -> Value {
     bytes
         .as_ref()
-        .map_or(Value::Null, |b| Value::String(crate::base64::encode(b)))
+        .map_or(Value::Null, |b| Value::String(base64_encode(b)))
 }
 
 fn change_json(change: &StagedChange) -> Value {
@@ -47,7 +48,7 @@ fn change_json(change: &StagedChange) -> Value {
             "revision": record.revision,
             "origin_device": record.origin_device,
             "modified_ms": record.modified_ms,
-            "payload": crate::base64::encode(&record.payload),
+            "payload": base64_encode(&record.payload),
             "system_fields": optional_b64(system_fields),
         }),
     }
@@ -90,7 +91,7 @@ fn text(value: &Value, key: &str) -> Result<String, String> {
 }
 
 fn bytes(value: &Value, key: &str) -> Result<Vec<u8>, String> {
-    crate::base64::decode(&text(value, key)?).ok_or_else(|| format!("`{key}` is not base64"))
+    base64_decode(&text(value, key)?).ok_or_else(|| format!("`{key}` is not base64"))
 }
 
 fn raw_record(value: &Value) -> Result<RawRecord, String> {

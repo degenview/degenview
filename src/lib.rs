@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod alloc_count;
 mod app;
-mod base64;
 mod crash_report;
 mod format;
 mod host;
