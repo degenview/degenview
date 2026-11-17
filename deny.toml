@@ -30,9 +30,9 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained, merged into zbus 6; follows oo7" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained, merged into zbus 6; follows oo7" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained, merged into zbus 6; follows oo7" },
-    # Transitive only, through rmcp and schemars (MCP server and its tool schemas); we never use it
-    # directly. No safe upgrade exists; drop this when rmcp and schemars move off chrono.
-    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained, transitive through rmcp and schemars; follows them" },
+    # Through rmcp and schemars (the MCP server's protocol and schema crates), never a direct
+    # dependency. Reported unmaintained on 2026-11-17; follows the rmcp release that moves off it.
+    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained, transitive through rmcp and schemars; follows rmcp" },
 ]
 
 [sources]

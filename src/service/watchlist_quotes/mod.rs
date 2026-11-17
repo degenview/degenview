@@ -2,14 +2,14 @@
 //!
 //! Sidebars say which markets they need and whether they are on screen
 //! (`set_demand`); the coordinator merges those needs by market, polls each source
-//! once per round in a background thread, and feeds one shared Coinbase socket. Quotes
+//! once per round in a background thread, and feeds one shared ticker socket per streamed source. Quotes
 //! land in a `WatchlistQuoteBook` the UI reads; a repaint callback fires when any
 //! quote changes. Nothing here touches the database or the egui types.
 
 mod book;
-mod coinbase_ws;
 mod engine;
 mod provider;
+mod quote_stream;
 
 use crate::lock::lock;
 pub use book::WatchlistQuoteBook;
@@ -20,18 +20,19 @@ pub use provider::QuoteProvider;
 #[cfg(test)]
 pub use provider::{QuoteFailure, QuoteRequest};
 
-use crate::model::InstrumentId;
 use crate::model::alert::AlertProviderHealth;
 use crate::model::watchlist::now_ms;
-use coinbase_ws::{CoinbaseSocket, CoinbaseTick};
+use crate::model::{DataSource, InstrumentId};
 use engine::Engine;
 use provider::LiveProvider;
+use quote_stream::{QuoteSocket, StreamTick};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// How often the loop drains the Coinbase channel: a busy feed becomes a few updates
+/// How often the loop drains the tick channel: a busy feed becomes a few updates
 /// a second per product.
 const TICK: Duration = Duration::from_millis(250);
 
@@ -111,19 +112,19 @@ fn run(
     repaint: &Arc<dyn Fn() + Send + Sync>,
     shutdown: &AtomicBool,
 ) {
-    let (sender, receiver): (_, Receiver<CoinbaseTick>) = mpsc::channel();
-    let mut socket: Option<CoinbaseSocket> = None;
+    let (sender, receiver): (_, Receiver<StreamTick>) = mpsc::channel();
+    let mut sockets: HashMap<DataSource, QuoteSocket> = HashMap::new();
     let mut last_round = i64::MIN / 2;
     let mut seen_revision = book.revision();
 
     while !shutdown.load(Ordering::Acquire) {
         std::thread::sleep(TICK);
         let now = now_ms();
-        let (products, interval, active, renew) = {
+        let (streams, interval, active, renew) = {
             let mut guard = lock(engine);
             guard.expire_leases(now);
             (
-                guard.coinbase_products(),
+                DataSource::QUOTE_STREAMS.map(|source| (source, guard.stream_products(source))),
                 guard.poll_interval_ms(),
                 guard.has_subscriptions(),
                 guard.lease_aging(now),
@@ -134,17 +135,20 @@ fn run(
             repaint();
         }
 
-        // One socket for every Coinbase product any visible sidebar shows.
-        if socket.as_ref().map(CoinbaseSocket::products) != Some(products.as_slice())
-            && !(socket.is_none() && products.is_empty())
-        {
-            socket = None;
-            if !products.is_empty() {
-                socket = Some(CoinbaseSocket::connect(products, sender.clone()));
+        // One socket per streamed source, for every product any visible sidebar shows of it.
+        for (source, products) in streams {
+            if sockets.get(&source).map(QuoteSocket::products) == Some(products.as_slice()) {
+                continue;
+            }
+            sockets.remove(&source);
+            if !products.is_empty()
+                && let Some(socket) = QuoteSocket::connect(source, products, sender.clone())
+            {
+                sockets.insert(source, socket);
             }
         }
 
-        let ticks: Vec<CoinbaseTick> = receiver.try_iter().collect();
+        let ticks: Vec<StreamTick> = receiver.try_iter().collect();
         if !ticks.is_empty() {
             lock(engine).receive_ticks(ticks, now);
         }

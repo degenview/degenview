@@ -18,7 +18,7 @@ impl InstrumentId {
     }
 
     /// Stable identity for equality, flags, list membership, quote lookup and sync merging:
-    /// the market, however it was spelled. Binance and Coinbase spellings that the provider
+    /// the market, however it was spelled. Binance, Coinbase and OKX spellings that the provider
     /// takes as one market (`BTC`, `btcusdt`, `BTC/USDT`; `ETH`, `ETH/USD`, `eth-usd`) share a
     /// key, because it is built from `api_symbol`. Otherwise case-insensitive where the
     /// provider is: DEX addresses and prediction-market ids are case-sensitive.
@@ -31,11 +31,21 @@ impl InstrumentId {
     }
 
     /// The id the provider's API takes. A bare Binance asset (`BTC`) is quoted in
-    /// USDT, and Coinbase ids are `BASE-QUOTE`.
+    /// USDT, Coinbase ids are `BASE-QUOTE` (a bare asset is quoted in USD) and so are OKX's (in
+    /// USDT); Kraken's are `BASE/QUOTE` (USD) in the common tickers, never the legacy `XBT`.
     pub fn api_symbol(&self) -> String {
         match self.source {
-            DataSource::Binance => {
-                let upper = self.symbol.to_uppercase().replace('/', "");
+            DataSource::Mexc => {
+                let upper = self.symbol.to_uppercase().replace(['/', '-', '_', ' '], "");
+                // Its own quotes (`USD1`, `USDE`), and a one-letter base is a real asset (`S`).
+                if crate::model::market::source::split_mexc_pair(&upper).is_some() {
+                    upper
+                } else {
+                    format!("{upper}USDT")
+                }
+            }
+            DataSource::Binance | DataSource::Bybit => {
+                let upper = self.symbol.to_uppercase().replace(['/', '-'], "");
                 // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
                 if crate::model::market::source::split_binance_pair(&upper)
                     .is_some_and(|(base, _)| base.len() > 1)
@@ -45,12 +55,33 @@ impl InstrumentId {
                     format!("{upper}USDT")
                 }
             }
-            DataSource::Coinbase => {
+            DataSource::Coinbase | DataSource::Okx => {
                 let id = self.symbol.to_uppercase().replace('/', "-");
                 if id.contains('-') {
                     id
+                } else if self.source == DataSource::Okx {
+                    format!("{id}-USDT")
                 } else {
                     format!("{id}-USD")
+                }
+            }
+            DataSource::Gate => {
+                let id = self.symbol.to_uppercase().replace(['/', '-', ' '], "_");
+                if id.contains('_') {
+                    id
+                } else {
+                    format!("{id}_USDT")
+                }
+            }
+            DataSource::Kraken => {
+                let id = self.symbol.to_uppercase().replace(['-', ' '], "/");
+                match id.split_once('/') {
+                    Some((base, quote)) => format!(
+                        "{}/{}",
+                        crate::model::market::source::kraken_asset(base),
+                        crate::model::market::source::kraken_asset(quote)
+                    ),
+                    None => format!("{}/USD", crate::model::market::source::kraken_asset(&id)),
                 }
             }
             _ => self.symbol.clone(),
@@ -74,7 +105,13 @@ impl InstrumentId {
 
     fn normalized(symbol: &str, source: DataSource) -> String {
         match source {
-            DataSource::Binance | DataSource::Coinbase => Self::new(source, symbol).api_symbol(),
+            DataSource::Binance
+            | DataSource::Bybit
+            | DataSource::Mexc
+            | DataSource::Coinbase
+            | DataSource::Okx
+            | DataSource::Kraken
+            | DataSource::Gate => Self::new(source, symbol).api_symbol(),
             DataSource::Alpaca => symbol.to_uppercase(),
             DataSource::CoinGecko => symbol.to_lowercase(),
             _ => symbol.to_owned(),
@@ -115,6 +152,46 @@ mod tests {
                 "{symbol}"
             );
         }
+        for symbol in ["BTC", "btc", "BTCUSDT", "btc-usdt", "BTC/USDT"] {
+            assert_eq!(key(DataSource::Bybit, symbol), "BYBIT:BTCUSDT", "{symbol}");
+        }
+        for symbol in ["BTC", "btc_usdt", "BTC/USDT", "btc-usdt"] {
+            assert_eq!(key(DataSource::Gate, symbol), "GATEIO:BTC_USDT", "{symbol}");
+        }
+        for symbol in ["BTC", "btcusdt", "btc-usdt", "BTC/USDT"] {
+            assert_eq!(key(DataSource::Mexc, symbol), "MEXC:BTCUSDT", "{symbol}");
+        }
+        // Ids MEXC lists as they are: a quote that is not Binance's, a one-letter base.
+        for (symbol, id) in [
+            ("BTCUSD1", "BTCUSD1"),
+            ("btc/usd1", "BTCUSD1"),
+            ("SUSDT", "SUSDT"),
+            ("s-usdt", "SUSDT"),
+            ("ETHUSDE", "ETHUSDE"),
+            ("ETHBTC", "ETHBTC"),
+            ("SOLEUR", "SOLEUR"),
+            // A bare asset is quoted in USDT, a wrapped one included.
+            ("WBTC", "WBTCUSDT"),
+            ("S", "SUSDT"),
+            ("USD1", "USD1USDT"),
+        ] {
+            assert_eq!(
+                key(DataSource::Mexc, symbol),
+                format!("MEXC:{id}"),
+                "{symbol}"
+            );
+        }
+        for symbol in ["BTC", "btc-usdt", "BTC/USDT", "BTC-USDT"] {
+            assert_eq!(key(DataSource::Okx, symbol), "OKX:BTC-USDT", "{symbol}");
+        }
+        for symbol in ["BTC", "btc/usd", "XBT/USD", "xbt-usd", "BTC USD"] {
+            assert_eq!(
+                key(DataSource::Kraken, symbol),
+                "KRAKEN:BTC/USD",
+                "{symbol}"
+            );
+        }
+        assert_eq!(key(DataSource::Kraken, "xdg/eur"), "KRAKEN:DOGE/EUR");
         // A different quote is a different market.
         assert_ne!(
             key(DataSource::Binance, "BTC"),

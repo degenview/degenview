@@ -393,7 +393,8 @@ impl ChartWorkspace {
         }
     }
 
-    /// Shows `item` on the chart, keeping its settings, drawings and place in the grid. Returns
+    /// Shows `item` on the chart, keeping its settings and place in the grid; its drawings are the
+    /// market's own (see `Chart::file_drawings`). Returns
     /// whether the market changed; the chart already showing it is only focused.
     pub(in crate::workspace) fn switch_chart(
         &mut self,
@@ -422,8 +423,10 @@ impl ChartWorkspace {
         let timeframe = self.timeframe;
         if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
             chart.chart.reset_view();
+            chart.chart.abort_drawing();
             chart.fetch(timeframe, ctx);
         }
+        self.tools.forget_chart(chart_id);
         self.link_state.series_changed();
         self.forget_views(Some(chart_id));
         self.focus_chart(chart_id);

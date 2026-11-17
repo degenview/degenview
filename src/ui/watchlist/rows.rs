@@ -50,7 +50,7 @@ fn fitted(
 pub fn icon_base_symbol(item: &WatchlistInstrument) -> String {
     let symbol = &item.instrument.symbol;
     match item.instrument.source {
-        DataSource::Binance => {
+        DataSource::Binance | DataSource::Bybit | DataSource::Mexc => {
             let upper = symbol.to_uppercase();
             ["USDT", "USDC", "BUSD", "FDUSD", "USD"]
                 .iter()
@@ -58,7 +58,11 @@ pub fn icon_base_symbol(item: &WatchlistInstrument) -> String {
                 .unwrap_or(&upper)
                 .to_owned()
         }
-        DataSource::Coinbase => symbol.split('-').next().unwrap_or(symbol).to_uppercase(),
+        DataSource::Coinbase | DataSource::Okx => {
+            symbol.split('-').next().unwrap_or(symbol).to_uppercase()
+        }
+        DataSource::Kraken => symbol.split('/').next().unwrap_or(symbol).to_uppercase(),
+        DataSource::Gate => symbol.split('_').next().unwrap_or(symbol).to_uppercase(),
         DataSource::CoinGecko | DataSource::DexScreener => item
             .label
             .split('/')

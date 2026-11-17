@@ -4,12 +4,12 @@ pub(in crate::workspace) mod autosave;
 pub(in crate::workspace) mod session;
 
 use super::chart::Chart;
-use super::drawing::{is_ruler, merge_remote_drawings, plain_drawings};
+use super::drawing::merge_remote_markets;
 use super::layout::autosave::AutosaveState;
 
 use super::{ChartWorkspace, PersistedChart, PersistedWorkspace};
 use crate::model::watchlist::{new_id, now_ms};
-use crate::model::{ChartColumn, ChartConfig, Drawing, LayoutSnapshot, SavedView};
+use crate::model::{ChartColumn, ChartConfig, LayoutSnapshot, SavedView};
 use crate::ui::workspace::layout_prompts::{self, NameOutcome, NamePrompt, UnsavedChoice};
 use eframe::egui;
 
@@ -31,12 +31,7 @@ impl ChartWorkspace {
                     y_zoom: chart.chart.y_zoom(),
                     indicators: chart.indicators,
                     appearance: chart.chart.appearance(),
-                    drawings: chart
-                        .drawings
-                        .iter()
-                        .filter(|drawing| !is_ruler(drawing))
-                        .cloned()
-                        .collect(),
+                    drawings: chart.stored_drawings(),
                     pine_instances: chart.chart.pine_instances().to_vec(),
                     candle_count: chart.chart.visible_candles() as i64,
                     viewport: chart.chart.saved_viewport(),
@@ -101,7 +96,7 @@ impl ChartWorkspace {
         self.layout.saved_drawings = self
             .charts
             .iter()
-            .map(|chart| (chart.id, plain_drawings(&chart.drawings)))
+            .map(|chart| (chart.id, chart.stored_drawings()))
             .collect();
     }
 
@@ -120,7 +115,7 @@ impl ChartWorkspace {
             let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == saved.id) else {
                 continue;
             };
-            let remote = plain_drawings(&saved.drawings);
+            let remote = saved.drawings.clone();
             let base = self
                 .layout
                 .saved_drawings
@@ -130,21 +125,11 @@ impl ChartWorkspace {
             if base == remote {
                 continue;
             }
-            let local = plain_drawings(&chart.drawings);
-            let merged = merge_remote_drawings(&base, &local, &remote);
+            let local = chart.stored_drawings();
+            let merged = merge_remote_markets(&base, &local, &remote);
             diverged |= merged != remote;
             if merged != local {
-                let rulers: Vec<Drawing> = chart
-                    .drawings
-                    .iter()
-                    .filter(|d| is_ruler(d))
-                    .cloned()
-                    .collect();
-                if let Some(highest) = merged.iter().map(Drawing::stored_id).max() {
-                    chart.next_drawing_id = chart.next_drawing_id.max(highest + 1);
-                }
-                chart.drawings = merged;
-                chart.drawings.extend(rulers);
+                chart.set_stored_drawings(merged);
                 // An undo step would put back drawings that were since added or removed elsewhere.
                 self.history.forget_drawings(chart.id);
                 changed = true;
@@ -500,7 +485,7 @@ impl ChartWorkspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::DrawingCommand;
+    use crate::model::{DataSource, Drawing, DrawingCommand, InstrumentId};
     use crate::workspace::test_support::{
         chart_with_drawings, drawing_ids, empty_workspace, rectangle, unreadable,
     };
@@ -511,7 +496,8 @@ mod tests {
         let mut views = workspace.load_saved_views();
         for view in &mut views {
             for saved in view.charts.iter_mut().filter(|saved| saved.id == chart) {
-                saved.drawings = drawings.clone();
+                let market = InstrumentId::new(saved.source, &saved.symbol).key();
+                saved.drawings.put(&market, drawings.clone());
             }
         }
         workspace
@@ -562,7 +548,11 @@ mod tests {
         // Whatever the next write is, nothing the other Mac drew is dropped.
         workspace.flush_autosave();
         let saved = workspace.load_saved_views();
-        assert_eq!(stored_ids(&saved[0].charts[0].drawings), [1, 50, 51, 52]);
+        let market = workspace.charts[0].drawing_market();
+        assert_eq!(
+            stored_ids(saved[0].charts[0].drawings.get(&market)),
+            [1, 50, 51, 52]
+        );
         assert!(
             workspace.chart_data(chart).unwrap().next_drawing_id > 52,
             "new drawings never reuse an id a newer build stored"
@@ -591,7 +581,7 @@ mod tests {
         // The old behaviour: the next autosave wrote the tab's stale list over the other Mac's.
         assert!(workspace.flush_autosave());
         let saved = workspace.load_saved_views();
-        assert_eq!(saved[0].charts[0].drawings.len(), 2);
+        assert_eq!(saved[0].charts[0].drawings.count(), 2);
         // The counter moved past the arrived drawing.
         assert!(workspace.chart_data(chart).unwrap().next_drawing_id > 7);
     }
@@ -620,10 +610,96 @@ mod tests {
         assert!(workspace.flush_autosave());
         let ids: Vec<u64> = workspace.load_saved_views()[0].charts[0]
             .drawings
-            .iter()
+            .all()
             .map(Drawing::id)
             .collect();
         assert_eq!(ids, [1, 3, 7]);
+    }
+
+    #[test]
+    fn showing_another_market_is_not_a_drawing_edit() {
+        use crate::model::watchlist::WatchlistInstrument;
+        let ctx = eframe::egui::Context::default();
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1, 2]);
+        assert!(workspace.save_named("Nico".to_owned(), Some(true)));
+        assert!(!workspace.drawings_dirty());
+
+        let other = WatchlistInstrument::from_market(DataSource::Binance, "ETHUSDT", "ETHUSDT");
+        workspace.switch_chart(chart, &other, &ctx);
+        assert!(!workspace.drawings_dirty(), "the sets moved, none changed");
+        workspace.adopt_remote_layout();
+        assert!(!workspace.drawings_dirty());
+        assert!(drawing_ids(&workspace, chart).is_empty());
+    }
+
+    #[test]
+    fn a_drawing_another_mac_made_on_a_market_the_chart_is_not_showing_waits_for_it() {
+        use crate::model::watchlist::WatchlistInstrument;
+        let ctx = eframe::egui::Context::default();
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        assert!(workspace.save_named("Nico".to_owned(), Some(true)));
+        let other = WatchlistInstrument::from_market(DataSource::Binance, "ETHUSDT", "ETHUSDT");
+        workspace.switch_chart(chart, &other, &ctx);
+
+        // The other Mac drew 7 on ETHUSDT, the market this chart now shows, and 8 on BTCUSDT.
+        let mut views = workspace.load_saved_views();
+        let btc = InstrumentId::new(DataSource::Binance, "BTCUSDT").key();
+        let eth = InstrumentId::new(DataSource::Binance, "ETHUSDT").key();
+        views[0].charts[0]
+            .drawings
+            .put(&btc, vec![rectangle(1, 100), rectangle(8, 800)]);
+        views[0].charts[0]
+            .drawings
+            .put(&eth, vec![rectangle(7, 700)]);
+        workspace
+            .store
+            .lock()
+            .unwrap()
+            .replace_saved_views(&views)
+            .unwrap();
+        workspace.adopt_remote_layout();
+
+        assert_eq!(live_ids(&workspace, chart), [7]);
+        workspace.switch_chart(
+            chart,
+            &WatchlistInstrument::from_market(DataSource::Binance, "BTCUSDT", "BTCUSDT"),
+            &ctx,
+        );
+        assert_eq!(live_ids(&workspace, chart), [1, 8]);
+    }
+
+    #[test]
+    fn a_drawing_made_here_and_one_that_arrived_for_another_market_never_share_an_id() {
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        assert!(workspace.save_named("Nico".to_owned(), Some(true)));
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(rectangle(1, 100))]);
+
+        // Meanwhile the other Mac drew its own number 1, on ETHUSDT.
+        let mut views = workspace.load_saved_views();
+        let eth = InstrumentId::new(DataSource::Binance, "ETHUSDT").key();
+        views[0].charts[0]
+            .drawings
+            .put(&eth, vec![rectangle(1, 900)]);
+        workspace
+            .store
+            .lock()
+            .unwrap()
+            .replace_saved_views(&views)
+            .unwrap();
+        workspace.adopt_remote_layout();
+
+        assert!(workspace.flush_autosave());
+        let saved = workspace.load_saved_views();
+        let drawings = &saved[0].charts[0].drawings;
+        let mut ids: Vec<u64> = drawings.all().map(Drawing::stored_id).collect();
+        ids.sort_unstable();
+        assert_eq!(drawings.count(), 2, "both survive the write");
+        ids.dedup();
+        assert_eq!(ids.len(), 2, "and each has its own id: {ids:?}");
+        assert!(workspace.chart_data(chart).unwrap().next_drawing_id > *ids.last().unwrap());
     }
 
     #[test]
@@ -688,7 +764,7 @@ mod tests {
         let saved = workspace.load_saved_views();
         assert_eq!(saved.len(), 1);
         assert_eq!(
-            saved[0].charts[0].drawings.len(),
+            saved[0].charts[0].drawings.count(),
             1,
             "the drawing reached the saved layout"
         );
@@ -700,7 +776,7 @@ mod tests {
         assert!(manual.save_named("Manual".to_owned(), Some(false)));
         manual.apply_drawing_commands(chart, vec![DrawingCommand::Add(rectangle(1, 100))]);
         assert!(manual.flush_autosave());
-        assert!(manual.load_saved_views()[0].charts[0].drawings.is_empty());
+        assert_eq!(manual.load_saved_views()[0].charts[0].drawings.count(), 0);
     }
 
     #[test]
@@ -720,7 +796,8 @@ mod tests {
         let json = serde_json::to_string(&saved).unwrap();
         let reopened: PersistedWorkspace = serde_json::from_str(&json).unwrap();
         assert_eq!(reopened, saved);
-        assert_eq!(reopened.charts[0].drawings.len(), 3);
-        assert!(reopened.charts[0].drawings[1].locked());
+        let market = workspace.charts[0].drawing_market();
+        assert_eq!(reopened.charts[0].drawings.count(), 3);
+        assert!(reopened.charts[0].drawings.get(&market)[1].locked());
     }
 }

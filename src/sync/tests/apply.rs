@@ -1003,6 +1003,43 @@ fn a_layout_and_its_drawings_arrive_as_separate_records() {
 }
 
 #[test]
+fn drawings_of_two_markets_travel_as_one_record_each_and_arrive_filed_by_market() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let mut row = layout(10, "Main", &[(1, "BTC", &[(1, 1.0), (2, 2.0)])]);
+    for (drawing, market) in row.0["charts"][0]["drawings"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .zip(["BINANCE:BTCUSDT", "BINANCE:ETHUSDT"])
+    {
+        let body = drawing
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+            .next()
+            .unwrap();
+        body["market"] = json!(market);
+        body["since"] = json!(crate::model::drawings::DRAWING_FORMAT);
+    }
+    put_layouts(&a, &[row]);
+    settle(&mut a, &mut b);
+    assert_eq!(
+        cloud.names(),
+        ["layout.10", "layoutdrawing.10.1.1", "layoutdrawing.10.1.2"],
+        "the market is in the drawing: no other record, no other key"
+    );
+    let on_b: crate::model::SavedView =
+        serde_json::from_value(rows(&b, "saved_view")[0].clone()).unwrap();
+    let drawings = &on_b.charts[0].drawings;
+    assert_eq!(drawings.get("BINANCE:BTCUSDT").len(), 1);
+    assert_eq!(drawings.get("BINANCE:ETHUSDT").len(), 1);
+    assert_eq!(drawings.highest_id(), Some(2));
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
 fn per_device_layout_fields_stay_per_device() {
     let (_cloud, mut a, mut b) = pair();
     a.core.start();

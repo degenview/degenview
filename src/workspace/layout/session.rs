@@ -3,7 +3,8 @@
 //! act on it; the rest of the workspace asks it the open layout's name and notes drawing edits.
 
 use super::autosave::AutosaveState;
-use crate::model::{Drawing, LayoutSnapshot};
+use crate::model::LayoutSnapshot;
+use crate::model::drawings::market::MarketDrawings;
 use crate::ui::workspace::layout_prompts::NamePrompt;
 use std::collections::HashMap;
 
@@ -16,7 +17,7 @@ pub(in crate::workspace) struct LayoutSession {
     pub(super) saved_drawings_version: u64,
     /// Each chart's drawings as of the last save or open: the common ancestor when another Mac's
     /// edit to the open layout arrives (`adopt_remote_layout`).
-    pub(super) saved_drawings: HashMap<u64, Vec<Drawing>>,
+    pub(super) saved_drawings: HashMap<u64, MarketDrawings>,
     pub(super) active_view_id: Option<u64>,
     pub(super) active_view_name: Option<String>,
     /// The name prompt that is open, if any, and the text in it.

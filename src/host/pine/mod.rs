@@ -161,6 +161,11 @@ fn source_for_slug(slug: &str) -> Option<DataSource> {
     match slug.to_ascii_uppercase().as_str() {
         "BINANCE" => Some(DataSource::Binance),
         "COINBASE" => Some(DataSource::Coinbase),
+        "OKX" => Some(DataSource::Okx),
+        "KRAKEN" => Some(DataSource::Kraken),
+        "BYBIT" => Some(DataSource::Bybit),
+        "GATEIO" => Some(DataSource::Gate),
+        "MEXC" => Some(DataSource::Mexc),
         "COINGECKO" => Some(DataSource::CoinGecko),
         "DEXSCREENER" => Some(DataSource::DexScreener),
         "ALPACA" => Some(DataSource::Alpaca),

@@ -66,7 +66,10 @@ fn applying_a_symbol_changes_the_focused_chart_and_keeps_everything_else() {
         "SOLUSDT",
         "only the focused chart"
     );
-    assert_eq!(drawing_ids(&workspace, first), vec![1, 2], "drawings stay");
+    assert!(
+        drawing_ids(&workspace, first).is_empty(),
+        "drawings belong to a market: the new one has none yet"
+    );
     assert_eq!(workspace.timeframe, timeframe);
     assert!(
         workspace.take_link_signals().is_empty(),
@@ -257,10 +260,9 @@ fn two_linked_tabs_follow_each_other_both_ways_and_settle() {
     a.announce_market(&row("ETHUSDT"));
     assert_eq!(tick(&mut hub, &table, &mut [&mut a, &mut b], &ctx), 1);
     assert_eq!(shown(&b, chart_b), "ETHUSDT");
-    assert_eq!(
-        drawing_ids(&b, chart_b),
-        vec![2],
-        "B keeps its own drawings"
+    assert!(
+        drawing_ids(&b, chart_b).is_empty(),
+        "B's drawings stay with the market it left"
     );
 
     // Nothing echoes, however long the app ticks.
@@ -348,7 +350,10 @@ fn unlinking_stops_a_tab_at_once_and_leaves_its_chart_alone() {
         "ETHUSDT",
         "unlinking never resets the chart"
     );
-    assert_eq!(drawing_ids(&a, chart_a), vec![1]);
+    assert!(
+        drawing_ids(&a, chart_a).is_empty(),
+        "ETHUSDT has no drawings of its own"
+    );
 
     // And it no longer hears either.
     b.switch_chart(chart_b, &row("SOLUSDT"), &ctx);
@@ -594,4 +599,28 @@ fn a_zoom_waits_for_a_chart_that_has_no_bars_yet() {
         .hub
         .deliver(1, zoom_only, &TimeAxis::new(&bars), &mut view);
     assert_eq!(view.visible, 120, "a delivered-or-expired burst is over");
+}
+
+#[test]
+fn a_drawing_step_from_before_a_link_switch_does_not_undo_onto_the_new_market() {
+    let ctx = egui::Context::default();
+    let mut workspace = empty_workspace(1);
+    let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+    workspace.set_link(Some(LinkColor::Orange));
+    workspace.apply_drawing_commands(
+        chart,
+        vec![crate::model::DrawingCommand::Add(
+            super::super::test_support::rectangle(2, 200),
+        )],
+    );
+    assert_eq!(drawing_ids(&workspace, chart), vec![1, 2]);
+
+    assert!(workspace.apply_link(1, &market("ETHUSDT"), &ctx));
+    workspace.undo(&ctx);
+    assert!(
+        drawing_ids(&workspace, chart).is_empty(),
+        "undo put BTCUSDT's drawings on ETHUSDT"
+    );
+    workspace.switch_chart(chart, &row("BTCUSDT"), &ctx);
+    assert_eq!(drawing_ids(&workspace, chart), vec![1, 2]);
 }

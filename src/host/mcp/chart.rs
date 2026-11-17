@@ -164,6 +164,11 @@ pub fn source_slug(source: DataSource) -> &'static str {
     match source {
         DataSource::Binance => "binance",
         DataSource::Coinbase => "coinbase",
+        DataSource::Okx => "okx",
+        DataSource::Kraken => "kraken",
+        DataSource::Bybit => "bybit",
+        DataSource::Gate => "gateio",
+        DataSource::Mexc => "mexc",
         DataSource::CoinGecko => "coingecko",
         DataSource::DexScreener => "dexscreener",
         DataSource::Alpaca => "alpaca",

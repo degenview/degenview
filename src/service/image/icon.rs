@@ -193,7 +193,13 @@ pub fn clear_memory() {
 /// The symbol reduced to its base asset, used by the symbol-keyed steps of the chain.
 fn base_symbol(source: DataSource, symbol: &str) -> String {
     match source {
-        DataSource::Binance | DataSource::Coinbase => source.base_asset(symbol).to_lowercase(),
+        DataSource::Binance
+        | DataSource::Coinbase
+        | DataSource::Okx
+        | DataSource::Kraken
+        | DataSource::Bybit
+        | DataSource::Gate
+        | DataSource::Mexc => source.base_asset(symbol).to_lowercase(),
         _ => symbol.to_lowercase(),
     }
 }
@@ -755,6 +761,11 @@ mod tests {
             assert_eq!(base_symbol(DataSource::Binance, symbol), base);
         }
         assert_eq!(base_symbol(DataSource::Coinbase, "SEI-USD"), "sei");
+        assert_eq!(base_symbol(DataSource::Okx, "SEI-USDT"), "sei");
+        assert_eq!(base_symbol(DataSource::Kraken, "SEI/USD"), "sei");
+        assert_eq!(base_symbol(DataSource::Bybit, "SEIUSDT"), "sei");
+        assert_eq!(base_symbol(DataSource::Gate, "SEI_USDT"), "sei");
+        assert_eq!(base_symbol(DataSource::Mexc, "SEIUSDT"), "sei");
     }
 
     fn parse_snapshot(body: &str) -> Option<Snapshot> {

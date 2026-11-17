@@ -208,7 +208,7 @@ impl Series {
 /// How long after a request a market is asked again, with `active` markets being refreshed.
 pub(super) fn refresh_after(source: DataSource, active: usize) -> Duration {
     let floor = match source {
-        DataSource::CoinGecko | DataSource::DexScreener => SLOW_MIN_REFRESH,
+        DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken => SLOW_MIN_REFRESH,
         _ => MIN_REFRESH,
     };
     floor.max(REFRESH_PER_MARKET * active as u32)
@@ -216,7 +216,7 @@ pub(super) fn refresh_after(source: DataSource, active: usize) -> Duration {
 
 fn retry_after(source: DataSource) -> Duration {
     match source {
-        DataSource::CoinGecko | DataSource::DexScreener => SLOW_RETRY_AFTER,
+        DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken => SLOW_RETRY_AFTER,
         _ => RETRY_AFTER,
     }
 }
@@ -420,10 +420,11 @@ impl OverlayHub {
         }
     }
 
-    /// A live Binance kline of `base` candles for `symbol`: every overlay market on that symbol
-    /// folds it into its candles of `timeframe`.
+    /// A live kline of `base` candles for `symbol` on `source`: every overlay market on that
+    /// symbol folds it into its candles of `timeframe`.
     pub(super) fn apply_live(
         &mut self,
+        source: DataSource,
         timeframe: Timeframe,
         base: Timeframe,
         symbol: &str,
@@ -431,8 +432,8 @@ impl OverlayHub {
         now: Instant,
     ) {
         for series in self.series.values_mut() {
-            if series.instrument.source != DataSource::Binance
-                || !series.instrument.symbol.eq_ignore_ascii_case(symbol)
+            if series.instrument.source != source
+                || !series.instrument.api_symbol().eq_ignore_ascii_case(symbol)
             {
                 continue;
             }
@@ -451,13 +452,13 @@ impl OverlayHub {
         }
     }
 
-    /// The Binance symbols the live feed should also stream: shown overlay markets.
-    pub(super) fn binance_symbols(&self) -> Vec<String> {
+    /// The `source` symbols the live feed should also stream: shown overlay markets.
+    pub(super) fn streamed_symbols(&self, source: DataSource) -> Vec<String> {
         let mut symbols: Vec<String> = self
             .series
             .values()
-            .filter(|series| series.instrument.source == DataSource::Binance && series.shown())
-            .map(|series| series.instrument.symbol.to_uppercase())
+            .filter(|series| series.instrument.source == source && series.shown())
+            .map(|series| series.instrument.api_symbol())
             .collect();
         symbols.sort();
         symbols.dedup();

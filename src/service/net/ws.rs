@@ -52,6 +52,21 @@ pub fn configure(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>) -> io::Resul
     stream.set_write_timeout(Some(READ_TIMEOUT))
 }
 
+/// How a quiet socket is probed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Keepalive {
+    /// A WebSocket ping frame, answered by a pong frame.
+    Frame,
+    /// A text message answered by a text message, for servers that define their own heartbeat
+    /// (OKX: `"ping"` and `"pong"`; Bybit: `{"op":"ping"}` and a JSON answer that starts
+    /// `{"success":true,"ret_msg":"pong"`). An answer is a message that begins with `pong`, and is
+    /// not data.
+    Text {
+        ping: &'static str,
+        pong: &'static str,
+    },
+}
+
 pub struct Health {
     route: Route,
     route_checked: Instant,
@@ -59,10 +74,11 @@ pub struct Health {
     last_data: Instant,
     ping_sent: Option<Instant>,
     max_data_silence: Duration,
+    keepalive: Keepalive,
 }
 
 impl Health {
-    pub fn new(max_data_silence: Duration, route: Route) -> Self {
+    pub fn new(max_data_silence: Duration, keepalive: Keepalive, route: Route) -> Self {
         let now = Instant::now();
         Self {
             route,
@@ -71,6 +87,7 @@ impl Health {
             last_data: now,
             ping_sent: None,
             max_data_silence,
+            keepalive,
         }
     }
 
@@ -89,6 +106,12 @@ impl Health {
         }
         match socket.read() {
             Ok(Message::Pong(_)) => {
+                self.last_message = Instant::now();
+                self.ping_sent = None;
+                Ok(None)
+            }
+            Ok(Message::Text(text)) if matches!(self.keepalive, Keepalive::Text { pong, .. } if text.as_str().starts_with(pong)) =>
+            {
                 self.last_message = Instant::now();
                 self.ping_sent = None;
                 Ok(None)
@@ -141,7 +164,10 @@ impl Health {
             )));
         }
         if self.ping_sent.is_none() && now.duration_since(self.last_message) >= PING_AFTER {
-            socket.send(Message::Ping(Vec::new().into()))?;
+            socket.send(match self.keepalive {
+                Keepalive::Frame => Message::Ping(Vec::new().into()),
+                Keepalive::Text { ping, .. } => Message::Text(ping.into()),
+            })?;
             self.ping_sent = Some(now);
         }
         Ok(None)
@@ -180,6 +206,76 @@ impl Backoff {
     }
 }
 
+/// One feed's connection: where it connects, what it subscribes to and how it is kept alive.
+pub struct Session {
+    pub url: String,
+    pub host: String,
+    pub port: u16,
+    /// Sent in order, one message each, after every (re)connect; empty for a feed that subscribes
+    /// through its URL.
+    pub subscribe: Vec<String>,
+    pub max_data_silence: Duration,
+    pub keepalive: Keepalive,
+}
+
+/// One data message of a feed (a heartbeat answer or a close is not one).
+#[derive(Clone, Copy, Debug)]
+pub enum Frame<'a> {
+    Text(&'a str),
+    /// A binary message: Protocol Buffers for MEXC.
+    Binary(&'a [u8]),
+}
+
+impl Session {
+    /// Connects, subscribes and reads until `shutdown`, reconnecting with backoff whenever the
+    /// socket fails. Every text message goes to `on_text`; it answers whether to keep reading
+    /// (`false` when nobody is listening any more).
+    pub fn run(&self, shutdown: &AtomicBool, mut on_text: impl FnMut(&str) -> bool) {
+        self.run_frames(shutdown, |frame| match frame {
+            Frame::Text(text) => on_text(text),
+            Frame::Binary(_) => true,
+        });
+    }
+
+    /// Like [`Self::run`], for a feed that also sends binary messages.
+    pub fn run_frames(&self, shutdown: &AtomicBool, mut on_frame: impl FnMut(Frame<'_>) -> bool) {
+        let mut backoff = Backoff::new();
+        while !shutdown.load(Ordering::Acquire) {
+            if let Ok((mut socket, route)) = connect(&self.url, &self.host, self.port) {
+                let subscribed = self
+                    .subscribe
+                    .iter()
+                    .all(|message| socket.send(Message::Text(message.as_str().into())).is_ok());
+                if subscribed {
+                    let mut health = Health::new(self.max_data_silence, self.keepalive, route);
+                    while !shutdown.load(Ordering::Acquire) {
+                        match health.read(&mut socket) {
+                            Ok(Some(Message::Text(text))) => {
+                                backoff.reset();
+                                if !on_frame(Frame::Text(text.as_str())) {
+                                    return;
+                                }
+                            }
+                            Ok(Some(Message::Binary(bytes))) => {
+                                backoff.reset();
+                                if !on_frame(Frame::Binary(&bytes)) {
+                                    return;
+                                }
+                            }
+                            Ok(Some(Message::Close(_))) | Err(_) => break,
+                            Ok(_) => {}
+                        }
+                    }
+                }
+            }
+            if shutdown.load(Ordering::Acquire) {
+                return;
+            }
+            backoff.wait(shutdown);
+        }
+    }
+}
+
 fn jittered(delay: Duration, random: u32) -> Duration {
     delay.mul_f64((75 + random % 51) as f64 / 100.0)
 }
@@ -195,6 +291,181 @@ mod tests {
         assert_eq!(jittered(Duration::from_secs(4), 50), Duration::from_secs(5));
     }
 
+    /// A server that reads `messages` messages, answers `replies`, then lingers so the client stays
+    /// up. It returns what it read.
+    fn serve_many(
+        messages: usize,
+        replies: &'static [&'static str],
+    ) -> (u16, std::thread::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            let received: Vec<String> = (0..messages)
+                .map(|_| socket.read().unwrap().into_text().unwrap().to_string())
+                .collect();
+            for reply in replies {
+                socket.send(Message::Text((*reply).into())).unwrap();
+            }
+            std::thread::sleep(Duration::from_millis(300));
+            received
+        });
+        (port, handle)
+    }
+
+    fn serve(replies: &'static [&'static str]) -> (u16, std::thread::JoinHandle<String>) {
+        let (port, server) = serve_many(1, replies);
+        let handle = std::thread::spawn(move || server.join().unwrap().remove(0));
+        (port, handle)
+    }
+
+    #[test]
+    fn a_session_sends_every_subscribe_message_in_order_after_each_connect() {
+        let (port, server) = serve_many(3, &["tick"]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["one".to_owned(), "two".to_owned(), "three".to_owned()],
+            max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Frame,
+        };
+        session.run(&AtomicBool::new(false), |_| false);
+        assert_eq!(server.join().unwrap(), ["one", "two", "three"]);
+    }
+
+    #[test]
+    fn a_session_subscribes_and_hands_over_what_it_reads() {
+        let (port, server) = serve(&["tick"]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["subscribe".to_owned()],
+            max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Frame,
+        };
+        let mut seen = Vec::new();
+        session.run(&AtomicBool::new(false), |text| {
+            seen.push(text.to_owned());
+            false
+        });
+        assert_eq!(seen, ["tick"]);
+        assert_eq!(server.join().unwrap(), "subscribe");
+    }
+
+    /// A server that sends a binary message, then lingers.
+    fn serve_binary(frame: &'static [u8]) -> (u16, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            let _ = socket.read().unwrap();
+            socket.send(Message::Binary(frame.to_vec().into())).unwrap();
+            std::thread::sleep(Duration::from_millis(300));
+        });
+        (port, handle)
+    }
+
+    #[test]
+    fn a_binary_message_is_a_frame_and_text_only_callers_skip_it() {
+        let (port, server) = serve_binary(&[1, 2, 3]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["subscribe".to_owned()],
+            max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Frame,
+        };
+        let mut seen = Vec::new();
+        session.run_frames(&AtomicBool::new(false), |frame| {
+            if let Frame::Binary(bytes) = frame {
+                seen.push(bytes.to_vec());
+            }
+            false
+        });
+        assert_eq!(seen, [vec![1, 2, 3]]);
+        server.join().unwrap();
+
+        // `run` hands over text only: the binary message ends nothing and reaches no callback.
+        let (port, server) = serve_binary(&[9]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["subscribe".to_owned()],
+            max_data_silence: Duration::from_millis(400),
+            keepalive: Keepalive::Frame,
+        };
+        let shutdown = AtomicBool::new(false);
+        let mut texts = 0;
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(250));
+                shutdown.store(true, Ordering::Release);
+            });
+            session.run(&shutdown, |_| {
+                texts += 1;
+                true
+            });
+        });
+        assert_eq!(texts, 0);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn a_text_heartbeat_answer_is_not_data() {
+        let (port, server) = serve(&["pong", "tick"]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["subscribe".to_owned()],
+            max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Text {
+                ping: "ping",
+                pong: "pong",
+            },
+        };
+        let mut seen = Vec::new();
+        session.run(&AtomicBool::new(false), |text| {
+            seen.push(text.to_owned());
+            false
+        });
+        assert_eq!(seen, ["tick"]);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn a_text_heartbeat_answer_is_recognised_by_its_start() {
+        // Bybit's pong carries the connection id, so only its beginning is fixed.
+        let (port, server) = serve(&[
+            r#"{"success":true,"ret_msg":"pong","conn_id":"abc-1","op":"ping"}"#,
+            r#"{"topic":"tickers.BTCUSDT","data":{}}"#,
+        ]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["subscribe".to_owned()],
+            max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Text {
+                ping: r#"{"op":"ping"}"#,
+                pong: r#"{"success":true,"ret_msg":"pong""#,
+            },
+        };
+        let mut seen = Vec::new();
+        session.run(&AtomicBool::new(false), |text| {
+            seen.push(text.to_owned());
+            false
+        });
+        assert_eq!(seen, [r#"{"topic":"tickers.BTCUSDT","data":{}}"#]);
+        server.join().unwrap();
+    }
+
     /// A feed that was connected under one proxy setting reconnects when it changes, instead of
     /// keeping the route it was dialled with.
     #[test]
@@ -204,7 +475,11 @@ mod tests {
             mode: ProxyMode::Off,
             ..ProxyConfig::default()
         });
-        let mut health = Health::new(Duration::from_secs(60), Route(proxy::generation()));
+        let mut health = Health::new(
+            Duration::from_secs(60),
+            Keepalive::Frame,
+            Route(proxy::generation()),
+        );
         let due = |health: &mut Health| health.route_checked -= ROUTE_CHECK * 2;
 
         due(&mut health);
@@ -242,7 +517,7 @@ mod tests {
                 .set_read_timeout(Some(Duration::from_millis(20)))
                 .unwrap();
         }
-        let mut health = Health::new(Duration::ZERO, route);
+        let mut health = Health::new(Duration::ZERO, Keepalive::Frame, route);
         assert!(matches!(
             health.read(&mut socket),
             Err(tungstenite::Error::Io(error)) if error.kind() == io::ErrorKind::TimedOut
