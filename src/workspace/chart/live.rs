@@ -71,8 +71,8 @@ impl ChartWorkspace {
     }
 
     /// Every chart of `symbol` on `source` takes the kline of `base` candles, whatever else it
-    /// shows. A chart's symbol may be spelled any way the source takes (`BTC`, `XBT/USD`), the
-    /// feed names the market as the source does.
+    /// shows. A chart's symbol may be spelled any way the source takes (`BTC`, `btc/usdt`): the
+    /// feed names the market as the source does, so they are compared by `api_symbol`.
     fn apply_live_kline(
         &mut self,
         source: DataSource,
@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn a_chart_takes_the_live_bar_whatever_way_its_symbol_is_spelled() {
+    fn a_kraken_chart_takes_the_live_bar_whatever_way_its_symbol_is_spelled() {
         let mut workspace = empty_workspace(1);
         for (id, symbol) in [(1, "xbt/usd"), (2, "BTC-USD"), (3, "BTC")] {
             let mut chart = Chart::blank(id, symbol, DataSource::Kraken);
@@ -149,6 +149,31 @@ mod tests {
             DataSource::Kraken,
             base,
             "BTC/USD",
+            candle(2, 5.0),
+            Instant::now(),
+        );
+
+        let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
+        assert_eq!(lens, [2, 2, 2, 1]);
+    }
+
+    #[test]
+    fn an_okx_chart_takes_the_live_bar_whatever_way_its_symbol_is_spelled() {
+        let mut workspace = empty_workspace(1);
+        for (id, symbol) in [(1, "btc/usdt"), (2, "BTC-USDT"), (3, "BTC")] {
+            let mut chart = Chart::blank(id, symbol, DataSource::Okx);
+            chart.candles = vec![candle(1, 1.0)];
+            workspace.charts.push(chart);
+        }
+        let mut other = Chart::blank(4, "ETH-USDT", DataSource::Okx);
+        other.candles = vec![candle(1, 1.0)];
+        workspace.charts.push(other);
+
+        let base = workspace.timeframe;
+        workspace.apply_live_kline(
+            DataSource::Okx,
+            base,
+            "BTC-USDT",
             candle(2, 5.0),
             Instant::now(),
         );
