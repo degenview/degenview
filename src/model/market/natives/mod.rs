@@ -168,17 +168,14 @@ impl DataSource {
     /// 180 days: a page of its base candles that already spans that has no older one.
     pub fn supports_older_history(self, timeframe: Timeframe) -> bool {
         match self {
-            Self::Binance | Self::Coinbase | Self::Okx | Self::Alpaca => true,
+            // Kraken's OHLC answers the newest 720 candles whatever is asked: the chart's first
+            // 500 leave the rest for the first older page, and a second page is empty.
+            Self::Binance | Self::Coinbase | Self::Okx | Self::Kraken | Self::Alpaca => true,
             Self::DexScreener => self.plan(timeframe).is_some_and(|plan| {
                 let page_days = plan.base().nominal_ms() * GECKOTERMINAL_PAGE as i64 / 86_400_000;
                 page_days < GECKOTERMINAL_HISTORY_DAYS
             }),
-            // Its OHLC has no way back past the newest 720 candles.
-            Self::Kraken
-            | Self::CoinGecko
-            | Self::Polymarket
-            | Self::Kalshi
-            | Self::CoinMarketCap => false,
+            Self::CoinGecko | Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => false,
         }
     }
 }

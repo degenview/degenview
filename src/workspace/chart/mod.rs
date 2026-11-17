@@ -345,10 +345,14 @@ impl Chart {
     /// How long after a fetch began the next one is due.
     pub(super) fn refresh_after(&self) -> Duration {
         match self.source {
-            DataSource::CoinGecko | DataSource::DexScreener if self.error.is_some() => {
+            DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken
+                if self.error.is_some() =>
+            {
                 SLOW_RETRY_INTERVAL
             }
-            DataSource::CoinGecko | DataSource::DexScreener => SLOW_REFRESH_INTERVAL,
+            DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken => {
+                SLOW_REFRESH_INTERVAL
+            }
             _ => REFRESH_INTERVAL,
         }
     }
@@ -540,6 +544,16 @@ mod tests {
         ));
         assert_eq!(binance.refresh_after(), REFRESH_INTERVAL);
         assert_eq!(dex.refresh_after(), SLOW_RETRY_INTERVAL);
+    }
+
+    #[test]
+    fn kraken_charts_refresh_slowly_because_the_socket_keeps_them_live() {
+        let mut kraken = Chart::blank(1, "BTC/USD", DataSource::Kraken);
+        assert_eq!(kraken.refresh_after(), SLOW_REFRESH_INTERVAL);
+        kraken.error = Some(ProviderError::Network(
+            crate::service::net::http::Error::Status(429),
+        ));
+        assert_eq!(kraken.refresh_after(), SLOW_RETRY_INTERVAL);
     }
 
     #[test]
