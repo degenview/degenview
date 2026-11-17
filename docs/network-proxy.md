@@ -27,6 +27,16 @@ address ranges (`10.0.0.0/8`) are refused with a message, because the matcher is
 private ranges (`10.*`, `192.168.*`, `172.16-31.*`, `169.254.*`), IPv6 local ranges and `.local`
 names **always** connect directly (`bypass.rs`).
 
+What the page checks depends on what it shows: the port only for a manual proxy, the no-proxy list
+unless the proxy is Off. A leftover typo in a hidden field never blocks switching mode.
+
+`Spec.host` is the bare name or address: an IPv6 proxy has no brackets in it (`::1`, however it was
+typed or read from a URL), so a socket can dial it as it is; `Spec::build` brackets it for the URL
+`ureq` wants, and `describe` for the status line. Credentials need no escaping by us: `ureq`
+percent-encodes them when it builds the proxy. A complete manual proxy that still cannot be built is
+shown as a problem on the page (`Status::problem`); it is never dropped silently into direct
+connections.
+
 ## Where the OS proxy comes from
 
 - **Windows**: `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings` (`ProxyEnable`,

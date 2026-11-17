@@ -61,6 +61,8 @@ pub fn open(
 /// A plain TCP connection with `timeout` for the connect and for each read and write after.
 fn connect(host: &str, port: u16, timeout: Duration) -> io::Result<TcpStream> {
     let mut last = None;
+    // A URL's IPv6 host has brackets, a socket address does not.
+    let host = super::spec::bare_host(host);
     for address in (host, port).to_socket_addrs()?.take(4) {
         match TcpStream::connect_timeout(&address, timeout) {
             Ok(stream) => {

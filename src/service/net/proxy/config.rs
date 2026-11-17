@@ -72,7 +72,11 @@ impl ProxyConfig {
     /// Whether this can be saved and used. System and Off need nothing; only the no-proxy list
     /// is checked for them, since it applies on top of the system's proxy too.
     pub fn validate(&self) -> Result<(), ProxyError> {
-        bypass::check(&bypass::split(&self.no_proxy))?;
+        // Off never reads the list and its field is hidden, so a bad one cannot block turning
+        // the proxy off.
+        if self.mode != ProxyMode::Off {
+            bypass::check(&bypass::split(&self.no_proxy))?;
+        }
         if self.mode != ProxyMode::Manual {
             return Ok(());
         }
@@ -80,9 +84,12 @@ impl ProxyConfig {
         if host.is_empty() {
             return Err(ProxyError::MissingHost);
         }
-        if !host
-            .chars()
-            .all(|c| c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '[' | ']'))
+        // Brackets only as the pair around an IPv6 address.
+        let bare = super::spec::bare_host(host);
+        if bare.contains(['[', ']'])
+            || !bare
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ':'))
         {
             return Err(ProxyError::BadHost(host.to_owned()));
         }
@@ -102,7 +109,7 @@ impl ProxyConfig {
         };
         let spec = Spec {
             protocol,
-            host: self.host.trim().to_owned(),
+            host: super::spec::bare_host(&self.host).to_owned(),
             port: self.port?,
             username: None,
             password: None,

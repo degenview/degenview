@@ -6,6 +6,8 @@ use ureq::ProxyProtocol;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Spec {
     pub protocol: ProxyProtocol,
+    /// The bare name or address: an IPv6 address has no brackets here (they belong to URLs and to
+    /// `host:port` text, see `bare_host` and `describe`), so it can be dialled as it is.
     pub host: String,
     pub port: u16,
     pub username: Option<String>,
@@ -21,7 +23,7 @@ impl Spec {
             return None;
         }
         let proxy = ureq::Proxy::new(text).ok()?;
-        let host = proxy.host();
+        let host = bare_host(proxy.host());
         if host.is_empty() {
             return None;
         }
@@ -46,8 +48,14 @@ impl Spec {
     /// The `ureq` proxy for this server. Traffic to the hosts `bypass` names (see
     /// `bypass::entries`) skips it.
     pub fn build(&self, bypass: &[String]) -> Result<ureq::Proxy, ureq::Error> {
+        // A URL needs an IPv6 address in brackets.
+        let host = if self.host.contains(':') {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        };
         let mut builder = ureq::Proxy::builder(self.protocol)
-            .host(&self.host)
+            .host(&host)
             .port(self.port);
         if let Some(username) = &self.username {
             builder = builder.username(username);
@@ -63,7 +71,7 @@ impl Spec {
 
     /// `host:port`, with the protocol when it is not plain HTTP, for a status line.
     pub fn describe(&self) -> String {
-        let host = if self.host.contains(':') && !self.host.starts_with('[') {
+        let host = if self.host.contains(':') {
             format!("[{}]", self.host)
         } else {
             self.host.clone()
@@ -74,6 +82,14 @@ impl Spec {
             protocol => format!("{address} ({protocol})"),
         }
     }
+}
+
+/// `host` without the brackets an IPv6 address has in a URL.
+pub(super) fn bare_host(host: &str) -> &str {
+    let host = host.trim();
+    host.strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(host)
 }
 
 fn label(protocol: ProxyProtocol) -> &'static str {

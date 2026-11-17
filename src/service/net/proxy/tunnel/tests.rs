@@ -74,6 +74,48 @@ fn connect_names_the_host_and_signs_in() {
     thread.join().unwrap();
 }
 
+/// A proxy at an IPv6 address, as `ureq` hands it over from a URL and as a manual setting has it.
+#[test]
+fn an_ipv6_proxy_can_be_dialled() {
+    let Ok(listener) = TcpListener::bind("[::1]:0") else {
+        return; // no IPv6 loopback on this machine
+    };
+    let port = listener.local_addr().unwrap().port();
+    let thread = std::thread::spawn(move || {
+        for _ in 0..2 {
+            let mut stream = listener.accept().unwrap().0;
+            let head = read_head(&mut stream);
+            assert!(head.starts_with("CONNECT a.example:443 HTTP/1.1\r\n"));
+            stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+        }
+    });
+    let from_url = Spec::parse(&format!("http://[::1]:{port}")).unwrap();
+    let manual = Spec {
+        protocol: ProxyProtocol::Http,
+        host: "::1".to_owned(),
+        port,
+        username: None,
+        password: None,
+    };
+    for spec in [from_url, manual] {
+        let proxy = Resolved::new(spec, &[], Source::Manual).expect("an IPv6 proxy builds");
+        open(&proxy, "a.example", 443, WAIT).unwrap();
+    }
+    thread.join().unwrap();
+}
+
+/// A URL's authority brings an IPv6 target with its brackets; they are not part of the address.
+#[test]
+fn a_bracketed_ipv6_target_is_dialled() {
+    let Ok(listener) = TcpListener::bind("[::1]:0") else {
+        return;
+    };
+    let port = listener.local_addr().unwrap().port();
+    let thread = std::thread::spawn(move || listener.accept().unwrap());
+    connect("[::1]", port, WAIT).unwrap();
+    thread.join().unwrap();
+}
+
 #[test]
 fn connect_without_a_login_sends_no_credentials() {
     let (port, thread) = serve(|mut stream| {

@@ -18,6 +18,7 @@ fn active(source: Source, server: &str) -> Status {
             source,
             server: server.to_owned(),
         }),
+        problem: None,
     }
 }
 
@@ -85,21 +86,40 @@ fn what_is_wrong_is_said_in_words() {
     assert_eq!(manual("proxy", "8080").problem(), None);
 }
 
+/// The port field is only on the page in Manual mode, so what is typed in it cannot hold up the
+/// other two: switching to System or Off after a typo must save.
 #[test]
-fn a_bad_port_is_refused_even_when_the_proxy_is_not_manual() {
-    let mut state = manual("", "abc");
-    state.draft.mode = ProxyMode::System;
+fn a_bad_port_only_matters_while_the_proxy_is_manual() {
+    let mut state = manual("proxy", "abc");
     assert!(state.problem().is_some());
     assert!(state.save().is_none());
+    for mode in [ProxyMode::System, ProxyMode::Off] {
+        state.draft.mode = mode;
+        assert_eq!(state.problem(), None, "{mode:?}");
+        let Some(NetworkAction::Save { config, .. }) = state.save() else {
+            panic!("{mode:?} should save with a bad port left behind");
+        };
+        assert_eq!(config.mode, mode);
+        assert_eq!(config.port, None);
+    }
 }
 
 #[test]
-fn the_no_proxy_list_is_checked_in_every_mode() {
+fn the_no_proxy_list_is_checked_where_its_field_is_shown() {
     let mut state = NetworkState::default();
     state.load(&ProxyConfig::default());
     state.draft.no_proxy = "10.0.0.0/8".to_owned();
-    assert!(state.problem().unwrap().contains("10.0.0.0/8"));
-    assert!(state.save().is_none());
+    for mode in [ProxyMode::System, ProxyMode::Manual] {
+        state.draft.mode = mode;
+        state.draft.host = "proxy".to_owned();
+        state.port_text = "8080".to_owned();
+        assert!(state.problem().unwrap().contains("10.0.0.0/8"), "{mode:?}");
+        assert!(state.save().is_none(), "{mode:?}");
+    }
+    // Off hides the list, so it cannot block turning the proxy off.
+    state.draft.mode = ProxyMode::Off;
+    assert_eq!(state.problem(), None);
+    assert!(state.save().is_some());
 }
 
 #[test]
@@ -168,7 +188,11 @@ fn the_badge_says_what_is_in_use() {
         (ProxyMode::Off, "Proxy off"),
         (ProxyMode::Manual, "No proxy server set"),
     ] {
-        let (shown, tone) = badge(&Status { mode, active: None });
+        let (shown, tone) = badge(&Status {
+            mode,
+            active: None,
+            problem: None,
+        });
         assert_eq!(shown, text);
         assert_eq!(tone, Tone::Neutral);
     }
@@ -211,6 +235,7 @@ fn the_network_page_draws_in_every_mode_and_both_themes() {
                     source: Source::Manual,
                     server: "127.0.0.1:1080 (SOCKS5)".to_owned(),
                 }),
+                problem: None,
             },
         ),
         (
@@ -222,6 +247,7 @@ fn the_network_page_draws_in_every_mode_and_both_themes() {
             Status {
                 mode: ProxyMode::Off,
                 active: None,
+                problem: None,
             },
         ),
     ];

@@ -146,6 +146,68 @@ fn a_manual_login_carries_the_password() {
     assert_eq!(found.spec.password, None);
 }
 
+/// Credentials are percent-encoded by `ureq` when the proxy is built, so no character in a
+/// password can change which server the proxy is.
+#[test]
+fn a_password_with_url_characters_changes_nothing_else() {
+    for password in [
+        "with space",
+        "has#hash",
+        "a/b",
+        "q?x",
+        "c:o:l",
+        "at@sign",
+        "100%",
+        "p%40ss",
+        "p:ss ?#é",
+    ] {
+        let config = ProxyConfig {
+            username: "us/er".to_owned(),
+            ..manual("proxy.example", Some(8080))
+        };
+        let found = resolve(&config, Some(password), &no_env, &nothing)
+            .unwrap_or_else(|| panic!("{password:?} made the proxy unusable"));
+        assert_eq!(found.proxy.host(), "proxy.example", "{password:?}");
+        assert_eq!(found.proxy.port(), 8080, "{password:?}");
+        assert_eq!(found.proxy.username(), Some("us/er"), "{password:?}");
+        assert_eq!(found.proxy.password(), Some(password), "{password:?}");
+    }
+}
+
+#[test]
+fn an_ipv6_proxy_is_kept_without_brackets_however_it_is_written() {
+    let parsed = Spec::parse("http://[::1]:8080").unwrap();
+    assert_eq!(parsed.host, "::1");
+    for host in ["::1", "[::1]", " [fe80::2] "] {
+        let found = resolve(&manual(host, Some(7890)), None, &no_env, &nothing)
+            .unwrap_or_else(|| panic!("{host:?} did not resolve"));
+        assert!(!found.spec.host.contains('['), "{host:?}");
+        assert!(found.spec.host.contains(':'), "{host:?}");
+        assert_eq!(found.spec.port, 7890);
+        assert!(
+            found.spec.describe().starts_with('['),
+            "the status line brackets it again"
+        );
+    }
+}
+
+#[test]
+fn a_complete_manual_proxy_that_cannot_be_built_is_reported_not_bypassed() {
+    let complete = manual("proxy.example", Some(8080));
+    let working = resolve(&complete, None, &no_env, &nothing);
+    assert!(working.is_some());
+    assert_eq!(current::problem(&complete, working.as_ref()), None);
+    // Complete, yet nothing came of it: traffic would go direct without a word.
+    assert!(
+        current::problem(&complete, None)
+            .unwrap()
+            .contains("directly")
+    );
+    // Not finished yet, or not Manual: nothing to report.
+    assert_eq!(current::problem(&manual("", None), None), None);
+    assert_eq!(current::problem(&ProxyConfig::default(), None), None);
+}
+
 #[test]
 fn an_incomplete_manual_proxy_resolves_to_nothing() {
     assert!(resolve(&manual("", Some(1)), None, &no_env, &nothing).is_none());
@@ -162,17 +224,26 @@ fn validation_says_what_is_missing() {
     );
     assert!(manual("p.example", Some(1)).validate().is_ok());
     assert!(manual("[::1]", Some(1)).validate().is_ok());
+    assert!(manual("::1", Some(1)).validate().is_ok());
+    assert!(manual("[::1", Some(1)).validate().is_err());
+    assert!(manual("a[b]", Some(1)).validate().is_err());
     assert!(ProxyConfig::default().validate().is_ok());
 }
 
 #[test]
-fn an_address_range_in_the_no_proxy_list_is_refused_in_every_mode() {
+fn an_address_range_in_the_no_proxy_list_is_refused_unless_the_proxy_is_off() {
     let config = ProxyConfig {
         no_proxy: "example.org, 10.0.0.0/8".to_owned(),
         ..ProxyConfig::default()
     };
     let error = config.validate().unwrap_err();
     assert!(error.to_string().contains("10.0.0.0/8"), "{error}");
+    // Off never reads the list (and its field is hidden), so it cannot hold up turning it off.
+    let off = ProxyConfig {
+        mode: ProxyMode::Off,
+        ..config
+    };
+    assert_eq!(off.validate(), Ok(()));
 }
 
 #[test]

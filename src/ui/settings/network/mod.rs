@@ -78,7 +78,9 @@ impl NetworkState {
     /// Why the draft is not saved, if it is not. A manual proxy with nothing typed yet is not
     /// an error, only not ready (`awaiting_server`).
     pub fn problem(&self) -> Option<String> {
-        if Self::parse_port(&self.port_text).is_err() {
+        // The port field is on the page only for a manual proxy; elsewhere a leftover typo must not
+        // hold up saving the mode.
+        if self.draft.mode == ProxyMode::Manual && Self::parse_port(&self.port_text).is_err() {
             return Some("The port is a number from 1 to 65535.".to_owned());
         }
         if self.awaiting_server() {
@@ -240,6 +242,9 @@ pub fn body(
 
     if let Some(problem) = state.problem() {
         status_message(ui, &problem, true);
+        ui.add_space(8.0);
+    } else if let Some(problem) = input.status.problem.as_deref() {
+        status_message(ui, problem, true);
         ui.add_space(8.0);
     } else if let Some(status) = &state.status {
         status_message(ui, &status.text, status.is_error);

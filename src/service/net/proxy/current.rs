@@ -45,6 +45,9 @@ pub struct Snapshot {
 pub struct Status {
     pub mode: ProxyMode,
     pub active: Option<Active>,
+    /// Set when the manual proxy is complete yet unusable, so connections go direct: said on
+    /// the page instead of leaving the user to wonder why the proxy is not in use.
+    pub problem: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -135,7 +138,15 @@ fn status_of(state: &State) -> Status {
             source: resolved.source,
             server: resolved.spec.describe(),
         }),
+        problem: problem(&state.config, state.resolved.as_ref()),
     }
+}
+
+/// A manual proxy that passed validation but did not resolve: it could not be built, and every
+/// connection would go direct without a word. Nothing to say while it is unfinished.
+pub(super) fn problem(config: &ProxyConfig, resolved: Option<&Resolved>) -> Option<String> {
+    (config.mode == ProxyMode::Manual && resolved.is_none() && config.validate().is_ok())
+        .then(|| "This proxy server cannot be used, so connections go directly.".to_owned())
 }
 
 /// A `ureq` config with the proxy in force. Every agent is built from this, never from
