@@ -4,6 +4,36 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "% of account"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "+ Column"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "+ Row"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "A"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "A PNG or JPEG, scaled to fit and kept with your drawings"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid ""
+"A candle's range, in percent of the first price. Zero takes the average range "
+"of the chart's last 20 bars."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "A copy kept in the drawing: later changes to the chart do not move it."
+msgstr ""
+
 #: src/service/update/install/portable_binary.rs
 msgid "A development build does not update itself."
 msgstr ""
@@ -12,8 +42,34 @@ msgstr ""
 msgid "A development build must not use iCloud's Production environment."
 msgstr ""
 
+#: src/ui/drawing/properties/style.rs
+msgid "A dot halfway along the line."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid ""
+"A drawing only: it never places an order, and what it says is hypothetical."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid ""
+"A made-up run between the two points: not a forecast, and never real candles."
+msgstr ""
+
 #: src/service/system/entitlements.rs
 msgid "A release build must not use iCloud's Development environment."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "A second background, behind the other set of levels."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "A tag with the price on the price axis."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "A tag with the time on the time axis."
 msgstr ""
 
 #: src/service/snapshot/providers/self_hosted.rs
@@ -21,11 +77,56 @@ msgid "A token has no spaces and only plain letters, digits and symbols."
 msgstr ""
 
 #: src/trading/confirm.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/tests.rs
 msgid "Account"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Account size"
 msgstr ""
 
 #: src/trading/edit/mod.rs
 msgid "Action"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Add"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Add alert at this price"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Add column"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Add image"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+#: src/ui/drawing/properties/tests.rs
+msgid "Add level"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Add post"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Add row"
+msgstr ""
+
+#: src/ui/drawing/layer/draw.rs
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/layer/text_edit.rs
+msgid "Add text"
+msgstr ""
+
+#: src/ui/drawing/properties/text.rs
+msgid "Add text to this drawing"
 msgstr ""
 
 #: src/service/snapshot/providers/self_hosted.rs
@@ -33,12 +134,44 @@ msgid ""
 "Add the address of your snapshot host in Settings ▸ Snapshots to share."
 msgstr ""
 
+#: src/ui/drawing/layer/menu.rs
+msgid "Add vertex here"
+msgstr ""
+
 #: src/service/watchlist_quotes/provider.rs
 msgid "Add your Alpaca API key in Settings to see stock quotes"
 msgstr ""
 
+#: src/ui/drawing/properties/text.rs
+msgid "Alignment"
+msgstr ""
+
+#: src/ui/drawing/properties/visibility.rs
+msgid "All timeframes"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Allow"
+msgstr ""
+
 #: src/service/watchlist_quotes/provider.rs
 msgid "Alpaca refused your API key. Check it in Settings"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Always show"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Always show stats"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Always stats"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Amount"
 msgstr ""
 
 #: src/service/snapshot/providers/imgbb.rs
@@ -49,8 +182,42 @@ msgstr ""
 msgid "An estimate: {assets} could not be priced and is left out."
 msgstr ""
 
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Anchor"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Angle"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Apex"
+msgstr ""
+
+#: src/ui/drawing/properties/content.rs
 #: src/ui/settings/window.rs
 msgid "Appearance"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Applied “{name}”"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Apply template {name}"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "Area"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+#: src/ui/drawing/properties/tests.rs
+msgid "Arrowheads"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Auto · {interval}"
 msgstr ""
 
 #: src/service/update/install/app_bundle.rs
@@ -65,8 +232,103 @@ msgstr ""
 msgid "Available funds as a share of equity"
 msgstr ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Average high-low"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "B"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Back to start"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Back to the default style"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/footer.rs
+msgid "Back to the view the capture started with"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+#: src/ui/snapshot_studio/window/tests.rs
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "Background"
+msgstr ""
+
 #: src/trading/paper/stats.rs
 msgid "Balance"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Band color"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Band {number}"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/style.rs
+#: src/ui/replay/bar.rs
+msgid "Bars"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Base line"
+msgstr ""
+
+#: src/ui/drawing/properties/tests.rs
+#: src/ui/drawing/properties/text.rs
+msgid "Bold"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Border"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/style.rs
+msgid "Border color"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Border style"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Border thickness"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Borders"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Bottom labels"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Bottom puts the text on the line, top under it."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+#: src/ui/drawing/properties/text.rs
+msgid "Box"
+msgstr ""
+
+#: src/ui/drawing/properties/text.rs
+msgid "Break long lines to fit a box of the width below."
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Bring forward"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Bring to front"
 msgstr ""
 
 #: src/trading/draft.rs
@@ -83,6 +345,23 @@ msgid ""
 "Bybit refused the request (HTTP 403): it is not available in every country"
 msgstr ""
 
+#: src/ui/drawing/properties/coordinates.rs
+msgid "C"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+#: src/ui/drawing/properties/mod.rs
+#: src/ui/drawing/properties/templates.rs
+#: src/ui/drawing/properties/tests.rs
+#: src/ui/replay/bar.rs
+#: src/ui/replay/date_sheet.rs
+msgid "Cancel"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Cancel (Esc)"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Cancel requested"
 msgstr ""
@@ -94,8 +373,32 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Candles"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Caps the size at the account times this over the entry price."
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Cash"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Center"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Change in ticks"
+msgstr ""
+
+#: src/ui/drawing/properties/mod.rs
+msgid "Changes show on the chart; OK keeps them"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Channel width"
 msgstr ""
 
 #: src/service/update/install/mod.rs
@@ -114,12 +417,52 @@ msgstr ""
 msgid "Choose a CoinMarketCap transactions export"
 msgstr ""
 
+#: src/ui/replay/bar.rs
+msgid "Choose a new starting point"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Choose a start"
+msgstr ""
+
 #: src/host/portfolio/import_flow.rs
 msgid "Choose a transactions CSV to import"
 msgstr ""
 
+#: src/ui/drawing/content/sheet.rs
+msgid "Choose file…"
+msgstr ""
+
 #: src/ui/settings/window.rs
 msgid "Choose how DegenView looks across every window and chart."
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Choose where the replay starts"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Click a candle"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Click a candle on a chart to start the replay there"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Click a candle on a chart to start the replay there (Esc cancels)"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/mod.rs
+msgid "Close"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Close Replay"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "Closed P&L: {amount}"
 msgstr ""
 
 #: src/trading/paper/backend.rs
@@ -127,8 +470,72 @@ msgid ""
 "CoinMarketCap charts have no tradable price, so paper trading skips them."
 msgstr ""
 
+#: src/ui/drawing/properties/style.rs
+msgid "Color"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/levels.rs
+msgid "Colors"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Committed to open orders"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Compact"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Compact stats"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Continue to the left edge of the chart."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Continue to the right edge of the chart."
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Control point"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Control point 1"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Control point 2"
+msgstr ""
+
+#: src/ui/drawing/properties/mod.rs
+msgid "Coordinates"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Copied from"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Copy"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/snapshot_studio/window/footer.rs
+#: src/ui/snapshot_studio/window/tests.rs
+msgid "Copy image"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/content.rs
+msgid "Copy link"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Copy style"
 msgstr ""
 
 #: src/host/sync/mod.rs
@@ -307,12 +714,40 @@ msgstr ""
 msgid "Couldn't find this pair's network"
 msgstr ""
 
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Counterclockwise"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Curvature point"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "D"
+msgstr ""
+
 #: src/ui/theme/mod.rs
 msgid "Dark"
 msgstr ""
 
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Dashed"
+msgstr ""
+
 #: src/service/watchlist_quotes/provider.rs
 msgid "Data error: {error}"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Date & Time"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Date and time"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Decimal places of a ratio."
 msgstr ""
 
 #: src/service/update/install/mod.rs
@@ -325,6 +760,63 @@ msgstr ""
 msgid "DegenView is not running from an app bundle."
 msgstr ""
 
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "DegenView mark"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Degree"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Delete"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Delete column"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Delete row"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Deleted “{name}”"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Details"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Dismiss"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Distance"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Dotted"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Down border"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Down candle"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Down volume"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/footer.rs
+#: src/ui/snapshot_studio/window/tests.rs
+msgid "Download PNG"
+msgstr ""
+
 #: src/service/update/install/mod.rs
 msgid "Downloading the new version…"
 msgstr ""
@@ -333,12 +825,121 @@ msgstr ""
 msgid "Drag DegenView from the disk image to the Applications folder first."
 msgstr ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Draw another run"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Draw each arc as a whole circle."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Draw every level in the line color."
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Draw every line in the median's color."
+msgstr ""
+
+#: src/ui/drawing/properties/mod.rs
+msgid "Drawing properties"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/preview.rs
+msgid "Drawing the image…"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "Drawings"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Drive 1"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Drive 2"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Drive 3"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Drop to add the picture"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Duplicate"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Each level is drawn on both sides of the median."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Each row's height, in steps of the chart's last printed price place."
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Edit requested"
 msgstr ""
 
 #: src/trading/edit/mod.rs
 msgid "Edit sent. The order updates when the broker confirms it."
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Edit text"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Emoji"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Emoji background"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Emoji pin"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+#: src/ui/drawing/properties/style.rs
+msgid "End"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "End bar"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "End of arc"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "End of first cycle"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "End of move"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "End of retracement"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "End of second edge"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Ended"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Entry"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -362,6 +963,31 @@ msgstr ""
 msgid "Export theme"
 msgstr ""
 
+#: src/ui/drawing/properties/style.rs
+msgid "Extend"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Extend left"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Extend point of control"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Extend right"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Failure"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Far"
+msgstr ""
+
 #: src/trading/edit/mod.rs
 msgid "Fee (broker's estimate)"
 msgstr ""
@@ -372,6 +998,73 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "Fees"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Fetch previews from {service}?"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Fetch preview…"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Fill"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/style.rs
+msgid "Fill color"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Fill the bands"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "First Bar"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "First bar's close"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "First extreme"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "First line"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Flip the drawing round its anchors."
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Flipped"
+msgstr ""
+
+#: src/ui/drawing/properties/tests.rs
+#: src/ui/drawing/properties/text.rs
+msgid "Font"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Font size"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Forget my default"
+msgstr ""
+
+#: src/ui/drawing/layer/volume_shapes.rs
+msgid "From the loaded bars only"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Full circles"
 msgstr ""
 
 #: src/service/watchlist_quotes/provider.rs
@@ -388,16 +1081,102 @@ msgstr ""
 msgid "GitHub sent an unreadable reply."
 msgstr ""
 
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Grid color"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Head"
+msgstr ""
+
+#: src/ui/drawing/properties/content.rs
+#: src/ui/snapshot_studio/window/footer.rs
+#: src/ui/snapshot_studio/window/tests.rs
+msgid "Height"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Hide"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Historical replay"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Historical replay, {state}"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Holdings"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+#: src/ui/drawing/properties/text.rs
+msgid "Horizontal"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "How far from the VWAP, either side."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "How long the arrow spans."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "How many bars the arrow spans."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "How many rows the range is cut into."
+msgstr ""
+
+#: src/ui/snapshot_studio/window/footer.rs
+msgid ""
+"How much of the price axis the image shows. Drag the ruler left to zoom in, "
+"right to zoom out; double-click to reset."
+msgstr ""
+
+#: src/ui/snapshot_studio/window/footer.rs
+msgid ""
+"How much of the time axis the image shows. Drag the ruler left to zoom in, "
+"right to zoom out; double-click to reset."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "How much the ranges and the path wander, in percent."
+msgstr ""
+
+#: src/ui/drawing/properties/mod.rs
+msgid "Image"
+msgstr ""
+
+#: src/ui/drawing/layer/draw.rs
+msgid "Image unavailable (waiting to sync)"
 msgstr ""
 
 #: src/service/editor_theme/files.rs
 msgid "Import a theme"
 msgstr ""
 
+#: src/ui/snapshot_studio/window/tests.rs
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "Include"
+msgstr ""
+
 #: src/service/watchlist_quotes/engine.rs
 msgid "Index charts have no market quote"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "Indicators"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/levels.rs
+#: src/ui/drawing/properties/mod.rs
+msgid "Inputs"
 msgstr ""
 
 #: src/ui/settings/appearance.rs
@@ -406,6 +1185,15 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "It filled before the cancel arrived."
+msgstr ""
+
+#: src/ui/drawing/properties/text.rs
+msgid "Italic"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/content.rs
+msgid "Keep shape"
 msgstr ""
 
 #: src/service/snapshot/providers/imgbb.rs
@@ -420,12 +1208,90 @@ msgstr ""
 msgid "Kraken error: {text}"
 msgstr ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Label"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Label background"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Label height"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Label placement"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Label position"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/fib_pages.rs
+#: src/ui/drawing/properties/levels.rs
+msgid "Labels"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Language"
 msgstr ""
 
 #: src/model/tab/title.rs
 msgid "Layout name only"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Leave replay and return to the live market"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Left"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Left edge"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Left labels"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Left neckline"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Left shoulder"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Level"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+#: src/ui/drawing/properties/levels.rs
+msgid "Level color"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Level {ratio}"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+#: src/ui/drawing/properties/mod.rs
+msgid "Levels"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Levels based on log scale"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/tests.rs
+msgid "Leverage"
 msgstr ""
 
 #: src/ui/theme/mod.rs
@@ -437,9 +1303,82 @@ msgstr ""
 msgid "Limit price"
 msgstr ""
 
+#: src/ui/drawing/properties/style.rs
+msgid "Line"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/levels.rs
+#: src/ui/drawing/properties/style.rs
+msgid "Line color"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+#: src/ui/drawing/properties/levels.rs
+#: src/ui/drawing/properties/style.rs
+msgid "Line style"
+msgstr ""
+
+#: src/ui/drawing/properties/mod.rs
+msgid "Link"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Live"
+msgstr ""
+
+#: src/ui/replay/date_sheet.rs
+msgid "Load a chart with data first."
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Loading history"
+msgstr ""
+
+#: src/ui/drawing/layer/draw.rs
+msgid "Loading image…"
+msgstr ""
+
+#: src/ui/replay/date_sheet.rs
+msgid "Local time"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Lock"
+msgstr ""
+
+#: src/ui/replay/overlay.rs
+msgid "Logs"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "Long"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Look"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/tests.rs
+msgid "Lot size"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Lower deviation"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Lower line"
+msgstr ""
+
 #: src/service/watchlist_quotes/provider.rs
 msgid ""
 "MEXC refused the request (HTTP 403): it is not available in every country"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Make this the default {tool}"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -454,17 +1393,134 @@ msgstr ""
 msgid "Margin used"
 msgstr ""
 
+#: src/ui/drawing/properties/style.rs
+msgid "Marker"
+msgstr ""
+
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
 msgid "Market"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Measurements printed beside the arrow."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Measurements printed beside the line."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Median"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Median color"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Middle line"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Middle line color"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Middle line style"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Middle point"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Mirrored"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Mode"
 msgstr ""
 
 #: src/service/update/install/app_bundle.rs
 msgid "Move DegenView to the Applications folder first."
 msgstr ""
 
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Move down"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Move up"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/preview.rs
+msgid "Moving the picture is not available for several charts"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "My {tool}"
+msgstr ""
+
+#: src/ui/drawing/properties/content.rs
+msgid "Name"
+msgstr ""
+
+#: src/ui/drawing/properties/content.rs
+msgid "Name this image"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Names"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Near"
+msgstr ""
+
 #: src/service/watchlist_quotes/provider.rs
 msgid "Network error: {error}"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "New drawings start with the built-in style again"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "New run"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "New {tool} drawings start with this style"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Next extreme"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "No indicators on this chart"
+msgstr ""
+
+#: src/ui/drawing/properties/content.rs
+msgid "No preview fetched. Choose Preview on the card's toolbar to ask for one."
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "No saved templates yet"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "No visible drawings"
+msgstr ""
+
+#: src/ui/drawing/layer/volume_shapes.rs
+msgid "No volume data"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/footer.rs
+msgid "Not available for several charts"
 msgstr ""
 
 #: src/service/update/check.rs
@@ -477,6 +1533,39 @@ msgstr ""
 
 #: src/trading/confirm.rs
 msgid "Note"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Nothing is contacted: the card shows what the link says."
+msgstr ""
+
+#: src/ui/drawing/properties/mod.rs
+#: src/ui/drawing/properties/tests.rs
+msgid "OK"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Off"
+msgstr ""
+
+#: src/ui/drawing/properties/text.rs
+msgid "Off keeps the text but does not draw it."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Off shows the statistics only while the arrow is selected."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Off shows them only while the position is selected."
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Offset point"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "On a logarithmic chart, space levels by the ratio of the prices."
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -505,12 +1594,49 @@ msgstr ""
 msgid "Only PNG and JPEG pictures can be added."
 msgstr ""
 
+#: src/ui/drawing/content/sheet.rs
+msgid "Only when you ask, for the one link you chose"
+msgstr ""
+
+#: src/ui/drawing/properties/content.rs
+msgid "Opacity (%)"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Open"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "Open P&L: {amount}"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/content.rs
+msgid "Open link"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Open orders"
 msgstr ""
 
+#: src/ui/drawing/content/sheet.rs
+msgid "Or drop a picture on the chart"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Orders resting at the broker or being sent"
+msgstr ""
+
+#: src/ui/drawing/properties/text.rs
+msgid "Orientation"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Origin"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "P&L: —"
 msgstr ""
 
 #: src/trading/paper/backend.rs
@@ -521,13 +1647,163 @@ msgstr ""
 msgid "Paper trading has no price for this chart."
 msgstr ""
 
+#: src/ui/drawing/content/sheet.rs
+msgid "Paste from clipboard"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Paste style"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Paste the link of a post on X. It is placed at the time it was posted."
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Paste the link of another post on X."
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Pause"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Pause (Shift–Down Arrow)"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Paused"
+msgstr ""
+
 #: src/host/paper/mod.rs
 msgid ""
 "Paused: two Macs changed this account. Placing an order here takes it over."
 msgstr ""
 
+#: src/ui/drawing/properties/levels.rs
+msgid "Pearson's R"
+msgstr ""
+
+#: src/ui/drawing/layer/line_shapes.rs
+msgid "Pearson's R: {value}"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/style.rs
+msgid "Percent change"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Percent of the chart's width or height, from its top-left corner."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Percents"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Pick a date and time to start from"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Pick a start"
+msgstr ""
+
+#: src/ui/replay/date_sheet.rs
+msgid "Pick the moment the chart rewinds to."
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Picking"
+msgstr ""
+
+#: src/ui/drawing/properties/content.rs
+msgid "Picture"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Pin to chart"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Pin to screen"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Pinned to screen"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Pitchfork"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Pivot names"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Placement"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Plate"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Play"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Play (Shift–Down Arrow)"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Playback speed"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Playing"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Point 1"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Point 2"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Point 3"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Point of control"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Point on the 1x1 angle"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Point on the spiral"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Point {number}"
+msgstr ""
+
 #: src/service/watchlist_quotes/engine.rs
 msgid "Portfolio cards have no market quote"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+#: src/ui/drawing/properties/text.rs
+msgid "Position"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Position on screen"
 msgstr ""
 
 #: src/trading/paper/stats.rs
@@ -538,6 +1814,10 @@ msgstr ""
 msgid "Post only"
 msgstr ""
 
+#: src/ui/drawing/content/card.rs
+msgid "Post {id}"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Practice orders on {broker}'s test environment. No real money."
 msgstr ""
@@ -546,13 +1826,123 @@ msgstr ""
 msgid "Practice with pretend money. Nothing leaves this computer."
 msgstr ""
 
+#: src/ui/drawing/properties/levels.rs
+msgid "Precision"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/content.rs
+msgid "Preview"
+msgstr ""
+
+#: src/ui/drawing/content/card.rs
+msgid "Preview not fetched"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/preview.rs
+msgid "Preview. Drag to move the picture; arrow keys move it, Home resets."
+msgstr ""
+
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
+#: src/ui/drawing/properties/coordinates.rs
+#: src/ui/drawing/properties/forecast_pages.rs
 msgid "Price"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Price change"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Price label"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Price labels"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Price level"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Price per bar"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Price range"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Prices"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Print each level's price."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Print each level's value."
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Print how closely the price follows the line (-1 to 1)."
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid ""
+"Print the Fibonacci ratio of each leg on the dashed line it is measured along."
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Print the name of each pivot beside it."
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Print the name of each wave at its end."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Print values as percentages."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Quantity precision"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Radius and first arm"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Radius point"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+#: src/ui/replay/date_sheet.rs
+msgid "Random"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Ranges and ratio"
 msgstr ""
 
 #: src/service/watchlist_quotes/provider.rs
 msgid "Rate limited by the provider"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Ratio"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/levels.rs
+msgid "Ratios"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Reading the picture…"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -567,18 +1957,175 @@ msgstr ""
 msgid "Reconnecting ({reason}). New orders are paused."
 msgstr ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Reflect the pattern vertically."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Remove level"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Remove vertex"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Rename"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Renamed to “{name}”"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+#: src/ui/drawing/layer/menu.rs
+msgid "Replace"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/content.rs
+msgid "Replace image…"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid "Replace link"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Replace link…"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Replay"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Replay Again"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Replay Again (Shift–Down Arrow)"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid ""
+"Replay resolution. Auto picks the finest history that fits; 1 bar steps whole "
+"chart bars."
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Reset aspect ratio"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Reset shape"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Reset to the default style"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/footer.rs
+msgid "Reset view"
+msgstr ""
+
+#: src/ui/drawing/properties/content.rs
+msgid "Resizing keeps the picture's proportions."
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Restore default"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+#: src/ui/drawing/properties/tests.rs
+msgid "Restore defaults"
 msgstr ""
 
 #: src/trading/confirm.rs
 msgid "Rests; never takes"
 msgstr ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Result"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Retracement A"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Retracement C"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Return to live market"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Reverse"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Right"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Right edge"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Right labels"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Right neckline"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Right shoulder"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Risk"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Risk is"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "Risk/Reward Ratio: {ratio}"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Row size"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Rows"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Rows layout"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Run"
+msgstr ""
+
 #: src/service/system/sandbox.rs
 msgid ""
 "Run flatpak update if you installed from the DegenView repository, or download"
 " the new .flatpak from the release page."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Run it on to the edge of the chart."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Run the pattern backwards in time."
 msgstr ""
 
 #: src/host/paper/mod.rs
@@ -593,12 +2140,52 @@ msgstr ""
 msgid "Same as the system"
 msgstr ""
 
+#: src/ui/drawing/properties/templates.rs
+msgid "Save"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Save as template…"
+msgstr ""
+
 #: src/service/snapshot/export.rs
 msgid "Save chart image"
 msgstr ""
 
 #: src/host/settings/mod.rs
 msgid "Saved conversations cleared."
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Saved templates could not be read, so none are changed."
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Saved “{name}”"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Second arm"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Second line"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Second wave X"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Select"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Select Bar on Chart"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Select bar on chart"
 msgstr ""
 
 #: src/host/portfolio/import_flow.rs
@@ -611,22 +2198,208 @@ msgstr ""
 msgid "Sell"
 msgstr ""
 
+#: src/ui/drawing/layer/menu.rs
+msgid "Send backward"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Send to back"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Settings"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "Settings…"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Shade between each band and its mirror."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Shape"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "Short"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Shorter tags."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/levels.rs
+msgid "Show"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Show an emoji on the marker at the anchor."
+msgstr ""
+
+#: src/ui/drawing/properties/visibility.rs
+msgid "Show on"
+msgstr ""
+
+#: src/ui/drawing/properties/text.rs
+msgid "Show text"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Show the time range, the price range and their ratio."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Shown once the bars say whether the price reached the target in time."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Shown when the market has any."
+msgstr ""
+
 #: src/trading/confirm.rs
 msgid "Side"
 msgstr ""
 
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
+#: src/ui/drawing/properties/content.rs
+#: src/ui/drawing/properties/text.rs
+#: src/ui/snapshot_studio/window/toolbar.rs
 msgid "Size"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "Size applies to the Styled look"
+msgstr ""
+
+#: src/ui/replay/date_sheet.rs
+msgid "Snaps to the bar at {date} {time}"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/levels.rs
+msgid "Source"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Speed"
 msgstr ""
 
 #: src/trading/confirm.rs
 msgid "Spend"
 msgstr ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Standard deviations"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Standard deviations above the line."
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Standard deviations from the line, negative for below."
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+#: src/ui/drawing/properties/style.rs
+#: src/ui/replay/bar.rs
+msgid "Start"
+msgstr ""
+
+#: src/ui/replay/date_sheet.rs
+msgid "Start Replay"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Start bar"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Start from a random bar, leaving room to play forward"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Start from the first bar the chart has loaded"
+msgstr ""
+
+#: src/ui/replay/overlay.rs
+msgid "Start here"
+msgstr ""
+
+#: src/ui/replay/date_sheet.rs
+msgid "Start of data"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Start of move"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Statistics"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Stats"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Stats plate"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Step Back (Shift–Left Arrow)"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Step Forward (Shift–Right Arrow)"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Step {number} of {count}"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Steps of the chart's last printed price place."
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+#: src/ui/drawing/properties/coordinates.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Stop"
+msgstr ""
+
+#: src/ui/replay/overlay.rs
+msgid "Stop here"
+msgstr ""
+
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
 msgid "Stop price"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Stop reached"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/mod.rs
+#: src/ui/snapshot_studio/window/tests.rs
+msgid "Studio"
+msgstr ""
+
+#: src/ui/drawing/properties/mod.rs
+#: src/ui/drawing/properties/style.rs
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "Style"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Success"
 msgstr ""
 
 #: src/model/tab/title.rs
@@ -647,6 +2420,36 @@ msgstr ""
 
 #: src/ui/settings/appearance.rs
 msgid "Tabs"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+#: src/ui/drawing/properties/coordinates.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Target"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Target reached"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+#: src/ui/drawing/properties/tests.rs
+msgid "Template"
+msgstr ""
+
+#: src/ui/drawing/properties/templates.rs
+msgid "Template name"
+msgstr ""
+
+#: src/ui/drawing/properties/mod.rs
+#: src/ui/drawing/properties/text.rs
+msgid "Text"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+#: src/ui/drawing/properties/tests.rs
+#: src/ui/drawing/properties/text.rs
+msgid "Text color"
 msgstr ""
 
 #: src/host/broker/mod.rs
@@ -696,6 +2499,14 @@ msgstr ""
 msgid "The app has no parent folder."
 msgstr ""
 
+#: src/ui/drawing/properties/style.rs
+msgid "The arrow's angle as drawn on screen."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "The balance the risk and the size are worked from."
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "The broker does not know this order any more."
 msgstr ""
@@ -716,10 +2527,23 @@ msgstr ""
 msgid "The cancel was sent but the answer was lost. The order is being checked."
 msgstr ""
 
+#: src/ui/drawing/properties/content.rs
+msgid ""
+"The card shows what the link says, and a preview only when you fetch one."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "The change as a percentage of the start."
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid ""
 "The connection changed since the order was set up. Nothing was sent. Check the"
 " order again."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "The corner the arc is centred on"
 msgstr ""
 
 #: src/service/update/archive.rs
@@ -774,6 +2598,10 @@ msgstr ""
 msgid "The download uses an unsupported zip format."
 msgstr ""
 
+#: src/ui/drawing/properties/visibility.rs
+msgid "The drawing is kept when you switch to a timeframe it is not shown on."
+msgstr ""
+
 #: src/service/system/file_dialog.rs
 msgid "The file dialog failed: {message}"
 msgstr ""
@@ -782,6 +2610,18 @@ msgstr ""
 msgid ""
 "The language of menus, labels and messages. Market names, prices and Pine "
 "scripts stay as they are."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "The line joining the anchors."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "The longest bar, in percent of the range's width."
+msgstr ""
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "The mark belongs to the Styled look"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -816,6 +2656,10 @@ msgid ""
 "DegenView."
 msgstr ""
 
+#: src/ui/drawing/properties/content.rs
+msgid "The picture is not available yet"
+msgstr ""
+
 #: src/host/portfolio/card.rs
 msgid "The portfolio database is unavailable."
 msgstr ""
@@ -833,6 +2677,14 @@ msgid ""
 "The previous DegenView is still running. Close it, then open DegenView again."
 msgstr ""
 
+#: src/ui/drawing/properties/style.rs
+msgid "The price at each end."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "The price change between the ends."
+msgstr ""
+
 #: src/trading/edit/mod.rs
 msgid "The price is not a number."
 msgstr ""
@@ -841,6 +2693,14 @@ msgstr ""
 msgid ""
 "The price must be a multiple of {increment}. The nearest valid price below is "
 "{nearest}."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "The price that is averaged."
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "The price the line is fitted to."
 msgstr ""
 
 #: src/service/watchlist_quotes/provider.rs
@@ -863,6 +2723,18 @@ msgstr ""
 msgid "The provider returned no quote"
 msgstr ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "The row with the most volume."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "The same size, different candles."
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "The scale of the move: it sets how the waves are written."
+msgstr ""
+
 #: src/host/broker/mod.rs
 msgid "The secret store stopped answering."
 msgstr ""
@@ -881,6 +2753,16 @@ msgstr ""
 msgid "The settings database is unavailable."
 msgstr ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid ""
+"The share of the volume the value area holds, grown out from the point of "
+"control."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "The signed number of bars from start to end."
+msgstr ""
+
 #: src/trading/edit/mod.rs
 msgid "The size cannot be less than what has already filled."
 msgstr ""
@@ -897,6 +2779,20 @@ msgstr ""
 msgid "The size must be a multiple of {increment}."
 msgstr ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "The smallest amount traded: a quantity is in lots."
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "The table stays here however the chart is scrolled."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid ""
+"The volume of each bar is spread over its high to low: an approximation, not "
+"tick data."
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Theme"
 msgstr ""
@@ -907,6 +2803,13 @@ msgstr ""
 
 #: src/host/update/mod.rs
 msgid "There is no update ready to install."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+#: src/ui/drawing/properties/levels.rs
+#: src/ui/drawing/properties/style.rs
+#: src/ui/drawing/properties/tests.rs
+msgid "Thickness"
 msgstr ""
 
 #: src/service/update/code_signature.rs
@@ -937,6 +2840,14 @@ msgid ""
 "itself."
 msgstr ""
 
+#: src/ui/drawing/layer/draw.rs
+msgid "This image could not be read"
+msgstr ""
+
+#: src/ui/snapshot_studio/compose/mod.rs
+msgid "This image is too large to draw. Try a different size or background."
+msgstr ""
+
 #: src/trading/paper/backend.rs
 msgid "This needs {short} more than the {free} free."
 msgstr ""
@@ -957,8 +2868,46 @@ msgid ""
 "Settings ▸ Snapshots."
 msgstr ""
 
+#: src/ui/drawing/properties/coordinates.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/replay/date_sheet.rs
+msgid "Time"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Time (UTC)"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Time label"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "Time of the replay cursor, in your time zone"
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Time range"
+msgstr ""
+
+#: src/ui/drawing/content/sheet.rs
+msgid ""
+"To show its text and the author's picture, DegenView sends this post's link to"
+" {host}, asks X's embed service for the author's picture and downloads it from"
+" X's image server. The few lines and the picture it gets back are kept on the "
+"card. Nothing else is sent: no account, no cookies, nothing about your charts."
+msgstr ""
+
 #: src/model/alert/feed.rs
 msgid "Today"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Top labels"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Top-left corner"
 msgstr ""
 
 #: src/trading/edit/mod.rs
@@ -973,8 +2922,17 @@ msgstr ""
 msgid "Total (venue's estimate)"
 msgstr ""
 
+#: src/ui/drawing/properties/fib_pages.rs
+#: src/ui/drawing/properties/style.rs
+msgid "Trend line"
+msgstr ""
+
 #: src/host/snapshot/mod.rs
 msgid "Turn on a snapshot host in Settings ▸ Snapshots to share."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Turn the other way round."
 msgstr ""
 
 #: src/trading/confirm.rs
@@ -1013,8 +2971,24 @@ msgstr ""
 msgid "Unexpected OKX response"
 msgstr ""
 
+#: src/ui/drawing/layer/menu.rs
+msgid "Unlock"
+msgstr ""
+
 #: src/service/update/install/mod.rs
 msgid "Unpacking and checking it…"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Up border"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Up candle"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Up volume"
 msgstr ""
 
 #: src/service/update/install/app_bundle.rs
@@ -1026,10 +3000,156 @@ msgstr ""
 msgid "Uploads to {host}"
 msgstr ""
 
+#: src/ui/drawing/properties/levels.rs
+msgid "Upper deviation"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Upper line"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+#: src/ui/drawing/properties/levels.rs
+msgid "Use one color"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Value area high and low"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Value area lines"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Value area volume"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Variance"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+#: src/ui/drawing/properties/text.rs
+msgid "Vertical"
+msgstr ""
+
+#: src/ui/drawing/properties/mod.rs
+msgid "Visibility"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Volume"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "Volume: {volume}"
+msgstr ""
+
+#: src/ui/drawing/properties/levels.rs
+msgid "Wave"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave 1"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave 2"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave 3"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave 4"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave 5"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave A"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave B"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave C"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave D"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave E"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave W"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave X"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave Y"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Wave Z"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid ""
 "What a chart tab shows. The layout name and the price follow the tab's focused"
 " chart."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "What is lost if the stop is reached."
+msgstr ""
+
+#: src/ui/drawing/properties/style.rs
+msgid "Where the median starts and ends."
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Wick"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Wicks"
+msgstr ""
+
+#: src/ui/drawing/properties/content.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/text.rs
+#: src/ui/snapshot_studio/window/footer.rs
+#: src/ui/snapshot_studio/window/tests.rs
+msgid "Width"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "Width point"
+msgstr ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "Worked from the volume of the bars the chart draws: no volume, no line."
+msgstr ""
+
+#: src/ui/drawing/properties/text.rs
+msgid "Wrap text"
+msgstr ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "X"
 msgstr ""
 
 #: src/model/alert/feed.rs
@@ -1038,6 +3158,10 @@ msgstr ""
 
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Your saved access token is sent with it."
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "Zero takes it from the two anchors."
 msgstr ""
 
 #: src/service/update/code_signature.rs
@@ -1072,6 +3196,14 @@ msgstr ""
 msgid "open"
 msgstr ""
 
+#: src/ui/replay/bar.rs
+msgid "or"
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "to cancel"
+msgstr ""
+
 #: src/service/update/archive.rs
 msgid "unexpected executable {relative}"
 msgstr ""
@@ -1092,9 +3224,24 @@ msgstr ""
 msgid "{assets} · {unpriced} unpriced"
 msgstr ""
 
+#: src/ui/drawing/layer/gann_shapes.rs
+msgid "{bars} bars"
+msgstr ""
+
+#: src/ui/drawing/render.rs
+msgid "{bars} · {duration}"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "{count} asset"
 msgid_plural "{count} assets"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/render.rs
+msgid "{count} bar"
+msgid_plural "{count} bars"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -1119,6 +3266,19 @@ msgstr[1] ""
 #: src/ui/kit/time_text.rs
 msgid "{count} mo. ago"
 msgid_plural "{count} mo. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/drawing/properties/coordinates.rs
+msgid "{count} more point: drag it on the chart."
+msgid_plural "{count} more points: drag them on the chart."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/levels.rs
+msgid "{count} place"
+msgid_plural "{count} places"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -1154,6 +3314,14 @@ msgstr[1] ""
 msgid "{currency} free to spend"
 msgstr ""
 
+#: src/ui/drawing/render.rs
+msgid "{days}d"
+msgstr ""
+
+#: src/ui/drawing/render.rs
+msgid "{days}d {hours}h"
+msgstr ""
+
 #: src/trading/edit/mod.rs
 msgid "{error} The order is being read again to see what happened."
 msgstr ""
@@ -1180,6 +3348,30 @@ msgid ""
 "Documents."
 msgstr ""
 
+#: src/ui/drawing/properties/forecast_pages.rs
+msgid "{from} to {to}"
+msgstr ""
+
+#: src/ui/drawing/render.rs
+msgid "{hours}h"
+msgstr ""
+
+#: src/ui/drawing/render.rs
+msgid "{hours}h {minutes}m"
+msgstr ""
+
+#: src/ui/drawing/render.rs
+msgid "{minutes}m"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "{name} (hypothetical)"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/swatches.rs
+msgid "{name} background"
+msgstr ""
+
 #: src/host/snapshot/mod.rs
 msgid "{name} has no secret called {key}."
 msgstr ""
@@ -1188,10 +3380,30 @@ msgstr ""
 msgid "{name} has no setting called {key}."
 msgstr ""
 
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "{name}, off"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgid "{name}, on"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "{name}: {offset}"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "{name}: {offset}, Amount: {amount}"
+msgstr ""
+
 #: src/service/system/file_dialog.rs
 msgid ""
 "{path} is {size} KB, which is too large to be what was asked for (the limit is"
 " {limit} KB)."
+msgstr ""
+
+#: src/ui/drawing/render.rs
+msgid "{periods} periods"
 msgstr ""
 
 #: src/service/update/archive.rs
@@ -1200,6 +3412,10 @@ msgstr ""
 
 #: src/trading/edit/mod.rs
 msgid "{side} {size} {product} · {kind}"
+msgstr ""
+
+#: src/ui/drawing/layer/forecast_shapes.rs
+msgid "{standing}, Qty: {quantity}"
 msgstr ""
 
 #: src/ui/settings/appearance.rs
@@ -1216,6 +3432,48 @@ msgstr ""
 
 #: src/host/snapshot/mod.rs
 msgid "{value} is not a choice for {title}."
+msgstr ""
+
+#: src/ui/replay/bar.rs
+msgid "{when}  ·  Step {number} of {count}"
+msgstr ""
+
+#: src/ui/drawing/properties/content.rs
+msgid "{width} × {height} pixels"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "{width}px"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "{width}px dashed"
+msgstr ""
+
+#: src/ui/drawing/properties/fib_pages.rs
+msgid "{width}px dotted"
+msgstr ""
+
+#: src/ui/replay/overlay.rs
+msgid "{words} · {time}"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "− Column"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgid "− Row"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgctxt "bold button"
+msgid "B"
+msgstr ""
+
+#: src/ui/drawing/layer/menu.rs
+msgctxt "italic button"
+msgid "I"
 msgstr ""
 
 #: src/trading/model.rs

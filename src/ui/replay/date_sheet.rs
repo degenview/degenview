@@ -2,6 +2,7 @@
 //! presets and a live "snaps to bar" preview. Pure view — it renders an egui window
 //! over `ctx` and returns a `ReplayDateSheetResult` only when the user commits or cancels.
 
+use crate::i18n::{datetime, tr};
 use eframe::egui::{self, Color32, RichText, Sense, Stroke, Vec2};
 
 use crate::clock::now_ms;
@@ -90,8 +91,8 @@ fn header(ui: &mut egui::Ui) {
     sheet::header(
         ui,
         Icon::ClockArrow,
-        "Start Replay",
-        "Pick the moment the chart rewinds to.",
+        tr!("Start Replay"),
+        tr!("Pick the moment the chart rewinds to."),
         theme::REPLAY,
     );
 }
@@ -102,11 +103,11 @@ fn presets(ui: &mut egui::Ui, draft_ms: &mut i64, range: Option<(i64, i64)>) {
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.add_enabled_ui(range.is_some(), |ui| {
             for (label, fraction) in [
-                ("Start of data", Some(0.0)),
+                (tr!("Start of data"), Some(0.0)),
                 ("25%", Some(0.25)),
                 ("50%", Some(0.5)),
                 ("75%", Some(0.75)),
-                ("Random", None),
+                (tr!("Random"), None),
             ] {
                 let button = egui::Button::new(RichText::new(label).size(11.5))
                     .fill(theme::ink(14))
@@ -130,7 +131,7 @@ fn presets(ui: &mut egui::Ui, draft_ms: &mut i64, range: Option<(i64, i64)>) {
 
 fn picker(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, range: Option<(i64, i64)>) {
     let Some((lo, hi)) = range else {
-        ui.label(RichText::new("Load a chart with data first.").weak());
+        ui.label(RichText::new(tr!("Load a chart with data first.")).weak());
         return;
     };
     egui::Frame::new()
@@ -154,7 +155,7 @@ fn picker(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, range: Option<(i6
 fn calendar_header(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, lo: i64, hi: i64) {
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new(crate::i18n::datetime::month_year(
+            RichText::new(datetime::month_year(
                 state.display_year,
                 state.display_month,
             ))
@@ -195,7 +196,8 @@ fn calendar_grid(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, lo: i64, h
     egui::Grid::new("replay-calendar-grid")
         .spacing([4.0, 3.0])
         .show(ui, |ui| {
-            for weekday in ["M", "T", "W", "T", "F", "S", "S"] {
+            for day in 0..7 {
+                let weekday = datetime::weekday_initial(day);
                 ui.add_sized(
                     [43.0, 22.0],
                     egui::Label::new(
@@ -252,7 +254,7 @@ fn time_picker(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, lo: i64, hi:
     let (year, month, day, mut hour, mut minute, _) = local_fields(state.draft_ms);
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new("Time")
+            RichText::new(tr!("Time"))
                 .size(12.0)
                 .color(theme::text_secondary()),
         );
@@ -277,7 +279,7 @@ fn time_picker(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, lo: i64, hi:
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
-                RichText::new("Local time")
+                RichText::new(tr!("Local time"))
                     .size(11.0)
                     .color(theme::text_tertiary()),
             );
@@ -305,10 +307,10 @@ fn snap_preview(ui: &mut egui::Ui, draft_ms: i64, timeline: &[i64]) {
         scope_icon(ui);
         let local_bar = bar + local_utc_offset_secs(bar) * 1_000;
         ui.label(
-            RichText::new(format!(
-                "Snaps to the bar at {} {}",
-                date_text(local_bar),
-                time_text(local_bar)
+            RichText::new(tr!(
+                "Snaps to the bar at {date} {time}",
+                date = date_text(local_bar),
+                time = time_text(local_bar)
             ))
             .small()
             .weak(),
@@ -328,10 +330,10 @@ fn buttons(
         Vec2::new(width, 28.0),
         egui::Layout::right_to_left(egui::Align::Center),
         |ui| {
-            if kit::sheet_button(ui, "Start Replay", true, has_range).clicked() {
+            if kit::sheet_button(ui, tr!("Start Replay"), true, has_range).clicked() {
                 *result = Some(ReplayDateSheetResult::Start(draft_ms));
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                 *result = Some(ReplayDateSheetResult::Cancel);
             }
         },
@@ -490,5 +492,81 @@ mod tests {
             rect.height()
         );
         screen.save("replay-date-sheet", last.unwrap());
+    }
+    /// Every word a frame writes.
+    fn words(output: &egui::FullOutput) -> Vec<String> {
+        fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::Shape::Text(text) => out.push(text.galley.text().to_owned()),
+                egui::Shape::Vec(inner) => inner.iter().for_each(|shape| walk(shape, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut out);
+        }
+        out
+    }
+
+    /// The sheet in the pseudo-locale, in both themes: its words come through `tr!`, so none shows
+    /// without brackets, and the longer text fits the sheet: no label is cut. The month heading is a date, which
+    /// the formatter writes and the pseudo-locale leaves alone. With
+    /// `DEGENVIEW_GALLERY_DIR` set the pictures are written out to look at.
+    #[test]
+    fn the_sheet_draws_in_the_pseudo_locale() {
+        use crate::i18n::{Locale, with_locale};
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        use crate::ui::theme::{AppTheme, RestoreDefaultTheme};
+        let _theme = RestoreDefaultTheme;
+        let timeline: Vec<i64> = (0..400)
+            .map(|bar| 1_700_000_000_000 + bar * 3_600_000)
+            .collect();
+        with_locale(Locale::PSEUDO, || {
+            for (name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+                let mut screen = Screen::new(egui::vec2(520.0, 700.0));
+                theme::apply(&screen.ctx, app_theme);
+                let mut state = ReplayDateSheetState::default();
+                state.open(&timeline);
+                let mut last = None;
+                for _ in 0..4 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        show(ui.ctx(), &mut state, &timeline);
+                    }));
+                }
+                let last = last.expect("a frame");
+                let shown = words(&last);
+                for word in [
+                    tr!("Start Replay"),
+                    tr!("Start of data"),
+                    tr!("Random"),
+                    tr!("Time"),
+                    tr!("Local time"),
+                    tr!("Cancel"),
+                ] {
+                    assert!(word.starts_with('['), "{word} is not in the pseudo-locale");
+                    assert!(
+                        shown.iter().any(|text| text == word),
+                        "{name}: {word} is not drawn: {shown:?}"
+                    );
+                }
+                assert!(
+                    shown.iter().any(|text| text.contains(&datetime::month_year(
+                        state.display_year,
+                        state.display_month
+                    ))),
+                    "{name}: the month heading is not drawn: {shown:?}"
+                );
+                assert_eq!(
+                    Screen::truncated_text(&last),
+                    Vec::<String>::new(),
+                    "{name}: a label was cut"
+                );
+                assert!(state.is_open(), "{name}: nothing was clicked");
+                if gallery_dir().is_some() {
+                    screen.save(&format!("replay-date-sheet-pseudo-{name}"), last);
+                }
+            }
+        });
     }
 }

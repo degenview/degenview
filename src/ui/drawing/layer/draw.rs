@@ -4,6 +4,7 @@
 
 use super::Projection;
 use super::shape::{HandleSpot, LabelLook, LabelPlace, Screen, Tag, TextPlace};
+use crate::i18n::tr;
 use crate::model::Drawing;
 use crate::model::chart::kind::LineDash;
 use crate::model::drawings::style::{
@@ -447,9 +448,9 @@ impl Textures {
 fn picture_status(painter: &Painter, asset: &str) -> &'static str {
     use crate::service::annotation::asset_host::{AssetImage, lookup};
     match lookup(painter.ctx(), asset) {
-        AssetImage::Loading => "Loading image…",
-        AssetImage::Missing => "Image unavailable (waiting to sync)",
-        AssetImage::Corrupt => "This image could not be read",
+        AssetImage::Loading => tr!("Loading image…"),
+        AssetImage::Missing => tr!("Image unavailable (waiting to sync)"),
+        AssetImage::Corrupt => tr!("This image could not be read"),
         AssetImage::Ready(_) => "",
     }
 }
@@ -853,7 +854,7 @@ pub(super) fn paint(
             faint.color[3] = (u16::from(faint.color[3]) * 45 / 100) as u8;
             faint.italic = true;
             let words = if drawing.text().trim().is_empty() {
-                INVITATION
+                tr!("Add text")
             } else {
                 drawing.text()
             };
@@ -1046,9 +1047,6 @@ fn shown_text(screen: &Screen, drawing: &Drawing) -> String {
         (None, _) => drawing.text().to_owned(),
     }
 }
-
-/// What the empty text place of a selected drawing says.
-const INVITATION: &str = "Add text";
 
 /// The trend angle's mark: a level reference line from the left end, an arc up (or down) to the
 /// line, and the angle in degrees beside it.
