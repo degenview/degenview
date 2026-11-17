@@ -26,7 +26,7 @@ const VENUE_SIZE: f32 = 14.0;
 pub struct RowState {
     /// The keyboard's (or the pointer's) row.
     pub highlighted: bool,
-    /// The market is already on a chart of the tab.
+    /// The market is already on a chart of the tab (or in the watchlist being added to).
     pub on_chart: bool,
     /// The market is the focused chart's own or already compared on it.
     pub overlaid: bool,
