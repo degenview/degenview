@@ -30,7 +30,7 @@ dev-unsealed-mcp = []
 dev-mock-broker = ["degenview-brokers/testing"]
 
 [dependencies]
-eframe = { version = "0.36.2", features = ["persistence"] }
+eframe = { version = "0.37.0", features = ["persistence"] }
 # Reads the name and post tables of installed fonts to list the monospaced families (the same
 # version egui already builds).
 ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
