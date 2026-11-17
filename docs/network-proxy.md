@@ -1,0 +1,134 @@
+# Network proxy
+
+DegenView follows a proxy for everything it sends over the internet: market data, live price feeds,
+updates, link previews, webhooks, AI requests and chart sharing. It was added for users whose VPN or
+network publishes a proxy (a Windows user running Karing in system-proxy mode, say) and who could
+only start the app from a launcher that set `HTTPS_PROXY`. Code: `src/service/net/proxy/`; page:
+Settings ▸ Network (`src/ui/settings/network/`).
+
+## The setting
+
+`ProxyConfig`, the local `net.proxy` setting (never synced: it names this Mac's own network;
+classified in `sync::record::policy`).
+
+| Mode | Behaviour |
+| --- | --- |
+| System (default) | The `ALL_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` variables (and lowercase), then the operating system's proxy. |
+| Manual | The server typed on the page: HTTP (`CONNECT`) or SOCKS5, host, port, optional user name. |
+| Off | Direct, whatever the system or environment says. |
+
+The manual proxy's password is never in SQLite: `keychain::proxy_password::ProxyPasswordStore` (service
+`es.nico.degenview.network`). It is read only when a user name is set, so nobody without one is
+prompted. `DEGENVIEW_NO_KEYCHAIN` keeps it in memory. The page asks `is_saved` every frame, so
+no call to the storage happens under a lock it takes (`keychain::cached_secret`: a short `state`
+lock for the page, a separate `io` lock for the reads and writes).
+
+The no-proxy list (`no_proxy`, comma/semicolon/space separated) adds to every mode but Off. A bare
+domain also covers its subdomains (as `curl` reads `NO_PROXY`); `*.x`, `.x`, `10.1.*` and `*` work;
+address ranges (`10.0.0.0/8`) are refused with a message, because the matcher is `ureq`'s.
+Local hosts **always** connect directly, decided by what the host *is* (`bypass::is_local`):
+loopback, `10/8`, `172.16/12`, `192.168/16`, `169.254/16`, IPv6 `::1`, `fe80::/10`, `fc00::/7`
+(also as IPv4-mapped), `localhost`, `*.localhost` and `*.local`. A public name that merely starts
+like an address, `10.example.com`, goes through the proxy. `ureq` can only match the spelling of a
+host, so it cannot make this decision; the agents are picked per request instead (below).
+
+`<local>` is a rule, not an expression: every name **without a dot** (`intranet`, `nas`) connects
+directly. It comes from the typed list, the environment's `NO_PROXY`, Windows' `ProxyOverride` or
+macOS's "Exclude simple hostnames"; `bypass::entries` keeps it out of `ureq`'s list and
+`Resolved::skips` applies it.
+
+What the page checks depends on what it shows: the port only for a manual proxy, the no-proxy list
+unless the proxy is Off. A leftover typo in a hidden field never blocks switching mode.
+
+`Spec.host` is the bare name or address: an IPv6 proxy has no brackets in it (`::1`, however it was
+typed or read from a URL), so a socket can dial it as it is; `Spec::build` brackets it for the URL
+`ureq` wants, and `describe` for the status line. Credentials need no escaping by us: `ureq`
+percent-encodes them when it builds the proxy. A complete manual proxy that still cannot be built is
+shown as a problem on the page (`Status::problem`); it is never dropped silently into direct
+connections.
+
+## Where the OS proxy comes from
+
+- **Windows**: `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings` (`ProxyEnable`,
+  `ProxyServer`, `ProxyOverride`) through `windows-sys` (`Win32_System_Registry`, no new crate).
+  `ProxyServer` is either `host:port` or `http=…;https=…;socks=…` (HTTPS entry preferred, then HTTP,
+  then SOCKS5). `<local>` in `ProxyOverride` is kept as a rule (below). A PAC script
+  (`AutoConfigURL`) is **not** followed.
+- **macOS**: `scutil --proxy` (HTTPS, else HTTP, else SOCKS; `ExceptionsList`, and `ExcludeSimpleHostnames` as the `<local>` rule; the
+  latter is read from a fixture, not yet seen on a real Mac). A process spawn: it
+  runs when the proxy is applied or refreshed, on a worker, never in a frame.
+- **Linux**: no system setting; environment and manual only.
+
+Parsers are pure and tested on every platform (`os/scutil.rs`, `os/server_list.rs`); only the
+registry call (`os/registry.rs`) is `cfg(windows)`.
+
+## How it reaches the code
+
+- `net::proxy::current` holds the process-wide state: the config, the resolved `Resolved`
+  (server, `ureq::Proxy` that knows what to skip, source) and a generation that counts changes.
+  Nothing is resolved before `proxy::init(&store)` / `proxy::apply`, so tests and tools connect
+  directly. In System mode it is read again when older than 30 s: `proxy::refresh_if_stale`, which
+  blocks, is called only where a worker is about to connect (`FollowingAgent::get_for`,
+  `config_builder_for`, `tunnel::dial`, a live feed's route check), so a VPN client switching its
+  proxy on or off is followed without a restart. `snapshot`, `route`, `generation` and `status` are
+  cheap reads.
+- `init` runs at both entry points: `run_gui_with` and `run_alert_agent`. The alert agent is a
+  separate process: its loop calls `proxy::follow(&store)`, which every 2 s reads the saved setting
+  and applies it when it changed, and re-reads the password every 30 s for a manual proxy with a
+  user name (`ProxyPasswordStore::read_fresh`, past the per-process cache), so a change made in
+  the app reaches it without a restart.
+- **Every HTTP agent is built for the URL it will call.** Per call: `net::config_builder_for(url)`
+  (a `ureq` builder with the proxy applied unless the host skips it), never
+  `ureq::Agent::config_builder()` (a test fails if non-test code does). Kept in a struct or a
+  static: `net::agent::FollowingAgent::get_for(url)`, which holds a proxied and a direct agent per
+  proxy generation (rebuilt after a change) and hands out the one the host calls for: `net::http`,
+  the webhook, snapshot and FX transports. `llm::HttpProvider` keeps a `FollowingAgent` too and asks it per request, so
+  building the client on the frame reads nothing from the system. Agents built per call
+  (`update::download`, `annotation::link_fetch`) use `config_builder_for`.
+- **Redirects are followed by hand.** A `FollowingAgent`'s agents never follow them (`ureq` would
+  keep the first hop's proxy or direct choice and match later hops by spelling only, so a redirect
+  to `127.0.0.1` would reach the proxy). `get_following` / `head_following` (market data, images,
+  FX) pick the agent for every hop, up to 5, resolve each `Location` as RFC 3986 says (dot
+  segments removed, fragment dropped; `agent::resolve_location`), and send the caller's headers only
+  to the host the request started at. The webhook, snapshot, AI, link-preview and update agents refuse redirects
+  (update's own checked chain stays on its allow-list).
+- **WebSockets** (`net::ws::connect`) open their TCP stream with `proxy::dial`, which tunnels
+  through the proxy unless it skips the host, and then speak TLS over the tunnel
+  (`tunnel/mod.rs`): HTTP `CONNECT` with Basic auth, SOCKS5 no-auth and user/password (the host
+  name goes to the proxy, not an address, unless it is one). SOCKS4 and `https://` proxies work for
+  REST (`ureq`) but not for live feeds: the error says so. Tests run against in-process fake
+  proxies. A feed reconnects when the setting changes: `ws::connect` returns the proxy generation
+  it dialled under (`Route`), `Health::new` keeps it, and `Health::read` checks it once a second
+  and fails with "the proxy setting changed", which the feed loops already answer by reconnecting
+  after their backoff.
+- The Settings host saves the setting on the frame (cheap), then hands it to `proxy::submit`
+  (`proxy/applier.rs`). A worker on the `SNAPSHOTS` queue applies it (reading the system proxy and
+  the Keychain block): one drain loop, the latest setting wins, and a save that keeps the password
+  does not undo an earlier change to it. The queue is owned by the service, not the host, so a
+  save made just before the window closes still takes effect. What the page should say (a password
+  the storage refused) waits in `proxy::take_report` until the window is next drawn.
+
+- **Live trading** (`degenview-brokers`, an external pinned crate with its own HTTP client and
+  WebSocket) is routed through `proxy::BrokerNetwork` (`proxy/broker.rs`), which `host::broker`
+  gives the crate in `Env::with_network`. The crate asks `route(url)` before every request and
+  rebuilds its agent only when the answer changes; `route` is `route_for_url` (the same decision
+  `config_builder_for` makes) mapped by the pure `to_broker_route`. Its account stream opens the
+  socket with `dial` (the live-feed tunnel, so the same HTTP `CONNECT` and SOCKS5 limits: no SOCKS4
+  or `https://` proxy for the stream, whose error says so) and checks the route about once a
+  second, reconnecting after a change. The crate never reads `*_PROXY` variables itself. A
+  `dev-mock-broker` loopback exchange is local, so it stays direct. Tested against in-process fake
+  proxies in the crate and for the mapping and the routing decisions here; **not exercised**
+  against a real exchange through a real proxy.
+
+## Not covered
+
+- CloudKit (iCloud Sync) uses the system's networking and its own proxy handling.
+- PAC scripts and WPAD; per-host proxy rules beyond the no-proxy list.
+
+## Verified and not
+
+Unit-tested: resolution order, env and OS parsers, bypass rules, the tunnels against fake proxies,
+the setting round trip, the page's rules, the broker route mapping, and that no agent bypasses the proxy setting (`config_builder_for` / `get_for`). Looked at in a
+picture: the Network page in System, Manual and Off, both themes. **Not exercised**: a real Windows
+machine (the registry reader is only type-checked there), Karing, a real HTTP/SOCKS proxy end to end
+against a market provider, and a live WebSocket feed through a proxy.

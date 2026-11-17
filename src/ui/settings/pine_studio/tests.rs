@@ -83,12 +83,12 @@ fn click_at(position: egui::Pos2) -> Vec<Event> {
 #[test]
 fn the_page_is_in_the_sidebar_after_appearance() {
     use crate::ui::settings::window::SettingsSection as S;
-    assert_eq!(S::ALL.len(), 13);
+    assert_eq!(S::ALL.len(), 14);
     let visible: Vec<_> = S::visible().collect();
     assert_eq!(visible[1], S::PineStudio);
     assert_eq!(S::PineStudio.title(), "Pine Studio");
-    // The sidebar still fits the smallest window Settings can be (400 points tall).
-    assert!(10.0 + 32.0 * visible.len() as f32 <= 400.0);
+    // The sidebar still fits the smallest window Settings can be.
+    assert!(10.0 + 32.0 * visible.len() as f32 <= crate::ui::settings::window::MIN_SIZE.y);
 }
 
 #[test]

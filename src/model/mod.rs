@@ -4,6 +4,7 @@ pub mod broker;
 pub mod chart;
 pub mod drawings;
 pub mod editor_theme;
+pub mod encoding;
 pub mod fib;
 pub mod forecast;
 pub mod ids;

@@ -1,28 +1,8 @@
 use super::*;
 use crate::lock::lock;
+use crate::model::encoding::{base64_decode, base64_encode};
 use crate::sync::record::policy::EntityKind;
 use std::sync::Mutex;
-
-#[test]
-fn base64_round_trips_every_length_and_byte() {
-    for len in 0..40 {
-        let data: Vec<u8> = (0..len).map(|n| (n * 37 + 11) as u8).collect();
-        assert_eq!(base64_decode(&base64_encode(&data)).unwrap(), data, "{len}");
-    }
-    let all: Vec<u8> = (0..=255).collect();
-    assert_eq!(base64_decode(&base64_encode(&all)).unwrap(), all);
-}
-
-#[test]
-fn base64_matches_the_standard_encoding() {
-    assert_eq!(base64_encode(b""), "");
-    assert_eq!(base64_encode(b"f"), "Zg==");
-    assert_eq!(base64_encode(b"fo"), "Zm8=");
-    assert_eq!(base64_encode(b"foo"), "Zm9v");
-    assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
-    assert_eq!(base64_decode("Zm9vYmE=").unwrap(), b"fooba");
-    assert!(base64_decode("not base64!").is_none());
-}
 
 #[test]
 fn commands_serialize_with_the_fields_the_bridge_reads() {

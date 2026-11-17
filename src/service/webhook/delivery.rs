@@ -14,6 +14,7 @@ use crate::model::webhook::{
     EndpointId, WebhookDeliveryError, WebhookDeliveryResult, WebhookEndpoint, WebhookHeader,
     WebhookHttpMethod,
 };
+use crate::service::net::agent::FollowingAgent;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -117,28 +118,29 @@ impl WebhookSecretStore for InMemoryWebhookSecretStore {
 /// `ureq` transport with no cookies, no cache and no redirects: a 3xx therefore surfaces
 /// as a failed delivery.
 pub struct UreqTransport {
-    agent: ureq::Agent,
+    agent: FollowingAgent,
 }
 
 impl Default for UreqTransport {
     fn default() -> Self {
-        let config = ureq::Agent::config_builder()
-            .timeout_global(Some(REQUEST_TIMEOUT))
-            .max_redirects(0)
-            .max_redirects_will_error(false)
-            .http_status_as_error(false)
-            .build();
         Self {
-            agent: ureq::Agent::new_with_config(config),
+            agent: FollowingAgent::new(|config| {
+                config
+                    .timeout_global(Some(REQUEST_TIMEOUT))
+                    .max_redirects(0)
+                    .max_redirects_will_error(false)
+                    .http_status_as_error(false)
+            }),
         }
     }
 }
 
 impl WebhookTransport for UreqTransport {
     fn send(&self, request: &TransportRequest) -> Result<u16, TransportError> {
+        let agent = self.agent.get_for(&request.url);
         let mut builder = match request.method {
-            WebhookHttpMethod::Post => self.agent.post(&request.url),
-            WebhookHttpMethod::Put => self.agent.put(&request.url),
+            WebhookHttpMethod::Post => agent.post(&request.url),
+            WebhookHttpMethod::Put => agent.put(&request.url),
         };
         for (name, value) in &request.headers {
             builder = builder.header(name, value);

@@ -1,8 +1,8 @@
 //! Read deadlines, heartbeat checks, and reconnect pacing for live market feeds.
 
+use super::proxy;
 use std::io;
 use std::net::TcpStream;
-use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
@@ -12,37 +12,29 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const PING_AFTER: Duration = Duration::from_secs(15);
 const PONG_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Bound TCP connect and TLS/WebSocket handshakes before entering the read loop.
+/// How often a connected feed asks whether the proxy changed under it.
+const ROUTE_CHECK: Duration = Duration::from_secs(1);
+
+/// The proxy generation a connection was made under, to hand to [`Health::new`]: the feed then
+/// reconnects when the setting changes instead of keeping the old route.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Route(u64);
+
+/// Bound TCP connect and TLS/WebSocket handshakes before entering the read loop. The connection
+/// goes through the proxy in force, unless it skips `host` (see `net::proxy`).
 pub fn connect(
     url: &str,
     host: &str,
     port: u16,
-) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, String> {
-    let addresses = (host, port)
-        .to_socket_addrs()
-        .map_err(|error| error.to_string())?;
-    let mut last_error = None;
-    for address in addresses.take(4) {
-        match TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) {
-            Ok(stream) => {
-                stream
-                    .set_read_timeout(Some(CONNECT_TIMEOUT))
-                    .map_err(|error| error.to_string())?;
-                stream
-                    .set_write_timeout(Some(CONNECT_TIMEOUT))
-                    .map_err(|error| error.to_string())?;
-                let (mut socket, _) =
-                    tungstenite::client_tls(url, stream).map_err(|error| error.to_string())?;
-                configure(&mut socket).map_err(|error| error.to_string())?;
-                return Ok(socket);
-            }
-            Err(error) => last_error = Some(error),
-        }
-    }
-    Err(last_error.map_or_else(
-        || "no address for WebSocket host".to_owned(),
-        |error| error.to_string(),
-    ))
+) -> Result<(WebSocket<MaybeTlsStream<TcpStream>>, Route), String> {
+    // Refreshed and read first: a change while dialling then counts as a change after.
+    proxy::refresh_if_stale();
+    let route = Route(proxy::generation());
+    let stream = proxy::dial(host, port, CONNECT_TIMEOUT).map_err(|error| error.to_string())?;
+    let (mut socket, _) =
+        tungstenite::client_tls(url, stream).map_err(|error| error.to_string())?;
+    configure(&mut socket).map_err(|error| error.to_string())?;
+    Ok((socket, route))
 }
 
 pub fn configure(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>) -> io::Result<()> {
@@ -76,6 +68,8 @@ pub enum Keepalive {
 }
 
 pub struct Health {
+    route: Route,
+    route_checked: Instant,
     last_message: Instant,
     last_data: Instant,
     ping_sent: Option<Instant>,
@@ -84,9 +78,11 @@ pub struct Health {
 }
 
 impl Health {
-    pub fn new(max_data_silence: Duration, keepalive: Keepalive) -> Self {
+    pub fn new(max_data_silence: Duration, keepalive: Keepalive, route: Route) -> Self {
         let now = Instant::now();
         Self {
+            route,
+            route_checked: now,
             last_message: now,
             last_data: now,
             ping_sent: None,
@@ -102,6 +98,12 @@ impl Health {
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<TcpStream>>,
     ) -> tungstenite::Result<Option<Message>> {
+        if self.route_changed() {
+            return Err(tungstenite::Error::Io(io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                "the proxy setting changed",
+            )));
+        }
         match socket.read() {
             Ok(Message::Pong(_)) => {
                 self.last_message = Instant::now();
@@ -131,6 +133,18 @@ impl Health {
             }
             Err(error) => Err(error),
         }
+    }
+
+    /// Whether the proxy in force is no longer the one this connection was made under. Asked
+    /// once a second at most, not on every message; the feed's own thread, so it may refresh the
+    /// system's proxy.
+    fn route_changed(&mut self) -> bool {
+        if self.route_checked.elapsed() < ROUTE_CHECK {
+            return false;
+        }
+        self.route_checked = Instant::now();
+        proxy::refresh_if_stale();
+        Route(proxy::generation()) != self.route
     }
 
     #[allow(clippy::result_large_err)]
@@ -227,13 +241,13 @@ impl Session {
     pub fn run_frames(&self, shutdown: &AtomicBool, mut on_frame: impl FnMut(Frame<'_>) -> bool) {
         let mut backoff = Backoff::new();
         while !shutdown.load(Ordering::Acquire) {
-            if let Ok(mut socket) = connect(&self.url, &self.host, self.port) {
+            if let Ok((mut socket, route)) = connect(&self.url, &self.host, self.port) {
                 let subscribed = self
                     .subscribe
                     .iter()
                     .all(|message| socket.send(Message::Text(message.as_str().into())).is_ok());
                 if subscribed {
-                    let mut health = Health::new(self.max_data_silence, self.keepalive);
+                    let mut health = Health::new(self.max_data_silence, self.keepalive, route);
                     while !shutdown.load(Ordering::Acquire) {
                         match health.read(&mut socket) {
                             Ok(Some(Message::Text(text))) => {
@@ -452,6 +466,41 @@ mod tests {
         server.join().unwrap();
     }
 
+    /// A feed that was connected under one proxy setting reconnects when it changes, instead of
+    /// keeping the route it was dialled with.
+    #[test]
+    fn a_feed_notices_that_the_proxy_setting_changed() {
+        use crate::service::net::proxy::{ProxyConfig, ProxyMode};
+        let _applied = proxy::AppliedProxy::new(ProxyConfig {
+            mode: ProxyMode::Off,
+            ..ProxyConfig::default()
+        });
+        let mut health = Health::new(
+            Duration::from_secs(60),
+            Keepalive::Frame,
+            Route(proxy::generation()),
+        );
+        let due = |health: &mut Health| health.route_checked -= ROUTE_CHECK * 2;
+
+        due(&mut health);
+        assert!(!health.route_changed(), "nothing changed");
+        proxy::apply(
+            ProxyConfig {
+                mode: ProxyMode::Manual,
+                host: "127.0.0.1".to_owned(),
+                port: Some(9),
+                ..ProxyConfig::default()
+            },
+            None,
+        );
+        assert!(
+            !health.route_changed(),
+            "asked once a second at most, not on every message"
+        );
+        due(&mut health);
+        assert!(health.route_changed(), "the proxy changed under the feed");
+    }
+
     #[test]
     fn silent_socket_reaches_heartbeat_deadline() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -461,13 +510,14 @@ mod tests {
             let _socket = tungstenite::accept(stream).unwrap();
             std::thread::sleep(Duration::from_millis(100));
         });
-        let mut socket = connect(&format!("ws://127.0.0.1:{port}"), "127.0.0.1", port).unwrap();
+        let (mut socket, route) =
+            connect(&format!("ws://127.0.0.1:{port}"), "127.0.0.1", port).unwrap();
         if let MaybeTlsStream::Plain(stream) = socket.get_mut() {
             stream
                 .set_read_timeout(Some(Duration::from_millis(20)))
                 .unwrap();
         }
-        let mut health = Health::new(Duration::ZERO, Keepalive::Frame);
+        let mut health = Health::new(Duration::ZERO, Keepalive::Frame, route);
         assert!(matches!(
             health.read(&mut socket),
             Err(tungstenite::Error::Io(error)) if error.kind() == io::ErrorKind::TimedOut

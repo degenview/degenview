@@ -11,6 +11,7 @@ use super::Store;
 use crate::model::Timeframe;
 use crate::model::alert::pine::PineAlertSubscription;
 use crate::model::webhook::WebhookEndpoint;
+use crate::service::net::proxy::ProxyConfig;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -103,6 +104,8 @@ pub(crate) struct FrameCaches {
     webhook_summaries: ChangeCachedMap<u64, Option<(usize, usize)>>,
     /// The timeframe picker's pinned list, which every chart toolbar and Pine Studio bar shows.
     pinned_timeframes: ChangeCached<Vec<Timeframe>>,
+    /// The `net.proxy` setting the Settings window's Network page shows.
+    proxy_config: ChangeCached<ProxyConfig>,
 }
 
 impl Store {
@@ -146,6 +149,13 @@ impl Store {
         self.frame_caches
             .pinned_timeframes
             .get(self.change_stamp(), || self.pinned_timeframes())
+    }
+
+    /// The saved proxy setting (`ProxyConfig::load`), read again only after a write.
+    pub fn proxy_config_cached(&self) -> Arc<ProxyConfig> {
+        self.frame_caches
+            .proxy_config
+            .get(self.change_stamp(), || ProxyConfig::load(self))
     }
 
     /// How many of `event_id`'s webhook deliveries arrived, of how many were attempted; `None`

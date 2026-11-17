@@ -146,6 +146,8 @@ pub enum Icon {
     Shield,
     /// A hexagon outline, a stop sign: the Stop order type.
     StopSign,
+    /// A globe: the network.
+    Globe,
     LockFill,
     SplitColumns,
     Tag,
@@ -2305,6 +2307,19 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 p(2.8, 3.6),
             ]);
         }
+        Icon::Globe => {
+            circle(p(8.0, 8.0), 6.4, false);
+            line(&[p(1.6, 8.0), p(14.4, 8.0)]);
+            line(&[p(2.4, 5.2), p(13.6, 5.2)]);
+            line(&[p(2.4, 10.8), p(13.6, 10.8)]);
+            let meridian: Vec<Pos2> = (0..=24)
+                .map(|k| {
+                    let a = k as f32 / 24.0 * std::f32::consts::TAU;
+                    p(8.0 + 3.0 * a.cos(), 8.0 + 6.4 * a.sin())
+                })
+                .collect();
+            closed(&meridian);
+        }
         Icon::StopSign => {
             let hexagon: Vec<Pos2> = (0..6)
                 .map(|k| {
@@ -2502,6 +2517,7 @@ mod tests {
             Target,
             Shield,
             StopSign,
+            Globe,
             LockFill,
             SplitColumns,
             Tag,

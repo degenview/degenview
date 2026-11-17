@@ -411,7 +411,7 @@ impl DegenViewApp {
             egui::ViewportBuilder::default()
                 .with_title("Settings")
                 .with_inner_size(window::WINDOW_SIZE)
-                .with_min_inner_size([520.0, 400.0]),
+                .with_min_inner_size(window::MIN_SIZE),
         );
         ctx.show_viewport_deferred(settings_viewport_id(), builder, move |ui, _class| {
             if ui.input(|input| input.viewport().close_requested()) {

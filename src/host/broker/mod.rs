@@ -37,6 +37,7 @@ use crate::lock::lock;
 use crate::model::broker;
 use crate::model::broker::prefs::{AllPrefs, BrokerPrefs};
 use crate::service::keychain::broker_secrets::BrokerSecrets;
+use crate::service::net::proxy::BrokerNetwork;
 use crate::service::work_queue::{self, Pending};
 use crate::store::SharedStore;
 use crate::trading::task::Task;
@@ -590,17 +591,18 @@ fn operation(receiver: Receiver<Result<(), String>>) -> Operation {
     })
 }
 
-/// The environment live trading runs in: the real brokers. A developer build with
+/// The environment live trading runs in: the real brokers, reached through the proxy setting
+/// (Settings ▸ Network) like every other connection. A developer build with
 /// `dev-mock-broker` can point it at a local mock exchange instead (loopback only: the crate refuses
 /// anything else, so a stray variable can never send a signed request elsewhere).
 #[cfg(not(feature = "dev-mock-broker"))]
 fn production_env() -> Env {
-    Env::default()
+    Env::default().with_network(Arc::new(BrokerNetwork))
 }
 
 #[cfg(feature = "dev-mock-broker")]
 fn production_env() -> Env {
-    let mut env = Env::default();
+    let mut env = Env::default().with_network(Arc::new(BrokerNetwork));
     if let Ok(url) = std::env::var("DEGENVIEW_MOCK_BROKER_URL") {
         env = env.with_loopback_base_url(url);
     }

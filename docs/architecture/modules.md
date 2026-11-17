@@ -94,6 +94,7 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart, script value types (`script`) and the Pine indicators bundled with the app (`bundled/`) |
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
 | `ids/` | The id space engines mint into (`LEGACY_LIMIT`, `GLOBAL_BASE`); sync tags it in `sync::record::ids` |
+| `encoding/` | Standard base64 (`base64_encode`, `base64_decode`) for MCP images, the CloudKit bridge, stored pictures and proxy sign-in |
 
 Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, `model::ChartType`).
 A new module goes in the matching directory; a new domain gets its own directory and a row here.
@@ -112,11 +113,11 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 | Directory | Holds |
 | --- | --- |
 | `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), their `error` (`ProviderError`), `live` feed, `candles` clean-up (`normalize`), symbol `catalog`, `search_rank`, `fx_rates`, `trend` (recent daily closes for sparklines) |
-| `net/` | Shared transport: `http`, `rate_limit`, `ws`, `multipart` |
+| `net/` | Shared transport: `http`, `rate_limit`, `ws`, `multipart`, `agent` (`FollowingAgent`) and `proxy/` (the proxy setting, its resolution, OS readers and the live-feed tunnel) |
 | `cache/` | `mod.rs` the candle cache; `disk`, `lookup` and `control` (what Settings ▸ Storage does) |
 | `annotation/` | What drawings' pictures and Post cards need: `asset_host`, `ingest`, `link_fetch` |
 | `image/` | Artwork: `icon` resolver and the remote-image `loader` |
-| `keychain/` | Secrets by kind (`ai_keys api_keys broker_secrets mcp_seal snapshot_secrets webhook_secrets`) and the platform stores (`secret_service`, `windows_credentials`) |
+| `keychain/` | Secrets by kind (`ai_keys api_keys broker_secrets mcp_seal proxy_password snapshot_secrets webhook_secrets`) on the shared `cached_secret` and the platform stores (`secret_service`, `windows_credentials`) |
 | `update/` | `check`, `download`, `archive`, `tag_signature`, `code_signature`, and `install/` (the per-platform self-update) |
 | `snapshot/` | `export`, `job`, `raster`, `upload` and `providers/` |
 | `portfolio/`, `webhook/`, `alert/`, `editor_theme/` | Portfolio history, performers, quotes and ticker mapping; webhook delivery; macOS notifications and the login item; theme files and the font catalog (`fonts/`) |

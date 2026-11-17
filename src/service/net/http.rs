@@ -1,19 +1,55 @@
 //! Shared transport for idempotent market-data GETs. Provider parsing and rate limits
 //! remain at their call sites; this only bounds network work and classifies failures.
 
+use super::agent::FollowingAgent;
 use std::sync::LazyLock;
 use std::time::Duration;
+use ureq::http::Response;
 
 const TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_BODY_BYTES: u64 = 8 * 1024 * 1024;
 
-static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
-    let config = ureq::Agent::config_builder()
-        .timeout_global(Some(TIMEOUT))
-        .http_status_as_error(false)
-        .build();
-    ureq::Agent::new_with_config(config)
+static AGENT: LazyLock<FollowingAgent> = LazyLock::new(|| {
+    FollowingAgent::new(|config| {
+        config
+            .timeout_global(Some(TIMEOUT))
+            .http_status_as_error(false)
+    })
 });
+
+/// Something that sends a GET: the shared agent, which follows redirects hop by hop under the
+/// proxy setting (`FollowingAgent::get_following`), or a plain agent.
+trait Get {
+    fn get_url(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Response<ureq::Body>, ureq::Error>;
+}
+
+impl Get for FollowingAgent {
+    fn get_url(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Response<ureq::Body>, ureq::Error> {
+        self.get_following(url, headers)
+    }
+}
+
+impl Get for ureq::Agent {
+    fn get_url(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Response<ureq::Body>, ureq::Error> {
+        let mut request = self.get(url);
+        for &(name, value) in headers {
+            request = request.header(name, value);
+        }
+        request.call()
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Retry {
@@ -39,8 +75,7 @@ pub fn get_text(url: &str, headers: &[(&str, &str)], retry: Retry) -> Result<Str
 
 pub fn head_status(url: &str) -> Result<u16, Error> {
     AGENT
-        .head(url)
-        .call()
+        .head_following(url)
         .map(|response| response.status().as_u16())
         .map_err(|error| Error::Network(error.to_string()))
 }
@@ -52,9 +87,14 @@ pub fn get_text_with_limit(
     retry: Retry,
     max_body_bytes: u64,
 ) -> Result<String, Error> {
-    get_with(&AGENT, url, headers, retry, max_body_bytes, |delay| {
-        std::thread::sleep(delay)
-    })
+    get_with(
+        &*AGENT,
+        url,
+        headers,
+        retry,
+        max_body_bytes,
+        std::thread::sleep,
+    )
 }
 
 fn retry_delay(retry_after: Option<&str>, attempt: usize, random: u32) -> Duration {
@@ -73,7 +113,7 @@ fn jitter_seed() -> u32 {
 }
 
 fn get_with(
-    agent: &ureq::Agent,
+    agent: &impl Get,
     url: &str,
     headers: &[(&str, &str)],
     retry: Retry,
@@ -88,7 +128,7 @@ fn get_with(
 /// A GET that returns the body as bytes, for images. `max_body_bytes` bounds what is read.
 pub fn get_bytes(url: &str, max_body_bytes: u64) -> Result<Vec<u8>, Error> {
     fetch(
-        &AGENT,
+        &*AGENT,
         url,
         &[],
         Retry::Transient,
@@ -100,7 +140,7 @@ pub fn get_bytes(url: &str, max_body_bytes: u64) -> Result<Vec<u8>, Error> {
 /// The request loop shared by every GET: retry classification and `Retry-After` live here, the
 /// caller only says how to read a successful body.
 fn fetch<T>(
-    agent: &ureq::Agent,
+    agent: &impl Get,
     url: &str,
     headers: &[(&str, &str)],
     retry: Retry,
@@ -109,11 +149,7 @@ fn fetch<T>(
 ) -> Result<T, Error> {
     let attempts = if retry == Retry::Transient { 2 } else { 1 };
     for attempt in 0..attempts {
-        let mut request = agent.get(url);
-        for &(name, value) in headers {
-            request = request.header(name, value);
-        }
-        let (result, retry_after) = match request.call() {
+        let (result, retry_after) = match agent.get_url(url, headers) {
             Ok(mut response) => {
                 let status = response.status().as_u16();
                 if status >= 400 {

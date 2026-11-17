@@ -342,6 +342,8 @@ mod tests {
             "scriptDebug.state",
             // Names this user's own account and server.
             "ai.prefs",
+            // The proxy of this Mac's own network (its password is in the Keychain).
+            "net.proxy",
             // Their prompts about their own scripts, and the model's replies.
             "ai.history",
             "scriptPreview.market",

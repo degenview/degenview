@@ -219,3 +219,7 @@ watchlists.
   `is_market_open = false`, so an old close cannot fill.
 - In replay the quote stays live; the ticket's reference follows the replay slice. Unresolved: should
   replay block paper orders?
+
+## Network
+
+Every HTTP agent is built from `service::net::config_builder_for(url)` (or is a `net::agent::FollowingAgent`, used through `get_for(url)`), and every WebSocket opens through `net::ws::connect` and passes its `Route` to `ws::Health::new`, so the user's proxy applies and a feed reconnects when it changes. Never start from `ureq::Agent::config_builder()` or `Agent::new_with_defaults()`, and never open a `TcpStream` to a provider yourself. See [Network proxy](../network-proxy.md).

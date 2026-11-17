@@ -12,8 +12,8 @@
 //! nothing until one is looked at.
 
 use super::Store;
+use crate::model::encoding::{base64_decode, base64_encode};
 use crate::service::annotation::ingest::{self, Ingested, MAX_STORED_BYTES};
-use crate::sync::transport::native::{base64_decode, base64_encode};
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
