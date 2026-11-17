@@ -154,7 +154,7 @@ mod tests {
     use super::super::{ProxyMode, snapshot, status};
     use super::*;
     use crate::service::keychain::api_keys::{KeyBackend, MemoryBackend};
-    use crate::service::keychain::webhook_secrets::Scope;
+    use crate::service::keychain::gated_backend::gated;
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -255,54 +255,23 @@ mod tests {
         assert!(!lock(&queue).running);
     }
 
-    /// A password backend that stops inside `write` until released, to hold an apply open.
-    struct Gate {
-        inner: MemoryBackend,
-        entered: mpsc::Sender<()>,
-        release: Mutex<mpsc::Receiver<()>>,
-    }
-
-    impl KeyBackend for Gate {
-        fn read(&self, scope: Scope, account: &str) -> Option<String> {
-            self.inner.read(scope, account)
-        }
-        fn exists(&self, scope: Scope, account: &str) -> bool {
-            self.inner.exists(scope, account)
-        }
-        fn write(&self, scope: Scope, account: &str, value: &str) -> Result<(), SecretStoreError> {
-            let _ = self.entered.send(());
-            let _ = lock(&self.release).recv_timeout(WAIT);
-            self.inner.write(scope, account, value)
-        }
-        fn delete(&self, scope: Scope, account: &str) -> Result<(), SecretStoreError> {
-            self.inner.delete(scope, account)
-        }
-    }
-
     /// A save that arrives while an apply is running is applied after it, by the same worker, and
     /// the setting that ends up in force is the later one.
     #[test]
     fn a_save_made_during_an_apply_is_applied_after_it() {
         let _applied = AppliedProxy::new(config(ProxyMode::Off));
-        let (entered, inside) = mpsc::channel();
-        let (release, held) = mpsc::channel();
-        let applier = applier(Gate {
-            inner: MemoryBackend::default(),
-            entered,
-            release: Mutex::new(held),
-        });
+        let (backend, gate) = gated(false, true);
+        let applier = applier(backend);
         let (wake, done) = wake();
         applier.submit(
             config(ProxyMode::Manual),
             PasswordChange::Set("pw".to_owned()),
             Arc::clone(&wake),
         );
-        inside
-            .recv_timeout(WAIT)
-            .expect("the first apply is under way");
+        gate.wait_until_held();
         applier.submit(config(ProxyMode::Off), PasswordChange::Keep, wake);
         assert!(lock(&applier.queue).running);
-        release.send(()).unwrap();
+        gate.release();
         done.recv_timeout(WAIT).unwrap();
         done.recv_timeout(WAIT).unwrap();
         assert_eq!(status().mode, ProxyMode::Off, "the later save won");

@@ -3,12 +3,11 @@
 //! proxy password is never prompted. Under `DEGENVIEW_NO_KEYCHAIN` it lives in memory for the
 //! session.
 
-use crate::lock::lock;
 use crate::service::keychain::api_keys::{KeyBackend, default_backend};
 use crate::service::keychain::cached_secret::CachedSecret;
 use crate::service::keychain::webhook_secrets::Scope;
 use crate::service::webhook::delivery::SecretStoreError;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 const SCOPE: Scope = Scope {
     service: "es.nico.degenview.network",
@@ -18,14 +17,14 @@ const ACCOUNT: &str = "proxy-password-v1";
 
 pub struct ProxyPasswordStore {
     backend: Box<dyn KeyBackend>,
-    secret: Mutex<CachedSecret>,
+    secret: CachedSecret,
 }
 
 impl ProxyPasswordStore {
     pub fn with_backend(backend: Box<dyn KeyBackend>) -> Self {
         Self {
             backend,
-            secret: Mutex::new(CachedSecret::new(SCOPE, ACCOUNT)),
+            secret: CachedSecret::new(SCOPE, ACCOUNT),
         }
     }
 
@@ -36,13 +35,13 @@ impl ProxyPasswordStore {
 
     /// The saved password. The first read may prompt for Keychain access.
     pub fn read(&self) -> Option<String> {
-        lock(&self.secret).read(&*self.backend)
+        self.secret.read(&*self.backend)
     }
 
     /// The saved password, asked of the storage again: another process (the app, for the alert
     /// helper) may have changed it since this one read it.
     pub fn read_fresh(&self) -> Option<String> {
-        lock(&self.secret).read_fresh(&*self.backend)
+        self.secret.read_fresh(&*self.backend)
     }
 
     /// Saves the password as typed (spaces are part of a password); an empty one removes it. If
@@ -52,17 +51,17 @@ impl ProxyPasswordStore {
         if password.is_empty() {
             return self.remove();
         }
-        lock(&self.secret).save(&*self.backend, password)
+        self.secret.save(&*self.backend, password)
     }
 
     pub fn remove(&self) -> Result<(), SecretStoreError> {
-        lock(&self.secret).remove(&*self.backend)
+        self.secret.remove(&*self.backend)
     }
 
     /// Whether one is saved, without reading it (so without a prompt); a page may ask every
     /// frame.
     pub fn is_saved(&self) -> bool {
-        lock(&self.secret).is_saved(&*self.backend)
+        self.secret.is_saved(&*self.backend)
     }
 }
 
@@ -70,6 +69,9 @@ impl ProxyPasswordStore {
 mod tests {
     use super::*;
     use crate::service::keychain::api_keys::MemoryBackend;
+    use crate::service::keychain::gated_backend::{Gate, gated};
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     fn store() -> ProxyPasswordStore {
         ProxyPasswordStore::with_backend(Box::new(MemoryBackend::default()))
@@ -95,5 +97,54 @@ mod tests {
         store.save("").unwrap();
         assert!(!store.is_saved());
         assert_eq!(store.read(), None);
+    }
+
+    /// Whether `ask` answers within a second while `hold` is stuck in the storage.
+    fn answers_while_held(
+        gate: &Gate,
+        hold: impl FnOnce() + Send,
+        ask: impl FnOnce() -> bool + Send,
+    ) -> bool {
+        std::thread::scope(|scope| {
+            scope.spawn(hold);
+            gate.wait_until_held();
+            let (sender, answer) = mpsc::channel();
+            scope.spawn(move || {
+                let _ = sender.send(ask());
+            });
+            let answered = answer.recv_timeout(Duration::from_secs(1)).is_ok();
+            gate.release();
+            answered
+        })
+    }
+
+    /// The Network page asks `is_saved` on every frame: a save that waits for the user (a Keychain
+    /// prompt) must not stop it.
+    #[test]
+    fn asking_whether_a_password_is_saved_does_not_wait_for_a_save() {
+        let (backend, gate) = gated(false, true);
+        let store = ProxyPasswordStore::with_backend(Box::new(backend));
+        let answered = answers_while_held(
+            &gate,
+            || {
+                let _ = store.save("pw");
+            },
+            || store.is_saved(),
+        );
+        assert!(answered, "is_saved waited for the save to finish");
+    }
+
+    #[test]
+    fn asking_whether_a_password_is_saved_does_not_wait_for_a_read() {
+        let (backend, gate) = gated(true, false);
+        let store = ProxyPasswordStore::with_backend(Box::new(backend));
+        let answered = answers_while_held(
+            &gate,
+            || {
+                let _ = store.read();
+            },
+            || store.is_saved(),
+        );
+        assert!(answered, "is_saved waited for the read to finish");
     }
 }

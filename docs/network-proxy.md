@@ -19,7 +19,9 @@ classified in `sync::record::policy`).
 
 The manual proxy's password is never in SQLite: `keychain::proxy_password::ProxyPasswordStore` (service
 `es.nico.degenview.network`). It is read only when a user name is set, so nobody without one is
-prompted. `DEGENVIEW_NO_KEYCHAIN` keeps it in memory.
+prompted. `DEGENVIEW_NO_KEYCHAIN` keeps it in memory. The page asks `is_saved` every frame, so
+no call to the storage happens under a lock it takes (`keychain::cached_secret`: a short `state`
+lock for the page, a separate `io` lock for the reads and writes).
 
 The no-proxy list (`no_proxy`, comma/semicolon/space separated) adds to every mode but Off. A bare
 domain also covers its subdomains (as `curl` reads `NO_PROXY`); `*.x`, `.x`, `10.1.*` and `*` work;

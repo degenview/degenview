@@ -11,7 +11,7 @@ use crate::service::keychain::webhook_secrets::Scope;
 use crate::service::llm::ProviderKind;
 use crate::service::webhook::delivery::SecretStoreError;
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 const SERVICE: &str = "es.nico.degenview.ai";
 const SCOPE: Scope = Scope {
@@ -25,7 +25,9 @@ fn account(kind: ProviderKind) -> String {
 
 pub struct AiKeyStore {
     backend: Box<dyn KeyBackend>,
-    keys: Mutex<HashMap<ProviderKind, CachedSecret>>,
+    /// One item per provider. The map is locked only to find or add an item; the calls to the
+    /// storage happen on the item, after the map is let go.
+    keys: Mutex<HashMap<ProviderKind, Arc<CachedSecret>>>,
 }
 
 impl AiKeyStore {
@@ -41,27 +43,22 @@ impl AiKeyStore {
         STORE.get_or_init(|| Self::with_backend(default_backend()))
     }
 
-    /// Runs `use_secret` on `kind`'s item, under the lock.
-    fn with_secret<T>(
-        &self,
-        kind: ProviderKind,
-        use_secret: impl FnOnce(&mut CachedSecret, &dyn KeyBackend) -> T,
-    ) -> T {
+    fn secret(&self, kind: ProviderKind) -> Arc<CachedSecret> {
         let mut keys = lock(&self.keys);
-        let secret = keys
-            .entry(kind)
-            .or_insert_with(|| CachedSecret::new(SCOPE, account(kind)));
-        use_secret(secret, &*self.backend)
+        Arc::clone(
+            keys.entry(kind)
+                .or_insert_with(|| Arc::new(CachedSecret::new(SCOPE, account(kind)))),
+        )
     }
 
     /// The saved key. The first read may prompt for Keychain access.
     pub fn key(&self, kind: ProviderKind) -> Option<String> {
-        self.with_secret(kind, |secret, backend| secret.read(backend))
+        self.secret(kind).read(&*self.backend)
     }
 
     /// Whether a key is saved, without reading it (so without a prompt).
     pub fn is_configured(&self, kind: ProviderKind) -> bool {
-        self.with_secret(kind, |secret, backend| secret.is_saved(backend))
+        self.secret(kind).is_saved(&*self.backend)
     }
 
     /// Saves the trimmed key; an empty one removes it. If the Keychain refuses (or there is none),
@@ -72,12 +69,12 @@ impl AiKeyStore {
             self.remove(kind);
             return Ok(());
         }
-        self.with_secret(kind, |secret, backend| secret.save(backend, value))
+        self.secret(kind).save(&*self.backend, value)
     }
 
     pub fn remove(&self, kind: ProviderKind) {
         // Best effort: nothing on the AI keys page can show a failed removal yet. (Broker keys do.)
-        let _ = self.with_secret(kind, |secret, backend| secret.remove(backend));
+        let _ = self.secret(kind).remove(&*self.backend);
     }
 }
 
@@ -171,5 +168,32 @@ mod tests {
         assert_eq!(key_with(&store, kind, &|_| None), None);
         // The environment variable of one provider does not leak into another.
         assert_eq!(key_with(&store, ProviderKind::Anthropic, &env), None);
+    }
+
+    /// The AI page asks `is_configured` on every frame, for the provider shown and others: a key
+    /// that waits on the Keychain must not stop it.
+    #[test]
+    fn asking_whether_a_key_is_saved_does_not_wait_for_another_keys_save() {
+        use crate::service::keychain::gated_backend::gated;
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let (backend, gate) = gated(false, true);
+        let store = AiKeyStore::with_backend(Box::new(backend));
+        for asked in [ProviderKind::OpenAi, ProviderKind::Anthropic] {
+            std::thread::scope(|scope| {
+                scope.spawn(|| {
+                    let _ = store.save(ProviderKind::Anthropic, "sk-held");
+                });
+                gate.wait_until_held();
+                let (sender, answer) = mpsc::channel();
+                let store = &store;
+                scope.spawn(move || {
+                    let _ = sender.send(store.is_configured(asked));
+                });
+                let answered = answer.recv_timeout(Duration::from_secs(1)).is_ok();
+                gate.release();
+                assert!(answered, "is_configured({asked:?}) waited for a save");
+            });
+        }
     }
 }
