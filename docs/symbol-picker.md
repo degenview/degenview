@@ -47,6 +47,15 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   row; the footer says what was added. It records no recents, offers no Replace or Compare, has no
   Watchlists tab, and the workspace keeps the target list (`WatchlistPane::picker_target`) only while the picker
   is open.
+  - **The list's own markets** come in each frame as `Env::in_list` (the target list's instruments,
+    portfolio cards by `instrument_id`), the way `Env::on_tab` carries a chart tab's. A row already in
+    the list shows the check instead of the plus, the footer's Return hint reads "Already in {list}",
+    and Return, ⇧Return or a click on it adds nothing and acknowledges nothing (`commit` refuses it, so
+    "Added X" is never said for a duplicate; the store's `add_to_list` still answers `Ok(false)` for any
+    other caller).
+  - **The footer names the market** Return adds, resolved from the highlighted row: "Add Binance ·
+    BTCUSDT to Favorites" (the venue as `lookup::short_name` says it, so "Alpaca (IEX)" is "Alpaca",
+    then the row's name; an event's title for a prediction market).
 - **Tabs** All, Stocks, Crypto, Predictions, Dashboards, Watchlists (Tab cycles the tabs of the mode)
   and a filter pull-down at their right: the exchange ("All venues"), the prediction provider, or on
   Dashboards the portfolio ("All Portfolios"). All is crypto and stocks together; prediction markets
@@ -77,6 +86,20 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     a check marks a card or index already on the tab (`Env::cards_on_tab`). Without a portfolio the
     cards are not offered and a note says where they come from (`wants_portfolios` feeds the list
     while the tab shows). Nothing here has a price to fetch.
+- **Typed `VENUE:SYMBOL`** (`lookup.rs`, in every mode): `BINANCE:BTCUSDT`, `nasdaq: aapl`. The prefix
+  is read by `model::market::venue`, the same parser the watchlist import uses (a provider's
+  watchlist slug, or a US exchange, which is Alpaca's), in any case and with spaces. The symbol is the
+  query and the prefix's provider the venue filter, over whatever the pull-down says (the pull-down
+  then shows that venue). `BINANCE:` alone lists the venue's recent or popular markets. The Watchlists
+  and Predictions tabs read only a prefix they know (a prediction title can hold a colon), Dashboards
+  none. A prefix the open tab has no markets of (`BINANCE:` on Stocks) says so.
+  - **Never silent.** A prefix no provider serves (`OKX:BTCUSDT`, BYBIT, HKEX, SSE, futures venues,
+    CoinMarketCap's `CMC`) is a word of 2-12 letters or digits followed by a colon and a symbol: the
+    symbol is searched on every venue of the tab and listed under "OKX isn't supported · matches from
+    other venues", and with no match the card reads "OKX isn't supported. Searched: Binance,
+    Coinbase, DEXScreener, CoinGecko, Alpaca." A plain miss reads "Nothing matches “zzz”. Searched:
+    …" with the venues asked (the pull-down's one, or the tab's). Return on no result does nothing.
+    Two sources are never merged into one row.
 - **Rows** show the market as its exchange names it (`BTCUSDT`, `BTC-USD`, `AAPL`), what it trades
   under it (`BTC / USDT`, the company, a prediction's event), the exchange and its kind, a check when
   the market is already on a chart of the tab, and a plus on the highlighted row.
