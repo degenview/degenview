@@ -56,6 +56,14 @@ impl InstrumentId {
                     format!("{id}-USD")
                 }
             }
+            DataSource::Gate => {
+                let id = self.symbol.to_uppercase().replace(['/', '-', ' '], "_");
+                if id.contains('_') {
+                    id
+                } else {
+                    format!("{id}_USDT")
+                }
+            }
             DataSource::Kraken => {
                 let id = self.symbol.to_uppercase().replace(['-', ' '], "/");
                 match id.split_once('/') {
@@ -92,7 +100,8 @@ impl InstrumentId {
             | DataSource::Bybit
             | DataSource::Coinbase
             | DataSource::Okx
-            | DataSource::Kraken => Self::new(source, symbol).api_symbol(),
+            | DataSource::Kraken
+            | DataSource::Gate => Self::new(source, symbol).api_symbol(),
             DataSource::Alpaca => symbol.to_uppercase(),
             DataSource::CoinGecko => symbol.to_lowercase(),
             _ => symbol.to_owned(),
@@ -135,6 +144,9 @@ mod tests {
         }
         for symbol in ["BTC", "btc", "BTCUSDT", "btc-usdt", "BTC/USDT"] {
             assert_eq!(key(DataSource::Bybit, symbol), "BYBIT:BTCUSDT", "{symbol}");
+        }
+        for symbol in ["BTC", "btc_usdt", "BTC/USDT", "btc-usdt"] {
+            assert_eq!(key(DataSource::Gate, symbol), "GATEIO:BTC_USDT", "{symbol}");
         }
         for symbol in ["BTC", "btc-usdt", "BTC/USDT", "BTC-USDT"] {
             assert_eq!(key(DataSource::Okx, symbol), "OKX:BTC-USDT", "{symbol}");

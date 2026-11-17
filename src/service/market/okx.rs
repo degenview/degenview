@@ -27,7 +27,7 @@ pub const OKX: Okx = Okx;
 /// them for its 20 requests per 2 seconds per IP.
 const PAGING: Paging = Paging {
     page: 300,
-    max_pages: 120,
+    max_candles: 36_000,
     pause: Duration::from_millis(100),
 };
 

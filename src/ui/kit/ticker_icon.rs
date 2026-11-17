@@ -21,6 +21,7 @@ pub fn ticker_icon(ui: &Ui, rect: Rect, symbol: &str, source: DataSource) {
         | DataSource::Okx
         | DataSource::Kraken
         | DataSource::Bybit
+        | DataSource::Gate
         | DataSource::CoinGecko => Some((DataSource::Binance, format!("{base}USDT"))),
         DataSource::Alpaca => Some((DataSource::Alpaca, base.clone())),
         _ => None,

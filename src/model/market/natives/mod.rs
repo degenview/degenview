@@ -68,6 +68,23 @@ const OKX: [Timeframe; 14] = [
     Timeframe::MONTH_3,
 ];
 
+/// Gate.io's documented candlestick intervals (it also answers `3m`, `2h`, `6h` and `12h`, which
+/// its docs do not list, so they fold): 1, 5, 15, 30 minutes, 1, 4 and 8 hours, `1d`, `7d` and
+/// `30d`. Its days are cut at UTC midnight, its `7d` weeks start on Monday and its `30d` is the
+/// calendar month, so all of them are cut where this app cuts.
+const GATE: [Timeframe; 10] = [
+    minutes(1),
+    minutes(5),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(4),
+    hours(8),
+    Timeframe::DAY_1,
+    Timeframe::WEEK_1,
+    Timeframe::MONTH_1,
+];
+
 /// Bybit's kline intervals: 1, 3, 5, 15, 30, 60, 120, 240, 360 and 720 minutes, `D`, `W` and `M`.
 /// All of them are cut where this app cuts: days at UTC midnight, weeks on Monday and months on
 /// the calendar, so the quarter and the year fold from months.
@@ -156,6 +173,7 @@ impl DataSource {
             Self::Okx => &OKX,
             Self::Kraken => &KRAKEN,
             Self::Bybit => &BYBIT,
+            Self::Gate => &GATE,
             Self::Alpaca => &ALPACA,
             Self::DexScreener => &GECKOTERMINAL,
             Self::CoinGecko | Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => &[],
@@ -177,6 +195,7 @@ impl DataSource {
             | Self::Okx
             | Self::Kraken
             | Self::Bybit
+            | Self::Gate
             | Self::Alpaca
             | Self::DexScreener => self.plan(timeframe).is_some(),
             Self::CoinGecko => samples::chart_days(timeframe, 1).is_some(),
@@ -196,6 +215,7 @@ impl DataSource {
             | Self::Okx
             | Self::Kraken
             | Self::Bybit
+            | Self::Gate
             | Self::Alpaca => true,
             Self::DexScreener => self.plan(timeframe).is_some_and(|plan| {
                 let page_days = plan.base().nominal_ms() * GECKOTERMINAL_PAGE as i64 / 86_400_000;

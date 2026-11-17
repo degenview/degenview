@@ -67,6 +67,7 @@ pub fn chunk_size(source: DataSource) -> usize {
         DataSource::Kraken => 100,
         // One call answers every spot market, so a round is one request however many rows.
         DataSource::Bybit => 2_000,
+        DataSource::Gate => 2_500,
         DataSource::DexScreener => 30,
         _ => 100,
     }
@@ -80,6 +81,7 @@ const COINBASE_URL: &str = "https://api.exchange.coinbase.com";
 const OKX_URL: &str = "https://www.okx.com/api/v5";
 const KRAKEN_URL: &str = crate::service::market::kraken::BASE_URL;
 const BYBIT_URL: &str = crate::service::market::bybit::BASE_URL;
+const GATE_URL: &str = crate::service::market::gateio::BASE_URL;
 const DEX_URL: &str = "https://api.dexscreener.com/latest/dex";
 
 impl QuoteProvider for LiveProvider {
@@ -97,6 +99,7 @@ impl QuoteProvider for LiveProvider {
             DataSource::Okx => okx(requests).map(Outcome::from_quotes),
             DataSource::Kraken => kraken(requests).map(Outcome::from_quotes),
             DataSource::Bybit => bybit(requests).map(Outcome::from_quotes),
+            DataSource::Gate => gateio(requests).map(Outcome::from_quotes),
             DataSource::CoinGecko => coingecko(requests).map(Outcome::from_quotes),
             DataSource::DexScreener => Ok(dexscreener(requests)),
             DataSource::Alpaca => alpaca(requests).map(Outcome::from_quotes),
@@ -144,6 +147,11 @@ pub fn classify_status(source: DataSource, code: u16) -> QuoteFailure {
         (DataSource::Bybit, 403) => QuoteFailure::Failed(
             "Bybit refused the request (HTTP 403): it is not available in every country".to_owned(),
         ),
+        // Gate.io refuses some countries, and a client that asks too often, with a 403.
+        (DataSource::Gate, 403) => QuoteFailure::Failed(
+            "Gate.io refused the request (HTTP 403): it is not available in every country"
+                .to_owned(),
+        ),
         // Coinbase is asked one product at a time: a 404 names that product.
         (DataSource::Coinbase, 404) => {
             QuoteFailure::Rejected("The provider answered HTTP 404".to_owned())
@@ -172,6 +180,11 @@ fn binance(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Qu
 /// How many answers in a row may fail before an adapter stops asking: the endpoint is
 /// down, and the rest of the batch would only add requests.
 const CONSECUTIVE_FAILURES: usize = 3;
+
+fn gateio(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+    let body = get(DataSource::Gate, &format!("{GATE_URL}/tickers"), &[])?;
+    parse_gateio(&body, requests)
+}
 
 fn bybit(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
     let body = get(
@@ -447,6 +460,52 @@ pub fn parse_binance(
         quotes.insert(request.symbol.clone(), quote);
     }
     Ok(quotes)
+}
+
+/// One Gate.io spot ticker (`/spot/tickers` and the `spot.tickers` channel carry the same fields):
+/// the market and its price, with the price a day ago taken from the 24h change in percent
+/// (`change_percentage`), and the quote-currency volume of a dollar-quoted pair, the units traded
+/// otherwise.
+pub fn gateio_ticker(ticker: &Value) -> Option<(String, SourceQuote)> {
+    let id = ticker.get("currency_pair")?.as_str()?.to_uppercase();
+    let price = number(ticker.get("last")).filter(|price| *price > 0.0)?;
+    let mut quote = SourceQuote {
+        price,
+        previous_day_price: number(ticker.get("change_percentage"))
+            .filter(|percent| percent.is_finite() && *percent > -100.0)
+            .map(|percent| price / (1.0 + percent / 100.0)),
+        ..SourceQuote::default()
+    };
+    let dollar_quoted = DOLLAR_QUOTES.iter().any(|quote| id.ends_with(quote));
+    if let (true, Some(turnover)) = (dollar_quoted, number(ticker.get("quote_volume"))) {
+        quote.volume_24h = Some(turnover);
+        quote.volume_kind = Some(VolumeKind::QuoteCurrency);
+    } else if let Some(units) = number(ticker.get("base_volume")) {
+        quote.volume_24h = Some(units);
+        quote.volume_kind = Some(VolumeKind::Base);
+    }
+    Some((id, quote))
+}
+
+/// `/spot/tickers`: every spot market in one answer; the requested ones are kept.
+pub fn parse_gateio(
+    body: &str,
+    requests: &[QuoteRequest],
+) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+    let value = json(body)?;
+    let tickers: HashMap<String, SourceQuote> = value
+        .as_array()
+        .ok_or_else(|| QuoteFailure::Failed("Unexpected Gate.io response".to_owned()))?
+        .iter()
+        .filter_map(gateio_ticker)
+        .collect();
+    Ok(requests
+        .iter()
+        .filter_map(|request| {
+            let quote = tickers.get(&request.symbol.to_uppercase())?;
+            Some((request.symbol.clone(), *quote))
+        })
+        .collect())
 }
 
 /// One Bybit spot ticker (`/market/tickers` and the `tickers` topic carry the same fields): the
@@ -906,6 +965,62 @@ mod tests {
         )
         .unwrap();
         assert_eq!(sol.previous_day_price, None);
+    }
+
+    #[test]
+    fn gate_answers_every_spot_market_with_the_price_a_day_ago_from_the_change() {
+        let body = r#"[
+            {"currency_pair":"BTC_USDT","last":"65100","change_percentage":"2","base_volume":"14040.69","quote_volume":"908513512.9"},
+            {"currency_pair":"ETH_BTC","last":"0.05","change_percentage":"-1.5","base_volume":"2000","quote_volume":"100"},
+            {"currency_pair":"DEAD_USDT","last":"0","change_percentage":"0","base_volume":"1","quote_volume":"1"},
+            {"currency_pair":"WILD_USDT","last":"1","change_percentage":"-100","base_volume":"1","quote_volume":"1"}
+        ]"#;
+        let quotes = parse_gateio(
+            body,
+            &[
+                request("BTC_USDT"),
+                request("ETH_BTC"),
+                request("DEAD_USDT"),
+                request("WILD_USDT"),
+                request("MISSING_USDT"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            quotes.len(),
+            3,
+            "unrequested, unlisted and priceless are left out"
+        );
+        let btc = &quotes["BTC_USDT"];
+        assert_eq!(btc.price, 65_100.0);
+        assert!((btc.previous_day_price.unwrap() - 63_823.529).abs() < 0.001);
+        assert_eq!(
+            (btc.volume_24h, btc.volume_kind),
+            (Some(908_513_512.9), Some(VolumeKind::QuoteCurrency))
+        );
+        // A pair quoted in a coin reports the units traded; a fall of 1.5 % has a higher past.
+        let eth = &quotes["ETH_BTC"];
+        assert!(eth.previous_day_price.unwrap() > 0.05);
+        assert_eq!(
+            (eth.volume_24h, eth.volume_kind),
+            (Some(2_000.0), Some(VolumeKind::Base))
+        );
+        // A change of -100 % leaves no price a day ago to divide by.
+        assert_eq!(quotes["WILD_USDT"].previous_day_price, None);
+    }
+
+    #[test]
+    fn gate_odd_answers_and_refusals() {
+        assert!(parse_gateio("not json", &[]).is_err());
+        assert!(parse_gateio(r#"{"label":"INVALID_CURRENCY"}"#, &[]).is_err());
+        assert!(matches!(
+            classify_status(DataSource::Gate, 403),
+            QuoteFailure::Failed(message) if message.contains("not available in every country")
+        ));
+        assert_eq!(
+            classify_status(DataSource::Gate, 429),
+            QuoteFailure::RateLimited
+        );
     }
 
     #[test]

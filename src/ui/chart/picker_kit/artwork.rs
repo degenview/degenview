@@ -29,6 +29,7 @@ fn supports_ticker_icon_lookup(source: DataSource) -> bool {
             | DataSource::Okx
             | DataSource::Kraken
             | DataSource::Bybit
+            | DataSource::Gate
             | DataSource::CoinGecko
             | DataSource::DexScreener
             | DataSource::Alpaca
@@ -76,6 +77,7 @@ pub(crate) fn result_icon(ui: &Ui, rect: Rect, result: &SearchResult) {
         | DataSource::Okx
         | DataSource::Kraken
         | DataSource::Bybit
+        | DataSource::Gate
         | DataSource::CoinGecko => {
             ticker_icon(ui, rect, &base, DataSource::Binance, &format!("{base}USDT"));
         }

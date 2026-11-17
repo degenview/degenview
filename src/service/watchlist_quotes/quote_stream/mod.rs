@@ -3,6 +3,7 @@
 
 mod bybit;
 mod coinbase;
+mod gateio;
 mod kraken;
 mod okx;
 
@@ -42,6 +43,7 @@ impl QuoteSocket {
             DataSource::Okx => (okx::session(&products), okx::parse_tick),
             DataSource::Kraken => (kraken::session(&products), kraken::parse_tick),
             DataSource::Bybit => (bybit::session(&products), bybit::parse_tick),
+            DataSource::Gate => (gateio::session(&products), gateio::parse_tick),
             _ => return None,
         };
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -123,6 +125,25 @@ mod tests {
             .expect("a tick in 30 s");
         assert_eq!(tick.source, DataSource::Bybit);
         assert_eq!(tick.product_id, "BTCUSDT");
+        assert!(tick.quote.price > 0.0 && tick.quote.previous_day_price.is_some());
+    }
+
+    /// Run with `cargo test --lib quote_stream::tests::live_gate -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_gate_streams_a_ticker_beside_an_unknown_product() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let _socket = QuoteSocket::connect(
+            DataSource::Gate,
+            vec!["NOPE_USDT".to_owned(), "BTC_USDT".to_owned()],
+            sender,
+        )
+        .expect("Gate.io has a ticker socket");
+        let tick = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("a tick in 30 s");
+        assert_eq!(tick.source, DataSource::Gate);
+        assert_eq!(tick.product_id, "BTC_USDT");
         assert!(tick.quote.price > 0.0 && tick.quote.previous_day_price.is_some());
     }
 

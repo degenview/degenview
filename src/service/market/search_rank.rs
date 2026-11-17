@@ -95,7 +95,7 @@ impl Key {
     }
 }
 
-/// An exchange's main dollar quote first (USDT on Binance, OKX and Bybit, USD on Coinbase and Kraken), then the other dollar
+/// An exchange's main dollar quote first (USDT on Binance, OKX, Bybit and Gate.io, USD on Coinbase and Kraken), then the other dollar
 /// quotes in their own order; a hit with no quote (a coin, a share) after the exchange pairs;
 /// other quotes last.
 fn quote_order(result: &SearchResult) -> usize {
@@ -105,6 +105,7 @@ fn quote_order(result: &SearchResult) -> usize {
         DataSource::Okx => Some("USDT"),
         DataSource::Kraken => Some("USD"),
         DataSource::Bybit => Some("USDT"),
+        DataSource::Gate => Some("USDT"),
         _ => None,
     };
     match result.quote.as_deref() {

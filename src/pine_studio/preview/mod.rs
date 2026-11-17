@@ -63,6 +63,7 @@ impl PreviewMarket {
                 | DataSource::Okx
                 | DataSource::Kraken
                 | DataSource::Bybit
+                | DataSource::Gate
                 | DataSource::CoinGecko
                 | DataSource::DexScreener
                 | DataSource::Alpaca

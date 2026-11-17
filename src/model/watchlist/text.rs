@@ -31,12 +31,13 @@ const US_EXCHANGES: [&str; 7] = [
     "NYSEAMERICAN",
 ];
 
-const SOURCES: [DataSource; 11] = [
+const SOURCES: [DataSource; 12] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
     DataSource::Kraken,
     DataSource::Bybit,
+    DataSource::Gate,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -305,6 +306,18 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
                 .to_owned());
             }
             Ok(item(source, &symbol, &symbol.replace('-', "/"), &symbol))
+        }
+        DataSource::Gate => {
+            let symbol = rest.to_uppercase();
+            let valid = symbol.split_once('_').is_some_and(|(base, quote)| {
+                [base, quote]
+                    .iter()
+                    .all(|part| !part.is_empty() && part.chars().all(is_upper_alphanumeric))
+            });
+            if !valid {
+                return Err("Gate.io markets are written BASE_QUOTE, like BTC_USDT".to_owned());
+            }
+            Ok(item(source, &symbol, &symbol.replace('_', "/"), &symbol))
         }
         DataSource::Kraken => {
             let valid = rest.split_once('/').is_some_and(|(base, quote)| {
@@ -586,6 +599,26 @@ mod tests {
         assert_eq!(
             reasons,
             ["OKX spot markets are written BASE-QUOTE, like BTC-USDT"; 2]
+        );
+    }
+
+    #[test]
+    fn gate_rows_are_spot_pairs_written_base_underscore_quote() {
+        let parsed =
+            parse("GATEIO:btc_usdt\nGATEIO:BTCUSDT\nGATEIO:BTC_USDT_PERP\nGATEIO:BTC-USDT");
+        assert_eq!(parsed.rows.len(), 1);
+        let Row::Instrument(item) = &parsed.rows[0] else {
+            panic!("an instrument");
+        };
+        assert_eq!(item.instrument.key(), "GATEIO:BTC_USDT");
+        assert_eq!(item.name, "BTC/USDT");
+        assert_eq!(
+            parsed
+                .skipped
+                .iter()
+                .map(|skipped| skipped.reason.as_str())
+                .collect::<Vec<_>>(),
+            ["Gate.io markets are written BASE_QUOTE, like BTC_USDT"; 3]
         );
     }
 

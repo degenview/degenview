@@ -11,12 +11,13 @@ const TABLE: [&str; 24] = [
     "3D", "5D", "1W", "2W", "1M", "2M", "3M", "6M", "1Y",
 ];
 
-const CANDLE_SOURCES: [DataSource; 7] = [
+const CANDLE_SOURCES: [DataSource; 8] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
     DataSource::Kraken,
     DataSource::Bybit,
+    DataSource::Gate,
     DataSource::Alpaca,
     DataSource::DexScreener,
 ];
@@ -94,6 +95,27 @@ fn kraken_folds_its_thursday_weeks_and_everything_above_a_day_from_days() {
     assert_eq!(base("12h").as_deref(), Some("4h"));
     for text in TABLE {
         assert!(DataSource::Kraken.serves(tf(text)), "{text}");
+    }
+}
+
+#[test]
+fn gate_has_every_documented_bar_on_our_grid_and_folds_the_rest() {
+    let base = |text: &str| {
+        DataSource::Gate
+            .plan(tf(text))
+            .map(|plan| plan.base().label())
+    };
+    // It answers 3m, 2h, 6h and 12h as well, but does not document them.
+    assert_eq!(base("3m").as_deref(), Some("1m"));
+    assert_eq!(base("2h").as_deref(), Some("1h"));
+    assert_eq!(base("6h").as_deref(), Some("1h"));
+    assert_eq!(base("12h").as_deref(), Some("4h"));
+    for text in ["3M", "1Y", "6M"] {
+        assert_eq!(base(text).as_deref(), Some("1M"), "{text}");
+    }
+    assert_eq!(base("8h").as_deref(), Some("8h"));
+    for text in TABLE {
+        assert!(DataSource::Gate.serves(tf(text)), "{text}");
     }
 }
 
@@ -237,6 +259,7 @@ fn exchanges_page_back_at_any_length() {
         DataSource::Coinbase,
         DataSource::Okx,
         DataSource::Bybit,
+        DataSource::Gate,
         DataSource::Alpaca,
     ] {
         for text in TABLE {

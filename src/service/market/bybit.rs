@@ -26,7 +26,7 @@ pub const BYBIT: Bybit = Bybit;
 /// requests per 5 seconds per IP, far more than a chart asks for, so the pages are not spaced.
 const PAGING: Paging = Paging {
     page: 1_000,
-    max_pages: 60,
+    max_candles: 60_000,
     pause: Duration::ZERO,
 };
 
@@ -313,7 +313,7 @@ mod tests {
         // 500 candles of 1,439 minutes (nothing larger folds from one-minute bars) is 720,939
         // base candles; paging reaches 60,000.
         let plan = plan(DataSource::Bybit, Timeframe::parse("1439m").unwrap()).unwrap();
-        assert_eq!(PAGING.requested(plan, 500), PAGING.max_candles());
+        assert_eq!(PAGING.requested(plan, 500), PAGING.max_candles);
         let hour = super::plan(DataSource::Bybit, Timeframe::HOUR_1).unwrap();
         assert_eq!(PAGING.requested(hour, 500), 500);
     }

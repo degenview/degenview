@@ -19,7 +19,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
 ## What it does
 
 - **Opens searching for the market on the focused chart** (`Chart::picker_query`): the exchange's own
-  name for Binance, Coinbase, OKX, Kraken, Bybit, Alpaca and CoinGecko, the base token for a DEX pair, nothing for a
+  name for Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, Alpaca and CoinGecko, the base token for a DEX pair, nothing for a
   prediction market or a CoinMarketCap gauge. The text is selected, so typing replaces it. Add,
   Compare and Watchlist modes open empty.
 - **Return replaces** the focused chart's market (`replace_focused_market`, which is
@@ -83,7 +83,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
 - **Detail panel** (hidden below 760 px of window width): artwork, price and change from the quote feed (the percent at two decimals, with the amount
   beside it, trimmed of trailing zeros, only while both fit),
   "Open 24/7" for crypto or the stock's market state, the exchange, and "Also trades as": the other
-  dollar markets of the asset on Binance, Coinbase, OKX, Kraken and Bybit (`SymbolSearch::related`, read from the locally
+  dollar markets of the asset on Binance, Coinbase, OKX, Kraken, Bybit and Gate.io (`SymbolSearch::related`, read from the locally
   held exchange lists). Clicking one of them replaces the chart. A prediction market shows the event's
   artwork and title, its chance, the provider and what the provider says about the event
   (`EventStats`: volume, 24-hour volume, liquidity, open interest, end date, category, and its
@@ -108,7 +108,7 @@ stays.
 
 `service/market/search_rank.rs` is the one rule, used inside each provider and across all of them
 (`merge_ranked`). A query is normalised to letters and digits, so `btc/usd`, `BTC-USD` and `BTC USD`
-are one query, and Binance, Coinbase, OKX, Kraken and Bybit match it against their own lists the same way
+are one query, and Binance, Coinbase, OKX, Kraken, Bybit and Gate.io match it against their own lists the same way
 (`BTC-USDT` finds Binance's `BTCUSDT`, Coinbase's `BTC-USDT` and OKX's `BTC-USDT`; Kraken's legacy `XBT`
 is read as `BTC`, so `xbtusd` finds its `BTC/USD`). Tiers:
 
@@ -121,8 +121,8 @@ is read as `BTC`, so `xbtusd` finds its `BTC/USD`). Tiers:
 5. the rest.
 
 A prediction market has no pair to rank: the Predictions tab keeps each provider's own order,
-Polymarket first. Inside a tier: provider order (Binance, Coinbase, OKX, Kraken, Bybit, DEXScreener, CoinGecko, Alpaca), then quote (the
-exchange's main dollar quote first: USDT on Binance, OKX and Bybit, USD on Coinbase and Kraken; then USD, USDT, USDC...), then
+Polymarket first. Inside a tier: provider order (Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, DEXScreener, CoinGecko, Alpaca), then quote (the
+exchange's main dollar quote first: USDT on Binance, OKX, Bybit and Gate.io, USD on Coinbase and Kraken; then USD, USDT, USDC...), then
 the provider's own order. A coin or a share has no quote and counts as dollars. Each provider still
 keeps its first 20 (30 for Alpaca) after ranking, so the dollar markets are never cut off by the
 odd quotes.

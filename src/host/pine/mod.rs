@@ -164,6 +164,7 @@ fn source_for_slug(slug: &str) -> Option<DataSource> {
         "OKX" => Some(DataSource::Okx),
         "KRAKEN" => Some(DataSource::Kraken),
         "BYBIT" => Some(DataSource::Bybit),
+        "GATEIO" => Some(DataSource::Gate),
         "COINGECKO" => Some(DataSource::CoinGecko),
         "DEXSCREENER" => Some(DataSource::DexScreener),
         "ALPACA" => Some(DataSource::Alpaca),

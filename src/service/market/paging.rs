@@ -11,25 +11,21 @@ use std::time::Duration;
 pub(crate) struct Paging {
     /// The most rows one request returns.
     pub page: usize,
-    /// How many pages one request pages back.
-    pub max_pages: usize,
+    /// The most base candles one request pages back to: what the exchange lets a request reach,
+    /// or what is worth fetching.
+    pub max_candles: usize,
     /// Between pages, for an exchange that limits how fast they may be asked.
     pub pause: Duration,
 }
 
 impl Paging {
-    /// The most base candles one request pages back to.
-    pub const fn max_candles(self) -> usize {
-        self.page * self.max_pages
-    }
-
     /// The base candles to ask for to end with `limit` candles of `plan`'s target: what the fold
     /// needs, at most what the paging reaches. Capped here, before the answer is folded, because a
     /// short answer is read as the start of the market's history and its first fold is kept: a
     /// request the paging cut short must come back as long as it asked for, so that fragment is
     /// dropped.
     pub fn requested(self, plan: FoldPlan, limit: usize) -> usize {
-        plan.base_count(limit).min(self.max_candles())
+        plan.base_count(limit).min(self.max_candles)
     }
 
     /// The newest `requested` candles that open in `[start_ms, end_ms)`, oldest first, paged back
@@ -44,7 +40,7 @@ impl Paging {
     ) -> Result<Vec<Kline>, ProviderError> {
         let mut candles: Vec<Kline> = Vec::new();
         let mut after = end_ms;
-        for page in 0..self.max_pages {
+        for page in 0..self.max_candles.div_ceil(self.page) {
             if candles.len() >= requested || after <= start_ms {
                 break;
             }
@@ -82,7 +78,7 @@ mod tests {
 
     const PAGING: Paging = Paging {
         page: 300,
-        max_pages: 120,
+        max_candles: 36_000,
         pause: Duration::ZERO,
     };
 
@@ -179,7 +175,7 @@ mod tests {
 
     #[test]
     fn a_request_is_capped_at_what_the_paging_reaches() {
-        assert_eq!(PAGING.requested(okx_plan("79m"), 500), PAGING.max_candles());
+        assert_eq!(PAGING.requested(okx_plan("79m"), 500), PAGING.max_candles);
         assert_eq!(PAGING.requested(okx_plan("1h"), 500), 500);
         assert_eq!(PAGING.requested(okx_plan("22m"), 500), 501 * 22);
     }
@@ -189,7 +185,7 @@ mod tests {
         // 500 candles of 79 minutes is 39,579 one-minute candles; paging reaches 36,000. The
         // oldest of them, at 12:00, is nine minutes into a bucket that began at 11:51.
         let plan = okx_plan("79m");
-        let candles = minutes_ending(NOON, PAGING.max_candles());
+        let candles = minutes_ending(NOON, PAGING.max_candles);
         let shown = plan.shape(candles, PAGING.requested(plan, 500), 500);
         assert_eq!(shown.first().map(|candle| candle.volume), Some(79.0));
         // The last bucket of each day (18 minutes) and the one forming at noon are short by design.

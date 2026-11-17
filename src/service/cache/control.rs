@@ -4,7 +4,7 @@ use super::disk::{self, CacheStats, ClearOutcome, Limits};
 use super::lookup;
 use crate::service::{
     image::{icon, loader},
-    market::{alpaca, binance, bybit, coinbase, kraken, okx},
+    market::{alpaca, binance, bybit, coinbase, gateio, kraken, okx},
     work_queue,
 };
 use eframe::egui;
@@ -54,6 +54,7 @@ fn clear_memory() {
     okx::clear_catalog();
     kraken::clear_catalog();
     bybit::clear_catalog();
+    gateio::clear_catalog();
     alpaca::clear_catalog();
     loader::clear_memory();
 }
