@@ -444,6 +444,196 @@ fn the_wheel_zooms_and_a_sideways_swipe_scrolls() {
     assert_eq!(rig.card.viewport.horizontal.visible, visible);
 }
 
+impl Rig {
+    /// The (fractional) bar index drawn at `x`.
+    fn bar_at(&self, x: f32) -> f64 {
+        let probe = self.probe();
+        f64::from((x - probe.plot.left()) / probe.slot_width - 0.5 - probe.lead)
+            + probe.start as f64
+    }
+
+    fn wheel(&mut self, delta: Vec2, modifiers: Modifiers) {
+        self.frame(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta,
+            phase: egui::TouchPhase::Move,
+            modifiers,
+        }]);
+        self.frames(&[]);
+    }
+}
+
+/// One zoom input a person makes.
+type Gesture = fn(&mut Rig);
+
+fn wheel_in(rig: &mut Rig) {
+    rig.wheel(Vec2::new(0.0, 60.0), Modifiers::NONE);
+}
+
+fn wheel_out(rig: &mut Rig) {
+    rig.wheel(Vec2::new(0.0, -60.0), Modifiers::NONE);
+}
+
+fn command_wheel(rig: &mut Rig) {
+    rig.wheel(Vec2::new(0.0, 60.0), Modifiers::COMMAND);
+}
+
+fn pinch(rig: &mut Rig) {
+    rig.frames(&[egui::Event::Zoom(1.5)]);
+}
+
+/// A rig scrolled back into history, with the pointer `fraction` of the way across the plot.
+fn rig_pointing_at(fraction: f32) -> (Rig, Pos2) {
+    let mut rig = Rig::new();
+    rig.card.viewport.horizontal.right_offset = 120.0;
+    rig.frames(&[]);
+    let probe = rig.probe();
+    let at = Pos2::new(
+        probe.plot.left() + probe.plot.width() * fraction,
+        rig.in_plot().y,
+    );
+    rig.frames(&[egui::Event::PointerMoved(at)]);
+    (rig, at)
+}
+
+#[test]
+fn the_plain_wheel_zooms_about_the_right_edge() {
+    for (name, zoom) in [("in", wheel_in as Gesture), ("out", wheel_out)] {
+        for fraction in [0.1, 0.5, 0.9] {
+            let (mut rig, _) = rig_pointing_at(fraction);
+            let (visible, edge) = (
+                rig.card.viewport.horizontal.visible,
+                rig.probe().plot.right(),
+            );
+            let before = rig.bar_at(edge);
+            zoom(&mut rig);
+            assert_ne!(
+                rig.card.viewport.horizontal.visible, visible,
+                "wheel {name} zooms"
+            );
+            assert!(
+                (rig.bar_at(edge) - before).abs() < 0.05,
+                "wheel {name} at {fraction}: the right edge moved"
+            );
+            assert!(close(rig.offset(), 120.0), "the offset is left alone");
+        }
+    }
+}
+
+#[test]
+fn ctrl_wheel_and_a_pinch_zoom_about_the_pointer() {
+    for (name, zoom) in [("ctrl wheel", command_wheel as Gesture), ("pinch", pinch)] {
+        for fraction in [0.1, 0.5, 0.9] {
+            let (mut rig, at) = rig_pointing_at(fraction);
+            let (visible, before) = (rig.card.viewport.horizontal.visible, rig.bar_at(at.x));
+            zoom(&mut rig);
+            assert_ne!(
+                rig.card.viewport.horizontal.visible, visible,
+                "{name} zooms"
+            );
+            let after = rig.bar_at(at.x);
+            assert!(
+                (after - before).abs() < 0.05,
+                "{name} at {fraction}: the bar under the pointer moved from {before} to {after}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_wheel_over_the_price_axis_stretches_the_prices_as_dragging_it_does() {
+    for (name, zoom) in [
+        ("wheel", wheel_in as Gesture),
+        ("ctrl wheel", command_wheel),
+        ("pinch", pinch),
+    ] {
+        let mut rig = Rig::new();
+        let at = rig.on_price_axis();
+        rig.frames(&[egui::Event::PointerMoved(at)]);
+        let before = rig.card.viewport;
+        zoom(&mut rig);
+        let after = rig.card.viewport;
+        assert!(after.vertical.zoom > 1.0, "{name} makes the candles taller");
+        assert_eq!(
+            after.horizontal, before.horizontal,
+            "{name} leaves the time alone"
+        );
+    }
+
+    let mut rig = Rig::new();
+    let at = rig.on_price_axis();
+    rig.frames(&[egui::Event::PointerMoved(at)]);
+    wheel_out(&mut rig);
+    assert!(
+        rig.card.viewport.vertical.zoom < 1.0,
+        "wheeling out shrinks them"
+    );
+
+    // A drag of the same axis in the same direction does the same.
+    let mut dragged = Rig::new();
+    let from = dragged.on_price_axis();
+    dragged.drag(from, Vec2::new(0.0, -50.0));
+    assert!(dragged.card.viewport.vertical.zoom > 1.0);
+}
+
+#[test]
+fn the_wheel_over_the_price_axis_stretches_a_manual_range_about_its_centre() {
+    let mut rig = Rig::new();
+    rig.card.viewport.vertical.manual = Some(PriceRange::new(100.0, 200.0));
+    let at = rig.on_price_axis();
+    rig.frames(&[egui::Event::PointerMoved(at)]);
+    wheel_in(&mut rig);
+    let range = rig.card.viewport.vertical.manual.expect("still manual");
+    assert!(range.maximum - range.minimum < 100.0, "a narrower range");
+    assert!(
+        close((range.minimum + range.maximum) / 2.0, 150.0),
+        "same centre"
+    );
+}
+
+#[test]
+fn a_pinch_spreading_the_fingers_shows_fewer_bars() {
+    let mut rig = Rig::new();
+    let at = rig.in_plot();
+    rig.frames(&[egui::Event::PointerMoved(at)]);
+    rig.frames(&[egui::Event::Zoom(1.25)]);
+    let narrowed = rig.card.viewport.horizontal.visible;
+    assert!(narrowed < DEFAULT_VISIBLE);
+    rig.frames(&[egui::Event::Zoom(0.8)]);
+    assert!(rig.card.viewport.horizontal.visible > narrowed);
+}
+
+#[test]
+fn a_slow_scroll_adds_up_instead_of_rounding_away() {
+    let mut rig = Rig::new();
+    let at = rig.in_plot();
+    rig.frames(&[egui::Event::PointerMoved(at)]);
+    // Two points a frame is under one bar of 120: only the sum of many frames shows.
+    for _ in 0..40 {
+        rig.frame(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: Vec2::new(0.0, 2.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        }]);
+    }
+    assert!(rig.card.viewport.horizontal.visible < DEFAULT_VISIBLE - 10);
+}
+
+#[test]
+fn a_pinch_is_ignored_off_the_chart_and_in_select_portion() {
+    let mut rig = Rig::new();
+    rig.frames(&[egui::Event::PointerMoved(Pos2::new(-50.0, -50.0))]);
+    rig.frames(&[egui::Event::Zoom(1.5)]);
+    assert_eq!(rig.card.viewport, ChartViewport::default());
+
+    let at = rig.in_plot();
+    rig.card.snapshot_select = true;
+    rig.frames(&[egui::Event::PointerMoved(at)]);
+    rig.frames(&[egui::Event::Zoom(1.5)]);
+    assert_eq!(rig.card.viewport, ChartViewport::default());
+}
+
 // MARK: Drawings and data
 
 fn trend_line() -> Drawing {

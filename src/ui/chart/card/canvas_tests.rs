@@ -90,6 +90,10 @@ pub(super) struct Harness {
     pub(super) error: Option<ProviderError>,
     pub(super) scale_mode: PriceScaleMode,
     pub(super) source: DataSource,
+    /// The time of the next frame in seconds, for what waits on it (a tooltip's delay).
+    pub(super) clock: f64,
+    /// The pointer as last told to egui: a still pointer sends no event, as in a real window.
+    sent: Option<Pos2>,
 }
 
 impl Harness {
@@ -109,19 +113,24 @@ impl Harness {
             error: None,
             scale_mode: PriceScaleMode::Regular,
             source: DataSource::Binance,
+            clock: 0.0,
+            sent: None,
         }
     }
 
     pub(super) fn frame(&mut self) -> (Vec<ClippedShape>, ChartPointer) {
         let input = egui::RawInput {
+            time: Some(self.clock),
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
             events: self
                 .pointer
+                .filter(|at| self.sent != Some(*at))
                 .map(egui::Event::PointerMoved)
                 .into_iter()
                 .collect(),
             ..Default::default()
         };
+        self.sent = self.pointer;
         let mut pointer = ChartPointer::default();
         let source = self.source;
         let (card, candles, replay_active, crosshair, error, scale_mode) = (

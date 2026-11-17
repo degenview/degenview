@@ -63,6 +63,13 @@ pub(super) fn remember(ctx: &Context, chart_id: u64, index: usize, top: f32) {
     });
 }
 
+/// Where the card was last drawn on `chart_id`, for the tests that put the pointer around it.
+#[cfg(test)]
+pub(super) fn card_rect(ctx: &Context, chart_id: u64) -> Option<Rect> {
+    ctx.data(|data| data.get_temp::<Memo>(memo_id(chart_id)))
+        .and_then(|memo| memo.rect)
+}
+
 /// What a control of the card asks for.
 pub(super) type CardAction = Action;
 
@@ -72,6 +79,14 @@ pub(super) struct CardResult {
     pub action: Option<CardAction>,
     /// The pointer is on the card, so the plot under it sees none.
     pub on_card: bool,
+}
+
+/// What a row's buttons report.
+#[derive(Default)]
+struct RowControls {
+    action: Option<CardAction>,
+    /// The pointer is on one of the buttons.
+    hovered: bool,
 }
 
 struct Row<'a> {
@@ -253,21 +268,21 @@ impl ChartCard {
                 (origin.x + pad.x, top),
                 (name_width, row_h),
             );
+            let mut on_control = false;
             if hovered {
-                action = action.or(self.row_controls(
-                    ui,
-                    chart_id,
-                    row_rect,
-                    overlay.visible,
-                    id,
-                    row_h,
-                ));
+                let controls =
+                    self.row_controls(ui, chart_id, row_rect, overlay.visible, id, row_h);
+                action = action.or(controls.action);
+                on_control = controls.hovered;
             }
             if response.clicked() && action.is_none() {
                 action = Some(Action::ConfigureOverlay(id, row_rect));
             }
-            let note = self.row_note(row);
-            response.clone().on_hover_text(note);
+            // The row's tooltip stays up while the pointer is anywhere in the row, and egui shows one
+            // tooltip per layer, so over a button it would hide the button's own.
+            if !on_control {
+                response.clone().on_hover_text(self.row_note(row));
+            }
             let first = n == 0;
             let last = n + 1 == count;
             let scale = overlay.scale;
@@ -356,8 +371,8 @@ impl ChartCard {
         visible: bool,
         id: OverlayId,
         control: f32,
-    ) -> Option<CardAction> {
-        let mut action = None;
+    ) -> RowControls {
+        let mut result = RowControls::default();
         let controls = [
             (
                 if visible { Icon::Eye } else { Icon::EyeSlash },
@@ -401,11 +416,12 @@ impl ChartCard {
                 icon,
                 theme::text_secondary(),
             );
+            result.hovered |= response.hovered();
             if response.clicked() {
-                action = Some(wanted);
+                result.action = Some(wanted);
             }
         }
-        action
+        result
     }
 
     /// What a row's tooltip says: the market, where it comes from and how its data is doing.

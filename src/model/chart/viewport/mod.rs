@@ -245,6 +245,27 @@ impl HorizontalViewport {
         self.clamp(total);
     }
 
+    /// Shows `count` bars (within the limits of [`set_visible`](Self::set_visible)) while the slot
+    /// at `anchor` stays where it is on the plot, so the bar under the pointer does not slide.
+    /// `anchor` is the fraction of the plot's width, 0 at its left edge and 1 at its right (where
+    /// the newest bar rests, and where [`set_visible`](Self::set_visible) alone keeps it), and
+    /// `reserved` the free slots past the newest bar that share the plot.
+    pub fn zoom_at(&mut self, count: usize, anchor: f64, reserved: usize, total: usize) {
+        let anchor = if anchor.is_finite() {
+            anchor.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let slots_before = (self.visible + reserved) as f64;
+        // The offset moves before it is clamped: `set_visible` clamping the old one first would
+        // eat a negative offset (the view in the empty space past the newest bar) on zooming in.
+        let offset = self.right_offset;
+        self.visible = count.clamp(MIN_VISIBLE, Self::max_visible(total));
+        let slots_after = (self.visible + reserved) as f64;
+        self.right_offset = offset + (1.0 - anchor) * (slots_before - slots_after);
+        self.clamp(total);
+    }
+
     /// Drags the time axis: `factor` is how many more bars are shown, the newest bar staying put.
     pub fn stretch(&mut self, origin_visible: usize, factor: f64, total: usize) {
         if factor.is_finite() && factor > 0.0 {
