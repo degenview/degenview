@@ -7,7 +7,7 @@
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::search_rank::normalize;
-use crate::model::market::bucket::next_bucket_start_ms;
+use crate::model::market::bucket::{FoldPlan, bucket_start_ms, next_bucket_start_ms};
 use crate::model::market::natives::KRAKEN_BARS;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::{http, rate_limit};
@@ -57,10 +57,8 @@ impl MarketSource for Kraken {
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Kraken, timeframe)?;
-        let requested = plan.base_count(max).min(KRAKEN_BARS);
-        let mut candles = fetch_ohlc(symbol, plan.base(), None)?;
-        candles.retain(|candle| candle.open_time >= start_ms && candle.open_time < end_ms);
-        Ok(plan.shape(newest(candles, requested), requested, max))
+        let rows = fetch_ohlc(symbol, plan.base(), None)?;
+        Ok(window(plan, rows, start_ms, end_ms, max))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -76,6 +74,31 @@ impl MarketSource for Kraken {
             .take(20)
             .collect())
     }
+}
+
+/// The candles of `plan`'s target that open in `[start_ms, end_ms)` out of everything Kraken holds
+/// of the base candle (`rows`), the newest `max`. A full window of `rows` was cut short of the
+/// market's beginning, so its first fold is a fragment and goes, even when the range leaves fewer
+/// candles than that: otherwise the page before what a chart shows would bring that fragment back
+/// as a candle of its own.
+fn window(plan: FoldPlan, rows: Vec<Kline>, start_ms: i64, end_ms: i64, max: usize) -> Vec<Kline> {
+    let cut = rows.len() >= KRAKEN_BARS;
+    let requested = plan.base_count(max).min(KRAKEN_BARS);
+    let mut candles = rows;
+    candles.retain(|candle| candle.open_time >= start_ms && candle.open_time < end_ms);
+    let candles = newest(candles, requested);
+    let first_open = candles.first().map(|candle| candle.open_time);
+    let mut shown = plan.fold(candles, cut);
+    // A fold keeps a lone bucket, whatever it is: a lone fragment is not a candle.
+    if cut
+        && shown.len() == 1
+        && first_open.is_some_and(|open| open > bucket_start_ms(plan.target(), open))
+    {
+        shown.clear();
+    }
+    let skip = shown.len().saturating_sub(max);
+    shown.drain(..skip);
+    shown
 }
 
 /// `text` with Kraken's legacy asset names in the common ones.
@@ -341,6 +364,68 @@ mod tests {
         assert!(parse_ohlc(bad_field, Timeframe::HOUR_1).is_err());
     }
 
+    const DAY: i64 = 86_400_000;
+    /// 2026-11-17 00:00 UTC.
+    const TODAY: i64 = 1_794_873_600_000;
+
+    /// `count` daily candles of volume 1 with the last one opening at `last_open`.
+    fn days(count: usize, last_open: i64) -> Vec<Kline> {
+        (0..count as i64)
+            .rev()
+            .map(|back| {
+                let open_time = last_open - back * DAY;
+                Kline {
+                    open_time,
+                    close_time: open_time + DAY - 1,
+                    open: 1.0,
+                    high: 1.0,
+                    low: 1.0,
+                    close: 1.0,
+                    volume: 1.0,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_first_older_page_brings_the_rest_of_the_candles_kraken_holds() {
+        // 721 hourly candles: the chart showed the newest 500, the page before them is the rest.
+        let plan = plan(DataSource::Kraken, Timeframe::HOUR_1).unwrap();
+        let hour = 3_600_000;
+        let rows: Vec<Kline> = (0..721)
+            .map(|index| Kline {
+                open_time: index * hour,
+                close_time: index * hour + hour - 1,
+                ..days(1, 0)[0].clone()
+            })
+            .collect();
+        let end = rows[721 - 500].open_time;
+        let page = window(plan, rows, 0, end, 1_000);
+        assert_eq!(page.len(), 221);
+        assert_eq!(page[0].open_time, 0);
+        assert_eq!(page.last().unwrap().open_time, end - hour);
+    }
+
+    #[test]
+    fn an_older_page_of_a_fold_does_not_bring_back_the_fragment_the_window_cut() {
+        // Kraken's 720 days begin mid-week: the first weekly candle the chart showed is the first
+        // whole one, and what lies before it is only that fragment, which is not a week.
+        let plan = plan(DataSource::Kraken, Timeframe::WEEK_1).unwrap();
+        let rows = days(721, TODAY);
+        let shown = plan.shape(newest(rows.clone(), 720), 720, 500);
+        let end = shown.first().unwrap().open_time;
+        assert!(window(plan, rows, 0, end, 1_000).is_empty());
+    }
+
+    #[test]
+    fn a_market_that_began_inside_the_window_keeps_its_first_partial_week() {
+        let plan = plan(DataSource::Kraken, Timeframe::WEEK_1).unwrap();
+        // Ten days of history that start on a Wednesday: the first week genuinely began then.
+        let rows = days(10, TODAY);
+        let weeks = window(plan, rows, 0, TODAY + DAY, 500);
+        assert!(weeks.first().is_some_and(|week| week.volume < 7.0));
+    }
+
     #[test]
     fn a_range_keeps_the_candles_that_open_in_it() {
         let candles = parse_ohlc(OHLC, Timeframe::HOUR_1).unwrap();
@@ -414,6 +499,20 @@ mod tests {
             .fetch_klines("BTC/USD", Timeframe::WEEK_1, 500)
             .expect("weekly");
         assert!((90..=105).contains(&weekly.len()), "{}", weekly.len());
+        // The chart's first 500 leave the rest of the 720 for one older page, then nothing.
+        let shown = KRAKEN
+            .fetch_klines("BTC/USD", Timeframe::HOUR_1, 500)
+            .expect("hourly");
+        let end = shown[0].open_time;
+        let older = KRAKEN
+            .fetch_klines_range("BTC/USD", Timeframe::HOUR_1, 0, end, 1_000)
+            .expect("older page");
+        assert!((200..=225).contains(&older.len()), "{}", older.len());
+        let end = older[0].open_time;
+        let none = KRAKEN
+            .fetch_klines_range("BTC/USD", Timeframe::HOUR_1, 0, end, 1_000)
+            .expect("second older page");
+        assert!(none.is_empty());
         // A tail refresh asks for little.
         let tail = KRAKEN
             .fetch_klines("BTC/USD", Timeframe::MINUTE_1, 4)

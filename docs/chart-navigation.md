@@ -190,7 +190,7 @@ page was cut by the request, so a bar is never split across two pages.
 | Binance | Yes, every timeframe (3M / 1Y fold monthly klines). |
 | Coinbase | Yes, every timeframe (daily or hourly pages of 290, folded). Not verified live. 1m to 4h (for Pine's requests, not the chart) were fetched live once: no gaps, bars on UTC boundaries. |
 | Bybit | Yes, every timeframe (`kline` pages of 1,000 with an `end` cursor, folded, at most 60 pages = 60,000 base candles). Bucket opens match Binance's (`live_sources_cut_the_same_buckets`). Weeks and months reach back only to the 2021 listing. |
-| Kraken | No. Its `OHLC` always answers the newest 720 candles of an interval (`since` cannot page back), so a chart holds 12 hours of 1m, 30 days of 1h, 120 days of 4h and 2 years of 1D; 1W / 1M / 1Y fold from those days. |
+| Kraken | Once. Its `OHLC` always answers the newest 720 candles of an interval (`since` cannot page back), so a chart holds 12 hours of 1m, 30 days of 1h, 120 days of 4h and 2 years of 1D: the first 500 load with the chart, the first older page brings the other 220 and the next one is empty. 1W / 1M / 1Y fold from those days, and a fold's first fragment is dropped. |
 | OKX | Yes, every timeframe (`history-candles` pages of 300 with an `after` cursor, folded; spaced 100 ms for its 20 requests per 2 seconds). Bucket opens match Binance and Coinbase (`live_sources_cut_the_same_buckets`). |
 | Alpaca | Yes, every timeframe (needs the API keys; `start`/`end` bars). Not verified live. |
 | DexScreener | Hourly only. GeckoTerminal's free API serves the last 180 days (`before_timestamp` older than that is HTTP 401, taken as the start of history), so daily bars arrive whole (about 180) and 1W / 1M / 3M / 1Y are shallow by nature. |

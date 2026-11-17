@@ -304,6 +304,10 @@ fn refreshing_slows_down_as_more_markets_are_active() {
         refresh_after(DataSource::CoinGecko, 1),
         Duration::from_secs(15)
     );
+    assert_eq!(
+        refresh_after(DataSource::Kraken, 1),
+        Duration::from_secs(15)
+    );
 }
 
 #[test]

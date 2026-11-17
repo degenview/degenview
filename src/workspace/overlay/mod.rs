@@ -208,7 +208,7 @@ impl Series {
 /// How long after a request a market is asked again, with `active` markets being refreshed.
 pub(super) fn refresh_after(source: DataSource, active: usize) -> Duration {
     let floor = match source {
-        DataSource::CoinGecko | DataSource::DexScreener => SLOW_MIN_REFRESH,
+        DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken => SLOW_MIN_REFRESH,
         _ => MIN_REFRESH,
     };
     floor.max(REFRESH_PER_MARKET * active as u32)
@@ -216,7 +216,7 @@ pub(super) fn refresh_after(source: DataSource, active: usize) -> Duration {
 
 fn retry_after(source: DataSource) -> Duration {
     match source {
-        DataSource::CoinGecko | DataSource::DexScreener => SLOW_RETRY_AFTER,
+        DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken => SLOW_RETRY_AFTER,
         _ => RETRY_AFTER,
     }
 }

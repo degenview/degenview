@@ -98,10 +98,11 @@ fn kraken_folds_its_thursday_weeks_and_everything_above_a_day_from_days() {
 }
 
 #[test]
-fn kraken_cannot_page_back_past_its_newest_candles() {
+fn kraken_pages_back_once_to_the_rest_of_the_candles_it_holds() {
+    // Its OHLC answers the newest 720 whatever is asked; the chart's first 500 leave 220 behind.
     for text in TABLE {
         assert!(
-            !DataSource::Kraken.supports_older_history(tf(text)),
+            DataSource::Kraken.supports_older_history(tf(text)),
             "{text}"
         );
     }
