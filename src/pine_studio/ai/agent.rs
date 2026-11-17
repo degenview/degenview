@@ -7,6 +7,7 @@
 
 use super::plan::Plan;
 use super::tools::{Outcome, ToolBox};
+use crate::i18n::tr;
 use crate::service::llm::{ChatMessage, ChatRequest, LlmError, LlmProvider, Stop, ToolResult};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -46,8 +47,11 @@ pub enum Limit {
 impl Limit {
     pub fn message(&self) -> String {
         match self {
-            Self::Rounds => format!("It used all {MAX_ROUNDS} steps without finishing."),
-            Self::Repeating => "It kept repeating the same step.".to_owned(),
+            Self::Rounds => tr!(
+                "It used all {steps} steps without finishing.",
+                steps = MAX_ROUNDS
+            ),
+            Self::Repeating => tr!("It kept repeating the same step.").to_owned(),
         }
     }
 }

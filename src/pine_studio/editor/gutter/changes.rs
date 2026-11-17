@@ -2,10 +2,11 @@
 //! and menu, the comparison popover, and putting the saved lines back.
 
 use super::{CHANGE_BAR, CHANGE_HIT, CHANGE_INSET, WEDGE_HALF};
+use crate::i18n::{tr, tr_n};
 use crate::pine_studio::editor::diff::{ChangeKind, DiffHunk, DiffSnapshot};
 use crate::pine_studio::editor::diff_view::PreviewEvent;
 use crate::pine_studio::editor::{
-    EditorState, GutterRows, TEXT_INSET, apply_undoable, diff, diff_view, plural,
+    EditorState, GutterRows, TEXT_INSET, apply_undoable, diff, diff_view,
 };
 use crate::ui::icons::Icon;
 use crate::ui::{accessibility, kit, theme};
@@ -32,22 +33,22 @@ pub(in crate::pine_studio) struct ChangeRow {
 pub(in crate::pine_studio) fn change_rows(kind: ChangeKind) -> Vec<ChangeRow> {
     let (show, revert, original, current) = match kind {
         ChangeKind::Added => (
-            "Show Changes",
-            "Revert Added Lines",
+            tr!("Show Changes"),
+            tr!("Revert Added Lines"),
             None,
-            Some("Copy Current Lines"),
+            Some(tr!("Copy Current Lines")),
         ),
         ChangeKind::Deleted => (
-            "Show Deleted Lines",
-            "Restore Deleted Lines",
-            Some("Copy Original Lines"),
+            tr!("Show Deleted Lines"),
+            tr!("Restore Deleted Lines"),
+            Some(tr!("Copy Original Lines")),
             None,
         ),
         ChangeKind::Modified => (
-            "Compare Changes",
-            "Revert Change",
-            Some("Copy Original"),
-            Some("Copy Current"),
+            tr!("Compare Changes"),
+            tr!("Revert Change"),
+            Some(tr!("Copy Original")),
+            Some(tr!("Copy Current")),
         ),
     };
     let row = |icon, label, command| ChangeRow {
@@ -80,30 +81,27 @@ pub(in crate::pine_studio::editor) fn run_change(
     false
 }
 
-/// "Line 12", "Lines 18–20": a lines label starting a sentence.
-fn sentence_lines(range: &std::ops::Range<usize>) -> String {
-    let label = diff_view::lines_label(range);
-    let mut chars = label.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
-}
-
 /// The hover text: the count and what a click does, in words (the colour is not the message).
 fn change_tooltip(hunk: &DiffHunk) -> String {
     match hunk.kind {
-        ChangeKind::Added => format!(
-            "{} added — Click to inspect",
-            plural(hunk.added_lines(), "line")
+        ChangeKind::Added => tr_n!(
+            hunk.added_lines(),
+            "{count} line added — Click to inspect",
+            "{count} lines added — Click to inspect"
         ),
-        ChangeKind::Deleted => format!(
-            "{} deleted — Click to restore",
-            plural(hunk.removed_lines(), "line")
+        ChangeKind::Deleted => tr_n!(
+            hunk.removed_lines(),
+            "{count} line deleted — Click to restore",
+            "{count} lines deleted — Click to restore"
         ),
-        ChangeKind::Modified => format!(
-            "{} modified — Click to compare",
-            sentence_lines(&hunk.new_lines)
+        ChangeKind::Modified if diff_view::is_single_line(&hunk.new_lines) => tr!(
+            "Line {line} modified — Click to compare",
+            line = hunk.new_lines.start + 1
+        ),
+        ChangeKind::Modified => tr!(
+            "Lines {first}–{last} modified — Click to compare",
+            first = hunk.new_lines.start + 1,
+            last = hunk.new_lines.end
         ),
     }
 }
@@ -111,19 +109,34 @@ fn change_tooltip(hunk: &DiffHunk) -> String {
 /// The spoken description of a marker.
 fn change_description(hunk: &DiffHunk) -> String {
     match hunk.kind {
-        ChangeKind::Added => format!("{}: Added since last save", sentence_lines(&hunk.new_lines)),
-        ChangeKind::Modified => format!(
-            "{}: Modified since last save",
-            sentence_lines(&hunk.new_lines)
+        ChangeKind::Added if diff_view::is_single_line(&hunk.new_lines) => tr!(
+            "Line {line}: Added since last save",
+            line = hunk.new_lines.start + 1
         ),
-        ChangeKind::Deleted if hunk.new_lines.start == 0 => format!(
-            "At the start: {} deleted since last save",
-            plural(hunk.removed_lines(), "line")
+        ChangeKind::Added => tr!(
+            "Lines {first}–{last}: Added since last save",
+            first = hunk.new_lines.start + 1,
+            last = hunk.new_lines.end
         ),
-        ChangeKind::Deleted => format!(
-            "After line {}: {} deleted since last save",
-            hunk.new_lines.start,
-            plural(hunk.removed_lines(), "line")
+        ChangeKind::Modified if diff_view::is_single_line(&hunk.new_lines) => tr!(
+            "Line {line}: Modified since last save",
+            line = hunk.new_lines.start + 1
+        ),
+        ChangeKind::Modified => tr!(
+            "Lines {first}–{last}: Modified since last save",
+            first = hunk.new_lines.start + 1,
+            last = hunk.new_lines.end
+        ),
+        ChangeKind::Deleted if hunk.new_lines.start == 0 => tr_n!(
+            hunk.removed_lines(),
+            "At the start: {count} line deleted since last save",
+            "At the start: {count} lines deleted since last save"
+        ),
+        ChangeKind::Deleted => tr_n!(
+            hunk.removed_lines(),
+            "After line {line}: {count} line deleted since last save",
+            "After line {line}: {count} lines deleted since last save",
+            line = hunk.new_lines.start
         ),
     }
 }

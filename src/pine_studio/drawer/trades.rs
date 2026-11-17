@@ -3,6 +3,7 @@
 //! and their comments.
 
 use super::tab_chrome::{self as chrome, card, hairline, panel};
+use crate::i18n::{tr, tr_n};
 use crate::pine::strategy::{StrategyReport, Trade};
 use crate::ui::icons::{self, Icon};
 use crate::ui::pine::report::{self, PineReportFormat};
@@ -23,17 +24,17 @@ const MIN_PRICES: f32 = 64.0;
 /// The trades card, or a word on where trades will show while there are none.
 pub(super) fn trades_card(ui: &mut Ui, report: &StrategyReport) {
     if report.trades.is_empty() {
-        chrome::caption(ui, "Trades");
+        chrome::caption(ui, tr!("Trades"));
         panel(ui, |ui| {
             ui.label(kit::text(
-                "No closed trades yet",
+                tr!("No closed trades yet"),
                 kit::size::CALLOUT,
                 kit::MEDIUM,
                 theme::text_secondary(),
             ));
             ui.add_space(3.0);
             ui.label(kit::text(
-                "Each trade is listed here once the strategy closes it.",
+                tr!("Each trade is listed here once the strategy closes it."),
                 kit::size::CAPTION,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -41,7 +42,7 @@ pub(super) fn trades_card(ui: &mut Ui, report: &StrategyReport) {
         });
         return;
     }
-    chrome::caption(ui, &format!("Trades ({})", report.trades.len()));
+    chrome::caption(ui, &tr!("Trades ({count})", count = report.trades.len()));
     let shown: Vec<&Trade> = report.trades.iter().rev().take(TRADE_LIMIT).collect();
     let columns = Columns::measure(ui, &shown);
     card(ui, |ui| {
@@ -55,9 +56,10 @@ pub(super) fn trades_card(ui: &mut Ui, report: &StrategyReport) {
     if report.trades.len() > TRADE_LIMIT {
         chrome::footnote(
             ui,
-            &format!(
-                "Showing the latest {TRADE_LIMIT} of {}",
-                report.trades.len()
+            &tr!(
+                "Showing the latest {shown} of {total}",
+                shown = TRADE_LIMIT,
+                total = report.trades.len()
             ),
         );
     }
@@ -66,7 +68,7 @@ pub(super) fn trades_card(ui: &mut Ui, report: &StrategyReport) {
 /// "1 bar", "12 bars": how long a trade was held.
 pub(super) fn held(trade: &Trade) -> String {
     let bars = trade.exit_bar.saturating_sub(trade.entry_bar);
-    format!("{bars} bar{}", if bars == 1 { "" } else { "s" })
+    tr_n!(bars, "{count} bar", "{count} bars")
 }
 
 /// What hovering a trade says: when it opened and closed, then its orders, size and comments.
@@ -106,11 +108,26 @@ impl Columns {
         };
         Self {
             number: widest(&number, kit::size::CAPTION, kit::REGULAR),
-            side: SIDE_ICON + 4.0 + width("Short", kit::size::SUBHEADLINE, kit::REGULAR),
+            // Wide enough for either word, whichever language they are in.
+            side: SIDE_ICON
+                + 4.0
+                + width(long(), kit::size::SUBHEADLINE, kit::REGULAR).max(width(
+                    short(),
+                    kit::size::SUBHEADLINE,
+                    kit::REGULAR,
+                )),
             held: widest(&held, kit::size::CAPTION, kit::REGULAR),
             profit: widest(&profit, kit::size::SUBHEADLINE, kit::MEDIUM),
         }
     }
+}
+
+fn long() -> &'static str {
+    tr!("Long")
+}
+
+fn short() -> &'static str {
+    tr!("Short")
 }
 
 fn number(trade: &Trade) -> String {
@@ -152,9 +169,9 @@ fn trade_row(ui: &mut Ui, trade: &Trade, columns: &Columns) {
 
     let side_x = number_x + columns.number + GAP;
     let (icon, side) = if trade.is_long {
-        (Icon::ArrowUpRight, "Long")
+        (Icon::ArrowUpRight, long())
     } else {
-        (Icon::ArrowDownRight, "Short")
+        (Icon::ArrowDownRight, short())
     };
     icons::paint(
         &painter,

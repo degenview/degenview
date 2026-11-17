@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use super::tools::Outcome;
 use crate::host::pine::KlineSecurityDataProvider;
+use crate::i18n::tr_n;
 use crate::pine::profile::{
     Completeness, Interruption, ProfileConfig, ProfileOutcome, ProfileReport, ProfileSession,
 };
@@ -115,16 +116,19 @@ impl ProfileTool {
         let previous = self.take_previous(&report);
         let content = describe(&report, &marks, label, previous);
         let summary = match marks.hot.first() {
-            Some(hot) => format!(
-                "Profiled the draft \u{b7} {} bars \u{b7} {} \u{b7} hottest line {} ({})",
-                marks.totals.bars,
-                marks.totals.time,
-                hot.line,
-                percent(f64::from(hot.line_share))
+            Some(hot) => tr_n!(
+                report.summary.bars,
+                "Profiled the draft · {count} bar · {time} · hottest line {line} ({share})",
+                "Profiled the draft · {count} bars · {time} · hottest line {line} ({share})",
+                time = marks.totals.time,
+                line = hot.line,
+                share = percent(f64::from(hot.line_share))
             ),
-            None => format!(
-                "Profiled the draft \u{b7} {} bars \u{b7} {}",
-                marks.totals.bars, marks.totals.time
+            None => tr_n!(
+                report.summary.bars,
+                "Profiled the draft · {count} bar · {time}",
+                "Profiled the draft · {count} bars · {time}",
+                time = marks.totals.time
             ),
         };
         Outcome {

@@ -3,6 +3,7 @@
 //! its gutters offer is here too.
 
 use super::entry::{Entry, Item, Submenu, grouped};
+use crate::i18n::tr;
 use crate::pine_studio::commands::Cmd;
 use crate::pine_studio::debug::PanelAction;
 use crate::pine_studio::debug::marks::GutterEvent;
@@ -29,10 +30,10 @@ pub(super) fn entries(state: &EditorMenuState) -> Vec<Entry> {
 
 fn history(state: &EditorMenuState) -> Vec<Entry> {
     vec![
-        edit("Undo", Icon::Undo, EditAction::Undo, &shortcut::UNDO)
+        edit(tr!("Undo"), Icon::Undo, EditAction::Undo, &shortcut::UNDO)
             .enabled(state.can_undo)
             .into(),
-        edit("Redo", Icon::Redo, EditAction::Redo, &shortcut::REDO)
+        edit(tr!("Redo"), Icon::Redo, EditAction::Redo, &shortcut::REDO)
             .enabled(state.can_redo)
             .into(),
     ]
@@ -40,21 +41,26 @@ fn history(state: &EditorMenuState) -> Vec<Entry> {
 
 fn clipboard(state: &EditorMenuState) -> Vec<Entry> {
     vec![
-        edit("Cut", Icon::Scissors, EditAction::Cut, &shortcut::CUT)
-            .enabled(state.selection)
-            .into(),
-        edit("Copy", Icon::CopyDoc, EditAction::Copy, &shortcut::COPY)
+        edit(tr!("Cut"), Icon::Scissors, EditAction::Cut, &shortcut::CUT)
             .enabled(state.selection)
             .into(),
         edit(
-            "Paste",
+            tr!("Copy"),
+            Icon::CopyDoc,
+            EditAction::Copy,
+            &shortcut::COPY,
+        )
+        .enabled(state.selection)
+        .into(),
+        edit(
+            tr!("Paste"),
             Icon::Clipboard,
             EditAction::Paste,
             &shortcut::PASTE,
         )
         .into(),
         edit(
-            "Select All",
+            tr!("Select All"),
             Icon::SelectArea,
             EditAction::SelectAll,
             &shortcut::SELECT_ALL,
@@ -66,9 +72,15 @@ fn clipboard(state: &EditorMenuState) -> Vec<Entry> {
 
 fn find(state: &EditorMenuState) -> Vec<Entry> {
     vec![
-        edit("Find…", Icon::Magnifier, EditAction::Find, &shortcut::FIND).into(),
         edit(
-            "Find Next",
+            tr!("Find…"),
+            Icon::Magnifier,
+            EditAction::Find,
+            &shortcut::FIND,
+        )
+        .into(),
+        edit(
+            tr!("Find Next"),
             Icon::ArrowDown,
             EditAction::FindNext,
             &shortcut::FIND_NEXT,
@@ -76,7 +88,7 @@ fn find(state: &EditorMenuState) -> Vec<Entry> {
         .enabled(state.can_step_matches)
         .into(),
         edit(
-            "Find Previous",
+            tr!("Find Previous"),
             Icon::ArrowUp,
             EditAction::FindPrevious,
             &shortcut::FIND_PREVIOUS,
@@ -89,7 +101,7 @@ fn find(state: &EditorMenuState) -> Vec<Entry> {
 fn lines(state: &EditorMenuState) -> Vec<Entry> {
     vec![
         edit(
-            "Toggle Comment",
+            tr!("Toggle Comment"),
             Icon::Code,
             EditAction::ToggleComment,
             &shortcut::TOGGLE_COMMENT,
@@ -97,7 +109,7 @@ fn lines(state: &EditorMenuState) -> Vec<Entry> {
         .enabled(state.can_toggle_comment)
         .into(),
         edit(
-            "Duplicate Line Up",
+            tr!("Duplicate Line Up"),
             Icon::CopyDoc,
             EditAction::DuplicateLineUp,
             &shortcut::DUPLICATE_LINE_UP,
@@ -105,7 +117,7 @@ fn lines(state: &EditorMenuState) -> Vec<Entry> {
         .enabled(state.has_text)
         .into(),
         edit(
-            "Duplicate Line Down",
+            tr!("Duplicate Line Down"),
             Icon::CopyDoc,
             EditAction::DuplicateLineDown,
             &shortcut::DUPLICATE_LINE_DOWN,
@@ -113,7 +125,7 @@ fn lines(state: &EditorMenuState) -> Vec<Entry> {
         .enabled(state.has_text)
         .into(),
         edit(
-            "Move Line Up",
+            tr!("Move Line Up"),
             Icon::ChevronUp,
             EditAction::MoveLineUp,
             &shortcut::MOVE_LINE_UP,
@@ -121,7 +133,7 @@ fn lines(state: &EditorMenuState) -> Vec<Entry> {
         .enabled(state.can_move_up)
         .into(),
         edit(
-            "Move Line Down",
+            tr!("Move Line Down"),
             Icon::ChevronDown,
             EditAction::MoveLineDown,
             &shortcut::MOVE_LINE_DOWN,
@@ -134,19 +146,19 @@ fn lines(state: &EditorMenuState) -> Vec<Entry> {
 fn names(state: &EditorMenuState) -> Vec<Entry> {
     vec![
         edit(
-            "Go to Definition",
+            tr!("Go to Definition"),
             Icon::ArrowUpRight,
             EditAction::GoToDefinition,
             &shortcut::GO_TO_DEFINITION,
         )
         .enabled(state.definition)
         .into(),
-        Item::new("Find Usages", Cmd::Edit(EditAction::FindUsages))
+        Item::new(tr!("Find Usages"), Cmd::Edit(EditAction::FindUsages))
             .icon(Icon::Magnifier)
             .enabled(state.usages)
             .into(),
         edit(
-            "Rename Symbol…",
+            tr!("Rename Symbol…"),
             Icon::Pencil,
             EditAction::Rename,
             &shortcut::RENAME_SYMBOL,
@@ -175,7 +187,7 @@ fn breakpoint(state: &EditorMenuState) -> Submenu {
         entries.push(Entry::Separator);
         entries.push(
             Item::new(
-                "Remove All Breakpoints",
+                tr!("Remove All Breakpoints"),
                 Cmd::DebugPanel(PanelAction::RemoveAllBreakpoints),
             )
             .icon(Icon::Trash)
@@ -183,7 +195,7 @@ fn breakpoint(state: &EditorMenuState) -> Submenu {
             .into(),
         );
     }
-    Submenu::new("Breakpoint", entries).icon(Icon::Circle)
+    Submenu::new(tr!("Breakpoint"), entries).icon(Icon::Circle)
 }
 
 /// The change the caret's line is in: the rows of the change column's menu. Greyed when the line
@@ -202,7 +214,7 @@ fn change(state: &EditorMenuState) -> Submenu {
                 .collect()
         })
         .unwrap_or_default();
-    Submenu::new("Change", entries)
+    Submenu::new(tr!("Change"), entries)
         .icon(Icon::Compare)
         .enabled(state.change.is_some())
 }

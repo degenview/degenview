@@ -5,6 +5,7 @@
 
 use super::Proposal;
 use super::review::{Review, Row, header_row};
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::pine_studio::editor::diff::{ChangeKind, DiffHunk};
 use crate::pine_studio::editor::diff_view;
 use crate::pine_studio::editor::syntax;
@@ -135,7 +136,7 @@ fn header(
                 // The block is centred by hand: a vertical layout inside a centred row hugs the top.
                 ui.add_space(11.0);
                 ui.label(kit::text(
-                    "Review changes",
+                    tr!("Review changes"),
                     kit::size::TITLE2,
                     kit::SEMIBOLD,
                     theme::text_primary(),
@@ -143,7 +144,11 @@ fn header(
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
                     ui.label(kit::text(
-                        format!("{} of {} selected", review.selected(), total),
+                        tr!(
+                            "{selected} of {total} selected",
+                            selected = review.selected(),
+                            total = total
+                        ),
                         kit::size::SUBHEADLINE + 1.0,
                         kit::REGULAR,
                         theme::text_secondary(),
@@ -166,18 +171,30 @@ fn header(
                 ui.add_space(14.0);
                 ui.spacing_mut().item_spacing.x = 2.0;
                 let color = theme::text_secondary();
-                if icons::button(ui, Icon::Xmark, 28.0, color, "Close (Esc)").clicked() {
+                if icons::button(ui, Icon::Xmark, 28.0, color, tr!("Close (Esc)")).clicked() {
                     actions.push(ReviewAction::Close);
                 }
                 ui.add_space(6.0);
                 if total > 1 {
-                    if icons::button(ui, Icon::ChevronDown, 28.0, color, "Next change (↓ or J)")
-                        .clicked()
+                    if icons::button(
+                        ui,
+                        Icon::ChevronDown,
+                        28.0,
+                        color,
+                        tr!("Next change (↓ or J)"),
+                    )
+                    .clicked()
                     {
                         actions.push(ReviewAction::Step(true));
                     }
-                    if icons::button(ui, Icon::ChevronUp, 28.0, color, "Previous change (↑ or K)")
-                        .clicked()
+                    if icons::button(
+                        ui,
+                        Icon::ChevronUp,
+                        28.0,
+                        color,
+                        tr!("Previous change (↑ or K)"),
+                    )
+                    .clicked()
                     {
                         actions.push(ReviewAction::Step(false));
                     }
@@ -207,15 +224,21 @@ fn footer(ui: &mut Ui, width: f32, review: &Review, total: usize, actions: &mut 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(22.0);
                 ui.spacing_mut().item_spacing.x = 10.0;
-                let label = if selected == total {
-                    format!("Apply all {total}")
-                } else {
-                    format!("Apply {selected} of {total}")
-                };
-                let label = if review.errors > 0 {
-                    format!("{label} anyway")
-                } else {
-                    label
+                let label = match (selected == total, review.errors > 0) {
+                    (true, false) => tr!("Apply all {total}", total = total),
+                    (true, true) => tr!("Apply all {total} anyway", total = total),
+                    (false, false) => {
+                        tr!(
+                            "Apply {selected} of {total}",
+                            selected = selected,
+                            total = total
+                        )
+                    }
+                    (false, true) => tr!(
+                        "Apply {selected} of {total} anyway",
+                        selected = selected,
+                        total = total
+                    ),
                 };
                 if kit::sheet_button(ui, &label, review.errors == 0, selected > 0)
                     .on_hover_text("⌘↩")
@@ -223,11 +246,11 @@ fn footer(ui: &mut Ui, width: f32, review: &Review, total: usize, actions: &mut 
                 {
                     actions.push(ReviewAction::Apply);
                 }
-                if kit::sheet_button(ui, "Discard all", false, true).clicked() {
+                if kit::sheet_button(ui, tr!("Discard all"), false, true).clicked() {
                     actions.push(ReviewAction::DiscardAll);
                 }
                 ui.label(kit::text(
-                    "↑↓ move · space toggles",
+                    tr!("↑↓ move · space toggles"),
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
                     theme::text_tertiary(),
@@ -239,30 +262,38 @@ fn footer(ui: &mut Ui, width: f32, review: &Review, total: usize, actions: &mut 
 
 /// What the current selection compiles to, in words.
 fn status(review: &Review) -> (Icon, Color32, String) {
-    let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
     if review.selected() == 0 {
         (
             Icon::InfoCircle,
             theme::text_secondary(),
-            "Nothing selected".to_owned(),
+            tr!("Nothing selected").to_owned(),
         )
     } else if review.errors > 0 {
         (
             Icon::TriangleFill,
             kit::RED,
-            format!(
-                "{} with this selection",
-                plural(review.errors, "compile error")
+            tr_n!(
+                review.errors,
+                "{count} compile error with this selection",
+                "{count} compile errors with this selection"
             ),
         )
     } else if review.warnings > 0 {
         (
             Icon::TriangleFill,
             Color32::from_rgb(255, 159, 10),
-            format!("Compiles · {}", plural(review.warnings, "warning")),
+            tr_n!(
+                review.warnings,
+                "Compiles · {count} warning",
+                "Compiles · {count} warnings"
+            ),
         )
     } else {
-        (Icon::CheckCircleFill, kit::GREEN, "Compiles".to_owned())
+        (
+            Icon::CheckCircleFill,
+            kit::GREEN,
+            tr!("Compiles").to_owned(),
+        )
     }
 }
 
@@ -284,11 +315,12 @@ fn rail(
     column.painter().text(
         pos2(strip.left() + 14.0, strip.center().y),
         Align2::LEFT_CENTER,
-        "CHANGES",
+        tr!("Changes").to_uppercase(),
         FontId::proportional(kit::size::CAPTION),
         theme::text_tertiary(),
     );
-    let link = |ui: &mut Ui, id: &str, label: &str, right: f32| -> bool {
+    // Draws a link whose right edge is at `right`; says whether it was clicked and where it starts.
+    let link = |ui: &mut Ui, id: &str, label: &str, right: f32| -> (bool, f32) {
         let galley = kit::galley(
             ui,
             label,
@@ -310,14 +342,28 @@ fn rail(
             Sense::click(),
         );
         ui.painter().galley(at.min, galley, kit::ACCENT);
-        response
+        let clicked = response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
+            .clicked();
+        (clicked, at.left())
     };
-    if link(&mut column, "none", "None", strip.right() - 14.0) {
+    let (none, none_left) = link(
+        &mut column,
+        "none",
+        tr_c!("select changes", "None"),
+        strip.right() - 14.0,
+    );
+    if none {
         actions.push(ReviewAction::SetAll(false));
     }
-    if link(&mut column, "all", "All", strip.right() - 56.0) {
+    // The second link sits a gap to the left of the first, however long each word is.
+    let (all, _) = link(
+        &mut column,
+        "all",
+        tr_c!("select changes", "All"),
+        none_left - 14.0,
+    );
+    if all {
         actions.push(ReviewAction::SetAll(true));
     }
     let list = Rect::from_min_max(pos2(rect.left(), strip.bottom()), rect.max);
@@ -574,11 +620,11 @@ fn paint_row(
             painter.text(
                 pos2(rect.left() + 26.0, middle),
                 Align2::LEFT_CENTER,
-                format!(
-                    "Change {} of {}  ·  {}",
-                    hunk + 1,
-                    hunks.len(),
-                    diff_view::title(change)
+                tr!(
+                    "Change {number} of {total}  ·  {title}",
+                    number = hunk + 1,
+                    total = hunks.len(),
+                    title = diff_view::title(change)
                 ),
                 FontId::proportional(12.0),
                 if accepted {
@@ -595,9 +641,9 @@ fn paint_row(
             );
             let toggle = ui.interact(chip, Id::new(("ai-review-chip", *hunk)), Sense::click());
             let (label, color) = if accepted {
-                ("✓ Accepted", kit::GREEN)
+                (tr!("✓ Accepted"), kit::GREEN)
             } else {
-                ("✕ Rejected", theme::text_secondary())
+                (tr!("✕ Rejected"), theme::text_secondary())
             };
             painter.rect_filled(
                 chip,
@@ -676,11 +722,14 @@ fn paint_row(
                 theme::with_alpha(theme::text_primary(), if hovered { 0.07 } else { 0.03 }),
             );
             let visible = ui.clip_rect();
-            let noun = if *count == 1 { "line" } else { "lines" };
             painter.text(
                 pos2(visible.center().x.max(rect.left() + 200.0), middle),
                 Align2::CENTER_CENTER,
-                format!("⋯  {count} unchanged {noun}  ·  click to show"),
+                tr_n!(
+                    *count,
+                    "⋯  {count} unchanged line  ·  click to show",
+                    "⋯  {count} unchanged lines  ·  click to show"
+                ),
                 FontId::proportional(11.5),
                 if hovered {
                     kit::ACCENT

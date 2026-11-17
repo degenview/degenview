@@ -1,6 +1,7 @@
 //! The Pine Studio's persisted window layout: the `pineStudio.*` UserDefaults of the Swift
 //! app, kept as one JSON setting.
 
+use crate::i18n::tr;
 use crate::store::SharedStore;
 use serde::{Deserialize, Serialize};
 
@@ -21,9 +22,9 @@ impl ChartPosition {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Left => "Left of Code",
-            Self::Top => "Above Code",
-            Self::Bottom => "Below Code",
+            Self::Left => tr!("Left of Code"),
+            Self::Top => tr!("Above Code"),
+            Self::Bottom => tr!("Below Code"),
         }
     }
 }

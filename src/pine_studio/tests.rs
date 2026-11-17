@@ -1177,3 +1177,187 @@ fn an_outside_edit_reaches_the_open_editor_without_losing_or_duplicating_a_draft
     assert_eq!(manager.open.as_ref().unwrap().id, id);
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// Every piece of text a frame drew, in drawing order.
+fn drawn_texts(output: &egui::FullOutput) -> Vec<String> {
+    fn collect(shape: &egui::Shape, found: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(text) => found.push(text.galley.text().to_owned()),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, found)),
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for clipped in &output.shapes {
+        collect(&clipped.shape, &mut found);
+    }
+    found
+}
+
+/// The Studio's own words in the pseudo-locale, at the narrowest window, in both themes: the menu
+/// strip, every drawer tab, and the assistant and debugger panels. Each word of the interface is
+/// put through `tr!`, so none shows without accents and brackets, and the longer text fits (the
+/// frames are also written as pictures when `DEGENVIEW_GALLERY_DIR` is set).
+#[test]
+fn the_studio_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::theme::{self, AppTheme};
+    use debug::studio_tests::Rig;
+    let _theme = theme::RestoreDefaultTheme;
+    let size = vec2(960.0, 640.0);
+    // The English words that must never be drawn as they are: the strip's titles, the drawer's
+    // tab names and the panels' headings.
+    let bare = [
+        "File", "Edit", "View", "Theme", "Inputs", "Report", "Problems", "Logs", "Profile",
+    ];
+    with_locale(Locale::PSEUDO, || {
+        for (theme_name, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            // (picture, drawer tab, whether the panels are open, the window's width)
+            let shots: [(&str, Option<DrawerTab>, bool, f32); 8] = [
+                ("inputs", Some(DrawerTab::Inputs), false, 960.0),
+                ("report", Some(DrawerTab::Report), false, 960.0),
+                ("problems", Some(DrawerTab::Problems), false, 960.0),
+                ("logs", Some(DrawerTab::Logs), false, 960.0),
+                ("profile", Some(DrawerTab::Profile), false, 960.0),
+                ("panels", Some(DrawerTab::Inputs), true, 960.0),
+                ("panels-narrow", Some(DrawerTab::Inputs), true, 760.0),
+                ("no-drawer", None, false, 960.0),
+            ];
+            for (name, tab, panels, width) in shots {
+                let mut rig = Rig::new(&format!("pseudo-{theme_name}-{name}"));
+                let mut screen = Screen::new(vec2(width, size.y));
+                theme::apply(&screen.ctx, appearance);
+                rig.manager.prefs.drawer_open = tab.is_some();
+                if let Some(tab) = tab {
+                    rig.manager.prefs.drawer_tab = tab;
+                }
+                rig.manager.prefs.ai_open = panels;
+                rig.manager.prefs.debug_open = panels;
+                let output = settle(&mut rig.manager, &mut screen);
+                let texts = drawn_texts(&output);
+                for word in bare {
+                    assert!(
+                        !texts.iter().any(|text| text == word),
+                        "{word:?} was drawn in English ({theme_name}, {name})"
+                    );
+                }
+                assert!(
+                    texts.iter().any(|text| text.starts_with('[')),
+                    "no bracketed text in the {name} frame"
+                );
+                if gallery_dir().is_some() {
+                    screen.save(&format!("pseudo-{name}-{theme_name}"), output);
+                }
+            }
+        }
+    });
+}
+
+/// The strip's menus in the pseudo-locale: each is as wide as its longest row in the longer
+/// text, and none of its rows is drawn in English (the pictures are written when
+/// `DEGENVIEW_GALLERY_DIR` is set).
+#[test]
+fn the_studio_menus_draw_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::theme::{self, AppTheme};
+    use debug::studio_tests::Rig;
+    use menu_bar::Menu;
+    let _theme = theme::RestoreDefaultTheme;
+    let size = vec2(960.0, 640.0);
+    let bare = [
+        "Undo",
+        "Redo",
+        "Cut",
+        "Copy",
+        "Paste",
+        "Select All",
+        "Find",
+        "Rename",
+        "New Script",
+        "Preview Chart",
+    ];
+    with_locale(Locale::PSEUDO, || {
+        for (theme_name, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            for (name, menu) in [
+                ("file", Menu::File),
+                ("edit", Menu::Edit),
+                ("view", Menu::View),
+                ("theme", Menu::Theme),
+            ] {
+                let mut rig = Rig::new(&format!("pseudo-menu-{theme_name}-{name}"));
+                let mut screen = Screen::new(size);
+                theme::apply(&screen.ctx, appearance);
+                rig.manager.prefs.chart_visible = false;
+                settle(&mut rig.manager, &mut screen);
+                let corner = strip_corner(size, ChartPosition::Bottom);
+                click_window(
+                    &mut rig.manager,
+                    &mut screen,
+                    menu_bar::title_centre(menu, corner),
+                );
+                let output = settle(&mut rig.manager, &mut screen);
+                let texts = drawn_texts(&output);
+                for word in bare {
+                    assert!(
+                        !texts.iter().any(|text| text == word),
+                        "{word:?} was drawn in English ({theme_name}, {name} menu)"
+                    );
+                }
+                if gallery_dir().is_some() {
+                    screen.save(&format!("pseudo-menu-{name}-{theme_name}"), output);
+                }
+            }
+        }
+    });
+}
+
+/// The script picker and the Inputs tab of a script that has inputs, in the pseudo-locale: the
+/// panel's own words are put through `tr!`, the inputs the script declared stay as written (the
+/// pictures are written when `DEGENVIEW_GALLERY_DIR` is set).
+#[test]
+fn the_picker_and_the_inputs_tab_draw_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::theme::{self, AppTheme};
+    use debug::studio_tests::Rig;
+    let _theme = theme::RestoreDefaultTheme;
+    let size = vec2(960.0, 640.0);
+    let source = "//@version=6
+indicator(\"Inputs demo\")
+length = input.int(14, \"Length\", minval = 1)
+src = input.source(close, \"Source\")
+frame = input.timeframe(\"D\", \"Timeframe\")
+show = input.bool(true, \"Show the line\")
+plot(show ? ta.sma(src, length) : na)
+";
+    with_locale(Locale::PSEUDO, || {
+        for (theme_name, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            let mut rig = Rig::new(&format!("pseudo-inputs-{theme_name}"));
+            let mut screen = Screen::new(size);
+            theme::apply(&screen.ctx, appearance);
+            rig.set_source(source);
+            rig.manager.prefs.drawer_open = true;
+            rig.manager.prefs.drawer_tab = DrawerTab::Inputs;
+            let output = settle(&mut rig.manager, &mut screen);
+            let texts = drawn_texts(&output);
+            assert!(
+                !texts.iter().any(|text| text == "Inputs"),
+                "the tab was drawn in English ({theme_name})"
+            );
+            if gallery_dir().is_some() {
+                screen.save(&format!("pseudo-inputs-tab-{theme_name}"), output);
+            }
+            rig.manager.picker.open();
+            let output = picker_frames(&mut rig.manager, &mut screen, Vec::new());
+            let texts = drawn_texts(&output);
+            assert!(
+                !texts
+                    .iter()
+                    .any(|text| text == "Search" || text == "Favorites"),
+                "the picker was drawn in English ({theme_name})"
+            );
+            if gallery_dir().is_some() {
+                screen.save(&format!("pseudo-picker-{theme_name}"), output);
+            }
+        }
+    });
+}

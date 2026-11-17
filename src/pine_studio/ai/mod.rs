@@ -23,6 +23,7 @@ pub(in crate::pine_studio) mod studio_tests;
 pub(in crate::pine_studio) mod tools;
 
 use super::editor::diff::DiffSnapshot;
+use crate::i18n::{tr, tr_n};
 use crate::model::pine::script::ScriptId;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::service::llm::prefs::AiPrefs;
@@ -286,8 +287,11 @@ impl Assistant {
             return;
         };
         let kind = *kind;
-        let answer =
-            pending.poll_or(|| Err(ErrorReport::message("The model list stopped unexpectedly.")));
+        let answer = pending.poll_or(|| {
+            Err(ErrorReport::message(tr!(
+                "The model list stopped unexpectedly."
+            )))
+        });
         let list = match answer {
             Some(Ok(ids)) => ModelList::Ready(models::usable_chat_models(kind, &ids)),
             Some(Err(report)) => ModelList::Failed(report),
@@ -349,7 +353,7 @@ impl Assistant {
                 wake();
             });
         if spawned.is_err() {
-            self.notice = Some(Notice::error("Could not start the request."));
+            self.notice = Some(Notice::error(tr!("Could not start the request.")));
             return;
         }
         self.proposal = None;
@@ -380,12 +384,12 @@ impl Assistant {
             run.cancel.store(true, Ordering::Relaxed);
             self.input = run.typed.clone();
             self.streaming.clear();
-            self.notice = Some(Notice::info("Stopped."));
+            self.notice = Some(Notice::info(tr!("Stopped.")));
             if let Some(script) = changed_draft(run.draft.as_ref(), &run.base) {
                 self.propose(
                     run.base.clone(),
                     script,
-                    Some("Stopped before it finished.".to_owned()),
+                    Some(tr!("Stopped before it finished.").to_owned()),
                     compile,
                 );
             }
@@ -435,7 +439,7 @@ impl Assistant {
                 Err(TryRecvError::Empty) => return None,
                 Err(TryRecvError::Disconnected) => {
                     return Some(self.end(Err(LlmError::Protocol(
-                        "The assistant stopped unexpectedly.".to_owned(),
+                        tr!("The assistant stopped unexpectedly.").to_owned(),
                     ))));
                 }
             }
@@ -473,9 +477,9 @@ impl Assistant {
         match result {
             Err(LlmError::Cancelled) => {
                 self.input = typed;
-                self.notice = Some(Notice::info("Stopped."));
+                self.notice = Some(Notice::info(tr!("Stopped.")));
                 if let Some(script) = drafted {
-                    let note = "Stopped before it finished.".to_owned();
+                    let note = tr!("Stopped before it finished.").to_owned();
                     self.propose(base, script, Some(note), compile);
                 }
             }
@@ -486,7 +490,7 @@ impl Assistant {
                 }
                 self.notice = Some(Notice::failure(error.report()));
                 if let Some(script) = drafted {
-                    let note = "Incomplete: the request failed before it finished.".to_owned();
+                    let note = tr!("Incomplete: the request failed before it finished.").to_owned();
                     self.propose(base, script, Some(note), compile);
                 }
             }
@@ -495,7 +499,7 @@ impl Assistant {
                 if text.trim().is_empty() {
                     text = match &ended.limit {
                         Some(limit) => limit.message(),
-                        None => "(No reply.)".to_owned(),
+                        None => tr!("(No reply.)").to_owned(),
                     };
                 }
                 self.turns.push(Turn::User(typed));
@@ -504,9 +508,9 @@ impl Assistant {
                     mode,
                 });
                 if ended.tools_refused {
-                    self.notice = Some(Notice::info(
-                        "This server does not accept tools, so the assistant answered without them.",
-                    ));
+                    self.notice = Some(Notice::info(tr!(
+                        "This server does not accept tools, so the assistant answered without them."
+                    )));
                 }
                 if mode == Mode::Plan {
                     self.plan = ended.plan.clone();
@@ -519,7 +523,7 @@ impl Assistant {
                     let note = ended
                         .limit
                         .as_ref()
-                        .map(|limit| format!("Incomplete. {}", limit.message()));
+                        .map(|limit| tr!("Incomplete. {reason}", reason = limit.message()));
                     self.propose(base, script, note, compile);
                     return;
                 }
@@ -532,16 +536,16 @@ impl Assistant {
                     return;
                 };
                 if ended.truncated || !reply.complete {
-                    self.notice = Some(Notice::error(
-                        "The reply hit the model's length limit, so the script is cut off. Ask for a smaller change.",
-                    ));
+                    self.notice = Some(Notice::error(tr!(
+                        "The reply hit the model's length limit, so the script is cut off. Ask for a smaller change."
+                    )));
                     return;
                 }
                 let script = match_line_endings(&script, &base);
                 if same_text(&script, &base) {
-                    self.notice = Some(Notice::info(
-                        "The script already does this. Nothing to change.",
-                    ));
+                    self.notice = Some(Notice::info(tr!(
+                        "The script already does this. Nothing to change."
+                    )));
                     return;
                 }
                 self.propose(base, script, None, compile);
@@ -580,17 +584,17 @@ impl Assistant {
 /// sentence "Not applied automatically: …".
 pub fn auto_apply_check(proposal: &Proposal, editor_source: &str) -> Result<(), String> {
     if proposal.note.is_some() {
-        return Err("it did not finish.".to_owned());
+        return Err(tr!("it did not finish.").to_owned());
     }
     if proposal.errors > 0 {
-        let n = proposal.errors;
-        return Err(format!(
-            "it has {n} compile error{}.",
-            if n == 1 { "" } else { "s" }
+        return Err(tr_n!(
+            proposal.errors,
+            "it has {count} compile error.",
+            "it has {count} compile errors."
         ));
     }
     if editor_source != proposal.base {
-        return Err("the script changed while the assistant worked.".to_owned());
+        return Err(tr!("the script changed while the assistant worked.").to_owned());
     }
     Ok(())
 }

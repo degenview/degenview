@@ -1,6 +1,7 @@
 //! What can be done to a script: the rows of the script picker's right-click menu and of the File
 //! menu over the editor, in one list so the two cannot drift.
 
+use crate::i18n::tr;
 use crate::model::pine::script::ScriptType;
 use crate::pine_studio::commands::Cmd;
 use crate::ui::icons::Icon;
@@ -67,18 +68,23 @@ pub(in crate::pine_studio) fn script_groups(
                 ScriptAction::Favorite,
                 if favorite { Icon::Star } else { Icon::StarFill },
                 if favorite {
-                    "Remove Favorite"
+                    tr!("Remove Favorite")
                 } else {
-                    "Favorite"
+                    tr!("Favorite")
                 },
                 false,
             ),
-            row(ScriptAction::Rename, Icon::Pencil, "Rename…", false),
-            row(ScriptAction::Duplicate, Icon::CopyDoc, "Duplicate", false),
+            row(ScriptAction::Rename, Icon::Pencil, tr!("Rename…"), false),
+            row(
+                ScriptAction::Duplicate,
+                Icon::CopyDoc,
+                tr!("Duplicate"),
+                false,
+            ),
         ],
         vec![
             row(ScriptAction::ShowInFileManager, Icon::Books, show_in, false),
-            row(ScriptAction::Export, Icon::ShareUp, "Export…", false),
+            row(ScriptAction::Export, Icon::ShareUp, tr!("Export…"), false),
         ],
     ];
     if script_type != ScriptType::Library {
@@ -86,16 +92,21 @@ pub(in crate::pine_studio) fn script_groups(
             row(
                 ScriptAction::AddToChart,
                 Icon::ChartLine,
-                "Add to Chart",
+                tr!("Add to Chart"),
                 false,
             ),
-            row(ScriptAction::CreateAlert, Icon::Bell, "Create Alert", false),
+            row(
+                ScriptAction::CreateAlert,
+                Icon::Bell,
+                tr!("Create Alert"),
+                false,
+            ),
         ]);
     }
     groups.push(vec![row(
         ScriptAction::Delete,
         Icon::Trash,
-        "Delete…",
+        tr!("Delete…"),
         true,
     )]);
     groups

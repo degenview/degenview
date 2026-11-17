@@ -2,6 +2,7 @@
 //! Logs and Profile tabs' introductions (a picture, what the manager is for, three numbered steps,
 //! an example, and the two ways to begin), and the script picker's short form of the same.
 
+use crate::i18n::tr;
 use crate::pine_studio::commands::Cmd;
 use crate::ui::icons::Icon;
 use crate::ui::pine::logs_view::{centered, intro, step};
@@ -19,17 +20,17 @@ pub(in crate::pine_studio) fn library(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
     centered(ui, |ui| {
         intro(
             ui,
-            "Write your own scripts",
-            "Indicators and strategies in Pine Script.",
+            tr!("Write your own scripts"),
+            tr!("Indicators and strategies in Pine Script."),
             |ui| {
                 step(ui, 1, |ui| {
-                    ui.label(muted("Create a script, or start from the examples."));
+                    ui.label(muted(tr!("Create a script, or start from the examples.")));
                 });
                 step(ui, 2, |ui| {
-                    ui.label(muted("Edit it; problems are flagged as you type."));
+                    ui.label(muted(tr!("Edit it; problems are flagged as you type.")));
                 });
                 step(ui, 3, |ui| {
-                    ui.label(muted("Preview it, then add it to any chart."));
+                    ui.label(muted(tr!("Preview it, then add it to any chart.")));
                 });
             },
             example,
@@ -37,12 +38,13 @@ pub(in crate::pine_studio) fn library(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
             |ui| {
                 ui.add_space(14.0);
                 ui.spacing_mut().item_spacing.y = 8.0;
-                if kit::push_button(ui, Some(Icon::Plus), "Create Your First Script", true)
+                if kit::push_button(ui, Some(Icon::Plus), tr!("Create Your First Script"), true)
                     .clicked()
                 {
                     cmds.push(Cmd::NewScript);
                 }
-                if kit::push_button(ui, Some(Icon::Download), "Add Example Scripts", true).clicked()
+                if kit::push_button(ui, Some(Icon::Download), tr!("Add Example Scripts"), true)
+                    .clicked()
                 {
                     cmds.push(Cmd::AddExamples);
                 }
@@ -63,17 +65,17 @@ pub(in crate::pine_studio) fn short(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
         picture(ui, rect);
         ui.add_space(12.0);
         ui.label(kit::text(
-            "No scripts yet",
+            tr!("No scripts yet"),
             kit::size::HEADLINE,
             kit::SEMIBOLD,
             theme::text_primary(),
         ));
         ui.add_space(3.0);
-        ui.label(muted(
-            "Create one with the button below, or start from the examples.",
-        ));
+        ui.label(muted(tr!(
+            "Create one with the button below, or start from the examples."
+        )));
         ui.add_space(12.0);
-        if kit::push_button(ui, Some(Icon::Download), "Add Example Scripts", true).clicked() {
+        if kit::push_button(ui, Some(Icon::Download), tr!("Add Example Scripts"), true).clicked() {
             cmds.push(Cmd::AddExamples);
         }
     });
@@ -93,8 +95,8 @@ fn muted(text: &str) -> egui::RichText {
 /// when it has not.
 fn links(ui: &mut Ui) {
     let items = [
-        ("Pine Script documentation", DOCS_URL),
-        ("Community scripts", super::picker::COMMUNITY_URL),
+        (tr!("Pine Script documentation"), DOCS_URL),
+        (tr!("Community scripts"), super::picker::COMMUNITY_URL),
     ];
     let widths: Vec<f32> = items
         .iter()

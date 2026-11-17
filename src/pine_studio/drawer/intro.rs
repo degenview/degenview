@@ -2,6 +2,7 @@
 //! and Profile tabs' introductions: a picture, what the tab is for, three numbered steps and an
 //! example of what it will hold.
 
+use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
 use crate::ui::pine::logs_view::{centered, intro, step};
 use crate::ui::{kit, theme};
@@ -16,19 +17,21 @@ pub fn inputs(ui: &mut Ui) {
     centered(ui, |ui| {
         intro(
             ui,
-            "Tune a script without editing it",
-            "This script has no inputs yet.",
+            tr!("Tune a script without editing it"),
+            tr!("This script has no inputs yet."),
             |ui| {
                 step(ui, 1, |ui| {
-                    ui.label(muted(
-                        "Declare one in the script with input.int(), input.bool() and friends.",
-                    ));
+                    ui.label(muted(tr!(
+                        "Declare one in the script with input.int(), input.bool() and friends."
+                    )));
                 });
                 step(ui, 2, |ui| {
-                    ui.label(muted("It appears here as a control, grouped as you set."));
+                    ui.label(muted(tr!(
+                        "It appears here as a control, grouped as you set."
+                    )));
                 });
                 step(ui, 3, |ui| {
-                    ui.label(muted("Change it and the preview chart updates."));
+                    ui.label(muted(tr!("Change it and the preview chart updates.")));
                 });
             },
             input_example,
@@ -43,19 +46,21 @@ pub fn problems(ui: &mut Ui) {
     centered(ui, |ui| {
         intro(
             ui,
-            "How problems show up",
-            "Nothing to fix in this script.",
+            tr!("How problems show up"),
+            tr!("Nothing to fix in this script."),
             |ui| {
                 step(ui, 1, |ui| {
-                    ui.label(muted(
-                        "Write or edit the script; it is checked as you type.",
-                    ));
+                    ui.label(muted(tr!(
+                        "Write or edit the script; it is checked as you type."
+                    )));
                 });
                 step(ui, 2, |ui| {
-                    ui.label(muted("Errors and warnings are listed here, errors first."));
+                    ui.label(muted(tr!(
+                        "Errors and warnings are listed here, errors first."
+                    )));
                 });
                 step(ui, 3, |ui| {
-                    ui.label(muted("Click a row to go to its line."));
+                    ui.label(muted(tr!("Click a row to go to its line.")));
                 });
             },
             problem_example,
@@ -70,19 +75,19 @@ pub fn report(ui: &mut Ui) {
     centered(ui, |ui| {
         intro(
             ui,
-            "How to read a report",
-            "See how a strategy would have traded.",
+            tr!("How to read a report"),
+            tr!("See how a strategy would have traded."),
             |ui| {
                 step(ui, 1, |ui| {
-                    ui.label(muted("Apply a strategy to the preview chart."));
+                    ui.label(muted(tr!("Apply a strategy to the preview chart.")));
                 });
                 step(ui, 2, |ui| {
-                    ui.label(muted(
-                        "Its figures, equity curve and every trade appear here.",
-                    ));
+                    ui.label(muted(tr!(
+                        "Its figures, equity curve and every trade appear here."
+                    )));
                 });
                 step(ui, 3, |ui| {
-                    ui.label(muted("An indicator lists the alerts it raises."));
+                    ui.label(muted(tr!("An indicator lists the alerts it raises.")));
                 });
             },
             report_example,

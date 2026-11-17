@@ -15,9 +15,10 @@ pub(in crate::pine_studio) mod marks;
 pub(in crate::pine_studio) mod studio_tests;
 pub(in crate::pine_studio) mod ui;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use crate::i18n::tr;
 use crate::pine::profile::{
     Completeness, Interruption, ProfileConfig, ProfileOutcome, ProfileReport, ProfileSession,
 };
@@ -79,7 +80,50 @@ pub struct Profile {
     /// The symbol and timeframe it ran on, for the summary.
     pub label: String,
     pub report: Arc<ProfileReport>,
-    pub marks: Arc<ProfileMarks>,
+    /// What the marks are made from, kept so they can be made again in another language.
+    source: Arc<str>,
+    compile_ns: u64,
+    /// The marks and the language revision they were written in.
+    words: Mutex<(u64, Arc<ProfileMarks>)>,
+}
+
+impl Profile {
+    pub(in crate::pine_studio) fn new(
+        key: ProfileKey,
+        label: String,
+        report: ProfileReport,
+        source: Arc<str>,
+        compile_ns: u64,
+    ) -> Self {
+        let marks = ProfileMarks::build(&report, &source, compile_ns);
+        Self {
+            key,
+            label,
+            report: Arc::new(report),
+            source,
+            compile_ns,
+            words: Mutex::new((crate::i18n::revision(), Arc::new(marks))),
+        }
+    }
+
+    /// The marks, in the language in use now. Their words (the tooltips, the summary's labels, the
+    /// caveat) are written when they are built, so they are built again when the language changes
+    /// rather than kept in the one they were made in.
+    pub fn marks(&self) -> Arc<ProfileMarks> {
+        let revision = crate::i18n::revision();
+        let mut words = self.words.lock().unwrap_or_else(PoisonError::into_inner);
+        if words.0 != revision {
+            *words = (
+                revision,
+                Arc::new(ProfileMarks::build(
+                    &self.report,
+                    &self.source,
+                    self.compile_ns,
+                )),
+            );
+        }
+        Arc::clone(&words.1)
+    }
 }
 
 struct Run {
@@ -287,22 +331,23 @@ impl Profiler {
                 self.profile = None;
                 self.failure = Some(Failure {
                     key: run.key,
-                    message: format!(
-                        "The script failed on bar {}: {}",
-                        report.summary.bars, error.message
+                    message: tr!(
+                        "The script failed on bar {bar}: {message}",
+                        bar = report.summary.bars,
+                        message = error.message
                     ),
                     not_runnable: false,
                     error: Some(error),
                 });
             }
             Ok(report) => {
-                let marks = ProfileMarks::build(&report, &run.source, outcome.compile_ns);
-                self.profile = Some(Profile {
-                    key: run.key,
-                    label: run.label,
-                    report: Arc::new(report),
-                    marks: Arc::new(marks),
-                });
+                self.profile = Some(Profile::new(
+                    run.key,
+                    run.label,
+                    report,
+                    run.source,
+                    outcome.compile_ns,
+                ));
             }
             Err(error) => {
                 self.failure = Some(Failure {
@@ -402,19 +447,19 @@ impl Profiler {
         let status = self.status(current);
         Some(match status {
             Status::Off => return None,
-            Status::Ready | Status::Partial => {
-                ProfileColumn::Marks(Arc::clone(&self.profile.as_ref()?.marks))
-            }
+            Status::Ready | Status::Partial => ProfileColumn::Marks(self.profile.as_ref()?.marks()),
             Status::Stale if self.lines_match(current) => {
-                ProfileColumn::Dated(Arc::clone(&self.profile.as_ref()?.marks))
+                ProfileColumn::Dated(self.profile.as_ref()?.marks())
             }
-            Status::Running { .. } => ProfileColumn::Empty("Profiling\u{2026}"),
-            Status::Stale => ProfileColumn::Empty(
-                "This profile is of earlier text. Run it again to see where the time goes now.",
-            ),
-            Status::Failed(_) => ProfileColumn::Empty("The script could not be profiled."),
+            Status::Running { .. } => ProfileColumn::Empty(tr!("Profiling…")),
+            Status::Stale => ProfileColumn::Empty(tr!(
+                "This profile is of earlier text. Run it again to see where the time goes now."
+            )),
+            Status::Failed(_) => ProfileColumn::Empty(tr!("The script could not be profiled.")),
             Status::Waiting(why) => ProfileColumn::Empty(why),
-            Status::Idle => ProfileColumn::Empty("Run the profiler to see where the time goes."),
+            Status::Idle => {
+                ProfileColumn::Empty(tr!("Run the profiler to see where the time goes."))
+            }
         })
     }
 }

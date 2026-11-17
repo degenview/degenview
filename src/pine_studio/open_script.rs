@@ -4,6 +4,7 @@
 use super::editor::EditorState;
 use super::{OpenDiskState, OpenScript, PineStudio, compile_into, editor, library};
 use crate::clock::now_ms;
+use crate::i18n::tr;
 use crate::model::pine::script::{ScriptDraft, ScriptType};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
@@ -65,7 +66,7 @@ impl PineStudio {
         open.editor.mark_saved();
         open.watch.reloaded();
         open.editor
-            .set_notice("Reloaded: the file changed outside the app.");
+            .set_notice(tr!("Reloaded: the file changed outside the app."));
         self.editor_changed();
     }
 
@@ -88,8 +89,11 @@ impl PineStudio {
         };
         let Some(script) = found else {
             self.error = Some(match &target.library {
-                Some(name) => format!("The library “{name}” is not in the Pine Studio."),
-                None => "That script is no longer in the Pine Studio.".to_owned(),
+                Some(name) => tr!(
+                    "The library “{name}” is not in the Pine Studio.",
+                    name = name
+                ),
+                None => tr!("That script is no longer in the Pine Studio.").to_owned(),
             });
             return;
         };
@@ -107,7 +111,7 @@ impl PineStudio {
         }
         if changed {
             self.error = Some(
-                "This script was edited after that message was written, so the line may have moved."
+                tr!("This script was edited after that message was written, so the line may have moved.")
                     .to_owned(),
             );
         }

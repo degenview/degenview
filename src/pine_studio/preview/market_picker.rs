@@ -2,6 +2,7 @@
 //! markets, and the rows they are listed in.
 
 use super::{PreviewMarket, PreviewState};
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::keychain::api_keys::alpaca_configured;
 use crate::service::work_queue::{self, PendingAll};
@@ -149,13 +150,13 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
     let tabs = [
         kit::TabItem {
             value: AssetType::Crypto,
-            title: "Crypto",
+            title: tr!("Crypto"),
             icon: Icon::BitcoinCircle,
             count: 0,
         },
         kit::TabItem {
             value: AssetType::Stock,
-            title: "Stocks",
+            title: tr!("Stocks"),
             icon: Icon::BuildingColumns,
             count: 0,
         },
@@ -207,8 +208,8 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
     picker.cursor = picker.cursor.min(rows.saturating_sub(1));
 
     let placeholder = match picker.asset {
-        AssetType::Crypto => "Search coins and tokens, e.g. BTC, ETH, PEPE",
-        AssetType::Stock => "Search US stocks and ETFs, e.g. AAPL, Tesla",
+        AssetType::Crypto => tr!("Search coins and tokens, e.g. BTC, ETH, PEPE"),
+        AssetType::Stock => tr!("Search US stocks and ETFs, e.g. AAPL, Tesla"),
     };
     let field_id = Id::new("script-preview-search");
     let searching = picker.search.is_some();
@@ -248,7 +249,7 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
                         Icon::XmarkCircleFill,
                         18.0,
                         theme::text_secondary(),
-                        "Clear search",
+                        tr!("Clear search"),
                     )
                     .clicked()
                 {
@@ -277,9 +278,9 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
                     ui,
                     Icon::TriangleFill,
                     theme::YELLOW,
-                    "Stocks need Alpaca market data",
-                    Some("Add your Alpaca API keys in Settings."),
-                    Some("Open Settings"),
+                    tr!("Stocks need Alpaca market data"),
+                    Some(tr!("Add your Alpaca API keys in Settings.")),
+                    Some(tr!("Open Settings")),
                 ) {
                     preview.pending_settings = true;
                 }
@@ -290,11 +291,11 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
                 body_message(
                     ui,
                     Icon::Magnifier,
-                    "Search markets",
-                    "Find a symbol to run this script on.",
+                    tr!("Search markets"),
+                    tr!("Find a symbol to run this script on."),
                 );
             } else if query_empty {
-                section_header(ui, "Recent", None);
+                section_header(ui, tr!("Recent"), None);
                 for (index, market) in recents.iter().enumerate() {
                     let response = recent_row(ui, market, &preview.market, index == picker.cursor);
                     if index == picker.cursor && moved {
@@ -356,8 +357,8 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
                 body_message(
                     ui,
                     Icon::Magnifier,
-                    "No markets found",
-                    "Try another symbol or name.",
+                    tr!("No markets found"),
+                    tr!("Try another symbol or name."),
                 );
             }
         },
@@ -365,7 +366,7 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
 
     if rows > 0 {
         ui.label(
-            RichText::new("↑↓ Navigate    ↩ Select    esc Close")
+            RichText::new(tr!("↑↓ Navigate    ↩ Select    esc Close"))
                 .size(10.0)
                 .color(theme::text_tertiary()),
         );

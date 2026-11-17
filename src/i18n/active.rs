@@ -81,6 +81,13 @@ pub fn preference() -> Preference {
 /// Changes whenever the language does, so a window with nothing animating knows to draw again, and
 /// so text kept from an earlier frame (which `tr!` does not do for you) is made again.
 pub fn revision() -> u64 {
+    // A test that asks for a language on its own thread (`with_locale`) changes what this thread
+    // reads, so it changes the revision this thread sees too: text kept from an earlier frame is made
+    // again there, as it is when the language is changed in Settings.
+    #[cfg(test)]
+    if let Some(locale) = OVERRIDE.get() {
+        return ACTIVE.revision() ^ ((u64::from(locale.index()) + 1) << 56);
+    }
     ACTIVE.revision()
 }
 
