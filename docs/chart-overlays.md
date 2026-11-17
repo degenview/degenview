@@ -89,7 +89,7 @@ and Indexed axes, its price otherwise; a dash where it has no candle or nothing 
 hidden one). A hovered row shows an eye, a settings button and an x; clicking the row opens the
 settings too, and a right-click opens the menu (Settings…, Hide/Show, Scale ▸ Chart's / Its own /
 Scale of …, Visual order ▸ Bring to front / forward, Send backward / to back, Remove). The tooltip names
-the market, the provider and how its data is doing. A row is as tall as the OHLC box's text, so the card with one market is as tall as that box. At rest the card is as wide as its text; while the
+the market, the provider and how its data is doing; over one of the row's buttons it gives way to that button's own tooltip (egui shows one tooltip per layer and keeps the row's up while the pointer is anywhere in the row). A row is as tall as the OHLC box's text, so the card with one market is as tall as that box. At rest the card is as wide as its text; while the
 pointer is on it (or a settings popover is up) it widens by the room of the three buttons. Rows that do
 not fit are counted ("+N more").
 
