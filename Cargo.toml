@@ -47,7 +47,7 @@ sha2 = "0.10.9"
 # Error enums derive their messages (`#[error("...")]`) instead of hand-written Display and Error
 # impls. Already in the tree through rustls, rmcp and others; derive only, no runtime.
 thiserror = "2.0.21"
-hmac = "0.12.1"
+hmac = "0.13.0"
 rusqlite = { version = "0.41", features = ["bundled"] }
 tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 # 3.5.1 percent-encodes proxy credentials; `Spec::build` relies on it (3.4.x mangles `@`, `:`, `/`).
