@@ -51,7 +51,7 @@ plot, by whether a drawing gesture claimed it (`DrawingLayer::claims_drag`, chec
 | Double-click the time axis | Newest bars at the default spacing. |
 | Reset button | Both of the above. |
 | Scroll / zoom buttons | As before; the scroll buttons stop at the newest bar, only a drag goes on into empty space. |
-| Wheel | Zoom (unchanged). |
+| Wheel, Ctrl/⌘ + wheel, trackpad pinch | Zoom about the pointer: the bar under it stays under it (`HorizontalViewport::zoom_at`; `f` is the pointer's fraction of the plot's width, `right_offset += (1 − f)(S − S′)` for `S` slots before and `S′` after, the offset moved before it is clamped). A pointer on an axis zooms about the right edge, as the time-axis drag and the zoom buttons always do. egui turns Ctrl/⌘ + wheel and a pinch into one zoom factor (spreading shows fewer bars); the plain wheel keeps its own step. The bars shown are whole, so the card keeps the unrounded count (`zoom_exact`) while it still rounds to what is shown, and a slow smooth scroll adds up instead of rounding away. |
 | Sideways trackpad swipe | Scrolls through time (swiping right shows older bars). Mostly vertical swipes still zoom. |
 | Escape during a drag | The view returns to where the press found it; the rest of the drag is ignored. The Escape is reported as consumed so nothing else answers it. |
 | Cursor | Crosshair over the plot (unless a drawing chose one), a grabbing hand while panning, resize arrows on the axes. |

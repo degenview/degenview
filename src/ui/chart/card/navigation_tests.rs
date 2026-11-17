@@ -444,6 +444,111 @@ fn the_wheel_zooms_and_a_sideways_swipe_scrolls() {
     assert_eq!(rig.card.viewport.horizontal.visible, visible);
 }
 
+impl Rig {
+    /// The (fractional) bar index drawn at `x`.
+    fn bar_at(&self, x: f32) -> f64 {
+        let probe = self.probe();
+        f64::from((x - probe.plot.left()) / probe.slot_width - 0.5 - probe.lead)
+            + probe.start as f64
+    }
+
+    fn wheel(&mut self, delta: Vec2, modifiers: Modifiers) {
+        self.frame(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta,
+            phase: egui::TouchPhase::Move,
+            modifiers,
+        }]);
+        self.frames(&[]);
+    }
+}
+
+/// One zoom input a person makes.
+type Gesture = fn(&mut Rig);
+
+#[test]
+fn the_wheel_and_a_pinch_zoom_about_the_pointer() {
+    let zooms: [(&str, Gesture); 4] = [
+        ("wheel in", |rig| {
+            rig.wheel(Vec2::new(0.0, 60.0), Modifiers::NONE);
+        }),
+        ("wheel out", |rig| {
+            rig.wheel(Vec2::new(0.0, -60.0), Modifiers::NONE);
+        }),
+        ("ctrl wheel", |rig| {
+            rig.wheel(Vec2::new(0.0, 60.0), Modifiers::COMMAND);
+        }),
+        ("pinch", |rig| rig.frames(&[egui::Event::Zoom(1.5)])),
+    ];
+    for (name, zoom) in zooms {
+        for fraction in [0.1, 0.5, 0.9] {
+            let mut rig = Rig::new();
+            rig.card.viewport.horizontal.right_offset = 120.0;
+            rig.frames(&[]);
+            let probe = rig.probe();
+            let at = Pos2::new(
+                probe.plot.left() + probe.plot.width() * fraction,
+                rig.in_plot().y,
+            );
+            rig.frames(&[egui::Event::PointerMoved(at)]);
+            let (visible, before) = (rig.card.viewport.horizontal.visible, rig.bar_at(at.x));
+            zoom(&mut rig);
+            assert_ne!(
+                rig.card.viewport.horizontal.visible, visible,
+                "{name} zooms"
+            );
+            let after = rig.bar_at(at.x);
+            assert!(
+                (after - before).abs() < 0.05,
+                "{name} at {fraction}: the bar under the pointer moved from {before} to {after}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_pinch_spreading_the_fingers_shows_fewer_bars() {
+    let mut rig = Rig::new();
+    let at = rig.in_plot();
+    rig.frames(&[egui::Event::PointerMoved(at)]);
+    rig.frames(&[egui::Event::Zoom(1.25)]);
+    let narrowed = rig.card.viewport.horizontal.visible;
+    assert!(narrowed < DEFAULT_VISIBLE);
+    rig.frames(&[egui::Event::Zoom(0.8)]);
+    assert!(rig.card.viewport.horizontal.visible > narrowed);
+}
+
+#[test]
+fn a_slow_scroll_adds_up_instead_of_rounding_away() {
+    let mut rig = Rig::new();
+    let at = rig.in_plot();
+    rig.frames(&[egui::Event::PointerMoved(at)]);
+    // Two points a frame is under one bar of 120: only the sum of many frames shows.
+    for _ in 0..40 {
+        rig.frame(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: Vec2::new(0.0, 2.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        }]);
+    }
+    assert!(rig.card.viewport.horizontal.visible < DEFAULT_VISIBLE - 10);
+}
+
+#[test]
+fn a_pinch_is_ignored_off_the_chart_and_in_select_portion() {
+    let mut rig = Rig::new();
+    rig.frames(&[egui::Event::PointerMoved(Pos2::new(-50.0, -50.0))]);
+    rig.frames(&[egui::Event::Zoom(1.5)]);
+    assert_eq!(rig.card.viewport, ChartViewport::default());
+
+    let at = rig.in_plot();
+    rig.card.snapshot_select = true;
+    rig.frames(&[egui::Event::PointerMoved(at)]);
+    rig.frames(&[egui::Event::Zoom(1.5)]);
+    assert_eq!(rig.card.viewport, ChartViewport::default());
+}
+
 // MARK: Drawings and data
 
 fn trend_line() -> Drawing {
