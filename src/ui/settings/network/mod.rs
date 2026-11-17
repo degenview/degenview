@@ -225,7 +225,7 @@ pub fn body(
                             ui,
                             "Hosts that connect directly",
                             Some(
-                                "Separated by commas. A name also covers its subdomains; use 192.168.1.* for a block of addresses. Local addresses (localhost, 10.*, 192.168.*, 172.16-31.*, .local) never use the proxy.",
+                                "Separated by commas. A name also covers its subdomains; use 192.168.1.* for a block of addresses, or <local> for every name without a dot. Local addresses (localhost, 10.*, 192.168.*, 172.16-31.*, .local) never use the proxy.",
                             ),
                             "example.com, *.corp.test",
                             &mut state.draft.no_proxy,

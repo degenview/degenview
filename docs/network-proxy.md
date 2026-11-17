@@ -30,6 +30,11 @@ loopback, `10/8`, `172.16/12`, `192.168/16`, `169.254/16`, IPv6 `::1`, `fe80::/1
 like an address, `10.example.com`, goes through the proxy. `ureq` can only match the spelling of a
 host, so it cannot make this decision; the agents are picked per request instead (below).
 
+`<local>` is a rule, not an expression: every name **without a dot** (`intranet`, `nas`) connects
+directly. It comes from the typed list, the environment's `NO_PROXY`, Windows' `ProxyOverride` or
+macOS's "Exclude simple hostnames"; `bypass::entries` keeps it out of `ureq`'s list and
+`Resolved::skips` applies it.
+
 What the page checks depends on what it shows: the port only for a manual proxy, the no-proxy list
 unless the proxy is Off. A leftover typo in a hidden field never blocks switching mode.
 
@@ -45,9 +50,10 @@ connections.
 - **Windows**: `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings` (`ProxyEnable`,
   `ProxyServer`, `ProxyOverride`) through `windows-sys` (`Win32_System_Registry`, no new crate).
   `ProxyServer` is either `host:port` or `http=…;https=…;socks=…` (HTTPS entry preferred, then HTTP,
-  then SOCKS5). `<local>` in `ProxyOverride` is dropped (local hosts bypass anyway). A PAC script
+  then SOCKS5). `<local>` in `ProxyOverride` is kept as a rule (below). A PAC script
   (`AutoConfigURL`) is **not** followed.
-- **macOS**: `scutil --proxy` (HTTPS, else HTTP, else SOCKS; `ExceptionsList`). A process spawn: it
+- **macOS**: `scutil --proxy` (HTTPS, else HTTP, else SOCKS; `ExceptionsList`, and `ExcludeSimpleHostnames` as the `<local>` rule; the
+  latter is read from a fixture, not yet seen on a real Mac). A process spawn: it
   runs when the proxy is applied or refreshed, on a worker, never in a frame.
 - **Linux**: no system setting; environment and manual only.
 

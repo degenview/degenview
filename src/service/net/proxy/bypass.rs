@@ -7,8 +7,16 @@
 //! public name) goes through the proxy like any other. The user's entries are `ureq`'s
 //! expressions (`example.com`, `.example.com`, `*.example.com`, `192.168.*`, `*`), which the HTTP
 //! agent and the live-feed tunnel share.
+//!
+//! One entry is a rule, not an expression: [`LOCAL`] (`<local>`, Windows' "bypass proxy server for
+//! local addresses", macOS's "Exclude simple hostnames") means every name without a dot, such as
+//! `intranet` or `nas`. `ureq` cannot match that, so [`entries`] leaves it out and
+//! [`wants_simple_names`] tells the resolver, which asks [`is_simple_name`] per host.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+/// The "names without a dot" rule, as Windows' `ProxyOverride` writes it.
+pub const LOCAL: &str = "<local>";
 
 /// Local names in `ureq`'s expressions. Only spellings that cannot belong to a public host; they
 /// back [`is_local`] up for a redirect, where the agent decides on its own.
@@ -59,9 +67,24 @@ pub enum BypassError {
 pub fn split(text: &str) -> Vec<String> {
     text.split([',', ';', ' ', '\n', '\t'])
         .map(str::trim)
-        .filter(|entry| !entry.is_empty() && *entry != "<local>")
+        .filter(|entry| !entry.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+fn is_rule(entry: &str) -> bool {
+    entry.eq_ignore_ascii_case(LOCAL)
+}
+
+/// Whether the list carries the [`LOCAL`] rule.
+pub fn wants_simple_names(entries: &[String]) -> bool {
+    entries.iter().any(|entry| is_rule(entry))
+}
+
+/// Whether `host` is a name without a dot: not an address (an IPv6 one has colons) and not empty.
+pub fn is_simple_name(host: &str) -> bool {
+    let host = host.trim();
+    !host.is_empty() && !host.contains(['.', ':', '['])
 }
 
 /// The first entry that cannot be matched.
@@ -80,7 +103,7 @@ pub fn entries(own: &[String]) -> Vec<String> {
         .map(|entry| (*entry).to_owned())
         .collect();
     for entry in own {
-        if entry.contains('/') {
+        if entry.contains('/') || is_rule(entry) {
             continue;
         }
         let entry = entry.to_ascii_lowercase();

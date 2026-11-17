@@ -50,6 +50,10 @@ pub fn parse(text: &str) -> Option<SystemProxy> {
             password: None,
         })
     };
+    // "Exclude simple hostnames" in System Settings: the same rule as Windows' `<local>`.
+    if fields.get("ExcludeSimpleHostnames") == Some(&"1") {
+        exceptions.push(super::super::bypass::LOCAL.to_owned());
+    }
     let spec = server("HTTPS", ProxyProtocol::Http)
         .or_else(|| server("HTTP", ProxyProtocol::Http))
         .or_else(|| server("SOCKS", ProxyProtocol::Socks5h))?;
@@ -86,6 +90,20 @@ mod tests {
         assert_eq!(system.spec.port, 7891);
         assert_eq!(system.spec.protocol, ProxyProtocol::Http);
         assert_eq!(system.bypass, ["*.local", "169.254/16", "example.org"]);
+    }
+
+    #[test]
+    fn exclude_simple_hostnames_becomes_the_local_rule() {
+        let text = SAMPLE.replace(
+            "FTPPassive : 1",
+            "ExcludeSimpleHostnames : 1\n  FTPPassive : 1",
+        );
+        let system = parse(&text).unwrap();
+        assert_eq!(
+            system.bypass,
+            ["*.local", "169.254/16", "example.org", "<local>"]
+        );
+        assert_eq!(parse(SAMPLE).unwrap().bypass.len(), 3, "not set: no rule");
     }
 
     #[test]

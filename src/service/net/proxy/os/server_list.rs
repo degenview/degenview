@@ -29,8 +29,8 @@ pub fn choose(value: &str) -> Option<Spec> {
         })
 }
 
-/// `ProxyOverride`: entries separated by semicolons; `<local>` (every name without a dot) is
-/// dropped, since private and `.local` hosts always go direct anyway.
+/// `ProxyOverride`: entries separated by semicolons. `<local>` (every name without a dot) stays
+/// in the list as the rule the resolver applies (`bypass::LOCAL`).
 pub fn bypass(value: &str) -> Vec<String> {
     super::super::bypass::split(value)
 }
@@ -70,10 +70,10 @@ mod tests {
     }
 
     #[test]
-    fn the_override_list_drops_local() {
+    fn the_override_list_keeps_local() {
         assert_eq!(
             bypass("*.corp.example;<local>; 10.1.*"),
-            ["*.corp.example", "10.1.*"]
+            ["*.corp.example", "<local>", "10.1.*"]
         );
     }
 }

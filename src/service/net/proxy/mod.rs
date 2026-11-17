@@ -38,6 +38,8 @@ pub struct Resolved {
     pub spec: Spec,
     pub proxy: ureq::Proxy,
     pub source: Source,
+    /// The `<local>` rule: names without a dot skip the proxy (`ureq` cannot express that).
+    skip_simple_names: bool,
 }
 
 impl Resolved {
@@ -47,13 +49,14 @@ impl Resolved {
             spec,
             proxy,
             source,
+            skip_simple_names: bypass::wants_simple_names(bypass),
         })
     }
 
-    /// Whether a connection to `host` skips the proxy: it is local (`bypass::is_local`), or the
-    /// no-proxy lists name it.
+    /// Whether a connection to `host` skips the proxy: it is local (`bypass::is_local`), a name
+    /// without a dot under the `<local>` rule, or the no-proxy lists name it.
     pub fn skips(&self, host: &str) -> bool {
-        if bypass::is_local(host) {
+        if bypass::is_local(host) || (self.skip_simple_names && bypass::is_simple_name(host)) {
             return true;
         }
         format!("https://{}/", spec::bracketed(host))

@@ -662,3 +662,74 @@ fn building_an_ai_client_does_not_read_the_system_proxy() {
     HttpProvider::new(ProviderKind::Compatible, "https://example.test/v1", None).unwrap();
     assert_eq!(current::system_reads(), before, "new() blocked on the OS");
 }
+
+/// Windows' `<local>` (and macOS's "Exclude simple hostnames"): a name without a dot is on the
+/// intranet, so it skips the proxy, but only when the rule is there.
+#[test]
+fn the_local_rule_skips_names_without_a_dot() {
+    let with = |no_proxy: &str| {
+        let config = ProxyConfig {
+            no_proxy: no_proxy.to_owned(),
+            ..manual("proxy.example", Some(8080))
+        };
+        resolve(&config, None, &no_env, &nothing).unwrap()
+    };
+    let plain = with("");
+    let rule = with("<local>");
+    for simple in ["intranet", "nas", "INTRANET", "build-box"] {
+        assert!(
+            !plain.skips(simple),
+            "{simple} goes through the proxy without the rule"
+        );
+        assert!(rule.skips(simple), "{simple}");
+    }
+    for dotted in [
+        "intranet.example.com",
+        "10.example.com",
+        "api.binance.com",
+        "8.8.8.8",
+        "2001:db8::1",
+        "[2001:db8::1]",
+        "",
+    ] {
+        assert!(!rule.skips(dotted), "{dotted:?} is not a simple name");
+    }
+    // The rule is not an expression for `ureq`, whose matcher would treat it as a host name.
+    assert!(
+        !rule
+            .proxy
+            .is_no_proxy(&"https://intranet/".parse().unwrap())
+    );
+    assert_eq!(with("<LOCAL>"), rule, "any case");
+    assert!(
+        ProxyConfig {
+            no_proxy: "<local>".to_owned(),
+            ..ProxyConfig::default()
+        }
+        .validate()
+        .is_ok()
+    );
+}
+
+#[test]
+fn the_local_rule_comes_from_every_source() {
+    let found = |bypass: &[&str]| {
+        let system = || {
+            Some(SystemProxy {
+                spec: Spec::parse("127.0.0.1:7890").unwrap(),
+                bypass: bypass.iter().map(|entry| (*entry).to_owned()).collect(),
+            })
+        };
+        resolve(&ProxyConfig::default(), None, &no_env, &system).unwrap()
+    };
+    assert!(found(&["<local>"]).skips("intranet"));
+    assert!(!found(&["corp.example"]).skips("intranet"));
+    let from_env = resolve(
+        &ProxyConfig::default(),
+        None,
+        &env(&[("HTTPS_PROXY", "127.0.0.1:7890"), ("NO_PROXY", "<local>")]),
+        &nothing,
+    )
+    .unwrap();
+    assert!(from_env.skips("intranet"));
+}
