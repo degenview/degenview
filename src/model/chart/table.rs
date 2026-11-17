@@ -7,6 +7,7 @@
 //! feed, the view draws it.
 
 use crate::format;
+use crate::i18n::tr;
 use crate::model::watchlist::quote::compact_number;
 use crate::model::{Kline, PriceFormat};
 
@@ -97,12 +98,12 @@ impl TableFeed {
 
     pub fn title(&self, column: Column) -> String {
         match column {
-            Column::Time => "Time".to_owned(),
-            Column::Open => "Open".to_owned(),
-            Column::High => "High".to_owned(),
-            Column::Low => "Low".to_owned(),
-            Column::Close => "Close".to_owned(),
-            Column::Volume => "Volume".to_owned(),
+            Column::Time => tr!("Time").to_owned(),
+            Column::Open => tr!("Open").to_owned(),
+            Column::High => tr!("High").to_owned(),
+            Column::Low => tr!("Low").to_owned(),
+            Column::Close => tr!("Close").to_owned(),
+            Column::Volume => tr!("Volume").to_owned(),
             Column::Extra(index) => self
                 .extras
                 .get(index)
@@ -143,8 +144,8 @@ impl TableFeed {
                     Some(value) => match extra.kind {
                         ValueKind::Price => price.format(value),
                         ValueKind::Plain => format!("{value:.2}"),
-                        ValueKind::Flip if value > 0.0 => "Bullish".to_owned(),
-                        ValueKind::Flip => "Bearish".to_owned(),
+                        ValueKind::Flip if value > 0.0 => tr!("Bullish").to_owned(),
+                        ValueKind::Flip => tr!("Bearish").to_owned(),
                     },
                 }
             }

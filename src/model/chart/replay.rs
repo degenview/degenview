@@ -1,3 +1,4 @@
+use crate::i18n::tr;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -26,14 +27,14 @@ pub enum ReplayInterval {
 impl ReplayInterval {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Automatic => "Auto",
+            Self::Automatic => tr!("Auto"),
             Self::OneMinute => "1m",
             Self::FiveMinutes => "5m",
             Self::FifteenMinutes => "15m",
             Self::ThirtyMinutes => "30m",
             Self::OneHour => "1h",
             Self::OneDay => "1D",
-            Self::ChartBar => "1 bar",
+            Self::ChartBar => tr!("1 bar"),
         }
     }
 }
@@ -71,7 +72,7 @@ impl ReplaySpeed {
             Self::Ten => "10×",
             Self::Twenty => "20×",
             Self::Fifty => "50×",
-            Self::Max => "Max",
+            Self::Max => tr!("Max"),
         }
     }
 

@@ -6,6 +6,7 @@
 //! pivot the user placed: TradingView's help states those rules for its automatic indicator, and
 //! says nothing of the drawing tools enforcing them. Pure: no egui types.
 
+use crate::i18n::tr;
 use crate::model::drawings::tool::Tool;
 use serde::{Deserialize, Serialize};
 
@@ -138,17 +139,17 @@ impl Degree {
         Self::Subminuette,
     ];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::GrandSupercycle => "Grand Supercycle",
-            Self::Supercycle => "Supercycle",
-            Self::Cycle => "Cycle",
-            Self::Primary => "Primary",
-            Self::Intermediate => "Intermediate",
-            Self::Minor => "Minor",
-            Self::Minute => "Minute",
-            Self::Minuette => "Minuette",
-            Self::Subminuette => "Subminuette",
+            Self::GrandSupercycle => tr!("Grand Supercycle"),
+            Self::Supercycle => tr!("Supercycle"),
+            Self::Cycle => tr!("Cycle"),
+            Self::Primary => tr!("Primary"),
+            Self::Intermediate => tr!("Intermediate"),
+            Self::Minor => tr!("Minor"),
+            Self::Minute => tr!("Minute"),
+            Self::Minuette => tr!("Minuette"),
+            Self::Subminuette => tr!("Subminuette"),
         }
     }
 

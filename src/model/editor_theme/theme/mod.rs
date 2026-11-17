@@ -13,6 +13,7 @@
 
 use super::typography::tolerant;
 use super::{BuiltInTheme, ColorKey, Palette, Rgba, TypographyOverride};
+use crate::i18n::tr;
 use crate::model::watchlist;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -122,12 +123,15 @@ pub enum ThemeError {
 impl ThemeError {
     pub fn message(self) -> String {
         match self {
-            Self::EmptyName => "Give the theme a name.".to_owned(),
-            Self::NameTooLong => format!("Names are at most {MAX_NAME_CHARS} characters."),
-            Self::ControlCharacters => "Names cannot contain control characters.".to_owned(),
-            Self::DuplicateName => "A theme with that name already exists.".to_owned(),
-            Self::Missing => "That theme no longer exists.".to_owned(),
-            Self::TooMany => format!("You can keep at most {MAX_THEMES} custom themes."),
+            Self::EmptyName => tr!("Give the theme a name.").to_owned(),
+            Self::NameTooLong => tr!("Names are at most {max} characters.", max = MAX_NAME_CHARS),
+            Self::ControlCharacters => tr!("Names cannot contain control characters.").to_owned(),
+            Self::DuplicateName => tr!("A theme with that name already exists.").to_owned(),
+            Self::Missing => tr!("That theme no longer exists.").to_owned(),
+            Self::TooMany => tr!(
+                "You can keep at most {max} custom themes.",
+                max = MAX_THEMES
+            ),
         }
     }
 }

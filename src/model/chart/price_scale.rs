@@ -15,6 +15,7 @@
 //! cut by the plot's edge and still count is inferred, and no live TradingView chart was compared.
 
 use crate::format::group_thousands;
+use crate::i18n::tr;
 use crate::model::chart::price_format::places_for_step;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -38,12 +39,12 @@ impl PriceScaleMode {
         Self::Logarithmic,
     ];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Regular => "Regular",
-            Self::Percent => "Percent",
-            Self::IndexedTo100 => "Indexed to 100",
-            Self::Logarithmic => "Logarithmic",
+            Self::Regular => tr!("Regular"),
+            Self::Percent => tr!("Percent"),
+            Self::IndexedTo100 => tr!("Indexed to 100"),
+            Self::Logarithmic => tr!("Logarithmic"),
         }
     }
 

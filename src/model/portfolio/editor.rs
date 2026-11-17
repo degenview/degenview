@@ -8,6 +8,7 @@
 //! warns before saving.
 
 use crate::format::civil_from_days;
+use crate::i18n::tr;
 use crate::model::paper::ticket::parse_decimal;
 use crate::model::portfolio::csv::parse_iso8601;
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction, PortfolioTransactionType};
@@ -422,13 +423,13 @@ impl TransactionDraft {
             return None;
         }
         let Some(value) = Self::parse(text) else {
-            return Some("Enter a number.");
+            return Some(tr!("Enter a number."));
         };
         if value < 0.0 {
-            return Some("Can't be negative.");
+            return Some(tr!("Can't be negative."));
         }
         if value == 0.0 && !allows_zero {
-            return Some("Must be greater than zero.");
+            return Some(tr!("Must be greater than zero."));
         }
         None
     }
@@ -460,7 +461,7 @@ impl TransactionDraft {
         }
         note(EditorField::Fee, Self::number_issue(&self.fee_text, true));
         if self.timestamp().is_none() {
-            result.insert(EditorField::Date, "Use YYYY-MM-DD HH:MM.".to_owned());
+            result.insert(EditorField::Date, tr!("Use YYYY-MM-DD HH:MM.").to_owned());
         }
         result
     }
@@ -488,9 +489,9 @@ impl TransactionDraft {
         let (total, fee) = (self.total()?, self.fee()?);
         let net = match self.kind {
             PortfolioTransactionType::Buy | PortfolioTransactionType::TransferIn => {
-                Some(("Total cost", total + fee))
+                Some((tr!("Total cost"), total + fee))
             }
-            PortfolioTransactionType::Sell => Some(("Net proceeds", total - fee)),
+            PortfolioTransactionType::Sell => Some((tr!("Net proceeds"), total - fee)),
             _ => None,
         };
         Some(Summary {

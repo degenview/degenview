@@ -11,6 +11,7 @@
 //! Pure: no egui, no locale. Thousands are grouped with commas and the point is a point.
 
 use crate::format::group_thousands;
+use crate::i18n::tr;
 use serde::{Deserialize, Serialize};
 
 /// How a price under [`SMALL_BELOW`] is written.
@@ -28,10 +29,10 @@ pub enum SmallPrices {
 impl SmallPrices {
     pub const ALL: [Self; 2] = [Self::ZeroCount, Self::Decimals];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::ZeroCount => "Count the zeros",
-            Self::Decimals => "Write out the zeros",
+            Self::ZeroCount => tr!("Count the zeros"),
+            Self::Decimals => tr!("Write out the zeros"),
         }
     }
 

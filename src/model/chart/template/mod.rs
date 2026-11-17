@@ -12,6 +12,7 @@
 //! (validation, unique names, rename, duplicate, update, delete); the store reads and writes it
 //! whole.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::chart::canvas::{
     BackgroundAppearance, BackgroundMode, ChartCanvas, ChartMargins, LineAppearance,
     ScaleAppearance, ScaleTextSize, WatermarkAppearance, WatermarkMode,
@@ -40,19 +41,19 @@ pub enum ApplyScope {
 impl ApplyScope {
     pub const ALL: [Self; 2] = [Self::AppearanceAndCanvas, Self::ColorsAndCanvas];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::AppearanceAndCanvas => "Apply appearance and canvas",
-            Self::ColorsAndCanvas => "Apply colors and canvas only",
+            Self::AppearanceAndCanvas => tr!("Apply appearance and canvas"),
+            Self::ColorsAndCanvas => tr!("Apply colors and canvas only"),
         }
     }
 
-    pub const fn hint(self) -> &'static str {
+    pub fn hint(self) -> &'static str {
         match self {
             Self::AppearanceAndCanvas => {
-                "Takes the chart type and its settings too. Another type redraws the chart."
+                tr!("Takes the chart type and its settings too. Another type redraws the chart.")
             }
-            Self::ColorsAndCanvas => "Keeps this chart's type and how its bars are built.",
+            Self::ColorsAndCanvas => tr!("Keeps this chart's type and how its bars are built."),
         }
     }
 
@@ -122,15 +123,18 @@ pub enum TemplateError {
 impl TemplateError {
     pub fn message(self) -> String {
         match self {
-            Self::EmptyName => "Give the template a name.".to_owned(),
-            Self::NameTooLong => format!("Names are at most {MAX_NAME_CHARS} characters."),
-            Self::DescriptionTooLong => {
-                format!("Descriptions are at most {MAX_DESCRIPTION_CHARS} characters.")
+            Self::EmptyName => tr!("Give the template a name.").to_owned(),
+            Self::NameTooLong => tr!("Names are at most {max} characters.", max = MAX_NAME_CHARS),
+            Self::DescriptionTooLong => tr!(
+                "Descriptions are at most {max} characters.",
+                max = MAX_DESCRIPTION_CHARS
+            ),
+            Self::ControlCharacters => tr!("Names cannot contain control characters.").to_owned(),
+            Self::DuplicateName => tr!("A template with that name already exists.").to_owned(),
+            Self::BuiltIn => {
+                tr!("Built-in templates cannot be changed. Duplicate it first.").to_owned()
             }
-            Self::ControlCharacters => "Names cannot contain control characters.".to_owned(),
-            Self::DuplicateName => "A template with that name already exists.".to_owned(),
-            Self::BuiltIn => "Built-in templates cannot be changed. Duplicate it first.".to_owned(),
-            Self::Missing => "That template no longer exists.".to_owned(),
+            Self::Missing => tr!("That template no longer exists.").to_owned(),
         }
     }
 }
@@ -591,20 +595,21 @@ pub struct ApplyPlan {
 impl ApplyPlan {
     /// One line for the sheet's footer.
     pub fn message(&self, chart_type_label: &str) -> String {
-        let noun = |count: usize| if count == 1 { "chart" } else { "charts" };
         if self.steps.is_empty() {
-            return "There are no other charts in this workspace.".to_owned();
+            return tr!("There are no other charts in this workspace.").to_owned();
         }
-        let mut text = format!(
-            "Applied the appearance to {} {}.",
+        let mut text = tr_n!(
             self.steps.len(),
-            noun(self.steps.len())
+            "Applied the appearance to {count} chart.",
+            "Applied the appearance to {count} charts."
         );
         if self.kept_type > 0 {
-            text.push_str(&format!(
-                " {} kept {} chart type: their market cannot draw {chart_type_label}.",
+            text.push(' ');
+            text.push_str(&tr_n!(
                 self.kept_type,
-                if self.kept_type == 1 { "its" } else { "their" },
+                "{count} kept its chart type: its market cannot draw {chart_type}.",
+                "{count} kept their chart type: their market cannot draw {chart_type}.",
+                chart_type = chart_type_label
             ));
         }
         text

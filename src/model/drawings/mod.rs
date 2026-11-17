@@ -12,6 +12,7 @@ pub mod style;
 pub mod template;
 pub mod tool;
 
+use crate::i18n::tr;
 use crate::model::Timeframe;
 use crate::model::annotation::image_content::{Content, ImageData};
 use crate::model::annotation::link_card::LinkCard;
@@ -405,12 +406,12 @@ impl PitchforkVariant {
         Self::Inside,
     ];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Standard => "Original",
-            Self::Schiff => "Schiff",
-            Self::ModifiedSchiff => "Modified Schiff",
-            Self::Inside => "Inside",
+            Self::Standard => tr!("Original"),
+            Self::Schiff => tr!("Schiff"),
+            Self::ModifiedSchiff => tr!("Modified Schiff"),
+            Self::Inside => tr!("Inside"),
         }
     }
 
@@ -1560,7 +1561,11 @@ impl Drawing {
             Geometry::Table(table) => Some(table.summary()),
             Geometry::Image(image) => Some(image.name.clone()).filter(|name| !name.is_empty()),
             Geometry::Card { card, .. } => Some(card.summary()),
-            Geometry::Bars(pattern) => Some(format!("{} bars", pattern.bars.len())),
+            Geometry::Bars(pattern) => Some(crate::i18n::tr_n!(
+                pattern.bars.len(),
+                "{count} bar",
+                "{count} bars"
+            )),
             _ => None,
         }
     }

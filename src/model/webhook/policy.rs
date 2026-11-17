@@ -3,6 +3,7 @@
 //! encoded, how a URL is redacted for display, and which Content-Type the body gets.
 //! One place, so the editor, the store and the request builder cannot disagree.
 
+use crate::i18n::tr;
 use crate::model::alert::{AlertEventOrigin, AlertTriggerEvent};
 use crate::model::webhook::{WebhookDeliveryError, WebhookHeader};
 
@@ -123,12 +124,12 @@ pub fn validate_url(text: &str) -> Result<ParsedUrl, WebhookDeliveryError> {
 /// A message for the editor. Never includes the URL.
 pub fn url_message(error: WebhookDeliveryError) -> &'static str {
     match error {
-        WebhookDeliveryError::UnsupportedScheme => "Use an http:// or https:// address.",
-        WebhookDeliveryError::UnsupportedPort => "The port must be between 1 and 65535.",
+        WebhookDeliveryError::UnsupportedScheme => tr!("Use an http:// or https:// address."),
+        WebhookDeliveryError::UnsupportedPort => tr!("The port must be between 1 and 65535."),
         WebhookDeliveryError::SecretInHost => {
-            "The secret can't go in the host. Use it in the path or after a ?."
+            tr!("The secret can't go in the host. Use it in the path or after a ?.")
         }
-        _ => "Enter a full address, such as https://example.com/hook.",
+        _ => tr!("Enter a full address, such as https://example.com/hook."),
     }
 }
 
@@ -277,30 +278,39 @@ pub fn validate_secret(secret: &str) -> Option<WebhookSecretError> {
 
 pub fn header_message(error: WebhookHeaderError) -> String {
     match error {
-        WebhookHeaderError::EmptyName => "Enter a header name.".to_owned(),
-        WebhookHeaderError::InvalidName => "Use letters, numbers and - _ . only.".to_owned(),
+        WebhookHeaderError::EmptyName => tr!("Enter a header name.").to_owned(),
+        WebhookHeaderError::InvalidName => tr!("Use letters, numbers and - _ . only.").to_owned(),
         WebhookHeaderError::NameTooLong => {
-            format!("Header names are limited to {MAXIMUM_NAME_LENGTH} characters.")
+            tr!(
+                "Header names are limited to {max} characters.",
+                max = MAXIMUM_NAME_LENGTH
+            )
         }
-        WebhookHeaderError::Reserved => "DegenView sets this header itself.".to_owned(),
-        WebhookHeaderError::Duplicate => "This header is already set.".to_owned(),
+        WebhookHeaderError::Reserved => tr!("DegenView sets this header itself.").to_owned(),
+        WebhookHeaderError::Duplicate => tr!("This header is already set.").to_owned(),
         WebhookHeaderError::InvalidValue => {
-            "Use plain letters, numbers and symbols (no line breaks).".to_owned()
+            tr!("Use plain letters, numbers and symbols (no line breaks).").to_owned()
         }
         WebhookHeaderError::ValueTooLong => {
-            format!("Header values are limited to {MAXIMUM_VALUE_LENGTH} characters.")
+            tr!(
+                "Header values are limited to {max} characters.",
+                max = MAXIMUM_VALUE_LENGTH
+            )
         }
     }
 }
 
 pub fn secret_message(error: WebhookSecretError) -> String {
     match error {
-        WebhookSecretError::Empty => "Enter the secret.".to_owned(),
+        WebhookSecretError::Empty => tr!("Enter the secret.").to_owned(),
         WebhookSecretError::TooLong => {
-            format!("Secrets are limited to {MAXIMUM_SECRET_LENGTH} characters.")
+            tr!(
+                "Secrets are limited to {max} characters.",
+                max = MAXIMUM_SECRET_LENGTH
+            )
         }
         WebhookSecretError::ControlCharacters => {
-            "The secret can't contain line breaks or control characters.".to_owned()
+            tr!("The secret can't contain line breaks or control characters.").to_owned()
         }
     }
 }

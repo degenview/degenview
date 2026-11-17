@@ -2,6 +2,7 @@
 //! indicators bundled with the app, and the user's saved scripts. Pure data and search; nothing
 //! here draws or touches storage.
 
+use crate::i18n::tr;
 use crate::model::BuiltIn;
 use crate::model::pine::bundled::{self, BundledIndicator};
 use crate::model::pine::script::{LocalScript, ScriptType};
@@ -28,11 +29,11 @@ impl Family {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Trend => "Trend",
-            Self::Momentum => "Momentum",
-            Self::Volatility => "Volatility",
-            Self::VolumeFlow => "Volume & Flow",
-            Self::Structure => "Structure",
+            Self::Trend => tr!("Trend"),
+            Self::Momentum => tr!("Momentum"),
+            Self::Volatility => tr!("Volatility"),
+            Self::VolumeFlow => tr!("Volume & Flow"),
+            Self::Structure => tr!("Structure"),
         }
     }
 }
@@ -113,38 +114,48 @@ impl CatalogEntry {
         let (family, summary, description, aliases): (_, _, _, &[&str]) = match kind {
             BuiltIn::Volume => (
                 Family::VolumeFlow,
-                "Traded volume under the candles.",
-                "Bars of the volume traded in each candle, coloured by whether the candle closed up or down. Not available on line charts, which carry no volume.",
+                tr!("Traded volume under the candles."),
+                tr!(
+                    "Bars of the volume traded in each candle, coloured by whether the candle closed up or down. Not available on line charts, which carry no volume."
+                ),
                 &["vol"],
             ),
             BuiltIn::Rsi => (
                 Family::Momentum,
-                "Relative Strength Index, 14 periods.",
-                "Wilder's momentum oscillator, from 0 to 100, with the 70 and 30 levels drawn. Above 70 is conventionally overbought and below 30 oversold.",
+                tr!("Relative Strength Index, 14 periods."),
+                tr!(
+                    "Wilder's momentum oscillator, from 0 to 100, with the 70 and 30 levels drawn. Above 70 is conventionally overbought and below 30 oversold."
+                ),
                 &["relative strength index", "rsi 14"],
             ),
             BuiltIn::Ema => (
                 Family::Trend,
-                "Exponential moving average of the close.",
-                "A moving average that weights recent closes more. Choose its period from the chip on the chart (9, 20, 50, 100 or 200).",
+                tr!("Exponential moving average of the close."),
+                tr!(
+                    "A moving average that weights recent closes more. Choose its period from the chip on the chart (9, 20, 50, 100 or 200)."
+                ),
                 &["exponential moving average", "moving average", "ma"],
             ),
             BuiltIn::Bollinger => (
                 Family::Volatility,
-                "Bollinger Bands, 20 periods and 2 deviations.",
-                "A 20-period average with bands two standard deviations above and below. The bands widen when price is volatile and narrow when it is quiet.",
+                tr!("Bollinger Bands, 20 periods and 2 deviations."),
+                tr!(
+                    "A 20-period average with bands two standard deviations above and below. The bands widen when price is volatile and narrow when it is quiet."
+                ),
                 &["bbands", "bb", "bollinger bands"],
             ),
             BuiltIn::TrendFlips => (
                 Family::Trend,
-                "Marks where a Supertrend (10, 3) changes direction.",
-                "Computes a Supertrend with an ATR length of 10 and a multiplier of 3 and marks each bar where its direction flips, up or down.",
+                tr!("Marks where a Supertrend (10, 3) changes direction."),
+                tr!(
+                    "Computes a Supertrend with an ATR length of 10 and a multiplier of 3 and marks each bar where its direction flips, up or down."
+                ),
                 &["supertrend", "trend flip", "reversal"],
             ),
         };
         Self {
             key: EntryKey::Native(kind),
-            title: kind.menu_title().to_owned(),
+            title: kind.display_title().to_owned(),
             summary: summary.to_owned(),
             description: description.to_owned(),
             family: Some(family),
@@ -178,20 +189,26 @@ impl CatalogEntry {
     }
 
     fn script(script: &Arc<LocalScript>) -> Self {
-        let kind = match script.script_type {
-            ScriptType::Strategy => "strategy",
-            _ => "indicator",
+        let (summary, description) = match script.script_type {
+            ScriptType::Strategy => (
+                tr!("Your saved Pine strategy."),
+                tr!("A Pine strategy from your Scripts folder."),
+            ),
+            _ => (
+                tr!("Your saved Pine indicator."),
+                tr!("A Pine indicator from your Scripts folder."),
+            ),
         };
         Self {
             key: EntryKey::Script(script.id.clone()),
             title: script.name.clone(),
-            summary: format!("Your saved Pine {kind}."),
-            description: format!("A Pine {kind} from your Scripts folder."),
+            summary: summary.to_owned(),
+            description: description.to_owned(),
             family: None,
             aliases: Vec::new(),
             overlay: false,
             origin: Origin::Script,
-            author: "You",
+            author: tr!("You"),
             license: "",
             script: Some(script.clone()),
         }
