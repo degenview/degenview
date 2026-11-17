@@ -103,6 +103,7 @@ mod tests {
             DataSource::Kraken,
             DataSource::Bybit,
             DataSource::Gate,
+            DataSource::Mexc,
             DataSource::Alpaca,
             DataSource::DexScreener,
         ] {
@@ -133,12 +134,14 @@ mod tests {
         }
     }
 
-    /// Fetches ETH from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io and a Uniswap pool and compares their buckets. Run with
+    /// Fetches ETH from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC and a Uniswap pool and compares their buckets. Run with
     /// `cargo test --release --lib live_sources_cut -- --ignored --nocapture`.
     #[test]
     #[ignore = "needs the network"]
     fn live_sources_cut_the_same_buckets() {
-        use crate::model::DataSource::{Binance, Bybit, Coinbase, DexScreener, Gate, Kraken, Okx};
+        use crate::model::DataSource::{
+            Binance, Bybit, Coinbase, DexScreener, Gate, Kraken, Mexc, Okx,
+        };
         let pool = "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640";
         let odd = ["5m", "22m", "3h", "4h", "6h", "12h", "2D", "3D", "2W", "6M"]
             .map(|text| Timeframe::parse(text).expect("a timeframe"));
@@ -153,6 +156,7 @@ mod tests {
             let kraken = fetch(Kraken, "ETH/USD").unwrap();
             let bybit = fetch(Bybit, "ETHUSDT").unwrap();
             let gate = fetch(Gate, "ETH_USDT").unwrap();
+            let mexc = fetch(Mexc, "ETHUSDT").unwrap();
             // GeckoTerminal's free quota is small; a refusal skips it rather than failing the rest.
             let dex = fetch(DexScreener, pool)
                 .map_err(|error| println!("skipped: {error}"))
@@ -160,13 +164,14 @@ mod tests {
             let opens = |bars: &[Kline]| -> std::collections::BTreeSet<i64> {
                 bars.iter().map(|bar| bar.open_time).collect()
             };
-            let (b, c, o, k, y, g) = (
+            let (b, c, o, k, y, g, m) = (
                 opens(&binance),
                 opens(&coinbase),
                 opens(&okx),
                 opens(&kraken),
                 opens(&bybit),
                 opens(&gate),
+                opens(&mexc),
             );
             let d = dex.as_deref().map(opens);
             // Compare inside the range every source covers.
@@ -177,6 +182,7 @@ mod tests {
                 k.first(),
                 y.first(),
                 g.first(),
+                m.first(),
                 d.as_ref().and_then(|d| d.first()),
             ]
             .into_iter()
@@ -188,13 +194,14 @@ mod tests {
                 set.iter().copied().filter(|time| *time >= from).collect()
             };
             println!(
-                "{interval:>3}: binance {:>4} coinbase {:>4} okx {:>4} kraken {:>4} bybit {:>4} gate {:>4} dex {:>4} | shared range {:>4} bars",
+                "{interval:>3}: binance {:>4} coinbase {:>4} okx {:>4} kraken {:>4} bybit {:>4} gate {:>4} mexc {:>4} dex {:>4} | shared range {:>4} bars",
                 b.len(),
                 c.len(),
                 o.len(),
                 k.len(),
                 y.len(),
                 g.len(),
+                m.len(),
                 d.as_ref().map_or(0, |d| d.len()),
                 within(&b).len(),
             );
@@ -203,6 +210,7 @@ mod tests {
             assert_eq!(within(&b), within(&k), "{interval} binance vs kraken");
             assert_eq!(within(&b), within(&y), "{interval} binance vs bybit");
             assert_eq!(within(&b), within(&g), "{interval} binance vs gate");
+            assert_eq!(within(&b), within(&m), "{interval} binance vs mexc");
             if let Some(d) = &d {
                 assert_eq!(within(&b), within(d), "{interval} binance vs dexscreener");
             }

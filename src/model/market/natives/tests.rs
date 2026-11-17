@@ -11,13 +11,14 @@ const TABLE: [&str; 24] = [
     "3D", "5D", "1W", "2W", "1M", "2M", "3M", "6M", "1Y",
 ];
 
-const CANDLE_SOURCES: [DataSource; 8] = [
+const CANDLE_SOURCES: [DataSource; 9] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
     DataSource::Kraken,
     DataSource::Bybit,
     DataSource::Gate,
+    DataSource::Mexc,
     DataSource::Alpaca,
     DataSource::DexScreener,
 ];
@@ -95,6 +96,27 @@ fn kraken_folds_its_thursday_weeks_and_everything_above_a_day_from_days() {
     assert_eq!(base("12h").as_deref(), Some("4h"));
     for text in TABLE {
         assert!(DataSource::Kraken.serves(tf(text)), "{text}");
+    }
+}
+
+#[test]
+fn mexc_has_its_ten_bars_and_folds_the_rest() {
+    let base = |text: &str| {
+        DataSource::Mexc
+            .plan(tf(text))
+            .map(|plan| plan.base().label())
+    };
+    // It has no 3-minute, 2-hour, 6-hour or 12-hour bar.
+    assert_eq!(base("3m").as_deref(), Some("1m"));
+    assert_eq!(base("2h").as_deref(), Some("1h"));
+    assert_eq!(base("6h").as_deref(), Some("1h"));
+    assert_eq!(base("12h").as_deref(), Some("4h"));
+    assert_eq!(base("8h").as_deref(), Some("8h"));
+    for text in ["3M", "1Y", "6M"] {
+        assert_eq!(base(text).as_deref(), Some("1M"), "{text}");
+    }
+    for text in TABLE {
+        assert!(DataSource::Mexc.serves(tf(text)), "{text}");
     }
 }
 
@@ -260,6 +282,7 @@ fn exchanges_page_back_at_any_length() {
         DataSource::Okx,
         DataSource::Bybit,
         DataSource::Gate,
+        DataSource::Mexc,
         DataSource::Alpaca,
     ] {
         for text in TABLE {

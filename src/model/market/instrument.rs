@@ -35,7 +35,7 @@ impl InstrumentId {
     /// USDT); Kraken's are `BASE/QUOTE` (USD) in the common tickers, never the legacy `XBT`.
     pub fn api_symbol(&self) -> String {
         match self.source {
-            DataSource::Binance | DataSource::Bybit => {
+            DataSource::Binance | DataSource::Bybit | DataSource::Mexc => {
                 let upper = self.symbol.to_uppercase().replace(['/', '-'], "");
                 // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
                 if crate::model::market::source::split_binance_pair(&upper)
@@ -98,6 +98,7 @@ impl InstrumentId {
         match source {
             DataSource::Binance
             | DataSource::Bybit
+            | DataSource::Mexc
             | DataSource::Coinbase
             | DataSource::Okx
             | DataSource::Kraken
@@ -147,6 +148,9 @@ mod tests {
         }
         for symbol in ["BTC", "btc_usdt", "BTC/USDT", "btc-usdt"] {
             assert_eq!(key(DataSource::Gate, symbol), "GATEIO:BTC_USDT", "{symbol}");
+        }
+        for symbol in ["BTC", "btcusdt", "btc-usdt", "BTC/USDT"] {
+            assert_eq!(key(DataSource::Mexc, symbol), "MEXC:BTCUSDT", "{symbol}");
         }
         for symbol in ["BTC", "btc-usdt", "BTC/USDT", "BTC-USDT"] {
             assert_eq!(key(DataSource::Okx, symbol), "OKX:BTC-USDT", "{symbol}");

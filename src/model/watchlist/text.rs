@@ -31,13 +31,14 @@ const US_EXCHANGES: [&str; 7] = [
     "NYSEAMERICAN",
 ];
 
-const SOURCES: [DataSource; 12] = [
+const SOURCES: [DataSource; 13] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
     DataSource::Kraken,
     DataSource::Bybit,
     DataSource::Gate,
+    DataSource::Mexc,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -281,7 +282,7 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
     };
 
     match source {
-        DataSource::Binance | DataSource::Bybit => {
+        DataSource::Binance | DataSource::Bybit | DataSource::Mexc => {
             let symbol = rest.to_uppercase();
             if !(3..=20).contains(&symbol.len()) || !symbol.chars().all(is_upper_alphanumeric) {
                 return Err(format!(
@@ -599,6 +600,24 @@ mod tests {
         assert_eq!(
             reasons,
             ["OKX spot markets are written BASE-QUOTE, like BTC-USDT"; 2]
+        );
+    }
+
+    #[test]
+    fn mexc_rows_are_spot_symbols_written_without_a_separator() {
+        let parsed = parse("MEXC:btcusdt\nMEXC:BTCUSDT.P\nMEXC:BTC_USDT");
+        assert_eq!(parsed.rows.len(), 1);
+        let Row::Instrument(item) = &parsed.rows[0] else {
+            panic!("an instrument");
+        };
+        assert_eq!(item.instrument.key(), "MEXC:BTCUSDT");
+        assert_eq!(
+            parsed
+                .skipped
+                .iter()
+                .map(|skipped| skipped.reason.as_str())
+                .collect::<Vec<_>>(),
+            ["Not a MEXC spot symbol (perpetuals and futures aren't supported)"; 2]
         );
     }
 

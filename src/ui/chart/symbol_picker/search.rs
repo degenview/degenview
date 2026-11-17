@@ -25,13 +25,14 @@ const RELATED_LIMIT: usize = 6;
 
 /// The markets the picker lists, in the order the providers are asked (and so the order exchanges
 /// that list the same market appear in).
-pub const PROVIDERS: [DataSource; 9] = [
+pub const PROVIDERS: [DataSource; 10] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
     DataSource::Kraken,
     DataSource::Bybit,
     DataSource::Gate,
+    DataSource::Mexc,
     DataSource::DexScreener,
     DataSource::CoinGecko,
     DataSource::Alpaca,
@@ -163,7 +164,8 @@ pub fn trading_kind(source: DataSource) -> &'static str {
         | DataSource::Okx
         | DataSource::Kraken
         | DataSource::Bybit
-        | DataSource::Gate => "Spot",
+        | DataSource::Gate
+        | DataSource::Mexc => "Spot",
         DataSource::DexScreener => "DEX",
         DataSource::CoinGecko => "Aggregate",
         DataSource::Alpaca => "Stock",
@@ -385,6 +387,7 @@ fn related_markets(asset: &str) -> Vec<SearchResult> {
         DataSource::Kraken,
         DataSource::Bybit,
         DataSource::Gate,
+        DataSource::Mexc,
     ]
     .into_iter()
     .map(|source| {
@@ -490,6 +493,7 @@ mod tests {
             DataSource::Kraken,
             DataSource::Bybit,
             DataSource::Gate,
+            DataSource::Mexc,
             DataSource::DexScreener,
             DataSource::CoinGecko,
         ] {

@@ -198,7 +198,8 @@ fn base_symbol(source: DataSource, symbol: &str) -> String {
         | DataSource::Okx
         | DataSource::Kraken
         | DataSource::Bybit
-        | DataSource::Gate => source.base_asset(symbol).to_lowercase(),
+        | DataSource::Gate
+        | DataSource::Mexc => source.base_asset(symbol).to_lowercase(),
         _ => symbol.to_lowercase(),
     }
 }
@@ -764,6 +765,7 @@ mod tests {
         assert_eq!(base_symbol(DataSource::Kraken, "SEI/USD"), "sei");
         assert_eq!(base_symbol(DataSource::Bybit, "SEIUSDT"), "sei");
         assert_eq!(base_symbol(DataSource::Gate, "SEI_USDT"), "sei");
+        assert_eq!(base_symbol(DataSource::Mexc, "SEIUSDT"), "sei");
     }
 
     fn parse_snapshot(body: &str) -> Option<Snapshot> {

@@ -1,6 +1,6 @@
 use crate::lock::lock;
 use crate::model::{DataSource, Kline, Timeframe};
-use crate::service::net::ws::Session;
+use crate::service::net::ws::{Frame, Session};
 use eframe::egui;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,6 +10,7 @@ mod binance;
 mod bybit;
 mod gateio;
 mod kraken;
+mod mexc;
 mod okx;
 
 /// The most bars the inbox keeps. A feed nobody reads for days (a background tab, a hidden
@@ -45,11 +46,20 @@ impl LiveInbox {
     }
 }
 
-/// Turns one text message of an exchange's stream into `(symbol, kline)`.
-type Parser = Box<dyn Fn(&str) -> Option<(String, Kline)> + Send>;
+/// Turns one message of an exchange's stream into `(symbol, kline)`.
+type Parser = Arc<dyn Fn(Frame<'_>) -> Option<(String, Kline)> + Send + Sync>;
 
-/// A kline feed for one workspace's charts of one source: a background thread that reconnects
-/// with backoff and puts `(symbol, kline)` updates in the inbox.
+/// A parser of text messages.
+fn text_parser(parse: impl Fn(&str) -> Option<(String, Kline)> + Send + Sync + 'static) -> Parser {
+    Arc::new(move |frame| match frame {
+        Frame::Text(text) => parse(text),
+        Frame::Binary(_) => None,
+    })
+}
+
+/// A kline feed for one workspace's charts of one source: background threads (one per connection:
+/// an exchange that caps the topics of a connection gets several) that reconnect with backoff and
+/// put `(symbol, kline)` updates in the inbox.
 pub struct LiveFeed {
     pub inbox: Arc<LiveInbox>,
     signature: (Vec<String>, Timeframe),
@@ -64,42 +74,50 @@ impl LiveFeed {
         base: Timeframe,
         ctx: egui::Context,
     ) -> Option<Self> {
-        let (session, parse): (Session, Parser) = match source {
+        let (sessions, parse): (Vec<Session>, Parser) = match source {
             DataSource::Binance => (
-                binance::session(&symbols, base),
-                Box::new(binance::parse_kline),
+                vec![binance::session(&symbols, base)],
+                text_parser(binance::parse_kline),
             ),
             DataSource::Okx => (
-                okx::session(&symbols, base)?,
-                Box::new(move |text| okx::parse_kline(text, base)),
+                vec![okx::session(&symbols, base)?],
+                text_parser(move |text| okx::parse_kline(text, base)),
             ),
             DataSource::Kraken => (
-                kraken::session(&symbols, base)?,
-                Box::new(move |text| kraken::parse_kline(text, base)),
+                vec![kraken::session(&symbols, base)?],
+                text_parser(move |text| kraken::parse_kline(text, base)),
             ),
             DataSource::Bybit => (
-                bybit::session(&symbols, base)?,
-                Box::new(bybit::parse_kline),
+                vec![bybit::session(&symbols, base)?],
+                text_parser(bybit::parse_kline),
             ),
             DataSource::Gate => (
-                gateio::session(&symbols, base)?,
-                Box::new(move |text| gateio::parse_kline(text, base)),
+                vec![gateio::session(&symbols, base)?],
+                text_parser(move |text| gateio::parse_kline(text, base)),
+            ),
+            DataSource::Mexc => (
+                mexc::sessions(&symbols, base)?,
+                Arc::new(move |frame| mexc::parse_kline(frame, base)),
             ),
             _ => return None,
         };
         let inbox = Arc::new(LiveInbox::default());
         let shutdown = Arc::new(AtomicBool::new(false));
-        let thread_shutdown = Arc::clone(&shutdown);
-        let thread_inbox = Arc::clone(&inbox);
-        std::thread::spawn(move || {
-            session.run(&thread_shutdown, |text| {
-                if let Some((symbol, kline)) = parse(text) {
-                    thread_inbox.push(symbol, kline);
-                    ctx.request_repaint();
-                }
-                true
+        for session in sessions {
+            let thread_shutdown = Arc::clone(&shutdown);
+            let thread_inbox = Arc::clone(&inbox);
+            let parse = Arc::clone(&parse);
+            let ctx = ctx.clone();
+            std::thread::spawn(move || {
+                session.run_frames(&thread_shutdown, |frame| {
+                    if let Some((symbol, kline)) = parse(frame) {
+                        thread_inbox.push(symbol, kline);
+                        ctx.request_repaint();
+                    }
+                    true
+                });
             });
-        });
+        }
         Some(Self {
             inbox,
             signature: (symbols, base),
@@ -294,6 +312,37 @@ mod tests {
             seen.into_iter().collect::<Vec<_>>(),
             ["BTC_USDT", "ETH_USDT"]
         );
+    }
+
+    /// Run with `cargo test --lib live::tests::live_mexc -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_mexc_streams_the_forming_candle_of_every_market_asked_for_even_beside_an_unknown_one() {
+        let feed = LiveFeed::connect(
+            DataSource::Mexc,
+            vec![
+                "NOPEUSDT".to_owned(),
+                "BTCUSDT".to_owned(),
+                "eth/usdt".to_owned(),
+            ],
+            Timeframe::MINUTE_1,
+            egui::Context::default(),
+        )
+        .expect("MEXC streams one-minute candles");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let mut seen = std::collections::BTreeSet::new();
+        while seen.len() < 2 {
+            for (symbol, kline) in feed.inbox.drain() {
+                assert!(kline.close > 0.0 && kline.close_time > kline.open_time);
+                seen.insert(symbol);
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "only {seen:?} in 60 s"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        assert_eq!(seen.into_iter().collect::<Vec<_>>(), ["BTCUSDT", "ETHUSDT"]);
     }
 
     #[test]

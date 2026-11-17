@@ -96,13 +96,14 @@ pub fn parse_type(text: &str) -> Option<PortfolioTransactionType> {
     ALL_TYPES.into_iter().find(|kind| type_name(*kind) == text)
 }
 
-const ALL_SOURCES: [DataSource; 12] = [
+const ALL_SOURCES: [DataSource; 13] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
     DataSource::Kraken,
     DataSource::Bybit,
     DataSource::Gate,
+    DataSource::Mexc,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,

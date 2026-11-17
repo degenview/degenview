@@ -233,6 +233,31 @@ mod tests {
     }
 
     #[test]
+    fn a_mexc_chart_takes_the_live_bar_whatever_way_its_symbol_is_spelled() {
+        let mut workspace = empty_workspace(1);
+        for (id, symbol) in [(1, "btc/usdt"), (2, "BTCUSDT"), (3, "BTC")] {
+            let mut chart = Chart::blank(id, symbol, DataSource::Mexc);
+            chart.candles = vec![candle(1, 1.0)];
+            workspace.charts.push(chart);
+        }
+        let mut other = Chart::blank(4, "ETHUSDT", DataSource::Mexc);
+        other.candles = vec![candle(1, 1.0)];
+        workspace.charts.push(other);
+
+        let base = workspace.timeframe;
+        workspace.apply_live_kline(
+            DataSource::Mexc,
+            base,
+            "BTCUSDT",
+            candle(2, 5.0),
+            Instant::now(),
+        );
+
+        let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
+        assert_eq!(lens, [2, 2, 2, 1]);
+    }
+
+    #[test]
     fn a_late_tick_of_an_older_bar_does_not_unsort_the_chart() {
         let mut workspace = empty_workspace(1);
         let mut chart = Chart::blank(1, "BTCUSDT", DataSource::Binance);

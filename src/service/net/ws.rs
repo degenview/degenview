@@ -204,11 +204,27 @@ pub struct Session {
     pub keepalive: Keepalive,
 }
 
+/// One data message of a feed (a heartbeat answer or a close is not one).
+#[derive(Clone, Copy, Debug)]
+pub enum Frame<'a> {
+    Text(&'a str),
+    /// A binary message: Protocol Buffers for MEXC.
+    Binary(&'a [u8]),
+}
+
 impl Session {
     /// Connects, subscribes and reads until `shutdown`, reconnecting with backoff whenever the
     /// socket fails. Every text message goes to `on_text`; it answers whether to keep reading
     /// (`false` when nobody is listening any more).
     pub fn run(&self, shutdown: &AtomicBool, mut on_text: impl FnMut(&str) -> bool) {
+        self.run_frames(shutdown, |frame| match frame {
+            Frame::Text(text) => on_text(text),
+            Frame::Binary(_) => true,
+        });
+    }
+
+    /// Like [`Self::run`], for a feed that also sends binary messages.
+    pub fn run_frames(&self, shutdown: &AtomicBool, mut on_frame: impl FnMut(Frame<'_>) -> bool) {
         let mut backoff = Backoff::new();
         while !shutdown.load(Ordering::Acquire) {
             if let Ok(mut socket) = connect(&self.url, &self.host, self.port) {
@@ -222,7 +238,13 @@ impl Session {
                         match health.read(&mut socket) {
                             Ok(Some(Message::Text(text))) => {
                                 backoff.reset();
-                                if !on_text(text.as_str()) {
+                                if !on_frame(Frame::Text(text.as_str())) {
+                                    return;
+                                }
+                            }
+                            Ok(Some(Message::Binary(bytes))) => {
+                                backoff.reset();
+                                if !on_frame(Frame::Binary(&bytes)) {
                                     return;
                                 }
                             }
@@ -317,6 +339,67 @@ mod tests {
         });
         assert_eq!(seen, ["tick"]);
         assert_eq!(server.join().unwrap(), "subscribe");
+    }
+
+    /// A server that sends a binary message, then lingers.
+    fn serve_binary(frame: &'static [u8]) -> (u16, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            let _ = socket.read().unwrap();
+            socket.send(Message::Binary(frame.to_vec().into())).unwrap();
+            std::thread::sleep(Duration::from_millis(300));
+        });
+        (port, handle)
+    }
+
+    #[test]
+    fn a_binary_message_is_a_frame_and_text_only_callers_skip_it() {
+        let (port, server) = serve_binary(&[1, 2, 3]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["subscribe".to_owned()],
+            max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Frame,
+        };
+        let mut seen = Vec::new();
+        session.run_frames(&AtomicBool::new(false), |frame| {
+            if let Frame::Binary(bytes) = frame {
+                seen.push(bytes.to_vec());
+            }
+            false
+        });
+        assert_eq!(seen, [vec![1, 2, 3]]);
+        server.join().unwrap();
+
+        // `run` hands over text only: the binary message ends nothing and reaches no callback.
+        let (port, server) = serve_binary(&[9]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["subscribe".to_owned()],
+            max_data_silence: Duration::from_millis(400),
+            keepalive: Keepalive::Frame,
+        };
+        let shutdown = AtomicBool::new(false);
+        let mut texts = 0;
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(250));
+                shutdown.store(true, Ordering::Release);
+            });
+            session.run(&shutdown, |_| {
+                texts += 1;
+                true
+            });
+        });
+        assert_eq!(texts, 0);
+        server.join().unwrap();
     }
 
     #[test]
