@@ -351,7 +351,7 @@ impl ChartCard {
 
     /// Drops a drawing being placed or moved: its anchors belong to the market that was shown.
     pub fn abort_drawing(&mut self) {
-        self.layer.abort();
+        self.layer.abandon();
     }
 
     /// Whether the price axis follows the bars on screen (no range placed by dragging).

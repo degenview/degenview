@@ -11,7 +11,7 @@ use crate::model::{Drawing, DrawingCommand};
 use crate::store::drawing_template::DrawingTemplateStore;
 use crate::ui::drawing::properties::{self, DrawingProperties};
 use eframe::egui;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::time::Instant;
 
 /// Rulers are transient measurements: never persisted, never in undo history.
@@ -74,7 +74,53 @@ pub(super) fn merge_remote_markets(
             merge_remote_drawings(base.get(market), local.get(market), remote.get(market)),
         );
     }
-    merged
+    separate_ids(merged, base, remote)
+}
+
+/// Ids are unique per chart, not per market: a layout's sync records are keyed by chart and id, so
+/// two drawings with one id would be one record and a drawing would be lost. Markets merge on
+/// their own, so a drawing made here that takes an id a drawing of another market holds is given
+/// a fresh one; the drawing that was saved or arrived keeps its id (as the sync engine does for a
+/// saved local drawing). A drawing this version cannot read is never renumbered: it came from a row.
+fn separate_ids(
+    merged: MarketDrawings,
+    base: &MarketDrawings,
+    remote: &MarketDrawings,
+) -> MarketDrawings {
+    let mut uses: HashMap<u64, usize> = HashMap::new();
+    for id in merged.all().map(Drawing::stored_id).filter(|id| *id != 0) {
+        *uses.entry(id).or_default() += 1;
+    }
+    if uses.values().all(|count| *count == 1) {
+        return merged;
+    }
+    let mut fresh = [&merged, base, remote]
+        .into_iter()
+        .filter_map(MarketDrawings::highest_id)
+        .max()
+        .unwrap_or(0);
+    let mut separated = MarketDrawings::default();
+    for (market, drawings) in merged.sets() {
+        let known = |id: u64| {
+            [base, remote]
+                .into_iter()
+                .any(|saved| saved.get(market).iter().any(|d| d.stored_id() == id))
+        };
+        let set = drawings
+            .iter()
+            .map(|drawing| {
+                let id = drawing.stored_id();
+                let shared = uses.get(&id).is_some_and(|count| *count > 1);
+                if !shared || known(id) || matches!(drawing, Drawing::Unreadable(_)) {
+                    return drawing.clone();
+                }
+                fresh += 1;
+                drawing.clone().with_id(fresh)
+            })
+            .collect();
+        separated.put(market, set);
+    }
+    separated
 }
 
 /// Drawings the strip's lock and hide controls act on: everything but the transient ruler and
@@ -408,6 +454,80 @@ mod tests {
             &[d(1, 100), unreadable(50)],
         );
         assert_eq!(merged, [d(1, 111), unreadable(50)]);
+    }
+
+    fn filed(sets: &[(&str, Vec<Drawing>)]) -> MarketDrawings {
+        let mut drawings = MarketDrawings::default();
+        for (market, set) in sets {
+            drawings.put(market, set.clone());
+        }
+        drawings
+    }
+
+    fn distinct_ids(drawings: &MarketDrawings) -> bool {
+        let mut ids: Vec<u64> = drawings.all().map(Drawing::stored_id).collect();
+        let all = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        ids.len() == all
+    }
+
+    #[test]
+    fn a_drawing_made_here_that_takes_an_id_of_another_market_is_renumbered() {
+        let merged = merge_remote_markets(
+            &MarketDrawings::default(),
+            &filed(&[("BTC", vec![rectangle(1, 100)])]),
+            &filed(&[("ETH", vec![rectangle(1, 900)])]),
+        );
+        assert_eq!(
+            merged.get("ETH"),
+            [rectangle(1, 900)],
+            "the one that arrived keeps its id"
+        );
+        let [mine] = merged.get("BTC") else {
+            panic!("one drawing")
+        };
+        assert_ne!(mine.id(), 1);
+        assert_eq!(
+            mine.clone().with_id(1),
+            rectangle(1, 100),
+            "nothing else changed"
+        );
+        assert!(distinct_ids(&merged));
+    }
+
+    #[test]
+    fn it_is_renumbered_even_when_the_saved_layout_held_the_id_for_another_market() {
+        let saved = filed(&[("ETH", vec![rectangle(1, 900)])]);
+        let merged = merge_remote_markets(
+            &saved,
+            &filed(&[
+                ("ETH", vec![rectangle(1, 900)]),
+                ("BTC", vec![rectangle(1, 100)]),
+            ]),
+            &saved,
+        );
+        assert_eq!(merged.get("ETH"), [rectangle(1, 900)]);
+        assert!(distinct_ids(&merged));
+        assert_eq!(merged.get("BTC").len(), 1);
+    }
+
+    #[test]
+    fn several_collisions_each_get_their_own_id_and_none_collide_when_there_is_none() {
+        let merged = merge_remote_markets(
+            &MarketDrawings::default(),
+            &filed(&[("BTC", vec![rectangle(1, 100), rectangle(2, 200)])]),
+            &filed(&[("ETH", vec![rectangle(1, 900), rectangle(2, 950)])]),
+        );
+        assert_eq!(merged.count(), 4);
+        assert!(distinct_ids(&merged));
+        assert_eq!(merged.get("ETH"), [rectangle(1, 900), rectangle(2, 950)]);
+
+        let local = filed(&[("BTC", vec![rectangle(1, 100)])]);
+        let remote = filed(&[("ETH", vec![rectangle(2, 900)])]);
+        let merged = merge_remote_markets(&MarketDrawings::default(), &local, &remote);
+        assert_eq!(merged.get("BTC"), [rectangle(1, 100)]);
+        assert_eq!(merged.get("ETH"), [rectangle(2, 900)]);
     }
 
     #[test]

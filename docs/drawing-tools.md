@@ -112,7 +112,10 @@ same text.
   (`model::drawings::market::MarketDrawings`): each drawing's body names its `market` and carries
   `"since": 2` (`DRAWING_FORMAT`), so the layout's drawing records, their keys and ids are as before.
   A drawing that names no market (saved by a build before this one) is dropped when read. Ids stay
-  unique per chart across markets, and `next_drawing_id` is one counter.
+  unique per chart across markets, and `next_drawing_id` is one counter; when another Mac's layout is
+  merged into an open tab, a drawing made here that takes an id of another market is renumbered.
+  Changing the symbol also drops what is in progress on the old market (`DrawingLayer::abandon`: a
+  gesture, an inline text draft, a table cell, the open menu).
 - The app has not shipped with the older forms, so nothing is kept for them: the trend line is a
   `Shape` with a `trend_line` geometry like every other line (it was a variant of its own), and a
   row saved by an earlier development build may be unreadable now.

@@ -134,7 +134,9 @@ Entity ids are nanosecond timestamps (watchlists, layouts, templates, alerts) or
 (scripts), so they do not collide across Macs. Chart ids are stable inside a layout; drawing ids
 are per chart (one counter for every market the chart showed: a drawing names its market inside its
 body, `{"Shape": {"market": "BINANCE:BTCUSDT", "since": 2, …}}`), so a drawing is keyed `layout.chart.drawing`. When two Macs give different
-drawings the same id, the local one is renumbered so both survive. Each Mac's Favorites list has
+drawings the same id, the local one is renumbered so both survive; so is an unsaved local drawing
+whose id a drawing of another market arrives with (`separate_ids`, in the tab's merge of an
+adopted layout: markets merge one by one, ids are per chart). Each Mac's Favorites list has
 a different local id, so it syncs as the singleton `watchlist.favorites` and keeps its own id.
 
 ## Pictures

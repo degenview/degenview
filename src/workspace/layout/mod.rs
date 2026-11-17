@@ -671,6 +671,38 @@ mod tests {
     }
 
     #[test]
+    fn a_drawing_made_here_and_one_that_arrived_for_another_market_never_share_an_id() {
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        assert!(workspace.save_named("Nico".to_owned(), Some(true)));
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(rectangle(1, 100))]);
+
+        // Meanwhile the other Mac drew its own number 1, on ETHUSDT.
+        let mut views = workspace.load_saved_views();
+        let eth = InstrumentId::new(DataSource::Binance, "ETHUSDT").key();
+        views[0].charts[0]
+            .drawings
+            .put(&eth, vec![rectangle(1, 900)]);
+        workspace
+            .store
+            .lock()
+            .unwrap()
+            .replace_saved_views(&views)
+            .unwrap();
+        workspace.adopt_remote_layout();
+
+        assert!(workspace.flush_autosave());
+        let saved = workspace.load_saved_views();
+        let drawings = &saved[0].charts[0].drawings;
+        let mut ids: Vec<u64> = drawings.all().map(Drawing::stored_id).collect();
+        ids.sort_unstable();
+        assert_eq!(drawings.count(), 2, "both survive the write");
+        ids.dedup();
+        assert_eq!(ids.len(), 2, "and each has its own id: {ids:?}");
+        assert!(workspace.chart_data(chart).unwrap().next_drawing_id > *ids.last().unwrap());
+    }
+
+    #[test]
     fn a_layout_nobody_changed_is_left_alone() {
         let mut workspace = empty_workspace(8);
         let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1, 2]);
