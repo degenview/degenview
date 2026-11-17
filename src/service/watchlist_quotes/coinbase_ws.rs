@@ -69,7 +69,7 @@ impl Drop for CoinbaseSocket {
 fn run(products: &[String], sender: &Sender<CoinbaseTick>, shutdown: &AtomicBool) {
     let mut backoff = crate::service::net::ws::Backoff::new();
     while !shutdown.load(Ordering::Acquire) {
-        if let Ok(mut socket) =
+        if let Ok((mut socket, route)) =
             crate::service::net::ws::connect(FEED_URL, "ws-feed.exchange.coinbase.com", 443)
         {
             let subscribe = subscription(products);
@@ -77,7 +77,8 @@ fn run(products: &[String], sender: &Sender<CoinbaseTick>, shutdown: &AtomicBool
                 .send(tungstenite::Message::Text(subscribe.into()))
                 .is_ok()
             {
-                let mut health = crate::service::net::ws::Health::new(Duration::from_secs(15));
+                let mut health =
+                    crate::service::net::ws::Health::new(Duration::from_secs(15), route);
                 while !shutdown.load(Ordering::Acquire) {
                     match health.read(&mut socket) {
                         Ok(Some(tungstenite::Message::Text(text))) => {

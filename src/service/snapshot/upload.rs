@@ -66,7 +66,7 @@ impl SnapshotTransport for UreqTransport {
     fn send(&self, request: &Request<'_>) -> Result<HostResponse, TransportError> {
         let mut call = self
             .agent
-            .get()
+            .get_for(&request.url)
             .post(&request.url)
             .header("Content-Type", &request.content_type)
             .header(

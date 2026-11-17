@@ -16,8 +16,8 @@ static AGENT: LazyLock<FollowingAgent> = LazyLock::new(|| {
     })
 });
 
-fn agent() -> ureq::Agent {
-    AGENT.get()
+fn agent_for(url: &str) -> ureq::Agent {
+    AGENT.get_for(url)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,7 +43,7 @@ pub fn get_text(url: &str, headers: &[(&str, &str)], retry: Retry) -> Result<Str
 }
 
 pub fn head_status(url: &str) -> Result<u16, Error> {
-    agent()
+    agent_for(url)
         .head(url)
         .call()
         .map(|response| response.status().as_u16())
@@ -57,9 +57,14 @@ pub fn get_text_with_limit(
     retry: Retry,
     max_body_bytes: u64,
 ) -> Result<String, Error> {
-    get_with(&agent(), url, headers, retry, max_body_bytes, |delay| {
-        std::thread::sleep(delay)
-    })
+    get_with(
+        &agent_for(url),
+        url,
+        headers,
+        retry,
+        max_body_bytes,
+        std::thread::sleep,
+    )
 }
 
 fn retry_delay(retry_after: Option<&str>, attempt: usize, random: u32) -> Duration {
@@ -93,7 +98,7 @@ fn get_with(
 /// A GET that returns the body as bytes, for images. `max_body_bytes` bounds what is read.
 pub fn get_bytes(url: &str, max_body_bytes: u64) -> Result<Vec<u8>, Error> {
     fetch(
-        &agent(),
+        &agent_for(url),
         url,
         &[],
         Retry::Transient,

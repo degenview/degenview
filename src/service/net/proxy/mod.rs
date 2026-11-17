@@ -14,10 +14,12 @@ mod tunnel;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::AppliedProxy;
 
 pub use config::{Protocol, ProxyConfig, ProxyMode};
-pub use current::{Active, Status, apply, config_builder, init, status};
-pub(in crate::service) use current::{route, snapshot};
+pub use current::{Active, Status, apply, config_builder_for, follow, init, status};
+pub(in crate::service) use current::{generation, host_of, route, snapshot};
 pub use password::ProxyPasswordStore;
 pub(in crate::service) use tunnel::dial;
 
@@ -50,8 +52,12 @@ impl Resolved {
         })
     }
 
-    /// Whether a connection to `host` skips the proxy.
+    /// Whether a connection to `host` skips the proxy: it is local (`bypass::is_local`), or the
+    /// no-proxy lists name it.
     pub fn skips(&self, host: &str) -> bool {
+        if bypass::is_local(host) {
+            return true;
+        }
         let host = if host.contains(':') && !host.starts_with('[') {
             format!("[{host}]")
         } else {

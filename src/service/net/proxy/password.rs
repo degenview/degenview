@@ -53,6 +53,17 @@ impl ProxyPasswordStore {
             .clone()
     }
 
+    /// The saved password, asked of the storage again: another process (the app, for the alert
+    /// helper) may have changed it since this one read it.
+    pub fn read_fresh(&self) -> Option<String> {
+        let found = self
+            .backend
+            .read(SCOPE, ACCOUNT)
+            .filter(|password| !password.is_empty());
+        lock(&self.cache).value = Some(found.clone());
+        found
+    }
+
     /// Saves the password; an empty one removes it. If the storage refuses, the password is
     /// still kept for this session and the error says it was not saved for good.
     pub fn save(&self, password: &str) -> Result<(), SecretStoreError> {
@@ -96,6 +107,16 @@ mod tests {
 
     fn store() -> ProxyPasswordStore {
         ProxyPasswordStore::with_backend(Box::new(MemoryBackend::default()))
+    }
+
+    #[test]
+    fn a_fresh_read_sees_what_another_process_wrote() {
+        let store = store();
+        assert_eq!(store.read(), None, "now cached as absent");
+        store.backend.write(SCOPE, ACCOUNT, "from the app").unwrap();
+        assert_eq!(store.read(), None, "the cache still says absent");
+        assert_eq!(store.read_fresh().as_deref(), Some("from the app"));
+        assert_eq!(store.read().as_deref(), Some("from the app"));
     }
 
     #[test]

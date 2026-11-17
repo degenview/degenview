@@ -98,8 +98,10 @@ fn run(
         if shutdown.load(Ordering::Acquire) {
             return;
         }
-        if let Ok(mut socket) = crate::service::net::ws::connect(&url, "stream.binance.com", 443) {
-            let mut health = crate::service::net::ws::Health::new(Duration::from_secs(60));
+        if let Ok((mut socket, route)) =
+            crate::service::net::ws::connect(&url, "stream.binance.com", 443)
+        {
+            let mut health = crate::service::net::ws::Health::new(Duration::from_secs(60), route);
             while !shutdown.load(Ordering::Acquire) {
                 match health.read(&mut socket) {
                     Ok(Some(tungstenite::Message::Text(text))) => {

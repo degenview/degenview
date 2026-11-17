@@ -67,8 +67,10 @@ pub struct Preview {
     pub avatar: Option<Ingested>,
 }
 
-fn agent() -> ureq::Agent {
-    let config = crate::service::net::config_builder()
+/// An agent for the requests of one fetch, which all go to the public hosts of the link's
+/// service; it follows the proxy setting as of now.
+fn agent(url: &str) -> ureq::Agent {
+    let config = crate::service::net::config_builder_for(url)
         .timeout_global(Some(TIMEOUT))
         .max_redirects(0)
         .max_redirects_will_error(false)
@@ -81,7 +83,7 @@ fn agent() -> ureq::Agent {
 
 /// Fetches the preview of `link`. Blocks; run it on a worker.
 pub fn fetch(link: &Link, now_ms: i64) -> Result<Preview, FetchError> {
-    let agent = agent();
+    let agent = agent(&request_url(link));
     let meta = fetch_text(&agent, link, now_ms)?;
     let avatar = avatar_url(&agent, link).and_then(|url| download_avatar(&agent, &url));
     Ok(Preview { meta, avatar })

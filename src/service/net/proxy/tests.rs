@@ -379,13 +379,169 @@ fn no_agent_is_built_without_the_proxy_setting() {
     assert!(found.is_empty(), "built without the proxy: {found:?}");
 }
 
+/// What a host *is* decides, not how it is spelled: a public name that starts like a private
+/// address (`10.example.com`) goes through the proxy.
+#[test]
+fn local_means_a_local_address_not_a_name_that_starts_like_one() {
+    use super::bypass::is_local;
+    for local in [
+        "localhost",
+        "LOCALHOST",
+        "app.localhost",
+        "printer.local",
+        "nas.local.",
+        "127.0.0.1",
+        "127.1.2.3",
+        "10.0.0.1",
+        "10.255.255.255",
+        "172.16.0.1",
+        "172.31.255.1",
+        "192.168.1.20",
+        "169.254.10.10",
+        "0.0.0.0",
+        "::1",
+        "[::1]",
+        "fe80::1",
+        "fe80::1%en0",
+        "[fe80::abcd]",
+        "febf::1",
+        "fc00::1",
+        "fd12:3456::1",
+        "::ffff:10.0.0.1",
+        "[::ffff:192.168.0.9]",
+    ] {
+        assert!(is_local(local), "{local} is local");
+    }
+    for public in [
+        "10.example.com",
+        "127.example.com",
+        "192.168.example.com",
+        "172.16.evil.test",
+        "169.254.example.org",
+        "localhost.example.com",
+        "mylocalhost",
+        "notlocal",
+        "api.binance.com",
+        "11.0.0.1",
+        "172.15.0.1",
+        "172.32.0.1",
+        "192.169.0.1",
+        "169.253.0.1",
+        "8.8.8.8",
+        "2606:4700::1111",
+        "fec0::1",
+        "::ffff:8.8.8.8",
+        "fdexample.com",
+        "fe80.example.com",
+    ] {
+        assert!(!is_local(public), "{public} is public");
+    }
+}
+
+#[test]
+fn a_proxy_is_skipped_for_local_hosts_only() {
+    let found = resolve(
+        &manual("proxy.example", Some(8080)),
+        None,
+        &no_env,
+        &nothing,
+    )
+    .unwrap();
+    for local in [
+        "10.1.2.3",
+        "127.0.0.1",
+        "[::1]",
+        "::1",
+        "printer.local",
+        "localhost",
+    ] {
+        assert!(found.skips(local), "{local}");
+    }
+    for public in [
+        "10.example.com",
+        "127.example.com",
+        "192.168.example.com",
+        "api.binance.com",
+    ] {
+        assert!(!found.skips(public), "{public}");
+    }
+    // The user's own entries still work, by `ureq`'s expressions.
+    let own = ProxyConfig {
+        no_proxy: "corp.test, 100.64.*".to_owned(),
+        ..manual("proxy.example", Some(8080))
+    };
+    let found = resolve(&own, None, &no_env, &nothing).unwrap();
+    assert!(found.skips("corp.test") && found.skips("a.corp.test") && found.skips("100.64.1.1"));
+}
+
+/// A request to a public name that starts like a private address must reach the proxy, and one
+/// to a real private address must not.
+#[test]
+fn requests_are_routed_by_what_the_host_is() {
+    use crate::service::net::http::{self, Retry};
+    let (port, proxy_thread) = fake_http_proxy();
+    let _applied = AppliedProxy::new(manual("127.0.0.1", Some(port)));
+    let body = http::get_text("http://10.example.test/ping", &[], Retry::Never).unwrap();
+    assert_eq!(body, "proxy");
+    let heads = proxy_thread.join().unwrap();
+    assert!(
+        heads[0].starts_with("CONNECT 10.example.test:80 HTTP/1.1"),
+        "{}",
+        heads[0]
+    );
+
+    // A private address is dialled directly: nothing listens there, and the (consumed) fake
+    // proxy is not asked, so this fails to connect rather than tunnelling.
+    let direct = http::get_text("http://127.0.0.1:9/ping", &[], Retry::Never);
+    assert!(matches!(direct, Err(http::Error::Network(_))), "{direct:?}");
+}
+
+#[test]
+fn a_helper_process_follows_the_saved_setting() {
+    use crate::service::keychain::api_keys::MemoryBackend;
+    use std::time::{Duration, Instant};
+    let _applied = AppliedProxy::new(ProxyConfig {
+        mode: ProxyMode::Off,
+        ..ProxyConfig::default()
+    });
+    let store = crate::store::Store::open_in_memory().unwrap();
+    let passwords = ProxyPasswordStore::with_backend(Box::new(MemoryBackend::default()));
+    let start = Instant::now() + Duration::from_secs(10);
+    let at = |seconds| start + Duration::from_secs(seconds);
+    let follow = |seconds| current::follow_with(&store, &passwords, at(seconds));
+
+    // Nothing saved reads as the default, System; the helper was on Off.
+    assert!(follow(0));
+    assert_eq!(status().mode, ProxyMode::System);
+    assert!(!follow(1), "looked at a moment ago");
+
+    let saved = ProxyConfig {
+        username: "me".to_owned(),
+        ..manual("127.0.0.1", Some(7890))
+    };
+    saved.save(&store).unwrap();
+    assert!(follow(3), "the app saved a manual proxy");
+    assert_eq!(status().mode, ProxyMode::Manual);
+    let generation = snapshot().generation;
+    assert!(!follow(6), "unchanged: nothing applied");
+    assert_eq!(snapshot().generation, generation);
+
+    passwords.save("pw").unwrap();
+    assert!(follow(40), "the password changed behind the helper's back");
+    assert_eq!(
+        snapshot().proxy.unwrap().spec.password.as_deref(),
+        Some("pw")
+    );
+    assert!(!follow(80), "the same password again changes nothing");
+}
+
 /// Applies a setting to the process-wide proxy for one test, and puts "no proxy" back after.
-struct AppliedProxy {
+pub(crate) struct AppliedProxy {
     _serial: std::sync::MutexGuard<'static, ()>,
 }
 
 impl AppliedProxy {
-    fn new(config: ProxyConfig) -> Self {
+    pub(crate) fn new(config: ProxyConfig) -> Self {
         static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let guard = crate::lock::lock(&ONE_AT_A_TIME);
         apply(config, None);

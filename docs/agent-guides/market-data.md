@@ -211,4 +211,4 @@ watchlists.
 
 ## Network
 
-Every HTTP agent is built from `service::net::config_builder()` (or is a `net::agent::FollowingAgent`), and every WebSocket opens through `net::ws::connect`, so the user's proxy applies. Never start from `ureq::Agent::config_builder()` or `Agent::new_with_defaults()`, and never open a `TcpStream` to a provider yourself. See [Network proxy](../network-proxy.md).
+Every HTTP agent is built from `service::net::config_builder_for(url)` (or is a `net::agent::FollowingAgent`, used through `get_for(url)`), and every WebSocket opens through `net::ws::connect` and passes its `Route` to `ws::Health::new`, so the user's proxy applies and a feed reconnects when it changes. Never start from `ureq::Agent::config_builder()` or `Agent::new_with_defaults()`, and never open a `TcpStream` to a provider yourself. See [Network proxy](../network-proxy.md).

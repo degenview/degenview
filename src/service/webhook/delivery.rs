@@ -137,7 +137,7 @@ impl Default for UreqTransport {
 
 impl WebhookTransport for UreqTransport {
     fn send(&self, request: &TransportRequest) -> Result<u16, TransportError> {
-        let agent = self.agent.get();
+        let agent = self.agent.get_for(&request.url);
         let mut builder = match request.method {
             WebhookHttpMethod::Post => agent.post(&request.url),
             WebhookHttpMethod::Put => agent.put(&request.url),
