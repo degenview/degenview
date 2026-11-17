@@ -165,6 +165,7 @@ pub fn source_slug(source: DataSource) -> &'static str {
         DataSource::Binance => "binance",
         DataSource::Coinbase => "coinbase",
         DataSource::Okx => "okx",
+        DataSource::Kraken => "kraken",
         DataSource::CoinGecko => "coingecko",
         DataSource::DexScreener => "dexscreener",
         DataSource::Alpaca => "alpaca",

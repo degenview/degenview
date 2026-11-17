@@ -11,10 +11,11 @@ const TABLE: [&str; 24] = [
     "3D", "5D", "1W", "2W", "1M", "2M", "3M", "6M", "1Y",
 ];
 
-const CANDLE_SOURCES: [DataSource; 5] = [
+const CANDLE_SOURCES: [DataSource; 6] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
+    DataSource::Kraken,
     DataSource::Alpaca,
     DataSource::DexScreener,
 ];
@@ -53,6 +54,36 @@ fn okx_folds_what_it_cuts_off_the_utc_grid_and_the_year() {
     assert_eq!(base("22m").as_deref(), Some("1m"));
     for text in TABLE {
         assert!(DataSource::Okx.serves(tf(text)), "{text}");
+    }
+}
+
+#[test]
+fn kraken_folds_its_thursday_weeks_and_everything_above_a_day_from_days() {
+    let base = |text: &str| {
+        DataSource::Kraken
+            .plan(tf(text))
+            .map(|plan| plan.base().label())
+    };
+    for text in ["1W", "2W", "1M", "3M", "1Y", "3D"] {
+        assert_eq!(base(text).as_deref(), Some("1D"), "{text}");
+    }
+    assert_eq!(base("3m").as_deref(), Some("1m"));
+    assert_eq!(base("2h").as_deref(), Some("1h"));
+    assert_eq!(base("6h").as_deref(), Some("1h"));
+    assert_eq!(base("8h").as_deref(), Some("4h"));
+    assert_eq!(base("12h").as_deref(), Some("4h"));
+    for text in TABLE {
+        assert!(DataSource::Kraken.serves(tf(text)), "{text}");
+    }
+}
+
+#[test]
+fn kraken_cannot_page_back_past_its_newest_candles() {
+    for text in TABLE {
+        assert!(
+            !DataSource::Kraken.supports_older_history(tf(text)),
+            "{text}"
+        );
     }
 }
 

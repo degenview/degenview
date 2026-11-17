@@ -2,6 +2,7 @@
 //! it. The ticker carries the last trade plus the 24h open and volume, which is all a row needs.
 
 mod coinbase;
+mod kraken;
 mod okx;
 
 use crate::model::DataSource;
@@ -38,6 +39,7 @@ impl QuoteSocket {
         let (session, parse): (Session, Parser) = match source {
             DataSource::Coinbase => (coinbase::session(&products), coinbase::parse_tick),
             DataSource::Okx => (okx::session(&products), okx::parse_tick),
+            DataSource::Kraken => (kraken::session(&products), kraken::parse_tick),
             _ => return None,
         };
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -82,6 +84,25 @@ mod tests {
         assert_eq!(tick.source, DataSource::Okx);
         assert!(["BTC-USDT", "ETH-USDT"].contains(&tick.product_id.as_str()));
         assert!(tick.quote.price > 0.0);
+    }
+
+    /// Run with `cargo test --lib quote_stream::tests::live_kraken -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_kraken_streams_a_ticker() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let _socket = QuoteSocket::connect(
+            DataSource::Kraken,
+            vec!["BTC/USD".to_owned(), "ETH/USD".to_owned()],
+            sender,
+        )
+        .expect("Kraken has a ticker socket");
+        let tick = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("a tick in 30 s");
+        assert_eq!(tick.source, DataSource::Kraken);
+        assert!(["BTC/USD", "ETH/USD"].contains(&tick.product_id.as_str()));
+        assert!(tick.quote.price > 0.0 && tick.quote.previous_day_price.is_some());
     }
 
     #[test]

@@ -36,9 +36,16 @@ impl RateLimiter {
 
 static COINGECKO: OnceLock<RateLimiter> = OnceLock::new();
 static GECKOTERMINAL: OnceLock<RateLimiter> = OnceLock::new();
+static KRAKEN: OnceLock<RateLimiter> = OnceLock::new();
 
 pub fn coingecko() -> &'static RateLimiter {
     COINGECKO.get_or_init(|| RateLimiter::new(Duration::from_secs(4)))
+}
+
+/// Kraken's public REST endpoints answer `EGeneral:Too many requests` to a client that asks more
+/// than about once a second for long.
+pub fn kraken() -> &'static RateLimiter {
+    KRAKEN.get_or_init(|| RateLimiter::new(Duration::from_secs(1)))
 }
 
 pub fn geckoterminal() -> &'static RateLimiter {

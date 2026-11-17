@@ -5,7 +5,7 @@ use super::StreamTick;
 use crate::model::DataSource;
 use crate::model::watchlist::quote::SourceQuote;
 use crate::service::net::ws::{Keepalive, Session};
-use crate::service::watchlist_quotes::provider::{coinbase_volume, parse_iso_ms};
+use crate::service::watchlist_quotes::provider::coinbase_volume;
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -47,7 +47,7 @@ pub(super) fn parse_tick(text: &str) -> Option<StreamTick> {
         timestamp_ms: value
             .get("time")
             .and_then(Value::as_str)
-            .and_then(parse_iso_ms),
+            .and_then(crate::format::parse_iso8601),
         ..SourceQuote::default()
     };
     if let Some(base) = number("volume_24h") {

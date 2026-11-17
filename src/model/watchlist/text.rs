@@ -31,10 +31,11 @@ const US_EXCHANGES: [&str; 7] = [
     "NYSEAMERICAN",
 ];
 
-const SOURCES: [DataSource; 9] = [
+const SOURCES: [DataSource; 10] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
+    DataSource::Kraken,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -304,6 +305,18 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
             }
             Ok(item(source, &symbol, &symbol.replace('-', "/"), &symbol))
         }
+        DataSource::Kraken => {
+            let valid = rest.split_once('/').is_some_and(|(base, quote)| {
+                [base, quote]
+                    .iter()
+                    .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric()))
+            });
+            if !valid {
+                return Err("Kraken markets are written BASE/QUOTE, like BTC/USD".to_owned());
+            }
+            let symbol = InstrumentId::new(source, rest.as_str()).api_symbol();
+            Ok(item(source, &symbol, &symbol, &symbol))
+        }
         DataSource::Alpaca => stock(&rest),
         DataSource::CoinGecko => {
             let id = rest.to_lowercase();
@@ -572,6 +585,28 @@ mod tests {
         assert_eq!(
             reasons,
             ["OKX spot markets are written BASE-QUOTE, like BTC-USDT"; 2]
+        );
+    }
+
+    #[test]
+    fn kraken_rows_are_spot_pairs_written_base_slash_quote() {
+        let parsed = parse("KRAKEN:xbt/usd\nKRAKEN:ETH/EUR\nKRAKEN:BTCUSD\nKRAKEN:BTC-USD");
+        let keys: Vec<String> = parsed
+            .rows
+            .iter()
+            .filter_map(|row| match row {
+                Row::Instrument(item) => Some(item.instrument.key()),
+                Row::Section(_) => None,
+            })
+            .collect();
+        assert_eq!(keys, ["KRAKEN:BTC/USD", "KRAKEN:ETH/EUR"]);
+        assert_eq!(
+            parsed
+                .skipped
+                .iter()
+                .map(|skipped| skipped.reason.as_str())
+                .collect::<Vec<_>>(),
+            ["Kraken markets are written BASE/QUOTE, like BTC/USD"; 2]
         );
     }
 

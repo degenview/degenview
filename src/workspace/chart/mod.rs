@@ -187,6 +187,7 @@ impl Chart {
             DataSource::Binance
             | DataSource::Coinbase
             | DataSource::Okx
+            | DataSource::Kraken
             | DataSource::CoinGecko
             | DataSource::Alpaca => self.source.display_symbol(&self.symbol),
             DataSource::DexScreener => self.source.base_asset(&self.display_title()),

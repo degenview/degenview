@@ -2,7 +2,7 @@
 //! charts.
 
 use crate::model::market::live::LiveMark;
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::market::live::LiveFeed;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
@@ -20,7 +20,7 @@ impl ChartWorkspace {
             .charts
             .iter()
             .filter(|chart| chart.is_market() && chart.source == source)
-            .map(|chart| chart.symbol.to_uppercase())
+            .map(|chart| InstrumentId::new(source, chart.symbol.as_str()).api_symbol())
             .collect();
         // The markets compared on a chart stream too, once however many overlays name them.
         for symbol in self.overlay_hub.streamed_symbols(source) {
@@ -71,7 +71,8 @@ impl ChartWorkspace {
     }
 
     /// Every chart of `symbol` on `source` takes the kline of `base` candles, whatever else it
-    /// shows.
+    /// shows. A chart's symbol may be spelled any way the source takes (`BTC`, `XBT/USD`), the
+    /// feed names the market as the source does.
     fn apply_live_kline(
         &mut self,
         source: DataSource,
@@ -81,11 +82,12 @@ impl ChartWorkspace {
         now: Instant,
     ) {
         let timeframe = self.timeframe;
-        for chart in self
-            .charts
-            .iter_mut()
-            .filter(|chart| chart.source == source && chart.symbol.eq_ignore_ascii_case(symbol))
-        {
+        for chart in self.charts.iter_mut().filter(|chart| {
+            chart.source == source
+                && InstrumentId::new(source, chart.symbol.as_str())
+                    .api_symbol()
+                    .eq_ignore_ascii_case(symbol)
+        }) {
             if let Some(open_time) =
                 chart
                     .live_fold
@@ -128,6 +130,31 @@ mod tests {
         let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
         assert_eq!(lens, [2, 2, 1]);
         assert!(workspace.charts[0].live.is_some() && workspace.charts[1].live.is_some());
+    }
+
+    #[test]
+    fn a_chart_takes_the_live_bar_whatever_way_its_symbol_is_spelled() {
+        let mut workspace = empty_workspace(1);
+        for (id, symbol) in [(1, "xbt/usd"), (2, "BTC-USD"), (3, "BTC")] {
+            let mut chart = Chart::blank(id, symbol, DataSource::Kraken);
+            chart.candles = vec![candle(1, 1.0)];
+            workspace.charts.push(chart);
+        }
+        let mut other = Chart::blank(4, "ETH/USD", DataSource::Kraken);
+        other.candles = vec![candle(1, 1.0)];
+        workspace.charts.push(other);
+
+        let base = workspace.timeframe;
+        workspace.apply_live_kline(
+            DataSource::Kraken,
+            base,
+            "BTC/USD",
+            candle(2, 5.0),
+            Instant::now(),
+        );
+
+        let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
+        assert_eq!(lens, [2, 2, 2, 1]);
     }
 
     #[test]

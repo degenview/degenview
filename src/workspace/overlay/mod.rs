@@ -433,7 +433,7 @@ impl OverlayHub {
     ) {
         for series in self.series.values_mut() {
             if series.instrument.source != source
-                || !series.instrument.symbol.eq_ignore_ascii_case(symbol)
+                || !series.instrument.api_symbol().eq_ignore_ascii_case(symbol)
             {
                 continue;
             }
@@ -458,7 +458,7 @@ impl OverlayHub {
             .series
             .values()
             .filter(|series| series.instrument.source == source && series.shown())
-            .map(|series| series.instrument.symbol.to_uppercase())
+            .map(|series| series.instrument.api_symbol())
             .collect();
         symbols.sort();
         symbols.dedup();

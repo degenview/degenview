@@ -20,6 +20,7 @@ impl ChangeBasis {
             DataSource::Binance
             | DataSource::Coinbase
             | DataSource::Okx
+            | DataSource::Kraken
             | DataSource::CoinGecko
             | DataSource::DexScreener => Self::Rolling24h,
             DataSource::Alpaca => Self::PreviousClose,
@@ -165,7 +166,11 @@ impl WatchlistQuote {
 /// Seconds between refreshes of a source while a sidebar is visible.
 pub fn refresh_interval_secs(source: DataSource) -> u64 {
     match source {
-        DataSource::Binance | DataSource::Coinbase | DataSource::Okx | DataSource::Alpaca => 5,
+        DataSource::Binance
+        | DataSource::Coinbase
+        | DataSource::Okx
+        | DataSource::Kraken
+        | DataSource::Alpaca => 5,
         DataSource::DexScreener => 10,
         DataSource::CoinGecko | DataSource::Polymarket | DataSource::Kalshi => 30,
         DataSource::CoinMarketCap => 0,
@@ -176,7 +181,7 @@ pub fn refresh_interval_secs(source: DataSource) -> u64 {
 /// intervals, so one missed round does not dim a row but a real outage does.
 pub fn maximum_age_secs(source: DataSource) -> i64 {
     match source {
-        DataSource::Binance | DataSource::Okx | DataSource::Alpaca => 45,
+        DataSource::Binance | DataSource::Okx | DataSource::Kraken | DataSource::Alpaca => 45,
         DataSource::DexScreener => 60,
         // Coinbase is refreshed from REST every 30 seconds when the socket has been quiet.
         DataSource::Coinbase => 90,

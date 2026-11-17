@@ -64,6 +64,7 @@ pub fn chunk_size(source: DataSource) -> usize {
         DataSource::Coinbase => 20,
         // One call answers every spot market, so a round is one request however many rows.
         DataSource::Okx => 2_000,
+        DataSource::Kraken => 100,
         DataSource::DexScreener => 30,
         _ => 100,
     }
@@ -75,6 +76,7 @@ pub struct LiveProvider;
 
 const COINBASE_URL: &str = "https://api.exchange.coinbase.com";
 const OKX_URL: &str = "https://www.okx.com/api/v5";
+const KRAKEN_URL: &str = crate::service::market::kraken::BASE_URL;
 const DEX_URL: &str = "https://api.dexscreener.com/latest/dex";
 
 impl QuoteProvider for LiveProvider {
@@ -90,6 +92,7 @@ impl QuoteProvider for LiveProvider {
             DataSource::Binance => binance(requests).map(Outcome::from_quotes),
             DataSource::Coinbase => Ok(coinbase(requests)),
             DataSource::Okx => okx(requests).map(Outcome::from_quotes),
+            DataSource::Kraken => kraken(requests).map(Outcome::from_quotes),
             DataSource::CoinGecko => coingecko(requests).map(Outcome::from_quotes),
             DataSource::DexScreener => Ok(dexscreener(requests)),
             DataSource::Alpaca => alpaca(requests).map(Outcome::from_quotes),
@@ -161,6 +164,21 @@ fn binance(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Qu
 /// How many answers in a row may fail before an adapter stops asking: the endpoint is
 /// down, and the rest of the batch would only add requests.
 const CONSECUTIVE_FAILURES: usize = 3;
+
+fn kraken(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+    // One unknown pair refuses the whole call: the engine bisects for it.
+    let pairs: Vec<&str> = requests
+        .iter()
+        .map(|request| request.symbol.as_str())
+        .collect();
+    crate::service::net::rate_limit::kraken().wait_for_slot();
+    let body = get(
+        DataSource::Kraken,
+        &format!("{KRAKEN_URL}/Ticker?pair={}", pairs.join(",")),
+        &[],
+    )?;
+    parse_kraken(&body, requests)
+}
 
 fn okx(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
     let body = get(
@@ -411,6 +429,72 @@ pub fn parse_binance(
     Ok(quotes)
 }
 
+/// 24h volume as a dollar turnover where the pair is dollar-quoted, otherwise in base units.
+/// Kraken reports the base volume and the 24h vwap, so turnover is their product.
+pub fn kraken_volume(pair: &str, base_volume: f64, vwap: f64) -> (f64, VolumeKind) {
+    let pair = pair.to_uppercase();
+    if vwap > 0.0 && DOLLAR_QUOTES.iter().any(|quote| pair.ends_with(quote)) {
+        (base_volume * vwap, VolumeKind::QuoteCurrency)
+    } else {
+        (base_volume, VolumeKind::Base)
+    }
+}
+
+/// `/Ticker?pair=BTC/USD,…`: the last trade `c[0]`, today's UTC open `o` (Kraken's REST has no
+/// rolling 24h open: the ticker socket's change replaces it once it answers), the 24h volume
+/// `v[1]` and vwap `p[1]`. A refusal of the call is the provider's own code.
+pub fn parse_kraken(
+    body: &str,
+    requests: &[QuoteRequest],
+) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+    let value = json(body)?;
+    if let Some(code) = value
+        .get("error")
+        .and_then(Value::as_array)
+        .and_then(|errors| errors.first())
+        .and_then(Value::as_str)
+    {
+        let text = code
+            .split_once(':')
+            .map_or(code, |(_, text)| text)
+            .to_owned();
+        return Err(if crate::service::market::kraken::is_rate_limit(code) {
+            QuoteFailure::RateLimited
+        } else if code.starts_with("EQuery:") {
+            QuoteFailure::Rejected(text)
+        } else {
+            QuoteFailure::Failed(format!("Kraken error: {text}"))
+        });
+    }
+    let tickers = value
+        .get("result")
+        .and_then(Value::as_object)
+        .ok_or_else(|| QuoteFailure::Failed("Unexpected Kraken response".to_owned()))?;
+    let mut quotes = HashMap::new();
+    for request in requests {
+        let Some(ticker) = tickers.get(&request.symbol) else {
+            continue;
+        };
+        let pair = |key: &str, index: usize| number(ticker.get(key)?.get(index));
+        let Some(price) = pair("c", 0).filter(|price| *price > 0.0) else {
+            continue;
+        };
+        let mut quote = SourceQuote {
+            price,
+            previous_day_price: number(ticker.get("o")).filter(|open| *open > 0.0),
+            timestamp_ms: Some(crate::model::watchlist::now_ms()),
+            ..SourceQuote::default()
+        };
+        if let (Some(base), Some(vwap)) = (pair("v", 1), pair("p", 1)) {
+            let (volume, kind) = kraken_volume(&request.symbol, base, vwap);
+            quote.volume_24h = Some(volume);
+            quote.volume_kind = Some(kind);
+        }
+        quotes.insert(request.symbol.clone(), quote);
+    }
+    Ok(quotes)
+}
+
 /// One OKX spot ticker (`/market/tickers` and the `tickers` channel carry the same fields): the
 /// market's id and its price, with the change measured against the rolling 24h open.
 pub fn okx_ticker(ticker: &Value) -> Option<(String, SourceQuote)> {
@@ -526,7 +610,7 @@ pub fn parse_coingecko_markets(
         quote.timestamp_ms = coin
             .get("last_updated")
             .and_then(Value::as_str)
-            .and_then(parse_iso_ms);
+            .and_then(crate::format::parse_iso8601);
         quotes.insert(request.symbol.clone(), quote);
     }
     Ok(quotes)
@@ -614,40 +698,11 @@ pub fn parse_alpaca_snapshots(
                 timestamp_ms: snapshot
                     .pointer("/latestTrade/t")
                     .and_then(Value::as_str)
-                    .and_then(parse_iso_ms),
+                    .and_then(crate::format::parse_iso8601),
             },
         );
     }
     Ok(quotes)
-}
-
-/// ISO-8601 UTC instant (`2024-01-15T15:00:00Z`, optional fractional seconds) in epoch ms.
-pub fn parse_iso_ms(text: &str) -> Option<i64> {
-    let text = text.trim().strip_suffix('Z').unwrap_or(text.trim());
-    let (date, time) = text.split_once('T')?;
-    let mut date_parts = date.split('-');
-    let (year, month, day) = (
-        date_parts.next()?.parse::<i64>().ok()?,
-        date_parts.next()?.parse::<i64>().ok()?,
-        date_parts.next()?.parse::<i64>().ok()?,
-    );
-    let time = time.split(['+', '-']).next()?;
-    let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
-    let mut clock_parts = clock.split(':');
-    let hour = clock_parts.next()?.parse::<i64>().ok()?;
-    let minute = clock_parts.next()?.parse::<i64>().ok()?;
-    let second = clock_parts
-        .next()
-        .map_or(Some(0), |s| s.parse::<i64>().ok())?;
-    let millis = fraction
-        .chars()
-        .chain("000".chars())
-        .take(3)
-        .collect::<String>()
-        .parse::<i64>()
-        .ok()?;
-    let days = crate::format::days_from_civil(year, month, day);
-    Some(((days * 86_400 + hour * 3_600 + minute * 60 + second) * 1_000) + millis)
 }
 
 #[cfg(test)]
@@ -770,6 +825,63 @@ mod tests {
         )
         .unwrap();
         assert_eq!(sol.previous_day_price, None);
+    }
+
+    #[test]
+    fn kraken_answers_by_the_pairs_asked_for_with_the_open_and_the_24h_volume() {
+        let body = r#"{"error":[],"result":{
+            "BTC/USD":{"c":["64297.1","0.0003"],"o":"64813.7","v":["1383.5","4526.9"],"p":["64571.4","64719.4"]},
+            "ETH/BTC":{"c":["0.05","1"],"o":"0.049","v":["10","2000"],"p":["0.05","0.05"]},
+            "DEAD/USD":{"c":["0","0"],"o":"1","v":["1","1"],"p":["1","1"]}
+        }}"#;
+        let quotes = parse_kraken(
+            body,
+            &[
+                request("BTC/USD"),
+                request("ETH/BTC"),
+                request("DEAD/USD"),
+                request("MISSING/USD"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(quotes.len(), 2, "priceless and unlisted pairs are left out");
+        let btc = &quotes["BTC/USD"];
+        assert_eq!(btc.price, 64_297.1);
+        assert_eq!(btc.previous_day_price, Some(64_813.7));
+        assert_eq!(
+            (btc.volume_24h, btc.volume_kind),
+            (Some(4526.9 * 64_719.4), Some(VolumeKind::QuoteCurrency))
+        );
+        // A pair quoted in a coin reports the units traded.
+        let eth = &quotes["ETH/BTC"];
+        assert_eq!(
+            (eth.volume_24h, eth.volume_kind),
+            (Some(2_000.0), Some(VolumeKind::Base))
+        );
+    }
+
+    #[test]
+    fn kraken_refusals_are_told_apart_by_their_code() {
+        let refused =
+            |code: &str| parse_kraken(&format!(r#"{{"error":["{code}"]}}"#), &[]).unwrap_err();
+        assert_eq!(
+            refused("EQuery:Unknown asset pair"),
+            QuoteFailure::Rejected("Unknown asset pair".to_owned())
+        );
+        assert_eq!(
+            refused("EAPI:Rate limit exceeded"),
+            QuoteFailure::RateLimited
+        );
+        assert_eq!(
+            refused("EGeneral:Too many requests"),
+            QuoteFailure::RateLimited
+        );
+        assert_eq!(
+            refused("EService:Unavailable"),
+            QuoteFailure::Failed("Kraken error: Unavailable".to_owned())
+        );
+        assert!(parse_kraken("not json", &[]).is_err());
+        assert!(parse_kraken(r#"{"error":[]}"#, &[]).is_err());
     }
 
     #[test]
@@ -944,24 +1056,6 @@ mod tests {
         assert_eq!(aapl.timestamp_ms, Some(1_705_330_800_000));
         assert_eq!(quotes["TSLA"].price, 200.0);
         assert_eq!(quotes["TSLA"].previous_day_price, None);
-    }
-
-    #[test]
-    fn iso_timestamps() {
-        assert_eq!(parse_iso_ms("1970-01-01T00:00:00Z"), Some(0));
-        assert_eq!(
-            parse_iso_ms("2024-01-15T15:00:00Z"),
-            Some(1_705_330_800_000)
-        );
-        assert_eq!(
-            parse_iso_ms("2024-01-15T15:00:00.5Z"),
-            Some(1_705_330_800_500)
-        );
-        assert_eq!(
-            parse_iso_ms("2024-01-15T15:00:00.123456Z"),
-            Some(1_705_330_800_123)
-        );
-        assert_eq!(parse_iso_ms("yesterday"), None);
     }
 
     #[test]

@@ -162,6 +162,7 @@ fn source_for_slug(slug: &str) -> Option<DataSource> {
         "BINANCE" => Some(DataSource::Binance),
         "COINBASE" => Some(DataSource::Coinbase),
         "OKX" => Some(DataSource::Okx),
+        "KRAKEN" => Some(DataSource::Kraken),
         "COINGECKO" => Some(DataSource::CoinGecko),
         "DEXSCREENER" => Some(DataSource::DexScreener),
         "ALPACA" => Some(DataSource::Alpaca),

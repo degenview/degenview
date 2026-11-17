@@ -61,6 +61,7 @@ impl PreviewMarket {
             DataSource::Binance
                 | DataSource::Coinbase
                 | DataSource::Okx
+                | DataSource::Kraken
                 | DataSource::CoinGecko
                 | DataSource::DexScreener
                 | DataSource::Alpaca

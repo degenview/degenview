@@ -75,6 +75,7 @@ watchlists.
   | --- | --- | --- |
   | Binance | 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1D 1W 1M | 1000 per request, paged in parallel (`fetch_klines` pages when a fold needs more). Its `3d` is left out: Binance's 3d bars start on a day that is not a multiple of three since 1970-01-01 (checked against the API), so 3D folds from 1D. Weeks start Monday, as here. Folded series are cached (`cache::policy(source, timeframe)`) and refreshed by their tail |
   | OKX | 1m 3m 5m 15m 30m 1H 2H 4H 6H 12H 1D 1W 1M 3M | Public API, no key. Asked as `…utc` bars from 6H up (its plain ones are cut at UTC+8). Left out: `8H` (no such bar), `2D`/`3D` (counted from a day that is not a multiple of the length since 1970-01-01, like Binance's `3d`: fold from 1D) and the year (folds from `3Mutc`). 300 per request: `/market/candles` for the newest, `/market/history-candles` with an `after` cursor for older (20 requests per 2 s, so pages are spaced 100 ms). Spot only. Held and tail-refreshed (`cache::policy`) |
+  | Kraken | 1m 5m 15m 30m 1h 4h 1D | Public API, no key. `OHLC` answers only the newest 720 candles and cannot page back (`KRAKEN_BARS`; `supports_older_history` is false): 12 hours of 1m, 30 days of 1h, 2 years of 1D. Its week (`10080`) starts on a Thursday and its `21600` is 15 days counted from 1970, so 1W, 1M and 1Y fold from days. Ids are `BTC/USD` on REST and websocket alike (`XBT`/`XDG` are refused: `kraken_asset`). One request a second (`net::rate_limit::kraken`); refusals are HTTP 200 with an `error` code (`is_rate_limit`) |
   | Coinbase | 1m 5m 15m 1h 6h 1D | `MAX_PAGES` x 290 candles caps a request (a 5m series reaches back ~60 days) |
   | Alpaca | 1m 5m 15m 30m 1h 1D 1W 1M | Alpaca also has `3Hour`, `4Min`, `2Month` and so on, but it does not say where those start; only lengths that divide the hour are used (an hour's start is the same in UTC and New York), the rest fold. Days, weeks and months keep Alpaca's New York-midnight stamps; a fold re-anchors them on UTC. Stocks fold intraday buckets from UTC midnight, not the session open. 10,000 bars per request |
   | DEXScreener (GeckoTerminal) | 1m 5m 15m 1h 4h 12h 1D | 1,000 per request; empty buckets are filled flat (`bucket::fill_gaps`) before a fold |
@@ -128,7 +129,7 @@ watchlists.
 - `service::image::icon` keys by `"<source>:<ticker>"`, never chart id: static CDN (unthrottled HEAD), then
   rate-limited CoinGecko search, then a letter monogram.
 - One `service::market::live::LiveFeed` per workspace and streamed source (`DataSource::CANDLE_STREAMS`;
-  each protocol is a module under `live/` that builds a `net::ws::Session` and parses its messages): updates the forming candle, reconnects with backoff. OKX is the second stream (`candle<bar>` channels on `wss://ws.okx.com/ws/v5/business`, one subscribe message naming every market, kept alive with the text `ping`/`pong` through `ws::Keepalive::Text`; its `public` endpoint refuses candles). Binance's streams
+  each protocol is a module under `live/` that builds a `net::ws::Session` and parses its messages): updates the forming candle, reconnects with backoff. Kraken is the third (websocket v2 `ohlc` with `snapshot:false`, one subscribe naming every market, kept alive by the server's one-a-second `heartbeat` and protocol pings; its `ticker` channel carries the rolling 24h `change`, which gives the price a day ago). OKX is the second stream (`candle<bar>` channels on `wss://ws.okx.com/ws/v5/business`, one subscribe message naming every market, kept alive with the text `ping`/`pong` through `ws::Keepalive::Text`; its `public` endpoint refuses candles). Binance's streams
   the *base* candle the timeframe is served from (`DataSource::Binance.plan(timeframe).base()`:
   `@kline_1m` for a 22-minute chart, `@kline_1M` for `3M` and `1Y`; none for a timeframe Binance cannot
   reach). Charts and compared markets fold a live kline with `model::market::live::LiveFold::apply`
@@ -150,7 +151,7 @@ watchlists.
 - `service::cache::fetch`: a failed tail refresh falls back to the whole fetch, except a rate limit,
   which is returned.
 - Visible watchlists share one ticker socket per source in `DataSource::QUOTE_STREAMS` (Coinbase: last
-  trade, 24-hour open, volume, it has no candle channel; OKX: its `tickers` channel on `/ws/v5/public`). `watchlist_quotes::quote_stream` holds one
+  trade, 24-hour open, volume, it has no candle channel; OKX: its `tickers` channel on `/ws/v5/public`; Kraken: its v2 `ticker`). Kraken's REST fallback measures the day from the UTC open (`o`), the socket from the rolling 24h change. `watchlist_quotes::quote_stream` holds one
   module per protocol; the engine keeps per-source products, and REST fills a product the socket has
   not answered. A new socket is a `Session` plus a parser, never another copy of the connect/read/backoff loop.
 

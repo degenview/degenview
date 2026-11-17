@@ -54,6 +54,7 @@ fn source_of(prefix: &str) -> Option<DataSource> {
         DataSource::Binance,
         DataSource::Coinbase,
         DataSource::Okx,
+        DataSource::Kraken,
         DataSource::CoinGecko,
         DataSource::DexScreener,
         DataSource::Alpaca,

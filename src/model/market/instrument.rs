@@ -31,7 +31,8 @@ impl InstrumentId {
     }
 
     /// The id the provider's API takes. A bare Binance asset (`BTC`) is quoted in
-    /// USDT, Coinbase ids are `BASE-QUOTE` (a bare asset is quoted in USD) and so are OKX's (in USDT).
+    /// USDT, Coinbase ids are `BASE-QUOTE` (a bare asset is quoted in USD) and so are OKX's (in
+    /// USDT); Kraken's are `BASE/QUOTE` (USD) in the common tickers, never the legacy `XBT`.
     pub fn api_symbol(&self) -> String {
         match self.source {
             DataSource::Binance => {
@@ -55,6 +56,17 @@ impl InstrumentId {
                     format!("{id}-USD")
                 }
             }
+            DataSource::Kraken => {
+                let id = self.symbol.to_uppercase().replace(['-', ' '], "/");
+                match id.split_once('/') {
+                    Some((base, quote)) => format!(
+                        "{}/{}",
+                        crate::model::market::source::kraken_asset(base),
+                        crate::model::market::source::kraken_asset(quote)
+                    ),
+                    None => format!("{}/USD", crate::model::market::source::kraken_asset(&id)),
+                }
+            }
             _ => self.symbol.clone(),
         }
     }
@@ -76,7 +88,7 @@ impl InstrumentId {
 
     fn normalized(symbol: &str, source: DataSource) -> String {
         match source {
-            DataSource::Binance | DataSource::Coinbase | DataSource::Okx => {
+            DataSource::Binance | DataSource::Coinbase | DataSource::Okx | DataSource::Kraken => {
                 Self::new(source, symbol).api_symbol()
             }
             DataSource::Alpaca => symbol.to_uppercase(),
@@ -122,6 +134,14 @@ mod tests {
         for symbol in ["BTC", "btc-usdt", "BTC/USDT", "BTC-USDT"] {
             assert_eq!(key(DataSource::Okx, symbol), "OKX:BTC-USDT", "{symbol}");
         }
+        for symbol in ["BTC", "btc/usd", "XBT/USD", "xbt-usd", "BTC USD"] {
+            assert_eq!(
+                key(DataSource::Kraken, symbol),
+                "KRAKEN:BTC/USD",
+                "{symbol}"
+            );
+        }
+        assert_eq!(key(DataSource::Kraken, "xdg/eur"), "KRAKEN:DOGE/EUR");
         // A different quote is a different market.
         assert_ne!(
             key(DataSource::Binance, "BTC"),

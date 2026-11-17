@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 mod binance;
+mod kraken;
 mod okx;
 
 /// The most bars the inbox keeps. A feed nobody reads for days (a background tab, a hidden
@@ -69,6 +70,10 @@ impl LiveFeed {
             DataSource::Okx => (
                 okx::session(&symbols, base)?,
                 Box::new(move |text| okx::parse_kline(text, base)),
+            ),
+            DataSource::Kraken => (
+                kraken::session(&symbols, base)?,
+                Box::new(move |text| kraken::parse_kline(text, base)),
             ),
             _ => return None,
         };
@@ -188,6 +193,29 @@ mod tests {
                 return;
             }
             assert!(std::time::Instant::now() < deadline, "no candle in 30 s");
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    }
+
+    /// Run with `cargo test --lib live::tests::live_kraken -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_kraken_streams_the_forming_candle() {
+        let feed = LiveFeed::connect(
+            DataSource::Kraken,
+            vec!["BTC/USD".to_owned()],
+            Timeframe::MINUTE_1,
+            egui::Context::default(),
+        )
+        .expect("Kraken streams one-minute candles");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        loop {
+            if let Some((symbol, kline)) = feed.inbox.drain().pop() {
+                assert_eq!(symbol, "BTC/USD");
+                assert!(kline.close > 0.0 && kline.close_time > kline.open_time);
+                return;
+            }
+            assert!(std::time::Instant::now() < deadline, "no candle in 60 s");
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
     }

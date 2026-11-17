@@ -68,6 +68,23 @@ const OKX: [Timeframe; 14] = [
     Timeframe::MONTH_3,
 ];
 
+/// Kraken's OHLC intervals in minutes: 1, 5, 15, 30, 60, 240 and 1440. Left out: its week
+/// (`10080`) starts on a Thursday and its `21600` is a 15-day length counted from 1970-01-01, so
+/// weeks, months and years fold from days.
+const KRAKEN: [Timeframe; 7] = [
+    minutes(1),
+    minutes(5),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(4),
+    Timeframe::DAY_1,
+];
+
+/// The candles Kraken's OHLC answers with: always the newest 720, whatever `since` says, so a
+/// chart reaches back 12 hours of 1-minute bars, 30 days of hours and 2 years of days.
+pub const KRAKEN_BARS: usize = 720;
+
 /// Coinbase's granularities: 60, 300, 900, 3600, 21600 and 86400 seconds.
 const COINBASE: [Timeframe; 6] = [
     minutes(1),
@@ -118,6 +135,7 @@ impl DataSource {
             Self::Binance => &BINANCE,
             Self::Coinbase => &COINBASE,
             Self::Okx => &OKX,
+            Self::Kraken => &KRAKEN,
             Self::Alpaca => &ALPACA,
             Self::DexScreener => &GECKOTERMINAL,
             Self::CoinGecko | Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => &[],
@@ -134,9 +152,12 @@ impl DataSource {
     /// samples are fine enough, or the source draws a line that follows any timeframe.
     pub fn serves(self, timeframe: Timeframe) -> bool {
         match self {
-            Self::Binance | Self::Coinbase | Self::Okx | Self::Alpaca | Self::DexScreener => {
-                self.plan(timeframe).is_some()
-            }
+            Self::Binance
+            | Self::Coinbase
+            | Self::Okx
+            | Self::Kraken
+            | Self::Alpaca
+            | Self::DexScreener => self.plan(timeframe).is_some(),
             Self::CoinGecko => samples::chart_days(timeframe, 1).is_some(),
             Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => true,
         }
@@ -152,7 +173,12 @@ impl DataSource {
                 let page_days = plan.base().nominal_ms() * GECKOTERMINAL_PAGE as i64 / 86_400_000;
                 page_days < GECKOTERMINAL_HISTORY_DAYS
             }),
-            Self::CoinGecko | Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => false,
+            // Its OHLC has no way back past the newest 720 candles.
+            Self::Kraken
+            | Self::CoinGecko
+            | Self::Polymarket
+            | Self::Kalshi
+            | Self::CoinMarketCap => false,
         }
     }
 }

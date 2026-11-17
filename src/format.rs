@@ -136,6 +136,35 @@ pub(crate) fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
 }
 
 /// Inverse of `civil_from_days`, exposed for calendar-bucket folding in services.
+/// ISO-8601 UTC instant (`2024-01-15T15:00:00Z`, optional fractional seconds) in epoch ms.
+pub(crate) fn parse_iso8601(text: &str) -> Option<i64> {
+    let text = text.trim().strip_suffix('Z').unwrap_or(text.trim());
+    let (date, time) = text.split_once('T')?;
+    let mut date_parts = date.split('-');
+    let (year, month, day) = (
+        date_parts.next()?.parse::<i64>().ok()?,
+        date_parts.next()?.parse::<i64>().ok()?,
+        date_parts.next()?.parse::<i64>().ok()?,
+    );
+    let time = time.split(['+', '-']).next()?;
+    let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
+    let mut clock_parts = clock.split(':');
+    let hour = clock_parts.next()?.parse::<i64>().ok()?;
+    let minute = clock_parts.next()?.parse::<i64>().ok()?;
+    let second = clock_parts
+        .next()
+        .map_or(Some(0), |s| s.parse::<i64>().ok())?;
+    let millis = fraction
+        .chars()
+        .chain("000".chars())
+        .take(3)
+        .collect::<String>()
+        .parse::<i64>()
+        .ok()?;
+    let days = crate::format::days_from_civil(year, month, day);
+    Some(((days * 86_400 + hour * 3_600 + minute * 60 + second) * 1_000) + millis)
+}
+
 pub(crate) fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
@@ -220,5 +249,28 @@ mod tests {
     fn timestamp_is_utc() {
         assert_eq!(timestamp(0), "1970-01-01 00:00");
         assert_eq!(timestamp(1_700_000_000_000), "2023-11-14 22:13");
+    }
+
+    #[test]
+    fn iso_timestamps_read_back_in_epoch_ms() {
+        assert_eq!(parse_iso8601("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(
+            parse_iso8601("2024-01-15T15:00:00Z"),
+            Some(1_705_330_800_000)
+        );
+        assert_eq!(
+            parse_iso8601("2024-01-15T15:00:00.5Z"),
+            Some(1_705_330_800_500)
+        );
+        assert_eq!(
+            parse_iso8601("2024-01-15T15:00:00.123456Z"),
+            Some(1_705_330_800_123)
+        );
+        // Kraken's websocket writes nine fractional digits.
+        assert_eq!(
+            parse_iso8601("2026-11-17T10:04:00.000000000Z"),
+            Some(1_794_909_840_000)
+        );
+        assert_eq!(parse_iso8601("yesterday"), None);
     }
 }

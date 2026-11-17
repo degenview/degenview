@@ -61,6 +61,7 @@ pub fn icon_base_symbol(item: &WatchlistInstrument) -> String {
         DataSource::Coinbase | DataSource::Okx => {
             symbol.split('-').next().unwrap_or(symbol).to_uppercase()
         }
+        DataSource::Kraken => symbol.split('/').next().unwrap_or(symbol).to_uppercase(),
         DataSource::CoinGecko | DataSource::DexScreener => item
             .label
             .split('/')

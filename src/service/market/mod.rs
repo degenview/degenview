@@ -10,6 +10,7 @@ pub mod error;
 pub mod fx_rates;
 pub(in crate::service) mod geckoterminal;
 pub(in crate::service) mod kalshi;
+pub(in crate::service) mod kraken;
 pub mod live;
 pub(in crate::service) mod okx;
 pub(in crate::service) mod polymarket;

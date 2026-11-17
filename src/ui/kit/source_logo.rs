@@ -9,6 +9,7 @@ fn source(source: DataSource) -> ImageSource<'static> {
         DataSource::Binance => egui::include_image!("../../../assets/source_logos/binance.svg"),
         DataSource::Coinbase => egui::include_image!("../../../assets/source_logos/coinbase.svg"),
         DataSource::Okx => egui::include_image!("../../../assets/source_logos/okx.svg"),
+        DataSource::Kraken => egui::include_image!("../../../assets/source_logos/kraken.svg"),
         DataSource::CoinGecko => egui::include_image!("../../../assets/source_logos/coingecko.png"),
         DataSource::DexScreener => {
             egui::include_image!("../../../assets/source_logos/dexscreener.png")
