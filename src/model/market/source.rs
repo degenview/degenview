@@ -65,10 +65,10 @@ impl DataSource {
 
     /// The sources whose forming candle a chart takes from a socket instead of waiting for the
     /// next refresh.
-    pub const CANDLE_STREAMS: [DataSource; 1] = [DataSource::Binance];
+    pub const CANDLE_STREAMS: [DataSource; 2] = [DataSource::Binance, DataSource::Okx];
 
     /// The sources whose watchlist prices come from a shared ticker socket, REST filling in.
-    pub const QUOTE_STREAMS: [DataSource; 1] = [DataSource::Coinbase];
+    pub const QUOTE_STREAMS: [DataSource; 2] = [DataSource::Coinbase, DataSource::Okx];
 
     /// Whether watchlist prices of this source come from a ticker socket.
     pub fn streams_quotes(self) -> bool {

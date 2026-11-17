@@ -128,7 +128,7 @@ watchlists.
 - `service::image::icon` keys by `"<source>:<ticker>"`, never chart id: static CDN (unthrottled HEAD), then
   rate-limited CoinGecko search, then a letter monogram.
 - One `service::market::live::LiveFeed` per workspace and streamed source (`DataSource::CANDLE_STREAMS`;
-  each protocol is a module under `live/` that builds a `net::ws::Session` and parses its messages): updates the forming candle, reconnects with backoff. Binance's streams
+  each protocol is a module under `live/` that builds a `net::ws::Session` and parses its messages): updates the forming candle, reconnects with backoff. OKX is the second stream (`candle<bar>` channels on `wss://ws.okx.com/ws/v5/business`, one subscribe message naming every market, kept alive with the text `ping`/`pong` through `ws::Keepalive::Text`; its `public` endpoint refuses candles). Binance's streams
   the *base* candle the timeframe is served from (`DataSource::Binance.plan(timeframe).base()`:
   `@kline_1m` for a 22-minute chart, `@kline_1M` for `3M` and `1Y`; none for a timeframe Binance cannot
   reach). Charts and compared markets fold a live kline with `model::market::live::LiveFold::apply`
@@ -150,7 +150,7 @@ watchlists.
 - `service::cache::fetch`: a failed tail refresh falls back to the whole fetch, except a rate limit,
   which is returned.
 - Visible watchlists share one ticker socket per source in `DataSource::QUOTE_STREAMS` (Coinbase: last
-  trade, 24-hour open, volume; it has no candle channel). `watchlist_quotes::quote_stream` holds one
+  trade, 24-hour open, volume, it has no candle channel; OKX: its `tickers` channel on `/ws/v5/public`). `watchlist_quotes::quote_stream` holds one
   module per protocol; the engine keeps per-source products, and REST fills a product the socket has
   not answered. A new socket is a `Session` plus a parser, never another copy of the connect/read/backoff loop.
 

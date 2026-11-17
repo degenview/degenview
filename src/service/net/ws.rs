@@ -60,21 +60,36 @@ pub fn configure(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>) -> io::Resul
     stream.set_write_timeout(Some(READ_TIMEOUT))
 }
 
+/// How a quiet socket is probed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Keepalive {
+    /// A WebSocket ping frame, answered by a pong frame.
+    Frame,
+    /// A text message answered by a text message, for servers that define their own heartbeat
+    /// (OKX: `"ping"` and `"pong"`). The answer is not data.
+    Text {
+        ping: &'static str,
+        pong: &'static str,
+    },
+}
+
 pub struct Health {
     last_message: Instant,
     last_data: Instant,
     ping_sent: Option<Instant>,
     max_data_silence: Duration,
+    keepalive: Keepalive,
 }
 
 impl Health {
-    pub fn new(max_data_silence: Duration) -> Self {
+    pub fn new(max_data_silence: Duration, keepalive: Keepalive) -> Self {
         let now = Instant::now();
         Self {
             last_message: now,
             last_data: now,
             ping_sent: None,
             max_data_silence,
+            keepalive,
         }
     }
 
@@ -87,6 +102,12 @@ impl Health {
     ) -> tungstenite::Result<Option<Message>> {
         match socket.read() {
             Ok(Message::Pong(_)) => {
+                self.last_message = Instant::now();
+                self.ping_sent = None;
+                Ok(None)
+            }
+            Ok(Message::Text(text)) if matches!(self.keepalive, Keepalive::Text { pong, .. } if text.as_str() == pong) =>
+            {
                 self.last_message = Instant::now();
                 self.ping_sent = None;
                 Ok(None)
@@ -127,7 +148,10 @@ impl Health {
             )));
         }
         if self.ping_sent.is_none() && now.duration_since(self.last_message) >= PING_AFTER {
-            socket.send(Message::Ping(Vec::new().into()))?;
+            socket.send(match self.keepalive {
+                Keepalive::Frame => Message::Ping(Vec::new().into()),
+                Keepalive::Text { ping, .. } => Message::Text(ping.into()),
+            })?;
             self.ping_sent = Some(now);
         }
         Ok(None)
@@ -174,6 +198,7 @@ pub struct Session {
     /// Sent once after every (re)connect; `None` for a feed that subscribes through its URL.
     pub subscribe: Option<String>,
     pub max_data_silence: Duration,
+    pub keepalive: Keepalive,
 }
 
 impl Session {
@@ -188,7 +213,7 @@ impl Session {
                     socket.send(Message::Text(message.as_str().into())).is_ok()
                 });
                 if subscribed {
-                    let mut health = Health::new(self.max_data_silence);
+                    let mut health = Health::new(self.max_data_silence, self.keepalive);
                     while !shutdown.load(Ordering::Acquire) {
                         match health.read(&mut socket) {
                             Ok(Some(Message::Text(text))) => {
@@ -252,6 +277,7 @@ mod tests {
             port,
             subscribe: Some("subscribe".to_owned()),
             max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Frame,
         };
         let mut seen = Vec::new();
         session.run(&AtomicBool::new(false), |text| {
@@ -260,6 +286,29 @@ mod tests {
         });
         assert_eq!(seen, ["tick"]);
         assert_eq!(server.join().unwrap(), "subscribe");
+    }
+
+    #[test]
+    fn a_text_heartbeat_answer_is_not_data() {
+        let (port, server) = serve(&["pong", "tick"]);
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: Some("subscribe".to_owned()),
+            max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Text {
+                ping: "ping",
+                pong: "pong",
+            },
+        };
+        let mut seen = Vec::new();
+        session.run(&AtomicBool::new(false), |text| {
+            seen.push(text.to_owned());
+            false
+        });
+        assert_eq!(seen, ["tick"]);
+        server.join().unwrap();
     }
 
     #[test]
@@ -277,7 +326,7 @@ mod tests {
                 .set_read_timeout(Some(Duration::from_millis(20)))
                 .unwrap();
         }
-        let mut health = Health::new(Duration::ZERO);
+        let mut health = Health::new(Duration::ZERO, Keepalive::Frame);
         assert!(matches!(
             health.read(&mut socket),
             Err(tungstenite::Error::Io(error)) if error.kind() == io::ErrorKind::TimedOut

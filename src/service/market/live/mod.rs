@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 mod binance;
+mod okx;
 
 /// The most bars the inbox keeps. A feed nobody reads for days (a background tab, a hidden
 /// window) still sees one new bar per symbol per interval, so this is only a backstop.
@@ -42,7 +43,7 @@ impl LiveInbox {
 }
 
 /// Turns one text message of an exchange's stream into `(symbol, kline)`.
-type Parser = fn(&str) -> Option<(String, Kline)>;
+type Parser = Box<dyn Fn(&str) -> Option<(String, Kline)> + Send>;
 
 /// A kline feed for one workspace's charts of one source: a background thread that reconnects
 /// with backoff and puts `(symbol, kline)` updates in the inbox.
@@ -61,7 +62,14 @@ impl LiveFeed {
         ctx: egui::Context,
     ) -> Option<Self> {
         let (session, parse): (Session, Parser) = match source {
-            DataSource::Binance => (binance::session(&symbols, base), binance::parse_kline),
+            DataSource::Binance => (
+                binance::session(&symbols, base),
+                Box::new(binance::parse_kline),
+            ),
+            DataSource::Okx => (
+                okx::session(&symbols, base)?,
+                Box::new(move |text| okx::parse_kline(text, base)),
+            ),
             _ => return None,
         };
         let inbox = Arc::new(LiveInbox::default());
@@ -158,6 +166,52 @@ mod tests {
         assert_eq!(
             drained.last().unwrap().1.open_time,
             (INBOX_CAPACITY as i64 + 499) * 3_600_000
+        );
+    }
+
+    /// Run with `cargo test --lib live::tests::live_okx -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_okx_streams_the_forming_candle() {
+        let feed = LiveFeed::connect(
+            DataSource::Okx,
+            vec!["BTC-USDT".to_owned()],
+            Timeframe::MINUTE_1,
+            egui::Context::default(),
+        )
+        .expect("OKX streams one-minute candles");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            if let Some((symbol, kline)) = feed.inbox.drain().pop() {
+                assert_eq!(symbol, "BTC-USDT");
+                assert!(kline.close > 0.0 && kline.close_time > kline.open_time);
+                return;
+            }
+            assert!(std::time::Instant::now() < deadline, "no candle in 30 s");
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    }
+
+    #[test]
+    fn a_source_without_a_candle_stream_opens_none() {
+        assert!(
+            LiveFeed::connect(
+                DataSource::Coinbase,
+                vec!["BTC-USD".to_owned()],
+                Timeframe::MINUTE_1,
+                egui::Context::default()
+            )
+            .is_none()
+        );
+        // OKX has no 8-hour bar to stream.
+        assert!(
+            LiveFeed::connect(
+                DataSource::Okx,
+                vec!["BTC-USDT".to_owned()],
+                Timeframe::parse("8h").unwrap(),
+                egui::Context::default()
+            )
+            .is_none()
         );
     }
 }

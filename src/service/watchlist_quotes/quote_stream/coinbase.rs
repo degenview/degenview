@@ -4,7 +4,7 @@
 use super::StreamTick;
 use crate::model::DataSource;
 use crate::model::watchlist::quote::SourceQuote;
-use crate::service::net::ws::Session;
+use crate::service::net::ws::{Keepalive, Session};
 use crate::service::watchlist_quotes::provider::{coinbase_volume, parse_iso_ms};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -18,6 +18,7 @@ pub(super) fn session(products: &[String]) -> Session {
         port: 443,
         subscribe: Some(subscription(products)),
         max_data_silence: Duration::from_secs(15),
+        keepalive: Keepalive::Frame,
     }
 }
 

@@ -1609,6 +1609,50 @@ mod tests {
     }
 
     #[test]
+    fn each_streamed_source_has_its_own_products_and_takes_only_its_own_ticks() {
+        let (engine, book, provider) = setup();
+        provider.price("BTC-USDT", 100.0);
+        let okx = id(DataSource::Okx, "btc-usdt");
+        let coinbase = id(DataSource::Coinbase, "BTC-USD");
+        lock(&engine).update(1, vec![okx.clone(), coinbase.clone()], true, T0);
+        assert_eq!(
+            lock(&engine).stream_products(DataSource::Okx),
+            vec!["BTC-USDT".to_owned()]
+        );
+        assert_eq!(
+            lock(&engine).stream_products(DataSource::Coinbase),
+            vec!["BTC-USD".to_owned()]
+        );
+
+        // A Coinbase tick under an OKX product's name does not reach the OKX market.
+        let mut stray = tick("BTC-USDT", 1.0, None);
+        stray.source = DataSource::Coinbase;
+        let mut own = tick("BTC-USDT", 105.0, Some(100.0));
+        own.source = DataSource::Okx;
+        lock(&engine).receive_ticks(vec![stray], T0 + 1_000);
+        assert!(book.get(&okx).is_none());
+        lock(&engine).receive_ticks(vec![own], T0 + 2_000);
+        assert_eq!(book.get(&okx).unwrap().last, Some(105.0));
+        assert!(book.get(&coinbase).is_none());
+
+        // The socket owns the OKX price: REST waits, and refreshes it after 30 quiet seconds.
+        round(&engine, &provider, T0 + 20_000);
+        assert!(
+            provider
+                .calls()
+                .iter()
+                .all(|call| call.0 != DataSource::Okx)
+        );
+        round(&engine, &provider, T0 + 33_000);
+        assert!(
+            provider
+                .calls()
+                .iter()
+                .any(|call| call.0 == DataSource::Okx)
+        );
+    }
+
+    #[test]
     fn bare_coinbase_symbols_subscribe_under_their_product_id() {
         let (engine, _book, _provider) = setup();
         lock(&engine).update(1, vec![id(DataSource::Coinbase, "eth")], true, T0);

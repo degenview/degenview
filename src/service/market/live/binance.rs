@@ -1,7 +1,7 @@
 //! Binance's combined kline stream: the symbols and interval are in the URL, nothing is sent.
 
 use crate::model::{Kline, Timeframe};
-use crate::service::net::ws::Session;
+use crate::service::net::ws::{Keepalive, Session};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -20,6 +20,7 @@ pub(super) fn session(symbols: &[String], base: Timeframe) -> Session {
         port: 443,
         subscribe: None,
         max_data_silence: Duration::from_secs(60),
+        keepalive: Keepalive::Frame,
     }
 }
 

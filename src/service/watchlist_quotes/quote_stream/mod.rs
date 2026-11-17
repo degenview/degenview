@@ -2,6 +2,7 @@
 //! it. The ticker carries the last trade plus the 24h open and volume, which is all a row needs.
 
 mod coinbase;
+mod okx;
 
 use crate::model::DataSource;
 use crate::model::watchlist::quote::SourceQuote;
@@ -36,6 +37,7 @@ impl QuoteSocket {
     ) -> Option<Self> {
         let (session, parse): (Session, Parser) = match source {
             DataSource::Coinbase => (coinbase::session(&products), coinbase::parse_tick),
+            DataSource::Okx => (okx::session(&products), okx::parse_tick),
             _ => return None,
         };
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -56,5 +58,37 @@ impl QuoteSocket {
 impl Drop for QuoteSocket {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Release);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Run with `cargo test --lib quote_stream::tests::live_okx -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_okx_streams_a_ticker() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let _socket = QuoteSocket::connect(
+            DataSource::Okx,
+            vec!["BTC-USDT".to_owned(), "ETH-USDT".to_owned()],
+            sender,
+        )
+        .expect("OKX has a ticker socket");
+        let tick = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("a tick in 30 s");
+        assert_eq!(tick.source, DataSource::Okx);
+        assert!(["BTC-USDT", "ETH-USDT"].contains(&tick.product_id.as_str()));
+        assert!(tick.quote.price > 0.0);
+    }
+
+    #[test]
+    fn a_source_without_a_ticker_socket_opens_none() {
+        let (sender, _receiver) = std::sync::mpsc::channel();
+        assert!(
+            QuoteSocket::connect(DataSource::Binance, vec!["BTCUSDT".to_owned()], sender).is_none()
+        );
     }
 }
