@@ -153,6 +153,7 @@ fn a_refusing_http_proxy_is_reported_with_its_reason() {
         WAIT,
     )
     .unwrap_err();
+    assert!(matches!(error, TunnelError::NeedsCredentials), "{error}");
     assert!(
         error.to_string().contains("user name and password"),
         "{error}"

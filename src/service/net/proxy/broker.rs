@@ -50,12 +50,13 @@ fn broker_protocol(protocol: Protocol) -> ProxyProtocol {
     }
 }
 
-/// A tunnel failure as an I/O error with the same message, which the crate shows on the order
-/// screen and in its logs.
+/// A tunnel failure as an I/O error. The crate shows only the error's kind when a proxy is in
+/// use, so the kind carries the meaning: a proxy that wants credentials is `PermissionDenied`.
 fn into_io_error(error: TunnelError) -> io::Error {
     let kind = match &error {
         TunnelError::Connect(inner) | TunnelError::Proxy(inner) => inner.kind(),
         TunnelError::Unsupported(_) => io::ErrorKind::Unsupported,
+        TunnelError::NeedsCredentials => io::ErrorKind::PermissionDenied,
         TunnelError::Refused(_) => io::ErrorKind::ConnectionRefused,
         TunnelError::Protocol(_) => io::ErrorKind::InvalidData,
     };
@@ -129,6 +130,8 @@ mod tests {
         let error = into_io_error(TunnelError::Unsupported("SOCKS4"));
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
         assert!(error.to_string().contains("SOCKS4"), "{error}");
+        let error = into_io_error(TunnelError::NeedsCredentials);
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
     }
 
     #[test]

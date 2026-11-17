@@ -23,6 +23,9 @@ pub enum TunnelError {
     /// Reaching or talking to the proxy failed.
     #[error("proxy: {0}")]
     Proxy(#[from] io::Error),
+    /// An HTTP proxy answered `407`: it wants a user name and password this proxy setting lacks.
+    #[error("The proxy needs a user name and password")]
+    NeedsCredentials,
     #[error("The proxy refused the connection: {0}")]
     Refused(String),
     #[error("The proxy did not answer as expected: {0}")]
@@ -119,9 +122,7 @@ fn http_connect(
     }
     match status {
         "200" => Ok(()),
-        "407" => Err(TunnelError::Refused(
-            "it needs a user name and password".to_owned(),
-        )),
+        "407" => Err(TunnelError::NeedsCredentials),
         _ => Err(TunnelError::Refused(line.to_owned())),
     }
 }

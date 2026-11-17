@@ -50,7 +50,8 @@ thiserror = "2.0.21"
 hmac = "0.12.1"
 rusqlite = { version = "0.41", features = ["bundled"] }
 tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
-ureq = { version = "3.4.2", features = ["socks-proxy"] }
+# 3.5.1 percent-encodes proxy credentials; `Spec::build` relies on it (3.4.x mangles `@`, `:`, `/`).
+ureq = { version = "3.5.1", features = ["socks-proxy"] }
 rmcp = { version = "3.5.1", features = ["transport-streamable-http-server"] }
 tokio = { version = "1.53.2", features = ["rt", "net", "sync", "macros", "time"] }
 axum = "0.8.9"
