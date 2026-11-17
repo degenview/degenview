@@ -245,6 +245,10 @@ impl SettingsHost {
                 SettingsAction::UpdateNotifications(settings) => {
                     out.push(SettingsHostAction::UpdateNotifications(settings));
                 }
+                SettingsAction::SetPaperPrefs(prefs) => {
+                    // Applied in memory even when the save fails, like the theme.
+                    let _ = trading_hub.set_paper_prefs(store, prefs);
+                }
                 SettingsAction::RetryRegistration => {
                     out.push(SettingsHostAction::RetryRegistration);
                 }

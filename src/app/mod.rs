@@ -430,6 +430,7 @@ impl eframe::App for DegenViewApp {
             self.broker_host.revision(),
         );
         self.tick_broker_notices();
+        self.tick_paper_sound();
         self.broker_host.tick_quotes();
         self.tabs.tick_links(ctx);
         self.tabs.windows().restore_frames(
