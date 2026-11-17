@@ -22,7 +22,8 @@ use super::paper::PaperHost;
 use crate::lock::lock;
 use crate::model::broker::prefs::BrokerPrefs;
 use crate::model::broker::venue::TradingVenue;
-use crate::store::SharedStore;
+use crate::model::paper::prefs::PaperPrefs;
+use crate::store::{SharedStore, Store};
 use crate::trading::backend::TradingBackend;
 use crate::trading::broker::backend::BrokerBackend;
 use crate::trading::model::VenueInfo;
@@ -129,6 +130,16 @@ impl TradingHub {
         if let Some(id) = venue.broker() {
             self.brokers.set_prefs(id, prefs);
         }
+    }
+
+    /// How paper trading behaves on this Mac (its fill sound).
+    pub fn paper_prefs(&self) -> PaperPrefs {
+        lock(&self.paper).prefs()
+    }
+
+    /// Applies and saves the paper-trading choices through `store`, which the caller holds.
+    pub fn set_paper_prefs(&self, store: &Store, prefs: PaperPrefs) -> rusqlite::Result<()> {
+        lock(&self.paper).set_prefs(store, prefs)
     }
 
     pub fn brokers(&self) -> &Arc<BrokerHost> {

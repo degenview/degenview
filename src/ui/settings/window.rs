@@ -135,6 +135,8 @@ pub enum SettingsAction {
     SetTabTitleStyle(crate::model::tab::title::TabTitleStyle),
     /// A switch on the Notifications page changed: the whole new settings value.
     UpdateNotifications(AlertNotificationSettings),
+    /// The paper-trading card on the Notifications page changed.
+    SetPaperPrefs(crate::model::paper::prefs::PaperPrefs),
     RetryRegistration,
     OpenLoginItems,
     OpenNotificationSettings,
@@ -439,7 +441,15 @@ pub fn show(
                 &mut page,
                 section,
                 "Connect a broker to trade for real from your charts. Paper trading is separate.",
-                |ui| crate::ui::settings::brokers::body(ui, &mut state.brokers, input.trading_hub),
+                |ui| {
+                    if let Some(prefs) = crate::ui::settings::brokers::body(
+                        ui,
+                        &mut state.brokers,
+                        input.trading_hub,
+                    ) {
+                        actions.push(SettingsAction::SetPaperPrefs(prefs));
+                    }
+                },
             );
         }
         SettingsSection::CoinMarketCap => {
@@ -733,6 +743,24 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                 },
             );
         }
+    });
+
+    section(ui, "Paper trading", None, |ui| {
+        card::card(
+            ui,
+            Icon::SpeakerWave,
+            "Fill sound",
+            Some("Play a sound when a paper order is filled."),
+            |ui| {
+                let prefs = input.trading_hub.paper_prefs();
+                let mut value = prefs.fill_sound;
+                if card::switch(ui, &mut value) {
+                    actions.push(SettingsAction::SetPaperPrefs(
+                        crate::model::paper::prefs::PaperPrefs { fill_sound: value },
+                    ));
+                }
+            },
+        );
     });
 
     // The background agent, Login Items and the permission prompt are macOS services.

@@ -57,6 +57,76 @@ fn a_drag_is_measured_from_where_it_began_not_accumulated() {
     assert!(close(view.right_offset, 4.0));
 }
 
+/// The slot coordinate under `anchor` (a fraction of the plot's width), counted from the first bar.
+fn slot_under(view: &HorizontalViewport, anchor: f64, reserved: usize, total: usize) -> f64 {
+    let slots = (view.visible + reserved) as f64;
+    let right_edge = (total + reserved) as f64 - view.right_offset;
+    right_edge - slots * (1.0 - anchor)
+}
+
+#[test]
+fn zooming_keeps_the_slot_under_the_pointer_in_place() {
+    let (total, reserved) = (1000, 5);
+    for anchor in [0.0, 0.25, 0.5, 0.9, 1.0] {
+        for (offset, count) in [(100.0, 60), (100.0, 240), (-10.0, 60), (0.0, 30)] {
+            let mut view = HorizontalViewport {
+                right_offset: offset,
+                ..HorizontalViewport::default()
+            };
+            let before = slot_under(&view, anchor, reserved, total);
+            view.zoom_at(count, anchor, reserved, total);
+            assert_eq!(view.visible, count);
+            assert!(
+                close(slot_under(&view, anchor, reserved, total), before),
+                "anchor {anchor}, {count} bars from offset {offset}"
+            );
+        }
+    }
+}
+
+#[test]
+fn zooming_at_the_right_edge_is_the_zoom_that_keeps_the_newest_bar_put() {
+    let start = HorizontalViewport {
+        right_offset: 37.0,
+        ..HorizontalViewport::default()
+    };
+    let (mut anchored, mut plain) = (start, start);
+    anchored.zoom_at(50, 1.0, 5, 1000);
+    plain.set_visible(50, 1000);
+    assert_eq!(anchored, plain);
+}
+
+#[test]
+fn zooming_in_at_the_left_edge_shifts_the_view_toward_older_bars() {
+    let mut view = HorizontalViewport::default();
+    view.zoom_at(60, 0.0, 0, 1000);
+    assert!(
+        close(view.right_offset, 60.0),
+        "the 60 bars cut came off the right"
+    );
+}
+
+#[test]
+fn an_anchor_outside_the_plot_acts_as_the_right_edge() {
+    for anchor in [f64::NAN, f64::INFINITY, 4.0] {
+        let mut view = HorizontalViewport::default();
+        view.zoom_at(60, anchor, 0, 1000);
+        assert!(close(view.right_offset, 0.0), "{anchor}");
+    }
+}
+
+#[test]
+fn an_anchored_zoom_stays_inside_the_limits() {
+    let mut view = HorizontalViewport::default();
+    view.zoom_at(5_000, 0.0, 0, 300);
+    assert_eq!(view.visible, 300, "never more than the series holds");
+    assert!(view.right_offset >= view.offset_limits(300).0);
+    assert!(view.right_offset <= view.offset_limits(300).1);
+    view.zoom_at(1, 0.0, 0, 300);
+    assert_eq!(view.visible, MIN_VISIBLE);
+    assert!(view.right_offset <= view.offset_limits(300).1);
+}
+
 #[test]
 fn history_stops_where_a_few_bars_remain() {
     let mut view = HorizontalViewport::default();

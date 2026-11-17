@@ -38,8 +38,10 @@ and back, so a viewport *is* a time range.
 
 - **Position** is the time at the right edge. At the newest bar it is the end of that bar, so
   charts of any interval agree on "now" and the margin (a presentation setting) never enters.
-- **Zoom** is how many bars span the range. A zoom keeps the right edge (the app's existing
-  anchor), so it never moves the position.
+- **Zoom** is how many bars span the range. The wheel, the time-axis drag and the zoom buttons keep the right
+  edge, so they never move the position. Ctrl/⌘ with the wheel and a pinch zoom about the pointer
+  ([chart navigation](chart-navigation.md)): the right edge moves with them, so such a zoom is a
+  pan as well, and `HorizontalChange` records both (`moved` and `zoom`).
 
 `TimeAxis` interpolates between a bar's open and the next open: a weekend inside a stock chart is
 one slot wide, so the map is continuous and strictly increasing and a chart never oscillates
@@ -57,7 +59,7 @@ bars are covered by tests; nothing was checked against a live prediction-market 
 | Position | Zoom | A pan | A zoom |
 | --- | --- | --- | --- |
 | off | off | – | – |
-| on | off | followers' right edge goes to the leader's time; their zoom is kept | – |
+| on | off | followers' right edge goes to the leader's time; their zoom is kept | only a zoom that moved the leader's right edge (about the pointer): followers' right edge goes to the leader's time |
 | off | on | – | followers' bar count scales by the leader's factor about their own right edge; their position is kept |
 | on | on | as above | followers show the leader's time range (count from the time span, right edge from the time) |
 
