@@ -2,6 +2,7 @@
 
 use super::artwork::ticker_icon;
 use super::widgets::{caption_label, card};
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{MEDIUM, galley_words, size};
@@ -16,19 +17,23 @@ pub(crate) const STOCK_SUGGESTIONS: [&str; 10] = [
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD",
 ];
 
-/// Starting points for the Predictions section; each searches the selected provider for its query.
-pub(crate) const PREDICTION_TOPICS: [(&str, &str, Icon); 10] = [
-    ("Fed decision", "fed", Icon::BuildingColumns),
-    ("Bitcoin price", "bitcoin", Icon::BitcoinCircle),
-    ("Ethereum price", "ethereum", Icon::Diamond),
-    ("Inflation", "inflation", Icon::ChartUptrend),
-    ("Recession", "recession", Icon::ArrowDownRightCircle),
-    ("Election", "election", Icon::CheckmarkSeal),
-    ("Trump", "trump", Icon::PersonCircle),
-    ("Oil & gold", "oil", Icon::Flame),
-    ("Super Bowl", "super bowl", Icon::SportsCourt),
-    ("Weather", "temperature", Icon::CloudSun),
-];
+/// Starting points for the Predictions section; each searches the selected provider for its query,
+/// which stays as written (it is what the providers are asked), while the title is the person's
+/// language.
+pub(crate) fn prediction_topics() -> [(&'static str, &'static str, Icon); 10] {
+    [
+        (tr!("Fed decision"), "fed", Icon::BuildingColumns),
+        (tr!("Bitcoin price"), "bitcoin", Icon::BitcoinCircle),
+        (tr!("Ethereum price"), "ethereum", Icon::Diamond),
+        (tr!("Inflation"), "inflation", Icon::ChartUptrend),
+        (tr!("Recession"), "recession", Icon::ArrowDownRightCircle),
+        (tr!("Election"), "election", Icon::CheckmarkSeal),
+        (tr!("Trump"), "trump", Icon::PersonCircle),
+        (tr!("Oil & gold"), "oil", Icon::Flame),
+        (tr!("Super Bowl"), "super bowl", Icon::SportsCourt),
+        (tr!("Weather"), "temperature", Icon::CloudSun),
+    ]
+}
 
 pub(crate) enum Chip {
     /// A coin or company logo, looked up for the chip's title as a ticker of the source.

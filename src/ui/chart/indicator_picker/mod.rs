@@ -9,6 +9,7 @@ mod preview;
 mod sections;
 
 use super::indicator_strip::Action;
+use crate::i18n::tr;
 use crate::model::indicators::catalog::{self, CatalogEntry, EntryKey, Family, Origin};
 use crate::model::pine::bundled;
 use crate::model::{DataSource, IndicatorConfig};
@@ -76,10 +77,10 @@ pub enum Availability {
 /// What the entry can do on `target`.
 pub fn availability(entry: &CatalogEntry, target: Option<&Target>) -> Availability {
     let Some(target) = target else {
-        return Availability::Blocked("Open a chart to add indicators to it.");
+        return Availability::Blocked(tr!("Open a chart to add indicators to it."));
     };
     if !target.source.takes_indicators() {
-        return Availability::Blocked("This chart takes no indicators.");
+        return Availability::Blocked(tr!("This chart takes no indicators."));
     }
     match &entry.key {
         EntryKey::Native(kind) if kind.applied(&target.config) => Availability::Remove,
@@ -395,7 +396,7 @@ impl IndicatorPicker {
         let bar = Rect::from_min_size(full.min, vec2(full.width(), HEADER));
         let title = kit::galley(
             ui,
-            "Indicators",
+            tr!("Indicators"),
             size::TITLE2,
             SEMIBOLD,
             theme::text_primary(),
@@ -412,7 +413,10 @@ impl IndicatorPicker {
         );
         let mut field_ui = ui.new_child(egui::UiBuilder::new().max_rect(field));
         let before = self.query.clone();
-        let prompt = format!("Search {total} indicators, concepts or aliases");
+        let prompt = tr!(
+            "Search {total} indicators, concepts or aliases",
+            total = total
+        );
         let response = kit::search_field(
             &mut field_ui,
             search_id,
@@ -460,12 +464,12 @@ impl IndicatorPicker {
                         }
                     }
                 };
-                group(ui, "Yours", &sections::YOURS);
+                group(ui, tr!("Yours"), &sections::YOURS);
                 if sidebar_row(
                     ui,
                     width,
                     Icon::AngleBrackets,
-                    "Open Pine Studio",
+                    tr!("Open Pine Studio"),
                     None,
                     false,
                 )
@@ -473,10 +477,10 @@ impl IndicatorPicker {
                 {
                     *output = Some(Output::OpenPineStudio);
                 }
-                group(ui, "Built-in", &sections::BUILT_IN);
-                group(ui, "Library", &sections::LIBRARY);
+                group(ui, tr!("Built-in"), &sections::BUILT_IN);
+                group(ui, tr!("Library"), &sections::LIBRARY);
                 let families: Vec<Section> = Family::ALL.into_iter().map(Section::Family).collect();
-                group(ui, "Families", &families);
+                group(ui, tr!("Families"), &families);
             });
     }
 
@@ -507,7 +511,7 @@ impl IndicatorPicker {
                     let message = if self.query.trim().is_empty() {
                         self.section.empty_message().to_owned()
                     } else {
-                        format!("No indicators match \u{201c}{}\u{201d}.", self.query.trim())
+                        tr!("No indicators match “{query}”.", query = self.query.trim())
                     };
                     ui.add_space(40.0);
                     ui.vertical_centered(|ui| {
@@ -530,7 +534,7 @@ impl IndicatorPicker {
                     }
                     if let Some(heading) = block.heading {
                         let row = block_heading(ui, heading);
-                        if heading == "More to explore" && row.shuffle {
+                        if heading == tr!("More to explore") && row.shuffle {
                             self.shuffle = self.shuffle.wrapping_add(1);
                         }
                     }
@@ -606,7 +610,7 @@ impl IndicatorPicker {
         let Some(entry) = entry else {
             let text = kit::galley(
                 ui,
-                "Select an indicator",
+                tr!("Select an indicator"),
                 size::BODY,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -679,7 +683,11 @@ impl IndicatorPicker {
                 if entry.origin != Origin::Script {
                     ui.add_space(10.0);
                     ui.label(kit::text(
-                        format!("By {} \u{b7} {}", entry.author, entry.license),
+                        tr!(
+                            "By {author} · {license}",
+                            author = entry.author,
+                            license = entry.license
+                        ),
                         size::CAPTION + 0.5,
                         kit::REGULAR,
                         theme::text_tertiary(),
@@ -708,9 +716,9 @@ impl IndicatorPicker {
         button_ui.spacing_mut().item_spacing.x = 8.0;
         let blocked = matches!(status, Availability::Blocked(_));
         let label = match status {
-            Availability::Remove => "Remove from chart",
-            Availability::AddAnother => "Add another copy",
-            _ => "Add to chart",
+            Availability::Remove => tr!("Remove from chart"),
+            Availability::AddAnother => tr!("Add another copy"),
+            _ => tr!("Add to chart"),
         };
         if kit::large_prominent_button(&mut button_ui, label, !blocked, buttons.width() - 40.0)
             .clicked()
@@ -746,17 +754,21 @@ impl IndicatorPicker {
             ));
             ui.add_space(10.0);
         };
-        hint(&mut footer, &["\u{2191}", "\u{2193}"], "Browse");
-        hint(&mut footer, &["\u{21b5}"], "Add");
-        hint(&mut footer, &["\u{21e7}", "\u{21b5}"], "Add, keep open");
-        hint(&mut footer, &["F"], "Favorite");
-        hint(&mut footer, &["Esc"], "Close");
+        hint(&mut footer, &["\u{2191}", "\u{2193}"], tr!("Browse"));
+        hint(&mut footer, &["\u{21b5}"], tr!("Add"));
+        hint(
+            &mut footer,
+            &["\u{21e7}", "\u{21b5}"],
+            tr!("Add, keep open"),
+        );
+        hint(&mut footer, &["F"], tr!("Favorite"));
+        hint(&mut footer, &["Esc"], tr!("Close"));
         let mut done = false;
         footer.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            done = kit::sheet_button(ui, "Done", true, true).clicked();
+            done = kit::sheet_button(ui, tr!("Done"), true, true).clicked();
             ui.add_space(8.0);
             ui.label(kit::text(
-                format!("{shown} shown"),
+                tr!("{count} shown", count = shown),
                 size::SUBHEADLINE,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -808,14 +820,10 @@ fn glyph_for(entry: &CatalogEntry) -> Icon {
 
 /// `Momentum · Separate pane`, `Trend · Overlay`, `Your script`.
 fn meta_line(entry: &CatalogEntry) -> String {
-    let placement = if entry.overlay {
-        "Overlay"
-    } else {
-        "Separate pane"
-    };
-    match entry.family {
-        Some(family) => format!("{} \u{b7} {placement}", family.title()),
-        None => "Your script".to_owned(),
+    match (entry.family, entry.overlay) {
+        (Some(family), true) => tr!("{family} · Overlay", family = family.title()),
+        (Some(family), false) => tr!("{family} · Separate pane", family = family.title()),
+        (None, _) => tr!("Your script").to_owned(),
     }
 }
 
@@ -915,7 +923,7 @@ fn card_ui(
     if look.on_chart {
         let tag = kit::galley(
             ui,
-            "On chart",
+            tr!("On chart"),
             size::CAPTION,
             MEDIUM,
             theme::text_secondary(),
@@ -978,9 +986,9 @@ fn star_button(ui: &mut Ui, favorite: bool) -> egui::Response {
         theme::text_primary(),
     );
     response.on_hover_text(if favorite {
-        "Remove from favorites"
+        tr!("Remove from favorites")
     } else {
-        "Add to favorites"
+        tr!("Add to favorites")
     })
 }
 
@@ -1078,7 +1086,7 @@ fn block_heading(ui: &mut Ui, text: &str) -> HeadingRow {
         theme::text_primary(),
     );
     let mut shuffle = false;
-    if text == "More to explore" {
+    if text == tr!("More to explore") {
         let button = Rect::from_min_max(pos2(rect.right() - 84.0, rect.top()), rect.max);
         let response = ui.interact(button, Id::new("indicator_picker_shuffle"), Sense::click());
         let color = if response.hovered() {
@@ -1095,7 +1103,7 @@ fn block_heading(ui: &mut Ui, text: &str) -> HeadingRow {
             Icon::Repeat,
             color,
         );
-        let label = kit::galley(ui, "Shuffle", size::BODY, kit::REGULAR, color, 60.0);
+        let label = kit::galley(ui, tr!("Shuffle"), size::BODY, kit::REGULAR, color, 60.0);
         ui.painter().galley(
             pos2(
                 button.left() + 22.0,

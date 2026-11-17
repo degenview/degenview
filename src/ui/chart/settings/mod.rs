@@ -15,6 +15,7 @@ pub mod templates;
 use super::card::ChartCard;
 use super::settings::compare::CompareInput;
 use super::settings::templates::{TemplateAction, TemplateState};
+use crate::i18n::tr;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::{DataSource, IndicatorConfig};
 use crate::store::SharedStore;
@@ -72,11 +73,11 @@ impl Tab {
 
     fn title(self) -> &'static str {
         match self {
-            Self::Indicators => "Indicators",
-            Self::Scripts => "Scripts",
-            Self::Appearance => "Appearance",
-            Self::Canvas => "Canvas",
-            Self::Overlays => "Compare",
+            Self::Indicators => tr!("Indicators"),
+            Self::Scripts => tr!("Scripts"),
+            Self::Appearance => tr!("Appearance"),
+            Self::Canvas => tr!("Canvas"),
+            Self::Overlays => tr!("Compare"),
         }
     }
 
@@ -249,9 +250,9 @@ fn rule(ui: &mut Ui) {
 }
 
 fn header(ui: &mut Ui, c: &ChartSettingsContext) {
-    let subtitle = format!(
-        "{} · Changes apply as you make them",
-        c.source.display_name()
+    let subtitle = tr!(
+        "{market} · Changes apply as you make them",
+        market = c.source.display_name()
     );
     sheet::header_with(ui, c.title, &subtitle, |ui| {
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(46.0), Sense::hover());
@@ -282,11 +283,11 @@ fn footer(ui: &mut Ui, state: &mut ChartSettingsState) -> Option<ChartSettingsAc
     let mut action = None;
     ui.add_space(14.0);
     ui.horizontal(|ui| {
-        if kit::destructive_sheet_button(ui, Icon::Trash, "Remove Chart").clicked() {
+        if kit::destructive_sheet_button(ui, Icon::Trash, tr!("Remove Chart")).clicked() {
             action = Some(ChartSettingsAction::RemoveChart);
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if kit::sheet_button(ui, "Done", true, true).clicked() {
+            if kit::sheet_button(ui, tr!("Done"), true, true).clicked() {
                 action = Some(ChartSettingsAction::Done);
             }
             // What the last template action did, between the buttons.

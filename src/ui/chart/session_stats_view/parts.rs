@@ -2,6 +2,7 @@
 //! a bar for a share, the interval bar, and a gray link. They own no state and read no model; the
 //! panel and its result cards compose them.
 
+use crate::i18n::tr;
 use crate::model::session_stats::Estimate;
 use crate::ui::{accessibility, kit, theme};
 use eframe::egui::{self, Align, Color32, Layout, Rect, Sense, Stroke, Ui, WidgetType, pos2, vec2};
@@ -41,10 +42,21 @@ pub fn section_header(ui: &mut Ui, text: &str, trailing: impl FnOnce(&mut Ui)) {
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         vec2(width, ROW_HEIGHT),
-        Layout::left_to_right(Align::Center),
+        Layout::right_to_left(Align::Center),
         |ui| {
-            section_label(ui, text);
-            ui.with_layout(Layout::right_to_left(Align::Center), trailing);
+            // The trailing part keeps its width; a longer heading is cut to what is left.
+            trailing(ui);
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(kit::text(
+                        text,
+                        kit::size::SUBHEADLINE,
+                        kit::MEDIUM,
+                        theme::text_secondary(),
+                    ))
+                    .truncate(),
+                );
+            });
         },
     );
 }
@@ -86,7 +98,11 @@ pub fn link(ui: &mut Ui, label: &str) -> egui::Response {
 pub fn key_value(ui: &mut Ui, key: &str, value: &str) {
     let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::hover());
-    accessibility::label_as(response, WidgetType::Label, format!("{key}: {value}"));
+    accessibility::label_as(
+        response,
+        WidgetType::Label,
+        tr!("{label}: {value}", label = key, value = value),
+    );
     let value_galley = kit::digits(
         ui,
         value,
@@ -169,7 +185,11 @@ pub fn share_row(
     const MIN_BAR: f32 = 28.0;
     let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::hover());
-    accessibility::label_as(response, WidgetType::Label, format!("{label}: {text}"));
+    accessibility::label_as(
+        response,
+        WidgetType::Label,
+        tr!("{label}: {value}", label = label, value = text),
+    );
     let value = kit::digits(
         ui,
         text,
@@ -222,11 +242,11 @@ pub fn interval_bar(ui: &mut Ui, estimate: &Estimate) {
     accessibility::label_as(
         response,
         WidgetType::Label,
-        format!(
-            "{:.1}% of days, 95% interval {:.1}% to {:.1}%",
-            share * 100.0,
-            low * 100.0,
-            high * 100.0
+        tr!(
+            "{share}% of days, 95% interval {low}% to {high}%",
+            share = format!("{:.1}", share * 100.0),
+            low = format!("{:.1}", low * 100.0),
+            high = format!("{:.1}", high * 100.0)
         ),
     );
     let at = |fraction: f64| rect.left() + width * fraction as f32;

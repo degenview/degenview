@@ -1,6 +1,7 @@
 //! The crosshair: its lines and tags, and the readout naming the bar under it.
 
 use super::*;
+use crate::i18n::{tr, tr_c};
 use crate::model::chart::sync::TimeAxis;
 use crate::model::chart::viewport::zoom::Slots;
 
@@ -204,7 +205,7 @@ impl ChartCard {
         let mut items = readout_items(info, constructed, candle, price_format);
         if show_volume {
             items.push((
-                "Vol".to_owned(),
+                tr_c!("readout label", "Vol").to_owned(),
                 crate::model::watchlist::quote::compact_number(candle.volume),
             ));
         }
@@ -212,7 +213,10 @@ impl ChartCard {
         if constructed.is_some()
             && let Some(last) = info.source_candles.last()
         {
-            items.push(("Mkt".to_owned(), price_format.format(last.close)));
+            items.push((
+                tr_c!("readout label", "Mkt").to_owned(),
+                price_format.format(last.close),
+            ));
         }
         // The script's own candles and bars under the pointer, apart from the chart's.
         let hovered_from_end = info.shown_len + info.tail;
@@ -235,7 +239,12 @@ impl ChartCard {
                     .clone()
                     .filter(|title| !title.is_empty())
                     .unwrap_or_else(|| {
-                        if output.bar_style { "Bars" } else { "Candles" }.to_owned()
+                        if output.bar_style {
+                            tr!("Bars")
+                        } else {
+                            tr!("Candles")
+                        }
+                        .to_owned()
                     });
                 items.push((
                     name,
@@ -289,10 +298,22 @@ fn readout_items(
 ) -> Vec<(String, String)> {
     let ohlc = || {
         vec![
-            ("O".to_owned(), price_format.format(bar.open)),
-            ("H".to_owned(), price_format.format(bar.high)),
-            ("L".to_owned(), price_format.format(bar.low)),
-            ("C".to_owned(), price_format.format(bar.close)),
+            (
+                tr_c!("readout label: open", "O").to_owned(),
+                price_format.format(bar.open),
+            ),
+            (
+                tr_c!("readout label: high", "H").to_owned(),
+                price_format.format(bar.high),
+            ),
+            (
+                tr_c!("readout label: low", "L").to_owned(),
+                price_format.format(bar.low),
+            ),
+            (
+                tr_c!("readout label: close", "C").to_owned(),
+                price_format.format(bar.close),
+            ),
         ]
     };
     let Some(made) = constructed else {
@@ -300,12 +321,12 @@ fn readout_items(
     };
     let mut items = vec![(
         match info.chart_type {
-            ChartType::HeikinAshi => "Heikin Ashi",
-            ChartType::Renko => "Brick",
-            ChartType::LineBreak => "Line",
-            ChartType::Range => "Range bar",
-            ChartType::Kagi => "Kagi",
-            _ => "Point & Figure",
+            ChartType::HeikinAshi => tr!("Heikin Ashi"),
+            ChartType::Renko => tr_c!("readout label", "Brick"),
+            ChartType::LineBreak => tr_c!("readout label", "Line"),
+            ChartType::Range => tr!("Range bar"),
+            ChartType::Kagi => tr!("Kagi"),
+            _ => tr!("Point & Figure"),
         }
         .to_owned(),
         String::new(),
@@ -313,16 +334,28 @@ fn readout_items(
     match made.shape {
         BarShape::Ohlc => items.extend(ohlc()),
         BarShape::Kagi { thick, .. } => {
-            items.push(("From".to_owned(), price_format.format(made.open)));
-            items.push(("To".to_owned(), price_format.format(made.close)));
             items.push((
-                "Line".to_owned(),
-                if thick { "thick" } else { "thin" }.to_owned(),
+                tr_c!("readout label", "From").to_owned(),
+                price_format.format(made.open),
+            ));
+            items.push((
+                tr_c!("readout label", "To").to_owned(),
+                price_format.format(made.close),
+            ));
+            items.push((
+                tr_c!("readout label", "Line").to_owned(),
+                if thick { tr!("thick") } else { tr!("thin") }.to_owned(),
             ));
         }
         BarShape::Column { rising, boxes } => {
-            items.push(("From".to_owned(), price_format.format(made.open)));
-            items.push(("To".to_owned(), price_format.format(made.close)));
+            items.push((
+                tr_c!("readout label", "From").to_owned(),
+                price_format.format(made.open),
+            ));
+            items.push((
+                tr_c!("readout label", "To").to_owned(),
+                price_format.format(made.close),
+            ));
             items.push((if rising { "X" } else { "O" }.to_owned(), boxes.to_string()));
         }
     }
@@ -334,13 +367,16 @@ fn readout_items(
             format::timestamp(first.open_time),
             format::timestamp(last.open_time),
         );
-        items.push(("From candle".to_owned(), first[5..].to_owned()));
+        items.push((tr!("From candle").to_owned(), first[5..].to_owned()));
         if made.last_source != made.first_source {
-            items.push(("to".to_owned(), last[5..].to_owned()));
+            items.push((
+                tr_c!("readout label", "to").to_owned(),
+                last[5..].to_owned(),
+            ));
         }
     }
     if !made.confirmed {
-        items.push(("Live".to_owned(), String::new()));
+        items.push((tr!("Live").to_owned(), String::new()));
     }
     items
 }

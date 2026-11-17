@@ -7,6 +7,7 @@
 //! viewport and Pine instance list, so there is one zoom/scroll state and one pane order.
 
 use super::canvas::CanvasStyle;
+use crate::i18n::tr;
 use crate::model::chart::canvas::ButtonVisibility;
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
@@ -22,7 +23,7 @@ const FADE: f32 = 0.12;
 /// Clicks are taken once a fading group is this opaque.
 const CLICKABLE: f32 = 0.5;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum NavAction {
     ZoomIn,
     ZoomOut,
@@ -40,13 +41,13 @@ impl NavAction {
         Self::Reset,
     ];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::ZoomIn => "Zoom in",
-            Self::ZoomOut => "Zoom out",
-            Self::ScrollLeft => "Scroll to the left",
-            Self::ScrollRight => "Scroll to the right",
-            Self::Reset => "Reset chart view",
+            Self::ZoomIn => tr!("Zoom in"),
+            Self::ZoomOut => tr!("Zoom out"),
+            Self::ScrollLeft => tr!("Scroll to the left"),
+            Self::ScrollRight => tr!("Scroll to the right"),
+            Self::Reset => tr!("Reset chart view"),
         }
     }
 
@@ -61,7 +62,7 @@ impl NavAction {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PaneAction {
     MoveUp,
     MoveDown,
@@ -85,13 +86,13 @@ impl PaneState {
             (
                 PaneAction::MoveUp,
                 Icon::ChevronUp,
-                "Move pane up",
+                tr!("Move pane up"),
                 self.can_move_up,
             ),
             (
                 PaneAction::MoveDown,
                 Icon::ChevronDown,
-                "Move pane down",
+                tr!("Move pane down"),
                 self.can_move_down,
             ),
             (
@@ -102,9 +103,9 @@ impl PaneState {
                     Icon::Minus
                 },
                 if self.collapsed {
-                    "Expand pane"
+                    tr!("Expand pane")
                 } else {
-                    "Collapse pane"
+                    tr!("Collapse pane")
                 },
                 // A maximized pane cannot also be collapsed.
                 !self.maximized,
@@ -117,16 +118,16 @@ impl PaneState {
                     Icon::Maximize
                 },
                 if self.maximized {
-                    "Restore pane"
+                    tr!("Restore pane")
                 } else {
-                    "Maximize pane"
+                    tr!("Maximize pane")
                 },
                 !self.collapsed,
             ),
             (
                 PaneAction::Remove,
                 Icon::Xmark,
-                "Remove script from the chart",
+                tr!("Remove script from the chart"),
                 true,
             ),
         ]
@@ -266,7 +267,7 @@ pub fn navigation(
     let mut clicked = None;
     for (action, rect) in NavAction::ALL.into_iter().zip(rects) {
         let response = ui
-            .interact(rect, id.with(action.label()), Sense::click())
+            .interact(rect, id.with(action), Sense::click())
             .on_hover_cursor(CursorIcon::PointingHand)
             .on_hover_text(action.label());
         let response = accessibility::label(response, action.label());
@@ -309,7 +310,7 @@ pub fn pane(
     for ((action, icon, label, enabled), rect) in state.buttons().into_iter().zip(rects) {
         let response = ui.interact(
             rect,
-            id.with(label),
+            id.with(action),
             if enabled {
                 Sense::click()
             } else {

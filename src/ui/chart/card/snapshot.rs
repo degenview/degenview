@@ -11,6 +11,7 @@ use super::frame::{
 };
 use super::overlays::OverlayFrame;
 use super::*;
+use crate::i18n::tr;
 use crate::model::chart::snapshot::SnapshotDimensions;
 use crate::model::{Drawing, Tool};
 use crate::service::snapshot::raster::Scene;
@@ -103,10 +104,10 @@ pub enum SnapshotError {
 }
 
 impl SnapshotError {
-    pub const fn message(self) -> &'static str {
+    pub fn message(self) -> &'static str {
         match self {
-            Self::Empty => "There is nothing on this chart to take a picture of yet.",
-            Self::Unsupported => "This chart cannot be saved as an image.",
+            Self::Empty => tr!("There is nothing on this chart to take a picture of yet."),
+            Self::Unsupported => tr!("This chart cannot be saved as an image."),
         }
     }
 }
