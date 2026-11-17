@@ -135,6 +135,8 @@ pub enum SettingsAction {
     SetTabTitleStyle(crate::model::tab::title::TabTitleStyle),
     /// A switch on the Notifications page changed: the whole new settings value.
     UpdateNotifications(AlertNotificationSettings),
+    /// The paper-trading card on the Notifications page changed.
+    SetPaperPrefs(crate::model::paper::prefs::PaperPrefs),
     RetryRegistration,
     OpenLoginItems,
     OpenNotificationSettings,
@@ -733,6 +735,24 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                 },
             );
         }
+    });
+
+    section(ui, "Paper trading", None, |ui| {
+        card::card(
+            ui,
+            Icon::SpeakerWave,
+            "Fill sound",
+            Some("Play a sound when a paper order is filled."),
+            |ui| {
+                let prefs = input.trading_hub.paper_prefs();
+                let mut value = prefs.fill_sound;
+                if card::switch(ui, &mut value) {
+                    actions.push(SettingsAction::SetPaperPrefs(
+                        crate::model::paper::prefs::PaperPrefs { fill_sound: value },
+                    ));
+                }
+            },
+        );
     });
 
     // The background agent, Login Items and the permission prompt are macOS services.
