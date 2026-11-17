@@ -1,0 +1,82 @@
+# Network proxy
+
+DegenView follows a proxy for everything it sends over the internet: market data, live price feeds,
+updates, link previews, webhooks, AI requests and chart sharing. It was added for users whose VPN or
+network publishes a proxy (a Windows user running Karing in system-proxy mode, say) and who could
+only start the app from a launcher that set `HTTPS_PROXY`. Code: `src/service/net/proxy/`; page:
+Settings ▸ Network (`src/ui/settings/network/`).
+
+## The setting
+
+`ProxyConfig`, the local `net.proxy` setting (never synced: it names this Mac's own network;
+classified in `sync::record::policy`).
+
+| Mode | Behaviour |
+| --- | --- |
+| System (default) | The `ALL_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` variables (and lowercase), then the operating system's proxy. |
+| Manual | The server typed on the page: HTTP (`CONNECT`) or SOCKS5, host, port, optional user name. |
+| Off | Direct, whatever the system or environment says. |
+
+The manual proxy's password is never in SQLite: `ProxyPasswordStore` (`keychain`, service
+`es.nico.degenview.network`). It is read only when a user name is set, so nobody without one is
+prompted. `DEGENVIEW_NO_KEYCHAIN` keeps it in memory.
+
+The no-proxy list (`no_proxy`, comma/semicolon/space separated) adds to every mode but Off. A bare
+domain also covers its subdomains (as `curl` reads `NO_PROXY`); `*.x`, `.x`, `10.1.*` and `*` work;
+address ranges (`10.0.0.0/8`) are refused with a message, because the matcher is `ureq`'s. Loopback,
+private ranges (`10.*`, `192.168.*`, `172.16-31.*`, `169.254.*`), IPv6 local ranges and `.local`
+names **always** connect directly (`bypass.rs`).
+
+## Where the OS proxy comes from
+
+- **Windows**: `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings` (`ProxyEnable`,
+  `ProxyServer`, `ProxyOverride`) through `windows-sys` (`Win32_System_Registry`, no new crate).
+  `ProxyServer` is either `host:port` or `http=…;https=…;socks=…` (HTTPS entry preferred, then HTTP,
+  then SOCKS5). `<local>` in `ProxyOverride` is dropped (local hosts bypass anyway). A PAC script
+  (`AutoConfigURL`) is **not** followed.
+- **macOS**: `scutil --proxy` (HTTPS, else HTTP, else SOCKS; `ExceptionsList`). A process spawn: it
+  runs when the proxy is applied or refreshed, on a worker, never in a frame.
+- **Linux**: no system setting; environment and manual only.
+
+Parsers are pure and tested on every platform (`os/scutil.rs`, `os/server_list.rs`); only the
+registry call (`os/registry.rs`) is `cfg(windows)`.
+
+## How it reaches the code
+
+- `net::proxy::current` holds the process-wide state: the config, the resolved `Resolved`
+  (server, `ureq::Proxy` that knows what to skip, source) and a generation that counts changes.
+  Nothing is resolved before `proxy::init(&store)` / `proxy::apply`, so tests and tools connect
+  directly. In System mode it is read again when older than 30 s, by whichever worker asks next, so a
+  VPN client switching its proxy on or off is followed without a restart.
+- `init` runs at both entry points: `run_gui_with` and `run_alert_agent`. The alert agent is a
+  separate process and reads the setting once, when it starts.
+- **Every HTTP agent is built from `net::config_builder()`** (a `ureq` builder with the proxy
+  applied), never `ureq::Agent::config_builder()` (a test fails if non-test code does). Agents kept
+  in a struct or a static are `net::agent::FollowingAgent`, which rebuilds itself, with its own
+  options, after the generation changes: `net::http`, the webhook, snapshot and FX transports.
+  Agents built per call (`update::download`, `annotation::link_fetch`, `llm::HttpProvider`) follow it
+  naturally.
+- **WebSockets** (`net::ws::connect`) open their TCP stream with `proxy::dial`, which tunnels
+  through the proxy unless it skips the host, and then speak TLS over the tunnel
+  (`tunnel/mod.rs`): HTTP `CONNECT` with Basic auth, SOCKS5 no-auth and user/password (the host
+  name goes to the proxy, not an address, unless it is one). SOCKS4 and `https://` proxies work for
+  REST (`ureq`) but not for live feeds: the error says so. Tests run against in-process fake
+  proxies.
+- The Settings host saves the setting on the frame (cheap), then applies it on a worker
+  (`SNAPSHOTS` queue; reading the system proxy and the Keychain block), one at a time so saves end
+  in order.
+
+## Not covered
+
+- **`degenview-brokers`** (live trading) is an external pinned crate with its own HTTP client; it
+  does not follow this setting yet. The page says so.
+- CloudKit (iCloud Sync) uses the system's networking and its own proxy handling.
+- PAC scripts and WPAD; per-host proxy rules beyond the no-proxy list.
+
+## Verified and not
+
+Unit-tested: resolution order, env and OS parsers, bypass rules, the tunnels against fake proxies,
+the setting round trip, the page's rules, and that no agent bypasses `config_builder`. Looked at in a
+picture: the Network page in System, Manual and Off, both themes. **Not exercised**: a real Windows
+machine (the registry reader is only type-checked there), Karing, a real HTTP/SOCKS proxy end to end
+against a market provider, and a live WebSocket feed through a proxy.

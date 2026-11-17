@@ -176,6 +176,8 @@ pub fn run_alert_agent() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(Duration::from_millis(250));
     };
     let store = store::open_default()?;
+    // This process is separate from the app: it reads the proxy setting once, when it starts.
+    crate::service::net::proxy::init(&lock(&store));
     let quote_book = WatchlistQuoteBook::default();
     let quote_coordinator = WatchlistQuoteCoordinator::new(quote_book.clone(), Arc::new(|| {}));
     let notifier = default_notifier();

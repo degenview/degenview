@@ -1,19 +1,24 @@
 //! Shared transport for idempotent market-data GETs. Provider parsing and rate limits
 //! remain at their call sites; this only bounds network work and classifies failures.
 
+use super::agent::FollowingAgent;
 use std::sync::LazyLock;
 use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_BODY_BYTES: u64 = 8 * 1024 * 1024;
 
-static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
-    let config = ureq::Agent::config_builder()
-        .timeout_global(Some(TIMEOUT))
-        .http_status_as_error(false)
-        .build();
-    ureq::Agent::new_with_config(config)
+static AGENT: LazyLock<FollowingAgent> = LazyLock::new(|| {
+    FollowingAgent::new(|config| {
+        config
+            .timeout_global(Some(TIMEOUT))
+            .http_status_as_error(false)
+    })
 });
+
+fn agent() -> ureq::Agent {
+    AGENT.get()
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Retry {
@@ -38,7 +43,7 @@ pub fn get_text(url: &str, headers: &[(&str, &str)], retry: Retry) -> Result<Str
 }
 
 pub fn head_status(url: &str) -> Result<u16, Error> {
-    AGENT
+    agent()
         .head(url)
         .call()
         .map(|response| response.status().as_u16())
@@ -52,7 +57,7 @@ pub fn get_text_with_limit(
     retry: Retry,
     max_body_bytes: u64,
 ) -> Result<String, Error> {
-    get_with(&AGENT, url, headers, retry, max_body_bytes, |delay| {
+    get_with(&agent(), url, headers, retry, max_body_bytes, |delay| {
         std::thread::sleep(delay)
     })
 }
@@ -88,7 +93,7 @@ fn get_with(
 /// A GET that returns the body as bytes, for images. `max_body_bytes` bounds what is read.
 pub fn get_bytes(url: &str, max_body_bytes: u64) -> Result<Vec<u8>, Error> {
     fetch(
-        &AGENT,
+        &agent(),
         url,
         &[],
         Retry::Transient,

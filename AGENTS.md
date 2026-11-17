@@ -33,6 +33,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | The AI assistant, LLM providers, or the AI API keys | [AI assistant](docs/ai-assistant.md) |
 | Price/Pine alerts or webhooks | [Alerts and webhooks](docs/agent-guides/alerts-webhooks.md) |
 | Tab Linking: colour-tagged tabs that share symbol, interval, time or date range across windows | [Tab Linking](docs/tab-linking.md) |
+| Proxies, VPN "system proxy", `HTTP(S)_PROXY`, building an HTTP agent, WebSocket connections, or Settings ▸ Network | [Network proxy](docs/network-proxy.md) |
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
@@ -151,4 +152,4 @@ old output). Finished worktrees are where the disk goes.
   [Pine debugger](docs/pine-debugger.md), [Pine profiler](docs/pine-profiler.md),
   [Editor themes](docs/editor-themes.md), [User-defined methods](docs/pine-user-methods.md),
   [Pine volume footprints](docs/pine-footprint.md), [AI assistant](docs/ai-assistant.md),
-  [Portfolio page](docs/portfolio-page.md).
+  [Portfolio page](docs/portfolio-page.md), [Network proxy](docs/network-proxy.md).

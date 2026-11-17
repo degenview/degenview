@@ -67,7 +67,7 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
     let id = record.name.id.as_str();
     match kind {
         EntityKind::Setting => {
-            // A key this version keeps on the Mac (MCP, consent, AI preferences, the update channel,
+            // A key this version keeps on the Mac (MCP, consent, AI preferences, the proxy, the update channel,
             // anything it does not know) is never written from iCloud, whoever put the record there.
             if !super::policy::setting_is_portable(id) {
                 return Err("setting is not synced".into());

@@ -35,7 +35,7 @@ pub enum DownloadError {
 /// which must be `max_bytes` long or shorter.
 /// Calls `progress` with the bytes received so far after every chunk.
 pub fn get(url: &str, max_bytes: u64, progress: &dyn Fn(u64)) -> Result<Vec<u8>, DownloadError> {
-    let config = ureq::Agent::config_builder()
+    let config = crate::service::net::config_builder()
         .timeout_global(Some(TIMEOUT))
         .http_status_as_error(false)
         .max_redirects(0)

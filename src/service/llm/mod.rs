@@ -534,7 +534,7 @@ impl HttpProvider {
             )));
         }
         // No redirects: a redirect could carry the key to another host.
-        let config = ureq::Agent::config_builder()
+        let config = crate::service::net::config_builder()
             .timeout_connect(Some(CONNECT_TIMEOUT))
             .timeout_recv_response(Some(FIRST_BYTE_TIMEOUT))
             .timeout_recv_body(Some(BODY_TIMEOUT))

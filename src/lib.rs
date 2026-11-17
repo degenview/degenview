@@ -40,6 +40,8 @@ pub fn run_gui_with(
     // opens, and do not open it at all if that process never does (two instances on one store).
     service::update::install::wait_for_predecessor()?;
     let store = store::open_default()?;
+    // Before the first request: every agent and live feed follows this proxy setting.
+    service::net::proxy::init(&crate::lock::lock(&store));
     // A database copied from another Mac becomes this Mac's own before anything reads its ids.
     host::sync::adopt_this_mac(&store);
     // A finished update leaves the previous app in a hidden folder until the new one has started.

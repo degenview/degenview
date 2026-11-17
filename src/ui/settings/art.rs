@@ -35,6 +35,7 @@ pub fn paint(ui: &Ui, rect: Rect, section: SettingsSection) {
         SettingsSection::Snapshots => art.snapshots(),
         SettingsSection::Mcp => art.mcp(),
         SettingsSection::Sync => art.sync(),
+        SettingsSection::Network => art.network(),
         SettingsSection::Storage => art.storage(),
         SettingsSection::About => art.about(),
     }
@@ -518,6 +519,29 @@ impl Art<'_> {
         }
     }
 
+    /// This Mac sending to the internet on a dashed path, with the proxy riding it.
+    fn network(&self) {
+        let card = self.scene();
+        let y = card.center().y;
+        let source = pos2(card.left() + 13.0, y);
+        let globe = pos2(card.right() - 15.0, y);
+        self.painter.circle_filled(source, 6.5, self.tint);
+        self.painter.circle_filled(source, 2.4, Color32::WHITE);
+        let from = source + vec2(9.0, 0.0);
+        let to = pos2(globe.x - 12.0, y);
+        self.painter.extend(Shape::dashed_line(
+            &[from, to],
+            Stroke::new(1.6, self.tint.gamma_multiply(0.85)),
+            3.0,
+            2.5,
+        ));
+        self.arrow_head(to + vec2(1.5, 0.0), vec2(1.0, 0.0), 6.0, self.tint);
+        self.glyph(Icon::Globe, globe, 18.0, theme::text_secondary());
+        let proxy = Rect::from_center_size(pos2((from.x + to.x) / 2.0, y - 11.0), vec2(20.0, 12.0));
+        self.chip(proxy);
+        self.glyph(Icon::Shield, proxy.center(), 8.0, Color32::WHITE);
+    }
+
     /// Stacked drives, and how full they are.
     fn storage(&self) {
         let card = self.scene();
@@ -657,7 +681,8 @@ mod tests {
         for (name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
             let columns = 4.0;
             let cell = vec2(130.0, 112.0);
-            let mut screen = Screen::new(vec2(cell.x * columns, cell.y * 3.0));
+            let rows = (SettingsSection::ALL.len() as f32 / columns).ceil();
+            let mut screen = Screen::new(vec2(cell.x * columns, cell.y * rows));
             egui_extras::install_image_loaders(&screen.ctx);
             crate::ui::theme::apply(&screen.ctx, app_theme);
             let mut last = None;

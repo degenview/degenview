@@ -24,6 +24,8 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 pub const SIDEBAR_WIDTH: f32 = 224.0;
 /// The Settings window: the sidebar and a 616-point page.
 pub const WINDOW_SIZE: Vec2 = Vec2::new(840.0, 600.0);
+/// The smallest the window can be made: tall enough for every sidebar row.
+pub const MIN_SIZE: Vec2 = Vec2::new(520.0, 480.0);
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum SettingsSection {
@@ -39,12 +41,13 @@ pub enum SettingsSection {
     Snapshots,
     Mcp,
     Sync,
+    Network,
     Storage,
     About,
 }
 
 impl SettingsSection {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::Appearance,
         Self::PineStudio,
         Self::Alpaca,
@@ -56,6 +59,7 @@ impl SettingsSection {
         Self::Snapshots,
         Self::Mcp,
         Self::Sync,
+        Self::Network,
         Self::Storage,
         Self::About,
     ];
@@ -78,6 +82,7 @@ impl SettingsSection {
             Self::Notifications => "Notifications",
             Self::Webhooks => "Webhooks",
             Self::Snapshots => "Snapshots",
+            Self::Network => "Network",
             Self::Storage => "Storage",
             Self::Mcp => "MCP Server",
             Self::Sync => "iCloud Sync",
@@ -97,6 +102,7 @@ impl SettingsSection {
             Self::Notifications => Color32::from_rgb(48, 209, 88),
             Self::Webhooks => Color32::from_rgb(48, 176, 199),
             Self::Snapshots => Color32::from_rgb(76, 201, 98),
+            Self::Network => Color32::from_rgb(90, 200, 250),
             Self::Storage => Color32::from_rgb(52, 199, 89),
             Self::Mcp => Color32::from_rgb(191, 90, 242),
             Self::Sync => Color32::from_rgb(64, 156, 255),
@@ -116,6 +122,7 @@ impl SettingsSection {
             Self::Notifications => "notifications",
             Self::Webhooks => "webhooks",
             Self::Snapshots => "snapshots",
+            Self::Network => "network",
             Self::Storage => "storage",
             Self::Mcp => "mcp",
             Self::Sync => "icloud",
@@ -144,6 +151,8 @@ pub enum SettingsAction {
     Mcp(McpAction),
     /// The AI Assistant page changed the provider or model.
     Ai(crate::ui::settings::ai::AiAction),
+    /// The Network page changed the proxy.
+    Network(crate::ui::settings::network::NetworkAction),
     /// An update was swapped in and a helper will reopen the app: quit now.
     QuitForUpdate,
     /// The About page chose which releases updates offer.
@@ -157,6 +166,7 @@ pub struct SettingsInput<'a> {
     pub mcp: McpSettingsInput<'a>,
     pub snapshots: crate::ui::settings::snapshots::SnapshotsInput<'a>,
     pub ai: crate::ui::settings::ai::AiSettingsInput<'a>,
+    pub network: crate::ui::settings::network::NetworkInput<'a>,
     pub updates: &'a crate::host::update::UpdateHost,
     pub sync: &'a crate::host::sync::SyncHost,
     pub trading_hub: &'a std::sync::Arc<crate::host::trading::TradingHub>,
@@ -172,6 +182,7 @@ pub struct SettingsState {
     pub api_keys: ApiKeysState,
     pub brokers: crate::ui::settings::brokers::BrokersState,
     pub ai: crate::ui::settings::ai::AiSettingsState,
+    pub network: crate::ui::settings::network::NetworkState,
     pub storage: StorageState,
     pub mcp: McpSettingsState,
     pub snapshots: crate::ui::settings::snapshots::SnapshotsState,
@@ -329,6 +340,7 @@ impl SettingsSection {
             Self::Notifications => Icon::BellBadge,
             Self::Webhooks => Icon::ArrowUpRightSquare,
             Self::Snapshots => Icon::Camera,
+            Self::Network => Icon::Globe,
             Self::Storage => Icon::Layers,
             Self::Mcp => Icon::LockFill,
             Self::Sync => Icon::Cycle,
@@ -460,6 +472,23 @@ pub fn show(
                 |ui| crate::ui::settings::ai::body(ui, &mut state.ai, &input.ai, &mut ai_actions),
             );
             actions.extend(ai_actions.into_iter().map(SettingsAction::Ai));
+        }
+        SettingsSection::Network => {
+            let mut network_actions = Vec::new();
+            page_shell(
+                &mut page,
+                section,
+                "Route DegenView's connections through a proxy, such as the one your VPN or network sets.",
+                |ui| {
+                    crate::ui::settings::network::body(
+                        ui,
+                        &mut state.network,
+                        &input.network,
+                        &mut network_actions,
+                    )
+                },
+            );
+            actions.extend(network_actions.into_iter().map(SettingsAction::Network));
         }
         SettingsSection::Notifications => {
             page_shell(

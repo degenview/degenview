@@ -68,7 +68,7 @@ pub struct Preview {
 }
 
 fn agent() -> ureq::Agent {
-    let config = ureq::Agent::config_builder()
+    let config = crate::service::net::config_builder()
         .timeout_global(Some(TIMEOUT))
         .max_redirects(0)
         .max_redirects_will_error(false)

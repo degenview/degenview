@@ -8,6 +8,7 @@
 use crate::model::chart::snapshot::{
     MAX_RESPONSE_BYTES, MAX_UPLOAD_BYTES, SharedSnapshot, UploadError,
 };
+use crate::service::net::agent::FollowingAgent;
 use crate::service::snapshot::providers::{Destination, Purpose, Request, Secrets};
 use std::time::Duration;
 
@@ -38,7 +39,7 @@ pub trait SnapshotTransport: Send + Sync {
 }
 
 pub struct UreqTransport {
-    agent: ureq::Agent,
+    agent: FollowingAgent,
 }
 
 impl Default for UreqTransport {
@@ -49,14 +50,14 @@ impl Default for UreqTransport {
 
 impl UreqTransport {
     pub fn with_timeout(timeout: Duration) -> Self {
-        let config = ureq::Agent::config_builder()
-            .timeout_global(Some(timeout))
-            .max_redirects(0)
-            .max_redirects_will_error(false)
-            .http_status_as_error(false)
-            .build();
         Self {
-            agent: ureq::Agent::new_with_config(config),
+            agent: FollowingAgent::new(move |config| {
+                config
+                    .timeout_global(Some(timeout))
+                    .max_redirects(0)
+                    .max_redirects_will_error(false)
+                    .http_status_as_error(false)
+            }),
         }
     }
 }
@@ -65,6 +66,7 @@ impl SnapshotTransport for UreqTransport {
     fn send(&self, request: &Request<'_>) -> Result<HostResponse, TransportError> {
         let mut call = self
             .agent
+            .get()
             .post(&request.url)
             .header("Content-Type", &request.content_type)
             .header(

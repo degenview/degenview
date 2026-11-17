@@ -1,8 +1,8 @@
 //! Read deadlines, heartbeat checks, and reconnect pacing for live market feeds.
 
+use super::proxy;
 use std::io;
 use std::net::TcpStream;
-use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
@@ -12,37 +12,18 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const PING_AFTER: Duration = Duration::from_secs(15);
 const PONG_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Bound TCP connect and TLS/WebSocket handshakes before entering the read loop.
+/// Bound TCP connect and TLS/WebSocket handshakes before entering the read loop. The connection
+/// goes through the proxy in force, unless it skips `host` (see `net::proxy`).
 pub fn connect(
     url: &str,
     host: &str,
     port: u16,
 ) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, String> {
-    let addresses = (host, port)
-        .to_socket_addrs()
-        .map_err(|error| error.to_string())?;
-    let mut last_error = None;
-    for address in addresses.take(4) {
-        match TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) {
-            Ok(stream) => {
-                stream
-                    .set_read_timeout(Some(CONNECT_TIMEOUT))
-                    .map_err(|error| error.to_string())?;
-                stream
-                    .set_write_timeout(Some(CONNECT_TIMEOUT))
-                    .map_err(|error| error.to_string())?;
-                let (mut socket, _) =
-                    tungstenite::client_tls(url, stream).map_err(|error| error.to_string())?;
-                configure(&mut socket).map_err(|error| error.to_string())?;
-                return Ok(socket);
-            }
-            Err(error) => last_error = Some(error),
-        }
-    }
-    Err(last_error.map_or_else(
-        || "no address for WebSocket host".to_owned(),
-        |error| error.to_string(),
-    ))
+    let stream = proxy::dial(host, port, CONNECT_TIMEOUT).map_err(|error| error.to_string())?;
+    let (mut socket, _) =
+        tungstenite::client_tls(url, stream).map_err(|error| error.to_string())?;
+    configure(&mut socket).map_err(|error| error.to_string())?;
+    Ok(socket)
 }
 
 pub fn configure(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>) -> io::Result<()> {

@@ -10,10 +10,12 @@ use crate::service::cache::control;
 use crate::service::cache::disk::{CacheStats, ClearOutcome};
 use crate::service::keychain::webhook_secrets::KeychainWebhookSecretStore;
 use crate::service::llm::prefs::AiPrefs;
+use crate::service::net::proxy::{self, ProxyConfig, ProxyMode, ProxyPasswordStore};
 use crate::service::webhook::delivery::{self, Mode, UreqTransport, WebhookSecretStore};
 use crate::service::work_queue::{self, Pending};
 use crate::store::Store;
 use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::network::{NetworkAction, PasswordChange};
 use crate::ui::settings::snapshots::SnapshotsAction;
 use crate::ui::settings::storage::StorageAction;
 use crate::ui::settings::window::{SettingsAction, SettingsInput, SettingsState};
@@ -68,6 +70,13 @@ pub struct SettingsHost {
     ai_prefs_read_at: Option<std::time::Instant>,
     /// When the snapshot choices were last read again, for what iCloud Sync applied meanwhile.
     snapshots_read_at: Option<std::time::Instant>,
+    /// The saved proxy setting, read again every second like the assistant's.
+    network_config: Option<ProxyConfig>,
+    network_config_read_at: Option<std::time::Instant>,
+    /// The proxy being applied on a worker (reading the system's proxy and the secure storage
+    /// block), and the save that came in meanwhile. One at a time, so they end in order.
+    network_job: Option<Pending<Result<bool, String>>>,
+    network_queued: Option<(ProxyConfig, PasswordChange)>,
     state: SettingsState,
     storage_events: StorageEvents,
     /// Shared with the jobs that run Test, so a slow endpoint never blocks the UI.
@@ -184,6 +193,17 @@ impl SettingsHost {
             self.ai_prefs_read_at = Some(std::time::Instant::now());
         }
         let ai_prefs = self.ai_prefs.clone().unwrap_or_default();
+        if self.network_config.is_none()
+            || self
+                .network_config_read_at
+                .is_none_or(|at| at.elapsed() > Duration::from_secs(1))
+        {
+            self.network_config = Some(ProxyConfig::load(store));
+            self.network_config_read_at = Some(std::time::Instant::now());
+        }
+        let network_config = self.network_config.clone().unwrap_or_default();
+        let proxy_status = proxy::status();
+        self.collect_network(ctx);
         let input = SettingsInput {
             notifications,
             health,
@@ -200,6 +220,10 @@ impl SettingsHost {
                 secrets: self.snapshots.secrets(),
             },
             ai: crate::ui::settings::ai::AiSettingsInput { prefs: &ai_prefs },
+            network: crate::ui::settings::network::NetworkInput {
+                config: &network_config,
+                status: &proxy_status,
+            },
             updates,
             sync,
             trading_hub,
@@ -214,6 +238,7 @@ impl SettingsHost {
                 }
                 SettingsAction::Storage(action) => self.apply_storage(action, ctx),
                 SettingsAction::Snapshots(action) => self.apply_snapshots(action, store),
+                SettingsAction::Network(action) => self.apply_network(action, store, ctx),
                 SettingsAction::Ai(crate::ui::settings::ai::AiAction::SavePrefs(prefs)) => {
                     if let Err(error) = prefs.save(store) {
                         self.state.ai.status = Some(StatusMessage::error(format!(
@@ -262,6 +287,66 @@ impl SettingsHost {
             }
         }
         out
+    }
+
+    /// Saves the proxy setting and applies it on a worker. A failure to save is said on the page.
+    fn apply_network(&mut self, action: NetworkAction, store: &Store, ctx: &egui::Context) {
+        let NetworkAction::Save { config, password } = action;
+        if let Err(error) = config.save(store) {
+            self.state.network.status = Some(StatusMessage::error(format!(
+                "Could not save the settings: {error}"
+            )));
+            return;
+        }
+        self.network_config = Some(config.clone());
+        self.network_config_read_at = Some(std::time::Instant::now());
+        // A password typed earlier and not yet applied must survive a later save that keeps it.
+        let password = match (self.network_queued.take(), password) {
+            (Some((_, earlier)), PasswordChange::Keep) => earlier,
+            (_, password) => password,
+        };
+        self.network_queued = Some((config, password));
+        self.start_network(ctx);
+    }
+
+    fn start_network(&mut self, ctx: &egui::Context) {
+        if self.network_job.is_some() {
+            return;
+        }
+        let Some((config, password)) = self.network_queued.take() else {
+            return;
+        };
+        self.network_job = Some(work_queue::SNAPSHOTS.start(Some(ctx), move || {
+            let passwords = ProxyPasswordStore::shared();
+            let result = match &password {
+                PasswordChange::Keep => Ok(false),
+                PasswordChange::Set(password) => passwords.save(password).map(|()| true),
+                PasswordChange::Remove => passwords.remove().map(|()| false),
+            };
+            let login = config.mode == ProxyMode::Manual && !config.username.trim().is_empty();
+            proxy::apply(config, login.then(|| passwords.read()).flatten());
+            result.map_err(|error| error.0)
+        }));
+    }
+
+    /// Takes the answer of the proxy worker, and starts the save that waited for it.
+    fn collect_network(&mut self, ctx: &egui::Context) {
+        let Some(job) = &mut self.network_job else {
+            return;
+        };
+        let lost = || Err("The proxy could not be applied.".to_owned());
+        let Some(result) = job.poll_or(lost) else {
+            return;
+        };
+        self.network_job = None;
+        self.state.network.status = match result {
+            Ok(true) => Some(StatusMessage::ok(crate::platform::saved_securely())),
+            Ok(false) => None,
+            Err(error) => Some(StatusMessage::error(format!(
+                "The password could not be saved for later ({error}). It works until you quit DegenView."
+            ))),
+        };
+        self.start_network(ctx);
     }
 
     /// Records the results of finished tests, and keeps the window repainting while any are
