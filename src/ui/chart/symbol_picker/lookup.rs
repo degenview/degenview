@@ -2,7 +2,7 @@
 //!
 //! `BINANCE:BTCUSDT` and `NASDAQ:AAPL` (the watchlist import's own format,
 //! [`crate::model::market::venue`]) search the symbol on that venue alone, whatever the pull-down
-//! says. A prefix no provider serves (`OKX:BTCUSDT`) is never dropped silently: the symbol is
+//! says. A prefix no provider serves (`KUCOIN:BTCUSDT`) is never dropped silently: the symbol is
 //! searched on every venue of the tab, and the list says the prefix was not understood.
 
 use super::search::{PREDICTION_PROVIDERS, PROVIDERS, Scope};
@@ -143,15 +143,15 @@ mod tests {
 
     #[test]
     fn a_venue_nothing_serves_is_named_and_searched_everywhere() {
-        for prefix in ["okx", "BYBIT", "HKEX", "SSE", "CME"] {
+        for prefix in ["kucoin", "BITGET", "HKEX", "SSE", "CME"] {
             let lookup = of(&format!("{prefix}:BTCUSDT"), Scope::All);
             assert_eq!(lookup.unsupported, Some(prefix.to_uppercase()));
             assert_eq!(lookup.query, "BTCUSDT");
             assert_eq!(lookup.venue, None);
         }
         // A venue picked in the pull-down does not narrow it: Binance's BTCUSDT must still show.
-        let chosen = Lookup::of("OKX:BTCUSDT", Scope::All, Some(DataSource::Coinbase));
-        assert_eq!(chosen.unsupported, Some("OKX".to_owned()));
+        let chosen = Lookup::of("KUCOIN:BTCUSDT", Scope::All, Some(DataSource::Coinbase));
+        assert_eq!(chosen.unsupported, Some("KUCOIN".to_owned()));
         assert_eq!(chosen.venue, None);
         assert_eq!(chosen.searched(Scope::All).len(), Scope::All.venues().len());
         // CoinMarketCap has indices, not markets to search.
@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn a_colon_in_a_phrase_is_not_a_venue() {
         for text in [
-            "OKX:",
+            "KUCOIN:",
             "Fed: rate cut",
             "a:b",
             "really long name:x",
@@ -180,8 +180,8 @@ mod tests {
     fn predictions_and_watchlists_read_only_a_prefix_they_know() {
         let fed = of("Fed: cut", Scope::Predictions);
         assert_eq!((fed.query.as_str(), fed.unsupported), ("Fed: cut", None));
-        let okx = of("OKX:BTC", Scope::Watchlists);
-        assert_eq!((okx.query.as_str(), okx.unsupported), ("OKX:BTC", None));
+        let okx = of("KUCOIN:BTC", Scope::Watchlists);
+        assert_eq!((okx.query.as_str(), okx.unsupported), ("KUCOIN:BTC", None));
         let known = of("kalshi:fed", Scope::Predictions);
         assert_eq!(
             (known.query.as_str(), known.venue),
@@ -224,7 +224,18 @@ mod tests {
         };
         assert_eq!(
             names(&of("btc", Scope::All), Scope::All),
-            ["Binance", "Coinbase", "DEXScreener", "CoinGecko", "Alpaca"]
+            [
+                "Binance",
+                "Coinbase",
+                "OKX",
+                "Kraken",
+                "Bybit",
+                "Gate.io",
+                "MEXC",
+                "DEXScreener",
+                "CoinGecko",
+                "Alpaca"
+            ]
         );
         assert_eq!(
             names(&of("coinbase:btc", Scope::All), Scope::All),
