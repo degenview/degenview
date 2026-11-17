@@ -272,6 +272,149 @@ fn crosshair_at(_chart: &Harness, x_fraction: f64) -> CrosshairInfo {
     }
 }
 
+/// Seconds between two frames while the pointer rests, so a tooltip's delay passes in a few.
+const TICK: f64 = 0.2;
+
+/// One frame of a chart in a workspace: what `workspace/grid.rs` does with the chart's answer. A
+/// pointer on the card freezes the crosshair where it was; a pointer the plot sees moves it; and
+/// with neither the crosshair is gone. Returns whether the card's market was named and what the
+/// chart reported.
+fn grid_frame(chart: &mut Harness) -> (bool, ChartPointer) {
+    let (shapes, pointer) = chart.frame();
+    let named = super::canvas_tests::gather(&shapes)
+        .texts
+        .iter()
+        .any(|(_, text, _)| text == "ETHUSDT");
+    let mut next = None;
+    if pointer.on_overlay_card {
+        next = chart.crosshair.map(|crosshair| CrosshairInfo {
+            frozen: true,
+            ..crosshair
+        });
+    }
+    if let (Some(x_fraction), Some(price)) = (pointer.hover_x_fraction, pointer.hover_price) {
+        next = Some(CrosshairInfo {
+            frozen: false,
+            owner_id: 1,
+            x_fraction,
+            time: pointer.hover_time,
+            price,
+        });
+    }
+    chart.crosshair = next;
+    (named, pointer)
+}
+
+/// A chart with the pointer resting on its plot, so the card is up, and the card's rectangle.
+fn chart_with_card_at_rest() -> (Harness, Rect) {
+    let mut chart = harness(&[("ETHUSDT", market(300, |n| 4_000.0 + n as f64))]);
+    chart.pointer = Some(Pos2::new(400.0, 300.0));
+    for _ in 0..4 {
+        grid_frame(&mut chart);
+    }
+    let rect = overlay_card::card_rect(&chart.ctx, 1).expect("the card is up");
+    (chart, rect)
+}
+
+/// Puts the pointer at `at` and runs frames: the card must be there in every one, and the chart's
+/// answer for "the pointer is on the card" must be the same from the third frame on.
+fn assert_steady_at(chart: &mut Harness, at: Pos2, what: &str) {
+    chart.pointer = Some(at);
+    // Long enough for the tooltips to come up, which must not disturb the card either.
+    let frames: Vec<(bool, bool)> = (0..12)
+        .map(|_| {
+            chart.clock += TICK;
+            let (named, pointer) = grid_frame(chart);
+            (named, pointer.on_overlay_card)
+        })
+        .collect();
+    assert!(
+        frames.iter().all(|(named, _)| *named),
+        "{what}: the card went away in some frame; (named, on card) per frame: {frames:?}"
+    );
+    assert!(
+        frames[2..].windows(2).all(|pair| pair[0].1 == pair[1].1),
+        "{what}: the card flips between on and off; (named, on card) per frame: {frames:?}"
+    );
+}
+
+#[test]
+fn a_pointer_on_the_card_keeps_it_up_and_steady() {
+    let (mut chart, rect) = chart_with_card_at_rest();
+    assert_steady_at(&mut chart, rect.center(), "inside the card");
+    let (_, pointer) = grid_frame(&mut chart);
+    assert!(pointer.on_overlay_card);
+}
+
+#[test]
+fn a_pointer_just_outside_the_card_keeps_it_up_and_steady() {
+    // egui may give the pointer to a widget up to its interact radius away: the card must stay up,
+    // and say the same about the pointer from frame to frame, in that margin too.
+    for what in ["left of", "under", "right of", "just under"] {
+        let (mut chart, rect) = chart_with_card_at_rest();
+        let at = match what {
+            "left of" => Pos2::new(rect.left() - 3.0, rect.center().y),
+            "under" => Pos2::new(rect.center().x, rect.bottom() + 3.0),
+            "right of" => Pos2::new(rect.right() + 3.0, rect.center().y),
+            _ => Pos2::new(rect.center().x, rect.bottom() + 1.0),
+        };
+        assert_steady_at(&mut chart, at, what);
+    }
+}
+
+#[test]
+fn a_pointer_on_a_rows_buttons_keeps_the_card_up_and_steady() {
+    let (mut chart, rest) = chart_with_card_at_rest();
+    // On the card the buttons make room, so the card widens; the last button is at its right end.
+    chart.pointer = Some(rest.center());
+    for _ in 0..4 {
+        grid_frame(&mut chart);
+    }
+    let wide = overlay_card::card_rect(&chart.ctx, 1).expect("the card is up");
+    assert!(wide.width() > rest.width(), "{wide:?} vs {rest:?}");
+    assert_steady_at(
+        &mut chart,
+        Pos2::new(wide.right() - 14.0, wide.center().y),
+        "on the buttons",
+    );
+}
+
+/// The texts of the tooltips a frame drew: the row's, or a button's.
+fn tooltips(chart: &mut Harness) -> Vec<String> {
+    chart.clock += TICK;
+    let drawn = super::canvas_tests::gather(&chart.frame().0);
+    drawn
+        .texts
+        .into_iter()
+        .map(|(_, text, _)| text)
+        .filter(|text| {
+            text.contains("· Binance") || ["Hide", "Settings", "Remove"].contains(&text.as_str())
+        })
+        .collect()
+}
+
+#[test]
+fn a_button_has_its_own_tooltip_even_after_the_rows_has_come_up() {
+    let (mut chart, rest) = chart_with_card_at_rest();
+    chart.pointer = Some(rest.center());
+    let mut seen = Vec::new();
+    for _ in 0..8 {
+        seen = tooltips(&mut chart);
+    }
+    assert_eq!(seen, ["ETHUSDT · Binance"], "the row's tooltip is up");
+    let wide = overlay_card::card_rect(&chart.ctx, 1).expect("the card is up");
+    // The remove button, at the right end of the row.
+    chart.pointer = Some(Pos2::new(wide.right() - 14.0, wide.center().y));
+    for _ in 0..8 {
+        seen = tooltips(&mut chart);
+    }
+    assert_eq!(
+        seen,
+        ["Remove"],
+        "the button says what it does, not the row"
+    );
+}
+
 #[test]
 fn many_overlays_draw_and_the_readout_counts_the_rows_it_cannot_fit() {
     let markets: Vec<(String, Vec<Kline>)> = (0..60)

@@ -27,6 +27,9 @@ watchlists.
   upper-cases. Never rebuild `BTC/USDT` labels. Asset: `DataSource::base_asset` /
   `SearchResult::base_asset`; pair: `SearchResult::base`/`quote`.
 - Hits are ordered by `service::market::search_rank`; see [Symbol picker](../symbol-picker.md).
+- `VENUE:SYMBOL` text (`BINANCE:BTCUSDT`, `NASDAQ:AAPL`) is read only by `model::market::venue`
+  (watchlist slugs plus `US_EXCHANGES`, which are Alpaca); the watchlist import and the picker both use
+  it. A new provider's slug is `DataSource::watchlist_slug`; do not add a second prefix table.
 
 ## Timeframes
 

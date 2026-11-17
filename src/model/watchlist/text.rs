@@ -14,33 +14,12 @@
 //! TradingView compatibility is best effort: exchange prefixes DegenView has no
 //! provider for are reported as skipped, never guessed at.
 
+use crate::model::market::venue::{self, VenueQuery};
 use crate::model::watchlist::{
     MAX_NAME_CHARS, Watchlist, WatchlistEntry, WatchlistError, WatchlistInstrument,
     WatchlistSection,
 };
 use crate::model::{DataSource, InstrumentId};
-
-/// US listings on these venues map to Alpaca, which serves US equities.
-const US_EXCHANGES: [&str; 7] = [
-    "NASDAQ",
-    "NYSE",
-    "AMEX",
-    "ARCA",
-    "NYSEARCA",
-    "BATS",
-    "NYSEAMERICAN",
-];
-
-const SOURCES: [DataSource; 8] = [
-    DataSource::Binance,
-    DataSource::Coinbase,
-    DataSource::CoinGecko,
-    DataSource::DexScreener,
-    DataSource::Alpaca,
-    DataSource::Polymarket,
-    DataSource::Kalshi,
-    DataSource::CoinMarketCap,
-];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Row {
@@ -247,18 +226,15 @@ pub fn market_item(source: DataSource, symbol: &str) -> Result<WatchlistInstrume
     instrument_from(&format!("{}:{symbol}", source.watchlist_slug()))
 }
 
-fn slug_source(prefix: &str) -> Option<DataSource> {
-    SOURCES
-        .into_iter()
-        .find(|source| source.watchlist_slug() == prefix)
-}
-
 fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
-    let Some((prefix, rest)) = token.split_once(':') else {
+    let Some(VenueQuery {
+        prefix,
+        source,
+        symbol: mut rest,
+    }) = venue::parse(token)
+    else {
         return Err("Missing exchange prefix, expected SOURCE:SYMBOL".to_owned());
     };
-    let prefix = prefix.trim().to_uppercase();
-    let mut rest = rest.trim().to_owned();
     let mut title = None;
     if let Some((symbol, candidate)) = rest.clone().split_once('|') {
         let candidate = Watchlist::sanitized_name(candidate);
@@ -269,10 +245,7 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
         return Err("Missing symbol".to_owned());
     }
 
-    if US_EXCHANGES.contains(&prefix.as_str()) {
-        return stock(&rest);
-    }
-    let Some(source) = slug_source(&prefix) else {
+    let Some(source) = source else {
         return Err(format!("Unsupported exchange {prefix}"));
     };
 

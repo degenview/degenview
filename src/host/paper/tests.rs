@@ -473,3 +473,155 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_millis() as i64)
 }
+
+mod fill_sound {
+    use super::*;
+    use crate::model::paper::prefs::PaperPrefs;
+    use crate::service::sound::{Sound, Sounder};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const KEY: &str = "Binance:BTCUSDT";
+
+    #[derive(Default)]
+    struct Counting(AtomicUsize);
+
+    impl Counting {
+        fn played(&self) -> usize {
+            self.0.load(Ordering::SeqCst)
+        }
+    }
+
+    impl Sounder for Counting {
+        fn play(&self, sound: Sound) {
+            assert_eq!(sound, Sound::OrderFilled);
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn quote(last: f64, offset: i64) -> PaperQuote {
+        PaperQuote {
+            instrument_key: KEY.into(),
+            bid: None,
+            ask: None,
+            last: Some(last),
+            timestamp: now_ms() + offset,
+            is_market_open: true,
+        }
+    }
+
+    fn small_market(account_id: u64) -> PaperOrderRequest {
+        let mut request = market_request(account_id);
+        request.quantity = 0.1;
+        request
+    }
+
+    fn limit_buy(account_id: u64, price: f64) -> PaperOrderRequest {
+        let mut request = market_request(account_id);
+        request.kind = PaperOrderType::Limit;
+        request.limit_price = Some(price);
+        request
+    }
+
+    #[test]
+    fn a_market_order_counts_one_fill() {
+        let mut host = PaperHost::load(store());
+        let id = account(&mut host);
+        host.process_quote(quote(50_000.0, 0)).unwrap();
+        assert_eq!(host.drain_fills(), 0, "a mark is not a fill");
+        host.submit(market_request(id)).unwrap();
+        assert_eq!(host.drain_fills(), 1);
+        assert_eq!(host.drain_fills(), 0, "each fill is taken once");
+    }
+
+    #[test]
+    fn a_limit_order_counts_once_when_a_quote_crosses_it() {
+        let mut host = PaperHost::load(store());
+        let id = account(&mut host);
+        host.process_quote(quote(50_000.0, 0)).unwrap();
+        host.submit(limit_buy(id, 40_000.0)).unwrap();
+        assert_eq!(host.drain_fills(), 0, "resting is not filled");
+        host.process_quote(quote(45_000.0, 500)).unwrap();
+        assert_eq!(host.drain_fills(), 0, "not crossed yet");
+        host.process_quote(quote(39_000.0, 1_000)).unwrap();
+        assert_eq!(host.drain_fills(), 1);
+        host.process_quote(quote(38_000.0, 1_500)).unwrap();
+        assert_eq!(host.drain_fills(), 0);
+    }
+
+    #[test]
+    fn a_reload_of_what_another_mac_filled_counts_nothing() {
+        let store = store();
+        let mut other = PaperHost::load(store.clone());
+        let id = account(&mut other);
+        other.process_quote(quote(50_000.0, 0)).unwrap();
+        other.submit(market_request(id)).unwrap();
+        assert_eq!(other.snapshot().fills.len(), 1);
+
+        let mut host = PaperHost::load(store);
+        host.reload();
+        assert_eq!(host.snapshot().fills.len(), 1);
+        assert_eq!(host.drain_fills(), 0);
+    }
+
+    #[test]
+    fn an_account_another_mac_runs_is_not_filled_here() {
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        let id = account(&mut host);
+        host.process_quote(quote(50_000.0, 0)).unwrap();
+        host.submit(limit_buy(id, 40_000.0)).unwrap();
+        store
+            .lock()
+            .unwrap()
+            .set_paper_owner(&id.to_string(), Some("other-mac"))
+            .unwrap();
+        host.reload();
+        host.process_quote(quote(39_000.0, 1_000)).unwrap();
+        assert_eq!(host.drain_fills(), 0);
+        assert!(host.snapshot().orders[0].status.is_working());
+    }
+
+    #[test]
+    fn the_choice_is_on_by_default_and_remembered() {
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        assert!(host.prefs().fill_sound);
+        let muted = PaperPrefs { fill_sound: false };
+        host.set_prefs(&store.lock().unwrap(), muted).unwrap();
+        assert_eq!(host.prefs(), muted);
+        assert_eq!(PaperHost::load(store).prefs(), muted);
+    }
+
+    #[test]
+    fn a_burst_of_fills_plays_once_and_a_muted_host_never_plays() {
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        let id = account(&mut host);
+        host.process_quote(quote(50_000.0, 0)).unwrap();
+        let sounder = Counting::default();
+
+        host.announce_fills(&sounder);
+        assert_eq!(sounder.played(), 0, "nothing was filled");
+
+        host.submit(small_market(id)).unwrap();
+        host.submit(small_market(id)).unwrap();
+        host.announce_fills(&sounder);
+        assert_eq!(sounder.played(), 1, "two fills, one sound");
+        host.announce_fills(&sounder);
+        assert_eq!(sounder.played(), 1);
+
+        host.set_prefs(&store.lock().unwrap(), PaperPrefs { fill_sound: false })
+            .unwrap();
+        host.submit(small_market(id)).unwrap();
+        host.announce_fills(&sounder);
+        assert_eq!(sounder.played(), 1, "muted");
+        host.set_prefs(&store.lock().unwrap(), PaperPrefs::default())
+            .unwrap();
+        host.announce_fills(&sounder);
+        assert_eq!(
+            sounder.played(),
+            1,
+            "a fill heard-as-muted is not played later"
+        );
+    }
+}
