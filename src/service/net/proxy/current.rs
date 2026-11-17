@@ -82,7 +82,33 @@ fn environment(name: &str) -> Option<String> {
 }
 
 fn resolve_now(config: &ProxyConfig, password: Option<&str>) -> Option<Resolved> {
-    resolve(config, password, &environment, &os::read)
+    resolve(config, password, &environment, &|| {
+        #[cfg(test)]
+        SYSTEM_READS.with(|reads| reads.set(reads.get() + 1));
+        os::read()
+    })
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread asked the operating system for its proxy, which blocks: a test
+    /// that says "never on this path" counts it.
+    static SYSTEM_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The system-proxy reads this thread made so far.
+#[cfg(test)]
+pub(crate) fn system_reads() -> usize {
+    SYSTEM_READS.with(std::cell::Cell::get)
+}
+
+/// Makes the last system-proxy read older than [`REFRESH`], so the next worker about to connect
+/// reads it again.
+#[cfg(test)]
+pub(crate) fn age_system_read() {
+    lock(&STATE).checked = Instant::now()
+        .checked_sub(REFRESH * 2)
+        .unwrap_or_else(Instant::now);
 }
 
 fn set(state: &mut State, resolved: Option<Resolved>) {

@@ -16,6 +16,7 @@ pub mod report;
 pub mod sample;
 pub mod sse;
 
+use crate::service::net::agent::FollowingAgent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sse::{Event, Flow};
@@ -502,7 +503,8 @@ pub struct HttpProvider {
     kind: ProviderKind,
     base_url: String,
     api_key: Option<String>,
-    agent: ureq::Agent,
+    /// Follows the proxy setting; asked for the agent per request, on the request's worker.
+    agent: FollowingAgent,
 }
 
 impl HttpProvider {
@@ -533,20 +535,23 @@ impl HttpProvider {
                 kind.title()
             )));
         }
-        // No redirects: a redirect could carry the key to another host.
-        let config = crate::service::net::config_builder_for(&base_url)
-            .timeout_connect(Some(CONNECT_TIMEOUT))
-            .timeout_recv_response(Some(FIRST_BYTE_TIMEOUT))
-            .timeout_recv_body(Some(BODY_TIMEOUT))
-            .max_redirects(0)
-            .max_redirects_will_error(false)
-            .http_status_as_error(false)
-            .build();
+        // No redirects: a redirect could carry the key to another host. The proxy is not looked up
+        // here (a view builds this on the frame, and the system's proxy is read by a blocking
+        // call): `send` asks the agent for it on the worker that makes the request.
+        let agent = FollowingAgent::new(|config| {
+            config
+                .timeout_connect(Some(CONNECT_TIMEOUT))
+                .timeout_recv_response(Some(FIRST_BYTE_TIMEOUT))
+                .timeout_recv_body(Some(BODY_TIMEOUT))
+                .max_redirects(0)
+                .max_redirects_will_error(false)
+                .http_status_as_error(false)
+        });
         Ok(Self {
             kind,
             base_url,
             api_key,
-            agent: ureq::Agent::new_with_config(config),
+            agent,
         })
     }
 
@@ -577,14 +582,15 @@ impl HttpProvider {
 
     /// Sends the request; a non-2xx answer becomes the error, a 2xx one the open body.
     fn send(&self, wire: &WireRequest) -> Result<ureq::Body, LlmError> {
+        let agent = self.agent.get_for(&wire.url);
         let response = if wire.body.is_empty() {
-            let mut builder = self.agent.get(&wire.url);
+            let mut builder = agent.get(&wire.url);
             for (name, value) in &wire.headers {
                 builder = builder.header(name, value);
             }
             builder.call()
         } else {
-            let mut builder = self.agent.post(&wire.url);
+            let mut builder = agent.post(&wire.url);
             for (name, value) in &wire.headers {
                 builder = builder.header(name, value);
             }

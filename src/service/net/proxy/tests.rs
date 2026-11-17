@@ -648,3 +648,17 @@ fn an_ipv6_host_is_bracketed_only_where_text_needs_it() {
     assert_eq!(super::spec::bracketed("[::1]"), "[::1]");
     assert_eq!(super::spec::bracketed("proxy.example"), "proxy.example");
 }
+
+/// Building an AI client happens on the frame (Send, Load models); the system's proxy is read on
+/// the worker that makes the request, never there.
+#[test]
+fn building_an_ai_client_does_not_read_the_system_proxy() {
+    use crate::service::llm::{HttpProvider, ProviderKind};
+    let _applied = AppliedProxy::new(ProxyConfig::default());
+    current::age_system_read();
+    let before = current::system_reads();
+    // No environment proxy is assumed: the read is only skipped when one is set, so a test
+    // machine with HTTPS_PROXY still passes, and one without fails if `new` reads.
+    HttpProvider::new(ProviderKind::Compatible, "https://example.test/v1", None).unwrap();
+    assert_eq!(current::system_reads(), before, "new() blocked on the OS");
+}
