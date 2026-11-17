@@ -3,6 +3,7 @@
 //! with its kind at the right, and a check for a market already on the tab or a plus to add it.
 
 use super::search::{market_kind, trading_kind};
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::SearchResult;
 use crate::ui::chart::picker_kit::artwork::result_icon;
@@ -45,9 +46,9 @@ impl RowState {
     /// What the plus (and the menu's last item) does to the market.
     fn add_label(self) -> &'static str {
         if self.watchlist {
-            "Add to watchlist"
+            tr!("Add to watchlist")
         } else {
-            ADD_LABEL
+            tr!("Add as new chart")
         }
     }
 
@@ -133,9 +134,7 @@ fn title_case(id: &str) -> String {
 /// always `Add as new chart`. The shortcuts are the keys that do the same.
 const REPLACE_KEY: &str = "↵";
 const ADD_KEY: &str = "⇧↵";
-const ADD_LABEL: &str = "Add as new chart";
 const COMPARE_KEY: &str = "⌥↵";
-const COMPARE_LABEL: &str = "Compare";
 
 /// Draws one row, `width` wide. `replacing` is the market on the focused chart, which a pick would
 /// replace; `None` when there is no chart to replace.
@@ -253,7 +252,7 @@ pub fn marks(
     if state.highlighted && state.offers_overlay() {
         let compare = ui.interact(compare_mark, row_id(ui, result, "compare"), Sense::click());
         let compare = compare
-            .on_hover_text("Compare on this chart")
+            .on_hover_text(tr!("Compare on this chart"))
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         let hot = compare.hovered();
         if hot {
@@ -370,10 +369,10 @@ fn context_menu(
 ) {
     let replace = replacing
         .filter(|_| !state.comparing && !state.watchlist)
-        .map(|current| format!("Replace {current}"));
+        .map(|current| tr!("Replace {market}", market = current));
     let compare = state.offers_overlay().then(|| match replacing {
-        Some(current) => format!("Compare with {current}"),
-        None => COMPARE_LABEL.to_owned(),
+        Some(current) => tr!("Compare with {market}", market = current),
+        None => tr!("Compare").to_owned(),
     });
     let compare_key = if state.comparing {
         REPLACE_KEY
@@ -439,7 +438,11 @@ pub fn related_row(ui: &mut Ui, result: &SearchResult, width: f32) -> bool {
     let (rect, response) = ui.allocate_exact_size(vec2(width, 44.0), Sense::click());
     let response = crate::ui::accessibility::label(
         response.on_hover_cursor(egui::CursorIcon::PointingHand),
-        format!("{} on {}", result.symbol, result.source.display_name()),
+        tr!(
+            "{symbol} on {venue}",
+            symbol = result.symbol,
+            venue = result.source.display_name()
+        ),
     );
     if response.hovered() {
         ui.painter().rect_filled(rect, 8.0, theme::ink(10));

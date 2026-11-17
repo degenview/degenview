@@ -8,6 +8,7 @@
 //! writes them.
 
 use crate::format::group_thousands;
+use crate::i18n::tr;
 use crate::model::PriceFormat;
 use crate::model::chart::table::{Column as Field, Order, TableFeed, ValueKind};
 use crate::ui::icons::{self, Icon};
@@ -146,47 +147,53 @@ fn toolbar(
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         vec2(width, TOOLBAR_HEIGHT),
-        Layout::left_to_right(Align::Center),
+        Layout::right_to_left(Align::Center),
         |ui| {
             ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
-            ui.add_space(PAD);
-            ui.label(kit::text(
-                "Table view",
-                kit::size::HEADLINE,
-                kit::SEMIBOLD,
-                theme::text_primary(),
-            ));
-            ui.add_space(4.0);
-            chip(ui, title);
-            if let Some(feed) = feed {
-                chip(ui, &feed.bars_label);
-                chip(
-                    ui,
-                    &format!("{} bars", group_thousands(&feed.len().to_string())),
-                );
+            // The buttons keep their room; the title and chips take what is left and are cut at
+            // its edge, however long the words are in the language in use.
+            ui.add_space(PAD - 4.0);
+            let close = icons::button(
+                ui,
+                Icon::Xmark,
+                26.0,
+                theme::text_secondary(),
+                tr!("Close table view"),
+            );
+            if close.clicked() {
+                *action = Some(TableAction::Close);
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.add_space(PAD - 4.0);
-                let close = icons::button(
-                    ui,
-                    Icon::Xmark,
-                    26.0,
-                    theme::text_secondary(),
-                    "Close table view",
-                );
-                if close.clicked() {
-                    *action = Some(TableAction::Close);
-                }
+            ui.add_space(4.0);
+            let (icon, label) = match state.order {
+                Order::NewestFirst => (Icon::ArrowDown, tr!("Newest first")),
+                Order::OldestFirst => (Icon::ArrowUp, tr!("Oldest first")),
+            };
+            if kit::push_button(ui, Some(icon), label, true)
+                .on_hover_text(tr!("Change the order of the rows"))
+                .clicked()
+            {
+                state.order = state.order.flipped();
+            }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.shrink_clip_rect(ui.max_rect());
+                ui.add_space(PAD);
+                ui.label(kit::text(
+                    tr!("Table view"),
+                    kit::size::HEADLINE,
+                    kit::SEMIBOLD,
+                    theme::text_primary(),
+                ));
                 ui.add_space(4.0);
-                let (icon, label) = match state.order {
-                    Order::NewestFirst => (Icon::ArrowDown, "Newest first"),
-                    Order::OldestFirst => (Icon::ArrowUp, "Oldest first"),
-                };
-                if kit::push_button(ui, Some(icon), label, true)
-                    .on_hover_text("Change the order of the rows")
-                    .clicked()
-                {
-                    state.order = state.order.flipped();
+                chip(ui, title);
+                if let Some(feed) = feed {
+                    chip(ui, &feed.bars_label);
+                    chip(
+                        ui,
+                        &tr!(
+                            "{count} bars",
+                            count = group_thousands(&feed.len().to_string())
+                        ),
+                    );
                 }
             });
         },
@@ -219,14 +226,14 @@ fn empty(ui: &mut Ui) {
     painter.text(
         pos2(rect.center().x, rect.center().y - 8.0),
         Align2::CENTER_CENTER,
-        "No bars to show yet",
+        tr!("No bars to show yet"),
         egui::FontId::proportional(kit::size::HEADLINE),
         theme::text_secondary(),
     );
     painter.text(
         pos2(rect.center().x, rect.center().y + 12.0),
         Align2::CENTER_CENTER,
-        "Rows appear as soon as the chart has data.",
+        tr!("Rows appear as soon as the chart has data."),
         egui::FontId::proportional(kit::size::SUBHEADLINE),
         theme::text_tertiary(),
     );
@@ -304,11 +311,14 @@ fn header(
         }
         if sortable {
             let tip = match state.order {
-                Order::NewestFirst => "Newest first: click for oldest first",
-                Order::OldestFirst => "Oldest first: click for newest first",
+                Order::NewestFirst => tr!("Newest first: click for oldest first"),
+                Order::OldestFirst => tr!("Oldest first: click for newest first"),
             };
-            if crate::ui::accessibility::label(response.on_hover_text(tip), format!("Time, {tip}"))
-                .clicked()
+            if crate::ui::accessibility::label(
+                response.on_hover_text(tip),
+                tr!("Time, {order}", order = tip),
+            )
+            .clicked()
             {
                 state.order = state.order.flipped();
             }
@@ -395,7 +405,11 @@ fn paint_row(
                     color,
                 );
                 if matches!(column, Field::Close | Field::Volume) {
-                    summary.push(format!("{} {text}", feed.title(*column)));
+                    summary.push(tr!(
+                        "{column} {value}",
+                        column = feed.title(*column),
+                        value = text
+                    ));
                 }
             }
         }
@@ -543,5 +557,51 @@ mod tests {
             value_color(&feed, true, Field::Open, "1"),
             theme::text_primary()
         );
+    }
+
+    /// The panel in the pseudo-locale, with rows and with none. `DEGENVIEW_GALLERY_DIR=<dir>`
+    /// writes the pictures.
+    #[test]
+    fn the_panel_draws_in_the_pseudo_locale() {
+        use crate::i18n::{Locale, with_locale};
+        use crate::ui::chart::painted_text;
+        use crate::ui::render_tests::{Screen, gallery_dir};
+
+        let _theme = crate::ui::theme::RestoreDefaultTheme;
+        let with_rows = feed(2);
+        for (theme_name, app_theme) in [
+            ("dark", crate::ui::theme::AppTheme::Dark),
+            ("light", crate::ui::theme::AppTheme::Light),
+        ] {
+            for (name, table, wanted) in [
+                ("rows", Some(&with_rows), "Table view"),
+                ("empty", None, "No bars to show yet"),
+            ] {
+                let mut screen = Screen::new(vec2(420.0, 220.0));
+                crate::ui::theme::apply(&screen.ctx, app_theme);
+                let mut state = TableViewState::default();
+                let mut last = None;
+                with_locale(Locale::Pseudo, || {
+                    for _ in 0..4 {
+                        last = Some(screen.run(Vec::new(), |ui| {
+                            let full = ui.max_rect();
+                            ui.painter()
+                                .rect_filled(full, 0.0, crate::ui::theme::chrome());
+                            show(ui, &mut state, "BTCUSDT", table, PriceFormat::default());
+                        }));
+                    }
+                });
+                let last = last.take().expect("a frame");
+                let texts = painted_text::of(&last);
+                painted_text::assert_painted(&texts, wanted);
+                if name == "rows" {
+                    painted_text::assert_painted(&texts, "Newest first");
+                }
+                if gallery_dir().is_some() {
+                    eprintln!("{name}: {:?}", painted_text::unbracketed(&texts));
+                    screen.save(&format!("pseudo-table-view-{name}-{theme_name}"), last);
+                }
+            }
+        }
     }
 }

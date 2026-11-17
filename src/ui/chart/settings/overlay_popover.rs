@@ -7,6 +7,7 @@
 //! outside) keeps what was changed.
 
 use super::overlay;
+use crate::i18n::tr;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::overlay::{ChartOverlay, OverlayCommand, OverlayId, OverlayScale};
 use crate::ui::icons::Icon;
@@ -112,12 +113,16 @@ impl OverlaySettingsPopover {
                 // Hide and Remove together at the trailing edge, the destructive one last.
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
-                    if kit::destructive_sheet_button(ui, Icon::Trash, "Remove").clicked() {
+                    if kit::destructive_sheet_button(ui, Icon::Trash, tr!("Remove")).clicked() {
                         outcome = Outcome::Command(OverlayCommand::Remove(overlay.id));
                     }
                     if kit::sheet_button(
                         ui,
-                        if overlay.visible { "Hide" } else { "Show" },
+                        if overlay.visible {
+                            tr!("Hide")
+                        } else {
+                            tr!("Show")
+                        },
                         false,
                         true,
                     )

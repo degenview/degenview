@@ -566,3 +566,69 @@ fn gallery_of_the_compare_page() {
         screen.save(name, last.expect("a frame"));
     }
 }
+
+/// Every page of the chart settings in the pseudo-locale, in both appearances: the headings,
+/// descriptions, hints and controls all go through `tr!`, and the longer text still fits.
+/// `DEGENVIEW_GALLERY_DIR=<dir>` writes the pictures.
+#[test]
+fn every_page_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::chart::painted_text;
+    use crate::ui::render_tests::{Screen, gallery_dir};
+
+    let _theme = crate::ui::theme::RestoreDefaultTheme;
+    for (theme_name, app_theme) in [
+        ("dark", crate::ui::theme::AppTheme::Dark),
+        ("light", crate::ui::theme::AppTheme::Light),
+    ] {
+        for (name, tab) in [
+            ("indicators", Tab::Indicators),
+            ("scripts", Tab::Scripts),
+            ("compare", Tab::Overlays),
+            ("appearance", Tab::Appearance),
+            ("canvas", Tab::Canvas),
+        ] {
+            let mut screen = Screen::new(egui::vec2(820.0, 900.0));
+            crate::ui::theme::apply(&screen.ctx, app_theme);
+            script_catalog::publish(&screen.ctx, library());
+            let mut state = ChartSettingsState {
+                tab,
+                ..ChartSettingsState::default()
+            };
+            let mut card = card_with_overlays(if tab == Tab::Overlays { 3 } else { 0 });
+            let mut indicators = IndicatorConfig::default();
+            let store = test_store();
+            let mut last = None;
+            with_locale(Locale::Pseudo, || {
+                for _ in 0..4 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        let _ = show(
+                            ui.ctx(),
+                            &mut state,
+                            ChartSettingsContext {
+                                title: "BTC/USDT",
+                                symbol: "BTCUSDT",
+                                source: DataSource::Binance,
+                                loaded_candles: 0,
+                                indicators: &mut indicators,
+                                card: &mut card,
+                                scale_mode: PriceScaleMode::Regular,
+                                store: &store,
+                            },
+                        );
+                    }));
+                }
+            });
+            let last = last.take().expect("a frame");
+            let texts = painted_text::of(&last);
+            assert!(
+                texts.iter().filter(|text| text.starts_with('[')).count() >= 5,
+                "{name} wrote little through tr!: {texts:#?}"
+            );
+            if gallery_dir().is_some() {
+                eprintln!("{name}: {:?}", painted_text::unbracketed(&texts));
+                screen.save(&format!("pseudo-chart-settings-{name}-{theme_name}"), last);
+            }
+        }
+    }
+}

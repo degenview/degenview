@@ -9,6 +9,7 @@
 //! [`ChartCard::set_logs_range`].
 
 use super::{ChartCard, Projection, View};
+use crate::i18n::tr;
 use crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT;
 use crate::ui::chart::canvas::CanvasStyle;
 use crate::ui::kit::time_text;
@@ -53,8 +54,10 @@ fn span_text(from_ms: i64, to_ms: i64) -> String {
     }
     let to = time_text::compact_text(to_ms);
     match (from.split_once(", "), to.split_once(", ")) {
-        (Some((day, _)), Some((other, time))) if day == other => format!("{from} – {time}"),
-        _ => format!("{from} – {to}"),
+        (Some((day, _)), Some((other, time))) if day == other => {
+            tr!("{from} – {to}", from = from, to = time)
+        }
+        _ => tr!("{from} – {to}", from = from, to = to),
     }
 }
 
@@ -155,9 +158,12 @@ impl ChartCard {
             );
         }
         let text = if from.is_some() {
-            format!("Logs · {}", span_text(time_of(first), time_of(last)))
+            tr!(
+                "Logs · {range}",
+                range = span_text(time_of(first), time_of(last))
+            )
         } else {
-            "Logs · drag over the bars".to_owned()
+            tr!("Logs · drag over the bars").to_owned()
         };
         paint_tag(
             painter,
@@ -232,7 +238,7 @@ impl ChartCard {
                 plot,
                 centre,
                 plot.bottom() - 12.0,
-                "Logs".to_owned(),
+                tr!("Logs").to_owned(),
                 accent,
             );
         }

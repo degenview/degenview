@@ -6,6 +6,7 @@
 //! the *size* of a price-based construction is replaced; its source, wicks, line count, reversal
 //! and look are the user's.
 
+use crate::i18n::tr;
 use crate::model::chart::kind::{ChartType, SizeMethod, SizeRule};
 use crate::model::chart::look::Palette;
 use crate::model::chart::synthetic::{Construction, SyntheticSeries, build_with};
@@ -95,7 +96,7 @@ pub fn show(ui: &mut Ui, appearance: &ChartAppearance, chart_type: ChartType) {
         ui.set_width(width - 28.0 - 2.0);
         ui.spacing_mut().item_spacing.y = 8.0;
         ui.label(kit::text(
-            "Preview",
+            tr!("Preview"),
             kit::size::SUBHEADLINE + 1.0,
             kit::SEMIBOLD,
             theme::text_primary(),

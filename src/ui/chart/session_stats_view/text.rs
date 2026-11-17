@@ -2,6 +2,7 @@
 //! answer read. Pure, so the panel, the copy button and the tests all say the same thing.
 
 use crate::format::group_thousands;
+use crate::i18n::tr;
 use crate::model::session_stats::{Date, Estimate, Stats};
 
 /// A share as a percent with one decimal (`0.919` is `91.9%`).
@@ -23,7 +24,7 @@ pub fn fraction(estimate: &Estimate) -> String {
 pub fn share(estimate: &Estimate) -> String {
     match estimate.proportion() {
         Some(p) => format!("{} · {}", percent(p), fraction(estimate)),
-        None => "no days".to_owned(),
+        None => tr!("no days").to_owned(),
     }
 }
 
@@ -39,13 +40,14 @@ fn hours(value: f64) -> String {
 /// Where in the day bar `index` is, for bars of `bar_ms`: the first bar, or the hours it covers.
 pub fn after_open(index: usize, bar_ms: i64) -> String {
     if index == 0 {
-        return "in the first bar".to_owned();
+        return tr!("in the first bar").to_owned();
     }
     let per_bar = bar_ms as f64 / 3_600_000.0;
-    format!(
-        "bar {index} ({}–{} h in)",
-        hours(index as f64 * per_bar),
-        hours((index + 1) as f64 * per_bar)
+    tr!(
+        "bar {index} ({from}–{to} h in)",
+        index = index,
+        from = hours(index as f64 * per_bar),
+        to = hours((index + 1) as f64 * per_bar)
     )
 }
 
@@ -57,47 +59,56 @@ pub fn date(date: Date) -> String {
 /// The answer as plain text for the clipboard: the question, the number with its sample and
 /// interval, the halves, and the reminder that it is a count, not a forecast.
 pub fn summary(title: &str, stats: &Stats, bar_ms: i64) -> String {
-    let mut lines = vec![format!(
-        "{title} · {} on {}",
-        stats.outcome.label(),
-        stats.filter.describe()
+    let mut lines = vec![tr!(
+        "{title} · {outcome} on {filter}",
+        title = title,
+        outcome = stats.outcome.label(),
+        filter = stats.filter.describe()
     )];
     match (stats.estimate.proportion(), stats.estimate.interval()) {
-        (Some(p), Some((low, high))) => lines.push(format!(
-            "{} ({} of {} days) · 95% CI {} – {}",
-            percent(p),
-            count(stats.estimate.hits),
-            count(stats.estimate.n),
-            percent(low),
-            percent(high)
+        (Some(p), Some((low, high))) => lines.push(tr!(
+            "{share} ({hits} of {days} days) · 95% CI {low} – {high}",
+            share = percent(p),
+            hits = count(stats.estimate.hits),
+            days = count(stats.estimate.n),
+            low = percent(low),
+            high = percent(high)
         )),
-        _ => lines.push("No days qualify.".to_owned()),
+        _ => lines.push(tr!("No days qualify.").to_owned()),
     }
     if let Some(halves) = &stats.stability {
-        lines.push(format!(
-            "Older half {} · newer half {} · the halves {}",
-            share(&halves.older),
-            share(&halves.newer),
-            if halves.agree { "agree" } else { "differ" }
-        ));
+        let (older, newer) = (share(&halves.older), share(&halves.newer));
+        lines.push(if halves.agree {
+            tr!(
+                "Older half {older} · newer half {newer} · the halves agree",
+                older = older,
+                newer = newer
+            )
+        } else {
+            tr!(
+                "Older half {older} · newer half {newer} · the halves differ",
+                older = older,
+                newer = newer
+            )
+        });
     }
     if let Some(timing) = &stats.timing {
-        lines.push(format!(
-            "When (n = {}): half by {} · 90% by {}",
-            count(timing.n),
-            after_open(timing.median, bar_ms),
-            after_open(timing.p90, bar_ms)
+        lines.push(tr!(
+            "When (n = {days}): half by {median} · 90% by {p90}",
+            days = count(timing.n),
+            median = after_open(timing.median, bar_ms),
+            p90 = after_open(timing.p90, bar_ms)
         ));
     }
     if let Some((first, last)) = stats.span {
-        lines.push(format!(
-            "{} sessions, {} to {} · {}",
-            count(stats.sessions),
-            date(first),
-            date(last),
-            stats.hours.label()
+        lines.push(tr!(
+            "{sessions} sessions, {first} to {last} · {hours}",
+            sessions = count(stats.sessions),
+            first = date(first),
+            last = date(last),
+            hours = stats.hours.label()
         ));
     }
-    lines.push("Historical frequency of this chart's bars, not a prediction.".to_owned());
+    lines.push(tr!("Historical frequency of this chart's bars, not a prediction.").to_owned());
     lines.join("\n")
 }

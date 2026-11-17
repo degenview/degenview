@@ -6,6 +6,7 @@
 //! The saved templates are read when the sheet opens and again before every change (see
 //! [`ChartTemplateStore`]); there is no database access in the paint path.
 
+use crate::i18n::tr;
 use crate::model::ChartAppearance;
 use crate::model::chart::template::{
     ApplyScope, MAX_DESCRIPTION_CHARS, MAX_NAME_CHARS, TemplateEntry, TemplateId, clean_name,
@@ -132,7 +133,7 @@ impl TemplateState {
             .templates(store)
             .book()
             .entry(id)
-            .ok_or_else(|| "That template no longer exists.".to_owned())?;
+            .ok_or_else(|| tr!("That template no longer exists.").to_owned())?;
         card.apply_template(&entry.appearance, scope);
         Ok(entry.name)
     }
@@ -196,9 +197,9 @@ pub fn notice(ui: &mut Ui, state: &mut TemplateState) {
 
 /// The "Templates ▾" button and its menu.
 pub fn menu(ui: &mut Ui, state: &mut TemplateState, store: &SharedStore, card: &mut ChartCard) {
-    let response = kit::push_button(ui, Some(Icon::Palette), "Templates", true);
-    let response = crate::ui::accessibility::label(response, "Templates")
-        .on_hover_text("Save this chart's look, or give it another.");
+    let response = kit::push_button(ui, Some(Icon::Palette), tr!("Templates"), true);
+    let response = crate::ui::accessibility::label(response, tr!("Templates"))
+        .on_hover_text(tr!("Save this chart's look, or give it another."));
     let scope = state.scope;
     // Read before the menu opens: the list is the sheet's, not each frame's.
     let entries: Vec<TemplateEntry> = state.templates(store).book().entries();
@@ -215,7 +216,7 @@ pub fn menu(ui: &mut Ui, state: &mut TemplateState, store: &SharedStore, card: &
             if kit::menu_item(
                 ui,
                 Icon::Plus,
-                "Save current settings as template…",
+                tr!("Save current settings as template…"),
                 true,
                 false,
             ) {
@@ -228,7 +229,7 @@ pub fn menu(ui: &mut Ui, state: &mut TemplateState, store: &SharedStore, card: &
                 ui.close();
             }
             kit::menu_separator(ui);
-            heading(ui, "When applying");
+            heading(ui, tr!("When applying"));
             for option in ApplyScope::ALL {
                 if kit::menu_item_marked(ui, Icon::Check, option.label(), option == scope) {
                     next_scope = Some(option);
@@ -236,11 +237,11 @@ pub fn menu(ui: &mut Ui, state: &mut TemplateState, store: &SharedStore, card: &
             }
             kit::menu_separator(ui);
             let saved: Vec<&TemplateEntry> = entries.iter().filter(|e| !e.built_in).collect();
-            heading(ui, "My templates");
+            heading(ui, tr!("My templates"));
             if load_error.is_some() {
-                disabled(ui, "Saved templates could not be read");
+                disabled(ui, tr!("Saved templates could not be read"));
             } else if saved.is_empty() {
-                disabled(ui, "None saved yet");
+                disabled(ui, tr!("None saved yet"));
             }
             for entry in saved {
                 if template_item(ui, entry) {
@@ -249,7 +250,7 @@ pub fn menu(ui: &mut Ui, state: &mut TemplateState, store: &SharedStore, card: &
                 }
             }
             kit::menu_separator(ui);
-            heading(ui, "Presets");
+            heading(ui, tr!("Presets"));
             for entry in entries.iter().filter(|e| e.built_in) {
                 if template_item(ui, entry) {
                     applied = Some(entry.clone());
@@ -257,7 +258,7 @@ pub fn menu(ui: &mut Ui, state: &mut TemplateState, store: &SharedStore, card: &
                 }
             }
             kit::menu_separator(ui);
-            if kit::menu_item(ui, Icon::Sliders, "Manage Templates…", true, false) {
+            if kit::menu_item(ui, Icon::Sliders, tr!("Manage Templates…"), true, false) {
                 next_dialog = Some(Dialog::Manage(Manage::default()));
                 ui.close();
             }
@@ -265,7 +266,7 @@ pub fn menu(ui: &mut Ui, state: &mut TemplateState, store: &SharedStore, card: &
             if kit::menu_item(
                 ui,
                 Icon::CopyDoc,
-                "Apply current settings to all charts…",
+                tr!("Apply current settings to all charts…"),
                 true,
                 false,
             ) {
@@ -275,7 +276,7 @@ pub fn menu(ui: &mut Ui, state: &mut TemplateState, store: &SharedStore, card: &
             if kit::menu_item(
                 ui,
                 Icon::Undo,
-                "Reset chart appearance to defaults…",
+                tr!("Reset chart appearance to defaults…"),
                 true,
                 false,
             ) {
@@ -288,15 +289,14 @@ pub fn menu(ui: &mut Ui, state: &mut TemplateState, store: &SharedStore, card: &
     }
     if let Some(entry) = applied {
         card.apply_template(&entry.appearance, state.scope);
-        state.say(format!(
-            "Applied “{}”{}.",
-            entry.name,
-            if state.scope == ApplyScope::ColorsAndCanvas {
-                " (colors and canvas only)"
-            } else {
-                ""
-            }
-        ));
+        state.say(if state.scope == ApplyScope::ColorsAndCanvas {
+            tr!(
+                "Applied “{name}” (colors and canvas only).",
+                name = entry.name
+            )
+        } else {
+            tr!("Applied “{name}”.", name = entry.name)
+        });
     }
     if let Some(dialog) = next_dialog {
         state.dialog = Some(dialog);
@@ -342,7 +342,7 @@ pub fn dialogs(
             mut error,
         } => {
             if name.is_empty() && focus {
-                name = state.templates(store).book().free_name("My Template");
+                name = state.templates(store).book().free_name(tr!("My Template"));
             }
             match save_dialog(
                 ctx,
@@ -357,7 +357,7 @@ pub fn dialogs(
                             .templates(store)
                             .save(&name, &description, &card.appearance());
                     match result {
-                        Ok(_) => state.say(format!("Saved the template “{}”.", name.trim())),
+                        Ok(_) => state.say(tr!("Saved the template “{name}”.", name = name.trim())),
                         Err(message) => {
                             error = Some(message);
                             keep = Some(Dialog::Save {
@@ -397,16 +397,20 @@ pub fn dialogs(
                     ctx,
                     "chart-template-update",
                     Icon::Download,
-                    &format!("Update “{name}”?"),
-                    "Replaces the template's look with this chart's current look. Charts that already use it keep theirs.",
-                    "Update Template",
+                    &tr!("Update “{name}”?", name = name),
+                    tr!(
+                        "Replaces the template's look with this chart's current look. Charts that already use it keep theirs."
+                    ),
+                    tr!("Update Template"),
                 ) {
                     Some(Outcome::Confirm) => {
                         match state
                             .templates(store)
                             .update_appearance(id, &card.appearance())
                         {
-                            Ok(()) => state.say(format!("Updated “{name}” from this chart.")),
+                            Ok(()) => {
+                                state.say(tr!("Updated “{name}” from this chart.", name = name))
+                            }
                             Err(message) => state.complain(message),
                         }
                         keep = Some(Dialog::Manage(Manage::default()));
@@ -423,20 +427,20 @@ pub fn dialogs(
                 .entry(id)
                 .map(|entry| entry.name);
             if let Some(name) = name {
-                let title = format!("Delete “{name}”?");
+                let title = tr!("Delete “{name}”?", name = name);
                 match kit::confirm(
                     ctx,
                     Id::new("chart-template-delete"),
                     &kit::Confirm {
                         icon: Icon::Trash,
                         title: &title,
-                        message: "Charts that already use it keep their look.",
-                        destructive: "Delete Template",
+                        message: tr!("Charts that already use it keep their look."),
+                        destructive: tr!("Delete Template"),
                     },
                 ) {
                     Some(kit::ConfirmOutcome::Confirmed) => {
                         match state.templates(store).delete(id) {
-                            Ok(()) => state.say(format!("Deleted “{name}”.")),
+                            Ok(()) => state.say(tr!("Deleted “{name}”.", name = name)),
                             Err(message) => state.complain(message),
                         }
                         keep = Some(Dialog::Manage(Manage::default()));
@@ -452,19 +456,23 @@ pub fn dialogs(
             let scope = state.scope;
             let message = match scope {
                 ApplyScope::AppearanceAndCanvas => {
-                    "Gives every chart in this workspace this chart's type, colors and canvas. Symbols, timeframes, indicators, scripts, alerts and drawings stay as they are."
+                    tr!(
+                        "Gives every chart in this workspace this chart's type, colors and canvas. Symbols, timeframes, indicators, scripts, alerts and drawings stay as they are."
+                    )
                 }
                 ApplyScope::ColorsAndCanvas => {
-                    "Gives every chart in this workspace this chart's colors and canvas. Each keeps its own chart type, symbol, timeframe, indicators, scripts, alerts and drawings."
+                    tr!(
+                        "Gives every chart in this workspace this chart's colors and canvas. Each keeps its own chart type, symbol, timeframe, indicators, scripts, alerts and drawings."
+                    )
                 }
             };
             match confirm(
                 ctx,
                 "chart-template-apply-all",
                 Icon::CopyDoc,
-                "Apply to all charts in this workspace?",
+                tr!("Apply to all charts in this workspace?"),
                 message,
-                "Apply to All Charts",
+                tr!("Apply to All Charts"),
             ) {
                 Some(Outcome::Confirm) => {
                     action = Some(TemplateAction::ApplyToAll(scope));
@@ -477,13 +485,15 @@ pub fn dialogs(
             ctx,
             "chart-template-reset",
             Icon::Undo,
-            "Reset chart appearance?",
-            "Puts the chart type and its settings, the colors and the whole canvas back to the defaults. Indicators, scripts, drawings and alerts stay. The price axis' decimals stay too.",
-            "Reset Appearance",
+            tr!("Reset chart appearance?"),
+            tr!(
+                "Puts the chart type and its settings, the colors and the whole canvas back to the defaults. Indicators, scripts, drawings and alerts stay. The price axis' decimals stay too."
+            ),
+            tr!("Reset Appearance"),
         ) {
             Some(Outcome::Confirm) => {
                 card.apply_template(&ChartAppearance::default(), ApplyScope::AppearanceAndCanvas);
-                state.say("Reset the chart's appearance to the defaults.");
+                state.say(tr!("Reset the chart's appearance to the defaults."));
             }
             Some(Outcome::Cancel) => {}
             None => keep = Some(Dialog::ResetAppearance),
@@ -567,8 +577,10 @@ fn save_dialog(
             sheet::header(
                 ui,
                 Icon::Palette,
-                "Save as Template",
-                "Saves this chart's type, colors and canvas, so any chart can wear them. Nothing about its market, indicators or drawings is saved.",
+                tr!("Save as Template"),
+                tr!(
+                    "Saves this chart's type, colors and canvas, so any chart can wear them. Nothing about its market, indicators or drawings is saved."
+                ),
                 theme::ACCENT,
             );
             ui.add_space(20.0);
@@ -577,7 +589,7 @@ fn save_dialog(
                 Id::new("chart-template-name"),
                 Icon::Tag,
                 name,
-                "Template name",
+                tr!("Template name"),
                 focus,
                 MAX_NAME_CHARS,
             );
@@ -588,7 +600,7 @@ fn save_dialog(
                 Id::new("chart-template-description"),
                 Icon::DocText,
                 description,
-                "Description (optional)",
+                tr!("Description (optional)"),
                 &mut no_focus,
                 MAX_DESCRIPTION_CHARS,
             );
@@ -599,10 +611,10 @@ fn save_dialog(
             ui.add_space(22.0);
         });
         sheet::footer(ui, |ui| {
-            if kit::sheet_button(ui, "Save", true, valid).clicked() {
+            if kit::sheet_button(ui, tr!("Save"), true, valid).clicked() {
                 outcome = Some(Outcome::Confirm);
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                 outcome = Some(Outcome::Cancel);
             }
         });
@@ -673,14 +685,19 @@ fn manage_dialog(
             sheet::header(
                 ui,
                 Icon::Sliders,
-                "Manage Templates",
-                "Saved looks for charts. Presets are fixed; duplicate one to make it your own.",
+                tr!("Manage Templates"),
+                tr!(
+                    "Saved looks for charts. Presets are fixed; duplicate one to make it your own."
+                ),
                 theme::ACCENT,
             );
             ui.add_space(16.0);
             if let Some(error) = load_error.as_deref() {
                 ui.label(kit::text(
-                    format!("Saved templates could not be read ({error}). They have been left as they are; presets still work."),
+                    tr!(
+                        "Saved templates could not be read ({error}). They have been left as they are; presets still work.",
+                        error = error
+                    ),
                     size::SUBHEADLINE,
                     REGULAR,
                     kit::ORANGE,
@@ -718,14 +735,14 @@ fn manage_dialog(
             ui.add_space(14.0);
         });
         sheet::footer(ui, |ui| {
-            if kit::sheet_button(ui, "Done", true, true).clicked() {
+            if kit::sheet_button(ui, tr!("Done"), true, true).clicked() {
                 outcome = ManageOutcome::Close;
             }
         });
     });
     if let Some(entry) = apply {
         card.apply_template(&entry.appearance, scope);
-        state.say(format!("Applied “{}”.", entry.name));
+        state.say(tr!("Applied “{name}”.", name = entry.name));
     }
     if let Some(id) = duplicate {
         match state.templates(store).duplicate(id) {
@@ -779,7 +796,7 @@ fn template_row(
                     Id::new(("template-rename", entry.id)),
                     Icon::Tag,
                     &mut renaming.name,
-                    "Template name",
+                    tr!("Template name"),
                     &mut renaming.focus,
                     MAX_NAME_CHARS,
                 );
@@ -790,7 +807,7 @@ fn template_row(
                     Id::new(("template-rename-description", entry.id)),
                     Icon::DocText,
                     &mut renaming.description,
-                    "Description (optional)",
+                    tr!("Description (optional)"),
                     &mut no_focus,
                     MAX_DESCRIPTION_CHARS,
                 );
@@ -799,12 +816,12 @@ fn template_row(
                 let valid = clean_name(&candidate.name).is_ok();
                 let mut cancelled = false;
                 ui.horizontal(|ui| {
-                    if kit::push_button(ui, None, "Save", valid).clicked()
+                    if kit::push_button(ui, None, tr!("Save"), valid).clicked()
                         || (valid && ui.input(|input| input.key_pressed(egui::Key::Enter)))
                     {
                         *rename_commit = Some(candidate.clone());
                     }
-                    cancelled = kit::push_button(ui, None, "Cancel", true).clicked();
+                    cancelled = kit::push_button(ui, None, tr!("Cancel"), true).clicked();
                 });
                 if cancelled {
                     manage.renaming = None;
@@ -827,7 +844,7 @@ fn template_row(
                             .truncate(),
                         );
                         if entry.built_in {
-                            kit::status_badge(ui, "Built-in", kit::Tone::Neutral);
+                            kit::status_badge(ui, tr!("Built-in"), kit::Tone::Neutral);
                         }
                     });
                     let detail = match (&entry.description, entry.built_in) {
@@ -847,9 +864,15 @@ fn template_row(
                     }
                     if !entry.built_in {
                         let when = if entry.updated_at > entry.created_at {
-                            format!("Updated {}", crate::format::timestamp(entry.updated_at))
+                            tr!(
+                                "Updated {time}",
+                                time = crate::format::timestamp(entry.updated_at)
+                            )
                         } else {
-                            format!("Created {}", crate::format::timestamp(entry.created_at))
+                            tr!(
+                                "Created {time}",
+                                time = crate::format::timestamp(entry.created_at)
+                            )
                         };
                         ui.label(kit::text(
                             when,
@@ -862,13 +885,13 @@ fn template_row(
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     let saved = !entry.built_in;
-                    if icon_button(ui, Icon::Trash, "Delete template", saved) {
+                    if icon_button(ui, Icon::Trash, tr!("Delete template"), saved) {
                         *outcome = ManageOutcome::Open(Dialog::Delete(entry.id));
                     }
-                    if icon_button(ui, Icon::Download, "Update from this chart", saved) {
+                    if icon_button(ui, Icon::Download, tr!("Update from this chart"), saved) {
                         *outcome = ManageOutcome::Open(Dialog::Update(entry.id));
                     }
-                    if icon_button(ui, Icon::Pencil, "Rename template", saved) {
+                    if icon_button(ui, Icon::Pencil, tr!("Rename template"), saved) {
                         manage.renaming = Some(Renaming {
                             id: entry.id,
                             name: entry.name.clone(),
@@ -876,10 +899,10 @@ fn template_row(
                             focus: true,
                         });
                     }
-                    if icon_button(ui, Icon::CopyDoc, "Duplicate template", true) {
+                    if icon_button(ui, Icon::CopyDoc, tr!("Duplicate template"), true) {
                         *duplicate = Some(entry.id);
                     }
-                    if icon_button(ui, Icon::Check, "Apply to this chart", true) {
+                    if icon_button(ui, Icon::Check, tr!("Apply to this chart"), true) {
                         *apply = Some(entry.clone());
                     }
                 });
