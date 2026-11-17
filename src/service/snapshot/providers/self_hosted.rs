@@ -6,6 +6,7 @@ use super::{
     FieldKind, FieldSpec, Glyph, Link, Logo, ProviderDescriptor, Purpose, Readiness, Request,
     SecretPresence, Secrets, SnapshotProvider,
 };
+use crate::i18n::tr;
 use crate::model::chart::snapshot::{
     FieldValues, SELF_HOSTED, SharedSnapshot, SnapshotHost, UploadError, parse_upload_response,
 };
@@ -26,8 +27,9 @@ fn host_problem(text: &str) -> Option<&'static str> {
 }
 
 fn token_problem(text: &str) -> Option<&'static str> {
-    (!token_is_valid(text.trim()))
-        .then_some("A token has no spaces and only plain letters, digits and symbols.")
+    (!token_is_valid(text.trim())).then_some(tr!(
+        "A token has no spaces and only plain letters, digits and symbols."
+    ))
 }
 
 static DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
@@ -95,7 +97,7 @@ impl SnapshotProvider for SelfHosted {
             Readiness::Ready
         } else {
             Readiness::Needs(
-                "Add the address of your snapshot host in Settings ▸ Snapshots to share."
+                tr!("Add the address of your snapshot host in Settings ▸ Snapshots to share.")
                     .to_owned(),
             )
         }
@@ -114,13 +116,13 @@ impl SnapshotProvider for SelfHosted {
         // somewhere new, so the question says it goes along.
         present
             .has(TOKEN)
-            .then(|| "Your saved access token is sent with it.".to_owned())
+            .then(|| tr!("Your saved access token is sent with it.").to_owned())
     }
 
     fn status_line(&self, settings: &FieldValues) -> String {
         host_of(settings).map_or_else(
             || DESCRIPTOR.summary.to_owned(),
-            |host| format!("Uploads to {}", host.authority()),
+            |host| tr!("Uploads to {host}", host = host.authority()),
         )
     }
 

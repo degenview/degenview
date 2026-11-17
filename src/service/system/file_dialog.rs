@@ -3,6 +3,7 @@
 //! reach a file outside the sandbox. Windows has none yet. Every call blocks until the user
 //! answers, so run them on a worker thread. A cancelled panel is `None`, not an error.
 
+use crate::i18n::tr;
 use std::path::PathBuf;
 #[cfg(not(target_os = "linux"))]
 use std::process::Command;
@@ -103,7 +104,7 @@ fn run(script: &str) -> Result<Option<PathBuf>, String> {
         .arg("-e")
         .arg(script)
         .output()
-        .map_err(|error| format!("Could not open the file dialog: {error}"))?;
+        .map_err(|error| tr!("Could not open the file dialog: {error}", error = error))?;
     if output.status.success() {
         return Ok(parse_path(&String::from_utf8_lossy(&output.stdout)));
     }
@@ -112,7 +113,10 @@ fn run(script: &str) -> Result<Option<PathBuf>, String> {
     if message.contains("-128") {
         Ok(None)
     } else {
-        Err(format!("The file dialog failed: {}", message.trim()))
+        Err(tr!(
+            "The file dialog failed: {message}",
+            message = message.trim()
+        ))
     }
 }
 
@@ -181,21 +185,32 @@ pub fn choose_folder(prompt: &str) -> Result<Option<PathBuf>, String> {
 
 /// Reads a chosen file as UTF-8 text.
 pub fn read_text(path: &std::path::Path) -> Result<String, String> {
-    std::fs::read_to_string(path)
-        .map_err(|error| format!("Could not read {}: {error}", path.display()))
+    std::fs::read_to_string(path).map_err(|error| {
+        tr!(
+            "Could not read {path}: {error}",
+            path = path.display(),
+            error = error
+        )
+    })
 }
 
 /// Reads a chosen file as UTF-8 text, refusing one longer than `limit` bytes without reading it.
 pub fn read_text_up_to(path: &std::path::Path, limit: usize) -> Result<String, String> {
     let length = std::fs::metadata(path)
-        .map_err(|error| format!("Could not read {}: {error}", path.display()))?
+        .map_err(|error| {
+            tr!(
+                "Could not read {path}: {error}",
+                path = path.display(),
+                error = error
+            )
+        })?
         .len();
     if length > limit as u64 {
-        return Err(format!(
-            "{} is {} KB, which is too large to be what was asked for (the limit is {} KB).",
-            path.display(),
-            length / 1024,
-            limit / 1024
+        return Err(tr!(
+            "{path} is {size} KB, which is too large to be what was asked for (the limit is {limit} KB).",
+            path = path.display(),
+            size = length / 1024,
+            limit = limit / 1024
         ));
     }
     read_text(path)
@@ -203,8 +218,13 @@ pub fn read_text_up_to(path: &std::path::Path, limit: usize) -> Result<String, S
 
 /// Writes `text` to `path`.
 pub fn write_text(path: &std::path::Path, text: &str) -> Result<(), String> {
-    std::fs::write(path, text)
-        .map_err(|error| format!("Could not write {}: {error}", path.display()))
+    std::fs::write(path, text).map_err(|error| {
+        tr!(
+            "Could not write {path}: {error}",
+            path = path.display(),
+            error = error
+        )
+    })
 }
 
 #[cfg(test)]

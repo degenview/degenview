@@ -7,6 +7,7 @@
 //! and the sheets' state types.
 
 use crate::host::portfolio::PortfolioHost;
+use crate::i18n::tr;
 use crate::model::portfolio;
 use crate::model::portfolio::csv::{CmcPreview, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
@@ -25,8 +26,9 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 pub const CSV_FILENAME: &str = "degenview-portfolio-transactions.csv";
 pub const HOLDINGS_FILENAME: &str = "degenview-portfolio-holdings.csv";
 pub const HISTORY_FILENAME: &str = "degenview-portfolio-history.csv";
-pub const NEEDS_DESTINATION: &str =
-    "Select the destination portfolio before importing CoinMarketCap transactions.";
+pub fn needs_destination() -> &'static str {
+    tr!("Select the destination portfolio before importing CoinMarketCap transactions.")
+}
 
 /// Looks a bare ticker up on the exchanges.
 pub type Resolver = Arc<dyn Fn(&str, PortfolioCurrency) -> Option<PortfolioAsset> + Send + Sync>;
@@ -248,7 +250,7 @@ impl PortfolioImportFlow {
     pub fn begin_import_csv(&mut self, ctx: &egui::Context) {
         self.jobs.push(Job::Csv(Self::read_file_job(
             ctx,
-            "Choose a transactions CSV to import",
+            tr!("Choose a transactions CSV to import"),
         )));
     }
 
@@ -259,11 +261,11 @@ impl PortfolioImportFlow {
         destination: Option<(u64, PortfolioCurrency)>,
     ) {
         let Some((portfolio_id, currency)) = destination else {
-            self.notice = Some(NEEDS_DESTINATION.to_owned());
+            self.notice = Some(needs_destination().to_owned());
             return;
         };
         self.jobs.push(Job::Cmc {
-            inbox: Self::read_file_job(ctx, "Choose a CoinMarketCap transactions export"),
+            inbox: Self::read_file_job(ctx, tr!("Choose a CoinMarketCap transactions export")),
             portfolio_id,
             currency,
         });
@@ -274,7 +276,7 @@ impl PortfolioImportFlow {
         let default_name = default_name.to_owned();
         let job =
             work_queue::SNAPSHOTS.start(Some(ctx), move || {
-                match file_dialog::choose_save_path("Export", &default_name) {
+                match file_dialog::choose_save_path(tr!("Export"), &default_name) {
                     Ok(Some(path)) => file_dialog::write_text(&path, &text).map(|()| Some(path)),
                     Ok(None) => Ok(None),
                     Err(message) => Err(message),
@@ -547,7 +549,7 @@ mod tests {
     fn a_cmc_import_needs_a_destination_portfolio() {
         let mut flow = PortfolioImportFlow::with_resolver(Arc::new(FakeFx), resolver());
         flow.begin_import_cmc(&egui::Context::default(), None);
-        assert_eq!(flow.notice.as_deref(), Some(NEEDS_DESTINATION));
+        assert_eq!(flow.notice.as_deref(), Some(needs_destination()));
         assert!(!flow.is_active(), "no dialog opened");
     }
 }

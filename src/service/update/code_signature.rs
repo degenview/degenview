@@ -5,6 +5,7 @@
 //! even if it got past the checksum.
 #![cfg_attr(any(windows, target_os = "linux"), allow(dead_code))]
 
+use crate::i18n::tr;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -20,9 +21,14 @@ pub fn team_id(bundle: &Path) -> Result<String, String> {
     let output = run(Command::new(CODESIGN)
         .args(["-dv", "--verbose=4"])
         .arg(bundle))
-    .map_err(|error| format!("Could not read this app's signature: {error}"))?;
+    .map_err(|error| {
+        tr!(
+            "Could not read this app's signature: {error}",
+            error = error
+        )
+    })?;
     parse_team_id(&output.text).ok_or_else(|| {
-        "This copy of DegenView is not signed with a Developer ID, so it cannot update itself."
+        tr!("This copy of DegenView is not signed with a Developer ID, so it cannot update itself.")
             .to_owned()
     })
 }
@@ -37,7 +43,9 @@ pub fn verify_bundle(bundle: &Path, helper: &Path, team_id: &str) -> Result<(), 
             .arg(format!("--test-requirement={requirement}"))
             .arg(path))?;
         if !output.success {
-            return Err("The download is not signed by the same developer as this app.".to_owned());
+            return Err(
+                tr!("The download is not signed by the same developer as this app.").to_owned(),
+            );
         }
     }
     // Gatekeeper's verdict also covers the notarization ticket.
@@ -54,7 +62,7 @@ pub fn verify_bundle(bundle: &Path, helper: &Path, team_id: &str) -> Result<(), 
 /// Developer ID Application leaf) from `team_id`.
 fn requirement(team_id: &str) -> Result<String, String> {
     if !is_team_id(team_id) {
-        return Err("This app's Team ID is not valid.".to_owned());
+        return Err(tr!("This app's Team ID is not valid.").to_owned());
     }
     Ok(format!(
         "=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists \
@@ -107,7 +115,7 @@ fn run(command: &mut Command) -> Result<Output, String> {
         if started.elapsed() > TIMEOUT {
             let _ = child.kill();
             let _ = child.wait();
-            return Err("checking the signature took too long".to_owned());
+            return Err(tr!("checking the signature took too long").to_owned());
         }
         std::thread::sleep(POLL);
     }

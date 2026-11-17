@@ -625,3 +625,17 @@ mod fill_sound {
         );
     }
 }
+
+#[test]
+fn the_owner_line_follows_the_language_and_keeps_the_mac_name() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::store::sync::Elsewhere;
+    let named = Elsewhere {
+        name: "Studio".to_owned(),
+        paused: false,
+    };
+    let english = owner_text(&named);
+    let pseudo = with_locale(Locale::Pseudo, || owner_text(&named));
+    assert_ne!(english, pseudo);
+    assert!(pseudo.contains("Studio"));
+}

@@ -15,6 +15,7 @@
 //! Everything lives in a hidden folder next to the app (same volume, so the swap is two atomic
 //! renames); an app in a folder the user cannot write to simply is not installable.
 
+use crate::i18n::tr;
 use crate::service::update::check::ReleaseAsset;
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
@@ -66,9 +67,9 @@ pub enum Stage {
 impl Stage {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Verifying => "Checking the release signature…",
-            Self::Downloading => "Downloading the new version…",
-            Self::Unpacking => "Unpacking and checking it…",
+            Self::Verifying => tr!("Checking the release signature…"),
+            Self::Downloading => tr!("Downloading the new version…"),
+            Self::Unpacking => tr!("Unpacking and checking it…"),
         }
     }
 }
@@ -128,12 +129,12 @@ fn is_writable(dir: &Path) -> bool {
 
 fn verify(bytes: &[u8], asset: &ReleaseAsset) -> Result<(), String> {
     if bytes.len() as u64 != asset.size {
-        return Err("The download is incomplete.".to_owned());
+        return Err(tr!("The download is incomplete.").to_owned());
     }
     let hash = Sha256::digest(bytes);
     let hex: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
     if hex != asset.sha256 {
-        return Err("The download does not match its published checksum.".to_owned());
+        return Err(tr!("The download does not match its published checksum.").to_owned());
     }
     Ok(())
 }
@@ -149,18 +150,23 @@ fn swap_paths(
     old: &Path,
     rename: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
 ) -> Result<(), String> {
-    rename(current, old)
-        .map_err(|error| format!("Could not move the current app aside: {error}"))?;
+    rename(current, old).map_err(|error| {
+        tr!(
+            "Could not move the current app aside: {error}",
+            error = error
+        )
+    })?;
     let Err(error) = rename(new, current) else {
         return Ok(());
     };
     match rename(old, current) {
-        Ok(()) => Err(format!("Could not install the new app: {error}")),
-        Err(restore) => Err(format!(
-            "Could not install the new app: {error}. Putting the old one back failed too \
-             ({restore}). It is at {}: move it to {} to get it back.",
-            old.display(),
-            current.display()
+        Ok(()) => Err(tr!("Could not install the new app: {error}", error = error)),
+        Err(restore) => Err(tr!(
+            "Could not install the new app: {error}. Putting the old one back failed too ({restore}). It is at {old}: move it to {current} to get it back.",
+            error = error,
+            restore = restore,
+            old = old.display(),
+            current = current.display()
         )),
     }
 }
@@ -171,11 +177,10 @@ fn swap_paths(
 fn keep_only_copy(staging: &Path, target: &Path) -> Result<(), String> {
     let old = staging.join("old");
     if std::fs::symlink_metadata(target).is_err() && std::fs::symlink_metadata(&old).is_ok() {
-        return Err(format!(
-            "DegenView is missing from {} and the previous version is in {}. Move it back, then \
-             try the update again.",
-            target.display(),
-            old.display()
+        return Err(tr!(
+            "DegenView is missing from {target} and the previous version is in {old}. Move it back, then try the update again.",
+            target = target.display(),
+            old = old.display()
         ));
     }
     Ok(())
@@ -350,5 +355,14 @@ mod tests {
         assert_eq!(end, unpack);
         assert_eq!(Progress::downloading(500, 100).fraction, end);
         assert_eq!(Progress::downloading(0, 0).fraction, begin);
+    }
+
+    #[test]
+    fn stage_labels_follow_the_language() {
+        use crate::i18n::{Locale, with_locale};
+        for stage in [Stage::Verifying, Stage::Downloading, Stage::Unpacking] {
+            let english = stage.label();
+            assert_ne!(with_locale(Locale::Pseudo, || stage.label()), english);
+        }
     }
 }

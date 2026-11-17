@@ -4,6 +4,7 @@
 //! reach outside the settings it owns (notifications, login items, alert reference bookkeeping) are
 //! handed back to the caller.
 
+use crate::i18n::tr;
 use crate::model::alert::{AlertNotificationSettings, AlertRuntimeHealth};
 use crate::model::webhook::{EndpointId, WebhookDeliveryResult, WebhookEndpoint};
 use crate::service::cache::control;
@@ -226,8 +227,9 @@ impl SettingsHost {
                 SettingsAction::Network(action) => self.apply_network(action, store, ctx),
                 SettingsAction::Ai(crate::ui::settings::ai::AiAction::SavePrefs(prefs)) => {
                     if let Err(error) = prefs.save(store) {
-                        self.state.ai.status = Some(StatusMessage::error(format!(
-                            "Could not save the settings: {error}"
+                        self.state.ai.status = Some(StatusMessage::error(tr!(
+                            "Could not save the settings: {error}",
+                            error = error
                         )));
                     }
                     self.ai_prefs = Some(prefs);
@@ -238,10 +240,11 @@ impl SettingsHost {
                     let mut history = History::load(store);
                     history.clear();
                     self.state.ai.status = Some(match history.save(store) {
-                        Ok(()) => StatusMessage::ok("Saved conversations cleared."),
-                        Err(error) => {
-                            StatusMessage::error(format!("Could not clear them: {error}"))
-                        }
+                        Ok(()) => StatusMessage::ok(tr!("Saved conversations cleared.")),
+                        Err(error) => StatusMessage::error(tr!(
+                            "Could not clear them: {error}",
+                            error = error
+                        )),
                     });
                 }
                 SettingsAction::SetTheme(theme) => {
@@ -287,8 +290,9 @@ impl SettingsHost {
     fn apply_network(&mut self, action: NetworkAction, store: &Store, ctx: &egui::Context) {
         let NetworkAction::Save { config, password } = action;
         if let Err(error) = config.save(store) {
-            self.state.network.status = Some(StatusMessage::error(format!(
-                "Could not save the settings: {error}"
+            self.state.network.status = Some(StatusMessage::error(tr!(
+                "Could not save the settings: {error}",
+                error = error
             )));
             return;
         }
@@ -308,9 +312,9 @@ impl SettingsHost {
         };
         self.state.network.status = Some(match report {
             ApplyReport::PasswordSaved => StatusMessage::ok(crate::platform::saved_securely()),
-            ApplyReport::PasswordNotKept(error) => StatusMessage::error(format!(
-                "The password could not be saved for later ({}). It works until you quit DegenView.",
-                error.0
+            ApplyReport::PasswordNotKept(error) => StatusMessage::error(tr!(
+                "The password could not be saved for later ({error}). It works until you quit DegenView.",
+                error = error.0
             )),
         });
     }
