@@ -6,6 +6,7 @@
 
 use eframe::egui::{self, Color32, Sense, Ui, vec2};
 
+use crate::i18n::tr;
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::model::{BackendState, VenueInfo, VenueKind};
 use crate::ui::broker::badge::LIVE;
@@ -47,8 +48,8 @@ pub enum PillSize {
 /// The tag beside the name in the panel: only real money and test environments carry one.
 pub fn tag(kind: VenueKind) -> Option<&'static str> {
     match kind {
-        VenueKind::Live => Some("LIVE"),
-        VenueKind::Test => Some("TEST"),
+        VenueKind::Live => Some(tr!("LIVE")),
+        VenueKind::Test => Some(tr!("TEST")),
         VenueKind::Simulated => None,
     }
 }
@@ -56,8 +57,8 @@ pub fn tag(kind: VenueKind) -> Option<&'static str> {
 /// What the pill says: `LIVE · COINBASE`, `TEST · COINBASE SANDBOX`, `PAPER TRADING`.
 pub fn title(info: &VenueInfo) -> String {
     match info.kind {
-        VenueKind::Live => format!("LIVE · {}", info.name.to_uppercase()),
-        VenueKind::Test => format!("TEST · {}", info.name.to_uppercase()),
+        VenueKind::Live => tr!("LIVE · {name}", name = info.name.to_uppercase()),
+        VenueKind::Test => tr!("TEST · {name}", name = info.name.to_uppercase()),
         VenueKind::Simulated => info.name.to_uppercase(),
     }
 }
@@ -66,16 +67,16 @@ pub fn title(info: &VenueInfo) -> String {
 pub fn row_label(info: &VenueInfo) -> String {
     match info.kind {
         VenueKind::Simulated => info.name.clone(),
-        kind => format!("{} · {}", info.name, kind.label()),
+        kind => tr!("{name} · {kind}", name = info.name, kind = kind.label()),
     }
 }
 
 /// What the dot means, for the tooltip.
 fn state_sentence(state: &BackendState) -> String {
     match state {
-        BackendState::Ready => "Connected".to_owned(),
-        BackendState::Connecting => "Connecting…".to_owned(),
-        BackendState::NotConnected => "Not connected".to_owned(),
+        BackendState::Ready => tr!("Connected").to_owned(),
+        BackendState::Connecting => tr!("Connecting…").to_owned(),
+        BackendState::NotConnected => tr!("Not connected").to_owned(),
         BackendState::Paused(reason) | BackendState::NeedsAttention(reason) => reason.clone(),
     }
 }
@@ -173,7 +174,7 @@ pub fn show(
     let labels: Vec<String> = venues
         .iter()
         .map(row_label)
-        .chain(std::iter::once("Add broker…".to_owned()))
+        .chain(std::iter::once(tr!("Add broker…").to_owned()))
         .collect();
     let mut chosen = None;
     kit::fitted_menu(
@@ -192,7 +193,7 @@ pub fn show(
             if !venues.is_empty() {
                 kit::menu_separator(ui);
             }
-            if kit::menu_item(ui, Icon::Plus, "Add broker…", true, false) {
+            if kit::menu_item(ui, Icon::Plus, tr!("Add broker…"), true, false) {
                 chosen = Some(PillAction::AddBroker);
                 ui.close();
             }

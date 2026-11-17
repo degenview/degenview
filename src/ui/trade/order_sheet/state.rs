@@ -7,6 +7,7 @@ use degenview_brokers::{Decimal, MarketRef, Side};
 #[cfg(test)]
 use eframe::egui;
 
+use crate::i18n::tr;
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::backend::TradingBackend;
 use crate::trading::draft::{CancelResult, SubmitResult, TradeDraft};
@@ -173,9 +174,11 @@ impl SheetState {
             return;
         };
         let text = if backend.binding() != *reviewed {
-            "The account changed since you set this order up. Nothing was sent. Check the order again."
+            tr!(
+                "The account changed since you set this order up. Nothing was sent. Check the order again."
+            )
         } else if !gate.allows_review() {
-            "The check of this order is out of date. Nothing was sent. Check the order again."
+            tr!("The check of this order is out of date. Nothing was sent. Check the order again.")
         } else {
             return;
         };
@@ -198,7 +201,7 @@ impl SheetState {
                 self.draft.size_text.clear();
                 self.draft.take_profit_text.clear();
                 self.draft.stop_loss_text.clear();
-                self.say("Order placed.", false);
+                self.say(tr!("Order placed."), false);
             }
             Err(text) => self.say(text, true),
         }

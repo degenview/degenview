@@ -2,6 +2,7 @@
 
 use super::{WatchlistSidebarInput, WatchlistSidebarState};
 
+use crate::i18n::tr;
 use crate::model::watchlist;
 use crate::model::watchlist::quote::WatchlistQuote;
 use crate::model::watchlist::quote::{Direction, Freshness};
@@ -114,8 +115,11 @@ fn detail_tile(
         );
     }
     ui.painter().galley(at, text, color);
-    ui.interact(rect, id, Sense::hover())
-        .on_hover_text(format!("{label}: {value}"));
+    ui.interact(rect, id, Sense::hover()).on_hover_text(tr!(
+        "{label}: {value}",
+        label = label,
+        value = value
+    ));
 }
 
 fn freshness_color(freshness: Freshness) -> Color32 {
@@ -279,16 +283,17 @@ pub(super) fn detail_panel(
     let volume = watchlist::quote::volume_text(quote);
     let tile_width = (width - DETAIL_TILE_GAP) / 2.0;
     let tiles = [
-        ("Volume", volume.as_str(), None),
+        ("volume", tr!("Volume"), volume.as_str(), None),
         (
-            "Status",
+            "status",
+            tr!("Status"),
             freshness.label(),
             Some(freshness_color(freshness)),
         ),
-        ("Symbol", symbol.as_str(), None),
-        ("Updated", updated.as_str(), None),
+        ("symbol", tr!("Symbol"), symbol.as_str(), None),
+        ("updated", tr!("Updated"), updated.as_str(), None),
     ];
-    for (index, (label, value, dot)) in tiles.into_iter().enumerate() {
+    for (index, (key, label, value, dot)) in tiles.into_iter().enumerate() {
         let (column, row) = (index % 2, index / 2);
         let rect = Rect::from_min_size(
             Pos2::new(
@@ -300,7 +305,7 @@ pub(super) fn detail_panel(
         detail_tile(
             ui,
             rect,
-            Id::new(("watchlist-detail-tile", list.id, label)),
+            Id::new(("watchlist-detail-tile", list.id, key)),
             label,
             value,
             dot,
@@ -321,7 +326,7 @@ pub(super) fn detail_panel(
     let row_mid = y + DETAIL_LISTS / 2.0;
     let caption = kit::galley(
         ui,
-        "IN LISTS",
+        &tr!("In lists").to_uppercase(),
         9.5,
         kit::SEMIBOLD,
         theme::text_tertiary(),

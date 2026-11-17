@@ -28,13 +28,6 @@ impl PaperOrderSide {
 }
 
 impl PaperPositionSide {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Long => "Long",
-            Self::Short => "Short",
-        }
-    }
-
     pub fn badge_text(self) -> &'static str {
         match self {
             Self::Long => "LONG",

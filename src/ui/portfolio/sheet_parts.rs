@@ -62,7 +62,7 @@ pub(crate) fn problem_card(
                     }
                     if !lines.is_empty() {
                         egui::ScrollArea::vertical()
-                            .id_salt(title)
+                            .id_salt(("problem-card-lines", tint))
                             .max_height(max_height)
                             .auto_shrink([false, true])
                             .show(ui, |ui| {

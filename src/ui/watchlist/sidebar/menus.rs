@@ -4,7 +4,10 @@
 use super::header::flag_row;
 use super::{PromptKind, WatchlistAction, WatchlistSidebarInput, WatchlistSidebarState};
 
-use crate::model::watchlist::{EntryId, Watchlist, WatchlistFlag, WatchlistInstrument};
+use crate::i18n::tr;
+use crate::model::watchlist::{
+    EntryId, Watchlist, WatchlistColumn, WatchlistFlag, WatchlistInstrument, WatchlistSortKey,
+};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use eframe::egui;
@@ -27,6 +30,83 @@ pub(super) const SUBMENU_WIDTH: f32 = 184.0;
 /// What the menu frame's margins take from its width.
 pub(super) const MENU_FRAME: f32 = 10.0;
 
+/// The width of the options and row menus: `MENU_WIDTH` (measured in English) or what their rows
+/// need in the language in use, whichever is more. Inside a menu's body.
+pub(super) fn menu_width_now(ui: &egui::Ui) -> f32 {
+    let labels = [
+        tr!("Add Section…"),
+        tr!("Sort By"),
+        tr!("Columns"),
+        tr!("Filter by Flag"),
+        tr!("Show Details"),
+        tr!("Import Symbols…"),
+        tr!("Export to File…"),
+        tr!("Copy as Text"),
+        tr!("Open in Focused Chart"),
+        tr!("Add as New Chart"),
+        tr!("Open in New Tab"),
+        tr!("Move to Section"),
+        tr!("Set Flag"),
+        tr!("Add to Watchlist"),
+        tr!("Create Price Alert…"),
+        tr!("Copy Symbol"),
+        tr!("Copy Qualified Symbol"),
+        tr!("Remove from Watchlist"),
+    ];
+    fitted(ui, &labels, MENU_WIDTH)
+}
+
+/// The width of the submenus and the section menu, as `menu_width_now`.
+pub(super) fn submenu_width_now(ui: &egui::Ui) -> f32 {
+    let mut labels = vec![
+        tr!("Expand Section"),
+        tr!("Collapse Section"),
+        tr!("Rename Section…"),
+        tr!("Add Section…"),
+        tr!("Delete Section"),
+        tr!("Show Symbol Subtitle"),
+        tr!("Show 1M Chart"),
+        tr!("Descending"),
+        tr!("No Section"),
+        tr!("Clear Flag"),
+        tr!("New Watchlist…"),
+    ];
+    labels.extend(WatchlistColumn::ALL.map(WatchlistColumn::accessibility_title));
+    labels.extend(WatchlistSortKey::ALL.map(WatchlistSortKey::title));
+    labels.extend(WatchlistFlag::ALL.map(WatchlistFlag::title));
+    fitted(ui, &labels, SUBMENU_WIDTH)
+}
+
+/// `menu_width_now` for a popup's builder, which runs every frame: the rows are measured only
+/// once `trigger` has opened the menu (or is about to).
+pub(super) fn menu_width(ui: &egui::Ui, trigger: &egui::Response) -> f32 {
+    if opens(ui, trigger) {
+        menu_width_now(ui)
+    } else {
+        MENU_WIDTH
+    }
+}
+
+/// `submenu_width_now` for a popup's builder; see `menu_width`.
+pub(super) fn submenu_width(ui: &egui::Ui, trigger: &egui::Response) -> f32 {
+    if opens(ui, trigger) {
+        submenu_width_now(ui)
+    } else {
+        SUBMENU_WIDTH
+    }
+}
+
+fn opens(ui: &egui::Ui, trigger: &egui::Response) -> bool {
+    trigger.clicked()
+        || trigger.secondary_clicked()
+        || egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(trigger))
+}
+
+fn fitted(ui: &egui::Ui, labels: &[&str], floor: f32) -> f32 {
+    let rows: Vec<(&str, Option<&str>)> = labels.iter().map(|label| (*label, None)).collect();
+    floor.max(kit::menu_width_for_rows(ui, &rows, 0.0))
+}
+
 pub(super) fn section_menu(
     ui: &mut egui::Ui,
     state: &mut WatchlistSidebarState,
@@ -36,11 +116,11 @@ pub(super) fn section_menu(
     collapsed: bool,
     actions: &mut Vec<WatchlistAction>,
 ) {
-    kit::menu_scope(ui, SUBMENU_WIDTH - MENU_FRAME);
+    kit::menu_scope(ui, submenu_width_now(ui) - MENU_FRAME);
     let (icon, label) = if collapsed {
-        (Icon::ChevronDown, "Expand Section")
+        (Icon::ChevronDown, tr!("Expand Section"))
     } else {
-        (Icon::ChevronUp, "Collapse Section")
+        (Icon::ChevronUp, tr!("Collapse Section"))
     };
     if kit::menu_item(ui, icon, label, true, false) {
         actions.push(WatchlistAction::SetSectionCollapsed {
@@ -50,7 +130,7 @@ pub(super) fn section_menu(
         });
         ui.close();
     }
-    if kit::menu_item(ui, Icon::Pencil, "Rename Section…", true, false) {
+    if kit::menu_item(ui, Icon::Pencil, tr!("Rename Section…"), true, false) {
         state.open_prompt(
             PromptKind::RenameSection {
                 list: list.id,
@@ -60,12 +140,12 @@ pub(super) fn section_menu(
         );
         ui.close();
     }
-    if kit::menu_item(ui, Icon::Plus, "Add Section…", true, false) {
+    if kit::menu_item(ui, Icon::Plus, tr!("Add Section…"), true, false) {
         state.open_prompt(PromptKind::NewSection(list.id), String::new());
         ui.close();
     }
     kit::menu_separator(ui);
-    if kit::menu_item(ui, Icon::Trash, "Delete Section", true, true) {
+    if kit::menu_item(ui, Icon::Trash, tr!("Delete Section"), true, true) {
         actions.push(WatchlistAction::DeleteSection {
             list: list.id,
             section,
@@ -83,16 +163,30 @@ pub(super) fn instrument_menu(
     item: &WatchlistInstrument,
     actions: &mut Vec<WatchlistAction>,
 ) {
-    kit::menu_scope(ui, MENU_WIDTH - MENU_FRAME);
-    if kit::menu_item(ui, Icon::ChartLine, "Open in Focused Chart", true, false) {
+    let menu = menu_width_now(ui);
+    let submenu = submenu_width_now(ui);
+    kit::menu_scope(ui, menu - MENU_FRAME);
+    if kit::menu_item(
+        ui,
+        Icon::ChartLine,
+        tr!("Open in Focused Chart"),
+        true,
+        false,
+    ) {
         actions.push(WatchlistAction::Open(item.clone()));
         ui.close();
     }
-    if kit::menu_item(ui, Icon::Plus, "Add as New Chart", true, false) {
+    if kit::menu_item(ui, Icon::Plus, tr!("Add as New Chart"), true, false) {
         actions.push(WatchlistAction::AddChart(item.clone()));
         ui.close();
     }
-    if kit::menu_item(ui, Icon::ArrowUpRightSquare, "Open in New Tab", true, false) {
+    if kit::menu_item(
+        ui,
+        Icon::ArrowUpRightSquare,
+        tr!("Open in New Tab"),
+        true,
+        false,
+    ) {
         actions.push(WatchlistAction::OpenInNewTab(item.clone()));
         ui.close();
     }
@@ -106,14 +200,14 @@ pub(super) fn instrument_menu(
         let owner = list.owning_section(item.id).map(|section| section.id);
         let row = kit::MenuRow {
             icon: Some(Icon::Layers),
-            ..kit::MenuRow::new("Move to Section")
+            ..kit::MenuRow::new(tr!("Move to Section"))
         };
-        kit::menu_submenu(ui, row, SUBMENU_WIDTH, |ui| {
+        kit::menu_submenu(ui, row, submenu, |ui| {
             let none = kit::menu_row(
                 ui,
                 kit::MenuRow {
                     checked: owner.is_none(),
-                    ..kit::MenuRow::new("No Section")
+                    ..kit::MenuRow::new(tr!("No Section"))
                 },
             );
             if none.clicked() {
@@ -147,9 +241,9 @@ pub(super) fn instrument_menu(
     let current = input.flags.get(&item.instrument.key()).copied();
     let row = kit::MenuRow {
         icon: Some(Icon::Tag),
-        ..kit::MenuRow::new("Set Flag")
+        ..kit::MenuRow::new(tr!("Set Flag"))
     };
-    kit::menu_submenu(ui, row, SUBMENU_WIDTH, |ui| {
+    kit::menu_submenu(ui, row, submenu, |ui| {
         for flag in WatchlistFlag::ALL {
             if flag_row(ui, flag, current == Some(flag)).clicked() {
                 actions.push(WatchlistAction::SetFlag {
@@ -160,7 +254,7 @@ pub(super) fn instrument_menu(
             }
         }
         kit::menu_separator(ui);
-        if kit::menu_item(ui, Icon::Xmark, "Clear Flag", current.is_some(), false) {
+        if kit::menu_item(ui, Icon::Xmark, tr!("Clear Flag"), current.is_some(), false) {
             actions.push(WatchlistAction::SetFlag {
                 instrument: item.instrument.clone(),
                 flag: None,
@@ -171,18 +265,24 @@ pub(super) fn instrument_menu(
 
     if !item.instrument.source.is_prediction_market()
         && item.instrument.source != crate::model::DataSource::CoinMarketCap
-        && kit::menu_item(ui, Icon::Bell, "Create Price Alert…", true, false)
+        && kit::menu_item(ui, Icon::Bell, tr!("Create Price Alert…"), true, false)
     {
         actions.push(WatchlistAction::CreateAlert(item.clone()));
         ui.close();
     }
 
     kit::menu_separator(ui);
-    if kit::menu_item(ui, Icon::CopyDoc, "Copy Symbol", true, false) {
+    if kit::menu_item(ui, Icon::CopyDoc, tr!("Copy Symbol"), true, false) {
         actions.push(WatchlistAction::CopyText(item.instrument.symbol.clone()));
         ui.close();
     }
-    if kit::menu_item(ui, Icon::Clipboard, "Copy Qualified Symbol", true, false) {
+    if kit::menu_item(
+        ui,
+        Icon::Clipboard,
+        tr!("Copy Qualified Symbol"),
+        true,
+        false,
+    ) {
         actions.push(WatchlistAction::CopyText(format!(
             "{}:{}",
             item.instrument.source.watchlist_slug(),
@@ -191,7 +291,7 @@ pub(super) fn instrument_menu(
         ui.close();
     }
     kit::menu_separator(ui);
-    if kit::menu_item(ui, Icon::Trash, "Remove from Watchlist", true, true) {
+    if kit::menu_item(ui, Icon::Trash, tr!("Remove from Watchlist"), true, true) {
         actions.push(WatchlistAction::RemoveEntry {
             list: list.id,
             entry: item.id,
@@ -216,9 +316,10 @@ pub fn membership_menu(
     let row = kit::MenuRow {
         icon: Some(Icon::Star),
         enabled: !disabled,
-        ..kit::MenuRow::new("Add to Watchlist")
+        ..kit::MenuRow::new(tr!("Add to Watchlist"))
     };
-    let response = kit::menu_submenu(ui, row, SUBMENU_WIDTH, |ui| {
+    let submenu = submenu_width_now(ui);
+    let response = kit::menu_submenu(ui, row, submenu, |ui| {
         for list in lists {
             let member = list.contains(&item.instrument);
             let toggle = kit::menu_row(
@@ -243,12 +344,12 @@ pub fn membership_menu(
             }
         }
         kit::menu_separator(ui);
-        if kit::menu_item(ui, Icon::Plus, "New Watchlist…", true, false) {
+        if kit::menu_item(ui, Icon::Plus, tr!("New Watchlist…"), true, false) {
             on_new_list(item.clone());
             ui.close();
         }
     });
     if disabled {
-        response.on_hover_text("Watchlists are unavailable");
+        response.on_hover_text(tr!("Watchlists are unavailable"));
     }
 }

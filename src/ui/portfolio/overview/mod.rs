@@ -4,6 +4,7 @@
 //! Every block here has a fixed height and paints its text at measured positions, so nothing
 //! reflows while prices stream in and cards in one row always end level.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::statistics::{
     PortfolioHistoryRange, PortfolioPeriodChange, PortfolioStatistics,
@@ -89,7 +90,7 @@ pub fn top_holdings(holdings: &[PortfolioHolding]) -> Vec<&PortfolioHolding> {
 
 /// "Portfolio · 3 assets".
 pub fn asset_count_text(count: usize) -> String {
-    format!("{count} {}", if count == 1 { "asset" } else { "assets" })
+    tr_n!(count, "{count} asset", "{count} assets")
 }
 
 /// How current the prices behind the total are; colours the dot beside the caption.
@@ -156,34 +157,22 @@ pub fn show_overview(
                             |ui, _| {
                                 ui.spacing_mut().item_spacing.y = GRID_GAP;
                                 let each = (panel_height(PANEL_CONTENT_HEIGHT) - GRID_GAP) / 2.0;
-                                performer_card(
-                                    ui,
-                                    "Best Performer",
-                                    stats.best.as_ref(),
-                                    input,
-                                    each,
-                                );
-                                performer_card(
-                                    ui,
-                                    "Worst Performer",
-                                    stats.worst.as_ref(),
-                                    input,
-                                    each,
-                                );
+                                performer_card(ui, true, stats.best.as_ref(), input, each);
+                                performer_card(ui, false, stats.worst.as_ref(), input, each);
                             },
                         );
                     } else {
                         ui.columns(2, |columns| {
                             performer_card(
                                 &mut columns[0],
-                                "Best Performer",
+                                true,
                                 stats.best.as_ref(),
                                 input,
                                 CARD_HEIGHT,
                             );
                             performer_card(
                                 &mut columns[1],
-                                "Worst Performer",
+                                false,
                                 stats.worst.as_ref(),
                                 input,
                                 CARD_HEIGHT,
@@ -207,15 +196,21 @@ fn allocation_panel(
     input: &OverviewInput,
     content_height: f32,
 ) {
-    panel(ui, content_height, Icon::PieChart, "Allocation", |_, ui| {
-        charts::show_allocation(
-            ui,
-            input.holdings,
-            input.formatter,
-            &mut state.hovered_slice,
-            content_height,
-        );
-    });
+    panel(
+        ui,
+        content_height,
+        Icon::PieChart,
+        tr!("Allocation"),
+        |_, ui| {
+            charts::show_allocation(
+                ui,
+                input.holdings,
+                input.formatter,
+                &mut state.hovered_slice,
+                content_height,
+            );
+        },
+    );
 }
 
 #[cfg(test)]

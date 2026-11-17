@@ -1,10 +1,11 @@
 //! The sidebar's rows, with drag reorder and its insertion line, and the empty state.
 
-use super::menus::{MENU_WIDTH, SUBMENU_WIDTH, instrument_menu, section_menu};
+use super::menus::{instrument_menu, menu_width, section_menu, submenu_width};
 use super::{
     Drag, WatchlistAction, WatchlistSidebarInput, WatchlistSidebarState, centered_message,
 };
 
+use crate::i18n::tr;
 use crate::model::watchlist;
 use crate::model::watchlist::layout::Row;
 use crate::model::watchlist::{Watchlist, WatchlistSortKey};
@@ -63,19 +64,18 @@ pub(super) fn content(
                                 collapsed: !section.is_collapsed,
                             });
                         }
-                        kit::context_popup(&response)
-                            .width(SUBMENU_WIDTH)
-                            .show(|ui| {
-                                section_menu(
-                                    ui,
-                                    state,
-                                    list,
-                                    section.id,
-                                    &section.title,
-                                    section.is_collapsed,
-                                    actions,
-                                );
-                            });
+                        let width = submenu_width(ui, &response);
+                        kit::context_popup(&response).width(width).show(|ui| {
+                            section_menu(
+                                ui,
+                                state,
+                                list,
+                                section.id,
+                                &section.title,
+                                section.is_collapsed,
+                                actions,
+                            );
+                        });
                         response
                     }
                     Row::Instrument { item, .. } => {
@@ -105,9 +105,9 @@ pub(super) fn content(
                         );
                         let more = crate::ui::accessibility::label(
                             more,
-                            format!("Actions for {}", item.name),
+                            tr!("Actions for {name}", name = item.name),
                         );
-                        let popup = kit::menu_popup(&more).width(MENU_WIDTH);
+                        let popup = kit::menu_popup(&more).width(menu_width(ui, &more));
                         let open = popup.is_open();
                         if response.hovered() || more.hovered() || open {
                             // Opaque, so the row's own trailing text does not show through.
@@ -129,8 +129,9 @@ pub(super) fn content(
                             actions.push(WatchlistAction::Open(item.clone()));
                         }
                         popup.show(|ui| instrument_menu(ui, state, input, list, item, actions));
+                        let width = menu_width(ui, &response);
                         kit::context_popup(&response)
-                            .width(MENU_WIDTH)
+                            .width(width)
                             .show(|ui| instrument_menu(ui, state, input, list, item, actions));
                         response
                     }
@@ -240,11 +241,11 @@ fn empty_state(
         centered_message(
             ui,
             Icon::Magnifier,
-            "No Matches",
-            &format!("Nothing in {} matches this filter.", list.name),
+            tr!("No Matches"),
+            &tr!("Nothing in {name} matches this filter.", name = list.name),
         );
         ui.vertical_centered(|ui| {
-            if ui.button("Clear Filter").clicked() {
+            if ui.button(tr!("Clear Filter")).clicked() {
                 state.clear_filter();
             }
         });
@@ -252,11 +253,11 @@ fn empty_state(
         centered_message(
             ui,
             Icon::Star,
-            "No Symbols",
-            "Add a stock, crypto, or prediction-market item to follow it here.",
+            tr!("No Symbols"),
+            tr!("Add a stock, crypto, or prediction-market item to follow it here."),
         );
         ui.vertical_centered(|ui| {
-            if ui.button("Add Symbol").clicked() {
+            if ui.button(tr!("Add Symbol")).clicked() {
                 actions.push(WatchlistAction::AddSymbol {
                     list: Some(list.id),
                 });

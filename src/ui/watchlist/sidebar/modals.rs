@@ -2,6 +2,7 @@
 
 use super::{PromptKind, WatchlistAction, WatchlistSidebarInput, WatchlistSidebarState};
 
+use crate::i18n::tr;
 use crate::model::watchlist::Watchlist;
 use crate::ui::icons::Icon;
 use crate::ui::kit::sheet;
@@ -65,7 +66,7 @@ pub(super) fn prompt_window(
                     ui,
                     field_id,
                     &mut state.prompt_text,
-                    "Name",
+                    tr!("Name"),
                     kit::size::BODY,
                     kit::REGULAR,
                     width,
@@ -102,7 +103,7 @@ pub(super) fn prompt_window(
                     if kit::sheet_button(ui, kind.confirm(), true, valid).clicked() {
                         commit = true;
                     }
-                    if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                    if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                         cancel = true;
                     }
                 });
@@ -159,15 +160,17 @@ fn delete_window(
         state.confirm_delete = false;
         return;
     };
-    let title = format!("Delete “{}”?", list.name);
+    let title = tr!("Delete “{name}”?", name = list.name);
     let result = kit::confirm(
         ctx,
         Id::new("watchlist-delete"),
         &Confirm {
             icon: Icon::Trash,
             title: &title,
-            message: "Its symbols stay in your other watchlists. Charts, drawings and alerts are not affected.",
-            destructive: "Delete",
+            message: tr!(
+                "Its symbols stay in your other watchlists. Charts, drawings and alerts are not affected."
+            ),
+            destructive: tr!("Delete"),
         },
     );
     if result == Some(ConfirmOutcome::Confirmed) {
@@ -197,8 +200,8 @@ fn import_window(
             sheet::header(
                 ui,
                 Icon::Download,
-                &format!("Import into {}", list.name),
-                "Paste symbols or open a text file.",
+                &tr!("Import into {name}", name = list.name),
+                tr!("Paste symbols or open a text file."),
                 theme::ACCENT,
             );
             ui.add_space(14.0);
@@ -213,7 +216,7 @@ fn import_window(
                 if !report.skipped.is_empty() {
                     ui.add_space(10.0);
                     ui.label(
-                        RichText::new("SKIPPED")
+                        RichText::new(tr!("Skipped").to_uppercase())
                             .small()
                             .strong()
                             .color(ui.visuals().weak_text_color()),
@@ -224,9 +227,10 @@ fn import_window(
                             for skipped in &report.skipped {
                                 ui.label(RichText::new(&skipped.text).monospace().small());
                                 ui.label(
-                                    RichText::new(format!(
-                                        "Line {} · {}",
-                                        skipped.line, skipped.reason
+                                    RichText::new(tr!(
+                                        "Line {line} · {reason}",
+                                        line = skipped.line,
+                                        reason = skipped.reason
                                     ))
                                     .small()
                                     .color(ui.visuals().weak_text_color()),
@@ -236,7 +240,7 @@ fn import_window(
                         });
                 }
             } else {
-                ui.label(RichText::new("One symbol per line as SOURCE:SYMBOL, for example BINANCE:BTCUSDT or COINBASE:ETH-USD. Lines starting with ### become sections. A single comma-separated line from TradingView is read too; markets DegenView has no provider for are skipped.").small().color(ui.visuals().weak_text_color()));
+                ui.label(RichText::new(tr!("One symbol per line as SOURCE:SYMBOL, for example BINANCE:BTCUSDT or COINBASE:ETH-USD. Lines starting with ### become sections. A single comma-separated line from TradingView is read too; markets DegenView has no provider for are skipped.")).small().color(ui.visuals().weak_text_color()));
                 ui.add_space(10.0);
                 ui.add_sized(
                     [ui.available_width(), 155.0],
@@ -259,7 +263,7 @@ fn import_window(
                     && ui
                         .add_enabled(
                             state.import_picker.is_none(),
-                            egui::Button::new("Open File…"),
+                            egui::Button::new(tr!("Open File…")),
                         )
                         .clicked()
                 {
@@ -267,17 +271,17 @@ fn import_window(
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if input.import_report.is_some() {
-                        if ui.button("Done").clicked() {
+                        if ui.button(tr!("Done")).clicked() {
                             close = true;
                         }
                     } else {
                         if ui
-                            .add_enabled(!text.trim().is_empty(), egui::Button::new("Import"))
+                            .add_enabled(!text.trim().is_empty(), egui::Button::new(tr!("Import")))
                             .clicked()
                         {
                             submit = true;
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button(tr!("Cancel")).clicked() {
                             close = true;
                         }
                     }

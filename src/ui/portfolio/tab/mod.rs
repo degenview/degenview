@@ -7,6 +7,7 @@ mod import;
 
 use crate::host::portfolio::import_flow::{self, PortfolioImportFlow};
 use crate::host::portfolio::{PortfolioHost, PortfolioHostError, local_offset, now_ms};
+use crate::i18n::{tr, tr_n};
 use crate::model::portfolio;
 use crate::model::portfolio::accounting::{holdings_and_closed, net_contributions};
 use crate::model::portfolio::format::{PORTFOLIO_CURRENCIES, PortfolioValueFormatter};
@@ -63,10 +64,10 @@ impl PortfolioSection {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Overview => "Overview",
-            Self::Holdings => "Holdings",
-            Self::Transactions => "Transactions",
-            Self::Statistics => "Statistics",
+            Self::Overview => tr!("Overview"),
+            Self::Holdings => tr!("Holdings"),
+            Self::Transactions => tr!("Transactions"),
+            Self::Statistics => tr!("Statistics"),
         }
     }
 
@@ -166,7 +167,7 @@ impl PortfolioTab {
     }
 
     pub fn title(&self) -> &'static str {
-        "Portfolio"
+        tr!("Portfolio")
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui, host: &mut PortfolioHost) {
@@ -224,8 +225,12 @@ impl PortfolioTab {
                 capped(ui, |ui| {
                     if scope.is_empty() {
                         empty::page(ui, empty::Scene::Portfolios, |ui| {
-                            if header_controls::prominent_button(ui, Icon::Plus, "Create Portfolio")
-                                .clicked()
+                            if header_controls::prominent_button(
+                                ui,
+                                Icon::Plus,
+                                tr!("Create Portfolio"),
+                            )
+                            .clicked()
                             {
                                 self.create = Some(CreateState::default());
                             }
@@ -234,8 +239,12 @@ impl PortfolioTab {
                     }
                     if !has_transactions {
                         empty::page(ui, self.section.empty_scene(), |ui| {
-                            if header_controls::prominent_button(ui, Icon::Plus, "Add Transaction")
-                                .clicked()
+                            if header_controls::prominent_button(
+                                ui,
+                                Icon::Plus,
+                                tr!("Add Transaction"),
+                            )
+                            .clicked()
                             {
                                 self.picker = Some(add_transaction_picker());
                             }
@@ -245,21 +254,21 @@ impl PortfolioTab {
                                 ui,
                                 egui::Id::new(("portfolio-empty-import", self.id)),
                                 Icon::Download,
-                                "Import Transactions",
-                                &IMPORT_SOURCES,
+                                tr!("Import Transactions"),
+                                &import_sources(),
                                 false,
                                 |ui| {
                                     if header_controls::action(
                                         ui,
                                         Icon::Download,
-                                        "From a CSV File\u{2026}",
+                                        tr!("From a CSV File…"),
                                     ) {
                                         self.import.begin_import_csv(&ctx);
                                     }
                                     if header_controls::action(
                                         ui,
                                         Icon::Download,
-                                        "From CoinMarketCap\u{2026}",
+                                        tr!("From CoinMarketCap…"),
                                     ) {
                                         self.import
                                             .begin_import_cmc(&ctx, cmc_destination(&snapshot));
@@ -375,7 +384,7 @@ impl PortfolioTab {
                                     .iter()
                                     .find(|portfolio| portfolio.id == id)
                             })
-                            .map_or("All Portfolios", |portfolio| portfolio.name.as_str()),
+                            .map_or(tr!("All Portfolios"), |portfolio| portfolio.name.as_str()),
                         now_ms,
                     ),
                     import_flow::HOLDINGS_FILENAME,
@@ -408,8 +417,11 @@ impl PortfolioTab {
         if let Some(message) = blocked {
             crate::ui::portfolio::table::empty_state(
                 ui,
-                "These Transactions Can't Be Valued",
-                &format!("{message} Review them in the Transactions tab."),
+                tr!("These Transactions Can't Be Valued"),
+                &tr!(
+                    "{message} Review them in the Transactions tab.",
+                    message = message
+                ),
             );
         } else {
             match self.section {
@@ -805,9 +817,11 @@ impl PortfolioTab {
                 egui::Id::new(("portfolio-delete-transaction", self.id)),
                 &Confirm {
                     icon: Icon::Trash,
-                    title: "Delete transaction?",
-                    message: "Holdings, cost basis, P&L, allocation, and later history will be recalculated.",
-                    destructive: "Delete",
+                    title: tr!("Delete transaction?"),
+                    message: tr!(
+                        "Holdings, cost basis, P&L, allocation, and later history will be recalculated."
+                    ),
+                    destructive: tr!("Delete"),
                 },
             );
             match result {
@@ -835,14 +849,20 @@ impl PortfolioTab {
             |ui| {
                 ui.add_space(20.0);
                 sheet::inset(ui, |ui| {
-                    sheet::header(ui, Icon::Triangle, "Portfolio", &message, theme::ORANGE);
+                    sheet::header(
+                        ui,
+                        Icon::Triangle,
+                        tr!("Portfolio"),
+                        &message,
+                        theme::ORANGE,
+                    );
                     ui.add_space(20.0);
                 });
                 ui.separator();
                 sheet::inset(ui, |ui| {
                     ui.add_space(12.0);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("OK").clicked() {
+                        if ui.button(tr!("OK")).clicked() {
                             host.clear_error();
                             self.notice = None;
                         }
@@ -885,16 +905,20 @@ fn cmc_destination(snapshot: &PortfolioLedgerSnapshot) -> Option<(u64, Portfolio
 }
 
 /// The empty page's import menu.
-const IMPORT_SOURCES: [&str; 2] = ["From a CSV File\u{2026}", "From CoinMarketCap\u{2026}"];
+fn import_sources() -> [&'static str; 2] {
+    [tr!("From a CSV File…"), tr!("From CoinMarketCap…")]
+}
 
 /// The header's Import or Export menu, for sizing it.
-const IMPORT_EXPORT_ACTIONS: [&str; 5] = [
-    "Import Transactions\u{2026}",
-    "Import from CoinMarketCap\u{2026}",
-    "Export Transactions\u{2026}",
-    "Export Current Holdings\u{2026}",
-    "Export Portfolio History\u{2026}",
-];
+fn import_export_actions() -> [&'static str; 5] {
+    [
+        tr!("Import Transactions…"),
+        tr!("Import from CoinMarketCap…"),
+        tr!("Export Transactions…"),
+        tr!("Export Current Holdings…"),
+        tr!("Export Portfolio History…"),
+    ]
+}
 
 /// A currency's row in the currency menu: the code, then its name.
 fn currency_choice(currency: PortfolioCurrency) -> String {
@@ -916,17 +940,17 @@ fn has_portfolio_scope(snapshot: &PortfolioLedgerSnapshot) -> bool {
 
 fn remap_picker(ticker: &str) -> AssetPickerState {
     AssetPickerState::new(
-        &format!("Remap {ticker}"),
-        "Move this asset's transactions to a different market.",
-        "Use Asset",
+        &tr!("Remap {ticker}", ticker = ticker),
+        tr!("Move this asset's transactions to a different market."),
+        tr!("Use Asset"),
     )
 }
 
 fn add_transaction_picker() -> AssetPickerState {
     AssetPickerState::new(
-        "Add Asset",
-        "Choose the asset this transaction is for.",
-        "Continue",
+        tr!("Add Asset"),
+        tr!("Choose the asset this transaction is for."),
+        tr!("Continue"),
     )
 }
 
@@ -935,29 +959,38 @@ fn market_value_caption(
     holdings: &[crate::model::portfolio::PortfolioHolding],
 ) -> String {
     if let Some(error) = &state.error {
-        return format!("Market value unavailable · {error}");
+        return tr!("Market value unavailable · {error}", error = error);
     }
     let Some(projection) = &state.projection else {
-        return "Loading market value…".to_owned();
+        return tr!("Loading market value…").to_owned();
     };
-    let exchange_suffix = if projection.uses_cached_exchange_rates {
-        " · Cached exchange rates"
-    } else {
-        ""
-    };
+    let cached_rates = projection.uses_cached_exchange_rates;
     if projection.unpriced_asset_count > 0 {
         let count = projection.unpriced_asset_count;
-        return format!(
-            "+ {count} unpriced asset{}{exchange_suffix}",
-            if count == 1 { "" } else { "s" }
-        );
+        return if cached_rates {
+            tr_n!(
+                count,
+                "+ {count} unpriced asset · Cached exchange rates",
+                "+ {count} unpriced assets · Cached exchange rates"
+            )
+        } else {
+            tr_n!(
+                count,
+                "+ {count} unpriced asset",
+                "+ {count} unpriced assets"
+            )
+        };
     }
     let label = if holdings.iter().any(|holding| holding.is_price_stale) {
-        "Cached market value"
+        tr!("Cached market value")
     } else {
-        "Live market value"
+        tr!("Live market value")
     };
-    format!("{label}{exchange_suffix}")
+    if cached_rates {
+        tr!("{caption} · Cached exchange rates", caption = label)
+    } else {
+        label.to_owned()
+    }
 }
 
 /// The widest the page grows. A wider window keeps the header, the section bar and the page in one

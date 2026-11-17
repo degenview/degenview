@@ -1,6 +1,7 @@
 //! The row of summary cards under the hero, and the best and worst performer cards.
 
 use super::OverviewInput;
+use crate::i18n::tr;
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::statistics::{AssetResult, PortfolioStatistics};
 use crate::ui::icons::{self, Icon};
@@ -20,15 +21,15 @@ pub(super) fn summary_cards(
     grid(
         ui,
         &[
-            StatCard::new("Cost Basis", f.money(stats.cost_basis)).icon(Icon::Banknote),
-            StatCard::new("All-time P&L", f.signed_money(stats.total_pnl()))
+            StatCard::new(tr!("Cost Basis"), f.money(stats.cost_basis)).icon(Icon::Banknote),
+            StatCard::new(tr!("All-time P&L"), f.signed_money(stats.total_pnl()))
                 .tone(f.tone(Some(stats.total_pnl())))
                 .icon(Icon::ChartUptrend),
-            StatCard::new("Unrealized P&L", f.signed_money(stats.unrealized_pnl))
+            StatCard::new(tr!("Unrealized P&L"), f.signed_money(stats.unrealized_pnl))
                 .tone(f.tone(Some(stats.unrealized_pnl)))
                 .caption(stats.unrealized_percent.map(|p| f.signed_percent(p, 2)))
                 .icon(Icon::Clock),
-            StatCard::new("Realized P&L", f.signed_money(stats.realized_pnl))
+            StatCard::new(tr!("Realized P&L"), f.signed_money(stats.realized_pnl))
                 .tone(f.tone(Some(stats.realized_pnl)))
                 .icon(Icon::CheckmarkSeal),
         ],
@@ -37,14 +38,19 @@ pub(super) fn summary_cards(
 
 pub(super) fn performer_card(
     ui: &mut egui::Ui,
-    title: &str,
+    best: bool,
     result: Option<&AssetResult>,
     input: &OverviewInput,
     height: f32,
 ) {
     if height > CARD_HEIGHT * 1.5 {
-        return performer_tile(ui, title, result, input, height);
+        return performer_tile(ui, best, result, input, height);
     }
+    let title = if best {
+        tr!("Best Performer")
+    } else {
+        tr!("Worst Performer")
+    };
     let f = input.formatter;
     let rect = card_frame(ui, height, None);
     let left = rect.left() + 14.0;
@@ -139,13 +145,17 @@ pub(super) fn performer_card(
 /// A performer as a tall tile: which it is, what it is, then how far it moved in large type.
 fn performer_tile(
     ui: &mut egui::Ui,
-    title: &str,
+    best: bool,
     result: Option<&AssetResult>,
     input: &OverviewInput,
     height: f32,
 ) {
     let f = input.formatter;
-    let best = title.starts_with("Best");
+    let title = if best {
+        tr!("Best Performer")
+    } else {
+        tr!("Worst Performer")
+    };
     let tone = result.and_then(|result| f.tone(Some(result.total_pnl)));
     let rect = card_frame(ui, height, tone.map(tone_color));
     let (left, right) = (rect.left() + 18.0, rect.right() - 18.0);
@@ -178,7 +188,7 @@ fn performer_tile(
             ui,
             pos2(left, rect.center().y + 10.0),
             Align2::LEFT_CENTER,
-            "No priced holdings yet",
+            tr!("No priced holdings yet"),
             kit::size::SUBHEADLINE,
             REGULAR,
             secondary,

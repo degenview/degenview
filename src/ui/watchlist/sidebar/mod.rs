@@ -5,6 +5,7 @@
 //! `WatchlistAction`s; the workspace applies them to the store. Which list a window
 //! shows, its filter and its highlighted row live in `WatchlistSidebarState`.
 
+use crate::i18n::tr;
 use crate::model::InstrumentId;
 use crate::model::market::trend::Trend;
 use crate::model::watchlist;
@@ -171,33 +172,36 @@ enum PromptKind {
 impl PromptKind {
     fn title(&self) -> &'static str {
         match self {
-            Self::NewList | Self::NewListWith(_) => "New Watchlist",
-            Self::RenameList(_) => "Rename Watchlist",
-            Self::CopyList(_) => "Make a Copy",
-            Self::NewSection(_) => "New Section",
-            Self::RenameSection { .. } => "Rename Section",
+            Self::NewList | Self::NewListWith(_) => tr!("New Watchlist"),
+            Self::RenameList(_) => tr!("Rename Watchlist"),
+            Self::CopyList(_) => tr!("Make a Copy"),
+            Self::NewSection(_) => tr!("New Section"),
+            Self::RenameSection { .. } => tr!("Rename Section"),
         }
     }
 
     fn message(&self) -> String {
         match self {
-            Self::NewList => "Name the new watchlist.".to_owned(),
+            Self::NewList => tr!("Name the new watchlist.").to_owned(),
             Self::NewListWith(item) => {
-                format!("Name the new watchlist. {} will be added to it.", item.name)
+                tr!(
+                    "Name the new watchlist. {name} will be added to it.",
+                    name = item.name
+                )
             }
-            Self::RenameList(_) => "Enter a new name.".to_owned(),
-            Self::CopyList(_) => "Name the copy.".to_owned(),
-            Self::NewSection(_) => "Sections group symbols under a heading.".to_owned(),
-            Self::RenameSection { .. } => "Enter a new name.".to_owned(),
+            Self::RenameList(_) => tr!("Enter a new name.").to_owned(),
+            Self::CopyList(_) => tr!("Name the copy.").to_owned(),
+            Self::NewSection(_) => tr!("Sections group symbols under a heading.").to_owned(),
+            Self::RenameSection { .. } => tr!("Enter a new name.").to_owned(),
         }
     }
 
     fn confirm(&self) -> &'static str {
         match self {
-            Self::NewList | Self::NewListWith(_) => "Create",
-            Self::RenameList(_) | Self::RenameSection { .. } => "Rename",
-            Self::CopyList(_) => "Copy",
-            Self::NewSection(_) => "Create",
+            Self::NewList | Self::NewListWith(_) => tr!("Create"),
+            Self::RenameList(_) | Self::RenameSection { .. } => tr!("Rename"),
+            Self::CopyList(_) => tr!("Copy"),
+            Self::NewSection(_) => tr!("Create"),
         }
     }
 }
@@ -388,7 +392,7 @@ pub fn show(
         centered_message(
             ui,
             Icon::Triangle,
-            "Watchlists Unavailable",
+            tr!("Watchlists Unavailable"),
             &WatchlistError::PersistenceUnavailable.to_string(),
         );
     } else if let Some(list) = list {
@@ -439,8 +443,8 @@ pub fn show(
         centered_message(
             ui,
             Icon::List,
-            "No Watchlists",
-            "Create a watchlist from the menu above.",
+            tr!("No Watchlists"),
+            tr!("Create a watchlist from the menu above."),
         );
     }
 

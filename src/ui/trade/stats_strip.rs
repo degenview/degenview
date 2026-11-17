@@ -4,6 +4,7 @@
 
 use eframe::egui::{self, Color32};
 
+use crate::i18n::tr;
 use crate::trading::model::{AccountStats, Hero, HeroNote, StatTone, Trend};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
@@ -74,7 +75,7 @@ fn hero(ui: &mut egui::Ui, hero: Option<&Hero>) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 2.0;
         ui.add_space((STRIP_HEIGHT - HERO_HEIGHT) / 2.0);
-        let title = hero.map_or("Equity", |hero| hero.title.as_str());
+        let title = hero.map_or(tr!("Equity"), |hero| hero.title.as_str());
         ui.label(kit::text(title, 10.5, kit::REGULAR, secondary));
         let (value, color) = match hero {
             Some(hero) => (hero.value.as_str(), theme::text_primary()),

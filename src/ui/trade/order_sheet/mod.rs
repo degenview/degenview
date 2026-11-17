@@ -20,6 +20,7 @@ use super::connect_list;
 use super::fields::{self, Hero};
 use super::figures;
 use super::venue_pill::{self, PillAction};
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::backend::TradingBackend;
@@ -137,7 +138,7 @@ fn header(
                 Icon::Xmark,
                 22.0,
                 theme::text_secondary(),
-                "Close the order sheet",
+                tr!("Close the order sheet"),
             )
             .clicked()
             {
@@ -148,7 +149,7 @@ fn header(
                 Icon::Gear,
                 22.0,
                 theme::text_secondary(),
-                "Trading settings",
+                tr!("Trading settings"),
             )
             .clicked()
             {
@@ -162,9 +163,11 @@ fn header(
 /// and the venue's own sentence beneath it.
 fn unavailable_card(ui: &mut egui::Ui, kind: UnavailableKind, text: &str) {
     let (title, tint) = match kind {
-        UnavailableKind::NotThisVenue => ("Can't trade this market here", theme::text_secondary()),
-        UnavailableKind::Waiting => ("Getting ready", theme::text_secondary()),
-        UnavailableKind::Blocked => ("Orders unavailable", kit::ORANGE),
+        UnavailableKind::NotThisVenue => {
+            (tr!("Can't trade this market here"), theme::text_secondary())
+        }
+        UnavailableKind::Waiting => (tr!("Getting ready"), theme::text_secondary()),
+        UnavailableKind::Blocked => (tr!("Orders unavailable"), kit::ORANGE),
     };
     kit::notice_card(ui, Icon::InfoCircle, tint, title, Some(text), None);
 }
@@ -188,9 +191,9 @@ fn body(
                 ui,
                 Icon::ArrowLeftRight,
                 theme::text_secondary(),
-                &format!("{} is not connected", info.name),
-                Some("Connect it in Settings to trade here."),
-                Some("Open Settings"),
+                &tr!("{name} is not connected", name = info.name),
+                Some(tr!("Connect it in Settings to trade here.")),
+                Some(tr!("Open Settings")),
             ) {
                 actions.push(SheetAction::OpenSettings);
             }
@@ -201,8 +204,8 @@ fn body(
                 ui,
                 Icon::InfoCircle,
                 theme::text_secondary(),
-                &format!("Connecting to {}…", info.name),
-                Some("Orders are available as soon as it is connected."),
+                &tr!("Connecting to {name}…", name = info.name),
+                Some(tr!("Orders are available as soon as it is connected.")),
                 None,
             );
             return;
@@ -212,9 +215,9 @@ fn body(
                 ui,
                 Icon::ArrowLeftRight,
                 kit::RED,
-                &format!("{} needs attention", info.name),
+                &tr!("{name} needs attention", name = info.name),
                 Some(text),
-                Some("Open Settings"),
+                Some(tr!("Open Settings")),
             ) {
                 actions.push(SheetAction::OpenSettings);
             }
@@ -227,8 +230,10 @@ fn body(
             ui,
             Icon::InfoCircle,
             theme::text_secondary(),
-            "No market in focus",
-            Some("Focus a market chart: an order is for the chart's market."),
+            tr!("No market in focus"),
+            Some(tr!(
+                "Focus a market chart: an order is for the chart's market."
+            )),
             None,
         );
         return;

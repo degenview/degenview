@@ -4,6 +4,7 @@ use eframe::egui::{self, Id};
 
 use super::form::FormContext;
 use super::state::{SheetState, Stage};
+use crate::i18n::tr;
 use crate::trading::confirm;
 use crate::trading::draft::DraftCheck;
 use crate::ui::icons::Icon;
@@ -40,18 +41,18 @@ pub(super) fn show(
         &check.estimate,
         state.preview.result(),
     );
-    let message = format!(
-        "This sends a real order to {}. Check every line.",
-        info.name
+    let message = tr!(
+        "This sends a real order to {name}. Check every line.",
+        name = info.name
     );
     let mut spec = dialog::Dialog::new(
         Icon::ArrowLeftRight,
         badge::LIVE,
-        "Place live order?",
+        tr!("Place live order?"),
         &message,
-        "Place order",
+        tr!("Place order"),
     );
-    spec.dismiss = "Back";
+    spec.dismiss = tr!("Back");
     spec.cautious = true;
     let outcome = dialog::show(ui.ctx(), Id::new("trade-confirm"), &spec, |ui| {
         ui.add_space(14.0);

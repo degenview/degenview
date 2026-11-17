@@ -3,6 +3,7 @@
 //! line up exactly (see `watchlist_style`), and each returns the `Response` the
 //! sidebar uses for clicks, drags and menus.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::market::trend::Trend;
 use crate::model::watchlist;
 use crate::model::watchlist::layout::Flags;
@@ -175,7 +176,7 @@ pub fn column_header(
     if let Some(key) = paint_title(
         ui,
         "symbol",
-        "Symbol",
+        tr!("Symbol"),
         Some(WatchlistSortKey::Symbol),
         Align2::LEFT_CENTER,
         rect.left() + LEADING_INSET,
@@ -186,7 +187,7 @@ pub fn column_header(
     for (column, right) in edges {
         if let Some(key) = paint_title(
             ui,
-            column.title(),
+            &format!("{column:?}"),
             column.title(),
             column.sort_key(),
             Align2::RIGHT_CENTER,
@@ -598,12 +599,17 @@ pub fn section_row(
 
     accessibility::label(
         response,
-        format!("{} section, {} symbols", section.title, count),
+        tr_n!(
+            count,
+            "{title} section, {count} symbol",
+            "{title} section, {count} symbols",
+            title = section.title
+        ),
     )
     .on_hover_text(if section.is_collapsed {
-        "Expand section"
+        tr!("Expand section")
     } else {
-        "Collapse section"
+        tr!("Collapse section")
     })
 }
 
@@ -634,7 +640,7 @@ pub fn empty_section_row(ui: &mut egui::Ui) -> Response {
     painter.text(
         inner.center(),
         Align2::CENTER_CENTER,
-        "Drag symbols here",
+        tr!("Drag symbols here"),
         FontId::proportional(11.0),
         ui.visuals().weak_text_color().gamma_multiply(0.7),
     );
