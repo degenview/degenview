@@ -2,8 +2,8 @@
 //! the symbol picker, so a line that imports also finds its market when typed.
 //!
 //! A prefix is a provider's watchlist slug ([`DataSource::watchlist_slug`]) or a US stock
-//! exchange, which Alpaca serves. Anything else (OKX, BYBIT, HKEX) names a venue no provider here
-//! lists; the parse keeps the prefix so callers can say so.
+//! exchange, which Alpaca serves. Anything else (KUCOIN, BITGET, HKEX) names a venue no provider
+//! here lists; the parse keeps the prefix so callers can say so.
 
 use crate::model::DataSource;
 
