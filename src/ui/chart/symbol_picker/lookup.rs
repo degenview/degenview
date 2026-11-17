@@ -52,9 +52,11 @@ impl Lookup {
             // Prediction titles have colons ("Fed: cut"), and a watchlist is filtered, not searched.
             _ if !scope.searches() || scope == Scope::Predictions => plain,
             _ if !is_symbol(&symbol) || !looks_like_venue(&prefix) => plain,
+            // The prefix overrides the pull-down here as it does for a served one: a venue filter
+            // left over from before would hide the symbol's match on the venue that does list it.
             _ => Self {
                 query: symbol,
-                venue: chosen,
+                venue: None,
                 unsupported: Some(prefix),
             },
         }
@@ -147,6 +149,11 @@ mod tests {
             assert_eq!(lookup.query, "BTCUSDT");
             assert_eq!(lookup.venue, None);
         }
+        // A venue picked in the pull-down does not narrow it: Binance's BTCUSDT must still show.
+        let chosen = Lookup::of("OKX:BTCUSDT", Scope::All, Some(DataSource::Coinbase));
+        assert_eq!(chosen.unsupported, Some("OKX".to_owned()));
+        assert_eq!(chosen.venue, None);
+        assert_eq!(chosen.searched(Scope::All).len(), Scope::All.venues().len());
         // CoinMarketCap has indices, not markets to search.
         assert_eq!(
             of("CMC:BTC.D", Scope::All).unsupported,

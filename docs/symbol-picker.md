@@ -95,7 +95,8 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   none. A prefix the open tab has no markets of (`BINANCE:` on Stocks) says so.
   - **Never silent.** A prefix no provider serves (`OKX:BTCUSDT`, BYBIT, HKEX, SSE, futures venues,
     CoinMarketCap's `CMC`) is a word of 2-12 letters or digits followed by a colon and a symbol: the
-    symbol is searched on every venue of the tab and listed under "OKX isn't supported · matches from
+    symbol is searched on every venue of the tab (a venue picked in the pull-down does not narrow it,
+    as the prefix overrides it) and listed under "OKX isn't supported · matches from
     other venues", and with no match the card reads "OKX isn't supported. Searched: Binance,
     Coinbase, DEXScreener, CoinGecko, Alpaca." A plain miss reads "Nothing matches “zzz”. Searched:
     …" with the venues asked (the pull-down's one, or the tab's). Return on no result does nothing.
