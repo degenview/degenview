@@ -4,6 +4,7 @@ use degenview_brokers::Side;
 use eframe::egui::{self, vec2};
 
 use super::state::SheetState;
+use crate::i18n::{tr, tr_n};
 use crate::trading::backend::TradingBackend;
 use crate::trading::model::OrderRow;
 use crate::ui::icons::{self, Icon};
@@ -21,7 +22,7 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn Trad
     let open = state.orders_open.unwrap_or(!rows.is_empty());
     let (head, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), 30.0), egui::Sense::click());
-    let response = crate::ui::accessibility::label(response, "Open orders")
+    let response = crate::ui::accessibility::label(response, tr!("Open orders"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     if response.clicked() {
         state.orders_open = Some(!open);
@@ -37,7 +38,7 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn Trad
     );
     let title = kit::galley(
         ui,
-        "Open orders",
+        tr!("Open orders"),
         kit::size::BODY,
         kit::SEMIBOLD,
         theme::text_primary(),
@@ -84,7 +85,7 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn Trad
     ui.add_space(6.0);
     if rows.is_empty() {
         ui.label(kit::text(
-            "Working orders rest here until they fill or are cancelled.",
+            tr!("Working orders rest here until they fill or are cancelled."),
             kit::size::CAPTION + 1.0,
             kit::REGULAR,
             theme::text_tertiary(),
@@ -101,15 +102,15 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn Trad
             };
             ui.label(kit::text(
                 match row.side {
-                    Side::Buy => "Buy",
-                    Side::Sell => "Sell",
+                    Side::Buy => tr!("Buy"),
+                    Side::Sell => tr!("Sell"),
                 },
                 kit::size::CAPTION + 1.0,
                 kit::SEMIBOLD,
                 color,
             ));
             let price = row.price.map_or_else(
-                || "market".to_owned(),
+                || tr!("market").to_owned(),
                 crate::model::broker::ticket::display,
             );
             let size = row
@@ -131,7 +132,7 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn Trad
                         Icon::Xmark,
                         20.0,
                         theme::text_secondary(),
-                        "Cancel this order",
+                        tr!("Cancel this order"),
                     )
                     .clicked()
                     {
@@ -145,7 +146,11 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn Trad
     }
     if rows.len() > SHOWN {
         ui.label(kit::text(
-            format!("{} more in the orders panel", rows.len() - SHOWN),
+            tr_n!(
+                rows.len() - SHOWN,
+                "{count} more in the orders panel",
+                "{count} more in the orders panel"
+            ),
             kit::size::CAPTION + 1.0,
             kit::REGULAR,
             theme::text_tertiary(),

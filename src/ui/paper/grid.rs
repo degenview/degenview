@@ -17,7 +17,7 @@ const MARGIN_X: f32 = 12.0;
 const MARGIN_Y: f32 = 8.0;
 const RADIUS: f32 = 8.0;
 /// Space between a cell's edge and its content.
-const CELL_PAD: f32 = 10.0;
+pub const CELL_PAD: f32 = 10.0;
 /// The footer bar under the table (`kit::footer_bar`'s height), which the table leaves room for.
 pub const FOOTER_HEIGHT: f32 = 45.0;
 
@@ -82,6 +82,15 @@ pub fn show(
     let area_height = table_height(ui);
     let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), area_height), Sense::hover());
     let frame = area.shrink2(vec2(MARGIN_X, MARGIN_Y));
+    // A column is never narrower than its header, which is longer in some languages.
+    let fitted: Vec<Col> = cols
+        .iter()
+        .map(|col| Col {
+            min: col.min.max(header_width(ui, col.title)),
+            ..*col
+        })
+        .collect();
+    let cols = fitted.as_slice();
     let minimum: f32 = cols.iter().map(|col| col.min).sum();
     let content_width = frame.width().max(minimum);
     let spans = column_spans(cols, content_width);
@@ -115,6 +124,31 @@ pub fn show(
     // The border goes over the rows, so a square zebra band never pokes out of a rounded corner.
     ui.painter()
         .rect_stroke(frame, RADIUS, stroke, egui::StrokeKind::Inside);
+}
+
+/// The width a column needs to show `title` on one line, with its padding.
+fn header_width(ui: &Ui, title: &str) -> f32 {
+    if title.is_empty() {
+        return 0.0;
+    }
+    let galley = kit::galley(
+        ui,
+        title,
+        size::CAPTION + 1.0,
+        SEMIBOLD,
+        theme::text_secondary(),
+        f32::INFINITY,
+    );
+    galley.size().x + 2.0 * CELL_PAD
+}
+
+/// The width a column needs to show `tag` (see [`tag`]) with its padding.
+pub fn tag_width(ui: &Ui, text: &str) -> f32 {
+    kit::galley(ui, text, 10.5, BOLD, theme::text_primary(), f32::INFINITY)
+        .size()
+        .x
+        + 14.0
+        + 2.0 * CELL_PAD
 }
 
 fn header(ui: &mut Ui, cols: &[Col], spans: &[(f32, f32)], width: f32, frame_top: f32) {

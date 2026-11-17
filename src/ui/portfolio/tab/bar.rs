@@ -4,10 +4,11 @@
 //! there is a portfolio to add to).
 
 use super::{
-    CreateState, IMPORT_EXPORT_ACTIONS, ManageState, PORTFOLIO_CURRENCIES, PendingExport,
-    PortfolioHost, PortfolioTab, add_transaction_picker, cmc_destination, currency_choice,
-    has_portfolio_scope, portfolio, portfolio_scope,
+    CreateState, ManageState, PORTFOLIO_CURRENCIES, PendingExport, PortfolioHost, PortfolioTab,
+    add_transaction_picker, cmc_destination, currency_choice, has_portfolio_scope,
+    import_export_actions, portfolio, portfolio_scope,
 };
+use crate::i18n::tr;
 use crate::model::portfolio::PortfolioLedgerSnapshot;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -44,13 +45,13 @@ struct BarState {
 }
 
 fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
-    let mut portfolio = BarButton::new("portfolio", "Choose portfolio")
+    let mut portfolio = BarButton::new("portfolio", tr!("Choose portfolio"))
         .icon(Icon::Briefcase)
         .label(state.portfolio.as_str())
         .with_menu(BarMenu::Portfolio)
         .chevron();
     portfolio.keep_label = true;
-    let mut currency = BarButton::new("currency", "Reporting currency")
+    let mut currency = BarButton::new("currency", tr!("Reporting currency"))
         .icon(Icon::Banknote)
         .label(state.currency)
         .enabled(!state.converting)
@@ -63,14 +64,14 @@ fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
     let mut right = Vec::new();
     if state.has_scope {
         right.push(Item::Button(
-            BarButton::new("import-export", "Import or Export")
+            BarButton::new("import-export", tr!("Import or Export"))
                 .icon(Icon::Exchange)
                 .with_menu(BarMenu::ImportExport),
         ));
         right.push(Item::Button(
-            BarButton::new("add-transaction", "Add a transaction")
+            BarButton::new("add-transaction", tr!("Add a transaction"))
                 .icon(Icon::Plus)
-                .label("Add Transaction")
+                .label(tr!("Add Transaction"))
                 .on_click(BarAction::AddTransaction),
         ));
         right.push(Item::Separator);
@@ -79,9 +80,9 @@ fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
         BarButton::new(
             "privacy",
             if state.privacy {
-                "Reveal portfolio values"
+                tr!("Reveal portfolio values")
             } else {
-                "Hide portfolio values"
+                tr!("Hide portfolio values")
             },
         )
         .icon(if state.privacy {
@@ -113,7 +114,7 @@ impl PortfolioTab {
                         .iter()
                         .find(|portfolio| portfolio.id == id)
                 })
-                .map_or("All Portfolios", |portfolio| portfolio.name.as_str())
+                .map_or(tr!("All Portfolios"), |portfolio| portfolio.name.as_str())
                 .to_owned(),
             currency: self.reporting_currency.code(),
             // Converting every transaction rebuilds the valuation from scratch.
@@ -154,26 +155,22 @@ impl PortfolioTab {
         host: &mut PortfolioHost,
         snapshot: &PortfolioLedgerSnapshot,
     ) {
-        let labels: Vec<&str> = [
-            "All Portfolios",
-            "Create Portfolio\u{2026}",
-            "Manage Portfolios\u{2026}",
-        ]
-        .into_iter()
-        .chain(
-            snapshot
-                .portfolios
-                .iter()
-                .filter(|portfolio| !portfolio.is_archived)
-                .map(|portfolio| portfolio.name.as_str()),
-        )
-        .collect();
+        let all_portfolios = tr!("All Portfolios");
+        let create_portfolio = tr!("Create Portfolio…");
+        let manage_portfolios = tr!("Manage Portfolios…");
+        let labels: Vec<&str> = [all_portfolios, create_portfolio, manage_portfolios]
+            .into_iter()
+            .chain(
+                snapshot
+                    .portfolios
+                    .iter()
+                    .filter(|portfolio| !portfolio.is_archived)
+                    .map(|portfolio| portfolio.name.as_str()),
+            )
+            .collect();
         kit::fitted_menu(ui, response, egui::RectAlign::BOTTOM_START, &labels, |ui| {
-            if header_controls::choice(
-                ui,
-                "All Portfolios",
-                snapshot.selected_portfolio_id.is_none(),
-            ) {
+            if header_controls::choice(ui, all_portfolios, snapshot.selected_portfolio_id.is_none())
+            {
                 let _ = host.select(None);
             }
             header_controls::separator(ui);
@@ -191,10 +188,10 @@ impl PortfolioTab {
                 }
             }
             header_controls::separator(ui);
-            if header_controls::action(ui, Icon::Plus, "Create Portfolio\u{2026}") {
+            if header_controls::action(ui, Icon::Plus, create_portfolio) {
                 self.create = Some(CreateState::default());
             }
-            if header_controls::action(ui, Icon::Sliders, "Manage Portfolios\u{2026}") {
+            if header_controls::action(ui, Icon::Sliders, manage_portfolios) {
                 self.manage = Some(ManageState::default());
             }
         });
@@ -222,22 +219,29 @@ impl PortfolioTab {
         snapshot: &PortfolioLedgerSnapshot,
     ) {
         let ctx = ui.ctx().clone();
+        let actions = import_export_actions();
+        let [
+            import_csv,
+            import_cmc,
+            export_transactions,
+            export_holdings,
+            export_history,
+        ] = actions;
         kit::fitted_menu(
             ui,
             response,
             egui::RectAlign::BOTTOM_END,
-            &IMPORT_EXPORT_ACTIONS[..],
+            &actions[..],
             |ui| {
-                if header_controls::action(ui, Icon::Download, "Import Transactions\u{2026}") {
+                if header_controls::action(ui, Icon::Download, import_csv) {
                     self.import.begin_import_csv(&ctx);
                 }
-                if header_controls::action(ui, Icon::Download, "Import from CoinMarketCap\u{2026}")
-                {
+                if header_controls::action(ui, Icon::Download, import_cmc) {
                     self.import
                         .begin_import_cmc(&ctx, cmc_destination(snapshot));
                 }
                 header_controls::separator(ui);
-                if header_controls::action(ui, Icon::ShareUp, "Export Transactions\u{2026}") {
+                if header_controls::action(ui, Icon::ShareUp, export_transactions) {
                     let text = portfolio::csv::export_transactions(
                         &snapshot.transactions,
                         &snapshot.portfolios,
@@ -248,10 +252,10 @@ impl PortfolioTab {
                         crate::host::portfolio::import_flow::CSV_FILENAME,
                     );
                 }
-                if header_controls::action(ui, Icon::ShareUp, "Export Current Holdings\u{2026}") {
+                if header_controls::action(ui, Icon::ShareUp, export_holdings) {
                     self.pending_export = Some(PendingExport::Holdings);
                 }
-                if header_controls::action(ui, Icon::ShareUp, "Export Portfolio History\u{2026}") {
+                if header_controls::action(ui, Icon::ShareUp, export_history) {
                     self.pending_export = Some(PendingExport::History);
                 }
             },

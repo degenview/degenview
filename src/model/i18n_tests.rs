@@ -54,7 +54,7 @@ fn broker_and_order_wording_follows_the_language() {
     follows_the_language(|| BrokerUnavailable::InReplay.text().to_owned());
     follows_the_language(|| status_label(OrderStatus::Open).0.to_owned());
     follows_the_language(|| PaperOrderSide::Buy.label().to_owned());
-    follows_the_language(|| PaperOrderType::StopLimit.label().to_owned());
+    follows_the_language(|| PaperOrderType::StopLimit.badge_text().to_owned());
 }
 
 #[test]

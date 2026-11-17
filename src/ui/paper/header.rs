@@ -3,6 +3,7 @@
 //! one-line summary of the section and its bulk action (Close All, Cancel All, Export) behind a
 //! confirmation. Pure views returning actions; the host owns the store and the engine.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::paper::PaperCurrency;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
@@ -45,10 +46,14 @@ pub fn can_delete_account(input: &PaperHeaderInput) -> bool {
 }
 
 pub fn delete_title(name: &str) -> String {
-    format!("Delete \u{201c}{name}\u{201d}?")
+    tr!("Delete \u{201c}{name}\u{201d}?", name = name)
 }
 
-pub const DELETE_MESSAGE: &str = "Every position, order, fill, history and journal entry in this account is removed. This can't be undone.";
+pub fn delete_message() -> &'static str {
+    tr!(
+        "Every position, order, fill, history and journal entry in this account is removed. This can't be undone."
+    )
+}
 
 /// The confirmation for deleting an account; `None` while it is still open.
 pub fn delete_confirm(ctx: &egui::Context, name: &str) -> Option<ConfirmOutcome> {
@@ -58,8 +63,8 @@ pub fn delete_confirm(ctx: &egui::Context, name: &str) -> Option<ConfirmOutcome>
         &Confirm {
             icon: Icon::Trash,
             title: &delete_title(name),
-            message: DELETE_MESSAGE,
-            destructive: "Delete Account",
+            message: delete_message(),
+            destructive: tr!("Delete Account"),
         },
     )
 }
@@ -77,7 +82,7 @@ pub fn account_name<'a>(input: &'a PaperHeaderInput) -> &'a str {
     input
         .selected
         .and_then(|id| input.accounts.iter().find(|account| account.id == id))
-        .map_or("No account", |account| account.name.as_str())
+        .map_or(tr!("No account"), |account| account.name.as_str())
 }
 
 /// The Swift tab glyphs.
@@ -113,7 +118,7 @@ pub fn header_parts(input: &PaperHeaderInput) -> HeaderParts {
     let chip = Chip {
         label: account_name(input).to_owned(),
         sub: input.currency.map(|currency| currency.code().to_owned()),
-        tip: "Switch paper account".to_owned(),
+        tip: tr!("Switch paper account").to_owned(),
         rows: input
             .accounts
             .iter()
@@ -122,18 +127,18 @@ pub fn header_parts(input: &PaperHeaderInput) -> HeaderParts {
                 selected: input.selected == Some(choice.id),
             })
             .collect(),
-        add: Some("New Account\u{2026}".to_owned()),
+        add: Some(tr!("New Account\u{2026}").to_owned()),
     };
     let mut more = vec![
         MoreItem {
             icon: Icon::ShareUp,
-            label: "Export Trading Data\u{2026}".to_owned(),
+            label: tr!("Export Trading Data\u{2026}").to_owned(),
             danger: false,
             rule_above: false,
         },
         MoreItem {
             icon: Icon::Undo,
-            label: "Reset Account\u{2026}".to_owned(),
+            label: tr!("Reset Account\u{2026}").to_owned(),
             danger: true,
             rule_above: false,
         },
@@ -145,7 +150,7 @@ pub fn header_parts(input: &PaperHeaderInput) -> HeaderParts {
     if can_delete_account(input) {
         more.push(MoreItem {
             icon: Icon::Trash,
-            label: "Delete Account\u{2026}".to_owned(),
+            label: tr!("Delete Account\u{2026}").to_owned(),
             danger: true,
             rule_above: false,
         });
@@ -184,25 +189,28 @@ pub struct PaperFooterState {
 
 /// "Close 1 Position" / "Cancel 3 Orders".
 pub fn confirm_button(confirm: PaperFooterConfirm, count: usize) -> String {
-    let (verb, noun) = match confirm {
-        PaperFooterConfirm::CloseAll => ("Close", "Position"),
-        PaperFooterConfirm::CancelAll => ("Cancel", "Order"),
-    };
-    format!("{verb} {count} {noun}{}", if count == 1 { "" } else { "s" })
+    match confirm {
+        PaperFooterConfirm::CloseAll => {
+            tr_n!(count, "Close {count} Position", "Close {count} Positions")
+        }
+        PaperFooterConfirm::CancelAll => {
+            tr_n!(count, "Cancel {count} Order", "Cancel {count} Orders")
+        }
+    }
 }
 
 pub fn confirm_title(confirm: PaperFooterConfirm) -> &'static str {
     match confirm {
-        PaperFooterConfirm::CloseAll => "Close all positions?",
-        PaperFooterConfirm::CancelAll => "Cancel all working orders?",
+        PaperFooterConfirm::CloseAll => tr!("Close all positions?"),
+        PaperFooterConfirm::CancelAll => tr!("Cancel all working orders?"),
     }
 }
 
 pub fn confirm_message(confirm: PaperFooterConfirm) -> &'static str {
     match confirm {
-        PaperFooterConfirm::CloseAll => "Each position is closed at market.",
+        PaperFooterConfirm::CloseAll => tr!("Each position is closed at market."),
         PaperFooterConfirm::CancelAll => {
-            "Protective take-profit and stop-loss orders are canceled too."
+            tr!("Protective take-profit and stop-loss orders are canceled too.")
         }
     }
 }
@@ -210,9 +218,9 @@ pub fn confirm_message(confirm: PaperFooterConfirm) -> &'static str {
 /// The label on the section's bulk button.
 pub fn bulk_label(tab: PaperTab) -> &'static str {
     match tab {
-        PaperTab::Positions => "Close All",
-        PaperTab::Orders => "Cancel All",
-        PaperTab::History | PaperTab::Trades | PaperTab::Journal => "Export…",
+        PaperTab::Positions => tr!("Close All"),
+        PaperTab::Orders => tr!("Cancel All"),
+        PaperTab::History | PaperTab::Trades | PaperTab::Journal => tr!("Export…"),
     }
 }
 
@@ -258,9 +266,9 @@ pub fn footer(
         bulk_label(tab),
         bulk_enabled(tab, facts),
         match tab {
-            PaperTab::Positions => "Close every open position at market",
-            PaperTab::Orders => "Cancel every working order",
-            _ => "Export the account's trading data",
+            PaperTab::Positions => tr!("Close every open position at market"),
+            PaperTab::Orders => tr!("Cancel every working order"),
+            _ => tr!("Export the account's trading data"),
         },
     );
     if clicked {
@@ -314,17 +322,22 @@ fn confirm_dialog(
 
 // MARK: Empty state
 
-pub const NO_ACCOUNT_TITLE: &str = "No paper account";
-pub const NO_ACCOUNT_MESSAGE: &str = "Create one to practise trading with simulated money.";
+pub fn no_account_title() -> &'static str {
+    tr!("No paper account")
+}
+
+pub fn no_account_message() -> &'static str {
+    tr!("Create one to practise trading with simulated money.")
+}
 
 /// What the panel shows when there is no account yet; true when "Create Account" was clicked.
 pub fn no_account_state(ui: &mut egui::Ui) -> bool {
     tables::empty_with_action(
         ui,
         Icon::DocText,
-        NO_ACCOUNT_TITLE,
-        NO_ACCOUNT_MESSAGE,
-        Some("Create Account"),
+        no_account_title(),
+        no_account_message(),
+        Some(tr!("Create Account")),
     )
 }
 
@@ -376,8 +389,8 @@ mod tests {
 
     #[test]
     fn the_empty_state_invites_a_first_account() {
-        assert_eq!(NO_ACCOUNT_TITLE, "No paper account");
-        assert!(NO_ACCOUNT_MESSAGE.contains("simulated money"));
+        assert_eq!(no_account_title(), "No paper account");
+        assert!(no_account_message().contains("simulated money"));
     }
 
     #[test]
@@ -440,6 +453,6 @@ mod tests {
     #[test]
     fn the_delete_confirmation_names_the_account() {
         assert_eq!(delete_title("Swing"), "Delete \u{201c}Swing\u{201d}?");
-        assert!(DELETE_MESSAGE.contains("can't be undone"));
+        assert!(delete_message().contains("can't be undone"));
     }
 }

@@ -2,6 +2,7 @@
 //! currency) and "Manage Portfolios" (rename, reorder, duplicate, delete). Pure views over
 //! plain values; the host owns the ledger and applies the actions.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::format::PORTFOLIO_CURRENCIES;
 use crate::model::portfolio::{
     MAX_NAME_LENGTH, Portfolio, PortfolioCurrency, is_duplicate_name, is_valid_name, normalize_name,
@@ -102,11 +103,11 @@ pub fn show_create(
             widgets::header(
                 ui,
                 art::Scene::Portfolio,
-                "New Portfolio",
-                "Group transactions and track them together.",
+                tr!("New Portfolio"),
+                tr!("Group transactions and track them together."),
             );
             ui.add_space(24.0);
-            section_label(ui, "Name");
+            section_label(ui, tr!("Name"));
             let id = Id::new("portfolio-create-name");
             let focused = ui.memory(|memory| memory.has_focus(id));
             let response = kit::field_frame(focused)
@@ -120,7 +121,7 @@ pub fn show_create(
                             ui,
                             id,
                             &mut state.name,
-                            "e.g. Long-term holds",
+                            tr!("e.g. Long-term holds"),
                             kit::size::BODY,
                             kit::REGULAR,
                             width,
@@ -147,7 +148,7 @@ pub fn show_create(
                 let warning = theme::pick(kit::ORANGE, Color32::from_rgb(190, 100, 0));
                 let message = kit::galley(
                     ui,
-                    "A portfolio with this name already exists.",
+                    tr!("A portfolio with this name already exists."),
                     kit::size::CAPTION + 1.0,
                     kit::REGULAR,
                     warning,
@@ -172,14 +173,14 @@ pub fn show_create(
                 );
             }
             ui.add_space(6.0);
-            section_label(ui, "Base currency");
+            section_label(ui, tr!("Base currency"));
             currency_grid(ui, &mut state.currency);
             ui.add_space(10.0);
             ui.add(
                 egui::Label::new(kit::text(
-                    format!(
-                        "Transactions in this portfolio are valued in {}. You can still view it in any currency later.",
-                        state.currency.code()
+                    tr!(
+                        "Transactions in this portfolio are valued in {currency}. You can still view it in any currency later.",
+                        currency = state.currency.code()
                     ),
                     kit::size::CAPTION + 1.0,
                     kit::REGULAR,
@@ -193,7 +194,7 @@ pub fn show_create(
         sheet::footer(ui, |ui| {
             if kit::footer_button(
                 ui,
-                "Create Portfolio",
+                tr!("Create Portfolio"),
                 kit::FooterButton::Primary,
                 state.is_valid() && !duplicate,
                 150.0,
@@ -202,7 +203,9 @@ pub fn show_create(
             {
                 outcome = state.outcome_unless(duplicate);
             }
-            if kit::footer_button(ui, "Cancel", kit::FooterButton::Secondary, true, 0.0).clicked() {
+            if kit::footer_button(ui, tr!("Cancel"), kit::FooterButton::Secondary, true, 0.0)
+                .clicked()
+            {
                 outcome = Some(CreateOutcome::Cancel);
             }
         });
@@ -383,13 +386,10 @@ pub fn rename_commit(draft: &str, current: &str) -> Option<String> {
 }
 
 pub fn delete_message(transactions: usize) -> String {
-    format!(
-        "This permanently deletes the portfolio and its {transactions} {}. It can't be undone.",
-        if transactions == 1 {
-            "transaction"
-        } else {
-            "transactions"
-        }
+    tr_n!(
+        transactions,
+        "This permanently deletes the portfolio and its {count} transaction. It can't be undone.",
+        "This permanently deletes the portfolio and its {count} transactions. It can't be undone."
     )
 }
 
@@ -416,7 +416,7 @@ pub fn show_manage(
             widgets::header(
                 ui,
                 art::Scene::Portfolio,
-                "Manage Portfolios",
+                tr!("Manage Portfolios"),
                 &manage_subtitle(input.rows.len()),
             );
         });
@@ -432,8 +432,8 @@ pub fn show_manage(
                     ui,
                     area,
                     empty::Scene::Portfolios,
-                    "No Portfolios",
-                    "Create a portfolio to start tracking investments.",
+                    tr!("No Portfolios"),
+                    tr!("Create a portfolio to start tracking investments."),
                 );
             });
         } else {
@@ -515,7 +515,7 @@ pub fn show_manage(
             |ui| {
                 if kit::footer_button(
                     ui,
-                    "New Portfolio\u{2026}",
+                    tr!("New Portfolio\u{2026}"),
                     kit::FooterButton::Secondary,
                     true,
                     0.0,
@@ -526,7 +526,8 @@ pub fn show_manage(
                 }
             },
             |ui| {
-                if kit::footer_button(ui, "Done", kit::FooterButton::Primary, true, 90.0).clicked()
+                if kit::footer_button(ui, tr!("Done"), kit::FooterButton::Primary, true, 90.0)
+                    .clicked()
                 {
                     done = true;
                 }
@@ -553,27 +554,22 @@ pub fn show_manage(
 /// "3 portfolios · Drag to reorder, click a name to rename."
 pub fn manage_subtitle(count: usize) -> String {
     if count == 0 {
-        return "No portfolios yet \u{00B7} Create one to start tracking.".to_owned();
+        return tr!("No portfolios yet \u{00B7} Create one to start tracking.").to_owned();
     }
-    format!(
-        "{} \u{00B7} Drag to reorder, click a name to rename.",
-        if count == 1 {
-            "1 portfolio".to_owned()
-        } else {
-            format!("{count} portfolios")
-        }
+    tr_n!(
+        count,
+        "{count} portfolio \u{00B7} Drag to reorder, click a name to rename.",
+        "{count} portfolios \u{00B7} Drag to reorder, click a name to rename."
     )
 }
 
 /// The caption under a portfolio's name: what it holds, without the currency (which has its own
 /// tile).
 pub fn holdings_line(transactions: usize, assets: usize) -> String {
-    let plural =
-        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
     format!(
         "{} \u{00B7} {}",
-        plural(transactions, "transaction", "transactions"),
-        plural(assets, "asset", "assets")
+        tr_n!(transactions, "{count} transaction", "{count} transactions"),
+        tr_n!(assets, "{count} asset", "{count} assets")
     )
 }
 
@@ -617,7 +613,7 @@ fn manage_row(
             Sense::drag(),
         )
         .on_hover_cursor(egui::CursorIcon::Grab)
-        .on_hover_text("Drag to reorder");
+        .on_hover_text(tr!("Drag to reorder"));
     let grip_color = if grip_response.hovered() || moving {
         primary
     } else {
@@ -670,7 +666,7 @@ fn manage_row(
         Icon::Trash,
         ROW_BUTTON,
         secondary,
-        "Delete portfolio",
+        tr!("Delete portfolio"),
     )
     .clicked()
     {
@@ -681,7 +677,7 @@ fn manage_row(
         Icon::CopyDoc,
         ROW_BUTTON,
         secondary,
-        "Duplicate, including its transactions",
+        tr!("Duplicate, including its transactions"),
     )
     .clicked()
     {
@@ -691,8 +687,8 @@ fn manage_row(
     for (label, tint) in [
         portfolio
             .is_archived
-            .then_some(("Archived", theme::text_tertiary())),
-        current.then_some(("Viewing", theme::UP)),
+            .then_some((tr!("Archived"), theme::text_tertiary())),
+        current.then_some((tr!("Viewing"), theme::UP)),
     ]
     .into_iter()
     .flatten()
@@ -745,7 +741,7 @@ fn manage_row(
         &mut name_ui,
         name_id,
         draft,
-        "Portfolio name",
+        tr!("Portfolio name"),
         kit::size::BODY + 1.0,
         kit::SEMIBOLD,
         field.width() - 16.0,
@@ -775,7 +771,7 @@ fn manage_row(
     }
     let (caption, caption_color) = if clashes {
         (
-            "Another portfolio already has this name".to_owned(),
+            tr!("Another portfolio already has this name").to_owned(),
             theme::DOWN,
         )
     } else {
@@ -819,7 +815,7 @@ fn delete_dialog(
         state.pending_delete = None;
         return;
     };
-    let title = format!("Delete {}?", row.portfolio.name);
+    let title = tr!("Delete {name}?", name = row.portfolio.name);
     let message = delete_message(row.transactions);
     let result = kit::confirm(
         ctx,
@@ -828,7 +824,7 @@ fn delete_dialog(
             icon: Icon::Trash,
             title: &title,
             message: &message,
-            destructive: "Delete Portfolio",
+            destructive: tr!("Delete Portfolio"),
         },
     );
     if result == Some(ConfirmOutcome::Confirmed) {

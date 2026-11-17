@@ -1,6 +1,7 @@
 //! The P&L by asset panel: one bar per asset.
 
 use super::{PNL_COMPACT, PNL_ROW_MAX, PNL_ROW_MIN};
+use crate::i18n::tr;
 use crate::model::portfolio::PortfolioAsset;
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::statistics::{AssetResult, pnl_bars};
@@ -23,10 +24,10 @@ pub(super) fn pnl_panel(
         ui,
         content_height,
         Icon::BarChart,
-        "P&L by Asset",
+        tr!("P&L by Asset"),
         |header, ui| {
             header.label(kit::text(
-                format!("Total, in {}", f.currency.code()),
+                tr!("Total, in {currency}", currency = f.currency.code()),
                 kit::size::SUBHEADLINE,
                 REGULAR,
                 caption_color(),
@@ -50,8 +51,8 @@ fn pnl_bars_view(
             ui,
             area,
             empty::Scene::Results,
-            "No Results Yet",
-            "Priced holdings appear here.",
+            tr!("No Results Yet"),
+            tr!("Priced holdings appear here."),
         );
         return;
     }

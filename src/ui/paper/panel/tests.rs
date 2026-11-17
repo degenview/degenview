@@ -23,12 +23,11 @@ fn a_bulk_action_reports_what_it_could_not_do() {
     let failed: Result<u64, PaperHostError> =
         Err(PaperHostError::Engine(PaperTradingError::NoMarketData));
     assert_eq!(
-        bulk_failure_text("Closed", "positions", &[ok.clone(), ok.clone()]),
+        bulk_failure_text(BulkAction::ClosePositions, &[ok.clone(), ok.clone()]),
         None
     );
     let text = bulk_failure_text(
-        "Closed",
-        "positions",
+        BulkAction::ClosePositions,
         &[ok.clone(), failed.clone(), failed.clone()],
     )
     .unwrap();

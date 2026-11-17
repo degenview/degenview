@@ -3,6 +3,7 @@
 //! change to an account goes through the host.
 
 use crate::host::paper::{PaperHost, PaperHostError, owner_text};
+use crate::i18n::{tr, tr_n};
 use crate::model::paper;
 use crate::model::paper::{
     PaperAccount, PaperClosedTrade, PaperCurrency, PaperJournalEntry, PaperOrder, PaperOrderEvent,
@@ -211,7 +212,7 @@ impl PaperPanel {
                 overlay: Some(self.show_trading_on_charts),
                 can_order: account.is_some(),
                 more: &parts.more,
-                settings_tip: "Paper trading settings",
+                settings_tip: tr!("Paper trading settings"),
             },
             &mut self.header.tab,
         );
@@ -338,20 +339,21 @@ impl PaperPanel {
             return;
         }
         let Some(account_id) = account_id else {
-            self.notice = Some(PanelNotice::info(
-                "Create a paper account first; there is nothing to export yet.",
-            ));
+            self.notice = Some(PanelNotice::info(tr!(
+                "Create a paper account first; there is nothing to export yet."
+            )));
             return;
         };
         let export = paper::export::export_account(host.snapshot(), account_id);
         if export.is_empty() {
-            self.notice = Some(PanelNotice::info(
-                "Nothing to export yet. Orders, fills and closed trades show up here once you trade.",
-            ));
+            self.notice = Some(PanelNotice::info(tr!(
+                "Nothing to export yet. Orders, fills and closed trades show up here once you trade."
+            )));
             return;
         }
+        let dialog_title = tr!("Export");
         let job = crate::service::work_queue::SNAPSHOTS.start(Some(ctx), move || {
-            crate::service::system::file_dialog::choose_folder("Export").and_then(|folder| {
+            crate::service::system::file_dialog::choose_folder(dialog_title).and_then(|folder| {
                 let Some(folder) = folder else {
                     return Ok(None);
                 };
@@ -375,8 +377,10 @@ impl PaperPanel {
                     || folder.display().to_string(),
                     |n| n.to_string_lossy().into(),
                 );
-                self.notice = Some(PanelNotice::info(format!(
-                    "Exported {summary} to \u{201c}{name}\u{201d}."
+                self.notice = Some(PanelNotice::info(tr!(
+                    "Exported {summary} to \u{201c}{name}\u{201d}.",
+                    summary = summary,
+                    name = name
                 )));
                 self.export_job = None;
             }
@@ -413,7 +417,13 @@ impl PaperPanel {
         };
         let text = match failures.len() {
             1 => first.to_string(),
-            more => format!("{more} failed: {first} (and {} more)", more - 1),
+            more => tr_n!(
+                more - 1,
+                "{total} failed: {first} (and {count} more)",
+                "{total} failed: {first} (and {count} more)",
+                total = more,
+                first = first
+            ),
         };
         self.notice = Some(PanelNotice::error(text));
         host.clear_error();
@@ -426,7 +436,13 @@ impl PaperPanel {
         };
         let text = match messages.len() {
             1 => first.clone(),
-            more => format!("{more} failed: {first} (and {} more)", more - 1),
+            more => tr_n!(
+                more - 1,
+                "{total} failed: {first} (and {count} more)",
+                "{total} failed: {first} (and {count} more)",
+                total = more,
+                first = first
+            ),
         };
         self.notice = Some(PanelNotice::error(text));
     }
@@ -477,7 +493,7 @@ impl PaperPanel {
                             rect,
                             egui::Id::new("paper-notice-dismiss"),
                             Icon::Xmark,
-                            "Dismiss",
+                            tr!("Dismiss"),
                             true,
                             true,
                         )
@@ -551,14 +567,14 @@ impl PaperPanel {
             match (action, account_id) {
                 (PaperFooterAction::CloseAllPositions, Some(id)) => {
                     let results = host.close_all_positions(id);
-                    if let Some(text) = bulk_failure_text("Closed", "positions", &results) {
+                    if let Some(text) = bulk_failure_text(BulkAction::ClosePositions, &results) {
                         self.notice = Some(PanelNotice::error(text));
                         host.clear_error();
                     }
                 }
                 (PaperFooterAction::CancelAllOrders, Some(id)) => {
                     let results = host.cancel_all_orders(id);
-                    if let Some(text) = bulk_failure_text("Canceled", "orders", &results) {
+                    if let Some(text) = bulk_failure_text(BulkAction::CancelOrders, &results) {
                         self.notice = Some(PanelNotice::error(text));
                         host.clear_error();
                     }
@@ -662,24 +678,53 @@ fn owner_note(ui: &mut egui::Ui, elsewhere: &Elsewhere) {
         });
 }
 
+/// The bulk action whose failures are being reported.
+#[derive(Clone, Copy)]
+enum BulkAction {
+    ClosePositions,
+    CancelOrders,
+}
+
 /// What a bulk action did not manage, or `None` when every item went through.
 fn bulk_failure_text<T>(
-    verb: &str,
-    noun: &str,
+    action: BulkAction,
     results: &[Result<T, PaperHostError>],
 ) -> Option<String> {
     let failures: Vec<&PaperHostError> = results.iter().filter_map(|r| r.as_ref().err()).collect();
     let first = failures.first()?;
-    let more = if failures.len() > 1 {
-        format!(" (and {} more)", failures.len() - 1)
-    } else {
-        String::new()
-    };
-    Some(format!(
-        "{verb} {} of {} {noun}. {first}{more}",
-        results.len() - failures.len(),
-        results.len(),
-    ))
+    let done = results.len() - failures.len();
+    let total = results.len();
+    let others = failures.len() - 1;
+    Some(match (action, others) {
+        (BulkAction::ClosePositions, 0) => tr!(
+            "Closed {done} of {total} positions. {error}",
+            done = done,
+            total = total,
+            error = first
+        ),
+        (BulkAction::ClosePositions, _) => tr_n!(
+            others,
+            "Closed {done} of {total} positions. {error} (and {count} more)",
+            "Closed {done} of {total} positions. {error} (and {count} more)",
+            done = done,
+            total = total,
+            error = first
+        ),
+        (BulkAction::CancelOrders, 0) => tr!(
+            "Canceled {done} of {total} orders. {error}",
+            done = done,
+            total = total,
+            error = first
+        ),
+        (BulkAction::CancelOrders, _) => tr_n!(
+            others,
+            "Canceled {done} of {total} orders. {error} (and {count} more)",
+            "Canceled {done} of {total} orders. {error} (and {count} more)",
+            done = done,
+            total = total,
+            error = first
+        ),
+    })
 }
 
 fn error_banner(ui: &mut egui::Ui, message: &str) {

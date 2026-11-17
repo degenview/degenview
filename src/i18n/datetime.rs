@@ -85,6 +85,7 @@ formatter!(
 formatter!(weekday_month_day_formatter, MDE, MDE::long());
 formatter!(weekday_month_day_year_formatter, YMDE, YMDE::long());
 formatter!(month_year_formatter, YM, YM::long());
+formatter!(month_year_short_formatter, YM, YM::medium());
 formatter!(weekday_long_formatter, E, E::long());
 formatter!(weekday_short_formatter, E, E::short());
 
@@ -211,6 +212,20 @@ pub fn month_year(year: i64, month: i64) -> String {
     )
 }
 
+/// "Oct 2026": the month abbreviated, for an axis that has little room.
+pub fn month_year_short(year: i64, month: i64) -> String {
+    iso(year, month, 1).map_or_else(
+        || format!("{year}-{month:02}"),
+        |date| {
+            plain_spaces(
+                month_year_short_formatter(Clock::Day24)
+                    .format(&date)
+                    .to_string(),
+            )
+        },
+    )
+}
+
 /// A day of a week counted from Monday, the way the pickers lay it out: any Monday and the days
 /// after it. 1 January 2024 was a Monday.
 fn weekday_date(day: usize) -> Option<Date<icu_calendar::Iso>> {
@@ -278,6 +293,8 @@ mod tests {
         );
         assert_eq!(month_year(2026, 10), "October 2026");
         assert_eq!(month_year(2026, 5), "May 2026");
+        assert_eq!(month_year_short(2026, 10), "Oct 2026");
+        assert_eq!(month_year_short(2026, 5), "May 2026");
     }
 
     #[test]
@@ -316,6 +333,7 @@ mod tests {
         assert_eq!(date(2026, 2, 31), "2026-02-31");
         assert_eq!(month_day(2026, 13, 1), "2026-13-01");
         assert_eq!(month_year(2026, 0), "2026-00");
+        assert_eq!(month_year_short(2026, 0), "2026-00");
     }
 
     #[test]

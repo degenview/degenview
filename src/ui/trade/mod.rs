@@ -12,4 +12,6 @@ pub mod tables;
 pub mod venue_pill;
 
 #[cfg(test)]
+pub(crate) mod pseudo_text;
+#[cfg(test)]
 mod sheet_gallery;

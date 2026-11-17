@@ -14,6 +14,7 @@ mod top_performers;
 mod value;
 mod value_chart;
 
+use crate::i18n::tr;
 use crate::model::portfolio::card::{CardData, CardKind, PortfolioCard};
 use crate::model::portfolio::format::Tone;
 use crate::model::portfolio::statistics::PortfolioHistoryRange;
@@ -105,7 +106,7 @@ pub fn header(
                 }
             })
             .response
-            .on_hover_text("Drag to reorder charts");
+            .on_hover_text(tr!("Drag to reorder charts"));
 
             let (badge, _) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::hover());
             paint_badge(ui.painter(), badge, card.kind);
@@ -139,7 +140,7 @@ pub fn header(
                     Icon::Xmark,
                     27.0,
                     theme::text_secondary(),
-                    "Remove Chart",
+                    tr!("Remove Chart"),
                 )
                 .clicked()
                 {
@@ -150,14 +151,14 @@ pub fn header(
                     (
                         Icon::StarFill,
                         theme::text_primary(),
-                        "Remove from Favorites",
+                        tr!("Remove from Favorites"),
                     )
                 } else {
-                    (Icon::Star, theme::text_secondary(), "Add to Favorites")
+                    (Icon::Star, theme::text_secondary(), tr!("Add to Favorites"))
                 };
                 let favorite = icons::button(ui, star, 27.0, color, tip);
                 favorite.context_menu(|ui| {
-                    ui.label(egui::RichText::new("Add to Watchlist").small().weak());
+                    ui.label(egui::RichText::new(tr!("Add to Watchlist")).small().weak());
                     for list in watchlists {
                         let mut included = list.contains_market;
                         if ui.checkbox(&mut included, &list.name).changed() {
@@ -190,8 +191,8 @@ pub fn body(ui: &mut Ui, card: &mut PortfolioCard, data: Option<&CardData>, char
             ui,
             area,
             icon(card.kind),
-            "Portfolio Unavailable",
-            "This card needs the portfolio, which isn't available here.",
+            tr!("Portfolio Unavailable"),
+            tr!("This card needs the portfolio, which isn't available here."),
         );
         return response.clicked();
     };
@@ -200,15 +201,21 @@ pub fn body(ui: &mut Ui, card: &mut PortfolioCard, data: Option<&CardData>, char
             ui,
             area,
             Icon::Briefcase,
-            "No Portfolios",
-            "Create a portfolio in the Portfolio tab to see it here.",
+            tr!("No Portfolios"),
+            tr!("Create a portfolio in the Portfolio tab to see it here."),
         );
         return response.clicked();
     }
     if let Some(error) = &data.error
         && data.holdings.is_empty()
     {
-        kit::empty_state(ui, area, Icon::Briefcase, "Portfolio Unavailable", error);
+        kit::empty_state(
+            ui,
+            area,
+            Icon::Briefcase,
+            tr!("Portfolio Unavailable"),
+            error,
+        );
         return response.clicked();
     }
 
@@ -301,19 +308,36 @@ fn paint_controls(ui: &mut Ui, row: Rect, id: Id, card: &mut PortfolioCard, data
 
 /// What a screen reader says for the card.
 fn describe(card: &PortfolioCard, data: &CardData) -> String {
-    let head = format!("{}, {}", card.kind.display_title(), data.scope_name);
+    let title = card.kind.display_title();
+    let scope = &data.scope_name;
     match card.kind {
         CardKind::Value | CardKind::ValueChart => {
-            format!("{head}: {}", data.formatter.money(data.total_value))
+            tr!(
+                "{title}, {scope}: {value}",
+                title = title,
+                scope = scope,
+                value = data.formatter.money(data.total_value)
+            )
         }
         CardKind::Allocation => {
             let slices = crate::ui::portfolio::charts::slices(&data.holdings);
             let parts: Vec<String> = slices
                 .iter()
                 .take(5)
-                .map(|slice| format!("{} {}", slice.label, data.formatter.percent(slice.share, 0)))
+                .map(|slice| {
+                    tr!(
+                        "{name} {share}",
+                        name = slice.label,
+                        share = data.formatter.percent(slice.share, 0)
+                    )
+                })
                 .collect();
-            format!("{head}: {}", parts.join(", "))
+            tr!(
+                "{title}, {scope}: {parts}",
+                title = title,
+                scope = scope,
+                parts = parts.join(", ")
+            )
         }
         CardKind::TopPerformers => {
             let parts: Vec<String> = data
@@ -322,14 +346,20 @@ fn describe(card: &PortfolioCard, data: &CardData) -> String {
                 .iter()
                 .take(3)
                 .map(|performer| {
-                    format!(
-                        "{} {}",
-                        performer.ticker,
-                        data.formatter.signed_percent(performer.change, 1)
+                    tr!(
+                        "{ticker} {change}",
+                        ticker = performer.ticker,
+                        change = data.formatter.signed_percent(performer.change, 1)
                     )
                 })
                 .collect();
-            format!("{head} over {}: {}", card.range.title(), parts.join(", "))
+            tr!(
+                "{title}, {scope} over {range}: {parts}",
+                title = title,
+                scope = scope,
+                range = card.range.title(),
+                parts = parts.join(", ")
+            )
         }
     }
 }
