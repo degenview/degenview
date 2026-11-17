@@ -385,7 +385,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_list_drawings",
-        description = "List the drawings on a chart in stacking order: id, tool (trend_line, rectangle, fib_retracement, brush, …), points as ISO time + price, style, label, and whether it is locked, hidden or editable by this server (the tools degenview_add_drawings can draw, when not locked).",
+        description = "List the drawings on a chart, for the market it shows (each market keeps its own set, so changing the chart's symbol changes them), in stacking order: id, tool (trend_line, rectangle, fib_retracement, brush, …), points as ISO time + price, style, label, and whether it is locked, hidden or editable by this server (the tools degenview_add_drawings can draw, when not locked).",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

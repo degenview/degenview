@@ -133,6 +133,19 @@ impl ChartWorkspace {
         }
     }
 
+    /// Shows `item` on a chart as a link does, which is no undo step of its own: the drawing steps
+    /// taken on the market the chart leaves would otherwise be undone onto the new one.
+    fn switch_chart_outside_undo(
+        &mut self,
+        chart_id: u64,
+        item: &crate::model::watchlist::WatchlistInstrument,
+        ctx: &egui::Context,
+    ) {
+        if self.switch_chart(chart_id, item, ctx) {
+            self.history.forget_drawings(chart_id);
+        }
+    }
+
     /// Applies what the group says. Returns whether anything on the tab changed.
     ///
     /// * The symbol goes to the focused market chart only, keeping its settings, indicators,
@@ -163,7 +176,7 @@ impl ChartWorkspace {
                 if shows_it {
                     false
                 } else {
-                    self.switch_chart(chart_id, item, ctx);
+                    self.switch_chart_outside_undo(chart_id, item, ctx);
                     self.link_state.probation = Some(Probation {
                         chart_id,
                         market: item.instrument.clone(),
@@ -231,7 +244,7 @@ impl ChartWorkspace {
                 return;
             };
             // Not announced: this is putting back what the tab had, not a choice of the user's.
-            self.switch_chart(chart_id, &previous, ctx);
+            self.switch_chart_outside_undo(chart_id, &previous, ctx);
             self.say(
                 format!(
                     "Couldn\u{2019}t load {}. This tab kept {}.",

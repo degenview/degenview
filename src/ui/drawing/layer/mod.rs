@@ -512,7 +512,7 @@ impl DrawingLayer {
     }
 
     /// Drops whatever gesture is in progress without committing anything.
-    fn abort(&mut self) {
+    pub(in crate::ui) fn abort(&mut self) {
         self.gesture = None;
     }
 

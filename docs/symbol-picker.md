@@ -23,7 +23,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   prediction market or a CoinMarketCap gauge. The text is selected, so typing replaces it. Add,
   Compare and Watchlist modes open empty.
 - **Return replaces** the focused chart's market (`replace_focused_market`, which is
-  `replace_chart_market`: the chart keeps its settings, indicators, drawings and place in the grid, and
+  `replace_chart_market`: the chart keeps its settings, indicators and place in the grid, shows the drawings of the new market (each market has its own set), and
   its candles reload). The replacement is one undo step (`Snapshot::Market`, with the indicators when a
   prediction market or gauge, which take none, removes them); undo reloads the old market's candles. A
   watchlist click on the focused chart replaces the same way; Tab Linking's follow does not, as it is

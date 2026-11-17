@@ -6,20 +6,17 @@ pub(in crate::workspace) mod tool_rail;
 pub(in crate::workspace) mod tools;
 
 use super::ChartWorkspace;
+use crate::model::drawings::market::MarketDrawings;
 use crate::model::{Drawing, DrawingCommand};
 use crate::store::drawing_template::DrawingTemplateStore;
 use crate::ui::drawing::properties::{self, DrawingProperties};
 use eframe::egui;
+use std::collections::BTreeSet;
 use std::time::Instant;
 
 /// Rulers are transient measurements: never persisted, never in undo history.
 pub(super) fn is_ruler(drawing: &Drawing) -> bool {
     drawing.is_ruler()
-}
-
-/// The drawings that are saved: rulers are never part of a layout.
-pub(super) fn plain_drawings(drawings: &[Drawing]) -> Vec<Drawing> {
-    drawings.iter().filter(|d| !is_ruler(d)).cloned().collect()
 }
 
 /// Three-way merge of one chart's drawings by id. `base` is what this tab last saved or opened,
@@ -56,6 +53,26 @@ pub(super) fn merge_remote_drawings(
         if find(local, drawing).is_none() && find(base, drawing).is_none() {
             merged.push(drawing.clone());
         }
+    }
+    merged
+}
+
+/// [`merge_remote_drawings`] for every market a chart holds drawings of.
+pub(super) fn merge_remote_markets(
+    base: &MarketDrawings,
+    local: &MarketDrawings,
+    remote: &MarketDrawings,
+) -> MarketDrawings {
+    let markets: BTreeSet<&str> = [base, local, remote]
+        .into_iter()
+        .flat_map(|drawings| drawings.sets().map(|(market, _)| market))
+        .collect();
+    let mut merged = MarketDrawings::default();
+    for market in markets {
+        merged.put(
+            market,
+            merge_remote_drawings(base.get(market), local.get(market), remote.get(market)),
+        );
     }
     merged
 }
@@ -328,7 +345,8 @@ mod tests {
         let saved = workspace.persisted();
         let json = serde_json::to_string(&saved).unwrap();
         let reread: PersistedWorkspace = serde_json::from_str(&json).unwrap();
-        let restored = reread.charts[0].drawings.clone();
+        let market = workspace.charts[0].drawing_market();
+        let restored = reread.charts[0].drawings.get(&market).to_vec();
         assert_eq!(restored.len(), 3);
         assert_eq!(restored[1], planned[0]);
         assert_eq!(restored[1].style().unwrap().stroke.dash, LineDash::Dotted);

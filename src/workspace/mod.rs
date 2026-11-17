@@ -820,7 +820,7 @@ mod tests {
                     y_zoom: 1.0,
                     indicators: IndicatorConfig::default(),
                     appearance: crate::model::ChartAppearance::default(),
-                    drawings: Vec::new(),
+                    drawings: Default::default(),
                     pine_instances: Vec::new(),
                     candle_count: 0,
                     viewport: Default::default(),
@@ -859,7 +859,7 @@ mod tests {
                             ..crate::model::ChartCanvas::default()
                         },
                     },
-                    drawings: Vec::new(),
+                    drawings: Default::default(),
                     pine_instances: vec![crate::model::pine::instance::PineInstance::new(
                         1,
                         Some("s".into()),
