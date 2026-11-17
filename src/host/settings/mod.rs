@@ -8,9 +8,10 @@ use crate::model::alert::{AlertNotificationSettings, AlertRuntimeHealth};
 use crate::model::webhook::{EndpointId, WebhookDeliveryResult, WebhookEndpoint};
 use crate::service::cache::control;
 use crate::service::cache::disk::{CacheStats, ClearOutcome};
+use crate::service::keychain::proxy_password::ProxyPasswordStore;
 use crate::service::keychain::webhook_secrets::KeychainWebhookSecretStore;
 use crate::service::llm::prefs::AiPrefs;
-use crate::service::net::proxy::{self, ProxyConfig, ProxyMode, ProxyPasswordStore};
+use crate::service::net::proxy::{self, ProxyConfig};
 use crate::service::webhook::delivery::{self, Mode, UreqTransport, WebhookSecretStore};
 use crate::service::work_queue::{self, Pending};
 use crate::store::Store;
@@ -70,9 +71,6 @@ pub struct SettingsHost {
     ai_prefs_read_at: Option<std::time::Instant>,
     /// When the snapshot choices were last read again, for what iCloud Sync applied meanwhile.
     snapshots_read_at: Option<std::time::Instant>,
-    /// The saved proxy setting, read again every second like the assistant's.
-    network_config: Option<ProxyConfig>,
-    network_config_read_at: Option<std::time::Instant>,
     /// The proxy being applied on a worker (reading the system's proxy and the secure storage
     /// block), and the save that came in meanwhile. One at a time, so they end in order.
     network_job: Option<Pending<Result<bool, String>>>,
@@ -193,15 +191,7 @@ impl SettingsHost {
             self.ai_prefs_read_at = Some(std::time::Instant::now());
         }
         let ai_prefs = self.ai_prefs.clone().unwrap_or_default();
-        if self.network_config.is_none()
-            || self
-                .network_config_read_at
-                .is_none_or(|at| at.elapsed() > Duration::from_secs(1))
-        {
-            self.network_config = Some(ProxyConfig::load(store));
-            self.network_config_read_at = Some(std::time::Instant::now());
-        }
-        let network_config = self.network_config.clone().unwrap_or_default();
+        let network_config = store.proxy_config_cached();
         let proxy_status = proxy::status();
         self.collect_network(ctx);
         let input = SettingsInput {
@@ -298,8 +288,6 @@ impl SettingsHost {
             )));
             return;
         }
-        self.network_config = Some(config.clone());
-        self.network_config_read_at = Some(std::time::Instant::now());
         // A password typed earlier and not yet applied must survive a later save that keeps it.
         let password = match (self.network_queued.take(), password) {
             (Some((_, earlier)), PasswordChange::Keep) => earlier,
@@ -323,8 +311,8 @@ impl SettingsHost {
                 PasswordChange::Set(password) => passwords.save(password).map(|()| true),
                 PasswordChange::Remove => passwords.remove().map(|()| false),
             };
-            let login = config.mode == ProxyMode::Manual && !config.username.trim().is_empty();
-            proxy::apply(config, login.then(|| passwords.read()).flatten());
+            let password = config.needs_password().then(|| passwords.read()).flatten();
+            proxy::apply(config, password);
             result.map_err(|error| error.0)
         }));
     }

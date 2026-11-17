@@ -13,7 +13,6 @@
 
 use super::Store;
 use crate::service::annotation::ingest::{self, Ingested, MAX_STORED_BYTES};
-use crate::sync::transport::native::{base64_decode, base64_encode};
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
@@ -42,7 +41,7 @@ impl StoredAsset {
             mime: picture.mime.to_owned(),
             width: picture.width,
             height: picture.height,
-            data: base64_encode(&picture.bytes),
+            data: crate::base64::encode(&picture.bytes),
         }
     }
 
@@ -61,7 +60,7 @@ impl StoredAsset {
         if self.data.len() > MAX_STORED_BYTES.div_ceil(3) * 4 + 8 {
             return None;
         }
-        let bytes = base64_decode(&self.data)?;
+        let bytes = crate::base64::decode(&self.data)?;
         if bytes.is_empty() || bytes.len() > MAX_STORED_BYTES {
             return None;
         }

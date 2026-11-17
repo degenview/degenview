@@ -27,7 +27,8 @@ pub fn connect(
     host: &str,
     port: u16,
 ) -> Result<(WebSocket<MaybeTlsStream<TcpStream>>, Route), String> {
-    // Read first: a change while dialling then counts as a change after.
+    // Refreshed and read first: a change while dialling then counts as a change after.
+    proxy::refresh_if_stale();
     let route = Route(proxy::generation());
     let stream = proxy::dial(host, port, CONNECT_TIMEOUT).map_err(|error| error.to_string())?;
     let (mut socket, _) =
@@ -112,12 +113,14 @@ impl Health {
     }
 
     /// Whether the proxy in force is no longer the one this connection was made under. Asked
-    /// once a second at most, not on every message.
+    /// once a second at most, not on every message; the feed's own thread, so it may refresh the
+    /// system's proxy.
     fn route_changed(&mut self) -> bool {
         if self.route_checked.elapsed() < ROUTE_CHECK {
             return false;
         }
         self.route_checked = Instant::now();
+        proxy::refresh_if_stale();
         Route(proxy::generation()) != self.route
     }
 

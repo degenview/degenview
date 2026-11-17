@@ -8,7 +8,6 @@ mod bypass;
 mod config;
 mod current;
 mod os;
-mod password;
 mod spec;
 mod tunnel;
 
@@ -19,8 +18,7 @@ pub(crate) use tests::AppliedProxy;
 
 pub use config::{Protocol, ProxyConfig, ProxyMode};
 pub use current::{Active, Status, apply, config_builder_for, follow, init, status};
-pub(in crate::service) use current::{generation, host_of, route, snapshot};
-pub use password::ProxyPasswordStore;
+pub(in crate::service) use current::{generation, host_of, refresh_if_stale, route, snapshot};
 pub(in crate::service) use tunnel::dial;
 
 use os::SystemProxy;
@@ -58,12 +56,7 @@ impl Resolved {
         if bypass::is_local(host) {
             return true;
         }
-        let host = if host.contains(':') && !host.starts_with('[') {
-            format!("[{host}]")
-        } else {
-            host.to_owned()
-        };
-        format!("https://{host}/")
+        format!("https://{}/", spec::bracketed(host))
             .parse::<ureq::http::Uri>()
             .is_ok_and(|uri| self.proxy.is_no_proxy(&uri))
     }

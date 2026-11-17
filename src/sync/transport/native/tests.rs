@@ -4,27 +4,6 @@ use crate::sync::record::policy::EntityKind;
 use std::sync::Mutex;
 
 #[test]
-fn base64_round_trips_every_length_and_byte() {
-    for len in 0..40 {
-        let data: Vec<u8> = (0..len).map(|n| (n * 37 + 11) as u8).collect();
-        assert_eq!(base64_decode(&base64_encode(&data)).unwrap(), data, "{len}");
-    }
-    let all: Vec<u8> = (0..=255).collect();
-    assert_eq!(base64_decode(&base64_encode(&all)).unwrap(), all);
-}
-
-#[test]
-fn base64_matches_the_standard_encoding() {
-    assert_eq!(base64_encode(b""), "");
-    assert_eq!(base64_encode(b"f"), "Zg==");
-    assert_eq!(base64_encode(b"fo"), "Zm8=");
-    assert_eq!(base64_encode(b"foo"), "Zm9v");
-    assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
-    assert_eq!(base64_decode("Zm9vYmE=").unwrap(), b"fooba");
-    assert!(base64_decode("not base64!").is_none());
-}
-
-#[test]
 fn commands_serialize_with_the_fields_the_bridge_reads() {
     let start: Value = serde_json::from_str(&command_json(&TransportCommand::Start {
         zone: "DegenViewZone".into(),
@@ -83,7 +62,7 @@ fn a_stage_command_carries_the_account_the_data_is_bound_to() {
     assert_eq!(changes[0]["record_name"], "watchlist.7");
     assert_eq!(changes[0]["entity_type"], "watchlist");
     assert_eq!(
-        base64_decode(changes[0]["payload"].as_str().unwrap()).unwrap(),
+        crate::base64::decode(changes[0]["payload"].as_str().unwrap()).unwrap(),
         b"{\"id\":7}"
     );
     assert_eq!(changes[0]["system_fields"], "CQ==");
@@ -93,7 +72,7 @@ fn a_stage_command_carries_the_account_the_data_is_bound_to() {
 
 #[test]
 fn every_event_kind_decodes() {
-    let b = |s: &str| base64_encode(s.as_bytes());
+    let b = |s: &str| crate::base64::encode(s.as_bytes());
     let cases = [
         (r#"{"event":"ready"}"#, TransportEvent::Ready),
         (
@@ -159,7 +138,7 @@ fn every_event_kind_decodes() {
 
 #[test]
 fn fetched_and_sent_events_carry_records_and_failures() {
-    let b = |s: &str| base64_encode(s.as_bytes());
+    let b = |s: &str| crate::base64::encode(s.as_bytes());
     let fetched = format!(
         r#"{{"event":"fetched","records":[{{"name":"watchlist.1","schema_version":1,"revision":3,
         "origin_device":"d","modified_ms":9,"payload":"{}","system_fields":"{}"}}],"deletions":["watchlist.2"]}}"#,

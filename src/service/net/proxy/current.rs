@@ -1,10 +1,12 @@
 //! The proxy in force for the whole process. The agents that make requests read it when they are
 //! built, so a change in Settings reaches the next request without a restart. A system proxy can
-//! change under the app (a VPN client switching it on), so in System mode it is read again
-//! when it is older than [`REFRESH`], on whichever worker asks next.
+//! change under the app (a VPN client switching it on), so in System mode a worker about to
+//! connect calls [`refresh_if_stale`], which reads it again once it is older than [`REFRESH`].
+//! Every other read here is a clone under a lock.
 
-use super::{ProxyConfig, ProxyMode, ProxyPasswordStore, Resolved, Source, os, resolve};
+use super::{ProxyConfig, ProxyMode, Resolved, Source, os, resolve};
 use crate::lock::lock;
+use crate::service::keychain::proxy_password::ProxyPasswordStore;
 use crate::store::Store;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -55,9 +57,17 @@ pub struct Snapshot {
 pub struct Status {
     pub mode: ProxyMode,
     pub active: Option<Active>,
-    /// Set when the manual proxy is complete yet unusable, so connections go direct: said on
-    /// the page instead of leaving the user to wonder why the proxy is not in use.
-    pub problem: Option<String>,
+    /// Set when the setting is not doing what it says: shown on the page instead of leaving the
+    /// user to wonder why the proxy is not in use.
+    pub problem: Option<ProxyProblem>,
+}
+
+/// Why the proxy in force is not the one the setting asks for. The messages are shown as they are.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ProxyProblem {
+    /// The manual proxy is complete yet could not be built, so connections go direct.
+    #[error("This proxy server cannot be used, so connections go directly.")]
+    Unusable,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -100,14 +110,11 @@ pub fn apply(config: ProxyConfig, password: Option<String>) -> Status {
 /// name makes one necessary.
 pub fn init(store: &Store) -> Status {
     let config = ProxyConfig::load(store);
-    let password = needs_password(&config)
+    let password = config
+        .needs_password()
         .then(|| ProxyPasswordStore::shared().read())
         .flatten();
     apply(config, password)
-}
-
-fn needs_password(config: &ProxyConfig) -> bool {
-    config.mode == ProxyMode::Manual && !config.username.trim().is_empty()
 }
 
 /// For a process that does not own the setting, the alert helper: looks at the saved setting
@@ -132,13 +139,14 @@ pub(super) fn follow_with(store: &Store, passwords: &ProxyPasswordStore, now: In
     };
     let saved = ProxyConfig::load(store);
     if applied.as_ref() != Some(&saved) {
-        let password = needs_password(&saved)
+        let password = saved
+            .needs_password()
             .then(|| passwords.read_fresh())
             .flatten();
         apply(saved, password);
         return true;
     }
-    if !(password_due && needs_password(&saved)) {
+    if !(password_due && saved.needs_password()) {
         return false;
     }
     let fresh = passwords.read_fresh();
@@ -151,8 +159,10 @@ pub(super) fn follow_with(store: &Store, passwords: &ProxyPasswordStore, now: In
     true
 }
 
-/// The proxy now in force. Cheap: a clone, except once per [`REFRESH`] in System mode.
-pub fn snapshot() -> Snapshot {
+/// In System mode, reads the system's proxy again when the last read is older than [`REFRESH`].
+/// That read blocks (a process on macOS), so this runs only on a worker about to connect, never
+/// on a frame. Another worker asking meanwhile goes on with the current answer.
+pub fn refresh_if_stale() {
     let stale = {
         let mut state = lock(&STATE);
         let stale = state.applied
@@ -171,6 +181,10 @@ pub fn snapshot() -> Snapshot {
             set(&mut state, resolved);
         }
     }
+}
+
+/// The proxy now in force, as last resolved. Cheap: a clone.
+pub fn snapshot() -> Snapshot {
     let state = lock(&STATE);
     Snapshot {
         generation: state.generation,
@@ -181,7 +195,7 @@ pub fn snapshot() -> Snapshot {
 /// Counts the changes of the proxy in force; a connection kept open is on the old route once this
 /// moves.
 pub fn generation() -> u64 {
-    snapshot().generation
+    lock(&STATE).generation
 }
 
 /// The proxy a connection to `host` goes through; `None` when it connects directly.
@@ -206,9 +220,9 @@ fn status_of(state: &State) -> Status {
 
 /// A manual proxy that passed validation but did not resolve: it could not be built, and every
 /// connection would go direct without a word. Nothing to say while it is unfinished.
-pub(super) fn problem(config: &ProxyConfig, resolved: Option<&Resolved>) -> Option<String> {
+pub(super) fn problem(config: &ProxyConfig, resolved: Option<&Resolved>) -> Option<ProxyProblem> {
     (config.mode == ProxyMode::Manual && resolved.is_none() && config.validate().is_ok())
-        .then(|| "This proxy server cannot be used, so connections go directly.".to_owned())
+        .then_some(ProxyProblem::Unusable)
 }
 
 /// The host of `url`, as `Uri` spells it (an IPv6 address keeps its brackets).
@@ -219,8 +233,10 @@ pub(in crate::service) fn host_of(url: &str) -> Option<String> {
 
 /// A `ureq` config for requests to `url`: through the proxy in force, unless it skips the host.
 /// Every agent is built from this or from `FollowingAgent::get_for`, never from
-/// `ureq::Agent::config_builder()`, so no request ignores the setting.
+/// `ureq::Agent::config_builder()`, so no request ignores the setting. Called on a worker about
+/// to connect, so it may refresh the system's proxy first.
 pub fn config_builder_for(url: &str) -> ureq::config::ConfigBuilder<ureq::typestate::AgentScope> {
+    refresh_if_stale();
     let proxy = match host_of(url) {
         Some(host) => route(&host),
         // Not a URL `ureq` will accept; it reports that itself.

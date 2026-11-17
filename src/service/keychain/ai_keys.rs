@@ -6,6 +6,7 @@
 
 use crate::lock::lock;
 use crate::service::keychain::api_keys::{KeyBackend, default_backend};
+use crate::service::keychain::cached_secret::CachedSecret;
 use crate::service::keychain::webhook_secrets::Scope;
 use crate::service::llm::ProviderKind;
 use crate::service::webhook::delivery::SecretStoreError;
@@ -22,23 +23,16 @@ fn account(kind: ProviderKind) -> String {
     format!("{}-key-v1", kind.key())
 }
 
-#[derive(Default)]
-struct Cache {
-    /// Keys read or saved this session; `None` is a confirmed absence.
-    keys: HashMap<ProviderKind, Option<String>>,
-    exists: HashMap<ProviderKind, bool>,
-}
-
 pub struct AiKeyStore {
     backend: Box<dyn KeyBackend>,
-    cache: Mutex<Cache>,
+    keys: Mutex<HashMap<ProviderKind, CachedSecret>>,
 }
 
 impl AiKeyStore {
     pub fn with_backend(backend: Box<dyn KeyBackend>) -> Self {
         Self {
             backend,
-            cache: Mutex::new(Cache::default()),
+            keys: Mutex::new(HashMap::new()),
         }
     }
 
@@ -47,36 +41,27 @@ impl AiKeyStore {
         STORE.get_or_init(|| Self::with_backend(default_backend()))
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Cache> {
-        lock(&self.cache)
+    /// Runs `use_secret` on `kind`'s item, under the lock.
+    fn with_secret<T>(
+        &self,
+        kind: ProviderKind,
+        use_secret: impl FnOnce(&mut CachedSecret, &dyn KeyBackend) -> T,
+    ) -> T {
+        let mut keys = lock(&self.keys);
+        let secret = keys
+            .entry(kind)
+            .or_insert_with(|| CachedSecret::new(SCOPE, account(kind)));
+        use_secret(secret, &*self.backend)
     }
 
     /// The saved key. The first read may prompt for Keychain access.
     pub fn key(&self, kind: ProviderKind) -> Option<String> {
-        let mut cache = self.lock();
-        cache
-            .keys
-            .entry(kind)
-            .or_insert_with(|| {
-                self.backend
-                    .read(SCOPE, &account(kind))
-                    .filter(|key| !key.is_empty())
-            })
-            .clone()
+        self.with_secret(kind, |secret, backend| secret.read(backend))
     }
 
     /// Whether a key is saved, without reading it (so without a prompt).
     pub fn is_configured(&self, kind: ProviderKind) -> bool {
-        let mut cache = self.lock();
-        if let Some(key) = cache.keys.get(&kind) {
-            return key.is_some();
-        }
-        if let Some(exists) = cache.exists.get(&kind) {
-            return *exists;
-        }
-        let found = self.backend.exists(SCOPE, &account(kind));
-        cache.exists.insert(kind, found);
-        found
+        self.with_secret(kind, |secret, backend| secret.is_saved(backend))
     }
 
     /// Saves the trimmed key; an empty one removes it. If the Keychain refuses (or there is none),
@@ -87,21 +72,12 @@ impl AiKeyStore {
             self.remove(kind);
             return Ok(());
         }
-        let written = self.backend.write(SCOPE, &account(kind), value);
-        let mut cache = self.lock();
-        cache.keys.insert(kind, Some(value.to_owned()));
-        cache.exists.remove(&kind);
-        drop(cache);
-        written
+        self.with_secret(kind, |secret, backend| secret.save(backend, value))
     }
 
     pub fn remove(&self, kind: ProviderKind) {
         // Best effort: nothing on the AI keys page can show a failed removal yet. (Broker keys do.)
-        let _ = self.backend.delete(SCOPE, &account(kind));
-        let mut cache = self.lock();
-        cache.keys.insert(kind, None);
-        cache.exists.remove(&kind);
-        drop(cache);
+        let _ = self.with_secret(kind, |secret, backend| secret.remove(backend));
     }
 }
 

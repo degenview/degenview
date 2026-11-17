@@ -39,20 +39,6 @@ fn read_head(stream: &mut TcpStream) -> String {
 }
 
 #[test]
-fn base64_matches_the_reference_vectors() {
-    for (plain, encoded) in [
-        ("", ""),
-        ("f", "Zg=="),
-        ("fo", "Zm8="),
-        ("foo", "Zm9v"),
-        ("foob", "Zm9vYg=="),
-        ("user:pass", "dXNlcjpwYXNz"),
-    ] {
-        assert_eq!(base64(plain.as_bytes()), encoded);
-    }
-}
-
-#[test]
 fn connect_names_the_host_and_signs_in() {
     let (port, thread) = serve(|mut stream| {
         let head = read_head(&mut stream);
@@ -338,5 +324,48 @@ fn a_proxy_that_is_down_is_an_error_not_a_hang() {
         WAIT,
     )
     .unwrap_err();
-    assert!(matches!(error, TunnelError::Io(_)), "{error}");
+    assert!(matches!(error, TunnelError::Proxy(_)), "{error}");
+}
+
+#[test]
+fn a_direct_connection_that_fails_does_not_blame_a_proxy() {
+    let _applied =
+        crate::service::net::proxy::AppliedProxy::new(crate::service::net::proxy::ProxyConfig {
+            mode: crate::service::net::proxy::ProxyMode::Off,
+            ..Default::default()
+        });
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let error = dial("127.0.0.1", port, WAIT).unwrap_err();
+    assert!(matches!(error, TunnelError::Connect(_)), "{error}");
+    assert!(!error.to_string().starts_with("proxy"), "{error}");
+}
+
+#[test]
+fn a_socks5_sign_in_reply_of_another_version_is_refused() {
+    let (port, thread) = serve(|mut stream| {
+        read_exactly(&mut stream, 4);
+        stream.write_all(&[5, 2]).unwrap();
+        // Version 1, "me", "pw".
+        assert_eq!(
+            read_exactly(&mut stream, 7),
+            [1, 2, b'm', b'e', 2, b'p', b'w']
+        );
+        stream.write_all(&[5, 0]).unwrap();
+    });
+    let error = open(
+        &proxy(ProxyProtocol::Socks5, port, Some(("me", "pw"))),
+        "a.example",
+        443,
+        WAIT,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, TunnelError::Protocol("unexpected sign-in reply")),
+        "{error}"
+    );
+    thread.join().unwrap();
 }

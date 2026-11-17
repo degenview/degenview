@@ -87,25 +87,6 @@ pub struct SnapshotParams {
     pub scale: Option<ScaleArg>,
 }
 
-/// Standard base64 (RFC 4648, padded), which is what an MCP image block carries.
-pub fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let group = u32::from(chunk[0]) << 16
-            | u32::from(*chunk.get(1).unwrap_or(&0)) << 8
-            | u32::from(*chunk.get(2).unwrap_or(&0));
-        for (index, shift) in [18, 12, 6, 0].into_iter().enumerate() {
-            if index <= chunk.len() {
-                out.push(ALPHABET[(group >> shift & 63) as usize] as char);
-            } else {
-                out.push('=');
-            }
-        }
-    }
-    out
-}
-
 #[tool_router(router = snapshot_router, vis = "pub(super)")]
 impl DegenViewMcp {
     #[tool(
@@ -172,7 +153,7 @@ impl DegenViewMcp {
                         "bytes": png.len(),
                     });
                     return Ok(CallToolResult::success(vec![
-                        ContentBlock::image(base64(&png), "image/png"),
+                        ContentBlock::image(crate::base64::encode(&png), "image/png"),
                         ContentBlock::text(meta.to_string()),
                     ]));
                 }
@@ -184,26 +165,5 @@ impl DegenViewMcp {
                 return Err(failure(&McpError::Timeout));
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn base64_matches_the_rfc_vectors() {
-        for (input, expected) in [
-            ("", ""),
-            ("f", "Zg=="),
-            ("fo", "Zm8="),
-            ("foo", "Zm9v"),
-            ("foob", "Zm9vYg=="),
-            ("fooba", "Zm9vYmE="),
-            ("foobar", "Zm9vYmFy"),
-        ] {
-            assert_eq!(base64(input.as_bytes()), expected, "{input:?}");
-        }
-        assert_eq!(base64(&[0xFF, 0xEE, 0xDD]), "/+7d");
     }
 }

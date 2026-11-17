@@ -1,6 +1,6 @@
 //! The proxy setting. Saved as the local `net.proxy` setting: it names this Mac's own network,
 //! so it never syncs. The password is not here; it lives in the secure storage
-//! (`ProxyPasswordStore`).
+//! (`keychain::proxy_password::ProxyPasswordStore`).
 
 use super::bypass::{self, BypassError};
 use super::spec::Spec;
@@ -97,6 +97,12 @@ impl ProxyConfig {
             return Err(ProxyError::MissingPort);
         }
         Ok(())
+    }
+
+    /// Whether this setting signs in, so the password must be read from the secure storage: a
+    /// manual proxy with a user name. Nothing else reads it, so nobody else is ever prompted.
+    pub fn needs_password(&self) -> bool {
+        self.mode == ProxyMode::Manual && !self.username.trim().is_empty()
     }
 
     /// The manual server, or `None` while it is incomplete.

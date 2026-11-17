@@ -198,10 +198,9 @@ fn a_complete_manual_proxy_that_cannot_be_built_is_reported_not_bypassed() {
     assert!(working.is_some());
     assert_eq!(current::problem(&complete, working.as_ref()), None);
     // Complete, yet nothing came of it: traffic would go direct without a word.
-    assert!(
-        current::problem(&complete, None)
-            .unwrap()
-            .contains("directly")
+    assert_eq!(
+        current::problem(&complete, None),
+        Some(current::ProxyProblem::Unusable)
     );
     // Not finished yet, or not Manual: nothing to report.
     assert_eq!(current::problem(&manual("", None), None), None);
@@ -505,7 +504,9 @@ fn a_helper_process_follows_the_saved_setting() {
         ..ProxyConfig::default()
     });
     let store = crate::store::Store::open_in_memory().unwrap();
-    let passwords = ProxyPasswordStore::with_backend(Box::new(MemoryBackend::default()));
+    let passwords = crate::service::keychain::proxy_password::ProxyPasswordStore::with_backend(
+        Box::new(MemoryBackend::default()),
+    );
     let start = Instant::now() + Duration::from_secs(10);
     let at = |seconds| start + Duration::from_secs(seconds);
     let follow = |seconds| current::follow_with(&store, &passwords, at(seconds));
@@ -626,4 +627,24 @@ fn the_status_names_the_proxy_and_where_it_came_from() {
     assert_eq!(active.server, "proxy.example:8080");
     apply(manual("", None), None);
     assert_eq!(super::status().active, None);
+}
+
+#[test]
+fn a_password_never_shows_in_debug_output() {
+    let config = ProxyConfig {
+        username: "me".to_owned(),
+        ..manual("proxy.example", Some(8080))
+    };
+    let resolved = resolve(&config, Some("hunter2"), &no_env, &nothing).unwrap();
+    assert_eq!(resolved.spec.password.as_deref(), Some("hunter2"));
+    let text = format!("{resolved:?}");
+    assert!(!text.contains("hunter2"), "{text}");
+    assert!(text.contains("<redacted>"), "{text}");
+}
+
+#[test]
+fn an_ipv6_host_is_bracketed_only_where_text_needs_it() {
+    assert_eq!(super::spec::bracketed("::1"), "[::1]");
+    assert_eq!(super::spec::bracketed("[::1]"), "[::1]");
+    assert_eq!(super::spec::bracketed("proxy.example"), "proxy.example");
 }

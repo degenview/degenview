@@ -17,7 +17,7 @@ classified in `sync::record::policy`).
 | Manual | The server typed on the page: HTTP (`CONNECT`) or SOCKS5, host, port, optional user name. |
 | Off | Direct, whatever the system or environment says. |
 
-The manual proxy's password is never in SQLite: `ProxyPasswordStore` (`keychain`, service
+The manual proxy's password is never in SQLite: `keychain::proxy_password::ProxyPasswordStore` (service
 `es.nico.degenview.network`). It is read only when a user name is set, so nobody without one is
 prompted. `DEGENVIEW_NO_KEYCHAIN` keeps it in memory.
 
@@ -59,8 +59,11 @@ registry call (`os/registry.rs`) is `cfg(windows)`.
 - `net::proxy::current` holds the process-wide state: the config, the resolved `Resolved`
   (server, `ureq::Proxy` that knows what to skip, source) and a generation that counts changes.
   Nothing is resolved before `proxy::init(&store)` / `proxy::apply`, so tests and tools connect
-  directly. In System mode it is read again when older than 30 s, by whichever worker asks next, so a
-  VPN client switching its proxy on or off is followed without a restart.
+  directly. In System mode it is read again when older than 30 s: `proxy::refresh_if_stale`, which
+  blocks, is called only where a worker is about to connect (`FollowingAgent::get_for`,
+  `config_builder_for`, `tunnel::dial`, a live feed's route check), so a VPN client switching its
+  proxy on or off is followed without a restart. `snapshot`, `route`, `generation` and `status` are
+  cheap reads.
 - `init` runs at both entry points: `run_gui_with` and `run_alert_agent`. The alert agent is a
   separate process: its loop calls `proxy::follow(&store)`, which every 2 s reads the saved setting
   and applies it when it changed, and re-reads the password every 30 s for a manual proxy with a

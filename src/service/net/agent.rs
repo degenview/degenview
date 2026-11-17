@@ -40,8 +40,10 @@ impl FollowingAgent {
     }
 
     /// The agent for a request to `url`, for the proxy now in force. Cloning an agent shares its
-    /// connection pool.
+    /// connection pool. Called on a worker about to connect, so it may refresh the system's proxy
+    /// first (`proxy::refresh_if_stale`).
     pub fn get_for(&self, url: &str) -> ureq::Agent {
+        proxy::refresh_if_stale();
         let snapshot = proxy::snapshot();
         let direct = snapshot
             .proxy

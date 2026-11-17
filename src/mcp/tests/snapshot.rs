@@ -2,7 +2,6 @@
 //! and then hands out a small fixed PNG.
 
 use super::{Harness, STUB_PNG, call, error_code, rpc, tool_names};
-use crate::mcp::snapshot::base64;
 use crate::model::mcp::Permission;
 use serde_json::{Value, json};
 
@@ -24,7 +23,7 @@ fn a_picture_comes_back_as_an_image_block_with_its_size() {
     assert_eq!(content.len(), 2, "{result}");
     assert_eq!(content[0]["type"], "image");
     assert_eq!(content[0]["mimeType"], "image/png");
-    assert_eq!(content[0]["data"], base64(STUB_PNG));
+    assert_eq!(content[0]["data"], crate::base64::encode(STUB_PNG));
     assert_eq!(content[1]["type"], "text");
     let meta: Value = serde_json::from_str(content[1]["text"].as_str().unwrap()).unwrap();
     assert_eq!(meta["width"], 640);

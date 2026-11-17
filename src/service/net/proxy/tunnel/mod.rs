@@ -3,7 +3,7 @@
 //! only ever sees the host and port. HTTP proxies are asked with `CONNECT`; SOCKS5 proxies with
 //! or without a user name and password. SOCKS4 and HTTPS proxies are not spoken here.
 
-use super::{Resolved, route};
+use super::{Resolved, refresh_if_stale, route};
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, TcpStream, ToSocketAddrs};
 use std::time::Duration;
@@ -16,19 +16,25 @@ const MAX_HEAD: usize = 8 * 1024;
 pub enum TunnelError {
     #[error("Live feeds cannot go through {0} proxies; use an HTTP or SOCKS5 proxy")]
     Unsupported(&'static str),
+    /// A direct connection (no proxy for this host) failed.
+    #[error("{0}")]
+    Connect(io::Error),
+    /// Reaching or talking to the proxy failed.
     #[error("proxy: {0}")]
-    Io(#[from] io::Error),
+    Proxy(#[from] io::Error),
     #[error("The proxy refused the connection: {0}")]
     Refused(String),
     #[error("The proxy did not answer as expected: {0}")]
     Protocol(&'static str),
 }
 
-/// A connection to `host:port`: through the proxy in force unless it skips this host.
+/// A connection to `host:port`: through the proxy in force unless it skips this host. Blocks; it
+/// may refresh the system's proxy first.
 pub fn dial(host: &str, port: u16, timeout: Duration) -> Result<TcpStream, TunnelError> {
+    refresh_if_stale();
     match route(host) {
         Some(proxy) => open(&proxy, host, port, timeout),
-        None => Ok(connect(host, port, timeout)?),
+        None => connect(host, port, timeout).map_err(TunnelError::Connect),
     }
 }
 
@@ -39,9 +45,9 @@ pub fn open(
     port: u16,
     timeout: Duration,
 ) -> Result<TcpStream, TunnelError> {
-    let kind = match proxy.spec.protocol {
-        ProxyProtocol::Http => None,
-        ProxyProtocol::Socks5 | ProxyProtocol::Socks5h => Some(true),
+    let handshake = match proxy.spec.protocol {
+        ProxyProtocol::Http => http_connect,
+        ProxyProtocol::Socks5 | ProxyProtocol::Socks5h => socks5,
         ProxyProtocol::Https => return Err(TunnelError::Unsupported("HTTPS")),
         _ => return Err(TunnelError::Unsupported("SOCKS4")),
     };
@@ -51,10 +57,7 @@ pub fn open(
         .username
         .as_deref()
         .map(|user| (user, proxy.spec.password.as_deref().unwrap_or_default()));
-    match kind {
-        None => http_connect(&mut stream, host, port, credentials)?,
-        Some(_) => socks5(&mut stream, host, port, credentials)?,
-    }
+    handshake(&mut stream, host, port, credentials)?;
     Ok(stream)
 }
 
@@ -82,14 +85,10 @@ fn http_connect(
     port: u16,
     credentials: Option<(&str, &str)>,
 ) -> Result<(), TunnelError> {
-    let authority = if host.contains(':') && !host.starts_with('[') {
-        format!("[{host}]:{port}")
-    } else {
-        format!("{host}:{port}")
-    };
+    let authority = format!("{}:{port}", super::spec::bracketed(host));
     let mut request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n");
     if let Some((user, password)) = credentials {
-        let token = base64(format!("{user}:{password}").as_bytes());
+        let token = crate::base64::encode(format!("{user}:{password}").as_bytes());
         request.push_str(&format!("Proxy-Authorization: Basic {token}\r\n"));
     }
     request.push_str("\r\n");
@@ -159,8 +158,12 @@ fn socks5(
             message.push(password_len);
             message.extend_from_slice(password);
             stream.write_all(&message)?;
+            // RFC 1929: the sub-negotiation's version is 1, and status 0 is success.
             let mut verdict = [0_u8; 2];
             stream.read_exact(&mut verdict)?;
+            if verdict[0] != 1 {
+                return Err(TunnelError::Protocol("unexpected sign-in reply"));
+            }
             if verdict[1] != 0 {
                 return Err(TunnelError::Refused(
                     "the user name or password was not accepted".to_owned(),
@@ -231,26 +234,6 @@ fn socks5_failure(code: u8) -> &'static str {
         8 => "address type not supported",
         _ => "general failure",
     }
-}
-
-fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let group = chunk.iter().enumerate().fold(0_u32, |acc, (index, byte)| {
-            acc | u32::from(*byte) << (16 - 8 * index)
-        });
-        for index in 0..4 {
-            if index <= chunk.len() {
-                out.push(char::from(
-                    ALPHABET[(group >> (18 - 6 * index) & 63) as usize],
-                ));
-            } else {
-                out.push('=');
-            }
-        }
-    }
-    out
 }
 
 #[cfg(test)]

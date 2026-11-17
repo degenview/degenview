@@ -3,9 +3,8 @@
 //! (`Autosave`); the proxy's password goes to the secure storage through the host. Every rule
 //! (what may be saved, what the status line says) is a plain method tested without a window.
 
-use crate::service::net::proxy::{
-    Active, Protocol, ProxyConfig, ProxyMode, ProxyPasswordStore, Source, Status,
-};
+use crate::service::keychain::proxy_password::ProxyPasswordStore;
+use crate::service::net::proxy::{Active, Protocol, ProxyConfig, ProxyMode, Source, Status};
 use crate::ui::icons::Icon;
 use crate::ui::kit::{Autosave, Tone, destructive_button, field};
 use crate::ui::settings::card::StatusMessage;
@@ -243,8 +242,8 @@ pub fn body(
     if let Some(problem) = state.problem() {
         status_message(ui, &problem, true);
         ui.add_space(8.0);
-    } else if let Some(problem) = input.status.problem.as_deref() {
-        status_message(ui, problem, true);
+    } else if let Some(problem) = input.status.problem {
+        status_message(ui, &problem.to_string(), true);
         ui.add_space(8.0);
     } else if let Some(status) = &state.status {
         status_message(ui, &status.text, status.is_error);

@@ -1,9 +1,12 @@
 //! One proxy server as every source describes it (the settings, the environment, the operating
 //! system), before it becomes the `ureq` proxy the HTTP agent uses.
 
+use std::borrow::Cow;
+use std::fmt;
 use ureq::ProxyProtocol;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// `Debug` is written out below so a password never reaches a log.
+#[derive(Clone, Eq, PartialEq)]
 pub struct Spec {
     pub protocol: ProxyProtocol,
     /// The bare name or address: an IPv6 address has no brackets here (they belong to URLs and to
@@ -48,14 +51,8 @@ impl Spec {
     /// The `ureq` proxy for this server. Traffic to the hosts `bypass` names (see
     /// `bypass::entries`) skips it.
     pub fn build(&self, bypass: &[String]) -> Result<ureq::Proxy, ureq::Error> {
-        // A URL needs an IPv6 address in brackets.
-        let host = if self.host.contains(':') {
-            format!("[{}]", self.host)
-        } else {
-            self.host.clone()
-        };
         let mut builder = ureq::Proxy::builder(self.protocol)
-            .host(&host)
+            .host(&bracketed(&self.host))
             .port(self.port);
         if let Some(username) = &self.username {
             builder = builder.username(username);
@@ -71,16 +68,32 @@ impl Spec {
 
     /// `host:port`, with the protocol when it is not plain HTTP, for a status line.
     pub fn describe(&self) -> String {
-        let host = if self.host.contains(':') {
-            format!("[{}]", self.host)
-        } else {
-            self.host.clone()
-        };
-        let address = format!("{host}:{}", self.port);
+        let address = format!("{}:{}", bracketed(&self.host), self.port);
         match label(self.protocol) {
             "HTTP" => address,
             protocol => format!("{address} ({protocol})"),
         }
+    }
+}
+
+impl fmt::Debug for Spec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Spec")
+            .field("protocol", &self.protocol)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
+/// `host` as a URL or `host:port` text needs it: an IPv6 address in brackets.
+pub(super) fn bracketed(host: &str) -> Cow<'_, str> {
+    if host.contains(':') && !host.starts_with('[') {
+        Cow::Owned(format!("[{host}]"))
+    } else {
+        Cow::Borrowed(host)
     }
 }
 

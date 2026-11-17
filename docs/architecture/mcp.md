@@ -223,7 +223,7 @@ Delete and saved-source writes require their own grants.
   four, forgotten after 120 s unless collected) and the tool polls `PollSnapshot` every 100 ms for up
   to 45 s. Default 1x (smaller to send), 2x on request; a chart too large for the scale is drawn
   smaller. The chart must have been drawn on screen once, so a window that has never shown it has no
-  size and answers `CONFLICT`. Base64 is a small local encoder (`mcp::snapshot::base64`, tested against
+  size and answers `CONFLICT`. Base64 is the crate's own small encoder (`crate::base64`, tested against
   the RFC 4648 vectors) so no dependency is added.
 - Replay (`mcp::replay`) drives the workspace's one `ReplayEngine`, the clock behind the
   replay bar, through `ChartWorkspace::replay_command` (`start` on a chart's bars, then
