@@ -7,6 +7,7 @@
 //! a No: the safe answer is the one that needs no aim. A button must be chosen on purpose
 //! (Tab to it, or click): Return alone does nothing.
 
+use crate::i18n::tr;
 use crate::mcp::confirm::PendingView;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -35,10 +36,10 @@ fn sentence(action: &str) -> String {
 }
 
 fn title(view: &PendingView) -> String {
-    format!(
-        "Allow “{}” to {}?",
-        view.client_name,
-        sentence(&view.summary.action)
+    tr!(
+        "Allow “{client}” to {action}?",
+        client = view.client_name,
+        action = sentence(&view.summary.action)
     )
 }
 
@@ -53,12 +54,13 @@ fn message(view: &PendingView, waiting: usize) -> String {
     }
     lines.push(String::new());
     if waiting > 1 {
-        lines.push(format!(
-            "1 of {waiting} waiting. Expires in {}.",
-            countdown(view.expires_in)
+        lines.push(tr!(
+            "1 of {waiting} waiting. Expires in {time}.",
+            waiting = waiting,
+            time = countdown(view.expires_in)
         ));
     } else {
-        lines.push(format!("Expires in {}.", countdown(view.expires_in)));
+        lines.push(tr!("Expires in {time}.", time = countdown(view.expires_in)));
     }
     lines.join("\n")
 }
@@ -76,8 +78,8 @@ pub fn show(ctx: &egui::Context, pending: &[PendingView]) -> Option<Answer> {
             tint: kit::ORANGE,
             title: &title(view),
             message: &message(view, pending.len()),
-            accept: "Allow Once",
-            dismiss: "Deny",
+            accept: tr!("Allow Once"),
+            dismiss: tr!("Deny"),
             // A stray Enter must not let a tool call through.
             cautious: true,
         },

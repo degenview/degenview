@@ -3,6 +3,7 @@
 
 use super::controls::{caption, copy_button, field, overview, row, secondary};
 use super::{CONTROL_HEIGHT, Copied, Editing, McpSettingsInput, McpSettingsState};
+use crate::i18n::tr;
 use crate::model::mcp::{BindMode, McpAction, PermissionSet};
 use crate::ui::icons::Icon;
 use crate::ui::kit::Tone;
@@ -17,10 +18,12 @@ pub(super) fn security_section(
     input: &McpSettingsInput,
     actions: &mut Vec<McpAction>,
 ) {
-    section(ui, "Security", None, |ui| {
+    section(ui, tr!("Security"), None, |ui| {
         card(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 10.0;
-            row(ui, "Authentication", |ui| secondary(ui, "Always required"));
+            row(ui, tr!("Authentication"), |ui| {
+                secondary(ui, tr!("Always required"))
+            });
             kit::divider(ui);
             remote_rows(ui, state, input, actions);
             kit::divider(ui);
@@ -47,8 +50,8 @@ pub(super) fn maximum_row(
     limit_row(
         ui,
         state,
-        "Maximum permissions",
-        "The most any credential can do. Each one can only narrow this.",
+        tr!("Maximum permissions"),
+        tr!("The most any credential can do. Each one can only narrow this."),
         input.global,
         Editing::Maximum,
     )
@@ -70,7 +73,7 @@ fn limit_row(
             vec2(ui.available_width(), CONTROL_HEIGHT),
             Layout::right_to_left(Align::Center),
             |ui| {
-                let button = kit::sheet_button(ui, "Edit…", false, true).on_hover_text(hover);
+                let button = kit::sheet_button(ui, tr!("Edit…"), false, true).on_hover_text(hover);
                 edit = button.rect;
                 if button.clicked() {
                     state.sheet = Some(editing);
@@ -103,15 +106,16 @@ fn limit_row(
 pub fn parse_interface(text: &str) -> Result<BindMode, String> {
     let text = text.trim().trim_start_matches('[').trim_end_matches(']');
     if text.is_empty() {
-        return Err("Enter the address of this Mac to listen on".into());
+        return Err(tr!("Enter the address of this Mac to listen on").into());
     }
     let address: IpAddr = text
         .parse()
-        .map_err(|_| format!("`{text}` is not an IP address"))?;
+        .map_err(|_| tr!("`{text}` is not an IP address", text = text))?;
     match BindMode::interface(address) {
-        Ok(BindMode::Loopback) => {
-            Err("That is this Mac's own address. Turn the switch off to listen here only".into())
-        }
+        Ok(BindMode::Loopback) => Err(tr!(
+            "That is this Mac's own address. Turn the switch off to listen here only"
+        )
+        .into()),
         Ok(bind) => Ok(bind),
         Err(error) => Err(error.to_string()),
     }
@@ -137,7 +141,7 @@ fn remote_rows(
     let locked = input.load_error.is_some();
     let bind = input.settings.bind;
     let on = !bind.is_loopback() || state.remote_editing;
-    row(ui, "Remote connections", |ui| {
+    row(ui, tr!("Remote connections"), |ui| {
         let mut value = on;
         if card::switch_enabled(ui, &mut value, !locked) {
             state.bind_error = None;
@@ -156,10 +160,14 @@ fn remote_rows(
     }
     caption(
         ui,
-        "Other computers connect over TLS, with a credential that has remote access (set on that client).",
+        tr!(
+            "Other computers connect over TLS, with a credential that has remote access (set on that client)."
+        ),
     );
     kit::divider(ui);
-    row(ui, "Interface", |ui| bind_control(ui, state, bind, actions));
+    row(ui, tr!("Interface"), |ui| {
+        bind_control(ui, state, bind, actions)
+    });
     if let Some(error) = &state.bind_error {
         ui.add(
             egui::Label::new(kit::text(
@@ -172,16 +180,16 @@ fn remote_rows(
         );
     }
     kit::divider(ui);
-    row(ui, "Certificate", |ui| match input.tls_fingerprint {
+    row(ui, tr!("Certificate"), |ui| match input.tls_fingerprint {
         Some(fingerprint) => copy_button(
             ui,
             &mut state.copied,
             Copied::Fingerprint,
-            "Copy Fingerprint",
+            tr!("Copy Fingerprint"),
             fingerprint,
             false,
         ),
-        None => secondary(ui, "Made when you apply an address"),
+        None => secondary(ui, tr!("Made when you apply an address")),
     });
     if let Some(fingerprint) = input.tls_fingerprint {
         ui.add(
@@ -195,21 +203,25 @@ fn remote_rows(
         );
         caption(
             ui,
-            "Self-signed for this address. A client must trust exactly this certificate: compare the fingerprint, never click through a warning.",
+            tr!(
+                "Self-signed for this address. A client must trust exactly this certificate: compare the fingerprint, never click through a warning."
+            ),
         );
     }
     kit::divider(ui);
     limit_row(
         ui,
         state,
-        "Remote ceiling",
-        "The most a credential with remote access can do, even on this Mac.",
+        tr!("Remote ceiling"),
+        tr!("The most a credential with remote access can do, even on this Mac."),
         &input.settings.remote_ceiling,
         Editing::RemoteCeiling,
     );
     caption(
         ui,
-        "Every change a remote credential makes waits for your approval here. Failed sign-ins are limited and logged by address.",
+        tr!(
+            "Every change a remote credential makes waits for your approval here. Failed sign-ins are limited and logged by address."
+        ),
     );
 }
 
@@ -231,9 +243,9 @@ fn bind_control(
     }
     let parsed = parse_interface(&state.bind_text);
     let changed = parsed.as_ref().is_ok_and(|parsed| *parsed != bind);
-    let mut apply = kit::sheet_button(ui, "Apply", changed, changed).clicked();
-    if kit::sheet_button(ui, "Detect", false, true)
-        .on_hover_text("Fill in this Mac's address on the local network")
+    let mut apply = kit::sheet_button(ui, tr!("Apply"), changed, changed).clicked();
+    if kit::sheet_button(ui, tr!("Detect"), false, true)
+        .on_hover_text(tr!("Fill in this Mac's address on the local network"))
         .clicked()
     {
         match detect_local_address() {
@@ -243,7 +255,7 @@ fn bind_control(
             }
             None => {
                 state.bind_error =
-                    Some("No local network address found. Type the one to listen on".into())
+                    Some(tr!("No local network address found. Type the one to listen on").into())
             }
         }
     }
@@ -279,9 +291,11 @@ pub(super) fn turn_off_approvals_alert(
         Id::new("mcp-turn-off-approvals"),
         &kit::Confirm {
             icon: Icon::LockFill,
-            title: "Turn off approvals?",
-            message: "Clients with write access will delete alerts, charts, drawings, watchlists and saved scripts, and place paper orders, without asking you first. The activity log still records every call.",
-            destructive: "Turn Off",
+            title: tr!("Turn off approvals?"),
+            message: tr!(
+                "Clients with write access will delete alerts, charts, drawings, watchlists and saved scripts, and place paper orders, without asking you first. The activity log still records every call."
+            ),
+            destructive: tr!("Turn Off"),
         },
     ) {
         Some(kit::ConfirmOutcome::Confirmed) => {

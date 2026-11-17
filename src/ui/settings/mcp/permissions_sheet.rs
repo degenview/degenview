@@ -3,6 +3,7 @@
 
 use super::controls::{caption, field};
 use super::{CONTROL_HEIGHT, Editing, McpSettingsInput, McpSettingsState, SHEET_WIDTH, initial};
+use crate::i18n::{tr, tr_n};
 use crate::model::mcp::{Cidr, MAX_CIDRS, McpAction, McpClient, Permission, PermissionSet};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{Tone, time_text::relative_time};
@@ -45,43 +46,40 @@ pub(super) fn permissions_sheet(
         ui.add_space(24.0);
         sheet::inset(ui, |ui| match client {
             Some(client) => {
-                let used = client.last_used_ms.map_or_else(
-                    || "never used".to_owned(),
-                    |used| format!("last used {}", relative_time(input.now_ms, used)),
-                );
-                sheet::header_with(
-                    ui,
-                    &client.name,
-                    &format!(
-                        "Created {} · {used}",
-                        relative_time(input.now_ms, client.created_at_ms)
+                let created = relative_time(input.now_ms, client.created_at_ms);
+                let subtitle = match client.last_used_ms {
+                    None => tr!("Created {created} · never used", created = created),
+                    Some(used) => tr!(
+                        "Created {created} · last used {used}",
+                        created = created,
+                        used = relative_time(input.now_ms, used)
                     ),
-                    |ui| {
-                        let (badge, _) = ui.allocate_exact_size(Vec2::splat(46.0), Sense::hover());
-                        ui.painter()
-                            .rect_filled(badge, 12.0, theme::with_alpha(kit::ACCENT, 0.14));
-                        ui.painter().text(
-                            badge.center(),
-                            egui::Align2::CENTER_CENTER,
-                            initial(&client.name),
-                            egui::FontId::proportional(20.0),
-                            kit::ACCENT,
-                        );
-                    },
-                );
+                };
+                sheet::header_with(ui, &client.name, &subtitle, |ui| {
+                    let (badge, _) = ui.allocate_exact_size(Vec2::splat(46.0), Sense::hover());
+                    ui.painter()
+                        .rect_filled(badge, 12.0, theme::with_alpha(kit::ACCENT, 0.14));
+                    ui.painter().text(
+                        badge.center(),
+                        egui::Align2::CENTER_CENTER,
+                        initial(&client.name),
+                        egui::FontId::proportional(20.0),
+                        kit::ACCENT,
+                    );
+                });
             }
             None if editing == Editing::RemoteCeiling => sheet::header(
                 ui,
                 Icon::Link,
-                "Remote ceiling",
-                "The most a credential with remote access can do, even on this Mac.",
+                tr!("Remote ceiling"),
+                tr!("The most a credential with remote access can do, even on this Mac."),
                 theme::text_secondary(),
             ),
             None => sheet::header(
                 ui,
                 Icon::Sliders,
-                "Maximum permissions",
-                "The most any credential can do. Each one can only narrow this.",
+                tr!("Maximum permissions"),
+                tr!("The most any credential can do. Each one can only narrow this."),
                 kit::ACCENT,
             ),
         });
@@ -115,7 +113,7 @@ pub(super) fn permissions_sheet(
                         group_card(ui, group, &editing, set, input.global, actions);
                     }
                     ui.add_space(12.0);
-                    caption(ui, "Changes apply immediately.");
+                    caption(ui, tr!("Changes apply immediately."));
                 });
             });
 
@@ -160,7 +158,7 @@ fn client_remote_block(
                     ui.set_max_width(ui.available_width() - 56.0);
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.label(kit::text(
-                        "Use from other machines",
+                        tr!("Use from other machines"),
                         12.5,
                         kit::MEDIUM,
                         theme::text_primary(),
@@ -168,9 +166,11 @@ fn client_remote_block(
                     caption(
                         ui,
                         if client.remote_allowed {
-                            "Held to the remote ceiling, and every change waits for your approval."
+                            tr!(
+                                "Held to the remote ceiling, and every change waits for your approval."
+                            )
                         } else {
-                            "Off: this credential works from this Mac only."
+                            tr!("Off: this credential works from this Mac only.")
                         },
                     );
                 });
@@ -190,13 +190,13 @@ fn client_remote_block(
             }
             kit::divider(ui);
             ui.label(kit::text(
-                "Only from these addresses",
+                tr!("Only from these addresses"),
                 kit::size::CAPTION + 0.5,
                 kit::SEMIBOLD,
                 theme::text_secondary(),
             ));
             if client.allowed_cidrs.is_empty() {
-                caption(ui, "Any address that has the token.");
+                caption(ui, tr!("Any address that has the token."));
             } else {
                 let mut removed = None;
                 ui.horizontal_wrapped(|ui| {
@@ -224,7 +224,7 @@ fn client_remote_block(
                 Layout::right_to_left(Align::Center),
                 |ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
-                    let mut add = kit::sheet_button(ui, "Add", ready, ready).clicked();
+                    let mut add = kit::sheet_button(ui, tr!("Add"), ready, ready).clicked();
                     let width = ui.available_width();
                     let response = field(
                         ui,
@@ -242,8 +242,11 @@ fn client_remote_block(
                     if add {
                         match &parsed {
                             _ if full => {
-                                state.range_error =
-                                    Some(format!("At most {MAX_CIDRS} address ranges"));
+                                state.range_error = Some(tr_n!(
+                                    MAX_CIDRS,
+                                    "At most {count} address range",
+                                    "At most {count} address ranges"
+                                ));
                             }
                             Ok(cidr) => {
                                 let mut cidrs = client.allowed_cidrs.clone();
@@ -272,7 +275,9 @@ fn client_remote_block(
             } else {
                 caption(
                     ui,
-                    "An address or a range, like 192.168.1.20 or 10.0.0.0/8. A request from anywhere else is refused as if the token were wrong.",
+                    tr!(
+                        "An address or a range, like 192.168.1.20 or 10.0.0.0/8. A request from anywhere else is refused as if the token were wrong."
+                    ),
                 );
             }
         });
@@ -318,7 +323,7 @@ fn range_chip(ui: &mut Ui, text: &str) -> bool {
     );
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text("Remove this range")
+        .on_hover_text(tr!("Remove this range"))
         .clicked()
 }
 
@@ -339,18 +344,18 @@ fn presets(ui: &mut Ui, editing: &Editing, current: &PermissionSet, actions: &mu
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         ui.label(kit::text(
-            "Preset",
+            tr!("Preset"),
             kit::size::CAPTION + 0.5,
             kit::SEMIBOLD,
             theme::text_secondary(),
         ));
-        if kit::sheet_button(ui, "Read only", false, true).clicked() {
+        if kit::sheet_button(ui, tr!("Read only"), false, true).clicked() {
             choose(PermissionSet::read_only(), actions);
         }
-        if kit::sheet_button(ui, "Everything", false, true).clicked() {
+        if kit::sheet_button(ui, tr!("Everything"), false, true).clicked() {
             choose(PermissionSet::everything(), actions);
         }
-        if kit::sheet_button(ui, "None", false, true).clicked() {
+        if kit::sheet_button(ui, tr!("None"), false, true).clicked() {
             choose(PermissionSet::none(), actions);
         }
     });
@@ -379,7 +384,11 @@ fn group_card(
         ));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(kit::text(
-                format!("{allowed} of {}", permissions.len()),
+                tr!(
+                    "{allowed} of {total}",
+                    allowed = allowed,
+                    total = permissions.len()
+                ),
                 kit::size::CAPTION,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -427,7 +436,7 @@ fn permission_row(
                     let (dot, response) = ui.allocate_exact_size(Vec2::splat(7.0), Sense::hover());
                     ui.painter()
                         .circle_filled(dot.center(), 3.0, Tone::Warning.dot());
-                    response.on_hover_text("Can change DegenView");
+                    response.on_hover_text(tr!("Can change DegenView"));
                 }
                 ui.label(kit::text(
                     permission.title(),
@@ -440,7 +449,7 @@ fn permission_row(
             caption(ui, permission.detail());
             if held_back {
                 ui.label(kit::text(
-                    "Held back: the maximum does not allow this",
+                    tr!("Held back: the maximum does not allow this"),
                     kit::size::CAPTION,
                     kit::REGULAR,
                     Tone::Warning.text(),
@@ -485,35 +494,35 @@ fn sheet_footer(
         match client {
             Some(client) if state.confirm_revoke => {
                 ui.label(kit::text(
-                    format!("Revoke “{}”?", client.name),
+                    tr!("Revoke “{name}”?", name = client.name),
                     kit::size::BODY,
                     kit::MEDIUM,
                     theme::text_primary(),
                 ));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
-                    if kit::destructive_sheet_button(ui, Icon::Xmark, "Revoke").clicked() {
+                    if kit::destructive_sheet_button(ui, Icon::Xmark, tr!("Revoke")).clicked() {
                         actions.push(McpAction::RevokeClient(client.id.clone()));
                         *close = true;
                     }
-                    if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                    if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                         state.confirm_revoke = false;
                     }
                 });
             }
             Some(_) => {
-                if kit::destructive_sheet_button(ui, Icon::Xmark, "Revoke…").clicked() {
+                if kit::destructive_sheet_button(ui, Icon::Xmark, tr!("Revoke…")).clicked() {
                     state.confirm_revoke = true;
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if kit::sheet_button(ui, "Done", true, true).clicked() {
+                    if kit::sheet_button(ui, tr!("Done"), true, true).clicked() {
                         *close = true;
                     }
                 });
             }
             None => {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if kit::sheet_button(ui, "Done", true, true).clicked() {
+                    if kit::sheet_button(ui, tr!("Done"), true, true).clicked() {
                         *close = true;
                     }
                 });

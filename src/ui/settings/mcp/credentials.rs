@@ -2,6 +2,7 @@
 
 use super::controls::{action_card, caption, copy_button, copy_button_with, field};
 use super::{Copied, McpSettingsInput, McpSettingsState, connection_json};
+use crate::i18n::tr;
 use crate::model::mcp::{MAX_CLIENT_NAME_LEN, McpAction};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone;
@@ -15,21 +16,21 @@ pub(super) fn credentials_section(
     input: &McpSettingsInput,
     actions: &mut Vec<McpAction>,
 ) {
-    section(ui, "Credentials", None, |ui| {
+    section(ui, tr!("Credentials"), None, |ui| {
         let ready = !state.new_client_name.trim().is_empty() && input.load_error.is_none();
         action_card(
             ui,
             Icon::Key,
-            "Generate Credential",
-            "A token for one MCP client. It is shown once; only a hash is kept.",
+            tr!("Generate Credential"),
+            tr!("A token for one MCP client. It is shown once; only a hash is kept."),
             |ui| {
-                let mut submit = kit::sheet_button(ui, "Generate", true, ready).clicked();
+                let mut submit = kit::sheet_button(ui, tr!("Generate"), true, ready).clicked();
                 let width = ui.available_width();
                 let response = field(
                     ui,
                     Id::new("mcp-client-name"),
                     &mut state.new_client_name,
-                    "Client name, e.g. Claude Desktop",
+                    tr!("Client name, e.g. Claude Desktop"),
                     width,
                 );
                 if state.new_client_name.chars().count() > MAX_CLIENT_NAME_LEN {
@@ -79,14 +80,14 @@ fn token_card(
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.label(kit::text(
-                        format!("Credential created for {name}"),
+                        tr!("Credential created for {name}", name = name),
                         12.5,
                         kit::SEMIBOLD,
                         theme::text_primary(),
                     ));
                     caption(
                         ui,
-                        "Copy it now. It is not stored and cannot be shown again.",
+                        tr!("Copy it now. It is not stored and cannot be shown again."),
                     );
                 });
             });
@@ -112,7 +113,7 @@ fn token_card(
                     ui,
                     &mut state.copied,
                     Copied::Credential,
-                    "Copy Credential",
+                    tr!("Copy Credential"),
                     token,
                     true,
                 );
@@ -120,12 +121,12 @@ fn token_card(
                     ui,
                     &mut state.copied,
                     Copied::Details,
-                    "Copy Connection Details",
+                    tr!("Copy Connection Details"),
                     false,
                     || connection_json(&input.settings.endpoint(), Some(token)),
                 );
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if kit::sheet_button(ui, "Done", false, true).clicked() {
+                    if kit::sheet_button(ui, tr!("Done"), false, true).clicked() {
                         actions.push(McpAction::DismissToken);
                     }
                 });

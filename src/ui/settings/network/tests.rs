@@ -286,3 +286,79 @@ fn the_network_page_draws_in_every_mode_and_both_themes() {
         }
     }
 }
+
+/// The page in the pseudo-locale, in both themes: text without brackets was never put through
+/// `tr!`, and a label that is cut shows its missing `]`. With `DEGENVIEW_GALLERY_DIR` set the
+/// pictures are written out to look at.
+#[test]
+fn the_network_page_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::render_tests::{Screen, gallery_dir};
+    use crate::ui::theme::AppTheme;
+    let _theme = crate::ui::theme::RestoreDefaultTheme;
+    let _ = ProxyPasswordStore::shared();
+    let config = ProxyConfig {
+        mode: ProxyMode::Manual,
+        protocol: Protocol::Socks5,
+        host: "127.0.0.1".to_owned(),
+        port: Some(1080),
+        username: "me".to_owned(),
+        no_proxy: "example.com, *.corp.test".to_owned(),
+    };
+    let status = Status {
+        mode: ProxyMode::Manual,
+        active: Some(Active {
+            source: Source::Manual,
+            server: "127.0.0.1:1080 (SOCKS5)".to_owned(),
+        }),
+        problem: None,
+    };
+    with_locale(Locale::PSEUDO, || {
+        for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, -160.0));
+            theme::apply(&screen.ctx, app_theme);
+            let mut state = NetworkState::default();
+            let mut actions = Vec::new();
+            let mut last = None;
+            for _ in 0..3 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let mut page = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
+                    page_shell(
+                        &mut page,
+                        SettingsSection::Network,
+                        crate::i18n::tr!(
+                            "Route DegenView's connections through a proxy, such as the one your VPN or network sets."
+                        ),
+                        |ui| {
+                            body(
+                                ui,
+                                &mut state,
+                                &NetworkInput {
+                                    config: &config,
+                                    status: &status,
+                                },
+                                &mut actions,
+                            )
+                        },
+                    );
+                }));
+            }
+            assert!(actions.is_empty(), "drawing alone saved something");
+            // HTTP and SOCKS5 are protocol names.
+            let loose = crate::ui::trade::pseudo_text::untranslated(
+                last.as_ref().expect("a frame"),
+                &["HTTP", "SOCKS5"],
+            );
+            assert!(
+                loose.is_empty(),
+                "{theme_name}: text not through tr!: {loose:?}"
+            );
+            if gallery_dir().is_some() {
+                screen.save(
+                    &format!("settings-network-pseudo-{theme_name}"),
+                    last.expect("a frame"),
+                );
+            }
+        }
+    });
+}

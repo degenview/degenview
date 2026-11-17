@@ -4,6 +4,7 @@
 use crate::build_info::{BUILD_ID, VERSION};
 use crate::format::civil_from_days;
 use crate::host::update::{Phase, UpdateHost, UpdateView};
+use crate::i18n::tr;
 use crate::service::update::check::Channel;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
@@ -17,7 +18,6 @@ pub const LICENSE: &str = "GPL-3.0-only";
 pub const REPOSITORY_URL: &str = "https://github.com/degenview/degenview";
 pub const DONATION_URL: &str = crate::ui::window::tab_bar::COFFEE_URL;
 pub const DOCS_URL: &str = crate::ui::window::tab_bar::DOCS_URL;
-const COPYRIGHT: &str = "Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only.";
 
 const MAX_WIDTH: f32 = 480.0;
 const ROW_HEIGHT: f32 = 44.0;
@@ -61,8 +61,12 @@ pub fn date_label(ms: i64) -> String {
 /// The header's second line: "Version 0.1.0 - Oct 11, 2026".
 pub fn header_subtitle(build_ms: Option<i64>) -> String {
     match build_ms {
-        Some(ms) => format!("Version {VERSION} - {}", date_label(ms)),
-        None => format!("Version {VERSION}"),
+        Some(ms) => tr!(
+            "Version {version} - {date}",
+            version = VERSION,
+            date = date_label(ms)
+        ),
+        None => tr!("Version {version}", version = VERSION),
     }
 }
 
@@ -122,7 +126,7 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 ui,
                                 Icon::DocText,
                                 Color32::from_rgb(48, 176, 199),
-                                "License",
+                                tr!("License"),
                                 |ui| {
                                     ui.label(kit::text(
                                         LICENSE,
@@ -137,7 +141,7 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 ui,
                                 Icon::InfoCircle,
                                 Color32::from_rgb(94, 92, 230),
-                                "Build Info",
+                                tr!("Build Info"),
                                 |ui| {
                                     copy_button(ui, build);
                                     ui.add_space(6.0);
@@ -159,8 +163,8 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 ui,
                                 egui::include_image!("../../../assets/brand/docs.svg"),
                                 Color32::from_rgb(24, 23, 23),
-                                "Documentation",
-                                "User guide for every feature",
+                                tr!("Documentation"),
+                                tr!("User guide for every feature"),
                                 DOCS_URL,
                             );
                             divider(ui);
@@ -169,7 +173,7 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 egui::include_image!("../../../assets/brand/github.svg"),
                                 Color32::from_rgb(24, 23, 23),
                                 "GitHub",
-                                "Source code, issues and releases",
+                                tr!("Source code, issues and releases"),
                                 REPOSITORY_URL,
                             );
                             divider(ui);
@@ -177,15 +181,15 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 ui,
                                 egui::include_image!("../../../assets/brand/buymeacoffee.png"),
                                 Color32::WHITE,
-                                "Support DegenView",
-                                "Buy me a coffee. It keeps development going",
+                                tr!("Support DegenView"),
+                                tr!("Buy me a coffee. It keeps development going"),
                                 DONATION_URL,
                             );
                         });
                         ui.add_space(24.0);
                         let copyright = kit::galley(
                             ui,
-                            COPYRIGHT,
+                            tr!("Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only."),
                             kit::size::CAPTION + 0.5,
                             kit::REGULAR,
                             theme::text_tertiary(),
@@ -228,46 +232,49 @@ const UP_TO_DATE: Color32 = Color32::from_rgb(48, 176, 112);
 fn card(view: &UpdateView) -> Card {
     let (headline, detail, tint, glyph) = match &view.phase {
         Phase::Unchecked | Phase::Checking => (
-            "Checking for updates…".to_owned(),
-            format!("You're on version {VERSION}."),
+            tr!("Checking for updates…").to_owned(),
+            tr!("You're on version {version}.", version = VERSION),
             NEUTRAL,
             Glyph::Spinner,
         ),
         Phase::UpToDate => (
-            "DegenView is up to date".to_owned(),
-            format!("You're on the latest version, {VERSION}."),
+            tr!("DegenView is up to date").to_owned(),
+            tr!(
+                "You're on the latest version, {version}.",
+                version = VERSION
+            ),
             UP_TO_DATE,
             Glyph::Icon(Icon::Check),
         ),
         Phase::Available { version, note, .. } => (
-            format!("DegenView {version} is available"),
+            tr!("DegenView {version} is available", version = version),
             note.clone()
-                .unwrap_or_else(|| format!("You're on version {VERSION}.")),
+                .unwrap_or_else(|| tr!("You're on version {version}.", version = VERSION)),
             kit::ORANGE,
             Glyph::Icon(Icon::ArrowUp),
         ),
         Phase::Installing(progress) => (
-            "Updating DegenView…".to_owned(),
+            tr!("Updating DegenView…").to_owned(),
             progress.stage.label().to_owned(),
             kit::ORANGE,
             Glyph::Spinner,
         ),
         Phase::Ready { version } => (
-            format!("DegenView {version} is ready"),
-            "Restart DegenView to finish updating.".to_owned(),
+            tr!("DegenView {version} is ready", version = version),
+            tr!("Restart DegenView to finish updating.").to_owned(),
             kit::ORANGE,
             Glyph::Icon(Icon::Cycle),
         ),
         Phase::InstallFailed {
             version, message, ..
         } => (
-            format!("Couldn't update to DegenView {version}"),
+            tr!("Couldn't update to DegenView {version}", version = version),
             message.clone(),
             kit::RED,
             Glyph::Mark("!"),
         ),
         Phase::CheckFailed(message) => (
-            "Couldn't check for updates".to_owned(),
+            tr!("Couldn't check for updates").to_owned(),
             message.clone(),
             kit::RED,
             Glyph::Mark("!"),
@@ -297,13 +304,13 @@ fn primary_action(view: &UpdateView) -> Option<(&'static str, Action)> {
     match &view.phase {
         Phase::Available {
             installable: true, ..
-        } => Some(("Update…", Action::Review)),
-        Phase::Available { .. } => Some(("View Release…", Action::Review)),
-        Phase::Ready { .. } => Some(("Restart to Update", Action::Restart)),
+        } => Some((tr!("Update…"), Action::Review)),
+        Phase::Available { .. } => Some((tr!("View Release…"), Action::Review)),
+        Phase::Ready { .. } => Some((tr!("Restart to Update"), Action::Restart)),
         Phase::InstallFailed { version, .. } => {
-            Some(("Try Again", Action::Install(version.clone())))
+            Some((tr!("Try Again"), Action::Install(version.clone())))
         }
-        Phase::CheckFailed(_) => Some(("Try Again", Action::CheckAgain)),
+        Phase::CheckFailed(_) => Some((tr!("Try Again"), Action::CheckAgain)),
         Phase::Unchecked | Phase::Checking | Phase::UpToDate | Phase::Installing(_) => None,
     }
 }
@@ -320,10 +327,10 @@ fn release_link(view: &UpdateView) -> Option<&str> {
 fn ago(elapsed: Duration) -> String {
     let seconds = elapsed.as_secs();
     match seconds {
-        0..60 => "just now".to_owned(),
-        60..3_600 => format!("{} min ago", seconds / 60),
-        3_600..86_400 => format!("{} h ago", seconds / 3_600),
-        _ => format!("{} d ago", seconds / 86_400),
+        0..60 => tr!("just now").to_owned(),
+        60..3_600 => tr!("{minutes} min ago", minutes = seconds / 60),
+        3_600..86_400 => tr!("{hours} h ago", hours = seconds / 3_600),
+        _ => tr!("{days} d ago", days = seconds / 86_400),
     }
 }
 
@@ -334,10 +341,10 @@ fn footer_status(view: &UpdateView) -> Option<String> {
         return None;
     }
     if view.checking {
-        return Some("Checking…".to_owned());
+        return Some(tr!("Checking…").to_owned());
     }
     Some(match view.checked_ago {
-        Some(elapsed) => format!("Checked {}", ago(elapsed)),
+        Some(elapsed) => tr!("Checked {ago}", ago = ago(elapsed)),
         None => String::new(),
     })
 }
@@ -507,49 +514,95 @@ fn footer(
     ui.add_space(4.0);
     // A fixed height: a right-to-left layout would otherwise take whatever is left of the page.
     let row = vec2(ui.available_width(), 24.0);
-    ui.allocate_ui_with_layout(
-        row,
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            if let Some(picked) = channel {
-                let mut choice = host.channel();
-                kit::segmented(
-                    ui,
-                    egui::Id::new("about-update-channel"),
-                    &Channel::ALL.map(|channel| (channel, channel.label())),
-                    &mut choice,
-                );
-                if choice != host.channel() {
-                    *picked = Some(choice);
+    let wrapped = ui
+        .allocate_ui_with_layout(
+            row,
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                if let Some(picked) = channel {
+                    let mut choice = host.channel();
+                    kit::segmented(
+                        ui,
+                        egui::Id::new("about-update-channel"),
+                        &Channel::ALL.map(|channel| (channel, channel.label())),
+                        &mut choice,
+                    );
+                    if choice != host.channel() {
+                        *picked = Some(choice);
+                    }
+                    ui.add_space(14.0);
                 }
-                ui.add_space(14.0);
-            }
-            if let Some(url) = release_link(view)
-                && text_link(ui, "Release Notes", "Open the release page on GitHub").clicked()
-            {
-                ui.ctx().open_url(egui::OpenUrl::new_tab(url));
-            }
-            let Some(status) = status else {
-                return;
-            };
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Right to left: the icon is the rightmost, the status reads to its left. While a
-                // check runs it stays, dimmed, so the row does not shift.
-                if refresh_button(ui, view.checking).clicked() {
-                    host.check_now(ui.ctx());
+                if let Some(url) = release_link(view)
+                    && text_link(
+                        ui,
+                        tr!("Release Notes"),
+                        tr!("Open the release page on GitHub"),
+                    )
+                    .clicked()
+                {
+                    ui.ctx().open_url(egui::OpenUrl::new_tab(url));
                 }
-                if !status.is_empty() {
-                    ui.add_space(2.0);
-                    ui.label(kit::text(
-                        status,
-                        kit::size::CAPTION + 1.0,
-                        kit::REGULAR,
-                        theme::text_secondary(),
-                    ));
+                let status = status?;
+                // The status goes to the right of the picker when it fits there, whatever the words
+                // measure in this language; otherwise it takes a line of its own below.
+                if check_status_width(ui, status) + CHECK_GAP > ui.available_width() {
+                    return Some(status);
                 }
-            });
-        },
-    );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    check_status(ui, host, view, status);
+                });
+                None
+            },
+        )
+        .inner;
+    if let Some(status) = wrapped {
+        ui.allocate_ui_with_layout(
+            vec2(ui.available_width(), 24.0),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| check_status(ui, host, view, status),
+        );
+    }
+}
+
+/// Room kept between the picker and the check status when they share a row.
+const CHECK_GAP: f32 = 12.0;
+
+/// How wide [`check_status`] is: the refresh icon and, when there is one, the words and their gap.
+fn check_status_width(ui: &Ui, status: &str) -> f32 {
+    let words = if status.is_empty() {
+        0.0
+    } else {
+        2.0 + ui.spacing().item_spacing.x + check_status_galley(ui, status).size().x
+    };
+    22.0 + ui.spacing().item_spacing.x + words
+}
+
+fn check_status_galley(ui: &Ui, status: &str) -> std::sync::Arc<egui::Galley> {
+    kit::galley(
+        ui,
+        status,
+        kit::size::CAPTION + 1.0,
+        kit::REGULAR,
+        theme::text_secondary(),
+        f32::INFINITY,
+    )
+}
+
+/// The refresh icon with the words of the last check to its left. Right to left: the icon is the
+/// rightmost. While a check runs it stays, dimmed, so the row does not shift.
+fn check_status(ui: &mut Ui, host: &UpdateHost, view: &UpdateView, status: &str) {
+    if refresh_button(ui, view.checking).clicked() {
+        host.check_now(ui.ctx());
+    }
+    if !status.is_empty() {
+        ui.add_space(2.0);
+        ui.label(kit::text(
+            status,
+            kit::size::CAPTION + 1.0,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
+    }
 }
 
 /// The caution under the update card while the Release Candidate channel is on: an amber panel
@@ -574,14 +627,14 @@ fn channel_warning(ui: &mut Ui) {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 3.0;
                     ui.label(kit::text(
-                        "Pre-release channel",
+                        tr!("Pre-release channel"),
                         kit::size::SUBHEADLINE + 1.0,
                         kit::SEMIBOLD,
                         theme::text_primary(),
                     ));
                     ui.add(
                         egui::Label::new(kit::text(
-                            "Release candidates preview the next version and may be less stable.",
+                            tr!("Release candidates preview the next version and may be less stable."),
                             kit::size::SUBHEADLINE + 1.0,
                             kit::REGULAR,
                             theme::text_secondary(),
@@ -598,8 +651,8 @@ fn channel_warning(ui: &mut Ui) {
 fn refresh_button(ui: &mut Ui, busy: bool) -> egui::Response {
     let sense = if busy { Sense::hover() } else { Sense::click() };
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(22.0), sense);
-    let response = crate::ui::accessibility::label(response, "Check Again")
-        .on_hover_text("Look for a newer version");
+    let response = crate::ui::accessibility::label(response, tr!("Check Again"))
+        .on_hover_text(tr!("Look for a newer version"));
     let hot = !busy && response.hovered();
     if hot {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -778,9 +831,9 @@ fn copy_button(ui: &mut Ui, build: Option<i64>) {
         .data(|data| data.get_temp::<f64>(copied_at))
         .is_some_and(|at| now - at < COPIED_FOR.as_secs_f64());
     let (icon, label, color) = if copied {
-        (Icon::Check, "Copied", kit::GREEN)
+        (Icon::Check, tr!("Copied"), kit::GREEN)
     } else {
-        (Icon::CopyDoc, "Copy", kit::ACCENT)
+        (Icon::CopyDoc, tr!("Copy"), kit::ACCENT)
     };
     let text = kit::galley(
         ui,
@@ -792,8 +845,8 @@ fn copy_button(ui: &mut Ui, build: Option<i64>) {
     );
     let size = vec2(12.0 + 5.0 + text.size().x + 12.0, 22.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let response = crate::ui::accessibility::label(response, "Copy build info")
-        .on_hover_text("Copy the version and build date for a bug report")
+    let response = crate::ui::accessibility::label(response, tr!("Copy build info"))
+        .on_hover_text(tr!("Copy the version and build date for a bug report"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     if response.hovered() {
         ui.painter().rect_filled(rect, 5.0, kit::primary(0.06));
@@ -832,9 +885,12 @@ fn link_row(
 ) {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT + 6.0), Sense::click());
-    let response = crate::ui::accessibility::label(response, format!("{title}, {hint}"))
-        .on_hover_text(url)
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let response = crate::ui::accessibility::label(
+        response,
+        tr!("{title}, {hint}", title = title, hint = hint),
+    )
+    .on_hover_text(url)
+    .on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
     if hovered {
         ui.painter().rect_filled(rect, 0.0, theme::quaternary(0.7));
@@ -1162,5 +1218,37 @@ mod tests {
             });
             output.textures_delta.clear();
         }
+    }
+
+    /// The picker and the words of the last check share a row only when both fit on it.
+    #[test]
+    fn the_footer_never_prints_the_check_status_over_the_picker() {
+        use crate::i18n::{Locale, with_locale};
+        use crate::ui::render_tests::Screen;
+        use crate::ui::trade::pseudo_text::{overlapping, painted};
+        with_locale(Locale::PSEUDO, || {
+            let host = UpdateHost::default();
+            let view = view(Phase::UpToDate);
+            let card = card(&view);
+            let status = footer_status(&view).expect("a status");
+            // Every width the card can have: the status fits beside the picker in some and not in others.
+            for width in (300..=760).step_by(10).map(|width| width as f32) {
+                let mut screen = Screen::new(vec2(width, 200.0));
+                let mut last = None;
+                for _ in 0..3 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        let mut picked = None;
+                        footer(ui, &host, &view, &card, Some(&status), Some(&mut picked));
+                    }));
+                }
+                let output = last.expect("a frame");
+                assert!(
+                    painted(&output).contains(&status),
+                    "{width}: the status is shown"
+                );
+                let overlapping = overlapping(&output);
+                assert!(overlapping.is_empty(), "{width}: {overlapping:?}");
+            }
+        });
     }
 }

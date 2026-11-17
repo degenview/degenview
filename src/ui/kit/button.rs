@@ -57,6 +57,27 @@ pub fn hover_button(
     }
 }
 
+/// How wide `push_button` is for `label`. A card or row that keeps room for the button asks this, so
+/// the room follows the words in any language instead of a width tuned to English.
+pub fn push_button_width(ui: &Ui, icon: Option<Icon>, label: &str) -> f32 {
+    let text = galley(
+        ui,
+        label,
+        size::BODY,
+        REGULAR,
+        Color32::PLACEHOLDER,
+        f32::INFINITY,
+    );
+    push_width(text.size().x, icon.is_some())
+}
+
+/// What a leading icon takes of a push button: its 12 points and the gap to the label.
+const ICON_ROOM: f32 = 17.0;
+
+fn push_width(text: f32, icon: bool) -> f32 {
+    text + if icon { ICON_ROOM } else { 0.0 } + 22.0
+}
+
 /// A bordered push button with an optional leading icon, at the regular control size.
 pub fn push_button(ui: &mut Ui, icon: Option<Icon>, label: &str, enabled: bool) -> egui::Response {
     let color = if enabled {
@@ -65,8 +86,7 @@ pub fn push_button(ui: &mut Ui, icon: Option<Icon>, label: &str, enabled: bool) 
         theme::text_tertiary()
     };
     let label_galley = galley(ui, label, size::BODY, REGULAR, color, f32::INFINITY);
-    let icon_width = if icon.is_some() { 17.0 } else { 0.0 };
-    let size = vec2(label_galley.size().x + icon_width + 22.0, 24.0);
+    let size = vec2(push_width(label_galley.size().x, icon.is_some()), 24.0);
     let sense = if enabled {
         Sense::click()
     } else {
@@ -102,7 +122,7 @@ pub fn push_button(ui: &mut Ui, icon: Option<Icon>, label: &str, enabled: bool) 
             icon,
             color,
         );
-        x += icon_width;
+        x += ICON_ROOM;
     }
     painter.galley(
         pos2(x, rect.center().y - label_galley.size().y / 2.0),
@@ -214,6 +234,24 @@ struct Focusable {
     ring: bool,
 }
 
+/// How wide `sheet_button` is for `label`, for a card that keeps room for it (see
+/// [`push_button_width`]).
+pub fn sheet_button_width(ui: &Ui, label: &str, prominent: bool) -> f32 {
+    let text = galley(
+        ui,
+        label,
+        size::BODY,
+        if prominent { MEDIUM } else { REGULAR },
+        Color32::PLACEHOLDER,
+        f32::INFINITY,
+    );
+    sheet_width(text.size().x)
+}
+
+fn sheet_width(text: f32) -> f32 {
+    (text + 32.0).max(76.0)
+}
+
 fn sheet_button_in(
     ui: &mut Ui,
     focusable: Option<Focusable>,
@@ -229,7 +267,7 @@ fn sheet_button_in(
         Color32::PLACEHOLDER,
         f32::INFINITY,
     );
-    let width = (text.size().x + 32.0).max(76.0);
+    let width = sheet_width(text.size().x);
     let sense = if enabled {
         Sense::click()
     } else {
@@ -573,4 +611,30 @@ pub fn destructive_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     ui.painter()
         .galley(rect.center() - galley.size() / 2.0, galley, RED);
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A card that keeps room for a button asks how wide it will be; the answer is what it takes.
+    #[test]
+    fn the_width_asked_for_a_button_is_the_width_it_takes() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            for label in ["OK", "Clear Cache…", "[Çļéåř Çåçĥé… ~~~~~~~~]"] {
+                for icon in [None, Some(Icon::Trash)] {
+                    let asked = push_button_width(ui, icon, label);
+                    let taken = push_button(ui, icon, label, true).rect.width();
+                    assert_eq!(asked, taken, "push button {label:?}");
+                }
+                for prominent in [false, true] {
+                    let asked = sheet_button_width(ui, label, prominent);
+                    let taken = sheet_button(ui, label, prominent, true).rect.width();
+                    assert_eq!(asked, taken, "sheet button {label:?}");
+                }
+            }
+        });
+        output.textures_delta.clear();
+    }
 }
