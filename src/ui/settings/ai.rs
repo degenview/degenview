@@ -4,6 +4,7 @@
 //! rule (what may be saved, what the badge says, what a test reports) is a plain method tested
 //! against in-memory stores and a scripted provider.
 
+use crate::i18n::{tr, tr_n};
 use crate::service::keychain::ai_keys::{self, AiKeyStore};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;
@@ -104,13 +105,13 @@ impl AiSettingsState {
         let kind = self.kind();
         if kind == ProviderKind::Compatible {
             if self.draft.compatible_base_url.trim().is_empty() {
-                return Some("Enter the server's base URL.".to_owned());
+                return Some(tr!("Enter the server's base URL.").to_owned());
             }
             if let Err(message) = validate_base_url(&self.draft.compatible_base_url) {
                 return Some(message);
             }
             if self.draft.model(kind).is_empty() {
-                return Some("Enter the model name your server expects.".to_owned());
+                return Some(tr!("Enter the model name your server expects.").to_owned());
             }
         }
         None
@@ -119,21 +120,21 @@ impl AiSettingsState {
     pub fn badge(&self, store: &AiKeyStore) -> (&'static str, Tone) {
         let kind = self.kind();
         if store.is_configured(kind) {
-            ("API key saved", Tone::Good)
+            (tr!("API key saved"), Tone::Good)
         } else if kind.env_key_present() {
-            ("Key from environment", Tone::Good)
+            (tr!("Key from environment"), Tone::Good)
         } else if kind.needs_key() {
-            ("No API key", Tone::Neutral)
+            (tr!("No API key"), Tone::Neutral)
         } else {
-            ("No key needed for a local server", Tone::Neutral)
+            (tr!("No key needed for a local server"), Tone::Neutral)
         }
     }
 
     pub fn field_title(&self, store: &AiKeyStore) -> &'static str {
         if store.is_configured(self.kind()) {
-            "Replace API Key"
+            tr!("Replace API Key")
         } else {
-            "API Key"
+            tr!("API Key")
         }
     }
 
@@ -162,9 +163,9 @@ impl AiSettingsState {
         if !self.key_input.trim().is_empty() {
             self.status = Some(match store.save(kind, &self.key_input) {
                 Ok(()) => StatusMessage::ok(crate::platform::saved_securely()),
-                Err(error) => StatusMessage::error(format!(
-                    "The key could not be saved for later ({}). It works until you quit DegenView.",
-                    error.0
+                Err(error) => StatusMessage::error(tr!(
+                    "The key could not be saved for later ({error}). It works until you quit DegenView.",
+                    error = error.0
                 )),
             });
         }
@@ -176,7 +177,7 @@ impl AiSettingsState {
     pub fn remove_key(&mut self, store: &AiKeyStore) {
         store.remove(self.kind());
         self.key_input.clear();
-        self.status = Some(StatusMessage::ok("Key removed."));
+        self.status = Some(StatusMessage::ok(tr!("Key removed.")));
     }
 
     /// What the Test button tests: the provider and server of the draft, and the typed key.
@@ -214,18 +215,19 @@ impl AiSettingsState {
             return;
         };
         let Some(outcome) = test.poll_or(|| {
-            Err(ErrorReport::message(
-                "The connection test stopped unexpectedly.",
-            ))
+            Err(ErrorReport::message(tr!(
+                "The connection test stopped unexpectedly."
+            )))
         }) else {
             return;
         };
         self.test = None;
         self.status = Some(match outcome {
-            Ok(1) => StatusMessage::ok("Connection successful. 1 model available."),
-            Ok(count) => {
-                StatusMessage::ok(format!("Connection successful. {count} models available."))
-            }
+            Ok(count) => StatusMessage::ok(tr_n!(
+                count,
+                "Connection successful. {count} model available.",
+                "Connection successful. {count} models available."
+            )),
             Err(report) => StatusMessage::failure(report),
         });
     }
@@ -235,10 +237,11 @@ impl AiSettingsState {
 
 fn key_page(kind: ProviderKind) -> Option<(&'static str, &'static str)> {
     match kind {
-        ProviderKind::OpenAi => Some(("Get API Key", "https://platform.openai.com/api-keys")),
-        ProviderKind::Anthropic => {
-            Some(("Get API Key", "https://console.anthropic.com/settings/keys"))
-        }
+        ProviderKind::OpenAi => Some((tr!("Get API Key"), "https://platform.openai.com/api-keys")),
+        ProviderKind::Anthropic => Some((
+            tr!("Get API Key"),
+            "https://console.anthropic.com/settings/keys",
+        )),
         ProviderKind::Compatible => None,
     }
 }
@@ -261,7 +264,7 @@ pub fn body(
     ui.add_space(18.0);
     failure_card(ui, state);
 
-    section(ui, "Provider", None, |ui| {
+    section(ui, tr!("Provider"), None, |ui| {
         card(ui, |ui| {
             let options: Vec<(ProviderKind, &str)> = ProviderKind::ALL
                 .into_iter()
@@ -276,10 +279,23 @@ pub fn body(
             let kind = state.kind();
             let mut model = state.draft.model(kind);
             let suggestion = kind.default_model();
-            let hint = (!suggestion.is_empty())
-                .then(|| format!("Model names change often. Suggested: {suggestion}."));
+            let hint = (!suggestion.is_empty()).then(|| {
+                tr!(
+                    "Model names change often. Suggested: {suggestion}.",
+                    suggestion = suggestion
+                )
+            });
             let edit = ui
-                .vertical(|ui| field(ui, "Model", hint.as_deref(), suggestion, &mut model, false))
+                .vertical(|ui| {
+                    field(
+                        ui,
+                        tr!("Model"),
+                        hint.as_deref(),
+                        suggestion,
+                        &mut model,
+                        false,
+                    )
+                })
                 .inner;
             state.autosave.watch(&edit, false);
             state.draft.set_model(kind, &model);
@@ -288,10 +304,10 @@ pub fn body(
                     .vertical(|ui| {
                         field(
                             ui,
-                            "Server Base URL",
-                            Some(
-                                "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a server on this Mac.",
-                            ),
+                            tr!("Server Base URL"),
+                            Some(tr!(
+                                "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a server on this Mac."
+                            )),
                             "http://localhost:11434/v1",
                             &mut state.draft.compatible_base_url,
                             false,
@@ -311,7 +327,7 @@ pub fn body(
     ui.add_space(18.0);
 
     let (title, hint) = (state.field_title(store), state.field_hint(store));
-    section(ui, "API access", None, |ui| {
+    section(ui, tr!("API access"), None, |ui| {
         card(ui, |ui| {
             let key = ui
                 .vertical(|ui| field(ui, title, Some(hint), "", &mut state.key_input, true))
@@ -321,7 +337,7 @@ pub fn body(
                 ui.spacing_mut().item_spacing.x = 10.0;
                 if state.is_testing() {
                     ui.add(LoadingIndicator::new().size(14.0));
-                } else if kit::sheet_button(ui, "Test Connection", false, state.can_save())
+                } else if kit::sheet_button(ui, tr!("Test Connection"), false, state.can_save())
                     .clicked()
                 {
                     let request = state.test_request();
@@ -333,7 +349,7 @@ pub fn body(
                     open_button(ui, label, url);
                 }
                 if store.is_configured(state.kind())
-                    && destructive_button(ui, "Remove Key").clicked()
+                    && destructive_button(ui, tr!("Remove Key")).clicked()
                 {
                     state.remove_key(store);
                 }
@@ -359,25 +375,28 @@ pub fn body(
         ui,
         Icon::InfoCircle,
         theme::text_secondary(),
-        "Your script is sent to the provider",
-        Some(&format!(
-            "When you ask the assistant for a change, the open script and your message are sent to {provider} with your key. DegenView has no server in between, and you pay {provider} for the usage."
+        tr!("Your script is sent to the provider"),
+        Some(&tr!(
+            "When you ask the assistant for a change, the open script and your message are sent to {provider} with your key. DegenView has no server in between, and you pay {provider} for the usage.",
+            provider = provider
         )),
         None,
     );
     ui.add_space(18.0);
-    section(ui, "Conversations", None, |ui| {
+    section(ui, tr!("Conversations"), None, |ui| {
         card(ui, |ui| {
             ui.add(
                 egui::Label::new(kit::text(
-                    "Each script's conversation with the assistant is kept on this Mac so it is there after a restart. It is never synced.",
+                    tr!(
+                        "Each script's conversation with the assistant is kept on this Mac so it is there after a restart. It is never synced."
+                    ),
                     kit::size::SUBHEADLINE + 1.0,
                     kit::REGULAR,
                     theme::text_secondary(),
                 ))
                 .wrap(),
             );
-            if destructive_button(ui, "Clear saved conversations").clicked() {
+            if destructive_button(ui, tr!("Clear saved conversations")).clicked() {
                 actions.push(AiAction::ClearHistory);
             }
         });

@@ -3,6 +3,7 @@
 //! CoinMarketCap connection test happen here, since the stores are process-wide, but every rule
 //! (what may be saved, what the status says) is a plain function tested against in-memory stores.
 
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::{
@@ -68,9 +69,9 @@ impl AlpacaForm {
 
     pub fn badge(&self) -> (&'static str, Tone) {
         if self.is_saved {
-            ("Keys saved", Tone::Good)
+            (tr!("Keys saved"), Tone::Good)
         } else {
-            ("Not configured", Tone::Neutral)
+            (tr!("Not configured"), Tone::Neutral)
         }
     }
 
@@ -84,7 +85,7 @@ impl AlpacaForm {
                 self.is_saved = true;
                 StatusMessage::ok(crate::platform::saved_securely())
             }
-            Err(error) => StatusMessage::error(format!("Could not save: {}", error.0)),
+            Err(error) => StatusMessage::error(tr!("Could not save: {error}", error = error.0)),
         });
     }
 
@@ -122,9 +123,11 @@ impl AlpacaForm {
                 self.key_id.clear();
                 self.secret_key.clear();
                 self.is_saved = false;
-                StatusMessage::ok("Keys removed. Stock charts need keys to load.")
+                StatusMessage::ok(tr!("Keys removed. Stock charts need keys to load."))
             }
-            Err(error) => StatusMessage::error(format!("Could not remove the keys: {}", error.0)),
+            Err(error) => {
+                StatusMessage::error(tr!("Could not remove the keys: {error}", error = error.0))
+            }
         });
     }
 }
@@ -149,17 +152,17 @@ impl CmcForm {
 
     pub fn badge(&self) -> (&'static str, Tone) {
         if self.configured {
-            ("API key configured", Tone::Good)
+            (tr!("API key configured"), Tone::Good)
         } else {
-            ("Public API mode", Tone::Neutral)
+            (tr!("Public API mode"), Tone::Neutral)
         }
     }
 
     pub fn field_title(&self) -> &'static str {
         if self.configured {
-            "Replace API Key"
+            tr!("Replace API Key")
         } else {
-            "API Key"
+            tr!("API Key")
         }
     }
 
@@ -178,7 +181,7 @@ impl CmcForm {
                 self.api_key.clear();
                 StatusMessage::ok(crate::platform::saved_securely())
             }
-            Err(error) => StatusMessage::error(format!("Could not save: {}", error.0)),
+            Err(error) => StatusMessage::error(tr!("Could not save: {error}", error = error.0)),
         });
     }
 
@@ -187,9 +190,11 @@ impl CmcForm {
             Ok(()) => {
                 self.api_key.clear();
                 self.configured = false;
-                StatusMessage::ok("Key removed. Public API mode is active.")
+                StatusMessage::ok(tr!("Key removed. Public API mode is active."))
             }
-            Err(error) => StatusMessage::error(format!("Could not remove the key: {}", error.0)),
+            Err(error) => {
+                StatusMessage::error(tr!("Could not remove the key: {error}", error = error.0))
+            }
         });
     }
 
@@ -222,15 +227,15 @@ fn take_test_answer(
         return;
     };
     let Some(outcome) = pending.poll_or(|| {
-        Err(ProviderError::other(
-            "The connection test stopped unexpectedly.",
-        ))
+        Err(ProviderError::other(tr!(
+            "The connection test stopped unexpectedly."
+        )))
     }) else {
         return;
     };
     *test = None;
     *status = Some(match outcome {
-        Ok(()) => StatusMessage::ok("Connection successful."),
+        Ok(()) => StatusMessage::ok(tr!("Connection successful.")),
         Err(error) => StatusMessage::error(error.to_string()),
     });
 }
@@ -299,15 +304,15 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
     let (text, tone) = form.badge();
     kit::status_badge(ui, text, tone);
     ui.add_space(18.0);
-    section(ui, "API credentials", None, |ui| {
+    section(ui, tr!("API credentials"), None, |ui| {
         card(ui, |ui| {
             ui.vertical(|ui| {
-                let key_id = field(ui, "API Key ID", None, "PK…", &mut form.key_id, false);
+                let key_id = field(ui, tr!("API Key ID"), None, "PK…", &mut form.key_id, false);
                 form.autosave.watch(&key_id, false);
                 ui.add_space(12.0);
                 let secret = field(
                     ui,
-                    "Secret Key",
+                    tr!("Secret Key"),
                     Some(crate::platform::credential_stored_hint()),
                     "",
                     &mut form.secret_key,
@@ -319,13 +324,14 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                 ui.spacing_mut().item_spacing.x = 10.0;
                 if form.is_testing() {
                     ui.add(LoadingIndicator::new().size(14.0));
-                } else if kit::sheet_button(ui, "Test Connection", false, form.can_save()).clicked()
+                } else if kit::sheet_button(ui, tr!("Test Connection"), false, form.can_save())
+                    .clicked()
                 {
                     form.start_test(Some(ui.ctx()), |key_id, secret| {
                         crate::service::alpaca_test_connection(&key_id, &secret)
                     });
                 }
-                if form.is_saved && destructive_button(ui, "Remove Keys").clicked() {
+                if form.is_saved && destructive_button(ui, tr!("Remove Keys")).clicked() {
                     form.remove(store);
                     form.autosave.cancel();
                 }
@@ -340,22 +346,22 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
     if form.autosave.due(ui.ctx()) && form.can_save() {
         form.save(store);
     }
-    section(ui, "Getting your keys", None, |ui| {
+    section(ui, tr!("Getting your keys"), None, |ui| {
         card(ui, |ui| {
-            step(ui, 1, "Create a free Alpaca account.");
+            step(ui, 1, tr!("Create a free Alpaca account."));
             step(
                 ui,
                 2,
-                "Open the API Keys section of the dashboard and generate a key.",
+                tr!("Open the API Keys section of the dashboard and generate a key."),
             );
             step(
                 ui,
                 3,
-                "Copy both values here. Alpaca only shows the secret once.",
+                tr!("Copy both values here. Alpaca only shows the secret once."),
             );
             link(
                 ui,
-                "Open the Alpaca dashboard",
+                tr!("Open the Alpaca dashboard"),
                 "https://app.alpaca.markets/",
             );
         });
@@ -378,7 +384,7 @@ pub fn coinmarketcap_body(
     kit::status_badge(ui, text, tone);
     ui.add_space(18.0);
     let (title, hint) = (form.field_title(), form.field_hint());
-    section(ui, "API access", None, |ui| {
+    section(ui, tr!("API access"), None, |ui| {
         card(ui, |ui| {
             ui.vertical(|ui| {
                 let key = field(ui, title, Some(hint), "", &mut form.api_key, true);
@@ -388,11 +394,15 @@ pub fn coinmarketcap_body(
                 ui.spacing_mut().item_spacing.x = 10.0;
                 if form.is_testing() {
                     ui.add(LoadingIndicator::new().size(14.0));
-                } else if kit::sheet_button(ui, "Test Connection", false, true).clicked() {
+                } else if kit::sheet_button(ui, tr!("Test Connection"), false, true).clicked() {
                     form.start_test(Some(ui.ctx()), crate::service::market::cmc::test_connection);
                 }
-                open_button(ui, "Get API Key", "https://pro.coinmarketcap.com/signup/");
-                if form.configured && destructive_button(ui, "Remove Key").clicked() {
+                open_button(
+                    ui,
+                    tr!("Get API Key"),
+                    "https://pro.coinmarketcap.com/signup/",
+                );
+                if form.configured && destructive_button(ui, tr!("Remove Key")).clicked() {
                     form.remove(store);
                     form.autosave.cancel();
                 }
@@ -410,10 +420,10 @@ pub fn coinmarketcap_body(
         ui,
         Icon::InfoCircle,
         theme::text_secondary(),
-        "A key is optional",
-        Some(
-            "CoinMarketCap works without an API key. Adding one gives DegenView higher API rate limits.",
-        ),
+        tr!("A key is optional"),
+        Some(tr!(
+            "CoinMarketCap works without an API key. Adding one gives DegenView higher API rate limits."
+        )),
         None,
     );
 }
