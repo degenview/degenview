@@ -139,45 +139,140 @@ impl FollowingAgent {
     }
 }
 
-/// `location` as an absolute URL, relative to the page `base` it came from.
+/// `location` as an absolute URL, resolved against the page `base` it came from as RFC 3986
+/// section 5.2 says, which is what a browser or `curl` sends: dot segments are removed and a
+/// fragment is dropped. `None` for an empty or unparsable `Location`.
 fn resolve_location(base: &str, location: &str) -> Option<String> {
     let base: Uri = base.parse().ok()?;
-    let (scheme, authority) = (base.scheme_str()?, base.authority()?);
+    let (base_scheme, base_authority) = (base.scheme_str()?, base.authority()?);
     let location = location.trim();
-    let url = if location.starts_with("http://") || location.starts_with("https://") {
-        location.to_owned()
-    } else if let Some(rest) = location.strip_prefix("//") {
-        format!("{scheme}://{rest}")
-    } else if location.starts_with('/') {
-        format!("{scheme}://{authority}{location}")
-    } else if location.starts_with('?') {
-        format!("{scheme}://{authority}{}{location}", base.path())
-    } else if location.is_empty() {
+    if location.is_empty() {
         return None;
+    }
+    let reference = location.split('#').next().unwrap_or_default();
+    let with_authority = if reference.starts_with("http://") || reference.starts_with("https://") {
+        Some(reference.to_owned())
+    } else if reference.starts_with("//") {
+        Some(format!("{base_scheme}:{reference}"))
     } else {
-        // Beside the page: its path up to the last slash.
-        let path = base.path();
-        let directory = &path[..path.rfind('/').map_or(0, |slash| slash + 1)];
-        format!("{scheme}://{authority}{directory}{location}")
+        None
+    };
+    let (scheme, authority, path, query) = match with_authority {
+        Some(text) => {
+            let uri: Uri = text.parse().ok()?;
+            (
+                uri.scheme_str()?.to_owned(),
+                uri.authority()?.to_string(),
+                remove_dot_segments(uri.path()),
+                uri.query().map(str::to_owned),
+            )
+        }
+        None => {
+            let (path, query) = match reference.split_once('?') {
+                Some((path, query)) => (path, Some(query.to_owned())),
+                None => (reference, None),
+            };
+            let (path, query) = if path.is_empty() {
+                // Only a query (or a fragment): the same page, with the query it names.
+                (
+                    base.path().to_owned(),
+                    query.or(base.query().map(str::to_owned)),
+                )
+            } else if path.starts_with('/') {
+                (remove_dot_segments(path), query)
+            } else {
+                // Beside the page: its path up to the last slash, then the reference.
+                let directory = &base.path()[..base.path().rfind('/').map_or(0, |slash| slash + 1)];
+                (remove_dot_segments(&format!("{directory}{path}")), query)
+            };
+            (
+                base_scheme.to_owned(),
+                base_authority.to_string(),
+                path,
+                query,
+            )
+        }
+    };
+    let url = match query {
+        Some(query) => format!("{scheme}://{authority}{path}?{query}"),
+        None => format!("{scheme}://{authority}{path}"),
     };
     url.parse::<Uri>().is_ok().then_some(url)
+}
+
+/// RFC 3986 section 5.2.4 for a path that starts with `/`: `.` goes, `..` takes the segment
+/// before it (never going above the root), and a path that ends in either ends in a slash.
+fn remove_dot_segments(path: &str) -> String {
+    let mut kept: Vec<&str> = Vec::new();
+    let mut segments = path.strip_prefix('/').unwrap_or(path).split('/').peekable();
+    while let Some(segment) = segments.next() {
+        let last = segments.peek().is_none();
+        match segment {
+            "." => {}
+            ".." => {
+                kept.pop();
+            }
+            _ => kept.push(segment),
+        }
+        if last && matches!(segment, "." | "..") {
+            kept.push("");
+        }
+    }
+    format!("/{}", kept.join("/"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::resolve_location;
 
+    /// RFC 3986 section 5.4: the examples that resolve against one base, for the schemes this
+    /// client speaks. `//g` and `` are the two places it differs: an authority-only URL gets its
+    /// `/`, and an empty `Location` is no redirect at all.
     #[test]
-    fn a_location_is_read_against_the_page_it_came_from() {
-        let base = "https://api.example.com/v1/items?page=2";
+    fn a_location_resolves_as_rfc_3986_says() {
+        let base = "http://a/b/c/d;p?q";
         for (location, expected) in [
-            ("https://other.example/x", Some("https://other.example/x")),
-            ("http://other.example/x", Some("http://other.example/x")),
-            ("//cdn.example/x", Some("https://cdn.example/x")),
-            ("/root", Some("https://api.example.com/root")),
-            ("next", Some("https://api.example.com/v1/next")),
-            ("?page=3", Some("https://api.example.com/v1/items?page=3")),
+            ("http://g", Some("http://g/")),
+            ("g", Some("http://a/b/c/g")),
+            ("./g", Some("http://a/b/c/g")),
+            ("g/", Some("http://a/b/c/g/")),
+            ("/g", Some("http://a/g")),
+            ("//g", Some("http://g/")),
+            ("?y", Some("http://a/b/c/d;p?y")),
+            ("g?y", Some("http://a/b/c/g?y")),
+            ("#s", Some("http://a/b/c/d;p?q")),
+            ("g#s", Some("http://a/b/c/g")),
+            ("g?y#s", Some("http://a/b/c/g?y")),
+            (";x", Some("http://a/b/c/;x")),
+            ("g;x", Some("http://a/b/c/g;x")),
+            ("g;x?y#s", Some("http://a/b/c/g;x?y")),
             ("", None),
+            (".", Some("http://a/b/c/")),
+            ("./", Some("http://a/b/c/")),
+            ("..", Some("http://a/b/")),
+            ("../", Some("http://a/b/")),
+            ("../g", Some("http://a/b/g")),
+            ("../..", Some("http://a/")),
+            ("../../", Some("http://a/")),
+            ("../../g", Some("http://a/g")),
+            ("../../../g", Some("http://a/g")),
+            ("../../../../g", Some("http://a/g")),
+            ("/./g", Some("http://a/g")),
+            ("/../g", Some("http://a/g")),
+            ("g.", Some("http://a/b/c/g.")),
+            (".g", Some("http://a/b/c/.g")),
+            ("g..", Some("http://a/b/c/g..")),
+            ("..g", Some("http://a/b/c/..g")),
+            ("./../g", Some("http://a/b/g")),
+            ("./g/.", Some("http://a/b/c/g/")),
+            ("g/./h", Some("http://a/b/c/g/h")),
+            ("g/../h", Some("http://a/b/c/h")),
+            ("g;x=1/./y", Some("http://a/b/c/g;x=1/y")),
+            ("g;x=1/../y", Some("http://a/b/c/y")),
+            ("g?y/./x", Some("http://a/b/c/g?y/./x")),
+            ("g?y/../x", Some("http://a/b/c/g?y/../x")),
+            ("g#s/./x", Some("http://a/b/c/g")),
+            ("g#s/../x", Some("http://a/b/c/g")),
             ("http://bad host/", None),
         ] {
             assert_eq!(
@@ -186,9 +281,29 @@ mod tests {
                 "{location:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_parent_reference_does_not_leave_dot_segments_in_the_request() {
+        let resolved = resolve_location("http://127.0.0.1:9/a/start", "../final");
+        assert_eq!(resolved.as_deref(), Some("http://127.0.0.1:9/final"));
+        // The scheme, the port and the page's own query are kept where the location leaves them.
+        let base = "https://api.example.com:8443/v1/items?page=2";
         assert_eq!(
-            resolve_location("http://127.0.0.1:9", "next").as_deref(),
-            Some("http://127.0.0.1:9/next")
+            resolve_location(base, "next").as_deref(),
+            Some("https://api.example.com:8443/v1/next")
+        );
+        assert_eq!(
+            resolve_location(base, "?page=3").as_deref(),
+            Some("https://api.example.com:8443/v1/items?page=3")
+        );
+        assert_eq!(
+            resolve_location(base, "//cdn.example/x/../y").as_deref(),
+            Some("https://cdn.example/y")
+        );
+        assert_eq!(
+            resolve_location("http://a", "g").as_deref(),
+            Some("http://a/g")
         );
     }
 }

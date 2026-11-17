@@ -896,3 +896,18 @@ fn redirects_are_followed_up_to_a_limit_and_headers_stay_on_their_host() {
     );
     thread.join().unwrap();
 }
+
+/// A redirect to a parent path reaches the server as the path it names, not with dot segments.
+#[test]
+fn a_parent_relative_redirect_requests_the_resolved_path() {
+    use crate::service::net::http::{self, Retry};
+    let _applied = AppliedProxy::new(ProxyConfig {
+        mode: ProxyMode::Off,
+        ..ProxyConfig::default()
+    });
+    let (port, thread) = origin(vec![redirect("../final"), answer("done")]);
+    let url = format!("http://127.0.0.1:{port}/a/start");
+    assert_eq!(http::get_text(&url, &[], Retry::Never).unwrap(), "done");
+    let asked = thread.join().unwrap();
+    assert!(asked[1].starts_with("GET /final HTTP/1.1"), "{asked:?}");
+}

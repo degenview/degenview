@@ -86,8 +86,9 @@ registry call (`os/registry.rs`) is `cfg(windows)`.
 - **Redirects are followed by hand.** A `FollowingAgent`'s agents never follow them (`ureq` would
   keep the first hop's proxy or direct choice and match later hops by spelling only, so a redirect
   to `127.0.0.1` would reach the proxy). `get_following` / `head_following` (market data, images,
-  FX) pick the agent for every hop, up to 5, and send the caller's headers only to the host the
-  request started at. The webhook, snapshot, AI, link-preview and update agents refuse redirects
+  FX) pick the agent for every hop, up to 5, resolve each `Location` as RFC 3986 says (dot
+  segments removed, fragment dropped; `agent::resolve_location`), and send the caller's headers only
+  to the host the request started at. The webhook, snapshot, AI, link-preview and update agents refuse redirects
   (update's own checked chain stays on its allow-list).
 - **WebSockets** (`net::ws::connect`) open their TCP stream with `proxy::dial`, which tunnels
   through the proxy unless it skips the host, and then speak TLS over the tunnel
