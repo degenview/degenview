@@ -24,6 +24,7 @@ use eframe::egui::{self, vec2};
 
 use crate::host::broker::{BrokerHost, Connection, Operation};
 use crate::host::trading::TradingHub;
+use crate::model::paper::prefs::PaperPrefs;
 use crate::ui::icons::Icon;
 use crate::ui::kit::Tone;
 use crate::ui::kit::{destructive_button, field};
@@ -204,7 +205,13 @@ pub fn card_summary(descriptor: &Descriptor, connection: &Connection) -> String 
     }
 }
 
-pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, hub: &std::sync::Arc<TradingHub>) {
+/// The Brokers page. Returns the paper-trading choices when the user changed them: that setting
+/// is saved through the store, which this page is drawn under, so the caller saves it.
+pub fn body(
+    ui: &mut egui::Ui,
+    state: &mut BrokersState,
+    hub: &std::sync::Arc<TradingHub>,
+) -> Option<PaperPrefs> {
     for broker in hub.brokers().brokers() {
         let descriptor = broker.descriptor();
         let form = state.forms.entry(descriptor.id.as_str()).or_default();
@@ -212,7 +219,8 @@ pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, hub: &std::sync::Arc<Tr
         broker_card(ui, hub, broker, form, open);
         ui.add_space(10.0);
     }
-    ui.add_space(4.0);
+    let paper = paper_choices(ui, hub);
+    ui.add_space(14.0);
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         ui.add_space(2.0);
@@ -227,6 +235,21 @@ pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, hub: &std::sync::Arc<Tr
             .wrap(),
         );
     });
+    paper
+}
+
+/// How paper trading behaves on this Mac; the new choices when the user changed them.
+fn paper_choices(ui: &mut egui::Ui, hub: &std::sync::Arc<TradingHub>) -> Option<PaperPrefs> {
+    let before = hub.paper_prefs();
+    let mut prefs = before;
+    titled_group(ui, "Paper trading", |ui| {
+        switch_row(
+            ui,
+            "Play a sound when a paper order is filled",
+            &mut prefs.fill_sound,
+        );
+    });
+    (prefs != before).then_some(prefs)
 }
 
 /// One broker: a header that folds the rest. A broker with a problem starts unfolded, the others

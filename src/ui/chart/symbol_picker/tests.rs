@@ -151,6 +151,7 @@ struct Rig {
     overlaid: Vec<InstrumentId>,
     can_overlay: bool,
     cards_on_tab: Vec<PortfolioCard>,
+    in_list: Vec<InstrumentId>,
 }
 
 impl Rig {
@@ -177,6 +178,7 @@ impl Rig {
             overlaid: Vec::new(),
             can_overlay: false,
             cards_on_tab: Vec::new(),
+            in_list: Vec::new(),
         };
         rig.settle();
         rig
@@ -199,6 +201,7 @@ impl Rig {
             overlaid: &self.overlaid,
             can_overlay: self.can_overlay,
             cards_on_tab: &self.cards_on_tab,
+            in_list: &self.in_list,
         };
         let output = self.screen.run(events, |ui| {
             if let Some(output) = picker.show(ui.ctx(), &env) {
@@ -1009,6 +1012,7 @@ fn without_a_portfolio_the_tab_offers_the_indices_and_says_where_views_come_from
             overlaid: &[],
             can_overlay: false,
             cards_on_tab: &rig.cards_on_tab,
+            in_list: &[],
         },
     );
     assert!(state.on_chart);
@@ -1036,7 +1040,9 @@ fn the_watchlist_mode_follows_markets_and_stays_open_for_the_next() {
     assert_eq!(rig.picker.mode(), PickMode::Watchlist);
     let shown = texts(&mut rig);
     assert!(
-        shown.iter().any(|text| text == "Add to Favorites"),
+        shown
+            .iter()
+            .any(|text| text == "Add Binance · BTCUSDT to Favorites"),
         "{shown:?}"
     );
     let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
@@ -1052,6 +1058,249 @@ fn the_watchlist_mode_follows_markets_and_stays_open_for_the_next() {
     assert!(matches!(output, Some(Output::Watchlist(_))), "{output:?}");
     // What a watchlist follows is not a recent chart.
     assert!(recents::load_recents(&rig.store.lock().unwrap()).is_empty());
+}
+
+fn binance(symbol: &str) -> InstrumentId {
+    InstrumentId::new(DataSource::Binance, symbol)
+}
+
+/// A picker adding to "Favorites" that already holds `held`, with `query` answered.
+fn favorites_rig(held: Vec<InstrumentId>, query: &str) -> Rig {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.open_for_watchlist("Favorites");
+    rig.in_list = held;
+    rig.type_text(query);
+    rig
+}
+
+#[test]
+fn the_watchlist_footer_names_the_market_the_return_key_adds() {
+    let mut rig = favorites_rig(Vec::new(), "btc");
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    let shown = texts(&mut rig);
+    assert!(
+        shown
+            .iter()
+            .any(|text| text == "Add Binance · BTCUSDC to Favorites"),
+        "{shown:?}"
+    );
+    rig.picker.set_scope(Scope::Stocks);
+    rig.picker.query.clear();
+    rig.type_text("aapl");
+    let shown = texts(&mut rig);
+    assert!(
+        shown
+            .iter()
+            .any(|text| text == "Add Alpaca · AAPL to Favorites"),
+        "{shown:?}"
+    );
+}
+
+#[test]
+fn a_long_event_title_is_cut_in_the_footer_hint() {
+    let result = chance(
+        DataSource::Polymarket,
+        "Will the Federal Reserve cut interest rates at its next meeting?",
+        "Yes",
+        Some(0.4),
+    );
+    assert_eq!(
+        market_label(&result),
+        "Polymarket · Will the Federal Reserve cu…"
+    );
+    assert_eq!(
+        market_label(&pair(DataSource::Binance, "BTCUSDT", "BTC", "USDT")),
+        "Binance · BTCUSDT"
+    );
+}
+
+#[test]
+fn a_market_the_list_already_holds_is_checked_and_never_added_twice() {
+    let mut rig = favorites_rig(vec![binance("BTCUSDT")], "btc");
+    let shown = texts(&mut rig);
+    assert!(
+        shown.iter().any(|text| text == "Already in Favorites"),
+        "{shown:?}"
+    );
+    assert!(shown.iter().all(|text| !text.starts_with("Add Binance")));
+    let ctx = rig.screen.ctx.clone();
+    let listing = rig.picker.listing(&ctx);
+    let rows = rig.picker.rows(&listing);
+    let env = |in_list| Env {
+        on_tab: &[],
+        quote: None,
+        replacing: None,
+        overlaid: &[],
+        can_overlay: false,
+        cards_on_tab: &[],
+        in_list,
+    };
+    let held = [binance("BTCUSDT")];
+    let checked = |index: usize| rig.picker.row_state(index, &rows.items[index], &env(&held));
+    assert!(checked(0).on_chart, "BTCUSDT is in the list");
+    assert!(!checked(1).on_chart);
+
+    // Return, ⇧Return and a click do nothing, and nothing is acknowledged.
+    for modifiers in [Modifiers::NONE, Modifiers::SHIFT] {
+        let output = rig.frame(vec![press(Key::Enter, modifiers)]);
+        assert!(output.is_none(), "{output:?}");
+    }
+    assert!(rig.picker.is_open());
+    let shown = texts(&mut rig);
+    assert!(
+        shown.iter().all(|text| !text.starts_with("Added")),
+        "{shown:?}"
+    );
+
+    // The next market adds as usual, and the list then holds it.
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(matches!(output, Some(Output::Watchlist(r)) if r.symbol == "BTCUSDC"));
+    assert!(texts(&mut rig).iter().any(|text| text == "Added BTCUSDC"));
+}
+
+#[test]
+fn a_portfolio_view_the_list_holds_is_checked_and_not_added_again() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.open_for_watchlist("Favorites");
+    rig.picker.set_scope(Scope::Dashboards);
+    rig.picker.set_portfolios(portfolios());
+    rig.in_list = vec![PortfolioCard::new(CardKind::Allocation, None).instrument_id()];
+    rig.settle();
+    let tile = dashboards::groups(&portfolios(), None, "")
+        .remove(1)
+        .tiles
+        .remove(2);
+    let pick = SymbolPicker::tile_pick(&tile);
+    let item = Item::Tile(tile);
+    rig.picker.highlighted = Some(item.clone());
+    let held = rig.in_list.clone();
+    let env = Env {
+        on_tab: &[],
+        quote: None,
+        replacing: None,
+        overlaid: &[],
+        can_overlay: false,
+        cards_on_tab: &[],
+        in_list: &held,
+    };
+    assert!(rig.picker.row_state(0, &item, &env).on_chart);
+    assert_eq!(rig.picker.return_hint(&env), "Already in Favorites");
+    assert!(rig.picker.commit(pick, PickKind::Watchlist, &env).is_none());
+}
+
+#[test]
+fn what_the_list_holds_is_ignored_outside_a_watchlists_picker() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.in_list = vec![binance("BTCUSDT")];
+    rig.type_text("btc");
+    let shown = texts(&mut rig);
+    assert!(
+        shown.iter().all(|text| !text.starts_with("Already")),
+        "{shown:?}"
+    );
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(matches!(output, Some(Output::Replace(_))), "{output:?}");
+}
+
+#[test]
+fn a_prefixed_query_searches_the_symbol_on_that_venue_alone() {
+    for mode_open in [
+        (|picker: &mut SymbolPicker| picker.open("")) as fn(&mut SymbolPicker),
+        |picker| picker.open_add(),
+        |picker| picker.open_for_watchlist("Favorites"),
+    ] {
+        let mut rig = Rig::new(1100.0, "");
+        mode_open(&mut rig.picker);
+        rig.type_text("coinbase:btc");
+        assert_eq!(rig.names(), ["BTC-USD", "BTC-USDT", "BTC-EUR"]);
+        assert_eq!(rig.picker.filter_menu().unwrap().label, "Coinbase");
+    }
+    // The prefix wins over the pull-down, in any case and with spaces.
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.set_venue(Some(DataSource::Coinbase));
+    rig.type_text(" BINANCE : BTCUSDT");
+    assert_eq!(rig.names(), ["BTCUSDT"]);
+    // A US exchange is Alpaca's.
+    rig.picker.query.clear();
+    rig.type_text("nasdaq:aapl");
+    assert_eq!(rig.names(), ["AAPL — Apple Inc."]);
+}
+
+#[test]
+fn a_prefix_with_no_symbol_yet_lists_the_venues_own_markets() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.type_text("binance:");
+    let names = rig.names();
+    assert!(!names.is_empty());
+    assert!(names.iter().all(|name| name.ends_with("USDT")), "{names:?}");
+    assert_eq!(rig.heads(), ["Popular"]);
+}
+
+#[test]
+fn a_venue_nothing_serves_is_named_and_the_symbol_searched_everywhere() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.type_text("okx:btc");
+    assert!(rig.names().contains(&"BTCUSDT".to_owned()));
+    assert_eq!(
+        rig.heads(),
+        ["OKX isn't supported · matches from other venues"]
+    );
+
+    // Nothing found: the card says so and lists what was searched, and Return stays inert.
+    let mut rig = Rig::new(1100.0, "");
+    rig.type_text("okx:zzz");
+    let shown = texts(&mut rig);
+    assert!(
+        shown.iter().any(|text| text
+            == "OKX isn't supported. Searched: Binance, Coinbase, DEXScreener, CoinGecko, Alpaca."),
+        "{shown:?}"
+    );
+    assert!(
+        rig.frame(vec![press(Key::Enter, Modifiers::NONE)])
+            .is_none()
+    );
+    assert!(rig.picker.is_open());
+}
+
+#[test]
+fn a_plain_miss_lists_the_venues_that_were_searched() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.type_text("zzz");
+    let shown = texts(&mut rig);
+    assert!(
+        shown.iter().any(|text| text
+            == "Nothing matches “zzz”. Searched: Binance, Coinbase, DEXScreener, CoinGecko, Alpaca."),
+        "{shown:?}"
+    );
+    rig.picker.set_venue(Some(DataSource::Coinbase));
+    rig.settle();
+    let shown = texts(&mut rig);
+    assert!(
+        shown
+            .iter()
+            .any(|text| text == "Nothing matches “zzz”. Searched: Coinbase."),
+        "{shown:?}"
+    );
+    assert!(
+        rig.frame(vec![press(Key::Enter, Modifiers::NONE)])
+            .is_none()
+    );
+}
+
+#[test]
+fn a_venue_the_tab_does_not_list_says_so() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.set_scope(Scope::Stocks);
+    rig.type_text("binance:btc");
+    assert!(rig.names().is_empty());
+    let shown = texts(&mut rig);
+    assert!(
+        shown
+            .iter()
+            .any(|text| text == "Binance has no markets under Stocks. Try another tab."),
+        "{shown:?}"
+    );
 }
 
 #[test]
@@ -1216,7 +1465,7 @@ fn gallery_of_the_symbol_picker() {
 
     // The other tabs and modes, in both appearances.
     type Setup = fn(&mut Rig);
-    let scenes: [(&str, f32, Setup); 13] = [
+    let scenes: [(&str, f32, Setup); 16] = [
         ("symbol-picker-predictions", 1100.0, |rig| {
             rig.picker.set_scope(Scope::Predictions);
             rig.type_text("fed");
@@ -1281,6 +1530,21 @@ fn gallery_of_the_symbol_picker() {
             rig.picker.open_add();
             rig.type_text("btc");
         }),
+        ("symbol-picker-watchlist-duplicate-narrow", 700.0, |rig| {
+            rig.picker.open_for_watchlist("Favorites");
+            rig.in_list = vec![binance("BTCUSDT")];
+            rig.type_text("btc");
+        }),
+        ("symbol-picker-unsupported-venue-narrow", 700.0, |rig| {
+            rig.type_text("okx:zzz");
+        }),
+        (
+            "symbol-picker-unsupported-venue-matches-narrow",
+            700.0,
+            |rig| {
+                rig.type_text("okx:btc");
+            },
+        ),
         ("symbol-picker-watchlist", 1100.0, |rig| {
             rig.picker.open_for_watchlist("Favorites");
             rig.type_text("btc");

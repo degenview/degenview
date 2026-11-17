@@ -121,6 +121,7 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 | `snapshot/` | `export`, `job`, `raster`, `upload` and `providers/` |
 | `portfolio/`, `webhook/`, `alert/`, `editor_theme/` | Portfolio history, performers, quotes and ticker mapping; webhook delivery; macOS notifications and the login item; theme files and the font catalog (`fonts/`) |
 | `system/` | `entitlements`, `file_dialog`, `sandbox`, `timezone` |
+| `sound/` | Short system sounds through the platform's own player (`NSSound`, `PlaySoundW`, `canberra-gtk-play`), no audio crate; `Sounder` is the seam tests replace. The paper-fill sound: `PaperHost` counts fills this Mac made (`drain_fills`, never a reload or a mirrored account), `app/background.rs` plays one sound per frame, and the Notifications page's "Fill sound" switch is the local setting `paper.prefs` |
 | `llm/`, `watchlist_quotes/` | The AI providers; the shared quote stream |
 
 `host/` has only `mod.rs` at its root. One directory per domain, the host in `mod.rs` and its helpers
