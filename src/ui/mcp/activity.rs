@@ -5,6 +5,7 @@
 //! the store: the only thing it asks of the host is [`McpAction::ClearActivity`], and only after
 //! the sheet's own "Clear the log?" question has been answered.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::mcp::activity::{
     ACTIVITY_PAGE_SIZE, McpActivityClient, McpActivityFilter, McpActivityRange, McpActivityStatus,
     Paging, clients_in,
@@ -198,8 +199,8 @@ fn status_tone(status: McpActivityStatus) -> Tone {
 fn outcome_tag(entry: &McpAuditEntry) -> (&'static str, Tone) {
     match (entry.status(), entry.kind) {
         (Some(status), _) => (status.label(), status_tone(status)),
-        (None, McpAuditKind::Gap) => ("Gap", Tone::Warning),
-        (None, _) => ("Cleared", Tone::Neutral),
+        (None, McpAuditKind::Gap) => (tr!("Gap"), Tone::Warning),
+        (None, _) => (tr!("Cleared"), Tone::Neutral),
     }
 }
 
@@ -207,15 +208,11 @@ fn outcome_tag(entry: &McpAuditEntry) -> (&'static str, Tone) {
 fn row_title(entry: &McpAuditEntry) -> String {
     match entry.kind {
         McpAuditKind::Call | McpAuditKind::Confirmation => tool_title(&entry.tool),
-        McpAuditKind::RateLimited => "Rate limit reached".to_owned(),
-        McpAuditKind::AuthRefused => "Sign-in refused".to_owned(),
-        McpAuditKind::Cleared => "Activity log cleared".to_owned(),
-        McpAuditKind::Gap => "Some activity was not recorded".to_owned(),
+        McpAuditKind::RateLimited => tr!("Rate limit reached").to_owned(),
+        McpAuditKind::AuthRefused => tr!("Sign-in refused").to_owned(),
+        McpAuditKind::Cleared => tr!("Activity log cleared").to_owned(),
+        McpAuditKind::Gap => tr!("Some activity was not recorded").to_owned(),
     }
-}
-
-fn plural(count: u32, one: &str, many: &str) -> String {
-    format!("{count} {}", if count == 1 { one } else { many })
 }
 
 /// The small print under a headline: who, what it named, how it ended and how long it took.
@@ -240,14 +237,15 @@ fn row_detail(entry: &McpAuditEntry) -> String {
                 parts.push(entry.code.clone());
             }
             if !entry.peer.is_empty() {
-                parts.push(format!("from {}", entry.peer));
+                parts.push(tr!("from {peer}", peer = entry.peer));
             }
-            parts.push(format!("{} ms", entry.duration_ms));
+            parts.push(tr!("{ms} ms", ms = entry.duration_ms));
         }
-        McpAuditKind::AuthRefused => parts.push(format!(
-            "{} from {} refused within a minute",
-            plural(entry.count, "request", "requests"),
-            entry.peer
+        McpAuditKind::AuthRefused => parts.push(tr_n!(
+            entry.count,
+            "{count} request from {peer} refused within a minute",
+            "{count} requests from {peer} refused within a minute",
+            peer = entry.peer
         )),
         McpAuditKind::Confirmation => {
             if !entry.client_name.is_empty() {
@@ -255,10 +253,10 @@ fn row_detail(entry: &McpAuditEntry) -> String {
             }
             parts.push(
                 match entry.status() {
-                    Some(McpActivityStatus::Approved) => "you approved it",
-                    Some(McpActivityStatus::Declined) => "you declined it",
-                    Some(McpActivityStatus::Expired) => "nobody answered in time",
-                    _ => "waiting for you",
+                    Some(McpActivityStatus::Approved) => tr!("you approved it"),
+                    Some(McpActivityStatus::Declined) => tr!("you declined it"),
+                    Some(McpActivityStatus::Expired) => tr!("nobody answered in time"),
+                    _ => tr!("waiting for you"),
                 }
                 .to_owned(),
             );
@@ -266,18 +264,20 @@ fn row_detail(entry: &McpAuditEntry) -> String {
         McpAuditKind::RateLimited => {
             parts.push(entry.client_name.clone());
             if !entry.peer.is_empty() {
-                parts.push(format!("from {}", entry.peer));
+                parts.push(tr!("from {peer}", peer = entry.peer));
             }
-            parts.push(format!(
-                "{} refused within a minute",
-                plural(entry.count, "call", "calls")
+            parts.push(tr_n!(
+                entry.count,
+                "{count} call refused within a minute",
+                "{count} calls refused within a minute"
             ));
         }
-        McpAuditKind::Gap => parts.push(format!(
-            "{} dropped while the app was busy",
-            plural(entry.count, "row", "rows")
+        McpAuditKind::Gap => parts.push(tr_n!(
+            entry.count,
+            "{count} row dropped while the app was busy",
+            "{count} rows dropped while the app was busy"
         )),
-        McpAuditKind::Cleared => parts.push("Earlier activity was deleted".to_owned()),
+        McpAuditKind::Cleared => parts.push(tr!("Earlier activity was deleted").to_owned()),
     }
     parts.join(" · ")
 }
@@ -298,36 +298,40 @@ fn stamp(ms: i64, utc_offset_secs: i64) -> String {
 fn row_tooltip(entry: &McpAuditEntry, utc_offset_secs: i64) -> String {
     let mut lines = vec![stamp(entry.at_ms, utc_offset_secs)];
     if !entry.client_name.is_empty() || !entry.client_id.is_empty() {
-        lines.push(format!(
-            "Client: {} ({})",
-            if entry.client_name.is_empty() {
-                "unnamed"
+        lines.push(tr!(
+            "Client: {name} ({id})",
+            name = if entry.client_name.is_empty() {
+                tr!("unnamed")
             } else {
                 &entry.client_name
             },
-            entry.client_id
+            id = entry.client_id
         ));
     }
     if !entry.peer.is_empty() {
-        lines.push(format!("From: {}", entry.peer));
+        lines.push(tr!("From: {peer}", peer = entry.peer));
     }
     if !entry.tool.is_empty() {
-        lines.push(format!("Tool: {}", entry.tool));
+        lines.push(tr!("Tool: {tool}", tool = entry.tool));
     }
     if let Some(status) = entry.status() {
         lines.push(if entry.code.is_empty() {
-            format!("Result: {}", status.label())
+            tr!("Result: {result}", result = status.label())
         } else {
-            format!("Result: {} ({})", status.label(), entry.code)
+            tr!(
+                "Result: {result} ({code})",
+                result = status.label(),
+                code = entry.code
+            )
         });
     }
     if entry.kind == McpAuditKind::Call {
-        lines.push(format!("Took {} ms", entry.duration_ms));
+        lines.push(tr!("Took {ms} ms", ms = entry.duration_ms));
     }
     if !entry.targets.is_empty() {
-        lines.push(format!(
-            "Named: {}",
-            entry
+        lines.push(tr!(
+            "Named: {targets}",
+            targets = entry
                 .targets
                 .iter()
                 .map(|target| target_text(&target.kind, &target.id))
@@ -336,9 +340,9 @@ fn row_tooltip(entry: &McpAuditEntry, utc_offset_secs: i64) -> String {
         ));
     }
     if !entry.request_id.is_empty() {
-        lines.push(format!("Request id: {}", entry.request_id));
+        lines.push(tr!("Request id: {id}", id = entry.request_id));
     }
-    lines.push(format!("Entry id: {}", entry.id));
+    lines.push(tr!("Entry id: {id}", id = entry.id));
     lines.join("\n")
 }
 
@@ -471,17 +475,17 @@ fn caption(ui: &mut Ui, text: impl Into<String>, color: Color32) {
 pub fn preview(ui: &mut Ui, state: &mut ActivityState, input: &ActivityInput) {
     section(
         ui,
-        "Recent activity",
-        Some(
-            "What connected clients asked DegenView to do, newest first. Kept on this Mac only, and holds ids and results, never what a request contained.",
-        ),
+        tr!("Recent activity"),
+        Some(tr!(
+            "What connected clients asked DegenView to do, newest first. Kept on this Mac only, and holds ids and results, never what a request contained."
+        )),
         |ui| {
             if input.entries.is_empty() {
                 card(ui, |ui| {
                     ui.add_space(2.0);
                     caption(
                         ui,
-                        "Nothing yet. Calls from connected clients appear here.",
+                        tr!("Nothing yet. Calls from connected clients appear here."),
                         theme::text_secondary(),
                     );
                     ui.add_space(2.0);
@@ -503,17 +507,18 @@ pub fn preview(ui: &mut Ui, state: &mut ActivityState, input: &ActivityInput) {
                 caption(
                     ui,
                     if input.entries.len() > PREVIEW_ROWS {
-                        format!(
-                            "Showing the newest {PREVIEW_ROWS} of {}",
-                            input.entries.len()
+                        tr!(
+                            "Showing the newest {shown} of {total}",
+                            shown = PREVIEW_ROWS,
+                            total = input.entries.len()
                         )
                     } else {
-                        format!("{} in all", input.entries.len())
+                        tr!("{total} in all", total = input.entries.len())
                     },
                     theme::text_secondary(),
                 );
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if kit::sheet_button(ui, "View All Activity…", false, true).clicked() {
+                    if kit::sheet_button(ui, tr!("View All Activity…"), false, true).clicked() {
                         state.open();
                     }
                 });
@@ -550,8 +555,10 @@ pub fn sheet(
             sheet::header(
                 ui,
                 Icon::List,
-                "Activity log",
-                "What connected clients asked DegenView to do. Kept on this Mac only; it holds ids and results, never what a request contained.",
+                tr!("Activity log"),
+                tr!(
+                    "What connected clients asked DegenView to do. Kept on this Mac only; it holds ids and results, never what a request contained."
+                ),
                 theme::text_secondary(),
             );
         });
@@ -601,14 +608,15 @@ pub fn sheet(
             |ui| {
                 if confirming {
                     ui.label(kit::text(
-                        "Clear the whole log?",
+                        tr!("Clear the whole log?"),
                         kit::size::BODY,
                         kit::MEDIUM,
                         theme::text_primary(),
                     ));
                 } else {
                     ui.add_enabled_ui(can_clear, |ui| {
-                        if kit::destructive_sheet_button(ui, Icon::Trash, "Clear…").clicked() {
+                        if kit::destructive_sheet_button(ui, Icon::Trash, tr!("Clear…")).clicked()
+                        {
                             ask_to_clear = true;
                         }
                     });
@@ -616,13 +624,13 @@ pub fn sheet(
             },
             |ui| {
                 if confirming {
-                    if kit::destructive_sheet_button(ui, Icon::Trash, "Clear Log").clicked() {
+                    if kit::destructive_sheet_button(ui, Icon::Trash, tr!("Clear Log")).clicked() {
                         clear = true;
                     }
-                    if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                    if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                         cancel_clear = true;
                     }
-                } else if kit::sheet_button(ui, "Done", true, true).clicked() {
+                } else if kit::sheet_button(ui, tr!("Done"), true, true).clicked() {
                     close = true;
                 }
             },
@@ -687,7 +695,7 @@ fn controls(
         ui,
         Id::new("mcp-activity-search"),
         &mut state.search,
-        "Search tool, id or error code",
+        tr!("Search tool, id or error code"),
         ui.available_width(),
     );
 
@@ -704,7 +712,7 @@ fn controls(
 }
 
 fn client_picker(ui: &mut Ui, state: &mut ActivityState, clients: &[McpActivityClient]) {
-    let mut labels = vec!["All clients".to_owned()];
+    let mut labels = vec![tr!("All clients").to_owned()];
     labels.extend(clients.iter().map(|client| client.label.clone()));
     let selected = state
         .client_id
@@ -720,7 +728,7 @@ fn client_picker(ui: &mut Ui, state: &mut ActivityState, clients: &[McpActivityC
 }
 
 fn status_picker(ui: &mut Ui, state: &mut ActivityState) {
-    let mut labels = vec!["All outcomes".to_owned()];
+    let mut labels = vec![tr!("All outcomes").to_owned()];
     labels.extend(McpActivityStatus::ALL.map(|status| status.label().to_owned()));
     let selected = state.status.map_or(0, |status| {
         McpActivityStatus::ALL
@@ -783,7 +791,7 @@ fn custom_range(ui: &mut Ui, state: &mut ActivityState, input: &ActivityInput) {
         let default_to = input.now_ms;
         bound(
             ui,
-            "From",
+            tr!("From"),
             from_id(),
             &mut state.from_text,
             input.now_ms - DEFAULT_FROM_AGO_MS,
@@ -792,7 +800,7 @@ fn custom_range(ui: &mut Ui, state: &mut ActivityState, input: &ActivityInput) {
         );
         bound(
             ui,
-            "To",
+            tr!("To"),
             to_id(),
             &mut state.to_text,
             default_to,
@@ -803,7 +811,7 @@ fn custom_range(ui: &mut Ui, state: &mut ActivityState, input: &ActivityInput) {
     if inverted {
         caption(
             ui,
-            "The start is after the end, so nothing matches.",
+            tr!("The start is after the end, so nothing matches."),
             kit::ORANGE,
         );
     }
@@ -828,9 +836,11 @@ fn bound(
     ));
     if text.is_empty() {
         let (rect, response) = ui.allocate_exact_size(vec2(DATE_FIELD_WIDTH, 24.0), Sense::click());
-        let response =
-            crate::ui::accessibility::label(response, format!("{label}: no limit. Set one"))
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let response = crate::ui::accessibility::label(
+            response,
+            tr!("{label}: no limit. Set one", label = label),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
         let frame = kit::field_frame(false);
         ui.painter().rect_filled(rect, 6.0, frame.fill);
         ui.painter().rect_stroke(
@@ -841,7 +851,7 @@ fn bound(
         );
         let galley = kit::galley(
             ui,
-            "No limit",
+            tr!("No limit"),
             12.0,
             kit::REGULAR,
             theme::text_tertiary(),
@@ -870,7 +880,7 @@ fn bound(
             Icon::Xmark,
             24.0,
             theme::text_secondary(),
-            "Remove this limit",
+            tr!("Remove this limit"),
         )
         .clicked()
         {
@@ -888,27 +898,33 @@ fn summary(ui: &mut Ui, state: &mut ActivityState, input: &ActivityInput, view: 
         ui.set_min_height(20.0);
         let all = input.entries.len();
         let mut text = if view.filter.is_active() {
-            format!("{} of {} {}", view.matching.len(), all, noun(all))
+            tr_n!(
+                all,
+                "{matching} of {count} entry",
+                "{matching} of {count} entries",
+                matching = view.matching.len()
+            )
         } else {
-            format!("{all} {}", noun(all))
+            tr_n!(all, "{count} entry", "{count} entries")
         };
         if input.unreadable > 0 {
-            text.push_str(&format!(" · {} could not be read", input.unreadable));
+            text.push_str(" · ");
+            text.push_str(&tr_n!(
+                input.unreadable,
+                "{count} could not be read",
+                "{count} could not be read"
+            ));
         }
         caption(ui, text, theme::text_secondary());
         if view.filter.is_active() {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if quiet_link(ui, "Clear filters").clicked() {
+                if quiet_link(ui, tr!("Clear filters")).clicked() {
                     state.clear_filters(ui.ctx());
                     state.page = 0;
                 }
             });
         }
     });
-}
-
-fn noun(count: usize) -> &'static str {
-    if count == 1 { "entry" } else { "entries" }
 }
 
 /// The page of rows, or the reason there are none.
@@ -927,17 +943,17 @@ fn list(
                 if input.entries.is_empty() {
                     caption(
                         ui,
-                        "Nothing yet. Calls from connected clients appear here.",
+                        tr!("Nothing yet. Calls from connected clients appear here."),
                         theme::text_secondary(),
                     );
                 } else {
                     caption(
                         ui,
-                        "No entries match these filters.",
+                        tr!("No entries match these filters."),
                         theme::text_secondary(),
                     );
                     ui.add_space(4.0);
-                    if quiet_link(ui, "Clear filters").clicked() {
+                    if quiet_link(ui, tr!("Clear filters")).clicked() {
                         state.clear_filters(ui.ctx());
                         state.page = 0;
                     }
@@ -980,7 +996,7 @@ fn pager(ui: &mut Ui, paging: &Paging) -> i32 {
                     Icon::ChevronRight,
                     24.0,
                     theme::text_primary(),
-                    "Next page (Page Down)",
+                    tr!("Next page (Page Down)"),
                 )
                 .clicked()
                 {
@@ -988,7 +1004,11 @@ fn pager(ui: &mut Ui, paging: &Paging) -> i32 {
                 }
             });
             ui.label(kit::text(
-                format!("Page {} of {}", paging.page + 1, paging.pages),
+                tr!(
+                    "Page {page} of {pages}",
+                    page = paging.page + 1,
+                    pages = paging.pages
+                ),
                 kit::size::CAPTION + 0.5,
                 kit::REGULAR,
                 theme::text_secondary(),
@@ -999,7 +1019,7 @@ fn pager(ui: &mut Ui, paging: &Paging) -> i32 {
                     Icon::ChevronLeft,
                     24.0,
                     theme::text_primary(),
-                    "Previous page (Page Up)",
+                    tr!("Previous page (Page Up)"),
                 )
                 .clicked()
                 {

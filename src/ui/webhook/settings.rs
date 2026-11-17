@@ -2,6 +2,7 @@
 //! to. A pure view returning `WebhookSettingsAction`s; the host owns the store, sends the
 //! test (through the same `deliver` alerts use, in test mode) and feeds the result back.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::webhook::{
     EndpointId, WebhookDeliveryError, WebhookDeliveryResult, WebhookEndpoint,
 };
@@ -64,11 +65,11 @@ impl WebhookTestState {
 
     pub fn title(&self) -> &'static str {
         match self {
-            Self::NotTested => "Not tested",
-            Self::Testing => "Testing…",
-            Self::Delivered { .. } => "Delivered",
-            Self::Failed { .. } => "Failed",
-            Self::TimedOut { .. } => "Timed out",
+            Self::NotTested => tr!("Not tested"),
+            Self::Testing => tr!("Testing…"),
+            Self::Delivered { .. } => tr!("Delivered"),
+            Self::Failed { .. } => tr!("Failed"),
+            Self::TimedOut { .. } => tr!("Timed out"),
         }
     }
 
@@ -83,7 +84,7 @@ impl WebhookTestState {
                 status.map(|s| format!("HTTP {s}")),
                 milliseconds(*duration_secs),
             )),
-            Self::TimedOut { duration_secs } => Some(format!("{duration_secs:.1} s")),
+            Self::TimedOut { duration_secs } => Some(seconds(*duration_secs)),
             Self::Failed {
                 error,
                 status,
@@ -93,18 +94,21 @@ impl WebhookTestState {
                     status.map(|s| format!("HTTP {s}")),
                     milliseconds(*duration_secs),
                 ),
-                WebhookDeliveryError::NetworkFailure => "Could not connect".to_owned(),
+                WebhookDeliveryError::NetworkFailure => tr!("Could not connect").to_owned(),
                 WebhookDeliveryError::InvalidUrl
                 | WebhookDeliveryError::UnsupportedScheme
-                | WebhookDeliveryError::UnsupportedPort => "Invalid address".to_owned(),
+                | WebhookDeliveryError::UnsupportedPort => tr!("Invalid address").to_owned(),
                 WebhookDeliveryError::SecretUnavailable => {
-                    format!("Secret not found {}", crate::platform::in_secret_store())
+                    tr!(
+                        "Secret not found {location}",
+                        location = crate::platform::in_secret_store()
+                    )
                 }
-                WebhookDeliveryError::InvalidHeader => "Invalid header".to_owned(),
-                WebhookDeliveryError::SecretInHost => "Secret can't be in the host".to_owned(),
-                WebhookDeliveryError::MissingEndpoint => "Webhook not found".to_owned(),
-                WebhookDeliveryError::DisabledEndpoint => "Webhook is off".to_owned(),
-                WebhookDeliveryError::Timeout => format!("{duration_secs:.1} s"),
+                WebhookDeliveryError::InvalidHeader => tr!("Invalid header").to_owned(),
+                WebhookDeliveryError::SecretInHost => tr!("Secret can't be in the host").to_owned(),
+                WebhookDeliveryError::MissingEndpoint => tr!("Webhook not found").to_owned(),
+                WebhookDeliveryError::DisabledEndpoint => tr!("Webhook is off").to_owned(),
+                WebhookDeliveryError::Timeout => seconds(*duration_secs),
             }),
         }
     }
@@ -119,7 +123,11 @@ impl WebhookTestState {
 }
 
 fn milliseconds(duration_secs: f64) -> String {
-    format!("{} ms", (duration_secs * 1000.0).round() as i64)
+    tr!("{ms} ms", ms = (duration_secs * 1000.0).round() as i64)
+}
+
+fn seconds(duration_secs: f64) -> String {
+    tr!("{secs} s", secs = format!("{duration_secs:.1}"))
 }
 
 fn join(status: Option<String>, timing: String) -> String {
@@ -210,10 +218,10 @@ impl WebhookSettingsState {
 /// The delete confirmation's wording, with a usage count.
 pub fn delete_message(references: usize) -> String {
     match references {
-        0 => "This webhook isn’t used by any alert.".to_owned(),
-        1 => "This webhook is currently used by 1 alert. Deleting it will stop webhook delivery for that alert."
-            .to_owned(),
-        count => format!(
+        0 => tr!("This webhook isn’t used by any alert.").to_owned(),
+        count => tr_n!(
+            count,
+            "This webhook is currently used by {count} alert. Deleting it will stop webhook delivery for that alert.",
             "This webhook is currently used by {count} alerts. Deleting it will stop webhook delivery for those alerts."
         ),
     }
@@ -243,10 +251,10 @@ pub fn body(
             ui,
             Icon::TriangleFill,
             kit::ORANGE,
-            "Saved webhooks could not be read",
-            Some(
-                "Changes are turned off so nothing is overwritten. Restart DegenView to try again.",
-            ),
+            tr!("Saved webhooks could not be read"),
+            Some(tr!(
+                "Changes are turned off so nothing is overwritten. Restart DegenView to try again."
+            )),
             None,
         );
         ui.add_space(18.0);
@@ -254,15 +262,15 @@ pub fn body(
 
     section(
         ui,
-        "Endpoints",
-        Some(
-            "Each alert chooses which of these it posts to. Turning one off pauses it everywhere.",
-        ),
+        tr!("Endpoints"),
+        Some(tr!(
+            "Each alert chooses which of these it posts to. Turning one off pauses it everywhere."
+        )),
         |ui| {
             if input.endpoints.is_empty() {
                 card(ui, |ui| {
                     ui.label(kit::text(
-                        "No webhooks yet. Add one to start sending alerts to your own server.",
+                        tr!("No webhooks yet. Add one to start sending alerts to your own server."),
                         kit::size::SUBHEADLINE + 1.0,
                         kit::REGULAR,
                         theme::text_secondary(),
@@ -279,7 +287,7 @@ pub fn body(
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 12.0;
-                if kit::push_button(ui, Some(Icon::Plus), "Add Webhook", !input.load_failed)
+                if kit::push_button(ui, Some(Icon::Plus), tr!("Add Webhook"), !input.load_failed)
                     .clicked()
                 {
                     state.editor = Some(WebhookEditorState::new_blank());
@@ -293,10 +301,10 @@ pub fn body(
 
     section(
         ui,
-        "Test message",
-        Some(
-            "Sent by each Test button. Valid JSON goes out as application/json, anything else as text/plain.",
-        ),
+        tr!("Test message"),
+        Some(tr!(
+            "Sent by each Test button. Valid JSON goes out as application/json, anything else as text/plain."
+        )),
         |ui| {
             card(ui, |ui| {
                 ui.add(
@@ -315,13 +323,10 @@ pub fn body(
         ui,
         Icon::InfoCircle,
         theme::text_secondary(),
-        "How it works",
-        Some(&format!(
-            "Alerts send their final message as the request body. A secret is kept {} and added \
-             to the URL or a header where you place it. Each alert triggers one attempt per webhook, \
-             with a 3 second limit and no retries, so a slow or failing server can never send the \
-             same message twice.",
-            crate::platform::in_secret_store()
+        tr!("How it works"),
+        Some(&tr!(
+            "Alerts send their final message as the request body. A secret is kept {location} and added to the URL or a header where you place it. Each alert triggers one attempt per webhook, with a 3 second limit and no retries, so a slow or failing server can never send the same message twice.",
+            location = crate::platform::in_secret_store()
         )),
         None,
     );
@@ -399,7 +404,7 @@ fn name_line(ui: &mut egui::Ui, endpoint: &WebhookEndpoint) {
         if !endpoint.is_enabled {
             let text = kit::galley(
                 ui,
-                "Off",
+                tr!("Off"),
                 kit::size::CAPTION,
                 kit::SEMIBOLD,
                 theme::text_secondary(),
@@ -414,7 +419,7 @@ fn name_line(ui: &mut egui::Ui, endpoint: &WebhookEndpoint) {
                 text,
                 theme::text_secondary(),
             );
-            response.on_hover_text("Disabled: alerts skip this webhook");
+            response.on_hover_text(tr!("Disabled: alerts skip this webhook"));
         }
     });
 }
@@ -449,17 +454,14 @@ fn address_line(ui: &mut egui::Ui, input: &WebhookSettingsInput, endpoint: &Webh
         )
         .on_hover_text(&endpoint.url);
         if (input.has_secret)(endpoint.id) {
-            icons::inline(ui, Icon::LockFill, 10.0, theme::text_secondary()).on_hover_text(
-                format!("Uses a secret kept {}", crate::platform::in_secret_store()),
-            );
+            icons::inline(ui, Icon::LockFill, 10.0, theme::text_secondary()).on_hover_text(tr!(
+                "Uses a secret kept {location}",
+                location = crate::platform::in_secret_store()
+            ));
         }
         if !endpoint.headers.is_empty() {
             ui.label(kit::text(
-                if endpoint.headers.len() == 1 {
-                    "1 header".to_owned()
-                } else {
-                    format!("{} headers", endpoint.headers.len())
-                },
+                tr_n!(endpoint.headers.len(), "{count} header", "{count} headers"),
                 kit::size::CAPTION,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -516,8 +518,10 @@ fn test_button(
 ) {
     if test == WebhookTestState::Testing {
         ui.add(LoadingIndicator::new().size(14.0));
-    } else if kit::push_button(ui, None, "Test", true)
-        .on_hover_text("Send the test payload to this webhook, even if it is disabled")
+    } else if kit::push_button(ui, None, tr!("Test"), true)
+        .on_hover_text(tr!(
+            "Send the test payload to this webhook, even if it is disabled"
+        ))
         .clicked()
     {
         state
@@ -544,7 +548,7 @@ fn more_menu(
         slot,
         egui::Id::new(("webhook-more", endpoint.id)),
         Icon::Ellipsis,
-        &format!("More actions for {}", endpoint.name),
+        &tr!("More actions for {name}", name = endpoint.name),
         true,
         true,
     );
@@ -552,9 +556,9 @@ fn more_menu(
         ui,
         &response,
         egui::RectAlign::BOTTOM_END,
-        &["Edit\u{2026}", "Disable", "Delete\u{2026}"],
+        &[tr!("Edit…"), tr!("Disable"), tr!("Enable"), tr!("Delete…")],
         |ui| {
-            if kit::menu_item(ui, Icon::Pencil, "Edit…", true, false) {
+            if kit::menu_item(ui, Icon::Pencil, tr!("Edit…"), true, false) {
                 state.editor = Some(WebhookEditorState::editing(
                     endpoint,
                     (input.secret_for_edit)(endpoint.id),
@@ -562,16 +566,16 @@ fn more_menu(
                 ui.close();
             }
             let (icon, label) = if endpoint.is_enabled {
-                (Icon::PauseFill, "Disable")
+                (Icon::PauseFill, tr!("Disable"))
             } else {
-                (Icon::PlayFill, "Enable")
+                (Icon::PlayFill, tr!("Enable"))
             };
             if kit::menu_item(ui, icon, label, true, false) {
                 actions.push(WebhookSettingsAction::Toggle(endpoint.id));
                 ui.close();
             }
             kit::menu_separator(ui);
-            if kit::menu_item(ui, Icon::Trash, "Delete…", true, true) {
+            if kit::menu_item(ui, Icon::Trash, tr!("Delete…"), true, true) {
                 state.pending_delete = Some(endpoint.id);
                 ui.close();
             }
@@ -592,7 +596,7 @@ fn delete_dialog(
         state.pending_delete = None;
         return;
     };
-    let title = format!("Delete “{}”?", endpoint.name);
+    let title = tr!("Delete “{name}”?", name = endpoint.name);
     let message = delete_message((input.reference_count)(id));
     match kit::confirm(
         ctx,
@@ -601,7 +605,7 @@ fn delete_dialog(
             icon: Icon::Trash,
             title: &title,
             message: &message,
-            destructive: "Delete",
+            destructive: tr!("Delete"),
         },
     ) {
         Some(kit::ConfirmOutcome::Confirmed) => {
@@ -746,6 +750,78 @@ mod tests {
             created_at_ms: 0,
             updated_at_ms: 0,
         }
+    }
+
+    /// The page and the editor sheet in the pseudo-locale, in both themes: text that shows without
+    /// brackets was never put through `tr!`, and a cut label shows its missing `]`. With
+    /// `DEGENVIEW_GALLERY_DIR` set the pictures are written out to look at.
+    #[test]
+    fn the_page_and_the_sheet_draw_in_the_pseudo_locale() {
+        use crate::i18n::{Locale, with_locale};
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        use crate::ui::theme::AppTheme;
+        let _theme = crate::ui::theme::RestoreDefaultTheme;
+        let mut first = endpoint(1, "Alerts", "https://hooks.example.com/alerts", true);
+        first.headers.push(crate::model::webhook::WebhookHeader {
+            id: 1,
+            name: "X-Source".into(),
+            value: "degenview".into(),
+        });
+        let endpoints = vec![
+            first,
+            endpoint(3, "Staging", "https://staging.example.com/alerts", false),
+        ];
+        let has_secret = |id: EndpointId| id == 1;
+        let secret_for_edit = |_: EndpointId| None;
+        let reference_count = |_: EndpointId| 2;
+        with_locale(Locale::Pseudo, || {
+            for (name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+                for sheet in [false, true] {
+                    let mut screen =
+                        Screen::new(Vec2::new(616.0, if sheet { 900.0 } else { 760.0 }));
+                    crate::ui::theme::apply(&screen.ctx, app_theme);
+                    let mut state = WebhookSettingsState::default();
+                    state.set_test_result(&WebhookDeliveryResult {
+                        endpoint_id: 3,
+                        timestamp_ms: 0,
+                        duration_secs: 0.02,
+                        status_code: None,
+                        error: Some(WebhookDeliveryError::NetworkFailure),
+                    });
+                    if sheet {
+                        state.editor = Some(WebhookEditorState::editing(&endpoints[0], None));
+                    }
+                    let mut last = None;
+                    for _ in 0..3 {
+                        last = Some(screen.run(Vec::new(), |ui| {
+                            let input = WebhookSettingsInput {
+                                endpoints: &endpoints,
+                                has_secret: &has_secret,
+                                secret_for_edit: &secret_for_edit,
+                                reference_count: &reference_count,
+                                load_failed: false,
+                            };
+                            egui::Frame::new()
+                                .inner_margin(egui::Margin::same(24))
+                                .show(ui, |ui| {
+                                    body(ui, &mut state, &input);
+                                });
+                        }));
+                    }
+                    let output = last.expect("a frame");
+                    assert!(!output.shapes.is_empty(), "{name}: nothing drew");
+                    if gallery_dir().is_some() {
+                        screen.save(
+                            &format!(
+                                "webhooks-{}-pseudo-{name}",
+                                if sheet { "sheet" } else { "page" }
+                            ),
+                            output,
+                        );
+                    }
+                }
+            }
+        });
     }
 
     /// The page with endpoints in each state, and the editor sheet, in both themes; with

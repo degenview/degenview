@@ -3,6 +3,7 @@
 
 use crate::format::civil_from_days;
 use crate::host::update::{BUILD_ID, Phase, UpdateHost, UpdateView};
+use crate::i18n::tr;
 use crate::service::update::check::Channel;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
@@ -16,7 +17,6 @@ pub const LICENSE: &str = "GPL-3.0-only";
 pub const REPOSITORY_URL: &str = "https://github.com/degenview/degenview";
 pub const DONATION_URL: &str = crate::ui::window::tab_bar::COFFEE_URL;
 pub const DOCS_URL: &str = crate::ui::window::tab_bar::DOCS_URL;
-const COPYRIGHT: &str = "Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only.";
 
 const MAX_WIDTH: f32 = 480.0;
 const ROW_HEIGHT: f32 = 44.0;
@@ -54,7 +54,7 @@ fn pick_build_time(modified: Option<i64>, compiled: Option<i64>) -> Option<i64> 
 pub fn date_label(ms: i64) -> String {
     let local = ms + crate::service::system::timezone::local_utc_offset_secs(ms) * 1_000;
     let (year, month, day) = civil_from_days(local.div_euclid(86_400_000));
-    crate::i18n::tr!(
+    tr!(
         "{day} {month} {year}",
         day = day,
         month = crate::i18n::calendar::month_abbreviation(month),
@@ -65,8 +65,12 @@ pub fn date_label(ms: i64) -> String {
 /// The header's second line: "Version 0.1.0 - 11 Oct 2026".
 pub fn header_subtitle(build_ms: Option<i64>) -> String {
     match build_ms {
-        Some(ms) => format!("Version {VERSION} - {}", date_label(ms)),
-        None => format!("Version {VERSION}"),
+        Some(ms) => tr!(
+            "Version {version} - {date}",
+            version = VERSION,
+            date = date_label(ms)
+        ),
+        None => tr!("Version {version}", version = VERSION),
     }
 }
 
@@ -126,7 +130,7 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 ui,
                                 Icon::DocText,
                                 Color32::from_rgb(48, 176, 199),
-                                "License",
+                                tr!("License"),
                                 |ui| {
                                     ui.label(kit::text(
                                         LICENSE,
@@ -141,7 +145,7 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 ui,
                                 Icon::InfoCircle,
                                 Color32::from_rgb(94, 92, 230),
-                                "Build Info",
+                                tr!("Build Info"),
                                 |ui| {
                                     copy_button(ui, build);
                                     ui.add_space(6.0);
@@ -163,8 +167,8 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 ui,
                                 egui::include_image!("../../../assets/brand/docs.svg"),
                                 Color32::from_rgb(24, 23, 23),
-                                "Documentation",
-                                "User guide for every feature",
+                                tr!("Documentation"),
+                                tr!("User guide for every feature"),
                                 DOCS_URL,
                             );
                             divider(ui);
@@ -173,7 +177,7 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 egui::include_image!("../../../assets/brand/github.svg"),
                                 Color32::from_rgb(24, 23, 23),
                                 "GitHub",
-                                "Source code, issues and releases",
+                                tr!("Source code, issues and releases"),
                                 REPOSITORY_URL,
                             );
                             divider(ui);
@@ -181,15 +185,15 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 ui,
                                 egui::include_image!("../../../assets/brand/buymeacoffee.png"),
                                 Color32::WHITE,
-                                "Support DegenView",
-                                "Buy me a coffee. It keeps development going",
+                                tr!("Support DegenView"),
+                                tr!("Buy me a coffee. It keeps development going"),
                                 DONATION_URL,
                             );
                         });
                         ui.add_space(24.0);
                         let copyright = kit::galley(
                             ui,
-                            COPYRIGHT,
+                            tr!("Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only."),
                             kit::size::CAPTION + 0.5,
                             kit::REGULAR,
                             theme::text_tertiary(),
@@ -232,46 +236,49 @@ const UP_TO_DATE: Color32 = Color32::from_rgb(48, 176, 112);
 fn card(view: &UpdateView) -> Card {
     let (headline, detail, tint, glyph) = match &view.phase {
         Phase::Unchecked | Phase::Checking => (
-            "Checking for updates…".to_owned(),
-            format!("You're on version {VERSION}."),
+            tr!("Checking for updates…").to_owned(),
+            tr!("You're on version {version}.", version = VERSION),
             NEUTRAL,
             Glyph::Spinner,
         ),
         Phase::UpToDate => (
-            "DegenView is up to date".to_owned(),
-            format!("You're on the latest version, {VERSION}."),
+            tr!("DegenView is up to date").to_owned(),
+            tr!(
+                "You're on the latest version, {version}.",
+                version = VERSION
+            ),
             UP_TO_DATE,
             Glyph::Icon(Icon::Check),
         ),
         Phase::Available { version, note, .. } => (
-            format!("DegenView {version} is available"),
+            tr!("DegenView {version} is available", version = version),
             note.clone()
-                .unwrap_or_else(|| format!("You're on version {VERSION}.")),
+                .unwrap_or_else(|| tr!("You're on version {version}.", version = VERSION)),
             kit::ORANGE,
             Glyph::Icon(Icon::ArrowUp),
         ),
         Phase::Installing(progress) => (
-            "Updating DegenView…".to_owned(),
+            tr!("Updating DegenView…").to_owned(),
             progress.stage.label().to_owned(),
             kit::ORANGE,
             Glyph::Spinner,
         ),
         Phase::Ready { version } => (
-            format!("DegenView {version} is ready"),
-            "Restart DegenView to finish updating.".to_owned(),
+            tr!("DegenView {version} is ready", version = version),
+            tr!("Restart DegenView to finish updating.").to_owned(),
             kit::ORANGE,
             Glyph::Icon(Icon::Cycle),
         ),
         Phase::InstallFailed {
             version, message, ..
         } => (
-            format!("Couldn't update to DegenView {version}"),
+            tr!("Couldn't update to DegenView {version}", version = version),
             message.clone(),
             kit::RED,
             Glyph::Mark("!"),
         ),
         Phase::CheckFailed(message) => (
-            "Couldn't check for updates".to_owned(),
+            tr!("Couldn't check for updates").to_owned(),
             message.clone(),
             kit::RED,
             Glyph::Mark("!"),
@@ -298,11 +305,13 @@ fn primary_action(view: &UpdateView) -> Option<(&'static str, Action)> {
     match &view.phase {
         Phase::Available {
             installable: true, ..
-        } => Some(("Update Now", Action::Install)),
-        Phase::Available { url, .. } => Some(("View Release", Action::OpenRelease(url.clone()))),
-        Phase::Ready { .. } => Some(("Restart to Update", Action::Restart)),
-        Phase::InstallFailed { .. } => Some(("Try Again", Action::Install)),
-        Phase::CheckFailed(_) => Some(("Try Again", Action::CheckAgain)),
+        } => Some((tr!("Update Now"), Action::Install)),
+        Phase::Available { url, .. } => {
+            Some((tr!("View Release"), Action::OpenRelease(url.clone())))
+        }
+        Phase::Ready { .. } => Some((tr!("Restart to Update"), Action::Restart)),
+        Phase::InstallFailed { .. } => Some((tr!("Try Again"), Action::Install)),
+        Phase::CheckFailed(_) => Some((tr!("Try Again"), Action::CheckAgain)),
         Phase::Unchecked | Phase::Checking | Phase::UpToDate | Phase::Installing(_) => None,
     }
 }
@@ -325,10 +334,10 @@ fn release_link(view: &UpdateView) -> Option<&str> {
 fn ago(elapsed: Duration) -> String {
     let seconds = elapsed.as_secs();
     match seconds {
-        0..60 => "just now".to_owned(),
-        60..3_600 => format!("{} min ago", seconds / 60),
-        3_600..86_400 => format!("{} h ago", seconds / 3_600),
-        _ => format!("{} d ago", seconds / 86_400),
+        0..60 => tr!("just now").to_owned(),
+        60..3_600 => tr!("{minutes} min ago", minutes = seconds / 60),
+        3_600..86_400 => tr!("{hours} h ago", hours = seconds / 3_600),
+        _ => tr!("{days} d ago", days = seconds / 86_400),
     }
 }
 
@@ -339,10 +348,10 @@ fn footer_status(view: &UpdateView) -> Option<String> {
         return None;
     }
     if view.checking {
-        return Some("Checking…".to_owned());
+        return Some(tr!("Checking…").to_owned());
     }
     Some(match view.checked_ago {
-        Some(elapsed) => format!("Checked {}", ago(elapsed)),
+        Some(elapsed) => tr!("Checked {ago}", ago = ago(elapsed)),
         None => String::new(),
     })
 }
@@ -526,7 +535,12 @@ fn footer(
                 ui.add_space(14.0);
             }
             if let Some(url) = release_link(view)
-                && text_link(ui, "Release Notes", "Open the release page on GitHub").clicked()
+                && text_link(
+                    ui,
+                    tr!("Release Notes"),
+                    tr!("Open the release page on GitHub"),
+                )
+                .clicked()
             {
                 ui.ctx().open_url(egui::OpenUrl::new_tab(url));
             }
@@ -575,14 +589,14 @@ fn channel_warning(ui: &mut Ui) {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 3.0;
                     ui.label(kit::text(
-                        "Pre-release channel",
+                        tr!("Pre-release channel"),
                         kit::size::SUBHEADLINE + 1.0,
                         kit::SEMIBOLD,
                         theme::text_primary(),
                     ));
                     ui.add(
                         egui::Label::new(kit::text(
-                            "Release candidates preview the next version and may be less stable.",
+                            tr!("Release candidates preview the next version and may be less stable."),
                             kit::size::SUBHEADLINE + 1.0,
                             kit::REGULAR,
                             theme::text_secondary(),
@@ -599,8 +613,8 @@ fn channel_warning(ui: &mut Ui) {
 fn refresh_button(ui: &mut Ui, busy: bool) -> egui::Response {
     let sense = if busy { Sense::hover() } else { Sense::click() };
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(22.0), sense);
-    let response = crate::ui::accessibility::label(response, "Check Again")
-        .on_hover_text("Look for a newer version");
+    let response = crate::ui::accessibility::label(response, tr!("Check Again"))
+        .on_hover_text(tr!("Look for a newer version"));
     let hot = !busy && response.hovered();
     if hot {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -779,9 +793,9 @@ fn copy_button(ui: &mut Ui, build: Option<i64>) {
         .data(|data| data.get_temp::<f64>(copied_at))
         .is_some_and(|at| now - at < COPIED_FOR.as_secs_f64());
     let (icon, label, color) = if copied {
-        (Icon::Check, "Copied", kit::GREEN)
+        (Icon::Check, tr!("Copied"), kit::GREEN)
     } else {
-        (Icon::CopyDoc, "Copy", kit::ACCENT)
+        (Icon::CopyDoc, tr!("Copy"), kit::ACCENT)
     };
     let text = kit::galley(
         ui,
@@ -793,8 +807,8 @@ fn copy_button(ui: &mut Ui, build: Option<i64>) {
     );
     let size = vec2(12.0 + 5.0 + text.size().x + 12.0, 22.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let response = crate::ui::accessibility::label(response, "Copy build info")
-        .on_hover_text("Copy the version and build date for a bug report")
+    let response = crate::ui::accessibility::label(response, tr!("Copy build info"))
+        .on_hover_text(tr!("Copy the version and build date for a bug report"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     if response.hovered() {
         ui.painter().rect_filled(rect, 5.0, kit::primary(0.06));
@@ -833,9 +847,12 @@ fn link_row(
 ) {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT + 6.0), Sense::click());
-    let response = crate::ui::accessibility::label(response, format!("{title}, {hint}"))
-        .on_hover_text(url)
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let response = crate::ui::accessibility::label(
+        response,
+        tr!("{title}, {hint}", title = title, hint = hint),
+    )
+    .on_hover_text(url)
+    .on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
     if hovered {
         ui.painter().rect_filled(rect, 0.0, theme::quaternary(0.7));

@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use degenview_brokers::{Decimal, OrderId, Side};
 use eframe::egui::{self, Color32, Id};
 
+use crate::i18n::{tr, tr_n};
 use crate::model::broker::ticket::{self as rules};
 use crate::trading::backend::TradingBackend;
 use crate::trading::broker::commands::{Answer, BrokerCommands, CancelReport, HistoryChoice};
@@ -22,6 +23,7 @@ use crate::trading::edit::{
     EditEvent, EditForm, EditFrame, EditSession, EditVenue, EditView, ReviewLine, Step,
 };
 use crate::trading::model::{AccountStats, BackendState, FillRow, OrderRow, Page};
+use crate::ui::broker::chart_trading::side_tag;
 use crate::ui::icons::Icon;
 use crate::ui::paper::grid::{self as grid, Col, col};
 use crate::ui::paper::tables::empty;
@@ -45,10 +47,10 @@ pub enum BrokerTab {
 impl BrokerTab {
     fn title(self) -> &'static str {
         match self {
-            Self::Orders => "Orders",
-            Self::History => "History",
-            Self::Fills => "Fills",
-            Self::Balances => "Balances",
+            Self::Orders => tr!("Orders"),
+            Self::History => tr!("History"),
+            Self::Fills => tr!("Fills"),
+            Self::Balances => tr!("Balances"),
         }
     }
 
@@ -174,14 +176,18 @@ fn side_color(side: Side) -> Color32 {
 }
 
 fn side_word(side: Side) -> &'static str {
-    if side == Side::Buy { "Buy" } else { "Sell" }
+    if side == Side::Buy {
+        tr!("Buy")
+    } else {
+        tr!("Sell")
+    }
 }
 
 /// The size column: the base amount, or "25 (spend)" for a market buy sized by an amount to spend.
 fn size_text(row: &OrderRow) -> String {
     match (row.size, row.spend) {
         (Some(size), _) => rules::display(size),
-        (None, Some(spend)) => format!("{} (spend)", rules::display(spend)),
+        (None, Some(spend)) => tr!("{amount} (spend)", amount = rules::display(spend)),
         (None, None) => "—".to_owned(),
     }
 }
@@ -344,9 +350,9 @@ pub fn ui(
         || (connection == BackendState::Connecting && backend.account().is_none())
     {
         let message = if connection == BackendState::Connecting {
-            "Connecting…"
+            tr!("Connecting…")
         } else {
-            "Connect this broker in Settings ▸ Brokers to trade here."
+            tr!("Connect this broker in Settings ▸ Brokers to trade here.")
         };
         if empty_with_settings(ui, message) {
             actions.push(PanelEvent::OpenSettings);
@@ -392,9 +398,9 @@ fn empty_with_settings(ui: &mut egui::Ui, message: &str) -> bool {
     crate::ui::paper::tables::empty_with_action(
         ui,
         Icon::ArrowLeftRight,
-        "Live trading",
+        tr!("Live trading"),
         message,
-        Some("Open Settings"),
+        Some(tr!("Open Settings")),
     )
 }
 
@@ -433,7 +439,7 @@ fn header(
             .map(|account| account.label)
             .unwrap_or_default(),
         sub: None,
-        tip: "The account orders go to".to_owned(),
+        tip: tr!("The account orders go to").to_owned(),
         rows: Vec::new(),
         add: None,
     };
@@ -446,7 +452,7 @@ fn header(
             overlay: None,
             can_order: backend.can_order(),
             more: &[],
-            settings_tip: "Brokers settings",
+            settings_tip: tr!("Brokers settings"),
         },
         &mut state.tab,
     );
@@ -467,7 +473,7 @@ fn poll_flights(state: &mut BrokerPanelState) {
             Flight::Retry(task) => task.poll().map(|answer| {
                 answer
                     .clone()
-                    .map(|()| ("The order was found and is placed.".to_owned(), false))
+                    .map(|()| (tr!("The order was found and is placed.").to_owned(), false))
             }),
         };
         if let Some(said) = said {
@@ -502,7 +508,7 @@ fn orders_tab(
             OrderAction::Check(id) => {
                 if let Some(commands) = commands {
                     state.flights.push(Flight::Retry(commands.retry(&id)));
-                    state.say("Looking the order up at the broker…", false);
+                    state.say(tr!("Looking the order up at the broker…"), false);
                 }
             }
             OrderAction::Edit(id) => {
@@ -551,11 +557,11 @@ fn request_cancel(
     let many = ids.len();
     state.cancel_ask = Some(CancelAsk {
         title: if many == 1 {
-            "Cancel this order?".to_owned()
+            tr!("Cancel this order?").to_owned()
         } else {
-            format!("Cancel {many} orders?")
+            tr!("Cancel {count} orders?", count = many)
         },
-        message: "The broker is asked to cancel. An order can still fill before the cancel reaches it, and it stays listed until the broker confirms."
+        message: tr!("The broker is asked to cancel. An order can still fill before the cancel reaches it, and it stays listed until the broker confirms.")
             .to_owned(),
         ids,
     });
@@ -573,7 +579,7 @@ fn send_cancel(
         state.selected.remove(id);
     }
     state.flights.push(Flight::Cancel(commands.cancel(ids)));
-    state.say("Asking the broker to cancel…", false);
+    state.say(tr!("Asking the broker to cancel…"), false);
 }
 
 // ---- History, fills, balances ---------------------------------------------------------------------
@@ -592,11 +598,11 @@ fn history_tab(
                 ui,
                 Id::new("broker-history-filter"),
                 &[
-                    (HistoryChoice::All, "All"),
-                    (HistoryChoice::Filled, "Filled"),
-                    (HistoryChoice::Cancelled, "Cancelled"),
-                    (HistoryChoice::Expired, "Expired"),
-                    (HistoryChoice::Rejected, "Rejected"),
+                    (HistoryChoice::All, tr!("All")),
+                    (HistoryChoice::Filled, tr!("Filled")),
+                    (HistoryChoice::Cancelled, tr!("Cancelled")),
+                    (HistoryChoice::Expired, tr!("Expired")),
+                    (HistoryChoice::Rejected, tr!("Rejected")),
                 ],
                 &mut state.history_choice,
             );
@@ -622,34 +628,34 @@ fn history_tab(
             empty(
                 ui,
                 Icon::List,
-                "Loading history…",
-                "Reading finished orders from the broker.",
+                tr!("Loading history…"),
+                tr!("Reading finished orders from the broker."),
             );
         } else {
             empty(
                 ui,
                 Icon::List,
-                "No finished orders",
-                "Filled, cancelled, expired and rejected orders are listed here.",
+                tr!("No finished orders"),
+                tr!("Filled, cancelled, expired and rejected orders are listed here."),
             );
         }
         return;
     }
-    const COLS: [Col; 8] = [
-        col("Time", 90.0, 0.0, false),
-        col("Market", 110.0, 1.2, false),
-        col("Side", 64.0, 0.0, false),
-        col("Type", 120.0, 1.0, false),
-        col("Price", 110.0, 1.0, true),
-        col("Filled / Size", 130.0, 1.0, true),
-        col("Status", 110.0, 0.0, false),
-        col("Fees", 90.0, 0.0, true),
+    let cols: [Col; 8] = [
+        col(tr!("Time"), 90.0, 0.0, false),
+        col(tr!("Market"), 110.0, 1.2, false),
+        col(tr!("Side"), 64.0, 0.0, false),
+        col(tr!("Type"), 120.0, 1.0, false),
+        col(tr!("Price"), 110.0, 1.0, true),
+        col(tr!("Filled / Size"), 130.0, 1.0, true),
+        col(tr!("Status"), 110.0, 0.0, false),
+        col(tr!("Fees"), 90.0, 0.0, true),
     ];
     let items = &state.history.items;
     grid::show(
         ui,
         "broker-history",
-        &COLS,
+        &cols,
         items.len(),
         |ui, row, column| {
             let order = &items[row];
@@ -658,15 +664,7 @@ fn history_tab(
             match column {
                 0 => grid::figure(ui, &clock_time_seconds(order.created_ms), weak),
                 1 => grid::text_cell(ui, &order.market, primary),
-                2 => grid::tag(
-                    ui,
-                    if order.side == Side::Buy {
-                        "BUY"
-                    } else {
-                        "SELL"
-                    },
-                    side_color(order.side),
-                ),
+                2 => grid::tag(ui, side_tag(order.side), side_color(order.side)),
                 3 => grid::text_cell(ui, &order.kind, weak),
                 4 => grid::figure(
                     ui,
@@ -687,7 +685,7 @@ fn history_tab(
     );
     let more = state.history.cursor.is_some();
     if more
-        && kit::sheet_button(ui, "Load more", false, state.history.pending.is_none()).clicked()
+        && kit::sheet_button(ui, tr!("Load more"), false, state.history.pending.is_none()).clicked()
         && let Some(commands) = commands
     {
         let cursor = state.history.cursor.clone();
@@ -709,36 +707,28 @@ fn fills_tab(
         empty(
             ui,
             Icon::List,
-            "No fills yet",
-            "Executions of your orders are listed here.",
+            tr!("No fills yet"),
+            tr!("Executions of your orders are listed here."),
         );
         return;
     }
-    const COLS: [Col; 7] = [
-        col("Time", 90.0, 0.0, false),
-        col("Market", 110.0, 1.2, false),
-        col("Side", 64.0, 0.0, false),
-        col("Price", 110.0, 1.0, true),
-        col("Size", 120.0, 1.0, true),
-        col("Fee", 100.0, 0.0, true),
-        col("Order", 100.0, 1.0, false),
+    let cols: [Col; 7] = [
+        col(tr!("Time"), 90.0, 0.0, false),
+        col(tr!("Market"), 110.0, 1.2, false),
+        col(tr!("Side"), 64.0, 0.0, false),
+        col(tr!("Price"), 110.0, 1.0, true),
+        col(tr!("Size"), 120.0, 1.0, true),
+        col(tr!("Fee"), 100.0, 0.0, true),
+        col(tr!("Order"), 100.0, 1.0, false),
     ];
-    grid::show(ui, "broker-fills", &COLS, all.len(), |ui, row, column| {
+    grid::show(ui, "broker-fills", &cols, all.len(), |ui, row, column| {
         let fill = all[row];
         let primary = theme::text_primary();
         let weak = theme::text_secondary();
         match column {
             0 => grid::figure(ui, &clock_time_seconds(Some(fill.time_ms)), weak),
             1 => grid::text_cell(ui, &fill.market, primary),
-            2 => grid::tag(
-                ui,
-                if fill.side == Side::Buy {
-                    "BUY"
-                } else {
-                    "SELL"
-                },
-                side_color(fill.side),
-            ),
+            2 => grid::tag(ui, side_tag(fill.side), side_color(fill.side)),
             3 => grid::figure(ui, &fill.price, primary),
             4 => grid::figure(ui, &rules::display(fill.size), primary),
             5 => grid::figure(ui, &rules::display(fill.fee), weak),
@@ -747,7 +737,7 @@ fn fills_tab(
     });
     if kit::sheet_button(
         ui,
-        "Load older fills",
+        tr!("Load older fills"),
         false,
         state.fills_more.pending.is_none(),
     )
@@ -769,21 +759,21 @@ fn balances_tab(ui: &mut egui::Ui, backend: &dyn TradingBackend) {
         empty(
             ui,
             Icon::List,
-            "No balances",
-            "Assets held in this account appear here.",
+            tr!("No balances"),
+            tr!("Assets held in this account appear here."),
         );
         return;
     }
-    const COLS: [Col; 4] = [
-        col("Asset", 100.0, 1.0, false),
-        col("Available", 140.0, 1.0, true),
-        col("On hold", 140.0, 1.0, true),
-        col("Total", 140.0, 1.0, true),
+    let cols: [Col; 4] = [
+        col(tr!("Asset"), 100.0, 1.0, false),
+        col(tr!("Available"), 140.0, 1.0, true),
+        col(tr!("On hold"), 140.0, 1.0, true),
+        col(tr!("Total"), 140.0, 1.0, true),
     ];
     grid::show(
         ui,
         "broker-balances",
-        &COLS,
+        &cols,
         rows.len(),
         |ui, row, column| {
             let balance = &rows[row];
@@ -812,25 +802,24 @@ fn dialogs_with(
 ) {
     if let Some(ask) = &state.cancel_ask {
         let count = ask.ids.len();
-        let mut spec = dialog::Dialog::new(
-            Icon::Trash,
-            kit::RED,
-            &ask.title,
-            &ask.message,
-            if count == 1 {
-                "Cancel order"
-            } else {
-                "Cancel orders"
-            },
-        );
+        let confirm = tr_n!(count, "Cancel order", "Cancel orders");
+        let mut spec =
+            dialog::Dialog::new(Icon::Trash, kit::RED, &ask.title, &ask.message, &confirm);
         spec.destructive = true;
-        spec.dismiss = "Keep";
+        spec.dismiss = tr!("Keep");
         let ids = ask.ids.clone();
         let preview: Vec<String> = ids
             .iter()
             .take(8)
             .filter_map(|id| rows.iter().find(|row| &row.id == id))
-            .map(|row| format!("{} {} {}", side_word(row.side), size_text(row), row.market))
+            .map(|row| {
+                tr!(
+                    "{side} {size} {market}",
+                    side = side_word(row.side),
+                    size = size_text(row),
+                    market = row.market
+                )
+            })
             .collect();
         let outcome = dialog::show(ctx, Id::new("broker-cancel-ask"), &spec, |ui| {
             ui.add_space(10.0);
@@ -844,7 +833,7 @@ fn dialogs_with(
             }
             if count > preview.len() {
                 ui.label(kit::text(
-                    format!("and {} more", count - preview.len()),
+                    tr!("and {count} more", count = count - preview.len()),
                     kit::size::BODY,
                     kit::REGULAR,
                     theme::text_tertiary(),
@@ -918,15 +907,17 @@ fn draw_edit(ctx: &egui::Context, session: &mut EditSession) -> Vec<EditEvent> {
 /// The approval: what changes, from what to what, with the broker's figures. Nothing is sent until
 /// the user accepts.
 fn draw_review(ctx: &egui::Context, lines: &[ReviewLine]) -> Option<EditEvent> {
-    let message = "This changes the order at the broker. A new price may lose your place in the queue, and the order can fill at its old terms until the change is applied.";
+    let message = tr!(
+        "This changes the order at the broker. A new price may lose your place in the queue, and the order can fill at its old terms until the change is applied."
+    );
     let mut spec = dialog::Dialog::new(
         Icon::Pencil,
         badge::LIVE,
-        "Change live order?",
+        tr!("Change live order?"),
         message,
-        "Change order",
+        tr!("Change order"),
     );
-    spec.dismiss = "Back";
+    spec.dismiss = tr!("Back");
     spec.cautious = true;
     let outcome = dialog::show(ctx, Id::new("broker-edit-confirm"), &spec, |ui| {
         ui.add_space(12.0);
@@ -966,7 +957,7 @@ fn draw_form(ctx: &egui::Context, session: &mut EditSession, form: &EditForm) ->
         sheet::inset(ui, |ui| {
             ui.add_space(20.0);
             ui.label(kit::text(
-                "Edit order",
+                tr!("Edit order"),
                 kit::size::TITLE2 + 1.0,
                 kit::SEMIBOLD,
                 theme::text_primary(),
@@ -982,7 +973,7 @@ fn draw_form(ctx: &egui::Context, session: &mut EditSession, form: &EditForm) ->
             let (price, size) = session.fields_mut();
             kit::field(ui, form.price_title, None, "0", price, false);
             ui.add_space(12.0);
-            kit::field(ui, "Size", None, "0", size, false);
+            kit::field(ui, tr!("Size"), None, "0", size, false);
             ui.add_space(8.0);
             let red = |ui: &mut egui::Ui, text: &str, weight| {
                 ui.label(kit::text(text, kit::size::CAPTION + 0.5, weight, kit::RED));
@@ -998,7 +989,10 @@ fn draw_form(ctx: &egui::Context, session: &mut EditSession, form: &EditForm) ->
             }
             if let Some(total) = &form.broker_total {
                 ui.label(kit::text(
-                    format!("Broker's figure for the changed order: {total}"),
+                    tr!(
+                        "Broker's figure for the changed order: {total}",
+                        total = total
+                    ),
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -1007,18 +1001,19 @@ fn draw_form(ctx: &egui::Context, session: &mut EditSession, form: &EditForm) ->
             if let degenview_brokers::model::preview::PreviewGate::Failed(error) = &form.gate {
                 red(
                     ui,
-                    &format!(
-                        "The broker could not preview this change ({error}). It cannot be sent without that."
+                    &tr!(
+                        "The broker could not preview this change ({error}). It cannot be sent without that.",
+                        error = error
                     ),
                     kit::REGULAR,
                 );
                 ui.add_space(4.0);
-                if kit::push_button(ui, None, "Try again", true).clicked() {
+                if kit::push_button(ui, None, tr!("Try again"), true).clicked() {
                     events.push(EditEvent::TryAgain);
                 }
             } else if form.asking {
                 ui.label(kit::text(
-                    "Asking the broker to check this change…",
+                    tr!("Asking the broker to check this change…"),
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
                     theme::text_tertiary(),
@@ -1030,7 +1025,7 @@ fn draw_form(ctx: &egui::Context, session: &mut EditSession, form: &EditForm) ->
                     ui,
                     Icon::TriangleFill,
                     kit::RED,
-                    "Order not changed",
+                    tr!("Order not changed"),
                     Some(error),
                     None,
                 );
@@ -1040,12 +1035,12 @@ fn draw_form(ctx: &egui::Context, session: &mut EditSession, form: &EditForm) ->
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if form.sending {
                         ui.spinner();
-                    } else if kit::sheet_button(ui, "Review change", true, form.can_review)
+                    } else if kit::sheet_button(ui, tr!("Review change"), true, form.can_review)
                         .clicked()
                     {
                         review = true;
                     }
-                    if kit::sheet_button(ui, "Cancel", false, !form.sending).clicked() {
+                    if kit::sheet_button(ui, tr!("Cancel"), false, !form.sending).clicked() {
                         close = true;
                     }
                 });

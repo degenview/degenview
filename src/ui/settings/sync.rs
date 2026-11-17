@@ -5,6 +5,7 @@
 //! copy of this Mac's data is a button the user presses, with the consequence written next to it.
 
 use crate::host::sync::{SyncAction, SyncHost, SyncNotice, SyncPrompt, SyncView};
+use crate::i18n::{tr, tr_n};
 use crate::store::sync::ConflictSummary;
 use crate::sync::engine::account::AccountChoice;
 use crate::sync::engine::core::{PauseReason, Phase};
@@ -25,22 +26,22 @@ use eframe::egui;
 /// are red.
 pub fn phase_label(phase: Phase) -> (String, Tone) {
     let (text, tone) = match phase {
-        Phase::Off => ("Off", Tone::Neutral),
-        Phase::CheckingAccount => ("Checking iCloud…", Tone::Neutral),
-        Phase::NeedsSetup => ("Waiting for your OK", Tone::Warning),
-        Phase::AwaitingJoin => ("Choose how to combine data", Tone::Warning),
-        Phase::Ready => ("Ready", Tone::Neutral),
-        Phase::Syncing => ("Syncing…", Tone::Neutral),
-        Phase::UpToDate => ("Up to date", Tone::Good),
-        Phase::WaitingForNetwork => ("Waiting for the network", Tone::Neutral),
-        Phase::WaitingForAccount => ("Sign in to iCloud to sync", Tone::Warning),
+        Phase::Off => (tr!("Off"), Tone::Neutral),
+        Phase::CheckingAccount => (tr!("Checking iCloud…"), Tone::Neutral),
+        Phase::NeedsSetup => (tr!("Waiting for your OK"), Tone::Warning),
+        Phase::AwaitingJoin => (tr!("Choose how to combine data"), Tone::Warning),
+        Phase::Ready => (tr!("Ready"), Tone::Neutral),
+        Phase::Syncing => (tr!("Syncing…"), Tone::Neutral),
+        Phase::UpToDate => (tr!("Up to date"), Tone::Good),
+        Phase::WaitingForNetwork => (tr!("Waiting for the network"), Tone::Neutral),
+        Phase::WaitingForAccount => (tr!("Sign in to iCloud to sync"), Tone::Warning),
         Phase::Paused(PauseReason::AccountChanged) => {
-            ("Paused: a different Apple Account", Tone::Warning)
+            (tr!("Paused: a different Apple Account"), Tone::Warning)
         }
         Phase::Paused(PauseReason::RemoteDataDeleted) => {
-            ("Paused: iCloud data was removed", Tone::Warning)
+            (tr!("Paused: iCloud data was removed"), Tone::Warning)
         }
-        Phase::NeedsAttention => ("Needs your attention", Tone::Warning),
+        Phase::NeedsAttention => (tr!("Needs your attention"), Tone::Warning),
         Phase::Error(kind) => return (error_label(kind).to_owned(), Tone::Bad),
     };
     (text.to_owned(), tone)
@@ -48,32 +49,57 @@ pub fn phase_label(phase: Phase) -> (String, Tone) {
 
 fn error_label(kind: ErrorKind) -> &'static str {
     match kind {
-        ErrorKind::Quota => "iCloud storage is full",
-        ErrorKind::Permission => "DegenView is not allowed to use iCloud",
-        ErrorKind::AccountUnavailable => "iCloud is unavailable",
-        ErrorKind::Storage => "This Mac could not save sync data",
-        _ => "Something went wrong syncing",
+        ErrorKind::Quota => tr!("iCloud storage is full"),
+        ErrorKind::Permission => tr!("DegenView is not allowed to use iCloud"),
+        ErrorKind::AccountUnavailable => tr!("iCloud is unavailable"),
+        ErrorKind::Storage => tr!("This Mac could not save sync data"),
+        _ => tr!("Something went wrong syncing"),
     }
 }
 
 /// "3 watchlists, 2 layouts, 1 script", leaving out what is zero.
 pub fn counts_text(counts: &Counts) -> String {
     let parts = [
-        (counts.watchlists, "watchlist", "watchlists"),
-        (counts.layouts, "layout", "layouts"),
-        (counts.templates, "template", "templates"),
-        (counts.scripts, "script", "scripts"),
-        (counts.alerts, "alert", "alerts"),
-        (counts.portfolios, "portfolio", "portfolios"),
-        (counts.paper_accounts, "paper account", "paper accounts"),
+        (
+            counts.watchlists,
+            tr_n!(counts.watchlists, "{count} watchlist", "{count} watchlists"),
+        ),
+        (
+            counts.layouts,
+            tr_n!(counts.layouts, "{count} layout", "{count} layouts"),
+        ),
+        (
+            counts.templates,
+            tr_n!(counts.templates, "{count} template", "{count} templates"),
+        ),
+        (
+            counts.scripts,
+            tr_n!(counts.scripts, "{count} script", "{count} scripts"),
+        ),
+        (
+            counts.alerts,
+            tr_n!(counts.alerts, "{count} alert", "{count} alerts"),
+        ),
+        (
+            counts.portfolios,
+            tr_n!(counts.portfolios, "{count} portfolio", "{count} portfolios"),
+        ),
+        (
+            counts.paper_accounts,
+            tr_n!(
+                counts.paper_accounts,
+                "{count} paper account",
+                "{count} paper accounts"
+            ),
+        ),
     ];
     let listed: Vec<String> = parts
-        .iter()
-        .filter(|(n, _, _)| *n > 0)
-        .map(|(n, one, many)| format!("{n} {}", if *n == 1 { one } else { many }))
+        .into_iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(_, text)| text)
         .collect();
     if listed.is_empty() {
-        "nothing yet".to_owned()
+        tr!("nothing yet").to_owned()
     } else {
         listed.join(", ")
     }
@@ -108,17 +134,20 @@ pub fn conflict_groups(conflicts: &[ConflictSummary]) -> Vec<ConflictGroup> {
 }
 
 pub fn conflict_title(kind: &str, count: usize) -> String {
-    let (one, many) = match kind {
-        "paper" => ("paper trading account", "paper trading accounts"),
-        "layout" => ("layout", "layouts"),
-        "script" => ("Pine script", "Pine scripts"),
-        "ledger" => ("portfolio transaction", "portfolio transactions"),
-        _ => ("item", "items"),
-    };
-    if count == 1 {
-        format!("1 {one}")
-    } else {
-        format!("{count} {many}")
+    match kind {
+        "paper" => tr_n!(
+            count,
+            "{count} paper trading account",
+            "{count} paper trading accounts"
+        ),
+        "layout" => tr_n!(count, "{count} layout", "{count} layouts"),
+        "script" => tr_n!(count, "{count} Pine script", "{count} Pine scripts"),
+        "ledger" => tr_n!(
+            count,
+            "{count} portfolio transaction",
+            "{count} portfolio transactions"
+        ),
+        _ => tr_n!(count, "{count} item", "{count} items"),
     }
 }
 
@@ -126,27 +155,28 @@ pub fn conflict_title(kind: &str, count: usize) -> String {
 pub fn conflict_detail(kind: &str) -> &'static str {
     match kind {
         "paper" => {
-            "Changed on two Macs at once. The other version is kept as a paused copy with \u{201c}conflict from\u{201d} in its name. Use the \u{2026} menu \u{25b8} Delete Account on the copy you don't need."
+            tr!(
+                "Changed on two Macs at once. The other version is kept as a paused copy with \u{201c}conflict from\u{201d} in its name. Use the \u{2026} menu \u{25b8} Delete Account on the copy you don't need."
+            )
         }
         "layout" => {
-            "Changed on two Macs at once. The other version is kept as a layout with \u{201c}conflict from\u{201d} in its name. Delete the one you don't need."
+            tr!(
+                "Changed on two Macs at once. The other version is kept as a layout with \u{201c}conflict from\u{201d} in its name. Delete the one you don't need."
+            )
         }
         "script" => {
-            "Changed on two Macs at once. The other version is kept as a script with \u{201c}conflict from\u{201d} in its name. Delete the one you don't need in the Pine Studio."
+            tr!(
+                "Changed on two Macs at once. The other version is kept as a script with \u{201c}conflict from\u{201d} in its name. Delete the one you don't need in the Pine Studio."
+            )
         }
         "ledger" => {
-            "These would have left a portfolio with more sold than bought, so they wait until the missing transactions arrive."
+            tr!(
+                "These would have left a portfolio with more sold than bought, so they wait until the missing transactions arrive."
+            )
         }
-        _ => "Changed on two Macs at once. Both versions were kept.",
+        _ => tr!("Changed on two Macs at once. Both versions were kept."),
     }
 }
-
-const NOT_SYNCED: &str = "Never synced: market data caches, portfolio value history (rebuilt on each Mac), \
-webhook endpoints and their secrets, API keys, MCP access, and which windows and tabs are open. \
-Alerts you sync arrive switched off on your other Macs, so each one notifies from one Mac only.";
-
-const PRIVACY: &str = "Your data is stored in your private iCloud storage for DegenView, tied to \
-your Apple Account. Pine scripts are synced as written, so remove any secrets you pasted into them.";
 
 pub fn body(ui: &mut egui::Ui, sync: &SyncHost, now_ms: i64) {
     let view = sync.view();
@@ -159,7 +189,7 @@ fn show(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             ui,
             Icon::TriangleFill,
             kit::ORANGE,
-            "iCloud Sync isn't available",
+            tr!("iCloud Sync isn't available"),
             Some(reason),
             None,
         );
@@ -167,14 +197,14 @@ fn show(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
     }
     notice(ui, sync, view);
     prompts(ui, sync, view);
-    section(ui, "iCloud Sync", None, |ui| {
+    section(ui, tr!("iCloud Sync"), None, |ui| {
         card::card(
             ui,
             Icon::Cycle,
-            "Sync DegenView data with iCloud",
-            Some(
-                "Keeps your watchlists, layouts, drawings, templates, scripts, portfolios and paper-trading accounts the same on every Mac signed in to your Apple Account. Everything also stays on this Mac.",
-            ),
+            tr!("Sync DegenView data with iCloud"),
+            Some(tr!(
+                "Keeps your watchlists, layouts, drawings, templates, scripts, portfolios and paper-trading accounts the same on every Mac signed in to your Apple Account. Everything also stays on this Mac."
+            )),
             |ui| {
                 let mut on = view.enabled;
                 if card::switch(ui, &mut on) {
@@ -191,7 +221,7 @@ fn show(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
         ui.add_space(10.0);
         small(
             ui,
-            "Turning sync off keeps all your data here and removes nothing from iCloud.",
+            tr!("Turning sync off keeps all your data here and removes nothing from iCloud."),
         );
         return;
     }
@@ -200,9 +230,9 @@ fn show(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
     conflicts(ui, sync, view, now_ms);
     categories(ui, sync, view);
     ui.add_space(14.0);
-    small(ui, NOT_SYNCED);
+    small(ui, not_synced());
     ui.add_space(8.0);
-    small(ui, PRIVACY);
+    small(ui, privacy());
     delete_section(ui, sync, view);
 }
 
@@ -216,14 +246,14 @@ fn notice(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
         ui,
         Icon::CheckCircleFill,
         kit::GREEN,
-        "DegenView's data was deleted from iCloud",
-        Some(
-            "Sync is off. Everything on this Mac is still here, and your other Macs will ask what to do with their copies.",
-        ),
+        tr!("DegenView's data was deleted from iCloud"),
+        Some(tr!(
+            "Sync is off. Everything on this Mac is still here, and your other Macs will ask what to do with their copies."
+        )),
         None,
     );
     ui.add_space(8.0);
-    if kit::push_button(ui, None, "OK", true).clicked() {
+    if kit::push_button(ui, None, tr!("OK"), true).clicked() {
         sync.act(SyncAction::DismissNotice);
     }
     ui.add_space(14.0);
@@ -257,8 +287,8 @@ pub fn delete_offer(view: &SyncView) -> DeleteOffer {
         | Phase::UpToDate
         | Phase::NeedsAttention
         | Phase::Error(_) => DeleteOffer::Ready,
-        Phase::WaitingForNetwork => DeleteOffer::Waiting("Connect to the internet to delete."),
-        Phase::WaitingForAccount => DeleteOffer::Waiting("Sign in to iCloud to delete."),
+        Phase::WaitingForNetwork => DeleteOffer::Waiting(tr!("Connect to the internet to delete.")),
+        Phase::WaitingForAccount => DeleteOffer::Waiting(tr!("Sign in to iCloud to delete.")),
         Phase::Off
         | Phase::CheckingAccount
         | Phase::NeedsSetup
@@ -267,10 +297,23 @@ pub fn delete_offer(view: &SyncView) -> DeleteOffer {
     }
 }
 
-const DELETE_CARD_HINT: &str = "Removes everything DegenView stored in your iCloud and turns sync off. Your data on this Mac is kept.";
-
 /// A separate, red-edged card at the foot of the page. Deleting iCloud data is a different thing
 /// from turning sync off, and the card says so before anything is asked.
+fn not_synced() -> &'static str {
+    tr!(
+        "Never synced: market data caches, portfolio value history (rebuilt on each Mac), \
+         webhook endpoints and their secrets, API keys, MCP access, and which windows and tabs are open. \
+         Alerts you sync arrive switched off on your other Macs, so each one notifies from one Mac only."
+    )
+}
+
+fn privacy() -> &'static str {
+    tr!(
+        "Your data is stored in your private iCloud storage for DegenView, tied to \
+         your Apple Account. Pine scripts are synced as written, so remove any secrets you pasted into them."
+    )
+}
+
 fn delete_section(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
     let offer = delete_offer(view);
     if offer == DeleteOffer::Hidden && !view.deleting {
@@ -279,7 +322,7 @@ fn delete_section(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
     let dialog_id = egui::Id::new("icloud-delete-dialog");
     let mut open: bool = ui.data(|data| data.get_temp(dialog_id)).unwrap_or(false);
     ui.add_space(22.0);
-    section(ui, "Delete iCloud data", None, |ui| {
+    section(ui, tr!("Delete iCloud data"), None, |ui| {
         let tint = kit::RED;
         egui::Frame::new()
             .fill(theme::with_alpha(tint, 0.06))
@@ -304,14 +347,14 @@ fn delete_section(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
                         ui.set_max_width((ui.available_width() - 150.0).max(140.0));
                         ui.spacing_mut().item_spacing.y = 3.0;
                         ui.label(kit::text(
-                            "Delete iCloud Data",
+                            tr!("Delete iCloud Data"),
                             12.0,
                             kit::SEMIBOLD,
                             theme::text_primary(),
                         ));
                         ui.add(
                             egui::Label::new(kit::text(
-                                DELETE_CARD_HINT,
+                                tr!("Removes everything DegenView stored in your iCloud and turns sync off. Your data on this Mac is kept."),
                                 10.5,
                                 kit::REGULAR,
                                 theme::text_secondary(),
@@ -325,7 +368,7 @@ fn delete_section(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if view.deleting {
                             ui.label(kit::text(
-                                "Deleting…",
+                                tr!("Deleting…"),
                                 kit::size::BODY,
                                 kit::REGULAR,
                                 theme::text_secondary(),
@@ -333,16 +376,16 @@ fn delete_section(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
                             ui.add(LoadingIndicator::new().size(14.0));
                         } else if offer == DeleteOffer::Ready {
                             let label = if view.delete_error.is_some() {
-                                "Try Again…"
+                                tr!("Try Again…")
                             } else {
-                                "Delete…"
+                                tr!("Delete…")
                             };
                             if kit::destructive_button(ui, label).clicked() {
                                 open = true;
                             }
                         } else {
                             ui.add_enabled_ui(false, |ui| {
-                                kit::destructive_button(ui, "Delete…");
+                                kit::destructive_button(ui, tr!("Delete…"));
                             });
                         }
                     });
@@ -352,7 +395,11 @@ fn delete_section(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
             && !view.deleting
         {
             ui.add_space(8.0);
-            status_message(ui, &format!("{error} Nothing was deleted."), true);
+            status_message(
+                ui,
+                &tr!("{error} Nothing was deleted.", error = error),
+                true,
+            );
         }
     });
 
@@ -386,9 +433,9 @@ fn delete_dialog(ctx: &egui::Context) -> Option<DialogOutcome> {
     let mut spec = Dialog::new(
         Icon::Trash,
         kit::RED,
-        "Delete all DegenView data from iCloud?",
-        "This permanently removes what DegenView synced to your private iCloud storage.",
-        "Delete iCloud Data",
+        tr!("Delete all DegenView data from iCloud?"),
+        tr!("This permanently removes what DegenView synced to your private iCloud storage."),
+        tr!("Delete iCloud Data"),
     );
     spec.destructive = true;
     // The field takes the focus first; the button is pressable once the word is typed (as of the
@@ -408,27 +455,27 @@ fn delete_dialog(ctx: &egui::Context) -> Option<DialogOutcome> {
                     ui,
                     Icon::XmarkCircleFill,
                     kit::RED,
-                    "Removed from iCloud",
-                    "Watchlists, layouts and drawings, templates, Pine scripts, alerts, portfolios, paper-trading accounts and preferences.",
+                    tr!("Removed from iCloud"),
+                    tr!("Watchlists, layouts and drawings, templates, Pine scripts, alerts, portfolios, paper-trading accounts and preferences."),
                 );
                 consequence(
                     ui,
                     Icon::CheckCircleFill,
                     kit::GREEN,
-                    "Kept on this Mac",
-                    "All your data stays here. Sync turns off.",
+                    tr!("Kept on this Mac"),
+                    tr!("All your data stays here. Sync turns off."),
                 );
                 consequence(
                     ui,
                     Icon::Layers,
                     theme::text_secondary(),
-                    "Your other Macs",
-                    "They keep their own copies and will offer to upload them again.",
+                    tr!("Your other Macs"),
+                    tr!("They keep their own copies and will offer to upload them again."),
                 );
             });
         ui.add_space(16.0);
         ui.label(kit::text(
-            format!("Type “{DELETE_WORD}” to confirm"),
+            tr!("Type “{word}” to confirm", word = DELETE_WORD),
             kit::size::CAPTION + 0.5,
             kit::MEDIUM,
             theme::text_secondary(),
@@ -512,21 +559,21 @@ fn small(ui: &mut egui::Ui, text: &str) {
 }
 
 fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
-    section(ui, "Status", None, |ui| {
+    section(ui, tr!("Status"), None, |ui| {
         card(ui, |ui| {
             let (mut label, tone) = phase_label(view.phase);
             if matches!(view.phase, Phase::Error(_))
                 && view.last_error.as_deref().is_some_and(schema_not_deployed)
             {
-                label = "iCloud isn't set up for this release yet".to_owned();
+                label = tr!("iCloud isn't set up for this release yet").to_owned();
             }
-            row(ui, "Status", |ui| {
+            row(ui, tr!("Status"), |ui| {
                 kit::status_badge(ui, &label, tone);
             });
             let last = view.last_send_ms.max(view.last_fetch_ms);
             if let Some(last) = last {
                 kit::divider(ui);
-                row(ui, "Last synced", |ui| {
+                row(ui, tr!("Last synced"), |ui| {
                     ui.label(kit::text(
                         relative_time(now_ms, last),
                         kit::size::BODY,
@@ -537,7 +584,7 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             }
             if view.pending > 0 {
                 kit::divider(ui);
-                row(ui, "Waiting to upload", |ui| {
+                row(ui, tr!("Waiting to upload"), |ui| {
                     ui.label(kit::text(
                         changes_text(view.pending),
                         kit::size::BODY,
@@ -548,7 +595,7 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             }
             if let Some(name) = &view.device_name {
                 kit::divider(ui);
-                row(ui, "This Mac", |ui| {
+                row(ui, tr!("This Mac"), |ui| {
                     ui.label(kit::text(
                         name,
                         kit::size::BODY,
@@ -559,14 +606,14 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             }
             if view.environment.as_deref() == Some("Development") {
                 kit::divider(ui);
-                row(ui, "iCloud environment", |ui| {
-                    kit::status_badge(ui, "Development (test data)", Tone::Warning);
+                row(ui, tr!("iCloud environment"), |ui| {
+                    kit::status_badge(ui, tr!("Development (test data)"), Tone::Warning);
                 });
             }
         });
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            if kit::push_button(ui, None, "Sync Now", true).clicked() {
+            if kit::push_button(ui, None, tr!("Sync Now"), true).clicked() {
                 sync.act(SyncAction::SyncNow);
             }
         });
@@ -575,7 +622,12 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
         {
             ui.add_space(8.0);
             if schema_not_deployed(error) {
-                small(ui, SCHEMA_NOT_DEPLOYED_HELP);
+                small(
+                    ui,
+                    tr!(
+                        "iCloud refused the upload because this release's iCloud database has not been deployed to production yet. Nothing is lost: your changes keep waiting here and upload on their own once it is."
+                    ),
+                );
             } else {
                 small(ui, error);
             }
@@ -589,8 +641,6 @@ fn schema_not_deployed(message: &str) -> bool {
     message.contains("in production schema")
 }
 
-const SCHEMA_NOT_DEPLOYED_HELP: &str = "iCloud refused the upload because this release's iCloud database has not been deployed to production yet. Nothing is lost: your changes keep waiting here and upload on their own once it is.";
-
 /// Decisions that must not be missed sit at the top of the page.
 fn prompts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
     let Some(prompt) = &view.prompt else { return };
@@ -600,18 +650,18 @@ fn prompts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
                 ui,
                 Icon::PersonCircle,
                 kit::ACCENT,
-                "Use the Apple Account signed in on this Mac?",
-                Some(
-                    "Nothing is read from or sent to iCloud until you agree. You will choose how to combine data next.",
-                ),
+                tr!("Use the Apple Account signed in on this Mac?"),
+                Some(tr!(
+                    "Nothing is read from or sent to iCloud until you agree. You will choose how to combine data next."
+                )),
                 None,
             );
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if kit::push_button(ui, None, "Use This Account", true).clicked() {
+                if kit::push_button(ui, None, tr!("Use This Account"), true).clicked() {
                     sync.act(SyncAction::ConfirmAccount);
                 }
-                if kit::push_button(ui, None, "Not Now", true).clicked() {
+                if kit::push_button(ui, None, tr!("Not Now"), true).clicked() {
                     sync.act(SyncAction::Disable);
                 }
             });
@@ -622,16 +672,18 @@ fn prompts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
                 ui,
                 Icon::TriangleFill,
                 kit::ORANGE,
-                "DegenView's data in iCloud was deleted",
-                Some("Another Mac deleted it. Everything on this Mac is still here."),
+                tr!("DegenView's data in iCloud was deleted"),
+                Some(tr!(
+                    "Another Mac deleted it. Everything on this Mac is still here."
+                )),
                 None,
             );
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if kit::push_button(ui, None, "Upload This Mac's Data Again", true).clicked() {
+                if kit::push_button(ui, None, tr!("Upload This Mac's Data Again"), true).clicked() {
                     sync.act(SyncAction::ResolveRemoteDeletion { reupload: true });
                 }
-                if kit::push_button(ui, None, "Turn Sync Off", true).clicked() {
+                if kit::push_button(ui, None, tr!("Turn Sync Off"), true).clicked() {
                     sync.act(SyncAction::ResolveRemoteDeletion { reupload: false });
                 }
             });
@@ -641,23 +693,23 @@ fn prompts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
                 ui,
                 Icon::TriangleFill,
                 kit::ORANGE,
-                "A different Apple Account is signed in",
-                Some(
-                    "Nothing from this Mac has been sent to it. Choose what to do with your data here.",
-                ),
+                tr!("A different Apple Account is signed in"),
+                Some(tr!(
+                    "Nothing from this Mac has been sent to it. Choose what to do with your data here."
+                )),
                 None,
             );
             ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
-                if kit::push_button(ui, None, "Keep Local Only", true).clicked() {
+                if kit::push_button(ui, None, tr!("Keep Local Only"), true).clicked() {
                     sync.act(SyncAction::ResolveAccount(AccountChoice::KeepLocalOnly));
                 }
-                if kit::push_button(ui, None, "Merge Into This Account", true).clicked() {
+                if kit::push_button(ui, None, tr!("Merge Into This Account"), true).clicked() {
                     sync.act(SyncAction::ResolveAccount(
                         AccountChoice::MergeIntoThisAccount,
                     ));
                 }
-                if kit::push_button(ui, None, "Use This Account's Data", true).clicked() {
+                if kit::push_button(ui, None, tr!("Use This Account's Data"), true).clicked() {
                     sync.act(SyncAction::ResolveAccount(
                         AccountChoice::UseThisAccountsData,
                     ));
@@ -666,7 +718,9 @@ fn prompts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
             ui.add_space(4.0);
             small(
                 ui,
-                "Using the other account's data first saves a copy of this Mac's data that you can restore. Nothing is deleted from either account.",
+                tr!(
+                    "Using the other account's data first saves a copy of this Mac's data that you can restore. Nothing is deleted from either account."
+                ),
             );
         }
     }
@@ -679,19 +733,19 @@ fn join_prompt(ui: &mut egui::Ui, sync: &SyncHost, summary: &JoinSummary) {
             ui,
             Icon::Cycle,
             kit::ACCENT,
-            "iCloud has no DegenView data yet",
-            Some(&format!(
-                "This Mac's data ({}) will be uploaded so your other Macs can have it.",
-                counts_text(&summary.local)
+            tr!("iCloud has no DegenView data yet"),
+            Some(&tr!(
+                "This Mac's data ({data}) will be uploaded so your other Macs can have it.",
+                data = counts_text(&summary.local)
             )),
             None,
         );
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if kit::push_button(ui, None, "Start Syncing", true).clicked() {
+            if kit::push_button(ui, None, tr!("Start Syncing"), true).clicked() {
                 sync.act(SyncAction::ChooseJoin(JoinMode::Merge));
             }
-            if kit::push_button(ui, None, "Don't Sync", true).clicked() {
+            if kit::push_button(ui, None, tr!("Don't Sync"), true).clicked() {
                 sync.act(SyncAction::ChooseJoin(JoinMode::KeepLocalOnly));
             }
         });
@@ -702,64 +756,74 @@ fn join_prompt(ui: &mut egui::Ui, sync: &SyncHost, summary: &JoinSummary) {
         ui,
         Icon::Cycle,
         kit::ACCENT,
-        "iCloud already has DegenView data",
-        Some(&format!(
-            "iCloud has {}{}. This Mac has {}.",
-            counts_text(&summary.cloud),
-            if macs > 0 {
-                format!(" from {macs} Mac{}", if macs == 1 { "" } else { "s" })
-            } else {
-                String::new()
-            },
-            counts_text(&summary.local)
-        )),
+        tr!("iCloud already has DegenView data"),
+        Some(&if macs > 0 {
+            tr_n!(
+                macs,
+                "iCloud has {cloud} from {count} Mac. This Mac has {local}.",
+                "iCloud has {cloud} from {count} Macs. This Mac has {local}.",
+                cloud = counts_text(&summary.cloud),
+                local = counts_text(&summary.local)
+            )
+        } else {
+            tr!(
+                "iCloud has {cloud}. This Mac has {local}.",
+                cloud = counts_text(&summary.cloud),
+                local = counts_text(&summary.local)
+            )
+        }),
         None,
     );
     ui.add_space(8.0);
     ui.horizontal_wrapped(|ui| {
-        if kit::push_button(ui, None, "Merge (Recommended)", true).clicked() {
+        if kit::push_button(ui, None, tr!("Merge (Recommended)"), true).clicked() {
             sync.act(SyncAction::ChooseJoin(JoinMode::Merge));
         }
-        if kit::push_button(ui, None, "Use iCloud's Data", true).clicked() {
+        if kit::push_button(ui, None, tr!("Use iCloud's Data"), true).clicked() {
             sync.act(SyncAction::ChooseJoin(JoinMode::UseCloud));
         }
-        if kit::push_button(ui, None, "Don't Sync", true).clicked() {
+        if kit::push_button(ui, None, tr!("Don't Sync"), true).clicked() {
             sync.act(SyncAction::ChooseJoin(JoinMode::KeepLocalOnly));
         }
     });
     ui.add_space(4.0);
     small(
         ui,
-        "Merge keeps everything from both. Using iCloud's data replaces this Mac's watchlists, layouts and templates after saving a copy you can restore; scripts, alerts, portfolios and paper accounts are always merged.",
+        tr!(
+            "Merge keeps everything from both. Using iCloud's data replaces this Mac's watchlists, layouts and templates after saving a copy you can restore; scripts, alerts, portfolios and paper accounts are always merged."
+        ),
     );
 }
 
 fn changes_text(count: usize) -> String {
-    match count {
-        1 => "1 change".to_owned(),
-        count => format!("{count} changes"),
-    }
+    tr_n!(count, "{count} change", "{count} changes")
 }
 
 fn held_title(count: usize) -> String {
-    match count {
-        1 => "1 item was deleted at once".to_owned(),
-        count => format!("{count} items were deleted at once"),
-    }
+    tr_n!(
+        count,
+        "{count} item was deleted at once",
+        "{count} items were deleted at once"
+    )
 }
 
 fn too_large_title(count: usize) -> String {
-    match count {
-        1 => "1 item is too large to sync".to_owned(),
-        count => format!("{count} items are too large to sync"),
-    }
+    tr_n!(
+        count,
+        "{count} item is too large to sync",
+        "{count} items are too large to sync"
+    )
 }
 
 fn too_large_detail(count: usize) -> &'static str {
     if count == 1 {
-        "It stays on this Mac. Shortening a very long Pine script or a long trading history usually fixes it."
+        tr!(
+            "It stays on this Mac. Shortening a very long Pine script or a long trading history usually fixes it."
+        )
     } else {
-        "They stay on this Mac. Shortening a very long Pine script or a long trading history usually fixes it."
+        tr!(
+            "They stay on this Mac. Shortening a very long Pine script or a long trading history usually fixes it."
+        )
     }
 }
 
@@ -771,15 +835,15 @@ fn attention(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
             Icon::TriangleFill,
             kit::ORANGE,
             &held_title(view.held),
-            Some("Delete them from iCloud and your other Macs too?"),
+            Some(tr!("Delete them from iCloud and your other Macs too?")),
             None,
         );
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            if kit::push_button(ui, None, "Delete Everywhere", true).clicked() {
+            if kit::push_button(ui, None, tr!("Delete Everywhere"), true).clicked() {
                 sync.act(SyncAction::ConfirmHeldDeletes);
             }
-            if kit::push_button(ui, None, "Keep on Other Macs", true).clicked() {
+            if kit::push_button(ui, None, tr!("Keep on Other Macs"), true).clicked() {
                 sync.act(SyncAction::KeepHeldDeletes);
             }
         });
@@ -804,10 +868,10 @@ fn conflicts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
     }
     section(
         ui,
-        "Changed on two Macs",
-        Some(
-            "Nothing was lost: both versions were kept. Delete the copies you don't need, then dismiss these.",
-        ),
+        tr!("Changed on two Macs"),
+        Some(tr!(
+            "Nothing was lost: both versions were kept. Delete the copies you don't need, then dismiss these."
+        )),
         |ui| {
             card(ui, |ui| {
                 for (index, group) in groups.iter().enumerate() {
@@ -821,7 +885,7 @@ fn conflicts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             });
             if groups.len() > 1 || groups[0].count > 1 {
                 ui.add_space(10.0);
-                if kit::push_button(ui, None, "Dismiss All", true).clicked() {
+                if kit::push_button(ui, None, tr!("Dismiss All"), true).clicked() {
                     sync.act(SyncAction::DismissConflicts(None));
                 }
             }
@@ -833,7 +897,7 @@ fn conflict_row(ui: &mut egui::Ui, group: &ConflictGroup, now_ms: i64) -> bool {
     let mut dismissed = false;
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            dismissed = kit::push_button(ui, None, "Dismiss", true).clicked();
+            dismissed = kit::push_button(ui, None, tr!("Dismiss"), true).clicked();
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 3.0;
@@ -853,7 +917,10 @@ fn conflict_row(ui: &mut egui::Ui, group: &ConflictGroup, now_ms: i64) -> bool {
                         .wrap(),
                     );
                     ui.label(kit::text(
-                        format!("Latest {}", relative_time(now_ms, group.newest_ms)),
+                        tr!(
+                            "Latest {when}",
+                            when = relative_time(now_ms, group.newest_ms)
+                        ),
                         kit::size::CAPTION,
                         kit::REGULAR,
                         theme::text_tertiary(),
@@ -868,8 +935,8 @@ fn conflict_row(ui: &mut egui::Ui, group: &ConflictGroup, now_ms: i64) -> bool {
 fn categories(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
     section(
         ui,
-        "What syncs",
-        Some("Turn off anything you want to keep on this Mac only."),
+        tr!("What syncs"),
+        Some(tr!("Turn off anything you want to keep on this Mac only.")),
         |ui| {
             card(ui, |ui| {
                 for (index, (category, on)) in view.categories.iter().enumerate() {
@@ -1021,11 +1088,11 @@ mod tests {
     #[test]
     fn the_page_states_what_never_syncs() {
         for word in ["value history", "secrets", "API keys", "MCP"] {
-            assert!(NOT_SYNCED.contains(word), "{word}");
+            assert!(not_synced().contains(word), "{word}");
         }
-        assert!(PRIVACY.contains("private iCloud storage"));
+        assert!(privacy().contains("private iCloud storage"));
         assert!(
-            !PRIVACY.to_lowercase().contains("end-to-end"),
+            !privacy().to_lowercase().contains("end-to-end"),
             "no unverified claim"
         );
     }

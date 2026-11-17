@@ -2,6 +2,7 @@
 //! the permissions overview and the clickable and action cards.
 
 use super::{CONTROL_HEIGHT, CONTROL_RADIUS, COPIED_FOR, Copied, access_overview};
+use crate::i18n::tr;
 use crate::model::mcp::PermissionSet;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone;
@@ -123,7 +124,7 @@ pub(super) fn copy_button_with(
     text: impl FnOnce() -> String,
 ) {
     let recent = copied.is_some_and(|(what, at)| what == kind && at.elapsed() < COPIED_FOR);
-    let shown = if recent { "Copied" } else { label };
+    let shown = if recent { tr!("Copied") } else { label };
     if kit::sheet_button(ui, shown, prominent && !recent, true).clicked() {
         ui.ctx().copy_text(text());
         *copied = Some((kind, Instant::now()));
@@ -169,10 +170,10 @@ pub(in crate::ui) fn capsule(
 /// reaches past the width the caller leaves.
 pub(super) fn overview(ui: &mut Ui, set: &PermissionSet) -> Rect {
     let overview = access_overview(set);
-    if overview.headline == "No access" {
+    if overview.none {
         return ui
             .label(kit::text(
-                "No access",
+                overview.headline,
                 kit::size::CAPTION + 0.5,
                 kit::REGULAR,
                 theme::text_tertiary(),

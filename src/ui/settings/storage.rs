@@ -6,14 +6,13 @@
 //! so the host fetches them off the UI thread and hands them to `StorageState`; this view only
 //! draws and returns what was asked for.
 
+use crate::i18n::{tr, tr_n};
 use crate::platform;
 use crate::service::cache::disk::{CacheStats, ClearOutcome, Usage};
 use crate::ui::icons::Icon;
 use crate::ui::settings::window::{card, row, section, status_message};
 use crate::ui::{kit, settings::card, theme};
 use eframe::egui;
-
-const CLEAR_HINT: &str = "Deletes downloaded logos and saved lookups. Your charts, watchlists, portfolios, alerts and scripts are not affected. Logos and lookups download again as needed.";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Notice {
@@ -61,11 +60,7 @@ pub enum StorageAction {
 pub fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
     if bytes < 1024 {
-        return if bytes == 1 {
-            "1 byte".to_owned()
-        } else {
-            format!("{bytes} bytes")
-        };
+        return tr_n!(bytes, "{count} byte", "{count} bytes");
     }
     let mut value = bytes as f64 / 1024.0;
     let mut unit = 0;
@@ -84,25 +79,26 @@ pub fn format_bytes(bytes: u64) -> String {
 /// "128 files · 1.4 MB".
 pub fn usage_label(usage: Usage) -> String {
     if usage.files == 0 {
-        return "Empty".to_owned();
+        return tr!("Empty").to_owned();
     }
-    format!(
-        "{} {} · {}",
+    tr_n!(
         usage.files,
-        if usage.files == 1 { "file" } else { "files" },
-        format_bytes(usage.bytes)
+        "{count} file · {size}",
+        "{count} files · {size}",
+        size = format_bytes(usage.bytes)
     )
 }
 
 /// What to tell the user after a clear.
 pub fn cleared_notice(outcome: ClearOutcome) -> Notice {
     let text = match (outcome.freed_bytes, outcome.failures) {
-        (0, 0) => "The cache was already empty.".to_owned(),
-        (freed, 0) => format!("Cleared {}.", format_bytes(freed)),
-        (_, failures) => format!(
-            "Cleared {}, but {failures} {} could not be removed.",
-            format_bytes(outcome.freed_bytes),
-            if failures == 1 { "item" } else { "items" }
+        (0, 0) => tr!("The cache was already empty.").to_owned(),
+        (freed, 0) => tr!("Cleared {size}.", size = format_bytes(freed)),
+        (freed, failures) => tr_n!(
+            failures,
+            "Cleared {size}, but {count} item could not be removed.",
+            "Cleared {size}, but {count} items could not be removed.",
+            size = format_bytes(freed)
         ),
     };
     Notice {
@@ -130,8 +126,10 @@ pub fn body(ui: &mut egui::Ui, state: &mut StorageState, actions: &mut Vec<Stora
 
     section(
         ui,
-        "Saved on this computer",
-        Some("Logos and lookups kept so they appear instantly and need fewer requests."),
+        tr!("Saved on this computer"),
+        Some(tr!(
+            "Logos and lookups kept so they appear instantly and need fewer requests."
+        )),
         |ui| {
             card(ui, |ui| {
                 let (images, lookups, total) = match &state.stats {
@@ -141,19 +139,19 @@ pub fn body(ui: &mut egui::Ui, state: &mut StorageState, actions: &mut Vec<Stora
                         format_bytes(stats.total_bytes()),
                     ),
                     None => {
-                        let waiting = "Calculating…".to_owned();
+                        let waiting = tr!("Calculating…").to_owned();
                         (waiting.clone(), waiting.clone(), waiting)
                     }
                 };
-                value_row(ui, "Logos", &images);
+                value_row(ui, tr!("Logos"), &images);
                 kit::divider(ui);
-                value_row(ui, "Lookups", &lookups);
+                value_row(ui, tr!("Lookups"), &lookups);
                 kit::divider(ui);
-                value_row(ui, "Total", &total);
+                value_row(ui, tr!("Total"), &total);
                 if let Some(location) = &location {
                     kit::divider(ui);
-                    row(ui, "Location", |ui| {
-                        let label = format!("Show in {}", platform::file_manager());
+                    row(ui, tr!("Location"), |ui| {
+                        let label = tr!("Show in {app}", app = platform::file_manager());
                         if kit::push_button(ui, None, &label, true).clicked() {
                             // Nothing may be cached yet; reveal an empty folder rather than fail.
                             let _ = std::fs::create_dir_all(location);
@@ -175,17 +173,25 @@ pub fn body(ui: &mut egui::Ui, state: &mut StorageState, actions: &mut Vec<Stora
         },
     );
 
-    section(ui, "Clear cache", None, |ui| {
-        card::card(ui, Icon::Trash, "Clear Cache", Some(CLEAR_HINT), |ui| {
-            let (label, enabled) = if state.clearing {
-                ("Clearing…", false)
-            } else {
-                ("Clear Cache…", available)
-            };
-            if kit::push_button(ui, None, label, enabled).clicked() {
-                state.confirming = true;
-            }
-        });
+    section(ui, tr!("Clear cache"), None, |ui| {
+        card::card(
+            ui,
+            Icon::Trash,
+            tr!("Clear Cache"),
+            Some(tr!(
+                "Deletes downloaded logos and saved lookups. Your charts, watchlists, portfolios, alerts and scripts are not affected. Logos and lookups download again as needed."
+            )),
+            |ui| {
+                let (label, enabled) = if state.clearing {
+                    (tr!("Clearing…"), false)
+                } else {
+                    (tr!("Clear Cache…"), available)
+                };
+                if kit::push_button(ui, None, label, enabled).clicked() {
+                    state.confirming = true;
+                }
+            },
+        );
         if let Some(notice) = &state.notice {
             ui.add_space(10.0);
             status_message(ui, &notice.text, notice.is_error);
@@ -194,7 +200,9 @@ pub fn body(ui: &mut egui::Ui, state: &mut StorageState, actions: &mut Vec<Stora
             ui.add_space(10.0);
             status_message(
                 ui,
-                "DegenView could not find a folder to cache in, so nothing is saved between launches.",
+                tr!(
+                    "DegenView could not find a folder to cache in, so nothing is saved between launches."
+                ),
                 true,
             );
         }
@@ -223,9 +231,11 @@ fn confirm_clear(ctx: &egui::Context, state: &mut StorageState, actions: &mut Ve
         egui::Id::new("settings-clear-cache"),
         &kit::Confirm {
             icon: Icon::Trash,
-            title: "Clear the cache?",
-            message: "Downloaded logos and saved lookups are deleted and fetched again as needed. Your charts, watchlists, portfolios, alerts and scripts are not affected.",
-            destructive: "Clear Cache",
+            title: tr!("Clear the cache?"),
+            message: tr!(
+                "Downloaded logos and saved lookups are deleted and fetched again as needed. Your charts, watchlists, portfolios, alerts and scripts are not affected."
+            ),
+            destructive: tr!("Clear Cache"),
         },
     ) {
         Some(kit::ConfirmOutcome::Confirmed) => {
