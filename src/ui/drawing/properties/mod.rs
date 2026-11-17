@@ -4,6 +4,7 @@
 //! session is at most one undo step and a cancelled one is none.
 
 use crate::format;
+use crate::i18n::tr;
 use crate::model::chart::template::TemplateId;
 use crate::model::drawings::style::DrawingStyle;
 use crate::model::{Caps, Drawing, Geometry, Tool};
@@ -65,14 +66,14 @@ enum Tab {
 impl Tab {
     fn title(self) -> &'static str {
         match self {
-            Self::Style => "Style",
-            Self::Inputs => "Inputs",
-            Self::Levels => "Levels",
-            Self::Text => "Text",
-            Self::Content => "Image",
-            Self::Link => "Link",
-            Self::Coordinates => "Coordinates",
-            Self::Visibility => "Visibility",
+            Self::Style => tr!("Style"),
+            Self::Inputs => tr!("Inputs"),
+            Self::Levels => tr!("Levels"),
+            Self::Text => tr!("Text"),
+            Self::Content => tr!("Image"),
+            Self::Link => tr!("Link"),
+            Self::Coordinates => tr!("Coordinates"),
+            Self::Visibility => tr!("Visibility"),
         }
     }
 
@@ -287,7 +288,7 @@ impl DrawingProperties {
         }
         // Escape and Return belong to an open calendar before they reach the dialog.
         let calendar_open = self.calendar_open(ctx);
-        let window = egui::Window::new("Drawing properties")
+        let window = egui::Window::new(tr!("Drawing properties"))
             .id(Id::new(("drawing-properties", self.draft.id())))
             .title_bar(false)
             .resizable(false)
@@ -366,7 +367,7 @@ impl DrawingProperties {
 
     fn body(&mut self, ui: &mut Ui, templates: &mut DrawingTemplateStore) -> Outcome {
         ui.add_space(sheet::INSET as f32);
-        let subtitle = "Changes show on the chart; OK keeps them";
+        let subtitle = tr!("Changes show on the chart; OK keeps them");
         sheet::inset(ui, |ui| {
             sheet::header(
                 ui,
@@ -430,10 +431,10 @@ impl DrawingProperties {
         }
         let mut outcome = Outcome::Open;
         sheet::footer(ui, |ui| {
-            if kit::sheet_button(ui, "OK", true, true).clicked() {
+            if kit::sheet_button(ui, tr!("OK"), true, true).clicked() {
                 outcome = Outcome::Apply(Box::new(self.draft.clone()));
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                 outcome = Outcome::Cancel;
             }
         });

@@ -15,6 +15,7 @@ mod preview;
 mod swatches;
 mod toolbar;
 
+use crate::i18n::tr;
 use crate::model::chart::snapshot::framing::{Dial, Step};
 use crate::model::chart::snapshot::studio::{
     Area, AspectRatio, Background, Include, StudioConfig, Style,
@@ -179,7 +180,7 @@ fn header(ui: &mut egui::Ui, width: f32, output: &mut Output) {
     let (row, _) = ui.allocate_exact_size(vec2(width, HEADER_HEIGHT), egui::Sense::hover());
     let title = kit::galley(
         ui,
-        "Studio",
+        tr!("Studio"),
         size::TITLE2,
         SEMIBOLD,
         theme::text_primary(),
@@ -199,7 +200,7 @@ fn header(ui: &mut egui::Ui, width: f32, output: &mut Output) {
         close,
         Id::new("studio-close"),
         Icon::Xmark,
-        "Close",
+        tr!("Close"),
         true,
         true,
     )

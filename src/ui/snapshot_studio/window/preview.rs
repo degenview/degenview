@@ -4,6 +4,7 @@
 //! several charts) it only shows.
 
 use super::{Action, Image, Input, Output, PAD, Preview};
+use crate::i18n::tr;
 use crate::ui::kit::{self, REGULAR, size};
 use crate::ui::theme;
 use eframe::egui::{
@@ -75,7 +76,7 @@ pub(super) fn show(ui: &mut Ui, input: &Input<'_>, width: f32, height: f32, outp
             failure: Some(failure),
             ..
         } => message(ui, room, failure),
-        Preview { .. } => kit::loading::message(ui, room, "Drawing the image…"),
+        Preview { .. } => kit::loading::message(ui, room, tr!("Drawing the image…")),
     }
 }
 
@@ -126,10 +127,12 @@ fn picture(
     let response = crate::ui::accessibility::label_as(
         response,
         egui::WidgetType::Other,
-        "Preview. Drag to move the picture; arrow keys move it, Home resets.",
+        tr!("Preview. Drag to move the picture; arrow keys move it, Home resets."),
     );
     if !input.reframable {
-        response.on_hover_text("Moving the picture is not available for several charts");
+        response.on_hover_text(tr!(
+            "Moving the picture is not available for several charts"
+        ));
         return;
     }
     if response.is_pointer_button_down_on() {

@@ -3,6 +3,7 @@
 //! groups that do not fit wrap onto a second line.
 
 use super::{Action, Input, Output, PAD, swatches};
+use crate::i18n::tr;
 use crate::model::chart::snapshot::studio::{Area, AspectRatio, Include, Style};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, Segment, size};
@@ -42,13 +43,13 @@ impl Group {
         Self::Include,
     ];
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Area => "Area",
-            Self::Style => "Style",
-            Self::Size => "Size",
-            Self::Background => "Background",
-            Self::Include => "Include",
+            Self::Area => tr!("Area"),
+            Self::Style => tr!("Style"),
+            Self::Size => tr!("Size"),
+            Self::Background => tr!("Background"),
+            Self::Include => tr!("Include"),
         }
     }
 }
@@ -95,7 +96,7 @@ fn size_options(enabled: bool) -> Vec<Segment<'static, AspectRatio>> {
             Segment::new(size, size.label()).tooltip(if enabled {
                 size.tooltip()
             } else {
-                "Size applies to the Styled look"
+                tr!("Size applies to the Styled look")
             })
         })
         .collect()
@@ -237,22 +238,22 @@ fn include(ui: &mut Ui, input: &Input<'_>, output: &mut Output) {
     let toggles = [
         Toggle {
             icon: Icon::Indicators,
-            name: "Indicators",
+            name: tr!("Indicators"),
             on: include.indicators,
-            unavailable: (!input.has_indicators).then_some("No indicators on this chart"),
+            unavailable: (!input.has_indicators).then_some(tr!("No indicators on this chart")),
         },
         Toggle {
             icon: Icon::Pencil,
-            name: "Drawings",
+            name: tr!("Drawings"),
             on: include.drawings,
-            unavailable: (!input.has_drawings).then_some("No visible drawings"),
+            unavailable: (!input.has_drawings).then_some(tr!("No visible drawings")),
         },
         Toggle {
             icon: Icon::Branding,
-            name: "DegenView mark",
+            name: tr!("DegenView mark"),
             on: include.branding,
             unavailable: (config.style != Style::Styled)
-                .then_some("The mark belongs to the Styled look"),
+                .then_some(tr!("The mark belongs to the Styled look")),
         },
     ];
     let (track, _) = ui.allocate_exact_size(
@@ -278,10 +279,13 @@ fn include(ui: &mut Ui, input: &Input<'_>, output: &mut Output) {
                 Sense::hover()
             },
         );
-        let state = if toggle.on && usable { "on" } else { "off" };
-        let response =
-            crate::ui::accessibility::label(response, format!("{}, {state}", toggle.name))
-                .on_hover_text(toggle.unavailable.unwrap_or(toggle.name));
+        let described = if toggle.on && usable {
+            tr!("{name}, on", name = toggle.name)
+        } else {
+            tr!("{name}, off", name = toggle.name)
+        };
+        let response = crate::ui::accessibility::label(response, described)
+            .on_hover_text(toggle.unavailable.unwrap_or(toggle.name));
         let lit = toggle.on && usable;
         if lit {
             ui.painter().add(

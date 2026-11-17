@@ -2,6 +2,7 @@
 
 use super::DrawingProperties;
 use super::rows::{Page, color_card, toggle_row};
+use crate::i18n::tr;
 use crate::model::drawings::style::{HorizontalAlign, TextOrientation, VerticalAlign};
 use crate::model::{Caps, Tool};
 use crate::ui::chart::settings::style::{number_field, picker_row};
@@ -41,7 +42,7 @@ impl DrawingProperties {
         let mut page = Page::new(true);
         // A price label's text is its price: there is nothing to type.
         if self.tool.caps().has(Caps::TEXT) {
-            page.section(ui, "Text", None);
+            page.section(ui, tr!("Text"), None);
             let mut text = self.draft.text().to_owned();
             let focused_id = Id::new("drawing-text");
             let focused = ui.memory(|memory| memory.has_focus(focused_id));
@@ -50,7 +51,7 @@ impl DrawingProperties {
                     egui::TextEdit::multiline(&mut text)
                         .id(focused_id)
                         .frame(egui::Frame::NONE)
-                        .hint_text("Add text to this drawing")
+                        .hint_text(tr!("Add text to this drawing"))
                         .char_limit(self.draft.max_text())
                         .desired_rows(3)
                         .desired_width(f32::INFINITY),
@@ -63,9 +64,15 @@ impl DrawingProperties {
 
         let mut style = self.style();
         let before = style;
-        page.section(ui, "Font", None);
-        color_card(ui, Icon::Palette, "Text color", None, &mut style.text.color);
-        if let Some(size) = card::card(ui, Icon::TextFormat, "Size", None, |ui| {
+        page.section(ui, tr!("Font"), None);
+        color_card(
+            ui,
+            Icon::Palette,
+            tr!("Text color"),
+            None,
+            &mut style.text.color,
+        );
+        if let Some(size) = card::card(ui, Icon::TextFormat, tr!("Size"), None, |ui| {
             number_field(
                 ui,
                 Id::new("drawing-text-size"),
@@ -78,15 +85,21 @@ impl DrawingProperties {
         }) {
             style.text.size = size as f32;
         }
-        toggle_row(ui, Icon::TextFormat, "Bold", "", &mut style.text.bold);
-        toggle_row(ui, Icon::TextFormat, "Italic", "", &mut style.text.italic);
+        toggle_row(ui, Icon::TextFormat, tr!("Bold"), "", &mut style.text.bold);
+        toggle_row(
+            ui,
+            Icon::TextFormat,
+            tr!("Italic"),
+            "",
+            &mut style.text.italic,
+        );
         if labels_are_written_by_the_tool(self.tool.caps()) {
             if style != before {
                 self.set_style(style);
             }
             return;
         }
-        page.section(ui, "Alignment", None);
+        page.section(ui, tr!("Alignment"), None);
         let horizontal: Vec<(HorizontalAlign, &str)> = HorizontalAlign::ALL
             .iter()
             .map(|align| (*align, align.label()))
@@ -94,7 +107,7 @@ impl DrawingProperties {
         picker_row(
             ui,
             Icon::Sliders,
-            "Alignment",
+            tr!("Alignment"),
             None,
             &horizontal,
             &mut style.text.align,
@@ -107,7 +120,7 @@ impl DrawingProperties {
             picker_row(
                 ui,
                 Icon::Sliders,
-                "Position",
+                tr!("Position"),
                 None,
                 &vertical,
                 &mut style.text.valign,
@@ -116,8 +129,8 @@ impl DrawingProperties {
         if self.tool.caps().has(Caps::ORIENTATION) {
             // A vertical line's text reads up the line or across it.
             let options = [
-                (TextOrientation::Vertical, "Vertical"),
-                (TextOrientation::Horizontal, "Horizontal"),
+                (TextOrientation::Vertical, tr!("Vertical")),
+                (TextOrientation::Horizontal, tr!("Horizontal")),
             ];
             let mut shown = if style.text.orientation == TextOrientation::Horizontal {
                 TextOrientation::Horizontal
@@ -127,7 +140,7 @@ impl DrawingProperties {
             picker_row(
                 ui,
                 Icon::TextFormat,
-                "Orientation",
+                tr!("Orientation"),
                 None,
                 &options,
                 &mut shown,
@@ -135,26 +148,28 @@ impl DrawingProperties {
             style.text.orientation = shown;
         }
         if self.tool.caps().has(Caps::BOX) && !self.tool.caps().has(Caps::AUTO_TEXT) {
-            page.section(ui, "Box", None);
+            page.section(ui, tr!("Box"), None);
             toggle_row(
                 ui,
                 Icon::TextFormat,
-                "Wrap text",
-                "Break long lines to fit a box of the width below.",
+                tr!("Wrap text"),
+                tr!("Break long lines to fit a box of the width below."),
                 &mut style.wrap,
             );
             if style.wrap {
                 use crate::model::drawings::style::{MAX_BOX_WIDTH, MIN_BOX_WIDTH};
-                if let Some(width) = card::card(ui, Icon::ArrowLeftRight, "Width", None, |ui| {
-                    number_field(
-                        ui,
-                        Id::new("drawing-box-width"),
-                        f64::from(style.wrapped_width()),
-                        10.0,
-                        f64::from(MIN_BOX_WIDTH)..=f64::from(MAX_BOX_WIDTH),
-                        0,
-                    )
-                }) {
+                if let Some(width) =
+                    card::card(ui, Icon::ArrowLeftRight, tr!("Width"), None, |ui| {
+                        number_field(
+                            ui,
+                            Id::new("drawing-box-width"),
+                            f64::from(style.wrapped_width()),
+                            10.0,
+                            f64::from(MIN_BOX_WIDTH)..=f64::from(MAX_BOX_WIDTH),
+                            0,
+                        )
+                    })
+                {
                     style.box_width = width as f32;
                 }
             }
@@ -163,8 +178,8 @@ impl DrawingProperties {
         toggle_row(
             ui,
             Icon::Eye,
-            "Show text",
-            "Off keeps the text but does not draw it.",
+            tr!("Show text"),
+            tr!("Off keeps the text but does not draw it."),
             &mut visible,
         );
         style.hide_text = !visible;
