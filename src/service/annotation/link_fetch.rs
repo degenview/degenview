@@ -9,6 +9,7 @@
 //! other. What X does not say stays empty; nothing is filled in. The picture is best effort: the
 //! text is the preview, and a missing picture is not a failure.
 
+use crate::i18n::tr;
 use crate::model::annotation::link_card::{FETCH_HOST, Link, LinkMeta};
 use crate::service::annotation::ingest::{self, Ingested};
 use std::io::Read;
@@ -42,12 +43,17 @@ pub enum FetchError {
 impl FetchError {
     pub fn message(self) -> String {
         match self {
-            Self::Network => "The preview could not be fetched. Check your connection.".to_owned(),
-            Self::Unavailable => {
-                "The preview is unavailable: the link may be deleted or private.".to_owned()
+            Self::Network => {
+                tr!("The preview could not be fetched. Check your connection.").to_owned()
             }
-            Self::Refused(status) => format!("The service refused the request ({status})."),
-            Self::Unreadable => "The service sent nothing a card can show.".to_owned(),
+            Self::Unavailable => {
+                tr!("The preview is unavailable: the link may be deleted or private.").to_owned()
+            }
+            Self::Refused(status) => tr!(
+                "The service refused the request ({status}).",
+                status = status
+            ),
+            Self::Unreadable => tr!("The service sent nothing a card can show.").to_owned(),
         }
     }
 }

@@ -19,6 +19,7 @@
 #[cfg(test)]
 mod tests;
 
+use crate::i18n::tr;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -392,7 +393,7 @@ impl BrokerHost {
             Some(broker) => broker
                 .connect(&credentials, &env)
                 .map(|connection| connection.session().clone()),
-            None => Err(BrokerError::invalid("That broker is not available.")),
+            None => Err(BrokerError::invalid(tr!("That broker is not available."))),
         })
     }
 
@@ -586,7 +587,7 @@ fn operation(receiver: Receiver<Result<(), String>>) -> Operation {
         Ok(answer) => Some(answer),
         Err(mpsc::TryRecvError::Empty) => None,
         Err(mpsc::TryRecvError::Disconnected) => {
-            Some(Err("The secret store stopped answering.".to_owned()))
+            Some(Err(tr!("The secret store stopped answering.").to_owned()))
         }
     })
 }

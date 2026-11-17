@@ -20,6 +20,7 @@ use degenview_brokers::{
 
 use super::commands::{Answer, BrokerCommands, CancelReport, HistoryChoice, cancel_report};
 use crate::host::broker::{BrokerHost, Connection};
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::model::broker;
 use crate::model::broker::chart::ChartTrading;
 use crate::model::broker::ticket::{self as rules, StatusTone};
@@ -59,7 +60,9 @@ where
     })
 }
 
-const NOT_CONNECTED: &str = "The broker is not connected.";
+fn not_connected_text() -> &'static str {
+    tr!("The broker is not connected.")
+}
 
 pub struct BrokerBackend {
     host: Arc<BrokerHost>,
@@ -86,10 +89,10 @@ impl BrokerBackend {
         binding: &Binding,
     ) -> Result<Arc<degenview_brokers::BrokerRuntime>, String> {
         let Some(runtime) = self.host.runtime(self.id()) else {
-            return Err("The broker is not connected.".to_owned());
+            return Err(not_connected_text().to_owned());
         };
         if binding.account.is_empty() || runtime.generation() != binding.generation {
-            return Err("The connection changed since the order was set up. Nothing was sent. Check the order again.".to_owned());
+            return Err(tr!("The connection changed since the order was set up. Nothing was sent. Check the order again.").to_owned());
         }
         Ok(runtime)
     }
@@ -145,7 +148,7 @@ impl EditVenue for BrokerBackend {
 }
 
 fn not_connected() -> BrokerError {
-    BrokerError::new(ErrorKind::Invalid, NOT_CONNECTED)
+    BrokerError::new(ErrorKind::Invalid, not_connected_text())
 }
 
 impl BrokerCommands for BrokerBackend {
@@ -157,7 +160,7 @@ impl BrokerCommands for BrokerBackend {
             (Some(runtime), Some(account)) => {
                 answer(runtime.retry(ClientOrderId(id.to_owned()), account), |_| ())
             }
-            _ => Task::ready(Err(NOT_CONNECTED.to_owned())),
+            _ => Task::ready(Err(not_connected_text().to_owned())),
         }
     }
 
@@ -167,13 +170,13 @@ impl BrokerCommands for BrokerBackend {
                 runtime.cancel(orders.into_iter().map(OrderId::new).collect()),
                 |results| cancel_report(&results),
             ),
-            None => Task::ready(Err(NOT_CONNECTED.to_owned())),
+            None => Task::ready(Err(not_connected_text().to_owned())),
         }
     }
 
     fn history(&self, choice: HistoryChoice, cursor: Option<String>) -> Answer<Page<OrderRow>> {
         let Some(runtime) = self.host.runtime(self.id()) else {
-            return Task::ready(Err(NOT_CONNECTED.to_owned()));
+            return Task::ready(Err(not_connected_text().to_owned()));
         };
         let source = source_of(self.id());
         answer(
@@ -198,7 +201,7 @@ impl BrokerCommands for BrokerBackend {
 
     fn fills(&self, cursor: Option<String>) -> Answer<Page<FillRow>> {
         let Some(runtime) = self.host.runtime(self.id()) else {
-            return Task::ready(Err(NOT_CONNECTED.to_owned()));
+            return Task::ready(Err(not_connected_text().to_owned()));
         };
         let host = Arc::clone(&self.host);
         let id = self.id();
@@ -297,14 +300,11 @@ fn fill_row(fill: &LiveFill, snapshot: Option<&BrokerSnapshot>) -> FillRow {
 
 /// Said when the journal holds unconfirmed orders that are not this account's.
 fn held_elsewhere_text(count: usize) -> String {
-    if count == 1 {
-        "1 unconfirmed order belongs to a different account. It is left untouched here and checked when that account is connected."
-            .to_owned()
-    } else {
-        format!(
-            "{count} unconfirmed orders belong to a different account. They are left untouched here and checked when that account is connected."
-        )
-    }
+    tr_n!(
+        count,
+        "{count} unconfirmed order belongs to a different account. It is left untouched here and checked when that account is connected.",
+        "{count} unconfirmed orders belong to a different account. They are left untouched here and checked when that account is connected."
+    )
 }
 
 fn tone(tone: StatusTone) -> Tone {
@@ -325,9 +325,10 @@ fn state_of(snapshot: &BrokerSnapshot) -> BackendState {
                 .to_owned(),
         ),
         Status::Live => BackendState::Ready,
-        Status::Reconnecting { reason, .. } => {
-            BackendState::Paused(format!("Reconnecting ({reason}). New orders are paused."))
-        }
+        Status::Reconnecting { reason, .. } => BackendState::Paused(tr!(
+            "Reconnecting ({reason}). New orders are paused.",
+            reason = reason
+        )),
         Status::Failed(error) => BackendState::NeedsAttention(error.to_string()),
         Status::Stopped => BackendState::NotConnected,
     }
@@ -391,9 +392,11 @@ fn order_row(view: &OrderView, snapshot: &BrokerSnapshot) -> OrderRow {
     let order = &view.order;
     let working = order.status.is_working();
     let (label, status_tone) = match view.overlay.map(|overlay| overlay.kind) {
-        Some(OverlayKind::CancelRequested) if working => ("Cancel requested", StatusTone::Warning),
+        Some(OverlayKind::CancelRequested) if working => {
+            (tr!("Cancel requested"), StatusTone::Warning)
+        }
         Some(OverlayKind::EditRequested { .. }) if working => {
-            ("Edit requested", StatusTone::Warning)
+            (tr!("Edit requested"), StatusTone::Warning)
         }
         _ => rules::status_label(order.status),
     };
@@ -459,20 +462,32 @@ fn pending_row(pending: &PendingView, broker: degenview_brokers::BrokerId) -> Or
     let (kind, price, trigger, size, spend) = match &draft.kind {
         OrderKind::Market {
             size: OrderSize::Base(size),
-        } => ("Market", None, None, Some(*size), None),
+        } => (tr_c!("order type", "Market"), None, None, Some(*size), None),
         OrderKind::Market {
             size: OrderSize::Quote(amount),
-        } => ("Market", None, None, None, Some(*amount)),
+        } => (
+            tr_c!("order type", "Market"),
+            None,
+            None,
+            None,
+            Some(*amount),
+        ),
         OrderKind::Limit {
             base_size, price, ..
-        } => ("Limit", Some(*price), None, Some(*base_size), None),
+        } => (
+            tr_c!("order type", "Limit"),
+            Some(*price),
+            None,
+            Some(*base_size),
+            None,
+        ),
         OrderKind::StopLimit {
             base_size,
             limit_price,
             stop_price,
             ..
         } => (
-            "Stop-limit",
+            tr_c!("order type", "Stop-limit"),
             Some(*limit_price),
             Some(*stop_price),
             Some(*base_size),
@@ -492,12 +507,12 @@ fn pending_row(pending: &PendingView, broker: degenview_brokers::BrokerId) -> Or
         spend,
         status: if unconfirmed {
             RowStatus {
-                label: "Unconfirmed",
+                label: tr_c!("order status", "Unconfirmed"),
                 tone: Tone::Warning,
             }
         } else {
             RowStatus {
-                label: "Sending…",
+                label: tr_c!("order status", "Sending…"),
                 tone: Tone::Neutral,
             }
         },
@@ -566,20 +581,25 @@ fn field_of(field: TicketField) -> DraftField {
     }
 }
 
-const NO_STOP: &str = "This broker has no plain stop order. Use a stop limit.";
+fn no_stop() -> &'static str {
+    tr!("This broker has no plain stop order. Use a stop limit.")
+}
 
 fn cancel_text(outcome: CancelOutcome) -> CancelResult {
     match outcome {
         CancelOutcome::Requested => Ok(()),
-        CancelOutcome::AlreadyFilled => Err("It filled before the cancel arrived.".to_owned()),
-        CancelOutcome::NotFound => Err("The broker does not know this order any more.".to_owned()),
+        CancelOutcome::AlreadyFilled => Err(tr!("It filled before the cancel arrived.").to_owned()),
+        CancelOutcome::NotFound => {
+            Err(tr!("The broker does not know this order any more.").to_owned())
+        }
         CancelOutcome::BeingReplaced => {
-            Err("The order is being changed. Try again in a moment.".to_owned())
+            Err(tr!("The order is being changed. Try again in a moment.").to_owned())
         }
         CancelOutcome::Rejected(text) => Err(text),
-        CancelOutcome::Unknown(_) => Err(
-            "The cancel was sent but the answer was lost. The order is being checked.".to_owned(),
-        ),
+        CancelOutcome::Unknown(_) => Err(tr!(
+            "The cancel was sent but the answer was lost. The order is being checked."
+        )
+        .to_owned()),
     }
 }
 
@@ -596,11 +616,14 @@ impl TradingBackend for BrokerBackend {
             name: descriptor.display_name.to_owned(),
             kind,
             summary: if descriptor.real_money {
-                format!("Real orders on your {} account.", descriptor.display_name)
+                tr!(
+                    "Real orders on your {broker} account.",
+                    broker = descriptor.display_name
+                )
             } else {
-                format!(
-                    "Practice orders on {}'s test environment. No real money.",
-                    descriptor.display_name
+                tr!(
+                    "Practice orders on {broker}'s test environment. No real money.",
+                    broker = descriptor.display_name
                 )
             },
             needs_no_credentials: descriptor.credential_fields.is_empty(),
@@ -650,21 +673,17 @@ impl TradingBackend for BrokerBackend {
         let note = if valuation.assets == 0 {
             None
         } else {
-            let assets = format!(
-                "{} {}",
-                valuation.assets,
-                if valuation.assets == 1 {
-                    "asset"
-                } else {
-                    "assets"
-                }
-            );
+            let assets = tr_n!(valuation.assets, "{count} asset", "{count} assets");
             Some(HeroNote {
                 trend: Trend::Flat,
                 text: if valuation.unpriced.is_empty() {
                     assets
                 } else {
-                    format!("{assets} · {} unpriced", valuation.unpriced.len())
+                    tr!(
+                        "{assets} · {unpriced} unpriced",
+                        assets = assets,
+                        unpriced = valuation.unpriced.len()
+                    )
                 },
                 tone: if valuation.unpriced.is_empty() {
                     StatTone::Neutral
@@ -676,49 +695,52 @@ impl TradingBackend for BrokerBackend {
         };
         let mut cells = vec![
             StatCell {
-                title: "Cash".to_owned(),
+                title: tr!("Cash").to_owned(),
                 value: money(valuation.cash),
                 tone: StatTone::Neutral,
-                help: format!("{currency} free to spend"),
+                help: tr!("{currency} free to spend", currency = currency),
             },
             StatCell {
-                title: "On hold".to_owned(),
+                title: tr!("On hold").to_owned(),
                 value: money(valuation.on_hold),
                 tone: StatTone::Neutral,
-                help: "Committed to open orders".to_owned(),
+                help: tr!("Committed to open orders").to_owned(),
             },
             StatCell {
-                title: "Holdings".to_owned(),
+                title: tr!("Holdings").to_owned(),
                 value: money(valuation.holdings),
                 tone: StatTone::Neutral,
-                help: format!("Everything held except {currency}, at the latest prices"),
+                help: tr!(
+                    "Everything held except {currency}, at the latest prices",
+                    currency = currency
+                ),
             },
             StatCell {
-                title: "Open orders".to_owned(),
+                title: tr!("Open orders").to_owned(),
                 value: working.to_string(),
                 tone: StatTone::Neutral,
-                help: "Orders resting at the broker or being sent".to_owned(),
+                help: tr!("Orders resting at the broker or being sent").to_owned(),
             },
         ];
         if let Some(fees) = &snapshot.fees
             && let (Some(maker), Some(taker)) = (fees.maker_rate, fees.taker_rate)
         {
             cells.push(StatCell {
-                title: "Fees".to_owned(),
+                title: tr!("Fees").to_owned(),
                 value: format!("{} / {}", money::percent(maker), money::percent(taker)),
                 tone: StatTone::Neutral,
-                help: format!("Maker / taker, {}", fees.tier),
+                help: tr!("Maker / taker, {tier}", tier = fees.tier),
             });
         }
         let help = (!valuation.unpriced.is_empty()).then(|| {
-            format!(
-                "An estimate: {} could not be priced and is left out.",
-                valuation.unpriced.join(", ")
+            tr!(
+                "An estimate: {assets} could not be priced and is left out.",
+                assets = valuation.unpriced.join(", ")
             )
         });
         Some(AccountStats {
             hero: Hero {
-                title: "Equity".to_owned(),
+                title: tr!("Equity").to_owned(),
                 value: if valuation.assets == 0 {
                     "—".to_owned()
                 } else {
@@ -799,7 +821,7 @@ impl TradingBackend for BrokerBackend {
             return DraftCheck {
                 issues: vec![DraftIssue::new(
                     DraftField::Order,
-                    "The market's rules have not been read yet.",
+                    tr!("The market's rules have not been read yet."),
                 )],
                 missing,
                 estimate: Estimate::default(),
@@ -807,7 +829,7 @@ impl TradingBackend for BrokerBackend {
         };
         if draft.class == OrderClass::Stop {
             return DraftCheck {
-                issues: vec![DraftIssue::new(DraftField::Order, NO_STOP)],
+                issues: vec![DraftIssue::new(DraftField::Order, no_stop())],
                 missing,
                 estimate: Estimate::default(),
             };
@@ -881,7 +903,9 @@ impl TradingBackend for BrokerBackend {
         binding: &Binding,
     ) -> Task<Result<PreviewResult, String>> {
         let Some(found) = self.market_of(market) else {
-            return Task::ready(Err("The market's rules have not been read yet.".to_owned()));
+            return Task::ready(Err(
+                tr!("The market's rules have not been read yet.").to_owned()
+            ));
         };
         let runtime = match self.runtime_for(binding) {
             Ok(runtime) => runtime,
@@ -921,7 +945,9 @@ impl TradingBackend for BrokerBackend {
         binding: &Binding,
     ) -> Task<SubmitResult> {
         let Some(found) = self.market_of(market) else {
-            return Task::ready(Err("The market's rules have not been read yet.".to_owned()));
+            return Task::ready(Err(
+                tr!("The market's rules have not been read yet.").to_owned()
+            ));
         };
         // The runtime the order was reviewed against, or none: never "whatever is connected now".
         let runtime = match self.runtime_for(binding) {

@@ -6,6 +6,7 @@
 //! `CardRuntime` per card. A runtime releases its demand when the card goes away.
 
 use crate::host::portfolio::{PortfolioHost, local_offset, now_ms};
+use crate::i18n::tr;
 use crate::model::portfolio::accounting::{holdings, net_contributions};
 use crate::model::portfolio::card::{CardData, CardKind, Performance, PortfolioCard, performance};
 use crate::model::portfolio::format::PortfolioValueFormatter;
@@ -287,7 +288,7 @@ fn unavailable(card: &PortfolioCard, now_ms: i64, utc_offset_secs: i64) -> CardD
         ),
         loading: false,
         loading_history: false,
-        error: Some("The portfolio database is unavailable.".to_owned()),
+        error: Some(tr!("The portfolio database is unavailable.").to_owned()),
         unpriced: 0,
         performance: Performance::default(),
         loading_performance: false,

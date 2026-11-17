@@ -1,6 +1,7 @@
 //! Reading and writing theme files: the open and save panels, and where a file goes on a system
 //! that has none. Every call blocks until the user answers, so run them on a worker thread.
 
+use crate::i18n::tr;
 use crate::service::snapshot::export::downloads_path;
 use crate::service::system::file_dialog;
 use std::path::PathBuf;
@@ -13,7 +14,7 @@ pub fn file_name(stem: &str) -> String {
 
 /// Asks for a theme file and reads it, up to `limit` bytes. `None` when the person cancels.
 pub fn choose_and_read(limit: usize) -> Result<Option<String>, String> {
-    let Some(path) = file_dialog::choose_json("Import a theme")? else {
+    let Some(path) = file_dialog::choose_json(tr!("Import a theme"))? else {
         return Ok(None);
     };
     file_dialog::read_text_up_to(&path, limit).map(Some)
@@ -24,7 +25,7 @@ pub fn choose_and_read(limit: usize) -> Result<Option<String>, String> {
 pub fn save(stem: &str, text: &str) -> Result<Option<PathBuf>, String> {
     let name = file_name(stem);
     let path = if crate::platform::has_file_dialogs() {
-        file_dialog::choose_save_path("Export theme", &name)?
+        file_dialog::choose_save_path(tr!("Export theme"), &name)?
     } else {
         Some(downloads_path(&name).map_err(|error| error.message())?)
     };

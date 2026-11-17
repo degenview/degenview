@@ -8,6 +8,7 @@
 // The macOS bundle checks and `ditto` extraction below are unused on Windows and Linux.
 #![cfg_attr(any(windows, target_os = "linux"), allow(dead_code))]
 
+use crate::i18n::tr;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -37,7 +38,7 @@ fn le32(bytes: &[u8], at: usize) -> Option<u64> {
 /// Reads the zip's central directory (no decompression) and refuses archives that declare too
 /// many entries, too much data, ZIP64 sizes, or an entry name that is absolute or climbs out.
 pub fn precheck(zip: &[u8]) -> Result<(), String> {
-    let invalid = || "The download is not a valid zip.".to_owned();
+    let invalid = || tr!("The download is not a valid zip.").to_owned();
     let last = zip.len().checked_sub(22).ok_or_else(invalid)?;
     let first = last.saturating_sub(usize::from(u16::MAX));
     let eocd = (first..=last)
@@ -48,10 +49,10 @@ pub fn precheck(zip: &[u8]) -> Result<(), String> {
     let directory_size = le32(zip, eocd + 12).ok_or_else(invalid)?;
     let directory_at = le32(zip, eocd + 16).ok_or_else(invalid)?;
     if count == 0xFFFF || directory_size == 0xFFFF_FFFF || directory_at == 0xFFFF_FFFF {
-        return Err("The download uses an unsupported zip format.".to_owned());
+        return Err(tr!("The download uses an unsupported zip format.").to_owned());
     }
     if count == 0 || count > MAX_ENTRIES {
-        return Err("The download has an unexpected number of files.".to_owned());
+        return Err(tr!("The download has an unexpected number of files.").to_owned());
     }
     let mut at = usize::try_from(directory_at).map_err(|_| invalid())?;
     let mut total: u64 = 0;
@@ -67,12 +68,14 @@ pub fn precheck(zip: &[u8]) -> Result<(), String> {
         );
         let name = zip.get(at + 46..at + 46 + name_len).ok_or_else(invalid)?;
         if !is_safe_entry_name(name) {
-            return Err("The download contains an unsafe file path.".to_owned());
+            return Err(tr!("The download contains an unsafe file path.").to_owned());
         }
         total = total
             .checked_add(size)
             .filter(|total| *total <= MAX_UNPACKED_BYTES && size != 0xFFFF_FFFF)
-            .ok_or("The download unpacks to more data than an update should.")?;
+            .ok_or(tr!(
+                "The download unpacks to more data than an update should."
+            ))?;
         at += 46 + name_len + extra_len + comment_len;
     }
     Ok(())
@@ -96,7 +99,7 @@ pub fn extract(zip: &Path, dest: &Path) -> Result<(), String> {
     let mut command = Command::new("/usr/bin/ditto");
     command.arg("-x").arg("-k").arg(zip).arg(dest);
     run_bounded(&mut command, dest, MAX_UNPACKED_BYTES, EXTRACT_TIMEOUT)
-        .map_err(|error| format!("Could not unpack the download: {error}"))
+        .map_err(|error| tr!("Could not unpack the download: {error}", error = error))
 }
 
 fn run_bounded(
@@ -120,17 +123,27 @@ fn run_bounded(
     loop {
         match child.try_wait().map_err(|error| error.to_string())? {
             Some(status) if status.success() => return Ok(()),
-            Some(status) => return Err(format!("unpacking failed ({status})")),
+            Some(status) => return Err(tr!("unpacking failed ({status})", status = status)),
             None => {}
         }
         match directory_bytes(watch) {
             Ok(bytes) if bytes <= max_bytes => {}
-            Ok(_) => return fail(&mut child, "it unpacks to more data than an update should"),
+            Ok(_) => {
+                return fail(
+                    &mut child,
+                    tr!("it unpacks to more data than an update should"),
+                );
+            }
             // A size that cannot be measured cannot be bounded: stop rather than let it grow.
-            Err(error) => return fail(&mut child, &format!("could not measure it ({error})")),
+            Err(error) => {
+                return fail(
+                    &mut child,
+                    &tr!("could not measure it ({error})", error = error),
+                );
+            }
         }
         if started.elapsed() > timeout {
-            return fail(&mut child, "unpacking took too long");
+            return fail(&mut child, tr!("unpacking took too long"));
         }
         std::thread::sleep(POLL);
     }
@@ -177,18 +190,20 @@ pub const EXE_NAME: &str = "degenview.exe";
 pub fn extract_exe(bytes: &[u8], dest_dir: &Path) -> Result<std::path::PathBuf, String> {
     use std::io::Read;
 
-    let failed = |error: &dyn std::fmt::Display| format!("Could not unpack the download: {error}");
+    let failed = |error: &dyn std::fmt::Display| {
+        tr!("Could not unpack the download: {error}", error = error)
+    };
     let mut archive =
         zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|error| failed(&error))?;
     // Two entries of one name would leave it to the reader which one is "the" executable.
     if archive.has_duplicate_names() {
-        return Err("The download contains the same file twice.".to_owned());
+        return Err(tr!("The download contains the same file twice.").to_owned());
     }
     let mut entry = archive
         .by_name(EXE_NAME)
-        .map_err(|_| "The download is not a DegenView app.".to_owned())?;
+        .map_err(|_| tr!("The download is not a DegenView app.").to_owned())?;
     if !entry.is_file() || entry.size() > MAX_UNPACKED_BYTES {
-        return Err("The download is not a DegenView app.".to_owned());
+        return Err(tr!("The download is not a DegenView app.").to_owned());
     }
     std::fs::create_dir_all(dest_dir).map_err(|error| failed(&error))?;
     let dest = dest_dir.join(EXE_NAME);
@@ -197,7 +212,7 @@ pub fn extract_exe(bytes: &[u8], dest_dir: &Path) -> Result<std::path::PathBuf, 
     let copied = std::io::copy(&mut (&mut entry).take(MAX_UNPACKED_BYTES + 1), &mut out)
         .map_err(|error| failed(&error))?;
     if copied > MAX_UNPACKED_BYTES {
-        return Err("The download unpacks to more data than an update should.".to_owned());
+        return Err(tr!("The download unpacks to more data than an update should.").to_owned());
     }
     Ok(dest)
 }
@@ -217,7 +232,7 @@ const fn expected_machine() -> u16 {
 fn pe_machine(exe: &Path) -> Result<u16, String> {
     use std::io::{Read, Seek, SeekFrom};
 
-    let not_degenview = || "The download is not a DegenView app.".to_owned();
+    let not_degenview = || tr!("The download is not a DegenView app.").to_owned();
     let mut file = std::fs::File::open(exe).map_err(|_| not_degenview())?;
     let mut dos = [0u8; 64];
     file.read_exact(&mut dos).map_err(|_| not_degenview())?;
@@ -240,7 +255,7 @@ fn pe_machine(exe: &Path) -> Result<u16, String> {
 #[cfg(any(windows, test))]
 pub fn check_exe(exe: &Path) -> Result<(), String> {
     if pe_machine(exe)? != expected_machine() {
-        return Err("The download is for a different kind of processor.".to_owned());
+        return Err(tr!("The download is for a different kind of processor.").to_owned());
     }
     Ok(())
 }
@@ -271,10 +286,12 @@ fn extract_tar_gz_binary_within(
 ) -> Result<std::path::PathBuf, String> {
     use std::io::Read;
 
-    let failed = |error: &dyn std::fmt::Display| format!("Could not unpack the download: {error}");
-    let not_degenview = || "The download is not a DegenView app.".to_owned();
+    let failed = |error: &dyn std::fmt::Display| {
+        tr!("Could not unpack the download: {error}", error = error)
+    };
+    let not_degenview = || tr!("The download is not a DegenView app.").to_owned();
     if bytes.get(..2) != Some(&[0x1f, 0x8b]) {
-        return Err("The download is not a valid archive.".to_owned());
+        return Err(tr!("The download is not a valid archive.").to_owned());
     }
     // Declared sizes can lie, and so can compression ratios: bound what actually comes out.
     let stream = flate2::read::GzDecoder::new(bytes).take(max_bytes);
@@ -282,15 +299,15 @@ fn extract_tar_gz_binary_within(
     let mut written = None;
     for (index, entry) in archive.entries().map_err(|e| failed(&e))?.enumerate() {
         if index >= MAX_ENTRIES {
-            return Err("The download has an unexpected number of files.".to_owned());
+            return Err(tr!("The download has an unexpected number of files.").to_owned());
         }
         let mut entry = entry.map_err(|e| failed(&e))?;
         let path = entry.path().map_err(|e| failed(&e))?;
         let name = path
             .to_str()
-            .ok_or("The download contains an unsafe file path.")?;
+            .ok_or(tr!("The download contains an unsafe file path."))?;
         if !is_safe_entry_name(name.as_bytes()) {
-            return Err("The download contains an unsafe file path.".to_owned());
+            return Err(tr!("The download contains an unsafe file path.").to_owned());
         }
         if name.trim_start_matches("./") != BINARY_NAME {
             continue;
@@ -329,7 +346,7 @@ const fn expected_elf_machine() -> u16 {
 fn elf_machine(path: &Path) -> Result<u16, String> {
     use std::io::Read;
 
-    let not_degenview = || "The download is not a DegenView app.".to_owned();
+    let not_degenview = || tr!("The download is not a DegenView app.").to_owned();
     let mut header = [0u8; 20];
     std::fs::File::open(path)
         .and_then(|mut file| file.read_exact(&mut header))
@@ -348,7 +365,7 @@ fn elf_machine(path: &Path) -> Result<u16, String> {
 #[cfg(any(target_os = "linux", test))]
 pub fn check_elf(path: &Path) -> Result<(), String> {
     if elf_machine(path)? != expected_elf_machine() {
-        return Err("The download is for a different kind of processor.".to_owned());
+        return Err(tr!("The download is for a different kind of processor.").to_owned());
     }
     Ok(())
 }
@@ -358,7 +375,7 @@ pub fn check_elf(path: &Path) -> Result<(), String> {
 /// The unpacked bundle must be exactly DegenView: both of its executables with our bundle ids, no
 /// other launchable file, and no link that leaves the bundle.
 pub fn check_bundle(app: &Path) -> Result<(), String> {
-    let not_degenview = || "The download is not a DegenView app.".to_owned();
+    let not_degenview = || tr!("The download is not a DegenView app.").to_owned();
     let helper = app.join(HELPER_APP);
     let declares = |bundle: &Path, id: &str| {
         std::fs::read_to_string(bundle.join("Contents/Info.plist"))
@@ -375,8 +392,12 @@ pub fn check_bundle(app: &Path) -> Result<(), String> {
     }
     // If the bundle's layout changes on purpose, update the constants above.
     let expected = [main_executable, helper_executable];
-    inspect(app, app, &expected)
-        .map_err(|problem| format!("The download is not a DegenView app ({problem})."))
+    inspect(app, app, &expected).map_err(|problem| {
+        tr!(
+            "The download is not a DegenView app ({problem}).",
+            problem = problem
+        )
+    })
 }
 
 fn inspect(root: &Path, dir: &Path, expected: &[std::path::PathBuf]) -> Result<(), String> {
@@ -396,12 +417,12 @@ fn inspect(root: &Path, dir: &Path, expected: &[std::path::PathBuf]) -> Result<(
                     .components()
                     .any(|part| matches!(part, std::path::Component::ParentDir));
             if escapes {
-                return Err(format!("{relative} links outside the app"));
+                return Err(tr!("{relative} links outside the app", relative = relative));
             }
         } else if meta.is_dir() {
             inspect(root, &path, expected)?;
         } else if is_executable(&meta) && !expected.contains(&path) {
-            return Err(format!("unexpected executable {relative}"));
+            return Err(tr!("unexpected executable {relative}", relative = relative));
         }
     }
     Ok(())

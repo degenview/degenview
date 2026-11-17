@@ -4,6 +4,7 @@
 //! The screens hold this trait, never the broker's runtime: every call is a [`Task`] they poll on
 //! later frames, and a call made while the broker is not connected answers with an error at once.
 
+use crate::i18n::{tr, tr_n};
 use degenview_brokers::model::orders::{CancelOutcome, CancelResult};
 
 use crate::trading::edit::EditVenue;
@@ -58,31 +59,41 @@ pub fn cancel_report(results: &[CancelResult]) -> CancelReport {
     for result in results {
         match &result.outcome {
             CancelOutcome::Requested => {}
-            CancelOutcome::AlreadyFilled => problems.push("one had already filled".to_owned()),
+            CancelOutcome::AlreadyFilled => problems.push(tr!("one had already filled").to_owned()),
             CancelOutcome::NotFound => {
-                problems.push("one could not be found (it may already be finished)".to_owned());
+                problems.push(tr!("one could not be found (it may already be finished)").to_owned());
             }
             CancelOutcome::BeingReplaced => {
-                problems.push("one is being edited; try again in a moment".to_owned());
+                problems.push(tr!("one is being edited; try again in a moment").to_owned());
             }
             CancelOutcome::Rejected(text) => problems.push(text.clone()),
             CancelOutcome::Unknown(_) => problems.push(
-                "one did not get an answer: it may or may not be cancelled, and is being read again"
+                tr!("one did not get an answer: it may or may not be cancelled, and is being read again")
                     .to_owned(),
             ),
         }
     }
     let asked = match requested {
         0 => String::new(),
-        1 => "Cancel requested. The order stays until the broker confirms.".to_owned(),
-        n => format!("{n} cancels requested. The orders stay until the broker confirms."),
+        n => tr_n!(
+            n,
+            "Cancel requested. The order stays until the broker confirms.",
+            "{count} cancels requested. The orders stay until the broker confirms."
+        ),
     };
     let (text, error) = if problems.is_empty() {
         (asked, false)
     } else if asked.is_empty() {
         (capitalise(&problems.join("; ")), true)
     } else {
-        (format!("{asked} But {}.", problems.join("; ")), true)
+        (
+            tr!(
+                "{asked} But {problems}.",
+                asked = asked,
+                problems = problems.join("; ")
+            ),
+            true,
+        )
     };
     CancelReport { text, error }
 }
@@ -152,5 +163,18 @@ mod tests {
                 .text
                 .contains("edited")
         );
+    }
+
+    #[test]
+    fn a_cancel_report_follows_the_language() {
+        use crate::i18n::{Locale, with_locale};
+        let results = [
+            result(CancelOutcome::Requested),
+            result(CancelOutcome::NotFound),
+        ];
+        let english = cancel_report(&results);
+        let pseudo = with_locale(Locale::Pseudo, || cancel_report(&results));
+        assert_ne!(pseudo.text, english.text);
+        assert_eq!(pseudo.error, english.error);
     }
 }

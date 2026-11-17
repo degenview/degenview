@@ -25,6 +25,7 @@
 // Off Linux nothing but the tests reaches the worker.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
+use crate::i18n::tr;
 use crate::service::keychain::webhook_secrets::Scope;
 use crate::service::webhook::delivery::SecretStoreError;
 use std::collections::HashMap;
@@ -235,7 +236,12 @@ impl Client {
         self.ask(PATIENT, |reply| {
             Request::Write(id.clone(), value.to_owned(), reply)
         })
-        .map_err(|reason| SecretStoreError(format!("Could not save to the keyring: {reason}")))?;
+        .map_err(|reason| {
+            SecretStoreError(tr!(
+                "Could not save to the keyring: {reason}",
+                reason = reason
+            ))
+        })?;
         self.remember(&id, true);
         Ok(())
     }
@@ -247,8 +253,9 @@ impl Client {
                 self.remember(&id, false);
                 Ok(())
             }
-            Err(reason) => Err(SecretStoreError(format!(
-                "Could not remove it from the keyring: {reason}"
+            Err(reason) => Err(SecretStoreError(tr!(
+                "Could not remove it from the keyring: {reason}",
+                reason = reason
             ))),
         }
     }

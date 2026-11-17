@@ -13,6 +13,7 @@
 //! this Mac, the editor keeps the system's monospace font and the saved name is kept, so the font
 //! comes back when it does.
 
+use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::editor_theme::codec;
 use crate::model::editor_theme::{
@@ -364,14 +365,19 @@ impl Inner {
         if self.themes_dirty && self.themes_unwritable.is_none() {
             match store.replace_editor_themes(self.book.saved()) {
                 Ok(()) => self.themes_dirty = false,
-                Err(error) => self.notice = Some(format!("Could not save your themes: {error}")),
+                Err(error) => {
+                    self.notice = Some(tr!("Could not save your themes: {error}", error = error))
+                }
             }
         }
         if self.prefs_dirty {
             match store.set_editor_prefs(&self.prefs) {
                 Ok(()) => self.prefs_dirty = false,
                 Err(error) => {
-                    self.notice = Some(format!("Could not save the editor settings: {error}"))
+                    self.notice = Some(tr!(
+                        "Could not save the editor settings: {error}",
+                        error = error
+                    ))
                 }
             }
         }
