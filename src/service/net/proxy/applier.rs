@@ -70,12 +70,17 @@ pub fn take_report() -> Option<ApplyReport> {
     lock(&SHARED.queue).report.take()
 }
 
-/// Clears `running` if the worker dies in the middle of a job, so the next save starts another.
+/// Clears `running` if the worker dies in the middle of a job, so the next save starts another
+/// (what was queued waits for it). A worker that leaves normally has cleared it already, in the
+/// lock that found the queue empty; clearing it again here could erase the flag of a successor
+/// that a save started in between, and the next save would then start a second worker beside it.
 struct Running<'a>(&'a Mutex<Queue>);
 
 impl Drop for Running<'_> {
     fn drop(&mut self) {
-        lock(self.0).running = false;
+        if std::thread::panicking() {
+            lock(self.0).running = false;
+        }
     }
 }
 
@@ -220,6 +225,34 @@ mod tests {
             lock(&applier.queue).report.take(),
             Some(ApplyReport::PasswordSaved)
         );
+    }
+
+    /// A worker that leaves normally has already cleared `running` in the lock that found the queue
+    /// empty. If a save started a successor in the moment after, the leaving worker must not clear
+    /// the successor's flag: the next save would start a second worker beside it, and the two could
+    /// apply settings out of order.
+    #[test]
+    fn a_leaving_worker_does_not_clear_its_successors_flag() {
+        let queue = Mutex::new(Queue::default());
+        let leaving = Running(&queue);
+        lock(&queue).running = true; // the successor
+        drop(leaving);
+        assert!(lock(&queue).running);
+    }
+
+    /// A worker that dies in the middle of a job does clear it, so the next save starts another.
+    #[test]
+    fn a_worker_that_panics_frees_the_next_save_to_start_one() {
+        let queue = Mutex::new(Queue {
+            running: true,
+            ..Queue::default()
+        });
+        let died = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _running = Running(&queue);
+            panic!("the storage broke");
+        }));
+        assert!(died.is_err());
+        assert!(!lock(&queue).running);
     }
 
     /// A password backend that stops inside `write` until released, to hold an apply open.
