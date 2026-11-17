@@ -250,17 +250,17 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
     };
 
     match source {
-        DataSource::Binance => {
+        DataSource::Binance | DataSource::Bybit | DataSource::Mexc => {
             let symbol = rest.to_uppercase();
             if !(3..=20).contains(&symbol.len()) || !symbol.chars().all(is_upper_alphanumeric) {
-                return Err(
-                    "Not a Binance spot symbol (perpetuals and futures aren't supported)"
-                        .to_owned(),
-                );
+                return Err(format!(
+                    "Not a {} spot symbol (perpetuals and futures aren't supported)",
+                    source.display_name()
+                ));
             }
             Ok(item(source, &symbol, &symbol, &symbol))
         }
-        DataSource::Coinbase => {
+        DataSource::Coinbase | DataSource::Okx => {
             let symbol = rest.to_uppercase();
             let valid = symbol.split_once('-').is_some_and(|(base, quote)| {
                 [base, quote]
@@ -268,9 +268,37 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
                     .all(|part| !part.is_empty() && part.chars().all(is_upper_alphanumeric))
             });
             if !valid {
-                return Err("Coinbase products are written BASE-QUOTE, like BTC-USD".to_owned());
+                return Err(match source {
+                    DataSource::Okx => "OKX spot markets are written BASE-QUOTE, like BTC-USDT",
+                    _ => "Coinbase products are written BASE-QUOTE, like BTC-USD",
+                }
+                .to_owned());
             }
             Ok(item(source, &symbol, &symbol.replace('-', "/"), &symbol))
+        }
+        DataSource::Gate => {
+            let symbol = rest.to_uppercase();
+            let valid = symbol.split_once('_').is_some_and(|(base, quote)| {
+                [base, quote]
+                    .iter()
+                    .all(|part| !part.is_empty() && part.chars().all(is_upper_alphanumeric))
+            });
+            if !valid {
+                return Err("Gate.io markets are written BASE_QUOTE, like BTC_USDT".to_owned());
+            }
+            Ok(item(source, &symbol, &symbol.replace('_', "/"), &symbol))
+        }
+        DataSource::Kraken => {
+            let valid = rest.split_once('/').is_some_and(|(base, quote)| {
+                [base, quote]
+                    .iter()
+                    .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric()))
+            });
+            if !valid {
+                return Err("Kraken markets are written BASE/QUOTE, like BTC/USD".to_owned());
+            }
+            let symbol = InstrumentId::new(source, rest.as_str()).api_symbol();
+            Ok(item(source, &symbol, &symbol, &symbol))
         }
         DataSource::Alpaca => stock(&rest),
         DataSource::CoinGecko => {
@@ -520,6 +548,104 @@ mod tests {
                 (8, "Not a US stock ticker"),
                 (9, "Missing symbol"),
             ]
+        );
+    }
+
+    #[test]
+    fn okx_rows_are_spot_pairs_written_base_dash_quote() {
+        let parsed = parse("OKX:btc-usdt\nOKX:BTCUSDT\nOKX:BTC-USDT-SWAP");
+        assert_eq!(parsed.rows.len(), 1);
+        let Row::Instrument(item) = &parsed.rows[0] else {
+            panic!("an instrument");
+        };
+        assert_eq!(item.instrument.key(), "OKX:BTC-USDT");
+        assert_eq!(item.name, "BTC/USDT");
+        let reasons: Vec<&str> = parsed
+            .skipped
+            .iter()
+            .map(|skipped| skipped.reason.as_str())
+            .collect();
+        assert_eq!(
+            reasons,
+            ["OKX spot markets are written BASE-QUOTE, like BTC-USDT"; 2]
+        );
+    }
+
+    #[test]
+    fn mexc_rows_are_spot_symbols_written_without_a_separator() {
+        let parsed = parse("MEXC:btcusdt\nMEXC:BTCUSDT.P\nMEXC:BTC_USDT");
+        assert_eq!(parsed.rows.len(), 1);
+        let Row::Instrument(item) = &parsed.rows[0] else {
+            panic!("an instrument");
+        };
+        assert_eq!(item.instrument.key(), "MEXC:BTCUSDT");
+        assert_eq!(
+            parsed
+                .skipped
+                .iter()
+                .map(|skipped| skipped.reason.as_str())
+                .collect::<Vec<_>>(),
+            ["Not a MEXC spot symbol (perpetuals and futures aren't supported)"; 2]
+        );
+    }
+
+    #[test]
+    fn gate_rows_are_spot_pairs_written_base_underscore_quote() {
+        let parsed =
+            parse("GATEIO:btc_usdt\nGATEIO:BTCUSDT\nGATEIO:BTC_USDT_PERP\nGATEIO:BTC-USDT");
+        assert_eq!(parsed.rows.len(), 1);
+        let Row::Instrument(item) = &parsed.rows[0] else {
+            panic!("an instrument");
+        };
+        assert_eq!(item.instrument.key(), "GATEIO:BTC_USDT");
+        assert_eq!(item.name, "BTC/USDT");
+        assert_eq!(
+            parsed
+                .skipped
+                .iter()
+                .map(|skipped| skipped.reason.as_str())
+                .collect::<Vec<_>>(),
+            ["Gate.io markets are written BASE_QUOTE, like BTC_USDT"; 3]
+        );
+    }
+
+    #[test]
+    fn bybit_rows_are_spot_symbols_written_without_a_separator() {
+        let parsed = parse("BYBIT:btcusdt\nBYBIT:BTCUSDT.P\nBYBIT:BTC-USDT");
+        assert_eq!(parsed.rows.len(), 1);
+        let Row::Instrument(item) = &parsed.rows[0] else {
+            panic!("an instrument");
+        };
+        assert_eq!(item.instrument.key(), "BYBIT:BTCUSDT");
+        assert_eq!(
+            parsed
+                .skipped
+                .iter()
+                .map(|skipped| skipped.reason.as_str())
+                .collect::<Vec<_>>(),
+            ["Not a Bybit spot symbol (perpetuals and futures aren't supported)"; 2]
+        );
+    }
+
+    #[test]
+    fn kraken_rows_are_spot_pairs_written_base_slash_quote() {
+        let parsed = parse("KRAKEN:xbt/usd\nKRAKEN:ETH/EUR\nKRAKEN:BTCUSD\nKRAKEN:BTC-USD");
+        let keys: Vec<String> = parsed
+            .rows
+            .iter()
+            .filter_map(|row| match row {
+                Row::Instrument(item) => Some(item.instrument.key()),
+                Row::Section(_) => None,
+            })
+            .collect();
+        assert_eq!(keys, ["KRAKEN:BTC/USD", "KRAKEN:ETH/EUR"]);
+        assert_eq!(
+            parsed
+                .skipped
+                .iter()
+                .map(|skipped| skipped.reason.as_str())
+                .collect::<Vec<_>>(),
+            ["Kraken markets are written BASE/QUOTE, like BTC/USD"; 2]
         );
     }
 

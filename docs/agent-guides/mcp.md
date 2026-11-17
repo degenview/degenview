@@ -123,7 +123,8 @@ entry and `McpCommand::domain` arm), its arms in the app's `run_mcp_command` and
   from a worker. Saves compare the file with what the editor last read
   (`PineStudio::open_disk_state`, `ScriptStore::save_if_unchanged`) and are refused during an
   unresolved external-change conflict; never `ScriptStore::save` from MCP.
-- Drawings: plan from `ChartWorkspace::chart_data` with `mcp::chart::data`, commit via
+- Drawings: a chart's drawings are the set of the market it shows (each market has its own, see
+  `docs/drawing-tools.md`), so the tools list, add, edit and remove on that market. Plan from `ChartWorkspace::chart_data` with `mcp::chart::data`, commit via
   `apply_planned_drawings` (pointer's path, one undo step); tool threads never read `Chart.drawings`
   or `Chart.candles`. Validate in `mcp::chart::drawings` before queueing; never edit a locked drawing.
 - `degenview_get_candles` returns the market's own candles, not constructed bars. Indicator readings

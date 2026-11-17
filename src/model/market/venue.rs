@@ -65,6 +65,11 @@ mod tests {
         for (slug, expected) in [
             ("BINANCE", DataSource::Binance),
             ("COINBASE", DataSource::Coinbase),
+            ("OKX", DataSource::Okx),
+            ("KRAKEN", DataSource::Kraken),
+            ("BYBIT", DataSource::Bybit),
+            ("GATEIO", DataSource::Gate),
+            ("MEXC", DataSource::Mexc),
             ("COINGECKO", DataSource::CoinGecko),
             ("DEXSCREENER", DataSource::DexScreener),
             ("ALPACA", DataSource::Alpaca),
@@ -98,7 +103,7 @@ mod tests {
 
     #[test]
     fn a_venue_no_provider_serves_keeps_its_prefix() {
-        for prefix in ["OKX", "BYBIT", "HKEX", "SSE", "CME", "FX"] {
+        for prefix in ["KUCOIN", "BITGET", "HKEX", "SSE", "CME", "FX"] {
             let query = parse(&format!("{}:BTCUSDT", prefix.to_lowercase())).unwrap();
             assert_eq!(query.source, None, "{prefix}");
             assert_eq!(query.prefix, prefix);

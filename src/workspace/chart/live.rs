@@ -1,47 +1,62 @@
-//! The live Binance feed: keeping it on the workspace's charts and folding its candles in.
+//! The live candle feeds: one per streamed source on the workspace, folding its candles into the
+//! charts.
 
 use crate::model::market::live::LiveMark;
-use crate::model::{DataSource, Kline, Timeframe};
-use crate::service::market::live::BinanceLiveFeed;
+use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
+use crate::service::market::live::LiveFeed;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
 use std::time::Instant;
 
 impl ChartWorkspace {
-    pub(in crate::workspace) fn update_live_feed(&mut self, ctx: &egui::Context) {
+    pub(in crate::workspace) fn update_live_feeds(&mut self, ctx: &egui::Context) {
+        for source in DataSource::CANDLE_STREAMS {
+            self.update_live_feed(source, ctx);
+        }
+    }
+
+    fn update_live_feed(&mut self, source: DataSource, ctx: &egui::Context) {
         let mut symbols: Vec<String> = self
             .charts
             .iter()
-            .filter(|chart| chart.is_market() && chart.source == DataSource::Binance)
-            .map(|chart| chart.symbol.to_uppercase())
+            .filter(|chart| chart.is_market() && chart.source == source)
+            .map(|chart| InstrumentId::new(source, chart.symbol.as_str()).api_symbol())
             .collect();
         // The markets compared on a chart stream too, once however many overlays name them.
-        for symbol in self.overlay_hub.binance_symbols() {
+        for symbol in self.overlay_hub.streamed_symbols(source) {
             if !symbols.contains(&symbol) {
                 symbols.push(symbol);
             }
         }
-        // The stream is of the candle length Binance serves the timeframe from (one-minute klines
-        // for a 22-minute chart, monthly ones for a quarter); a timeframe it cannot reach has none.
-        let base = DataSource::Binance
+        // The stream is of the candle length the source serves the timeframe from (one-minute
+        // klines for a 22-minute chart, monthly ones for a quarter); a timeframe it cannot reach
+        // has none.
+        let base = source
             .plan(self.timeframe)
             .map(|plan| plan.base())
             .filter(|_| !symbols.is_empty());
-        let wanted = base.map(|base| (symbols, base.interval()));
-        let changed = match (&self.live_feed, &wanted) {
+        let wanted = base.map(|base| (symbols, base));
+        let changed = match (self.live_feeds.get(&source), &wanted) {
             (Some(feed), Some(wanted)) => feed.signature() != wanted,
             (None, None) => false,
             _ => true,
         };
         if changed {
-            self.live_feed = wanted.map(|(symbols, interval)| {
-                BinanceLiveFeed::connect(symbols, interval, ctx.clone())
-            });
+            let feed = wanted
+                .and_then(|(symbols, base)| LiveFeed::connect(source, symbols, base, ctx.clone()));
+            match feed {
+                Some(feed) => {
+                    self.live_feeds.insert(source, feed);
+                }
+                None => {
+                    self.live_feeds.remove(&source);
+                }
+            }
         }
 
         let updates = self
-            .live_feed
-            .as_ref()
+            .live_feeds
+            .get(&source)
             .map(|feed| feed.inbox.drain())
             .unwrap_or_default();
         let Some(base) = base else {
@@ -50,16 +65,28 @@ impl ChartWorkspace {
         let now = Instant::now();
         for (symbol, kline) in updates {
             self.overlay_hub
-                .apply_live(self.timeframe, base, &symbol, &kline, now);
-            self.apply_live_kline(base, &symbol, kline, now);
+                .apply_live(source, self.timeframe, base, &symbol, &kline, now);
+            self.apply_live_kline(source, base, &symbol, kline, now);
         }
     }
 
-    /// Every chart of `symbol` takes the kline of `base` candles, whatever else it shows.
-    fn apply_live_kline(&mut self, base: Timeframe, symbol: &str, kline: Kline, now: Instant) {
+    /// Every chart of `symbol` on `source` takes the kline of `base` candles, whatever else it
+    /// shows. A chart's symbol may be spelled any way the source takes (`BTC`, `btc/usdt`): the
+    /// feed names the market as the source does, so they are compared by `api_symbol`.
+    fn apply_live_kline(
+        &mut self,
+        source: DataSource,
+        base: Timeframe,
+        symbol: &str,
+        kline: Kline,
+        now: Instant,
+    ) {
         let timeframe = self.timeframe;
         for chart in self.charts.iter_mut().filter(|chart| {
-            chart.source == DataSource::Binance && chart.symbol.eq_ignore_ascii_case(symbol)
+            chart.source == source
+                && InstrumentId::new(source, chart.symbol.as_str())
+                    .api_symbol()
+                    .eq_ignore_ascii_case(symbol)
         }) {
             if let Some(open_time) =
                 chart
@@ -92,11 +119,142 @@ mod tests {
         workspace.charts.push(other);
 
         let base = workspace.timeframe;
-        workspace.apply_live_kline(base, "btcusdt", candle(2, 5.0), Instant::now());
+        workspace.apply_live_kline(
+            DataSource::Binance,
+            base,
+            "btcusdt",
+            candle(2, 5.0),
+            Instant::now(),
+        );
 
         let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
         assert_eq!(lens, [2, 2, 1]);
         assert!(workspace.charts[0].live.is_some() && workspace.charts[1].live.is_some());
+    }
+
+    #[test]
+    fn a_kraken_chart_takes_the_live_bar_whatever_way_its_symbol_is_spelled() {
+        let mut workspace = empty_workspace(1);
+        for (id, symbol) in [(1, "xbt/usd"), (2, "BTC-USD"), (3, "BTC")] {
+            let mut chart = Chart::blank(id, symbol, DataSource::Kraken);
+            chart.candles = vec![candle(1, 1.0)];
+            workspace.charts.push(chart);
+        }
+        let mut other = Chart::blank(4, "ETH/USD", DataSource::Kraken);
+        other.candles = vec![candle(1, 1.0)];
+        workspace.charts.push(other);
+
+        let base = workspace.timeframe;
+        workspace.apply_live_kline(
+            DataSource::Kraken,
+            base,
+            "BTC/USD",
+            candle(2, 5.0),
+            Instant::now(),
+        );
+
+        let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
+        assert_eq!(lens, [2, 2, 2, 1]);
+    }
+
+    #[test]
+    fn an_okx_chart_takes_the_live_bar_whatever_way_its_symbol_is_spelled() {
+        let mut workspace = empty_workspace(1);
+        for (id, symbol) in [(1, "btc/usdt"), (2, "BTC-USDT"), (3, "BTC")] {
+            let mut chart = Chart::blank(id, symbol, DataSource::Okx);
+            chart.candles = vec![candle(1, 1.0)];
+            workspace.charts.push(chart);
+        }
+        let mut other = Chart::blank(4, "ETH-USDT", DataSource::Okx);
+        other.candles = vec![candle(1, 1.0)];
+        workspace.charts.push(other);
+
+        let base = workspace.timeframe;
+        workspace.apply_live_kline(
+            DataSource::Okx,
+            base,
+            "BTC-USDT",
+            candle(2, 5.0),
+            Instant::now(),
+        );
+
+        let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
+        assert_eq!(lens, [2, 2, 2, 1]);
+    }
+
+    #[test]
+    fn a_bybit_chart_takes_the_live_bar_whatever_way_its_symbol_is_spelled() {
+        let mut workspace = empty_workspace(1);
+        for (id, symbol) in [(1, "btc/usdt"), (2, "BTCUSDT"), (3, "BTC")] {
+            let mut chart = Chart::blank(id, symbol, DataSource::Bybit);
+            chart.candles = vec![candle(1, 1.0)];
+            workspace.charts.push(chart);
+        }
+        let mut other = Chart::blank(4, "ETHUSDT", DataSource::Bybit);
+        other.candles = vec![candle(1, 1.0)];
+        workspace.charts.push(other);
+
+        let base = workspace.timeframe;
+        workspace.apply_live_kline(
+            DataSource::Bybit,
+            base,
+            "BTCUSDT",
+            candle(2, 5.0),
+            Instant::now(),
+        );
+
+        let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
+        assert_eq!(lens, [2, 2, 2, 1]);
+    }
+
+    #[test]
+    fn a_gate_chart_takes_the_live_bar_whatever_way_its_symbol_is_spelled() {
+        let mut workspace = empty_workspace(1);
+        for (id, symbol) in [(1, "btc/usdt"), (2, "BTC_USDT"), (3, "BTC")] {
+            let mut chart = Chart::blank(id, symbol, DataSource::Gate);
+            chart.candles = vec![candle(1, 1.0)];
+            workspace.charts.push(chart);
+        }
+        let mut other = Chart::blank(4, "ETH_USDT", DataSource::Gate);
+        other.candles = vec![candle(1, 1.0)];
+        workspace.charts.push(other);
+
+        let base = workspace.timeframe;
+        workspace.apply_live_kline(
+            DataSource::Gate,
+            base,
+            "BTC_USDT",
+            candle(2, 5.0),
+            Instant::now(),
+        );
+
+        let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
+        assert_eq!(lens, [2, 2, 2, 1]);
+    }
+
+    #[test]
+    fn a_mexc_chart_takes_the_live_bar_whatever_way_its_symbol_is_spelled() {
+        let mut workspace = empty_workspace(1);
+        for (id, symbol) in [(1, "btc/usdt"), (2, "BTCUSDT"), (3, "BTC")] {
+            let mut chart = Chart::blank(id, symbol, DataSource::Mexc);
+            chart.candles = vec![candle(1, 1.0)];
+            workspace.charts.push(chart);
+        }
+        let mut other = Chart::blank(4, "ETHUSDT", DataSource::Mexc);
+        other.candles = vec![candle(1, 1.0)];
+        workspace.charts.push(other);
+
+        let base = workspace.timeframe;
+        workspace.apply_live_kline(
+            DataSource::Mexc,
+            base,
+            "BTCUSDT",
+            candle(2, 5.0),
+            Instant::now(),
+        );
+
+        let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
+        assert_eq!(lens, [2, 2, 2, 1]);
     }
 
     #[test]
@@ -107,7 +265,13 @@ mod tests {
         workspace.charts.push(chart);
 
         let base = workspace.timeframe;
-        workspace.apply_live_kline(base, "BTCUSDT", candle(1, 9.0), Instant::now());
+        workspace.apply_live_kline(
+            DataSource::Binance,
+            base,
+            "BTCUSDT",
+            candle(1, 9.0),
+            Instant::now(),
+        );
 
         assert_eq!(
             workspace.charts[0].candles,
@@ -132,7 +296,13 @@ mod tests {
         };
 
         for kline in [live(0, 1.0), live(0, 2.0), live(minute, 3.0)] {
-            workspace.apply_live_kline(Timeframe::MINUTE_1, "BTCUSDT", kline, Instant::now());
+            workspace.apply_live_kline(
+                DataSource::Binance,
+                Timeframe::MINUTE_1,
+                "BTCUSDT",
+                kline,
+                Instant::now(),
+            );
         }
 
         for chart in &workspace.charts {
@@ -158,6 +328,7 @@ mod tests {
         let mut kline = candle(0, 5.0);
         kline.volume = 4.0;
         workspace.apply_live_kline(
+            DataSource::Binance,
             Timeframe::MINUTE_1,
             "BTCUSDT",
             kline.clone(),
@@ -185,6 +356,7 @@ mod tests {
         // The bar already counted in the refresh's volume adds only what it trades from here.
         kline.volume = 4.5;
         workspace.apply_live_kline(
+            DataSource::Binance,
             Timeframe::MINUTE_1,
             "BTCUSDT",
             kline.clone(),
@@ -192,7 +364,13 @@ mod tests {
         );
         assert_eq!(workspace.charts[0].candles[0].volume, 10.0);
         kline.volume = 5.0;
-        workspace.apply_live_kline(Timeframe::MINUTE_1, "BTCUSDT", kline, Instant::now());
+        workspace.apply_live_kline(
+            DataSource::Binance,
+            Timeframe::MINUTE_1,
+            "BTCUSDT",
+            kline,
+            Instant::now(),
+        );
         assert_eq!(workspace.charts[0].candles[0].volume, 10.5);
     }
 }

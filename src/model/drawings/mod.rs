@@ -6,6 +6,7 @@
 //! text and per-timeframe visibility live beside the geometry, so moving, restyling and hiding a
 //! drawing never touch each other.
 
+pub mod market;
 pub mod regression;
 pub mod style;
 pub mod template;
@@ -1686,7 +1687,9 @@ pub fn apply_commands(drawings: &mut Vec<Drawing>, commands: Vec<DrawingCommand>
 /// newer one). So a build that adds a field an older build would drop must write `"since": N`
 /// (N = this constant plus one, and this constant raised to N) inside the drawing's body, and an
 /// older build then treats the drawing as unreadable. See `docs/agent-guides/charts.md`.
-pub const DRAWING_FORMAT: u32 = 1;
+///
+/// 2: every drawing carries the market it was drawn on ([`market::MarketDrawings`]).
+pub const DRAWING_FORMAT: u32 = 2;
 
 /// Whether a stored drawing says it was written for a newer format than this build reads: a
 /// `since` number in its body (`{"Shape": {"id": 1, "since": 2, ...}}`) above [`DRAWING_FORMAT`].
@@ -1726,18 +1729,19 @@ pub mod lenient {
         deserializer: D,
     ) -> Result<Vec<Drawing>, D::Error> {
         let values = Vec::<serde_json::Value>::deserialize(deserializer)?;
-        Ok(values
-            .into_iter()
-            .map(|value| {
-                if super::written_for_a_newer_format(&value) {
-                    return Drawing::Unreadable(value);
-                }
-                serde_json::from_value::<Drawing>(value.clone())
-                    .ok()
-                    .filter(drawing_is_sane)
-                    .unwrap_or(Drawing::Unreadable(value))
-            })
-            .collect())
+        Ok(values.into_iter().map(read).collect())
+    }
+
+    /// One stored drawing: as it was drawn, or [`Drawing::Unreadable`] when this build cannot
+    /// draw it (a newer tool or format, damage).
+    pub(super) fn read(value: serde_json::Value) -> Drawing {
+        if super::written_for_a_newer_format(&value) {
+            return Drawing::Unreadable(value);
+        }
+        serde_json::from_value::<Drawing>(value.clone())
+            .ok()
+            .filter(drawing_is_sane)
+            .unwrap_or(Drawing::Unreadable(value))
     }
 
     /// A decoded drawing that still could not be drawn (a shape with no vertices, a

@@ -4,13 +4,13 @@
 //! Sidebars (one per window) say which markets they need and whether they are on
 //! screen. Needs are merged by market, so one that sits in three lists or two windows is
 //! requested once. Prices come from one batched request per source per round, plus a
-//! single shared Coinbase socket. A source that fails or is rate limited backs off
+//! one shared ticker socket per streamed source. A source that fails or is rate limited backs off
 //! alone, keeping its last prices marked stale; a symbol the provider rejects is found
 //! by splitting the batch and then left out for ten minutes.
 
 use super::book::WatchlistQuoteBook;
-use super::coinbase_ws::CoinbaseTick;
 use super::provider::{QuoteFailure, QuoteProvider, QuoteRequest, chunk_size};
+use super::quote_stream::StreamTick;
 use crate::lock::lock;
 use crate::model::alert::AlertProviderHealth;
 use crate::model::watchlist::quote::{
@@ -31,10 +31,14 @@ pub struct Config {
     pub rejected_retry_ms: i64,
     /// What the engine remembers about a market nobody asks for is dropped after this long.
     pub idle_grace_ms: i64,
-    /// Coinbase products the socket has not answered yet are filled from REST after this long...
-    pub coinbase_fallback_delay_ms: i64,
+    /// Products of a streamed source the socket has not answered yet are filled from REST after
+    /// this long...
+    pub stream_fallback_delay_ms: i64,
     /// ...and any product the socket has been quiet about is refreshed from REST this often.
-    pub coinbase_refresh_ms: i64,
+    pub stream_refresh_ms: i64,
+    /// A REST refresh of a streamed market that gives no price a day ago borrows the one its last
+    /// tick gave, for this long: a quiet market keeps its change instead of losing it every refresh.
+    pub stream_reference_ms: i64,
     pub chain_lookups_per_round: usize,
 }
 
@@ -46,8 +50,9 @@ impl Default for Config {
             rate_limit_backoff: (15.0, 60.0),
             rejected_retry_ms: 600_000,
             idle_grace_ms: 600_000,
-            coinbase_fallback_delay_ms: 6_000,
-            coinbase_refresh_ms: 30_000,
+            stream_fallback_delay_ms: 6_000,
+            stream_refresh_ms: 30_000,
+            stream_reference_ms: 600_000,
             chain_lookups_per_round: 5,
         }
     }
@@ -157,9 +162,13 @@ pub struct Engine {
     rejected: HashMap<String, i64>,
     chains: HashMap<String, String>,
     unresolved_chains: HashSet<String>,
-    /// Upper-case product id -> instrument key.
-    coinbase_products: HashMap<String, String>,
-    coinbase_subscribed_at: HashMap<String, i64>,
+    /// Per streamed source: upper-case product id -> instrument key.
+    stream_products: HashMap<DataSource, HashMap<String, String>>,
+    /// When each streamed market was first asked for, by instrument key.
+    stream_subscribed_at: HashMap<String, i64>,
+    /// The price a day ago the last tick of each streamed market gave, and when: instrument key ->
+    /// (price, time).
+    stream_references: HashMap<String, (f64, i64)>,
     /// When each remembered market stopped being asked for (see `Config::idle_grace_ms`).
     idle_since: HashMap<String, i64>,
     last_prune_ms: i64,
@@ -177,8 +186,9 @@ impl Engine {
             rejected: HashMap::new(),
             chains: HashMap::new(),
             unresolved_chains: HashSet::new(),
-            coinbase_products: HashMap::new(),
-            coinbase_subscribed_at: HashMap::new(),
+            stream_products: HashMap::new(),
+            stream_subscribed_at: HashMap::new(),
+            stream_references: HashMap::new(),
             idle_since: HashMap::new(),
             last_prune_ms: i64::MIN / 2,
         }
@@ -335,9 +345,13 @@ impl Engine {
             .collect()
     }
 
-    /// The Coinbase products the shared socket should carry, sorted.
-    pub fn coinbase_products(&self) -> Vec<String> {
-        let mut products: Vec<String> = self.coinbase_products.keys().cloned().collect();
+    /// The products the shared socket of `source` should carry, sorted.
+    pub fn stream_products(&self, source: DataSource) -> Vec<String> {
+        let mut products: Vec<String> = self
+            .stream_products
+            .get(&source)
+            .map(|products| products.keys().cloned().collect())
+            .unwrap_or_default();
         products.sort();
         products
     }
@@ -346,7 +360,7 @@ impl Engine {
         let wanted = self.wanted();
         self.prune(&wanted, now);
         if wanted.is_empty() {
-            self.coinbase_products.clear();
+            self.stream_products.clear();
             return;
         }
         for (key, instrument) in &wanted {
@@ -366,11 +380,11 @@ impl Engine {
         }
         // Prices that aged while nothing was polling must not read as live on return.
         self.age_quotes(now);
-        self.sync_coinbase(&wanted, now);
+        self.sync_streams(&wanted, now);
     }
 
     /// Forgets markets nobody has asked for during the grace period: their prices, the
-    /// moments they were confirmed, their refusals and Coinbase bookkeeping. Without this a
+    /// moments they were confirmed, their refusals and socket bookkeeping. Without this a
     /// long session that imports, deletes and browses many markets only ever grows, and a
     /// market that returns hours later would show an hours-old price at once.
     fn prune(&mut self, wanted: &BTreeMap<String, InstrumentId>, now: i64) {
@@ -384,7 +398,8 @@ impl Engine {
             .keys()
             .chain(self.received.keys())
             .chain(self.rejected.keys())
-            .chain(self.coinbase_subscribed_at.keys())
+            .chain(self.stream_subscribed_at.keys())
+            .chain(self.stream_references.keys())
             .chain(self.unresolved_chains.iter())
             .cloned()
             .collect();
@@ -409,7 +424,8 @@ impl Engine {
             self.known.remove(key);
             self.received.remove(key);
             self.rejected.remove(key);
-            self.coinbase_subscribed_at.remove(key);
+            self.stream_subscribed_at.remove(key);
+            self.stream_references.remove(key);
             self.unresolved_chains.remove(key);
         }
         self.book.remove(&expired);
@@ -420,24 +436,24 @@ impl Engine {
         self.known.len()
             + self.received.len()
             + self.rejected.len()
-            + self.coinbase_subscribed_at.len()
+            + self.stream_subscribed_at.len()
+            + self.stream_references.len()
             + self.unresolved_chains.len()
             + self.idle_since.len()
     }
 
-    fn sync_coinbase(&mut self, wanted: &BTreeMap<String, InstrumentId>, now: i64) {
-        let mut products = HashMap::new();
+    fn sync_streams(&mut self, wanted: &BTreeMap<String, InstrumentId>, now: i64) {
+        let mut streams: HashMap<DataSource, HashMap<String, String>> = HashMap::new();
         for (key, instrument) in wanted {
-            if instrument.source == DataSource::Coinbase {
-                products.insert(instrument.api_symbol().to_uppercase(), key.clone());
+            if instrument.source.streams_quotes() {
+                streams
+                    .entry(instrument.source)
+                    .or_default()
+                    .insert(instrument.api_symbol().to_uppercase(), key.clone());
+                self.stream_subscribed_at.entry(key.clone()).or_insert(now);
             }
         }
-        for key in products.values() {
-            self.coinbase_subscribed_at
-                .entry(key.clone())
-                .or_insert(now);
-        }
-        self.coinbase_products = products;
+        self.stream_products = streams;
     }
 
     // MARK: Planning a round
@@ -484,16 +500,14 @@ impl Engine {
         }
         match instrument.source {
             DataSource::CoinMarketCap => None,
-            DataSource::Coinbase => {
+            source if source.streams_quotes() => {
                 // The socket supplies prices; REST fills a product it has not answered, and
                 // refreshes one it has gone quiet on, so a thin market's price never ages.
                 if let Some(last) = self.received.get(key) {
-                    return (now - last >= self.config.coinbase_refresh_ms)
-                        .then_some(DataSource::Coinbase);
+                    return (now - last >= self.config.stream_refresh_ms).then_some(source);
                 }
-                let since = self.coinbase_subscribed_at.get(key)?;
-                (now - since >= self.config.coinbase_fallback_delay_ms)
-                    .then_some(DataSource::Coinbase)
+                let since = self.stream_subscribed_at.get(key)?;
+                (now - since >= self.config.stream_fallback_delay_ms).then_some(source)
             }
             DataSource::DexScreener => self
                 .chains
@@ -590,7 +604,11 @@ impl Engine {
 
         for (key, request) in &planned.requests {
             if let Some(quote) = outcome.quotes.get(&request.symbol) {
-                updates.insert(key.clone(), WatchlistQuote::from_source(source, quote, now));
+                let quote = self.with_stream_reference(source, key, *quote, now);
+                updates.insert(
+                    key.clone(),
+                    WatchlistQuote::from_source(source, &quote, now),
+                );
                 self.received.insert(key.clone(), now);
                 self.rejected.remove(key);
             } else if let Some(failure) = failed.get(request.symbol.as_str()) {
@@ -626,6 +644,29 @@ impl Engine {
             self.known.insert(key.clone(), quote.clone());
         }
         self.book.apply(updates);
+    }
+
+    /// `quote` of a streamed market with the price a day ago its last tick gave, when REST gives
+    /// none and that tick is recent enough to still say what a day ago was.
+    fn with_stream_reference(
+        &self,
+        source: DataSource,
+        key: &str,
+        quote: SourceQuote,
+        now: i64,
+    ) -> SourceQuote {
+        if quote.previous_day_price.is_some() || !source.streams_quotes() {
+            return quote;
+        }
+        let reference = self
+            .stream_references
+            .get(key)
+            .filter(|(_, taken)| now - taken <= self.config.stream_reference_ms)
+            .map(|(price, _)| *price);
+        SourceQuote {
+            previous_day_price: reference,
+            ..quote
+        }
     }
 
     /// The last known price, marked stale; or an unavailable quote if there never was one.
@@ -677,20 +718,29 @@ impl Engine {
             .find(|source| source.watchlist_slug() == slug)
     }
 
-    // MARK: Coinbase ticks
+    // MARK: Ticks
 
     /// Publishes the latest tick of each product; the coordinator drains its channel on a
     /// short interval, so a busy feed becomes a few updates a second.
-    pub fn receive_ticks(&mut self, ticks: Vec<CoinbaseTick>, now: i64) {
+    pub fn receive_ticks(&mut self, ticks: Vec<StreamTick>, now: i64) {
         let mut latest: HashMap<String, WatchlistQuote> = HashMap::new();
+        let mut heard: HashSet<DataSource> = HashSet::new();
         for tick in ticks {
-            let Some(key) = self.coinbase_products.get(&tick.product_id.to_uppercase()) else {
+            let Some(key) = self
+                .stream_products
+                .get(&tick.source)
+                .and_then(|products| products.get(&tick.product_id.to_uppercase()))
+            else {
                 continue;
             };
+            if let Some(reference) = tick.quote.previous_day_price {
+                self.stream_references.insert(key.clone(), (reference, now));
+            }
             latest.insert(
                 key.clone(),
-                WatchlistQuote::from_source(DataSource::Coinbase, &tick.as_source_quote(), now),
+                WatchlistQuote::from_source(tick.source, &tick.quote, now),
             );
+            heard.insert(tick.source);
         }
         if latest.is_empty() {
             return;
@@ -699,17 +749,24 @@ impl Engine {
             self.received.insert(key.clone(), now);
             self.known.insert(key.clone(), quote.clone());
         }
-        let state = self.sources.entry(DataSource::Coinbase).or_default();
-        state.last_successful_quote_ms = Some(now);
-        state.last_error = None;
-        state.next_allowed_ms = i64::MIN;
+        for source in heard {
+            let state = self.sources.entry(source).or_default();
+            state.last_successful_quote_ms = Some(now);
+            state.last_error = None;
+            state.next_allowed_ms = i64::MIN;
+        }
         self.book.apply(latest);
     }
 }
 
-const ALL_SOURCES: [DataSource; 8] = [
+const ALL_SOURCES: [DataSource; 13] = [
     DataSource::Binance,
     DataSource::Coinbase,
+    DataSource::Okx,
+    DataSource::Kraken,
+    DataSource::Bybit,
+    DataSource::Gate,
+    DataSource::Mexc,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -917,6 +974,8 @@ mod tests {
         limit_after: Mutex<Option<usize>>,
         calls: Mutex<Vec<(DataSource, Vec<String>)>>,
         chains: Mutex<HashMap<String, String>>,
+        /// Answers carry no price a day ago, as Kraken's REST ticker does not.
+        without_reference: Mutex<bool>,
     }
 
     impl FakeProvider {
@@ -978,7 +1037,8 @@ mod tests {
                                 r.symbol.clone(),
                                 SourceQuote {
                                     price: *price,
-                                    previous_day_price: Some(*price / 2.0),
+                                    previous_day_price: (!*self.without_reference.lock().unwrap())
+                                        .then_some(*price / 2.0),
                                     ..SourceQuote::default()
                                 },
                             )
@@ -990,6 +1050,18 @@ mod tests {
 
         fn resolve_chain(&self, address: &str) -> Option<String> {
             self.chains.lock().unwrap().get(address).cloned()
+        }
+    }
+
+    fn tick(product_id: &str, price: f64, open_24h: Option<f64>) -> StreamTick {
+        StreamTick {
+            source: DataSource::Coinbase,
+            product_id: product_id.to_owned(),
+            quote: SourceQuote {
+                price,
+                previous_day_price: open_24h,
+                ..SourceQuote::default()
+            },
         }
     }
 
@@ -1540,7 +1612,7 @@ mod tests {
         let btc = id(DataSource::Coinbase, "BTC-USD");
         lock(&engine).update(1, vec![btc.clone()], true, T0);
         assert_eq!(
-            lock(&engine).coinbase_products(),
+            lock(&engine).stream_products(DataSource::Coinbase),
             vec!["BTC-USD".to_owned()]
         );
 
@@ -1555,16 +1627,7 @@ mod tests {
         );
 
         // A tick lands: the socket now owns the price and REST stays quiet...
-        lock(&engine).receive_ticks(
-            vec![CoinbaseTick {
-                product_id: "btc-usd".to_owned(),
-                price: 105.0,
-                open_24h: Some(100.0),
-                volume_24h: Some(2.0),
-                time_ms: None,
-            }],
-            T0 + 7_000,
-        );
+        lock(&engine).receive_ticks(vec![tick("btc-usd", 105.0, Some(100.0))], T0 + 7_000);
         let quote = book.get(&btc).unwrap();
         assert_eq!(quote.last, Some(105.0));
         assert!((quote.change_percent.unwrap() - 5.0).abs() < 1e-9);
@@ -1580,22 +1643,113 @@ mod tests {
         let (engine, book, _provider) = setup();
         let btc = id(DataSource::Coinbase, "BTC-USD");
         lock(&engine).update(1, vec![btc.clone()], true, T0);
-        lock(&engine).receive_ticks(
-            vec![CoinbaseTick {
-                product_id: "DOGE-USD".to_owned(),
-                price: 1.0,
-                open_24h: None,
-                volume_24h: None,
-                time_ms: None,
-            }],
-            T0,
-        );
+        lock(&engine).receive_ticks(vec![tick("DOGE-USD", 1.0, None)], T0);
         assert!(
             book.get(&InstrumentId::new(DataSource::Coinbase, "DOGE-USD"))
                 .is_none()
         );
         lock(&engine).update(1, vec![btc], false, T0 + 1);
-        assert!(lock(&engine).coinbase_products().is_empty());
+        assert!(
+            lock(&engine)
+                .stream_products(DataSource::Coinbase)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_rest_refresh_of_a_streamed_market_keeps_the_sockets_reference_for_a_while() {
+        let (engine, book, provider) = setup();
+        *provider.without_reference.lock().unwrap() = true;
+        provider.price("BTC-USD", 110.0);
+        let btc = id(DataSource::Coinbase, "BTC-USD");
+        lock(&engine).update(1, vec![btc.clone()], true, T0);
+        lock(&engine).receive_ticks(vec![tick("BTC-USD", 105.0, Some(100.0))], T0 + 7_000);
+
+        // The socket goes quiet; REST brings a new price and no price a day ago: the change is
+        // still measured against the reference the socket gave.
+        round(&engine, &provider, T0 + 37_000);
+        let quote = book.get(&btc).unwrap();
+        assert_eq!(quote.last, Some(110.0));
+        assert!((quote.change_percent.unwrap() - 10.0).abs() < 1e-9);
+
+        // Ten minutes on with no tick, the reference is too old to say what a day ago was.
+        lock(&engine).update(1, vec![btc.clone()], true, T0 + 700_000);
+        round(&engine, &provider, T0 + 700_000);
+        let quote = book.get(&btc).unwrap();
+        assert_eq!(quote.last, Some(110.0));
+        assert_eq!(quote.change_percent, None);
+    }
+
+    #[test]
+    fn a_streamed_market_the_socket_never_answered_has_no_change_from_rest() {
+        let (engine, book, provider) = setup();
+        *provider.without_reference.lock().unwrap() = true;
+        provider.price("ETH-USD", 50.0);
+        let eth = id(DataSource::Coinbase, "ETH-USD");
+        lock(&engine).update(1, vec![eth.clone()], true, T0);
+        round(&engine, &provider, T0 + 6_000);
+        let quote = book.get(&eth).unwrap();
+        assert_eq!(quote.last, Some(50.0));
+        assert_eq!(quote.change, None);
+    }
+
+    #[test]
+    fn a_reference_is_forgotten_with_its_market() {
+        let (engine, _book, _provider) = setup();
+        let btc = id(DataSource::Coinbase, "BTC-USD");
+        lock(&engine).update(1, vec![btc], true, T0);
+        lock(&engine).receive_ticks(vec![tick("BTC-USD", 105.0, Some(100.0))], T0 + 1_000);
+        assert!(lock(&engine).remembered_markets() > 0);
+
+        // Nobody asks for it any more: marked idle, then forgotten once the grace has passed.
+        let grace = Config::default().idle_grace_ms;
+        lock(&engine).update(1, Vec::new(), true, T0 + 10_000);
+        lock(&engine).expire_leases(T0 + 10_000 + grace + 1);
+        assert_eq!(lock(&engine).remembered_markets(), 0);
+    }
+
+    #[test]
+    fn each_streamed_source_has_its_own_products_and_takes_only_its_own_ticks() {
+        let (engine, book, provider) = setup();
+        provider.price("BTC-USDT", 100.0);
+        let okx = id(DataSource::Okx, "btc-usdt");
+        let coinbase = id(DataSource::Coinbase, "BTC-USD");
+        lock(&engine).update(1, vec![okx.clone(), coinbase.clone()], true, T0);
+        assert_eq!(
+            lock(&engine).stream_products(DataSource::Okx),
+            vec!["BTC-USDT".to_owned()]
+        );
+        assert_eq!(
+            lock(&engine).stream_products(DataSource::Coinbase),
+            vec!["BTC-USD".to_owned()]
+        );
+
+        // A Coinbase tick under an OKX product's name does not reach the OKX market.
+        let mut stray = tick("BTC-USDT", 1.0, None);
+        stray.source = DataSource::Coinbase;
+        let mut own = tick("BTC-USDT", 105.0, Some(100.0));
+        own.source = DataSource::Okx;
+        lock(&engine).receive_ticks(vec![stray], T0 + 1_000);
+        assert!(book.get(&okx).is_none());
+        lock(&engine).receive_ticks(vec![own], T0 + 2_000);
+        assert_eq!(book.get(&okx).unwrap().last, Some(105.0));
+        assert!(book.get(&coinbase).is_none());
+
+        // The socket owns the OKX price: REST waits, and refreshes it after 30 quiet seconds.
+        round(&engine, &provider, T0 + 20_000);
+        assert!(
+            provider
+                .calls()
+                .iter()
+                .all(|call| call.0 != DataSource::Okx)
+        );
+        round(&engine, &provider, T0 + 33_000);
+        assert!(
+            provider
+                .calls()
+                .iter()
+                .any(|call| call.0 == DataSource::Okx)
+        );
     }
 
     #[test]
@@ -1603,7 +1757,7 @@ mod tests {
         let (engine, _book, _provider) = setup();
         lock(&engine).update(1, vec![id(DataSource::Coinbase, "eth")], true, T0);
         assert_eq!(
-            lock(&engine).coinbase_products(),
+            lock(&engine).stream_products(DataSource::Coinbase),
             vec!["ETH-USD".to_owned()]
         );
     }

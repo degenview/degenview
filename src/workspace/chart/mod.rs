@@ -2,6 +2,7 @@
 
 pub(in crate::workspace) mod collection;
 pub(in crate::workspace) mod context;
+mod drawing_sets;
 pub(in crate::workspace) mod live;
 pub(in crate::workspace) mod settings;
 pub(in crate::workspace) mod snapshot;
@@ -10,6 +11,7 @@ pub(in crate::workspace) mod symbol_picker;
 use super::PersistedChart;
 use crate::host::portfolio::card::CardRuntime;
 use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::drawings::market::MarketDrawings;
 use crate::model::market;
 use crate::model::market::history::OlderHistory;
 use crate::model::market::live::{LiveFold, LiveMark};
@@ -49,7 +51,11 @@ pub(super) struct Chart {
     pub(super) chart: ChartCard,
     pub(super) scale_mode: PriceScaleMode,
     pub(super) indicators: IndicatorConfig,
+    /// The drawings of the market the chart shows ([`drawing_sets`]).
     pub(super) drawings: Vec<Drawing>,
+    /// The drawings of the markets the chart showed before, by market key.
+    pub(super) parked_drawings: MarketDrawings,
+    /// The next id a drawing takes: one counter for every market, ids being unique per chart.
     pub(super) next_drawing_id: u64,
     pub(super) last_paper_quote: Option<(f64, Instant)>,
     /// Wall-clock time (epoch ms) the candles last arrived from the provider or its live feed.
@@ -137,6 +143,7 @@ impl Chart {
             scale_mode: PriceScaleMode::default(),
             indicators: IndicatorConfig::default(),
             drawings: Vec::new(),
+            parked_drawings: MarketDrawings::default(),
             next_drawing_id: 1,
             last_paper_quote: None,
             last_data_ms: None,
@@ -186,6 +193,11 @@ impl Chart {
         match self.source {
             DataSource::Binance
             | DataSource::Coinbase
+            | DataSource::Okx
+            | DataSource::Kraken
+            | DataSource::Bybit
+            | DataSource::Gate
+            | DataSource::Mexc
             | DataSource::CoinGecko
             | DataSource::Alpaca => self.source.display_symbol(&self.symbol),
             DataSource::DexScreener => self.source.base_asset(&self.display_title()),
@@ -217,10 +229,12 @@ impl Chart {
     /// Replaces the market-specific state while preserving this card's presentation settings.
     /// A market that takes no indicators leaves the chart without the ones it had.
     pub(super) fn replace_market(&mut self, item: &WatchlistInstrument) {
+        let from = self.drawing_market();
         self.symbol = item.instrument.symbol.clone();
         self.source = item.instrument.source;
         self.apply_watchlist_metadata(item);
         self.clear_market_data();
+        self.file_drawings(&from);
         if !self.source.takes_indicators() {
             self.indicators = IndicatorConfig::default();
             self.chart.set_pine_instances(Vec::new());
@@ -242,11 +256,13 @@ impl Chart {
     /// chart showed. The caller reloads the candles.
     pub(super) fn swap_market(&mut self, state: MarketState) -> MarketState {
         let current = self.market_state();
+        let from = self.drawing_market();
         self.symbol = state.symbol;
         self.source = state.source;
         self.chart.set_title(state.title);
         self.image_url = state.image_url;
         self.clear_market_data();
+        self.file_drawings(&from);
         self.pm_series = state.pm_series;
         current
     }
@@ -287,13 +303,7 @@ impl Chart {
             chart.indicators = IndicatorConfig::default();
             chart.chart.set_pine_instances(Vec::new());
         }
-        chart.drawings = saved.drawings;
-        chart.next_drawing_id = chart
-            .drawings
-            .iter()
-            .map(Drawing::stored_id)
-            .max()
-            .map_or(1, |max| max + 1);
+        chart.set_stored_drawings(saved.drawings);
         chart
     }
 
@@ -343,10 +353,14 @@ impl Chart {
     /// How long after a fetch began the next one is due.
     pub(super) fn refresh_after(&self) -> Duration {
         match self.source {
-            DataSource::CoinGecko | DataSource::DexScreener if self.error.is_some() => {
+            DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken
+                if self.error.is_some() =>
+            {
                 SLOW_RETRY_INTERVAL
             }
-            DataSource::CoinGecko | DataSource::DexScreener => SLOW_REFRESH_INTERVAL,
+            DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken => {
+                SLOW_REFRESH_INTERVAL
+            }
             _ => REFRESH_INTERVAL,
         }
     }
@@ -538,6 +552,16 @@ mod tests {
         ));
         assert_eq!(binance.refresh_after(), REFRESH_INTERVAL);
         assert_eq!(dex.refresh_after(), SLOW_RETRY_INTERVAL);
+    }
+
+    #[test]
+    fn kraken_charts_refresh_slowly_because_the_socket_keeps_them_live() {
+        let mut kraken = Chart::blank(1, "BTC/USD", DataSource::Kraken);
+        assert_eq!(kraken.refresh_after(), SLOW_REFRESH_INTERVAL);
+        kraken.error = Some(ProviderError::Network(
+            crate::service::net::http::Error::Status(429),
+        ));
+        assert_eq!(kraken.refresh_after(), SLOW_RETRY_INTERVAL);
     }
 
     #[test]
@@ -746,7 +770,7 @@ mod tests {
             y_zoom: 1.0,
             indicators: IndicatorConfig::default(),
             appearance: crate::model::ChartAppearance::default(),
-            drawings: Vec::new(),
+            drawings: Default::default(),
             pine_instances: Vec::new(),
             candle_count: 0,
             viewport: Default::default(),

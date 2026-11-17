@@ -11,9 +11,14 @@ const TABLE: [&str; 24] = [
     "3D", "5D", "1W", "2W", "1M", "2M", "3M", "6M", "1Y",
 ];
 
-const CANDLE_SOURCES: [DataSource; 4] = [
+const CANDLE_SOURCES: [DataSource; 9] = [
     DataSource::Binance,
     DataSource::Coinbase,
+    DataSource::Okx,
+    DataSource::Kraken,
+    DataSource::Bybit,
+    DataSource::Gate,
+    DataSource::Mexc,
     DataSource::Alpaca,
     DataSource::DexScreener,
 ];
@@ -33,6 +38,117 @@ fn every_native_is_its_own_base_and_lists_are_shortest_first() {
                 "{source:?} {native}"
             );
         }
+    }
+}
+
+#[test]
+fn okx_folds_what_it_cuts_off_the_utc_grid_and_the_year() {
+    let base = |text: &str| {
+        DataSource::Okx
+            .plan(tf(text))
+            .map(|plan| plan.base().label())
+    };
+    // Its own 2D and 3D are counted from days that are not ours, so days are folded.
+    assert_eq!(base("2D").as_deref(), Some("1D"));
+    assert_eq!(base("3D").as_deref(), Some("1D"));
+    // It has no 8-hour bar, and no year.
+    assert_eq!(base("8h").as_deref(), Some("4h"));
+    assert_eq!(base("1Y").as_deref(), Some("3M"));
+    assert_eq!(base("22m").as_deref(), Some("1m"));
+    for text in TABLE {
+        assert!(DataSource::Okx.serves(tf(text)), "{text}");
+    }
+}
+
+#[test]
+fn bybit_has_every_bar_on_our_grid_and_folds_quarters_and_years_from_months() {
+    let base = |text: &str| {
+        DataSource::Bybit
+            .plan(tf(text))
+            .map(|plan| plan.base().label())
+    };
+    for text in ["3M", "1Y", "2M", "6M"] {
+        assert_eq!(base(text).as_deref(), Some("1M"), "{text}");
+    }
+    assert_eq!(base("12h").as_deref(), Some("12h"));
+    assert_eq!(base("8h").as_deref(), Some("4h"));
+    assert_eq!(base("3D").as_deref(), Some("1D"));
+    assert_eq!(base("2W").as_deref(), Some("1W"));
+    for text in TABLE {
+        assert!(DataSource::Bybit.serves(tf(text)), "{text}");
+    }
+}
+
+#[test]
+fn kraken_folds_its_thursday_weeks_and_everything_above_a_day_from_days() {
+    let base = |text: &str| {
+        DataSource::Kraken
+            .plan(tf(text))
+            .map(|plan| plan.base().label())
+    };
+    for text in ["1W", "2W", "1M", "3M", "1Y", "3D"] {
+        assert_eq!(base(text).as_deref(), Some("1D"), "{text}");
+    }
+    assert_eq!(base("3m").as_deref(), Some("1m"));
+    assert_eq!(base("2h").as_deref(), Some("1h"));
+    assert_eq!(base("6h").as_deref(), Some("1h"));
+    assert_eq!(base("8h").as_deref(), Some("4h"));
+    assert_eq!(base("12h").as_deref(), Some("4h"));
+    for text in TABLE {
+        assert!(DataSource::Kraken.serves(tf(text)), "{text}");
+    }
+}
+
+#[test]
+fn mexc_has_its_ten_bars_and_folds_the_rest() {
+    let base = |text: &str| {
+        DataSource::Mexc
+            .plan(tf(text))
+            .map(|plan| plan.base().label())
+    };
+    // It has no 3-minute, 2-hour, 6-hour or 12-hour bar.
+    assert_eq!(base("3m").as_deref(), Some("1m"));
+    assert_eq!(base("2h").as_deref(), Some("1h"));
+    assert_eq!(base("6h").as_deref(), Some("1h"));
+    assert_eq!(base("12h").as_deref(), Some("4h"));
+    assert_eq!(base("8h").as_deref(), Some("8h"));
+    for text in ["3M", "1Y", "6M"] {
+        assert_eq!(base(text).as_deref(), Some("1M"), "{text}");
+    }
+    for text in TABLE {
+        assert!(DataSource::Mexc.serves(tf(text)), "{text}");
+    }
+}
+
+#[test]
+fn gate_has_every_documented_bar_on_our_grid_and_folds_the_rest() {
+    let base = |text: &str| {
+        DataSource::Gate
+            .plan(tf(text))
+            .map(|plan| plan.base().label())
+    };
+    // It answers 3m, 2h, 6h and 12h as well, but does not document them.
+    assert_eq!(base("3m").as_deref(), Some("1m"));
+    assert_eq!(base("2h").as_deref(), Some("1h"));
+    assert_eq!(base("6h").as_deref(), Some("1h"));
+    assert_eq!(base("12h").as_deref(), Some("4h"));
+    for text in ["3M", "1Y", "6M"] {
+        assert_eq!(base(text).as_deref(), Some("1M"), "{text}");
+    }
+    assert_eq!(base("8h").as_deref(), Some("8h"));
+    for text in TABLE {
+        assert!(DataSource::Gate.serves(tf(text)), "{text}");
+    }
+}
+
+#[test]
+fn kraken_pages_back_once_to_the_rest_of_the_candles_it_holds() {
+    // Its OHLC answers the newest 720 whatever is asked; the chart's first 500 leave 220 behind.
+    for text in TABLE {
+        assert!(
+            DataSource::Kraken.supports_older_history(tf(text)),
+            "{text}"
+        );
     }
 }
 
@@ -163,6 +279,10 @@ fn exchanges_page_back_at_any_length() {
     for source in [
         DataSource::Binance,
         DataSource::Coinbase,
+        DataSource::Okx,
+        DataSource::Bybit,
+        DataSource::Gate,
+        DataSource::Mexc,
         DataSource::Alpaca,
     ] {
         for text in TABLE {

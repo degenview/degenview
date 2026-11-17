@@ -52,7 +52,7 @@ mod tests {
                 y_zoom: 1.0,
                 indicators: IndicatorConfig::default(),
                 appearance: crate::model::ChartAppearance::default(),
-                drawings: Vec::new(),
+                drawings: Default::default(),
                 pine_instances: Vec::new(),
                 candle_count: 200,
                 viewport: Default::default(),

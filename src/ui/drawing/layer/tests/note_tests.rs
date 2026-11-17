@@ -435,6 +435,38 @@ fn a_note_and_a_callout_wait_for_their_text_after_both_points() {
 }
 
 #[test]
+fn abandoning_the_edits_drops_a_draft_so_keeping_it_later_adds_nothing() {
+    for tool in [
+        Tool::Text,
+        Tool::Comment,
+        Tool::Note,
+        Tool::Callout,
+        Tool::Signpost,
+    ] {
+        let mut rig = Rig::with_tool(tool);
+        rig.click(POINTS[0]);
+        if rig.layer.claims_drag() {
+            rig.click(POINTS[1]);
+        }
+        rig.settle();
+        assert!(rig.layer.is_editing_text(), "{tool:?} opens its editor");
+        rig.frame(vec![Event::Text("typed".to_owned())]);
+        rig.layer.table_cell = Some((9, 0, 0));
+        rig.layer.pending_cell = Some((9, 0));
+
+        // The chart now shows another market: what was being made on the old one goes.
+        rig.layer.abandon();
+        rig.settle();
+        assert!(!rig.layer.is_editing_text(), "{tool:?}: the editor is gone");
+        assert!(rig.layer.table_cell.is_none() && rig.layer.pending_cell.is_none());
+        rig.key(Key::Enter);
+        rig.settle();
+        assert!(rig.drawings.is_empty(), "{tool:?}: Enter adds nothing now");
+        assert_eq!(rig.undo_steps, 0);
+    }
+}
+
+#[test]
 fn a_note_points_from_its_box_at_the_anchor_with_a_leader_and_a_dot() {
     let (mut rig, id) = placed(Tool::Note);
     let (kind, at, label) = leader_at(&rig);

@@ -3,10 +3,11 @@
 
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::chart::viewport::SavedViewport;
+use crate::model::drawings::market::MarketDrawings;
 use crate::model::overlay::OverlayList;
 use crate::model::pine::instance::PineInstance;
 use crate::model::portfolio::card::PortfolioCard;
-use crate::model::{ChartAppearance, DataSource, Drawing, IndicatorConfig};
+use crate::model::{ChartAppearance, DataSource, IndicatorConfig};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -26,9 +27,10 @@ pub struct PersistedChart {
     pub indicators: IndicatorConfig,
     #[serde(default)]
     pub appearance: ChartAppearance,
-    /// Decoded one by one: a drawing this version cannot read is kept, not fatal to the chart.
-    #[serde(default, with = "crate::model::drawings::lenient")]
-    pub drawings: Vec<Drawing>,
+    /// Everything drawn on the chart, per market, decoded one by one: a drawing this version
+    /// cannot read is kept, not fatal to the chart. A drawing that names no market is dropped.
+    #[serde(default)]
+    pub drawings: MarketDrawings,
     /// The Pine scripts applied to the chart, in order; old rows decode as none.
     #[serde(default)]
     pub pine_instances: Vec<PineInstance>,
@@ -84,7 +86,7 @@ mod tests {
             y_zoom: 1.0,
             indicators: IndicatorConfig::default(),
             appearance: ChartAppearance::default(),
-            drawings: Vec::new(),
+            drawings: MarketDrawings::default(),
             pine_instances: Vec::new(),
             candle_count: 0,
             viewport: SavedViewport::default(),
@@ -256,17 +258,29 @@ mod tests {
             .collect()
     }
 
+    const BTC: &str = "BINANCE:BTCUSDT";
+
+    #[test]
+    fn drawings_saved_before_they_had_a_market_are_dropped_not_given_one() {
+        let mut row = serde_json::to_value(chart()).unwrap();
+        row["drawings"] = serde_json::json!([
+            {"TrendLine": {"id": 1, "a": {"time_ms": 0, "price": 1.0}, "b": {"time_ms": 60000, "price": 2.0}, "locked": false}}
+        ]);
+        let restored: PersistedChart = serde_json::from_value(row).unwrap();
+        assert_eq!(restored.drawings.count(), 0);
+    }
+
     #[test]
     fn every_drawing_survives_a_save_and_reopen() {
         let mut saved = chart();
-        saved.drawings = every_drawing();
-        assert!(saved.drawings.len() > 16);
+        saved.drawings.put(BTC, every_drawing());
+        assert!(saved.drawings.count() > 16);
         let restored: PersistedChart =
             serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
         assert_eq!(restored, saved);
         // Locked, hidden and per-timeframe visibility came back as saved.
-        assert!(restored.drawings.iter().any(crate::model::Drawing::locked));
-        assert!(restored.drawings.iter().any(crate::model::Drawing::hidden));
+        assert!(restored.drawings.all().any(crate::model::Drawing::locked));
+        assert!(restored.drawings.all().any(crate::model::Drawing::hidden));
     }
 
     #[test]
@@ -274,42 +288,47 @@ mod tests {
         // The exact drawings the previous version wrote, in a chart row.
         let mut row = serde_json::to_value(chart()).unwrap();
         row["drawings"] = serde_json::json!([
-            {"TrendLine": {"id": 1, "a": {"time_ms": 0, "price": 1.0}, "b": {"time_ms": 60000, "price": 2.0}, "locked": false}},
-            {"Brush": {"id": 2, "points": [{"time_ms": 0, "price": 1.0}, {"time_ms": 1000, "price": 1.5}], "width": 2.0, "locked": true}},
-            {"Ruler": {"id": 3, "a": {"time_ms": 0, "price": 1.0}, "b": {"time_ms": 60000, "price": 2.0}}}
+            {"TrendLine": {"market": BTC, "id": 1, "a": {"time_ms": 0, "price": 1.0}, "b": {"time_ms": 60000, "price": 2.0}, "locked": false}},
+            {"Brush": {"market": BTC, "id": 2, "points": [{"time_ms": 0, "price": 1.0}, {"time_ms": 1000, "price": 1.5}], "width": 2.0, "locked": true}},
+            {"Ruler": {"market": BTC, "id": 3, "a": {"time_ms": 0, "price": 1.0}, "b": {"time_ms": 60000, "price": 2.0}}}
         ]);
         let restored: PersistedChart = serde_json::from_value(row).unwrap();
-        assert_eq!(restored.drawings.len(), 3);
-        assert!(restored.drawings[1].locked());
+        assert_eq!(restored.drawings.count(), 3);
+        assert!(restored.drawings.get(BTC)[1].locked());
         assert!(
             restored
                 .drawings
-                .iter()
+                .all()
                 .all(|d| !d.hidden() && d.visibility().is_all())
         );
         // And a chart row with no drawings field at all reads as none.
         let mut bare = serde_json::to_value(chart()).unwrap();
         bare.as_object_mut().unwrap().remove("drawings");
         let none: PersistedChart = serde_json::from_value(bare).unwrap();
-        assert!(none.drawings.is_empty());
+        assert_eq!(none.drawings.count(), 0);
     }
 
     #[test]
     fn a_drawing_this_version_cannot_read_neither_costs_the_chart_nor_is_lost() {
         let mut row = serde_json::to_value(chart()).unwrap();
-        let future =
-            serde_json::json!({"Shape": {"id": 8, "geometry": {"hologram": {"depth": 3}}}});
-        let known = serde_json::to_value(&every_drawing()[0]).unwrap();
+        let future = serde_json::json!({"Shape": {"id": 8, "market": BTC, "geometry": {"hologram": {"depth": 3}}}});
+        let mut known = serde_json::to_value(&every_drawing()[0]).unwrap();
+        known
+            .as_object_mut()
+            .and_then(|variant| variant.values_mut().next())
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap()
+            .insert("market".into(), BTC.into());
         row["drawings"] = serde_json::json!([known.clone(), future.clone(), "garbage"]);
         let restored: PersistedChart = serde_json::from_value(row).unwrap();
-        // The chart opens with the drawing it can read; the others ride along untouched.
-        assert_eq!(restored.drawings.len(), 3);
-        assert!(restored.drawings[0].tool().is_some());
-        assert!(restored.drawings[1].tool().is_none());
+        // The chart opens with the drawing it can read; the unreadable one rides along untouched,
+        // and what names no market is gone.
+        assert_eq!(restored.drawings.count(), 2);
+        assert!(restored.drawings.get(BTC)[0].tool().is_some());
+        assert!(restored.drawings.get(BTC)[1].tool().is_none());
         let resaved = serde_json::to_value(&restored).unwrap();
         assert_eq!(resaved["drawings"][1], future);
-        assert_eq!(resaved["drawings"][2], serde_json::json!("garbage"));
-        assert_eq!(resaved["drawings"][0], known);
+        assert_eq!(resaved["drawings"].as_array().unwrap().len(), 2);
     }
 
     #[test]
@@ -317,12 +336,12 @@ mod tests {
         let mut row = serde_json::to_value(chart()).unwrap();
         // A path with no points and a rectangle whose price is not a number.
         row["drawings"] = serde_json::json!([
-            {"Shape": {"id": 1, "geometry": {"path": {"points": []}}}},
-            {"Shape": {"id": 2, "geometry": {"rectangle": {"a": {"time_ms": 0, "price": null}, "b": {"time_ms": 1, "price": 2.0}}}}}
+            {"Shape": {"id": 1, "market": BTC, "geometry": {"path": {"points": []}}}},
+            {"Shape": {"id": 2, "market": BTC, "geometry": {"rectangle": {"a": {"time_ms": 0, "price": null}, "b": {"time_ms": 1, "price": 2.0}}}}}
         ]);
         let restored: PersistedChart = serde_json::from_value(row).unwrap();
-        assert_eq!(restored.drawings.len(), 2);
-        assert!(restored.drawings.iter().all(|d| d.tool().is_none()));
+        assert_eq!(restored.drawings.count(), 2);
+        assert!(restored.drawings.all().all(|d| d.tool().is_none()));
     }
 
     #[test]

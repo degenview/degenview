@@ -50,7 +50,7 @@ fn persisted_session_round_trips() {
                 y_zoom: 1.0,
                 indicators: crate::model::IndicatorConfig::default(),
                 appearance: crate::model::ChartAppearance::default(),
-                drawings: Vec::new(),
+                drawings: Default::default(),
                 pine_instances: Vec::new(),
                 candle_count: 0,
                 viewport: Default::default(),

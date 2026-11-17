@@ -132,8 +132,11 @@ reported (asset upload is not implemented). A deflated record cannot unpack past
 
 Entity ids are nanosecond timestamps (watchlists, layouts, templates, alerts) or random 128-bit
 (scripts), so they do not collide across Macs. Chart ids are stable inside a layout; drawing ids
-are per chart, so a drawing is keyed `layout.chart.drawing`. When two Macs give different
-drawings the same id, the local one is renumbered so both survive. Each Mac's Favorites list has
+are per chart (one counter for every market the chart showed: a drawing names its market inside its
+body, `{"Shape": {"market": "BINANCE:BTCUSDT", "since": 2, …}}`), so a drawing is keyed `layout.chart.drawing`. When two Macs give different
+drawings the same id, the local one is renumbered so both survive; so is an unsaved local drawing
+whose id a drawing of another market arrives with (`separate_ids`, in the tab's merge of an
+adopted layout: markets merge one by one, ids are per chart). Each Mac's Favorites list has
 a different local id, so it syncs as the singleton `watchlist.favorites` and keeps its own id.
 
 ## Pictures
@@ -180,6 +183,7 @@ stays safe. (Read from the code; it has not been tried between two real builds.)
 |---|---|
 | A new drawing tool (a new `Geometry` variant in the existing drawing record, same schema number) | Accepts the record and stores it. The drawing decodes as `Drawing::Unreadable`: it is not drawn, selected or edited, is listed in the Object tree as "From a newer version" (deletable, nothing else), and is written back and synced byte for byte. |
 | A new field on an existing tool, marked `"since": N` above the older build's `DRAWING_FORMAT` | The same: kept whole as `Unreadable`, never re-saved without the field. |
+| Drawings that name their market (`"market"`, `"since": 2`; every drawing from this version on) | The same: every such drawing is kept whole as `Unreadable`, so the build shows no drawing of this layout until it is updated, and never strips the market. |
 | A new field on an existing tool **without** the marker | The older build decodes the drawing, ignores the field and re-saves it without it, and the stripped copy syncs back over the newer one. Not allowed: see the rule below. |
 | A new record kind (as pictures were), or a higher `SCHEMA_VERSION` | Kept in the inbox, applied by the first launch that reads it (see above). |
 | A new tool or magnet value in `drawing.prefs` | That one option falls back to its default; the others are kept. (The fallback is then what this build saves.) |

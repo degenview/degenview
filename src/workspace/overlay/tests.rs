@@ -200,11 +200,11 @@ fn hidden_overlays_are_not_fetched_until_shown() {
     list.set_visible(id, false);
     frame(&mut hub, 1, &list, now);
     assert_eq!(fake.pending(), 0);
-    assert!(hub.binance_symbols().is_empty());
+    assert!(hub.streamed_symbols(DataSource::Binance).is_empty());
     list.set_visible(id, true);
     frame(&mut hub, 1, &list, now);
     assert_eq!(fake.pending(), 1);
-    assert_eq!(hub.binance_symbols(), ["ETHUSDT"]);
+    assert_eq!(hub.streamed_symbols(DataSource::Binance), ["ETHUSDT"]);
 }
 
 #[test]
@@ -304,6 +304,10 @@ fn refreshing_slows_down_as_more_markets_are_active() {
         refresh_after(DataSource::CoinGecko, 1),
         Duration::from_secs(15)
     );
+    assert_eq!(
+        refresh_after(DataSource::Kraken, 1),
+        Duration::from_secs(15)
+    );
 }
 
 #[test]
@@ -367,6 +371,31 @@ fn a_new_timeframe_discards_the_candles_and_a_late_answer_for_the_old_one() {
 }
 
 #[test]
+fn an_overlay_spelled_any_way_the_source_takes_streams_and_takes_the_bar_by_its_canonical_name() {
+    let (mut hub, fake) = hub();
+    let now = Instant::now();
+    let main = InstrumentId::new(DataSource::Okx, "ETH-USDT");
+    let alias = InstrumentId::new(DataSource::Okx, "btc");
+    let mut list = OverlayList::new();
+    list.add(&main, alias.clone(), None);
+    frame(&mut hub, 1, &list, now);
+    fake.run_jobs();
+    hub.poll(Timeframe::HOUR_1, &egui::Context::default(), now);
+
+    // The feed streams and names the market as OKX does.
+    assert_eq!(hub.streamed_symbols(DataSource::Okx), ["BTC-USDT"]);
+    hub.apply_live(
+        DataSource::Okx,
+        Timeframe::HOUR_1,
+        Timeframe::HOUR_1,
+        "BTC-USDT",
+        &candle(11 * HOUR, 5.0),
+        now,
+    );
+    assert_eq!(hub.feed(&alias).unwrap().candles.last().unwrap().close, 5.0);
+}
+
+#[test]
 fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
     let (mut hub, fake) = hub();
     let now = Instant::now();
@@ -379,6 +408,7 @@ fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
 
     // The forming bar is replaced; a new bar is appended.
     hub.apply_live(
+        DataSource::Binance,
         Timeframe::HOUR_1,
         Timeframe::HOUR_1,
         "ETHUSDT",
@@ -389,6 +419,7 @@ fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
     assert_eq!(eth.candles.last().unwrap().close, 5.0);
     assert_eq!(eth.candles.len(), 2);
     hub.apply_live(
+        DataSource::Binance,
         Timeframe::HOUR_1,
         Timeframe::HOUR_1,
         "ethusdt",
@@ -402,6 +433,7 @@ fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
     assert_eq!(sol_after.revision, sol_before.revision);
     // A bar older than the newest is ignored.
     hub.apply_live(
+        DataSource::Binance,
         Timeframe::HOUR_1,
         Timeframe::HOUR_1,
         "ETHUSDT",
@@ -442,6 +474,7 @@ fn last_close(hub: &OverlayHub) -> f64 {
 fn a_refresh_does_not_undo_a_live_candle_that_arrived_while_it_was_out() {
     let (mut hub, fake, begun) = refreshing_hub();
     hub.apply_live(
+        DataSource::Binance,
         Timeframe::HOUR_1,
         Timeframe::HOUR_1,
         "ETHUSDT",
@@ -461,6 +494,7 @@ fn a_refresh_does_not_undo_a_live_candle_that_arrived_while_it_was_out() {
 fn a_refresh_updates_the_forming_bar_once_the_socket_went_quiet() {
     let (mut hub, fake, begun) = refreshing_hub();
     hub.apply_live(
+        DataSource::Binance,
         Timeframe::HOUR_1,
         Timeframe::HOUR_1,
         "ETHUSDT",
@@ -585,6 +619,7 @@ fn a_live_kline_of_a_finer_length_is_folded_into_each_holders_candles() {
     };
     let when = now + Duration::from_secs(3);
     hub.apply_live(
+        DataSource::Binance,
         two_hours,
         Timeframe::HOUR_1,
         "ETHUSDT",
@@ -592,6 +627,7 @@ fn a_live_kline_of_a_finer_length_is_folded_into_each_holders_candles() {
         when,
     );
     hub.apply_live(
+        DataSource::Binance,
         two_hours,
         Timeframe::HOUR_1,
         "ETHUSDT",
@@ -599,6 +635,7 @@ fn a_live_kline_of_a_finer_length_is_folded_into_each_holders_candles() {
         when,
     );
     hub.apply_live(
+        DataSource::Binance,
         two_hours,
         Timeframe::HOUR_1,
         "ETHUSDT",

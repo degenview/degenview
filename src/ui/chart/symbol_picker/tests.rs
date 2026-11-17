@@ -1240,20 +1240,20 @@ fn a_prefix_with_no_symbol_yet_lists_the_venues_own_markets() {
 #[test]
 fn a_venue_nothing_serves_is_named_and_the_symbol_searched_everywhere() {
     let mut rig = Rig::new(1100.0, "");
-    rig.type_text("okx:btc");
+    rig.type_text("kucoin:btc");
     assert!(rig.names().contains(&"BTCUSDT".to_owned()));
     assert_eq!(
         rig.heads(),
-        ["OKX isn't supported · matches from other venues"]
+        ["KUCOIN isn't supported · matches from other venues"]
     );
 
     // Nothing found: the card says so and lists what was searched, and Return stays inert.
     let mut rig = Rig::new(1100.0, "");
-    rig.type_text("okx:zzz");
+    rig.type_text("kucoin:zzz");
     let shown = texts(&mut rig);
     assert!(
         shown.iter().any(|text| text
-            == "OKX isn't supported. Searched: Binance, Coinbase, DEXScreener, CoinGecko, Alpaca."),
+            == "KUCOIN isn't supported. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, DEXScreener, CoinGecko, Alpaca."),
         "{shown:?}"
     );
     assert!(
@@ -1270,7 +1270,7 @@ fn a_plain_miss_lists_the_venues_that_were_searched() {
     let shown = texts(&mut rig);
     assert!(
         shown.iter().any(|text| text
-            == "Nothing matches “zzz”. Searched: Binance, Coinbase, DEXScreener, CoinGecko, Alpaca."),
+            == "Nothing matches “zzz”. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, DEXScreener, CoinGecko, Alpaca."),
         "{shown:?}"
     );
     rig.picker.set_venue(Some(DataSource::Coinbase));
@@ -1536,13 +1536,13 @@ fn gallery_of_the_symbol_picker() {
             rig.type_text("btc");
         }),
         ("symbol-picker-unsupported-venue-narrow", 700.0, |rig| {
-            rig.type_text("okx:zzz");
+            rig.type_text("kucoin:zzz");
         }),
         (
             "symbol-picker-unsupported-venue-matches-narrow",
             700.0,
             |rig| {
-                rig.type_text("okx:btc");
+                rig.type_text("kucoin:btc");
             },
         ),
         ("symbol-picker-watchlist", 1100.0, |rig| {
