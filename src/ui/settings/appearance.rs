@@ -1,5 +1,6 @@
 //! Settings ▸ Appearance: the app theme, picked from small previews of a window in each theme.
 
+use crate::i18n::{Locale, Preference, tr};
 use crate::model::tab::title::TabTitleStyle;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
@@ -19,10 +20,10 @@ pub fn body(ui: &mut egui::Ui, current: AppTheme) -> Option<AppTheme> {
     let mut picked = None;
     super::window::section(
         ui,
-        "Theme",
-        Some(&format!(
-            "System follows your {}'s light or dark setting.",
-            crate::platform::computer()
+        tr!("Theme"),
+        Some(&tr!(
+            "System follows your {computer}'s light or dark setting.",
+            computer = crate::platform::computer()
         )),
         |ui| {
             let width = TILE_WIDTH * 3.0 + TILE_GAP * 2.0;
@@ -55,10 +56,10 @@ pub fn tabs(ui: &mut egui::Ui, current: TabTitleStyle) -> Option<TabTitleStyle> 
     let mut picked = None;
     super::window::section(
         ui,
-        "Tabs",
-        Some(
-            "What a chart tab shows. The layout name and the price follow the tab's focused chart.",
-        ),
+        tr!("Tabs"),
+        Some(tr!(
+            "What a chart tab shows. The layout name and the price follow the tab's focused chart."
+        )),
         |ui| {
             let width = TILE_WIDTH * 3.0 + TILE_GAP * 2.0;
             let (row, _) = ui.allocate_exact_size(
@@ -88,7 +89,7 @@ pub fn tabs(ui: &mut egui::Ui, current: TabTitleStyle) -> Option<TabTitleStyle> 
                 ui.add_space(10.0);
                 let restore = ui.add(
                     egui::Label::new(
-                        egui::RichText::new("Restore default")
+                        egui::RichText::new(tr!("Restore default"))
                             .size(kit::size::SUBHEADLINE + 1.0)
                             .underline()
                             .color(theme::text_secondary()),
@@ -107,20 +108,64 @@ pub fn tabs(ui: &mut egui::Ui, current: TabTitleStyle) -> Option<TabTitleStyle> 
     picked.filter(|style| *style != current)
 }
 
-/// The words a tab shows in `style`, as they read on a strip: the price is the app's addition.
-fn tab_sample(style: TabTitleStyle) -> &'static str {
-    match style {
-        TabTitleStyle::Full => "BTC-USD 73,986 / Default",
-        TabTitleStyle::SymbolOnly => "BTC-USD",
-        TabTitleStyle::LayoutOnly => "Default",
+/// Width of the language pull-down: the longest language name and its chevrons.
+const LANGUAGE_PICKER_WIDTH: f32 = 220.0;
+
+/// The language card: "Same as the system" and each language by its own name. Draws nothing
+/// while there is only one language to pick. Returns the choice made this frame.
+pub fn language(ui: &mut egui::Ui, current: Preference) -> Option<Preference> {
+    let languages = Locale::selectable();
+    if languages.len() < 2 {
+        return None;
     }
+    ui.add_space(22.0);
+    let choices: Vec<Preference> = std::iter::once(Preference::System)
+        .chain(languages.into_iter().map(Preference::Fixed))
+        .collect();
+    let name = |choice: &Preference| match choice {
+        Preference::System => tr!("Same as the system").to_owned(),
+        Preference::Fixed(locale) => locale.native_name().to_owned(),
+    };
+    let labels: Vec<String> = choices.iter().map(name).collect();
+    let selected = choices
+        .iter()
+        .position(|choice| *choice == current)
+        .unwrap_or(usize::MAX);
+    let mut picked = None;
+    super::window::section(ui, tr!("Language"), None, |ui| {
+        super::card::card_reserving(
+            ui,
+            Icon::Globe,
+            tr!("Interface language"),
+            Some(tr!(
+                "The language of menus, labels and messages. Market names, prices and Pine scripts stay as they are."
+            )),
+            LANGUAGE_PICKER_WIDTH,
+            |ui| {
+                // A saved language this build does not offer (a copied database) is still named.
+                let hint = name(&current);
+                if let Some(index) = kit::menu_picker_hinted(
+                    ui,
+                    LANGUAGE_PICKER_WIDTH,
+                    &labels,
+                    selected,
+                    true,
+                    &hint,
+                ) {
+                    picked = Some(choices[index]);
+                }
+            },
+        );
+    });
+    picked.filter(|choice| *choice != current)
 }
 
-fn tab_label(style: TabTitleStyle) -> &'static str {
+/// The words a tab shows in `style`, as they read on a strip: the price is the app's addition.
+fn tab_sample(style: TabTitleStyle) -> String {
     match style {
-        TabTitleStyle::Full => "Symbol, price and layout",
-        TabTitleStyle::SymbolOnly => "Symbol only",
-        TabTitleStyle::LayoutOnly => "Layout name only",
+        TabTitleStyle::Full => format!("BTC-USD 73,986 / {}", tr!("Default")),
+        TabTitleStyle::SymbolOnly => "BTC-USD".to_owned(),
+        TabTitleStyle::LayoutOnly => tr!("Default").to_owned(),
     }
 }
 
@@ -129,14 +174,14 @@ fn tab_tile(ui: &mut egui::Ui, rect: Rect, style: TabTitleStyle, selected: bool)
     let response = ui
         .interact(
             rect,
-            egui::Id::new(("appearance-tab-title", tab_label(style))),
+            egui::Id::new(("appearance-tab-title", std::mem::discriminant(&style))),
             Sense::click(),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let response = crate::ui::accessibility::label_as(
         response,
         egui::WidgetType::RadioButton,
-        format!("{} tab title", tab_label(style)),
+        tr!("{style} tab title", style = style.label()),
     );
     let painter = ui.painter();
     paint_tile_frame(painter, rect, selected, response.hovered());
@@ -160,7 +205,7 @@ fn tab_tile(ui: &mut egui::Ui, rect: Rect, style: TabTitleStyle, selected: bool)
     );
     let text = kit::galley(
         ui,
-        tab_sample(style),
+        &tab_sample(style),
         9.5,
         kit::MEDIUM,
         theme::text_primary(),
@@ -202,7 +247,7 @@ fn tab_tile(ui: &mut egui::Ui, rect: Rect, style: TabTitleStyle, selected: bool)
     paint_tile_label(
         ui,
         preview,
-        tab_label(style),
+        style.label(),
         selected,
         preview.bottom() + 10.0 + 9.0,
     );
@@ -273,14 +318,14 @@ fn tile(ui: &mut egui::Ui, rect: Rect, theme: AppTheme, selected: bool) -> bool 
     let response = ui
         .interact(
             rect,
-            egui::Id::new(("appearance-theme", theme.title())),
+            egui::Id::new(("appearance-theme", std::mem::discriminant(&theme))),
             Sense::click(),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let response = crate::ui::accessibility::label_as(
         response,
         egui::WidgetType::RadioButton,
-        format!("{} theme", theme.title()),
+        tr!("{theme} theme", theme = theme.title()),
     );
     let painter = ui.painter();
     paint_tile_frame(painter, rect, selected, response.hovered());

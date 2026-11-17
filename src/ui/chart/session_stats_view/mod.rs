@@ -37,16 +37,6 @@ const FIELD_TEXT: f32 = kit::size::SUBHEADLINE + 1.0;
 /// How long the copy button says "copied".
 const COPIED_FOR: f64 = 1.6;
 
-const WEEKDAYS: [&str; 7] = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-];
-
 /// What the panel asks for.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
@@ -432,7 +422,8 @@ fn weekday_strip(ui: &mut Ui, set: &mut WeekdaySet) {
     let width = ui.available_width();
     let cell = (width - GAP * 6.0) / 7.0;
     let (strip, _) = ui.allocate_exact_size(vec2(width, DAY_HEIGHT), Sense::hover());
-    for (day, name) in WEEKDAYS.iter().enumerate() {
+    for day in 0..7 {
+        let name = crate::i18n::calendar::weekday_name(day);
         let rect = Rect::from_min_size(
             pos2(strip.left() + day as f32 * (cell + GAP), strip.top()),
             vec2(cell, DAY_HEIGHT),
@@ -445,7 +436,7 @@ fn weekday_strip(ui: &mut Ui, set: &mut WeekdaySet) {
                 Sense::click(),
             )
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text(*name);
+            .on_hover_text(name);
         response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, on, name));
         let painter = ui.painter();
         let fill = if on {

@@ -32,6 +32,10 @@ do not restyle screens you were not asked to touch, and do not copy their older 
   its text, centred); a progress toast puts a 48 one above its text, as the snapshot notice does.
   Every busy state in the app uses it: the large ones above, and the small inline ones (Test
   buttons, busy buttons, field adornments, import rows) at 10-16.
+- **Words go through `tr!`.** A label, hint, tooltip or message is `tr!("…")`, and a widget's `egui::Id`
+  is never made from it. Text grows in other languages (German by a third): let labels fall back to
+  icons or wrap, and look at the screen in the pseudo-locale (`DEGENVIEW_LOCALE=en-XA`). Details:
+  [Localization](../localization.md).
 - **One scale of text.** Page title `kit::size::TITLE2 + 3`, section heading `HEADLINE` bold, body
   `BODY`, hints `CAPTION` in `text_secondary`. Sizes only from `kit::size`.
 

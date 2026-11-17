@@ -17,22 +17,6 @@ use eframe::egui::{
     StrokeKind, Ui, Vec2, pos2, vec2,
 };
 
-const MONTHS: [&str; 12] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-];
-const WEEKDAYS: [&str; 7] = ["M", "T", "W", "T", "F", "S", "S"];
-
 const CELL: Vec2 = Vec2::new(34.0, 28.0);
 const POPOVER_WIDTH: f32 = 7.0 * CELL.x;
 
@@ -272,7 +256,11 @@ fn popover(
     let (header, _) = ui.allocate_exact_size(vec2(POPOVER_WIDTH, 26.0), Sense::hover());
     let title = kit::galley(
         ui,
-        &format!("{} {year}", MONTHS[(month - 1) as usize]),
+        &crate::i18n::tr!(
+            "{month} {year}",
+            month = crate::i18n::calendar::month_name(month),
+            year = year
+        ),
         kit::size::BODY,
         SEMIBOLD,
         theme::text_primary(),
@@ -309,7 +297,8 @@ fn popover(
 
     // Weekday initials.
     let (weekdays, _) = ui.allocate_exact_size(vec2(POPOVER_WIDTH, 20.0), Sense::hover());
-    for (index, initial) in WEEKDAYS.iter().enumerate() {
+    for index in 0..7 {
+        let initial = crate::i18n::calendar::weekday_initial(index);
         let galley = kit::galley(
             ui,
             initial,
