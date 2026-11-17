@@ -2,78 +2,83 @@
 //! on the machine it runs on instead of hard-coding macOS. Key combinations live in
 //! `ui::shortcut`.
 
-/// "in your Keychain" / "in secure storage".
-pub const fn in_secret_store() -> &'static str {
+use crate::i18n::{tr, tr_c};
+
+/// "in your Keychain" / "in secure storage". One whole message per platform: another language puts
+/// the platform's word where it wants it.
+pub fn in_secret_store() -> &'static str {
     if cfg!(target_os = "macos") {
-        "in your Keychain"
+        tr!("in your Keychain")
     } else if cfg!(windows) {
-        "in Windows Credential Manager"
+        tr!("in Windows Credential Manager")
     } else {
-        "in secure storage"
+        tr!("in secure storage")
     }
 }
 
 /// "Saved securely in Keychain." in green beside a credentials form.
-pub const fn saved_securely() -> &'static str {
+pub fn saved_securely() -> &'static str {
     if cfg!(target_os = "macos") {
-        "Saved securely in Keychain."
+        tr!("Saved securely in Keychain.")
     } else if cfg!(windows) {
-        "Saved securely in Windows Credential Manager."
+        tr!("Saved securely in Windows Credential Manager.")
     } else {
-        "Saved securely in secure storage."
+        tr!("Saved securely in secure storage.")
     }
 }
 
 /// The hint under a credential field that holds nothing yet.
-pub const fn credential_stored_hint() -> &'static str {
+pub fn credential_stored_hint() -> &'static str {
     if cfg!(target_os = "macos") {
-        "Stored in your Mac's Keychain, never in a file."
+        tr!("Stored in your Mac's Keychain, never in a file.")
     } else if cfg!(windows) {
-        "Stored in Windows Credential Manager, never in a file."
+        tr!("Stored in Windows Credential Manager, never in a file.")
     } else {
-        "Stored in this computer's secure storage, never in a file."
+        tr!("Stored in this computer's secure storage, never in a file.")
     }
 }
 
 /// Where a saved key stays, as a sentence: "The key stays in this Mac's Keychain."
-pub const fn key_stays_stored() -> &'static str {
+pub fn key_stays_stored() -> &'static str {
     if cfg!(target_os = "macos") {
-        "The key stays in this Mac's Keychain."
+        tr!("The key stays in this Mac's Keychain.")
     } else if cfg!(windows) {
-        "The key stays in Windows Credential Manager on this computer."
+        tr!("The key stays in Windows Credential Manager on this computer.")
     } else {
-        "The key stays in this computer's secure storage."
+        tr!("The key stays in this computer's secure storage.")
     }
 }
 
 /// The hint under a credential field that already holds a key.
-pub const fn credential_saved_hint() -> &'static str {
+pub fn credential_saved_hint() -> &'static str {
     if cfg!(target_os = "macos") {
-        "A key is saved in your Keychain. Enter a new one to replace it."
+        tr!("A key is saved in your Keychain. Enter a new one to replace it.")
     } else if cfg!(windows) {
-        "A key is saved in Windows Credential Manager. Enter a new one to replace it."
+        tr!("A key is saved in Windows Credential Manager. Enter a new one to replace it.")
     } else {
-        "A key is saved in secure storage. Enter a new one to replace it."
+        tr!("A key is saved in secure storage. Enter a new one to replace it.")
     }
 }
 
-/// The user's machine, for "your Mac's light or dark setting".
-pub const fn computer() -> &'static str {
+/// The user's machine, for "your Mac's light or dark setting". A word put into a sentence: a
+/// language that inflects it needs the whole sentence per platform instead (see
+/// `docs/localization.md`).
+pub fn computer() -> &'static str {
     if cfg!(target_os = "macos") {
-        "Mac"
+        tr_c!("the user's own machine", "Mac")
     } else {
-        "computer"
+        tr_c!("the user's own machine", "computer")
     }
 }
 
-/// The OS file browser's name.
-pub const fn file_manager() -> &'static str {
+/// The OS file browser's name, for "Show in Finder". Same caveat as `computer`.
+pub fn file_manager() -> &'static str {
     if cfg!(target_os = "macos") {
-        "Finder"
+        tr_c!("the OS file browser", "Finder")
     } else if cfg!(windows) {
-        "Explorer"
+        tr_c!("the OS file browser", "Explorer")
     } else {
-        "File Manager"
+        tr_c!("the OS file browser", "File Manager")
     }
 }
 
@@ -132,5 +137,26 @@ mod tests {
             assert_ne!(file_manager(), "Finder");
             assert!(!has_system_notifications());
         }
+    }
+
+    #[test]
+    fn every_wording_is_a_whole_message_in_the_pseudo_locale() {
+        use crate::i18n::{Locale, with_locale};
+        with_locale(Locale::Pseudo, || {
+            for text in [
+                in_secret_store(),
+                saved_securely(),
+                credential_stored_hint(),
+                key_stays_stored(),
+                credential_saved_hint(),
+                computer(),
+                file_manager(),
+            ] {
+                assert!(
+                    text.starts_with('[') && text.ends_with(']'),
+                    "not put through tr!: {text}"
+                );
+            }
+        });
     }
 }
