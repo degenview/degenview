@@ -3,6 +3,7 @@
 //! `Timeframe` is a value, not a closed list: `22m`, `3h` and `2D` are as real as `1D`.
 //! [`Timeframe::PRESETS`] are the chips the timeframe picker lists. Where a candle opens and closes is `model::market::bucket`'s business.
 
+use crate::i18n::tr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
 use std::fmt;
@@ -42,17 +43,6 @@ impl TimeUnit {
             Self::Day => "Days",
             Self::Week => "Weeks",
             Self::Month => "Months",
-        }
-    }
-
-    /// The unit's name for one candle, as in "22-minute candles".
-    const fn singular(self) -> &'static str {
-        match self {
-            Self::Minute => "minute",
-            Self::Hour => "hour",
-            Self::Day => "day",
-            Self::Week => "week",
-            Self::Month => "month",
         }
     }
 }
@@ -226,16 +216,20 @@ impl Timeframe {
 
     /// A sentence-case name for tooltips: "Daily candles", "22-minute candles".
     pub fn description(self) -> String {
-        match (self.unit, self.count) {
-            (TimeUnit::Minute | TimeUnit::Hour, 1) => {
-                format!("One-{} candles", self.unit.singular())
-            }
-            (TimeUnit::Day, 1) => "Daily candles".to_owned(),
-            (TimeUnit::Week, 1) => "Weekly candles".to_owned(),
-            (TimeUnit::Month, 1) => "Monthly candles".to_owned(),
-            (TimeUnit::Month, 3) => "Quarterly candles".to_owned(),
-            (TimeUnit::Month, 12) => "Yearly candles".to_owned(),
-            (unit, count) => format!("{count}-{} candles", unit.singular()),
+        let count = self.count;
+        match (self.unit, count) {
+            (TimeUnit::Minute, 1) => tr!("One-minute candles").to_owned(),
+            (TimeUnit::Hour, 1) => tr!("One-hour candles").to_owned(),
+            (TimeUnit::Day, 1) => tr!("Daily candles").to_owned(),
+            (TimeUnit::Week, 1) => tr!("Weekly candles").to_owned(),
+            (TimeUnit::Month, 1) => tr!("Monthly candles").to_owned(),
+            (TimeUnit::Month, 3) => tr!("Quarterly candles").to_owned(),
+            (TimeUnit::Month, 12) => tr!("Yearly candles").to_owned(),
+            (TimeUnit::Minute, _) => tr!("{count}-minute candles", count = count),
+            (TimeUnit::Hour, _) => tr!("{count}-hour candles", count = count),
+            (TimeUnit::Day, _) => tr!("{count}-day candles", count = count),
+            (TimeUnit::Week, _) => tr!("{count}-week candles", count = count),
+            (TimeUnit::Month, _) => tr!("{count}-month candles", count = count),
         }
     }
 

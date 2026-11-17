@@ -115,7 +115,7 @@ pub fn header(
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.add(
                     egui::Label::new(kit::text(
-                        card.kind.title(),
+                        card.kind.display_title(),
                         13.0,
                         kit::SEMIBOLD,
                         theme::text_primary(),
@@ -301,7 +301,7 @@ fn paint_controls(ui: &mut Ui, row: Rect, id: Id, card: &mut PortfolioCard, data
 
 /// What a screen reader says for the card.
 fn describe(card: &PortfolioCard, data: &CardData) -> String {
-    let head = format!("{}, {}", card.kind.title(), data.scope_name);
+    let head = format!("{}, {}", card.kind.display_title(), data.scope_name);
     match card.kind {
         CardKind::Value | CardKind::ValueChart => {
             format!("{head}: {}", data.formatter.money(data.total_value))

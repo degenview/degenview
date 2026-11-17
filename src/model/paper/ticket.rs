@@ -5,6 +5,7 @@
 //! charged only for the part of an order that adds exposure, and quantities and prices must sit on
 //! the instrument's increments. The engine stays the authority; this only warns before submitting.
 
+use crate::i18n::tr;
 use crate::model::paper::format::{self as fmt, decimal_places};
 use crate::model::paper::{
     PaperCommissionConfiguration, PaperInstrument, PaperOrderRequest, PaperOrderSide,
@@ -385,16 +386,18 @@ impl TicketDraft {
         if !self.quantity_text.trim().is_empty() {
             let instrument = &self.instrument;
             let issue = match self.quantity() {
-                None => Some("Enter a number.".to_owned()),
-                Some(quantity) if quantity <= 0.0 => Some("Must be greater than zero.".to_owned()),
-                Some(quantity) if quantity < instrument.minimum_quantity => Some(format!(
-                    "Minimum is {}.",
-                    fmt::quantity(instrument.minimum_quantity, instrument)
+                None => Some(tr!("Enter a number.").to_owned()),
+                Some(quantity) if quantity <= 0.0 => {
+                    Some(tr!("Must be greater than zero.").to_owned())
+                }
+                Some(quantity) if quantity < instrument.minimum_quantity => Some(tr!(
+                    "Minimum is {minimum}.",
+                    minimum = fmt::quantity(instrument.minimum_quantity, instrument)
                 )),
                 Some(quantity) if !is_aligned(quantity, instrument.quantity_increment) => {
-                    Some(format!(
-                        "Must be a multiple of {}.",
-                        fmt::quantity(instrument.quantity_increment, instrument)
+                    Some(tr!(
+                        "Must be a multiple of {step}.",
+                        step = fmt::quantity(instrument.quantity_increment, instrument)
                     ))
                 }
                 Some(_) => None,
@@ -472,15 +475,15 @@ impl TicketDraft {
             return None;
         }
         let Some(value) = value else {
-            return Some("Enter a number.".to_owned());
+            return Some(tr!("Enter a number.").to_owned());
         };
         if value <= 0.0 {
-            return Some("Must be greater than zero.".to_owned());
+            return Some(tr!("Must be greater than zero.").to_owned());
         }
         if !is_aligned(value, self.instrument.tick_size) {
-            return Some(format!(
-                "Must be a multiple of {}.",
-                fmt::price(self.instrument.tick_size, &self.instrument)
+            return Some(tr!(
+                "Must be a multiple of {step}.",
+                step = fmt::price(self.instrument.tick_size, &self.instrument)
             ));
         }
         None
@@ -500,10 +503,10 @@ impl TicketDraft {
         let above = self.side.is_buy() == is_take_profit;
         let shown = fmt::price(entry, &self.instrument);
         if above && value <= entry {
-            return Some(format!("Must be above {shown}."));
+            return Some(tr!("Must be above {price}.", price = shown));
         }
         if !above && value >= entry {
-            return Some(format!("Must be below {shown}."));
+            return Some(tr!("Must be below {price}.", price = shown));
         }
         None
     }

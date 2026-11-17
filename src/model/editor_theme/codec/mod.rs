@@ -25,6 +25,7 @@ use super::{
     BuiltInTheme, ColorKey, EditorTheme, LineHeight, NewTheme, SurfaceColor, SyntaxRole,
     TypographyOverride, clamp_size, clean_family, clean_name,
 };
+use crate::i18n::tr;
 use serde::Serialize;
 use serde::ser::{SerializeMap, Serializer};
 use serde_json::Value;
@@ -102,19 +103,24 @@ pub enum ImportError {
 impl ImportError {
     pub fn message(&self) -> String {
         match self {
-            Self::TooLarge => format!(
-                "That file is larger than {} KB, which no theme is.",
-                MAX_FILE_BYTES / 1024
+            Self::TooLarge => tr!(
+                "That file is larger than {kilobytes} KB, which no theme is.",
+                kilobytes = MAX_FILE_BYTES / 1024
             ),
-            Self::NotJson => "That file is not valid JSON.".to_owned(),
-            Self::NotAThemeFile => "That file is not a DegenView editor theme.".to_owned(),
-            Self::UnsupportedVersion(version) => format!(
-                "That theme is version {version}; this version of DegenView reads version {VERSION}. Update DegenView to import it."
+            Self::NotJson => tr!("That file is not valid JSON.").to_owned(),
+            Self::NotAThemeFile => tr!("That file is not a DegenView editor theme.").to_owned(),
+            Self::UnsupportedVersion(version) => tr!(
+                "That theme is version {version}; this version of DegenView reads version {current}. Update DegenView to import it.",
+                version = version,
+                current = VERSION
             ),
-            Self::MissingName => "That theme has no name.".to_owned(),
-            Self::BadName(why) => format!("That theme's name cannot be used: {why}"),
+            Self::MissingName => tr!("That theme has no name.").to_owned(),
+            Self::BadName(why) => tr!("That theme's name cannot be used: {why}", why = why),
             Self::UnknownBase(base) => {
-                format!("That theme starts from \"{base}\", which this version does not have.")
+                tr!(
+                    "That theme starts from \"{base}\", which this version does not have.",
+                    base = base
+                )
             }
         }
     }
@@ -163,8 +169,9 @@ pub fn import(text: &str) -> Result<Imported, ImportError> {
             continue;
         };
         let Some(entries) = entries.as_object() else {
-            skipped.push(format!(
-                "\"{section}\" is not an object, so none of it was read."
+            skipped.push(tr!(
+                "\"{section}\" is not an object, so none of it was read.",
+                section = section
             ));
             continue;
         };
@@ -174,13 +181,18 @@ pub fn import(text: &str) -> Result<Imported, ImportError> {
             let colour_key = ColorKey::from_key(key)
                 .filter(|colour| matches!(colour, ColorKey::Syntax(_)) == known);
             let Some(colour_key) = colour_key else {
-                skipped.push(format!(
-                    "\"{key}\" is not a {section} colour this version has."
+                skipped.push(tr!(
+                    "\"{key}\" is not a {section} colour this version has.",
+                    key = key,
+                    section = section
                 ));
                 continue;
             };
             let Some(colour) = value.as_str().and_then(super::Rgba::parse) else {
-                skipped.push(format!("\"{key}\" is not a colour (#RRGGBB or #RRGGBBAA)."));
+                skipped.push(tr!(
+                    "\"{key}\" is not a colour (#RRGGBB or #RRGGBBAA).",
+                    key = key
+                ));
                 continue;
             };
             if colour != base_palette.get(colour_key) {
@@ -193,7 +205,8 @@ pub fn import(text: &str) -> Result<Imported, ImportError> {
         None => TypographyOverride::default(),
         Some(Value::Object(entries)) => read_typography(entries, &mut skipped),
         Some(_) => {
-            skipped.push("\"typography\" is not an object, so none of it was read.".to_owned());
+            skipped
+                .push(tr!("\"typography\" is not an object, so none of it was read.").to_owned());
             TypographyOverride::default()
         }
     };
@@ -216,20 +229,21 @@ fn read_typography(
     if let Some(value) = entries.get("fontFamily") {
         match value.as_str().and_then(clean_family) {
             Some(family) => typography.font_family = Some(family),
-            None => skipped.push("\"fontFamily\" is not a usable font name.".to_owned()),
+            None => skipped.push(tr!("\"fontFamily\" is not a usable font name.").to_owned()),
         }
     }
     if let Some(value) = entries.get("fontSize") {
         match value.as_f64().filter(|size| size.is_finite()) {
             Some(size) => typography.font_size = Some(clamp_size(size as f32)),
-            None => skipped.push("\"fontSize\" is not a number.".to_owned()),
+            None => skipped.push(tr!("\"fontSize\" is not a number.").to_owned()),
         }
     }
     if let Some(value) = entries.get("lineHeight") {
         match value.as_str().and_then(LineHeight::from_key) {
             Some(height) => typography.line_height = Some(height),
-            None => skipped
-                .push("\"lineHeight\" is not one of compact, default, relaxed, loose.".to_owned()),
+            None => skipped.push(
+                tr!("\"lineHeight\" is not one of compact, default, relaxed, loose.").to_owned(),
+            ),
         }
     }
     typography

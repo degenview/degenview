@@ -73,7 +73,7 @@ pub fn menu(
                 shown_any = true;
                 kit::menu_heading(ui, group.label());
                 for kind in rows {
-                    let reason = kind.unsupported_reason(source);
+                    let reason = kind.unsupported_reason_text(source);
                     let (clicked, response) = row(ui, kind, kind == current, reason.is_none());
                     if let Some(reason) = reason {
                         response.on_hover_text(reason);

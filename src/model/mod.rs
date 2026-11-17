@@ -27,6 +27,9 @@ pub mod taker_flow;
 pub mod watchlist;
 pub mod webhook;
 
+#[cfg(test)]
+mod i18n_tests;
+
 pub use chart::appearance::ChartAppearance;
 pub use chart::canvas::ChartCanvas;
 pub use chart::kind::{ChartKind, ChartStyle, ChartType};

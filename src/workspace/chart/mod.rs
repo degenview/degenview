@@ -183,7 +183,7 @@ impl Chart {
     /// The name shown for the chart: an explicit display title, else its provider symbol.
     pub(super) fn display_title(&self) -> String {
         if let Some(card) = &self.card {
-            return card.kind.title().to_owned();
+            return card.kind.display_title().to_owned();
         }
         self.chart
             .title()
