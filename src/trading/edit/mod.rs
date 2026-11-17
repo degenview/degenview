@@ -7,6 +7,7 @@
 //! text boxes, the words for every reason the crate reports as a value, and the [`EditView`] the
 //! sheet draws. Nothing here draws or waits.
 
+use crate::i18n::tr;
 use std::time::Instant;
 
 use degenview_brokers::edit_session::{
@@ -187,25 +188,25 @@ impl EditSession {
         }
         let order = state.order;
         EditView::Editing(EditForm {
-            heading: format!(
-                "{} {} {} · {}",
-                if order.side == Side::Buy {
-                    "Buy"
-                } else {
-                    "Sell"
-                },
-                rules::size_text(order),
-                order.product,
-                rules::type_label(order)
+            heading: tr!(
+                "{side} {size} {product} · {kind}",
+                side = side_text(order.side),
+                size = rules::size_text(order),
+                product = order.product,
+                kind = rules::type_label(order)
             ),
             price_title: if order.order_type == OrderType::StopLimit {
-                "Stop price"
+                tr!("Stop price")
             } else {
-                "Limit price"
+                tr!("Limit price")
             },
             typed_error: match state.change {
-                Err(NotAChange::PriceNotANumber) => Some("The price is not a number.".to_owned()),
-                Err(NotAChange::SizeNotANumber) => Some("The size is not a number.".to_owned()),
+                Err(NotAChange::PriceNotANumber) => {
+                    Some(tr!("The price is not a number.").to_owned())
+                }
+                Err(NotAChange::SizeNotANumber) => {
+                    Some(tr!("The size is not a number.").to_owned())
+                }
                 // Unchanged is not an error, only nothing to review.
                 Err(NotAChange::Unchanged) | Ok(_) => None,
             },
@@ -234,6 +235,14 @@ impl EditSession {
     }
 }
 
+fn side_text(side: Side) -> &'static str {
+    if side == Side::Buy {
+        tr!("Buy")
+    } else {
+        tr!("Sell")
+    }
+}
+
 fn closing_notice(closing: &Closing) -> Option<Notice> {
     let closed = |text: &str, error: bool| {
         Some(Notice {
@@ -243,17 +252,23 @@ fn closing_notice(closing: &Closing) -> Option<Notice> {
     };
     match closing {
         Closing::Dismissed => None,
-        Closing::NotOpen => closed("The order is no longer open, so it was not edited.", true),
+        Closing::NotOpen => closed(
+            tr!("The order is no longer open, so it was not edited."),
+            true,
+        ),
         Closing::NotConnected => closed(
-            "The broker is not connected, so the order was not edited.",
+            tr!("The broker is not connected, so the order was not edited."),
             true,
         ),
         Closing::Sent => closed(
-            "Edit sent. The order updates when the broker confirms it.",
+            tr!("Edit sent. The order updates when the broker confirms it."),
             false,
         ),
         Closing::OutcomeUnknown(error) => closed(
-            &format!("{error} The order is being read again to see what happened."),
+            &tr!(
+                "{error} The order is being read again to see what happened.",
+                error = error
+            ),
             true,
         ),
     }
@@ -261,13 +276,13 @@ fn closing_notice(closing: &Closing) -> Option<Notice> {
 
 fn note_text(note: &EditNote) -> String {
     match note {
-        EditNote::NotChecked => "This change has not been checked.".to_owned(),
+        EditNote::NotChecked => tr!("This change has not been checked.").to_owned(),
         EditNote::OrderChanged => {
-            "The order changed while you were reviewing it. Nothing was sent. Review it again."
+            tr!("The order changed while you were reviewing it. Nothing was sent. Review it again.")
                 .to_owned()
         }
         EditNote::PreviewOutOfDate => {
-            "The broker's check of this change is out of date. Review it again.".to_owned()
+            tr!("The broker's check of this change is out of date. Review it again.").to_owned()
         }
         EditNote::AmendFailed(error) => error.to_string(),
     }
@@ -279,25 +294,25 @@ fn issue_text(issue: &EditIssue, spec: &ProductSpec) -> String {
         EditIssue::PriceOffIncrement {
             increment,
             nearest_below,
-        } => format!(
-            "The price must be a multiple of {}. The nearest valid price below is {}.",
-            rules::display(*increment),
-            rules::price_display(*nearest_below, spec),
+        } => tr!(
+            "The price must be a multiple of {increment}. The nearest valid price below is {nearest}.",
+            increment = rules::display(*increment),
+            nearest = rules::price_display(*nearest_below, spec),
         ),
         EditIssue::SizeOffIncrement { increment } => {
-            format!(
-                "The size must be a multiple of {}.",
-                rules::display(*increment)
+            tr!(
+                "The size must be a multiple of {increment}.",
+                increment = rules::display(*increment)
             )
         }
         EditIssue::SizeBelowMinimum { minimum } => {
-            format!(
-                "The size is below the minimum of {}.",
-                rules::display(*minimum)
+            tr!(
+                "The size is below the minimum of {minimum}.",
+                minimum = rules::display(*minimum)
             )
         }
         EditIssue::SizeBelowFilled => {
-            "The size cannot be less than what has already filled.".to_owned()
+            tr!("The size cannot be less than what has already filled.").to_owned()
         }
     }
 }
@@ -308,16 +323,8 @@ fn review_lines(
     preview: &EditPreview,
 ) -> Vec<ReviewLine> {
     let mut lines = vec![
-        ReviewLine::new("Market", order.product.to_string()),
-        ReviewLine::new(
-            "Action",
-            if order.side == Side::Buy {
-                "Buy"
-            } else {
-                "Sell"
-            }
-            .to_owned(),
-        ),
+        ReviewLine::new(tr!("Market"), order.product.to_string()),
+        ReviewLine::new(tr!("Action"), side_text(order.side).to_owned()),
     ];
     if let Some(new) = change.price.or(change.stop_price) {
         let old = if change.price.is_some() {
@@ -326,7 +333,7 @@ fn review_lines(
             order.stop_price
         };
         lines.push(ReviewLine::new(
-            "Price",
+            tr!("Price"),
             format!(
                 "{} → {}",
                 old.map_or("—".to_owned(), rules::display),
@@ -336,20 +343,20 @@ fn review_lines(
     }
     if let Some(new) = change.size {
         lines.push(ReviewLine::new(
-            "Size",
+            tr!("Size"),
             format!("{} → {}", rules::size_text(order), rules::display(new)),
         ));
     }
     // The broker's figures for the changed order, from a preview of exactly this change.
     if let Some(total) = preview.order_total {
         lines.push(ReviewLine::new(
-            "Total (broker's estimate)",
+            tr!("Total (broker's estimate)"),
             rules::display(total),
         ));
     }
     if let Some(fee) = preview.fees {
         lines.push(ReviewLine::new(
-            "Fee (broker's estimate)",
+            tr!("Fee (broker's estimate)"),
             rules::display(fee),
         ));
     }

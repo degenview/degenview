@@ -3,6 +3,7 @@
 //! from the signature first and CloudKit is never touched when it is "no".
 
 use crate::build_info::ICLOUD_CONTAINER;
+use crate::i18n::tr;
 
 /// What a signed entitlement holds. Only the macOS reader constructs `Text` and `List`.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -25,9 +26,10 @@ pub fn icloud_environment(
     release_build: bool,
 ) -> Result<String, String> {
     let not_signed = || {
-        "This copy of DegenView is not signed for iCloud. Install a release downloaded from the \
-         DegenView website."
-            .to_string()
+        tr!(
+            "This copy of DegenView is not signed for iCloud. Install a release downloaded from the DegenView website."
+        )
+        .to_string()
     };
     let has = |key: &str, wanted: &str| match read(key) {
         Some(EntitlementValue::List(items)) => items.iter().any(|item| item == wanted),
@@ -39,17 +41,17 @@ pub fn icloud_environment(
     }
     let environment = match read(ENVIRONMENT) {
         Some(EntitlementValue::Text(text)) if text == "Production" || text == "Development" => text,
-        Some(_) => return Err("This build has an unrecognised iCloud environment.".into()),
+        Some(_) => return Err(tr!("This build has an unrecognised iCloud environment.").into()),
         // A development-signed build without the key talks to Development; a release must say so.
         None if !release_build => "Development".to_string(),
-        None => return Err("This release is missing its iCloud environment.".into()),
+        None => return Err(tr!("This release is missing its iCloud environment.").into()),
     };
     match (release_build, environment.as_str()) {
         (true, "Development") => {
-            Err("A release build must not use iCloud's Development environment.".into())
+            Err(tr!("A release build must not use iCloud's Development environment.").into())
         }
         (false, "Production") => {
-            Err("A development build must not use iCloud's Production environment.".into())
+            Err(tr!("A development build must not use iCloud's Production environment.").into())
         }
         _ => Ok(environment),
     }

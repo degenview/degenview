@@ -2,6 +2,7 @@
 //! One of these is shared by every window (and any menu that edits a group). The choices are local to the Mac, like the tabs themselves.
 //!
 //! A tab's own colour is not here: it is saved with the tab (`PersistedWorkspace::link`).
+use crate::i18n::tr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -67,9 +68,12 @@ impl TabLinkHost {
         }
         self.touch();
         let write = |store: &Store| {
-            store
-                .set_setting(LinkTable::KEY, &*table)
-                .map_err(|error| format!("Could not save the tab linking settings: {error}"))
+            store.set_setting(LinkTable::KEY, &*table).map_err(|error| {
+                tr!(
+                    "Could not save the tab linking settings: {error}",
+                    error = error
+                )
+            })
         };
         if let Some(store) = held {
             return write(store);
@@ -79,7 +83,7 @@ impl TabLinkHost {
         };
         let store = shared
             .lock()
-            .map_err(|_| "The settings database is unavailable.".to_owned())?;
+            .map_err(|_| tr!("The settings database is unavailable.").to_owned())?;
         write(&store)
     }
 }

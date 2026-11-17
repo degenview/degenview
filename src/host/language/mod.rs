@@ -1,6 +1,7 @@
 //! The interface language: reads the saved choice at startup, and applies and saves a new one from
 //! Settings. `i18n` holds the language in use; this is what chooses it.
 
+use crate::i18n::tr;
 use crate::i18n::{self, Locale, Preference};
 use crate::service::system::language;
 use crate::store::Store;
@@ -20,7 +21,7 @@ pub fn choose(store: &Store, preference: Preference) -> Result<(), String> {
     apply(preference);
     store
         .set_language_preference(preference)
-        .map_err(|error| format!("Could not save the language: {error}"))
+        .map_err(|error| tr!("Could not save the language: {error}", error = error))
 }
 
 fn apply(preference: Preference) {
