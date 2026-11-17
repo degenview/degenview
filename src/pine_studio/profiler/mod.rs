@@ -18,6 +18,7 @@ pub(in crate::pine_studio) mod ui;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::i18n::tr;
 use crate::pine::profile::{
     Completeness, Interruption, ProfileConfig, ProfileOutcome, ProfileReport, ProfileSession,
 };
@@ -287,9 +288,10 @@ impl Profiler {
                 self.profile = None;
                 self.failure = Some(Failure {
                     key: run.key,
-                    message: format!(
-                        "The script failed on bar {}: {}",
-                        report.summary.bars, error.message
+                    message: tr!(
+                        "The script failed on bar {bar}: {message}",
+                        bar = report.summary.bars,
+                        message = error.message
                     ),
                     not_runnable: false,
                     error: Some(error),
@@ -408,13 +410,15 @@ impl Profiler {
             Status::Stale if self.lines_match(current) => {
                 ProfileColumn::Dated(Arc::clone(&self.profile.as_ref()?.marks))
             }
-            Status::Running { .. } => ProfileColumn::Empty("Profiling\u{2026}"),
-            Status::Stale => ProfileColumn::Empty(
-                "This profile is of earlier text. Run it again to see where the time goes now.",
-            ),
-            Status::Failed(_) => ProfileColumn::Empty("The script could not be profiled."),
+            Status::Running { .. } => ProfileColumn::Empty(tr!("Profiling…")),
+            Status::Stale => ProfileColumn::Empty(tr!(
+                "This profile is of earlier text. Run it again to see where the time goes now."
+            )),
+            Status::Failed(_) => ProfileColumn::Empty(tr!("The script could not be profiled.")),
             Status::Waiting(why) => ProfileColumn::Empty(why),
-            Status::Idle => ProfileColumn::Empty("Run the profiler to see where the time goes."),
+            Status::Idle => {
+                ProfileColumn::Empty(tr!("Run the profiler to see where the time goes."))
+            }
         })
     }
 }

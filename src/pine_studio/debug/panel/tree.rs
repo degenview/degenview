@@ -6,6 +6,7 @@
 
 use eframe::egui::{self, Align2, Color32, FontId, Rect, Sense, Stroke, Ui, pos2, vec2};
 
+use crate::i18n::tr;
 use crate::pine::debug::{Group, ValueRef, Variable, VariableGroup};
 use crate::pine_studio::debug::{PanelAction, Shown};
 use crate::ui::icons::{self, Icon};
@@ -281,7 +282,9 @@ pub fn show_rows(
                 loaded,
                 total,
             } => more_row(ui, reference, *depth, *loaded, *total, actions),
-            Line::Loading { depth } => note_row(ui, *depth, "Loading…", theme::text_tertiary()),
+            Line::Loading { depth } => {
+                note_row(ui, *depth, tr!("Loading…"), theme::text_tertiary())
+            }
             Line::Failed { depth, message } => {
                 note_row(ui, *depth, message, theme::syntax::string());
             }
@@ -345,7 +348,11 @@ fn more_row(
     ui.painter().with_clip_rect(rect).text(
         pos2(rect.left() + 28.0 + depth as f32 * 14.0, rect.center().y),
         Align2::LEFT_CENTER,
-        format!("Show more ({} of {total} shown)", loaded),
+        tr!(
+            "Show more ({loaded} of {total} shown)",
+            loaded = loaded,
+            total = total
+        ),
         FontId::proportional(kit::size::SUBHEADLINE),
         kit::ACCENT,
     );
@@ -538,20 +545,22 @@ fn variable_row(
     egui::Popup::context_menu(&response)
         .frame(kit::menu_frame())
         .show(|ui| {
-            kit::menu_fit(ui, &["Copy Name", "Copy Value", "Add to Watches"]);
+            let (copy_name, copy_value, add_watch) =
+                (tr!("Copy Name"), tr!("Copy Value"), tr!("Add to Watches"));
+            kit::menu_fit(ui, &[copy_name, copy_value, add_watch]);
             ui.spacing_mut().item_spacing.y = 0.0;
-            if kit::menu_item(ui, Icon::CopyDoc, "Copy Name", true, false) {
+            if kit::menu_item(ui, Icon::CopyDoc, copy_name, true, false) {
                 ui.ctx().copy_text(variable.name.clone());
                 ui.close();
             }
-            if kit::menu_item(ui, Icon::CopyDoc, "Copy Value", variable.assigned, false) {
+            if kit::menu_item(ui, Icon::CopyDoc, copy_value, variable.assigned, false) {
                 ui.ctx().copy_text(variable.full.clone());
                 ui.close();
             }
             if allow_watch
                 && depth == 0
                 && !key.starts_with("watch:")
-                && kit::menu_item(ui, Icon::Eye, "Add to Watches", true, false)
+                && kit::menu_item(ui, Icon::Eye, add_watch, true, false)
             {
                 actions.push(PanelAction::AddWatch(variable.name.clone()));
                 ui.close();

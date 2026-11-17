@@ -2,6 +2,7 @@
 //! the clicks and menu that set and change them.
 
 use super::{CHANGE_HIT, MARKER_RADIUS, MARKER_X};
+use crate::i18n::tr;
 use crate::pine_studio::debug::marks::{BreakpointMark, GutterEvent, MarkKind, StopMark};
 use crate::pine_studio::editor::{EditorState, GutterRows};
 use crate::ui::icons::Icon;
@@ -125,14 +126,14 @@ pub(in crate::pine_studio) fn breakpoint_rows(
     match mark {
         Some(mark) => {
             let (icon, label) = if mark.enabled {
-                (Icon::EyeSlash, "Disable Breakpoint")
+                (Icon::EyeSlash, tr!("Disable Breakpoint"))
             } else {
-                (Icon::Eye, "Enable Breakpoint")
+                (Icon::Eye, tr!("Enable Breakpoint"))
             };
             vec![
                 row(
                     Icon::Pencil,
-                    "Edit Breakpoint…",
+                    tr!("Edit Breakpoint…"),
                     false,
                     GutterEvent::Edit { line },
                 ),
@@ -147,7 +148,7 @@ pub(in crate::pine_studio) fn breakpoint_rows(
                 ),
                 row(
                     Icon::Trash,
-                    "Remove Breakpoint",
+                    tr!("Remove Breakpoint"),
                     true,
                     GutterEvent::Toggle { line },
                 ),
@@ -156,19 +157,19 @@ pub(in crate::pine_studio) fn breakpoint_rows(
         None => vec![
             row(
                 Icon::Plus,
-                "Add Breakpoint",
+                tr!("Add Breakpoint"),
                 false,
                 GutterEvent::Toggle { line },
             ),
             row(
                 Icon::Pencil,
-                "Add Conditional Breakpoint…",
+                tr!("Add Conditional Breakpoint…"),
                 false,
                 GutterEvent::Edit { line },
             ),
             row(
                 Icon::Code,
-                "Add Logpoint…",
+                tr!("Add Logpoint…"),
                 false,
                 GutterEvent::AddLogpoint { line },
             ),
@@ -191,7 +192,7 @@ pub(in crate::pine_studio::editor) fn breakpoint_gutter(
     let response = ui.interact(hit, state.id.with("breakpoints"), Sense::click());
     let response = accessibility::label(
         response,
-        "Breakpoint gutter: click a line to set a breakpoint",
+        tr!("Breakpoint gutter: click a line to set a breakpoint"),
     );
     let row_at = |y: f32| {
         let index = rows.rows.partition_point(|(top, height)| top + height <= y);
@@ -235,7 +236,7 @@ pub(in crate::pine_studio::editor) fn breakpoint_gutter(
                 let labels: Vec<&str> = rows.iter().map(|row| row.label).collect();
                 kit::menu_fit(ui, &labels);
                 ui.spacing_mut().item_spacing.y = 0.0;
-                kit::menu_heading(ui, &format!("Line {line}"));
+                kit::menu_heading(ui, &tr!("Line {line}", line = line));
                 for row in rows {
                     if kit::menu_item(ui, row.icon, row.label, true, row.destructive) {
                         events.push(row.event);

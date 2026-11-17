@@ -6,6 +6,7 @@
 use super::commands::Cmd;
 use super::library::prefs::{ChartPosition, LayoutPrefs};
 use super::{ai, debug, profiler};
+use crate::i18n::tr;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use crate::ui::kit::bar::{self, Button, Item};
@@ -93,9 +94,9 @@ fn position_icon(position: ChartPosition) -> Icon {
 
 fn items(state: &RailState) -> Vec<RailItem> {
     let preview_toggle = shortcut::TOGGLE_PREVIEW_CHART.hint(if state.chart_visible {
-        "Hide the preview chart"
+        tr!("Hide the preview chart")
     } else {
-        "Show the preview chart"
+        tr!("Show the preview chart")
     });
     vec![
         Item::Button(ai::panel::panel_button(
@@ -114,7 +115,7 @@ fn items(state: &RailState) -> Vec<RailItem> {
         Item::Button(
             RailButton::new(
                 "chart-position",
-                "Where the preview chart sits next to the code",
+                tr!("Where the preview chart sits next to the code"),
             )
             .icon(position_icon(state.chart_position))
             .with_menu(RailMenu::ChartPosition),

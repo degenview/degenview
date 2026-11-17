@@ -12,6 +12,7 @@
 use super::plan::Plan;
 use super::profile::ProfileTool;
 use super::prompt::Mode;
+use crate::i18n::{tr, tr_n};
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::pine_studio::debug::DebugFeed;
 use crate::pine_studio::drawer;
@@ -183,16 +184,18 @@ impl ToolBox {
     pub fn label(call: &ToolCall) -> String {
         match call.name.as_str() {
             "read_script" => match (line_arg(&call.input, "start"), line_arg(&call.input, "end")) {
-                (Some(start), Some(end)) => format!("Reading lines {start}\u{2013}{end}"),
-                (Some(start), None) => format!("Reading from line {start}"),
-                _ => "Reading the script".to_owned(),
+                (Some(start), Some(end)) => {
+                    tr!("Reading lines {start}–{end}", start = start, end = end)
+                }
+                (Some(start), None) => tr!("Reading from line {start}", start = start),
+                _ => tr!("Reading the script").to_owned(),
             },
-            "compile" => "Compiling the draft".to_owned(),
-            "profile" => "Profiling the draft".to_owned(),
-            "submit_plan" => "Writing up the plan".to_owned(),
-            "edit_script" => "Editing the script".to_owned(),
-            "write_script" => "Rewriting the script".to_owned(),
-            other => format!("Calling {other}"),
+            "compile" => tr!("Compiling the draft").to_owned(),
+            "profile" => tr!("Profiling the draft").to_owned(),
+            "submit_plan" => tr!("Writing up the plan").to_owned(),
+            "edit_script" => tr!("Editing the script").to_owned(),
+            "write_script" => tr!("Rewriting the script").to_owned(),
+            other => tr!("Calling {tool}", tool = other),
         }
     }
 
@@ -221,7 +224,7 @@ impl ToolBox {
             return Outcome::error(format!(
                 "`{}` is not available here: you are in {} mode and cannot change the script.",
                 call.name,
-                self.mode.title()
+                self.mode.name()
             ));
         }
         match tool.name {
@@ -241,7 +244,7 @@ impl ToolBox {
         if total == 0 {
             return Outcome::ok(
                 "The script is empty.".to_owned(),
-                "Read the script".to_owned(),
+                tr!("Read the script").to_owned(),
             );
         }
         let start = line_arg(input, "start").unwrap_or(1);
@@ -269,22 +272,27 @@ impl ToolBox {
             ));
         }
         let summary = if start == 1 && end == total {
-            format!("Read the script \u{b7} {total} lines")
+            tr_n!(
+                total,
+                "Read the script · {count} line",
+                "Read the script · {count} lines"
+            )
         } else {
-            format!("Read lines {start}\u{2013}{end}")
+            tr!("Read lines {start}–{end}", start = start, end = end)
         };
         Outcome::ok(out, summary)
     }
 
     fn compile_draft(&self) -> Outcome {
         let diagnostics = (self.compile)(&self.draft.text());
-        let summary = drawer::problems_summary(&diagnostics);
+        let shown = drawer::problems_summary(&diagnostics);
         if diagnostics.is_empty() {
             return Outcome::ok(
                 "No problems: the draft compiles with no errors or warnings.".to_owned(),
-                format!("Compiled \u{b7} {summary}"),
+                tr!("Compiled · {summary}", summary = shown),
             );
         }
+        let summary = model_summary(&diagnostics);
         let all = drawer::copy_text(&diagnostics);
         let mut lines: Vec<&str> = all.lines().collect();
         let more = lines.len().saturating_sub(MAX_DIAGNOSTIC_LINES);
@@ -296,7 +304,7 @@ impl ToolBox {
         if more > 0 {
             out.push_str(&format!("\n\u{2026} and {more} more."));
         }
-        Outcome::ok(out, format!("Compiled \u{b7} {summary}"))
+        Outcome::ok(out, tr!("Compiled · {summary}", summary = shown))
     }
 
     /// Takes the plan. It ends the request: the user reads it and decides.
@@ -305,10 +313,10 @@ impl ToolBox {
             Ok(plan) => Outcome {
                 content: "Plan submitted. The user will review it. Say nothing more.".to_owned(),
                 is_error: false,
-                summary: format!(
-                    "Submitted the plan \u{b7} {} step{}",
+                summary: tr_n!(
                     plan.steps.len(),
-                    if plan.steps.len() == 1 { "" } else { "s" }
+                    "Submitted the plan · {count} step",
+                    "Submitted the plan · {count} steps"
                 ),
                 plan: Some(plan),
             },
@@ -358,7 +366,7 @@ impl ToolBox {
                 let edited = format!("{}{new}{}", &text[..*at], &text[at + old.len()..]);
                 self.draft.set(edited);
                 let end_line = start_line + new.matches('\n').count();
-                self.after_change("Edited", start_line, end_line)
+                self.after_change(false, start_line, end_line)
             }
             many => {
                 let lines: Vec<String> = many
@@ -390,23 +398,25 @@ impl ToolBox {
         let text = normalize(text);
         let lines = text.lines().count().max(1);
         self.draft.set(text);
-        self.after_change("Rewrote", 1, lines)
+        self.after_change(true, 1, lines)
     }
 
     /// What a change did, without a second call: the model sees at once whether it still compiles.
-    fn after_change(&self, verb: &str, first: usize, last: usize) -> Outcome {
+    fn after_change(&self, rewrite: bool, first: usize, last: usize) -> Outcome {
         let text = self.draft.text();
         let diagnostics = (self.compile)(&text);
         let summary = drawer::problems_summary(&diagnostics);
+        let for_model = model_summary(&diagnostics);
         let total = text.lines().count();
-        let place = if verb == "Rewrote" {
+        let verb = if rewrite { "Rewrote" } else { "Edited" };
+        let place = if rewrite {
             format!("the whole script ({total} lines)")
         } else if first == last {
             format!("line {first}")
         } else {
             format!("lines {first}\u{2013}{last}")
         };
-        let mut out = format!("{verb} {place}. The draft has {total} lines. Now: {summary}.");
+        let mut out = format!("{verb} {place}. The draft has {total} lines. Now: {for_model}.");
         if diagnostics
             .iter()
             .any(|d| d.severity == DiagnosticSeverity::Error)
@@ -415,7 +425,27 @@ impl ToolBox {
             let shown: Vec<&str> = all.lines().take(MAX_PROBLEMS_AFTER_EDIT).collect();
             out.push_str(&format!("\n{}", shown.join("\n")));
         }
-        Outcome::ok(out, format!("{verb} {place} \u{b7} {summary}"))
+        // What the panel shows is in the user's language; `out` above is for the model.
+        let shown = match (rewrite, first == last) {
+            (true, _) => tr_n!(
+                total,
+                "Rewrote the whole script ({count} line) · {summary}",
+                "Rewrote the whole script ({count} lines) · {summary}",
+                summary = summary
+            ),
+            (false, true) => tr!(
+                "Edited line {line} · {summary}",
+                line = first,
+                summary = summary
+            ),
+            (false, false) => tr!(
+                "Edited lines {first}–{last} · {summary}",
+                first = first,
+                last = last,
+                summary = summary
+            ),
+        };
+        Outcome::ok(out, shown)
     }
 }
 
@@ -514,6 +544,28 @@ edits to rewriting. The answer says whether the draft still compiles.",
         name: name.to_owned(),
         description: description.to_owned(),
         schema,
+    }
+}
+
+/// "3 errors", "1 warning", "2 errors · 1 warning" or "No problems", always in English: the model
+/// reads it, so it does not follow the language of the interface.
+fn model_summary(diagnostics: &[Diagnostic]) -> String {
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == DiagnosticSeverity::Error)
+        .count();
+    let warnings = diagnostics.len() - errors;
+    let counted =
+        |count: usize, noun: &str| format!("{count} {noun}{}", if count == 1 { "" } else { "s" });
+    match (errors, warnings) {
+        (0, 0) => "No problems".to_owned(),
+        (errors, 0) => counted(errors, "error"),
+        (0, warnings) => counted(warnings, "warning"),
+        (errors, warnings) => format!(
+            "{} \u{b7} {}",
+            counted(errors, "error"),
+            counted(warnings, "warning")
+        ),
     }
 }
 

@@ -8,6 +8,7 @@ use eframe::egui;
 
 use super::marks::GutterEvent;
 use super::{Notice, PanelAction, StartMode};
+use crate::i18n::tr;
 use crate::model::pine::script::{CompileStatus, ScriptType};
 use crate::pine::compiler;
 use crate::pine::debug::{DebugCommand, SourceMap};
@@ -118,9 +119,9 @@ impl PineStudio {
             return;
         };
         let refusal = if open.script_type == ScriptType::Library {
-            Some("A library exports functions; there is nothing to run.")
+            Some(tr!("A library exports functions; there is nothing to run."))
         } else if open.editor.status == CompileStatus::Error {
-            Some("The script has errors. Fix them to debug it.")
+            Some(tr!("The script has errors. Fix them to debug it."))
         } else {
             None
         };
@@ -138,7 +139,7 @@ impl PineStudio {
             .debug_feed(crate::model::pine::script::now_ms(), theme::is_light())
         else {
             self.debug.notice = Some(Notice {
-                text: "The preview chart has no bars yet. Wait for it to load.".to_owned(),
+                text: tr!("The preview chart has no bars yet. Wait for it to load.").to_owned(),
                 error: true,
             });
             self.prefs.debug_open = true;

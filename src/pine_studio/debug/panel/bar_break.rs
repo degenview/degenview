@@ -7,6 +7,7 @@ use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, Vec2, vec2};
 
 use super::widgets::text_field;
 use super::{Context, bar_time_text};
+use crate::i18n::tr;
 use crate::pine::debug::BarBreak;
 use crate::pine_studio::debug::{DebugPanel, PanelAction, parse_bar_break};
 use crate::ui::icons::{self, Icon};
@@ -27,20 +28,24 @@ fn armed(panel: &DebugPanel) -> Option<Armed> {
     Some(match parse_bar_break(text)? {
         BarBreak::Index(index) => match usize::try_from(index).ok().filter(|i| *i < times.len()) {
             Some(index) => Armed::Bar(index),
-            None => Armed::Missing(format!(
-                "Bar {index} is past the last bar{}",
-                times
-                    .len()
-                    .checked_sub(1)
-                    .map_or(String::new(), |last| format!(" ({last})"))
-            )),
+            None => Armed::Missing(match times.len().checked_sub(1) {
+                Some(last) => tr!(
+                    "Bar {index} is past the last bar ({last})",
+                    index = index,
+                    last = last
+                ),
+                None => tr!("Bar {index} is past the last bar", index = index),
+            }),
         },
         BarBreak::Time(time) => {
             let index = times.partition_point(|open| *open < time);
             if index < times.len() {
                 Armed::Bar(index)
             } else {
-                Armed::Missing(format!("No bar opens at or after {}", bar_time_text(time)))
+                Armed::Missing(tr!(
+                    "No bar opens at or after {time}",
+                    time = bar_time_text(time)
+                ))
             }
         }
     })
@@ -65,13 +70,13 @@ pub(super) fn show(ui: &mut Ui, context: &mut Context<'_>) {
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
             ui.label(kit::text(
-                "Stop at bar",
+                tr!("Stop at bar"),
                 kit::size::SUBHEADLINE,
                 kit::SEMIBOLD,
                 theme::text_secondary(),
             ));
             ui.label(kit::text(
-                "Pauses at the start of a bar, wherever the script is in it.",
+                tr!("Pauses at the start of a bar, wherever the script is in it."),
                 kit::size::SUBHEADLINE,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -100,7 +105,7 @@ fn controls(ui: &mut Ui, context: &mut Context<'_>, bars: usize, armed_bar: Opti
         && ui.memory(|memory| memory.has_focus(ui.id().with("bar-index")))
     {
         ui.label(kit::text(
-            format!("The bars are numbered 0 to {}.", bars - 1),
+            tr!("The bars are numbered 0 to {last}.", last = bars - 1),
             kit::size::SUBHEADLINE,
             kit::REGULAR,
             theme::syntax::string(),
@@ -118,13 +123,20 @@ fn index_field(ui: &mut Ui, context: &mut Context<'_>, bars: usize, armed_bar: O
     }
     let response = ui
         .add_enabled_ui(bars > 0, |ui| {
-            text_field(ui, id, &mut context.state.bar_input, "Index", 58.0, true)
+            text_field(
+                ui,
+                id,
+                &mut context.state.bar_input,
+                tr!("Index"),
+                58.0,
+                true,
+            )
         })
         .inner
         .on_hover_text(match bars {
-            0 => "No bars on the chart yet".to_owned(),
-            1 => "The bar's index: 0".to_owned(),
-            _ => format!("The bar's index, 0 to {}", bars - 1),
+            0 => tr!("No bars on the chart yet").to_owned(),
+            1 => tr!("The bar's index: 0").to_owned(),
+            _ => tr!("The bar's index, 0 to {last}", last = bars - 1),
         });
     context.state.bar_input.retain(|c| c.is_ascii_digit());
     if response.lost_focus() && !ui.input(|input| input.key_pressed(egui::Key::Escape)) {
@@ -150,16 +162,16 @@ fn select_button(ui: &mut Ui, context: &mut Context<'_>) {
         ui,
         Some(Icon::ScrollToBar),
         if picking {
-            "Click a candle…"
+            tr!("Click a candle…")
         } else {
-            "Select bar"
+            tr!("Select bar")
         },
         true,
     )
     .on_hover_text(if picking {
-        "Click a candle on the preview chart, or press Esc to cancel"
+        tr!("Click a candle on the preview chart, or press Esc to cancel")
     } else {
-        "Click a candle on the preview chart to stop at its bar"
+        tr!("Click a candle on the preview chart to stop at its bar")
     });
     if picking {
         ui.painter().rect_stroke(
@@ -196,7 +208,7 @@ fn pickers(ui: &mut Ui, context: &mut Context<'_>, armed_bar: Option<usize>) {
             &panel.day_labels,
             day.unwrap_or(usize::MAX),
             !days.is_empty(),
-            "Date (UTC)",
+            tr!("Date (UTC)"),
         );
         if let Some(chosen) = chosen {
             // Keep the time of day when the new date has a bar at it, else take the first.
@@ -225,7 +237,7 @@ fn pickers(ui: &mut Ui, context: &mut Context<'_>, armed_bar: Option<usize>) {
                 .zip(range.as_ref())
                 .map_or(usize::MAX, |(bar, range)| bar - range.start);
             if let Some(chosen) =
-                kit::menu_picker_hinted(ui, 86.0, &labels, selected, day.is_some(), "Time")
+                kit::menu_picker_hinted(ui, 86.0, &labels, selected, day.is_some(), tr!("Time"))
             {
                 let range = range.expect("a time is chosen from a day's list");
                 context.actions.push(PanelAction::BreakOnBar(bar_time_text(
@@ -241,8 +253,11 @@ fn status(ui: &mut Ui, context: &mut Context<'_>, armed: &Armed) {
     let (accent, headline, detail) = match armed {
         Armed::Bar(index) => (
             true,
-            format!("Stops at bar {index}"),
-            format!("{} UTC", bar_time_text(context.panel.bar_times[*index])),
+            tr!("Stops at bar {index}", index = index),
+            tr!(
+                "{time} UTC",
+                time = bar_time_text(context.panel.bar_times[*index])
+            ),
         ),
         Armed::Missing(reason) => (false, reason.clone(), String::new()),
     };
@@ -285,7 +300,7 @@ fn status(ui: &mut Ui, context: &mut Context<'_>, armed: &Armed) {
                     ));
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if super::icon_button(ui, Icon::Xmark, true, "Don't stop at this bar") {
+                    if super::icon_button(ui, Icon::Xmark, true, tr!("Don't stop at this bar")) {
                         context.actions.push(PanelAction::ClearBarBreak);
                     }
                 });

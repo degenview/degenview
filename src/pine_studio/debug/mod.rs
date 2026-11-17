@@ -20,6 +20,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::i18n::tr;
 use crate::model::Kline;
 use crate::pine::Diagnostic;
 use crate::pine::compiler::program::{ChartTheme, InputValue, SymbolInfo};
@@ -154,10 +155,10 @@ impl HitKind {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Always => "Every time",
-            Self::Equals => "On the hit number",
-            Self::EveryNth => "Every nth hit",
-            Self::GreaterThan => "After the nth hit",
+            Self::Always => tr!("Every time"),
+            Self::Equals => tr!("On the hit number"),
+            Self::EveryNth => tr!("Every nth hit"),
+            Self::GreaterThan => tr!("After the nth hit"),
         }
     }
 
@@ -808,7 +809,11 @@ impl DebugPanel {
                 map.resolve_line(line)
         {
             self.notice = Some(Notice {
-                text: format!("Line {line}: {}", reason.describe()),
+                text: tr!(
+                    "Line {line}: {reason}",
+                    line = line,
+                    reason = reason.describe()
+                ),
                 error: false,
             });
             return false;
@@ -951,7 +956,7 @@ impl DebugPanel {
                     }
                     None => {
                         self.notice = Some(Notice {
-                            text: "Enter a bar index, or a time like 2026-10-24 12:00 (UTC)."
+                            text: tr!("Enter a bar index, or a time like 2026-10-24 12:00 (UTC).")
                                 .to_owned(),
                             error: true,
                         });
@@ -1061,7 +1066,7 @@ impl DebugPanel {
             }
             None => {
                 self.console[index].result = Some(Watched::Error(
-                    "Stop the script at a breakpoint to evaluate expressions.".to_owned(),
+                    tr!("Stop the script at a breakpoint to evaluate expressions.").to_owned(),
                 ));
             }
         }

@@ -5,6 +5,7 @@
 
 use super::empty_library;
 use super::script_actions::script_groups;
+use crate::i18n::{tr, tr_n};
 use crate::model::pine::script::{LocalScript, ScriptType};
 use crate::pine_studio::commands::Cmd;
 use crate::ui::icons::{self, Icon};
@@ -47,10 +48,10 @@ impl Group {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Favorites => "Favorites",
-            Self::Indicators => "Indicators",
-            Self::Strategies => "Strategies",
-            Self::Libraries => "Libraries",
+            Self::Favorites => tr!("Favorites"),
+            Self::Indicators => tr!("Indicators"),
+            Self::Strategies => tr!("Strategies"),
+            Self::Libraries => tr!("Libraries"),
         }
     }
 
@@ -297,7 +298,7 @@ fn search_field(
         ui,
         Id::new("script-picker-search"),
         &mut picker.search,
-        "Search name or source",
+        tr!("Search name or source"),
         width,
     );
     if picker.needs_focus {
@@ -321,7 +322,10 @@ fn list(
     open_id: Option<&str>,
     pass: &mut Pass,
 ) {
-    let show_in = format!("Show in {}", crate::platform::file_manager());
+    let show_in = tr!(
+        "Show in {file_manager}",
+        file_manager = crate::platform::file_manager()
+    );
     for (index, (group, rows)) in groups.iter().enumerate() {
         // Sections breathe: the gap above a header separates it from the rows it closes.
         if index > 0 {
@@ -350,14 +354,14 @@ fn no_matches(ui: &mut Ui) {
         icons::paint(ui.painter(), rect, Icon::Magnifier, theme::text_secondary());
         ui.add_space(8.0);
         ui.label(kit::text(
-            "No matches",
+            tr!("No matches"),
             kit::size::HEADLINE,
             kit::SEMIBOLD,
             theme::text_primary(),
         ));
         ui.add_space(3.0);
         ui.label(kit::text(
-            "No script's name or source contains that text.",
+            tr!("No script's name or source contains that text."),
             kit::size::SUBHEADLINE,
             kit::REGULAR,
             theme::text_secondary(),
@@ -552,22 +556,38 @@ fn footer(ui: &mut Ui, count: usize, pass: &mut Pass) {
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
-        let new = kit::push_button(ui, Some(Icon::Plus), "New Script", true)
-            .on_hover_text(shortcut::NEW_SCRIPT.hint("Create a new script"));
+        let new = kit::push_button(ui, Some(Icon::Plus), tr!("New Script"), true)
+            .on_hover_text(shortcut::NEW_SCRIPT.hint(tr!("Create a new script")));
         if new.clicked() {
             pass.run(Cmd::NewScript);
         }
         community_link(ui);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            ui.label(kit::text(
-                format!("{count} {}", if count == 1 { "script" } else { "scripts" }),
-                kit::size::CAPTION,
-                kit::REGULAR,
-                theme::text_tertiary(),
-            ));
-            ui.add_space(4.0);
-        });
+        // What is left of the row after the link: the count shows only when it fits, so a longer
+        // translation of the link never draws over it.
+        let count_text = tr_n!(count, "{count} script", "{count} scripts");
+        let room = ui.available_width();
+        let width = kit::galley(
+            ui,
+            &count_text,
+            kit::size::CAPTION,
+            kit::REGULAR,
+            theme::text_tertiary(),
+            f32::INFINITY,
+        )
+        .size()
+        .x;
+        if width + 4.0 <= room {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.label(kit::text(
+                    count_text,
+                    kit::size::CAPTION,
+                    kit::REGULAR,
+                    theme::text_tertiary(),
+                ));
+                ui.add_space(4.0);
+            });
+        }
     });
     ui.add_space(2.0);
 }
@@ -577,7 +597,7 @@ fn community_link(ui: &mut Ui) -> Response {
     let color = theme::text_secondary();
     let label = kit::galley(
         ui,
-        "Community scripts",
+        tr!("Community scripts"),
         kit::size::SUBHEADLINE,
         kit::REGULAR,
         color,
@@ -587,7 +607,7 @@ fn community_link(ui: &mut Ui) -> Response {
         vec2(label.size().x + 14.0, ROW_HEIGHT - 6.0),
         Sense::click(),
     );
-    let response = response.on_hover_text("Browse community scripts on TradingView");
+    let response = response.on_hover_text(tr!("Browse community scripts on TradingView"));
     let color = if response.hovered() {
         theme::text_primary()
     } else {

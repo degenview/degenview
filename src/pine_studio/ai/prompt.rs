@@ -6,6 +6,7 @@
 //! wrong often enough that applying one blindly would corrupt the user's code, whereas a whole
 //! script can be compiled and diffed against the buffer before anything changes.
 
+use crate::i18n::tr;
 use crate::pine::compiler::symbol_catalog;
 use crate::pine::syntax::token::Diagnostic;
 use crate::pine_studio::drawer;
@@ -38,7 +39,17 @@ pub enum Mode {
 }
 
 impl Mode {
+    /// The name the panel shows.
     pub fn title(self) -> &'static str {
+        match self {
+            Self::Ask => tr!("Ask"),
+            Self::Plan => tr!("Plan"),
+            Self::Edit => tr!("Edit"),
+        }
+    }
+
+    /// The name the model is told, which stays English whatever the interface language is.
+    pub fn name(self) -> &'static str {
         match self {
             Self::Ask => "Ask",
             Self::Plan => "Plan",

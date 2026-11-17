@@ -7,6 +7,7 @@
 use super::edit_ops;
 use super::symbols::SymbolTable;
 use super::syntax;
+use crate::i18n::tr_c;
 use crate::pine::compiler::symbol_catalog as catalog;
 use crate::pine::{builtins::misc, builtins::ta::extra, compiler::registry};
 use std::collections::BTreeSet;
@@ -48,15 +49,15 @@ impl Kind {
 
     pub fn detail(self) -> &'static str {
         match self {
-            Self::User => "your symbol",
-            Self::Field => "field",
-            Self::Method => "method",
-            Self::Variable => "built-in variable",
-            Self::Function => "built-in function",
-            Self::Namespace => "namespace",
-            Self::Keyword => "keyword",
-            Self::Type => "type",
-            Self::Constant => "constant",
+            Self::User => tr_c!("completion kind", "your symbol"),
+            Self::Field => tr_c!("completion kind", "field"),
+            Self::Method => tr_c!("completion kind", "method"),
+            Self::Variable => tr_c!("completion kind", "built-in variable"),
+            Self::Function => tr_c!("completion kind", "built-in function"),
+            Self::Namespace => tr_c!("completion kind", "namespace"),
+            Self::Keyword => tr_c!("completion kind", "keyword"),
+            Self::Type => tr_c!("completion kind", "type"),
+            Self::Constant => tr_c!("completion kind", "constant"),
         }
     }
 }

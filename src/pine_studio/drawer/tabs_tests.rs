@@ -30,30 +30,36 @@ const SIZES: [(f32, f32); 5] = [
 ];
 
 /// Draws `body` over several frames in a window of `size`, asserting it takes no more than the
-/// window, and writes the last frame when a gallery folder is set.
+/// window, and writes the last frame when a gallery folder is set. It is drawn twice: in English
+/// and in the pseudo-locale, whose longer text must fit as well.
 fn fits(tab: &str, state: &str, size: (f32, f32), mut body: impl FnMut(&mut Ui)) {
-    let mut screen = Screen::new(vec2(size.0, size.1));
-    let mut last = None;
-    for _ in 0..4 {
-        last = Some(screen.run(Vec::new(), |ui| {
-            let room = ui.max_rect();
-            ui.painter()
-                .rect_filled(room, 0.0, crate::ui::theme::background());
-            body(ui);
-            let used = ui.min_rect();
-            assert!(
-                used.height() <= room.height() + 1.0 && used.width() <= room.width() + 1.0,
-                "{tab} ({state}) at {size:?} used {:?} of {:?}",
-                used.size(),
-                room.size()
-            );
-        }));
-    }
-    if gallery_dir().is_some() {
-        screen.save(
-            &format!("drawer-{tab}-{state}-{}x{}", size.0, size.1),
-            last.expect("a frame"),
-        );
+    use crate::i18n::{Locale, with_locale};
+    for (locale, suffix) in [(Locale::English, ""), (Locale::Pseudo, "-pseudo")] {
+        with_locale(locale, || {
+            let mut screen = Screen::new(vec2(size.0, size.1));
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let room = ui.max_rect();
+                    ui.painter()
+                        .rect_filled(room, 0.0, crate::ui::theme::background());
+                    body(ui);
+                    let used = ui.min_rect();
+                    assert!(
+                        used.height() <= room.height() + 1.0 && used.width() <= room.width() + 1.0,
+                        "{tab} ({state}{suffix}) at {size:?} used {:?} of {:?}",
+                        used.size(),
+                        room.size()
+                    );
+                }));
+            }
+            if gallery_dir().is_some() {
+                screen.save(
+                    &format!("drawer-{tab}-{state}{suffix}-{}x{}", size.0, size.1),
+                    last.expect("a frame"),
+                );
+            }
+        });
     }
 }
 

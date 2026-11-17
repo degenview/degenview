@@ -5,6 +5,7 @@
 //! run, so its filters and rows are the same. "Source code" lands in the editor, and "Scroll to
 //! bar" moves the preview chart, which only holds the candles it fetched.
 
+use crate::i18n::tr;
 use crate::model::pine::logs_view::{LogsPrefs, SourceTarget};
 use crate::pine::logs::LogHistory;
 use crate::pine_studio::PineStudio;
@@ -56,7 +57,7 @@ pub(in crate::pine_studio) fn tab(
     let scripts = vec![ScriptEntry {
         id: PREVIEW_INSTANCE,
         label: if debugging {
-            format!("{name} (debugger)")
+            tr!("{name} (debugger)", name = name)
         } else {
             name.to_owned()
         },
@@ -156,12 +157,12 @@ impl PineStudio {
                     Scrolled::Done => {}
                     Scrolled::BeforeHistory => {
                         self.error = Some(
-                            "That bar is older than the candles the preview chart has loaded."
+                            tr!("That bar is older than the candles the preview chart has loaded.")
                                 .to_owned(),
                         )
                     }
                     Scrolled::NoBars => {
-                        self.error = Some("The preview chart has no bars yet.".to_owned())
+                        self.error = Some(tr!("The preview chart has no bars yet.").to_owned())
                     }
                 }
             }

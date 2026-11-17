@@ -4,6 +4,7 @@
 
 use super::entry::{Entry, Item, grouped};
 use crate::host::editor_theme::Choices;
+use crate::i18n::tr;
 use crate::model::editor_theme::{AUTOMATIC_NAME, BuiltInTheme, ThemeSelection};
 use crate::pine_studio::commands::Cmd;
 use crate::ui::icons::Icon;
@@ -30,7 +31,7 @@ pub(super) fn entries(choices: &Choices) -> Vec<Entry> {
     vec![
         Entry::Scroll(grouped(vec![built_in, custom])),
         Entry::Separator,
-        Item::new("Configure Themes…", Cmd::OpenThemeSettings)
+        Item::new(tr!("Configure Themes…"), Cmd::OpenThemeSettings)
             .icon(Icon::Sliders)
             .into(),
     ]
