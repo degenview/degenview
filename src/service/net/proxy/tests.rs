@@ -733,3 +733,166 @@ fn the_local_rule_comes_from_every_source() {
     .unwrap();
     assert!(from_env.skips("intranet"));
 }
+
+// MARK: Redirects
+
+/// Answers one request per entry of `replies` on a local port, returning what it was asked, and
+/// stops waiting for more after two seconds.
+fn origin(replies: Vec<String>) -> (u16, std::thread::JoinHandle<Vec<String>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let thread = std::thread::spawn(move || {
+        let mut heads = Vec::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        for reply in replies {
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(_) if std::time::Instant::now() < deadline => {
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                    Err(_) => return heads,
+                }
+            };
+            stream.set_nonblocking(false).unwrap();
+            let mut head = Vec::new();
+            let mut byte = [0_u8; 1];
+            while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).is_ok_and(|n| n > 0) {
+                head.push(byte[0]);
+            }
+            heads.push(String::from_utf8_lossy(&head).into_owned());
+            let _ = stream.write_all(reply.as_bytes());
+        }
+        heads
+    });
+    (port, thread)
+}
+
+fn redirect(location: &str) -> String {
+    format!(
+        "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    )
+}
+
+fn answer(body: &str) -> String {
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+/// A fake HTTP proxy that tunnels every `CONNECT` and answers the request inside with
+/// `redirect`, for two seconds; returns every request head it saw.
+fn redirecting_proxy(location: String) -> (u16, std::thread::JoinHandle<Vec<String>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let thread = std::thread::spawn(move || {
+        let mut heads = Vec::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            let Ok((mut stream, _)) = listener.accept() else {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                continue;
+            };
+            stream.set_nonblocking(false).unwrap();
+            for reply in [
+                "HTTP/1.1 200 Connection established\r\n\r\n".to_owned(),
+                redirect(&location),
+            ] {
+                let mut head = Vec::new();
+                let mut byte = [0_u8; 1];
+                while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).is_ok_and(|n| n > 0) {
+                    head.push(byte[0]);
+                }
+                heads.push(String::from_utf8_lossy(&head).into_owned());
+                let _ = stream.write_all(reply.as_bytes());
+            }
+        }
+        heads
+    });
+    (port, thread)
+}
+
+/// A public page that redirects to this machine must not carry that request to the proxy: the
+/// route is decided again for every hop, not once for the first URL.
+#[test]
+fn a_redirect_to_a_local_address_is_not_sent_through_the_proxy() {
+    use crate::service::net::http::{self, Retry};
+    let (origin_port, origin_thread) = origin(vec![answer("internal")]);
+    let (proxy_port, proxy_thread) =
+        redirecting_proxy(format!("http://127.0.0.1:{origin_port}/secret"));
+    let _applied = AppliedProxy::new(manual("127.0.0.1", Some(proxy_port)));
+    let body = http::get_text(
+        "http://public.test/start",
+        &[("X-Api-Key", "k")],
+        Retry::Never,
+    )
+    .unwrap();
+    assert_eq!(body, "internal");
+    let proxied = proxy_thread.join().unwrap();
+    assert_eq!(proxied.len(), 2, "one CONNECT and its GET: {proxied:?}");
+    assert!(
+        proxied[0].starts_with("CONNECT public.test:80"),
+        "{proxied:?}"
+    );
+    let asked = origin_thread.join().unwrap();
+    assert!(asked[0].starts_with("GET /secret HTTP/1.1"), "{asked:?}");
+    assert!(
+        !asked[0].to_ascii_lowercase().contains("x-api-key"),
+        "a header meant for public.test went to another host: {asked:?}"
+    );
+}
+
+/// The other way round: a local first hop connects directly, and a redirect to a public name goes
+/// through the proxy.
+#[test]
+fn a_redirect_from_a_local_address_to_a_public_host_uses_the_proxy() {
+    use crate::service::net::http::{self, Retry};
+    let (proxy_port, proxy_thread) = fake_http_proxy();
+    let (origin_port, origin_thread) = origin(vec![redirect("http://public.test/after")]);
+    let _applied = AppliedProxy::new(manual("127.0.0.1", Some(proxy_port)));
+    let body = http::get_text(
+        &format!("http://127.0.0.1:{origin_port}/start"),
+        &[],
+        Retry::Never,
+    )
+    .unwrap();
+    assert_eq!(body, "proxy");
+    let heads = proxy_thread.join().unwrap();
+    assert!(heads[0].starts_with("CONNECT public.test:80"), "{heads:?}");
+    assert!(origin_thread.join().unwrap()[0].starts_with("GET /start"));
+}
+
+#[test]
+fn redirects_are_followed_up_to_a_limit_and_headers_stay_on_their_host() {
+    use crate::service::net::http::{self, Error, Retry};
+    let _applied = AppliedProxy::new(ProxyConfig {
+        mode: ProxyMode::Off,
+        ..ProxyConfig::default()
+    });
+    // A relative Location stays on the same host and keeps the header.
+    let (port, thread) = origin(vec![redirect("next"), answer("done")]);
+    let url = format!("http://127.0.0.1:{port}/a/start");
+    assert_eq!(
+        http::get_text(&url, &[("X-Api-Key", "k")], Retry::Never).unwrap(),
+        "done"
+    );
+    let asked = thread.join().unwrap();
+    assert!(asked[1].starts_with("GET /a/next HTTP/1.1"), "{asked:?}");
+    assert!(
+        asked[1].to_ascii_lowercase().contains("x-api-key"),
+        "{asked:?}"
+    );
+    // Six hops are too many.
+    let (port, thread) = origin(vec![redirect("/loop"); 8]);
+    let result = http::get_text(&format!("http://127.0.0.1:{port}/loop"), &[], Retry::Never);
+    assert!(
+        matches!(&result, Err(Error::Network(text)) if text.contains("redirect")),
+        "{result:?}"
+    );
+    thread.join().unwrap();
+}

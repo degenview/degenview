@@ -80,9 +80,15 @@ registry call (`os/registry.rs`) is `cfg(windows)`.
   `ureq::Agent::config_builder()` (a test fails if non-test code does). Kept in a struct or a
   static: `net::agent::FollowingAgent::get_for(url)`, which holds a proxied and a direct agent per
   proxy generation (rebuilt after a change) and hands out the one the host calls for: `net::http`,
-  the webhook, snapshot and FX transports. Agents built per call (`update::download`,
-  `annotation::link_fetch`, `llm::HttpProvider`) use `config_builder_for`. A redirect keeps the
-  first hop's route (the sites that carry credentials already refuse redirects).
+  the webhook, snapshot and FX transports. `llm::HttpProvider` keeps a `FollowingAgent` too and asks it per request, so
+  building the client on the frame reads nothing from the system. Agents built per call
+  (`update::download`, `annotation::link_fetch`) use `config_builder_for`.
+- **Redirects are followed by hand.** A `FollowingAgent`'s agents never follow them (`ureq` would
+  keep the first hop's proxy or direct choice and match later hops by spelling only, so a redirect
+  to `127.0.0.1` would reach the proxy). `get_following` / `head_following` (market data, images,
+  FX) pick the agent for every hop, up to 5, and send the caller's headers only to the host the
+  request started at. The webhook, snapshot, AI, link-preview and update agents refuse redirects
+  (update's own checked chain stays on its allow-list).
 - **WebSockets** (`net::ws::connect`) open their TCP stream with `proxy::dial`, which tunnels
   through the proxy unless it skips the host, and then speak TLS over the tunnel
   (`tunnel/mod.rs`): HTTP `CONNECT` with Basic auth, SOCKS5 no-auth and user/password (the host

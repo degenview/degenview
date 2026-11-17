@@ -68,18 +68,16 @@ impl Default for UreqFxTransport {
 
 impl FxTransport for UreqFxTransport {
     fn get(&self, url: &str) -> Result<HttpReply, TransportError> {
-        let mut response =
-            self.agent
-                .get_for(url)
-                .get(url)
-                .call()
-                .map_err(|error| match error {
-                    ureq::Error::Timeout(_)
-                    | ureq::Error::Io(_)
-                    | ureq::Error::HostNotFound
-                    | ureq::Error::ConnectionFailed => TransportError::Retryable(error.to_string()),
-                    other => TransportError::Fatal(other.to_string()),
-                })?;
+        let mut response = self
+            .agent
+            .get_following(url, &[])
+            .map_err(|error| match error {
+                ureq::Error::Timeout(_)
+                | ureq::Error::Io(_)
+                | ureq::Error::HostNotFound
+                | ureq::Error::ConnectionFailed => TransportError::Retryable(error.to_string()),
+                other => TransportError::Fatal(other.to_string()),
+            })?;
         let status = response.status().as_u16();
         let retry_after = response
             .headers()
