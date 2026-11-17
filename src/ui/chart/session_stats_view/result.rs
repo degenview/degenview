@@ -6,6 +6,7 @@ use super::parts::{
     callout, interval_bar, key_value, link, paragraph, section_header, share_row, text_width,
 };
 use super::text;
+use crate::i18n::tr;
 use crate::model::session_stats::{MarketHours, Note, Stats, Unavailable};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
@@ -54,16 +55,16 @@ pub fn show(
                 ui,
                 Icon::Clock,
                 theme::text_secondary(),
-                "Waiting for bars",
-                "The chart has no bars yet. The answer appears once it has loaded some.",
+                tr!("Waiting for bars"),
+                tr!("The chart has no bars yet. The answer appears once it has loaded some."),
             );
             None
         }
         Some(Err(reason)) => {
             let (icon, title) = match reason {
-                Unavailable::NoBars => (Icon::Clock, "Nothing to count yet"),
+                Unavailable::NoBars => (Icon::Clock, tr!("Nothing to count yet")),
                 Unavailable::TooCoarse | Unavailable::NeedsIntraday => {
-                    (Icon::Calendar, "Not on this timeframe")
+                    (Icon::Calendar, tr!("Not on this timeframe"))
                 }
             };
             callout(ui, icon, kit::Tone::Warning.dot(), title, reason.text());
@@ -106,10 +107,10 @@ fn answer_cards(ui: &mut Ui, stats: &Stats, setting: &Setting) -> Option<Request
 
 fn estimate_card(ui: &mut Ui, stats: &Stats) {
     card(ui, |ui| {
-        let sentence = format!(
-            "{} on {}",
-            stats.outcome.question(),
-            stats.filter.describe()
+        let sentence = tr!(
+            "{question} on {filter}",
+            question = stats.outcome.question(),
+            filter = stats.filter.describe()
         );
         paragraph(
             ui,
@@ -140,24 +141,28 @@ fn estimate_card(ui: &mut Ui, stats: &Stats) {
                 ui,
                 hero.right(),
                 hero.center().y,
-                "Small sample",
+                tr!("Small sample"),
                 kit::Tone::Warning,
             );
             ui.interact(badge, ui.id().with("small-sample"), Sense::hover())
-                .on_hover_text(format!(
-                    "Fewer than {SMALL_SAMPLE} qualifying days: the interval is wide, and one \
-                     more day would move the number."
+                .on_hover_text(tr!(
+                    "Fewer than {limit} qualifying days: the interval is wide, and one more day would move the number.",
+                    limit = SMALL_SAMPLE
                 ));
         }
         interval_bar(ui, estimate);
         ui.add_space(4.0);
-        key_value(ui, "Days counted", &text::count(estimate.n));
-        key_value(ui, "Days it happened", &text::count(estimate.hits));
+        key_value(ui, tr!("Days counted"), &text::count(estimate.n));
+        key_value(ui, tr!("Days it happened"), &text::count(estimate.hits));
         if let Some((low, high)) = estimate.interval() {
             key_value(
                 ui,
-                "95% interval",
-                &format!("{} – {}", text::percent(low), text::percent(high)),
+                tr!("95% interval"),
+                &tr!(
+                    "{low} – {high}",
+                    low = text::percent(low),
+                    high = text::percent(high)
+                ),
             );
         }
     });
@@ -165,18 +170,20 @@ fn estimate_card(ui: &mut Ui, stats: &Stats) {
 
 fn stability_card(ui: &mut Ui, halves: &crate::model::session_stats::Stability) {
     card(ui, |ui| {
-        section_header(ui, "Older and newer half", |ui| {
+        section_header(ui, tr!("Older and newer half"), |ui| {
             let (label, tone, tip) = if halves.agree {
                 (
-                    "Halves agree",
+                    tr!("Halves agree"),
                     kit::Tone::Good,
-                    "The two halves' 95% intervals overlap.",
+                    tr!("The two halves' 95% intervals overlap."),
                 )
             } else {
                 (
-                    "Halves differ",
+                    tr!("Halves differ"),
                     kit::Tone::Warning,
-                    "The two halves' 95% intervals do not overlap: the pattern may have changed.",
+                    tr!(
+                        "The two halves' 95% intervals do not overlap: the pattern may have changed."
+                    ),
                 )
             };
             let (rect, _) =
@@ -187,26 +194,40 @@ fn stability_card(ui: &mut Ui, halves: &crate::model::session_stats::Stability) 
         });
         let texts = [text::share(&halves.older), text::share(&halves.newer)];
         let column = text_width(ui, &texts);
-        share_row(ui, "Older", HALF_LABEL, column, &halves.older, &texts[0]);
-        share_row(ui, "Newer", HALF_LABEL, column, &halves.newer, &texts[1]);
+        share_row(
+            ui,
+            tr!("Older"),
+            HALF_LABEL,
+            column,
+            &halves.older,
+            &texts[0],
+        );
+        share_row(
+            ui,
+            tr!("Newer"),
+            HALF_LABEL,
+            column,
+            &halves.newer,
+            &texts[1],
+        );
     });
 }
 
 fn timing_card(ui: &mut Ui, timing: &crate::model::session_stats::Timing, bar_ms: i64) {
     card(ui, |ui| {
-        section_header(ui, "When it happens", |ui| {
+        section_header(ui, tr!("When it happens"), |ui| {
             ui.label(kit::text(
-                format!("{} days", text::count(timing.n)),
+                tr!("{count} days", count = text::count(timing.n)),
                 kit::size::SUBHEADLINE,
                 kit::REGULAR,
                 theme::text_tertiary(),
             ));
         });
         for (label, index) in [
-            ("A quarter by", timing.p25),
-            ("Half by", timing.median),
-            ("Three quarters by", timing.p75),
-            ("Nine in ten by", timing.p90),
+            (tr!("A quarter by"), timing.p25),
+            (tr!("Half by"), timing.median),
+            (tr!("Three quarters by"), timing.p75),
+            (tr!("Nine in ten by"), timing.p90),
         ] {
             key_value(ui, label, &text::after_open(index, bar_ms));
         }
@@ -215,7 +236,7 @@ fn timing_card(ui: &mut Ui, timing: &crate::model::session_stats::Timing, bar_ms
 
 fn years_card(ui: &mut Ui, stats: &Stats) {
     card(ui, |ui| {
-        section_header(ui, "By year", |_| {});
+        section_header(ui, tr!("By year"), |_| {});
         let texts: Vec<String> = stats
             .per_year
             .iter()
@@ -244,7 +265,7 @@ fn empty(ui: &mut Ui, stats: &Stats, setting: &Setting) -> Option<Request> {
             icons::inline(ui, Icon::CircleDashed, 22.0, theme::text_tertiary());
             ui.add_space(6.0);
             ui.label(kit::text(
-                "No days qualify",
+                tr!("No days qualify"),
                 kit::size::HEADLINE + 1.0,
                 kit::SEMIBOLD,
                 theme::text_primary(),
@@ -252,9 +273,9 @@ fn empty(ui: &mut Ui, stats: &Stats, setting: &Setting) -> Option<Request> {
             let detail = if stats.notes.contains(&Note::NoGaps) {
                 Note::NoGaps.text()
             } else if setting.narrowed {
-                "No day in these bars matches every condition. Loosen one, or load more history."
+                tr!("No day in these bars matches every condition. Loosen one, or load more history.")
             } else {
-                "No day in these bars can answer this question."
+                tr!("No day in these bars can answer this question.")
             };
             paragraph(
                 ui,
@@ -265,7 +286,7 @@ fn empty(ui: &mut Ui, stats: &Stats, setting: &Setting) -> Option<Request> {
             );
             if setting.narrowed {
                 ui.add_space(4.0);
-                if link(ui, "Clear conditions").clicked() {
+                if link(ui, tr!("Clear conditions")).clicked() {
                     request = Some(Request::ClearConditions);
                 }
             }
@@ -279,21 +300,22 @@ fn footer(ui: &mut Ui, stats: &Stats, setting: &Setting) {
     ui.add_space(2.0);
     let mut lines = Vec::new();
     if let Some((first, last)) = stats.span {
-        lines.push(format!(
-            "{} sessions · {} to {}",
-            text::count(stats.sessions),
-            text::date(first),
-            text::date(last)
+        lines.push(tr!(
+            "{sessions} sessions · {first} to {last}",
+            sessions = text::count(stats.sessions),
+            first = text::date(first),
+            last = text::date(last)
         ));
     }
     lines.push(match stats.hours {
-        MarketHours::UsStock => "A day is the regular session in New York.".to_owned(),
+        MarketHours::UsStock => tr!("A day is the regular session in New York.").to_owned(),
         MarketHours::Continuous => {
-            "A day is a UTC date: this market trades round the clock.".to_owned()
+            tr!("A day is a UTC date: this market trades round the clock.").to_owned()
         }
     });
     if setting.replay {
-        lines.push("Replay is on: only bars up to the replay position are counted.".to_owned());
+        lines
+            .push(tr!("Replay is on: only bars up to the replay position are counted.").to_owned());
     }
     for line in lines {
         paragraph(
@@ -307,7 +329,9 @@ fn footer(ui: &mut Ui, stats: &Stats, setting: &Setting) {
     ui.add_space(2.0);
     paragraph(
         ui,
-        "Historical frequencies of this chart's bars, with their sample sizes. Not predictions, not advice.",
+        tr!(
+            "Historical frequencies of this chart's bars, with their sample sizes. Not predictions, not advice."
+        ),
         kit::size::CAPTION + 0.5,
         kit::REGULAR,
         theme::text_tertiary(),

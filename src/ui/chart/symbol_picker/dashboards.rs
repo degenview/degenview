@@ -4,6 +4,7 @@
 use super::list::{
     PAD, RowOutput, RowState, SUBTITLE_SIZE, TITLE_SIZE, marks, paint_background, venue_block,
 };
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::model::market::cmc::CHART_TYPES;
 use crate::model::portfolio::Portfolio;
@@ -19,12 +20,17 @@ const ROW_HEIGHT: f32 = 56.0;
 const ICON: f32 = 20.0;
 
 /// Icon and description per entry of [`CHART_TYPES`], in the same order.
-const GAUGE_DETAILS: [(Icon, &str); 4] = [
-    (Icon::ChartLine, "Historical 0–100 index chart"),
-    (Icon::GaugeHigh, "Current Bitcoin/Altcoin season reading"),
-    (Icon::Waveform, "Historical market-sentiment chart"),
-    (Icon::Gauge, "Current sentiment gauge"),
-];
+fn gauge_details() -> [(Icon, &'static str); 4] {
+    [
+        (Icon::ChartLine, tr!("Historical 0–100 index chart")),
+        (
+            Icon::GaugeHigh,
+            tr!("Current Bitcoin/Altcoin season reading"),
+        ),
+        (Icon::Waveform, tr!("Historical market-sentiment chart")),
+        (Icon::Gauge, tr!("Current sentiment gauge")),
+    ]
+}
 
 /// What a tile adds to the tab.
 #[derive(Clone, Debug, PartialEq)]
@@ -63,7 +69,7 @@ pub fn groups(portfolios: &[Portfolio], scope: Option<u64>, query: &str) -> Vec<
     };
     let gauges = CHART_TYPES
         .iter()
-        .zip(GAUGE_DETAILS)
+        .zip(gauge_details())
         .map(|((key, title), (icon, summary))| Tile {
             icon,
             title: (*title).to_owned(),
@@ -90,7 +96,7 @@ pub fn groups(portfolios: &[Portfolio], scope: Option<u64>, query: &str) -> Vec<
             .filter(matches)
             .collect()
     };
-    [("Market indices", gauges), ("Portfolio", cards)]
+    [(tr!("Market indices"), gauges), (tr!("Portfolio"), cards)]
         .into_iter()
         .filter(|(_, tiles): &(&str, Vec<Tile>)| !tiles.is_empty())
         .map(|(heading, tiles)| Group { heading, tiles })
@@ -168,7 +174,7 @@ fn scope_block(ui: &Ui, rect: Rect, right: f32, scope: &str) -> f32 {
     let name = kit::galley(ui, scope, 14.0, MEDIUM, theme::text_primary(), 180.0);
     let kind = kit::galley(
         ui,
-        "Portfolio",
+        tr!("Portfolio"),
         SUBTITLE_SIZE,
         REGULAR,
         theme::text_secondary(),

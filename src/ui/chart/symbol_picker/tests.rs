@@ -1566,3 +1566,46 @@ fn gallery_of_the_symbol_picker() {
         }
     }
 }
+
+/// The picker in the pseudo-locale at its narrowest, on a few tabs, in both appearances: the tabs,
+/// the filter pull-down, the footer's hints and the empty answers all fit their room.
+/// `DEGENVIEW_GALLERY_DIR=<dir>` writes the pictures.
+#[test]
+fn the_picker_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::chart::painted_text;
+
+    let _theme = crate::ui::theme::RestoreDefaultTheme;
+    let bitcoin = quote(76_075.70, 208.12, 0.27, Freshness::Live);
+    for (theme_name, app_theme) in [
+        ("dark", crate::ui::theme::AppTheme::Dark),
+        ("light", crate::ui::theme::AppTheme::Light),
+    ] {
+        for (name, query, scope) in [
+            ("all", "btc", Scope::All),
+            ("none", "zzzz", Scope::All),
+            ("empty", "", Scope::All),
+            ("predictions", "", Scope::Predictions),
+            ("dashboards", "", Scope::Dashboards),
+        ] {
+            with_locale(Locale::Pseudo, || {
+                let mut rig = Rig::sized(640.0, 560.0, query);
+                crate::ui::theme::apply(&rig.screen.ctx, app_theme);
+                rig.quote = Some(bitcoin.clone());
+                rig.on_tab = vec![InstrumentId::new(DataSource::Binance, "BTCUSDT")];
+                rig.picker.set_watchlists(lists());
+                rig.picker.set_scope(scope);
+                rig.settle();
+                let (_, output) = rig.frame_with_output(Vec::new());
+                let texts = painted_text::of(&output);
+                painted_text::assert_painted(&texts, "Predictions");
+                painted_text::assert_painted(&texts, "Navigate");
+                if gallery_dir().is_some() {
+                    eprintln!("{name}: {:?}", painted_text::unbracketed(&texts));
+                    rig.screen
+                        .save(&format!("pseudo-symbol-picker-{name}-{theme_name}"), output);
+                }
+            });
+        }
+    }
+}

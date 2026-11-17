@@ -9,6 +9,8 @@ pub mod indicator_picker;
 pub mod indicator_strip;
 pub mod notice;
 pub mod object_tree;
+#[cfg(test)]
+mod painted_text;
 pub mod picker_kit;
 pub(in crate::ui) mod price_text;
 pub mod scale_menu;

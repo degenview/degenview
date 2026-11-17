@@ -322,7 +322,12 @@ impl ChartCard {
                 self.bearish_color()
             };
             let galley = painter.layout_no_wrap(
-                if bullish { "Bullish" } else { "Bearish" }.to_owned(),
+                if bullish {
+                    tr!("Bullish")
+                } else {
+                    tr!("Bearish")
+                }
+                .to_owned(),
                 FontId::proportional(TREND_FLIP_LABEL_FONT_SIZE),
                 Color32::WHITE,
             );

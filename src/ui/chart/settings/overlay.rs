@@ -2,6 +2,7 @@
 //! popover on a chart's overlay card: colour, line, price, scale and the last-value tag, each
 //! answered with the [`OverlayCommand`] that makes the change.
 
+use crate::i18n::tr;
 use crate::model::chart::kind::{LineDash, PriceSource};
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::editor_theme::Rgba;
@@ -83,7 +84,7 @@ pub fn body(
         .spacing(density.spacing())
         .min_col_width(density.name_column())
         .show(ui, |ui| {
-            setting_name(ui, "Colour", 20.0);
+            setting_name(ui, tr!("Colour"), 20.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = if density.roomy() { 6.0 } else { 4.0 };
                 for hex in PALETTE {
@@ -95,7 +96,7 @@ pub fn body(
                 ui.add_space(4.0);
                 if density.roomy() {
                     ui.label(kit::text(
-                        "Custom",
+                        tr!("Custom"),
                         10.5,
                         kit::REGULAR,
                         theme::text_secondary(),
@@ -105,7 +106,7 @@ pub fn body(
                 if let Some(picked) = kit::color_well(
                     ui,
                     vec2(26.0, 20.0),
-                    &format!("{} custom colour", overlay.name()),
+                    &tr!("{name} custom colour", name = overlay.name()),
                     rgb(overlay.color),
                     egui::color_picker::Alpha::Opaque,
                 ) {
@@ -125,10 +126,13 @@ pub fn body(
             });
             ui.end_row();
 
-            setting_name(ui, "Line", 24.0);
+            setting_name(ui, tr!("Line"), 24.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                let widths: Vec<String> = WIDTHS.iter().map(|w| format!("{w} px")).collect();
+                let widths: Vec<String> = WIDTHS
+                    .iter()
+                    .map(|w| tr!("{width} px", width = w))
+                    .collect();
                 let at = WIDTHS
                     .iter()
                     .position(|w| (*w - overlay.width).abs() < 0.01)
@@ -158,7 +162,7 @@ pub fn body(
             });
             ui.end_row();
 
-            setting_name(ui, "Price", 24.0);
+            setting_name(ui, tr!("Price"), 24.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
                 let sources: Vec<String> = PriceSource::ALL
@@ -178,18 +182,21 @@ pub fn body(
                     send(OverlayCommand::SetSource(id, PriceSource::ALL[pick]));
                 }
                 if density.roomy() {
-                    hint(ui, "The value of each candle the line follows.");
+                    hint(ui, tr!("The value of each candle the line follows."));
                 }
             });
             ui.end_row();
 
-            setting_name(ui, "Scale", 24.0);
+            setting_name(ui, tr!("Scale"), 24.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
-                let mut labels = vec!["Chart's scale".to_owned(), "Its own scale".to_owned()];
+                let mut labels = vec![
+                    tr!("Chart's scale").to_owned(),
+                    tr!("Its own scale").to_owned(),
+                ];
                 let mut choices = vec![ScaleChoice::Main, ScaleChoice::Own];
                 for (other, name) in own_scales.iter().filter(|(other, _)| *other != id) {
-                    labels.push(format!("Scale of {name}"));
+                    labels.push(tr!("Scale of {name}", name = name));
                     choices.push(ScaleChoice::SharedWith(*other));
                 }
                 let at = match overlay.scale {
@@ -216,14 +223,17 @@ pub fn body(
             // The roomy page keeps it as a row of the grid; the popover puts it under the grid, so
             // the grid's name column is as wide as its own names and not as "Last value tag".
             if density.roomy() {
-                setting_name(ui, "Last value tag", 20.0);
+                setting_name(ui, tr!("Last value tag"), 20.0);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 4.0;
                     let mut shown = overlay.show_label;
                     if card::switch(ui, &mut shown) {
                         send(OverlayCommand::SetLabel(id, shown));
                     }
-                    hint(ui, "A label at the end of the line with its latest value.");
+                    hint(
+                        ui,
+                        tr!("A label at the end of the line with its latest value."),
+                    );
                 });
                 ui.end_row();
             }
@@ -234,7 +244,7 @@ pub fn body(
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
             ui.label(kit::text(
-                "Last value tag",
+                tr!("Last value tag"),
                 11.5,
                 kit::MEDIUM,
                 theme::text_secondary(),
@@ -257,23 +267,33 @@ pub fn scale_hint(
     match overlay.scale {
         OverlayScale::Main => match mode {
             PriceScaleMode::Percent | PriceScaleMode::IndexedTo100 => {
-                "Starts where the chart does, so the axis reads this market's own change.".to_owned()
+                tr!("Starts where the chart does, so the axis reads this market's own change.")
+                    .to_owned()
             }
             PriceScaleMode::Regular | PriceScaleMode::Logarithmic => {
-                "Starts where the chart does. Use the Percent or Indexed axis to read it as a change."
-                    .to_owned()
+                tr!(
+                    "Starts where the chart does. Use the Percent or Indexed axis to read it as a change."
+                )
+                .to_owned()
             }
         },
         OverlayScale::Own(group) if group == overlay.id => {
-            "Fitted to the height of the chart. Its price is in the tag and the legend, not on the axis."
-                .to_owned()
+            tr!(
+                "Fitted to the height of the chart. Its price is in the tag and the legend, not on the axis."
+            )
+            .to_owned()
         }
         OverlayScale::Own(group) => {
-            let owner = own_scales
-                .iter()
-                .find(|(other, _)| *other == group)
-                .map_or("another market", |(_, name)| name.as_str());
-            format!("Fitted together with {owner}, so they can be read against each other.")
+            match own_scales.iter().find(|(other, _)| *other == group) {
+                Some((_, owner)) => tr!(
+                    "Fitted together with {owner}, so they can be read against each other.",
+                    owner = owner
+                ),
+                None => tr!(
+                    "Fitted together with another market, so they can be read against each other."
+                )
+                .to_owned(),
+            }
         }
     }
 }
@@ -307,7 +327,8 @@ fn swatch_button(ui: &mut Ui, color: Color32, selected: bool) -> bool {
         ui.painter()
             .circle_stroke(center, 9.5, Stroke::new(1.0, theme::ink(40)));
     }
-    crate::ui::accessibility::label(response, format!("Colour {}", color_name(color))).clicked()
+    crate::ui::accessibility::label(response, tr!("Colour {hex}", hex = color_name(color)))
+        .clicked()
 }
 
 fn color_name(color: Color32) -> String {
