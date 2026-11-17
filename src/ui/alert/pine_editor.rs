@@ -6,6 +6,7 @@
 //! being armed, cards for the rows, the shared webhook picker, and a footer that says what will
 //! happen.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::alert;
 use crate::model::alert::pine::{ArmingFacts, Blocker, CallRow, PineAlertSubscription};
 use crate::model::webhook::{EndpointId, WebhookEndpoint};
@@ -18,8 +19,11 @@ use eframe::egui::{self, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, ve
 /// More call sites than this scroll instead of growing the sheet.
 pub const INLINE_CALL_LIMIT: usize = 4;
 
-pub const FOOTNOTE: &str = "Fires only while this chart shows this symbol and timeframe and its live feed is running. \
-Editing the script pauses the alert until you re-arm it.";
+pub fn footnote_text() -> &'static str {
+    tr!(
+        "Fires only while this chart shows this symbol and timeframe and its live feed is running. Editing the script pauses the alert until you re-arm it."
+    )
+}
 
 const WIDTH: f32 = 480.0;
 const INSET: f32 = 24.0;
@@ -91,35 +95,39 @@ pub fn displayed_script_name(script_name: &str, loaded: bool) -> String {
     if !script_name.is_empty() {
         script_name.to_owned()
     } else if loaded {
-        "Untitled script".to_owned()
+        tr!("Untitled script").to_owned()
     } else {
-        "Loading…".to_owned()
+        tr!("Loading…").to_owned()
     }
 }
 
 /// "Fires on live bars of BTC/USDT · 1h", shown beside the Create button.
 pub fn summary(facts: ArmingFacts, chart_title: &str, timeframe: &str) -> String {
     if can_create(facts) {
-        format!("Fires on live bars of {chart_title} · {timeframe}")
+        tr!(
+            "Fires on live bars of {chart} · {timeframe}",
+            chart = chart_title,
+            timeframe = timeframe
+        )
     } else {
-        "Nothing to arm yet.".to_owned()
+        tr!("Nothing to arm yet.").to_owned()
     }
 }
 
 /// The readiness badge on the script card.
 pub fn status_badge(facts: ArmingFacts) -> (&'static str, kit::Tone) {
     if !facts.loaded {
-        ("Checking…", kit::Tone::Neutral)
+        (tr!("Checking…"), kit::Tone::Neutral)
     } else if alert::pine::blocker(facts).is_none() {
-        ("Ready", kit::Tone::Good)
+        (tr!("Ready"), kit::Tone::Good)
     } else {
-        ("Can't arm", kit::Tone::Warning)
+        (tr!("Can't arm"), kit::Tone::Warning)
     }
 }
 
 /// "1 alert" / "3 alerts", above the list of calls.
 pub fn call_count(count: usize) -> String {
-    format!("{count} alert{}", if count == 1 { "" } else { "s" })
+    tr_n!(count, "{count} alert", "{count} alerts")
 }
 
 // MARK: Create sheet
@@ -196,7 +204,7 @@ fn form(ui: &mut Ui, state: &mut PineAlertEditorState, input: &PineAlertEditorIn
     sheet::header(
         ui,
         Icon::AngleBrackets,
-        "Create Script Alert",
+        tr!("Create Script Alert"),
         &format!("{} · {}", input.chart_title, input.source_name),
         theme::text_primary(),
     );
@@ -254,7 +262,11 @@ fn script_card(ui: &mut Ui, input: &PineAlertEditorInput) {
     let room = rect.width() - 28.0 - badge_width - 12.0;
     let caption = kit::galley(
         ui,
-        &format!("Applied on {} · {}", input.chart_title, input.timeframe),
+        &tr!(
+            "Applied on {chart} · {timeframe}",
+            chart = input.chart_title,
+            timeframe = input.timeframe
+        ),
         size::CAPTION + 0.5,
         REGULAR,
         theme::text_secondary(),
@@ -286,7 +298,7 @@ fn script_card(ui: &mut Ui, input: &PineAlertEditorInput) {
 /// The script's `alert()` and `alertcondition()` calls, one card each.
 fn triggers(ui: &mut Ui, input: &PineAlertEditorInput) {
     ui.horizontal(|ui| {
-        section_title(ui, "Alerts in this script");
+        section_title(ui, tr!("Alerts in this script"));
         if !input.call_sites.is_empty() {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(kit::text(
@@ -303,8 +315,8 @@ fn triggers(ui: &mut Ui, input: &PineAlertEditorInput) {
         row_card(
             ui,
             Icon::Bell,
-            "Reading the script…",
-            Some("Looking for its alert calls."),
+            tr!("Reading the script…"),
+            Some(tr!("Looking for its alert calls.")),
             None,
             None,
             "",
@@ -342,7 +354,7 @@ fn call_row(ui: &mut Ui, row: &CallRow) {
         &row.headline,
         Some(&detail),
         Some(row.frequency),
-        Some(format!("Line {}", row.line)),
+        Some(tr!("Line {line}", line = row.line)),
         row.help,
     );
 }
@@ -487,7 +499,7 @@ fn note_field(ui: &mut Ui, state: &mut PineAlertEditorState) {
                 ui,
                 id,
                 &mut state.note,
-                "Add a note (optional)",
+                tr!("Add a note (optional)"),
                 size::BODY,
                 REGULAR,
                 width,
@@ -502,7 +514,7 @@ fn footnote(ui: &mut Ui) {
         icons::inline(ui, Icon::InfoCircle, 11.0, theme::text_tertiary());
         ui.add(
             egui::Label::new(kit::text(
-                FOOTNOTE,
+                footnote_text(),
                 size::CAPTION + 0.5,
                 REGULAR,
                 theme::text_tertiary(),
@@ -539,10 +551,10 @@ fn footer(
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
-            if kit::sheet_button(ui, "Create Alert", true, can_create(input.facts)).clicked() {
+            if kit::sheet_button(ui, tr!("Create Alert"), true, can_create(input.facts)).clicked() {
                 outcome = Some(create(state));
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                 outcome = Some(PineAlertEditorOutcome::Cancel);
             }
         });
@@ -586,7 +598,7 @@ pub fn show_webhooks(
             sheet::header(
                 ui,
                 Icon::ArrowUpRightSquare,
-                "Alert Webhooks",
+                tr!("Alert Webhooks"),
                 &subscription.script_name,
                 theme::text_primary(),
             );
@@ -602,7 +614,7 @@ pub fn show_webhooks(
             ui.add_space(12.0);
             ui.add(
                 egui::Label::new(kit::text(
-                    "The alert's message is posted as is. Frequency and re-arming work exactly as they do for notifications.",
+                    tr!("The alert's message is posted as is. Frequency and re-arming work exactly as they do for notifications."),
                     size::CAPTION + 0.5,
                     REGULAR,
                     theme::text_tertiary(),
@@ -612,10 +624,10 @@ pub fn show_webhooks(
             ui.add_space(GAP);
         });
         sheet::footer(ui, |ui| {
-            if kit::sheet_button(ui, "Save", true, true).clicked() {
+            if kit::sheet_button(ui, tr!("Save"), true, true).clicked() {
                 outcome = Some(PineAlertWebhooksOutcome::Save(state.selection.clone()));
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                 outcome = Some(PineAlertWebhooksOutcome::Cancel);
             }
         });

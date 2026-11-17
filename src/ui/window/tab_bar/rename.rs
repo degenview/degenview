@@ -1,6 +1,7 @@
 //! Renaming a tab in place: the field over the tab and what has been typed.
 
 use super::{TabBar, TabBarEvent};
+use crate::i18n::tr;
 use crate::model::tab::title::TabChart;
 use crate::model::tab::windows::TabId;
 use crate::ui::kit;
@@ -52,7 +53,7 @@ impl TabBar<'_> {
                     ui.set_width(240.0);
                     let edit = ui.add(
                         egui::TextEdit::singleline(&mut state.text)
-                            .hint_text("Tab title")
+                            .hint_text(tr!("Tab title"))
                             .char_limit(crate::model::tab::title::MAX_CUSTOM_TITLE_CHARS)
                             .desired_width(f32::INFINITY),
                     );
@@ -62,7 +63,7 @@ impl TabBar<'_> {
                     }
                     ui.add_space(4.0);
                     ui.label(kit::text(
-                        "Return to save, Esc to cancel. Empty restores the default.",
+                        tr!("Return to save, Esc to cancel. Empty restores the default."),
                         kit::size::CAPTION,
                         kit::REGULAR,
                         theme::text_secondary(),

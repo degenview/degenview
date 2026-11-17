@@ -9,6 +9,7 @@
 //! it is closed, when a chart it holds goes away, or with the workspace.
 
 use super::*;
+use crate::i18n::tr;
 use crate::model::chart::snapshot::composition;
 use crate::model::chart::snapshot::framing::{Base, Framing};
 use crate::model::chart::snapshot::studio::{Area, StudioConfig, StudioPrefs};
@@ -347,7 +348,7 @@ impl ChartWorkspace {
         export: window::Export,
     ) {
         if self.snapshot_busy() {
-            self.say("A snapshot is already being made.", true);
+            self.say(tr!("A snapshot is already being made."), true);
             return;
         }
         let scale = self.snapshot_prefs().options().scale;

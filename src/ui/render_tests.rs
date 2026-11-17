@@ -125,3 +125,26 @@ impl Drop for Screen {
         self.textures.clear();
     }
 }
+
+impl Screen {
+    /// The words of `texts` (a frame's `Screen::words`) that read as English interface text but carry
+    /// no pseudo-locale brackets: a literal nobody put through `tr!`. Text with no lowercase run of
+    /// three letters (a glyph, a number, a ticker) and the `known` data (a symbol, a layout name) are
+    /// not counted. A page drawn in the pseudo-locale must report none.
+    pub(crate) fn untranslated<'a>(texts: &'a [String], known: &[&str]) -> Vec<&'a str> {
+        texts
+            .iter()
+            .map(String::as_str)
+            .filter(|text| !text.trim().is_empty())
+            .filter(|text| !text.contains('[') && !text.contains(']'))
+            .filter(|text| !known.iter().any(|known| text.contains(known)))
+            .filter(|text| {
+                let mut run = 0;
+                text.chars().any(|c| {
+                    run = if c.is_ascii_lowercase() { run + 1 } else { 0 };
+                    run >= 3
+                })
+            })
+            .collect()
+    }
+}

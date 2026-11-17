@@ -85,7 +85,8 @@ pub fn header_with(ui: &mut Ui, title: &str, subtitle: &str, badge: impl FnOnce(
 }
 
 /// `header_with` for a scene picture (`kit::art`): the picture's `size` box, the title and the
-/// one-line description centred on its height, the way a Settings page's header is. `paint` draws
+/// description centred on its height, the way a Settings page's header is; both wrap, and the row is
+/// as tall as the picture or the words, whichever is more. `paint` draws
 /// into the box, which starts `lead` points left of the sheet's inset so the picture's card lines
 /// up with the body's left edge.
 pub fn header_picture(
@@ -96,14 +97,11 @@ pub fn header_picture(
     subtitle: &str,
     paint: impl FnOnce(&Ui, Rect),
 ) {
-    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), size.y), Sense::hover());
-    paint(
-        ui,
-        Rect::from_min_size(row.min - Vec2::new(lead, 0.0), size),
-    );
-    let left = row.min.x + size.x - lead + 14.0;
-    let width = row.right() - left;
-    let title = kit::galley(
+    // The words wrap beside the picture and the row grows with them, so a language that writes the
+    // title longer than English still shows all of it.
+    let offset = size.x - lead + 14.0;
+    let width = ui.available_width() - offset;
+    let title = kit::paragraph(
         ui,
         title,
         size::TITLE2 + 1.0,
@@ -111,7 +109,7 @@ pub fn header_picture(
         theme::text_primary(),
         width,
     );
-    let detail = kit::galley(
+    let detail = kit::paragraph(
         ui,
         subtitle,
         size::SUBHEADLINE + 1.0,
@@ -120,6 +118,16 @@ pub fn header_picture(
         width,
     );
     let gap = 3.0;
+    let text_height = title.size().y + gap + detail.size().y;
+    let (row, _) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), size.y.max(text_height)),
+        Sense::hover(),
+    );
+    paint(
+        ui,
+        Rect::from_min_size(row.min - Vec2::new(lead, 0.0), size),
+    );
+    let left = row.min.x + offset;
     let top = row.center().y - (title.size().y + gap + detail.size().y) / 2.0;
     let title_height = title.size().y;
     ui.painter()

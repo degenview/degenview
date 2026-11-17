@@ -9,6 +9,7 @@
 use super::super::{
     MENU_FRAME_MARGIN, MenuRow, menu_frame, menu_row, menu_scope, menu_width_for_rows,
 };
+use crate::i18n::tr;
 use eframe::egui::{self, Pos2, Response, Ui};
 
 /// The menu that opens at the pointer on a right-click of `chip`; `at` is where it is open, if it
@@ -20,7 +21,7 @@ pub(super) fn menu(ui: &Ui, chip: &Response, at: &mut Option<Pos2>) -> bool {
     let Some(position) = *at else {
         return false;
     };
-    let width = menu_width_for_rows(ui, &[("Unpin", None)], 0.0);
+    let width = menu_width_for_rows(ui, &[(tr!("Unpin"), None)], 0.0);
     let mut open = true;
     let mut chosen = false;
     egui::Popup::menu(chip)
@@ -35,7 +36,7 @@ pub(super) fn menu(ui: &Ui, chip: &Response, at: &mut Option<Pos2>) -> bool {
             ui.set_width(width - MENU_FRAME_MARGIN);
             let row = MenuRow {
                 reserve_icon: false,
-                ..MenuRow::new("Unpin")
+                ..MenuRow::new(tr!("Unpin"))
             };
             if menu_row(ui, row).clicked() {
                 chosen = true;

@@ -7,6 +7,7 @@
 
 use crate::build_info::VERSION;
 use crate::host::update::{Phase, UpdateHost, UpdateView};
+use crate::i18n::tr;
 use crate::model::changelog::{Coverage, ReleaseNotes};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, sheet, size};
 use crate::ui::theme;
@@ -47,7 +48,6 @@ const BULLET_GAP: f32 = 9.0;
 const CHROME_TOLERANCE: f32 = 0.5;
 /// The size of the notes' titles, the footnotes, the note and the link under the list.
 const DETAIL_TEXT: f32 = size::SUBHEADLINE + 1.0;
-const NO_NOTES: &str = "No summary of changes is available for this version.";
 
 /// How the person answered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -120,8 +120,8 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
                 ui,
                 art::SIZE,
                 PICTURE_LEAD,
-                &format!("Update to DegenView {version}"),
-                &format!("You have {installed}."),
+                &tr!("Update to DegenView {version}", version = version),
+                &tr!("You have {installed}.", installed = installed),
                 art::paint,
             );
         });
@@ -146,9 +146,9 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
         });
         sheet::footer(ui, |ui| {
             let label = if *installable {
-                "Update"
+                tr!("Update")
             } else {
-                "View Release"
+                tr!("View Release")
             };
             if kit::sheet_button_focusable(ui, primary_id, ring, label, true, true).clicked() {
                 outcome = Some(if *installable {
@@ -157,7 +157,7 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
                     Outcome::ViewRelease
                 });
             }
-            if kit::sheet_button_focusable(ui, id.with("cancel"), ring, "Cancel", false, true)
+            if kit::sheet_button_focusable(ui, id.with("cancel"), ring, tr!("Cancel"), false, true)
                 .clicked()
             {
                 outcome = Some(Outcome::Cancel);
@@ -227,7 +227,7 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes, coverage: &Coverage) {
     if notes.is_empty() {
         ui.add(
             egui::Label::new(kit::text(
-                NO_NOTES,
+                tr!("No summary of changes is available for this version."),
                 size::BODY,
                 REGULAR,
                 theme::text_secondary(),
@@ -236,7 +236,7 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes, coverage: &Coverage) {
         );
         return;
     }
-    let groups = [("New", &notes.new), ("Fixed", &notes.fixed)];
+    let groups = [(tr!("New"), &notes.new), (tr!("Fixed"), &notes.fixed)];
     for (index, (title, entries)) in groups
         .into_iter()
         .filter(|(_, entries)| !entries.is_empty())
@@ -296,7 +296,7 @@ fn release_notes_link(ui: &mut Ui, url: &str) {
         .add(
             egui::Label::new(
                 kit::text(
-                    "Full release notes",
+                    tr!("Full release notes"),
                     DETAIL_TEXT,
                     REGULAR,
                     theme::text_secondary(),

@@ -6,6 +6,7 @@ use super::chrome::{self, Control};
 use super::tab_link_menu;
 use super::update_indicator;
 use crate::host::update::UpdateView;
+use crate::i18n::tr;
 use crate::model::InstrumentId;
 use crate::model::tab;
 use crate::model::tab::title::{Detail, TabChart, TabTitleStyle};
@@ -17,7 +18,7 @@ use crate::ui::shortcut;
 use crate::ui::theme;
 use eframe::egui::{self, Id, Rect, Sense, Ui, Vec2, pos2, vec2};
 use geometry::close_rect;
-use menu::MENU_ROWS;
+use menu::menu_rows;
 use paint::fade_edge;
 
 mod geometry;
@@ -321,7 +322,8 @@ impl TabBar<'_> {
             vec2(NEW_BUTTON_WIDTH - 4.0, strip.height() - 8.0),
         );
         let new_tab = ui.interact(new_rect, self.id("new"), Sense::click());
-        let new_tab = crate::ui::accessibility::label(new_tab, "New tab").on_hover_text("New tab");
+        let new_tab =
+            crate::ui::accessibility::label(new_tab, tr!("New tab")).on_hover_text(tr!("New tab"));
         if new_tab.hovered() {
             painter.rect_filled(new_rect, 6.0, theme::ink(18));
         }
@@ -360,7 +362,7 @@ impl TabBar<'_> {
                 pos2(settings_left + 2.0, full.top() + 5.0),
                 vec2(SETTINGS_BUTTON_WIDTH - 4.0, full.height() - 8.0),
             );
-            let label = shortcut::OPEN_SETTINGS.hint("Settings");
+            let label = shortcut::OPEN_SETTINGS.hint(tr!("Settings"));
             let button = ui.interact(rect, self.id("settings"), Sense::click());
             let button = crate::ui::accessibility::label(button, &label).on_hover_text(&label);
             if button.hovered() {
@@ -380,13 +382,13 @@ impl TabBar<'_> {
         // Two gray links at the far right: the project on GitHub, and a coffee for its maker.
         let links = [
             (
-                "View project on GitHub",
+                tr!("View project on GitHub"),
                 GITHUB_URL,
                 egui::include_image!("../../../../assets/brand/github.svg"),
                 14.0,
             ),
             (
-                "Support this project by buying me a coffee",
+                tr!("Support this project by buying me a coffee"),
                 COFFEE_URL,
                 egui::include_image!("../../../../assets/brand/coffee.svg"),
                 // The cup fills about three quarters of its 24 grid, where the GitHub mark
@@ -528,7 +530,7 @@ impl TabBar<'_> {
             egui::WidgetType::SelectableLabel,
             tab.title.clone(),
         );
-        let close = crate::ui::accessibility::label(close, format!("Close {}", tab.title));
+        let close = crate::ui::accessibility::label(close, tr!("Close {title}", title = tab.title));
 
         let look = Look {
             active: tab.id == self.active,
@@ -548,10 +550,10 @@ impl TabBar<'_> {
                 ui.label(tab::title::tooltip(chart, quote.as_ref(), &tab.timeframe));
                 if let Some(link) = tab.link {
                     // Said in words too: a dot's colour alone is not enough.
-                    ui.label(format!(
-                        "Linked tab: {} ({})",
-                        link.title(),
-                        tab_link_menu::describe(tab.link_toggles)
+                    ui.label(tr!(
+                        "Linked tab: {color} ({synced})",
+                        color = link.title(),
+                        synced = tab_link_menu::describe(tab.link_toggles)
                     ));
                 }
             }),
@@ -577,7 +579,7 @@ impl TabBar<'_> {
             });
         }
 
-        let rows = MENU_ROWS.map(|label| (label, None));
+        let rows = menu_rows().map(|label| (label, None));
         // The Tab Linking section at the bottom has a width of its own.
         let section = if tab.linkable {
             tab_link_menu::WIDTH

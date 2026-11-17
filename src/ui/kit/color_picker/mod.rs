@@ -7,6 +7,7 @@
 //! sliders are, what a pointer position means) and the text handling (hex) are pure functions
 //! below, tested without a window.
 
+use crate::i18n::tr;
 use crate::ui::accessibility;
 use crate::ui::kit;
 use crate::ui::theme;
@@ -612,10 +613,14 @@ pub fn show(ui: &mut Ui, color: &mut Color32, alpha: Alpha) -> bool {
     let square_response = accessibility::label_as(
         square_response,
         egui::WidgetType::Slider,
-        "Saturation and brightness",
+        tr!("Saturation and brightness"),
     );
     square_response.widget_info(|| {
-        egui::WidgetInfo::slider(true, f64::from(hsv.s * 100.0), "Saturation and brightness")
+        egui::WidgetInfo::slider(
+            true,
+            f64::from(hsv.s * 100.0),
+            tr!("Saturation and brightness"),
+        )
     });
     if square_response.hovered() || square_response.dragged() {
         ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
@@ -672,7 +677,7 @@ pub fn show(ui: &mut Ui, color: &mut Color32, alpha: Alpha) -> bool {
         &hue_stops(),
         false,
         hue_thumb,
-        "Hue",
+        tr!("Hue"),
         360.0,
     );
     edited |= changed;
@@ -689,7 +694,7 @@ pub fn show(ui: &mut Ui, color: &mut Color32, alpha: Alpha) -> bool {
             &[opaque.gamma_multiply(0.0), opaque],
             true,
             opaque,
-            "Opacity",
+            tr!("Opacity"),
             100.0,
         );
         edited |= changed;
@@ -724,7 +729,7 @@ pub fn show(ui: &mut Ui, color: &mut Color32, alpha: Alpha) -> bool {
                 id.with("hex"),
                 &format_hex(next, with_alpha),
                 hex_width,
-                "Hex color",
+                tr!("Hex color"),
             )
         })
         .inner;
@@ -752,7 +757,7 @@ pub fn show(ui: &mut Ui, color: &mut Color32, alpha: Alpha) -> bool {
                     id.with("percent"),
                     &format!("{percent}%"),
                     38.0,
-                    "Opacity percent",
+                    tr!("Opacity percent"),
                 )
             })
             .inner;
@@ -773,7 +778,7 @@ pub fn show(ui: &mut Ui, color: &mut Color32, alpha: Alpha) -> bool {
     for (index, rgb) in SYSTEM_SWATCHES.iter().enumerate() {
         let rect = Layout::swatch(layout.swatches, index);
         let swatch = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
-        let name = format!("Color {}", format_hex(swatch, false));
+        let name = tr!("Color {hex}", hex = format_hex(swatch, false));
         if swatch_button(ui, id.with(("system", index)), rect, swatch, &name) {
             swatch_pick = Some(Color32::from_rgba_unmultiplied(
                 rgb[0],
@@ -792,7 +797,7 @@ pub fn show(ui: &mut Ui, color: &mut Color32, alpha: Alpha) -> bool {
     ui.painter().text(
         pos2(layout.recents.left(), layout.recents.top() - 12.0),
         egui::Align2::LEFT_TOP,
-        "Recent",
+        tr!("Recent"),
         egui::FontId::proportional(10.0),
         theme::text_tertiary(),
     );
@@ -803,7 +808,7 @@ pub fn show(ui: &mut Ui, color: &mut Color32, alpha: Alpha) -> bool {
         ui.painter().text(
             layout.recents.left_center(),
             egui::Align2::LEFT_CENTER,
-            "Colors you pick appear here",
+            tr!("Colors you pick appear here"),
             egui::FontId::proportional(11.0),
             theme::text_tertiary(),
         );
@@ -811,7 +816,7 @@ pub fn show(ui: &mut Ui, color: &mut Color32, alpha: Alpha) -> bool {
     for (index, [r, g, b, a]) in recents.0.iter().enumerate() {
         let rect = Layout::swatch(layout.recents, index);
         let recent = Color32::from_rgba_unmultiplied(*r, *g, *b, if with_alpha { *a } else { 255 });
-        let name = format!("Recent color {}", format_hex(recent, with_alpha));
+        let name = tr!("Recent color {hex}", hex = format_hex(recent, with_alpha));
         if swatch_button(ui, id.with(("recent", index)), rect, recent, &name) {
             swatch_pick = Some(recent);
         }
