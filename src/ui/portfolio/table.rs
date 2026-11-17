@@ -56,16 +56,6 @@ pub fn paint_asset_icon(ui: &egui::Ui, rect: egui::Rect, asset: &PortfolioAsset)
     kit::monogram_with(ui, rect, &ticker, 0.42, None);
 }
 
-/// `noun` is `(singular, plural)`.
-pub fn count_text(shown: usize, total: usize, noun: (&str, &str)) -> String {
-    let word = |n: usize| if n == 1 { noun.0 } else { noun.1 };
-    if shown == total {
-        format!("{total} {}", word(total))
-    } else {
-        format!("{shown} of {total} {}", word(total))
-    }
-}
-
 /// A centred empty state inside the table area.
 pub fn empty_state(ui: &mut egui::Ui, title: &str, detail: &str) {
     ui.add_space(50.0);
@@ -79,19 +69,6 @@ pub fn empty_state(ui: &mut egui::Ui, title: &str, detail: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn counts_read_naturally() {
-        let assets = ("asset", "assets");
-        assert_eq!(count_text(1, 1, assets), "1 asset");
-        assert_eq!(count_text(3, 3, assets), "3 assets");
-        assert_eq!(count_text(0, 0, assets), "0 assets");
-        assert_eq!(count_text(2, 5, assets), "2 of 5 assets");
-        assert_eq!(
-            count_text(1, 1, ("transaction", "transactions")),
-            "1 transaction"
-        );
-    }
 
     #[test]
     fn tones_map_to_the_gain_and_loss_colours() {

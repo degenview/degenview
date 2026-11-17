@@ -3,6 +3,7 @@
 //! `model::portfolio::editor`) that returns an outcome; the host saves it to the ledger and
 //! reports a rejection back through `TransactionEditorState::failed`.
 
+use crate::i18n::tr;
 use crate::model::portfolio::editor::{Category, EditorField, Summary, TransactionDraft};
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
 use crate::ui::chart::picker_kit::{art, widgets};
@@ -31,25 +32,25 @@ pub enum EditorMode {
 impl EditorMode {
     pub fn title(self) -> &'static str {
         match self {
-            Self::New => "Add Transaction",
-            Self::Edit => "Edit Transaction",
-            Self::Duplicate => "Duplicate Transaction",
+            Self::New => tr!("Add Transaction"),
+            Self::Edit => tr!("Edit Transaction"),
+            Self::Duplicate => tr!("Duplicate Transaction"),
         }
     }
 
     /// The line under the title: what the sheet does with what is entered.
     pub fn subtitle(self) -> &'static str {
         match self {
-            Self::New => "Record a buy, sell or transfer of this asset.",
-            Self::Edit => "Change what was recorded for this transaction.",
-            Self::Duplicate => "Add a copy of this transaction, then adjust it.",
+            Self::New => tr!("Record a buy, sell or transfer of this asset."),
+            Self::Edit => tr!("Change what was recorded for this transaction."),
+            Self::Duplicate => tr!("Add a copy of this transaction, then adjust it."),
         }
     }
 
     pub fn submit_title(self) -> &'static str {
         match self {
-            Self::Edit => "Save Changes",
-            Self::New | Self::Duplicate => "Add Transaction",
+            Self::Edit => tr!("Save Changes"),
+            Self::New | Self::Duplicate => tr!("Add Transaction"),
         }
     }
 }
@@ -115,21 +116,25 @@ impl TransactionEditorState {
 // MARK: Pure text
 
 pub fn price_label(ticker: &str) -> String {
-    format!("Price per {ticker}")
+    tr!("Price per {ticker}", ticker = ticker)
 }
 
 pub fn price_hint(requires_price: bool) -> &'static str {
     if requires_price {
-        "Required"
+        tr!("Required")
     } else {
-        "Optional"
+        tr!("Optional")
     }
 }
 
 pub fn summary_rows(summary: &Summary, currency: PortfolioCurrency) -> Vec<(String, String, bool)> {
-    let mut rows = vec![("Value".to_owned(), currency.format(summary.value), false)];
+    let mut rows = vec![(
+        tr!("Value").to_owned(),
+        currency.format(summary.value),
+        false,
+    )];
     if summary.fee > 0.0 {
-        rows.push(("Fee".to_owned(), currency.format(summary.fee), false));
+        rows.push((tr!("Fee").to_owned(), currency.format(summary.fee), false));
     }
     if let Some((label, amount)) = summary.net {
         rows.push((label.to_owned(), currency.format(amount), true));
@@ -236,7 +241,7 @@ fn field(
                 };
                 let suffix_width = measure(suffix, kit::size::BODY, kit::REGULAR);
                 let market_width = if accessory {
-                    measure("Market", kit::size::CAPTION, kit::SEMIBOLD)
+                    measure(tr!("Market"), kit::size::CAPTION, kit::SEMIBOLD)
                         + 2.0 * ui.spacing().button_padding.x
                         + 7.0
                 } else {
@@ -255,7 +260,7 @@ fn field(
                     && ui
                         .add(
                             egui::Button::new(kit::text(
-                                "Market",
+                                tr!("Market"),
                                 kit::size::CAPTION,
                                 kit::SEMIBOLD,
                                 theme::text_primary(),
@@ -385,31 +390,31 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
         &[
             TabItem {
                 value: Category::Buy,
-                title: "Buy",
+                title: tr!("Buy"),
                 icon: Icon::Plus,
                 count: 0,
             },
             TabItem {
                 value: Category::Sell,
-                title: "Sell",
+                title: tr!("Sell"),
                 icon: Icon::ArrowDown,
                 count: 0,
             },
             TabItem {
                 value: Category::Transfer,
-                title: "Transfer",
+                title: tr!("Transfer"),
                 icon: Icon::ArrowLeftRight,
                 count: 0,
             },
             TabItem {
                 value: Category::Income,
-                title: "Income",
+                title: tr!("Income"),
                 icon: Icon::Banknote,
                 count: 0,
             },
             TabItem {
                 value: Category::Other,
-                title: "Other",
+                title: tr!("Other"),
                 icon: Icon::Ellipsis,
                 count: 0,
             },
@@ -455,7 +460,7 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
     let ticker = state.asset_ticker();
     let currency = state.price_currency();
 
-    label(ui, "Quantity");
+    label(ui, tr!("Quantity"));
     if state.first_frame {
         // The field keeps its cursor between sheets (same id): start with the whole value
         // selected instead of wherever the last sheet left it.
@@ -491,7 +496,7 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
         ui.spacing_mut().item_spacing.x = 12.0;
         ui.vertical(|ui| {
             ui.set_width(150.0);
-            label(ui, "Fee");
+            label(ui, tr!("Fee"));
             field(
                 ui,
                 "fee",
@@ -505,7 +510,7 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
         });
         ui.vertical(|ui| {
             ui.set_width(date_width);
-            label(ui, "Date & time");
+            label(ui, tr!("Date & time"));
             let zone = state.draft.utc_offset_secs();
             date_picker::show(
                 ui,
@@ -521,7 +526,7 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
     });
     ui.add_space(16.0);
 
-    label(ui, "Notes");
+    label(ui, tr!("Notes"));
     let notes_id = ui.make_persistent_id("portfolio-transaction-notes");
     let notes_focused = ui.memory(|memory| memory.has_focus(notes_id));
     egui::Frame::new()
@@ -539,7 +544,7 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
                 egui::TextEdit::multiline(&mut state.draft.notes)
                     .id(notes_id)
                     .frame(egui::Frame::NONE)
-                    .hint_text("Add a note (optional)")
+                    .hint_text(tr!("Add a note (optional)"))
                     .desired_rows(2)
                     .desired_width(f32::INFINITY),
             );
@@ -599,7 +604,7 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
             ui,
             Icon::TriangleFill,
             theme::DOWN,
-            "Transaction not saved",
+            tr!("Transaction not saved"),
             Some(error),
             None,
         );
@@ -643,7 +648,7 @@ fn price_fields(
             Some(price_hint(state.draft.requires_price())),
         );
 
-        label(&mut columns[1], "Total");
+        label(&mut columns[1], tr!("Total"));
         let mut total = state.draft.displayed_total();
         let changed = field(
             &mut columns[1],
@@ -672,7 +677,7 @@ fn footer(
     ui.horizontal(|ui| {
         if kit::footer_button(
             ui,
-            "Cancel",
+            tr!("Cancel"),
             kit::FooterButton::Secondary,
             !state.submitting,
             0.0,

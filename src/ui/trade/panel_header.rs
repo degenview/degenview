@@ -8,6 +8,7 @@
 
 use eframe::egui::{self, Id, Sense, Vec2, pos2, vec2};
 
+use crate::i18n::tr;
 use crate::trading::model::{BackendState, VenueInfo};
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
@@ -159,7 +160,13 @@ pub fn glyph_response(
 
 /// An icon-only button; `label` is its tooltip.
 pub fn icon_button(ui: &mut egui::Ui, icon: Icon, label: &str, active: bool) -> egui::Response {
-    glyph_response(ui, Id::new(("trade-icon", label)), icon, active, label)
+    glyph_response(
+        ui,
+        Id::new(("trade-icon", icon as u32)),
+        icon,
+        active,
+        label,
+    )
 }
 
 /// A hairline between the identity and the sections it holds, shorter than the controls.
@@ -340,14 +347,20 @@ fn tabs<T: Copy + PartialEq>(ui: &mut egui::Ui, header: &Header<T>, tab: &mut T)
 fn buttons<T>(ui: &mut egui::Ui, header: &Header<T>, events: &mut Vec<HeaderEvent>) {
     ui.spacing_mut().item_spacing.x = 2.0;
     // Right-to-left, so the last one added sits leftmost.
-    if icon_button(ui, Icon::Xmark, "Close the trading panel", false).clicked() {
+    if icon_button(ui, Icon::Xmark, tr!("Close the trading panel"), false).clicked() {
         events.push(HeaderEvent::Panel(PanelEvent::Close));
     }
     if icon_button(ui, Icon::Gear, header.settings_tip, false).clicked() {
         events.push(HeaderEvent::Panel(PanelEvent::OpenSettings));
     }
     if !header.more.is_empty() {
-        let more = glyph_response(ui, Id::new("trade-more"), Icon::Ellipsis, false, "More");
+        let more = glyph_response(
+            ui,
+            Id::new("trade-more"),
+            Icon::Ellipsis,
+            false,
+            tr!("More"),
+        );
         let labels: Vec<&str> = header.more.iter().map(|item| item.label.as_str()).collect();
         kit::fitted_menu(ui, &more, egui::RectAlign::BOTTOM_END, &labels, |ui| {
             for (index, item) in header.more.iter().enumerate() {
@@ -364,16 +377,16 @@ fn buttons<T>(ui: &mut egui::Ui, header: &Header<T>, events: &mut Vec<HeaderEven
     if let Some(showing) = header.overlay {
         let icon = if showing { Icon::Eye } else { Icon::EyeSlash };
         let label = if showing {
-            "Hide trading on charts"
+            tr!("Hide trading on charts")
         } else {
-            "Show trading on charts"
+            tr!("Show trading on charts")
         };
         if icon_button(ui, icon, label, showing).clicked() {
             events.push(HeaderEvent::ToggleOverlay);
         }
     }
     ui.add_space(6.0);
-    if kit::sheet_button(ui, "New order", true, header.can_order).clicked() {
+    if kit::sheet_button(ui, tr!("New order"), true, header.can_order).clicked() {
         events.push(HeaderEvent::Panel(PanelEvent::NewOrder));
     }
 }

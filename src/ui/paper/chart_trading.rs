@@ -6,6 +6,7 @@
 //! exactly at its price when the chart zooms or the axis is dragged. Pure views returning actions;
 //! the host applies them to the store.
 
+use crate::i18n::tr;
 use crate::model::chart::context::Target;
 use crate::model::paper::format::{self as fmt, pnl_tone};
 use crate::model::paper::ticket::rounded_to_tick;
@@ -26,7 +27,11 @@ const PILL_MARGIN: f32 = 8.0;
 
 /// "Sell $67,432.19" tooltips and accessibility text for the header pills.
 pub fn quick_trade_help(side: PaperOrderSide, price_text: &str) -> String {
-    format!("{} {price_text} — opens a paper order ticket", side.label())
+    tr!(
+        "{side} {price} — opens a paper order ticket",
+        side = side.label(),
+        price = price_text
+    )
 }
 
 /// Height of a header pill.
@@ -84,10 +89,16 @@ pub fn quick_trade_buttons(ui: &mut egui::Ui, price_text: &str) -> Option<PaperO
                 tint,
             );
             // The header is drawn over the plot, whose crosshair cursor would show here.
-            let response =
-                accessibility::label(response, format!("{} at {price_text}", side.badge_text()))
-                    .on_hover_text(quick_trade_help(side, price_text))
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+            let response = accessibility::label(
+                response,
+                tr!(
+                    "{side} at {price}",
+                    side = side.badge_text(),
+                    price = price_text
+                ),
+            )
+            .on_hover_text(quick_trade_help(side, price_text))
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
             if response.clicked() {
                 clicked = Some(side);
             }
@@ -121,10 +132,11 @@ pub fn position_pill(position: &PaperPosition, pnl: f64, currency: PaperCurrency
             fmt::signed_money(pnl, currency),
             pnl_color(pnl_tone(pnl), theme::text_secondary()),
         )),
-        close_label: format!(
-            "Close paper {} position, {size}",
-            side.label().to_lowercase()
-        ),
+        close_label: if side.is_long() {
+            tr!("Close paper long position, {size}", size = size)
+        } else {
+            tr!("Close paper short position, {size}", size = size)
+        },
     }
 }
 
@@ -153,10 +165,11 @@ pub fn order_pill(order: &PaperOrder, displayed_price: f64) -> Pill {
         tint: order_tint(order),
         text: format!("{} {quantity} @ {price}", order.side.badge_text()),
         pnl: None,
-        close_label: format!(
-            "Cancel paper {} {} order at {price}",
-            order.side.label().to_lowercase(),
-            order.kind.label().to_lowercase()
+        close_label: tr!(
+            "Cancel paper {side} {kind} order at {price}",
+            side = order.side.label().to_lowercase(),
+            kind = order.kind.label().to_lowercase(),
+            price = price
         ),
     }
 }
@@ -479,7 +492,7 @@ pub(in crate::ui) fn marker(
         ui.ctx().request_repaint();
     }
     if draggable && body.hovered() && !close.hovered() {
-        body.on_hover_text("Drag to modify; release to commit");
+        body.on_hover_text(tr!("Drag to modify; release to commit"));
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
     MarkerResult {

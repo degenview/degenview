@@ -1,9 +1,10 @@
 //! The sidebar's header: the list selector, the add and options buttons with the options menu,
 //! and the filter field.
 
-use super::menus::{MENU_FRAME, MENU_WIDTH, SUBMENU_WIDTH};
+use super::menus::{MENU_FRAME, menu_width, menu_width_now, submenu_width_now};
 use super::{PromptKind, WatchlistAction, WatchlistSidebarInput, WatchlistSidebarState};
 
+use crate::i18n::tr;
 use crate::model::watchlist::{
     Watchlist, WatchlistColumn, WatchlistFlag, WatchlistSort, WatchlistSortKey,
 };
@@ -43,7 +44,7 @@ pub(super) fn header(
         add_rect,
         Id::new("watchlist-add"),
         Icon::Plus,
-        "Add Symbol",
+        tr!("Add Symbol"),
         true,
         enabled,
     );
@@ -58,8 +59,8 @@ pub(super) fn header(
         Id::new("watchlist-filter-toggle"),
         Sense::click(),
     );
-    let filter = crate::ui::accessibility::label(filter, "Filter this watchlist")
-        .on_hover_text("Filter this watchlist");
+    let filter = crate::ui::accessibility::label(filter, tr!("Filter this watchlist"))
+        .on_hover_text(tr!("Filter this watchlist"));
     if filtering {
         ui.painter()
             .rect_filled(filter_rect, 6.0, theme::selected_tint(filter.hovered()));
@@ -95,7 +96,7 @@ pub(super) fn list_selector(
 ) {
     const PAD: f32 = 6.0;
     const CHEVRON: f32 = 10.0;
-    let title = list.map_or("Watchlists", |list| list.name.as_str());
+    let title = list.map_or(tr!("Watchlists"), |list| list.name.as_str());
     let color = if input.load_failed {
         theme::text_tertiary()
     } else {
@@ -123,7 +124,8 @@ pub(super) fn list_selector(
             Sense::click()
         },
     );
-    let response = crate::ui::accessibility::label(response, format!("Watchlist: {title}"));
+    let response =
+        crate::ui::accessibility::label(response, tr!("Watchlist: {title}", title = title));
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
     if !input.load_failed {
         if open || response.is_pointer_button_down_on() {
@@ -163,10 +165,10 @@ pub(super) fn list_selector(
         .collect();
     rows.extend(
         [
-            "Create New Watchlist\u{2026}",
-            "Rename Watchlist\u{2026}",
-            "Make a Copy\u{2026}",
-            "Delete Watchlist\u{2026}",
+            tr!("Create New Watchlist…"),
+            tr!("Rename Watchlist…"),
+            tr!("Make a Copy…"),
+            tr!("Delete Watchlist…"),
         ]
         .map(|label| (label, None)),
     );
@@ -176,7 +178,7 @@ pub(super) fn list_selector(
         .show(|ui| {
             kit::menu_scope(ui, list_menu_width - MENU_FRAME);
             if !input.lists.is_empty() {
-                kit::menu_heading(ui, "Watchlists");
+                kit::menu_heading(ui, tr!("Watchlists"));
                 egui::ScrollArea::vertical()
                     .max_height(kit::MENU_MAX_HEIGHT)
                     .auto_shrink([false, true])
@@ -206,19 +208,22 @@ pub(super) fn list_selector(
                     });
                 kit::menu_separator(ui);
             }
-            if kit::menu_item(ui, Icon::Plus, "Create New Watchlist…", true, false) {
+            if kit::menu_item(ui, Icon::Plus, tr!("Create New Watchlist…"), true, false) {
                 state.open_prompt(PromptKind::NewList, String::new());
                 ui.close();
             }
             let Some(list) = list else {
                 return;
             };
-            if kit::menu_item(ui, Icon::Pencil, "Rename Watchlist…", true, false) {
+            if kit::menu_item(ui, Icon::Pencil, tr!("Rename Watchlist…"), true, false) {
                 state.open_prompt(PromptKind::RenameList(list.id), list.name.clone());
                 ui.close();
             }
-            if kit::menu_item(ui, Icon::CopyDoc, "Make a Copy…", true, false) {
-                state.open_prompt(PromptKind::CopyList(list.id), format!("{} copy", list.name));
+            if kit::menu_item(ui, Icon::CopyDoc, tr!("Make a Copy…"), true, false) {
+                state.open_prompt(
+                    PromptKind::CopyList(list.id),
+                    tr!("{name} copy", name = list.name),
+                );
                 ui.close();
             }
             kit::menu_separator(ui);
@@ -229,11 +234,11 @@ pub(super) fn list_selector(
                     icon: Some(Icon::Trash),
                     enabled: deletable,
                     destructive: true,
-                    ..kit::MenuRow::new("Delete Watchlist…")
+                    ..kit::MenuRow::new(tr!("Delete Watchlist…"))
                 },
             );
             if !deletable {
-                delete.on_hover_text("Favorites can be renamed but not deleted");
+                delete.on_hover_text(tr!("Favorites can be renamed but not deleted"));
             } else if delete.clicked() {
                 state.confirm_delete = true;
                 ui.close();
@@ -268,16 +273,19 @@ fn options_menu(
         rect,
         Id::new("watchlist-options"),
         Icon::Ellipsis,
-        "Watchlist options",
+        tr!("Watchlist options"),
         true,
         enabled,
     );
-    kit::menu_popup(&response).width(MENU_WIDTH).show(|ui| {
-        kit::menu_scope(ui, MENU_WIDTH - MENU_FRAME);
+    let width = menu_width(ui, &response);
+    kit::menu_popup(&response).width(width).show(|ui| {
+        let width = menu_width_now(ui);
+        let submenu = submenu_width_now(ui);
+        kit::menu_scope(ui, width - MENU_FRAME);
         let Some(list) = list else {
             return;
         };
-        if kit::menu_item(ui, Icon::Plus, "Add Section…", true, false) {
+        if kit::menu_item(ui, Icon::Plus, tr!("Add Section…"), true, false) {
             state.open_prompt(PromptKind::NewSection(list.id), String::new());
             ui.close();
         }
@@ -289,8 +297,8 @@ fn options_menu(
         };
         kit::menu_submenu(
             ui,
-            row(Icon::ChevronUpDown, "Sort By"),
-            SUBMENU_WIDTH,
+            row(Icon::ChevronUpDown, tr!("Sort By")),
+            submenu,
             |ui| {
                 let sort = list.display.sort;
                 for key in WatchlistSortKey::ALL {
@@ -324,7 +332,7 @@ fn options_menu(
                     kit::MenuRow {
                         checked: !sort.ascending && !manual,
                         enabled: !manual,
-                        ..kit::MenuRow::new("Descending")
+                        ..kit::MenuRow::new(tr!("Descending"))
                     },
                 );
                 if descending.clicked() {
@@ -339,61 +347,56 @@ fn options_menu(
             },
         );
 
-        kit::menu_submenu(
-            ui,
-            row(Icon::SplitColumns, "Columns"),
-            SUBMENU_WIDTH,
-            |ui| {
-                for column in WatchlistColumn::ALL {
-                    let visible = list.display.columns.contains(&column);
-                    let toggle = kit::menu_row(
-                        ui,
-                        kit::MenuRow {
-                            checked: visible,
-                            ..kit::MenuRow::new(column.accessibility_title())
-                        },
-                    );
-                    if toggle.clicked() {
-                        actions.push(WatchlistAction::SetColumn {
-                            list: list.id,
-                            column,
-                            visible: !visible,
-                        });
-                    }
-                }
-                kit::menu_separator(ui);
-                let shows = list.display.shows_description;
-                let subtitle = kit::menu_row(
+        kit::menu_submenu(ui, row(Icon::SplitColumns, tr!("Columns")), submenu, |ui| {
+            for column in WatchlistColumn::ALL {
+                let visible = list.display.columns.contains(&column);
+                let toggle = kit::menu_row(
                     ui,
                     kit::MenuRow {
-                        checked: shows,
-                        ..kit::MenuRow::new("Show Symbol Subtitle")
+                        checked: visible,
+                        ..kit::MenuRow::new(column.accessibility_title())
                     },
                 );
-                if subtitle.clicked() {
-                    actions.push(WatchlistAction::SetShowsDescription {
+                if toggle.clicked() {
+                    actions.push(WatchlistAction::SetColumn {
                         list: list.id,
-                        shows: !shows,
+                        column,
+                        visible: !visible,
                     });
                 }
-                let shows = list.display.shows_chart;
-                let chart = kit::menu_row(
-                    ui,
-                    kit::MenuRow {
-                        checked: shows,
-                        ..kit::MenuRow::new("Show 1M Chart")
-                    },
-                );
-                if chart.clicked() {
-                    actions.push(WatchlistAction::SetShowsChart {
-                        list: list.id,
-                        shows: !shows,
-                    });
-                }
-            },
-        );
+            }
+            kit::menu_separator(ui);
+            let shows = list.display.shows_description;
+            let subtitle = kit::menu_row(
+                ui,
+                kit::MenuRow {
+                    checked: shows,
+                    ..kit::MenuRow::new(tr!("Show Symbol Subtitle"))
+                },
+            );
+            if subtitle.clicked() {
+                actions.push(WatchlistAction::SetShowsDescription {
+                    list: list.id,
+                    shows: !shows,
+                });
+            }
+            let shows = list.display.shows_chart;
+            let chart = kit::menu_row(
+                ui,
+                kit::MenuRow {
+                    checked: shows,
+                    ..kit::MenuRow::new(tr!("Show 1M Chart"))
+                },
+            );
+            if chart.clicked() {
+                actions.push(WatchlistAction::SetShowsChart {
+                    list: list.id,
+                    shows: !shows,
+                });
+            }
+        });
 
-        kit::menu_submenu(ui, row(Icon::Tag, "Filter by Flag"), SUBMENU_WIDTH, |ui| {
+        kit::menu_submenu(ui, row(Icon::Tag, tr!("Filter by Flag")), submenu, |ui| {
             for flag in WatchlistFlag::ALL {
                 if flag_row(ui, flag, state.filter.flag == Some(flag)).clicked() {
                     state.filter.flag = Some(flag);
@@ -404,7 +407,7 @@ fn options_menu(
             if kit::menu_item(
                 ui,
                 Icon::Xmark,
-                "Show All",
+                tr!("Show All"),
                 state.filter.flag.is_some(),
                 false,
             ) {
@@ -418,7 +421,7 @@ fn options_menu(
             kit::MenuRow {
                 icon: Some(Icon::Eye),
                 current: state.shows_detail,
-                ..kit::MenuRow::new("Show Details")
+                ..kit::MenuRow::new(tr!("Show Details"))
             },
         );
         if details.clicked() {
@@ -426,17 +429,17 @@ fn options_menu(
         }
 
         kit::menu_separator(ui);
-        if kit::menu_item(ui, Icon::Download, "Import Symbols…", true, false) {
+        if kit::menu_item(ui, Icon::Download, tr!("Import Symbols…"), true, false) {
             state.import_text = Some(String::new());
             state.import_error = None;
             actions.push(WatchlistAction::BeginImport);
             ui.close();
         }
-        if kit::menu_item(ui, Icon::ShareUp, "Export to File…", true, false) {
+        if kit::menu_item(ui, Icon::ShareUp, tr!("Export to File…"), true, false) {
             actions.push(WatchlistAction::Export { list: list.id });
             ui.close();
         }
-        if kit::menu_item(ui, Icon::CopyDoc, "Copy as Text", true, false) {
+        if kit::menu_item(ui, Icon::CopyDoc, tr!("Copy as Text"), true, false) {
             actions.push(WatchlistAction::CopyText(
                 crate::model::watchlist::text::export(list),
             ));
@@ -472,7 +475,7 @@ pub(super) fn filter_field(ui: &mut egui::Ui, state: &mut WatchlistSidebarState)
     let response = ui.put(
         text_rect,
         egui::TextEdit::singleline(&mut state.filter.text)
-            .hint_text("Filter symbols")
+            .hint_text(tr!("Filter symbols"))
             .frame(egui::Frame::NONE),
     );
     if response.lost_focus() {
@@ -503,7 +506,7 @@ pub(super) fn filter_field(ui: &mut egui::Ui, state: &mut WatchlistSidebarState)
             clear_rect,
             Id::new("watchlist-filter-clear"),
             Icon::XmarkCircleFill,
-            "Clear filter",
+            tr!("Clear filter"),
             true,
             true,
         )

@@ -3,6 +3,7 @@
 //! Rows come from the unprojected ledger (so Edit opens exactly what was entered); the price
 //! and fee shown are the reporting-currency projection of the same transaction.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::DataSource;
 use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};
 use crate::model::portfolio::{PortfolioAsset, PortfolioTransaction, PortfolioTransactionType};
@@ -52,14 +53,14 @@ impl TransactionColumn {
     /// Money columns name the reporting currency.
     pub fn title(self, currency_code: &str) -> String {
         match self {
-            Self::Date => "Date".to_owned(),
-            Self::Asset => "Asset".to_owned(),
-            Self::Type => "Type".to_owned(),
-            Self::Quantity => "Quantity".to_owned(),
-            Self::Price => format!("Price ({currency_code})"),
-            Self::Total => format!("Total ({currency_code})"),
-            Self::Fee => "Fee".to_owned(),
-            Self::Notes => "Notes".to_owned(),
+            Self::Date => tr!("Date").to_owned(),
+            Self::Asset => tr!("Asset").to_owned(),
+            Self::Type => tr!("Type").to_owned(),
+            Self::Quantity => tr!("Quantity").to_owned(),
+            Self::Price => tr!("Price ({currency})", currency = currency_code),
+            Self::Total => tr!("Total ({currency})", currency = currency_code),
+            Self::Fee => tr!("Fee").to_owned(),
+            Self::Notes => tr!("Notes").to_owned(),
         }
     }
 
@@ -104,9 +105,9 @@ impl TransactionRow {
     pub fn source_name(&self) -> &'static str {
         use crate::model::portfolio::PortfolioSource::*;
         match self.transaction.source {
-            Manual => "Manual",
-            Wallet => "Wallet",
-            Exchange => "Exchange",
+            Manual => tr!("Manual"),
+            Wallet => tr!("Wallet"),
+            Exchange => tr!("Exchange"),
             Csv => "CSV",
             CoinMarketCap => "CoinMarketCap",
         }
@@ -116,17 +117,17 @@ impl TransactionRow {
 pub fn type_name(kind: PortfolioTransactionType) -> &'static str {
     use PortfolioTransactionType::*;
     match kind {
-        Buy => "Buy",
-        Sell => "Sell",
-        TransferIn => "Transfer In",
-        TransferOut => "Transfer Out",
-        Reward => "Reward",
-        StakingReward => "Staking Reward",
-        Airdrop => "Airdrop",
-        Mining => "Mining",
-        Interest => "Interest",
-        Fee => "Fee",
-        Adjustment => "Adjustment",
+        Buy => tr!("Buy"),
+        Sell => tr!("Sell"),
+        TransferIn => tr!("Transfer In"),
+        TransferOut => tr!("Transfer Out"),
+        Reward => tr!("Reward"),
+        StakingReward => tr!("Staking Reward"),
+        Airdrop => tr!("Airdrop"),
+        Mining => tr!("Mining"),
+        Interest => tr!("Interest"),
+        Fee => tr!("Fee"),
+        Adjustment => tr!("Adjustment"),
     }
 }
 
@@ -398,8 +399,8 @@ pub fn show(
                 ui,
                 grid::body_rect(outer),
                 Icon::Magnifier,
-                "No Matching Transactions",
-                "Nothing matches the current search and filters.",
+                tr!("No Matching Transactions"),
+                tr!("Nothing matches the current search and filters."),
             );
             let button = Rect::from_center_size(
                 pos2(outer.center().x, grid::body_rect(outer).center().y + 62.0),
@@ -407,7 +408,7 @@ pub fn show(
             );
             if ui
                 .put(button, |ui: &mut egui::Ui| {
-                    kit::push_button(ui, None, "Clear Filters", true)
+                    kit::push_button(ui, None, tr!("Clear Filters"), true)
                 })
                 .clicked()
             {
@@ -418,8 +419,8 @@ pub fn show(
                 ui,
                 grid::body_rect(outer),
                 empty::Scene::Transactions,
-                "No Transactions",
-                "Add a transaction or import a CSV to get started.",
+                tr!("No Transactions"),
+                tr!("Add a transaction or import a CSV to get started."),
             );
         }
     } else {
@@ -435,12 +436,24 @@ pub fn show(
     grid::footer(
         ui,
         outer,
-        &table::count_text(
-            shown.len(),
-            input.ledger.len(),
-            ("transaction", "transactions"),
+        &if shown.len() == input.ledger.len() {
+            tr_n!(
+                input.ledger.len(),
+                "{count} transaction",
+                "{count} transactions"
+            )
+        } else {
+            tr_n!(
+                input.ledger.len(),
+                "{shown} of {count} transaction",
+                "{shown} of {count} transactions",
+                shown = shown.len()
+            )
+        },
+        &tr!(
+            "Prices and fees in {currency}",
+            currency = input.formatter.currency.code()
         ),
-        &format!("Prices and fees in {}", input.formatter.currency.code()),
     );
     if shown.len() > PAGE_SIZES[0] {
         pager(ui, state, outer, shown.len(), on_page);
@@ -464,7 +477,12 @@ fn pager(
         outer.max,
     );
     let pages = page_count(total, state.page_size);
-    let label = format!("{}\u{2013}{} of {total}", on_page.start + 1, on_page.end);
+    let label = tr!(
+        "{from}\u{2013}{to} of {total}",
+        from = on_page.start + 1,
+        to = on_page.end,
+        total = total
+    );
     let text = kit::galley(
         ui,
         &label,
@@ -481,13 +499,13 @@ fn pager(
     let size_rect = Rect::from_min_size(pos2(x, middle - 11.0), vec2(SIZE_WIDTH, 22.0));
     let size_labels: Vec<String> = PAGE_SIZES
         .iter()
-        .map(|size| format!("{size} per page"))
+        .map(|size| tr!("{size} per page", size = size))
         .collect();
     ui.put(size_rect, |ui: &mut egui::Ui| {
         grid::dropdown_inline(
             ui,
             egui::Id::new("portfolio-transactions-page-size"),
-            &format!("{} per page", state.page_size),
+            &tr!("{size} per page", size = state.page_size),
             &size_labels,
             |ui| {
                 for (size, name) in PAGE_SIZES.iter().zip(&size_labels) {
@@ -562,12 +580,12 @@ fn toolbar(
             ui,
             search_id,
             &mut state.filters.search,
-            "Search asset, notes, or source",
+            tr!("Search asset, notes, or source"),
             246.0,
         );
 
-        let kind_label = state.filters.kind.map_or("All Types", type_name);
-        let kind_choices: Vec<&str> = std::iter::once("All Types")
+        let kind_label = state.filters.kind.map_or(tr!("All Types"), type_name);
+        let kind_choices: Vec<&str> = std::iter::once(tr!("All Types"))
             .chain(ALL_TYPES.iter().map(|kind| type_name(*kind)))
             .collect();
         grid::dropdown(
@@ -578,7 +596,8 @@ fn toolbar(
             &kind_choices,
             |ui| {
                 let filters = &mut state.filters;
-                if kit::menu_item_marked(ui, Icon::Check, "All Types", filters.kind.is_none()) {
+                if kit::menu_item_marked(ui, Icon::Check, tr!("All Types"), filters.kind.is_none())
+                {
                     filters.kind = None;
                     ui.close();
                 }
@@ -603,8 +622,8 @@ fn toolbar(
             .asset_key
             .as_ref()
             .and_then(|key| choices.iter().find(|(candidate, _)| candidate == key))
-            .map_or("All Assets", |(_, ticker)| ticker.as_str());
-        let asset_names: Vec<&str> = std::iter::once("All Assets")
+            .map_or(tr!("All Assets"), |(_, ticker)| ticker.as_str());
+        let asset_names: Vec<&str> = std::iter::once(tr!("All Assets"))
             .chain(choices.iter().map(|(_, ticker)| ticker.as_str()))
             .collect();
         grid::dropdown(
@@ -615,8 +634,12 @@ fn toolbar(
             &asset_names,
             |ui| {
                 let filters = &mut state.filters;
-                if kit::menu_item_marked(ui, Icon::Check, "All Assets", filters.asset_key.is_none())
-                {
+                if kit::menu_item_marked(
+                    ui,
+                    Icon::Check,
+                    tr!("All Assets"),
+                    filters.asset_key.is_none(),
+                ) {
                     filters.asset_key = None;
                     ui.close();
                 }
@@ -634,12 +657,12 @@ fn toolbar(
                 }
             },
         );
-        if state.filters.is_active() && grid::link(ui, "Clear") {
+        if state.filters.is_active() && grid::link(ui, tr!("Clear")) {
             state.filters.clear();
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.add_space(INSET);
-            if kit::push_button(ui, Some(Icon::Plus), "Add Transaction", true).clicked() {
+            if kit::push_button(ui, Some(Icon::Plus), tr!("Add Transaction"), true).clicked() {
                 actions.push(TransactionAction::Add);
             }
         });
@@ -703,7 +726,7 @@ fn summary_band(ui: &mut egui::Ui, input: &TransactionsInput) {
         ui,
         inner.left_top(),
         Align2::LEFT_TOP,
-        "Transactions",
+        tr!("Transactions"),
         kit::size::CAPTION,
         REGULAR,
         secondary,
@@ -751,7 +774,7 @@ fn summary_band(ui: &mut egui::Ui, input: &TransactionsInput) {
         ui,
         area.left_top(),
         Align2::LEFT_TOP,
-        "By Type",
+        tr!("By Type"),
         kit::size::CAPTION,
         REGULAR,
         secondary,
@@ -761,9 +784,12 @@ fn summary_band(ui: &mut egui::Ui, input: &TransactionsInput) {
         area.right_top(),
         Align2::RIGHT_TOP,
         &if summary.fees > 0.0 {
-            format!("Fees paid \u{00B7} {}", f.money(summary.fees))
+            tr!(
+                "Fees paid \u{00B7} {amount}",
+                amount = f.money(summary.fees)
+            )
         } else {
-            "No fees paid".to_owned()
+            tr!("No fees paid").to_owned()
         },
         kit::size::CAPTION,
         REGULAR,
@@ -1092,7 +1118,7 @@ fn transaction_row(
         egui::Id::new(("portfolio-transaction-type", tx.id)),
         Sense::hover(),
     )
-    .on_hover_text(format!("Source: {}", item.source_name()));
+    .on_hover_text(tr!("Source: {source}", source = item.source_name()));
 
     let quantity_color = if f.privacy {
         primary
@@ -1158,7 +1184,11 @@ fn transaction_row(
         ui,
         cells[7],
         egui::Id::new(("portfolio-transaction-menu", tx.id)),
-        &format!("Actions for {} {}", item.ticker(), item.type_name()),
+        &tr!(
+            "Actions for {ticker} {kind}",
+            ticker = item.ticker(),
+            kind = item.type_name()
+        ),
         |ui| row_menu(ui, tx.id, actions),
     );
     if row.response.double_clicked() {
@@ -1167,29 +1197,29 @@ fn transaction_row(
     egui::Popup::context_menu(row.response)
         .frame(kit::menu_frame())
         .show(|ui| row_menu(ui, tx.id, actions));
-    let spoken = format!(
-        "{} {}, {}, {}",
-        item.type_name(),
-        item.ticker(),
-        f.quantity(tx.quantity, QuantitySign::None),
-        date_time_text(tx.timestamp, input.utc_offset_secs),
+    let spoken = tr!(
+        "{kind} {ticker}, {quantity}, {date}",
+        kind = item.type_name(),
+        ticker = item.ticker(),
+        quantity = f.quantity(tx.quantity, QuantitySign::None),
+        date = date_time_text(tx.timestamp, input.utc_offset_secs),
     );
     accessibility::label_as(row.response.clone(), egui::WidgetType::Button, spoken);
 }
 
 fn row_menu(ui: &mut egui::Ui, id: u64, actions: &mut Vec<TransactionAction>) {
-    grid::fit_menu(ui, &["Edit", "Duplicate", "Delete"]);
+    grid::fit_menu(ui, &[tr!("Edit"), tr!("Duplicate"), tr!("Delete")]);
     ui.spacing_mut().item_spacing.y = 0.0;
-    if kit::menu_item(ui, Icon::Pencil, "Edit", true, false) {
+    if kit::menu_item(ui, Icon::Pencil, tr!("Edit"), true, false) {
         actions.push(TransactionAction::Edit(id));
         ui.close();
     }
-    if kit::menu_item(ui, Icon::CopyDoc, "Duplicate", true, false) {
+    if kit::menu_item(ui, Icon::CopyDoc, tr!("Duplicate"), true, false) {
         actions.push(TransactionAction::Duplicate(id));
         ui.close();
     }
     kit::menu_separator(ui);
-    if kit::menu_item(ui, Icon::Trash, "Delete", true, true) {
+    if kit::menu_item(ui, Icon::Trash, tr!("Delete"), true, true) {
         actions.push(TransactionAction::Delete(id));
         ui.close();
     }

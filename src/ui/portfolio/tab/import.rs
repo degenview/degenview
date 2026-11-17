@@ -4,6 +4,7 @@
 
 use crate::host::portfolio::PortfolioHost;
 use crate::host::portfolio::import_flow::{FlowEvent, PortfolioImportFlow};
+use crate::i18n::tr;
 use crate::service::portfolio::asset_auto_mapper::asset_from_search_result;
 use crate::ui::icons::Icon;
 use crate::ui::kit::sheet;
@@ -59,9 +60,9 @@ fn show_cmc(ctx: &egui::Context, import: &mut PortfolioImportFlow, host: &Portfo
                 flow.picking = Some((
                     symbol.clone(),
                     AssetPickerState::new(
-                        &format!("Match {symbol}"),
-                        "Pick the market that matches this CoinMarketCap ticker.",
-                        "Use Asset",
+                        &tr!("Match {symbol}", symbol = symbol),
+                        tr!("Pick the market that matches this CoinMarketCap ticker."),
+                        tr!("Use Asset"),
                     ),
                 ));
             }
@@ -110,7 +111,7 @@ fn show_notice(ctx: &egui::Context, flow: &mut PortfolioImportFlow) {
             sheet::header(
                 ui,
                 Icon::Triangle,
-                "Import or Export",
+                tr!("Import or Export"),
                 &message,
                 theme::ORANGE,
             );
@@ -120,7 +121,7 @@ fn show_notice(ctx: &egui::Context, flow: &mut PortfolioImportFlow) {
         sheet::inset(ui, |ui| {
             ui.add_space(12.0);
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("OK").clicked() {
+                if ui.button(tr!("OK")).clicked() {
                     flow.notice = None;
                 }
             });

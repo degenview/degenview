@@ -3,6 +3,7 @@
 //! account's current settings rather than defaults. A pure view: it returns the chosen values and
 //! the host applies them to the store.
 
+use crate::i18n::tr;
 use crate::model::paper::format as fmt;
 use crate::model::paper::ticket::{decimal_text, parse_decimal};
 use crate::model::paper::{
@@ -35,10 +36,10 @@ impl CommissionKind {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::None => "None",
-            Self::Fixed => "Fixed",
-            Self::Percentage => "Percent",
-            Self::PerContract => "Per contract",
+            Self::None => tr!("None"),
+            Self::Fixed => tr!("Fixed"),
+            Self::Percentage => tr!("Percent"),
+            Self::PerContract => tr!("Per contract"),
         }
     }
 
@@ -46,9 +47,9 @@ impl CommissionKind {
     pub fn unit(self, currency: PaperCurrency) -> String {
         match self {
             Self::None => String::new(),
-            Self::Fixed => format!("{} per order", currency.code()),
-            Self::Percentage => "% of value".to_owned(),
-            Self::PerContract => format!("{} per contract", currency.code()),
+            Self::Fixed => tr!("{currency} per order", currency = currency.code()),
+            Self::Percentage => tr!("% of value").to_owned(),
+            Self::PerContract => tr!("{currency} per contract", currency = currency.code()),
         }
     }
 
@@ -149,17 +150,17 @@ impl PaperAccountSheetState {
 
     pub fn balance_error(&self) -> Option<&'static str> {
         match self.balance() {
-            None => Some("Enter a number."),
+            None => Some(tr!("Enter a number.")),
             Some(balance) if balance > 0.0 => None,
-            Some(_) => Some("Must be greater than zero."),
+            Some(_) => Some(tr!("Must be greater than zero.")),
         }
     }
 
     pub fn leverage_error(&self) -> Option<&'static str> {
         match self.leverage() {
-            None => Some("Enter a number."),
+            None => Some(tr!("Enter a number.")),
             Some(leverage) if (1.0..=MAX_LEVERAGE).contains(&leverage) => None,
-            Some(_) => Some("Must be between 1× and 1000×."),
+            Some(_) => Some(tr!("Must be between 1× and 1000×.")),
         }
     }
 
@@ -168,9 +169,9 @@ impl PaperAccountSheetState {
             return None;
         }
         match self.commission_value() {
-            None => Some("Enter a number."),
+            None => Some(tr!("Enter a number.")),
             Some(value) if value >= 0.0 => None,
-            Some(_) => Some("Can't be negative."),
+            Some(_) => Some(tr!("Can't be negative.")),
         }
     }
 
@@ -196,25 +197,25 @@ impl PaperAccountSheetState {
 
     pub fn title(&self) -> &'static str {
         if self.is_reset {
-            "Reset Paper Account"
+            tr!("Reset Paper Account")
         } else {
-            "New Paper Account"
+            tr!("New Paper Account")
         }
     }
 
     pub fn subtitle(&self) -> &'static str {
         if self.is_reset {
-            "Start over with a fresh balance."
+            tr!("Start over with a fresh balance.")
         } else {
-            "Practice with simulated money."
+            tr!("Practice with simulated money.")
         }
     }
 
     pub fn submit_title(&self) -> &'static str {
         if self.is_reset {
-            "Reset Account"
+            tr!("Reset Account")
         } else {
-            "Create Account"
+            tr!("Create Account")
         }
     }
 
@@ -223,8 +224,12 @@ impl PaperAccountSheetState {
         if !self.is_reset {
             return None;
         }
-        self.balance()
-            .map(|balance| format!("Balance resets to {}.", fmt::money(balance, self.currency)))
+        self.balance().map(|balance| {
+            tr!(
+                "Balance resets to {amount}.",
+                amount = fmt::money(balance, self.currency)
+            )
+        })
     }
 
     /// One leverage applies to every market, as in the Swift sheet.
@@ -272,7 +277,7 @@ pub fn show(
                     ui,
                     Icon::TriangleFill,
                     kit::RED,
-                    "Not saved",
+                    tr!("Not saved"),
                     Some(error),
                     None,
                 );
@@ -312,16 +317,16 @@ fn form(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
             ui,
             Icon::TriangleFill,
             kit::RED,
-            "This can't be undone",
-            Some(
-                "Every position, order, fill, history and journal entry in this account is removed.",
-            ),
+            tr!("This can't be undone"),
+            Some(tr!(
+                "Every position, order, fill, history and journal entry in this account is removed."
+            )),
             None,
         );
         ui.add_space(GAP);
     }
 
-    field_label(ui, "Account name");
+    field_label(ui, tr!("Account name"));
     if std::mem::take(&mut state.focus_pending) {
         ui.memory_mut(|memory| memory.request_focus(Id::new(("paper-text-field", "account-name"))));
     }
@@ -358,7 +363,7 @@ fn form(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
                 ui.set_width(width - currency_width - gap);
-                field_label(ui, "Starting balance");
+                field_label(ui, tr!("Starting balance"));
                 text_field(
                     ui,
                     "account-balance",
@@ -377,7 +382,7 @@ fn form(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
                 ui.set_width(currency_width);
-                field_label(ui, "Currency");
+                field_label(ui, tr!("Currency"));
                 if let Some(index) = dropdown_field(ui, &labels, selected, true) {
                     state.currency = PaperCurrency::ALL[index];
                 }
@@ -418,7 +423,7 @@ fn footer(
     sheet::inset(ui, |ui| {
         ui.add_space(14.0);
         ui.horizontal(|ui| {
-            if kit::large_button(ui, "Cancel").clicked() {
+            if kit::large_button(ui, tr!("Cancel")).clicked() {
                 *outcome = Some(AccountSheetOutcome::Cancel);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -442,7 +447,7 @@ fn footer(
 }
 
 fn leverage_field(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
-    field_label(ui, "Leverage");
+    field_label(ui, tr!("Leverage"));
     let error = state.visible_leverage_error();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -472,7 +477,7 @@ fn leverage_field(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
     field_footer(
         ui,
         error.map(str::to_owned).as_ref(),
-        Some("Applies to every market. 1× means no borrowing."),
+        Some(tr!("Applies to every market. 1× means no borrowing.")),
     );
 }
 
@@ -509,7 +514,7 @@ fn leverage_preset(ui: &mut egui::Ui, preset: f64, selected: bool, width: f32) -
 }
 
 fn commission_field(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
-    field_label(ui, "Commission");
+    field_label(ui, tr!("Commission"));
     let width = ui.available_width();
     kit::segmented_filling(
         ui,
