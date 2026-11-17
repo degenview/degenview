@@ -441,7 +441,15 @@ pub fn show(
                 &mut page,
                 section,
                 "Connect a broker to trade for real from your charts. Paper trading is separate.",
-                |ui| crate::ui::settings::brokers::body(ui, &mut state.brokers, input.trading_hub),
+                |ui| {
+                    if let Some(prefs) = crate::ui::settings::brokers::body(
+                        ui,
+                        &mut state.brokers,
+                        input.trading_hub,
+                    ) {
+                        actions.push(SettingsAction::SetPaperPrefs(prefs));
+                    }
+                },
             );
         }
         SettingsSection::CoinMarketCap => {
