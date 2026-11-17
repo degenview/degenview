@@ -12,6 +12,7 @@
 pub mod dashboards;
 mod detail;
 mod list;
+mod lookup;
 pub mod predictions;
 pub mod search;
 pub mod watchlists;
@@ -32,6 +33,7 @@ use crate::ui::theme;
 use dashboards::{Tile, TilePick};
 use eframe::egui::{self, Color32, Id, Key, Modifiers, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use list::RowState;
+use lookup::Lookup;
 use predictions::EventHead;
 use search::{Backend, Listing, Scope, SymbolSearch};
 use watchlists::WatchlistGroup;
@@ -99,6 +101,16 @@ enum Pick {
     Card(PortfolioCard),
 }
 
+impl Pick {
+    /// The identity a watchlist keeps the pick under.
+    fn instrument(&self) -> InstrumentId {
+        match self {
+            Self::Market(result) => InstrumentId::new(result.source, &result.full_symbol),
+            Self::Card(card) => card.instrument_id(),
+        }
+    }
+}
+
 /// A row of the list.
 #[derive(Clone, Debug, PartialEq)]
 enum Item {
@@ -141,6 +153,9 @@ pub struct Env<'a> {
     pub can_overlay: bool,
     /// The portfolio cards already on the tab, which the Dashboards tab marks with a check.
     pub cards_on_tab: &'a [PortfolioCard],
+    /// What the watchlist being added to already holds, in [`PickMode::Watchlist`]: its rows are
+    /// checked, and a pick of one adds nothing. Cards are held by their `instrument_id`.
+    pub in_list: &'a [InstrumentId],
 }
 
 /// The quote-demand owner of the picker in tab `tab`: clear of the sidebar's (the tab id), the
@@ -384,7 +399,7 @@ impl SymbolPicker {
         let clicked_outside = modal.backdrop_response.clicked();
 
         if let Some((pick, kind)) = picked {
-            output = output.or_else(|| self.commit(pick, kind));
+            output = output.or_else(|| self.commit(pick, kind, env));
         }
         if self.select_all && ctx.memory(|memory| memory.has_focus(search_id)) {
             select_all(ctx, search_id, &self.query);
@@ -436,14 +451,15 @@ impl SymbolPicker {
     /// What the providers answered for the box, and (on the Predictions tab) the events that
     /// answer is grouped into. An empty box on that tab lists the trending ones instead.
     fn listing(&mut self, ctx: &egui::Context) -> Listing {
+        let lookup = self.lookup();
         let nothing = |searching| Listing {
             results: Vec::new(),
             searching,
             errors: Vec::new(),
         };
-        if self.scope == Scope::Predictions && self.query.trim().is_empty() {
+        if self.scope == Scope::Predictions && lookup.is_empty() {
             // Only a provider that can rank its markets by activity has a trending list.
-            let trending = self.venue.is_none_or(service::supports_trending);
+            let trending = lookup.venue.is_none_or(service::supports_trending);
             if trending {
                 self.trending.refresh(ctx);
             }
@@ -461,12 +477,17 @@ impl SymbolPicker {
         }
         let listing = self
             .search
-            .listing(ctx, &self.query, self.scope, self.venue);
+            .listing(ctx, &lookup.query, self.scope, lookup.venue);
         if self.scope == Scope::Predictions {
             self.events.set(listing.results.iter());
             self.keep_ticks_listed();
         }
         listing
+    }
+
+    /// What the box asks for: its text, or a `VENUE:SYMBOL` read as a venue and a symbol.
+    fn lookup(&self) -> Lookup {
+        Lookup::of(&self.query, self.scope, self.venue)
     }
 
     /// Drops ticks whose event is no longer listed: they would chart something not on screen.
@@ -485,9 +506,10 @@ impl SymbolPicker {
     /// the watchlists' markets, the events and tiles of the other tabs, or the recent (else
     /// popular) picks while the box is empty.
     fn rows(&self, listing: &Listing) -> Rows {
+        let lookup = self.lookup();
         let in_scope = |result: &SearchResult| {
             self.scope.includes(result.source)
-                && self.venue.is_none_or(|venue| venue == result.source)
+                && lookup.venue.is_none_or(|venue| venue == result.source)
         };
         match self.scope {
             Scope::Watchlists => {
@@ -499,7 +521,7 @@ impl SymbolPicker {
                             .markets
                             .iter()
                             .filter(|market| {
-                                in_scope(market) && watchlists::matches(market, &self.query)
+                                in_scope(market) && watchlists::matches(market, &lookup.query)
                             })
                             .cloned()
                             .map(Item::Market),
@@ -528,7 +550,7 @@ impl SymbolPicker {
             }
             Scope::Predictions => {
                 let items = predictions::items(&self.events, self.ticked.as_ref());
-                let head = self.query.trim().is_empty().then(|| {
+                let head = lookup.is_empty().then(|| {
                     format!(
                         "Trending on {}",
                         predictions::TRENDING_PROVIDER.display_name()
@@ -538,8 +560,12 @@ impl SymbolPicker {
             }
             Scope::All | Scope::Stocks | Scope::Crypto => {}
         }
-        if !self.query.trim().is_empty() {
-            return Rows::of(listing.results.clone(), None);
+        if !lookup.is_empty() {
+            let head = lookup
+                .unsupported
+                .as_ref()
+                .map(|prefix| format!("{prefix} isn't supported · matches from other venues"));
+            return Rows::of(listing.results.clone(), head.as_deref());
         }
         let recent: Vec<SearchResult> = self
             .recents
@@ -666,7 +692,7 @@ impl SymbolPicker {
                 if kind == PickKind::Overlay && Self::overlaid(env, result) {
                     return None;
                 }
-                self.commit(Pick::Market(self.selection(result)), kind)
+                self.commit(Pick::Market(self.selection(result)), kind, env)
             }
             Item::Tile(tile) => {
                 let kind = if kind == PickKind::Overlay {
@@ -674,7 +700,7 @@ impl SymbolPicker {
                 } else {
                     kind
                 };
-                self.commit(Self::tile_pick(tile), kind)
+                self.commit(Self::tile_pick(tile), kind, env)
             }
         }
     }
@@ -716,8 +742,13 @@ impl SymbolPicker {
         };
     }
 
-    /// Validates a pick, records it as recent and hands it to the host.
-    fn commit(&mut self, pick: Pick, kind: PickKind) -> Option<Output> {
+    /// Validates a pick, records it as recent and hands it to the host. A watchlist's own pick
+    /// of what the list already holds is refused: nothing is added, so nothing is acknowledged.
+    fn commit(&mut self, pick: Pick, kind: PickKind, env: &Env) -> Option<Output> {
+        if kind == PickKind::Watchlist && self.held(env, &pick.instrument()) {
+            self.added = None;
+            return None;
+        }
         let output = match pick {
             Pick::Card(card) => {
                 if kind == PickKind::Watchlist {
@@ -985,6 +1016,8 @@ impl SymbolPicker {
         if venues.is_empty() {
             return None;
         }
+        // A venue typed as a prefix wins over the pull-down, so the pull-down says what is searched.
+        let venue = self.lookup().venue;
         let mut entries = vec![(Filter::Venue(None), "All venues".to_owned())];
         entries.extend(
             venues
@@ -992,14 +1025,13 @@ impl SymbolPicker {
                 .map(|venue| (Filter::Venue(Some(*venue)), venue.display_name().to_owned())),
         );
         Some(FilterMenu {
-            label: self
-                .venue
+            label: venue
                 .map_or("All venues", |venue| venue.display_name())
                 .to_owned(),
-            active: self.venue.is_some(),
+            active: venue.is_some(),
             tip: "Filter by exchange",
             entries,
-            current: Filter::Venue(self.venue),
+            current: Filter::Venue(venue),
         })
     }
 
@@ -1120,10 +1152,11 @@ impl SymbolPicker {
         let mut body = ui
             .new_child(egui::UiBuilder::new().max_rect(content.shrink2(vec2(PADDING - 6.0, 6.0))));
         body.set_clip_rect(content);
-        let empty_query = self.query.trim().is_empty();
+        let lookup = self.lookup();
+        let empty_query = lookup.is_empty();
         let topics = self.scope == Scope::Predictions && empty_query;
         if rows.items.is_empty() && rows.note.is_none() && !topics {
-            self.empty_state(&mut body, listing, empty_query);
+            self.empty_state(&mut body, listing, &lookup);
             return None;
         }
         let pointer_moved = ui.input(|input| input.pointer.delta() != Vec2::ZERO);
@@ -1204,17 +1237,29 @@ impl SymbolPicker {
         picked
     }
 
-    /// How `item`'s row is drawn: highlighted, already on the tab, drawn over the chart.
+    /// Whether `market` is already where a pick would put it: on a chart of the tab, or in the
+    /// watchlist being added to.
+    fn held(&self, env: &Env, market: &InstrumentId) -> bool {
+        let held = if self.mode == PickMode::Watchlist {
+            env.in_list
+        } else {
+            env.on_tab
+        };
+        held.iter().any(|id| id.is_same_market(market))
+    }
+
+    /// How `item`'s row is drawn: highlighted, already held, drawn over the chart.
     fn row_state(&self, index: usize, item: &Item, env: &Env) -> RowState {
         let on_chart = match item {
             Item::Market(result) | Item::Choice(result) => {
-                let market = InstrumentId::new(result.source, &result.full_symbol);
-                env.on_tab.iter().any(|id| id.is_same_market(&market))
+                self.held(env, &InstrumentId::new(result.source, &result.full_symbol))
             }
             Item::Tile(tile) => match &tile.pick {
                 TilePick::Gauge(result) => {
-                    let market = InstrumentId::new(result.source, &result.full_symbol);
-                    env.on_tab.iter().any(|id| id.is_same_market(&market))
+                    self.held(env, &InstrumentId::new(result.source, &result.full_symbol))
+                }
+                TilePick::Card(card) if self.mode == PickMode::Watchlist => {
+                    self.held(env, &card.instrument_id())
                 }
                 TilePick::Card(card) => env.cards_on_tab.iter().any(|on| on.same_card(card)),
             },
@@ -1223,7 +1268,7 @@ impl SymbolPicker {
         let market = item.market().filter(|_| !matches!(item, Item::Event(_)));
         RowState {
             highlighted: index == self.highlight,
-            on_chart: on_chart && self.mode != PickMode::Watchlist,
+            on_chart,
             overlaid: market.is_some_and(|result| Self::overlaid(env, result)),
             can_overlay: env.can_overlay
                 && self.mode != PickMode::Watchlist
@@ -1261,7 +1306,7 @@ impl SymbolPicker {
                     Rect::from_center_size(area.center(), Vec2::splat(32.0)),
                     LoadingIndicator::new().size(32.0),
                 );
-            } else if self.venue == Some(DataSource::Kalshi) {
+            } else if self.lookup().venue == Some(DataSource::Kalshi) {
                 note_line(
                     ui,
                     "Kalshi cannot list its busiest markets. Search for one, or pick a topic.",
@@ -1270,8 +1315,9 @@ impl SymbolPicker {
         }
     }
 
-    fn empty_state(&self, ui: &mut Ui, listing: &Listing, empty_query: bool) {
+    fn empty_state(&self, ui: &mut Ui, listing: &Listing, lookup: &Lookup) {
         let query = self.query.trim();
+        let empty_query = lookup.is_empty();
         match self.scope {
             Scope::Watchlists => {
                 let (title, detail) = if self.watchlists.is_empty() {
@@ -1298,7 +1344,17 @@ impl SymbolPicker {
             }
             Scope::All | Scope::Stocks | Scope::Crypto | Scope::Predictions => {}
         }
-        if empty_query {
+        if let Some(venue) = lookup.outside(self.scope) {
+            widgets::no_results(
+                ui,
+                "No results",
+                &format!(
+                    "{} has no markets under {}. Try another tab.",
+                    lookup::short_name(venue),
+                    self.scope.title()
+                ),
+            );
+        } else if empty_query {
             widgets::no_results(
                 ui,
                 "Search stocks and crypto",
@@ -1320,18 +1376,21 @@ impl SymbolPicker {
                 &format!("{} could not be searched", source.display_name()),
                 &error.to_string(),
             );
-        } else if self.scope == Scope::Predictions {
-            widgets::no_results(
-                ui,
-                "No results",
-                &format!("No market matches “{query}”. Try a topic like Bitcoin or the Fed."),
-            );
         } else {
-            widgets::no_results(
-                ui,
-                "No results",
-                &format!("Nothing matches “{query}”. Try a ticker or a company name."),
-            );
+            let searched = lookup
+                .searched(self.scope)
+                .into_iter()
+                .map(lookup::short_name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let detail = match &lookup.unsupported {
+                Some(prefix) => format!("{prefix} isn't supported. Searched: {searched}."),
+                None if self.scope == Scope::Predictions => format!(
+                    "No market matches “{query}”. Searched: {searched}. Try a topic like Bitcoin or the Fed."
+                ),
+                None => format!("Nothing matches “{query}”. Searched: {searched}."),
+            };
+            widgets::no_results(ui, "No results", &detail);
         }
     }
 
@@ -1455,7 +1514,16 @@ impl SymbolPicker {
 
     /// What Return does on the highlighted row, in the footer's words.
     fn return_hint(&self, env: &Env) -> String {
-        let to_watchlist = || format!("Add to {}", self.list_name);
+        let list = &self.list_name;
+        let to_watchlist = |market: Option<&SearchResult>| match market {
+            Some(market)
+                if self.held(env, &InstrumentId::new(market.source, &market.full_symbol)) =>
+            {
+                format!("Already in {list}")
+            }
+            Some(market) => format!("Add {} to {list}", market_label(market)),
+            None => format!("Add to {list}"),
+        };
         match &self.highlighted {
             Some(Item::Event(head)) => {
                 return if head.open {
@@ -1466,13 +1534,15 @@ impl SymbolPicker {
                 .to_owned();
             }
             Some(Item::Tile(Tile {
-                pick: TilePick::Card(_),
+                pick: TilePick::Card(card),
                 ..
             })) => {
-                return if self.mode == PickMode::Watchlist {
-                    to_watchlist()
-                } else {
-                    "Add card".to_owned()
+                return match self.mode {
+                    PickMode::Watchlist if self.held(env, &card.instrument_id()) => {
+                        format!("Already in {list}")
+                    }
+                    PickMode::Watchlist => to_watchlist(None),
+                    _ => "Add card".to_owned(),
                 };
             }
             _ => {}
@@ -1484,9 +1554,30 @@ impl SymbolPicker {
             (PickMode::Compare, _) => "Compare".to_owned(),
             (PickMode::Chart, Some(current)) => format!("Replace {current}"),
             (PickMode::Chart | PickMode::Add, _) => "Add chart".to_owned(),
-            (PickMode::Watchlist, _) => to_watchlist(),
+            (PickMode::Watchlist, _) => {
+                to_watchlist(self.highlighted.as_ref().and_then(Item::market))
+            }
         }
     }
+}
+
+/// The longest market name the footer's Return hint spells out; an event's title is longer.
+const HINT_NAME_CHARS: usize = 28;
+
+/// A market as the footer names it before it is picked: its venue and its name, as the row has them.
+fn market_label(result: &SearchResult) -> String {
+    // A lone "Yes" says nothing: a prediction market is named by its event.
+    let name = match &result.event {
+        Some(event) if !event.title.is_empty() => event.title.clone(),
+        _ => pick_name(result),
+    };
+    let name = if name.chars().count() > HINT_NAME_CHARS {
+        let cut: String = name.chars().take(HINT_NAME_CHARS - 1).collect();
+        format!("{}…", cut.trim_end())
+    } else {
+        name
+    };
+    format!("{} · {name}", lookup::short_name(result.source))
 }
 
 /// What a market is called when a watchlist took it: the event, for choices charted together.

@@ -523,7 +523,7 @@ mod tests {
         assert!(
             workspace.persisted().charts[0]
                 .drawings
-                .iter()
+                .all()
                 .all(|d| !d.is_ruler())
         );
     }
@@ -812,6 +812,45 @@ mod tests {
         assert_eq!(market(&workspace), (DataSource::Coinbase, "ETH-USD".into()));
         workspace.undo(&ctx);
         assert_eq!(market(&workspace), (DataSource::Binance, "BTCUSDT".into()));
+    }
+
+    #[test]
+    fn undo_walks_back_through_drawings_and_market_changes_in_the_order_they_happened() {
+        use crate::model::DataSource;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(13);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        let add = |workspace: &mut ChartWorkspace, id| {
+            workspace.apply_drawing_commands(
+                chart,
+                vec![DrawingCommand::Add(rectangle(id, id as i64 * 100))],
+            );
+        };
+        add(&mut workspace, 2);
+        assert!(replace(
+            &mut workspace,
+            chart,
+            DataSource::Binance,
+            "ETHUSDT",
+            &ctx
+        ));
+        add(&mut workspace, 3);
+        assert_eq!(drawing_ids(&workspace, chart), vec![3]);
+
+        workspace.undo(&ctx);
+        assert!(drawing_ids(&workspace, chart).is_empty());
+        workspace.undo(&ctx);
+        assert_eq!(market(&workspace).1, "BTCUSDT");
+        assert_eq!(drawing_ids(&workspace, chart), vec![1, 2]);
+        workspace.undo(&ctx);
+        assert_eq!(drawing_ids(&workspace, chart), vec![1]);
+
+        workspace.redo(&ctx);
+        workspace.redo(&ctx);
+        assert_eq!(market(&workspace).1, "ETHUSDT");
+        assert!(drawing_ids(&workspace, chart).is_empty());
+        workspace.redo(&ctx);
+        assert_eq!(drawing_ids(&workspace, chart), vec![3]);
     }
 
     #[test]

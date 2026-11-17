@@ -69,6 +69,30 @@ mod tests {
         }
     }
 
+    const MARKET: &str = "BINANCE:BTCUSDT";
+
+    /// `drawings` as a chart stores them: each names its market and the format that wrote it.
+    fn filed(drawings: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+        drawings
+            .into_iter()
+            .map(|mut drawing| {
+                if let Some(body) = drawing
+                    .as_object_mut()
+                    .and_then(|variant| variant.values_mut().next())
+                    .and_then(serde_json::Value::as_object_mut)
+                    .filter(|body| body.get("since").is_none())
+                {
+                    body.insert("market".into(), MARKET.into());
+                    body.insert(
+                        "since".into(),
+                        crate::model::drawings::DRAWING_FORMAT.into(),
+                    );
+                }
+                drawing
+            })
+            .collect()
+    }
+
     /// A layout whose one chart holds `drawings` (as stored JSON).
     fn view_with(drawings: Vec<serde_json::Value>) -> SavedView {
         let mut value = serde_json::to_value(view(3)).unwrap();
@@ -111,27 +135,21 @@ mod tests {
             .collect();
         // A tool from a build newer than this one rides along untouched.
         stored.push(serde_json::json!({"Shape": {"id": 99, "geometry": {"hologram": {"x": 1}}}}));
+        let stored = filed(stored);
         let store = Store::open_in_memory().expect("open");
         store
             .replace_saved_views(&[view_with(stored.clone())])
             .expect("write");
         let loaded = store.saved_views();
-        let drawings = &loaded[0].charts[0].drawings;
+        let drawings = loaded[0].charts[0].drawings.get(MARKET);
         assert_eq!(drawings.len(), 18);
         assert!(matches!(drawings[17], Drawing::Unreadable(_)));
         // Written back, the row is what it was: the readable ones re-encode identically and the
         // unreadable one verbatim.
         store.replace_saved_views(&loaded).expect("rewrite");
         let again = store.saved_views();
-        let back: Vec<serde_json::Value> = again[0].charts[0]
-            .drawings
-            .iter()
-            .map(|drawing| match drawing {
-                Drawing::Unreadable(raw) => raw.clone(),
-                other => serde_json::to_value(other).unwrap(),
-            })
-            .collect();
-        assert_eq!(back, stored);
+        let back = serde_json::to_value(&again[0].charts[0].drawings).unwrap();
+        assert_eq!(back, serde_json::Value::Array(stored));
     }
 
     #[test]
@@ -158,22 +176,19 @@ mod tests {
                 serde_json::to_value(&drawing).unwrap()
             })
             .collect();
+        let stored = filed(stored);
         let store = Store::open_in_memory().expect("open");
         store
             .replace_saved_views(&[view_with(stored.clone())])
             .expect("write");
         let loaded = store.saved_views();
-        let drawings = &loaded[0].charts[0].drawings;
+        let drawings = loaded[0].charts[0].drawings.get(MARKET);
         assert_eq!(drawings.len(), 12);
         assert!(drawings.iter().all(|drawing| drawing.tool().is_some()));
         store.replace_saved_views(&loaded).expect("rewrite");
         let again = store.saved_views();
-        let back: Vec<serde_json::Value> = again[0].charts[0]
-            .drawings
-            .iter()
-            .map(|drawing| serde_json::to_value(drawing).unwrap())
-            .collect();
-        assert_eq!(back, stored);
+        let back = serde_json::to_value(&again[0].charts[0].drawings).unwrap();
+        assert_eq!(back, serde_json::Value::Array(stored));
     }
 
     #[test]
@@ -201,22 +216,19 @@ mod tests {
                 serde_json::to_value(&drawing).unwrap()
             })
             .collect();
+        let stored = filed(stored);
         let store = Store::open_in_memory().expect("open");
         store
             .replace_saved_views(&[view_with(stored.clone())])
             .expect("write");
         let loaded = store.saved_views();
-        let drawings = &loaded[0].charts[0].drawings;
+        let drawings = loaded[0].charts[0].drawings.get(MARKET);
         assert_eq!(drawings.len(), 14);
         assert!(drawings.iter().all(|drawing| drawing.tool().is_some()));
         store.replace_saved_views(&loaded).expect("rewrite");
         let again = store.saved_views();
-        let back: Vec<serde_json::Value> = again[0].charts[0]
-            .drawings
-            .iter()
-            .map(|drawing| serde_json::to_value(drawing).unwrap())
-            .collect();
-        assert_eq!(back, stored);
+        let back = serde_json::to_value(&again[0].charts[0].drawings).unwrap();
+        assert_eq!(back, serde_json::Value::Array(stored));
     }
 
     #[test]
@@ -254,22 +266,19 @@ mod tests {
                 serde_json::to_value(&drawing).unwrap()
             })
             .collect();
+        let stored = filed(stored);
         let store = Store::open_in_memory().expect("open");
         store
             .replace_saved_views(&[view_with(stored.clone())])
             .expect("write");
         let loaded = store.saved_views();
-        let drawings = &loaded[0].charts[0].drawings;
+        let drawings = loaded[0].charts[0].drawings.get(MARKET);
         assert_eq!(drawings.len(), Tool::fib_tools().count());
         assert!(drawings.iter().all(|drawing| drawing.tool().is_some()));
         store.replace_saved_views(&loaded).expect("rewrite");
         let again = store.saved_views();
-        let back: Vec<serde_json::Value> = again[0].charts[0]
-            .drawings
-            .iter()
-            .map(|drawing| serde_json::to_value(drawing).unwrap())
-            .collect();
-        assert_eq!(back, stored);
+        let back = serde_json::to_value(&again[0].charts[0].drawings).unwrap();
+        assert_eq!(back, serde_json::Value::Array(stored));
     }
 
     #[test]

@@ -98,7 +98,10 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 
 ## Drawings
 
-- Pinned to time+price. Brush and ruler have own variants; every other tool (trend line, Fibonacci
+- Pinned to time+price. **Per market:** a chart's `drawings` are the set of the market it shows; the
+  other markets' sets wait in `parked_drawings` and are saved with it (`MarketDrawings`, each drawing
+  names its `market`). Never write code that reads or sets a chart's saved drawings as one list: go
+  through `Chart::stored_drawings` / `set_stored_drawings` (docs/drawing-tools.md). Brush and ruler have own variants; every other tool (trend line, Fibonacci
   included) is `Drawing::Shape { geometry: Geometry, style, text, locked, hidden, visibility }`. New
   fields need `#[serde(default)]`. Never store a pixel or derived corner. No older stored form has
   shipped: no compatibility readers.

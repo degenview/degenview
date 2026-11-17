@@ -511,6 +511,18 @@ impl DrawingLayer {
         self.hover = None;
     }
 
+    /// Drops everything in progress on the drawings shown, committing nothing: the gesture, an
+    /// inline text edit (a draft too, so keeping it later adds nothing), the table cell being
+    /// started or selected and the open menu. For a chart that shows another market, whose
+    /// drawings these are not.
+    pub(in crate::ui) fn abandon(&mut self) {
+        self.abort();
+        self.text_edit = None;
+        self.pending_cell = None;
+        self.table_cell = None;
+        self.menu = None;
+    }
+
     /// Drops whatever gesture is in progress without committing anything.
     fn abort(&mut self) {
         self.gesture = None;

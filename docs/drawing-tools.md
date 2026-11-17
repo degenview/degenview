@@ -104,6 +104,18 @@ same text.
 
 ### Storage and sync
 
+- **Drawings belong to a market.** A chart keeps a separate set for every market it has shown
+  (`Chart::drawings` is the set of the market on screen, `Chart::parked_drawings` the others, by
+  `InstrumentId::key()`; `workspace/chart/drawing_sets.rs`). Changing the chart's symbol swaps the
+  set and changing back restores it; two charts of one market keep their own. A ruler is not kept:
+  it measures the market it was drawn on. Saved, a chart's drawings are still one flat array
+  (`model::drawings::market::MarketDrawings`): each drawing's body names its `market` and carries
+  `"since": 2` (`DRAWING_FORMAT`), so the layout's drawing records, their keys and ids are as before.
+  A drawing that names no market (saved by a build before this one) is dropped when read. Ids stay
+  unique per chart across markets, and `next_drawing_id` is one counter; when another Mac's layout is
+  merged into an open tab, a drawing made here that takes an id of another market is renumbered.
+  Changing the symbol also drops what is in progress on the old market (`DrawingLayer::abandon`: a
+  gesture, an inline text draft, a table cell, the open menu).
 - The app has not shipped with the older forms, so nothing is kept for them: the trend line is a
   `Shape` with a `trend_line` geometry like every other line (it was a variant of its own), and a
   row saved by an earlier development build may be unreadable now.
@@ -257,8 +269,8 @@ here has a pip convention to follow.
 
 ## Persistence and undo
 
-Drawings are saved with their chart in the existing session and saved layouts; new fields
-default. A chart's drawings decode one by one
+Drawings are saved with their chart (every market's, see Storage and sync) in the existing session
+and saved layouts; new fields default. A chart's drawings decode one by one
 (`model::drawings::lenient`): a row this version cannot read, such as a tool from a newer build,
 stays in the list as `Drawing::Unreadable` and is written back byte for byte, instead of costing
 the whole tab or layout. Geometry with a non-finite number or too few points is treated the same.
@@ -328,7 +340,10 @@ reinterpreted as a pane value.
   can darken where it crosses. Separate strokes darken by design.
 - **Locking and hiding all** act on every chart of the tab, with one undo step per chart because
   history is per chart. "Hide all" is a view toggle and is not saved.
-- Market replacement (`switch_chart`) keeps a chart's old drawings, as before.
+- Market replacement (`switch_chart`) files the drawings under the market the chart leaves. Tab
+  Linking switches are not undo steps, so they forget the chart's drawing steps
+  (`switch_chart_outside_undo`); a replacement from the symbol picker is a step, and undo walks back
+  through drawing and market steps in order.
 
 ## Performance
 

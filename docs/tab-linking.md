@@ -46,7 +46,8 @@ Everything else is **not stated by TradingView, so it is a decision here**:
 - Not announced: restoring a session, loading a saved layout, adding a chart, a chart that is not
   focused, an unlinked tab (its outbox is cleared the moment it is unlinked).
 - The symbol is the whole watchlist row (provider, symbol, title, artwork), never a bare ticker.
-  The chart keeps its type, settings, indicators, Pine instances, drawings and timeframe.
+  The chart keeps its type, settings, indicators, Pine instances and timeframe; its drawings follow the
+  market (each market has its own set, see [Drawing tools](drawing-tools.md#storage-and-sync)).
 - When several tabs speak in one tick, every tab of the group ends on the newest value: a tab is
   never told something older than what it said itself.
 - Choosing a market that is already open on the tab (from the watchlist) is announced like any
@@ -55,7 +56,8 @@ Everything else is **not stated by TradingView, so it is a decision here**:
   tab shows what it had and says so in the chart notice. The rest of the group is unaffected.
 - A tab with no market chart (a blank tab, a portfolio card in focus) has nothing to change and gets
   no chart invented for it.
-- Tab Linking never touches the crosshair, drawings, alerts or Pine scripts.
+- Tab Linking never touches the crosshair, alerts or Pine scripts, and no drawing is moved or
+  changed: a symbol change shows the drawings of the new market and parks the old one's.
 
 ## Time and Date range
 

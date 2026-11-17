@@ -113,6 +113,29 @@ impl DrawingTools {
         self.selected.as_ref()
     }
 
+    /// Lets go of what refers to the drawings `chart_id` shows: its selection, its open properties
+    /// dialog and a pending "remove all". Used when it shows another market, whose drawings these
+    /// are not.
+    pub(in crate::workspace) fn forget_chart(&mut self, chart_id: u64) {
+        if self
+            .selected
+            .as_ref()
+            .is_some_and(|(selected_chart, _)| *selected_chart == chart_id)
+        {
+            self.selected = None;
+        }
+        if self
+            .properties
+            .as_ref()
+            .is_some_and(|props| props.chart_id == chart_id)
+        {
+            self.properties = None;
+        }
+        if self.confirm_remove == Some(chart_id) {
+            self.confirm_remove = None;
+        }
+    }
+
     /// The selected drawings when they are on `chart_id`, else none.
     pub(in crate::workspace) fn selected_on(&self, chart_id: u64) -> Vec<u64> {
         self.selected

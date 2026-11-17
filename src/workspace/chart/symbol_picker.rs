@@ -2,6 +2,7 @@
 //! market priced while it is open, and what a pick does to the charts.
 
 use crate::host::portfolio::card::PortfolioCardEnv;
+use crate::lock::lock;
 use crate::model::InstrumentId;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
@@ -85,6 +86,7 @@ impl ChartWorkspace {
         let can_overlay = self
             .focused_market_chart()
             .is_some_and(|chart| self.can_compare(chart.id));
+        let in_list = self.picker_list_instruments();
         let output = self.symbol_picker.show(
             ctx,
             &Env {
@@ -94,6 +96,7 @@ impl ChartWorkspace {
                 overlaid: &overlaid,
                 can_overlay,
                 cards_on_tab: &cards_on_tab,
+                in_list: &in_list,
             },
         );
         let mut actions = Vec::new();
@@ -122,6 +125,24 @@ impl ChartWorkspace {
             self.quote_coordinator.release(owner);
         }
         actions
+    }
+
+    /// What the watchlist the picker was opened for already holds (nothing for any other mode).
+    fn picker_list_instruments(&self) -> Vec<InstrumentId> {
+        let Some(list_id) = self.watchlist_pane.picker_target() else {
+            return Vec::new();
+        };
+        let store = lock(&self.watchlist);
+        store
+            .lists()
+            .iter()
+            .find(|list| list.id == list_id)
+            .map(|list| {
+                list.instruments()
+                    .map(|item| item.instrument.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Follows `result` in the watchlist the picker was opened for.

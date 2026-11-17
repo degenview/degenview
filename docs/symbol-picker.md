@@ -19,11 +19,11 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
 ## What it does
 
 - **Opens searching for the market on the focused chart** (`Chart::picker_query`): the exchange's own
-  name for Binance, Coinbase, Alpaca and CoinGecko, the base token for a DEX pair, nothing for a
+  name for Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Alpaca and CoinGecko, the base token for a DEX pair, nothing for a
   prediction market or a CoinMarketCap gauge. The text is selected, so typing replaces it. Add,
   Compare and Watchlist modes open empty.
 - **Return replaces** the focused chart's market (`replace_focused_market`, which is
-  `replace_chart_market`: the chart keeps its settings, indicators, drawings and place in the grid, and
+  `replace_chart_market`: the chart keeps its settings, indicators and place in the grid, shows the drawings of the new market (each market has its own set), and
   its candles reload). The replacement is one undo step (`Snapshot::Market`, with the indicators when a
   prediction market or gauge, which take none, removes them); undo reloads the old market's candles. A
   watchlist click on the focused chart replaces the same way; Tab Linking's follow does not, as it is
@@ -47,6 +47,15 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   row; the footer says what was added. It records no recents, offers no Replace or Compare, has no
   Watchlists tab, and the workspace keeps the target list (`WatchlistPane::picker_target`) only while the picker
   is open.
+  - **The list's own markets** come in each frame as `Env::in_list` (the target list's instruments,
+    portfolio cards by `instrument_id`), the way `Env::on_tab` carries a chart tab's. A row already in
+    the list shows the check instead of the plus, the footer's Return hint reads "Already in {list}",
+    and Return, ⇧Return or a click on it adds nothing and acknowledges nothing (`commit` refuses it, so
+    "Added X" is never said for a duplicate; the store's `add_to_list` still answers `Ok(false)` for any
+    other caller).
+  - **The footer names the market** Return adds, resolved from the highlighted row: "Add Binance ·
+    BTCUSDT to Favorites" (the venue as `lookup::short_name` says it, so "Alpaca (IEX)" is "Alpaca",
+    then the row's name; an event's title for a prediction market).
 - **Tabs** All, Stocks, Crypto, Predictions, Dashboards, Watchlists (Tab cycles the tabs of the mode)
   and a filter pull-down at their right: the exchange ("All venues"), the prediction provider, or on
   Dashboards the portfolio ("All Portfolios"). All is crypto and stocks together; prediction markets
@@ -77,13 +86,28 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     a check marks a card or index already on the tab (`Env::cards_on_tab`). Without a portfolio the
     cards are not offered and a note says where they come from (`wants_portfolios` feeds the list
     while the tab shows). Nothing here has a price to fetch.
+- **Typed `VENUE:SYMBOL`** (`lookup.rs`, in every mode): `BINANCE:BTCUSDT`, `nasdaq: aapl`. The prefix
+  is read by `model::market::venue`, the same parser the watchlist import uses (a provider's
+  watchlist slug, or a US exchange, which is Alpaca's), in any case and with spaces. The symbol is the
+  query and the prefix's provider the venue filter, over whatever the pull-down says (the pull-down
+  then shows that venue). `BINANCE:` alone lists the venue's recent or popular markets. The Watchlists
+  and Predictions tabs read only a prefix they know (a prediction title can hold a colon), Dashboards
+  none. A prefix the open tab has no markets of (`BINANCE:` on Stocks) says so.
+  - **Never silent.** A prefix no provider serves (`OKX:BTCUSDT`, BYBIT, HKEX, SSE, futures venues,
+    CoinMarketCap's `CMC`) is a word of 2-12 letters or digits followed by a colon and a symbol: the
+    symbol is searched on every venue of the tab (a venue picked in the pull-down does not narrow it,
+    as the prefix overrides it) and listed under "OKX isn't supported · matches from
+    other venues", and with no match the card reads "OKX isn't supported. Searched: Binance,
+    Coinbase, DEXScreener, CoinGecko, Alpaca." A plain miss reads "Nothing matches “zzz”. Searched:
+    …" with the venues asked (the pull-down's one, or the tab's). Return on no result does nothing.
+    Two sources are never merged into one row.
 - **Rows** show the market as its exchange names it (`BTCUSDT`, `BTC-USD`, `AAPL`), what it trades
   under it (`BTC / USDT`, the company, a prediction's event), the exchange and its kind, a check when
   the market is already on a chart of the tab, and a plus on the highlighted row.
 - **Detail panel** (hidden below 760 px of window width): artwork, price and change from the quote feed (the percent at two decimals, with the amount
   beside it, trimmed of trailing zeros, only while both fit),
   "Open 24/7" for crypto or the stock's market state, the exchange, and "Also trades as": the other
-  dollar markets of the asset on Binance and Coinbase (`SymbolSearch::related`, read from the locally
+  dollar markets of the asset on Binance, Coinbase, OKX, Kraken, Bybit, Gate.io and MEXC (`SymbolSearch::related`, read from the locally
   held exchange lists). Clicking one of them replaces the chart. A prediction market shows the event's
   artwork and title, its chance, the provider and what the provider says about the event
   (`EventStats`: volume, 24-hour volume, liquidity, open interest, end date, category, and its
@@ -108,8 +132,9 @@ stays.
 
 `service/market/search_rank.rs` is the one rule, used inside each provider and across all of them
 (`merge_ranked`). A query is normalised to letters and digits, so `btc/usd`, `BTC-USD` and `BTC USD`
-are one query, and Binance and Coinbase match it against their own lists the same way (`BTC-USDT`
-finds Binance's `BTCUSDT` and Coinbase's `BTC-USDT`). Tiers:
+are one query, and Binance, Coinbase, OKX, Kraken, Bybit, Gate.io and MEXC match it against their own lists the same way
+(`BTC-USDT` finds Binance's `BTCUSDT`, Coinbase's `BTC-USDT` and OKX's `BTC-USDT`; Kraken's legacy `XBT`
+is read as `BTC`, so `xbtusd` finds its `BTC/USD`). Tiers:
 
 0. the exact market, or the asset in a dollar quote (USD, USDT, USDC, USDS, FDUSD, BUSD, TUSD, USDP,
    DAI) on every exchange;
@@ -120,8 +145,8 @@ finds Binance's `BTCUSDT` and Coinbase's `BTC-USDT`). Tiers:
 5. the rest.
 
 A prediction market has no pair to rank: the Predictions tab keeps each provider's own order,
-Polymarket first. Inside a tier: provider order (Binance, Coinbase, DEXScreener, CoinGecko, Alpaca), then quote (the
-exchange's main dollar quote first: USDT on Binance, USD on Coinbase; then USD, USDT, USDC...), then
+Polymarket first. Inside a tier: provider order (Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, DEXScreener, CoinGecko, Alpaca), then quote (the
+exchange's main dollar quote first: USDT on Binance, OKX, Bybit, Gate.io and MEXC, USD on Coinbase and Kraken; then USD, USDT, USDC...), then
 the provider's own order. A coin or a share has no quote and counts as dollars. Each provider still
 keeps its first 20 (30 for Alpaca) after ranking, so the dollar markets are never cut off by the
 odd quotes.
