@@ -8,15 +8,14 @@ use crate::model::alert::{AlertNotificationSettings, AlertRuntimeHealth};
 use crate::model::webhook::{EndpointId, WebhookDeliveryResult, WebhookEndpoint};
 use crate::service::cache::control;
 use crate::service::cache::disk::{CacheStats, ClearOutcome};
-use crate::service::keychain::proxy_password::ProxyPasswordStore;
 use crate::service::keychain::webhook_secrets::KeychainWebhookSecretStore;
 use crate::service::llm::prefs::AiPrefs;
-use crate::service::net::proxy::{self, ProxyConfig};
+use crate::service::net::proxy::{self, ApplyReport};
 use crate::service::webhook::delivery::{self, Mode, UreqTransport, WebhookSecretStore};
 use crate::service::work_queue::{self, Pending};
 use crate::store::Store;
 use crate::ui::settings::card::StatusMessage;
-use crate::ui::settings::network::{NetworkAction, PasswordChange};
+use crate::ui::settings::network::NetworkAction;
 use crate::ui::settings::snapshots::SnapshotsAction;
 use crate::ui::settings::storage::StorageAction;
 use crate::ui::settings::window::{SettingsAction, SettingsInput, SettingsState};
@@ -71,10 +70,6 @@ pub struct SettingsHost {
     ai_prefs_read_at: Option<std::time::Instant>,
     /// When the snapshot choices were last read again, for what iCloud Sync applied meanwhile.
     snapshots_read_at: Option<std::time::Instant>,
-    /// The proxy being applied on a worker (reading the system's proxy and the secure storage
-    /// block), and the save that came in meanwhile. One at a time, so they end in order.
-    network_job: Option<Pending<Result<bool, String>>>,
-    network_queued: Option<(ProxyConfig, PasswordChange)>,
     state: SettingsState,
     storage_events: StorageEvents,
     /// Shared with the jobs that run Test, so a slow endpoint never blocks the UI.
@@ -193,7 +188,7 @@ impl SettingsHost {
         let ai_prefs = self.ai_prefs.clone().unwrap_or_default();
         let network_config = store.proxy_config_cached();
         let proxy_status = proxy::status();
-        self.collect_network(ctx);
+        self.collect_network();
         let input = SettingsInput {
             notifications,
             health,
@@ -279,7 +274,8 @@ impl SettingsHost {
         out
     }
 
-    /// Saves the proxy setting and applies it on a worker. A failure to save is said on the page.
+    /// Saves the proxy setting and hands it to the proxy worker, which applies it whether or not
+    /// this window stays open. A failure to save is said on the page.
     fn apply_network(&mut self, action: NetworkAction, store: &Store, ctx: &egui::Context) {
         let NetworkAction::Save { config, password } = action;
         if let Err(error) = config.save(store) {
@@ -288,53 +284,27 @@ impl SettingsHost {
             )));
             return;
         }
-        // A password typed earlier and not yet applied must survive a later save that keeps it.
-        let password = match (self.network_queued.take(), password) {
-            (Some((_, earlier)), PasswordChange::Keep) => earlier,
-            (_, password) => password,
-        };
-        self.network_queued = Some((config, password));
-        self.start_network(ctx);
+        self.state.network.status = None;
+        let repaint = ctx.clone();
+        proxy::submit(
+            config,
+            password,
+            Arc::new(move || repaint.request_repaint()),
+        );
     }
 
-    fn start_network(&mut self, ctx: &egui::Context) {
-        if self.network_job.is_some() {
-            return;
-        }
-        let Some((config, password)) = self.network_queued.take() else {
+    /// Shows what the proxy worker has to say, which waits here while the window is closed.
+    fn collect_network(&mut self) {
+        let Some(report) = proxy::take_report() else {
             return;
         };
-        self.network_job = Some(work_queue::SNAPSHOTS.start(Some(ctx), move || {
-            let passwords = ProxyPasswordStore::shared();
-            let result = match &password {
-                PasswordChange::Keep => Ok(false),
-                PasswordChange::Set(password) => passwords.save(password).map(|()| true),
-                PasswordChange::Remove => passwords.remove().map(|()| false),
-            };
-            let password = config.needs_password().then(|| passwords.read()).flatten();
-            proxy::apply(config, password);
-            result.map_err(|error| error.0)
-        }));
-    }
-
-    /// Takes the answer of the proxy worker, and starts the save that waited for it.
-    fn collect_network(&mut self, ctx: &egui::Context) {
-        let Some(job) = &mut self.network_job else {
-            return;
-        };
-        let lost = || Err("The proxy could not be applied.".to_owned());
-        let Some(result) = job.poll_or(lost) else {
-            return;
-        };
-        self.network_job = None;
-        self.state.network.status = match result {
-            Ok(true) => Some(StatusMessage::ok(crate::platform::saved_securely())),
-            Ok(false) => None,
-            Err(error) => Some(StatusMessage::error(format!(
-                "The password could not be saved for later ({error}). It works until you quit DegenView."
-            ))),
-        };
-        self.start_network(ctx);
+        self.state.network.status = Some(match report {
+            ApplyReport::PasswordSaved => StatusMessage::ok(crate::platform::saved_securely()),
+            ApplyReport::PasswordNotKept(error) => StatusMessage::error(format!(
+                "The password could not be saved for later ({}). It works until you quit DegenView.",
+                error.0
+            )),
+        });
     }
 
     /// Records the results of finished tests, and keeps the window repainting while any are

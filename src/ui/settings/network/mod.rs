@@ -4,21 +4,15 @@
 //! (what may be saved, what the status line says) is a plain method tested without a window.
 
 use crate::service::keychain::proxy_password::ProxyPasswordStore;
-use crate::service::net::proxy::{Active, Protocol, ProxyConfig, ProxyMode, Source, Status};
+use crate::service::net::proxy::{
+    Active, PasswordChange, Protocol, ProxyConfig, ProxyMode, Source, Status,
+};
 use crate::ui::icons::Icon;
 use crate::ui::kit::{Autosave, Tone, destructive_button, field};
 use crate::ui::settings::card::StatusMessage;
 use crate::ui::settings::window::{card, section, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
-
-/// What the proxy's password is to become.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PasswordChange {
-    Keep,
-    Set(String),
-    Remove,
-}
 
 /// What the page asks the host to do.
 #[derive(Clone, Debug, PartialEq)]

@@ -27,7 +27,7 @@ fn nothing() -> Option<SystemProxy> {
     None
 }
 
-fn manual(host: &str, port: Option<u16>) -> ProxyConfig {
+pub(super) fn manual(host: &str, port: Option<u16>) -> ProxyConfig {
     ProxyConfig {
         mode: ProxyMode::Manual,
         host: host.to_owned(),

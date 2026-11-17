@@ -98,9 +98,12 @@ registry call (`os/registry.rs`) is `cfg(windows)`.
   it dialled under (`Route`), `Health::new` keeps it, and `Health::read` checks it once a second
   and fails with "the proxy setting changed", which the feed loops already answer by reconnecting
   after their backoff.
-- The Settings host saves the setting on the frame (cheap), then applies it on a worker
-  (`SNAPSHOTS` queue; reading the system proxy and the Keychain block), one at a time so saves end
-  in order.
+- The Settings host saves the setting on the frame (cheap), then hands it to `proxy::submit`
+  (`proxy/applier.rs`). A worker on the `SNAPSHOTS` queue applies it (reading the system proxy and
+  the Keychain block): one drain loop, the latest setting wins, and a save that keeps the password
+  does not undo an earlier change to it. The queue is owned by the service, not the host, so a
+  save made just before the window closes still takes effect. What the page should say (a password
+  the storage refused) waits in `proxy::take_report` until the window is next drawn.
 
 ## Not covered
 

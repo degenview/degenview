@@ -4,6 +4,7 @@
 //! process and rebuilds the HTTP agents when it changes, and [`tunnel`] carries the WebSocket
 //! live feeds through the same proxy. See `docs/network-proxy.md`.
 
+mod applier;
 mod bypass;
 mod config;
 mod current;
@@ -16,6 +17,7 @@ mod tests;
 #[cfg(test)]
 pub(crate) use tests::AppliedProxy;
 
+pub use applier::{ApplyReport, PasswordChange, submit, take_report};
 pub use config::{Protocol, ProxyConfig, ProxyMode};
 pub use current::{Active, Status, apply, config_builder_for, follow, init, status};
 pub(in crate::service) use current::{generation, host_of, refresh_if_stale, route, snapshot};
