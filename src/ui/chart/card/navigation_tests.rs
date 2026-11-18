@@ -1077,6 +1077,36 @@ fn strokes(rig: &Rig) -> Vec<usize> {
         .collect()
 }
 
+/// How far (ms of chart time) the single stroke on the card reaches from where it began.
+fn stroke_reach(rig: &Rig) -> i64 {
+    use crate::model::cursor::demo::MarkShape;
+    match &rig.card.demo.marks()[0].shape {
+        MarkShape::Stroke(points) => {
+            points.last().expect("a point").time_ms - points.first().expect("a point").time_ms
+        }
+        MarkShape::Dot(_) => 0,
+    }
+}
+
+#[test]
+fn a_quick_stroke_reaches_where_the_button_was_let_go() {
+    let mut rig = demonstrating();
+    let from = rig.in_plot();
+    let far = from + Vec2::new(150.0, 0.0);
+    // The press, one move past the drag threshold, then the last of the move arrives with the
+    // release in one frame: the stroke must take that position, not stop at the move before it.
+    rig.press(from);
+    rig.frame(vec![egui::Event::PointerMoved(from + Vec2::new(12.0, 0.0))]);
+    rig.frame(vec![egui::Event::PointerMoved(far), rig.button(far, false)]);
+    let wanted = (130.0 / rig.slot_width()) as i64 * HOUR;
+    assert!(
+        stroke_reach(&rig) >= wanted,
+        "the stroke reaches {} ms, the hand went {wanted}+ ms",
+        stroke_reach(&rig)
+    );
+    assert!(!rig.card.demonstration_claims_drag(), "and it is finished");
+}
+
 #[test]
 fn a_drag_under_demonstration_draws_a_stroke_and_never_pans() {
     let mut rig = demonstrating();

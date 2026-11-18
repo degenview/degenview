@@ -76,7 +76,9 @@ layer's pointer in place of selecting, editing and drawing:
 chart, as TradingView's help describes it: **Alt (Option) + click** puts a dot, **press and drag**
 draws freehand, and what was drawn **fades away after a few seconds**.
 
-- A stroke stays whole while the button is down; once finished it holds 2 s and fades over 1 s
+- A stroke takes the pointer's last position on the frame the button is let go (that frame can carry
+  the end of the move), so a quick stroke reaches where the hand stopped. It stays whole while the
+  button is down; once finished it holds 2 s and fades over 1 s
   (**ours**: TradingView says only "a few seconds"). The fade follows the clock (`input.time`), not
   the frames; frames are requested every 16 ms only while a stroke is drawn or fading, and one at the
   end of the hold otherwise, so an idle chart costs nothing. At most 48 marks, 4096 points a stroke.
