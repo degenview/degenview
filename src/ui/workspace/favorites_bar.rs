@@ -252,8 +252,13 @@ fn bar_body(
                 .on_hover_cursor(CursorIcon::PointingHand)
                 .on_hover_text(tooltip(tool));
         }
-        let response = crate::ui::accessibility::label(response, tool.label());
         let active = input.active_tool == tool;
+        let response = crate::ui::accessibility::selected_as(
+            response,
+            egui::WidgetType::Button,
+            tool.label(),
+            active,
+        );
         if active {
             ui.painter()
                 .rect_filled(rect, 6.0, theme::selected_tint(true));
@@ -720,6 +725,33 @@ mod tests {
         let (took, chart_saw) = escape_frame(&mut rig, &input);
         assert!(!took);
         assert!(chart_saw, "Escape was taken with no menu to close");
+    }
+
+    #[test]
+    fn the_armed_tool_is_told_to_a_screen_reader() {
+        use crate::ui::accessibility::AccessNodes;
+        use egui::accesskit::Toggled;
+        let prefs = BarPrefs::default();
+        let input = input(prefs, Tool::Highlighter);
+        let mut rig = Rig::new();
+        let mut nodes = AccessNodes::start(&rig.ctx);
+        for _ in 0..3 {
+            rig.time += 0.1;
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 700.0))),
+                time: Some(rig.time),
+                ..Default::default()
+            };
+            let output = rig.ctx.run_ui(raw, |ui| {
+                show(ui.ctx(), &input);
+            });
+            nodes.absorb(output);
+        }
+        let toggled = |label: &str| nodes.find(label).expect(label).toggled();
+        assert_eq!(toggled("Brush"), Some(Toggled::False));
+        assert_eq!(toggled("Highlighter"), Some(Toggled::True));
+        assert_eq!(toggled("Trend line"), Some(Toggled::False));
+        assert_eq!(toggled("Move favorites toolbar"), None);
     }
 
     #[test]

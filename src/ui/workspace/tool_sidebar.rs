@@ -794,10 +794,11 @@ fn menu_row(
         } else {
             "Add to favorites"
         });
-    let star = crate::ui::accessibility::label_as(
+    let star = crate::ui::accessibility::selected_as(
         star,
         egui::WidgetType::Checkbox,
         format!("Favorite {}", tool.label()),
+        favorite,
     );
     let highlighted = response.hovered() || star.hovered() || response.has_focus();
     let painter = ui.painter();
@@ -1644,6 +1645,72 @@ mod tests {
                 assert!(open, "the menu closed on the star of {tool:?}");
             }
         }
+    }
+
+    /// The stars of Brush and Highlighter as a screen reader gets them with the Shapes menu open.
+    fn star_states(
+        starred: Vec<Tool>,
+    ) -> (
+        Option<egui::accesskit::Toggled>,
+        Option<egui::accesskit::Toggled>,
+    ) {
+        use crate::ui::accessibility::AccessNodes;
+        let ctx = egui::Context::default();
+        let mut nodes = AccessNodes::start(&ctx);
+        let input = ToolSidebarInput {
+            favorites: Arc::new(starred),
+            ..state()
+        };
+        let (mut time, size) = (0.0, vec2(900.0, 1100.0));
+        let mut step = |events: Vec<egui::Event>| {
+            time += 0.1;
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+                time: Some(time),
+                events,
+                ..Default::default()
+            };
+            let output = ctx.run_ui(raw, |ui| {
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(Rect::from_min_size(Pos2::ZERO, vec2(WIDTH, size.y))),
+                    |ui| {
+                        show(ui, &input);
+                    },
+                );
+            });
+            nodes.absorb(output);
+        };
+        let button = |pressed| egui::Event::PointerButton {
+            pos: CORNER,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for _ in 0..3 {
+            step(Vec::new());
+        }
+        step(vec![egui::Event::PointerMoved(CORNER)]);
+        step(vec![button(true)]);
+        step(vec![button(false)]);
+        for _ in 0..4 {
+            step(Vec::new());
+        }
+        let toggled = |label: &str| nodes.find(label).expect(label).toggled();
+        (toggled("Favorite Brush"), toggled("Favorite Highlighter"))
+    }
+
+    #[test]
+    fn a_star_tells_a_screen_reader_whether_the_tool_is_a_favorite() {
+        use egui::accesskit::Toggled;
+        assert_eq!(
+            star_states(vec![Tool::Brush]),
+            (Some(Toggled::True), Some(Toggled::False))
+        );
+        assert_eq!(
+            star_states(vec![Tool::Highlighter]),
+            (Some(Toggled::False), Some(Toggled::True))
+        );
     }
 
     #[test]
