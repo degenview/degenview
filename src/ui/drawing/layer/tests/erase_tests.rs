@@ -314,3 +314,111 @@ fn a_move_across_the_whole_plot_never_skips_a_thin_line() {
     rig.release(to);
     assert!(rig.drawings.is_empty());
 }
+
+/// A press, a button release and a move are events of one frame when the window delivers them
+/// together: a tap, a fast click or a flick.
+fn down(rig: &Rig, at: Pos2) -> Event {
+    rig.button(at, true, PointerButton::Primary)
+}
+
+fn up(rig: &Rig, at: Pos2) -> Event {
+    rig.button(at, false, PointerButton::Primary)
+}
+
+/// A rig with the Eraser and one horizontal line, and a point above it and one below it.
+fn a_thin_line() -> (Rig, Pos2, Pos2) {
+    let mut rig = Rig::new();
+    rig.place(Tool::HorizontalLine);
+    rig.tool = Tool::Cursor;
+    let at = rig.body(rig.last().id());
+    rig.selected.clear();
+    rig.erase = true;
+    rig.settle();
+    (rig, pos2(at.x, at.y - 120.0), pos2(at.x, at.y + 120.0))
+}
+
+#[test]
+fn a_click_whose_press_and_release_share_a_frame_still_erases() {
+    let (mut rig, _) = erasing();
+    rig.selected.clear();
+    let steps = rig.undo_steps;
+    let at = inside(0.0);
+    let events = vec![Event::PointerMoved(at), down(&rig, at), up(&rig, at)];
+    rig.frame(events);
+    assert!(rig.drawings.is_empty(), "the click was lost");
+    assert_eq!(rig.undo_steps, steps + 1, "one undo step");
+}
+
+#[test]
+fn every_kind_of_drawing_is_erased_by_a_click_in_one_frame() {
+    for tool in Tool::GROUPED {
+        let mut rig = Rig::new();
+        rig.place(tool);
+        let id = rig.last().id();
+        rig.tool = Tool::Cursor;
+        rig.selected.clear();
+        let at = rig.body(id);
+        rig.erase = true;
+        rig.settle();
+        let events = vec![Event::PointerMoved(at), down(&rig, at), up(&rig, at)];
+        rig.frame(events);
+        assert!(rig.drawings.is_empty(), "{tool:?} was not erased at {at:?}");
+    }
+}
+
+#[test]
+fn a_move_that_arrives_with_the_press_is_swept_from_the_press() {
+    let (mut rig, from, to) = a_thin_line();
+    // Press above the line and move below it in the same frame, the button still down.
+    let events = vec![
+        Event::PointerMoved(from),
+        down(&rig, from),
+        Event::PointerMoved(to),
+    ];
+    rig.frame(events);
+    assert!(
+        rig.layer.is_marked_for_erasing(rig.drawings[0].id()),
+        "what lies between the press and the pointer was not tested"
+    );
+    rig.release(to);
+    assert!(rig.drawings.is_empty());
+}
+
+#[test]
+fn a_whole_flick_in_one_frame_erases_what_it_crossed() {
+    let (mut rig, from, to) = a_thin_line();
+    let steps = rig.undo_steps;
+    let events = vec![
+        Event::PointerMoved(from),
+        down(&rig, from),
+        Event::PointerMoved(to),
+        up(&rig, to),
+    ];
+    rig.frame(events);
+    assert!(rig.drawings.is_empty(), "the flick crossed the line");
+    assert_eq!(rig.undo_steps, steps + 1);
+}
+
+#[test]
+fn a_one_frame_gesture_on_empty_space_or_starting_off_the_plot_erases_nothing() {
+    let (mut rig, _) = erasing();
+    rig.selected.clear();
+    let empty = pos2(900.0, 40.0);
+    let events = vec![
+        Event::PointerMoved(empty),
+        down(&rig, empty),
+        up(&rig, empty),
+    ];
+    rig.frame(events);
+    assert_eq!(rig.drawings.len(), 1, "empty space");
+    // The press is outside the plot (on the axis), the release inside: not the plot's gesture.
+    let axis = pos2(1100.0, 230.0);
+    let events = vec![
+        Event::PointerMoved(axis),
+        down(&rig, axis),
+        Event::PointerMoved(inside(0.0)),
+        up(&rig, inside(0.0)),
+    ];
+    rig.frame(events);
+    assert_eq!(rig.drawings.len(), 1, "a press that began off the plot");
+}
