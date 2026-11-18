@@ -677,7 +677,7 @@ impl DrawingLayer {
         }
         if frame.erases() {
             self.update_eraser(ui, response, proj, frame, pointer, unseen);
-            self.set_cursor(ui, pointer, frame, plot);
+            self.set_cursor(ui, pointer.filter(|_| response.hovered()), frame, plot);
             return self.claims_drag();
         }
         self.sweep = None;
@@ -759,7 +759,7 @@ impl DrawingLayer {
             draft.rubber = Self::anchor_for(draft.tool, point, modifiers, frame, proj);
         }
 
-        self.set_cursor(ui, pointer, frame, plot);
+        self.set_cursor(ui, pointer.filter(|_| response.hovered()), frame, plot);
         self.claims_drag()
     }
 
@@ -1349,6 +1349,8 @@ impl DrawingLayer {
         }
     }
 
+    /// `pointer` is where the pointer is over the plot itself: `None` while something floating
+    /// over the chart (a menu) covers it, so the chart does not claim the cursor over it.
     fn set_cursor(&self, ui: &egui::Ui, pointer: Option<Pos2>, frame: &DrawingFrame, plot: Rect) {
         let over_plot = pointer.is_some_and(|point| plot.contains(point));
         let icon = match &self.gesture {
