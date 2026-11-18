@@ -1468,6 +1468,51 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_write_in_the_block_of_the_request_before_it_follows_the_series() {
+        assert_eq!(
+            last_plotted(
+                "level = 0.0\nx = 0.0\nif close > 0\n    level := close\n    x := request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_name_an_expression_statement_declares_is_read_as_declared() {
+        assert_eq!(
+            last_plotted(
+                "level = close\nx = if close > 0\n    level = 20.0\n    request.security(\"ETHUSDT\", \"1\", level)\nelse\n    0.0"
+            ),
+            Some(20.0)
+        );
+    }
+
+    #[test]
+    fn a_variable_is_computed_as_it_stands_where_it_is_read() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", snapshot)";
+        // The later `level` fails on the requested series (ETHUSDT closes above 50).
+        assert_eq!(
+            last_plotted(&format!(
+                "arr = array.new_float()\nlevel = close\nsnapshot = level\nlevel := close > 50 ? array.get(arr, 5) : close\n{request}"
+            )),
+            Some(120.0)
+        );
+        // A `var` and a history read see what the previous bar wrote after them.
+        assert_eq!(
+            last_plotted(&format!(
+                "var level = 0.0\nsnapshot = level\nlevel := close\n{request}"
+            )),
+            Some(110.0)
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "level = close\nsnapshot = level[1]\nlevel := level + 1\n{request}"
+            )),
+            Some(111.0)
+        );
+    }
+
     /// Runs `source` on one chart bar that gets two live ticks, as the session does for a bar that
     /// has not closed, and returns what `read` makes of the session after each tick.
     fn after_each_tick<T>(source: &str, read: impl Fn(&Session) -> T) -> Vec<T> {

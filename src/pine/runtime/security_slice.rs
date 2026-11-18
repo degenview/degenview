@@ -2,10 +2,11 @@
 //!
 //! `request.security(sym, tf, longTrend)` does not read the chart's `longTrend`: TradingView runs
 //! the statements that compute it on the requested series. The session cannot run the whole script
-//! there (it would draw and trade), so at build time each request gets the *slice* of top-level
-//! statements written **before it** that declare or change a name the expression reads, directly or
-//! through other slice statements and the script's functions. The slice runs in the request's own
-//! state, in source order, before the expression.
+//! there (it would draw and trade), so at build time each request gets the *slice* of statements
+//! written **before it** that declare or change a name the expression reads, directly or through
+//! other slice statements and the script's functions. Those are the top-level statements before the
+//! request's own, and the statements before the request in the blocks around it. The slice runs in
+//! the request's own state, in source order, before the expression.
 //!
 //! A statement changes a name when it declares it, assigns it (`x := …`, `x.field := …`), or, for a
 //! collection or object, passes it to something that may fill it: `array.push(samples, x)`,
@@ -13,15 +14,28 @@
 //! receives it as (a function that only reads its argument is not replayed). Calls of the script's
 //! functions follow the overload the type checker resolved (`Expression::Call::target`).
 //!
+//! Position matters for a name that is rebound (declared, `x := …`): a variable is computed as it
+//! stands where it is read, so what is rebound after the statement that reads it is left out. Not so
+//! for a name that is changed through its value (a collection filled later is the same collection),
+//! for a `var` or `varip` (a read sees what the previous bar wrote after it) or for one read as
+//! `level[1]`.
+//!
 //! Reads and writes are found scope-aware: a block's own `level` is not the global of that name, an
-//! alias of a collection (`alias = samples`, in a block or a helper too) is the collection, a
-//! collection argument is found by its label (`id`) or its position, and a function that changes a
-//! global collection (not only one it is handed) writes it where it is called. Aliases are per block
-//! (two blocks' `alias` are different variables), a builtin namespace's functions (`ta.sma`) are never
-//! the script's `sma`, and a method the type checker resolved to the script's own definition has that
-//! definition's effects, not the builtin ones of its name. Known limits:
-//! aliasing through a function's return value or a container, and handles other than collections and
-//! objects, are not followed.
+//! alias of a collection (`alias = samples`, in a block or a helper too, and one an inner block
+//! reassigns) is the collection, a collection argument is found by its label (`id`) or its
+//! position, and a function that changes a global collection (not only one it is handed) writes it
+//! where it is called. Aliases are per block (two blocks' `alias` are different variables), a
+//! builtin namespace's functions (`ta.sma`) are never the script's `sma`, and a method the type
+//! checker resolved to the script's own definition has that definition's effects, not the builtin
+//! ones of its name. Known limits: aliasing through a function's return value or a container, and
+//! handles other than collections and objects, are not followed.
+//!
+//! A statement in a block around the request is replayed as written, whatever the block's condition
+//! says: the request was reached, so the block ran. It can only be replayed when it declares nothing
+//! (that would define a global) and reads no name the blocks declared (the slice has none), and when
+//! no loop or `once` runs it more or fewer times than once per bar. A statement that qualifies but
+//! cannot be replayed leaves the request without a slice: the expression reads the chart's values as
+//! it did before slices.
 //!
 //! A name the request's own blocks declare before it (`level = 20.0` inside the `if` the request is
 //! in, a loop variable) is not the global of that name: the slice does not resolve it, so the
@@ -31,7 +45,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::pine::compiler::is_builtin_namespace;
-use crate::pine::syntax::ast::{Argument, Expression, Parameter, Statement};
+use crate::pine::syntax::ast::{Argument, DeclarationMode, Expression, Parameter, Statement};
 use crate::pine::syntax::traversal;
 
 /// The request functions whose third argument is the expression.
@@ -151,16 +165,13 @@ pub(crate) fn key(expression: &Expression) -> ExpressionKey {
 /// (inside one, a parameter may share a name with a global), for the requests that read a name the
 /// script declares at its top level.
 pub(crate) fn build(statements: &[Statement]) -> Slices {
-    let declared = declared_names(statements);
-    if declared.is_empty() {
+    let script = Script::new(statements);
+    if script.declared.is_empty() {
         return Slices::new();
     }
-    let references = reference_names(statements);
-    let aliases = aliases(statements);
-    let functions = Functions::new(statements);
     let facts: Vec<Facts> = statements
         .iter()
-        .map(|statement| Facts::of(statement, &declared, &references, &aliases, &functions))
+        .map(|statement| Facts::of(statement, &Scope::new(), false, &script))
         .collect();
 
     let mut slices = Slices::new();
@@ -175,9 +186,8 @@ pub(crate) fn build(statements: &[Statement]) -> Slices {
                     return;
                 };
                 let key = key(expression);
-                let locals =
-                    visible_locals(std::slice::from_ref(statement), key, false).unwrap_or_default();
-                let slice = slice_for(expression, index, statements, &facts, &functions, &locals);
+                let location = locate(statement, key).unwrap_or_default();
+                let slice = slice_for(expression, &location, index, statements, &facts, &script);
                 if !slice.is_empty() {
                     slices.insert(key, Arc::new(slice));
                 }
@@ -185,6 +195,29 @@ pub(crate) fn build(statements: &[Statement]) -> Slices {
         );
     }
     slices
+}
+
+/// What the script declares at its top level, as `build` needs it.
+struct Script<'a> {
+    declared: HashSet<String>,
+    /// The declared names known to hold a collection or an object.
+    references: HashSet<String>,
+    aliases: Aliases,
+    /// The `var` and `varip` names: a read of one sees what the previous bar wrote after it, too.
+    persistent: HashSet<String>,
+    functions: Functions<'a>,
+}
+
+impl<'a> Script<'a> {
+    fn new(statements: &'a [Statement]) -> Self {
+        Self {
+            declared: declared_names(statements),
+            references: reference_names(statements),
+            aliases: aliases(statements),
+            persistent: persistent_names(statements),
+            functions: Functions::new(statements),
+        }
+    }
 }
 
 /// The script's top-level functions and methods. A call's `target` is the position among them.
@@ -278,6 +311,24 @@ impl<'a> Functions<'a> {
         }
     }
 
+    /// `reads` and what the bodies of the functions it reaches read, however deep the calls go.
+    fn expanded(&self, mut reads: Reads) -> Reads {
+        let mut seen = HashSet::new();
+        loop {
+            let mut pending: Vec<usize> = reads.targets.iter().copied().collect();
+            for name in &reads.names {
+                pending.extend_from_slice(self.named(name));
+            }
+            pending.retain(|id| seen.insert(*id));
+            if pending.is_empty() {
+                return reads;
+            }
+            for id in pending {
+                reads.extend(&self.reads[id]);
+            }
+        }
+    }
+
     /// Every function or method called `name`: all overloads, for a call nothing resolved.
     fn named(&self, name: &str) -> &[usize] {
         self.by_name.get(name).map_or(&[], Vec::as_slice)
@@ -299,98 +350,190 @@ impl<'a> Functions<'a> {
 struct Reads {
     names: HashSet<String>,
     targets: HashSet<usize>,
+    /// The names among `names` that are read through the history operator (`level[1]`).
+    history: HashSet<String>,
 }
 
 impl Reads {
     fn extend(&mut self, other: &Reads) {
         self.names.extend(other.names.iter().cloned());
         self.targets.extend(other.targets.iter().copied());
+        self.history.extend(other.history.iter().cloned());
     }
 }
 
-/// What one top-level statement writes (of the names the script declares) and reads.
+/// What one statement writes (of the names the script declares) and reads.
+#[derive(Default)]
 struct Facts {
-    writes: HashSet<String>,
+    /// Names it rebinds: declared at the top level, or reassigned (`x := …`).
+    assigned: HashSet<String>,
+    /// Names it changes through the value: a collection filled, a field assigned, an argument or a
+    /// global a function changes. A collection changed through one name is changed for every name
+    /// that aliases it.
+    mutated: HashSet<String>,
+    /// What it reads, with the functions it calls expanded.
     reads: Reads,
+    /// Whether it reads a name that a block around it declared, which a slice does not have.
+    reads_local: bool,
     /// Whether it calls a `request.*` function. Such a statement is never part of a slice: run
     /// inside another request it would nest requests, so a name it computes keeps the chart's value.
     requests: bool,
 }
 
 impl Facts {
-    fn of(
-        statement: &Statement,
-        declared: &HashSet<String>,
-        references: &HashSet<String>,
-        aliases: &Aliases,
-        functions: &Functions,
-    ) -> Self {
-        let mut writes = HashSet::new();
+    /// The facts of `statement`, which sits in a block that has declared `scope` so far (`nested`
+    /// is false for a top-level statement).
+    fn of(statement: &Statement, scope: &Scope, nested: bool, script: &Script) -> Self {
+        let mut facts = Self::default();
+        if matches!(statement, Statement::Function { .. }) {
+            return facts;
+        }
+        let walker = Walker {
+            references: &script.references,
+            functions: &script.functions,
+        };
+        let mut effects = Effects::default();
+        walker.statement(statement, scope, nested, &mut effects);
+        facts.assigned = effects.assigned;
+        for name in effects.mutated {
+            facts
+                .mutated
+                .extend(script.aliases.get(&name).into_iter().flatten().cloned());
+            facts.mutated.insert(name);
+        }
+        facts.assigned.retain(|name| script.declared.contains(name));
+        facts.mutated.retain(|name| script.declared.contains(name));
+
+        let locals: HashSet<String> = scope.keys().cloned().collect();
         let mut reads = Reads::default();
-        let mut requests = false;
-        if !matches!(statement, Statement::Function { .. }) {
-            let walker = Walker {
-                references,
-                functions,
-            };
-            let mut effects = Effects::default();
-            walker.statement(statement, &Scope::new(), false, &mut effects);
-            writes = effects.assigned;
-            // A collection changed through one name is changed for every name that aliases it.
-            for name in effects.mutated {
-                writes.extend(aliases.get(&name).into_iter().flatten().cloned());
-                writes.insert(name);
-            }
-            writes.retain(|name| declared.contains(name));
+        collect_reads(std::slice::from_ref(statement), &locals, nested, &mut reads);
+        facts.reads = script.functions.expanded(reads);
+        if !locals.is_empty() {
+            let mut all = Reads::default();
             collect_reads(
                 std::slice::from_ref(statement),
                 &HashSet::new(),
-                false,
-                &mut reads,
+                nested,
+                &mut all,
             );
-            traversal::for_each_call(std::slice::from_ref(statement), &mut |name, _| {
-                requests |= name.starts_with("request.");
-            });
+            facts.reads_local = !all.names.is_disjoint(&locals);
         }
-        Self {
-            writes,
-            reads,
-            requests,
-        }
+        traversal::for_each_call(std::slice::from_ref(statement), &mut |name, _| {
+            facts.requests |= name.starts_with("request.");
+        });
+        facts
     }
+
+    /// Whether it writes a name the slice needs: it rebinds one that is read after it (`limits` has
+    /// the position a name's readers are at), or changes one in any way, since a collection
+    /// filled later is the same collection.
+    fn writes_needed(&self, position: usize, limits: &HashMap<String, usize>) -> bool {
+        self.assigned
+            .iter()
+            .any(|name| limits.get(name).is_some_and(|limit| position < *limit))
+            || self.mutated.iter().any(|name| limits.contains_key(name))
+    }
+}
+
+/// A statement that may be part of a slice, in source order: the top-level ones before the request,
+/// then those in the blocks around it.
+struct Unit<'a> {
+    statement: &'a Statement,
+    facts: &'a Facts,
+    /// Whether the slice can run it on its own, once per bar.
+    replayable: bool,
 }
 
 fn slice_for(
     expression: &Expression,
+    location: &Location,
     own_statement: usize,
     statements: &[Statement],
     facts: &[Facts],
-    functions: &Functions,
-    locals: &HashSet<String>,
+    script: &Script,
 ) -> Vec<Statement> {
     let mut needed = Reads::default();
     read_names(expression, &HashSet::new(), &mut needed);
     // A name the request's own blocks declare is not the global of that name.
-    let local_reads: HashSet<String> = needed.names.intersection(locals).cloned().collect();
+    let locals: HashSet<String> = location.scope.keys().cloned().collect();
+    let local_reads: HashSet<String> = needed.names.intersection(&locals).cloned().collect();
     for name in &local_reads {
         needed.names.remove(name);
     }
-    let mut expanded = HashSet::new();
-    expand_functions(&mut needed, &mut expanded, functions);
+    let needed = script.functions.expanded(needed);
 
     // Only what is written before the request: TradingView computes a variable as it stands where
     // the request is, and the request's own statement would run the request again from inside itself.
-    let mut included = vec![false; own_statement];
+    let preceding_facts: Vec<Facts> = location
+        .preceding
+        .iter()
+        .map(|before| Facts::of(before.statement, &before.scope, true, script))
+        .collect();
+    let units: Vec<Unit> = statements
+        .iter()
+        .zip(facts)
+        .take(own_statement)
+        .map(|(statement, facts)| Unit {
+            statement,
+            facts,
+            replayable: true,
+        })
+        .chain(
+            location
+                .preceding
+                .iter()
+                .zip(&preceding_facts)
+                .map(|(before, facts)| Unit {
+                    statement: before.statement,
+                    facts,
+                    // A declaration there would define a global in the slice, and a local it reads is
+                    // not defined there.
+                    replayable: before.replayable
+                        && !facts.reads_local
+                        && !matches!(
+                            before.statement,
+                            Statement::Declaration { .. } | Statement::TupleDeclaration { .. }
+                        ),
+                }),
+        )
+        .collect();
+
+    // For each name the slice needs, the position its readers are at: only what is rebound before
+    // that matters, except where a read also sees a later write (a `var`, or a history read, sees
+    // the previous bar's).
+    let end = units.len();
+    let mut limits: HashMap<String, usize> = needed
+        .names
+        .iter()
+        .map(|name| (name.clone(), end))
+        .collect();
+    let mut included = vec![false; end];
     loop {
         let mut changed = false;
-        for (index, fact) in facts.iter().enumerate().take(own_statement) {
-            if included[index] || fact.requests || fact.writes.is_disjoint(&needed.names) {
+        for (position, unit) in units.iter().enumerate() {
+            if included[position]
+                || unit.facts.requests
+                || !unit.facts.writes_needed(position, &limits)
+            {
                 continue;
             }
-            included[index] = true;
+            // The slice cannot run it, so it cannot compute what the expression needs: the
+            // expression reads the chart's values as it did before slices.
+            if !unit.replayable {
+                return Vec::new();
+            }
+            included[position] = true;
             changed = true;
-            needed.extend(&fact.reads);
-            expand_functions(&mut needed, &mut expanded, functions);
+            let reads = &unit.facts.reads;
+            for name in &reads.names {
+                let limit = if reads.history.contains(name) || script.persistent.contains(name) {
+                    end
+                } else {
+                    position
+                };
+                let slot = limits.entry(name.clone()).or_insert(limit);
+                *slot = (*slot).max(limit);
+            }
         }
         if !changed {
             break;
@@ -398,74 +541,121 @@ fn slice_for(
     }
     // The slice would define a global of that name, which the expression would read in place of
     // the local: no slice, and the request reads the chart's value as before.
-    let shadows = included
-        .iter()
-        .zip(facts)
-        .any(|(included, fact)| *included && !fact.writes.is_disjoint(&local_reads));
+    let shadows = included.iter().zip(&units).any(|(included, unit)| {
+        *included
+            && (!unit.facts.assigned.is_disjoint(&local_reads)
+                || !unit.facts.mutated.is_disjoint(&local_reads))
+    });
     if shadows {
         return Vec::new();
     }
-    statements
+    units
         .iter()
         .zip(&included)
         .filter(|(_, included)| **included)
-        .map(|(statement, _)| statement.clone())
+        .map(|(unit, _)| unit.statement.clone())
         .collect()
 }
 
-/// The names the blocks around the expression `key` declare before it, loop variables included, in
-/// `block` (`nested` is false for the top level, whose declarations are the globals). None when
-/// `key` is not inside `block`.
-fn visible_locals(
-    block: &[Statement],
-    key: ExpressionKey,
-    nested: bool,
-) -> Option<HashSet<String>> {
-    let mut locals = HashSet::new();
-    for statement in block {
-        if traversal::expressions(statement)
-            .into_iter()
-            .any(|expression| holds(expression, key))
-        {
-            return Some(locals);
-        }
-        for inner in traversal::nested_blocks(statement) {
-            if let Some(mut found) = visible_locals(inner, key, true) {
-                found.extend(locals);
-                declared_by_loop(statement, &mut found);
-                return Some(found);
-            }
-        }
-        if nested {
-            declared_by(statement, &mut locals);
-        }
-    }
-    None
+/// Where a request sits in the blocks around it.
+#[derive(Default)]
+struct Location<'a> {
+    /// The names the blocks around the request have declared before it, loop variables included.
+    scope: Scope,
+    /// The statements written before the request in those blocks, outermost block first.
+    preceding: Vec<Preceding<'a>>,
 }
 
-/// Whether the expression, or one inside it, is the one at `key`.
-fn holds(expression: &Expression, key: ExpressionKey) -> bool {
+struct Preceding<'a> {
+    statement: &'a Statement,
+    /// The names its block had declared before it.
+    scope: Scope,
+    /// Whether it runs once per bar: false inside a loop or a `once` block, which run it for each
+    /// iteration or only once.
+    replayable: bool,
+}
+
+/// The place of the expression at `key` in `statement`, a top-level statement. None when `key` is
+/// not inside it.
+fn locate(statement: &Statement, key: ExpressionKey) -> Option<Location<'_>> {
+    let mut location = Location::default();
+    locate_in_statement(statement, key, &Scope::new(), true, &mut location).then_some(location)
+}
+
+/// `scope` holds the names the blocks around `statement` have declared before it.
+fn locate_in_statement<'a>(
+    statement: &'a Statement,
+    key: ExpressionKey,
+    scope: &Scope,
+    replayable: bool,
+    out: &mut Location<'a>,
+) -> bool {
+    if traversal::expressions(statement)
+        .into_iter()
+        .any(|expression| locate_in_expression(expression, key, scope, replayable, out))
+    {
+        return true;
+    }
+    let replayable = replayable
+        && !matches!(
+            statement,
+            Statement::ForRange { .. }
+                | Statement::ForIn { .. }
+                | Statement::WhileLoop { .. }
+                | Statement::Once { .. }
+        );
+    traversal::nested_blocks(statement)
+        .into_iter()
+        .any(|block| {
+            let mut inner = scope.clone();
+            declare_loop_variables(statement, &mut inner);
+            locate_in_block(block, key, inner, replayable, out)
+        })
+}
+
+fn locate_in_block<'a>(
+    block: &'a [Statement],
+    key: ExpressionKey,
+    mut scope: Scope,
+    replayable: bool,
+    out: &mut Location<'a>,
+) -> bool {
+    let mut before = Vec::new();
+    for statement in block {
+        if locate_in_statement(statement, key, &scope, replayable, out) {
+            before.append(&mut out.preceding);
+            out.preceding = before;
+            return true;
+        }
+        before.push(Preceding {
+            statement,
+            scope: scope.clone(),
+            replayable,
+        });
+        declare(statement, &mut scope);
+    }
+    false
+}
+
+fn locate_in_expression<'a>(
+    expression: &'a Expression,
+    key: ExpressionKey,
+    scope: &Scope,
+    replayable: bool,
+    out: &mut Location<'a>,
+) -> bool {
     if self::key(expression) == key {
+        out.scope = scope.clone();
         return true;
     }
     if let Expression::Statement(statement, _) = expression
-        && statement_holds(statement, key)
+        && locate_in_statement(statement, key, scope, replayable, out)
     {
         return true;
     }
     traversal::children(expression)
         .into_iter()
-        .any(|child| holds(child, key))
-}
-
-fn statement_holds(statement: &Statement, key: ExpressionKey) -> bool {
-    traversal::expressions(statement)
-        .into_iter()
-        .any(|expression| holds(expression, key))
-        || traversal::nested_blocks(statement)
-            .into_iter()
-            .flatten()
-            .any(|inner| statement_holds(inner, key))
+        .any(|child| locate_in_expression(child, key, scope, replayable, out))
 }
 
 /// The names a statement declares in the block it is in.
@@ -506,6 +696,19 @@ fn declared_names(statements: &[Statement]) -> HashSet<String> {
         }
     }
     names
+}
+
+/// The names a script declares at its top level with `var` or `varip`.
+fn persistent_names(statements: &[Statement]) -> HashSet<String> {
+    statements
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::Declaration { name, mode, .. } if *mode != DeclarationMode::Ordinary => {
+                Some(name.clone())
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// The declared names known to hold a collection or an object: those declared from a constructor
@@ -977,6 +1180,13 @@ fn read_names(expression: &Expression, scope: &HashSet<String>, reads: &mut Read
                 reads.names.insert(name.clone());
             }
         },
+        Expression::History { base, .. } => {
+            if let Some(root) = root_name(base)
+                && !scope.contains(&root)
+            {
+                reads.history.insert(root);
+            }
+        }
         Expression::Statement(statement, _) => {
             collect_reads(std::slice::from_ref(statement.as_ref()), scope, true, reads);
         }
@@ -984,23 +1194,6 @@ fn read_names(expression: &Expression, scope: &HashSet<String>, reads: &mut Read
     }
     for child in traversal::children(expression) {
         read_names(child, scope, reads);
-    }
-}
-
-/// Adds what the bodies of the functions in `reads` read, however deep the calls go.
-fn expand_functions(reads: &mut Reads, expanded: &mut HashSet<usize>, functions: &Functions) {
-    loop {
-        let mut pending: Vec<usize> = reads.targets.iter().copied().collect();
-        for name in &reads.names {
-            pending.extend_from_slice(functions.named(name));
-        }
-        pending.retain(|id| expanded.insert(*id));
-        if pending.is_empty() {
-            return;
-        }
-        for id in pending {
-            reads.extend(&functions.reads[id]);
-        }
     }
 }
 
@@ -1358,5 +1551,97 @@ mod tests {
             "//@version=6\nindicator(\"T\")\nvar a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    alias = a\n    if close > 1\n        alias = b\n    alias.push(close)\nplot(request.security(syminfo.tickerid, \"D\", array.size(b)))",
         );
         assert_eq!(sizes, [1], "the block fills `a`, not `b`");
+    }
+
+    #[test]
+    fn a_write_in_the_block_of_the_request_before_it_is_part_of_the_slice() {
+        let request = "request.security(syminfo.tickerid, \"D\", level)";
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = 0.0\nvar float x = na\nif close > 0\n    level := close\n    x := {request}\nplot(x)"
+        ));
+        assert_eq!(
+            sizes,
+            [2],
+            "`level` and the reassignment before the request"
+        );
+        // After the request in the block, it is not what the request sees.
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = 0.0\nvar float x = na\nif close > 0\n    x := {request}\n    level := close\nplot(x)"
+        ));
+        assert_eq!(sizes, [1]);
+        // Nor is it when the request sits in the other branch.
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = 0.0\nvar float x = na\nif close > 0\n    level := close\nelse\n    x := {request}\nplot(x)"
+        ));
+        assert_eq!(sizes, [1]);
+    }
+
+    #[test]
+    fn a_name_an_expression_statement_declares_is_not_the_global() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nlevel = close\nx = if close > 0\n    level = 20.0\n    request.security(syminfo.tickerid, \"D\", level)\nelse\n    0.0\nplot(x)",
+        );
+        assert!(sizes.is_empty(), "{sizes:?}: the branch's own `level`");
+    }
+
+    #[test]
+    fn a_write_the_slice_cannot_replay_cancels_it() {
+        let request = "x := request.security(syminfo.tickerid, \"D\", level)";
+        // Run for each iteration, or only once, a block is not replayed as a statement of the slice.
+        for header in ["for i = 0 to 2", "while close < 0", "once"] {
+            let sizes = slice_sizes(&format!(
+                "//@version=6\nindicator(\"T\")\nlevel = 0.0\nvar float x = na\n{header}\n    level := close\n    {request}\nplot(x)"
+            ));
+            assert!(sizes.is_empty(), "{header}: {sizes:?}");
+        }
+        // One that writes nothing the request reads leaves the slice alone.
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = 0.0\nvar float x = na\nfor i = 0 to 2\n    {request}\nplot(x)"
+        ));
+        assert_eq!(sizes, [1]);
+        // A local it reads is not defined there.
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = 0.0\nvar float x = na\nif close > 0\n    double = close * 2\n    level := double\n    {request}\nplot(x)"
+        ));
+        assert!(sizes.is_empty(), "{sizes:?}");
+    }
+
+    #[test]
+    fn a_rebinding_after_the_reader_is_not_part_of_the_slice() {
+        let request = "plot(request.security(syminfo.tickerid, \"D\", snapshot))";
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = close\nsnapshot = level\nlevel := level + 1\n{request}"
+        ));
+        assert_eq!(
+            sizes,
+            [2],
+            "`level` and `snapshot`; not the change after it"
+        );
+        // A rebinding before the reader is.
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = close\nlevel := level + 1\nsnapshot = level\n{request}"
+        ));
+        assert_eq!(sizes, [3]);
+    }
+
+    #[test]
+    fn a_rebinding_after_a_reader_that_sees_the_previous_bar_is_part_of_the_slice() {
+        let request = "plot(request.security(syminfo.tickerid, \"D\", snapshot))";
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nvar level = 0.0\nsnapshot = level\nlevel := close\n{request}"
+        ));
+        assert_eq!(sizes, [3], "`var` keeps what the previous bar wrote");
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = close\nsnapshot = level[1]\nlevel := level + 1\n{request}"
+        ));
+        assert_eq!(sizes, [3], "`level[1]` is the previous bar's last value");
+    }
+
+    #[test]
+    fn a_change_to_a_collection_after_a_reader_is_part_of_the_slice() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nsamples = array.new_float()\nn = array.size(samples)\narray.push(samples, close)\nplot(request.security(syminfo.tickerid, \"D\", n))",
+        );
+        assert_eq!(sizes, [3], "the collection is the same one");
     }
 }
