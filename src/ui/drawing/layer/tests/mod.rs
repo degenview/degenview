@@ -68,6 +68,25 @@ const POINTS: [Pos2; 7] = [
 // MARK: Projection and editing
 
 #[test]
+fn an_armed_tool_shows_the_crosshair_over_the_plot_but_not_under_a_floating_panel() {
+    let mut rig = Rig::with_tool(Tool::TrendLine);
+    let (open, covered) = (pos2(700.0, 200.0), pos2(120.0, 200.0));
+    rig.move_to(open);
+    rig.settle();
+    assert_eq!(rig.cursor, egui::CursorIcon::Crosshair);
+
+    rig.cover = Some(Rect::from_min_size(pos2(60.0, 100.0), vec2(200.0, 200.0)));
+    rig.settle();
+    rig.move_to(covered);
+    rig.settle();
+    assert_ne!(rig.cursor, egui::CursorIcon::Crosshair, "the panel owns it");
+
+    rig.move_to(open);
+    rig.settle();
+    assert_eq!(rig.cursor, egui::CursorIcon::Crosshair, "beside the panel");
+}
+
+#[test]
 fn anchors_round_trip_through_the_screen() {
     let data = candles();
     for logarithmic in [false, true] {
@@ -309,6 +328,10 @@ struct Rig {
     place_now: bool,
     /// A picture to put in place of a drawing's.
     replace: Option<(u64, crate::model::annotation::image_content::ImageContent)>,
+    /// The cursor the last frame asked for.
+    cursor: egui::CursorIcon,
+    /// A floating panel over the chart, like a tool menu.
+    cover: Option<Rect>,
 }
 
 /// A picture to place, as the Image tool would have it once one is chosen.
@@ -364,6 +387,8 @@ impl Rig {
             pending: None,
             place_now: false,
             replace: None,
+            cursor: egui::CursorIcon::Default,
+            cover: None,
         };
         // egui hit-tests against the previous frame's widgets.
         rig.settle();
@@ -405,8 +430,14 @@ impl Rig {
             .with_pending_content(self.pending.clone())
             .with_picture_work(std::mem::take(&mut self.place_now), self.replace.take())
             .with_keys_blocked(self.keys_blocked);
-        let (layer, data, scale) = (&mut self.layer, &self.data, &self.scale);
+        let (layer, data, scale, cover) = (&mut self.layer, &self.data, &self.scale, self.cover);
         let mut output = self.ctx.run_ui(input, |ui| {
+            if let Some(cover) = cover {
+                egui::Area::new(egui::Id::new("cover"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(cover.min)
+                    .show(ui.ctx(), |ui| ui.allocate_rect(cover, Sense::click()));
+            }
             let response = ui.allocate_rect(PLOT, Sense::click_and_drag());
             let proj = projection(data, scale);
             layer.update(ui, &response, &proj, &mut frame);
@@ -414,6 +445,7 @@ impl Rig {
             layer.overlay(ui, &proj, &mut frame);
         });
         output.textures_delta.clear();
+        self.cursor = output.platform_output.cursor_icon;
         self.next_id = frame.next_id;
         if let Some(select) = frame.select.take() {
             self.selected = select;
