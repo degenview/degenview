@@ -291,6 +291,41 @@ fn bar_body(
             }
         });
     }
+    // Which menu is open, for the next frame's Escape to reach before the charts do.
+    let open = responses
+        .iter()
+        .map(egui::Popup::default_response_id)
+        .find(|popup| egui::Popup::is_id_open(ui.ctx(), *popup));
+    let slot = open_menu_slot(input.id);
+    ui.ctx().data_mut(|data| {
+        if let Some(popup) = open {
+            data.insert_temp(slot, popup);
+        } else {
+            data.remove::<Id>(slot);
+        }
+    });
+}
+
+/// Where the bar keeps the id of its open menu's popup, for `close_menu_on_escape`.
+fn open_menu_slot(bar: Id) -> Id {
+    bar.with("open-menu")
+}
+
+/// Closes the bar's open menu on Escape and spends the key, so that it does not also end a draft,
+/// disarm a tool or deselect a drawing behind the menu. egui's popup closes on any Escape without
+/// taking it, and the charts read the key before the bar is drawn: call this first in the frame,
+/// as the chart scale menu does (`scale_menu::close_on_escape`). Returns whether it took the key.
+pub fn close_menu_on_escape(ctx: &Context, bar: Id) -> bool {
+    let Some(popup) = ctx.data(|data| data.get_temp::<Id>(open_menu_slot(bar))) else {
+        return false;
+    };
+    if egui::Popup::is_id_open(ctx, popup)
+        && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        egui::Popup::close_id(ctx, popup);
+        return true;
+    }
+    false
 }
 
 const HIDE_LABEL: &str = "Hide favorites toolbar";
@@ -623,6 +658,68 @@ mod tests {
         }
         assert!(actions.is_empty(), "{actions:?}");
         assert!((rig.bar_at() - at).length() < 0.5);
+    }
+
+    /// A frame as the workspace runs it: the menu's Escape is taken first, then a chart reads the key,
+    /// then the bar is drawn. Returns whether the menu took the key and whether the chart still saw it.
+    fn escape_frame(rig: &mut Rig, input: &FavoritesBarInput) -> (bool, bool) {
+        rig.time += 0.1;
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 700.0))),
+            time: Some(rig.time),
+            events: vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: Some(egui::Key::Escape),
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let mut seen = (false, false);
+        let _ = rig.ctx.run_ui(raw, |ui| {
+            seen.0 = close_menu_on_escape(ui.ctx(), input.id);
+            seen.1 = ui.input(|state| state.key_pressed(egui::Key::Escape));
+            show(ui.ctx(), input);
+        });
+        seen
+    }
+
+    fn open_the_menu(rig: &mut Rig, input: &FavoritesBarInput, on: Pos2) {
+        rig.settle(input);
+        rig.frame(vec![egui::Event::PointerMoved(on)], input);
+        rig.button(on, egui::PointerButton::Secondary, true, input);
+        rig.button(on, egui::PointerButton::Secondary, false, input);
+        rig.settle(input);
+        assert!(egui::Popup::is_any_open(&rig.ctx), "the menu is open");
+    }
+
+    #[test]
+    fn escape_closes_the_menu_and_is_spent_before_the_charts_see_it() {
+        let prefs = BarPrefs::default();
+        let at = resolve(&prefs, AREA, TOOLS.len());
+        // Opened from a tool's button and from the grip.
+        for on in [center(at, Some(1)), center(at, None)] {
+            let input = input(prefs, Tool::Cursor);
+            let mut rig = Rig::new();
+            open_the_menu(&mut rig, &input, on);
+            let (took, chart_saw) = escape_frame(&mut rig, &input);
+            assert!(took, "the open menu did not take Escape");
+            assert!(!chart_saw, "a chart still saw Escape behind the menu");
+            rig.settle(&input);
+            assert!(!egui::Popup::is_any_open(&rig.ctx), "the menu stayed open");
+        }
+    }
+
+    #[test]
+    fn escape_with_no_menu_open_is_left_for_the_charts() {
+        let prefs = BarPrefs::default();
+        let input = input(prefs, Tool::Cursor);
+        let mut rig = Rig::new();
+        rig.settle(&input);
+        let (took, chart_saw) = escape_frame(&mut rig, &input);
+        assert!(!took);
+        assert!(chart_saw, "Escape was taken with no menu to close");
     }
 
     #[test]

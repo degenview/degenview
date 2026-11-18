@@ -23,6 +23,16 @@ impl ChartWorkspace {
         let _ = lock(&self.store).toggle_favorite_tool(tool);
     }
 
+    fn favorites_bar_id(&self) -> Id {
+        Id::new(("favorites-bar", self.id))
+    }
+
+    /// An open menu of the bar takes Escape before the charts do: the key must close it and
+    /// nothing behind it (a draft, the armed tool, the selection). Call before the charts are drawn.
+    pub(in crate::workspace) fn reserve_escape_for_favorites_menu(&self, ctx: &Context) {
+        favorites_bar::close_menu_on_escape(ctx, self.favorites_bar_id());
+    }
+
     /// Draws the bar over `area` (the charts) and applies what it asks for. It is not shown while
     /// a mode that owns the whole chart area is up.
     pub(in crate::workspace) fn show_favorites_bar(&mut self, ctx: &Context, area: Rect) {
@@ -37,7 +47,7 @@ impl ChartWorkspace {
             )
         };
         let input = FavoritesBarInput {
-            id: Id::new(("favorites-bar", self.id)),
+            id: self.favorites_bar_id(),
             tools: &tools,
             active_tool: self.tools.active_tool(),
             prefs: *prefs,
