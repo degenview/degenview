@@ -1657,6 +1657,123 @@ mod tests {
         assert!(!open);
     }
 
+    /// One frame of the strip with the favorites bar over the charts beside it.
+    fn frame_with_the_bar(
+        ctx: &egui::Context,
+        time: &mut f64,
+        events: Vec<egui::Event>,
+        starred: &[Tool],
+        prefs: crate::model::drawings::favorites::BarPrefs,
+    ) -> Vec<ToolSidebarAction> {
+        use crate::ui::workspace::favorites_bar::{self, FavoritesBarInput};
+        let size = vec2(900.0, 700.0);
+        *time += 0.1;
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+            time: Some(*time),
+            events,
+            ..Default::default()
+        };
+        let input = ToolSidebarInput {
+            favorites: Arc::new(starred.to_vec()),
+            ..state()
+        };
+        let mut actions = Vec::new();
+        let mut output = ctx.run_ui(raw, |ui| {
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .max_rect(Rect::from_min_size(Pos2::ZERO, vec2(WIDTH, size.y))),
+                |ui| actions = show(ui, &input),
+            );
+            favorites_bar::show(
+                ui.ctx(),
+                &FavoritesBarInput {
+                    id: Id::new("test-favorites-bar"),
+                    tools: starred,
+                    active_tool: Tool::Cursor,
+                    prefs,
+                    area: Rect::from_min_size(pos2(WIDTH, 0.0), vec2(size.x - WIDTH, size.y)),
+                },
+            );
+        });
+        output.textures_delta.clear();
+        actions
+    }
+
+    #[test]
+    fn a_favorites_bar_that_appears_does_not_cover_the_open_menu() {
+        use crate::model::drawings::favorites::{BarPrefs, placement_from};
+        use crate::ui::workspace::favorites_bar::bar_size;
+        let ctx = egui::Context::default();
+        let mut time = 0.0;
+        let mut prefs = BarPrefs::default();
+        let mut starred: Vec<Tool> = Vec::new();
+        let mut run = |ctx: &egui::Context, events, starred: &[Tool], prefs| {
+            frame_with_the_bar(ctx, &mut time, events, starred, prefs)
+        };
+        let click = |run: &mut dyn FnMut(Vec<egui::Event>) -> Vec<ToolSidebarAction>, at: Pos2| {
+            let button = |pressed| egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            run(vec![egui::Event::PointerMoved(at)]);
+            run(vec![button(true)]);
+            run(vec![button(false)])
+        };
+        for _ in 0..3 {
+            run(&ctx, Vec::new(), &starred, prefs);
+        }
+        click(
+            &mut |events| run(&ctx, events, &starred, prefs),
+            LINES_CORNER,
+        );
+        for _ in 0..3 {
+            run(&ctx, Vec::new(), &starred, prefs);
+        }
+        let menu = ctx
+            .memory(|memory| {
+                memory
+                    .layer_ids()
+                    .filter(|layer| layer.order == egui::Order::Foreground)
+                    .find_map(|layer| memory.area_rect(layer.id))
+            })
+            .expect("the Lines menu is open");
+        // The first row's star: Trend line.
+        let star = pos2(menu.right() - 21.0, menu.top() + 38.0);
+
+        let actions = click(&mut |events| run(&ctx, events, &starred, prefs), star);
+        assert_eq!(
+            actions,
+            [ToolSidebarAction::ToggleFavorite(Tool::TrendLine)]
+        );
+        starred.push(Tool::TrendLine);
+        // The bar is saved right over that star, as in a narrow chart area.
+        let size = bar_size(1);
+        let at = star - vec2(40.0, 19.0);
+        prefs.placement = Some(placement_from(
+            [at.x, at.y],
+            [WIDTH, 0.0],
+            [900.0 - WIDTH, 700.0],
+            [size.x, size.y],
+        ));
+        for _ in 0..3 {
+            run(&ctx, Vec::new(), &starred, prefs);
+        }
+        let top = ctx.layer_id_at(star).expect("something is under the star");
+        assert_ne!(
+            top.id,
+            Id::new("test-favorites-bar"),
+            "the bar is above the open menu"
+        );
+        let actions = click(&mut |events| run(&ctx, events, &starred, prefs), star);
+        assert_eq!(
+            actions,
+            [ToolSidebarAction::ToggleFavorite(Tool::TrendLine)]
+        );
+    }
+
     #[test]
     fn a_row_prints_the_shortcut_of_the_tool_it_arms() {
         for tool in Tool::GROUPED {

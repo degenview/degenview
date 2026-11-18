@@ -3,9 +3,10 @@
 //! (the caller routes `Select` through the tab's one tool choice), and lights while that tool is
 //! armed. A right-click on the bar offers to hide it.
 //!
-//! The bar is an area above the charts, so a press on it never reaches them; everywhere else the
-//! charts see the pointer as before. Dragging it keeps its position in egui's memory until the
-//! pointer is let go, and only then reports `Moved` for the caller to save.
+//! The bar is an area above the charts, so a press on it never reaches them, and below every popup
+//! and dialog; everywhere else the charts see the pointer as before. Dragging it keeps its
+//! position in egui's memory until the pointer is let go, and only then reports `Moved` for the
+//! caller to save.
 
 use crate::model::Tool;
 use crate::model::drawings::favorites::{BarPlacement, BarPrefs, placement_from};
@@ -165,7 +166,10 @@ pub fn show(ctx: &Context, input: &FavoritesBarInput) -> Vec<FavoritesBarAction>
     let position = live.unwrap_or_else(|| resolve(&input.prefs, input.area, count));
 
     egui::Area::new(input.id)
-        .order(Order::Foreground)
+        // Above the charts but below every popup, menu, drawing toolbar and dialog, however late
+        // the bar is first drawn (an area made later lands on top of its layer order): a flyout
+        // still open when its first star makes the bar appear must keep the pointer.
+        .order(Order::Middle)
         .fixed_pos(position)
         .interactable(true)
         .show(ctx, |ui| {

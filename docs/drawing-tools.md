@@ -256,6 +256,10 @@ bar over the charts: a grip of dots, then one button per tool.
   resized window keeps it inside the charts' area; a bar bigger than that room sits at its corner, and a
   chart area too small for it hides it. It is saved when the grip is let go, not while it moves. The bar
   is not shown while a portion of the chart is being selected or a replay start is being picked.
+- **Layer.** The bar is a `Middle`-order area: above the charts, below every popup and menu (so a flyout
+  open while its first star makes the bar appear keeps the pointer), the selected drawing's toolbar and the
+  dialogs. Beside another `Middle` window (Drawing properties) the later one drawn is on top until the
+  other is clicked.
 - **Not done.** No keyboard way to reorder, no per-chart list, no star on the ruler or Zoom In.
 
 ## Magnet and Keep drawing
