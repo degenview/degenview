@@ -2,12 +2,13 @@
 //! and only what selection could pick.
 
 use super::*;
+use crate::model::CursorMode;
 
 /// A rig with the Eraser as the cursor and one rectangle drawn, and the rectangle's id.
 fn erasing() -> (Rig, u64) {
     let mut rig = Rig::new();
     let id = rig.rect_with(0.0);
-    rig.erase = true;
+    rig.cursor = CursorMode::Eraser;
     rig.settle();
     (rig, id)
 }
@@ -33,7 +34,7 @@ fn a_click_erases_every_kind_of_drawing_in_one_undo_step() {
         rig.selected.clear();
         let at = rig.body(id);
         let steps = rig.undo_steps;
-        rig.erase = true;
+        rig.cursor = CursorMode::Eraser;
         rig.settle();
         rig.click(at);
         assert!(rig.drawings.is_empty(), "{tool:?} was not erased at {at:?}");
@@ -65,10 +66,10 @@ fn nothing_is_erased_until_the_button_is_let_go_and_what_is_passed_over_is_marke
 #[test]
 fn a_sweep_removes_everything_it_crosses_as_one_step_and_the_mode_stays_on() {
     let (mut rig, _) = erasing();
-    rig.erase = false;
+    rig.cursor = CursorMode::Cross;
     rig.rect_with(300.0);
     rig.rect_with(600.0);
-    rig.erase = true;
+    rig.cursor = CursorMode::Eraser;
     rig.settle();
     assert_eq!(rig.drawings.len(), 3);
     let steps = rig.undo_steps;
@@ -76,9 +77,9 @@ fn a_sweep_removes_everything_it_crosses_as_one_step_and_the_mode_stays_on() {
     assert!(rig.drawings.is_empty());
     assert_eq!(rig.undo_steps, steps + 1, "one step for the whole sweep");
     // Still the Eraser: the next drawing goes the same way.
-    rig.erase = false;
+    rig.cursor = CursorMode::Cross;
     rig.rect_with(0.0);
-    rig.erase = true;
+    rig.cursor = CursorMode::Eraser;
     rig.settle();
     rig.click(inside(0.0));
     assert!(rig.drawings.is_empty());
@@ -90,7 +91,7 @@ fn a_quick_drag_cannot_step_over_a_thin_line() {
     rig.place(Tool::HorizontalLine);
     rig.tool = Tool::Cursor;
     let at = rig.body(rig.last().id());
-    rig.erase = true;
+    rig.cursor = CursorMode::Eraser;
     rig.settle();
     // One move of 400 points across the line, with no frame in between.
     rig.move_to(pos2(at.x, at.y - 200.0));
@@ -115,9 +116,9 @@ fn a_locked_drawing_is_left_alone_and_says_so() {
     assert_eq!(rig.drawings.len(), 1);
     assert_eq!(rig.undo_steps, steps);
     // A sweep that crosses a locked drawing and a free one takes only the free one.
-    rig.erase = false;
+    rig.cursor = CursorMode::Cross;
     rig.rect_with(300.0);
-    rig.erase = true;
+    rig.cursor = CursorMode::Eraser;
     rig.settle();
     rig.drag(pos2(150.0, 230.0), pos2(650.0, 230.0));
     assert_eq!(rig.drawings.len(), 1);
@@ -160,9 +161,9 @@ fn a_row_this_version_cannot_read_is_never_touched() {
 #[test]
 fn a_click_on_overlapping_drawings_takes_the_top_one_only() {
     let (mut rig, bottom) = erasing();
-    rig.erase = false;
+    rig.cursor = CursorMode::Cross;
     let top = rig.rect_with(30.0);
-    rig.erase = true;
+    rig.cursor = CursorMode::Eraser;
     rig.settle();
     rig.click(pos2(280.0, 232.0));
     let left: Vec<u64> = rig.drawings.iter().map(Drawing::id).collect();
@@ -220,7 +221,7 @@ fn putting_the_eraser_down_mid_sweep_drops_it() {
     rig.move_to(inside(0.0));
     rig.press(inside(0.0));
     assert!(rig.layer.claims_drag());
-    rig.erase = false;
+    rig.cursor = CursorMode::Cross;
     rig.move_to(inside(10.0));
     assert!(!rig.layer.is_marked_for_erasing(rig.drawings[0].id()));
     rig.release(inside(10.0));

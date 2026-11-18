@@ -86,6 +86,25 @@ impl DrawingLayer {
         }
     }
 
+    /// One frame with the drawings out of reach (Demonstration): nothing is hovered, picked or
+    /// edited, and a right-click still opens the chart's own menu.
+    pub(super) fn update_inert(
+        &mut self,
+        response: &Response,
+        proj: &Projection,
+        frame: &mut DrawingFrame,
+        pointer: Option<Pos2>,
+    ) {
+        self.gesture = None;
+        self.hover = None;
+        self.cancelled_drag = false;
+        if response.secondary_clicked()
+            && let Some(point) = pointer.filter(|point| proj.plot.contains(*point))
+        {
+            frame.background_click = Some(point);
+        }
+    }
+
     /// Tests the pointer's way from where the sweep last was to `to`, marking each unlocked
     /// drawing it crosses once.
     fn sweep_to(&mut self, sweep: &mut Sweep, to: Pos2, frame: &DrawingFrame, proj: &Projection) {

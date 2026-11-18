@@ -1755,3 +1755,43 @@ fn gallery_of_the_cards() {
     }
     theme::apply(&egui::Context::default(), AppTheme::Dark);
 }
+
+#[test]
+fn a_snapshot_never_holds_what_the_demonstration_cursor_marked() {
+    use crate::model::CursorMode;
+    use crate::model::cursor::demo::MarkShape;
+    let mut harness = Harness::new(ChartCanvas::default());
+    let rect = Rect::from_min_size(Pos2::ZERO, SIZE);
+    let words = |harness: &Harness| {
+        snapshot_shapes(harness, rect, false)
+            .iter()
+            .map(|clipped| describe(&clipped.shape))
+            .collect::<Vec<_>>()
+    };
+    let before = words(&harness);
+    harness.card.set_cursor_mode(CursorMode::Demonstration);
+    let at = crate::model::Anchor {
+        time_ms: harness.candles[150].open_time,
+        price: 120.0,
+    };
+    harness.card.demo.begin(at, 0.0);
+    harness
+        .card
+        .demo
+        .extend(crate::model::Anchor { price: 130.0, ..at });
+    harness.card.demo.dot(at, 0.0);
+    assert!(
+        harness
+            .card
+            .demo
+            .marks()
+            .iter()
+            .any(|mark| matches!(mark.shape, MarkShape::Stroke(_))),
+        "the marks are there"
+    );
+    assert_eq!(
+        words(&harness),
+        before,
+        "and the snapshot does not know them"
+    );
+}

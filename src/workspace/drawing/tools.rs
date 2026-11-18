@@ -81,8 +81,8 @@ impl DrawingTools {
         if mode.persists() {
             self.prefs.cursor = mode;
         }
-        if mode.caps().erases {
-            // Nothing stays picked while the pointer erases.
+        if !mode.caps().edits_drawings {
+            // Nothing stays picked while the pointer erases or marks.
             self.selected = None;
         }
         self.active = Tool::Cursor;
@@ -108,7 +108,7 @@ impl DrawingTools {
     }
 
     /// Esc steps back one level: Zoom In first, then the armed tool, then a cursor of the moment
-    /// (the Eraser) back to the resting one, then the selection.
+    /// (Demonstration, the Eraser) back to the resting one, then the selection.
     pub(in crate::workspace) fn escape(&mut self) {
         if self.zoom_armed {
             self.zoom_armed = false;

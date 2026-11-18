@@ -216,15 +216,22 @@ mod tests {
     }
 
     #[test]
-    fn the_eraser_is_a_mode_of_the_moment_that_is_never_remembered() {
+    fn the_eraser_and_demonstration_are_modes_of_the_moment_that_are_never_remembered() {
+        use crate::model::CursorMode;
+        for moment in [CursorMode::Eraser, CursorMode::Demonstration] {
+            a_mode_of_the_moment(moment);
+        }
+    }
+
+    fn a_mode_of_the_moment(moment: crate::model::CursorMode) {
         use crate::model::CursorMode;
         let mut workspace = empty_workspace(1);
         // The strip opens the saved options before anything is picked.
         let _ = workspace.drawing_templates();
         workspace.tools.choose_cursor(CursorMode::Dot);
         workspace.tools.select(1, vec![4, 5]);
-        workspace.tools.choose_cursor(CursorMode::Eraser);
-        assert_eq!(workspace.tools.cursor(), CursorMode::Eraser);
+        workspace.tools.choose_cursor(moment);
+        assert_eq!(workspace.tools.cursor(), moment);
         assert!(
             workspace.tools.selection().is_none(),
             "nothing stays picked"
@@ -239,14 +246,14 @@ mod tests {
         workspace.tools.escape();
         assert_eq!(workspace.tools.cursor(), CursorMode::Dot);
         // Arming a tool holds the cross; Esc then ends the tool, not the (resting) cursor.
-        workspace.tools.choose_cursor(CursorMode::Eraser);
+        workspace.tools.choose_cursor(moment);
         workspace.toggle_tool(Tool::Rectangle);
         assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
         workspace.tools.escape();
         assert_eq!(
             workspace.tools.cursor(),
-            CursorMode::Eraser,
-            "the Eraser waits under the tool"
+            moment,
+            "the mode waits under the tool"
         );
         workspace.tools.escape();
         assert_eq!(workspace.tools.cursor(), CursorMode::Dot);

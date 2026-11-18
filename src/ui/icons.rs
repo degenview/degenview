@@ -268,6 +268,8 @@ pub enum Icon {
     CursorDot,
     /// The Arrow cursor: the classic pointer, outlined.
     CursorArrow,
+    /// The Demonstration cursor: a ring around a dot, the spot a presenter points with.
+    CursorDemonstration,
     /// The Eraser cursor: a slanted block with its lower half struck solid, over a baseline.
     CursorEraser,
 }
@@ -555,6 +557,10 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             p(8.5, 9.4),
             p(12.4, 9.4),
         ]),
+        Icon::CursorDemonstration => {
+            circle(p(8.0, 8.0), 6.0, false);
+            circle(p(8.0, 8.0), 2.0, true);
+        }
         Icon::CursorEraser => {
             closed(&[
                 p(2.4, 9.4),
@@ -2662,6 +2668,7 @@ mod tests {
             CursorCross,
             CursorDot,
             CursorArrow,
+            CursorDemonstration,
             CursorEraser,
         ];
         for icon in all {

@@ -1,7 +1,7 @@
 # Chart cursors
 
-The cursor menu on the tool rail's first tile: Cross, Dot, Arrow and the Eraser (Demonstration
-follows in a later change). There is no Magic cursor and none is planned.
+The cursor menu on the tool rail's first tile: Cross, Dot, Arrow, Demonstration and the Eraser.
+There is no Magic cursor and none is planned.
 
 A cursor is the pointer's resting state, not a drawing tool. It lives beside the armed `Tool`:
 arming a drawing tool or Zoom In puts the cursor down (the cross is in force then, because placing
@@ -20,9 +20,10 @@ an anchor needs the lines and the tags), and Esc or the tile brings it back.
   replay and sync stay as they were).
 - **Persistence.** `DrawingPrefs::cursor` in the synced `drawing.prefs` setting, saved when it
   changes (never per pointer frame). A value this build does not know falls back to Cross and keeps
-  the other options. Only a resting cursor (`CursorMode::persists`: Cross, Dot, Arrow) is stored: the
-  Eraser is a mode of the moment, so a restart (or another Mac) never opens in a mode that deletes.
-  Esc (after Zoom In and an armed tool) puts the Eraser down, back to the resting cursor.
+  the other options. Only a resting cursor (`CursorMode::persists`: Cross, Dot, Arrow) is stored:
+  Demonstration and the Eraser are modes of the moment, so a restart (or another Mac) never opens in
+  a mode that marks the chart or deletes. Esc (after Zoom In and an armed tool) puts them down, back
+  to the resting cursor.
 - **One crosshair.** `ChartCard::draw_crosshair` is still the only crosshair; it asks the caps which
   of its parts to draw (lines, price and time tags, the box naming the bar). Hover reporting is
   unchanged, so linked charts, replay and compared markets behave as before. Other charts' shared
@@ -66,18 +67,48 @@ layer's pointer in place of selecting, editing and drawing:
   (at least 5 drawings and over half of a kind in one write) can hold a very large sweep for
   confirmation.
 
+## Demonstration
+
+`ui/chart/card/demonstration.rs` over the pure store `model::cursor::demo::Marks`. For explaining a
+chart, as TradingView's help describes it: **Alt (Option) + click** puts a dot, **press and drag**
+draws freehand, and what was drawn **fades away after a few seconds**.
+
+- A stroke stays whole while the button is down; once finished it holds 2 s and fades over 1 s
+  (**ours**: TradingView says only "a few seconds"). The fade follows the clock (`input.time`), not
+  the frames; frames are requested every 16 ms only while a stroke is drawn or fading, and one at the
+  end of the hold otherwise, so an idle chart costs nothing. At most 48 marks, 4096 points a stroke.
+- Marks are pinned to time and price through `Projection::anchor`/`point` (the drawings' own
+  mapping), so a wheel zoom during the fade keeps them on their bars. They are painted over the
+  live plot after the frame (clipped to the plot), so they are **not drawings**: never in
+  `Chart::drawings`, a command, an undo step, a layout, an iCloud record, a template or a
+  snapshot (`paint_snapshot` never sees them; a test pins it).
+- The cursor takes the plot drag (no pan while a stroke is drawn; the axes, the wheel and the
+  pinch work), hides the crosshair lines, tags and the box naming the bar, keeps the plain arrow, and
+  leaves the drawings out of reach (`DrawingFrame::is_inert`: nothing is hovered, picked, moved or
+  deleted). Right-click still opens the chart's menu.
+- The marks go when the cursor changes or the card shows another market (`abort_drawing`).
+- A translucent stroke is one path, so where it crosses itself during the fade the overlap is a
+  little darker; the colour is the app's orange (**ours**).
+
 ## What TradingView documents, and what is our choice
 
 Sources: the Help Center article on cursors (`support/solutions/43000703396`): Cross is the default,
 Dot is "similar to the cross", Arrow is the "classic arrow without crosshair", and cursors "are not
 actually drawing tools".
 
-| | Cross | Dot | Arrow | Eraser |
-| --- | --- | --- | --- | --- |
-| Lines | yes | no (**ours**: the docs say only "similar to the cross") | no (docs: "without crosshair") | no (**ours**) |
-| Price and time tags | yes | yes (**ours**) | no (**inferred** from "without crosshair") | no (**ours**) |
-| Box naming the bar | yes | yes (**ours**) | yes (**ours**) | no (**ours**) |
-| Drag | pans | pans | pans | sweeps to erase (**ours**) |
+| | Cross | Dot | Arrow | Demonstration | Eraser |
+| --- | --- | --- | --- | --- | --- |
+| Lines | yes | no (**ours**: the docs say only "similar to the cross") | no (docs: "without crosshair") | no (**ours**) | no (**ours**) |
+| Price and time tags | yes | yes (**ours**) | no (**inferred** from "without crosshair") | no (**ours**) | no (**ours**) |
+| Box naming the bar | yes | yes (**ours**) | yes (**ours**) | no (**ours**) | no (**ours**) |
+| Drag | pans | pans | pans | draws a fading stroke (docs) | sweeps to erase (**ours**) |
+| Click | | | | Alt+click is a dot (docs) | erases (docs) |
+
+Demonstration: the Help Center ("How to draw temporarily on the chart", 43000747626) and the
+blog post announcing it say it works like the Highlighter, Alt/Option+click places dots, holding
+the left button draws freely, and the marks disappear after a few seconds. **Not documented, so
+not built**: a ring around the pointer, a click ripple, a trail on plain movement. Whether Alt must
+stay held for a whole stroke is worded differently in the two pages; here only the dot needs it.
 
 The Eraser: TradingView's pages say it removes drawings by clicking them (a masterclass page, seen in
 search results only) and that Ctrl/Cmd+click on a Fibonacci level removes just that level (Help
@@ -93,6 +124,7 @@ cursor between sessions (ours does).
 - The Dot's size and ring are our design.
 - The tile's click opens the menu; it no longer disarms a drawing tool by itself (picking a cursor,
   Esc, or arming another tool still does).
+- No pointer ring, ripple or trail: nothing documents them. The fade timings and the colour are ours.
 - DegenView has no drawing groups, so there is nothing to erase together. Ctrl/Cmd+click on one
   Fibonacci level is not implemented.
 - The inverted price scale does not exist in DegenView, so no cursor handles one.

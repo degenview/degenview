@@ -350,6 +350,8 @@ pub struct ChartCard {
     cursor: crate::model::CursorMode,
     /// The Dot cursor hid the system pointer on the last frame, so the card paints its own mark.
     dot_shown: bool,
+    /// What the Demonstration cursor drew and has not yet faded. View state, never saved.
+    demo: crate::model::cursor::demo::Marks,
     /// Bars that arrived at the newest end since this card began, whatever the view showed: what a
     /// stored view is translated by (see [`zoom_rect::ViewStep`]).
     arrivals: u64,
@@ -438,6 +440,7 @@ impl Default for ChartCard {
             snapshot_select: false,
             cursor: crate::model::CursorMode::default(),
             dot_shown: false,
+            demo: Default::default(),
             arrivals: 0,
             series_epoch: 0,
             drawn_series: None,
@@ -774,6 +777,7 @@ mod body;
 mod context;
 mod crosshair;
 mod cursor;
+mod demonstration;
 mod frame;
 mod header;
 mod live_overlays;

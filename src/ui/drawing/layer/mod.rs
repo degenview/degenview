@@ -42,7 +42,7 @@ use super::render::{
 };
 use crate::model::drawings::style::DrawingStyle;
 use crate::model::{
-    Anchor, Caps, Drawing, DrawingCommand, Geometry, MAX_POINTS, MagnetMode, Placement,
+    Anchor, Caps, CursorMode, Drawing, DrawingCommand, Geometry, MAX_POINTS, MagnetMode, Placement,
     PriceFormat, Timeframe, Tool,
 };
 use crate::ui::chart::card::PriceScale;
@@ -97,8 +97,9 @@ pub struct DrawingFrame<'a> {
     /// A drawing shown in place of the stored one with its id: the properties dialog's live
     /// preview of an edit not yet committed.
     pub preview: Option<&'a Drawing>,
-    /// The Eraser is the cursor: the pointer erases instead of picking, moving or drawing.
-    pub erase: bool,
+    /// The cursor the pointer rests on: the Eraser erases instead of picking, moving or drawing,
+    /// and a cursor that marks the chart (Demonstration) leaves the drawings alone.
+    pub cursor: CursorMode,
     // Outputs.
     pub commands: Vec<DrawingCommand>,
     /// `Some(x)` means set the selection to `x` (`Some(vec![])` clears it).
@@ -166,7 +167,7 @@ impl<'a> DrawingFrame<'a> {
             style_clipboard: None,
             keys_blocked: false,
             preview: None,
-            erase: false,
+            cursor: CursorMode::Cross,
             commands: Vec::new(),
             select: None,
             escape_consumed: false,
@@ -242,9 +243,20 @@ impl<'a> DrawingFrame<'a> {
         self
     }
 
-    pub fn with_eraser(mut self, erase: bool) -> Self {
-        self.erase = erase;
+    pub fn with_cursor(mut self, cursor: CursorMode) -> Self {
+        self.cursor = cursor;
         self
+    }
+
+    /// The pointer erases drawings.
+    fn erases(&self) -> bool {
+        self.cursor.caps().erases
+    }
+
+    /// The pointer neither picks nor erases: the drawings are out of its reach.
+    fn is_inert(&self) -> bool {
+        let caps = self.cursor.caps();
+        !caps.edits_drawings && !caps.erases
     }
 
     /// The style a new drawing of `tool` starts with.
@@ -653,13 +665,17 @@ impl DrawingLayer {
         if matches!(&self.gesture, Some(Gesture::Draft(draft)) if draft.tool != frame.tool) {
             self.abort();
         }
-        if frame.erase {
+        if frame.erases() {
             self.update_eraser(ui, response, proj, frame, pointer);
             self.set_cursor(ui, pointer, frame, plot);
             return self.claims_drag();
         }
         self.sweep = None;
         self.erase_blocked = false;
+        if frame.is_inert() {
+            self.update_inert(response, proj, frame, pointer);
+            return false;
+        }
         // A cell is selected only while its table is the one thing selected.
         if let Some((id, ..)) = self.table_cell
             && frame.selected != [id]
@@ -1327,8 +1343,8 @@ impl DrawingLayer {
             Some(Gesture::Edit(_)) => Some(CursorIcon::Grabbing),
             Some(Gesture::Draft(_)) => Some(CursorIcon::Crosshair),
             None if !over_plot => None,
-            None if frame.erase && self.erase_blocked => Some(CursorIcon::NotAllowed),
-            None if frame.erase => Some(CursorIcon::Crosshair),
+            None if frame.erases() && self.erase_blocked => Some(CursorIcon::NotAllowed),
+            None if frame.erases() => Some(CursorIcon::Crosshair),
             None if frame.tool != Tool::Cursor => Some(CursorIcon::Crosshair),
             None if pointer.is_some_and(|point| self.text_at(frame, point).is_some()) => {
                 Some(CursorIcon::Text)

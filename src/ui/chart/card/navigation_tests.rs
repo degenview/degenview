@@ -35,8 +35,8 @@ struct Rig {
     drawings: Vec<Drawing>,
     scale_mode: PriceScaleMode,
     tool: Tool,
-    /// The Eraser is the workspace's cursor.
-    erase: bool,
+    /// The workspace's cursor, as the drawing layer is told it.
+    cursor_mode: crate::model::CursorMode,
     selected: Vec<u64>,
     time: f64,
     rect: Rect,
@@ -50,6 +50,9 @@ struct Rig {
     escape_consumed: bool,
     /// The window has the keyboard focus.
     focused: bool,
+    /// The keys held down, as the window reports them.
+    modifiers: Modifiers,
+    sent_modifiers: Modifiers,
 }
 
 impl Rig {
@@ -63,7 +66,7 @@ impl Rig {
             drawings: Vec::new(),
             scale_mode: PriceScaleMode::Regular,
             tool: Tool::Cursor,
-            erase: false,
+            cursor_mode: crate::model::CursorMode::Cross,
             selected: Vec::new(),
             time: 0.0,
             rect: Rect::NOTHING,
@@ -73,13 +76,19 @@ impl Rig {
             picked_range: None,
             escape_consumed: false,
             focused: true,
+            modifiers: Modifiers::NONE,
+            sent_modifiers: Modifiers::NONE,
         };
         rig.frames(&[]);
         rig
     }
 
-    fn frame(&mut self, events: Vec<egui::Event>) {
+    fn frame(&mut self, mut events: Vec<egui::Event>) {
         self.time += 0.016;
+        if self.modifiers != self.sent_modifiers {
+            events.insert(0, egui::Event::ModifiersChanged(self.modifiers));
+            self.sent_modifiers = self.modifiers;
+        }
         let input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
             time: Some(self.time),
@@ -94,14 +103,14 @@ impl Rig {
             self.scale_mode,
         );
         let (tool, selected) = (self.tool, self.selected.clone());
-        let (selecting, erase) = (self.selecting, self.erase);
+        let (selecting, cursor_mode) = (self.selecting, self.cursor_mode);
         let (mut rect, mut commands) = (Rect::NOTHING, 0);
         let mut picked = None;
         let mut consumed = false;
         let mut output = self.ctx.run_ui(input, |ui| {
             let mut frame = DrawingFrame::new(drawings, tool, None, 100)
                 .with_selection(selected.clone())
-                .with_eraser(erase);
+                .with_cursor(cursor_mode);
             let mut replay = ReplayChartFrame {
                 selecting,
                 active: false,
@@ -995,9 +1004,9 @@ fn each_cursor_shows_its_own_pointer_over_the_plot_and_the_axes_keep_theirs() {
 }
 
 #[test]
-fn every_resting_cursor_pans_with_a_drag_and_the_dot_follows_the_hand() {
+fn every_cursor_that_leaves_the_drag_alone_pans_with_it() {
     use crate::model::CursorMode;
-    for mode in CursorMode::ALL {
+    for mode in CursorMode::ALL.into_iter().filter(|mode| mode.caps().pans) {
         let mut rig = Rig::new();
         rig.card.set_cursor_mode(mode);
         let from = rig.in_plot();
@@ -1014,7 +1023,7 @@ fn every_resting_cursor_pans_with_a_drag_and_the_dot_follows_the_hand() {
 fn the_eraser_holds_the_drag_so_the_chart_never_pans_but_the_axes_and_wheel_still_work() {
     use crate::model::CursorMode;
     let mut rig = Rig::new();
-    rig.erase = true;
+    rig.cursor_mode = CursorMode::Eraser;
     rig.card.set_cursor_mode(CursorMode::Eraser);
     rig.frames(&[]);
     let from = rig.in_plot();
@@ -1043,6 +1052,126 @@ fn the_eraser_holds_the_drag_so_the_chart_never_pans_but_the_axes_and_wheel_stil
         rig.card.viewport.horizontal.visible != before,
         "the wheel zooms"
     );
+}
+
+/// A rig on the Demonstration cursor.
+fn demonstrating() -> Rig {
+    use crate::model::CursorMode;
+    let mut rig = Rig::new();
+    rig.cursor_mode = CursorMode::Demonstration;
+    rig.card.set_cursor_mode(CursorMode::Demonstration);
+    rig.frames(&[]);
+    rig
+}
+
+fn strokes(rig: &Rig) -> Vec<usize> {
+    use crate::model::cursor::demo::MarkShape;
+    rig.card
+        .demo
+        .marks()
+        .iter()
+        .map(|mark| match &mark.shape {
+            MarkShape::Stroke(points) => points.len(),
+            MarkShape::Dot(_) => 0,
+        })
+        .collect()
+}
+
+#[test]
+fn a_drag_under_demonstration_draws_a_stroke_and_never_pans() {
+    let mut rig = demonstrating();
+    let from = rig.in_plot();
+    rig.press(from);
+    rig.drag_to(from, from + Vec2::new(90.0, 40.0));
+    assert!(
+        rig.card.demonstration_claims_drag(),
+        "held while it is drawn"
+    );
+    rig.release(from + Vec2::new(90.0, 40.0));
+    assert_eq!(rig.offset(), 0.0, "the chart stayed");
+    assert!(rig.card.viewport.vertical.is_auto());
+    let lengths = strokes(&rig);
+    assert_eq!(lengths.len(), 1);
+    assert!(lengths[0] >= 4, "a point for each move: {lengths:?}");
+    assert!(
+        !rig.card.demonstration_claims_drag(),
+        "let go with the button"
+    );
+    assert_eq!(rig.cursor, egui::CursorIcon::Default, "the plain arrow");
+}
+
+#[test]
+fn alt_click_puts_a_dot_and_a_plain_click_leaves_nothing() {
+    let mut rig = demonstrating();
+    let at = rig.in_plot();
+    rig.press(at);
+    rig.release(at);
+    assert!(
+        rig.card.demo.marks().is_empty(),
+        "a plain click marks nothing"
+    );
+    rig.modifiers = Modifiers::ALT;
+    rig.frames(&[]);
+    rig.press(at);
+    rig.release(at);
+    assert_eq!(strokes(&rig), vec![0], "one dot");
+}
+
+#[test]
+fn the_marks_fade_away_by_the_clock_not_by_the_frames() {
+    use crate::model::cursor::demo::{FADE_SECS, HOLD_SECS};
+    let mut rig = demonstrating();
+    let from = rig.in_plot();
+    rig.drag(from, Vec2::new(60.0, 0.0));
+    assert_eq!(rig.card.demo.marks().len(), 1);
+    // Frames close together change nothing; one a while later finds it gone.
+    for _ in 0..30 {
+        rig.frame(Vec::new());
+    }
+    assert_eq!(rig.card.demo.marks().len(), 1, "still held");
+    rig.time += HOLD_SECS + FADE_SECS + 1.0;
+    rig.frame(Vec::new());
+    assert!(rig.card.demo.marks().is_empty());
+}
+
+#[test]
+fn another_cursor_or_another_market_drops_the_marks_and_nothing_is_a_drawing() {
+    use crate::model::CursorMode;
+    let mut rig = demonstrating();
+    let from = rig.in_plot();
+    rig.drag(from, Vec2::new(60.0, 0.0));
+    assert_eq!(rig.commands, 0, "a mark is never a drawing command");
+    assert_eq!(rig.card.demo.marks().len(), 1);
+    rig.card.abort_drawing();
+    assert!(rig.card.demo.marks().is_empty(), "another market");
+    rig.drag(from, Vec2::new(60.0, 0.0));
+    assert_eq!(rig.card.demo.marks().len(), 1);
+    rig.card.set_cursor_mode(CursorMode::Cross);
+    assert!(rig.card.demo.marks().is_empty(), "another cursor");
+}
+
+#[test]
+fn demonstration_leaves_the_drawings_alone_and_the_axes_working() {
+    let mut rig = demonstrating();
+    rig.drawings.push(Drawing::Ruler {
+        id: 1,
+        a: Anchor {
+            time_ms: 380 * HOUR,
+            price: 120.0,
+        },
+        b: Anchor {
+            time_ms: 390 * HOUR,
+            price: 140.0,
+        },
+    });
+    let axis = rig.on_price_axis();
+    rig.drag(axis, Vec2::new(-40.0, -60.0));
+    assert!(
+        rig.card.viewport.vertical.zoom > 1.0,
+        "the price axis answers"
+    );
+    assert_eq!(rig.commands, 0);
+    assert_eq!(rig.drawings.len(), 1);
 }
 
 #[test]

@@ -196,6 +196,17 @@ impl ChartCard {
         }
         drawing.escape_consumed |=
             self.handle_zoom(ui, response, view.as_ref(), &regions, bars.len(), zooming);
+        if layout.main_visible
+            && !held
+            && let Some(view) = &view
+        {
+            self.handle_demonstration(
+                ui,
+                response,
+                &view.projection(plot, bars, self.appearance.price_format(), ui.ctx()),
+                plot,
+            );
+        }
         let navigation = navigation::Navigation {
             regions,
             shown: view
@@ -210,6 +221,7 @@ impl ChartCard {
             logarithmic: view.as_ref().is_some_and(|view| view.scale.logarithmic),
             // Dragging over bars for the logs pane is not a pan.
             drawing_claims: self.layer.claims_drag()
+                || self.demonstration_claims_drag()
                 || self.zoom_claims_drag()
                 || self.snapshot_select
                 || (replay.selecting && self.pick_kind == overlay::PickKind::LogsRange),

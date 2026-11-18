@@ -17,6 +17,9 @@ impl ChartCard {
         if mode != CursorMode::Dot {
             self.dot_shown = false;
         }
+        if !mode.caps().highlights {
+            self.demo.clear();
+        }
     }
 
     /// The Dot cursor: a small mark under the pointer where the system pointer was hidden. It
