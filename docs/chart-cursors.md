@@ -116,6 +116,24 @@ default). `ui/chart/card/values_tooltip.rs`.
   layer ignores that one (`DrawingFrame::long_press_values`), so it shows the values and not a menu.
   Off, a long touch is the context menu as before. **Not tried on a touch screen.**
 
+## Favorites
+
+Every row of the cursor menu has the same star as the drawing tools' flyouts, and a starred cursor is
+a button on the same floating favorites bar ([Drawing tools](drawing-tools.md#favorites)). Nothing
+read documents stars on cursors (a screenshot of TradingView's menu shows one on the Cross row, and
+a third-party widget's docs show one beside each cursor); that they join the one favorites list is
+**our choice**, so there is no second list.
+
+- **One list.** `drawing.favorites` holds tool names and, for a cursor, `cursor:` and its name
+  (`cursor:Eraser`; `model::drawings::favorites::Favorite`). An older build reads those as names it
+  does not know, keeps them when it re-saves the list and leaves them out of its bar, so nothing is
+  lost between builds. The list syncs; the bar's place stays on the device.
+- **A button** is lit while its cursor is in force (no tool and no Zoom In holding the pointer).
+  Pressing it picks the cursor exactly as the menu row does; pressing the lit one puts the cursor
+  down, back to the Cross (as a lit tool's button puts the tool down). Starring changes nothing that
+  is armed.
+- The Cross row's star is as starrable as the others, so the bar can always take the pointer back.
+
 ## What TradingView documents, and what is our choice
 
 Sources: the Help Center article on cursors (`support/solutions/43000703396`): Cross is the default,

@@ -8,10 +8,10 @@
 //! writer can be forgotten, at the cost of one rebuild per write.
 
 use super::Store;
+use crate::model::Timeframe;
 use crate::model::alert::pine::PineAlertSubscription;
-use crate::model::drawings::favorites::BarPrefs;
+use crate::model::drawings::favorites::{BarPrefs, Favorite};
 use crate::model::webhook::WebhookEndpoint;
-use crate::model::{Timeframe, Tool};
 use crate::service::net::proxy::ProxyConfig;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -107,8 +107,9 @@ pub(crate) struct FrameCaches {
     pinned_timeframes: ChangeCached<Vec<Timeframe>>,
     /// The `net.proxy` setting the Settings window's Network page shows.
     proxy_config: ChangeCached<ProxyConfig>,
-    /// The starred drawing tools, which every flyout row and the favorites bar show.
-    drawing_favorites: ChangeCached<Vec<Tool>>,
+    /// The starred drawing tools and cursors, which every flyout row, the cursor menu and the
+    /// favorites bar show.
+    drawing_favorites: ChangeCached<Vec<Favorite>>,
     /// The favorites bar's place and hidden flag.
     favorites_bar: ChangeCached<BarPrefs>,
 }
@@ -157,7 +158,7 @@ impl Store {
     }
 
     /// `drawing_favorites`, read again only after a write.
-    pub fn drawing_favorites_cached(&self) -> Arc<Vec<Tool>> {
+    pub fn drawing_favorites_cached(&self) -> Arc<Vec<Favorite>> {
         self.frame_caches
             .drawing_favorites
             .get(self.change_stamp(), || self.drawing_favorites())

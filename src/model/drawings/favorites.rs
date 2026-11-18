@@ -1,15 +1,57 @@
-//! The drawing tools a user starred, and where their floating bar sits.
+//! What a user starred: drawing tools and cursors, and where their floating bar sits.
 //!
-//! The list is app-wide: one ordered set of tools, in the order they were starred. It is kept as
-//! the tools' stored names (the variant names `drawing.prefs` and `drawing.defaults` already use),
-//! so a name a newer build wrote and this one does not know is kept when the list is written back
-//! and is only left out of what is shown. The bar's place is a fraction of the room the bar has
-//! to move in, so it follows a resized window instead of drifting off it.
+//! The list is app-wide: one ordered set, in the order it was starred. It is kept as stored names
+//! (a tool's variant name, which `drawing.prefs` and `drawing.defaults` already use; a cursor's as
+//! `cursor:` and its name), so a name a newer build wrote and this one does not know is kept when
+//! the list is written back and is only left out of what is shown. An older build reads a cursor's
+//! name as one it does not know and keeps it the same way. The bar's place is a fraction of the
+//! room the bar has to move in, so it follows a resized window instead of drifting off it.
 
 use super::tool::Tool;
+use crate::model::CursorMode;
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// The starred tools, as stored.
+/// Something that can be starred: a drawing tool with a menu row, or a cursor.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Favorite {
+    Tool(Tool),
+    Cursor(CursorMode),
+}
+
+impl From<Tool> for Favorite {
+    fn from(tool: Tool) -> Self {
+        Self::Tool(tool)
+    }
+}
+
+impl Favorite {
+    /// Stored names of cursors start with this; no tool's name contains a colon.
+    const CURSOR_PREFIX: &'static str = "cursor:";
+
+    /// The stored name, or `None` for a tool that has no menu row to star it from.
+    fn name(self) -> Option<String> {
+        match self {
+            Self::Tool(tool) => Tool::GROUPED.contains(&tool).then(|| format!("{tool:?}")),
+            Self::Cursor(mode) => Some(format!("{}{mode:?}", Self::CURSOR_PREFIX)),
+        }
+    }
+
+    fn named(name: &str) -> Option<Self> {
+        match name.strip_prefix(Self::CURSOR_PREFIX) {
+            Some(cursor) => CursorMode::ALL
+                .into_iter()
+                .find(|mode| format!("{mode:?}") == cursor)
+                .map(Self::Cursor),
+            None => Tool::GROUPED
+                .iter()
+                .copied()
+                .find(|tool| format!("{tool:?}") == name)
+                .map(Self::Tool),
+        }
+    }
+}
+
+/// The starred items, as stored.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct FavoriteTools {
@@ -17,34 +59,22 @@ pub struct FavoriteTools {
 }
 
 impl FavoriteTools {
-    /// A tool's stored name, or `None` for one that has no menu row to star it from.
-    fn name_of(tool: Tool) -> Option<String> {
-        Tool::GROUPED.contains(&tool).then(|| format!("{tool:?}"))
-    }
-
-    fn tool_named(name: &str) -> Option<Tool> {
-        Tool::GROUPED
-            .iter()
-            .copied()
-            .find(|tool| format!("{tool:?}") == name)
-    }
-
-    /// The starred tools this build knows, in the order they were starred, each once.
-    pub fn tools(&self) -> Vec<Tool> {
-        let mut tools: Vec<Tool> = Vec::new();
-        for tool in self.names.iter().filter_map(|name| Self::tool_named(name)) {
-            if !tools.contains(&tool) {
-                tools.push(tool);
+    /// The starred items this build knows, in the order they were starred, each once.
+    pub fn items(&self) -> Vec<Favorite> {
+        let mut items: Vec<Favorite> = Vec::new();
+        for item in self.names.iter().filter_map(|name| Favorite::named(name)) {
+            if !items.contains(&item) {
+                items.push(item);
             }
         }
-        tools
+        items
     }
 
-    /// Stars `tool`, or takes its star away when it has one. Returns whether it is starred now.
+    /// Stars `item`, or takes its star away when it has one. Returns whether it is starred now.
     /// A tool with no menu row cannot be starred and stays out. Names this build does not know are
     /// left where they are.
-    pub fn toggle(&mut self, tool: Tool) -> bool {
-        let Some(name) = Self::name_of(tool) else {
+    pub fn toggle(&mut self, item: impl Into<Favorite>) -> bool {
+        let Some(name) = item.into().name() else {
             return false;
         };
         if self.names.contains(&name) {
@@ -135,21 +165,65 @@ mod tests {
     #[test]
     fn a_tool_is_starred_once_and_in_the_order_it_was_starred() {
         let mut favorites = FavoriteTools::default();
-        assert!(favorites.tools().is_empty());
+        assert!(favorites.items().is_empty());
         assert!(favorites.toggle(Tool::Brush));
         assert!(favorites.toggle(Tool::TrendLine));
         assert!(favorites.toggle(Tool::Highlighter));
         assert_eq!(
-            favorites.tools(),
-            [Tool::Brush, Tool::TrendLine, Tool::Highlighter]
+            favorites.items(),
+            tools(&[Tool::Brush, Tool::TrendLine, Tool::Highlighter])
         );
         assert!(!favorites.toggle(Tool::TrendLine));
-        assert_eq!(favorites.tools(), [Tool::Brush, Tool::Highlighter]);
+        assert_eq!(favorites.items(), tools(&[Tool::Brush, Tool::Highlighter]));
         // Starred again, it goes to the end.
         assert!(favorites.toggle(Tool::TrendLine));
         assert_eq!(
-            favorites.tools(),
-            [Tool::Brush, Tool::Highlighter, Tool::TrendLine]
+            favorites.items(),
+            tools(&[Tool::Brush, Tool::Highlighter, Tool::TrendLine])
+        );
+    }
+
+    fn tools(tools: &[Tool]) -> Vec<Favorite> {
+        tools.iter().copied().map(Favorite::Tool).collect()
+    }
+
+    #[test]
+    fn a_cursor_is_starred_beside_the_tools_in_the_same_order() {
+        let mut favorites = FavoriteTools::default();
+        assert!(favorites.toggle(Tool::Brush));
+        assert!(favorites.toggle(Favorite::Cursor(CursorMode::Eraser)));
+        assert!(favorites.toggle(Favorite::Cursor(CursorMode::Cross)));
+        assert_eq!(
+            favorites.items(),
+            [
+                Favorite::Tool(Tool::Brush),
+                Favorite::Cursor(CursorMode::Eraser),
+                Favorite::Cursor(CursorMode::Cross)
+            ]
+        );
+        assert!(!favorites.toggle(Favorite::Cursor(CursorMode::Eraser)));
+        assert_eq!(favorites.items().len(), 2);
+        assert_eq!(
+            serde_json::to_string(&favorites).unwrap(),
+            r#"["Brush","cursor:Cross"]"#
+        );
+    }
+
+    #[test]
+    fn a_cursor_name_this_build_does_not_know_is_hidden_but_kept() {
+        let mut favorites: FavoriteTools =
+            serde_json::from_str(r#"["cursor:Magic","cursor:Dot","Brush"]"#).unwrap();
+        assert_eq!(
+            favorites.items(),
+            [
+                Favorite::Cursor(CursorMode::Dot),
+                Favorite::Tool(Tool::Brush)
+            ]
+        );
+        favorites.toggle(Tool::Circle);
+        assert_eq!(
+            serde_json::to_string(&favorites).unwrap(),
+            r#"["cursor:Magic","cursor:Dot","Brush","Circle"]"#
         );
     }
 
@@ -158,14 +232,14 @@ mod tests {
         let mut favorites = FavoriteTools::default();
         assert!(!favorites.toggle(Tool::Cursor));
         assert!(!favorites.toggle(Tool::Ruler));
-        assert!(favorites.tools().is_empty());
+        assert!(favorites.items().is_empty());
     }
 
     #[test]
     fn names_this_build_does_not_know_are_hidden_but_kept() {
         let mut favorites: FavoriteTools =
             serde_json::from_str(r#"["Brush","FutureTool","Cursor","Brush"]"#).unwrap();
-        assert_eq!(favorites.tools(), [Tool::Brush]);
+        assert_eq!(favorites.items(), tools(&[Tool::Brush]));
         assert!(favorites.toggle(Tool::Circle));
         let stored = serde_json::to_string(&favorites).unwrap();
         assert_eq!(
@@ -174,7 +248,7 @@ mod tests {
         );
         // A list holding only names nobody knows draws no bar.
         let strangers: FavoriteTools = serde_json::from_str(r#"["FutureTool"]"#).unwrap();
-        assert!(strangers.tools().is_empty());
+        assert!(strangers.items().is_empty());
     }
 
     #[test]

@@ -15,7 +15,7 @@ impl ChartWorkspace {
         // The strip shows the remembered options, so they are read before it is drawn.
         let _ = self.drawing_templates();
         let (has_drawings, all_locked) = self.drawing_lock_state();
-        let favorites = self.favorite_tools();
+        let favorites = self.favorites();
         let input = tool_sidebar::ToolSidebarInput {
             active_tool: self.tools.active,
             cursor: self.tools.chosen_cursor(),
@@ -82,7 +82,7 @@ impl ChartWorkspace {
                 }
                 ToolSidebarAction::OpenAlerts => actions.push(WorkspaceAction::OpenAlerts),
                 ToolSidebarAction::SetSync(sync) => self.set_sync(sync),
-                ToolSidebarAction::ToggleFavorite(tool) => self.toggle_favorite_tool(tool),
+                ToolSidebarAction::ToggleFavorite(item) => self.toggle_favorite(item),
             }
         }
         self.save_drawing_prefs();
