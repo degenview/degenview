@@ -283,6 +283,15 @@ skipped (the bar repeats the last result, a change is taken between the two late
 as `ta.sma` and `ta.rma` skip it here (item 23); what TradingView's reference RMA does after an interior
 gap (it probably restarts) is unchecked. Saved scripts that use it plot and trade differently.
 
+**`ta.alma`** weighted the window mirrored: it summed `values[length - 1 - i]` (newest first) against Pine's
+`series[length - i - 1]` (oldest first), so the weight peak at `offset * (length - 1)` sat on the *older*
+side and an offset of 0.75 behaved like 0.25. Every ALMA lagged, and indicators built on it (the X-trender
+script's trend lines turned up to ten bars late) differed from TradingView. Fixed; checked bar by bar
+against an independent implementation on 289 weekly BTC-USDT bars (the reporter's script now ends within
+0.03 of TradingView's values on every plot). `ta.cog`, `ta.wma`, `ta.hma`, `ta.linreg`, `ta.vwma` and
+`ta.swma` were read for the same mistake and are oriented correctly. Saved scripts that use `ta.alma` plot
+differently.
+
 **23. `na` in a window.** `sma`, `highest`, `lowest` and `rsi` use `last_valid` (`ta.rs:648-684, 707`), which
 compresses over `na`; `wma`, `stdev`, `median`, `variance`, `cci` use the strict `last_window`. The module
 header says "a window with any `na` yields `na`", so the file contradicts itself. A test pins the

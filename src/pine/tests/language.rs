@@ -175,7 +175,7 @@ fn windowed_statistics_follow_the_reference_formulas() {
          before = ta.valuewhen(bar_index % 2 == 0, close, 1)",
         5,
     );
-    close_to(&session, "alma", 103.314_326_399_761_74);
+    close_to(&session, "alma", 104.685_673_600_238_26);
     close_to(&session, "nearest", 105.0);
     close_to(&session, "linear", 104.6);
     close_to(&session, "median", 103.0);

@@ -379,7 +379,8 @@ fn last_n(values: &[f64], length: usize) -> Option<&[f64]> {
     (length > 0 && length <= values.len()).then(|| &values[values.len() - length..])
 }
 
-/// `ta.alma(series, length, offset, sigma, floor)`: the Arnaud Legoux moving average.
+/// `ta.alma(series, length, offset, sigma, floor)`: the Arnaud Legoux moving average. Weight `i` is
+/// for the `i`th bar of the window counting from the oldest, so an offset near 1 favours the newest.
 pub fn alma(
     source: &RuntimeValue,
     length: i64,
@@ -399,10 +400,10 @@ pub fn alma(
     }
     let s = length as f64 / sigma;
     let (mut norm, mut sum) = (0.0, 0.0);
-    for i in 0..length {
+    for (i, value) in values.iter().enumerate() {
         let weight = (-((i as f64 - m).powi(2)) / (2.0 * s * s)).exp();
         norm += weight;
-        sum += values[length - 1 - i] * weight;
+        sum += value * weight;
     }
     out((norm != 0.0).then(|| sum / norm))
 }
@@ -857,6 +858,55 @@ mod pivot_and_rank_tests {
     fn close_to(actual: &RuntimeValue, expected: f64) {
         let value = actual.number().unwrap_or_else(|| panic!("{actual:?}"));
         assert!((value - expected).abs() < 1e-9, "{value} vs {expected}");
+    }
+
+    fn alma_of(values: &[f64], length: i64, offset: f64, sigma: f64, floor: bool) -> RuntimeValue {
+        let mut state = State::default();
+        let mut last = RuntimeValue::Na;
+        for value in values {
+            last = alma(
+                &RuntimeValue::Float(*value),
+                length,
+                offset,
+                sigma,
+                floor,
+                &mut state,
+            );
+        }
+        last
+    }
+
+    #[test]
+    fn alma_weights_the_newest_bars_when_the_offset_is_near_one() {
+        // Pine's reference sums `series[length - i - 1] * weight` with the weight peaking at
+        // `offset * (length - 1)`: the window's oldest bar is index 0. Computed by hand.
+        close_to(
+            &alma_of(&[103.0, 104.0, 105.0], 3, 0.85, 6.0, false),
+            104.685_673_600_238_26,
+        );
+        // On a rising ramp an offset above one half lands above the window's middle (3), an
+        // offset below it under; a mirrored window swaps the two.
+        let ramp = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let late = alma_of(&ramp, 5, 0.75, 3.0, false).number().unwrap();
+        let early = alma_of(&ramp, 5, 0.25, 3.0, false).number().unwrap();
+        assert!(late > 3.0 && early < 3.0, "{late}, {early}");
+        assert!(
+            (late + early - 6.0).abs() < 1e-9,
+            "symmetric about the middle"
+        );
+        close_to(
+            &alma_of(&ramp, 5, 0.75, 3.0, false),
+            3.532_902_766_885_532_4,
+        );
+    }
+
+    #[test]
+    fn alma_floors_the_peak_only_when_asked() {
+        // `offset * (length - 1)` is 2.25 here; flooring moves the peak to 2.
+        let ramp = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let exact = alma_of(&ramp, 4, 0.75, 3.0, false).number().unwrap();
+        let floored = alma_of(&ramp, 4, 0.75, 3.0, true).number().unwrap();
+        assert!(floored < exact, "{floored} < {exact}");
     }
 
     #[test]
