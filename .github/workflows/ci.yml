@@ -161,10 +161,11 @@ jobs:
           DEGENVIEW_NO_KEYCHAIN: "1"
         run: cargo test --locked --lib -- update::install update::archive update::check host::update windows_credentials tls_protect
 
-  # Starts the real release executable (GUI subsystem, as shipped) and waits for a window to draw. The
+  # Starts the real release executable (GUI subsystem, as shipped) and waits for a frame to be presented. The
   # Windows build was never launched anywhere before this job, so "the app does not open" could not
   # be told from "it opens". The runner has no GPU: wgpu falls back to the WARP software adapter, which
-  # proves the startup path and the window loop, not any real driver. `startup.log` (see
+  # proves the startup path and the window loop, not any real driver. "First frame presented" is
+  # logged when a screenshot of the first frame comes back, so a hang in rendering is not a pass. `startup.log` (see
   # `crash_report`) is what the job reads, and prints when it fails.
   smoke-windows:
     name: ${{ matrix.name }}
@@ -212,13 +213,13 @@ jobs:
           $drawn = $false
           $deadline = (Get-Date).AddSeconds(90)
           while ((Get-Date) -lt $deadline -and -not $process.HasExited) {
-            if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'first tab window drawn' -Quiet)) {
+            if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'first frame presented' -Quiet)) {
               $drawn = $true
               break
             }
             Start-Sleep -Seconds 1
           }
-          # A window that draws once and then dies is still a failed start.
+          # A window that presents once and then dies is still a failed start.
           if ($drawn) { Start-Sleep -Seconds 15 }
           $process.Refresh()
           $alive = -not $process.HasExited
@@ -226,5 +227,5 @@ jobs:
             if (Test-Path $file) { Write-Host "::group::$file"; Get-Content $file; Write-Host '::endgroup::' }
           }
           if ($alive) { Stop-Process -Id $process.Id -Force }
-          if (-not $drawn) { Write-Host "::error::no window was drawn within 90 s (exited: $($process.HasExited))"; exit 1 }
-          if (-not $alive) { Write-Host "::error::the app exited after its first window (code $($process.ExitCode))"; exit 1 }
+          if (-not $drawn) { Write-Host "::error::no frame was presented within 90 s (exited: $($process.HasExited))"; exit 1 }
+          if (-not $alive) { Write-Host "::error::the app exited after presenting its first frame (code $($process.ExitCode))"; exit 1 }
