@@ -221,8 +221,9 @@ if bar_index % 3 == 0
     plot(v[2])      // TV: close from 6 bars ago. Ours: from 3 bars ago.
 ```
 
-**7. Function block locals push `na` on skipped bars** (`session.rs:2848, 2899-2921`). Locals are removed at
-call start, so a local from a skipped `if` reads `Na`, and `invoke_with` pushes that into its history.
+**7. Function block locals push `na` on skipped bars** (`session.rs:2848, 2899-2921`). A local from a skipped
+`if` has no value at the end of the call (or, when an outer variable has its name, that variable's), and
+`invoke_with` pushes that into its history.
 TradingView keeps the last committed value, so `t[1]` is the close of the previous bar the block ran on; ours
 is `na`.
 

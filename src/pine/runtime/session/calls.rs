@@ -609,19 +609,26 @@ impl Session {
         let prefix = self.site_key(site, context);
         let stash_key = |local: &str| format!("{INTERNAL_PREFIX}fn:{prefix}:{local}");
 
+        // What the caller's variables of these names hold, put back when the call ends.
         let saved: Vec<(String, Option<RuntimeValue>)> = function
             .locals
             .iter()
             .map(|local| (local.clone(), self.working.variables.get(local).cloned()))
             .collect();
-        for local in function.locals.iter() {
-            self.working.variables.remove(local);
-        }
+        // An ordinary local hides an outer variable of its name only from its declaration on: to
+        // the end of the call at the body's top level, to the end of its block in a branch or loop
+        // (`run_statement` puts the outer value back). So above the declaration, and outside a
+        // block that declares it, the name still reads the global.
         // A `var` local that has run before resumes with its value; on the first call it is left
-        // unset so its declaration initialises it.
+        // unset so its declaration initialises it rather than taking a global's value.
         for local in function.persistent_locals.iter() {
-            if let Some(value) = self.working.variables.get(&stash_key(local)).cloned() {
-                self.working.variables.insert(local.clone(), value);
+            match self.working.variables.get(&stash_key(local)).cloned() {
+                Some(value) => {
+                    self.working.variables.insert(local.clone(), value);
+                }
+                None => {
+                    self.working.variables.remove(local);
+                }
             }
         }
         for (parameter, value) in bound {

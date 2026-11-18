@@ -690,6 +690,43 @@ fn a_block_can_declare_a_name_an_outer_scope_already_has() {
 }
 
 #[test]
+fn a_function_reads_the_global_its_branch_declares_again_outside_that_branch() {
+    // `level = 1.0` is a local of its `if` alone: after the branch, taken or not, and above a
+    // declaration of the function's own, `level` is the global.
+    let session = run(
+        "level = close\n\
+         skipped() =>\n    if false\n        level = 1.0\n    level\n\
+         taken() =>\n    if true\n        level = 1.0\n    level\n\
+         looped() =>\n    for i = 0 to 1\n        level = 1.0\n    level\n\
+         above() =>\n    first = level\n    level = 2.0\n    first + level\n\
+         a = skipped()\n\
+         b = taken()\n\
+         c = looped()\n\
+         d = above()",
+        3,
+    );
+    // The last bar closes at 103.
+    assert_eq!(value(&session, "a"), RuntimeValue::Float(103.0));
+    assert_eq!(value(&session, "b"), RuntimeValue::Float(103.0));
+    assert_eq!(value(&session, "c"), RuntimeValue::Float(103.0));
+    assert_eq!(value(&session, "d"), RuntimeValue::Float(105.0));
+    assert_eq!(value(&session, "level"), RuntimeValue::Float(103.0));
+}
+
+#[test]
+fn a_var_local_named_like_a_global_keeps_its_own_value() {
+    let session = run(
+        "n = 5\n\
+         counter() =>\n    var int n = 10\n    n += 1\n    n\n\
+         first = counter()\n\
+         after = n",
+        3,
+    );
+    assert_eq!(value(&session, "first"), RuntimeValue::Int(13));
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(5));
+}
+
+#[test]
 fn a_loop_variable_may_carry_its_type() {
     let session = run(
         "type Zone\n    float top\n\
