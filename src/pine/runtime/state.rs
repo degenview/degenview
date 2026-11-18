@@ -30,6 +30,14 @@ pub struct AlertEvent {
     pub is_confirmed: bool,
 }
 
+/// A confirmed bar of the series a script (or a request's expression) runs on, with the bar length
+/// in force when it ran: a bar after a gap in the data is longer than the one before.
+#[derive(Clone, Debug)]
+pub struct LoggedBar {
+    pub bar: Kline,
+    pub seconds: f64,
+}
+
 /// What one `request.security` call site remembers between chart bars.
 #[derive(Clone, Debug)]
 pub struct SecuritySite {
@@ -45,6 +53,9 @@ pub struct SecuritySite {
     pub completed_candles: usize,
     /// The expression's own state, not shared with the chart script.
     pub state: Box<RuntimeState>,
+    /// The higher-timeframe candles this site has completed, which a request inside its expression
+    /// replays when that inner call skipped some of them. Kept only for scripts that request.
+    pub bars: Vec<LoggedBar>,
     /// The expression's value on the last completed higher-timeframe bar.
     pub last_result: RuntimeValue,
     /// The chart bar this site last answered, and what it answered, for a second call.
@@ -61,6 +72,7 @@ impl Default for SecuritySite {
             is_warmed_up: false,
             completed_candles: 0,
             state: Box::default(),
+            bars: Vec::new(),
             last_result: RuntimeValue::Na,
             processed_bar: None,
             bar_result: RuntimeValue::Na,

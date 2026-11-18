@@ -105,6 +105,7 @@ impl Session {
         let history_builtins =
             history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
         let security_slices = security_slice::build(&program.statements);
+        let tracks_chart_bars = requests_security(&program);
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
@@ -185,6 +186,9 @@ impl Session {
             logs: crate::pine::logs::LogSink::default(),
             mintick: supplied_mintick.unwrap_or(DEFAULT_MINTICK),
             footprints: Default::default(),
+            series_bars: Vec::new(),
+            replay_globals: None,
+            tracks_chart_bars,
             bar_seconds: 0.0,
             chart_bar_seconds: None,
             alert_mode: false,
@@ -307,4 +311,47 @@ fn history_builtin_names(
         }
     }
     names
+}
+
+/// Whether the script, or a library it imports, calls `request.security` anywhere (in a function
+/// body or a block too). Read off the parsed calls, so the way the call is spelled cannot hide it.
+fn requests_security(program: &CompiledProgram) -> bool {
+    let mut found = false;
+    crate::pine::syntax::traversal::for_each_call(&program.statements, &mut |name, _| {
+        found |= name == "request.security";
+    });
+    found
+        || program
+            .imports
+            .iter()
+            .any(|import| import.library.as_deref().is_some_and(requests_security))
+}
+
+#[cfg(test)]
+mod request_detection_tests {
+    use super::*;
+    use crate::pine::compiler::{self, NoLibraries};
+    use crate::pine::syntax::token::Limits;
+
+    fn finds(body: &str) -> bool {
+        let source = format!("//@version=6\nindicator(\"T\")\n{body}\n");
+        let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+        assert!(program.is_valid(), "{:?}", program.diagnostics);
+        requests_security(&program)
+    }
+
+    #[test]
+    fn a_request_is_found_however_it_is_written_and_wherever_it_sits() {
+        let call = "request.security(syminfo.tickerid, \"D\", close)";
+        assert!(finds(&format!("plot({call})")));
+        assert!(finds(
+            "plot(request . security(syminfo.tickerid, \"D\", close))"
+        ));
+        assert!(finds(&format!("daily() =>\n    {call}\nplot(daily())")));
+        assert!(finds(&format!("x = close > open ? {call} : 0.0\nplot(x)")));
+        assert!(!finds("plot(close)"));
+        assert!(!finds(
+            "// request.security is not called here\nplot(close)"
+        ));
+    }
 }

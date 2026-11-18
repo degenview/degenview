@@ -1226,6 +1226,32 @@ mod tests {
     }
 
     #[test]
+    fn rsi_follows_wilders_published_fourteen_day_series() {
+        // The closes of Wilder's worked example (as StockCharts reproduces it). Seeded with the
+        // simple average of the first 14 changes and smoothed with alpha 1/14, the RSI reads
+        // 70.46 on the 15th close; a window average (the old behaviour) reads 100 or 0 here.
+        let closes = [
+            44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03,
+            45.61, 46.28, 46.28, 46.00, 46.03, 46.41, 46.22, 45.64, 46.21, 46.25, 45.71, 46.45,
+            45.78, 45.35, 44.03, 44.18, 44.22, 44.57, 43.42, 42.66, 43.13,
+        ];
+        let expected = [
+            70.46, 66.25, 66.48, 69.35, 66.29, 57.92, 62.88, 63.21, 56.01, 62.34, 54.67, 50.39,
+            40.02, 41.49, 41.90, 45.50, 37.32, 33.09, 37.79,
+        ];
+        let values = numbers(&run("ta.rsi", &closes, 14));
+        assert!(values[..14].iter().all(Option::is_none), "needs 14 changes");
+        for (offset, want) in expected.iter().enumerate() {
+            let got = values[14 + offset].expect("a value");
+            assert!(
+                (got - want).abs() < 0.005,
+                "bar {}: {got} vs {want}",
+                14 + offset
+            );
+        }
+    }
+
+    #[test]
     fn rsi_after_a_long_fall_is_low_but_not_zero() {
         // The simple average over the window read exactly 0 after `length` falls in a row; the
         // smoothed gain only decays, so a later bounce still moves the value.

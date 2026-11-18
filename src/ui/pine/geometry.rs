@@ -6,8 +6,8 @@
 
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, Horizontal, LabelStyle, LineExtend, LineStyle, PlotStyle, Size, TableCell,
-    TableOutput, TablePosition, TextAlign, Vertical, YLocation, index_is_known,
+    DISPLAY_PANE, Horizontal, LabelStyle, LineExtend, LineStyle, MarkerShape, PlotStyle, Size,
+    TableCell, TableOutput, TablePosition, TextAlign, Vertical, YLocation, index_is_known,
 };
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
 
@@ -49,6 +49,28 @@ pub fn marker_radius(size: Size) -> f32 {
         Size::Huge => 14.0,
         // Only `size.*` names size a marker; a number reads as the default.
         Size::Points(_) => 7.0,
+    }
+}
+
+/// Half-width of a `plotshape` triangle. Measured against TradingView for `size.tiny` and
+/// `size.small` (a triangle 8 and 16 points wide on a 2x screen, which is half again to twice the
+/// circle's); `size.normal` and above keep that growth and are inferred.
+pub fn triangle_radius(size: Size) -> f32 {
+    match size {
+        Size::Tiny => 4.5,
+        Size::Small | Size::Auto => 8.5,
+        Size::Normal | Size::Points(_) => 12.0,
+        Size::Large => 17.0,
+        Size::Huge => 24.0,
+    }
+}
+
+/// Half-width of a `plotshape` marker of `shape` at `size`: triangles have their own ladder, every
+/// other shape reads `marker_radius`.
+pub fn shape_radius(shape: MarkerShape, size: Size) -> f32 {
+    match shape {
+        MarkerShape::TriangleUp | MarkerShape::TriangleDown => triangle_radius(size),
+        _ => marker_radius(size),
     }
 }
 
@@ -114,10 +136,14 @@ pub fn diamond_points(centre: Pos2, radius: f32) -> [Pos2; 4] {
     ]
 }
 
+/// A marker triangle's height over its half-width: TradingView's are as tall as they are wide
+/// (measured 16 by 15 and 32 by 31 pixels), taller than an equilateral triangle's 1.73.
+pub const TRIANGLE_HEIGHT: f32 = 1.9;
+
 /// The corners of an isosceles triangle centred on `centre`, its base `2 * radius` wide and its
-/// height `1.6 * radius`; the apex points down when `down`.
+/// height `TRIANGLE_HEIGHT * radius`; the apex points down when `down`.
 pub fn triangle_points(centre: Pos2, radius: f32, down: bool) -> [Pos2; 3] {
-    let half_height = radius * 0.8;
+    let half_height = radius * TRIANGLE_HEIGHT / 2.0;
     let (apex, base) = if down {
         (centre.y + half_height, centre.y - half_height)
     } else {
@@ -830,6 +856,21 @@ mod tests {
         assert_eq!(font_size(Size::Points(28)), 24.0);
         assert_eq!(marker_radius(Size::Tiny), 3.0);
         assert_eq!(marker_radius(Size::Auto), 5.0);
+        assert_eq!(triangle_radius(Size::Tiny), 4.5);
+        assert!(triangle_radius(Size::Tiny) > marker_radius(Size::Tiny));
+        let ladder = [
+            Size::Tiny,
+            Size::Small,
+            Size::Normal,
+            Size::Large,
+            Size::Huge,
+        ];
+        assert!(ladder.windows(2).all(|pair| {
+            triangle_radius(pair[0]) < triangle_radius(pair[1])
+                && marker_radius(pair[0]) < marker_radius(pair[1])
+        }));
+        assert_eq!(shape_radius(MarkerShape::Circle, Size::Small), 5.0);
+        assert_eq!(shape_radius(MarkerShape::TriangleUp, Size::Small), 8.5);
     }
 
     #[test]
@@ -942,16 +983,16 @@ mod tests {
     fn a_triangle_marker_points_where_it_is_told() {
         let centre = Pos2::new(10.0, 20.0);
         let up = triangle_points(centre, 5.0, false);
-        assert_eq!(up[0], Pos2::new(10.0, 16.0));
+        assert_eq!(up[0], Pos2::new(10.0, 15.25));
         assert_eq!(
             (up[1], up[2]),
-            (Pos2::new(15.0, 24.0), Pos2::new(5.0, 24.0))
+            (Pos2::new(15.0, 24.75), Pos2::new(5.0, 24.75))
         );
         let down = triangle_points(centre, 5.0, true);
-        assert_eq!(down[0], Pos2::new(10.0, 24.0));
+        assert_eq!(down[0], Pos2::new(10.0, 24.75));
         assert_eq!(
             (down[1], down[2]),
-            (Pos2::new(15.0, 16.0), Pos2::new(5.0, 16.0))
+            (Pos2::new(15.0, 15.25), Pos2::new(5.0, 15.25))
         );
     }
 
