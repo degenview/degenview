@@ -255,6 +255,8 @@ impl ChartWorkspace {
         self.give_pointer_to_tool_over_selection();
         let selecting_portion = self.is_selecting_portion();
         let (active_tool, zoom_armed) = (self.tools.active_tool(), self.tools.is_zoom_armed());
+        let cursor = self.tools.cursor();
+        let values_tooltip = self.tools.values_tooltip();
         let selected_drawing = self.tools.selection().cloned();
         let (magnet, keep_drawing, hide_all_drawings) = (
             self.tools.magnet(),
@@ -315,6 +317,7 @@ impl ChartWorkspace {
         let drawing_defaults = self.drawing_templates().defaults().clone();
         let drawing_preview: Option<(u64, Drawing)> = self.tools.previewed_draft();
         let mut drawing_escape = false;
+        self.reserve_escape_for_favorites_menu(ui.ctx());
         let mut paper_actions = Vec::new();
         let mut quick_trade = None;
         let mut live_actions = Vec::new();
@@ -535,6 +538,7 @@ impl ChartWorkspace {
                                             .with_behavior(magnet, keep_drawing)
                                             .with_style_clipboard(style_clipboard)
                                             .with_keys_blocked(dialog_open)
+                                            .with_cursor(cursor)
                                             .with_defaults(&drawing_defaults)
                                             .with_preview(
                                                 drawing_preview
@@ -545,6 +549,8 @@ impl ChartWorkspace {
                                                     .map(|(_, draft)| draft),
                                             );
                                             chart.chart.set_zoom_armed(zoom_armed);
+                                            chart.chart.set_cursor_mode(cursor);
+                                            chart.chart.set_values_tooltip(values_tooltip);
                                             chart.chart.set_snapshot_select(selecting_portion);
                                             let for_logs = logs_chart == Some(chart_id);
                                             chart
@@ -748,6 +754,7 @@ impl ChartWorkspace {
             &mut commands,
         );
         drawing_escape |= self.drive_portion_selection(&ctx, grid_rect);
+        self.show_favorites_bar(&ctx, grid_rect);
 
         if !favorite_toggles.is_empty() || !watchlist_changes.is_empty() {
             let mut store = lock(&self.watchlist);

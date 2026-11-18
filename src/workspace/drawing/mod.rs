@@ -1,6 +1,7 @@
 //! Drawings on a chart: what is saved, the properties dialog, templates and defaults, locking, and merging another Mac's edits.
 
 pub(in crate::workspace) mod content;
+pub(in crate::workspace) mod favorites;
 pub(in crate::workspace) mod links;
 pub(in crate::workspace) mod tool_rail;
 pub(in crate::workspace) mod tools;
@@ -158,6 +159,7 @@ impl ChartWorkspace {
             let prefs = templates.prefs();
             self.tools.prefs = prefs;
             self.tools.saved_prefs = prefs;
+            self.tools.cursor = prefs.cursor;
             self.tools.templates = Some(templates);
         }
         let templates = self.tools.templates.as_mut().expect("opened just above");

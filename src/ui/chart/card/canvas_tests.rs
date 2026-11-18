@@ -94,6 +94,10 @@ pub(super) struct Harness {
     pub(super) clock: f64,
     /// The pointer as last told to egui: a still pointer sends no event, as in a real window.
     sent: Option<Pos2>,
+    /// A press or a release of the primary button to send with the next frame.
+    pub(super) button: Option<bool>,
+    /// The window's size; `SIZE` unless a test wants a narrower chart.
+    pub(super) size: Vec2,
 }
 
 impl Harness {
@@ -115,18 +119,28 @@ impl Harness {
             source: DataSource::Binance,
             clock: 0.0,
             sent: None,
+            button: None,
+            size: SIZE,
         }
     }
 
     pub(super) fn frame(&mut self) -> (Vec<ClippedShape>, ChartPointer) {
         let input = egui::RawInput {
             time: Some(self.clock),
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, self.size)),
             events: self
                 .pointer
                 .filter(|at| self.sent != Some(*at))
                 .map(egui::Event::PointerMoved)
                 .into_iter()
+                .chain(self.button.take().zip(self.pointer).map(|(pressed, pos)| {
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    }
+                }))
                 .collect(),
             ..Default::default()
         };
@@ -1121,6 +1135,102 @@ fn the_ohlc_readout_hides_without_touching_the_crosshair() {
     assert!(
         hidden.texts.iter().any(|(_, text, _)| !text.is_empty()),
         "the axis tags still draw"
+    );
+}
+
+#[test]
+fn each_cursor_keeps_only_its_own_parts_of_the_crosshair() {
+    use crate::model::CursorMode;
+    let line = Color32::from_gray(135).gamma_multiply(0.6);
+    let tag = Color32::from_gray(79);
+    let readout = |drawn: &Drawn| {
+        ["O ", "H ", "L ", "C "].into_iter().all(|label| {
+            drawn
+                .texts
+                .iter()
+                .any(|(_, text, _)| text.starts_with(label))
+        })
+    };
+    for (mode, lines, tags) in [
+        (CursorMode::Cross, true, true),
+        (CursorMode::Dot, false, true),
+        (CursorMode::Arrow, false, false),
+    ] {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.card.set_cursor_mode(mode);
+        harness.crosshair = Some(CrosshairInfo {
+            frozen: false,
+            owner_id: 1,
+            x_fraction: 0.5,
+            time: None,
+            price: 230.0,
+        });
+        let (drawn, _) = harness.draw();
+        let drawn_lines = drawn
+            .segments
+            .iter()
+            .filter(|(_, stroke)| stroke.color == line)
+            .count();
+        let drawn_tags = drawn.rects.iter().filter(|(_, fill)| *fill == tag).count();
+        assert_eq!(drawn_lines > 0, lines, "{mode:?} lines: {drawn_lines}");
+        assert_eq!(drawn_tags, if tags { 2 } else { 0 }, "{mode:?} tags");
+        assert!(readout(&drawn), "{mode:?} still names the bar");
+    }
+}
+
+#[test]
+fn the_demonstration_marks_are_painted_over_the_chart_and_its_background() {
+    use crate::model::CursorMode;
+    // Every shape of the frame, in painting order.
+    fn flat(shape: &Shape, out: &mut Vec<Shape>) {
+        match shape {
+            Shape::Vec(shapes) => shapes.iter().for_each(|shape| flat(shape, out)),
+            other => out.push(other.clone()),
+        }
+    }
+    let marked = |harness: &mut Harness| -> Vec<Shape> {
+        let mut all = Vec::new();
+        for clipped in harness.frame().0 {
+            flat(&clipped.shape, &mut all);
+        }
+        all
+    };
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness.card.add_pine_instance(
+        None,
+        "Ground",
+        "//@version=6\nindicator(\"Ground\", overlay = true)\nbgcolor(color.new(color.red, 0))\n",
+    );
+    wait_for_run(&mut harness, id);
+    harness.card.set_cursor_mode(CursorMode::Demonstration);
+    harness.draw();
+    let at = crate::model::Anchor {
+        time_ms: harness.candles[250].open_time,
+        price: harness.candles[250].close,
+    };
+    harness.card.demo.dot(at, 0.0);
+    let shapes = marked(&mut harness);
+    let mark = shapes
+        .iter()
+        .position(
+            |shape| matches!(shape, Shape::Circle(circle) if circle.fill == crate::ui::kit::ORANGE),
+        )
+        .expect("the dot is painted");
+    let candle = shapes
+        .iter()
+        .rposition(|shape| {
+            matches!(shape, Shape::Rect(rect) if rect.fill == Color32::from_rgb(48, 209, 88)
+                || rect.fill == Color32::from_rgb(255, 69, 58))
+        })
+        .expect("candles are painted");
+    assert!(
+        mark > candle,
+        "the mark ({mark}) is under a candle ({candle})"
+    );
+    assert_eq!(
+        mark,
+        shapes.len() - 1,
+        "nothing of the chart is painted over the mark"
     );
 }
 

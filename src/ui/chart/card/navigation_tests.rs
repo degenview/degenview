@@ -35,6 +35,10 @@ struct Rig {
     drawings: Vec<Drawing>,
     scale_mode: PriceScaleMode,
     tool: Tool,
+    /// The workspace's cursor, as the drawing layer is told it.
+    cursor_mode: crate::model::CursorMode,
+    /// Whether the drawing layer was told a long touch is not a right-click, last frame.
+    long_press_values: bool,
     selected: Vec<u64>,
     time: f64,
     rect: Rect,
@@ -48,6 +52,9 @@ struct Rig {
     escape_consumed: bool,
     /// The window has the keyboard focus.
     focused: bool,
+    /// The keys held down, as the window reports them.
+    modifiers: Modifiers,
+    sent_modifiers: Modifiers,
 }
 
 impl Rig {
@@ -61,6 +68,8 @@ impl Rig {
             drawings: Vec::new(),
             scale_mode: PriceScaleMode::Regular,
             tool: Tool::Cursor,
+            cursor_mode: crate::model::CursorMode::Cross,
+            long_press_values: false,
             selected: Vec::new(),
             time: 0.0,
             rect: Rect::NOTHING,
@@ -70,13 +79,19 @@ impl Rig {
             picked_range: None,
             escape_consumed: false,
             focused: true,
+            modifiers: Modifiers::NONE,
+            sent_modifiers: Modifiers::NONE,
         };
         rig.frames(&[]);
         rig
     }
 
-    fn frame(&mut self, events: Vec<egui::Event>) {
+    fn frame(&mut self, mut events: Vec<egui::Event>) {
         self.time += 0.016;
+        if self.modifiers != self.sent_modifiers {
+            events.insert(0, egui::Event::ModifiersChanged(self.modifiers));
+            self.sent_modifiers = self.modifiers;
+        }
         let input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
             time: Some(self.time),
@@ -91,13 +106,15 @@ impl Rig {
             self.scale_mode,
         );
         let (tool, selected) = (self.tool, self.selected.clone());
-        let selecting = self.selecting;
+        let (selecting, cursor_mode) = (self.selecting, self.cursor_mode);
         let (mut rect, mut commands) = (Rect::NOTHING, 0);
         let mut picked = None;
         let mut consumed = false;
+        let mut long_press = false;
         let mut output = self.ctx.run_ui(input, |ui| {
-            let mut frame =
-                DrawingFrame::new(drawings, tool, None, 100).with_selection(selected.clone());
+            let mut frame = DrawingFrame::new(drawings, tool, None, 100)
+                .with_selection(selected.clone())
+                .with_cursor(cursor_mode);
             let mut replay = ReplayChartFrame {
                 selecting,
                 active: false,
@@ -122,11 +139,13 @@ impl Rig {
             commands = frame.commands.len();
             picked = replay.picked_range;
             consumed = frame.escape_consumed;
+            long_press = frame.long_press_values;
         });
         output.textures_delta.clear();
         self.cursor = output.platform_output.cursor_icon;
         self.rect = rect;
         self.commands += commands;
+        self.long_press_values = long_press;
         self.escape_consumed |= consumed;
         if picked.is_some() {
             self.picked_range = picked;
@@ -963,6 +982,369 @@ fn the_cursor_is_a_crosshair_over_the_plot_and_a_hand_while_dragging() {
     assert_eq!(cursor(&rig), egui::CursorIcon::Crosshair);
 }
 
+#[test]
+fn each_cursor_shows_its_own_pointer_over_the_plot_and_the_axes_keep_theirs() {
+    use crate::model::CursorMode;
+    for (mode, over_plot) in [
+        (CursorMode::Cross, egui::CursorIcon::Crosshair),
+        (CursorMode::Dot, egui::CursorIcon::None),
+        (CursorMode::Arrow, egui::CursorIcon::Default),
+    ] {
+        let mut rig = Rig::new();
+        rig.card.set_cursor_mode(mode);
+        let plot = rig.in_plot();
+        rig.frame(vec![egui::Event::PointerMoved(plot)]);
+        rig.frame(Vec::new());
+        assert_eq!(rig.cursor, over_plot, "{mode:?} over the plot");
+        assert_eq!(rig.card.dot_shown, mode == CursorMode::Dot);
+        let price_axis = rig.on_price_axis();
+        rig.frame(vec![egui::Event::PointerMoved(price_axis)]);
+        rig.frame(Vec::new());
+        assert_eq!(rig.cursor, egui::CursorIcon::ResizeVertical, "{mode:?}");
+        assert!(!rig.card.dot_shown, "the dot stays on the plot");
+        let time_axis = rig.on_time_axis();
+        rig.frame(vec![egui::Event::PointerMoved(time_axis)]);
+        rig.frame(Vec::new());
+        assert_eq!(rig.cursor, egui::CursorIcon::ResizeHorizontal, "{mode:?}");
+    }
+}
+
+#[test]
+fn every_cursor_that_leaves_the_drag_alone_pans_with_it() {
+    use crate::model::CursorMode;
+    for mode in CursorMode::ALL.into_iter().filter(|mode| mode.caps().pans) {
+        let mut rig = Rig::new();
+        rig.card.set_cursor_mode(mode);
+        let from = rig.in_plot();
+        rig.drag(from, Vec2::new(100.0, 0.0));
+        assert!(rig.offset() > 0.0, "{mode:?} pans: {}", rig.offset());
+        assert!(
+            rig.card.viewport.vertical.is_auto(),
+            "{mode:?} left the price scale alone"
+        );
+    }
+}
+
+#[test]
+fn the_eraser_holds_the_drag_so_the_chart_never_pans_but_the_axes_and_wheel_still_work() {
+    use crate::model::CursorMode;
+    let mut rig = Rig::new();
+    rig.cursor_mode = CursorMode::Eraser;
+    rig.card.set_cursor_mode(CursorMode::Eraser);
+    rig.frames(&[]);
+    let from = rig.in_plot();
+    rig.drag(from, Vec2::new(120.0, 0.0));
+    assert_eq!(rig.offset(), 0.0, "no pan under the Eraser");
+    assert_eq!(rig.cursor, egui::CursorIcon::Crosshair);
+    // The price axis still stretches the scale and the wheel still zooms.
+    let axis = rig.on_price_axis();
+    rig.drag(axis, Vec2::new(-40.0, -60.0));
+    assert!(
+        rig.card.viewport.vertical.zoom > 1.0,
+        "the price axis answers"
+    );
+    let before = rig.card.viewport.horizontal.visible;
+    rig.frame(vec![
+        egui::Event::PointerMoved(from),
+        egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: Vec2::new(0.0, 60.0),
+            modifiers: Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+        },
+    ]);
+    rig.frames(&[]);
+    assert!(
+        rig.card.viewport.horizontal.visible != before,
+        "the wheel zooms"
+    );
+}
+
+/// A rig on the Demonstration cursor.
+fn demonstrating() -> Rig {
+    use crate::model::CursorMode;
+    let mut rig = Rig::new();
+    rig.cursor_mode = CursorMode::Demonstration;
+    rig.card.set_cursor_mode(CursorMode::Demonstration);
+    rig.frames(&[]);
+    rig
+}
+
+fn strokes(rig: &Rig) -> Vec<usize> {
+    use crate::model::cursor::demo::MarkShape;
+    rig.card
+        .demo
+        .marks()
+        .iter()
+        .map(|mark| match &mark.shape {
+            MarkShape::Stroke(points) => points.len(),
+            MarkShape::Dot(_) => 0,
+        })
+        .collect()
+}
+
+/// How far (ms of chart time) the single stroke on the card reaches from where it began.
+fn stroke_reach(rig: &Rig) -> i64 {
+    use crate::model::cursor::demo::MarkShape;
+    match &rig.card.demo.marks()[0].shape {
+        MarkShape::Stroke(points) => {
+            points.last().expect("a point").time_ms - points.first().expect("a point").time_ms
+        }
+        MarkShape::Dot(_) => 0,
+    }
+}
+
+#[test]
+fn a_quick_stroke_reaches_where_the_button_was_let_go() {
+    let mut rig = demonstrating();
+    let from = rig.in_plot();
+    let far = from + Vec2::new(150.0, 0.0);
+    // The press, one move past the drag threshold, then the last of the move arrives with the
+    // release in one frame: the stroke must take that position, not stop at the move before it.
+    rig.press(from);
+    rig.frame(vec![egui::Event::PointerMoved(from + Vec2::new(12.0, 0.0))]);
+    rig.frame(vec![egui::Event::PointerMoved(far), rig.button(far, false)]);
+    let wanted = (130.0 / rig.slot_width()) as i64 * HOUR;
+    assert!(
+        stroke_reach(&rig) >= wanted,
+        "the stroke reaches {} ms, the hand went {wanted}+ ms",
+        stroke_reach(&rig)
+    );
+    assert!(!rig.card.demonstration_claims_drag(), "and it is finished");
+}
+
+#[test]
+fn a_drag_under_demonstration_draws_a_stroke_and_never_pans() {
+    let mut rig = demonstrating();
+    let from = rig.in_plot();
+    rig.press(from);
+    rig.drag_to(from, from + Vec2::new(90.0, 40.0));
+    assert!(
+        rig.card.demonstration_claims_drag(),
+        "held while it is drawn"
+    );
+    rig.release(from + Vec2::new(90.0, 40.0));
+    assert_eq!(rig.offset(), 0.0, "the chart stayed");
+    assert!(rig.card.viewport.vertical.is_auto());
+    let lengths = strokes(&rig);
+    assert_eq!(lengths.len(), 1);
+    assert!(lengths[0] >= 4, "a point for each move: {lengths:?}");
+    assert!(
+        !rig.card.demonstration_claims_drag(),
+        "let go with the button"
+    );
+    assert_eq!(rig.cursor, egui::CursorIcon::Default, "the plain arrow");
+}
+
+#[test]
+fn alt_click_puts_a_dot_and_a_plain_click_leaves_nothing() {
+    let mut rig = demonstrating();
+    let at = rig.in_plot();
+    rig.press(at);
+    rig.release(at);
+    assert!(
+        rig.card.demo.marks().is_empty(),
+        "a plain click marks nothing"
+    );
+    rig.modifiers = Modifiers::ALT;
+    rig.frames(&[]);
+    rig.press(at);
+    rig.release(at);
+    assert_eq!(strokes(&rig), vec![0], "one dot");
+}
+
+#[test]
+fn the_marks_fade_away_by_the_clock_not_by_the_frames() {
+    use crate::model::cursor::demo::{FADE_SECS, HOLD_SECS};
+    let mut rig = demonstrating();
+    let from = rig.in_plot();
+    rig.drag(from, Vec2::new(60.0, 0.0));
+    assert_eq!(rig.card.demo.marks().len(), 1);
+    // Frames close together change nothing; one a while later finds it gone.
+    for _ in 0..30 {
+        rig.frame(Vec::new());
+    }
+    assert_eq!(rig.card.demo.marks().len(), 1, "still held");
+    rig.time += HOLD_SECS + FADE_SECS + 1.0;
+    rig.frame(Vec::new());
+    assert!(rig.card.demo.marks().is_empty());
+}
+
+#[test]
+fn another_cursor_or_another_market_drops_the_marks_and_nothing_is_a_drawing() {
+    use crate::model::CursorMode;
+    let mut rig = demonstrating();
+    let from = rig.in_plot();
+    rig.drag(from, Vec2::new(60.0, 0.0));
+    assert_eq!(rig.commands, 0, "a mark is never a drawing command");
+    assert_eq!(rig.card.demo.marks().len(), 1);
+    rig.card.abort_drawing();
+    assert!(rig.card.demo.marks().is_empty(), "another market");
+    rig.drag(from, Vec2::new(60.0, 0.0));
+    assert_eq!(rig.card.demo.marks().len(), 1);
+    rig.card.set_cursor_mode(CursorMode::Cross);
+    assert!(rig.card.demo.marks().is_empty(), "another cursor");
+}
+
+#[test]
+fn demonstration_leaves_the_drawings_alone_and_the_axes_working() {
+    let mut rig = demonstrating();
+    rig.drawings.push(Drawing::Ruler {
+        id: 1,
+        a: Anchor {
+            time_ms: 380 * HOUR,
+            price: 120.0,
+        },
+        b: Anchor {
+            time_ms: 390 * HOUR,
+            price: 140.0,
+        },
+    });
+    let axis = rig.on_price_axis();
+    rig.drag(axis, Vec2::new(-40.0, -60.0));
+    assert!(
+        rig.card.viewport.vertical.zoom > 1.0,
+        "the price axis answers"
+    );
+    assert_eq!(rig.commands, 0);
+    assert_eq!(rig.drawings.len(), 1);
+}
+
+#[test]
+fn once_the_values_tooltip_shows_the_press_is_its_and_the_chart_does_not_pan() {
+    let mut rig = Rig::new();
+    let from = rig.in_plot();
+    rig.press(from);
+    rig.time += 0.6;
+    rig.frame(Vec::new());
+    assert!(rig.card.shows_values_tooltip());
+    rig.drag_to(from, from + Vec2::new(120.0, 0.0));
+    assert_eq!(rig.offset(), 0.0, "held for the tooltip, not panned");
+    rig.release(from + Vec2::new(120.0, 0.0));
+    // The next press, moved at once, is an ordinary pan.
+    rig.drag(from, Vec2::new(100.0, 0.0));
+    assert!(rig.offset() > 0.0);
+}
+
+#[test]
+fn a_long_touch_is_only_the_tooltips_while_the_tooltip_has_the_press() {
+    let mut rig = Rig::new();
+    let at = rig.in_plot();
+    rig.frame(vec![egui::Event::PointerMoved(at)]);
+    assert!(
+        !rig.long_press_values,
+        "before any press the menu is the long touch's"
+    );
+    rig.press(at);
+    assert!(!rig.long_press_values, "still waiting for the hold");
+    rig.time += 0.6;
+    rig.frame(Vec::new());
+    rig.frame(Vec::new());
+    assert!(rig.card.shows_values_tooltip());
+    assert!(rig.long_press_values, "the tooltip has the press");
+    // The long touch arrives with the release: the frame that sees it still has the tooltip's press.
+    rig.frame(vec![rig.button(at, false)]);
+    assert!(rig.long_press_values);
+    rig.frame(Vec::new());
+    assert!(
+        !rig.long_press_values,
+        "and the next press starts from nothing"
+    );
+}
+
+#[test]
+fn a_press_the_tooltip_never_took_keeps_its_long_touch_menu() {
+    use crate::model::CursorMode;
+    // On a drawing the press is the drawing's, so there is no tooltip and the menu is not taken.
+    let mut rig = Rig::new();
+    let covering = Drawing::build(
+        Tool::Rectangle,
+        1,
+        &[
+            Anchor {
+                time_ms: 0,
+                price: 0.0,
+            },
+            Anchor {
+                time_ms: 400 * HOUR,
+                price: 10_000.0,
+            },
+        ],
+        Tool::Rectangle.default_style(),
+    )
+    .expect("a rectangle");
+    rig.drawings.push(covering);
+    rig.frames(&[]);
+    let at = rig.in_plot();
+    rig.frame(vec![egui::Event::PointerMoved(at)]);
+    rig.press(at);
+    rig.time += 0.6;
+    rig.frame(Vec::new());
+    rig.frame(Vec::new());
+    assert!(!rig.card.shows_values_tooltip());
+    assert!(
+        !rig.long_press_values,
+        "a drawing, locked or not, keeps its long-touch menu"
+    );
+    rig.release(at);
+
+    // The option off, and the cursors that use the press themselves.
+    for (on, mode) in [
+        (false, CursorMode::Cross),
+        (true, CursorMode::Demonstration),
+        (true, CursorMode::Eraser),
+    ] {
+        let mut rig = Rig::new();
+        rig.card.set_values_tooltip(on);
+        rig.cursor_mode = mode;
+        rig.card.set_cursor_mode(mode);
+        let at = rig.in_plot();
+        rig.frame(vec![egui::Event::PointerMoved(at)]);
+        rig.press(at);
+        rig.time += 0.6;
+        rig.frame(Vec::new());
+        rig.frame(Vec::new());
+        assert!(!rig.long_press_values, "{mode:?} with the option {on}");
+    }
+}
+
+#[test]
+fn an_armed_drawing_tool_never_has_its_press_taken_by_the_tooltip() {
+    let mut rig = Rig::new();
+    rig.tool = Tool::TrendLine;
+    rig.frames(&[]);
+    let from = rig.in_plot();
+    let to = from + Vec2::new(120.0, 40.0);
+    rig.press(from);
+    // Held still well past the long press, then dragged: the drag draws the line.
+    rig.time += 0.6;
+    rig.frame(Vec::new());
+    rig.frame(Vec::new());
+    assert!(
+        !rig.card.shows_values_tooltip(),
+        "a tool is armed: no tooltip"
+    );
+    assert!(!rig.long_press_values);
+    rig.drag_to(from, to);
+    rig.release(to);
+    assert!(rig.commands >= 1, "the drag placed its line");
+}
+
+#[test]
+fn a_cursor_change_moves_nothing_on_the_chart() {
+    use crate::model::CursorMode;
+    let mut rig = Rig::new();
+    rig.card.viewport.horizontal.right_offset = 37.5;
+    rig.frames(&[]);
+    let (offset, range) = (rig.offset(), rig.range());
+    for mode in CursorMode::ALL {
+        rig.card.set_cursor_mode(mode);
+        rig.frames(&[]);
+        assert_eq!(rig.offset(), offset, "{mode:?} kept the view");
+        assert_eq!(rig.range(), range, "{mode:?} kept the price range");
+    }
+}
+
 // MARK: Cost
 
 /// Prints what a frame of a drag costs over long histories. Run with
@@ -1096,6 +1478,34 @@ fn a_click_on_a_bar_picks_that_bar_alone() {
     rig.release(at);
     let time = rig.candles[index].open_time;
     assert_eq!(rig.picked_range, Some((time, time)));
+}
+
+#[test]
+fn a_range_picker_has_the_drag_to_itself_under_demonstration() {
+    use crate::model::CursorMode;
+    let mut rig = Rig::new();
+    rig.cursor_mode = CursorMode::Demonstration;
+    rig.card.set_cursor_mode(CursorMode::Demonstration);
+    rig.card.set_pick_kind(PickKind::LogsRange);
+    rig.selecting = true;
+    rig.frames(&[]);
+    let probe = rig.probe();
+    let first = probe.start + 30;
+    let y = rig.in_plot().y;
+    let from = Pos2::new(rig.x_of(first), y);
+    let to = Pos2::new(rig.x_of(first + 20), y);
+    rig.press(from);
+    rig.drag_to(from, to);
+    assert!(
+        rig.card.demo.marks().is_empty() && !rig.card.demonstration_claims_drag(),
+        "no stroke is drawn over the bars being picked"
+    );
+    rig.release(to);
+    assert!(
+        rig.picked_range.is_some(),
+        "the picker still gets its range"
+    );
+    assert!(rig.card.demo.marks().is_empty());
 }
 
 #[test]

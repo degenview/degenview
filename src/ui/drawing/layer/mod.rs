@@ -9,6 +9,7 @@
 
 mod draw;
 mod edit;
+mod erase;
 mod fib_shapes;
 #[cfg(test)]
 mod fib_tests;
@@ -41,7 +42,7 @@ use super::render::{
 };
 use crate::model::drawings::style::DrawingStyle;
 use crate::model::{
-    Anchor, Caps, Drawing, DrawingCommand, Geometry, MAX_POINTS, MagnetMode, Placement,
+    Anchor, Caps, CursorMode, Drawing, DrawingCommand, Geometry, MAX_POINTS, MagnetMode, Placement,
     PriceFormat, Timeframe, Tool,
 };
 use crate::ui::chart::card::PriceScale;
@@ -96,6 +97,12 @@ pub struct DrawingFrame<'a> {
     /// A drawing shown in place of the stored one with its id: the properties dialog's live
     /// preview of an edit not yet committed.
     pub preview: Option<&'a Drawing>,
+    /// The cursor the pointer rests on: the Eraser erases instead of picking, moving or drawing,
+    /// and a cursor that marks the chart (Demonstration) leaves the drawings alone.
+    pub cursor: CursorMode,
+    /// The values tooltip has the press, so the long touch that follows it is not also a
+    /// right-click. Set by the card, which knows whether it does.
+    pub long_press_values: bool,
     // Outputs.
     pub commands: Vec<DrawingCommand>,
     /// `Some(x)` means set the selection to `x` (`Some(vec![])` clears it).
@@ -163,6 +170,8 @@ impl<'a> DrawingFrame<'a> {
             style_clipboard: None,
             keys_blocked: false,
             preview: None,
+            cursor: CursorMode::Cross,
+            long_press_values: false,
             commands: Vec::new(),
             select: None,
             escape_consumed: false,
@@ -236,6 +245,22 @@ impl<'a> DrawingFrame<'a> {
     pub fn with_preview(mut self, preview: Option<&'a Drawing>) -> Self {
         self.preview = preview;
         self
+    }
+
+    pub fn with_cursor(mut self, cursor: CursorMode) -> Self {
+        self.cursor = cursor;
+        self
+    }
+
+    /// The pointer erases drawings.
+    fn erases(&self) -> bool {
+        self.cursor.caps().erases
+    }
+
+    /// The pointer neither picks nor erases: the drawings are out of its reach.
+    fn is_inert(&self) -> bool {
+        let caps = self.cursor.caps();
+        !caps.edits_drawings && !caps.erases
     }
 
     /// The style a new drawing of `tool` starts with.
@@ -408,6 +433,10 @@ struct CacheEntry {
 #[derive(Default)]
 pub(in crate::ui) struct DrawingLayer {
     gesture: Option<Gesture>,
+    /// The Eraser's sweep: what the pointer has passed over since the press.
+    sweep: Option<erase::Sweep>,
+    /// The Eraser is over a locked drawing, which it leaves alone.
+    erase_blocked: bool,
     hover: Option<Hit>,
     /// Escape cancelled a gesture mid-drag; keep the plot from panning until release.
     cancelled_drag: bool,
@@ -493,7 +522,12 @@ fn constrained(tool: Tool, first: Option<Pos2>, pointer: Pos2, shift: bool) -> P
 impl DrawingLayer {
     /// Whether a gesture owns the plot drag, so the card must not pan.
     pub(in crate::ui) fn claims_drag(&self) -> bool {
-        self.gesture.is_some() || self.cancelled_drag
+        self.gesture.is_some() || self.sweep.is_some() || self.cancelled_drag
+    }
+
+    /// The pointer is over a drawing it could pick (last frame's hover).
+    pub(in crate::ui) fn is_over_drawing(&self) -> bool {
+        self.hover.is_some()
     }
 
     /// The drawings whose note is open, in no particular order.
@@ -517,6 +551,7 @@ impl DrawingLayer {
     /// drawings these are not.
     pub(in crate::ui) fn abandon(&mut self) {
         self.abort();
+        self.sweep = None;
         self.text_edit = None;
         self.pending_cell = None;
         self.table_cell = None;
@@ -632,12 +667,24 @@ impl DrawingLayer {
         // A gesture must not outlive the conditions it began under: the card going unseen
         // (another tab), the window losing focus, or the tool being switched.
         let frame_nr = ui.ctx().cumulative_frame_nr();
-        if self.gesture.is_some() && (!focused || frame_nr > self.last_frame + 1) {
+        let unseen = frame_nr > self.last_frame + 1;
+        if self.gesture.is_some() && (!focused || unseen) {
             self.abort();
         }
         self.last_frame = frame_nr;
         if matches!(&self.gesture, Some(Gesture::Draft(draft)) if draft.tool != frame.tool) {
             self.abort();
+        }
+        if frame.erases() {
+            self.update_eraser(ui, response, proj, frame, pointer, unseen);
+            self.set_cursor(ui, pointer.filter(|_| response.hovered()), frame, plot);
+            return self.claims_drag();
+        }
+        self.sweep = None;
+        self.erase_blocked = false;
+        if frame.is_inert() {
+            self.update_inert(response, proj, frame, pointer);
+            return false;
         }
         // A cell is selected only while its table is the one thing selected.
         if let Some((id, ..)) = self.table_cell
@@ -691,7 +738,9 @@ impl DrawingLayer {
             let double = response.double_clicked() || response.triple_clicked();
             self.click(point, modifiers, double, frame, proj);
         }
+        // A long touch is egui's right-click; when it shows the values it is not also a menu.
         if response.secondary_clicked()
+            && !(frame.long_press_values && response.long_touched())
             && let Some(point) = response
                 .interact_pointer_pos()
                 .or(pointer)
@@ -1308,6 +1357,8 @@ impl DrawingLayer {
             Some(Gesture::Edit(_)) => Some(CursorIcon::Grabbing),
             Some(Gesture::Draft(_)) => Some(CursorIcon::Crosshair),
             None if !over_plot => None,
+            None if frame.erases() && self.erase_blocked => Some(CursorIcon::NotAllowed),
+            None if frame.erases() => Some(CursorIcon::Crosshair),
             None if frame.tool != Tool::Cursor => Some(CursorIcon::Crosshair),
             None if pointer.is_some_and(|point| self.text_at(frame, point).is_some()) => {
                 Some(CursorIcon::Text)
@@ -1373,8 +1424,19 @@ impl DrawingLayer {
             let id = drawing.id();
             let selected = frame.is_selected(id);
             let emphasized = selected || hovered == Some(id);
+            // What a sweep has passed over is about to go: drawn faint.
+            let marked = self.is_marked_for_erasing(id);
+            let faint;
+            let painter = if marked {
+                let mut dimmed = clipped.clone();
+                dimmed.set_opacity(0.3);
+                faint = dimmed;
+                &faint
+            } else {
+                &clipped
+            };
             self.paint_drawing(
-                &clipped,
+                painter,
                 proj,
                 drawing,
                 emphasized,

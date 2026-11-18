@@ -400,13 +400,14 @@ fn a_portable_setting_travels_and_local_ones_do_not() {
 }
 
 /// Keys this version keeps on the Mac, from security and consent state to a key it has never heard of.
-const LOCAL_ONLY_KEYS: [&str; 7] = [
+const LOCAL_ONLY_KEYS: [&str; 8] = [
     "mcp.settings",
     "mcp.permissions",
     "ai.prefs",
     "net.proxy",
     "update.channel",
     "content.prefs",
+    "drawing.favoritesBar",
     "from.a.newer.version",
 ];
 
@@ -1941,6 +1942,34 @@ fn deleting_a_line_tool_drawing_propagates_and_an_unrelated_one_stays() {
         16
     );
     // The drawings agree; the rows differ only in what stays per Mac (autosave, last opened).
+    assert_eq!(
+        rows(&a, "saved_view")[0]["charts"][0]["drawings"],
+        on_b[0]["charts"][0]["drawings"]
+    );
+}
+
+#[test]
+fn an_eraser_sweep_that_removes_several_drawings_arrives_whole_and_the_rest_stay() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_line_tool();
+    put_layouts(&a, &[layout_of(10, "Lines", &drawings)]);
+    settle(&mut a, &mut b);
+    // One sweep took the first, a middle and the last drawing in one save.
+    let kept: Vec<_> = drawings
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| ![0, 7, drawings.len() - 1].contains(index))
+        .map(|(_, drawing)| drawing.clone())
+        .collect();
+    put_layouts(&a, &[layout_of(10, "Lines", &kept)]);
+    settle(&mut a, &mut b);
+    let on_b = rows(&b, "saved_view");
+    assert_eq!(
+        on_b[0]["charts"][0]["drawings"].as_array().unwrap().len(),
+        drawings.len() - 3
+    );
     assert_eq!(
         rows(&a, "saved_view")[0]["charts"][0]["drawings"],
         on_b[0]["charts"][0]["drawings"]

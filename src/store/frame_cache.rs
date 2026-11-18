@@ -10,6 +10,7 @@
 use super::Store;
 use crate::model::Timeframe;
 use crate::model::alert::pine::PineAlertSubscription;
+use crate::model::drawings::favorites::{BarPrefs, Favorite};
 use crate::model::webhook::WebhookEndpoint;
 use crate::service::net::proxy::ProxyConfig;
 use std::cell::RefCell;
@@ -106,6 +107,11 @@ pub(crate) struct FrameCaches {
     pinned_timeframes: ChangeCached<Vec<Timeframe>>,
     /// The `net.proxy` setting the Settings window's Network page shows.
     proxy_config: ChangeCached<ProxyConfig>,
+    /// The starred drawing tools and cursors, which every flyout row, the cursor menu and the
+    /// favorites bar show.
+    drawing_favorites: ChangeCached<Vec<Favorite>>,
+    /// The favorites bar's place and hidden flag.
+    favorites_bar: ChangeCached<BarPrefs>,
 }
 
 impl Store {
@@ -149,6 +155,20 @@ impl Store {
         self.frame_caches
             .pinned_timeframes
             .get(self.change_stamp(), || self.pinned_timeframes())
+    }
+
+    /// `drawing_favorites`, read again only after a write.
+    pub fn drawing_favorites_cached(&self) -> Arc<Vec<Favorite>> {
+        self.frame_caches
+            .drawing_favorites
+            .get(self.change_stamp(), || self.drawing_favorites())
+    }
+
+    /// `favorites_bar`, read again only after a write.
+    pub fn favorites_bar_cached(&self) -> Arc<BarPrefs> {
+        self.frame_caches
+            .favorites_bar
+            .get(self.change_stamp(), || self.favorites_bar())
     }
 
     /// The saved proxy setting (`ProxyConfig::load`), read again only after a write.

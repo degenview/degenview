@@ -22,3 +22,49 @@ pub fn label_as(response: Response, typ: WidgetType, text: impl Into<String>) ->
     response.widget_info(move || WidgetInfo::labeled(typ, enabled, text.clone()));
     response
 }
+
+/// [`label_as`] for a widget that is on or off (a star, a lit tool button): the state is told to the
+/// screen reader. A checkbox registered without one reads as indeterminate, so one that is drawn
+/// checked or not must come through here.
+pub fn selected_as(
+    response: Response,
+    typ: WidgetType,
+    text: impl Into<String>,
+    selected: bool,
+) -> Response {
+    let text = text.into();
+    let enabled = response.enabled();
+    response.widget_info(move || WidgetInfo::selected(typ, enabled, selected, text.clone()));
+    response
+}
+
+/// The accessibility tree a test reads, built from every frame's update (egui sends a node again
+/// only when it changed).
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct AccessNodes {
+    nodes:
+        std::collections::HashMap<eframe::egui::accesskit::NodeId, eframe::egui::accesskit::Node>,
+}
+
+#[cfg(test)]
+impl AccessNodes {
+    /// Starts the tree updates on `ctx`; call before the first frame.
+    pub(crate) fn start(ctx: &eframe::egui::Context) -> Self {
+        ctx.enable_accesskit();
+        Self::default()
+    }
+
+    /// Takes the frame's tree update, and drops its textures, which a test does not draw.
+    pub(crate) fn absorb(&mut self, mut output: eframe::egui::FullOutput) {
+        output.textures_delta.clear();
+        if let Some(update) = output.platform_output.accesskit_update {
+            self.nodes.extend(update.nodes);
+        }
+    }
+
+    /// The node an app named `label` (its toggled state is `node.toggled()`).
+    pub(crate) fn find(&self, label: &str) -> Option<&eframe::egui::accesskit::Node> {
+        self.nodes.values().find(|node| node.label() == Some(label))
+    }
+}

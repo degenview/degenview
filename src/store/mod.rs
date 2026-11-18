@@ -14,6 +14,7 @@ use std::time::Duration;
 pub mod alert;
 pub mod asset_store;
 pub mod chart;
+pub mod drawing_favorites;
 pub mod drawing_template;
 pub mod editor_theme;
 mod frame_cache;
