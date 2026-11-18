@@ -163,7 +163,10 @@
   slice. A statement that makes a `request.*` call is never in a slice (nesting; its names keep
   the chart's value via `security_globals`); requests inside functions are not sliced. Known gap:
   `alert()` in a statement of a slice emits from the other series. Unknown collection members count as
-  mutating (`READ_ONLY_MEMBERS` is the short list that does not).
+  mutating (`READ_ONLY_MEMBERS` lists the array/map/matrix queries that do not: add a new query there).
+  Aliases of a collection are per block (two blocks' `alias` are different variables), a dotted call
+  of a builtin namespace (`ta.sma`) never matches a script function called `sma`, and a call the type
+  checker resolved to a script method has that method's own effects, not the builtin ones of its name.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, share function bodies
   with `Arc`. Benchmark: `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

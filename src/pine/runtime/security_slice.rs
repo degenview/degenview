@@ -16,7 +16,10 @@
 //! Reads and writes are found scope-aware: a block's own `level` is not the global of that name, an
 //! alias of a collection (`alias = samples`, in a block or a helper too) is the collection, a
 //! collection argument is found by its label (`id`) or its position, and a function that changes a
-//! global collection (not only one it is handed) writes it where it is called. Known limits:
+//! global collection (not only one it is handed) writes it where it is called. Aliases are per block
+//! (two blocks' `alias` are different variables), a builtin namespace's functions (`ta.sma`) are never
+//! the script's `sma`, and a method the type checker resolved to the script's own definition has that
+//! definition's effects, not the builtin ones of its name. Known limits:
 //! aliasing through a function's return value or a container, and handles other than collections and
 //! objects, are not followed.
 //!
@@ -27,6 +30,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use crate::pine::compiler::is_builtin_namespace;
 use crate::pine::syntax::ast::{Argument, Expression, Parameter, Statement};
 use crate::pine::syntax::traversal;
 
@@ -38,7 +42,7 @@ const EXPRESSION_POSITION: usize = 2;
 const COLLECTION_NAMESPACES: [&str; 3] = ["array", "map", "matrix"];
 /// Members that never change the collection they are given. Any other member is taken to, so a
 /// function added to the language later errs towards running more, not towards wrong results.
-const READ_ONLY_MEMBERS: [&str; 18] = [
+const READ_ONLY_MEMBERS: [&str; 54] = [
     "get",
     "size",
     "first",
@@ -57,6 +61,44 @@ const READ_ONLY_MEMBERS: [&str; 18] = [
     "median",
     "keys",
     "values",
+    // Array queries and the functions that return a new array.
+    "abs",
+    "standardize",
+    "binary_search",
+    "binary_search_leftmost",
+    "binary_search_rightmost",
+    "sort_indices",
+    "covariance",
+    "every",
+    "some",
+    "mode",
+    "range",
+    "variance",
+    "stdev",
+    "percentile_nearest_rank",
+    "percentile_linear_interpolation",
+    "percentrank",
+    // Matrix queries and the functions that return a new matrix.
+    "col",
+    "columns",
+    "det",
+    "diff",
+    "eigenvalues",
+    "eigenvectors",
+    "elements_count",
+    "inv",
+    "is_square",
+    "is_stochastic",
+    "kron",
+    "mult",
+    "pinv",
+    "pow",
+    "rank",
+    "row",
+    "rows",
+    "submatrix",
+    "trace",
+    "transpose",
 ];
 /// Members, besides `new…`, that return a collection of their own.
 const COLLECTION_RETURNING_MEMBERS: [&str; 5] = ["from", "copy", "slice", "keys", "values"];
@@ -184,17 +226,15 @@ impl<'a> Functions<'a> {
                     let (parameters, body) = self.bodies[id];
                     let names: HashSet<String> =
                         parameters.iter().map(|p| p.name.clone()).collect();
-                    let body_aliases = aliases(body);
                     let walker = Walker {
                         references: &names,
-                        aliases: &body_aliases,
                         functions: self,
                     };
                     let mut effects = Effects::default();
-                    let mut scope = HashSet::new();
+                    let mut scope = Scope::new();
                     for statement in body {
                         walker.statement(statement, &scope, true, &mut effects);
-                        declared_by(statement, &mut scope);
+                        declare(statement, &mut scope);
                     }
                     let mut changed: HashSet<usize> = parameters
                         .iter()
@@ -270,11 +310,10 @@ impl Facts {
         if !matches!(statement, Statement::Function { .. }) {
             let walker = Walker {
                 references,
-                aliases,
                 functions,
             };
             let mut effects = Effects::default();
-            walker.statement(statement, &HashSet::new(), false, &mut effects);
+            walker.statement(statement, &Scope::new(), false, &mut effects);
             writes = effects.assigned;
             // A collection changed through one name is changed for every name that aliases it.
             for name in effects.mutated {
@@ -494,6 +533,52 @@ fn expression_argument<'a>(name: &str, arguments: &'a [Argument]) -> Option<&'a 
     None
 }
 
+/// The names the blocks around a statement have declared so far, each with the outer names (globals
+/// or parameters) it was copied from: `alias = samples` in a block gives `alias -> {samples}`, a
+/// plain local an empty set. Aliases are per block: two blocks' `alias` are different variables.
+type Scope = HashMap<String, HashSet<String>>;
+
+/// The outer names `value` stands for when it is copied: itself, or what a local it names was copied
+/// from.
+fn copied_from(value: &Expression, scope: &Scope) -> HashSet<String> {
+    match value {
+        Expression::Identifier(other, _) if !other.contains('.') => scope
+            .get(other)
+            .cloned()
+            .unwrap_or_else(|| HashSet::from([other.clone()])),
+        _ => HashSet::new(),
+    }
+}
+
+/// What a statement adds to the scope of the block it is in.
+fn declare(statement: &Statement, scope: &mut Scope) {
+    match statement {
+        Statement::Declaration { name, value, .. } => {
+            let sources = copied_from(value, scope);
+            scope.insert(name.clone(), sources);
+        }
+        Statement::TupleDeclaration { names, .. } => {
+            for name in names {
+                scope.insert(name.clone(), HashSet::new());
+            }
+        }
+        Statement::Assignment { name, value, .. } if scope.contains_key(name) => {
+            let sources = copied_from(value, scope);
+            scope.entry(name.clone()).or_default().extend(sources);
+        }
+        _ => {}
+    }
+}
+
+/// The variables of a `for` loop, which its body sees.
+fn declare_loop_variables(statement: &Statement, scope: &mut Scope) {
+    let mut names = HashSet::new();
+    declared_by_loop(statement, &mut names);
+    for name in names {
+        scope.insert(name, HashSet::new());
+    }
+}
+
 /// What statements do to the variables they mention.
 #[derive(Default)]
 struct Effects {
@@ -508,7 +593,6 @@ struct Effects {
 /// which any method that is not read-only counts as a change.
 struct Walker<'w, 'f> {
     references: &'w HashSet<String>,
-    aliases: &'w Aliases,
     functions: &'w Functions<'f>,
 }
 
@@ -516,13 +600,7 @@ impl Walker<'_, '_> {
     /// The effects of `statement`. `scope` holds the names the blocks around it have declared so far
     /// (loop variables included): those are the blocks' own, not the globals of the same name.
     /// `nested` is false for a top-level statement, whose declarations are the globals.
-    fn statement(
-        &self,
-        statement: &Statement,
-        scope: &HashSet<String>,
-        nested: bool,
-        out: &mut Effects,
-    ) {
+    fn statement(&self, statement: &Statement, scope: &Scope, nested: bool, out: &mut Effects) {
         match statement {
             Statement::Declaration { name, .. } if !nested => {
                 out.assigned.insert(name.clone());
@@ -530,7 +608,7 @@ impl Walker<'_, '_> {
             Statement::TupleDeclaration { names, .. } if !nested => {
                 out.assigned.extend(names.iter().cloned())
             }
-            Statement::Assignment { name, .. } if !scope.contains(name) => {
+            Statement::Assignment { name, .. } if !scope.contains_key(name) => {
                 out.assigned.insert(name.clone());
             }
             Statement::FieldAssignment { target, .. } => {
@@ -545,28 +623,26 @@ impl Walker<'_, '_> {
         }
         for block in traversal::nested_blocks(statement) {
             let mut inner = scope.clone();
-            declared_by_loop(statement, &mut inner);
+            declare_loop_variables(statement, &mut inner);
             for child in block {
                 self.statement(child, &inner, true, out);
-                declared_by(child, &mut inner);
+                declare(child, &mut inner);
             }
         }
     }
 
-    fn mutate(&self, root: String, scope: &HashSet<String>, out: &mut Effects) {
-        if !scope.contains(&root) {
-            out.mutated.insert(root);
-            return;
-        }
-        // A block's own name: what it was copied from is what changes.
-        for other in self.aliases.get(&root).into_iter().flatten() {
-            if !scope.contains(other) {
-                out.mutated.insert(other.clone());
+    /// `root` is changed. A name a block declared stands for what it was copied from; any other is
+    /// a global or a parameter, whose aliases the caller adds.
+    fn mutate(&self, root: String, scope: &Scope, out: &mut Effects) {
+        match scope.get(&root) {
+            Some(sources) => out.mutated.extend(sources.iter().cloned()),
+            None => {
+                out.mutated.insert(root);
             }
         }
     }
 
-    fn expression(&self, expression: &Expression, scope: &HashSet<String>, out: &mut Effects) {
+    fn expression(&self, expression: &Expression, scope: &Scope, out: &mut Effects) {
         match expression {
             Expression::Call {
                 name,
@@ -582,7 +658,10 @@ impl Walker<'_, '_> {
                 ..
             } => {
                 let root = root_name(receiver);
-                if MUTATING_METHODS.contains(&name.as_str())
+                // A method the type checker resolved to the script's own definition has that
+                // definition's effects, whatever it is called.
+                if target.is_none()
+                    && MUTATING_METHODS.contains(&name.as_str())
                     && let Some(root) = root.clone()
                 {
                     self.mutate(root, scope, out);
@@ -604,7 +683,7 @@ impl Walker<'_, '_> {
         name: &str,
         arguments: &[Argument],
         target: Option<usize>,
-        scope: &HashSet<String>,
+        scope: &Scope,
         out: &mut Effects,
     ) {
         let (receiver, member) = match name.rsplit_once('.') {
@@ -623,7 +702,9 @@ impl Walker<'_, '_> {
             }
             Some(variable) => {
                 let root = head(variable);
-                if (changes && self.references.contains(root)) || MUTATING_METHODS.contains(&member)
+                if target.is_none()
+                    && ((changes && self.references.contains(root))
+                        || MUTATING_METHODS.contains(&member))
                 {
                     self.mutate(root.to_owned(), scope, out);
                 }
@@ -644,7 +725,7 @@ impl Walker<'_, '_> {
         callees: &[usize],
         receiver: Option<String>,
         arguments: &[Argument],
-        scope: &HashSet<String>,
+        scope: &Scope,
         out: &mut Effects,
     ) {
         for &id in callees {
@@ -686,31 +767,50 @@ fn collection_argument(arguments: &[Argument]) -> Option<&Expression> {
         .map(|argument| &argument.value)
 }
 
-/// The names that refer to the same value because one was copied from the other
+/// The globals that refer to the same value because one was copied from the other
 /// (`alias = samples`, `alias := samples`): each name with every name in its group. A collection
-/// changed through one is changed for all.
+/// changed through one is changed for all. Only globals: a name a block declares is its own, and
+/// the walker resolves it per block.
 type Aliases = HashMap<String, HashSet<String>>;
 
 fn aliases(statements: &[Statement]) -> Aliases {
-    fn copies(statements: &[Statement], pairs: &mut Vec<(String, String)>) {
+    fn copies(
+        statements: &[Statement],
+        scope: &HashSet<String>,
+        nested: bool,
+        pairs: &mut Vec<(String, String)>,
+    ) {
+        let mut scope = scope.clone();
         for statement in statements {
             if matches!(statement, Statement::Function { .. }) {
                 continue;
             }
-            if let Statement::Declaration { name, value, .. }
-            | Statement::Assignment { name, value, .. } = statement
+            // A declaration in a block is the block's own variable.
+            let copy = match statement {
+                Statement::Declaration { name, value, .. } if !nested => Some((name, value)),
+                Statement::Assignment { name, value, .. } => Some((name, value)),
+                _ => None,
+            };
+            if let Some((name, value)) = copy
                 && let Expression::Identifier(other, _) = value
                 && !other.contains('.')
+                && !scope.contains(name)
+                && !scope.contains(other)
             {
                 pairs.push((name.clone(), other.clone()));
             }
             for block in traversal::nested_blocks(statement) {
-                copies(block, pairs);
+                let mut inner = scope.clone();
+                declared_by_loop(statement, &mut inner);
+                copies(block, &inner, true, pairs);
+            }
+            if nested {
+                declared_by(statement, &mut scope);
             }
         }
     }
     let mut pairs = Vec::new();
-    copies(statements, &mut pairs);
+    copies(statements, &HashSet::new(), false, &mut pairs);
     let mut groups: Vec<HashSet<String>> = Vec::new();
     for (a, b) in pairs {
         let mut merged: HashSet<String> = HashSet::from([a.clone(), b.clone()]);
@@ -799,7 +899,8 @@ fn read_names(expression: &Expression, scope: &HashSet<String>, reads: &mut Read
                 if !scope.contains(head(receiver)) {
                     reads.names.insert(head(receiver).to_owned());
                 }
-                if target.is_none() {
+                // `ta.sma` is the builtin, not a script function that happens to be called `sma`.
+                if target.is_none() && !is_builtin_namespace(head(receiver)) {
                     reads.names.insert(member.to_owned());
                 }
             }
@@ -1131,5 +1232,43 @@ mod tests {
             "//@version=6\nindicator(\"T\")\nx = close * 2\nplot(request.security(syminfo.tickerid, \"D\", expression = x))",
         );
         assert_eq!(sizes, [1]);
+    }
+
+    #[test]
+    fn two_blocks_alias_names_do_not_merge() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\nvar other = array.new_float()\nif close > 0\n    alias = samples\n    alias.push(close)\nif close > 0\n    alias = other\n    alias.push(array.get(other, 5))\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))",
+        );
+        assert_eq!(sizes, [2], "`samples` and the first block only");
+    }
+
+    #[test]
+    fn a_builtin_is_not_a_script_function_of_the_same_name() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nbad = close\nsma(float src, int len) =>\n    src + bad\nplot(request.security(syminfo.tickerid, \"D\", ta.sma(close, 2)))",
+        );
+        assert!(sizes.is_empty(), "{sizes:?}");
+    }
+
+    #[test]
+    fn a_read_only_query_is_not_a_write_of_the_collection() {
+        for query in [
+            "array.percentrank(samples, 0)",
+            "array.stdev(samples)",
+            "array.percentile_linear_interpolation(samples, 50)",
+        ] {
+            let sizes = slice_sizes(&format!(
+                "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\narray.push(samples, close)\nunused = {query}\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))"
+            ));
+            assert_eq!(sizes, [2], "{query}: the declaration and the push");
+        }
+    }
+
+    #[test]
+    fn a_user_method_has_its_own_effects_not_the_builtin_ones_of_its_name() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nbad = close\nlevel = close\nmethod push(float this, float v) =>\n    v + bad\nr = level.push(1.0)\nplot(request.security(syminfo.tickerid, \"D\", level))",
+        );
+        assert_eq!(sizes, [1], "`level` alone");
     }
 }

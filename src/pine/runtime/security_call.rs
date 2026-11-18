@@ -1394,6 +1394,49 @@ mod tests {
         }
     }
 
+    /// A line that only runs, and fails, on the ETHUSDT series (its closes are above 50).
+    const FAILS_ON_ETH: &str = "bad = close > 50 ? array.get(array.new_float(), 5) : 0.0\n";
+
+    #[test]
+    fn blocks_alias_names_do_not_merge_in_the_request() {
+        assert_eq!(
+            last_plotted(
+                "var samples = array.new_float()\nvar other = array.new_float()\nif close > 0\n    alias = samples\n    alias.push(close)\nif close > 50\n    alias = other\n    alias.push(array.get(other, 5))\nx = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            ),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn a_builtin_does_not_replay_the_script_function_of_its_name() {
+        assert_eq!(
+            last_plotted(&format!(
+                "{FAILS_ON_ETH}sma(float src, int len) =>\n    src + bad\nx = request.security(\"ETHUSDT\", \"1\", ta.sma(close, 2))"
+            )),
+            Some(115.0)
+        );
+    }
+
+    #[test]
+    fn a_read_only_query_is_not_replayed_in_the_request() {
+        assert_eq!(
+            last_plotted(
+                "var samples = array.new_float()\narray.push(samples, close)\nunused = close > 50 ? array.get(array.new_float(), 1) + array.percentrank(samples, 0) : 0.0\nx = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            ),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn a_read_only_user_method_is_not_replayed_in_the_request() {
+        assert_eq!(
+            last_plotted(&format!(
+                "{FAILS_ON_ETH}level = close\nmethod push(float this, float v) =>\n    v + bad\nr = level.push(1.0)\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            )),
+            Some(120.0)
+        );
+    }
+
     /// Runs `source` on one chart bar that gets two live ticks, as the session does for a bar that
     /// has not closed, and returns the last value of the first plot after each tick.
     fn plotted_after_each_tick(source: &str) -> Vec<Option<f64>> {
