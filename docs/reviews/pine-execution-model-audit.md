@@ -73,7 +73,7 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | 19 | gap | warnings | No execution-model compiler warnings | audit | — |
 | 20 | diff | ta | `ta.*` in a loop pushes one state entry per iteration | audit | — |
 | 21 | diff | scopes | A function called twice per bar from one site: the second call reads the first's value | audit | — |
-| 22 | diff | security | `request.security` is evaluated only when its site runs | audit | — |
+| 22 | diff | security | `request.security` is evaluated only when its site runs | audit | **done** (a site replays the chart bars it skipped) |
 | 23 | diff | ta | `na` inside a window: sma/highest/lowest skip it, wma/stdev/… return `na` | audit, needs TV | — |
 | 24 | diff | controller | A bar closes by wall clock; a late final tick forces a full rebuild | audit | — |
 | 25 | diff | controller | A new bar first seen already closed runs as `Historical` | audit | — |
@@ -257,7 +257,12 @@ runtime error (`PINE4006`), a `na` offset returns `na`.
 **22. `request.security`** (`security_call.rs:482-545`). `serve_security` folds the higher-timeframe candle
 from only the chart bars visited at the call site, so a conditional call excludes the skipped bars from the
 candle's high, low and volume and from any `ta.*` inside the expression. TradingView evaluates the
-expression on every higher-timeframe bar and the condition only selects the result. ~~Chart variables used
+expression on every higher-timeframe bar and the condition only selects the result. **Fixed**: the
+session keeps the confirmed chart bars of a script that calls `request.security` (`Session::chart_bars`),
+and a site replays the ones it was not called on (`replay_skipped_bars`) before it takes the current bar,
+so a conditional call matches an unconditional one (`pine/tests/security_conditional.rs`). Chart's own
+symbol only; a foreign symbol or a finer timeframe already walks the provider's candles. The warm-up
+feeds the provider's candles that closed before the chart's first bar, not before the first call. ~~Chart variables used
 inside the expression have no history~~: a script variable the expression reads is now computed on the
 requested series (`security_slice`), with its own history, from the code written before the request; only
 names that no slice statement computes (set by a statement that makes a request, or inside a function
@@ -362,7 +367,7 @@ Deferred, each because it changes the history model, needs a TradingView compari
 - `process_orders_on_close` for conditional orders (16); trailing stops (27, beyond the warning).
 - The `na`-window rule (23) and `ta.atr` previous close (9): compare with TradingView output first.
 - Execution-model compiler warnings (19, 20); a buffer model with `max_bars_back` (18, beyond the warning).
-- `request.security` conditional folding (22); `alertcondition` frequency and pre-error alerts (26);
+- `alertcondition` frequency and pre-error alerts (26);
   closing by feed flag, already-closed new bars (24, 25); margin model and count caps (29); the per-tick
   state clone (31, first half).
 

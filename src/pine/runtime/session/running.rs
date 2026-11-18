@@ -296,6 +296,9 @@ impl Session {
             self.capture_intrabar_objects();
         }
         if confirmed {
+            if self.tracks_chart_bars {
+                self.chart_bars.push(candle.clone());
+            }
             let builtins = self.read_history_builtins(&mut context);
             self.commit_histories(candle, true, builtins);
             if replaying {

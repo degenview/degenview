@@ -105,6 +105,8 @@ impl Session {
         let history_builtins =
             history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
         let security_slices = security_slice::build(&program.statements);
+        let tracks_chart_bars =
+            program.source.contains("request.security") || !program.imports.is_empty();
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
@@ -185,6 +187,8 @@ impl Session {
             logs: crate::pine::logs::LogSink::default(),
             mintick: supplied_mintick.unwrap_or(DEFAULT_MINTICK),
             footprints: Default::default(),
+            chart_bars: Vec::new(),
+            tracks_chart_bars,
             bar_seconds: 0.0,
             chart_bar_seconds: None,
             alert_mode: false,

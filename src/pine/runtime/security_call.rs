@@ -492,8 +492,70 @@ impl Session {
             return Ok(result);
         }
         if !state.is_warmed_up {
-            self.warm_up(&mut state, request, bar.open_time)?;
+            // History from before the chart's first bar; the chart's own bars, the ones this site
+            // was not called on included, are replayed below.
+            let before = self
+                .chart_bars
+                .first()
+                .map_or(bar.open_time, |first| first.open_time);
+            self.warm_up(&mut state, request, before)?;
         }
+        self.replay_skipped_bars(&mut state, request, bar.open_time)?;
+        let (result, fresh) = self.advance_site(
+            &mut state,
+            request,
+            &bar,
+            context.flags.is_confirmed,
+            context.flags.is_realtime,
+            false,
+        )?;
+        let result = if request.gaps_on && !fresh {
+            RuntimeValue::Na
+        } else {
+            result
+        };
+        state.processed_bar = Some(bar.open_time);
+        state.bar_result = result.clone();
+        self.working.securities.insert(key, state);
+        Ok(result)
+    }
+
+    /// Takes the confirmed chart bars before `before` that this site was not called on into its
+    /// higher-timeframe candle, as TradingView evaluates the expression on every bar whether or not
+    /// the call runs: a call under a condition sees the same candles and builds the same history as
+    /// one that always runs.
+    fn replay_skipped_bars(
+        &mut self,
+        state: &mut SecuritySite,
+        request: &SecurityRequest,
+        before: i64,
+    ) -> Result<(), Diagnostic> {
+        let start = state.processed_bar.map_or(0, |seen| {
+            self.chart_bars.partition_point(|bar| bar.open_time <= seen)
+        });
+        let end = self
+            .chart_bars
+            .partition_point(|bar| bar.open_time < before);
+        for index in start..end {
+            let skipped = self.chart_bars[index].clone();
+            self.advance_site(state, request, &skipped, true, false, true)?;
+            state.processed_bar = Some(skipped.open_time);
+        }
+        Ok(())
+    }
+
+    /// Takes `bar` into the site's candle. Returns the expression's value for the bar and whether a
+    /// higher-timeframe bar was completed on it. A `replay` of a skipped bar only keeps the site's
+    /// state current: nothing is evaluated for the bar itself.
+    fn advance_site(
+        &mut self,
+        state: &mut SecuritySite,
+        request: &SecurityRequest,
+        bar: &Kline,
+        confirmed: bool,
+        realtime: bool,
+        replay: bool,
+    ) -> Result<(RuntimeValue, bool), Diagnostic> {
         let start = time::bucket::start(bar.open_time, request.interval);
         let mut fresh = false;
         if state.bucket != Some(start) {
@@ -502,7 +564,7 @@ impl Session {
                 && let Some(pending) = state.accumulated.clone()
             {
                 state.last_result =
-                    self.evaluate_higher_timeframe(&mut state, &pending, request, true)?;
+                    self.evaluate_higher_timeframe(state, &pending, request, true)?;
                 fresh = true;
             }
             state.bucket = Some(start);
@@ -517,11 +579,10 @@ impl Session {
         let developing = fold_one(&developing, request.interval);
         let end = time::bucket::end(start, request.interval);
         let closes_bucket = bar.open_time + (self.bar_seconds * 1000.0).round() as i64 >= end;
-        let confirmed = context.flags.is_confirmed;
 
         let result;
         if closes_bucket && confirmed {
-            result = self.evaluate_higher_timeframe(&mut state, &developing, request, true)?;
+            result = self.evaluate_higher_timeframe(state, &developing, request, true)?;
             state.last_result = result.clone();
             state.accumulated = None;
             state.has_pending_bars = false;
@@ -531,21 +592,13 @@ impl Session {
                 state.accumulated = Some(developing.clone());
                 state.has_pending_bars = true;
             }
-            if request.lookahead_on || context.flags.is_realtime {
-                result = self.evaluate_higher_timeframe(&mut state, &developing, request, false)?;
+            if !replay && (request.lookahead_on || realtime) {
+                result = self.evaluate_higher_timeframe(state, &developing, request, false)?;
             } else {
                 result = state.last_result.clone();
             }
         }
-        let result = if request.gaps_on && !fresh {
-            RuntimeValue::Na
-        } else {
-            result
-        };
-        state.processed_bar = Some(bar.open_time);
-        state.bar_result = result.clone();
-        self.working.securities.insert(key, state);
-        Ok(result)
+        Ok((result, fresh))
     }
 
     /// `request.security` for a symbol the chart does not carry, from the provider's snapshot.
