@@ -1050,7 +1050,7 @@ struct LinkResult {
 }
 
 /// The namespaces whose members are builtin functions or variables.
-pub(super) fn is_builtin_namespace(alias: &str) -> bool {
+pub(crate) fn is_builtin_namespace(alias: &str) -> bool {
     matches!(
         alias,
         "ta" | "math"

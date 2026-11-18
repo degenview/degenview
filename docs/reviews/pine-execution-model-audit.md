@@ -61,7 +61,7 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | 7 | bug | scopes | Function block locals push `na` on skipped bars | audit | — |
 | 8 | bug | scopes | `f()[n]` / `ta.x()[n]` use global offsets; chained `[]` collide; offset 0 skips the trail | audit | — |
 | 9 | bug | ta | `ta.atr` takes the previous close from its own call history | audit | — |
-| 10 | diff | ta | `ta.rsi` is a simple average, not Wilder's RMA | re-read, needs TV | — |
+| 10 | diff | ta | `ta.rsi` is a simple average, not Wilder's RMA | re-read, needs TV | **done** (RMA, as TradingView defines it) |
 | 11 | bug | errors | A failed historical run resets state; the script resumes at `bar_index` 0 | audit, run (test) | PR 6 — **done** |
 | 12 | bug | errors | A failed closing run does not commit but clears `live_open_time` | audit | PR 6 — **done** (the script no longer runs again) |
 | 13 | diff | errors | A realtime runtime error does not halt the script | audit, run (test) | PR 6 — **done** |
@@ -257,8 +257,11 @@ runtime error (`PINE4006`), a `na` offset returns `na`.
 **22. `request.security`** (`security_call.rs:482-545`). `serve_security` folds the higher-timeframe candle
 from only the chart bars visited at the call site, so a conditional call excludes the skipped bars from the
 candle's high, low and volume and from any `ta.*` inside the expression. TradingView evaluates the
-expression on every higher-timeframe bar and the condition only selects the result. Chart variables used
-inside the expression have no history (`security_globals` vs `eval_history`).
+expression on every higher-timeframe bar and the condition only selects the result. ~~Chart variables used
+inside the expression have no history~~: a script variable the expression reads is now computed on the
+requested series (`security_slice`), with its own history, from the code written before the request; only
+names that no slice statement computes (set by a statement that makes a request, or inside a function
+body's request) still read the chart's value through `security_globals`.
 
 **31. Cost.** `commit_histories` pushes every variable every bar even if never indexed (TradingView buffers
 only what is referenced). Each non-historical tick does `working = committed.clone()` (`session.rs:643`) and
@@ -271,10 +274,23 @@ the close clones again (`:704`), O(history × variables) per tick. `ta.macd` (`t
 previous *call*, not the previous chart bar. Called conditionally (`if bar_index % 2 == 0`), gaps are ignored.
 `ta.tr` reads the real previous close (`market_values.rs:137-141`).
 
-**10. `ta.rsi`** (`ta.rs:777`) is the simple average of gains and losses over `length + 1` non-`na` values.
-The module header and the test `rsi_is_the_simple_average_variant_and_saturates` say this is a deliberate
-"faithful quirk" of the Swift app. TradingView uses `rma(up) / rma(down)`, so values differ from the first
-bar. Outside the execution model; listed because it is user-visible.
+**10. `ta.rsi`** was the simple average of gains and losses over `length + 1` non-`na` values (a "faithful
+quirk" of the Swift app), so it read 0 or 100 whenever the window moved one way and plots such as the
+X-trender (`ta.rsi(ta.alma(…), 9) - 50`) saturated at ±50 where TradingView's stay inside ±30. Now
+`ta.rsi` is `100 - 100 / (1 + rma(gain) / rma(loss))`, TradingView's definition (`extra::rsi`); the first
+value comes on bar `length`, and no losses stays 100. A missing source value inside the series is
+skipped (the bar repeats the last result, a change is taken between the two latest values that exist),
+as `ta.sma` and `ta.rma` skip it here (item 23); what TradingView's reference RMA does after an interior
+gap (it probably restarts) is unchecked. Saved scripts that use it plot and trade differently.
+
+**`ta.alma`** weighted the window mirrored: it summed `values[length - 1 - i]` (newest first) against Pine's
+`series[length - i - 1]` (oldest first), so the weight peak at `offset * (length - 1)` sat on the *older*
+side and an offset of 0.75 behaved like 0.25. Every ALMA lagged, and indicators built on it (the X-trender
+script's trend lines turned up to ten bars late) differed from TradingView. Fixed; checked bar by bar
+against an independent implementation on 289 weekly BTC-USDT bars (the reporter's script now ends within
+0.03 of TradingView's values on every plot). `ta.cog`, `ta.wma`, `ta.hma`, `ta.linreg`, `ta.vwma` and
+`ta.swma` were read for the same mistake and are oriented correctly. Saved scripts that use `ta.alma` plot
+differently.
 
 **23. `na` in a window.** `sma`, `highest`, `lowest` and `rsi` use `last_valid` (`ta.rs:648-684, 707`), which
 compresses over `na`; `wma`, `stdev`, `median`, `variance`, `cci` use the strict `last_window`. The module
@@ -344,8 +360,7 @@ Deferred, each because it changes the history model, needs a TradingView compari
 - Local-scope buffers (6, 7, 8, 21): a change of `commit_histories` and `eval_history`; bench-sensitive.
 - A broker that survives rolled-back ticks and real `calc_on_order_fills` re-execution (14, 15).
 - `process_orders_on_close` for conditional orders (16); trailing stops (27, beyond the warning).
-- `ta.rsi` → RMA (10), the `na`-window rule (23), `ta.atr` previous close (9): compare with TradingView
-  output first. Changing `ta.rsi` changes plotted values and strategy results of saved scripts.
+- The `na`-window rule (23) and `ta.atr` previous close (9): compare with TradingView output first.
 - Execution-model compiler warnings (19, 20); a buffer model with `max_bars_back` (18, beyond the warning).
 - `request.security` conditional folding (22); `alertcondition` frequency and pre-error alerts (26);
   closing by feed flag, already-closed new bars (24, 25); margin model and count caps (29); the per-tick

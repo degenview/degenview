@@ -690,8 +690,8 @@ impl PineLayer<'_> {
             stroke_path(
                 painter,
                 &[Pos2::new(self.plot.min.x, y), Pos2::new(self.plot.max.x, y)],
-                Stroke::new(1.0, faded(line.color, 0.8)),
-                &[4.0, 3.0],
+                Stroke::new(1.0, rgba(line.color)),
+                dash_pattern(line.style),
             );
         }
     }
@@ -2097,6 +2097,34 @@ mod tests {
     }
 
     #[test]
+    fn an_hline_is_drawn_in_the_colour_the_script_gave_it() {
+        // `color.new(color.yellow, 70)`: already faint, so the painter must not fade it again.
+        let candles = candles(3);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = VisualOutput {
+            bar_count: 3,
+            ..empty()
+        };
+        let given = 0xFFEB_3B4D;
+        output.hlines.push(HorizontalLine {
+            id: 0,
+            value: 100.0,
+            color: given,
+            title: None,
+            style: LineStyle::Dashed,
+        });
+        let layer = layer(&output, &candles, &x, &y);
+        let shapes = shapes_of(|painter| layer.draw_horizontal_lines(painter));
+        assert!(!shapes.is_empty());
+        for shape in shapes {
+            let Shape::LineSegment { stroke, .. } = shape else {
+                panic!("a dash is a line segment");
+            };
+            assert_eq!(stroke.color, rgba(given), "no extra fade");
+        }
+    }
+
+    #[test]
     fn markers_hlines_backgrounds_and_barcolors() {
         let candles = candles(3);
         let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
@@ -2128,6 +2156,7 @@ mod tests {
             value: 100.0,
             color: 0x8080_80FF,
             title: None,
+            style: LineStyle::Dashed,
         });
         output.backgrounds.push(ColorOutput {
             id: 0,
