@@ -24,7 +24,7 @@ use crate::ui::chart::series::{WICK_WIDTH, candle_half_width, snap_candle, snap_
 use crate::ui::pine::geometry::{
     self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, box_text_placement,
     candle_index_for_bar, dash_pattern, extended_line, faded, font_size, is_visible, label_layout,
-    marker_radius, polyline_points, rgba, series_index,
+    polyline_points, rgba, series_index, shape_radius,
 };
 use eframe::egui::{
     self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2,
@@ -974,7 +974,7 @@ impl PineLayer<'_> {
                 let y = self.marker_y(marker.location, &marker.prices, i);
                 let color = rgba(self.visible_opt(&marker.colors, i).unwrap_or(marker.color));
                 let centre = Pos2::new(x, y);
-                let radius = marker_radius(marker.size);
+                let radius = shape_radius(marker.style, marker.size);
                 let half_height = match &marker.character {
                     Some(glyph) => {
                         text_at(painter, glyph, 12.0, color, centre, Align2::CENTER_CENTER);
@@ -1238,7 +1238,10 @@ fn draw_arrow(painter: &Painter, tip: Pos2, up: bool, height: f32, color: Color3
 /// How far `draw_marker_shape` reaches above and below its centre, for placing `text` past it.
 fn marker_half_height(style: MarkerShape, radius: f32) -> f32 {
     match style {
-        MarkerShape::TriangleUp | MarkerShape::TriangleDown | MarkerShape::Square => 0.8 * radius,
+        MarkerShape::TriangleUp | MarkerShape::TriangleDown => {
+            geometry::TRIANGLE_HEIGHT / 2.0 * radius
+        }
+        MarkerShape::Square => 0.8 * radius,
         MarkerShape::Diamond => 1.1 * radius,
         MarkerShape::ArrowUp | MarkerShape::ArrowDown => radius + 3.0,
         MarkerShape::LabelUp | MarkerShape::LabelDown => 1.05 * radius,
@@ -2088,7 +2091,7 @@ mod tests {
                         } else {
                             Color32::from_rgb(239, 83, 80)
                         };
-                        draw_marker_shape(painter, style, centre, marker_radius(size), color);
+                        draw_marker_shape(painter, style, centre, shape_radius(style, size), color);
                     }
                 }
             }));
