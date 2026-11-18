@@ -1437,6 +1437,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_matrix_predicate_is_not_replayed_in_the_request() {
+        assert_eq!(
+            last_plotted(&format!(
+                "{FAILS_ON_ETH}m = matrix.new<float>(2, 2, 0.0)\nunused = matrix.is_zero(m) ? bad : 0.0\nx = request.security(\"ETHUSDT\", \"1\", matrix.rows(m))"
+            )),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn a_namespaced_builtin_does_not_replay_the_script_function_that_fills_a_global() {
+        assert_eq!(
+            last_plotted(&format!(
+                "{FAILS_ON_ETH}var samples = array.new_float()\nsma(float src, int len) =>\n    array.push(samples, src)\n    src\nunused = bad + ta.sma(close, 2)\nx = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            )),
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn an_alias_reassigned_in_an_inner_block_is_filled_through_both_sources() {
+        // On the chart (closes 1, 2, 3) `b` gets two values; on ETHUSDT (all above 1) three.
+        assert_eq!(
+            last_plotted(
+                "var a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    alias = a\n    if close > 1\n        alias := b\n    alias.push(close)\nx = request.security(\"ETHUSDT\", \"1\", array.size(b))"
+            ),
+            Some(3.0)
+        );
+    }
+
     /// Runs `source` on one chart bar that gets two live ticks, as the session does for a bar that
     /// has not closed, and returns what `read` makes of the session after each tick.
     fn after_each_tick<T>(source: &str, read: impl Fn(&Session) -> T) -> Vec<T> {

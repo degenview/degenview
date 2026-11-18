@@ -42,7 +42,7 @@ const EXPRESSION_POSITION: usize = 2;
 const COLLECTION_NAMESPACES: [&str; 3] = ["array", "map", "matrix"];
 /// Members that never change the collection they are given. Any other member is taken to, so a
 /// function added to the language later errs towards running more, not towards wrong results.
-const READ_ONLY_MEMBERS: [&str; 54] = [
+const READ_ONLY_MEMBERS: [&str; 62] = [
     "get",
     "size",
     "first",
@@ -99,6 +99,14 @@ const READ_ONLY_MEMBERS: [&str; 54] = [
     "submatrix",
     "trace",
     "transpose",
+    "is_identity",
+    "is_diagonal",
+    "is_antidiagonal",
+    "is_symmetric",
+    "is_antisymmetric",
+    "is_triangular",
+    "is_binary",
+    "is_zero",
 ];
 /// Members, besides `new…`, that return a collection of their own.
 const COLLECTION_RETURNING_MEMBERS: [&str; 5] = ["from", "copy", "slice", "keys", "values"];
@@ -182,6 +190,9 @@ pub(crate) fn build(statements: &[Statement]) -> Slices {
 /// The script's top-level functions and methods. A call's `target` is the position among them.
 struct Functions<'a> {
     bodies: Vec<(&'a [Parameter], &'a [Statement])>,
+    /// For each function, what its body reads of the script's names: a parameter, or a variable the
+    /// body declares before it reads it, is the function's own.
+    reads: Vec<Reads>,
     by_name: HashMap<&'a str, Vec<usize>>,
     /// For each function, the positions of the parameters it may change.
     mutated: Vec<HashSet<usize>>,
@@ -206,7 +217,17 @@ impl<'a> Functions<'a> {
                 bodies.push((parameters.as_slice(), body.as_slice()));
             }
         }
+        let reads = bodies
+            .iter()
+            .map(|(parameters, body)| {
+                let own: HashSet<String> = parameters.iter().map(|p| p.name.clone()).collect();
+                let mut reads = Reads::default();
+                collect_reads(body, &own, true, &mut reads);
+                reads
+            })
+            .collect();
         let mut functions = Self {
+            reads,
             mutated: vec![HashSet::new(); bodies.len()],
             global_writes: vec![HashSet::new(); bodies.len()],
             bodies,
@@ -550,8 +571,10 @@ fn copied_from(value: &Expression, scope: &Scope) -> HashSet<String> {
     }
 }
 
-/// What a statement adds to the scope of the block it is in.
+/// What a statement adds to the scope of the block it is in. An alias that a block of the statement
+/// reassigns (`alias := other` in an `if`) may stand for either source afterwards.
 fn declare(statement: &Statement, scope: &mut Scope) {
+    merge_blocks(statement, scope);
     match statement {
         Statement::Declaration { name, value, .. } => {
             let sources = copied_from(value, scope);
@@ -567,6 +590,45 @@ fn declare(statement: &Statement, scope: &mut Scope) {
             scope.entry(name.clone()).or_default().extend(sources);
         }
         _ => {}
+    }
+}
+
+/// `merge_block` for each block of `statement`, and of the statements its expressions hold
+/// (`x = if …`).
+fn merge_blocks(statement: &Statement, scope: &mut Scope) {
+    fn in_expression(expression: &Expression, scope: &mut Scope) {
+        if let Expression::Statement(statement, _) = expression {
+            merge_blocks(statement, scope);
+        }
+        for child in traversal::children(expression) {
+            in_expression(child, scope);
+        }
+    }
+    for expression in traversal::expressions(statement) {
+        in_expression(expression, scope);
+    }
+    for block in traversal::nested_blocks(statement) {
+        merge_block(statement, block, scope);
+    }
+}
+
+/// Runs `block`, a block of `owner`, over a copy of `scope` and adds what it reassigned to the outer
+/// names it did not shadow.
+fn merge_block(owner: &Statement, block: &[Statement], scope: &mut Scope) {
+    let mut inner = scope.clone();
+    declare_loop_variables(owner, &mut inner);
+    let mut shadowed = HashSet::new();
+    declared_by_loop(owner, &mut shadowed);
+    for statement in block {
+        declared_by(statement, &mut shadowed);
+        declare(statement, &mut inner);
+    }
+    for (name, sources) in inner {
+        if !shadowed.contains(&name)
+            && let Some(outer) = scope.get_mut(&name)
+        {
+            outer.extend(sources);
+        }
     }
 }
 
@@ -700,6 +762,8 @@ impl Walker<'_, '_> {
                     self.mutate(root, scope, out);
                 }
             }
+            // `ta.sma` is the builtin, not a script function that happens to be called `sma`.
+            Some(variable) if target.is_none() && is_builtin_namespace(head(variable)) => {}
             Some(variable) => {
                 let root = head(variable);
                 if target.is_none()
@@ -923,8 +987,7 @@ fn read_names(expression: &Expression, scope: &HashSet<String>, reads: &mut Read
     }
 }
 
-/// Adds what the bodies of the functions in `reads` read, however deep the calls go. A function's
-/// own parameters and locals are not reads of a global that happens to share the name.
+/// Adds what the bodies of the functions in `reads` read, however deep the calls go.
 fn expand_functions(reads: &mut Reads, expanded: &mut HashSet<usize>, functions: &Functions) {
     loop {
         let mut pending: Vec<usize> = reads.targets.iter().copied().collect();
@@ -936,36 +999,7 @@ fn expand_functions(reads: &mut Reads, expanded: &mut HashSet<usize>, functions:
             return;
         }
         for id in pending {
-            let (parameters, body) = functions.bodies[id];
-            let mut inner = Reads::default();
-            collect_reads(body, &HashSet::new(), true, &mut inner);
-            let mut locals: HashSet<String> = parameters.iter().map(|p| p.name.clone()).collect();
-            collect_locals(body, &mut locals);
-            reads.names.extend(inner.names.difference(&locals).cloned());
-            reads.targets.extend(inner.targets);
-        }
-    }
-}
-
-/// The names the statements declare, at any depth: variables, tuple elements and loop variables.
-fn collect_locals(statements: &[Statement], locals: &mut HashSet<String>) {
-    for statement in statements {
-        match statement {
-            Statement::Declaration { name, .. } => {
-                locals.insert(name.clone());
-            }
-            Statement::TupleDeclaration { names, .. } => locals.extend(names.iter().cloned()),
-            Statement::ForRange { variable, .. } => {
-                locals.insert(variable.clone());
-            }
-            Statement::ForIn { index, value, .. } => {
-                locals.extend(index.iter().cloned());
-                locals.insert(value.clone());
-            }
-            _ => {}
-        }
-        for block in traversal::nested_blocks(statement) {
-            collect_locals(block, locals);
+            reads.extend(&functions.reads[id]);
         }
     }
 }
@@ -1270,5 +1304,59 @@ mod tests {
             "//@version=6\nindicator(\"T\")\nbad = close\nlevel = close\nmethod push(float this, float v) =>\n    v + bad\nr = level.push(1.0)\nplot(request.security(syminfo.tickerid, \"D\", level))",
         );
         assert_eq!(sizes, [1], "`level` alone");
+    }
+
+    #[test]
+    fn a_matrix_predicate_is_not_a_write_of_the_matrix() {
+        for query in [
+            "matrix.is_zero(m)",
+            "matrix.is_identity(m)",
+            "matrix.is_symmetric(m)",
+        ] {
+            let sizes = slice_sizes(&format!(
+                "//@version=6\nindicator(\"T\")\nm = matrix.new<float>(2, 2, 0.0)\nunused = {query}\nplot(request.security(syminfo.tickerid, \"D\", matrix.rows(m)))"
+            ));
+            assert_eq!(sizes, [1], "{query}: only the declaration");
+        }
+    }
+
+    #[test]
+    fn a_namespaced_builtin_does_not_write_what_the_script_function_of_its_name_writes() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\nsma(float src, int len) =>\n    array.push(samples, src)\n    src\nunused = ta.sma(close, 2)\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))",
+        );
+        assert_eq!(sizes, [1]);
+        // The script's own function does.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\nsma(float src, int len) =>\n    array.push(samples, src)\n    src\nunused = sma(close, 2)\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))",
+        );
+        assert_eq!(sizes, [2]);
+    }
+
+    #[test]
+    fn a_name_declared_in_a_block_of_a_function_is_not_a_read_of_the_global() {
+        // `level` is read after the `if`, whose own `level` is gone: it is the global.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nlevel = close\nf() =>\n    if false\n        level = 1.0\n    level\nplot(request.security(syminfo.tickerid, \"D\", f()))",
+        );
+        assert_eq!(sizes, [1]);
+        // Read only inside the block that declares it, it is the function's own.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nlevel = close\nf() =>\n    if true\n        level = 1.0\n        level\n    1.0\nplot(request.security(syminfo.tickerid, \"D\", f()))",
+        );
+        assert!(sizes.is_empty(), "{sizes:?}");
+    }
+
+    #[test]
+    fn an_alias_reassigned_in_an_inner_block_stands_for_both_sources() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nvar a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    alias = a\n    if close > 1\n        alias := b\n    alias.push(close)\nplot(request.security(syminfo.tickerid, \"D\", array.size(b)))",
+        );
+        assert_eq!(sizes, [3], "`b`, the block that fills it, and `a` it reads");
+        // An `alias` the inner block declares is its own, not the outer one.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nvar a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    alias = a\n    if close > 1\n        alias = b\n    alias.push(close)\nplot(request.security(syminfo.tickerid, \"D\", array.size(b)))",
+        );
+        assert_eq!(sizes, [1], "the block fills `a`, not `b`");
     }
 }
