@@ -8,11 +8,9 @@
 
 use super::*;
 
-/// How far apart (px) the points tested along a sweep lie, so a quick drag cannot step over a
+/// The furthest apart (px) the points tested along a sweep lie, so a quick drag cannot step over a
 /// thin line.
 const SAMPLE_STEP: f32 = 4.0;
-/// Most points tested for the stretch one frame covers.
-const MAX_SAMPLES: usize = 64;
 
 /// A sweep in progress: where the pointer was last tested and what it passed over.
 pub(super) struct Sweep {
@@ -60,6 +58,11 @@ impl DrawingLayer {
                 }
                 self.sweep = Some(sweep);
             } else {
+                // The button came up this frame, possibly with the last of the move: that stretch
+                // is tested too, or what it crossed would survive.
+                if let Some(point) = pointer {
+                    self.sweep_to(&mut sweep, proj.clamp(point), frame, proj);
+                }
                 frame
                     .commands
                     .extend(sweep.ids.into_iter().map(DrawingCommand::Remove));
@@ -112,8 +115,9 @@ impl DrawingLayer {
     /// drawing it crosses once.
     fn sweep_to(&mut self, sweep: &mut Sweep, to: Pos2, frame: &DrawingFrame, proj: &Projection) {
         let from = sweep.last;
-        let steps = ((to - from).length() / SAMPLE_STEP).ceil() as usize;
-        let steps = steps.clamp(1, MAX_SAMPLES);
+        // Never further apart than `SAMPLE_STEP`, however far it moved: the pointer is clamped to
+        // the plot, so even the fastest frame is a few hundred points, each over the cached shapes.
+        let steps = (((to - from).length() / SAMPLE_STEP).ceil() as usize).max(1);
         for step in 1..=steps {
             let at = from + (to - from) * (step as f32 / steps as f32);
             if let Some(hit) = self.hit_test(frame, at, proj, false)

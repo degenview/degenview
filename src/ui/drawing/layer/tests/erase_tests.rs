@@ -266,3 +266,52 @@ fn a_press_that_goes_on_across_the_gap_erases_nothing_and_does_not_pan() {
     assert_eq!(rig.drawings.len(), 1);
     assert!(!rig.layer.claims_drag());
 }
+
+#[test]
+fn a_move_and_the_release_in_one_frame_still_erases_what_the_move_crossed() {
+    let mut rig = Rig::new();
+    rig.place(Tool::HorizontalLine);
+    rig.tool = Tool::Cursor;
+    let at = rig.body(rig.last().id());
+    rig.cursor = CursorMode::Eraser;
+    rig.settle();
+    let (from, to) = (pos2(at.x, at.y - 120.0), pos2(at.x, at.y + 120.0));
+    rig.move_to(from);
+    rig.press(from);
+    // The pointer crosses the line and the button comes up in the same frame.
+    let up = rig.button(to, false, PointerButton::Primary);
+    rig.frame(vec![Event::PointerMoved(to), up]);
+    assert!(
+        rig.drawings.is_empty(),
+        "the stretch the release frame covered was not tested"
+    );
+    assert_eq!(rig.undo_steps, 2, "placed, then erased in one step");
+}
+
+#[test]
+fn a_move_across_the_whole_plot_never_skips_a_thin_line() {
+    let mut rig = Rig::new();
+    // A vertical line near the left edge: half a step of the old 64-sample cap from the first
+    // test point of a 996 px move, which is further than the pick tolerance.
+    let anchor = rig.proj().anchor(pos2(9.8, 200.0));
+    let line = Drawing::build(
+        Tool::VerticalLine,
+        1,
+        &[anchor],
+        Tool::VerticalLine.default_style(),
+    )
+    .expect("a vertical line");
+    rig.drawings.push(line);
+    rig.cursor = CursorMode::Eraser;
+    rig.settle();
+    let (from, to) = (pos2(2.0, 200.0), pos2(998.0, 200.0));
+    rig.move_to(from);
+    rig.press(from);
+    rig.move_to(to);
+    assert!(
+        rig.layer.is_marked_for_erasing(1),
+        "marked while the button is down"
+    );
+    rig.release(to);
+    assert!(rig.drawings.is_empty());
+}

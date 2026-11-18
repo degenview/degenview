@@ -56,8 +56,10 @@ layer's pointer in place of selecting, editing and drawing:
   hide-all, other-timeframe and `Unreadable` rows are out of reach). Candles, indicators, scripts'
   plots and drawings, alerts and paper or live orders are not drawings and cannot be touched. A
   **locked** drawing is protected: the pointer turns to "not allowed" over it and a sweep passes it.
-- Each frame tests the pointer's way since the last one every 4 px (at most 64 points), so a quick
-  drag cannot step over a thin line.
+- Each frame tests the pointer's way since the last one every 4 px at most, however far it moved,
+  and tests it once more on the frame the button is let go (the last move can arrive with the
+  release), so a quick drag cannot step over a thin line. The work is bounded by the plot: the
+  pointer is clamped to it.
 - A drag on the plot never pans (the layer claims it, even over empty space); the axes, the wheel
   and a pinch still work. Right-click opens the chart's menu, not a drawing's. The selection is
   cleared when the Eraser is picked.
@@ -74,7 +76,9 @@ layer's pointer in place of selecting, editing and drawing:
 chart, as TradingView's help describes it: **Alt (Option) + click** puts a dot, **press and drag**
 draws freehand, and what was drawn **fades away after a few seconds**.
 
-- A stroke stays whole while the button is down; once finished it holds 2 s and fades over 1 s
+- A stroke takes the pointer's last position on the frame the button is let go (that frame can carry
+  the end of the move), so a quick stroke reaches where the hand stopped. It stays whole while the
+  button is down; once finished it holds 2 s and fades over 1 s
   (**ours**: TradingView says only "a few seconds"). The fade follows the clock (`input.time`), not
   the frames; frames are requested every 16 ms only while a stroke is drawn or fading, and one at the
   end of the hold otherwise, so an idle chart costs nothing. At most 48 marks, 4096 points a stroke.

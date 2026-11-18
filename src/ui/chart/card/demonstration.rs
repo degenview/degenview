@@ -48,7 +48,9 @@ impl ChartCard {
         {
             self.demo.begin(proj.anchor(origin), now);
         }
-        if response.dragged_by(primary)
+        // `dragged_by` is false on the frame the button comes up, which can carry the last of the
+        // move: the stroke takes that position too, or a quick stroke stops short.
+        if (response.dragged_by(primary) || response.drag_stopped_by(primary))
             && self.demo.is_drawing()
             && let Some(point) = pointer
         {
