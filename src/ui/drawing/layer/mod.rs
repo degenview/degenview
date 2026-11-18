@@ -671,7 +671,8 @@ impl DrawingLayer {
         // A gesture must not outlive the conditions it began under: the card going unseen
         // (another tab), the window losing focus, or the tool being switched.
         let frame_nr = ui.ctx().cumulative_frame_nr();
-        if self.gesture.is_some() && (!focused || frame_nr > self.last_frame + 1) {
+        let unseen = frame_nr > self.last_frame + 1;
+        if self.gesture.is_some() && (!focused || unseen) {
             self.abort();
         }
         self.last_frame = frame_nr;
@@ -679,7 +680,7 @@ impl DrawingLayer {
             self.abort();
         }
         if frame.erases() {
-            self.update_eraser(ui, response, proj, frame, pointer);
+            self.update_eraser(ui, response, proj, frame, pointer, unseen);
             self.set_cursor(ui, pointer, frame, plot);
             return self.claims_drag();
         }

@@ -536,6 +536,10 @@ impl ChartCard {
         pointer.overlay_action = overlay_action;
         pointer.on_overlay_card = on_overlay_card;
         self.layer = layer;
+        if layout.main_visible && self.cursor.caps().highlights {
+            let now = ui.input(|input| input.time);
+            self.paint_demonstration(&painter, plot, &projection, now);
+        }
         self.apply_overlay_results(
             OverlayResults {
                 pane_actions,
