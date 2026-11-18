@@ -748,6 +748,7 @@ impl ChartWorkspace {
             &mut commands,
         );
         drawing_escape |= self.drive_portion_selection(&ctx, grid_rect);
+        self.show_favorites_bar(&ctx, grid_rect);
 
         if !favorite_toggles.is_empty() || !watchlist_changes.is_empty() {
             let mut store = lock(&self.watchlist);

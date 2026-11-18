@@ -6,6 +6,7 @@
 //! text and per-timeframe visibility live beside the geometry, so moving, restyling and hiding a
 //! drawing never touch each other.
 
+pub mod favorites;
 pub mod market;
 pub mod regression;
 pub mod style;

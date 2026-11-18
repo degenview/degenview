@@ -228,6 +228,36 @@ Each shape has the handles its geometry needs (eight on a rectangle or ellipse, 
 a circle, three on a rotated rectangle with the width handle on the far edge, vertices on paths,
 hollow control points on curves).
 
+## Favorites
+
+A star at the right end of every row of the six flyouts stars that tool (`Tool::GROUPED`, so a tool
+added there gets one; the crosshair and the ruler have no row). Starred tools show in a small floating
+bar over the charts: a grip of dots, then one button per tool.
+
+- **Doc** (TradingView's help on favoriting, not detailed): a star beside a tool in the dropdown adds it
+  to a separate floating panel. Third-party posts say the panel can be moved and that a star toggle hides
+  it. **Inferred**, not stated anywhere read: the grip, the default place (centred near the top of the
+  chart area), the order (the order starred; unstarring and starring again moves a tool to the end),
+  and hiding through a right-click on the bar ("Hide favorites toolbar"). Nothing was compared with
+  TradingView.
+- **One tool choice.** A button goes through `ChartWorkspace::toggle_tool`, the call a rail tile uses, and the
+  bar lights the tab's armed tool (`DrawingTools::active`), so the rail, the menus and the bar cannot
+  disagree. Starring or unstarring never changes what is armed. Pressing the lit button puts the tool
+  down, as a rail tile does.
+- **Stars.** The star is a target of its own, made after the row, so a click on it never picks the tool,
+  and the menu stays open (`PopupCloseBehavior::CloseOnClickOutside`; picking a row closes it itself).
+  The bar changes at once: the stars are read through `Store::drawing_favorites_cached`, which rebuilds
+  after any write, so another window shows them too.
+- **Stored.** `drawing.favorites` is a list of tool names (the variant names `drawing.prefs` uses) and syncs;
+  `drawing.favoritesBar` is the place and a hidden flag and stays on the device (`store::drawing_favorites`,
+  `model::drawings::favorites`). A name this build does not know is kept when the list is written and
+  left out of the bar. Starring a tool shows a hidden bar again.
+- **Place.** The place is the share of the room the bar has to move in (0 top-left, 1 bottom-right), so a
+  resized window keeps it inside the charts' area; a bar bigger than that room sits at its corner, and a
+  chart area too small for it hides it. It is saved when the grip is let go, not while it moves. The bar
+  is not shown while a portion of the chart is being selected or a replay start is being picked.
+- **Not done.** No keyboard way to reorder, no per-chart list, no star on the ruler or Zoom In.
+
 ## Magnet and Keep drawing
 
 The strip's magnet cycles Off → Weak → Strong. Strong snaps an anchor to the open, high, low or
