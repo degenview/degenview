@@ -201,10 +201,14 @@ impl ChartCard {
         }
         drawing.escape_consumed |=
             self.handle_zoom(ui, response, view.as_ref(), &regions, bars.len(), zooming);
-        if layout.main_visible
-            && !held
-            && let Some(view) = &view
-        {
+        // A range being picked (replay start, Pine Logs) has the drag to itself: no stroke over the
+        // bars it selects, and one begun before the pick started is let go.
+        let marks_allowed = layout.main_visible && !held && !replay.selecting;
+        if !marks_allowed {
+            let now = ui.input(|input| input.time);
+            self.demo.end(now);
+        }
+        if marks_allowed && let Some(view) = &view {
             self.handle_demonstration(
                 ui,
                 response,
@@ -212,7 +216,9 @@ impl ChartCard {
                 plot,
             );
         }
-        if layout.main_visible && !held {
+        // Not while a drawing tool is armed: its press places anchors and drags out shapes, which
+        // the drawing layer (run above, before this) has already begun by the time a hold shows.
+        if layout.main_visible && !held && drawing.tool == crate::model::Tool::Cursor {
             let blocked =
                 replay.selecting || self.layer.claims_drag() || self.demonstration_claims_drag();
             self.handle_hold(ui, response, plot, blocked);

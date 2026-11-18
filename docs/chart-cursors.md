@@ -93,6 +93,8 @@ draws freehand, and what was drawn **fades away after a few seconds**.
   pinch work), hides the crosshair lines, tags and the box naming the bar, keeps the plain arrow, and
   leaves the drawings out of reach (`DrawingFrame::is_inert`: nothing is hovered, picked, moved or
   deleted). Right-click still opens the chart's menu.
+- A range being picked (replay start, Pine Logs) has the drag to itself: Demonstration draws nothing
+  while it is on, and lets go of a stroke begun before it.
 - The marks go when the cursor changes or the card shows another market (`abort_drawing`).
 - A translucent stroke is one path, so where it crosses itself during the fade the overlap is a
   little darker; the colour is the app's orange (**ours**).
@@ -108,7 +110,8 @@ default). `ui/chart/card/values_tooltip.rs`.
   ordinary pan or drawing drag and never shows it. Works for the three cursors that leave the
   press alone (Cross, Dot, Arrow); never for Demonstration or the Eraser.
 - **While it shows** it follows the pointer, the press is the tooltip's (the chart does not pan, a
-  drawing is not dragged), and it is gone when the button is let go. With a drawing under the press
+  drawing is not dragged), and it is gone when the button is let go. It never shows while a drawing
+  tool is armed: that press places anchors and drags out shapes. With a drawing under the press
   the press is the drawing's.
 - **Content, all from what the frame already computed** (`CrosshairBars`; nothing is recomputed):
   the time, the readout's rows (open, high, low, close or the constructed bar's own, volume, the
@@ -120,7 +123,8 @@ default). `ui/chart/card/values_tooltip.rs`.
 - It sits right and below the pointer, on the other side where there is no room, and stays inside
   the plot under the header. It is never bigger than that room: as many rows are listed as fit
   above the next pane, the rest are counted in a last row (`+N more`), and a long name is cut with an
-  ellipsis so the box is never wider than the plot. In a plot too short for a row, only the time
+  ellipsis, and a long value (a script's candle row, eight decimals) wraps within 60 % of the width,
+  so the box is never wider than the plot. In a plot too short for a row, only the time
   shows; in one too short for that, nothing. Drawn with the crosshair, so a snapshot never has it.
 - On a touch screen egui turns a long touch into a right-click. The drawing layer ignores that one
   (`DrawingFrame::long_press_values`) only while the tooltip has the press, so a press the tooltip

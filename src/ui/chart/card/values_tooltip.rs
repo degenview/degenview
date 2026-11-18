@@ -21,6 +21,8 @@ const SLOP: f32 = 6.0;
 const MAX_ROWS: usize = 256;
 /// The narrowest a row's name is cut to, in a plot too narrow for more.
 const MIN_LABEL: f32 = 40.0;
+/// The share of the width a row's value may take before it wraps; the name gets the rest.
+const VALUE_SHARE: f32 = 0.6;
 /// How far the box sits from the pointer.
 const OFFSET: f32 = 16.0;
 const PAD: Vec2 = Vec2::new(10.0, 8.0);
@@ -39,13 +41,6 @@ pub(super) enum Hold {
     Showing,
     /// The press moved, or something else took it: no tooltip until the button is let go.
     Spent,
-}
-
-/// How many rows fit under the header in a room `height` tall, or `None` when not even the header
-/// does. The box is the padding, the header and each row with the gap before it.
-fn rows_that_fit(height: f32, row_height: f32) -> Option<usize> {
-    let spare = height - 2.0 * PAD.y - row_height;
-    (spare >= 0.0).then(|| (spare / (row_height + ROW_GAP)).floor() as usize)
 }
 
 impl ChartCard {
@@ -221,38 +216,59 @@ impl ChartCard {
         );
         let row_height = header.size().y;
         let room = self.below_header(plot).shrink(4.0);
-        // As many rows as fit between the top of the plot and the next pane: the box is never
-        // taller than its room, so it cannot cover what lies under the plot. What does not fit is
-        // counted in a last row.
-        let Some(fit) = rows_that_fit(room.height(), row_height) else {
+        // What the two columns share, and what is left under the header: the box is never wider or
+        // taller than its room, so it cannot spill off the chart or cover a pane below the plot.
+        let inner = room.width() - 2.0 * PAD.x - COLUMN_GAP;
+        let spare = room.height() - 2.0 * PAD.y - row_height;
+        if spare < 0.0 {
             return;
-        };
-        let (listed, hidden) = match fit {
-            fit if rows.len() <= fit => (rows.len(), 0),
-            // Room for the header alone: no row, and no counter either.
-            0 => (0, 0),
-            fit => (fit - 1, rows.len() - (fit - 1)),
+        }
+        // A long value wraps within its share of the width instead of widening the box.
+        let value_cap = (inner * VALUE_SHARE).max(MIN_LABEL);
+        let wrapped = |text: &str, ink: Color32| {
+            let mut job =
+                egui::text::LayoutJob::simple(text.to_owned(), font.clone(), ink, value_cap);
+            job.wrap.break_anywhere = true;
+            painter.layout_job(job)
         };
         let bar_color = self.bar_color(candle, previous_close);
-        let values: Vec<_> = rows
+        // Rows in order while they fit, keeping room for the counter when some are left out.
+        let mut shown: Vec<(&str, std::sync::Arc<egui::Galley>, f32)> = Vec::new();
+        let mut used = 0.0;
+        for (index, (label, value)) in rows.iter().enumerate() {
+            let ink = if index < bar_rows {
+                bar_color
+            } else {
+                theme::text_primary()
+            };
+            let value = wrapped(value, ink);
+            let height = value.size().y.max(row_height);
+            let counter = if index + 1 < rows.len() {
+                ROW_GAP + row_height
+            } else {
+                0.0
+            };
+            if used + ROW_GAP + height + counter > spare {
+                break;
+            }
+            used += ROW_GAP + height;
+            shown.push((label, value, height));
+        }
+        let mut hidden = rows.len() - shown.len();
+        while hidden > 0 && used + ROW_GAP + row_height > spare {
+            // Not even the counter fits: give a row up for it, or show none.
+            let Some((_, _, height)) = shown.pop() else {
+                break;
+            };
+            used -= ROW_GAP + height;
+            hidden += 1;
+        }
+        let value_width = shown
             .iter()
-            .take(listed)
-            .enumerate()
-            .map(|(row, (_, value))| {
-                let ink = if row < bar_rows {
-                    bar_color
-                } else {
-                    theme::text_primary()
-                };
-                painter.layout_no_wrap(value.clone(), font.clone(), ink)
-            })
-            .collect();
-        let value_width = values
-            .iter()
-            .map(|value| value.size().x)
+            .map(|(_, value, _)| value.size().x)
             .fold(0.0, f32::max);
         // A long name is cut so the box stays inside the plot.
-        let label_room = (room.width() - 2.0 * PAD.x - COLUMN_GAP - value_width).max(MIN_LABEL);
+        let label_room = (inner - value_width).max(MIN_LABEL);
         let cut = |text: String| {
             let mut job = egui::text::LayoutJob::simple_singleline(
                 text,
@@ -262,25 +278,25 @@ impl ChartCard {
             job.wrap = egui::text::TextWrapping::truncate_at_width(label_room);
             painter.layout_job(job)
         };
-        let mut labels: Vec<_> = rows
-            .iter()
-            .take(listed)
-            .map(|(label, _)| cut(label.clone()))
+        let mut cells: Vec<_> = shown
+            .into_iter()
+            .map(|(label, value, height)| (cut(label.to_owned()), value, height))
             .collect();
-        let mut values = values;
-        if hidden > 0 {
-            labels.push(cut(format!("+{hidden} more")));
-            values.push(painter.layout_no_wrap(String::new(), font.clone(), theme::text_primary()));
+        if hidden > 0 && used + ROW_GAP + row_height <= spare {
+            used += ROW_GAP + row_height;
+            cells.push((
+                cut(format!("+{hidden} more")),
+                painter.layout_no_wrap(String::new(), font.clone(), theme::text_primary()),
+                row_height,
+            ));
         }
-        let label_width = labels
+        let label_width = cells
             .iter()
-            .map(|label| label.size().x)
+            .map(|(label, ..)| label.size().x)
             .fold(0.0, f32::max);
-        let cells: Vec<_> = labels.into_iter().zip(values).collect();
         let width = (header.size().x.max(label_width + COLUMN_GAP + value_width) + 2.0 * PAD.x)
             .min(room.width());
-        let height = row_height * (cells.len() + 1) as f32 + ROW_GAP * cells.len() as f32;
-        let size = Vec2::new(width, height + 2.0 * PAD.y);
+        let size = Vec2::new(width, 2.0 * PAD.y + row_height + used);
 
         // Right and below the pointer, or the other side where there is no room.
         let mut min = pointer + Vec2::splat(OFFSET);
@@ -318,11 +334,11 @@ impl ChartCard {
         let left = boxed.left() + PAD.x;
         painter.galley(Pos2::new(left, y), header, theme::text_secondary());
         y += row_height + ROW_GAP;
-        for (label, value) in cells {
+        for (label, value, height) in cells {
             painter.galley(Pos2::new(left, y), label, theme::text_secondary());
             let value_x = boxed.right() - PAD.x - value.size().x;
             painter.galley(Pos2::new(value_x, y), value, theme::text_primary());
-            y += row_height + ROW_GAP;
+            y += height + ROW_GAP;
         }
     }
 }

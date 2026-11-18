@@ -96,6 +96,8 @@ pub(super) struct Harness {
     sent: Option<Pos2>,
     /// A press or a release of the primary button to send with the next frame.
     pub(super) button: Option<bool>,
+    /// The window's size; `SIZE` unless a test wants a narrower chart.
+    pub(super) size: Vec2,
 }
 
 impl Harness {
@@ -118,13 +120,14 @@ impl Harness {
             clock: 0.0,
             sent: None,
             button: None,
+            size: SIZE,
         }
     }
 
     pub(super) fn frame(&mut self) -> (Vec<ClippedShape>, ChartPointer) {
         let input = egui::RawInput {
             time: Some(self.clock),
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, self.size)),
             events: self
                 .pointer
                 .filter(|at| self.sent != Some(*at))
