@@ -257,8 +257,11 @@ runtime error (`PINE4006`), a `na` offset returns `na`.
 **22. `request.security`** (`security_call.rs:482-545`). `serve_security` folds the higher-timeframe candle
 from only the chart bars visited at the call site, so a conditional call excludes the skipped bars from the
 candle's high, low and volume and from any `ta.*` inside the expression. TradingView evaluates the
-expression on every higher-timeframe bar and the condition only selects the result. Chart variables used
-inside the expression have no history (`security_globals` vs `eval_history`).
+expression on every higher-timeframe bar and the condition only selects the result. ~~Chart variables used
+inside the expression have no history~~: a script variable the expression reads is now computed on the
+requested series (`security_slice`), with its own history; only names that no slice statement computes
+(set by a statement that makes a request, or inside a function body's request) still read the chart's
+value through `security_globals`.
 
 **31. Cost.** `commit_histories` pushes every variable every bar even if never indexed (TradingView buffers
 only what is referenced). Each non-historical tick does `working = committed.clone()` (`session.rs:643`) and

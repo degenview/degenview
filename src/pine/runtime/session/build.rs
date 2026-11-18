@@ -8,6 +8,7 @@ use crate::pine::Limits;
 use crate::pine::compiler::program::{CompiledProgram, InputValue, SymbolInfo};
 use crate::pine::outputs::drawings;
 use crate::pine::runtime::fast_hash::FastMap;
+use crate::pine::runtime::security_slice;
 use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::support::{LibraryLinkage, SecurityDataProvider};
 use crate::pine::runtime::types::RuntimeFunction;
@@ -103,6 +104,7 @@ impl Session {
             .collect();
         let history_builtins =
             history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
+        let security_slices = security_slice::build(&program.statements);
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
@@ -166,6 +168,7 @@ impl Session {
             varip_fields,
             last_open_time: None,
             security_globals: None,
+            security_slices,
             theme: crate::pine::compiler::program::ChartTheme::DARK,
             security_depth: 0,
             shadowing_builtins,

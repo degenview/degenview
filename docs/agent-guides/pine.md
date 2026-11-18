@@ -144,6 +144,13 @@
   local shadow outside its block (`aVFtPnUh`) and unread shadows of `low`, `hl2`, `second`
   (`mwTRA4dO`, `aVFtPnUh`, `5YEHyvSL`). Parameters may reuse the name with a warning. TradingView's
   message text is undocumented.
+- `request.security` expressions that read script variables (`longTrend` in
+  `request.security(sym, "15", longTrend)`): `runtime::security_slice` finds at build time the top-level
+  statements that declare or `:=`-reassign what the expression reads (through other statements and the
+  script's functions, minus a function's locals), and `evaluate_higher_timeframe` runs them in the
+  request's own state before the expression. A statement that makes a `request.*` call is never in a
+  slice (nesting; its names keep the chart's value via `security_globals`); requests inside functions
+  are not sliced. Known gap: `alert()` in a statement of a slice emits from the other series.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, share function bodies
   with `Arc`. Benchmark: `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

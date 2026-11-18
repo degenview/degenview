@@ -99,6 +99,9 @@ pub struct Session {
     varip_fields: Vec<(String, Vec<String>)>,
     pub last_open_time: Option<i64>,
     pub security_globals: Option<FastMap<String, RuntimeValue>>,
+    /// For each `request.security` expression, the statements that compute the script variables it
+    /// reads, run on the requested series before it (`security_slice`).
+    pub(crate) security_slices: super::security_slice::Slices,
     /// The chart's foreground and background (`chart.fg_color`, `chart.bg_color`).
     pub theme: crate::pine::compiler::program::ChartTheme,
     /// Builtin variable names (`low`) the script declares itself: removed at the start of each bar so

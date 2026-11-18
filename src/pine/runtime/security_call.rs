@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::security_slice;
 use super::session::Session;
 use super::state::{RuntimeState, SecuritySite};
 use super::support::{ChartSpan, SecurityKey};
@@ -748,7 +749,16 @@ impl Session {
             self.debug_enter_security(&requested.symbol, requested.interval_seconds);
         }
         self.logs.enter_request(requested, candle.open_time, commit);
-        let evaluated = self.eval(&request.expression, &mut security_context);
+        // The script variables the expression reads are computed on this series, not read off the chart.
+        let slice = self
+            .security_slices
+            .get(&security_slice::key(&request.expression))
+            .cloned();
+        let evaluated = match slice {
+            Some(slice) => self.run(&slice, &mut security_context).map(|_| ()),
+            None => Ok(()),
+        }
+        .and_then(|()| self.eval(&request.expression, &mut security_context));
         self.logs.leave_request();
         if debugging {
             self.debug_leave();
@@ -1127,6 +1137,70 @@ mod tests {
         );
         assert_eq!(output.plots.len(), 1);
         assert_eq!(output.plots[0].values.last(), Some(&Some(120.0)));
+    }
+
+    /// ETHUSDT closes 100, 110, 120 on the same bars as a chart that closes 1, 2, 3.
+    fn eth_provider() -> TestProvider {
+        let mut provider = TestProvider::default();
+        provider.candles.insert(
+            SecurityKey {
+                symbol: "ETHUSDT".to_owned(),
+                interval: 60.0,
+                recent_bars: 0,
+            },
+            vec![bar(0, 100.0), bar(60_000, 110.0), bar(120_000, 120.0)],
+        );
+        provider
+    }
+
+    fn last_plotted(source: &str) -> Option<f64> {
+        let chart = [bar(0, 1.0), bar(60_000, 2.0), bar(120_000, 3.0)];
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}\nplot(x)");
+        run(&body, eth_provider(), &chart).plots[0]
+            .values
+            .last()
+            .copied()
+            .flatten()
+    }
+
+    #[test]
+    fn a_script_variable_is_computed_on_the_requested_series() {
+        // The chart's `doubled` is 6; ETHUSDT's is 240.
+        assert_eq!(
+            last_plotted("doubled = close * 2\nx = request.security(\"ETHUSDT\", \"1\", doubled)"),
+            Some(240.0)
+        );
+    }
+
+    #[test]
+    fn a_chain_of_variables_keeps_its_indicator_state_and_history() {
+        // `ta.sma` runs over ETHUSDT's closes (110, 120), and `[1]` reads that series' previous bar.
+        assert_eq!(
+            last_plotted("mean = ta.sma(close, 2)\nx = request.security(\"ETHUSDT\", \"1\", mean)"),
+            Some(115.0)
+        );
+        assert_eq!(
+            last_plotted(
+                "doubled = close * 2\nx = request.security(\"ETHUSDT\", \"1\", doubled[1])"
+            ),
+            Some(220.0)
+        );
+    }
+
+    #[test]
+    fn a_reassigned_variable_and_a_function_that_reads_one_follow_the_series() {
+        assert_eq!(
+            last_plotted(
+                "level = 0.0\nif close > 105\n    level := close\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+        assert_eq!(
+            last_plotted(
+                "factor = 2\nscaled() =>\n    close * factor\nx = request.security(\"ETHUSDT\", \"1\", scaled())"
+            ),
+            Some(240.0)
+        );
     }
 
     #[test]

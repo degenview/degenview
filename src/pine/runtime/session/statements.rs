@@ -63,7 +63,7 @@ impl<'s> Shadowed<'s> {
 }
 
 impl Session {
-    pub(super) fn run(
+    pub(crate) fn run(
         &mut self,
         statements: &[Statement],
         context: &mut RuntimeContext,
