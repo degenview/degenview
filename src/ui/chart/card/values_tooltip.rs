@@ -16,8 +16,11 @@ use std::time::Duration;
 const LONG_PRESS: f64 = 0.5;
 /// How far (px) the pointer may stray while it counts as still: egui's own click distance.
 const SLOP: f32 = 6.0;
-/// The most rows one tooltip lists; the plots of a script with dozens do not fill the screen.
-const MAX_ROWS: usize = 28;
+/// The most rows built for one tooltip, however many a script plots: only the ones that fit are
+/// laid out and painted, this bounds the strings made first.
+const MAX_ROWS: usize = 256;
+/// The narrowest a row's name is cut to, in a plot too narrow for more.
+const MIN_LABEL: f32 = 40.0;
 /// How far the box sits from the pointer.
 const OFFSET: f32 = 16.0;
 const PAD: Vec2 = Vec2::new(10.0, 8.0);
@@ -36,6 +39,13 @@ pub(super) enum Hold {
     Showing,
     /// The press moved, or something else took it: no tooltip until the button is let go.
     Spent,
+}
+
+/// How many rows fit under the header in a room `height` tall, or `None` when not even the header
+/// does. The box is the padding, the header and each row with the gap before it.
+fn rows_that_fit(height: f32, row_height: f32) -> Option<usize> {
+    let spare = height - 2.0 * PAD.y - row_height;
+    (spare >= 0.0).then(|| (spare / (row_height + ROW_GAP)).floor() as usize)
 }
 
 impl ChartCard {
@@ -209,40 +219,70 @@ impl ChartCard {
             font.clone(),
             theme::text_secondary(),
         );
+        let row_height = header.size().y;
+        let room = self.below_header(plot).shrink(4.0);
+        // As many rows as fit between the top of the plot and the next pane: the box is never
+        // taller than its room, so it cannot cover what lies under the plot. What does not fit is
+        // counted in a last row.
+        let Some(fit) = rows_that_fit(room.height(), row_height) else {
+            return;
+        };
+        let (listed, hidden) = match fit {
+            fit if rows.len() <= fit => (rows.len(), 0),
+            // Room for the header alone: no row, and no counter either.
+            0 => (0, 0),
+            fit => (fit - 1, rows.len() - (fit - 1)),
+        };
         let bar_color = self.bar_color(candle, previous_close);
-        let cells: Vec<_> = rows
+        let values: Vec<_> = rows
             .iter()
+            .take(listed)
             .enumerate()
-            .map(|(row, (label, value))| {
+            .map(|(row, (_, value))| {
                 let ink = if row < bar_rows {
                     bar_color
                 } else {
                     theme::text_primary()
                 };
-                (
-                    painter.layout_no_wrap(label.clone(), font.clone(), theme::text_secondary()),
-                    painter.layout_no_wrap(value.clone(), font.clone(), ink),
-                )
+                painter.layout_no_wrap(value.clone(), font.clone(), ink)
             })
             .collect();
-        let label_width = cells
+        let value_width = values
             .iter()
-            .map(|(label, _)| label.size().x)
+            .map(|value| value.size().x)
             .fold(0.0, f32::max);
-        let value_width = cells
+        // A long name is cut so the box stays inside the plot.
+        let label_room = (room.width() - 2.0 * PAD.x - COLUMN_GAP - value_width).max(MIN_LABEL);
+        let cut = |text: String| {
+            let mut job = egui::text::LayoutJob::simple_singleline(
+                text,
+                font.clone(),
+                theme::text_secondary(),
+            );
+            job.wrap = egui::text::TextWrapping::truncate_at_width(label_room);
+            painter.layout_job(job)
+        };
+        let mut labels: Vec<_> = rows
             .iter()
-            .map(|(_, value)| value.size().x)
+            .take(listed)
+            .map(|(label, _)| cut(label.clone()))
+            .collect();
+        let mut values = values;
+        if hidden > 0 {
+            labels.push(cut(format!("+{hidden} more")));
+            values.push(painter.layout_no_wrap(String::new(), font.clone(), theme::text_primary()));
+        }
+        let label_width = labels
+            .iter()
+            .map(|label| label.size().x)
             .fold(0.0, f32::max);
-        let row_height = cells
-            .iter()
-            .map(|(label, value)| label.size().y.max(value.size().y))
-            .fold(header.size().y, f32::max);
-        let width = header.size().x.max(label_width + COLUMN_GAP + value_width);
+        let cells: Vec<_> = labels.into_iter().zip(values).collect();
+        let width = (header.size().x.max(label_width + COLUMN_GAP + value_width) + 2.0 * PAD.x)
+            .min(room.width());
         let height = row_height * (cells.len() + 1) as f32 + ROW_GAP * cells.len() as f32;
-        let size = Vec2::new(width, height) + PAD * 2.0;
+        let size = Vec2::new(width, height + 2.0 * PAD.y);
 
         // Right and below the pointer, or the other side where there is no room.
-        let room = self.below_header(plot).shrink(4.0);
         let mut min = pointer + Vec2::splat(OFFSET);
         if min.x + size.x > room.right() {
             min.x = pointer.x - OFFSET - size.x;

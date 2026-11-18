@@ -254,3 +254,114 @@ fn scripts_plots_on_the_chart_and_in_their_panes_are_listed() {
         assert!(shown.iter().any(|text| text == name), "{name}: {shown:?}");
     }
 }
+
+/// The text of every row of the tooltip and where it was drawn, for a chart with `plots` script
+/// plots under the pointer and two panes below the price chart (which make its plot short).
+fn crowded(plots: usize, title: &str) -> (Vec<(Pos2, String)>, Rect, Vec<Rect>) {
+    let mut harness = hovering();
+    let mut source = String::from("//@version=6\nindicator(\"Crowd\", overlay = true)\n");
+    for index in 0..plots {
+        source.push_str(&format!(
+            "plot(close + {index}, title = \"{title}{index}\")\n"
+        ));
+    }
+    let overlay = harness.card.add_pine_instance(None, "Crowd", &source);
+    let panes = [
+        harness.card.add_pine_instance(
+            None,
+            "One",
+            "//@version=6\nindicator(\"One\")\nplot(close, title = \"One line\")\n",
+        ),
+        harness.card.add_pine_instance(
+            None,
+            "Two",
+            "//@version=6\nindicator(\"Two\")\nplot(open, title = \"Two line\")\n",
+        ),
+    ];
+    wait_for_run(&mut harness, overlay);
+    for pane in panes {
+        wait_for_run(&mut harness, pane);
+    }
+    harness.draw();
+    press(&mut harness);
+    wait(&mut harness, LONG);
+    let frame = harness.frame();
+    let plot = harness.card.probe.expect("the chart was drawn").plot;
+    let drawn = gather(&frame.0);
+    let boxed = theme::chrome().gamma_multiply(0.97);
+    let boxes = drawn
+        .rects
+        .iter()
+        .filter(|(_, fill)| *fill == boxed)
+        .map(|(rect, _)| *rect)
+        .collect();
+    let shown = drawn
+        .texts
+        .into_iter()
+        .map(|(at, text, _)| (at, text))
+        .collect();
+    (shown, plot, boxes)
+}
+
+#[test]
+fn a_tooltip_with_more_rows_than_the_plot_holds_stops_above_the_next_pane_and_counts_the_rest() {
+    let (texts, plot, boxes) = crowded(24, "Plot ");
+    assert!(
+        boxes
+            .iter()
+            .all(|boxed| plot.expand(0.5).contains_rect(*boxed)),
+        "the box {boxes:?} is not inside the plot {plot:?}"
+    );
+    let label = |text: &String| text == "Chg" || text.starts_with("Plot ");
+    let rows: Vec<_> = texts.iter().filter(|(_, text)| label(text)).collect();
+    assert!(!rows.is_empty(), "the tooltip is there: {texts:?}");
+    for (at, text) in &rows {
+        assert!(
+            at.y >= plot.top() && at.y + 11.0 <= plot.bottom() + 0.5,
+            "{text} at {at:?} is outside the plot {plot:?}"
+        );
+    }
+    let more = texts
+        .iter()
+        .find_map(|(_, text)| {
+            text.strip_prefix('+')?
+                .strip_suffix(" more")?
+                .parse::<usize>()
+                .ok()
+        })
+        .expect("the rows that did not fit are counted");
+    // Plots 0..24, the bar's rows and the panes' own: what was shown and what was not add up.
+    let shown_plots = rows
+        .iter()
+        .filter(|(_, text)| text.starts_with("Plot "))
+        .count();
+    assert!(shown_plots < 24, "not every plot fits");
+    assert!(
+        more >= 24 - shown_plots,
+        "{more} hidden of the {shown_plots} plots shown"
+    );
+}
+
+#[test]
+fn a_tooltip_that_fits_has_no_counter_and_a_long_name_is_cut_to_the_plot() {
+    let (texts, _, _) = crowded(1, "Plot ");
+    assert!(
+        !texts.iter().any(|(_, text)| text.ends_with(" more")),
+        "nothing was left out: {texts:?}"
+    );
+    let long = "a very long name of a script plot that goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on ";
+    let (texts, plot, boxes) = crowded(2, long);
+    assert!(
+        texts
+            .iter()
+            .any(|(_, text)| text.starts_with("a very long")),
+        "the plots are listed: {texts:?}"
+    );
+    assert!(!boxes.is_empty(), "the tooltip is drawn");
+    assert!(
+        boxes
+            .iter()
+            .all(|boxed| plot.expand(0.5).contains_rect(*boxed)),
+        "a long name widened the box {boxes:?} past the plot {plot:?}"
+    );
+}

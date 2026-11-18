@@ -56,8 +56,10 @@ layer's pointer in place of selecting, editing and drawing:
   hide-all, other-timeframe and `Unreadable` rows are out of reach). Candles, indicators, scripts'
   plots and drawings, alerts and paper or live orders are not drawings and cannot be touched. A
   **locked** drawing is protected: the pointer turns to "not allowed" over it and a sweep passes it.
-- Each frame tests the pointer's way since the last one every 4 px (at most 64 points), so a quick
-  drag cannot step over a thin line.
+- Each frame tests the pointer's way since the last one every 4 px at most, however far it moved,
+  and tests it once more on the frame the button is let go (the last move can arrive with the
+  release), so a quick drag cannot step over a thin line. The work is bounded by the plot: the
+  pointer is clamped to it.
 - A drag on the plot never pans (the layer claims it, even over empty space); the axes, the wheel
   and a pinch still work. Right-click opens the chart's menu, not a drawing's. The selection is
   cleared when the Eraser is picked.
@@ -74,7 +76,9 @@ layer's pointer in place of selecting, editing and drawing:
 chart, as TradingView's help describes it: **Alt (Option) + click** puts a dot, **press and drag**
 draws freehand, and what was drawn **fades away after a few seconds**.
 
-- A stroke stays whole while the button is down; once finished it holds 2 s and fades over 1 s
+- A stroke takes the pointer's last position on the frame the button is let go (that frame can carry
+  the end of the move), so a quick stroke reaches where the hand stopped. It stays whole while the
+  button is down; once finished it holds 2 s and fades over 1 s
   (**ours**: TradingView says only "a few seconds"). The fade follows the clock (`input.time`), not
   the frames; frames are requested every 16 ms only while a stroke is drawn or fading, and one at the
   end of the hold otherwise, so an idle chart costs nothing. At most 48 marks, 4096 points a stroke.
@@ -112,9 +116,12 @@ default). `ui/chart/card/values_tooltip.rs`.
   previous close, the built-in indicators over the bars in view (EMA, Bollinger, RSI, Supertrend
   flip), and every script plot that asks for the data window (`display` has
   `DISPLAY_DATA_WINDOW`), on the chart and in its pane, read at the hovered bar through
-  `series_index` (so replay-cut and constructed bars line up). At most 28 rows.
+  `series_index` (so replay-cut and constructed bars line up).
 - It sits right and below the pointer, on the other side where there is no room, and stays inside
-  the plot under the header. Drawn with the crosshair, so a snapshot never has it.
+  the plot under the header. It is never bigger than that room: as many rows are listed as fit
+  above the next pane, the rest are counted in a last row (`+N more`), and a long name is cut with an
+  ellipsis so the box is never wider than the plot. In a plot too short for a row, only the time
+  shows; in one too short for that, nothing. Drawn with the crosshair, so a snapshot never has it.
 - On a touch screen egui turns a long touch into a right-click. The drawing layer ignores that one
   (`DrawingFrame::long_press_values`) only while the tooltip has the press, so a press the tooltip
   never took (on a drawing, locked or not, with the option off, or under Demonstration or the Eraser)
