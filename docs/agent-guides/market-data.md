@@ -95,7 +95,10 @@ watchlists.
   `EARLIEST_MS`. A request is at most 10,000 bars, so a `22m` series from 1-minute bars is shorter
   than 500. Alpaca answers a time window, not a count, and its bars are sparse (IEX trades, holidays):
   a short answer is not the start of history. `shape_since` takes the window's start (the lookback, or
-  the clamped range start) and drops a first bucket that opened before it.
+  the clamped range start) and drops a first bucket that opened before it. A bucket's first base slot
+  is its UTC start plus the offset the provider stamps its bars with (New York midnight for days and
+  months), so a window that began at the first of those bars keeps its first bucket; an answer that is
+  only a fragment of one bucket is empty.
 - **Older history** (`DataSource::supports_older_history`): Binance, Coinbase, OKX, Bybit, Gate.io (to its 8,900-candle reach), MEXC and Alpaca page back at
   any length. GeckoTerminal's free API reaches back 180 days, so it pages (one page of base candles,
   folded) only while a page of the base candle (1,000 of them) is shorter than that: bases up to 4h

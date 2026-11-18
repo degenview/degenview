@@ -83,7 +83,12 @@ impl FoldPlan {
     /// [`shape`](Self::shape) for a source that answers a time window, not a count: the window
     /// began at `since_ms`, so even a short answer is cut off when its first candle sits in a
     /// bucket that opened before the window did. The candles before `since_ms` may exist, so that
-    /// bucket is a fragment.
+    /// bucket is a fragment, and an answer that is nothing else has no whole candle to show.
+    ///
+    /// A bucket opens before the window when its earliest base slot does: the bucket's start
+    /// moved by the offset the provider stamps its base candles with (none for intraday bars,
+    /// New York midnight for Alpaca's days and months), so the first bucket of a window that
+    /// began at the first base bar is whole.
     pub fn shape_since(
         self,
         candles: Vec<Kline>,
@@ -93,9 +98,21 @@ impl FoldPlan {
     ) -> Vec<Kline> {
         let begins_inside = candles
             .first()
-            .is_some_and(|first| since_ms > bucket_start_ms(self.target, first.open_time));
+            .is_some_and(|first| since_ms > self.earliest_slot(first.open_time));
+        let in_one_bucket = candles.first().zip(candles.last()).is_some_and(|(a, b)| {
+            bucket_start_ms(self.target, a.open_time) == bucket_start_ms(self.target, b.open_time)
+        });
+        if begins_inside && in_one_bucket {
+            return Vec::new();
+        }
         let truncated = candles.len() >= requested || begins_inside;
         self.trimmed(candles, truncated, limit)
+    }
+
+    /// Where the first base slot of the target bucket holding `open_time` sits: the bucket's start
+    /// plus the offset the provider stamps base candles with.
+    fn earliest_slot(self, open_time: i64) -> i64 {
+        bucket_start_ms(self.target, open_time) + open_time - bucket_start_ms(self.base, open_time)
     }
 
     fn trimmed(self, candles: Vec<Kline>, truncated: bool, limit: usize) -> Vec<Kline> {
