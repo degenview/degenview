@@ -1220,6 +1220,17 @@ mod tests {
     }
 
     #[test]
+    fn a_function_in_a_request_inside_a_function_reads_the_global_not_the_callers_local() {
+        // A request inside a function is not sliced: `len` is the chart's global, never `f`'s own.
+        assert_eq!(
+            last_plotted(
+                "len = 1.0\ng() =>\n    len\nf() =>\n    len = 50.0\n    request.security(\"ETHUSDT\", \"1\", g())\nx = f()"
+            ),
+            Some(1.0)
+        );
+    }
+
+    #[test]
     fn code_after_the_request_is_not_part_of_what_it_computes() {
         // TradingView computes the variable as it stands where the request is written.
         assert_eq!(

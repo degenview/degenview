@@ -1,7 +1,7 @@
 //! Calls: dispatch by route and name, argument binding, collection and method calls, field
 //! access, and invoking the script's own functions.
 
-use super::{INTERNAL_PREFIX, Session, Step};
+use super::{CallFrame, INTERNAL_PREFIX, SavedNames, Session, Step};
 use crate::pine::builtins::array::Bound;
 use crate::pine::compiler::program::InputValue;
 use crate::pine::runtime::fast_hash::FastMap;
@@ -609,9 +609,12 @@ impl Session {
         let prefix = self.site_key(site, context);
         let stash_key = |local: &str| format!("{INTERNAL_PREFIX}fn:{prefix}:{local}");
 
-        // What the caller's variables of these names hold, put back when the call ends.
-        let saved: Vec<(String, Option<RuntimeValue>)> = function
-            .locals
+        // A function sees its own names and the script's, never its caller's (Pine's scopes are
+        // lexical): the globals the calling function's locals hide come back for the call.
+        let uncovered = self.uncover_caller_globals();
+        // What the variables of these names hold, put back when the call ends.
+        let saved: SavedNames = function
+            .saved_order
             .iter()
             .map(|local| (local.clone(), self.working.variables.get(local).cloned()))
             .collect();
@@ -660,9 +663,19 @@ impl Session {
                 function.scope.as_deref(),
                 first_statement,
                 &saved,
+                &uncovered,
             );
         }
+        self.call_frames.push(CallFrame {
+            saved,
+            global_locals: function.global_locals,
+        });
         let result = self.run(&function.body, context);
+        let saved = self
+            .call_frames
+            .pop()
+            .map(|frame| frame.saved)
+            .unwrap_or_default();
         if self.hooks.is_some() {
             self.hook_leave_function();
         }
@@ -695,21 +708,14 @@ impl Session {
                 }
             }
         }
-        let result = result.inspect_err(|_| {
-            for (local, previous) in &saved {
-                match previous {
-                    Some(previous) => {
-                        self.working
-                            .variables
-                            .insert(local.clone(), previous.clone());
-                    }
-                    None => {
-                        self.working.variables.remove(local);
-                    }
-                }
+        let value = match result {
+            Ok((_, value)) => value,
+            Err(error) => {
+                self.restore_saved(saved);
+                self.cover_caller_globals(uncovered);
+                return Err(error);
             }
-        });
-        let (_, value) = result?;
+        };
         for local in function.persistent_locals.iter() {
             let value = self
                 .working
@@ -726,6 +732,13 @@ impl Session {
             }
             self.working.variables.insert(key, value);
         }
+        self.restore_saved(saved);
+        self.cover_caller_globals(uncovered);
+        Ok(value)
+    }
+
+    /// Puts back what the variables of a finished call's locals held when it began.
+    fn restore_saved(&mut self, saved: SavedNames) {
         for (local, previous) in saved {
             if let Some(previous) = previous {
                 self.working.variables.insert(local, previous);
@@ -733,7 +746,51 @@ impl Session {
                 self.working.variables.remove(&local);
             }
         }
-        Ok(value)
+    }
+
+    /// Sets each name the calling function's locals give a value of their own, over a global, back
+    /// to the global's value (what it held when the caller began: every call begins on the globals).
+    /// Returns the caller's own values, by their place in its `saved`, for `cover_caller_globals`.
+    /// Empty for a call from the script's top level, and for a caller whose locals hide no global.
+    fn uncover_caller_globals(&mut self) -> Vec<(usize, Option<RuntimeValue>)> {
+        let Some(caller) = self.call_frames.last() else {
+            return Vec::new();
+        };
+        let mut uncovered = Vec::new();
+        let globals = &caller.saved[..caller.global_locals];
+        for (index, (name, global)) in globals.iter().enumerate() {
+            let Some(global) = global else {
+                continue;
+            };
+            let own = match self.working.variables.get_mut(name) {
+                Some(slot) => Some(std::mem::replace(slot, global.clone())),
+                None => {
+                    self.working.variables.insert(name.clone(), global.clone());
+                    None
+                }
+            };
+            uncovered.push((index, own));
+        }
+        uncovered
+    }
+
+    /// Gives the caller its own values back once the call is over.
+    fn cover_caller_globals(&mut self, uncovered: Vec<(usize, Option<RuntimeValue>)>) {
+        let Some(caller) = self.call_frames.last() else {
+            return;
+        };
+        for (index, own) in uncovered {
+            let name = &caller.saved[index].0;
+            match (own, self.working.variables.get_mut(name)) {
+                (Some(own), Some(slot)) => *slot = own,
+                (Some(own), None) => {
+                    self.working.variables.insert(name.clone(), own);
+                }
+                (None, _) => {
+                    self.working.variables.remove(name);
+                }
+            }
+        }
     }
 
     fn bind_parameters(

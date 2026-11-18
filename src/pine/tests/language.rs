@@ -714,6 +714,45 @@ fn a_function_reads_the_global_its_branch_declares_again_outside_that_branch() {
 }
 
 #[test]
+fn a_function_reads_the_global_not_its_callers_local_of_that_name() {
+    // Functions see their own names and the script's, never their caller's: Pine scopes are lexical.
+    let session = run(
+        "len = 1\n\
+         length = 3\n\
+         v = 1\n\
+         g() =>\n    len\n\
+         f() =>\n    len = 50\n    a = g()\n    a + len\n\
+         h() =>\n    length\n\
+         k(length) =>\n    h() + length\n\
+         inner() =>\n    v\n\
+         middle() =>\n    inner()\n\
+         outer() =>\n    v = 7\n    middle() + v\n\
+         a = f()\n\
+         b = k(10)\n\
+         c = outer()",
+        3,
+    );
+    // The caller's own `len` is back after the call.
+    assert_eq!(value(&session, "a"), RuntimeValue::Int(51));
+    // A parameter is a local too.
+    assert_eq!(value(&session, "b"), RuntimeValue::Int(13));
+    // Two calls down, past a function that has no `v` of its own.
+    assert_eq!(value(&session, "c"), RuntimeValue::Int(8));
+}
+
+#[test]
+fn a_function_reads_the_global_its_callers_var_local_shadows() {
+    let session = run(
+        "n = 5\n\
+         g() =>\n    n\n\
+         counter() =>\n    var int n = 10\n    n += 1\n    g() + n\n\
+         x = counter()",
+        3,
+    );
+    assert_eq!(value(&session, "x"), RuntimeValue::Int(18));
+}
+
+#[test]
 fn a_var_local_named_like_a_global_keeps_its_own_value() {
     let session = run(
         "n = 5\n\
