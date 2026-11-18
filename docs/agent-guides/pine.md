@@ -161,8 +161,10 @@
   a loop variable) is not resolved to the global of that name: the expression reads the chart's value
   (`security_globals`), and when the slice would define a global of that name the request gets no
   slice. A statement that makes a `request.*` call is never in a slice (nesting; its names keep
-  the chart's value via `security_globals`); requests inside functions are not sliced. Known gap:
-  `alert()` in a statement of a slice emits from the other series. Unknown collection members count as
+  the chart's value via `security_globals`); requests inside functions are not sliced. `alert()`
+  does nothing while a request runs (`security_depth > 0`: a slice, or a function the expression
+  calls): only the chart's own run fires alerts, and the once-per-bar ledger stays its own.
+  Unknown collection members count as
   mutating (`READ_ONLY_MEMBERS` lists the array/map/matrix queries that do not: add a new query there).
   Aliases of a collection are per block (two blocks' `alias` are different variables), a dotted call
   of a builtin namespace (`ta.sma`) never matches a script function called `sma`, and a call the type

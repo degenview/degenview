@@ -1438,8 +1438,8 @@ mod tests {
     }
 
     /// Runs `source` on one chart bar that gets two live ticks, as the session does for a bar that
-    /// has not closed, and returns the last value of the first plot after each tick.
-    fn plotted_after_each_tick(source: &str) -> Vec<Option<f64>> {
+    /// has not closed, and returns what `read` makes of the session after each tick.
+    fn after_each_tick<T>(source: &str, read: impl Fn(&Session) -> T) -> Vec<T> {
         let body = format!("//@version=6\nindicator(\"T\")\n{source}");
         let program = compiler::compile(&body, Limits::default(), &NoLibraries);
         let mut session = Session::new(
@@ -1462,9 +1462,27 @@ mod tests {
                     true,
                     None,
                 );
-                session.output().plots[0].values.last().copied().flatten()
+                read(&session)
             })
             .collect()
+    }
+
+    /// The last value of the first plot after each tick.
+    fn plotted_after_each_tick(source: &str) -> Vec<Option<f64>> {
+        after_each_tick(source, |session| {
+            session.output().plots[0].values.last().copied().flatten()
+        })
+    }
+
+    /// The messages of the alerts the session emitted for each tick.
+    fn alerts_after_each_tick(source: &str) -> Vec<Vec<String>> {
+        after_each_tick(source, |session| {
+            session
+                .emitted_alerts
+                .iter()
+                .map(|alert| alert.message.clone())
+                .collect()
+        })
     }
 
     #[test]
@@ -1477,6 +1495,37 @@ mod tests {
             "{counter}ignored = request.security(\"ETHUSDT\", \"1\", n)"
         ));
         assert_eq!(requested, alone);
+    }
+
+    #[test]
+    fn an_alert_in_a_slice_does_not_fire_from_the_requested_series() {
+        let request = "ignored = request.security(\"ETHUSDT\", \"1\", level)";
+        // The slice replays the whole `if`, alert included; only the chart's own run fires it.
+        assert_eq!(
+            alerts_after_each_tick(&format!(
+                "level = 0.0\nif close > 0\n    level := close\n    alert(\"hi\", alert.freq_all)\n{request}"
+            )),
+            [["hi"], ["hi"]]
+        );
+        assert_eq!(
+            alerts_after_each_tick(&format!(
+                "level = 0.0\nnotify() =>\n    alert(\"hi\", alert.freq_all)\n    close\nif close > 0\n    level := notify()\n{request}"
+            )),
+            [["hi"], ["hi"]],
+            "through a function the slice calls"
+        );
+    }
+
+    #[test]
+    fn a_request_does_not_use_up_the_once_per_bar_alert() {
+        // The request runs `notify` first: on ETHUSDT (closes above 50) the message would read `true`
+        // and the chart's own call would find the bar's alert already given.
+        assert_eq!(
+            alerts_after_each_tick(
+                "notify() =>\n    alert(str.tostring(close > 50), alert.freq_once_per_bar)\n    close\nignored = request.security(\"ETHUSDT\", \"1\", notify())\nplot(notify())"
+            ),
+            [vec!["false"], vec![]]
+        );
     }
 
     #[test]
