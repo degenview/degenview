@@ -1345,6 +1345,55 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_block_reading_its_own_variable_does_not_pull_in_the_global() {
+        // The global `bad` fails on the requested series (ETHUSDT closes above 50); the block reads
+        // its own `bad`, so the request has no business running the global one.
+        assert_eq!(
+            last_plotted(
+                "arr = array.new_float()\nbad = close > 50 ? array.get(arr, 5) : 0.0\nlevel = close\nif close > 0\n    bad = close\n    level := bad\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_collection_changed_through_a_local_alias_is_filled() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", array.size(samples))";
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\nif close > 0\n    alias = samples\n    alias.push(close)\n{request}"
+            )),
+            Some(3.0),
+            "an alias a block makes"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\nfill(a) =>\n    alias = a\n    alias.push(close)\nfill(samples)\n{request}"
+            )),
+            Some(3.0),
+            "an alias a helper makes of its parameter"
+        );
+    }
+
+    #[test]
+    fn the_collection_of_a_builtin_is_found_by_label_or_position() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", array.size(samples))";
+        for call in [
+            "array.push(value = close, id = samples)",
+            "array.push(samples, value = close)",
+            "array.push(samples, close)",
+        ] {
+            assert_eq!(
+                last_plotted(&format!(
+                    "var samples = array.new_float()\n{call}\n{request}"
+                )),
+                Some(3.0),
+                "{call}"
+            );
+        }
+    }
+
     /// Runs `source` on one chart bar that gets two live ticks, as the session does for a bar that
     /// has not closed, and returns the last value of the first plot after each tick.
     fn plotted_after_each_tick(source: &str) -> Vec<Option<f64>> {

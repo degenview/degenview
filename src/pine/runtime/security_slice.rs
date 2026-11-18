@@ -13,10 +13,11 @@
 //! receives it as (a function that only reads its argument is not replayed). Calls of the script's
 //! functions follow the overload the type checker resolved (`Expression::Call::target`).
 //!
-//! Writes are found scope-aware: a block's own `level` is not the global of that name, an alias of
-//! a collection (`alias = samples`) is the collection, and a function that changes a global
-//! collection (not only one it is handed) writes it where it is called. Known limits: aliasing
-//! through a function's return value or a container, and handles other than collections and
+//! Reads and writes are found scope-aware: a block's own `level` is not the global of that name, an
+//! alias of a collection (`alias = samples`, in a block or a helper too) is the collection, a
+//! collection argument is found by its label (`id`) or its position, and a function that changes a
+//! global collection (not only one it is handed) writes it where it is called. Known limits:
+//! aliasing through a function's return value or a container, and handles other than collections and
 //! objects, are not followed.
 //!
 //! A name the request's own blocks declare before it (`level = 20.0` inside the `if` the request is
@@ -183,8 +184,10 @@ impl<'a> Functions<'a> {
                     let (parameters, body) = self.bodies[id];
                     let names: HashSet<String> =
                         parameters.iter().map(|p| p.name.clone()).collect();
+                    let body_aliases = aliases(body);
                     let walker = Walker {
                         references: &names,
+                        aliases: &body_aliases,
                         functions: self,
                     };
                     let mut effects = Effects::default();
@@ -267,6 +270,7 @@ impl Facts {
         if !matches!(statement, Statement::Function { .. }) {
             let walker = Walker {
                 references,
+                aliases,
                 functions,
             };
             let mut effects = Effects::default();
@@ -278,7 +282,12 @@ impl Facts {
                 writes.insert(name);
             }
             writes.retain(|name| declared.contains(name));
-            collect_reads(std::slice::from_ref(statement), &mut reads);
+            collect_reads(
+                std::slice::from_ref(statement),
+                &HashSet::new(),
+                false,
+                &mut reads,
+            );
             traversal::for_each_call(std::slice::from_ref(statement), &mut |name, _| {
                 requests |= name.starts_with("request.");
             });
@@ -300,7 +309,7 @@ fn slice_for(
     locals: &HashSet<String>,
 ) -> Vec<Statement> {
     let mut needed = Reads::default();
-    read_names(expression, &mut needed);
+    read_names(expression, &HashSet::new(), &mut needed);
     // A name the request's own blocks declare is not the global of that name.
     let local_reads: HashSet<String> = needed.names.intersection(locals).cloned().collect();
     for name in &local_reads {
@@ -499,6 +508,7 @@ struct Effects {
 /// which any method that is not read-only counts as a change.
 struct Walker<'w, 'f> {
     references: &'w HashSet<String>,
+    aliases: &'w Aliases,
     functions: &'w Functions<'f>,
 }
 
@@ -546,6 +556,13 @@ impl Walker<'_, '_> {
     fn mutate(&self, root: String, scope: &HashSet<String>, out: &mut Effects) {
         if !scope.contains(&root) {
             out.mutated.insert(root);
+            return;
+        }
+        // A block's own name: what it was copied from is what changes.
+        for other in self.aliases.get(&root).into_iter().flatten() {
+            if !scope.contains(other) {
+                out.mutated.insert(other.clone());
+            }
         }
     }
 
@@ -596,11 +613,10 @@ impl Walker<'_, '_> {
         };
         let changes = !READ_ONLY_MEMBERS.contains(&member);
         match receiver {
-            // Only a collection is accepted as the first argument.
             Some(namespace) if COLLECTION_NAMESPACES.contains(&namespace) => {
                 if changes
-                    && let Some(first) = arguments.first()
-                    && let Some(root) = root_name(&first.value)
+                    && let Some(collection) = collection_argument(arguments)
+                    && let Some(root) = root_name(collection)
                 {
                     self.mutate(root, scope, out);
                 }
@@ -658,6 +674,16 @@ impl Walker<'_, '_> {
             }
         }
     }
+}
+
+/// The collection a function of `array.*`, `map.*` or `matrix.*` is given: the argument labelled
+/// `id` (`id1` for `array.concat`), else the first one without a label.
+fn collection_argument(arguments: &[Argument]) -> Option<&Expression> {
+    arguments
+        .iter()
+        .find(|argument| matches!(argument.name.as_deref(), Some("id" | "id1")))
+        .or_else(|| arguments.iter().find(|argument| argument.name.is_none()))
+        .map(|argument| &argument.value)
 }
 
 /// The names that refer to the same value because one was copied from the other
@@ -724,13 +750,27 @@ fn head(name: &str) -> &str {
     name.split_once('.').map_or(name, |(head, _)| head)
 }
 
-fn collect_reads(statements: &[Statement], reads: &mut Reads) {
+/// What `statements` read. `scope` holds the names the blocks around them declared; a name read
+/// from it is the block's own, not a global. `nested` is false for the top level, whose declarations
+/// are the globals.
+fn collect_reads(
+    statements: &[Statement],
+    scope: &HashSet<String>,
+    nested: bool,
+    reads: &mut Reads,
+) {
+    let mut scope = scope.clone();
     for statement in statements {
         for expression in traversal::expressions(statement) {
-            read_names(expression, reads);
+            read_names(expression, &scope, reads);
         }
         for block in traversal::nested_blocks(statement) {
-            collect_reads(block, reads);
+            let mut inner = scope.clone();
+            declared_by_loop(statement, &mut inner);
+            collect_reads(block, &inner, true, reads);
+        }
+        if nested {
+            declared_by(statement, &mut scope);
         }
     }
 }
@@ -738,11 +778,13 @@ fn collect_reads(statements: &[Statement], reads: &mut Reads) {
 /// Every name an expression may depend on: variables (a dotted path counts as its head), and the
 /// callees. A call the type checker resolved names its definition; any other may be any
 /// definition of that name.
-fn read_names(expression: &Expression, reads: &mut Reads) {
+fn read_names(expression: &Expression, scope: &HashSet<String>, reads: &mut Reads) {
     match expression {
         Expression::Identifier(name, _) => {
-            reads.names.insert(name.clone());
-            reads.names.insert(head(name).to_owned());
+            if !scope.contains(name) && !scope.contains(head(name)) {
+                reads.names.insert(name.clone());
+                reads.names.insert(head(name).to_owned());
+            }
         }
         Expression::Call { name, target, .. } => {
             match target {
@@ -754,7 +796,9 @@ fn read_names(expression: &Expression, reads: &mut Reads) {
                 }
             }
             if let Some((receiver, member)) = name.rsplit_once('.') {
-                reads.names.insert(head(receiver).to_owned());
+                if !scope.contains(head(receiver)) {
+                    reads.names.insert(head(receiver).to_owned());
+                }
                 if target.is_none() {
                     reads.names.insert(member.to_owned());
                 }
@@ -769,12 +813,12 @@ fn read_names(expression: &Expression, reads: &mut Reads) {
             }
         },
         Expression::Statement(statement, _) => {
-            collect_reads(std::slice::from_ref(statement.as_ref()), reads);
+            collect_reads(std::slice::from_ref(statement.as_ref()), scope, true, reads);
         }
         _ => {}
     }
     for child in traversal::children(expression) {
-        read_names(child, reads);
+        read_names(child, scope, reads);
     }
 }
 
@@ -793,7 +837,7 @@ fn expand_functions(reads: &mut Reads, expanded: &mut HashSet<usize>, functions:
         for id in pending {
             let (parameters, body) = functions.bodies[id];
             let mut inner = Reads::default();
-            collect_reads(body, &mut inner);
+            collect_reads(body, &HashSet::new(), true, &mut inner);
             let mut locals: HashSet<String> = parameters.iter().map(|p| p.name.clone()).collect();
             collect_locals(body, &mut locals);
             reads.names.extend(inner.names.difference(&locals).cloned());
@@ -992,6 +1036,44 @@ mod tests {
             "//@version=6\nindicator(\"T\")\nchecked(float v) =>\n    v\nchecked(array<float> a) =>\n    array.push(a, 1.0)\n    1.0\nlevel = close\nunused = checked(level)\nplot(request.security(syminfo.tickerid, \"D\", level))",
         );
         assert_eq!(sizes, [1]);
+    }
+
+    #[test]
+    fn a_block_reading_its_own_variable_is_not_a_read_of_the_global() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nbad = close * 3\nlevel = close\nif close > 0\n    bad = close\n    level := bad\nplot(request.security(syminfo.tickerid, \"D\", level))",
+        );
+        assert_eq!(sizes, [2], "`level` and the block, not the global `bad`");
+        // Read before the block declares it, it is the global's.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nbad = close * 3\nlevel = close\nif close > 0\n    level := bad\n    bad = close\nplot(request.security(syminfo.tickerid, \"D\", level))",
+        );
+        assert_eq!(sizes, [3]);
+    }
+
+    #[test]
+    fn a_local_alias_of_a_collection_writes_the_collection() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\nif close > 0\n    alias = samples\n    alias.push(close)\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))",
+        );
+        assert_eq!(sizes, [2], "`samples` and the block");
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\nfill(a) =>\n    alias = a\n    alias.push(close)\nfill(samples)\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))",
+        );
+        assert_eq!(sizes, [2], "`samples` and `fill(samples)`");
+    }
+
+    #[test]
+    fn the_collection_of_a_builtin_is_found_by_label_or_position() {
+        for call in [
+            "array.push(value = close, id = samples)",
+            "array.push(samples, value = close)",
+        ] {
+            let sizes = slice_sizes(&format!(
+                "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\n{call}\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))"
+            ));
+            assert_eq!(sizes, [2], "{call}");
+        }
     }
 
     #[test]

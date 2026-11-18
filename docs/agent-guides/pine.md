@@ -151,7 +151,9 @@
   variable as, or the global collection it changes: `Functions::{mutated, global_writes}`, a
   fixpoint over the call graph; a function that only reads its argument is not replayed; the overload
   the type checker chose, else every one of that name) what the expression reads, scope-aware (a
-  block's own `level` is not the global) and through plain-copy aliases (`alias = samples`), through other statements and the script's functions (the overload the type
+  block's own `level` is not the global, for reads as for writes) and through plain-copy aliases
+  (`alias = samples`, also one a block or a helper makes; a builtin's collection argument is found by
+  its `id` label or its position), through other statements and the script's functions (the overload the type
   checker resolved, `Call::target`; all same-name ones when unresolved; a function's locals are not
   reads of a global). `evaluate_higher_timeframe` runs them in the request's own state, with its own
   empty `Session::intrabar` (a `varip` there acts like `var`; the chart's is untouched), before the
