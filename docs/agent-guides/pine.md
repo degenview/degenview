@@ -146,11 +146,16 @@
   message text is undocumented.
 - `request.security` expressions that read script variables (`longTrend` in
   `request.security(sym, "15", longTrend)`): `runtime::security_slice` finds at build time the top-level
-  statements that declare or `:=`-reassign what the expression reads (through other statements and the
-  script's functions, minus a function's locals), and `evaluate_higher_timeframe` runs them in the
-  request's own state before the expression. A statement that makes a `request.*` call is never in a
-  slice (nesting; its names keep the chart's value via `security_globals`); requests inside functions
-  are not sliced. Known gap: `alert()` in a statement of a slice emits from the other series.
+  statements **before the request** that declare, `:=`-reassign or may fill (`array.push(samples, x)`,
+  `samples.push(x)`, a call of the script's own function on a collection or object) what the
+  expression reads, through other statements and the script's functions (the overload the type
+  checker resolved, `Call::target`; all same-name ones when unresolved; a function's locals are not
+  reads of a global). `evaluate_higher_timeframe` runs them in the request's own state, with its own
+  empty `Session::intrabar` (a `varip` there acts like `var`; the chart's is untouched), before the
+  expression. A statement that makes a `request.*` call is never in a slice (nesting; its names keep
+  the chart's value via `security_globals`); requests inside functions are not sliced. Known gap:
+  `alert()` in a statement of a slice emits from the other series. Unknown collection members count as
+  mutating (`READ_ONLY_MEMBERS` is the short list that does not).
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, share function bodies
   with `Arc`. Benchmark: `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

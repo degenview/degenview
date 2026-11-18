@@ -722,6 +722,9 @@ impl Session {
         let outer_globals = self
             .security_globals
             .replace(std::mem::take(&mut chart.variables));
+        // `varip` values are the chart's: the request keeps its own (empty: a `varip` there acts
+        // like `var`, which the declaration reads from the site's variables).
+        let outer_intrabar = std::mem::take(&mut self.intrabar);
         self.working.instructions = 0;
         self.working.bar_index += 1;
         self.bar_seconds = request.interval;
@@ -774,6 +777,7 @@ impl Session {
         }
         chart.variables =
             std::mem::replace(&mut self.security_globals, outer_globals).unwrap_or_default();
+        self.intrabar = outer_intrabar;
         self.working = chart;
         self.bar_seconds = chart_bar_seconds;
         self.chart_bar_seconds = outer_chart_seconds;
@@ -1201,6 +1205,96 @@ mod tests {
             ),
             Some(240.0)
         );
+    }
+
+    #[test]
+    fn code_after_the_request_is_not_part_of_what_it_computes() {
+        // TradingView computes the variable as it stands where the request is written.
+        assert_eq!(
+            last_plotted(
+                "value = close\nx = request.security(\"ETHUSDT\", \"1\", value)\nvalue := value * 2"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_collection_a_call_fills_is_filled_in_the_request_too() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", ";
+        // The array lives in the request's own state and gets one value per requested bar.
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\narray.push(samples, close)\n{request}array.size(samples))"
+            )),
+            Some(3.0)
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\nsamples.push(close)\nn = samples.size()\n{request}n)"
+            )),
+            Some(3.0)
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\narray.push(samples, close)\nfirst = array.get(samples, 0)\n{request}first)"
+            )),
+            Some(100.0),
+            "no out-of-bounds read of an array nothing filled"
+        );
+    }
+
+    #[test]
+    fn overloads_run_only_the_dependencies_of_the_one_called() {
+        // `bad` is only read by the string overload, and fails where the chart does not run it
+        // (ETHUSDT closes above 50, the chart below).
+        assert_eq!(
+            last_plotted(
+                "arr = array.new_float()\nbad = close > 50 ? array.get(arr, 5) : 0.0\nf(float v) =>\n    v * 2\nf(string s) =>\n    str.tostring(bad)\nx = request.security(\"ETHUSDT\", \"1\", f(close))"
+            ),
+            Some(240.0)
+        );
+    }
+
+    /// Runs `source` on one chart bar that gets two live ticks, as the session does for a bar that
+    /// has not closed, and returns the last value of the first plot after each tick.
+    fn plotted_after_each_tick(source: &str) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(eth_provider())),
+            None,
+        );
+        [true, false]
+            .into_iter()
+            .map(|is_new| {
+                let _ = session.execute(
+                    BarEvent {
+                        candle: bar(0, 1.0),
+                        phase: BarPhase::RealtimeTick { is_new },
+                    },
+                    true,
+                    None,
+                );
+                session.output().plots[0].values.last().copied().flatten()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_request_does_not_touch_the_charts_varip_state() {
+        let counter = "varip n = 0\nn += 1\nplot(n)\n";
+        let alone = plotted_after_each_tick(counter);
+        assert_eq!(alone, [Some(1.0), Some(2.0)]);
+        // The same counter, read by a request whose result nothing uses.
+        let requested = plotted_after_each_tick(&format!(
+            "{counter}ignored = request.security(\"ETHUSDT\", \"1\", n)"
+        ));
+        assert_eq!(requested, alone);
     }
 
     #[test]
