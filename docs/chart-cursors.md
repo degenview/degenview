@@ -93,6 +93,8 @@ draws freehand, and what was drawn **fades away after a few seconds**.
   pinch work), hides the crosshair lines, tags and the box naming the bar, keeps the plain arrow, and
   leaves the drawings out of reach (`DrawingFrame::is_inert`: nothing is hovered, picked, moved or
   deleted). Right-click still opens the chart's menu.
+- A range being picked (replay start, Pine Logs) has the drag to itself: Demonstration draws nothing
+  while it is on, and lets go of a stroke begun before it.
 - The marks go when the cursor changes or the card shows another market (`abort_drawing`).
 - A translucent stroke is one path, so where it crosses itself during the fade the overlap is a
   little darker; the colour is the app's orange (**ours**).
