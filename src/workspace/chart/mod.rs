@@ -94,6 +94,8 @@ pub(super) struct MarketState {
 /// market each choice's own history.
 pub(super) struct Fetched {
     candles: Vec<Kline>,
+    /// The base candles of the newest candle's bucket (see [`service::LiveCandles`]).
+    bars: Vec<Kline>,
     series: Vec<(String, Vec<Kline>)>,
 }
 
@@ -107,6 +109,7 @@ impl Fetched {
             .ok_or_else(|| ProviderError::other("No price history for these choices"))?;
         Ok(Self {
             candles,
+            bars: Vec::new(),
             series: histories,
         })
     }
@@ -327,9 +330,10 @@ impl Chart {
                 return;
             }
             let result = if choices.is_empty() {
-                service::fetch_klines(source, &symbol, timeframe, CANDLE_LIMIT).map(|candles| {
+                service::fetch_klines_live(source, &symbol, timeframe, CANDLE_LIMIT).map(|live| {
                     Fetched {
-                        candles,
+                        candles: live.candles,
+                        bars: live.bars,
                         series: Vec::new(),
                     }
                 })
@@ -461,7 +465,7 @@ impl Chart {
         }
     }
 
-    pub(super) fn receive_fetch(&mut self) {
+    pub(super) fn receive_fetch(&mut self, timeframe: Timeframe) {
         let Some(receiver) = &self.inbox else {
             return;
         };
@@ -479,10 +483,11 @@ impl Chart {
             Ok(fetched) => {
                 let live_open = self.live.and_then(|mark| mark.guard_for(self.last_fetch));
                 let fresh = self.live_fold.merge_fetched(
+                    timeframe,
                     fetched.candles,
+                    fetched.bars,
                     &self.candles,
                     live_open,
-                    Some(requested_at_ms(self.last_fetch)),
                     CANDLE_LIMIT as usize,
                 );
                 self.candles =
@@ -497,12 +502,6 @@ impl Chart {
             Err(error) => self.error = Some(error),
         }
     }
-}
-
-/// When a request begun at `begun` was sent, in epoch milliseconds.
-pub(super) fn requested_at_ms(begun: Instant) -> i64 {
-    let since = i64::try_from(begun.elapsed().as_millis()).unwrap_or(i64::MAX);
-    crate::model::watchlist::now_ms().saturating_sub(since)
 }
 
 /// A request for the candles before the oldest one, with what it was asked for: an answer for a
@@ -577,7 +576,7 @@ mod tests {
         let unsupported = ProviderError::unsupported(DataSource::CoinGecko, Timeframe::MINUTE_1);
         sender.send(Err(unsupported.clone())).unwrap();
         chart.inbox = Some(receiver);
-        chart.receive_fetch();
+        chart.receive_fetch(Timeframe::HOUR_1);
         // The chart says why, in the slot every error uses.
         assert_eq!(chart.error, Some(unsupported));
         assert_eq!(
@@ -613,11 +612,12 @@ mod tests {
         sender
             .send(Ok(Fetched {
                 candles: vec![candle(11, 2.0), candle(12, 2.0), candle(13, 2.0)],
+                bars: Vec::new(),
                 series: Vec::new(),
             }))
             .unwrap();
         chart.inbox = Some(receiver);
-        chart.receive_fetch();
+        chart.receive_fetch(Timeframe::HOUR_1);
         assert_eq!(open_times(&chart), vec![7, 8, 10, 11, 12, 13]);
     }
 
@@ -629,11 +629,12 @@ mod tests {
         sender
             .send(Ok(Fetched {
                 candles: vec![candle(2, 2.0), candle(3, 2.0)],
+                bars: Vec::new(),
                 series: Vec::new(),
             }))
             .unwrap();
         chart.inbox = Some(receiver);
-        chart.receive_fetch();
+        chart.receive_fetch(Timeframe::HOUR_1);
         assert_eq!(open_times(&chart), vec![2, 3]);
     }
 
@@ -654,11 +655,12 @@ mod tests {
         sender
             .send(Ok(Fetched {
                 candles: vec![candle(1, 1.0), candle(2, 2.0)],
+                bars: Vec::new(),
                 series: Vec::new(),
             }))
             .unwrap();
         chart.inbox = Some(receiver);
-        chart.receive_fetch();
+        chart.receive_fetch(Timeframe::HOUR_1);
         chart
     }
 

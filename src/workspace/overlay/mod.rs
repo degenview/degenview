@@ -17,14 +17,14 @@
 
 pub(in crate::workspace) mod actions;
 
-use super::chart::{CANDLE_LIMIT, requested_at_ms};
+use super::chart::CANDLE_LIMIT;
 use crate::model::market;
 use crate::model::market::history::OlderHistory;
 use crate::model::market::live::{LiveFold, LiveMark};
 use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
 use crate::model::overlay::{OverlayId, OverlayList};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
-use crate::service::{self, ProviderError};
+use crate::service::{self, LiveCandles, ProviderError};
 use eframe::egui;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -48,13 +48,15 @@ const SLOW_RETRY_AFTER: Duration = Duration::from_secs(45);
 pub(super) trait OverlayBackend: Send + Sync + 'static {
     /// Runs `job` off the UI thread, on `source`'s lane of the work queue.
     fn submit(&self, source: DataSource, job: Box<dyn FnOnce() + Send>);
+    /// The newest candles, with the base candles of the newest one's bucket when a live feed
+    /// folds them.
     fn klines(
         &self,
         source: DataSource,
         symbol: &str,
         timeframe: Timeframe,
         limit: u32,
-    ) -> Result<Vec<Kline>, ProviderError>;
+    ) -> Result<LiveCandles, ProviderError>;
     /// A page of candles ending before `end_ms`.
     fn page(
         &self,
@@ -78,8 +80,8 @@ impl OverlayBackend for ServiceBackend {
         symbol: &str,
         timeframe: Timeframe,
         limit: u32,
-    ) -> Result<Vec<Kline>, ProviderError> {
-        service::fetch_klines(source, symbol, timeframe, limit)
+    ) -> Result<LiveCandles, ProviderError> {
+        service::fetch_klines_live(source, symbol, timeframe, limit)
     }
 
     fn page(
@@ -116,7 +118,7 @@ struct Series {
     status: OverlayStatus,
     /// Bumped by every request and reload; a queued job whose number is stale does nothing.
     generation: Arc<AtomicU64>,
-    inbox: Option<Receiver<Result<Vec<Kline>, ProviderError>>>,
+    inbox: Option<Receiver<Result<LiveCandles, ProviderError>>>,
     last_fetch: Option<Instant>,
     retry_at: Option<Instant>,
     older: OlderHistory,
@@ -362,7 +364,7 @@ impl OverlayHub {
         }
         let mut changed = false;
         for series in self.series.values_mut() {
-            changed |= receive_fetch(series, now);
+            changed |= receive_fetch(series, timeframe, now);
             changed |= receive_older(series, now);
         }
         if changed {
@@ -591,7 +593,7 @@ fn request_older(
     series.older_inbox = Some(receiver);
 }
 
-fn receive_fetch(series: &mut Series, now: Instant) -> bool {
+fn receive_fetch(series: &mut Series, timeframe: Timeframe, now: Instant) -> bool {
     let Some(receiver) = &series.inbox else {
         return false;
     };
@@ -610,10 +612,11 @@ fn receive_fetch(series: &mut Series, now: Instant) -> bool {
                 .zip(series.last_fetch)
                 .and_then(|(mark, begun)| mark.guard_for(begun));
             let merged = series.live_fold.merge_fetched(
-                fresh,
+                timeframe,
+                fresh.candles,
+                fresh.bars,
                 &series.candles,
                 live_open,
-                series.last_fetch.map(requested_at_ms),
                 CANDLE_LIMIT as usize,
             );
             let candles =

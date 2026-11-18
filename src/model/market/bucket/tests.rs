@@ -716,6 +716,24 @@ fn a_window_that_began_at_new_york_midnight_keeps_the_quarter_its_first_month_op
 }
 
 #[test]
+fn the_newest_bucket_is_the_base_candles_of_the_last_ones_bucket() {
+    let plan = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES);
+    let hourly = series(0, HOUR_MS, 8);
+    // Hours 6 and 7 make the forming 06:00 bucket.
+    assert_eq!(
+        opens(&plan.newest_bucket(&hourly)),
+        [6 * HOUR_MS, 7 * HOUR_MS]
+    );
+    assert!(plan.newest_bucket(&[]).is_empty());
+}
+
+#[test]
+fn a_native_target_has_no_newest_bucket() {
+    let plan = plan(Timeframe::HOUR_1, &SOME_NATIVES);
+    assert!(plan.newest_bucket(&series(0, HOUR_MS, 4)).is_empty());
+}
+
+#[test]
 fn a_folded_answer_is_trimmed_after_folding() {
     let hourly = series(0, HOUR_MS, 24);
     let shown = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES).shape(hourly, 100, 3);

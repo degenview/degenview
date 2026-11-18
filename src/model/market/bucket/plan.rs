@@ -109,6 +109,20 @@ impl FoldPlan {
         self.trimmed(candles, truncated, limit)
     }
 
+    /// The candles of `base` (ascending, of the base length) that fall in the same target bucket
+    /// as the last one: the bars the forming candle is made of. Nothing when the source has the
+    /// target itself, since then the candle is its own bar.
+    pub fn newest_bucket(self, base: &[Kline]) -> Vec<Kline> {
+        let Some(last) = base.last().filter(|_| !self.is_native()) else {
+            return Vec::new();
+        };
+        let bucket = bucket_start_ms(self.target, last.open_time);
+        base.iter()
+            .filter(|candle| bucket_start_ms(self.target, candle.open_time) == bucket)
+            .cloned()
+            .collect()
+    }
+
     /// Where the first base slot of the target bucket holding `open_time` sits: the bucket's start
     /// plus the offset the provider stamps base candles with.
     fn earliest_slot(self, open_time: i64) -> i64 {

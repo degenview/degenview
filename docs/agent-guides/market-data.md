@@ -148,18 +148,23 @@ watchlists.
   `apply_live` (replace the newest bar or append; a kline older than the newest is dropped, so candles
   stay ascending). For a folded one the forming bucket is rebuilt from the latest state of each base
   bar it holds (a kline is a running total, resent until its bar closes, so adding would double
-  count): the bucket's open, range and volume from before the socket's first kline are what the
-  chart held then, and the bucket cuts where `bucket` does (a `22m` day's last bucket closes at
-  midnight). How much of a live base bar that held candle already counts depends on when its
-  request began (`LiveFold::as_of`, epoch ms): a bar that opened at or after it is not in it and
-  counts in full, one that opened before counts only from its first live kline on, and with no time
-  known only the bucket's first bar is taken to be in it. The feed connects as soon as the chart
-  exists, so a kline can arrive before the first REST answer: the bucket then holds only what the
-  socket saw, and `LiveFold::merge_fetched` makes the answer's candle of that bucket its held
-  candle (once; a bucket that already has one is not moved by later refreshes). A chart and an
+  count), and the bucket cuts where `bucket` does (a `22m` day's last bucket closes at midnight).
+  What the socket did not see of the bucket (the bars before it connected, or while it was quiet)
+  comes from REST: `service::fetch_klines_live` asks, after the folded answer, for the base candles
+  of the newest bucket (one extra small request per refresh, only for a folded timeframe on a
+  streamed source; `FoldPlan::newest_bucket`), and `LiveFold::merge_fetched` merges them with the
+  socket's bars per bar. One rule takes a bar's state from either side: it replaces the stored one
+  unless it has less volume (a running total only grows; on a tie the arriving state wins), so
+  nothing is counted twice and neither side rolls the other back. A bucket the socket has not
+  reached starts from the bars; one newer than them is left alone. The merged series takes the
+  forming candle in place of its newest candle only, so REST's finished copy of an earlier bucket
+  stays. If that request fails, or the answer has no bars, the held-candle rule is the fallback:
+  the bucket's open, range and volume are what the chart held when the socket's first kline
+  arrived, and that kline's volume is not counted twice (`first_volume`). The feed connects as
+  soon as the chart exists, so a kline can arrive before the first REST answer. A chart and an
   overlay series each keep their own `LiveFold` and merge every REST answer through it; it resets
-  when an answer replaces the forming bucket or the market or timeframe changes. A
-  current-or-newer WebSocket bar beats an older REST snapshot
+  when an answer replaces the forming bucket (no socket bar newer than the request) or the market
+  or timeframe changes. A current-or-newer WebSocket bar beats an older REST snapshot
   (`live::merge_fetched`) only if the socket delivered after that request began
   (`LiveMark::guard_for`, carrying the bucket's open time): when it goes quiet, REST refreshes update
   the forming bar again.
