@@ -115,9 +115,10 @@ default). `ui/chart/card/values_tooltip.rs`.
   `series_index` (so replay-cut and constructed bars line up). At most 28 rows.
 - It sits right and below the pointer, on the other side where there is no room, and stays inside
   the plot under the header. Drawn with the crosshair, so a snapshot never has it.
-- On a touch screen egui turns a long touch into a right-click; while the tooltip is on, the drawing
-  layer ignores that one (`DrawingFrame::long_press_values`), so it shows the values and not a menu.
-  Off, a long touch is the context menu as before. **Not tried on a touch screen.**
+- On a touch screen egui turns a long touch into a right-click. The drawing layer ignores that one
+  (`DrawingFrame::long_press_values`) only while the tooltip has the press, so a press the tooltip
+  never took (on a drawing, locked or not, with the option off, or under Demonstration or the Eraser)
+  keeps its context menu. **Not tried on a touch screen.**
 
 ## What TradingView documents, and what is our choice
 

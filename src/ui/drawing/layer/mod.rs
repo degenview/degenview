@@ -100,7 +100,8 @@ pub struct DrawingFrame<'a> {
     /// The cursor the pointer rests on: the Eraser erases instead of picking, moving or drawing,
     /// and a cursor that marks the chart (Demonstration) leaves the drawings alone.
     pub cursor: CursorMode,
-    /// A long press shows the values tooltip, so a long touch is not also a right-click.
+    /// The values tooltip has the press, so the long touch that follows it is not also a
+    /// right-click. Set by the card, which knows whether it does.
     pub long_press_values: bool,
     // Outputs.
     pub commands: Vec<DrawingCommand>,
@@ -248,11 +249,6 @@ impl<'a> DrawingFrame<'a> {
 
     pub fn with_cursor(mut self, cursor: CursorMode) -> Self {
         self.cursor = cursor;
-        self
-    }
-
-    pub fn with_long_press_values(mut self, on: bool) -> Self {
-        self.long_press_values = on;
         self
     }
 

@@ -539,9 +539,6 @@ impl ChartWorkspace {
                                             .with_style_clipboard(style_clipboard)
                                             .with_keys_blocked(dialog_open)
                                             .with_cursor(cursor)
-                                            .with_long_press_values(
-                                                values_tooltip && cursor.caps().values_on_hold,
-                                            )
                                             .with_defaults(&drawing_defaults)
                                             .with_preview(
                                                 drawing_preview
