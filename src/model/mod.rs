@@ -2,6 +2,7 @@ pub mod alert;
 pub mod annotation;
 pub mod broker;
 pub mod chart;
+pub mod cursor;
 pub mod drawings;
 pub mod editor_theme;
 pub mod encoding;
@@ -33,6 +34,7 @@ pub use chart::replay::{
 };
 pub use chart::saved_view::SavedView;
 pub use chart::sync::ChartSyncSettings;
+pub use cursor::{CursorMode, PointerShape};
 pub use drawings::style::{DrawingStyle, Visibility, VisibilityRow};
 pub use drawings::tool::{Caps, MagnetMode, Placement, Tool, ToolGroup};
 pub use drawings::{

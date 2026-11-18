@@ -3,12 +3,14 @@
 //! counting undo steps) played by a small rig.
 
 use super::*;
-use crate::model::{DrawingStyle, Kline, Visibility, VisibilityRow};
+use crate::model::{CursorMode, DrawingStyle, Kline, Visibility, VisibilityRow};
 use eframe::egui::{Event, Key, Modifiers, RawInput, Sense, pos2, vec2};
 use menu::Action;
 
 mod card_tests;
+mod erase_tests;
 mod image_tests;
+mod inert_tests;
 mod note_tests;
 mod table_tests;
 
@@ -302,6 +304,8 @@ struct Rig {
     style_copied: Option<(Tool, DrawingStyle)>,
     background_click: Option<Pos2>,
     keys_blocked: bool,
+    /// The cursor the pointer rests on.
+    cursor: CursorMode,
     reveal_all: bool,
     /// What is waiting to be placed by a click (a picture).
     pending: Option<crate::model::annotation::image_content::Content>,
@@ -360,6 +364,7 @@ impl Rig {
             style_copied: None,
             background_click: None,
             keys_blocked: false,
+            cursor: CursorMode::Cross,
             reveal_all: false,
             pending: None,
             place_now: false,
@@ -404,7 +409,8 @@ impl Rig {
             .with_style_clipboard(self.style_clipboard)
             .with_pending_content(self.pending.clone())
             .with_picture_work(std::mem::take(&mut self.place_now), self.replace.take())
-            .with_keys_blocked(self.keys_blocked);
+            .with_keys_blocked(self.keys_blocked)
+            .with_cursor(self.cursor);
         let (layer, data, scale) = (&mut self.layer, &self.data, &self.scale);
         let mut output = self.ctx.run_ui(input, |ui| {
             let response = ui.allocate_rect(PLOT, Sense::click_and_drag());
@@ -436,6 +442,26 @@ impl Rig {
         let commands = std::mem::take(&mut frame.commands);
         drop(frame);
         self.apply(commands);
+    }
+
+    /// Frames in which the card is not drawn (another tab is showing): the window keeps running
+    /// and delivers `events`, but the layer is not updated.
+    fn skip_frames(&mut self, events: Vec<Event>) {
+        for (index, events) in std::iter::once(events)
+            .chain(std::iter::repeat_n(Vec::new(), 2))
+            .enumerate()
+        {
+            self.time += 0.1;
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 400.0))),
+                time: Some(self.time),
+                focused: self.focused,
+                events: if index == 0 { events } else { Vec::new() },
+                ..Default::default()
+            };
+            let mut output = self.ctx.run_ui(input, |_ui| {});
+            output.textures_delta.clear();
+        }
     }
 
     /// What `ChartWorkspace::apply_drawing_commands` does, minus the undo stack's contents.

@@ -15,9 +15,11 @@ impl ChartWorkspace {
         // The strip shows the remembered options, so they are read before it is drawn.
         let _ = self.drawing_templates();
         let (has_drawings, all_locked) = self.drawing_lock_state();
-        let favorites = self.favorite_tools();
+        let favorites = self.favorites();
         let input = tool_sidebar::ToolSidebarInput {
             active_tool: self.tools.active,
+            cursor: self.tools.chosen_cursor(),
+            values_tooltip: self.tools.values_tooltip(),
             zoom_armed: self.tools.zoom_armed,
             can_zoom_out: self
                 .focused
@@ -61,6 +63,11 @@ impl ChartWorkspace {
                     self.remember_group_tool(tool);
                     self.drop_rulers();
                 }
+                ToolSidebarAction::SetCursor(mode) => {
+                    self.tools.choose_cursor(mode);
+                    self.drop_rulers();
+                }
+                ToolSidebarAction::ToggleValuesTooltip => self.tools.toggle_values_tooltip(),
                 ToolSidebarAction::SetMagnet(mode) => self.tools.prefs.magnet = mode,
                 ToolSidebarAction::ToggleKeepDrawing => {
                     self.tools.prefs.keep_drawing = !self.tools.prefs.keep_drawing
@@ -75,7 +82,7 @@ impl ChartWorkspace {
                 }
                 ToolSidebarAction::OpenAlerts => actions.push(WorkspaceAction::OpenAlerts),
                 ToolSidebarAction::SetSync(sync) => self.set_sync(sync),
-                ToolSidebarAction::ToggleFavorite(tool) => self.toggle_favorite_tool(tool),
+                ToolSidebarAction::ToggleFavorite(item) => self.toggle_favorite(item),
             }
         }
         self.save_drawing_prefs();
@@ -170,5 +177,97 @@ mod tests {
         let mut workspace = empty_workspace(1);
         workspace.zoom_out_focused();
         assert!(!workspace.tools.zoom_armed);
+    }
+
+    #[test]
+    fn picking_a_cursor_puts_down_the_tool_and_zoom_and_is_remembered() {
+        use crate::model::CursorMode;
+        let mut workspace = empty_workspace(1);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
+        workspace.toggle_tool(Tool::TrendLine);
+        workspace.tools.choose_cursor(CursorMode::Dot);
+        assert_eq!(workspace.tools.active, Tool::Cursor);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Dot);
+        workspace.toggle_zoom_in();
+        workspace.tools.choose_cursor(CursorMode::Arrow);
+        assert!(!workspace.tools.zoom_armed);
+        // Saved with the strip's options, so the next tab starts on it.
+        workspace.save_drawing_prefs();
+        assert_eq!(
+            workspace.drawing_templates().prefs().cursor,
+            CursorMode::Arrow
+        );
+    }
+
+    #[test]
+    fn an_armed_tool_or_zoom_holds_the_cross_and_the_choice_waits() {
+        use crate::model::CursorMode;
+        let mut workspace = empty_workspace(1);
+        workspace.tools.choose_cursor(CursorMode::Arrow);
+        workspace.toggle_tool(Tool::Rectangle);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
+        assert_eq!(workspace.tools.chosen_cursor(), CursorMode::Arrow);
+        workspace.toggle_tool(Tool::Cursor);
+        assert_eq!(
+            workspace.tools.cursor(),
+            CursorMode::Arrow,
+            "Esc or the strip gives it back"
+        );
+        workspace.toggle_zoom_in();
+        assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
+    }
+
+    #[test]
+    fn the_eraser_and_demonstration_are_modes_of_the_moment_that_are_never_remembered() {
+        use crate::model::CursorMode;
+        for moment in [CursorMode::Eraser, CursorMode::Demonstration] {
+            a_mode_of_the_moment(moment);
+        }
+    }
+
+    fn a_mode_of_the_moment(moment: crate::model::CursorMode) {
+        use crate::model::CursorMode;
+        let mut workspace = empty_workspace(1);
+        // The strip opens the saved options before anything is picked.
+        let _ = workspace.drawing_templates();
+        workspace.tools.choose_cursor(CursorMode::Dot);
+        workspace.tools.select(1, vec![4, 5]);
+        workspace.tools.choose_cursor(moment);
+        assert_eq!(workspace.tools.cursor(), moment);
+        assert!(
+            workspace.tools.selection().is_none(),
+            "nothing stays picked"
+        );
+        workspace.save_drawing_prefs();
+        assert_eq!(
+            workspace.drawing_templates().prefs().cursor,
+            CursorMode::Dot,
+            "the next tab starts on the resting cursor"
+        );
+        // Esc puts the Eraser down, back to the resting cursor.
+        workspace.tools.escape();
+        assert_eq!(workspace.tools.cursor(), CursorMode::Dot);
+        // Arming a tool holds the cross; Esc then ends the tool, not the (resting) cursor.
+        workspace.tools.choose_cursor(moment);
+        workspace.toggle_tool(Tool::Rectangle);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
+        workspace.tools.escape();
+        assert_eq!(
+            workspace.tools.cursor(),
+            moment,
+            "the mode waits under the tool"
+        );
+        workspace.tools.escape();
+        assert_eq!(workspace.tools.cursor(), CursorMode::Dot);
+    }
+
+    #[test]
+    fn the_values_tooltip_switch_is_saved_with_the_options() {
+        let mut workspace = empty_workspace(1);
+        let _ = workspace.drawing_templates();
+        assert!(workspace.tools.values_tooltip());
+        workspace.tools.toggle_values_tooltip();
+        workspace.save_drawing_prefs();
+        assert!(!workspace.drawing_templates().prefs().values_tooltip);
     }
 }

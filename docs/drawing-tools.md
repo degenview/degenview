@@ -231,8 +231,9 @@ hollow control points on curves).
 ## Favorites
 
 A star at the right end of every row of the six flyouts stars that tool (`Tool::GROUPED`, so a tool
-added there gets one; the crosshair and the ruler have no row). Starred tools show in a small floating
-bar over the charts: a grip of dots, then one button per tool.
+added there gets one; the ruler has no row), and every row of the cursor menu stars that cursor
+([Chart cursors](chart-cursors.md#favorites)). Starred tools and cursors show in a small floating
+bar over the charts: a grip of dots, then one button per favorite.
 
 - **Doc** (TradingView's help on favoriting, not detailed): a star beside a tool in the dropdown adds it
   to a separate floating panel. Third-party posts say the panel can be moved and that a star toggle hides
@@ -248,7 +249,7 @@ bar over the charts: a grip of dots, then one button per tool.
   and the menu stays open (`PopupCloseBehavior::CloseOnClickOutside`; picking a row closes it itself).
   The bar changes at once: the stars are read through `Store::drawing_favorites_cached`, which rebuilds
   after any write, so another window shows them too.
-- **Stored.** `drawing.favorites` is a list of tool names (the variant names `drawing.prefs` uses) and syncs;
+- **Stored.** `drawing.favorites` is a list of tool names (the variant names `drawing.prefs` uses; a cursor is `cursor:` and its name) and syncs;
   `drawing.favoritesBar` is the place and a hidden flag and stays on the device (`store::drawing_favorites`,
   `model::drawings::favorites`). A name this build does not know is kept when the list is written and
   left out of the bar. Starring a tool shows a hidden bar again.
@@ -275,6 +276,9 @@ the replay cursor, so it cannot reach a bar replay has not shown.
 
 Keep drawing (on by default, which is how the tools always behaved here) stays on the tool after
 a drawing; off returns to the crosshair. Magnet, keep drawing and the grouped tile's tool persist.
+
+The cursor menu on the strip's first tile has an Eraser that removes drawings by clicking or
+sweeping over them; see [Chart cursors](chart-cursors.md).
 
 ## Styles, text, templates
 

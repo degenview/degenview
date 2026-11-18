@@ -6,8 +6,7 @@
 //! device (`sync::record::policy`).
 
 use super::Store;
-use crate::model::Tool;
-use crate::model::drawings::favorites::{BarPrefs, FavoriteTools};
+use crate::model::drawings::favorites::{BarPrefs, Favorite, FavoriteTools};
 
 /// The starred tools, as their stored names.
 pub const KEY: &str = "drawing.favorites";
@@ -15,21 +14,21 @@ pub const KEY: &str = "drawing.favorites";
 pub const BAR_KEY: &str = "drawing.favoritesBar";
 
 impl Store {
-    /// The starred tools this build knows, in the order they were starred.
-    pub fn drawing_favorites(&self) -> Vec<Tool> {
+    /// The starred tools and cursors this build knows, in the order they were starred.
+    pub fn drawing_favorites(&self) -> Vec<Favorite> {
         self.setting::<FavoriteTools>(KEY)
             .unwrap_or_default()
-            .tools()
+            .items()
     }
 
-    /// Stars `tool`, or takes its star away. The stored list is read again first, so a change that
+    /// Stars `item`, or takes its star away. The stored list is read again first, so a change that
     /// arrived from another Mac or window is not undone, and one this build cannot read is never
     /// written over. Starring a tool also shows the bar again when it was hidden.
-    pub fn toggle_favorite_tool(&self, tool: Tool) -> rusqlite::Result<()> {
+    pub fn toggle_favorite(&self, item: impl Into<Favorite>) -> rusqlite::Result<()> {
         let mut favorites = self
             .setting_strict::<FavoriteTools>(KEY)?
             .unwrap_or_default();
-        let starred = favorites.toggle(tool);
+        let starred = favorites.toggle(item);
         self.set_setting(KEY, &favorites)?;
         if starred {
             let bar = self.favorites_bar();
@@ -56,6 +55,11 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{CursorMode, Tool};
+
+    fn tools(tools: &[Tool]) -> Vec<Favorite> {
+        tools.iter().copied().map(Favorite::Tool).collect()
+    }
     use crate::model::drawings::favorites::BarPlacement;
     use std::sync::Arc;
 
@@ -67,19 +71,22 @@ mod tests {
     fn a_star_is_kept_and_comes_back_in_order() {
         let store = store();
         assert!(store.drawing_favorites().is_empty());
-        store.toggle_favorite_tool(Tool::Brush).unwrap();
-        store.toggle_favorite_tool(Tool::Highlighter).unwrap();
-        assert_eq!(store.drawing_favorites(), [Tool::Brush, Tool::Highlighter]);
-        store.toggle_favorite_tool(Tool::Brush).unwrap();
-        assert_eq!(store.drawing_favorites(), [Tool::Highlighter]);
-        store.toggle_favorite_tool(Tool::Highlighter).unwrap();
+        store.toggle_favorite(Tool::Brush).unwrap();
+        store.toggle_favorite(Tool::Highlighter).unwrap();
+        assert_eq!(
+            store.drawing_favorites(),
+            tools(&[Tool::Brush, Tool::Highlighter])
+        );
+        store.toggle_favorite(Tool::Brush).unwrap();
+        assert_eq!(store.drawing_favorites(), tools(&[Tool::Highlighter]));
+        store.toggle_favorite(Tool::Highlighter).unwrap();
         assert!(store.drawing_favorites().is_empty());
     }
 
     #[test]
     fn the_stored_form_is_a_list_of_names() {
         let store = store();
-        store.toggle_favorite_tool(Tool::TrendLine).unwrap();
+        store.toggle_favorite(Tool::TrendLine).unwrap();
         let raw: Vec<String> = store.setting(KEY).unwrap();
         assert_eq!(raw, ["TrendLine"]);
     }
@@ -88,10 +95,32 @@ mod tests {
     fn a_name_a_newer_build_wrote_survives_a_change_here() {
         let store = store();
         store.set_setting(KEY, &["FutureTool", "Brush"]).unwrap();
-        assert_eq!(store.drawing_favorites(), [Tool::Brush]);
-        store.toggle_favorite_tool(Tool::Circle).unwrap();
+        assert_eq!(store.drawing_favorites(), tools(&[Tool::Brush]));
+        store.toggle_favorite(Tool::Circle).unwrap();
         let raw: Vec<String> = store.setting(KEY).unwrap();
         assert_eq!(raw, ["FutureTool", "Brush", "Circle"]);
+    }
+
+    #[test]
+    fn a_cursor_is_starred_in_the_same_list_and_an_older_build_keeps_its_name() {
+        let store = store();
+        store.toggle_favorite(Tool::Brush).unwrap();
+        store
+            .toggle_favorite(Favorite::Cursor(CursorMode::Eraser))
+            .unwrap();
+        let raw: Vec<String> = store.setting(KEY).unwrap();
+        assert_eq!(raw, ["Brush", "cursor:Eraser"]);
+        assert_eq!(
+            store.drawing_favorites(),
+            [
+                Favorite::Tool(Tool::Brush),
+                Favorite::Cursor(CursorMode::Eraser)
+            ]
+        );
+        store
+            .toggle_favorite(Favorite::Cursor(CursorMode::Eraser))
+            .unwrap();
+        assert_eq!(store.drawing_favorites(), tools(&[Tool::Brush]));
     }
 
     #[test]
@@ -100,7 +129,7 @@ mod tests {
         store
             .set_setting(KEY, &serde_json::json!({"not": "a list"}))
             .unwrap();
-        assert!(store.toggle_favorite_tool(Tool::Brush).is_err());
+        assert!(store.toggle_favorite(Tool::Brush).is_err());
         let raw: serde_json::Value = store.setting(KEY).unwrap();
         assert_eq!(raw, serde_json::json!({"not": "a list"}));
         assert!(store.drawing_favorites().is_empty());
@@ -128,12 +157,12 @@ mod tests {
                 hidden: true,
             })
             .unwrap();
-        store.toggle_favorite_tool(Tool::Brush).unwrap();
+        store.toggle_favorite(Tool::Brush).unwrap();
         let bar = store.favorites_bar();
         assert!(!bar.hidden);
         assert_eq!(bar.placement, place);
         // Taking a star away does not hide it.
-        store.toggle_favorite_tool(Tool::Brush).unwrap();
+        store.toggle_favorite(Tool::Brush).unwrap();
         assert!(!store.favorites_bar().hidden);
     }
 
@@ -142,9 +171,9 @@ mod tests {
         let store = store();
         let before = store.drawing_favorites_cached();
         assert!(Arc::ptr_eq(&before, &store.drawing_favorites_cached()));
-        store.toggle_favorite_tool(Tool::Brush).unwrap();
+        store.toggle_favorite(Tool::Brush).unwrap();
         let after = store.drawing_favorites_cached();
-        assert_eq!(*after, [Tool::Brush]);
+        assert_eq!(*after, tools(&[Tool::Brush]));
         assert!(!Arc::ptr_eq(&before, &after));
 
         let bar = store.favorites_bar_cached();

@@ -51,6 +51,12 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
   `model::chart::viewport::zoom`, edits the same `ChartViewport` in-frame so linked charts follow.
   No second viewport; never store the rectangle as a drawing
   ([chart navigation](../chart-navigation.md#zoom-in)).
+- The cursor (Cross, Dot, Arrow, …) is workspace state pushed to every card each frame
+  (`ChartCard::set_cursor_mode`), never part of a chart, template, layout or drawing. What a mode
+  shows is one row of `CursorMode::caps` (`model::cursor`); `draw_crosshair` stays the only crosshair
+  and reads it. The pointer shape is set only in `ChartCard::set_cursor`
+  ([Chart cursors](../chart-cursors.md)). The values tooltip on long press lists values the
+  frame already computed (`CrosshairBars`) and never recomputes an indicator or a script.
 - Linked charts ([design](../chart-sync.md)) map viewport to time range and back; never copy an
   offset, bar index, or anything vertical. Followers are edited via `ChartCard::follow_sync` before
   drawing; publish only the user's own navigation, never a follower's change or a live bar.

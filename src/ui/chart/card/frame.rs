@@ -655,8 +655,19 @@ impl ChartCard {
                     shown_len: shown.len(),
                     tail,
                     overlays: (&overlay_frame, view),
+                    indicators: &series,
+                    indicator_config: &drawn_indicators,
+                    pane_pine: layout
+                        .pane_outputs
+                        .iter()
+                        .map(|(_, output)| &***output)
+                        .collect(),
                 },
             );
+        }
+
+        if let Some(crosshair) = decor.crosshair.filter(|_| main_visible) {
+            self.paint_dot(painter, plot, decor.chart_id, crosshair);
         }
 
         if main_visible {

@@ -1,7 +1,9 @@
 //! The vertical tool strip down the left edge of a chart window (Swift `ToolSidebar`): the
 //! drawing tools at the top; Paper Trading and the alerts bell at the bottom.
 
-use crate::model::{ChartSyncSettings, MagnetMode, Tool, ToolGroup};
+use super::cursor_menu::{self, CursorMenuAction};
+use crate::model::drawings::favorites::Favorite;
+use crate::model::{ChartSyncSettings, CursorMode, MagnetMode, Tool, ToolGroup};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, shortcut, theme};
 use eframe::egui::{
@@ -20,6 +22,10 @@ const TOOLTIP_DELAY: Duration = Duration::from_millis(250);
 
 pub struct ToolSidebarInput {
     pub active_tool: Tool,
+    /// The cursor the pointer rests on, shown on the first tile and ticked in its menu.
+    pub cursor: CursorMode,
+    /// Whether holding the button still shows the values of the bar under the pointer.
+    pub values_tooltip: bool,
     /// The Zoom In mode is on: a drag on a plot selects the rectangle to zoom to.
     pub zoom_armed: bool,
     /// The focused chart has a zoom to go back from, so Zoom out is offered under Zoom in.
@@ -56,8 +62,8 @@ pub struct ToolSidebarInput {
     pub can_link: bool,
     /// Charts that cannot take part in linking, by title.
     pub unlinkable: Vec<String>,
-    /// The tools starred in the menus, in the order they were starred.
-    pub favorites: Arc<Vec<Tool>>,
+    /// The tools and cursors starred in the menus, in the order they were starred.
+    pub favorites: Arc<Vec<Favorite>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -77,8 +83,12 @@ pub enum ToolSidebarAction {
     TogglePaper,
     OpenAlerts,
     SetSync(ChartSyncSettings),
-    /// Star `tool`, or take its star away. The menu stays open.
-    ToggleFavorite(Tool),
+    /// Star `item`, or take its star away. The menu stays open.
+    ToggleFavorite(Favorite),
+    /// Put the pointer on this cursor (and put any armed tool or Zoom In down).
+    SetCursor(CursorMode),
+    /// Turn the values tooltip on long press on or off. The menu stays open.
+    ToggleValuesTooltip,
 }
 
 /// How an active tile is drawn: a lit accent tile for an armed tool, or a tinted glyph on a
@@ -110,6 +120,8 @@ struct Tile<'a> {
 /// A tile at the top of the strip: one tool, or a tile that opens a menu of them.
 #[derive(Clone, Copy)]
 enum Slot {
+    /// The cursor: its tile shows the cursor in force and opens the cursor menu.
+    Cursor,
     Tool(Tool, Icon, &'static str),
     Menu(Menu),
 }
@@ -205,7 +217,7 @@ impl Menu {
 }
 
 const SLOTS: [Slot; 8] = [
-    Slot::Tool(Tool::Cursor, Icon::Plus, "Crosshair"),
+    Slot::Cursor,
     Slot::Menu(Menu::Lines),
     Slot::Menu(Menu::Fib),
     Slot::Menu(Menu::Patterns),
@@ -323,6 +335,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
     for slot in SLOTS {
         let rect = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
         match slot {
+            Slot::Cursor => cursor_tile(ui, rect, input, strip.right(), &mut actions),
             Slot::Tool(tool, icon, label) => {
                 let tile = Tile {
                     icon,
@@ -642,6 +655,55 @@ fn link_tile(
         });
 }
 
+/// The first tile: the cursor in force. A click opens the cursor menu; the tile is never lit, the
+/// cursor is the resting state like the crosshair always was.
+fn cursor_tile(
+    ui: &mut Ui,
+    rect: Rect,
+    input: &ToolSidebarInput,
+    strip_right: f32,
+    actions: &mut Vec<ToolSidebarAction>,
+) {
+    let tile = Tile {
+        icon: cursor_menu::icon(input.cursor),
+        label: "Cursors",
+        tooltip: "Cursors",
+        active: Active::Off,
+        tint: None,
+        enabled: true,
+        badge: 0,
+        key: "cursor",
+        notch: true,
+        mark: None,
+    };
+    let response = tile_button(ui, rect, &tile, strip_right);
+    let wants_open = response.clicked()
+        || response.secondary_clicked()
+        || (response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::ArrowRight)));
+    let width = cursor_menu::width(ui);
+    let popup = egui::Popup::menu(&response)
+        .open_memory(wants_open.then_some(SetOpenCommand::Toggle))
+        .align(RectAlign::RIGHT_START)
+        .align_alternatives(&[RectAlign::RIGHT_END])
+        .gap(10.0)
+        // The switch keeps the menu open; picking a cursor (which closes it itself) or a click
+        // outside ends it.
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .frame(kit::menu_frame())
+        .width(width);
+    popup.show(|ui| {
+        for action in cursor_menu::show(ui, input.cursor, input.values_tooltip, &input.favorites) {
+            actions.push(match action {
+                CursorMenuAction::Set(mode) => ToolSidebarAction::SetCursor(mode),
+                CursorMenuAction::ToggleFavorite(mode) => {
+                    ToolSidebarAction::ToggleFavorite(Favorite::Cursor(mode))
+                }
+                CursorMenuAction::ToggleValuesTooltip => ToolSidebarAction::ToggleValuesTooltip,
+            });
+        }
+    });
+}
+
 fn menu_tile(
     ui: &mut Ui,
     rect: Rect,
@@ -733,10 +795,10 @@ fn tool_menu(
                 ui.add_space(3.0);
                 for tool in Tool::in_group(*group) {
                     let selected = input.active_tool == tool;
-                    let favorite = input.favorites.contains(&tool);
+                    let favorite = input.favorites.contains(&Favorite::Tool(tool));
                     let (response, star) = menu_row(ui, tool, selected, favorite);
                     if star.clicked() {
-                        actions.push(ToolSidebarAction::ToggleFavorite(tool));
+                        actions.push(ToolSidebarAction::ToggleFavorite(Favorite::Tool(tool)));
                     }
                     // Land the keyboard on the armed tool (or the first row) when it opens.
                     let landed = ui.data(|data| data.get_temp::<bool>(seen).unwrap_or(false));
@@ -763,7 +825,7 @@ fn tool_menu(
 
 /// The star's target at the right end of a row: a little larger than the glyph, so it is easy to
 /// hit and cannot be mistaken for the row.
-const STAR_TARGET: f32 = 24.0;
+pub(super) const STAR_TARGET: f32 = 24.0;
 
 /// One row of a menu: glyph, name, the shortcut that arms the tool (if it has one), a check on the
 /// armed tool and the star that marks it a favorite. Returns the row's response and the star's:
@@ -778,26 +840,11 @@ fn menu_row(
     let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
     let response = crate::ui::accessibility::label(response, tool.label());
     // Made after the row, so it is the one the pointer lands on where the two overlap.
-    let star_rect = Rect::from_center_size(
-        pos2(rect.right() - 16.0, rect.center().y),
-        Vec2::splat(STAR_TARGET),
-    );
-    let star = ui
-        .interact(
-            star_rect,
-            Id::new(("tool-sidebar-star", tool)),
-            Sense::click(),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(if favorite {
-            "Remove from favorites"
-        } else {
-            "Add to favorites"
-        });
-    let star = crate::ui::accessibility::selected_as(
-        star,
-        egui::WidgetType::Checkbox,
-        format!("Favorite {}", tool.label()),
+    let star = star_button(
+        ui,
+        rect,
+        Id::new(("tool-sidebar-star", tool)),
+        tool.label(),
         favorite,
     );
     let highlighted = response.hovered() || star.hovered() || response.has_focus();
@@ -862,14 +909,52 @@ fn menu_row(
             color,
         );
     }
-    paint_star(ui, &star, favorite, highlighted);
+    paint_star(ui, &star, favorite, highlighted, None);
     (response, star)
+}
+
+/// The star at the right end of the row in `rect`: a target of its own, made after the row so a
+/// click on it never picks what the row is. `name` is what it is a favorite of, for the hover text
+/// and screen readers.
+pub(super) fn star_button(
+    ui: &mut Ui,
+    rect: Rect,
+    id: Id,
+    name: &str,
+    favorite: bool,
+) -> egui::Response {
+    let star_rect = Rect::from_center_size(
+        pos2(rect.right() - 16.0, rect.center().y),
+        Vec2::splat(STAR_TARGET),
+    );
+    let star = ui
+        .interact(star_rect, id, Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(if favorite {
+            "Remove from favorites"
+        } else {
+            "Add to favorites"
+        });
+    crate::ui::accessibility::selected_as(
+        star,
+        egui::WidgetType::Checkbox,
+        format!("Favorite {name}"),
+        favorite,
+    )
 }
 
 /// The star: filled when the tool is a favorite, an outline that brightens with the row and again
 /// under the pointer when it is not.
-fn paint_star(ui: &Ui, star: &egui::Response, favorite: bool, row_highlighted: bool) {
-    let tint = if favorite || star.hovered() {
+pub(super) fn paint_star(
+    ui: &Ui,
+    star: &egui::Response,
+    favorite: bool,
+    row_highlighted: bool,
+    ink: Option<Color32>,
+) {
+    let tint = if let Some(ink) = ink {
+        ink
+    } else if favorite || star.hovered() {
         theme::text_primary()
     } else if row_highlighted {
         theme::text_secondary()
@@ -1066,7 +1151,8 @@ fn badge(ui: &Ui, at: Pos2, count: usize) {
 fn tooltip(ui: &Ui, id: Id, response: &egui::Response, tile: Rect, strip_right: f32, label: &str) {
     let since = id.with("hover-since");
     let now = ui.input(|input| input.time);
-    if !response.hovered() {
+    // A menu opened beside the strip takes the place the label would be drawn in.
+    if !response.hovered() || egui::Popup::is_any_open(ui.ctx()) {
         ui.ctx().data_mut(|data| data.remove::<f64>(since));
         return;
     }
@@ -1135,6 +1221,8 @@ mod tests {
             (Tool::Ruler, false, false, false, 120),
         ] {
             let state = ToolSidebarInput {
+                cursor: CursorMode::Cross,
+                values_tooltip: true,
                 zoom_armed: false,
                 can_zoom_out: false,
                 active_tool: tool,
@@ -1167,8 +1255,15 @@ mod tests {
         }
     }
 
+    /// A list of favorites that are all tools.
+    fn favs(tools: &[Tool]) -> Arc<Vec<Favorite>> {
+        Arc::new(tools.iter().copied().map(Favorite::Tool).collect())
+    }
+
     fn state() -> ToolSidebarInput {
         ToolSidebarInput {
+            cursor: CursorMode::Cross,
+            values_tooltip: true,
             zoom_armed: false,
             can_zoom_out: false,
             active_tool: Tool::Cursor,
@@ -1250,11 +1345,14 @@ mod tests {
     }
 
     /// Clicks down the strip's left half in fresh contexts and returns the `y` values at which a
-    /// popup opened (no tile opens one from a plain click except Link charts).
+    /// popup opened (no tile opens one from a plain click except Link charts, and the cursor
+    /// tile at the top, which is skipped).
     fn popups_opened_by_plain_clicks(input: &ToolSidebarInput, height: f32) -> Vec<f32> {
         let size = vec2(900.0, height);
+        let below_cursor_tile = 10.0 + BUTTON + SPACING;
         (0..(height as i32 / 4))
             .map(|row| row as f32 * 4.0)
+            .filter(|y| *y >= below_cursor_tile)
             .filter(|y| {
                 let ctx = egui::Context::default();
                 let mut time = 0.0;
@@ -1404,6 +1502,178 @@ mod tests {
             .collect();
         assert_eq!(armed, expected, "every row, in order");
         assert_eq!(armed.len(), 16);
+    }
+
+    /// The cursor tile's centre, and one frame of the strip with its menu open.
+    const CURSOR_TILE: Pos2 = pos2(WIDTH / 2.0, 10.0 + BUTTON / 2.0);
+
+    fn open_cursor_menu(input: &ToolSidebarInput) -> (egui::Context, f64, Rect) {
+        let size = vec2(900.0, 700.0);
+        let ctx = egui::Context::default();
+        let mut time = 0.0;
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), input);
+        }
+        click(&ctx, &mut time, size, CURSOR_TILE, input);
+        let (_, menu) = frame(&ctx, &mut time, size, Vec::new(), input);
+        let menu = menu.expect("a click on the cursor tile opens its menu");
+        (ctx, time, menu)
+    }
+
+    /// The centre of the `n`th row of the cursor menu (the toggle is row `CursorMode::ALL.len()`
+    /// and sits after the separator).
+    fn cursor_row(menu: Rect, n: usize) -> Pos2 {
+        let separator = if n >= CursorMode::ALL.len() { 9.0 } else { 0.0 };
+        pos2(
+            menu.center().x,
+            menu.top() + 5.0 + 32.0 * n as f32 + 16.0 + separator,
+        )
+    }
+
+    #[test]
+    fn the_cursor_tile_shows_the_cursor_and_a_click_opens_the_menu_without_arming_anything() {
+        let size = vec2(900.0, 700.0);
+        for cursor in CursorMode::ALL {
+            let input = ToolSidebarInput { cursor, ..state() };
+            let ctx = egui::Context::default();
+            let mut time = 0.0;
+            let (actions, _) = frame(&ctx, &mut time, size, Vec::new(), &input);
+            assert!(actions.is_empty());
+            let actions = click(&ctx, &mut time, size, CURSOR_TILE, &input);
+            assert!(
+                actions.is_empty(),
+                "opening the menu changes nothing: {actions:?}"
+            );
+            let (_, menu) = frame(&ctx, &mut time, size, Vec::new(), &input);
+            assert!(menu.is_some(), "{cursor:?}: the menu is open");
+        }
+    }
+
+    #[test]
+    fn picking_a_cursor_row_reports_it_and_closes_the_menu() {
+        let size = vec2(900.0, 700.0);
+        for (n, cursor) in CursorMode::ALL.into_iter().enumerate() {
+            let input = state();
+            let (ctx, mut time, menu) = open_cursor_menu(&input);
+            let actions = click(&ctx, &mut time, size, cursor_row(menu, n), &input);
+            assert_eq!(actions, vec![ToolSidebarAction::SetCursor(cursor)]);
+            let (_, menu) = frame(&ctx, &mut time, size, Vec::new(), &input);
+            assert!(menu.is_none(), "picking {cursor:?} closes the menu");
+        }
+    }
+
+    #[test]
+    fn a_cursors_star_marks_a_favorite_without_picking_the_cursor_or_closing_the_menu() {
+        let size = vec2(900.0, 700.0);
+        for starred in [Vec::new(), vec![Favorite::Cursor(CursorMode::Dot)]] {
+            let input = ToolSidebarInput {
+                favorites: Arc::new(starred),
+                ..state()
+            };
+            for (n, mode) in CursorMode::ALL.into_iter().enumerate() {
+                let (ctx, mut time, menu) = open_cursor_menu(&input);
+                let row = cursor_row(menu, n);
+                let star = pos2(menu.right() - 21.0, row.y);
+                let actions = click(&ctx, &mut time, size, star, &input);
+                assert_eq!(
+                    actions,
+                    [ToolSidebarAction::ToggleFavorite(Favorite::Cursor(mode))]
+                );
+                let (_, menu) = frame(&ctx, &mut time, size, Vec::new(), &input);
+                assert!(menu.is_some(), "the menu closed on the star of {mode:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_values_tooltip_switch_keeps_the_menu_open() {
+        let size = vec2(900.0, 700.0);
+        let input = state();
+        let (ctx, mut time, menu) = open_cursor_menu(&input);
+        let toggle = cursor_row(menu, CursorMode::ALL.len());
+        let actions = click(&ctx, &mut time, size, toggle, &input);
+        assert_eq!(actions, vec![ToolSidebarAction::ToggleValuesTooltip]);
+        let (_, menu) = frame(&ctx, &mut time, size, Vec::new(), &input);
+        assert!(menu.is_some(), "a switch does not close the menu");
+    }
+
+    #[test]
+    fn the_cursor_menu_is_as_wide_as_its_rows_need() {
+        let input = state();
+        let (ctx, _, menu) = open_cursor_menu(&input);
+        let mut wanted = 0.0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            wanted = cursor_menu::width(ui);
+        });
+        output.textures_delta.clear();
+        assert!(
+            (menu.width() - wanted).abs() <= 1.0,
+            "the popup is {} wide, its rows need {wanted}",
+            menu.width()
+        );
+        // The longest row is the switch's label: it, the switch and their padding fit, no more.
+        assert!(wanted < 300.0, "no guessed width: {wanted}");
+    }
+
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_cursor_menu() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let _restore = theme::RestoreDefaultTheme;
+        for (name, cursor, light) in [
+            ("cursor-menu-cross", CursorMode::Cross, false),
+            ("cursor-menu-eraser", CursorMode::Eraser, false),
+            ("cursor-menu-dot-light", CursorMode::Dot, true),
+        ] {
+            let mut screen = Screen::new(vec2(360.0, 260.0));
+            theme::apply(
+                &screen.ctx,
+                if light {
+                    theme::AppTheme::Light
+                } else {
+                    theme::AppTheme::Dark
+                },
+            );
+            let input = ToolSidebarInput {
+                cursor,
+                favorites: Arc::new(vec![
+                    Favorite::Cursor(CursorMode::Cross),
+                    Favorite::Cursor(CursorMode::Eraser),
+                ]),
+                ..state()
+            };
+            let run = |screen: &mut Screen, events: Vec<egui::Event>| {
+                screen.run(events, |ui| {
+                    ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(Rect::from_min_size(Pos2::ZERO, vec2(WIDTH, 260.0))),
+                        |ui| {
+                            show(ui, &input);
+                        },
+                    );
+                })
+            };
+            let button = |pressed| egui::Event::PointerButton {
+                pos: CURSOR_TILE,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            for _ in 0..3 {
+                run(&mut screen, Vec::new());
+            }
+            run(&mut screen, vec![egui::Event::PointerMoved(CURSOR_TILE)]);
+            run(&mut screen, vec![button(true)]);
+            run(&mut screen, vec![button(false)]);
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(run(&mut screen, Vec::new()));
+            }
+            screen.save(name, last.expect("a frame"));
+        }
     }
 
     #[test]
@@ -1633,7 +1903,7 @@ mod tests {
     fn a_star_marks_a_favorite_without_picking_the_tool_or_closing_the_menu() {
         for starred in [Vec::new(), vec![Tool::Brush, Tool::Highlighter]] {
             let input = ToolSidebarInput {
-                favorites: Arc::new(starred),
+                favorites: favs(&starred),
                 ..state()
             };
             // The centres of the first two rows, Brush and Highlighter, at the star's column.
@@ -1641,7 +1911,10 @@ mod tests {
                 let (actions, open) = click_in_the_grouped_menu(&input, |menu| {
                     pos2(menu.right() - 21.0, menu.top() + row)
                 });
-                assert_eq!(actions, [ToolSidebarAction::ToggleFavorite(tool)]);
+                assert_eq!(
+                    actions,
+                    [ToolSidebarAction::ToggleFavorite(Favorite::Tool(tool))]
+                );
                 assert!(open, "the menu closed on the star of {tool:?}");
             }
         }
@@ -1658,7 +1931,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut nodes = AccessNodes::start(&ctx);
         let input = ToolSidebarInput {
-            favorites: Arc::new(starred),
+            favorites: favs(&starred),
             ..state()
         };
         let (mut time, size) = (0.0, vec2(900.0, 1100.0));
@@ -1742,9 +2015,10 @@ mod tests {
             ..Default::default()
         };
         let input = ToolSidebarInput {
-            favorites: Arc::new(starred.to_vec()),
+            favorites: favs(starred),
             ..state()
         };
+        let items = favs(starred);
         let mut actions = Vec::new();
         let mut output = ctx.run_ui(raw, |ui| {
             ui.scope_builder(
@@ -1756,8 +2030,10 @@ mod tests {
                 ui.ctx(),
                 &FavoritesBarInput {
                     id: Id::new("test-favorites-bar"),
-                    tools: starred,
+                    items: &items,
                     active_tool: Tool::Cursor,
+                    cursor: CursorMode::Cross,
+                    zoom_armed: false,
                     prefs,
                     area: Rect::from_min_size(pos2(WIDTH, 0.0), vec2(size.x - WIDTH, size.y)),
                 },
@@ -1813,7 +2089,9 @@ mod tests {
         let actions = click(&mut |events| run(&ctx, events, &starred, prefs), star);
         assert_eq!(
             actions,
-            [ToolSidebarAction::ToggleFavorite(Tool::TrendLine)]
+            [ToolSidebarAction::ToggleFavorite(Favorite::Tool(
+                Tool::TrendLine
+            ))]
         );
         starred.push(Tool::TrendLine);
         // The bar is saved right over that star, as in a narrow chart area.
@@ -1837,7 +2115,9 @@ mod tests {
         let actions = click(&mut |events| run(&ctx, events, &starred, prefs), star);
         assert_eq!(
             actions,
-            [ToolSidebarAction::ToggleFavorite(Tool::TrendLine)]
+            [ToolSidebarAction::ToggleFavorite(Favorite::Tool(
+                Tool::TrendLine
+            ))]
         );
     }
 
@@ -1916,7 +2196,7 @@ mod tests {
         ] {
             let mut screen = Screen::new(vec2(420.0, 700.0));
             let input = ToolSidebarInput {
-                favorites: Arc::new(vec![
+                favorites: favs(&[
                     Tool::Brush,
                     Tool::Highlighter,
                     Tool::TrendLine,

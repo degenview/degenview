@@ -1,15 +1,17 @@
-//! The floating bar of favorite drawing tools over the chart area: a grip to move it by, then one
-//! button per starred tool. A button arms its tool exactly as the same tool's tile or menu row does
-//! (the caller routes `Select` through the tab's one tool choice), and lights while that tool is
-//! armed. A right-click on the bar offers to hide it.
+//! The floating bar of favorites over the chart area: a grip to move it by, then one button per
+//! starred drawing tool or cursor. A button does what the same tool's tile or menu row, or the
+//! cursor's menu row, does (the caller routes `Select` through the tab's one tool and cursor
+//! choice), and lights while that tool is armed or that cursor is in force. A right-click on the
+//! bar offers to hide it.
 //!
 //! The bar is an area above the charts, so a press on it never reaches them, and below every popup
 //! and dialog; everywhere else the charts see the pointer as before. Dragging it keeps its
 //! position in egui's memory until the pointer is let go, and only then reports `Moved` for the
 //! caller to save.
 
-use crate::model::Tool;
-use crate::model::drawings::favorites::{BarPlacement, BarPrefs, placement_from};
+use crate::model::drawings::favorites::{BarPlacement, BarPrefs, Favorite, placement_from};
+use crate::model::{CursorMode, Tool};
+use crate::ui::workspace::cursor_menu;
 use crate::ui::workspace::tool_sidebar::tool_icon;
 use crate::ui::{icons, kit, shortcut, theme};
 use eframe::egui::{
@@ -31,10 +33,13 @@ const MIN_ROOM: f32 = 8.0;
 pub struct FavoritesBarInput<'a> {
     /// Names the bar's area, so each tab has its own.
     pub id: Id,
-    /// The starred tools, in the order to show them.
-    pub tools: &'a [Tool],
+    /// The starred tools and cursors, in the order to show them.
+    pub items: &'a [Favorite],
     /// The tool that is armed now.
     pub active_tool: Tool,
+    /// The cursor in force, and whether Zoom In holds the pointer instead.
+    pub cursor: CursorMode,
+    pub zoom_armed: bool,
     pub prefs: BarPrefs,
     /// The part of the window the bar may be moved over: the charts.
     pub area: Rect,
@@ -42,15 +47,15 @@ pub struct FavoritesBarInput<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FavoritesBarAction {
-    /// The button of this tool was pressed.
-    Select(Tool),
+    /// The button of this favorite was pressed.
+    Select(Favorite),
     /// The bar was moved and let go here.
     Moved(BarPlacement),
     /// Hide the bar (its stars stay).
     Hide,
 }
 
-/// The size of a bar holding `count` tools.
+/// The size of a bar holding `count` favorites.
 pub fn bar_size(count: usize) -> Vec2 {
     let buttons = count as f32 * BUTTON + count.saturating_sub(1) as f32 * SPACING;
     vec2(
@@ -94,20 +99,48 @@ fn clamped(position: Pos2, area: Rect, count: usize) -> Pos2 {
     )
 }
 
-/// Whether the bar is shown for this input: there is a tool to show, it is not hidden, and the
+/// Whether the bar is shown for this input: there is a favorite to show, it is not hidden, and the
 /// area has room for it.
 pub fn is_shown(input: &FavoritesBarInput) -> bool {
-    let size = bar_size(input.tools.len());
-    !input.tools.is_empty()
+    let size = bar_size(input.items.len());
+    !input.items.is_empty()
         && !input.prefs.hidden
         && input.area.width() >= size.x + MIN_ROOM
         && input.area.height() >= size.y + MIN_ROOM
 }
 
-fn tooltip(tool: Tool) -> String {
-    match shortcut::tool(tool) {
-        Some(shortcut) => format!("{} ({})", tool.label(), shortcut.label()),
-        None => tool.label().to_owned(),
+fn label(item: Favorite) -> &'static str {
+    match item {
+        Favorite::Tool(tool) => tool.label(),
+        Favorite::Cursor(mode) => mode.label(),
+    }
+}
+
+fn icon(item: Favorite) -> icons::Icon {
+    match item {
+        Favorite::Tool(tool) => tool_icon(tool),
+        Favorite::Cursor(mode) => cursor_menu::icon(mode),
+    }
+}
+
+fn tooltip(item: Favorite) -> String {
+    match item {
+        Favorite::Tool(tool) => match shortcut::tool(tool) {
+            Some(shortcut) => format!("{} ({})", tool.label(), shortcut.label()),
+            None => tool.label().to_owned(),
+        },
+        Favorite::Cursor(mode) => format!("{} cursor", mode.label()),
+    }
+}
+
+/// Whether the button of `item` is lit: its tool is armed, or its cursor is the one in force and
+/// no tool or Zoom In holds the pointer.
+fn is_lit(item: Favorite, input: &FavoritesBarInput) -> bool {
+    match item {
+        Favorite::Tool(tool) => input.active_tool == tool,
+        Favorite::Cursor(mode) => {
+            input.active_tool == Tool::Cursor && !input.zoom_armed && input.cursor == mode
+        }
     }
 }
 
@@ -151,7 +184,7 @@ pub fn show(ctx: &Context, input: &FavoritesBarInput) -> Vec<FavoritesBarAction>
     if !is_shown(input) {
         return actions;
     }
-    let count = input.tools.len();
+    let count = input.items.len();
     let drag_id = input.id.with("drag");
     let mut live = drag_in_progress(ctx, drag_id);
     if let Some(at) = live.as_mut() {
@@ -192,7 +225,7 @@ fn bar_body(
     position: Pos2,
     actions: &mut Vec<FavoritesBarAction>,
 ) {
-    let count = input.tools.len();
+    let count = input.items.len();
     let inner = bar_size(count) - 2.0 * vec2(MARGIN_X + STROKE, MARGIN_Y + STROKE);
     let (row, _) = ui.allocate_exact_size(inner, Sense::hover());
     let mut responses: Vec<egui::Response> = Vec::with_capacity(count + 1);
@@ -243,20 +276,20 @@ fn bar_body(
     }
     responses.push(grip);
 
-    for (index, tool) in input.tools.iter().copied().enumerate() {
+    for (index, item) in input.items.iter().copied().enumerate() {
         let left = row.left() + GRIP + SPACING + index as f32 * (BUTTON + SPACING);
         let rect = Rect::from_min_size(pos2(left, row.top()), Vec2::splat(BUTTON));
-        let mut response = ui.interact(rect, input.id.with(("tool", tool)), Sense::click());
+        let mut response = ui.interact(rect, input.id.with(("favorite", item)), Sense::click());
         if !dragging {
             response = response
                 .on_hover_cursor(CursorIcon::PointingHand)
-                .on_hover_text(tooltip(tool));
+                .on_hover_text(tooltip(item));
         }
-        let active = input.active_tool == tool;
+        let active = is_lit(item, input);
         let response = crate::ui::accessibility::selected_as(
             response,
             egui::WidgetType::Button,
-            tool.label(),
+            label(item),
             active,
         );
         if active {
@@ -277,11 +310,11 @@ fn bar_body(
         icons::paint(
             ui.painter(),
             Rect::from_center_size(rect.center(), Vec2::splat(ICON)),
-            tool_icon(tool),
+            icon(item),
             theme::text_primary(),
         );
         if response.clicked() {
-            actions.push(FavoritesBarAction::Select(tool));
+            actions.push(FavoritesBarAction::Select(item));
         }
         responses.push(response);
     }
@@ -344,13 +377,19 @@ mod tests {
         min: pos2(44.0, 40.0),
         max: pos2(944.0, 640.0),
     };
-    const TOOLS: [Tool; 3] = [Tool::Brush, Tool::Highlighter, Tool::TrendLine];
+    const TOOLS: [Favorite; 3] = [
+        Favorite::Tool(Tool::Brush),
+        Favorite::Tool(Tool::Highlighter),
+        Favorite::Tool(Tool::TrendLine),
+    ];
 
     fn input(prefs: BarPrefs, active_tool: Tool) -> FavoritesBarInput<'static> {
         FavoritesBarInput {
             id: Id::new("test-bar"),
-            tools: &TOOLS,
+            items: &TOOLS,
             active_tool,
+            cursor: CursorMode::Cross,
+            zoom_armed: false,
             prefs,
             area: AREA,
         }
@@ -434,6 +473,66 @@ mod tests {
     }
 
     #[test]
+    fn a_cursor_button_lights_while_that_cursor_is_in_force_and_no_tool_or_zoom_holds_the_pointer()
+    {
+        const MIXED: [Favorite; 3] = [
+            Favorite::Cursor(CursorMode::Dot),
+            Favorite::Tool(Tool::Brush),
+            Favorite::Cursor(CursorMode::Eraser),
+        ];
+        let lit = |cursor, active_tool, zoom_armed| {
+            let input = FavoritesBarInput {
+                items: &MIXED,
+                cursor,
+                active_tool,
+                zoom_armed,
+                ..input(BarPrefs::default(), Tool::Cursor)
+            };
+            MIXED.map(|item| is_lit(item, &input))
+        };
+        assert_eq!(
+            lit(CursorMode::Dot, Tool::Cursor, false),
+            [true, false, false]
+        );
+        assert_eq!(
+            lit(CursorMode::Eraser, Tool::Cursor, false),
+            [false, false, true]
+        );
+        assert_eq!(lit(CursorMode::Cross, Tool::Cursor, false), [false; 3]);
+        // A tool in hand lights its own button and puts every cursor's out.
+        assert_eq!(
+            lit(CursorMode::Cross, Tool::Brush, false),
+            [false, true, false]
+        );
+        assert_eq!(lit(CursorMode::Dot, Tool::Cursor, true), [false; 3]);
+    }
+
+    #[test]
+    fn a_cursor_button_reports_its_cursor_and_is_told_to_a_screen_reader() {
+        let prefs = BarPrefs::default();
+        let items = [
+            Favorite::Cursor(CursorMode::Arrow),
+            Favorite::Tool(Tool::Brush),
+        ];
+        let input = FavoritesBarInput {
+            items: &items,
+            ..input(prefs, Tool::Cursor)
+        };
+        let at = resolve(&prefs, AREA, items.len());
+        let mut rig = Rig::new();
+        rig.settle(&input);
+        let actions = rig.click(center(at, Some(0)), &input);
+        assert_eq!(
+            actions,
+            [FavoritesBarAction::Select(Favorite::Cursor(
+                CursorMode::Arrow
+            ))]
+        );
+        assert_eq!(label(items[0]), "Arrow");
+        assert_eq!(tooltip(items[0]), "Arrow cursor");
+    }
+
+    #[test]
     fn a_button_arms_its_tool_and_nothing_else() {
         let prefs = BarPrefs::default();
         let at = resolve(&prefs, AREA, TOOLS.len());
@@ -451,7 +550,7 @@ mod tests {
         let shown = input(BarPrefs::default(), Tool::Cursor);
         assert!(is_shown(&shown));
         let empty = FavoritesBarInput {
-            tools: &[],
+            items: &[],
             ..input(BarPrefs::default(), Tool::Cursor)
         };
         assert!(!is_shown(&empty));
@@ -809,24 +908,28 @@ mod tests {
             return;
         }
         let many = [
-            Tool::Highlighter,
-            Tool::ArrowMarkDown,
-            Tool::Rectangle,
-            Tool::Brush,
-            Tool::TrendLine,
-            Tool::FibRetracement,
-            Tool::Text,
+            Favorite::Cursor(CursorMode::Dot),
+            Favorite::Cursor(CursorMode::Eraser),
+            Favorite::Tool(Tool::Highlighter),
+            Favorite::Tool(Tool::ArrowMarkDown),
+            Favorite::Tool(Tool::Rectangle),
+            Favorite::Tool(Tool::Brush),
+            Favorite::Tool(Tool::TrendLine),
+            Favorite::Tool(Tool::FibRetracement),
+            Favorite::Tool(Tool::Text),
         ];
-        for (name, tools, active) in [
+        for (name, items, active) in [
             ("one", &many[..1], Tool::Cursor),
-            ("two", &many[3..5], Tool::TrendLine),
+            ("two", &many[5..7], Tool::TrendLine),
             ("many", &many[..], Tool::Rectangle),
         ] {
             let mut screen = Screen::new(vec2(700.0, 200.0));
             let input = FavoritesBarInput {
                 id: Id::new("gallery-bar"),
-                tools,
+                items,
                 active_tool: active,
+                cursor: CursorMode::Dot,
+                zoom_armed: false,
                 prefs: BarPrefs::default(),
                 area: Rect::from_min_size(pos2(0.0, 0.0), vec2(700.0, 200.0)),
             };
