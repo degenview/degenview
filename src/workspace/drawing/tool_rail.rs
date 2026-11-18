@@ -18,6 +18,7 @@ impl ChartWorkspace {
         let favorites = self.favorite_tools();
         let input = tool_sidebar::ToolSidebarInput {
             active_tool: self.tools.active,
+            cursor: self.tools.chosen_cursor(),
             zoom_armed: self.tools.zoom_armed,
             can_zoom_out: self
                 .focused
@@ -59,6 +60,10 @@ impl ChartWorkspace {
                 ToolSidebarAction::Arm(tool) => {
                     self.tools.active = tool;
                     self.remember_group_tool(tool);
+                    self.drop_rulers();
+                }
+                ToolSidebarAction::SetCursor(mode) => {
+                    self.tools.choose_cursor(mode);
                     self.drop_rulers();
                 }
                 ToolSidebarAction::SetMagnet(mode) => self.tools.prefs.magnet = mode,
@@ -170,5 +175,43 @@ mod tests {
         let mut workspace = empty_workspace(1);
         workspace.zoom_out_focused();
         assert!(!workspace.tools.zoom_armed);
+    }
+
+    #[test]
+    fn picking_a_cursor_puts_down_the_tool_and_zoom_and_is_remembered() {
+        use crate::model::CursorMode;
+        let mut workspace = empty_workspace(1);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
+        workspace.toggle_tool(Tool::TrendLine);
+        workspace.tools.choose_cursor(CursorMode::Dot);
+        assert_eq!(workspace.tools.active, Tool::Cursor);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Dot);
+        workspace.toggle_zoom_in();
+        workspace.tools.choose_cursor(CursorMode::Arrow);
+        assert!(!workspace.tools.zoom_armed);
+        // Saved with the strip's options, so the next tab starts on it.
+        workspace.save_drawing_prefs();
+        assert_eq!(
+            workspace.drawing_templates().prefs().cursor,
+            CursorMode::Arrow
+        );
+    }
+
+    #[test]
+    fn an_armed_tool_or_zoom_holds_the_cross_and_the_choice_waits() {
+        use crate::model::CursorMode;
+        let mut workspace = empty_workspace(1);
+        workspace.tools.choose_cursor(CursorMode::Arrow);
+        workspace.toggle_tool(Tool::Rectangle);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
+        assert_eq!(workspace.tools.chosen_cursor(), CursorMode::Arrow);
+        workspace.toggle_tool(Tool::Cursor);
+        assert_eq!(
+            workspace.tools.cursor(),
+            CursorMode::Arrow,
+            "Esc or the strip gives it back"
+        );
+        workspace.toggle_zoom_in();
+        assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
     }
 }

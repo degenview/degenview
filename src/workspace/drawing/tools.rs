@@ -2,7 +2,7 @@
 //! the selection, the copied style, and the dialogs about drawings. `drawing` and its children
 //! act on it; the grid, the chart menu and the shortcuts go through the methods below.
 
-use crate::model::{Drawing, DrawingStyle, MagnetMode, Tool};
+use crate::model::{CursorMode, Drawing, DrawingStyle, MagnetMode, Tool};
 use crate::store::drawing_template::{DrawingPrefs, DrawingTemplateStore};
 use crate::ui::drawing::properties::DrawingProperties;
 
@@ -11,6 +11,9 @@ pub(in crate::workspace) struct DrawingTools {
     /// The Zoom In mode of the tool rail. A mode of its own, never a drawing tool: a drag on a
     /// plot selects a rectangle to zoom to. Exclusive with `active`; not saved.
     pub(super) zoom_armed: bool,
+    /// The cursor the pointer rests on when no drawing tool or Zoom In holds it. Seeded from the
+    /// saved options (`prefs.cursor`) and written back to them when the user picks another.
+    pub(super) cursor: CursorMode,
     /// The strip's options: the magnet, keep drawing, and the tool each grouped tile shows.
     pub(super) prefs: DrawingPrefs,
     /// The strip's options as last saved, to notice a change.
@@ -35,6 +38,7 @@ impl Default for DrawingTools {
         Self {
             active: Tool::Cursor,
             zoom_armed: false,
+            cursor: CursorMode::default(),
             prefs: DrawingPrefs::default(),
             saved_prefs: DrawingPrefs::default(),
             templates: None,
@@ -54,6 +58,29 @@ impl DrawingTools {
 
     pub(in crate::workspace) fn is_zoom_armed(&self) -> bool {
         self.zoom_armed
+    }
+
+    /// The cursor in force: the chosen one at rest, the cross while a drawing tool or Zoom In is
+    /// armed (placing an anchor needs the lines and the tags).
+    pub(in crate::workspace) fn cursor(&self) -> CursorMode {
+        if self.active != Tool::Cursor || self.zoom_armed {
+            CursorMode::Cross
+        } else {
+            self.cursor
+        }
+    }
+
+    /// The cursor the user chose, whether or not a tool holds the pointer now.
+    pub(in crate::workspace) fn chosen_cursor(&self) -> CursorMode {
+        self.cursor
+    }
+
+    /// Puts the pointer on `mode`: any armed drawing tool and Zoom In are put down.
+    pub(in crate::workspace) fn choose_cursor(&mut self, mode: CursorMode) {
+        self.cursor = mode;
+        self.prefs.cursor = mode;
+        self.active = Tool::Cursor;
+        self.zoom_armed = false;
     }
 
     /// Zoom In and a drawing tool are one choice: whichever was picked last holds the pointer, so

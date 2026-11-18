@@ -659,6 +659,10 @@ impl ChartCard {
             );
         }
 
+        if let Some(crosshair) = decor.crosshair.filter(|_| main_visible) {
+            self.paint_dot(painter, plot, decor.chart_id, crosshair);
+        }
+
         if main_visible {
             overlays.finish(data, layout, view, &overlay_frame);
         }

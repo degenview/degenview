@@ -1124,6 +1124,46 @@ fn the_ohlc_readout_hides_without_touching_the_crosshair() {
     );
 }
 
+#[test]
+fn each_cursor_keeps_only_its_own_parts_of_the_crosshair() {
+    use crate::model::CursorMode;
+    let line = Color32::from_gray(135).gamma_multiply(0.6);
+    let tag = Color32::from_gray(79);
+    let readout = |drawn: &Drawn| {
+        ["O ", "H ", "L ", "C "].into_iter().all(|label| {
+            drawn
+                .texts
+                .iter()
+                .any(|(_, text, _)| text.starts_with(label))
+        })
+    };
+    for (mode, lines, tags) in [
+        (CursorMode::Cross, true, true),
+        (CursorMode::Dot, false, true),
+        (CursorMode::Arrow, false, false),
+    ] {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.card.set_cursor_mode(mode);
+        harness.crosshair = Some(CrosshairInfo {
+            frozen: false,
+            owner_id: 1,
+            x_fraction: 0.5,
+            time: None,
+            price: 230.0,
+        });
+        let (drawn, _) = harness.draw();
+        let drawn_lines = drawn
+            .segments
+            .iter()
+            .filter(|(_, stroke)| stroke.color == line)
+            .count();
+        let drawn_tags = drawn.rects.iter().filter(|(_, fill)| *fill == tag).count();
+        assert_eq!(drawn_lines > 0, lines, "{mode:?} lines: {drawn_lines}");
+        assert_eq!(drawn_tags, if tags { 2 } else { 0 }, "{mode:?} tags");
+        assert!(readout(&drawn), "{mode:?} still names the bar");
+    }
+}
+
 // MARK: Presentation only
 
 #[test]

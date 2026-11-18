@@ -262,6 +262,12 @@ pub enum Icon {
     Branding,
     /// A circular arrow turning back: Restart's mirror image.
     ResetView,
+    /// The Cross cursor: a thin plus with the pointer's own gap at its centre.
+    CursorCross,
+    /// The Dot cursor: one small solid dot.
+    CursorDot,
+    /// The Arrow cursor: the classic pointer, outlined.
+    CursorArrow,
 }
 
 /// Stroke width on the 16 grid.
@@ -531,6 +537,22 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&[p(8.0, 3.0), p(8.0, 13.0)]);
             line(&[p(3.0, 8.0), p(13.0, 8.0)]);
         }
+        Icon::CursorCross => {
+            line(&[p(8.0, 1.8), p(8.0, 6.0)]);
+            line(&[p(8.0, 10.0), p(8.0, 14.2)]);
+            line(&[p(1.8, 8.0), p(6.0, 8.0)]);
+            line(&[p(10.0, 8.0), p(14.2, 8.0)]);
+        }
+        Icon::CursorDot => circle(p(8.0, 8.0), 2.6, true),
+        Icon::CursorArrow => closed(&[
+            p(3.6, 2.0),
+            p(3.6, 13.0),
+            p(6.4, 10.2),
+            p(8.6, 14.4),
+            p(10.6, 13.5),
+            p(8.5, 9.4),
+            p(12.4, 9.4),
+        ]),
         Icon::PlusCircle => {
             circle(p(8.0, 8.0), 6.4, false);
             line(&[p(8.0, 5.0), p(8.0, 11.0)]);
@@ -2622,6 +2644,9 @@ mod tests {
             Indicators,
             Branding,
             ResetView,
+            CursorCross,
+            CursorDot,
+            CursorArrow,
         ];
         for icon in all {
             let ctx = egui::Context::default();

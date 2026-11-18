@@ -159,6 +159,7 @@ impl ChartWorkspace {
             let prefs = templates.prefs();
             self.tools.prefs = prefs;
             self.tools.saved_prefs = prefs;
+            self.tools.cursor = prefs.cursor;
             self.tools.templates = Some(templates);
         }
         let templates = self.tools.templates.as_mut().expect("opened just above");

@@ -56,7 +56,7 @@ plot, by whether a drawing gesture claimed it (`DrawingLayer::claims_drag`, chec
 | Wheel, Ctrl/⌘ + wheel or pinch over the price axis | Stretches the price range as dragging the axis does (`VerticalViewport::stretch`, applied to the current range each frame; wheeling up makes the candles taller like dragging up). Autoscale stays on; a manual range scales about its centre. The time is left alone. |
 | Sideways trackpad swipe | Scrolls through time (swiping right shows older bars). Mostly vertical swipes still zoom. |
 | Escape during a drag | The view returns to where the press found it; the rest of the drag is ignored. The Escape is reported as consumed so nothing else answers it. |
-| Cursor | Crosshair over the plot (unless a drawing chose one), a grabbing hand while panning, resize arrows on the axes. |
+| Cursor | The chosen cursor's pointer over the plot (crosshair for Cross, hidden for Dot, the platform arrow for Arrow, unless a drawing chose one; [Chart cursors](chart-cursors.md)), a grabbing hand while panning, resize arrows on the axes. |
 
 A drag that began on a drawing handle or body edits the drawing; a drag on a **locked** drawing pans
 (the layer starts no gesture for it); with a drawing tool active the drag draws. Panning produces no
@@ -72,7 +72,7 @@ Linking the charts of a workspace is built on this viewport: see [linked charts]
 
 The magnifying-glass tile under the Ruler arms a **mode** (`DrawingTools::is_zoom_armed`), not a
 drawing tool: there is no `Tool` variant, no `Geometry`, nothing stored, synced or put in a
-template. The zoom itself is an undo step (below). Arming it puts any drawing tool down and arming a drawing tool (or the crosshair tile, or
+template. The zoom itself is an undo step (below). Arming it puts any drawing tool down and arming a drawing tool (or picking a cursor, or
 Escape) puts it down; a finished zoom does too, whatever the Keep drawing setting says.
 
 | Input | Result |

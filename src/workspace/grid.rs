@@ -255,6 +255,7 @@ impl ChartWorkspace {
         self.give_pointer_to_tool_over_selection();
         let selecting_portion = self.is_selecting_portion();
         let (active_tool, zoom_armed) = (self.tools.active_tool(), self.tools.is_zoom_armed());
+        let cursor = self.tools.cursor();
         let selected_drawing = self.tools.selection().cloned();
         let (magnet, keep_drawing, hide_all_drawings) = (
             self.tools.magnet(),
@@ -546,6 +547,7 @@ impl ChartWorkspace {
                                                     .map(|(_, draft)| draft),
                                             );
                                             chart.chart.set_zoom_armed(zoom_armed);
+                                            chart.chart.set_cursor_mode(cursor);
                                             chart.chart.set_snapshot_select(selecting_portion);
                                             let for_logs = logs_chart == Some(chart_id);
                                             chart

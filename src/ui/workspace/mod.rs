@@ -1,5 +1,6 @@
 //! Workspace chrome: toolbar, tool rail, layouts, empty page and chart linking.
 
+pub mod cursor_menu;
 pub mod empty_state;
 pub mod favorites_bar;
 pub mod grid_drop;

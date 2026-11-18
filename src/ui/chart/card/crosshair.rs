@@ -47,13 +47,17 @@ impl ChartCard {
         info: &CrosshairBars,
     ) {
         let line = style.crosshair;
+        let caps = self.cursor.caps();
 
         // Vertical line — every chart draws it at the shared column, through the price chart and
         // on through each script pane under it.
-        if main_visible && !crosshair.frozen {
+        if caps.lines && main_visible && !crosshair.frozen {
             canvas::vertical(painter, x, (plot.top(), plot.bottom()), line);
         }
-        for pane in pane_rects.iter().filter(|_| !crosshair.frozen) {
+        for pane in pane_rects
+            .iter()
+            .filter(|_| caps.lines && !crosshair.frozen)
+        {
             if pane.height() > crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT {
                 canvas::vertical(painter, x, (pane.top(), pane.bottom()), line);
             }
@@ -63,21 +67,25 @@ impl ChartCard {
         if main_visible && crosshair.owner_id == chart_id && !crosshair.frozen {
             let y = scale.y(crosshair.price);
             if plot.y_range().contains(y) {
-                canvas::horizontal(painter, (plot.left(), plot.right()), y, line);
-                let half = style.tag_half_height();
-                let price_tag = Rect::from_min_max(
-                    Pos2::new(plot.right() + 3.0, y - half),
-                    Pos2::new(rect.right() - 3.0, y + half),
-                );
-                painter.rect_filled(price_tag, 3.0, Color32::from_gray(79));
-                price_text::paint(
-                    painter,
-                    price_tag.center(),
-                    Align2::CENTER_CENTER,
-                    &scale.tag_label(self.appearance.price_format(), crosshair.price),
-                    style.price_font(),
-                    Color32::WHITE,
-                );
+                if caps.lines {
+                    canvas::horizontal(painter, (plot.left(), plot.right()), y, line);
+                }
+                if caps.axis_tags {
+                    let half = style.tag_half_height();
+                    let price_tag = Rect::from_min_max(
+                        Pos2::new(plot.right() + 3.0, y - half),
+                        Pos2::new(rect.right() - 3.0, y + half),
+                    );
+                    painter.rect_filled(price_tag, 3.0, Color32::from_gray(79));
+                    price_text::paint(
+                        painter,
+                        price_tag.center(),
+                        Align2::CENTER_CENTER,
+                        &scale.tag_label(self.appearance.price_format(), crosshair.price),
+                        style.price_font(),
+                        Color32::WHITE,
+                    );
+                }
             }
         }
 
@@ -89,7 +97,7 @@ impl ChartCard {
             return;
         };
 
-        if !crosshair.frozen {
+        if caps.axis_tags && !crosshair.frozen {
             let date = format::timestamp(candle.open_time);
             let time_tag_width = 116.0 * style.time_size / 9.0;
             let time_tag = Rect::from_center_size(
@@ -112,7 +120,7 @@ impl ChartCard {
 
         // The header covers the plot's top, so the readouts start under it.
         let below_header = self.below_header(plot);
-        let readout_bottom = if style.ohlc_readout {
+        let readout_bottom = if style.ohlc_readout && caps.readout {
             let previous_close = match index.checked_sub(1) {
                 Some(before) => Some(candles[before].close),
                 None => info.previous_close,

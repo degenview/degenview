@@ -13,6 +13,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | The symbol picker (⌘K, Add Chart and a watchlist's plus: markets, prediction markets, indices and portfolio cards), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
 | Any UI: a new or restyled window, sheet, panel, card, sidebar, icon, menu, button, link or dialog | [UI style](docs/agent-guides/ui-style.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
+| The cursor menu (Cross, Dot, Arrow, Demonstration, Eraser), the crosshair's parts, the pointer shape over a plot, or the values tooltip on long press | [Chart cursors](docs/chart-cursors.md) |
 | The Screenshot Studio, Select portion, snapshot compositions or backgrounds, or the camera menu | [Chart snapshots](docs/snapshots.md) |
 | Markets compared on a chart (Compare, overlays), their data, scales, legend or the picker's compare mode | [Chart overlays](docs/chart-overlays.md) |
 | The Portfolio tab: Overview, Holdings, Transactions, Statistics, their empty states, or portfolio revaluation | [Portfolio page](docs/portfolio-page.md) |
@@ -127,6 +128,7 @@ old output). Finished worktrees are where the disk goes.
 
 - [Architecture](docs/architecture.md) — module map, data flow.
 - [Chart types](docs/chart-types.md) — construction rules, Pine semantics.
+- [Chart cursors](docs/chart-cursors.md) — the cursor modes and the capability table that decides what each shows.
 - [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, unverified items.
 - [Price scale modes](docs/price-scale.md) — Regular, Percent, Indexed to 100, Logarithmic; reference price, ticks, corner menu, persistence.
 - [Linked charts](docs/chart-sync.md) — position/zoom sync between a workspace's charts.

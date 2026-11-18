@@ -345,6 +345,11 @@ pub struct ChartCard {
     /// The workspace's Select portion mode is on: the pointer is the selection's, not the
     /// chart's. View state, never saved.
     snapshot_select: bool,
+    /// The workspace's cursor: which parts of the crosshair show and what the pointer looks like.
+    /// View state, never saved with the chart.
+    cursor: crate::model::CursorMode,
+    /// The Dot cursor hid the system pointer on the last frame, so the card paints its own mark.
+    dot_shown: bool,
     /// Bars that arrived at the newest end since this card began, whatever the view showed: what a
     /// stored view is translated by (see [`zoom_rect::ViewStep`]).
     arrivals: u64,
@@ -431,6 +436,8 @@ impl Default for ChartCard {
             zoom: zoom_rect::ZoomTool::default(),
             zoom_exact: 0.0,
             snapshot_select: false,
+            cursor: crate::model::CursorMode::default(),
+            dot_shown: false,
             arrivals: 0,
             series_epoch: 0,
             drawn_series: None,
@@ -766,6 +773,7 @@ mod bar_marker;
 mod body;
 mod context;
 mod crosshair;
+mod cursor;
 mod frame;
 mod header;
 mod live_overlays;

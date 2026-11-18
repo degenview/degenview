@@ -963,6 +963,64 @@ fn the_cursor_is_a_crosshair_over_the_plot_and_a_hand_while_dragging() {
     assert_eq!(cursor(&rig), egui::CursorIcon::Crosshair);
 }
 
+#[test]
+fn each_cursor_shows_its_own_pointer_over_the_plot_and_the_axes_keep_theirs() {
+    use crate::model::CursorMode;
+    for (mode, over_plot) in [
+        (CursorMode::Cross, egui::CursorIcon::Crosshair),
+        (CursorMode::Dot, egui::CursorIcon::None),
+        (CursorMode::Arrow, egui::CursorIcon::Default),
+    ] {
+        let mut rig = Rig::new();
+        rig.card.set_cursor_mode(mode);
+        let plot = rig.in_plot();
+        rig.frame(vec![egui::Event::PointerMoved(plot)]);
+        rig.frame(Vec::new());
+        assert_eq!(rig.cursor, over_plot, "{mode:?} over the plot");
+        assert_eq!(rig.card.dot_shown, mode == CursorMode::Dot);
+        let price_axis = rig.on_price_axis();
+        rig.frame(vec![egui::Event::PointerMoved(price_axis)]);
+        rig.frame(Vec::new());
+        assert_eq!(rig.cursor, egui::CursorIcon::ResizeVertical, "{mode:?}");
+        assert!(!rig.card.dot_shown, "the dot stays on the plot");
+        let time_axis = rig.on_time_axis();
+        rig.frame(vec![egui::Event::PointerMoved(time_axis)]);
+        rig.frame(Vec::new());
+        assert_eq!(rig.cursor, egui::CursorIcon::ResizeHorizontal, "{mode:?}");
+    }
+}
+
+#[test]
+fn every_resting_cursor_pans_with_a_drag_and_the_dot_follows_the_hand() {
+    use crate::model::CursorMode;
+    for mode in CursorMode::ALL {
+        let mut rig = Rig::new();
+        rig.card.set_cursor_mode(mode);
+        let from = rig.in_plot();
+        rig.drag(from, Vec2::new(100.0, 0.0));
+        assert!(rig.offset() > 0.0, "{mode:?} pans: {}", rig.offset());
+        assert!(
+            rig.card.viewport.vertical.is_auto(),
+            "{mode:?} left the price scale alone"
+        );
+    }
+}
+
+#[test]
+fn a_cursor_change_moves_nothing_on_the_chart() {
+    use crate::model::CursorMode;
+    let mut rig = Rig::new();
+    rig.card.viewport.horizontal.right_offset = 37.5;
+    rig.frames(&[]);
+    let (offset, range) = (rig.offset(), rig.range());
+    for mode in CursorMode::ALL {
+        rig.card.set_cursor_mode(mode);
+        rig.frames(&[]);
+        assert_eq!(rig.offset(), offset, "{mode:?} kept the view");
+        assert_eq!(rig.range(), range, "{mode:?} kept the price range");
+    }
+}
+
 // MARK: Cost
 
 /// Prints what a frame of a drag costs over long histories. Run with
