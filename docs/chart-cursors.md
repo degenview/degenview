@@ -46,7 +46,10 @@ an anchor needs the lines and the tags), and Esc or the tile brings it back.
 `ui/drawing/layer/erase.rs`. The mode (`DrawingFrame::erase`, from `caps.erases`) takes the drawing
 layer's pointer in place of selecting, editing and drawing:
 
-- A press on the plot starts a **sweep**; every drawing the pointer passes over is marked (drawn at
+- A press on the plot starts a **sweep** at the position of the press, read from the frame's own
+  events (so a move that arrives with the press loses nothing, and a click or flick whose press and
+  release share one frame still erases; one that ends on an overlay widget, an alert tag or an order
+  pill, is that widget's, not erased); every drawing the pointer passes over is marked (drawn at
   30 % opacity) and the mark is listed once. Letting go removes them all as one batch of
   `DrawingCommand::Remove`, so the whole sweep is **one undo step**, and a click is a sweep of one.
   Nothing is removed while the button is down, so Esc cancels a sweep (and the rest of that press does

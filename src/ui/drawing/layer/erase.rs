@@ -18,6 +18,40 @@ pub(super) struct Sweep {
     pub(super) ids: Vec<u64>,
 }
 
+/// A primary press that began in one frame.
+struct Press {
+    /// Where the button went down.
+    origin: Pos2,
+    /// The button also came up in the same frame.
+    released: bool,
+}
+
+/// The first primary press among a frame's raw events, and whether a release followed it.
+fn primary_press(events: &[egui::Event]) -> Option<Press> {
+    let mut press: Option<Press> = None;
+    for event in events {
+        if let egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            ..
+        } = event
+        {
+            match (&mut press, pressed) {
+                (None, true) => {
+                    press = Some(Press {
+                        origin: *pos,
+                        released: false,
+                    })
+                }
+                (Some(press), false) => press.released = true,
+                _ => {}
+            }
+        }
+    }
+    press
+}
+
 impl DrawingLayer {
     /// One frame of the Eraser. Takes the place of selecting, editing and drawing. `unseen` is
     /// that the card was not drawn since the last frame (another tab showed): a sweep begun
@@ -31,10 +65,10 @@ impl DrawingLayer {
         pointer: Option<Pos2>,
         unseen: bool,
     ) {
-        let (down, pressed, escape, focused) = ui.input(|input| {
+        let (down, press, escape, focused) = ui.input(|input| {
             (
                 input.pointer.primary_down(),
-                input.pointer.primary_pressed(),
+                primary_press(&input.events),
                 input.key_pressed(egui::Key::Escape),
                 input.focused,
             )
@@ -70,18 +104,37 @@ impl DrawingLayer {
             return;
         }
 
+        // A press that began this frame, from the frame's own events: its position is not the
+        // pointer's (the move can arrive with it) and a press and release sharing the frame leave
+        // no press origin and no held button for the response to report.
+        if let Some(press) = press
+            && proj.plot.contains(press.origin)
+            && !self.cancelled_drag
+            && (response.is_pointer_button_down_on()
+                // Over before the frame was out: the plot's own gesture if the pointer ended on the
+                // plot and no widget over it (an alert tag, an order pill) took the press.
+                || (press.released && response.hovered()))
+        {
+            let mut sweep = Sweep {
+                last: press.origin,
+                ids: Vec::new(),
+            };
+            self.sweep_to(&mut sweep, press.origin, frame, proj);
+            if let Some(now) = pointer {
+                self.sweep_to(&mut sweep, proj.clamp(now), frame, proj);
+            }
+            if press.released {
+                frame
+                    .commands
+                    .extend(sweep.ids.into_iter().map(DrawingCommand::Remove));
+            } else {
+                self.sweep = Some(sweep);
+            }
+            return;
+        }
         let Some(point) = inside.filter(|_| response.hovered()) else {
             return;
         };
-        if pressed && !self.cancelled_drag && response.is_pointer_button_down_on() {
-            let mut sweep = Sweep {
-                last: point,
-                ids: Vec::new(),
-            };
-            self.sweep_to(&mut sweep, point, frame, proj);
-            self.sweep = Some(sweep);
-            return;
-        }
         match self.hit_test(frame, point, proj, false) {
             Some(hit) if hit.locked => self.erase_blocked = true,
             hit => self.hover = hit,
