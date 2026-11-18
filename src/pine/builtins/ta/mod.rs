@@ -1236,6 +1236,55 @@ mod tests {
         assert!(last > 0.0 && last < 5.0, "{last}");
     }
 
+    /// `ta.rsi` over a series that may hold `na`, one bar at a time.
+    fn run_rsi_with_gaps(series: &[Option<f64>], length: i64) -> Vec<Option<f64>> {
+        let mut state = State::default();
+        series
+            .iter()
+            .map(|value| {
+                let source = value.map_or(RuntimeValue::Na, float);
+                evaluate("ta.rsi", &source, &RuntimeValue::Na, length, &mut state).number()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn rsi_skips_missing_values_instead_of_restarting() {
+        let gaps = [
+            Some(1.0),
+            None,
+            Some(2.0),
+            None,
+            Some(3.0),
+            None,
+            Some(4.0),
+            None,
+            Some(5.0),
+        ];
+        // Changes are between the valid values; a missing bar repeats the last result.
+        let values = run_rsi_with_gaps(&gaps, 3);
+        assert_eq!(
+            values,
+            [
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(100.0),
+                Some(100.0),
+                Some(100.0)
+            ]
+        );
+        assert_eq!(run_rsi_with_gaps(&gaps, 1)[2], Some(100.0));
+        // Leading `na` (a warm-up) changes nothing: same values as without it.
+        let plain = numbers(&run("ta.rsi", &[10.0, 11.0, 10.5, 11.5, 11.0], 3));
+        let mut padded = vec![None, None];
+        padded.extend([10.0, 11.0, 10.5, 11.5, 11.0].map(Some));
+        assert_eq!(run_rsi_with_gaps(&padded, 3)[2..], plain);
+    }
+
     #[test]
     fn cross_compares_this_bar_to_the_last() {
         let mut state = State::default();

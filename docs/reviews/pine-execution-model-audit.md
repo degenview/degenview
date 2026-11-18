@@ -275,8 +275,10 @@ previous *call*, not the previous chart bar. Called conditionally (`if bar_index
 quirk" of the Swift app), so it read 0 or 100 whenever the window moved one way and plots such as the
 X-trender (`ta.rsi(ta.alma(…), 9) - 50`) saturated at ±50 where TradingView's stay inside ±30. Now
 `ta.rsi` is `100 - 100 / (1 + rma(gain) / rma(loss))`, TradingView's definition (`extra::rsi`); the first
-value comes on bar `length`, and no losses stays 100. Saved scripts that use it plot and trade
-differently.
+value comes on bar `length`, and no losses stays 100. A missing source value inside the series is
+skipped (the bar repeats the last result, a change is taken between the two latest values that exist),
+as `ta.sma` and `ta.rma` skip it here (item 23); what TradingView's reference RMA does after an interior
+gap (it probably restarts) is unchecked. Saved scripts that use it plot and trade differently.
 
 **23. `na` in a window.** `sma`, `highest`, `lowest` and `rsi` use `last_valid` (`ta.rs:648-684, 707`), which
 compresses over `na`; `wma`, `stdev`, `median`, `variance`, `cci` use the strict `last_window`. The module
