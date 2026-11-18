@@ -443,6 +443,26 @@ impl Rig {
         self.apply(commands);
     }
 
+    /// Frames in which the card is not drawn (another tab is showing): the window keeps running
+    /// and delivers `events`, but the layer is not updated.
+    fn skip_frames(&mut self, events: Vec<Event>) {
+        for (index, events) in std::iter::once(events)
+            .chain(std::iter::repeat_n(Vec::new(), 2))
+            .enumerate()
+        {
+            self.time += 0.1;
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 400.0))),
+                time: Some(self.time),
+                focused: self.focused,
+                events: if index == 0 { events } else { Vec::new() },
+                ..Default::default()
+            };
+            let mut output = self.ctx.run_ui(input, |_ui| {});
+            output.textures_delta.clear();
+        }
+    }
+
     /// What `ChartWorkspace::apply_drawing_commands` does, minus the undo stack's contents.
     fn apply(&mut self, commands: Vec<DrawingCommand>) {
         if crate::model::drawings::apply_commands(&mut self.drawings, commands) {

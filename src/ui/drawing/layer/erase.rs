@@ -21,7 +21,9 @@ pub(super) struct Sweep {
 }
 
 impl DrawingLayer {
-    /// One frame of the Eraser. Takes the place of selecting, editing and drawing.
+    /// One frame of the Eraser. Takes the place of selecting, editing and drawing. `unseen` is
+    /// that the card was not drawn since the last frame (another tab showed): a sweep begun
+    /// before that is dropped, as a gesture is, so a release made while away erases nothing.
     pub(super) fn update_eraser(
         &mut self,
         ui: &egui::Ui,
@@ -29,6 +31,7 @@ impl DrawingLayer {
         proj: &Projection,
         frame: &mut DrawingFrame,
         pointer: Option<Pos2>,
+        unseen: bool,
     ) {
         let (down, pressed, escape, focused) = ui.input(|input| {
             (
@@ -47,7 +50,7 @@ impl DrawingLayer {
         let inside = pointer.filter(|point| proj.plot.contains(*point));
 
         if let Some(mut sweep) = self.sweep.take() {
-            if escape || !focused {
+            if escape || !focused || unseen {
                 // Cancelled: nothing is erased, and the rest of the press does not pan.
                 frame.escape_consumed |= escape;
                 self.cancelled_drag = down;
