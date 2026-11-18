@@ -216,7 +216,9 @@ impl ChartCard {
                 plot,
             );
         }
-        if layout.main_visible && !held {
+        // Not while a drawing tool is armed: its press places anchors and drags out shapes, which
+        // the drawing layer (run above, before this) has already begun by the time a hold shows.
+        if layout.main_visible && !held && drawing.tool == crate::model::Tool::Cursor {
             let blocked =
                 replay.selecting || self.layer.claims_drag() || self.demonstration_claims_drag();
             self.handle_hold(ui, response, plot, blocked);

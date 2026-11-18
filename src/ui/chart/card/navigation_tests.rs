@@ -1309,6 +1309,28 @@ fn a_press_the_tooltip_never_took_keeps_its_long_touch_menu() {
 }
 
 #[test]
+fn an_armed_drawing_tool_never_has_its_press_taken_by_the_tooltip() {
+    let mut rig = Rig::new();
+    rig.tool = Tool::TrendLine;
+    rig.frames(&[]);
+    let from = rig.in_plot();
+    let to = from + Vec2::new(120.0, 40.0);
+    rig.press(from);
+    // Held still well past the long press, then dragged: the drag draws the line.
+    rig.time += 0.6;
+    rig.frame(Vec::new());
+    rig.frame(Vec::new());
+    assert!(
+        !rig.card.shows_values_tooltip(),
+        "a tool is armed: no tooltip"
+    );
+    assert!(!rig.long_press_values);
+    rig.drag_to(from, to);
+    rig.release(to);
+    assert!(rig.commands >= 1, "the drag placed its line");
+}
+
+#[test]
 fn a_cursor_change_moves_nothing_on_the_chart() {
     use crate::model::CursorMode;
     let mut rig = Rig::new();

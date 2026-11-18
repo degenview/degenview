@@ -365,3 +365,75 @@ fn a_tooltip_that_fits_has_no_counter_and_a_long_name_is_cut_to_the_plot() {
         "a long name widened the box {boxes:?} past the plot {plot:?}"
     );
 }
+
+#[test]
+fn long_values_wrap_inside_a_narrow_chart_and_stay_inside_the_box() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    harness.size = Vec2::new(360.0, 520.0);
+    harness.crosshair = Some(CrosshairInfo {
+        frozen: false,
+        owner_id: 1,
+        x_fraction: 0.5,
+        time: None,
+        price: 230.0,
+    });
+    let at = Pos2::new(harness.size.x * 0.5, harness.size.y * 0.4);
+    harness.pointer = Some(at);
+    // Eleven-digit prices to eight places: a four-price candle row is far wider than the chart.
+    let script = "//@version=6\nindicator(\"Wide\", overlay = true)\n\
+        plotcandle(close * 1e9, close * 1e9 + 1e8, close * 1e9 - 1e8, close * 1e9 + 12345678.12345678, title = \"Candle\")\n\
+        plot(close * 1e9 + 0.12345678, title = \"Big\")\n";
+    let id = harness.card.add_pine_instance(None, "Wide", script);
+    wait_for_run(&mut harness, id);
+    harness.draw();
+    press(&mut harness);
+    wait(&mut harness, LONG);
+    let frame = harness.frame();
+    let plot = harness.card.probe.expect("the chart was drawn").plot;
+    let drawn = gather(&frame.0);
+    let boxed = theme::chrome().gamma_multiply(0.97);
+    let boxes: Vec<Rect> = drawn
+        .rects
+        .iter()
+        .filter(|(_, fill)| *fill == boxed)
+        .map(|(rect, _)| *rect)
+        .collect();
+    assert_eq!(boxes.len(), 1, "the tooltip is drawn");
+    let boxed = boxes[0];
+    assert!(
+        plot.expand(0.5).contains_rect(boxed),
+        "the box {boxed:?} is not inside the plot {plot:?}"
+    );
+    // Everything the tooltip wrote, as drawn, lies inside its box: a long value neither runs off
+    // the box nor lands on its name.
+    let mut written = Vec::new();
+    for clipped in &frame.0 {
+        collect_text(&clipped.shape, &mut written);
+    }
+    let rows: Vec<_> = written
+        .iter()
+        .filter(|(rect, _)| {
+            rect.top() >= boxed.top() - 0.5
+                && rect.top() <= boxed.bottom()
+                && rect.left() < plot.right()
+        })
+        .collect();
+    assert!(rows.len() > 8, "rows were drawn: {rows:?}");
+    for (rect, text) in rows {
+        assert!(
+            boxed.expand(0.5).contains_rect(*rect),
+            "{text} is drawn over {rect:?}, outside the box {boxed:?}"
+        );
+    }
+}
+
+/// The rectangle and words of every text in `shape`.
+fn collect_text(shape: &Shape, out: &mut Vec<(Rect, String)>) {
+    match shape {
+        Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect_text(shape, out)),
+        Shape::Text(text) => {
+            out.push((shape.visual_bounding_rect(), text.galley.text().to_owned()))
+        }
+        _ => {}
+    }
+}
