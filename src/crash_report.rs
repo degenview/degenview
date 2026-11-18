@@ -1,8 +1,11 @@
-//! What a user can send us when the app stops.
+//! What a user can send us when the app stops or does not open.
 //!
-//! A release build on Windows has no console, so a panic leaves nothing to look at: the window
-//! closes and the user is told nothing. A panic hook fixes both halves:
+//! A release build on Windows has no console, so a panic, or a start that stalls before a window
+//! shows, leaves nothing to look at. Two small files in the data directory fix that:
 //!
+//! - `startup.log` is rewritten at every launch with the stages reached (database open, graphics
+//!   ready with the adapter in use, first window drawn, first frame presented). When the app runs
+//!   but shows nothing, the last line says where it stopped.
 //! - `crash.log` in the data directory collects panics, newest last: message, location, thread and
 //!   backtrace. It is capped (`MAX_CRASH_LOG`) so a panic in a loop cannot fill the disk.
 //! - A panic on the main thread also calls the notifier the binary passes in, which shows a message
@@ -12,8 +15,12 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use eframe::egui;
+
+const STARTUP_LOG: &str = "startup.log";
 const CRASH_LOG: &str = "crash.log";
 /// The log never grows past this: an entry that would not fit starts the file afresh.
 const MAX_CRASH_LOG: u64 = 256 * 1024;
@@ -27,6 +34,89 @@ fn unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+fn since_start() -> f64 {
+    static START: OnceLock<Instant> = OnceLock::new();
+    START.get_or_init(Instant::now).elapsed().as_secs_f64()
+}
+
+/// Starts a fresh `startup.log` with the facts that say which build and machine it came from.
+pub fn begin_startup_log() {
+    let Some(dir) = crate::store::data_dir() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    let header = format!(
+        "DegenView {} ({}) on {} {}, started at unix {}\n",
+        env!("CARGO_PKG_VERSION"),
+        crate::host::update::BUILD_ID,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        unix_seconds(),
+    );
+    let _ = std::fs::write(dir.join(STARTUP_LOG), header);
+    since_start();
+}
+
+/// Appends one stage to `startup.log`, with the seconds since the log began.
+pub fn note(stage: &str) {
+    let Some(dir) = crate::store::data_dir() else {
+        return;
+    };
+    let line = format!("[+{:.3}s] {stage}\n", since_start());
+    let _ = append(&dir.join(STARTUP_LOG), &line);
+}
+
+/// Tags the screenshot the first frame asks for, so no other screenshot is taken for it.
+struct FrameProbe;
+
+enum Probe {
+    /// No window has drawn yet.
+    Idle,
+    /// The window of this viewport drew and asked for a screenshot of its frame.
+    Asked(egui::ViewportId),
+    Done,
+}
+
+/// Called by every window while it builds its UI. The first call logs "first tab window drawn" and
+/// asks for a screenshot of that frame. The reply only comes once the frame was painted and the GPU
+/// finished with it, so "first frame presented" in `startup.log` means a window really rendered; a
+/// driver that hangs in rendering or presenting stops the log at "first tab window drawn".
+pub fn confirm_first_frame(ctx: &egui::Context) {
+    static PROBE: Mutex<Probe> = Mutex::new(Probe::Idle);
+    let Ok(mut probe) = PROBE.lock() else { return };
+    match *probe {
+        Probe::Idle => {
+            *probe = Probe::Asked(ctx.viewport_id());
+            drop(probe);
+            note("first tab window drawn");
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
+                FrameProbe,
+            )));
+            ctx.request_repaint();
+        }
+        Probe::Asked(viewport) if viewport == ctx.viewport_id() => {
+            let answered = ctx.input(|input| {
+                input.events.iter().any(|event| match event {
+                    egui::Event::Screenshot { user_data, .. } => user_data
+                        .data
+                        .as_ref()
+                        .is_some_and(|data| data.is::<FrameProbe>()),
+                    _ => false,
+                })
+            });
+            if answered {
+                *probe = Probe::Done;
+                drop(probe);
+                note("first frame presented");
+            } else {
+                // The reply is read back a frame or more later; an idle window would not ask for one.
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            }
+        }
+        Probe::Asked(_) | Probe::Done => {}
+    }
 }
 
 /// `text` cut to at most `max` bytes (marker included) on a character boundary.

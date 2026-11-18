@@ -327,6 +327,24 @@ hook first thing in `main`:
 
 Not verified on Windows: the `MessageBoxW` path is `main`'s existing startup-error one, new title.
 
+### Startup diagnostics
+
+A start that stalls before a window shows leaves nothing at all (no panic, no dialog).
+`src/crash_report.rs` also writes `startup.log` in the data directory (`%APPDATA%\es.nico.degenview`),
+rewritten every launch: version, build, OS, then the stages reached (database open, graphics ready
+with the wgpu adapter and backend, first tab window drawn, first frame presented). "Drawn" is the UI
+callback running; "presented" is logged when the screenshot the first frame asked for comes back,
+which needs the frame painted and the GPU done with it, so a driver that hangs in rendering stops
+the log at "drawn". The last line says where a start that shows nothing stopped; a start that returns an error adds `failed: ...`. Panics go to `crash.log`
+(see Panics on Windows above).
+
+CI job `smoke-windows` (x64 and ARM64) builds the release exe, launches it against a scratch
+`APPDATA` and waits for "first frame presented" in `startup.log`, then checks it is still running
+15 s later. The runners have no GPU, so wgpu uses the WARP software adapter: this proves the startup
+path and window loop, not a real driver (an old Intel driver, a VM, an overlay that hooks DXGI).
+Ask a reporter for both logs, the Windows version and whether SmartScreen appeared; try
+`set WGPU_BACKEND=gl` or `dx12` from `cmd` to separate a backend problem.
+
 ### Windows installer
 
 `DegenView-<tag>-windows-x64-setup.exe` / `-windows-arm64-setup.exe` via
