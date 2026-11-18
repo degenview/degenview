@@ -315,6 +315,7 @@ impl ChartWorkspace {
         let drawing_defaults = self.drawing_templates().defaults().clone();
         let drawing_preview: Option<(u64, Drawing)> = self.tools.previewed_draft();
         let mut drawing_escape = false;
+        self.reserve_escape_for_favorites_menu(ui.ctx());
         let mut paper_actions = Vec::new();
         let mut quick_trade = None;
         let mut live_actions = Vec::new();
@@ -748,6 +749,7 @@ impl ChartWorkspace {
             &mut commands,
         );
         drawing_escape |= self.drive_portion_selection(&ctx, grid_rect);
+        self.show_favorites_bar(&ctx, grid_rect);
 
         if !favorite_toggles.is_empty() || !watchlist_changes.is_empty() {
             let mut store = lock(&self.watchlist);

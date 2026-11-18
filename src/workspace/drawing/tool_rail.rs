@@ -15,6 +15,7 @@ impl ChartWorkspace {
         // The strip shows the remembered options, so they are read before it is drawn.
         let _ = self.drawing_templates();
         let (has_drawings, all_locked) = self.drawing_lock_state();
+        let favorites = self.favorite_tools();
         let input = tool_sidebar::ToolSidebarInput {
             active_tool: self.tools.active,
             zoom_armed: self.tools.zoom_armed,
@@ -47,6 +48,7 @@ impl ChartWorkspace {
                 .filter(|chart| chart.is_market() && !chart.chart.takes_part_in_sync(chart.source))
                 .map(Chart::display_title)
                 .collect(),
+            favorites,
         };
         let mut actions = Vec::new();
         for action in tool_sidebar::show(ui, &input) {
@@ -73,6 +75,7 @@ impl ChartWorkspace {
                 }
                 ToolSidebarAction::OpenAlerts => actions.push(WorkspaceAction::OpenAlerts),
                 ToolSidebarAction::SetSync(sync) => self.set_sync(sync),
+                ToolSidebarAction::ToggleFavorite(tool) => self.toggle_favorite_tool(tool),
             }
         }
         self.save_drawing_prefs();

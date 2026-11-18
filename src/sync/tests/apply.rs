@@ -400,13 +400,14 @@ fn a_portable_setting_travels_and_local_ones_do_not() {
 }
 
 /// Keys this version keeps on the Mac, from security and consent state to a key it has never heard of.
-const LOCAL_ONLY_KEYS: [&str; 7] = [
+const LOCAL_ONLY_KEYS: [&str; 8] = [
     "mcp.settings",
     "mcp.permissions",
     "ai.prefs",
     "net.proxy",
     "update.channel",
     "content.prefs",
+    "drawing.favoritesBar",
     "from.a.newer.version",
 ];
 

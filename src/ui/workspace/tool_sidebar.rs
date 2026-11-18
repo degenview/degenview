@@ -8,6 +8,7 @@ use eframe::egui::{
     self, Color32, Id, Pos2, Rect, RectAlign, Sense, SetOpenCommand, Stroke, StrokeKind, Ui, Vec2,
     pos2, vec2,
 };
+use std::sync::Arc;
 use std::time::Duration;
 
 pub const WIDTH: f32 = 44.0;
@@ -55,6 +56,8 @@ pub struct ToolSidebarInput {
     pub can_link: bool,
     /// Charts that cannot take part in linking, by title.
     pub unlinkable: Vec<String>,
+    /// The tools starred in the menus, in the order they were starred.
+    pub favorites: Arc<Vec<Tool>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,6 +77,8 @@ pub enum ToolSidebarAction {
     TogglePaper,
     OpenAlerts,
     SetSync(ChartSyncSettings),
+    /// Star `tool`, or take its star away. The menu stays open.
+    ToggleFavorite(Tool),
 }
 
 /// How an active tile is drawn: a lit accent tile for an armed tool, or a tinted glyph on a
@@ -152,14 +157,14 @@ impl Menu {
 
     fn width(self) -> f32 {
         match self {
-            Self::Lines => 268.0,
-            Self::Fib => 268.0,
+            Self::Lines => 292.0,
+            Self::Fib => 292.0,
             // Wide enough for "Elliott triple combo wave (W·X·Y·X·Z)".
-            Self::Patterns => 322.0,
+            Self::Patterns => 346.0,
             // Wide enough for "Fixed range volume profile".
-            Self::Forecast => 268.0,
-            Self::Shapes => 224.0,
-            Self::Notes => 224.0,
+            Self::Forecast => 292.0,
+            Self::Shapes => 248.0,
+            Self::Notes => 248.0,
         }
     }
 
@@ -683,6 +688,9 @@ fn menu_tile(
         .align(RectAlign::RIGHT_START)
         .align_alternatives(&[RectAlign::RIGHT_END])
         .gap(10.0)
+        // A star is clicked inside the menu without picking the tool: only a pick (which closes the
+        // menu itself) or a click outside closes it.
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .frame(kit::menu_frame())
         .width(menu.width());
     popup.show(|ui| tool_menu(ui, input, actions, menu));
@@ -725,7 +733,11 @@ fn tool_menu(
                 ui.add_space(3.0);
                 for tool in Tool::in_group(*group) {
                     let selected = input.active_tool == tool;
-                    let response = menu_row(ui, tool, selected);
+                    let favorite = input.favorites.contains(&tool);
+                    let (response, star) = menu_row(ui, tool, selected, favorite);
+                    if star.clicked() {
+                        actions.push(ToolSidebarAction::ToggleFavorite(tool));
+                    }
                     // Land the keyboard on the armed tool (or the first row) when it opens.
                     let landed = ui.data(|data| data.get_temp::<bool>(seen).unwrap_or(false));
                     if !landed
@@ -749,13 +761,46 @@ fn tool_menu(
     }
 }
 
-/// One row of a menu: glyph, name, the shortcut that arms the tool (if it has one) and a check on
-/// the armed tool.
-fn menu_row(ui: &mut Ui, tool: Tool, selected: bool) -> egui::Response {
+/// The star's target at the right end of a row: a little larger than the glyph, so it is easy to
+/// hit and cannot be mistaken for the row.
+const STAR_TARGET: f32 = 24.0;
+
+/// One row of a menu: glyph, name, the shortcut that arms the tool (if it has one), a check on the
+/// armed tool and the star that marks it a favorite. Returns the row's response and the star's:
+/// the star is a target of its own on top of the row, so a click on it never picks the tool.
+fn menu_row(
+    ui: &mut Ui,
+    tool: Tool,
+    selected: bool,
+    favorite: bool,
+) -> (egui::Response, egui::Response) {
     let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
     let response = crate::ui::accessibility::label(response, tool.label());
-    let highlighted = response.hovered() || response.has_focus();
+    // Made after the row, so it is the one the pointer lands on where the two overlap.
+    let star_rect = Rect::from_center_size(
+        pos2(rect.right() - 16.0, rect.center().y),
+        Vec2::splat(STAR_TARGET),
+    );
+    let star = ui
+        .interact(
+            star_rect,
+            Id::new(("tool-sidebar-star", tool)),
+            Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(if favorite {
+            "Remove from favorites"
+        } else {
+            "Add to favorites"
+        });
+    let star = crate::ui::accessibility::selected_as(
+        star,
+        egui::WidgetType::Checkbox,
+        format!("Favorite {}", tool.label()),
+        favorite,
+    );
+    let highlighted = response.hovered() || star.hovered() || response.has_focus();
     let painter = ui.painter();
     if highlighted {
         painter.rect_filled(rect, 6.0, theme::selected_tint(true));
@@ -776,7 +821,7 @@ fn menu_row(ui: &mut Ui, tool: Tool, selected: bool) -> egui::Response {
         kit::size::BODY,
         kit::REGULAR,
         color,
-        width - 72.0 - hint_width,
+        width - 96.0 - hint_width,
     );
     ui.painter().galley(
         pos2(rect.left() + 38.0, rect.center().y - galley.size().y / 2.0),
@@ -799,7 +844,7 @@ fn menu_row(ui: &mut Ui, tool: Tool, selected: bool) -> egui::Response {
         );
         ui.painter().galley(
             pos2(
-                rect.right() - 32.0 - galley.size().x,
+                rect.right() - 56.0 - galley.size().x,
                 rect.center().y - galley.size().y / 2.0,
             ),
             galley,
@@ -810,14 +855,41 @@ fn menu_row(ui: &mut Ui, tool: Tool, selected: bool) -> egui::Response {
         icons::paint(
             ui.painter(),
             Rect::from_center_size(
-                pos2(rect.right() - 16.0, rect.center().y),
+                pos2(rect.right() - 40.0, rect.center().y),
                 Vec2::splat(12.0),
             ),
             Icon::Check,
             color,
         );
     }
-    response
+    paint_star(ui, &star, favorite, highlighted);
+    (response, star)
+}
+
+/// The star: filled when the tool is a favorite, an outline that brightens with the row and again
+/// under the pointer when it is not.
+fn paint_star(ui: &Ui, star: &egui::Response, favorite: bool, row_highlighted: bool) {
+    let tint = if favorite || star.hovered() {
+        theme::text_primary()
+    } else if row_highlighted {
+        theme::text_secondary()
+    } else {
+        theme::text_tertiary()
+    };
+    if star.has_focus() {
+        ui.painter().rect_stroke(
+            star.rect.shrink(1.0),
+            6.0,
+            Stroke::new(1.0, theme::text_secondary()),
+            StrokeKind::Inside,
+        );
+    }
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(star.rect.center(), Vec2::splat(14.0)),
+        if favorite { Icon::StarFill } else { Icon::Star },
+        tint,
+    );
 }
 
 /// The tile every strip control shares: glyph, hover wash, press feedback, active styles, the
@@ -1086,6 +1158,7 @@ mod tests {
                 },
                 can_link: market,
                 unlinkable: vec!["ETHUSDT (Renko)".to_owned()],
+                favorites: Arc::default(),
             };
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 assert!(show(ui, &state).is_empty(), "nothing was clicked");
@@ -1116,6 +1189,7 @@ mod tests {
             sync: ChartSyncSettings::default(),
             can_link: true,
             unlinkable: Vec::new(),
+            favorites: Arc::default(),
         }
     }
 
@@ -1533,6 +1607,240 @@ mod tests {
         assert!(Menu::Shapes.contains(Tool::Arc) && !Menu::Lines.contains(Tool::Arc));
     }
 
+    /// Opens the grouped menu, clicks `at` (relative to the menu's top-left) and returns what
+    /// that asked for and whether the menu is still open.
+    fn click_in_the_grouped_menu(
+        input: &ToolSidebarInput,
+        at: impl Fn(Rect) -> Pos2,
+    ) -> (Vec<ToolSidebarAction>, bool) {
+        let ctx = egui::Context::default();
+        let (mut time, size) = (0.0, vec2(900.0, 1100.0));
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), input);
+        }
+        click(&ctx, &mut time, size, CORNER, input);
+        let mut menu = None;
+        for _ in 0..3 {
+            menu = frame(&ctx, &mut time, size, Vec::new(), input).1;
+        }
+        let menu = menu.expect("open");
+        let actions = click(&ctx, &mut time, size, at(menu), input);
+        let open = frame(&ctx, &mut time, size, Vec::new(), input).1.is_some();
+        (actions, open)
+    }
+
+    #[test]
+    fn a_star_marks_a_favorite_without_picking_the_tool_or_closing_the_menu() {
+        for starred in [Vec::new(), vec![Tool::Brush, Tool::Highlighter]] {
+            let input = ToolSidebarInput {
+                favorites: Arc::new(starred),
+                ..state()
+            };
+            // The centres of the first two rows, Brush and Highlighter, at the star's column.
+            for (row, tool) in [(38.0, Tool::Brush), (68.0, Tool::Highlighter)] {
+                let (actions, open) = click_in_the_grouped_menu(&input, |menu| {
+                    pos2(menu.right() - 21.0, menu.top() + row)
+                });
+                assert_eq!(actions, [ToolSidebarAction::ToggleFavorite(tool)]);
+                assert!(open, "the menu closed on the star of {tool:?}");
+            }
+        }
+    }
+
+    /// The stars of Brush and Highlighter as a screen reader gets them with the Shapes menu open.
+    fn star_states(
+        starred: Vec<Tool>,
+    ) -> (
+        Option<egui::accesskit::Toggled>,
+        Option<egui::accesskit::Toggled>,
+    ) {
+        use crate::ui::accessibility::AccessNodes;
+        let ctx = egui::Context::default();
+        let mut nodes = AccessNodes::start(&ctx);
+        let input = ToolSidebarInput {
+            favorites: Arc::new(starred),
+            ..state()
+        };
+        let (mut time, size) = (0.0, vec2(900.0, 1100.0));
+        let mut step = |events: Vec<egui::Event>| {
+            time += 0.1;
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+                time: Some(time),
+                events,
+                ..Default::default()
+            };
+            let output = ctx.run_ui(raw, |ui| {
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(Rect::from_min_size(Pos2::ZERO, vec2(WIDTH, size.y))),
+                    |ui| {
+                        show(ui, &input);
+                    },
+                );
+            });
+            nodes.absorb(output);
+        };
+        let button = |pressed| egui::Event::PointerButton {
+            pos: CORNER,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for _ in 0..3 {
+            step(Vec::new());
+        }
+        step(vec![egui::Event::PointerMoved(CORNER)]);
+        step(vec![button(true)]);
+        step(vec![button(false)]);
+        for _ in 0..4 {
+            step(Vec::new());
+        }
+        let toggled = |label: &str| nodes.find(label).expect(label).toggled();
+        (toggled("Favorite Brush"), toggled("Favorite Highlighter"))
+    }
+
+    #[test]
+    fn a_star_tells_a_screen_reader_whether_the_tool_is_a_favorite() {
+        use egui::accesskit::Toggled;
+        assert_eq!(
+            star_states(vec![Tool::Brush]),
+            (Some(Toggled::True), Some(Toggled::False))
+        );
+        assert_eq!(
+            star_states(vec![Tool::Highlighter]),
+            (Some(Toggled::False), Some(Toggled::True))
+        );
+    }
+
+    #[test]
+    fn a_click_on_the_name_still_arms_the_tool() {
+        let (actions, open) =
+            click_in_the_grouped_menu(&state(), |menu| pos2(menu.left() + 60.0, menu.top() + 40.0));
+        assert!(
+            matches!(actions[..], [ToolSidebarAction::Arm(_)]),
+            "{actions:?}"
+        );
+        assert!(!open);
+    }
+
+    /// One frame of the strip with the favorites bar over the charts beside it.
+    fn frame_with_the_bar(
+        ctx: &egui::Context,
+        time: &mut f64,
+        events: Vec<egui::Event>,
+        starred: &[Tool],
+        prefs: crate::model::drawings::favorites::BarPrefs,
+    ) -> Vec<ToolSidebarAction> {
+        use crate::ui::workspace::favorites_bar::{self, FavoritesBarInput};
+        let size = vec2(900.0, 700.0);
+        *time += 0.1;
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+            time: Some(*time),
+            events,
+            ..Default::default()
+        };
+        let input = ToolSidebarInput {
+            favorites: Arc::new(starred.to_vec()),
+            ..state()
+        };
+        let mut actions = Vec::new();
+        let mut output = ctx.run_ui(raw, |ui| {
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .max_rect(Rect::from_min_size(Pos2::ZERO, vec2(WIDTH, size.y))),
+                |ui| actions = show(ui, &input),
+            );
+            favorites_bar::show(
+                ui.ctx(),
+                &FavoritesBarInput {
+                    id: Id::new("test-favorites-bar"),
+                    tools: starred,
+                    active_tool: Tool::Cursor,
+                    prefs,
+                    area: Rect::from_min_size(pos2(WIDTH, 0.0), vec2(size.x - WIDTH, size.y)),
+                },
+            );
+        });
+        output.textures_delta.clear();
+        actions
+    }
+
+    #[test]
+    fn a_favorites_bar_that_appears_does_not_cover_the_open_menu() {
+        use crate::model::drawings::favorites::{BarPrefs, placement_from};
+        use crate::ui::workspace::favorites_bar::bar_size;
+        let ctx = egui::Context::default();
+        let mut time = 0.0;
+        let mut prefs = BarPrefs::default();
+        let mut starred: Vec<Tool> = Vec::new();
+        let mut run = |ctx: &egui::Context, events, starred: &[Tool], prefs| {
+            frame_with_the_bar(ctx, &mut time, events, starred, prefs)
+        };
+        let click = |run: &mut dyn FnMut(Vec<egui::Event>) -> Vec<ToolSidebarAction>, at: Pos2| {
+            let button = |pressed| egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            run(vec![egui::Event::PointerMoved(at)]);
+            run(vec![button(true)]);
+            run(vec![button(false)])
+        };
+        for _ in 0..3 {
+            run(&ctx, Vec::new(), &starred, prefs);
+        }
+        click(
+            &mut |events| run(&ctx, events, &starred, prefs),
+            LINES_CORNER,
+        );
+        for _ in 0..3 {
+            run(&ctx, Vec::new(), &starred, prefs);
+        }
+        let menu = ctx
+            .memory(|memory| {
+                memory
+                    .layer_ids()
+                    .filter(|layer| layer.order == egui::Order::Foreground)
+                    .find_map(|layer| memory.area_rect(layer.id))
+            })
+            .expect("the Lines menu is open");
+        // The first row's star: Trend line.
+        let star = pos2(menu.right() - 21.0, menu.top() + 38.0);
+
+        let actions = click(&mut |events| run(&ctx, events, &starred, prefs), star);
+        assert_eq!(
+            actions,
+            [ToolSidebarAction::ToggleFavorite(Tool::TrendLine)]
+        );
+        starred.push(Tool::TrendLine);
+        // The bar is saved right over that star, as in a narrow chart area.
+        let size = bar_size(1);
+        let at = star - vec2(40.0, 19.0);
+        prefs.placement = Some(placement_from(
+            [at.x, at.y],
+            [WIDTH, 0.0],
+            [900.0 - WIDTH, 700.0],
+            [size.x, size.y],
+        ));
+        for _ in 0..3 {
+            run(&ctx, Vec::new(), &starred, prefs);
+        }
+        let top = ctx.layer_id_at(star).expect("something is under the star");
+        assert_ne!(
+            top.id,
+            Id::new("test-favorites-bar"),
+            "the bar is above the open menu"
+        );
+        let actions = click(&mut |events| run(&ctx, events, &starred, prefs), star);
+        assert_eq!(
+            actions,
+            [ToolSidebarAction::ToggleFavorite(Tool::TrendLine)]
+        );
+    }
+
     #[test]
     fn a_row_prints_the_shortcut_of_the_tool_it_arms() {
         for tool in Tool::GROUPED {
@@ -1607,7 +1915,18 @@ mod tests {
             ("menu-shapes", CORNER),
         ] {
             let mut screen = Screen::new(vec2(420.0, 700.0));
-            let input = state();
+            let input = ToolSidebarInput {
+                favorites: Arc::new(vec![
+                    Tool::Brush,
+                    Tool::Highlighter,
+                    Tool::TrendLine,
+                    Tool::FibRetracement,
+                    Tool::XabcdPattern,
+                    Tool::LongPosition,
+                ]),
+                active_tool: Tool::Brush,
+                ..state()
+            };
             let run = |screen: &mut Screen, events: Vec<egui::Event>| {
                 screen.run(events, |ui| {
                     ui.scope_builder(
