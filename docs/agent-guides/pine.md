@@ -169,13 +169,12 @@
   builtin's collection argument is found by its `id` label or its position), through other
   statements and the script's functions (the overload the type checker resolved, `Call::target`; all
   same-name ones when unresolved; a function's parameters, and the names its body declared before
-  reading them, are not reads of a global; the interpreter itself hides every name a function declares
-  anywhere in its body from the variables during a call, `invoke_with`). The statements are the
-  top-level ones before the request's own, and those before the request in the blocks around it
-  (`Location`, found by `locate`; replayed without re-checking the block's condition, since the request
-  was reached). A name that is rebound (declared, `:=`) counts only before the statement that reads
-  it (`Facts::writes_needed`, a limit per needed name); a collection changed through its value, a
-  `var`/`varip` and a `level[1]` read also see later writes. A statement in a block cannot be
+  reading them, are not reads of a global, the same scoping `invoke_with` runs them with). The
+  statements are the top-level ones before the request's own, and those before the request in the
+  blocks around it (`Location`, found by `locate`; replayed without re-checking the block's
+  condition, since the request was reached). A name that is rebound (declared, `:=`) counts only
+  before the statement that reads it (`Facts::writes_needed`, a limit per needed name); a collection
+  changed through its value, a `var`/`varip` and a `level[1]` read also see later writes. A statement in a block cannot be
   replayed when it declares something, reads a name a block declared, or sits in a loop or `once`
   body: when it would be part of the slice, the request gets no slice and reads the chart's values.
   `evaluate_higher_timeframe` runs the slice in the request's own state, with its own empty
