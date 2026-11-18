@@ -163,6 +163,9 @@ watchlists.
 - A chart whose last answer was `UnsupportedInterval` shows it in the usual error slot and is not
   refreshed again (`Chart::refresh_due`) until its market or the timeframe changes, which fetch at
   once. An overlay market becomes `OverlayStatus::Blocked(text)` and is not retried either.
+- `service::cache::patched` merges a tail into a held series by open time: the tail's copy of a candle
+  wins and a held candle the tail skips stays. A tail that does not reach back to the series is
+  fetched whole.
 - `service::cache::fetch`: a failed tail refresh falls back to the whole fetch, except a rate limit,
   which is returned.
 - Visible watchlists share one ticker socket per source in `DataSource::QUOTE_STREAMS` (Coinbase: last
