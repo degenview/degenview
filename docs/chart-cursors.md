@@ -116,9 +116,12 @@ default). `ui/chart/card/values_tooltip.rs`.
   previous close, the built-in indicators over the bars in view (EMA, Bollinger, RSI, Supertrend
   flip), and every script plot that asks for the data window (`display` has
   `DISPLAY_DATA_WINDOW`), on the chart and in its pane, read at the hovered bar through
-  `series_index` (so replay-cut and constructed bars line up). At most 28 rows.
+  `series_index` (so replay-cut and constructed bars line up).
 - It sits right and below the pointer, on the other side where there is no room, and stays inside
-  the plot under the header. Drawn with the crosshair, so a snapshot never has it.
+  the plot under the header. It is never bigger than that room: as many rows are listed as fit
+  above the next pane, the rest are counted in a last row (`+N more`), and a long name is cut with an
+  ellipsis so the box is never wider than the plot. In a plot too short for a row, only the time
+  shows; in one too short for that, nothing. Drawn with the crosshair, so a snapshot never has it.
 - On a touch screen egui turns a long touch into a right-click. The drawing layer ignores that one
   (`DrawingFrame::long_press_values`) only while the tooltip has the press, so a press the tooltip
   never took (on a drawing, locked or not, with the option off, or under Demonstration or the Eraser)
