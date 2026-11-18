@@ -12,7 +12,8 @@ use crate::model::drawings::favorites::{BarPlacement, BarPrefs, placement_from};
 use crate::ui::workspace::tool_sidebar::tool_icon;
 use crate::ui::{icons, kit, shortcut, theme};
 use eframe::egui::{
-    self, Context, CursorIcon, Id, Order, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2,
+    self, Context, CursorIcon, Id, Order, PointerButton, Pos2, Rect, Sense, Stroke, Vec2, pos2,
+    vec2,
 };
 
 const BUTTON: f32 = 28.0;
@@ -109,6 +110,41 @@ fn tooltip(tool: Tool) -> String {
     }
 }
 
+/// The grip being dragged: where the bar is, and the last frame that moved it.
+#[derive(Clone, Copy)]
+struct Drag {
+    at: Pos2,
+    frame: u64,
+}
+
+fn keep_drag(ctx: &Context, id: Id, at: Pos2) {
+    let drag = Drag {
+        at,
+        frame: ctx.cumulative_frame_nr(),
+    };
+    ctx.data_mut(|data| data.insert_temp(id, drag));
+}
+
+/// Where the bar is in a drag that is still going on. A drag whose end was never seen (the bar was
+/// not drawn when the button was let go) is dropped, or the bar would follow the pointer with no
+/// button held when it came back: one that missed a frame, or that has no button down now. The
+/// frame the button is let go is kept, for the grip to report where the bar was left.
+fn drag_in_progress(ctx: &Context, id: Id) -> Option<Pos2> {
+    let drag: Drag = ctx.data(|data| data.get_temp(id))?;
+    let (down, released) = ctx.input(|input| {
+        (
+            input.pointer.primary_down(),
+            input.pointer.primary_released(),
+        )
+    });
+    let missed_a_frame = ctx.cumulative_frame_nr() > drag.frame + 1;
+    if missed_a_frame || !(down || released) {
+        ctx.data_mut(|data| data.remove::<Drag>(id));
+        return None;
+    }
+    Some(drag.at)
+}
+
 pub fn show(ctx: &Context, input: &FavoritesBarInput) -> Vec<FavoritesBarAction> {
     let mut actions = Vec::new();
     if !is_shown(input) {
@@ -116,7 +152,7 @@ pub fn show(ctx: &Context, input: &FavoritesBarInput) -> Vec<FavoritesBarAction>
     }
     let count = input.tools.len();
     let drag_id = input.id.with("drag");
-    let mut live: Option<Pos2> = ctx.data(|data| data.get_temp(drag_id));
+    let mut live = drag_in_progress(ctx, drag_id);
     if let Some(at) = live.as_mut() {
         // Follows the pointer in this frame, not the next one.
         *at = clamped(
@@ -124,7 +160,7 @@ pub fn show(ctx: &Context, input: &FavoritesBarInput) -> Vec<FavoritesBarAction>
             input.area,
             count,
         );
-        ctx.data_mut(|data| data.insert_temp(drag_id, *at));
+        keep_drag(ctx, drag_id, *at);
     }
     let position = live.unwrap_or_else(|| resolve(&input.prefs, input.area, count));
 
@@ -158,20 +194,31 @@ fn bar_body(
     let mut responses: Vec<egui::Response> = Vec::with_capacity(count + 1);
 
     let grip_rect = Rect::from_min_size(row.min, vec2(GRIP, BUTTON));
+    // A press that does not move is a click, which is what a right-click needs to open the menu.
     let grip = ui
-        .interact(grip_rect, input.id.with("grip"), Sense::drag())
+        .interact(grip_rect, input.id.with("grip"), Sense::click_and_drag())
         .on_hover_cursor(if dragging {
             CursorIcon::Grabbing
         } else {
             CursorIcon::Grab
         });
     let grip = crate::ui::accessibility::label(grip, "Move favorites toolbar");
-    if grip.drag_started() {
-        ui.ctx()
-            .data_mut(|data| data.insert_temp(drag_id, position));
+    if grip.drag_started_by(PointerButton::Primary) {
+        // The drag starts once the pointer has moved a little: take that distance with it.
+        let (pressed_at, now) = ui
+            .ctx()
+            .input(|input| (input.pointer.press_origin(), input.pointer.interact_pos()));
+        let travelled = pressed_at
+            .zip(now)
+            .map_or(Vec2::ZERO, |(from, to)| to - from);
+        keep_drag(
+            ui.ctx(),
+            drag_id,
+            clamped(position + travelled, input.area, count),
+        );
     }
-    if grip.drag_stopped() {
-        ui.ctx().data_mut(|data| data.remove::<Pos2>(drag_id));
+    if grip.drag_stopped_by(PointerButton::Primary) {
+        ui.ctx().data_mut(|data| data.remove::<Drag>(drag_id));
         actions.push(FavoritesBarAction::Moved(placement_from(
             pair(position.to_vec2()),
             pair(input.area.min.to_vec2()),
@@ -469,6 +516,155 @@ mod tests {
         let row = target + vec2(40.0, 17.0);
         let actions = rig.click(row, &input);
         assert_eq!(actions, [FavoritesBarAction::Hide]);
+    }
+
+    impl Rig {
+        /// A frame in which the bar is not drawn at all (another tab is showing, say).
+        fn away(&mut self, events: Vec<egui::Event>) {
+            self.time += 0.1;
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 700.0))),
+                time: Some(self.time),
+                events,
+                ..Default::default()
+            };
+            let _ = self.ctx.run_ui(raw, |_| {});
+        }
+
+        /// Where the bar's area is now.
+        fn bar_at(&self) -> Pos2 {
+            self.ctx
+                .memory(|memory| memory.area_rect(Id::new("test-bar")))
+                .expect("drawn")
+                .min
+        }
+    }
+
+    /// A drag is begun on the grip, the bar goes away (`away` runs its frames) and the button is let
+    /// go meanwhile. When the bar is back, moving the pointer with no button held must not move it.
+    fn a_drag_cut_short_is_not_resumed(away: impl Fn(&mut Rig, Vec<egui::Event>)) {
+        let prefs = BarPrefs::default();
+        let at = resolve(&prefs, AREA, TOOLS.len());
+        let shown = input(prefs, Tool::Cursor);
+        let start = center(at, None);
+        let mut rig = Rig::new();
+        rig.settle(&shown);
+        rig.frame(vec![egui::Event::PointerMoved(start)], &shown);
+        rig.button(start, egui::PointerButton::Primary, true, &shown);
+        let mut held = start;
+        for step in 1..=4 {
+            held = start + vec2(20.0, 10.0) * step as f32;
+            rig.frame(vec![egui::Event::PointerMoved(held)], &shown);
+        }
+        assert!(rig.bar_at().x > at.x + 40.0, "the drag moved the bar");
+
+        away(&mut rig, vec![egui::Event::PointerMoved(held)]);
+        away(
+            &mut rig,
+            vec![egui::Event::PointerButton {
+                pos: held,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        away(&mut rig, Vec::new());
+
+        // Back, with the button up: the pointer wanders and the bar stays where it is saved.
+        let mut actions = Vec::new();
+        for step in 1..=4 {
+            let wander = held + vec2(-30.0, 15.0) * step as f32;
+            actions.extend(rig.frame(vec![egui::Event::PointerMoved(wander)], &shown));
+        }
+        assert!(actions.is_empty(), "{actions:?}");
+        let now = rig.bar_at();
+        assert!(
+            (now - at).length() < 0.5,
+            "the bar followed the pointer: {now:?}"
+        );
+    }
+
+    #[test]
+    fn a_drag_cut_short_by_the_bar_being_hidden_is_not_resumed() {
+        let hidden = input(
+            BarPrefs {
+                hidden: true,
+                ..BarPrefs::default()
+            },
+            Tool::Cursor,
+        );
+        a_drag_cut_short_is_not_resumed(|rig, events| {
+            rig.frame(events, &hidden);
+        });
+    }
+
+    #[test]
+    fn a_drag_cut_short_by_the_bar_not_being_drawn_is_not_resumed() {
+        a_drag_cut_short_is_not_resumed(|rig, events| rig.away(events));
+    }
+
+    #[test]
+    fn a_drag_with_no_button_down_is_dropped_even_while_the_bar_is_drawn() {
+        let prefs = BarPrefs::default();
+        let at = resolve(&prefs, AREA, TOOLS.len());
+        let shown = input(prefs, Tool::Cursor);
+        let mut rig = Rig::new();
+        rig.settle(&shown);
+        // A drag whose end was lost: left in memory with no button held.
+        keep_drag(&rig.ctx, Id::new("test-bar").with("drag"), at);
+        let mut actions = Vec::new();
+        for step in 1..=4 {
+            let wander = at + vec2(40.0, 30.0) * step as f32;
+            actions.extend(rig.frame(vec![egui::Event::PointerMoved(wander)], &shown));
+        }
+        assert!(actions.is_empty(), "{actions:?}");
+        assert!((rig.bar_at() - at).length() < 0.5);
+    }
+
+    #[test]
+    fn a_right_click_on_the_grip_offers_to_hide_the_bar() {
+        let prefs = BarPrefs::default();
+        let at = resolve(&prefs, AREA, TOOLS.len());
+        let target = center(at, None);
+        let input = input(prefs, Tool::Cursor);
+        let mut rig = Rig::new();
+        rig.settle(&input);
+        rig.frame(vec![egui::Event::PointerMoved(target)], &input);
+        rig.button(target, egui::PointerButton::Secondary, true, &input);
+        let opened = rig.button(target, egui::PointerButton::Secondary, false, &input);
+        assert!(opened.is_empty(), "the right-click asked for {opened:?}");
+        rig.settle(&input);
+        let actions = rig.click(target + vec2(40.0, 17.0), &input);
+        assert_eq!(actions, [FavoritesBarAction::Hide]);
+    }
+
+    #[test]
+    fn only_the_main_button_moves_the_bar_and_a_plain_click_on_the_grip_does_nothing() {
+        let prefs = BarPrefs::default();
+        let at = resolve(&prefs, AREA, TOOLS.len());
+        let start = center(at, None);
+        let input = input(prefs, Tool::Cursor);
+
+        let mut rig = Rig::new();
+        rig.settle(&input);
+        assert!(rig.click(start, &input).is_empty());
+
+        let mut rig = Rig::new();
+        rig.settle(&input);
+        rig.frame(vec![egui::Event::PointerMoved(start)], &input);
+        let mut actions = rig.button(start, egui::PointerButton::Secondary, true, &input);
+        let mut at_pointer = start;
+        for step in 1..=6 {
+            at_pointer = start + vec2(15.0, 10.0) * step as f32;
+            actions.extend(rig.frame(vec![egui::Event::PointerMoved(at_pointer)], &input));
+        }
+        actions.extend(rig.button(at_pointer, egui::PointerButton::Secondary, false, &input));
+        rig.settle(&input);
+        assert!(
+            actions.is_empty(),
+            "a right-button drag asked for {actions:?}"
+        );
+        assert!((rig.bar_at() - at).length() < 0.5);
     }
 
     /// Hand-run: the bar in both themes, with one, two and many tools and the second armed.
