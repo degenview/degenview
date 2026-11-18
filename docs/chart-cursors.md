@@ -50,7 +50,8 @@ layer's pointer in place of selecting, editing and drawing:
   30 % opacity) and the mark is listed once. Letting go removes them all as one batch of
   `DrawingCommand::Remove`, so the whole sweep is **one undo step**, and a click is a sweep of one.
   Nothing is removed while the button is down, so Esc cancels a sweep (and the rest of that press does
-  not pan).
+  not pan). A sweep is also dropped when the window loses focus or when the card was not drawn
+  (another tab showed), so a button let go while away erases nothing on return.
 - What it can reach is what selection can pick: the same `hit_test` (stroke tolerance, hidden,
   hide-all, other-timeframe and `Unreadable` rows are out of reach). Candles, indicators, scripts'
   plots and drawings, alerts and paper or live orders are not drawings and cannot be touched. A

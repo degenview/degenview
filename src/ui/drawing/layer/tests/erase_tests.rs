@@ -227,3 +227,42 @@ fn putting_the_eraser_down_mid_sweep_drops_it() {
     rig.release(inside(10.0));
     assert_eq!(rig.drawings.len(), 1);
 }
+
+#[test]
+fn a_sweep_does_not_outlive_the_card_being_unseen() {
+    let (mut rig, _) = erasing();
+    let steps = rig.undo_steps;
+    rig.move_to(inside(0.0));
+    rig.press(inside(0.0));
+    assert!(rig.layer.is_marked_for_erasing(rig.drawings[0].id()));
+    // Another tab shows; the button is let go there.
+    let up = rig.button(inside(0.0), false, PointerButton::Primary);
+    rig.skip_frames(vec![up]);
+    // Back on the chart: nothing is erased, and no press is left to hold the drag.
+    rig.move_to(inside(5.0));
+    rig.settle();
+    assert_eq!(
+        rig.drawings.len(),
+        1,
+        "the drawing was not erased from a gesture left behind"
+    );
+    assert_eq!(rig.undo_steps, steps);
+    assert!(!rig.layer.claims_drag());
+    assert!(!rig.layer.is_marked_for_erasing(rig.drawings[0].id()));
+}
+
+#[test]
+fn a_press_that_goes_on_across_the_gap_erases_nothing_and_does_not_pan() {
+    let (mut rig, _) = erasing();
+    rig.move_to(inside(0.0));
+    rig.press(inside(0.0));
+    rig.skip_frames(Vec::new());
+    rig.move_to(inside(20.0));
+    assert!(
+        rig.layer.claims_drag(),
+        "the rest of that press is not a pan"
+    );
+    rig.release(inside(20.0));
+    assert_eq!(rig.drawings.len(), 1);
+    assert!(!rig.layer.claims_drag());
+}
