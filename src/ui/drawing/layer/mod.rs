@@ -100,7 +100,8 @@ pub struct DrawingFrame<'a> {
     /// The cursor the pointer rests on: the Eraser erases instead of picking, moving or drawing,
     /// and a cursor that marks the chart (Demonstration) leaves the drawings alone.
     pub cursor: CursorMode,
-    /// A long press shows the values tooltip, so a long touch is not also a right-click.
+    /// The values tooltip has the press, so the long touch that follows it is not also a
+    /// right-click. Set by the card, which knows whether it does.
     pub long_press_values: bool,
     // Outputs.
     pub commands: Vec<DrawingCommand>,
@@ -248,11 +249,6 @@ impl<'a> DrawingFrame<'a> {
 
     pub fn with_cursor(mut self, cursor: CursorMode) -> Self {
         self.cursor = cursor;
-        self
-    }
-
-    pub fn with_long_press_values(mut self, on: bool) -> Self {
-        self.long_press_values = on;
         self
     }
 
@@ -671,7 +667,8 @@ impl DrawingLayer {
         // A gesture must not outlive the conditions it began under: the card going unseen
         // (another tab), the window losing focus, or the tool being switched.
         let frame_nr = ui.ctx().cumulative_frame_nr();
-        if self.gesture.is_some() && (!focused || frame_nr > self.last_frame + 1) {
+        let unseen = frame_nr > self.last_frame + 1;
+        if self.gesture.is_some() && (!focused || unseen) {
             self.abort();
         }
         self.last_frame = frame_nr;
@@ -679,7 +676,7 @@ impl DrawingLayer {
             self.abort();
         }
         if frame.erases() {
-            self.update_eraser(ui, response, proj, frame, pointer);
+            self.update_eraser(ui, response, proj, frame, pointer, unseen);
             self.set_cursor(ui, pointer, frame, plot);
             return self.claims_drag();
         }

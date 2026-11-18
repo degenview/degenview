@@ -176,6 +176,11 @@ impl ChartCard {
             main: layout.rect,
             chart: layout.full_rect,
         };
+        // A long touch is egui's right-click. Only a press the values tooltip has taken (the
+        // layer runs before `handle_hold`, so on the release frame it still has) swallows it: a
+        // press on a drawing, off the plot, with the option off or under a cursor that uses the
+        // press itself keeps its menu.
+        drawing.long_press_values = self.values_hold_claims_drag();
         // The Zoom In tool and Select portion own the pointer while they are on: nothing is drawn
         // or picked.
         let held = self.pointer_is_held(layout.main_visible, replay.selecting);
@@ -536,6 +541,10 @@ impl ChartCard {
         pointer.overlay_action = overlay_action;
         pointer.on_overlay_card = on_overlay_card;
         self.layer = layer;
+        if layout.main_visible && self.cursor.caps().highlights {
+            let now = ui.input(|input| input.time);
+            self.paint_demonstration(&painter, plot, &projection, now);
+        }
         self.apply_overlay_results(
             OverlayResults {
                 pane_actions,

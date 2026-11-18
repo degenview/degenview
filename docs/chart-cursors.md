@@ -50,7 +50,8 @@ layer's pointer in place of selecting, editing and drawing:
   30 % opacity) and the mark is listed once. Letting go removes them all as one batch of
   `DrawingCommand::Remove`, so the whole sweep is **one undo step**, and a click is a sweep of one.
   Nothing is removed while the button is down, so Esc cancels a sweep (and the rest of that press does
-  not pan).
+  not pan). A sweep is also dropped when the window loses focus or when the card was not drawn
+  (another tab showed), so a button let go while away erases nothing on return.
 - What it can reach is what selection can pick: the same `hit_test` (stroke tolerance, hidden,
   hide-all, other-timeframe and `Unreadable` rows are out of reach). Candles, indicators, scripts'
   plots and drawings, alerts and paper or live orders are not drawings and cannot be touched. A
@@ -78,8 +79,10 @@ draws freehand, and what was drawn **fades away after a few seconds**.
   the frames; frames are requested every 16 ms only while a stroke is drawn or fading, and one at the
   end of the hold otherwise, so an idle chart costs nothing. At most 48 marks, 4096 points a stroke.
 - Marks are pinned to time and price through `Projection::anchor`/`point` (the drawings' own
-  mapping), so a wheel zoom during the fade keeps them on their bars. They are painted over the
-  live plot after the frame (clipped to the plot), so they are **not drawings**: never in
+  mapping), so a wheel zoom during the fade keeps them on their bars. They are painted **after
+  the chart has painted** (`body_inner`, once `paint_frame` returns: the input pass runs before it,
+  so anything drawn there would sit under the candles and a script's `bgcolor`), above the chart and
+  its overlays and clipped to the plot, so they are **not drawings**: never in
   `Chart::drawings`, a command, an undo step, a layout, an iCloud record, a template or a
   snapshot (`paint_snapshot` never sees them; a test pins it).
 - The cursor takes the plot drag (no pan while a stroke is drawn; the axes, the wheel and the
@@ -112,9 +115,10 @@ default). `ui/chart/card/values_tooltip.rs`.
   `series_index` (so replay-cut and constructed bars line up). At most 28 rows.
 - It sits right and below the pointer, on the other side where there is no room, and stays inside
   the plot under the header. Drawn with the crosshair, so a snapshot never has it.
-- On a touch screen egui turns a long touch into a right-click; while the tooltip is on, the drawing
-  layer ignores that one (`DrawingFrame::long_press_values`), so it shows the values and not a menu.
-  Off, a long touch is the context menu as before. **Not tried on a touch screen.**
+- On a touch screen egui turns a long touch into a right-click. The drawing layer ignores that one
+  (`DrawingFrame::long_press_values`) only while the tooltip has the press, so a press the tooltip
+  never took (on a drawing, locked or not, with the option off, or under Demonstration or the Eraser)
+  keeps its context menu. **Not tried on a touch screen.**
 
 ## Favorites
 

@@ -37,6 +37,8 @@ struct Rig {
     tool: Tool,
     /// The workspace's cursor, as the drawing layer is told it.
     cursor_mode: crate::model::CursorMode,
+    /// Whether the drawing layer was told a long touch is not a right-click, last frame.
+    long_press_values: bool,
     selected: Vec<u64>,
     time: f64,
     rect: Rect,
@@ -67,6 +69,7 @@ impl Rig {
             scale_mode: PriceScaleMode::Regular,
             tool: Tool::Cursor,
             cursor_mode: crate::model::CursorMode::Cross,
+            long_press_values: false,
             selected: Vec::new(),
             time: 0.0,
             rect: Rect::NOTHING,
@@ -107,6 +110,7 @@ impl Rig {
         let (mut rect, mut commands) = (Rect::NOTHING, 0);
         let mut picked = None;
         let mut consumed = false;
+        let mut long_press = false;
         let mut output = self.ctx.run_ui(input, |ui| {
             let mut frame = DrawingFrame::new(drawings, tool, None, 100)
                 .with_selection(selected.clone())
@@ -135,11 +139,13 @@ impl Rig {
             commands = frame.commands.len();
             picked = replay.picked_range;
             consumed = frame.escape_consumed;
+            long_press = frame.long_press_values;
         });
         output.textures_delta.clear();
         self.cursor = output.platform_output.cursor_icon;
         self.rect = rect;
         self.commands += commands;
+        self.long_press_values = long_press;
         self.escape_consumed |= consumed;
         if picked.is_some() {
             self.picked_range = picked;
@@ -1188,6 +1194,88 @@ fn once_the_values_tooltip_shows_the_press_is_its_and_the_chart_does_not_pan() {
     // The next press, moved at once, is an ordinary pan.
     rig.drag(from, Vec2::new(100.0, 0.0));
     assert!(rig.offset() > 0.0);
+}
+
+#[test]
+fn a_long_touch_is_only_the_tooltips_while_the_tooltip_has_the_press() {
+    let mut rig = Rig::new();
+    let at = rig.in_plot();
+    rig.frame(vec![egui::Event::PointerMoved(at)]);
+    assert!(
+        !rig.long_press_values,
+        "before any press the menu is the long touch's"
+    );
+    rig.press(at);
+    assert!(!rig.long_press_values, "still waiting for the hold");
+    rig.time += 0.6;
+    rig.frame(Vec::new());
+    rig.frame(Vec::new());
+    assert!(rig.card.shows_values_tooltip());
+    assert!(rig.long_press_values, "the tooltip has the press");
+    // The long touch arrives with the release: the frame that sees it still has the tooltip's press.
+    rig.frame(vec![rig.button(at, false)]);
+    assert!(rig.long_press_values);
+    rig.frame(Vec::new());
+    assert!(
+        !rig.long_press_values,
+        "and the next press starts from nothing"
+    );
+}
+
+#[test]
+fn a_press_the_tooltip_never_took_keeps_its_long_touch_menu() {
+    use crate::model::CursorMode;
+    // On a drawing the press is the drawing's, so there is no tooltip and the menu is not taken.
+    let mut rig = Rig::new();
+    let covering = Drawing::build(
+        Tool::Rectangle,
+        1,
+        &[
+            Anchor {
+                time_ms: 0,
+                price: 0.0,
+            },
+            Anchor {
+                time_ms: 400 * HOUR,
+                price: 10_000.0,
+            },
+        ],
+        Tool::Rectangle.default_style(),
+    )
+    .expect("a rectangle");
+    rig.drawings.push(covering);
+    rig.frames(&[]);
+    let at = rig.in_plot();
+    rig.frame(vec![egui::Event::PointerMoved(at)]);
+    rig.press(at);
+    rig.time += 0.6;
+    rig.frame(Vec::new());
+    rig.frame(Vec::new());
+    assert!(!rig.card.shows_values_tooltip());
+    assert!(
+        !rig.long_press_values,
+        "a drawing, locked or not, keeps its long-touch menu"
+    );
+    rig.release(at);
+
+    // The option off, and the cursors that use the press themselves.
+    for (on, mode) in [
+        (false, CursorMode::Cross),
+        (true, CursorMode::Demonstration),
+        (true, CursorMode::Eraser),
+    ] {
+        let mut rig = Rig::new();
+        rig.card.set_values_tooltip(on);
+        rig.cursor_mode = mode;
+        rig.card.set_cursor_mode(mode);
+        let at = rig.in_plot();
+        rig.frame(vec![egui::Event::PointerMoved(at)]);
+        rig.press(at);
+        rig.time += 0.6;
+        rig.frame(Vec::new());
+        rig.frame(Vec::new());
+        assert!(!rig.long_press_values, "{mode:?} with the option {on}");
+    }
 }
 
 #[test]
