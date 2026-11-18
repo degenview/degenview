@@ -61,7 +61,7 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | 7 | bug | scopes | Function block locals push `na` on skipped bars | audit | — |
 | 8 | bug | scopes | `f()[n]` / `ta.x()[n]` use global offsets; chained `[]` collide; offset 0 skips the trail | audit | — |
 | 9 | bug | ta | `ta.atr` takes the previous close from its own call history | audit | — |
-| 10 | diff | ta | `ta.rsi` is a simple average, not Wilder's RMA | re-read, needs TV | — |
+| 10 | diff | ta | `ta.rsi` is a simple average, not Wilder's RMA | re-read, needs TV | **done** (RMA, as TradingView defines it) |
 | 11 | bug | errors | A failed historical run resets state; the script resumes at `bar_index` 0 | audit, run (test) | PR 6 — **done** |
 | 12 | bug | errors | A failed closing run does not commit but clears `live_open_time` | audit | PR 6 — **done** (the script no longer runs again) |
 | 13 | diff | errors | A realtime runtime error does not halt the script | audit, run (test) | PR 6 — **done** |
@@ -271,10 +271,12 @@ the close clones again (`:704`), O(history × variables) per tick. `ta.macd` (`t
 previous *call*, not the previous chart bar. Called conditionally (`if bar_index % 2 == 0`), gaps are ignored.
 `ta.tr` reads the real previous close (`market_values.rs:137-141`).
 
-**10. `ta.rsi`** (`ta.rs:777`) is the simple average of gains and losses over `length + 1` non-`na` values.
-The module header and the test `rsi_is_the_simple_average_variant_and_saturates` say this is a deliberate
-"faithful quirk" of the Swift app. TradingView uses `rma(up) / rma(down)`, so values differ from the first
-bar. Outside the execution model; listed because it is user-visible.
+**10. `ta.rsi`** was the simple average of gains and losses over `length + 1` non-`na` values (a "faithful
+quirk" of the Swift app), so it read 0 or 100 whenever the window moved one way and plots such as the
+X-trender (`ta.rsi(ta.alma(…), 9) - 50`) saturated at ±50 where TradingView's stay inside ±30. Now
+`ta.rsi` is `100 - 100 / (1 + rma(gain) / rma(loss))`, TradingView's definition (`extra::rsi`); the first
+value comes on bar `length`, and no losses stays 100. Saved scripts that use it plot and trade
+differently.
 
 **23. `na` in a window.** `sma`, `highest`, `lowest` and `rsi` use `last_valid` (`ta.rs:648-684, 707`), which
 compresses over `na`; `wma`, `stdev`, `median`, `variance`, `cci` use the strict `last_window`. The module
@@ -344,8 +346,7 @@ Deferred, each because it changes the history model, needs a TradingView compari
 - Local-scope buffers (6, 7, 8, 21): a change of `commit_histories` and `eval_history`; bench-sensitive.
 - A broker that survives rolled-back ticks and real `calc_on_order_fills` re-execution (14, 15).
 - `process_orders_on_close` for conditional orders (16); trailing stops (27, beyond the warning).
-- `ta.rsi` → RMA (10), the `na`-window rule (23), `ta.atr` previous close (9): compare with TradingView
-  output first. Changing `ta.rsi` changes plotted values and strategy results of saved scripts.
+- The `na`-window rule (23) and `ta.atr` previous close (9): compare with TradingView output first.
 - Execution-model compiler warnings (19, 20); a buffer model with `max_bars_back` (18, beyond the warning).
 - `request.security` conditional folding (22); `alertcondition` frequency and pre-error alerts (26);
   closing by feed flag, already-closed new bars (24, 25); margin model and count caps (29); the per-tick

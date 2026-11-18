@@ -77,9 +77,51 @@ impl Derived {
         result
     }
 
+    /// The RMA (Wilder's smoothing, alpha 1/`length`) of everything pushed so far, seeded and
+    /// reseeded after a gap like `ta.rma`.
+    fn rma(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
+        self.values.push(value);
+        let result = match (self.last, value) {
+            _ if length == 0 => None,
+            (Some(prior), Some(x)) => {
+                let alpha = 1.0 / length as f64;
+                Some(alpha * x + (1.0 - alpha) * prior)
+            }
+            (Some(_), None) => None,
+            (None, _) => self
+                .window(length)
+                .map(|w| w.iter().sum::<f64>() / length as f64),
+        };
+        if result.is_some() {
+            self.last = result;
+        } else if value.is_none() {
+            self.last = None;
+        }
+        result
+    }
+
     fn window(&self, length: usize) -> Option<Vec<f64>> {
         let start = self.values.len().checked_sub(length)?;
         self.values[start..].iter().copied().collect()
+    }
+}
+
+/// `ta.rsi(source, length)` for the bar `state.inputs` just ended on: `100 - 100 / (1 + rs)` with
+/// `rs` the RMA of the gains over the RMA of the losses, as TradingView defines it. The first value
+/// comes on bar `length`, when `length` changes exist. No losses is 100.
+pub fn rsi(state: &mut State, length: i64) -> RuntimeValue {
+    let length = count(length);
+    let mut recent = state.inputs.iter().rev().map(RuntimeValue::number);
+    let change = match (recent.next().flatten(), recent.next().flatten()) {
+        (Some(now), Some(before)) => Some(now - before),
+        _ => None,
+    };
+    let gain = derived(state, 0).rma(change.map(|c| c.max(0.0)), length);
+    let loss = derived(state, 1).rma(change.map(|c| (-c).max(0.0)), length);
+    match (gain, loss) {
+        (Some(_), Some(0.0)) => RuntimeValue::Float(100.0),
+        (Some(gain), Some(loss)) => RuntimeValue::Float(100.0 - 100.0 / (1.0 + gain / loss)),
+        _ => RuntimeValue::Na,
     }
 }
 

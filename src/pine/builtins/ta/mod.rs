@@ -4,8 +4,8 @@
 //! The session calls `evaluate` once per bar per call site. The state remembers every source value
 //! (`inputs`, `na` included) and every result (`results`), so windows are read off the history and
 //! the recursive averages (`ema`, `rma`) continue from the last result. Faithful quirks kept on
-//! purpose: `ta.rsi` is the simple (not Wilder-smoothed) average of gains and losses, `ta.variance`
-//! and `ta.stdev` are population statistics, and a window with any `na` yields `na`.
+//! purpose: `ta.variance` and `ta.stdev` are population statistics, and a window with any `na` yields
+//! `na`.
 
 pub mod call;
 pub mod extra;
@@ -109,6 +109,11 @@ pub fn evaluate(
     state: &mut State,
 ) -> RuntimeValue {
     state.inputs.push(source.clone());
+    if name == "ta.rsi" {
+        let result = extra::rsi(state, length);
+        state.results.push(result.clone());
+        return result;
+    }
     // A length that is not a positive count reads as no window (most indicators then yield `na`).
     let count = usize::try_from(length).unwrap_or(0);
     let inputs = &state.inputs;
@@ -123,7 +128,6 @@ pub fn evaluate(
         "ta.rising" => trend(inputs, count, true),
         "ta.falling" => trend(inputs, count, false),
         "ta.mom" | "ta.roc" => momentum(inputs, count, name == "ta.roc"),
-        "ta.rsi" => rsi(inputs, count),
         "ta.macd" => macd(state),
         "ta.median" => statistic(inputs, count, median),
         "ta.range" => statistic(inputs, count, |values| {
@@ -777,23 +781,6 @@ fn momentum(inputs: &[RuntimeValue], length: usize, is_rate: bool) -> RuntimeVal
     }
 }
 
-fn rsi(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
-    if length == 0 {
-        return RuntimeValue::Na;
-    }
-    let Some(values) = last_valid(inputs, length + 1) else {
-        return RuntimeValue::Na;
-    };
-    let changes: Vec<f64> = values.windows(2).map(|pair| pair[1] - pair[0]).collect();
-    let gain = changes.iter().map(|c| c.max(0.0)).sum::<f64>() / length as f64;
-    let loss = changes.iter().map(|c| (-c).max(0.0)).sum::<f64>() / length as f64;
-    float(if loss == 0.0 {
-        100.0
-    } else {
-        100.0 - 100.0 / (1.0 + gain / loss)
-    })
-}
-
 fn cross(
     name: &str,
     source: &RuntimeValue,
@@ -1226,14 +1213,27 @@ mod tests {
     }
 
     #[test]
-    fn rsi_is_the_simple_average_variant_and_saturates() {
+    fn rsi_smooths_gains_and_losses_with_the_rma() {
         let up = numbers(&run("ta.rsi", &[1.0, 2.0, 3.0, 4.0], 3));
         assert_eq!(up[3], Some(100.0), "no losses: 100");
-        assert_eq!(up[2], None);
-        let mixed = numbers(&run("ta.rsi", &[10.0, 11.0, 10.5, 11.5], 3));
-        // gains: 1 + 1 = 2, losses: 0.5 → gain/loss = 4 → 100 − 100/5 = 80.
+        assert_eq!(up[2], None, "the first value needs `length` changes");
+        // Changes +1, -0.5, +1: seeds gain 2/3 and loss 1/6, so rs = 4 and the RSI is 80.
+        let mixed = numbers(&run("ta.rsi", &[10.0, 11.0, 10.5, 11.5, 11.0], 3));
         assert!(close(mixed[3], 80.0));
+        // A fall of 0.5 moves the averages by 1/3: gain 4/9, loss 5/18, so rs = 1.6.
+        assert!(close(mixed[4], 100.0 - 100.0 / 2.6));
         assert_eq!(numbers(&run("ta.rsi", &[1.0, 2.0], 0)), [None, None]);
+    }
+
+    #[test]
+    fn rsi_after_a_long_fall_is_low_but_not_zero() {
+        // The simple average over the window read exactly 0 after `length` falls in a row; the
+        // smoothed gain only decays, so a later bounce still moves the value.
+        let mut prices = vec![100.0, 101.0, 100.5, 101.5, 101.0];
+        prices.extend((1..=12).map(|step| 101.0 - f64::from(step)));
+        let values = numbers(&run("ta.rsi", &prices, 3));
+        let last = values[prices.len() - 1].expect("a value");
+        assert!(last > 0.0 && last < 5.0, "{last}");
     }
 
     #[test]
