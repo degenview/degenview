@@ -174,12 +174,12 @@
   the chart's value via `security_globals`); requests inside functions are not sliced. `alert()`
   does nothing while a request runs (`security_depth > 0`: a slice, or a function the expression
   calls): only the chart's own run fires alerts, and the once-per-bar ledger stays its own.
-  Unknown collection members count as
-  mutating (`READ_ONLY_MEMBERS` lists the array/map/matrix queries and matrix predicates that do not:
-  add a new query there). Aliases of a collection are per block (two blocks' `alias` are different
-  variables), a dotted call of a builtin namespace (`ta.sma`) never matches a script function called
-  `sma`, for writes as for reads, and a call the type checker resolved to a script method has that
-  method's own effects, not the builtin ones of its name.
+  Unknown collection members count as mutating (`READ_ONLY_MEMBERS` lists the array/map/matrix
+  queries and matrix predicates that do not: add a new query there). Aliases of a collection are per
+  block (two blocks' `alias` are different variables), a dotted call of a builtin namespace
+  (`ta.sma`) never matches a script function called `sma`, for writes as for reads, and a call the
+  type checker resolved to a script method has that method's own effects, not the builtin ones of
+  its name.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, share function bodies
   with `Arc`. Benchmark: `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.
