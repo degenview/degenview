@@ -33,11 +33,16 @@ pub fn apply_live(candles: &mut Vec<Kline>, kline: Kline) -> bool {
 /// A kline is a running total of its bar, sent over and over until the bar closes, so the forming
 /// bucket is rebuilt from the latest state of each base bar it holds, never added to. What the
 /// socket did not see of the bucket (the bars before it connected) is what the series held of it
-/// when its first kline arrived, so the bucket keeps its open, its range and its volume. The one
-/// bar that was open then is already in that figure, so only what it traded since counts.
+/// when its first kline arrived, so the bucket keeps its open, its range and its volume.
+///
+/// How much of a live bar that held candle already counts depends on when it was requested: a bar
+/// that opened after the request is not in it and counts in full, one that opened before is in it
+/// up to the volume it had when its first kline arrived, so only what it traded since counts.
 #[derive(Debug, Default)]
 pub struct LiveFold {
     forming: Option<Forming>,
+    /// When the REST answer the series now holds was requested, in epoch milliseconds.
+    as_of: Option<i64>,
 }
 
 /// The bucket being built.
@@ -47,21 +52,55 @@ struct Forming {
     open_time: i64,
     /// The candle the series held for this bucket before the first live kline of it.
     held: Option<Kline>,
-    /// The volume of that first kline, already in `held`.
-    first_volume: f64,
+    /// When `held` was requested, in epoch milliseconds, if known: a base bar that opened at or
+    /// after it is not in `held`.
+    cutoff: Option<i64>,
+    /// The volume of each live base bar that `held` already counts.
+    baseline: BTreeMap<i64, f64>,
     /// The latest state of each live base bar of the bucket.
     bars: BTreeMap<i64, Kline>,
 }
 
 impl Forming {
-    fn begin(target: Timeframe, open_time: i64, held: Option<&Kline>, first: &Kline) -> Self {
+    fn begin(target: Timeframe, open_time: i64, held: Option<&Kline>, cutoff: Option<i64>) -> Self {
         Self {
             target,
             open_time,
             held: held.filter(|held| held.open_time == open_time).cloned(),
-            first_volume: first.volume,
+            cutoff,
+            baseline: BTreeMap::new(),
             bars: BTreeMap::new(),
         }
+    }
+
+    /// Takes in the state of a live base bar. When it is the first kline of a bar that `held`
+    /// already counts, what it had traded by then is not counted again. With no cutoff known, the
+    /// only such bar is the one open when the socket connected: the bucket's first.
+    fn take(&mut self, kline: Kline) {
+        if self.held.is_some() && !self.bars.contains_key(&kline.open_time) {
+            let in_held = match self.cutoff {
+                Some(cutoff) => kline.open_time < cutoff,
+                None => self.bars.is_empty(),
+            };
+            if in_held {
+                self.baseline.insert(kline.open_time, kline.volume);
+            }
+        }
+        self.bars.insert(kline.open_time, kline);
+    }
+
+    /// Makes `held`, a REST candle of this bucket requested at `as_of`, the candle the live bars
+    /// join, for a bucket the socket began before the first answer came: each bar that opened
+    /// before the request is in it up to the volume it has now.
+    fn adopt(&mut self, held: Kline, as_of: i64) {
+        self.baseline = self
+            .bars
+            .values()
+            .filter(|bar| bar.open_time < as_of)
+            .map(|bar| (bar.open_time, bar.volume))
+            .collect();
+        self.held = Some(held);
+        self.cutoff = Some(as_of);
     }
 
     fn is_of(&self, target: Timeframe, open_time: i64) -> bool {
@@ -84,7 +123,7 @@ impl Forming {
             candle.open = held.open;
             candle.high = candle.high.max(held.high);
             candle.low = candle.low.min(held.low);
-            candle.volume += held.volume - self.first_volume;
+            candle.volume += held.volume - self.baseline.values().sum::<f64>();
         }
         Some(candle)
     }
@@ -95,6 +134,53 @@ impl LiveFold {
     /// socket's bars (a refresh replaced it), or is another market's or timeframe's.
     pub fn reset(&mut self) {
         self.forming = None;
+        self.as_of = None;
+    }
+
+    /// Merges a REST answer into `current`, the candles held, as [`merge_fetched`] does, and
+    /// tells the fold what the answer is. `as_of_ms` is when it was requested, if known.
+    ///
+    /// An answer no socket bar is newer than (`live_open` is `None`) replaces the forming bucket,
+    /// so the fold starts it again. When the socket's bars began a bucket before any answer came,
+    /// the fold holds only what the socket saw of it: the answer's candle of that bucket becomes
+    /// what the bucket was before. A bucket that already has such a candle is left as it is, so
+    /// refreshes do not move it.
+    pub fn merge_fetched(
+        &mut self,
+        fetched: Vec<Kline>,
+        current: &[Kline],
+        live_open: Option<i64>,
+        as_of_ms: Option<i64>,
+        limit: usize,
+    ) -> Vec<Kline> {
+        if live_open.is_none() {
+            self.reset();
+            self.as_of = as_of_ms;
+            return merge_fetched(fetched, current, None, limit);
+        }
+        let adoptable = match (&mut self.forming, as_of_ms) {
+            (Some(forming), Some(as_of)) if forming.held.is_none() => fetched
+                .iter()
+                .find(|candle| candle.open_time == forming.open_time)
+                .map(|candle| (forming, candle.clone(), as_of)),
+            _ => None,
+        };
+        let Some((forming, held, as_of)) = adoptable else {
+            return merge_fetched(fetched, current, live_open, limit);
+        };
+        forming.adopt(held, as_of);
+        let open_time = forming.open_time;
+        let candle = forming.candle();
+        self.as_of = as_of_ms;
+        let mut merged = merge_fetched(fetched, current, live_open, limit);
+        if let Some(candle) = candle
+            && let Some(slot) = merged
+                .iter_mut()
+                .rfind(|merged| merged.open_time == open_time)
+        {
+            *slot = candle;
+        }
+        merged
     }
 
     /// Folds `kline`, a live kline of `base` candles, into `candles`, the series of `target`:
@@ -124,9 +210,9 @@ impl LiveFold {
         }
         let mut forming = match self.forming.take() {
             Some(forming) if forming.is_of(target, open_time) => forming,
-            _ => Forming::begin(target, open_time, candles.last(), &kline),
+            _ => Forming::begin(target, open_time, candles.last(), self.as_of),
         };
-        forming.bars.insert(kline.open_time, kline);
+        forming.take(kline);
         let candle = forming.candle();
         self.forming = Some(forming);
         apply_live(candles, candle?).then_some(open_time)

@@ -478,14 +478,11 @@ impl Chart {
         match result {
             Ok(fetched) => {
                 let live_open = self.live.and_then(|mark| mark.guard_for(self.last_fetch));
-                if live_open.is_none() {
-                    // The answer replaces the forming bucket: the socket's bars are of the past.
-                    self.live_fold.reset();
-                }
-                let fresh = market::live::merge_fetched(
+                let fresh = self.live_fold.merge_fetched(
                     fetched.candles,
                     &self.candles,
                     live_open,
+                    Some(requested_at_ms(self.last_fetch)),
                     CANDLE_LIMIT as usize,
                 );
                 self.candles =
@@ -500,6 +497,12 @@ impl Chart {
             Err(error) => self.error = Some(error),
         }
     }
+}
+
+/// When a request begun at `begun` was sent, in epoch milliseconds.
+pub(super) fn requested_at_ms(begun: Instant) -> i64 {
+    let since = i64::try_from(begun.elapsed().as_millis()).unwrap_or(i64::MAX);
+    crate::model::watchlist::now_ms().saturating_sub(since)
 }
 
 /// A request for the candles before the oldest one, with what it was asked for: an answer for a

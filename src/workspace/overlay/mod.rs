@@ -17,10 +17,10 @@
 
 pub(in crate::workspace) mod actions;
 
-use super::chart::CANDLE_LIMIT;
+use super::chart::{CANDLE_LIMIT, requested_at_ms};
 use crate::model::market;
 use crate::model::market::history::OlderHistory;
-use crate::model::market::live::{self, LiveFold, LiveMark};
+use crate::model::market::live::{LiveFold, LiveMark};
 use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
 use crate::model::overlay::{OverlayId, OverlayList};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
@@ -609,12 +609,13 @@ fn receive_fetch(series: &mut Series, now: Instant) -> bool {
                 .live
                 .zip(series.last_fetch)
                 .and_then(|(mark, begun)| mark.guard_for(begun));
-            if live_open.is_none() {
-                // The answer replaces the forming bucket: the socket's bars are of the past.
-                series.live_fold.reset();
-            }
-            let merged =
-                live::merge_fetched(fresh, &series.candles, live_open, CANDLE_LIMIT as usize);
+            let merged = series.live_fold.merge_fetched(
+                fresh,
+                &series.candles,
+                live_open,
+                series.last_fetch.map(requested_at_ms),
+                CANDLE_LIMIT as usize,
+            );
             let candles =
                 market::history::with_older(&series.candles, merged, series.older.keeps_older());
             series.set_candles(candles);

@@ -202,8 +202,8 @@ fn held_bucket() -> Kline {
 #[test]
 fn what_the_series_held_of_the_bucket_is_kept_and_its_open_bar_is_not_counted_twice() {
     let (mut fold, mut candles) = (LiveFold::default(), vec![held_bucket()]);
-    // The bar open when the socket connected is already in the held volume (10 includes the 3
-    // it had traded): only what it trades from here counts.
+    // With no time known for the held candle, the bar open when the socket connected is taken
+    // to be in it (10 includes the 3 it had traded): only what it trades from here counts.
     fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
     assert_eq!(candles[0].volume, 10.0);
     fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 113.0, 5.0));
@@ -214,6 +214,40 @@ fn what_the_series_held_of_the_bucket_is_kept_and_its_open_bar_is_not_counted_tw
     assert_eq!(candle.open, 100.0, "the held open");
     assert_eq!((candle.high, candle.low), (120.0, 90.0));
     assert_eq!(candle.close, 114.0);
+}
+
+/// A fold told the held bucket was requested at `cutoff`.
+fn fold_as_of(cutoff: i64) -> LiveFold {
+    let mut fold = LiveFold::default();
+    let _ = fold.merge_fetched(Vec::new(), &[], None, Some(cutoff), 500);
+    fold
+}
+
+#[test]
+fn a_bar_that_opened_after_the_held_candle_was_requested_counts_in_full() {
+    let mut fold = fold_as_of(2 * MINUTE);
+    let mut candles = vec![held_bucket()];
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
+    assert_eq!(candles[0].volume, 13.0, "the held 10 and the new bar's 3");
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 113.0, 8.0));
+    assert_eq!(candles[0].volume, 18.0);
+    fold_into(&mut fold, &mut candles, bar(4 * MINUTE, 114.0, 2.0));
+    assert_eq!(candles[0].volume, 20.0);
+}
+
+#[test]
+fn a_bar_that_opened_before_the_held_candle_was_requested_counts_only_since() {
+    let mut fold = fold_as_of(4 * MINUTE);
+    let mut candles = vec![held_bucket()];
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
+    assert_eq!(candles[0].volume, 10.0);
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 113.0, 8.0));
+    assert_eq!(candles[0].volume, 15.0);
+    fold_into(&mut fold, &mut candles, bar(4 * MINUTE, 114.0, 2.0));
+    assert_eq!(
+        candles[0].volume, 17.0,
+        "the later bar is not in the held candle"
+    );
 }
 
 #[test]
@@ -259,4 +293,104 @@ fn a_kline_of_the_timeframe_itself_replaces_the_candle() {
         Some(2)
     );
     assert_eq!(candles.len(), 2);
+}
+
+fn guarded_merge(
+    fold: &mut LiveFold,
+    fetched: Vec<Kline>,
+    current: &[Kline],
+    as_of: i64,
+) -> Vec<Kline> {
+    fold.merge_fetched(fetched, current, Some(0), Some(as_of), 500)
+}
+
+#[test]
+fn an_answer_that_comes_after_the_first_kline_gives_the_bucket_what_the_socket_missed() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    // The socket was first: the bucket holds only the bars it saw.
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
+    assert_eq!(candles[0].volume, 3.0);
+    // The answer was requested at minute 2.5 and has the bucket as it was then.
+    let merged = guarded_merge(
+        &mut fold,
+        vec![held_bucket()],
+        &candles,
+        2 * MINUTE + 30_000,
+    );
+    assert_eq!(merged.len(), 1);
+    assert_eq!(merged[0].open, 100.0, "the answer's open");
+    assert_eq!((merged[0].high, merged[0].low), (120.0, 90.0));
+    assert_eq!(merged[0].volume, 13.0);
+    assert_eq!(merged[0].close, 112.0, "the socket's latest close");
+    candles = merged;
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 113.0, 8.0));
+    assert_eq!(candles[0].volume, 18.0);
+    fold_into(&mut fold, &mut candles, bar(4 * MINUTE, 114.0, 2.0));
+    assert_eq!(candles[0].volume, 20.0);
+}
+
+#[test]
+fn a_bar_open_before_the_race_answer_was_requested_is_not_counted_twice() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
+    // Requested at minute 3.5: the answer already counts the bar's first 3.
+    let merged = guarded_merge(
+        &mut fold,
+        vec![held_bucket()],
+        &candles,
+        3 * MINUTE + 30_000,
+    );
+    assert_eq!(merged[0].volume, 10.0);
+    candles = merged;
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 113.0, 5.0));
+    assert_eq!(candles[0].volume, 12.0);
+}
+
+#[test]
+fn an_answer_that_has_no_candle_of_the_bucket_leaves_the_socket_bars_as_they_are() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
+    let earlier = Kline {
+        open_time: -5 * MINUTE,
+        close_time: -1,
+        ..held_bucket()
+    };
+    let merged = guarded_merge(&mut fold, vec![earlier.clone()], &candles, 2 * MINUTE);
+    assert_eq!(merged, vec![earlier, candles[0].clone()]);
+}
+
+#[test]
+fn a_guarded_answer_does_not_move_a_bucket_that_already_has_its_held_candle() {
+    let mut fold = fold_as_of(2 * MINUTE);
+    let mut candles = vec![held_bucket()];
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
+    let refreshed = Kline {
+        volume: 40.0,
+        ..held_bucket()
+    };
+    let merged = guarded_merge(&mut fold, vec![refreshed], &candles, 3 * MINUTE + 30_000);
+    assert_eq!(merged, candles);
+    candles = merged;
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 113.0, 8.0));
+    assert_eq!(candles[0].volume, 18.0);
+}
+
+#[test]
+fn an_answer_with_nothing_newer_than_it_starts_the_bucket_again() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
+    let merged = fold.merge_fetched(vec![held_bucket()], &candles, None, Some(4 * MINUTE), 500);
+    assert_eq!(merged, vec![held_bucket()]);
+    candles = merged;
+    // The answer is the account of the bucket, requested at minute 4: the bar open since 3 is in it.
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 113.0, 5.0));
+    assert_eq!(candles[0].volume, 10.0);
+}
+
+#[test]
+fn an_unknown_request_time_adopts_nothing() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
+    let merged = fold.merge_fetched(vec![held_bucket()], &candles, Some(0), None, 500);
+    assert_eq!(merged, candles);
 }

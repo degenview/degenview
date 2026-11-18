@@ -144,10 +144,17 @@ watchlists.
   stay ascending). For a folded one the forming bucket is rebuilt from the latest state of each base
   bar it holds (a kline is a running total, resent until its bar closes, so adding would double
   count): the bucket's open, range and volume from before the socket's first kline are what the
-  chart held then (its already-open bar counts only from there on), and the bucket cuts where
-  `bucket` does (a `22m` day's last bucket closes at midnight). A chart and an overlay series each
-  keep their own `LiveFold`, reset when a REST answer replaces the forming bucket or the market or
-  timeframe changes. A current-or-newer WebSocket bar beats an older REST snapshot
+  chart held then, and the bucket cuts where `bucket` does (a `22m` day's last bucket closes at
+  midnight). How much of a live base bar that held candle already counts depends on when its
+  request began (`LiveFold::as_of`, epoch ms): a bar that opened at or after it is not in it and
+  counts in full, one that opened before counts only from its first live kline on, and with no time
+  known only the bucket's first bar is taken to be in it. The feed connects as soon as the chart
+  exists, so a kline can arrive before the first REST answer: the bucket then holds only what the
+  socket saw, and `LiveFold::merge_fetched` makes the answer's candle of that bucket its held
+  candle (once; a bucket that already has one is not moved by later refreshes). A chart and an
+  overlay series each keep their own `LiveFold` and merge every REST answer through it; it resets
+  when an answer replaces the forming bucket or the market or timeframe changes. A
+  current-or-newer WebSocket bar beats an older REST snapshot
   (`live::merge_fetched`) only if the socket delivered after that request began
   (`LiveMark::guard_for`, carrying the bucket's open time): when it goes quiet, REST refreshes update
   the forming bar again.
