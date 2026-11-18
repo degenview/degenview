@@ -685,13 +685,7 @@ fn menu_tile(
         .gap(10.0)
         .frame(kit::menu_frame())
         .width(menu.width());
-    if let Some(shown) = popup.show(|ui| tool_menu(ui, input, actions, menu)) {
-        // The panel floats over the chart, which hands its crosshair to whatever covers it.
-        let area = &shown.response;
-        if ui.ctx().rect_contains_pointer(area.layer_id, area.rect) {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
-        }
-    }
+    popup.show(|ui| tool_menu(ui, input, actions, menu));
 }
 
 /// A menu of tools: a heading for each group and one row per tool. Rows are focusable, so the
@@ -1134,18 +1128,6 @@ mod tests {
         events: Vec<egui::Event>,
         input: &ToolSidebarInput,
     ) -> (Vec<ToolSidebarAction>, Option<Rect>) {
-        let (actions, menu, _) = frame_with_cursor(ctx, time, size, events, input);
-        (actions, menu)
-    }
-
-    /// `frame`, also returning the cursor the frame asked for.
-    fn frame_with_cursor(
-        ctx: &egui::Context,
-        time: &mut f64,
-        size: Vec2,
-        events: Vec<egui::Event>,
-        input: &ToolSidebarInput,
-    ) -> (Vec<ToolSidebarAction>, Option<Rect>, egui::CursorIcon) {
         *time += 0.1;
         let raw = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
@@ -1172,7 +1154,7 @@ mod tests {
                 })
             })
             .flatten();
-        (actions, menu, output.platform_output.cursor_icon)
+        (actions, menu)
     }
 
     fn click(
@@ -1270,41 +1252,6 @@ mod tests {
             "every row fits on a tall window: {menu:?}"
         );
         assert!(menu.bottom() <= size.y, "{menu:?}");
-    }
-
-    #[test]
-    fn the_grouped_menu_shows_the_crosshair_over_its_whole_panel() {
-        let ctx = egui::Context::default();
-        let (mut time, size) = (0.0, vec2(900.0, 900.0));
-        let input = state();
-        for _ in 0..3 {
-            frame(&ctx, &mut time, size, Vec::new(), &input);
-        }
-        click(&ctx, &mut time, size, CORNER, &input);
-        let mut menu = None;
-        for _ in 0..3 {
-            menu = frame(&ctx, &mut time, size, Vec::new(), &input).1;
-        }
-        let menu = menu.expect("the menu is open");
-
-        let cursor_at = |time: &mut f64, at: Pos2| {
-            let moved = vec![egui::Event::PointerMoved(at)];
-            frame_with_cursor(&ctx, time, size, moved, &input);
-            frame_with_cursor(&ctx, time, size, Vec::new(), &input).2
-        };
-        // A row, and the padding at the panel's edge where no row is.
-        for at in [menu.center(), menu.left_top() + vec2(2.0, 2.0)] {
-            assert_eq!(
-                cursor_at(&mut time, at),
-                egui::CursorIcon::Crosshair,
-                "at {at:?} of {menu:?}"
-            );
-        }
-        // Off the panel the strip's own cursor rules apply again.
-        assert_ne!(
-            cursor_at(&mut time, pos2(menu.right() + 40.0, menu.center().y)),
-            egui::CursorIcon::Crosshair
-        );
     }
 
     #[test]
