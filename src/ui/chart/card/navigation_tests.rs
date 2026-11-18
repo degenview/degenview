@@ -1459,6 +1459,34 @@ fn a_click_on_a_bar_picks_that_bar_alone() {
 }
 
 #[test]
+fn a_range_picker_has_the_drag_to_itself_under_demonstration() {
+    use crate::model::CursorMode;
+    let mut rig = Rig::new();
+    rig.cursor_mode = CursorMode::Demonstration;
+    rig.card.set_cursor_mode(CursorMode::Demonstration);
+    rig.card.set_pick_kind(PickKind::LogsRange);
+    rig.selecting = true;
+    rig.frames(&[]);
+    let probe = rig.probe();
+    let first = probe.start + 30;
+    let y = rig.in_plot().y;
+    let from = Pos2::new(rig.x_of(first), y);
+    let to = Pos2::new(rig.x_of(first + 20), y);
+    rig.press(from);
+    rig.drag_to(from, to);
+    assert!(
+        rig.card.demo.marks().is_empty() && !rig.card.demonstration_claims_drag(),
+        "no stroke is drawn over the bars being picked"
+    );
+    rig.release(to);
+    assert!(
+        rig.picked_range.is_some(),
+        "the picker still gets its range"
+    );
+    assert!(rig.card.demo.marks().is_empty());
+}
+
+#[test]
 fn a_drag_past_the_plot_ends_on_the_last_bar_shown() {
     let mut rig = Rig::new();
     rig.card.set_pick_kind(PickKind::LogsRange);
