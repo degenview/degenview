@@ -9,8 +9,13 @@
 //!
 //! A statement changes a name when it declares it, assigns it (`x := …`, `x.field := …`), or, for a
 //! collection or object, passes it to something that may fill it: `array.push(samples, x)`,
-//! `samples.push(x)`, or a call of one of the script's functions. Calls of the script's functions
-//! follow the overload the type checker resolved (`Expression::Call::target`).
+//! `samples.push(x)`, or a call of one of the script's functions that changes the parameter it
+//! receives it as (a function that only reads its argument is not replayed). Calls of the script's
+//! functions follow the overload the type checker resolved (`Expression::Call::target`).
+//!
+//! A name the request's own blocks declare before it (`level = 20.0` inside the `if` the request is
+//! in, a loop variable) is not the global of that name: the slice does not resolve it, so the
+//! expression reads the chart's value as it did before slices.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -48,6 +53,31 @@ const READ_ONLY_MEMBERS: [&str; 18] = [
 ];
 /// Members, besides `new…`, that return a collection of their own.
 const COLLECTION_RETURNING_MEMBERS: [&str; 5] = ["from", "copy", "slice", "keys", "values"];
+/// Methods that change the variable they are called on, whatever it is declared from (a collection
+/// a script function returned, say).
+const MUTATING_METHODS: [&str; 21] = [
+    "push",
+    "pop",
+    "shift",
+    "unshift",
+    "insert",
+    "remove",
+    "clear",
+    "set",
+    "fill",
+    "sort",
+    "reverse",
+    "put",
+    "put_all",
+    "add_row",
+    "add_col",
+    "remove_row",
+    "remove_col",
+    "swap_rows",
+    "swap_columns",
+    "reshape",
+    "concat",
+];
 
 /// Where an expression sits in the source (start and end offsets), which is how the runtime finds
 /// the slice of the request it evaluates.
@@ -68,8 +98,8 @@ pub(crate) fn build(statements: &[Statement]) -> Slices {
     if declared.is_empty() {
         return Slices::new();
     }
+    let references = reference_names(statements);
     let functions = Functions::new(statements);
-    let references = reference_names(statements, &functions);
     let facts: Vec<Facts> = statements
         .iter()
         .map(|statement| Facts::of(statement, &declared, &references, &functions))
@@ -86,9 +116,12 @@ pub(crate) fn build(statements: &[Statement]) -> Slices {
                 let Some(expression) = expression_argument(name, arguments) else {
                     return;
                 };
-                let slice = slice_for(expression, index, statements, &facts, &functions);
+                let key = key(expression);
+                let locals =
+                    visible_locals(std::slice::from_ref(statement), key, false).unwrap_or_default();
+                let slice = slice_for(expression, index, statements, &facts, &functions, &locals);
                 if !slice.is_empty() {
-                    slices.insert(key(expression), Arc::new(slice));
+                    slices.insert(key, Arc::new(slice));
                 }
             },
         );
@@ -100,6 +133,8 @@ pub(crate) fn build(statements: &[Statement]) -> Slices {
 struct Functions<'a> {
     bodies: Vec<(&'a [Parameter], &'a [Statement])>,
     by_name: HashMap<&'a str, Vec<usize>>,
+    /// For each function, the positions of the parameters it may change.
+    mutated: Vec<HashSet<usize>>,
 }
 
 impl<'a> Functions<'a> {
@@ -118,16 +153,50 @@ impl<'a> Functions<'a> {
                 bodies.push((parameters.as_slice(), body.as_slice()));
             }
         }
-        Self { bodies, by_name }
+        let mut functions = Self {
+            mutated: vec![HashSet::new(); bodies.len()],
+            bodies,
+            by_name,
+        };
+        functions.find_mutated_parameters();
+        functions
+    }
+
+    /// Which parameters each function may change: one it assigns a field of, calls a mutating
+    /// function or method on, or hands to a parameter another function changes. Repeated until
+    /// nothing is added, so a chain of calls settles.
+    fn find_mutated_parameters(&mut self) {
+        loop {
+            let next: Vec<HashSet<usize>> = (0..self.bodies.len())
+                .map(|id| {
+                    let (parameters, body) = self.bodies[id];
+                    let names: HashSet<String> =
+                        parameters.iter().map(|p| p.name.clone()).collect();
+                    let mut touched = HashSet::new();
+                    for statement in body {
+                        collect_field_writes(statement, &mut touched);
+                        collect_call_writes(statement, &names, self, &mut touched);
+                    }
+                    let mut changed: HashSet<usize> = parameters
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, parameter)| touched.contains(&parameter.name))
+                        .map(|(index, _)| index)
+                        .collect();
+                    changed.extend(self.mutated[id].iter().copied());
+                    changed
+                })
+                .collect();
+            if next == self.mutated {
+                return;
+            }
+            self.mutated = next;
+        }
     }
 
     /// Every function or method called `name`: all overloads, for a call nothing resolved.
     fn named(&self, name: &str) -> &[usize] {
         self.by_name.get(name).map_or(&[], Vec::as_slice)
-    }
-
-    fn is_function(&self, name: &str) -> bool {
-        self.by_name.contains_key(name)
     }
 }
 
@@ -167,6 +236,7 @@ impl Facts {
         let mut requests = false;
         if !matches!(statement, Statement::Function { .. }) {
             collect_writes(statement, false, &mut writes);
+            collect_field_writes(statement, &mut writes);
             collect_call_writes(statement, references, functions, &mut writes);
             writes.retain(|name| declared.contains(name));
             collect_reads(std::slice::from_ref(statement), &mut reads);
@@ -188,9 +258,15 @@ fn slice_for(
     statements: &[Statement],
     facts: &[Facts],
     functions: &Functions,
+    locals: &HashSet<String>,
 ) -> Vec<Statement> {
     let mut needed = Reads::default();
     read_names(expression, &mut needed);
+    // A name the request's own blocks declare is not the global of that name.
+    let local_reads: HashSet<String> = needed.names.intersection(locals).cloned().collect();
+    for name in &local_reads {
+        needed.names.remove(name);
+    }
     let mut expanded = HashSet::new();
     expand_functions(&mut needed, &mut expanded, functions);
 
@@ -212,12 +288,101 @@ fn slice_for(
             break;
         }
     }
+    // The slice would define a global of that name, which the expression would read in place of
+    // the local: no slice, and the request reads the chart's value as before.
+    let shadows = included
+        .iter()
+        .zip(facts)
+        .any(|(included, fact)| *included && !fact.writes.is_disjoint(&local_reads));
+    if shadows {
+        return Vec::new();
+    }
     statements
         .iter()
         .zip(&included)
         .filter(|(_, included)| **included)
         .map(|(statement, _)| statement.clone())
         .collect()
+}
+
+/// The names the blocks around the expression `key` declare before it, loop variables included, in
+/// `block` (`nested` is false for the top level, whose declarations are the globals). None when
+/// `key` is not inside `block`.
+fn visible_locals(
+    block: &[Statement],
+    key: ExpressionKey,
+    nested: bool,
+) -> Option<HashSet<String>> {
+    let mut locals = HashSet::new();
+    for statement in block {
+        if traversal::expressions(statement)
+            .into_iter()
+            .any(|expression| holds(expression, key))
+        {
+            return Some(locals);
+        }
+        for inner in traversal::nested_blocks(statement) {
+            if let Some(mut found) = visible_locals(inner, key, true) {
+                found.extend(locals);
+                declared_by_loop(statement, &mut found);
+                return Some(found);
+            }
+        }
+        if nested {
+            declared_by(statement, &mut locals);
+        }
+    }
+    None
+}
+
+/// Whether the expression, or one inside it, is the one at `key`.
+fn holds(expression: &Expression, key: ExpressionKey) -> bool {
+    if self::key(expression) == key {
+        return true;
+    }
+    if let Expression::Statement(statement, _) = expression
+        && statement_holds(statement, key)
+    {
+        return true;
+    }
+    traversal::children(expression)
+        .into_iter()
+        .any(|child| holds(child, key))
+}
+
+fn statement_holds(statement: &Statement, key: ExpressionKey) -> bool {
+    traversal::expressions(statement)
+        .into_iter()
+        .any(|expression| holds(expression, key))
+        || traversal::nested_blocks(statement)
+            .into_iter()
+            .flatten()
+            .any(|inner| statement_holds(inner, key))
+}
+
+/// The names a statement declares in the block it is in.
+fn declared_by(statement: &Statement, names: &mut HashSet<String>) {
+    match statement {
+        Statement::Declaration { name, .. } => {
+            names.insert(name.clone());
+        }
+        Statement::TupleDeclaration { names: tuple, .. } => names.extend(tuple.iter().cloned()),
+        _ => {}
+    }
+}
+
+/// The variables of a `for` loop, which its body sees.
+fn declared_by_loop(statement: &Statement, names: &mut HashSet<String>) {
+    match statement {
+        Statement::ForRange { variable, .. } => {
+            names.insert(variable.clone());
+        }
+        Statement::ForIn { index, value, .. } => {
+            names.extend(index.iter().cloned());
+            names.insert(value.clone());
+        }
+        _ => {}
+    }
 }
 
 /// The names a script declares at its top level: variables and tuple elements.
@@ -235,10 +400,10 @@ fn declared_names(statements: &[Statement]) -> HashSet<String> {
     names
 }
 
-/// The declared names that hold a collection or an object, so that passing one to a call may
-/// change it: those declared from a constructor (`array.new_float()`, `Point.new()`), a function
-/// that returns a collection, or a call of one of the script's own functions.
-fn reference_names(statements: &[Statement], functions: &Functions) -> HashSet<String> {
+/// The declared names known to hold a collection or an object: those declared from a constructor
+/// (`array.new_float()`, `Point.new()`). Other names may hold one too (a script function returned
+/// it); a call that changes it still shows up as a write through the call's own shape.
+fn reference_names(statements: &[Statement]) -> HashSet<String> {
     statements
         .iter()
         .filter_map(|statement| match statement {
@@ -246,16 +411,15 @@ fn reference_names(statements: &[Statement], functions: &Functions) -> HashSet<S
                 name,
                 value: Expression::Call { name: callee, .. },
                 ..
-            } if returns_reference(callee, functions) => Some(name.clone()),
+            } if returns_reference(callee) => Some(name.clone()),
             _ => None,
         })
         .collect()
 }
 
-fn returns_reference(callee: &str, functions: &Functions) -> bool {
+fn returns_reference(callee: &str) -> bool {
     let (namespace, member) = callee.rsplit_once('.').unwrap_or(("", callee));
-    functions.is_function(callee)
-        || member.starts_with("new")
+    member.starts_with("new")
         || (COLLECTION_NAMESPACES.contains(&namespace)
             && COLLECTION_RETURNING_MEMBERS.contains(&member))
 }
@@ -282,8 +446,8 @@ fn expression_argument<'a>(name: &str, arguments: &'a [Argument]) -> Option<&'a 
     None
 }
 
-/// Names the statement declares at its top level, or reassigns anywhere inside it (`x := …`,
-/// `x.field := …`); a declaration inside a block belongs to the block.
+/// Names the statement declares at its top level, or reassigns anywhere inside it (`x := …`); a
+/// declaration inside a block belongs to the block.
 fn collect_writes(statement: &Statement, nested: bool, writes: &mut HashSet<String>) {
     match statement {
         Statement::Declaration { name, .. } if !nested => {
@@ -295,11 +459,6 @@ fn collect_writes(statement: &Statement, nested: bool, writes: &mut HashSet<Stri
         Statement::Assignment { name, .. } => {
             writes.insert(name.clone());
         }
-        Statement::FieldAssignment { target, .. } => {
-            if let Some(root) = root_name(target) {
-                writes.insert(root);
-            }
-        }
         _ => {}
     }
     for block in traversal::nested_blocks(statement) {
@@ -309,20 +468,30 @@ fn collect_writes(statement: &Statement, nested: bool, writes: &mut HashSet<Stri
     }
 }
 
-/// The collections and objects (`references`) the calls in the statement may change.
+/// The variables whose fields the statement assigns anywhere inside it (`x.field := …`).
+fn collect_field_writes(statement: &Statement, writes: &mut HashSet<String>) {
+    if let Statement::FieldAssignment { target, .. } = statement
+        && let Some(root) = root_name(target)
+    {
+        writes.insert(root);
+    }
+    for block in traversal::nested_blocks(statement) {
+        for inner in block {
+            collect_field_writes(inner, writes);
+        }
+    }
+}
+
+/// The variables the calls in the statement may change: the collection a builtin mutator is given,
+/// a variable a mutating method is called on (`references` are the names known to hold a
+/// collection, for which any member that is not read-only counts), and what a call of the script's
+/// own functions passes for a parameter that function changes.
 fn collect_call_writes(
     statement: &Statement,
     references: &HashSet<String>,
     functions: &Functions,
     writes: &mut HashSet<String>,
 ) {
-    let touch = |expression: &Expression, writes: &mut HashSet<String>| {
-        if let Some(root) = root_name(expression)
-            && references.contains(&root)
-        {
-            writes.insert(root);
-        }
-    };
     traversal::for_each_call_with_args(
         std::slice::from_ref(statement),
         &mut |name, arguments, _| {
@@ -332,35 +501,65 @@ fn collect_call_writes(
             };
             let changes = !READ_ONLY_MEMBERS.contains(&member);
             match receiver {
-                // `array.push(samples, x)`: the collection is the first argument.
+                // `array.push(samples, x)`: only a collection is accepted as the first argument.
                 Some(namespace) if COLLECTION_NAMESPACES.contains(&namespace) => {
-                    if changes && let Some(first) = arguments.first() {
-                        touch(&first.value, writes);
+                    if changes
+                        && let Some(first) = arguments.first()
+                        && let Some(root) = root_name(&first.value)
+                    {
+                        writes.insert(root);
                     }
                 }
                 // `samples.push(x)`, or a method of the script's on the variable.
                 Some(variable) => {
                     let root = head(variable);
-                    if changes && references.contains(root) {
+                    if (changes && references.contains(root)) || MUTATING_METHODS.contains(&member)
+                    {
                         writes.insert(root.to_owned());
                     }
-                    if functions.is_function(member) {
-                        for argument in arguments {
-                            touch(&argument.value, writes);
-                        }
-                    }
+                    functions.arguments_changed(member, Some(root), arguments, writes);
                 }
-                // A function of the script may fill anything it is given.
-                None => {
-                    if functions.is_function(name) {
-                        for argument in arguments {
-                            touch(&argument.value, writes);
-                        }
-                    }
-                }
+                None => functions.arguments_changed(name, None, arguments, writes),
             }
         },
     );
+}
+
+impl Functions<'_> {
+    /// Adds to `writes` the variables a call of the script's function `name` hands to parameters the
+    /// function changes: the receiver is parameter 0, then the arguments in order (or by label).
+    fn arguments_changed(
+        &self,
+        name: &str,
+        receiver: Option<&str>,
+        arguments: &[Argument],
+        writes: &mut HashSet<String>,
+    ) {
+        for &id in self.named(name) {
+            let changed = &self.mutated[id];
+            let (parameters, _) = self.bodies[id];
+            if let Some(receiver) = receiver
+                && changed.contains(&0)
+            {
+                writes.insert(receiver.to_owned());
+            }
+            let mut position = usize::from(receiver.is_some());
+            for argument in arguments {
+                let index = match &argument.name {
+                    Some(label) => parameters.iter().position(|p| &p.name == label),
+                    None => {
+                        position += 1;
+                        Some(position - 1)
+                    }
+                };
+                if index.is_some_and(|index| changed.contains(&index))
+                    && let Some(root) = root_name(&argument.value)
+                {
+                    writes.insert(root);
+                }
+            }
+        }
+    }
 }
 
 /// The variable at the start of `a.b[1].c`: `a`.
@@ -549,6 +748,52 @@ mod tests {
             "//@version=6\nindicator(\"T\")\nsamples = array.new_float()\nfirst = array.get(samples, 0)\nn = array.size(samples)\n{request}"
         ));
         assert_eq!(sizes, [2], "`samples` and `n`; `first` only reads it");
+    }
+
+    #[test]
+    fn a_function_that_only_reads_its_argument_is_not_a_write() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nid(a) =>\n    a\nchecked(v) =>\n    runtime.error(\"x\")\n    v\nlevel = id(close)\nunused = checked(level)\nplot(request.security(syminfo.tickerid, \"D\", level))",
+        );
+        assert_eq!(sizes, [1], "only `level`");
+        // One that fills it, directly or through another function, is.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nmakeArray() =>\n    array.new_float()\nadd(a) =>\n    a.push(1.0)\nfill(a) =>\n    add(a)\nsamples = makeArray()\nfill(samples)\nn = array.size(samples)\nplot(request.security(syminfo.tickerid, \"D\", n))",
+        );
+        assert_eq!(sizes, [3], "`samples`, `fill(samples)` and `n`");
+    }
+
+    #[test]
+    fn a_name_the_requests_blocks_declare_is_not_the_global() {
+        let request = "request.security(syminfo.tickerid, \"D\", level)";
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = 10.0\nvar float x = na\nif close > 0\n    level = 20.0\n    x := {request}\nplot(x)"
+        ));
+        assert!(sizes.is_empty(), "{sizes:?}: the block's own `level`");
+        // Declared after the request, in the block, it is not visible yet: the global is.
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = 10.0\nvar float x = na\nif close > 0\n    x := {request}\n    level = 20.0\nplot(x)"
+        ));
+        assert_eq!(sizes, [1]);
+        // A loop variable is local to its loop, whatever the globals are called.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\ni = 5\nvar float x = na\nfor i = 0 to 2\n    x := request.security(syminfo.tickerid, \"D\", close[i])\nplot(x)",
+        );
+        assert!(sizes.is_empty(), "{sizes:?}");
+        // At the top level nothing is local.
+        let sizes = slice_sizes(&format!(
+            "//@version=6\nindicator(\"T\")\nlevel = 10.0\nplot({request})"
+        ));
+        assert_eq!(sizes, [1]);
+    }
+
+    #[test]
+    fn a_global_that_would_shadow_the_local_cancels_the_slice() {
+        // `other` needs the global `level`, which the expression's own `level` must not see.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nlevel = 10.0\nother = level * 2\nvar float x = na\nif close > 0\n    level = 20.0\n    x := request.security(syminfo.tickerid, \"D\", level + other)\nplot(x)",
+        );
+        assert!(sizes.is_empty(), "{sizes:?}");
     }
 
     #[test]

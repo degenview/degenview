@@ -147,12 +147,16 @@
 - `request.security` expressions that read script variables (`longTrend` in
   `request.security(sym, "15", longTrend)`): `runtime::security_slice` finds at build time the top-level
   statements **before the request** that declare, `:=`-reassign or may fill (`array.push(samples, x)`,
-  `samples.push(x)`, a call of the script's own function on a collection or object) what the
-  expression reads, through other statements and the script's functions (the overload the type
+  `samples.push(x)`, a call of the script's own function that changes the parameter it gets the
+  variable as: `Functions::mutated`, a fixpoint over the call graph; a function that only reads its
+  argument is not replayed) what the expression reads, through other statements and the script's functions (the overload the type
   checker resolved, `Call::target`; all same-name ones when unresolved; a function's locals are not
   reads of a global). `evaluate_higher_timeframe` runs them in the request's own state, with its own
   empty `Session::intrabar` (a `varip` there acts like `var`; the chart's is untouched), before the
-  expression. A statement that makes a `request.*` call is never in a slice (nesting; its names keep
+  expression. A name that a block around the request declares before it (`level = 20.0` in the `if` it is in,
+  a loop variable) is not resolved to the global of that name: the expression reads the chart's value
+  (`security_globals`), and when the slice would define a global of that name the request gets no
+  slice. A statement that makes a `request.*` call is never in a slice (nesting; its names keep
   the chart's value via `security_globals`); requests inside functions are not sliced. Known gap:
   `alert()` in a statement of a slice emits from the other series. Unknown collection members count as
   mutating (`READ_ONLY_MEMBERS` is the short list that does not).

@@ -1255,6 +1255,46 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_function_that_only_reads_its_argument_is_not_replayed() {
+        // `checked` fails on the requested series (ETHUSDT closes above 50) but not on the chart's.
+        // It cannot change `level`, so the request has no business running it.
+        assert_eq!(
+            last_plotted(
+                "id(a) =>\n    a\nchecked(v) =>\n    if v > 50\n        runtime.error(\"boom\")\n    v\nlevel = id(close)\nunused = checked(level)\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_collection_a_function_returned_is_still_filled() {
+        assert_eq!(
+            last_plotted(
+                "makeArray() =>\n    array.new_float()\nvar samples = makeArray()\nsamples.push(close)\nn = samples.size()\nx = request.security(\"ETHUSDT\", \"1\", n)"
+            ),
+            Some(3.0)
+        );
+        assert_eq!(
+            last_plotted(
+                "makeArray() =>\n    array.new_float()\nfill(a) =>\n    a.push(close)\nvar samples = makeArray()\nfill(samples)\nn = array.size(samples)\nx = request.security(\"ETHUSDT\", \"1\", n)"
+            ),
+            Some(3.0),
+            "a function that fills its parameter"
+        );
+    }
+
+    #[test]
+    fn a_local_in_a_block_is_not_resolved_to_the_global_with_its_name() {
+        // The request sees the `level` of the block it is written in.
+        assert_eq!(
+            last_plotted(
+                "level = 10.0\nvar float x = na\nif close > 0\n    level = 20.0\n    x := request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(20.0)
+        );
+    }
+
     /// Runs `source` on one chart bar that gets two live ticks, as the session does for a bar that
     /// has not closed, and returns the last value of the first plot after each tick.
     fn plotted_after_each_tick(source: &str) -> Vec<Option<f64>> {
