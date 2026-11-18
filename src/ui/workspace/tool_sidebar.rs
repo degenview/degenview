@@ -1,7 +1,7 @@
 //! The vertical tool strip down the left edge of a chart window (Swift `ToolSidebar`): the
 //! drawing tools at the top; Paper Trading and the alerts bell at the bottom.
 
-use super::cursor_menu;
+use super::cursor_menu::{self, CursorMenuAction};
 use crate::model::{ChartSyncSettings, CursorMode, MagnetMode, Tool, ToolGroup};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, shortcut, theme};
@@ -23,6 +23,8 @@ pub struct ToolSidebarInput {
     pub active_tool: Tool,
     /// The cursor the pointer rests on, shown on the first tile and ticked in its menu.
     pub cursor: CursorMode,
+    /// Whether holding the button still shows the values of the bar under the pointer.
+    pub values_tooltip: bool,
     /// The Zoom In mode is on: a drag on a plot selects the rectangle to zoom to.
     pub zoom_armed: bool,
     /// The focused chart has a zoom to go back from, so Zoom out is offered under Zoom in.
@@ -84,6 +86,8 @@ pub enum ToolSidebarAction {
     ToggleFavorite(Tool),
     /// Put the pointer on this cursor (and put any armed tool or Zoom In down).
     SetCursor(CursorMode),
+    /// Turn the values tooltip on long press on or off. The menu stays open.
+    ToggleValuesTooltip,
 }
 
 /// How an active tile is drawn: a lit accent tile for an armed tool, or a tinted glyph on a
@@ -681,11 +685,17 @@ fn cursor_tile(
         .align(RectAlign::RIGHT_START)
         .align_alternatives(&[RectAlign::RIGHT_END])
         .gap(10.0)
+        // The switch keeps the menu open; picking a cursor (which closes it itself) or a click
+        // outside ends it.
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .frame(kit::menu_frame())
         .width(width);
     popup.show(|ui| {
-        if let Some(mode) = cursor_menu::show(ui, input.cursor) {
-            actions.push(ToolSidebarAction::SetCursor(mode));
+        for action in cursor_menu::show(ui, input.cursor, input.values_tooltip) {
+            actions.push(match action {
+                CursorMenuAction::Set(mode) => ToolSidebarAction::SetCursor(mode),
+                CursorMenuAction::ToggleValuesTooltip => ToolSidebarAction::ToggleValuesTooltip,
+            });
         }
     });
 }
@@ -1185,6 +1195,7 @@ mod tests {
         ] {
             let state = ToolSidebarInput {
                 cursor: CursorMode::Cross,
+                values_tooltip: true,
                 zoom_armed: false,
                 can_zoom_out: false,
                 active_tool: tool,
@@ -1220,6 +1231,7 @@ mod tests {
     fn state() -> ToolSidebarInput {
         ToolSidebarInput {
             cursor: CursorMode::Cross,
+            values_tooltip: true,
             zoom_armed: false,
             can_zoom_out: false,
             active_tool: Tool::Cursor,
@@ -1476,9 +1488,14 @@ mod tests {
         (ctx, time, menu)
     }
 
-    /// The centre of the `n`th row of the cursor menu.
+    /// The centre of the `n`th row of the cursor menu (the toggle is row `CursorMode::ALL.len()`
+    /// and sits after the separator).
     fn cursor_row(menu: Rect, n: usize) -> Pos2 {
-        pos2(menu.center().x, menu.top() + 5.0 + 32.0 * n as f32 + 16.0)
+        let separator = if n >= CursorMode::ALL.len() { 9.0 } else { 0.0 };
+        pos2(
+            menu.center().x,
+            menu.top() + 5.0 + 32.0 * n as f32 + 16.0 + separator,
+        )
     }
 
     #[test]
@@ -1514,6 +1531,18 @@ mod tests {
     }
 
     #[test]
+    fn the_values_tooltip_switch_keeps_the_menu_open() {
+        let size = vec2(900.0, 700.0);
+        let input = state();
+        let (ctx, mut time, menu) = open_cursor_menu(&input);
+        let toggle = cursor_row(menu, CursorMode::ALL.len());
+        let actions = click(&ctx, &mut time, size, toggle, &input);
+        assert_eq!(actions, vec![ToolSidebarAction::ToggleValuesTooltip]);
+        let (_, menu) = frame(&ctx, &mut time, size, Vec::new(), &input);
+        assert!(menu.is_some(), "a switch does not close the menu");
+    }
+
+    #[test]
     fn the_cursor_menu_is_as_wide_as_its_rows_need() {
         let input = state();
         let (ctx, _, menu) = open_cursor_menu(&input);
@@ -1527,7 +1556,8 @@ mod tests {
             "the popup is {} wide, its rows need {wanted}",
             menu.width()
         );
-        assert!(wanted < 200.0, "no guessed width: {wanted}");
+        // The longest row is the switch's label: it, the switch and their padding fit, no more.
+        assert!(wanted < 300.0, "no guessed width: {wanted}");
     }
 
     #[test]

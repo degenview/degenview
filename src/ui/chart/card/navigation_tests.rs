@@ -1175,6 +1175,22 @@ fn demonstration_leaves_the_drawings_alone_and_the_axes_working() {
 }
 
 #[test]
+fn once_the_values_tooltip_shows_the_press_is_its_and_the_chart_does_not_pan() {
+    let mut rig = Rig::new();
+    let from = rig.in_plot();
+    rig.press(from);
+    rig.time += 0.6;
+    rig.frame(Vec::new());
+    assert!(rig.card.shows_values_tooltip());
+    rig.drag_to(from, from + Vec2::new(120.0, 0.0));
+    assert_eq!(rig.offset(), 0.0, "held for the tooltip, not panned");
+    rig.release(from + Vec2::new(120.0, 0.0));
+    // The next press, moved at once, is an ordinary pan.
+    rig.drag(from, Vec2::new(100.0, 0.0));
+    assert!(rig.offset() > 0.0);
+}
+
+#[test]
 fn a_cursor_change_moves_nothing_on_the_chart() {
     use crate::model::CursorMode;
     let mut rig = Rig::new();

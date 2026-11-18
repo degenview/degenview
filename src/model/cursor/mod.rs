@@ -41,6 +41,8 @@ pub struct CursorCaps {
     pub erases: bool,
     /// A press or drag leaves a mark that fades (`demo::Marks`).
     pub highlights: bool,
+    /// Holding the button still shows the values of the bar (when the option is on).
+    pub values_on_hold: bool,
 }
 
 /// The cursors of the cursor menu, in the order the menu lists them.
@@ -95,6 +97,7 @@ impl CursorMode {
             edits_drawings: true,
             erases: false,
             highlights: false,
+            values_on_hold: true,
         };
         match self {
             Self::Cross => CursorCaps {
@@ -114,6 +117,7 @@ impl CursorMode {
                 pans: false,
                 edits_drawings: false,
                 highlights: true,
+                values_on_hold: false,
                 ..BASE
             },
             Self::Eraser => CursorCaps {
@@ -122,6 +126,7 @@ impl CursorMode {
                 pans: false,
                 edits_drawings: false,
                 erases: true,
+                values_on_hold: false,
                 ..BASE
             },
         }
@@ -181,6 +186,13 @@ mod tests {
             let uses_the_drag = matches!(mode, CursorMode::Eraser | CursorMode::Demonstration);
             assert_eq!(caps.pans, !uses_the_drag, "{mode:?}");
             assert_eq!(caps.edits_drawings, caps.pans, "{mode:?}");
+        }
+        for mode in CursorMode::ALL {
+            assert_eq!(
+                mode.caps().values_on_hold,
+                mode.caps().pans,
+                "{mode:?}: the tooltip is for the modes that leave the press alone"
+            );
         }
         let demonstration = CursorMode::Demonstration.caps();
         assert!(!demonstration.lines && !demonstration.axis_tags && !demonstration.readout);

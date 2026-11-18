@@ -64,6 +64,9 @@ pub struct DrawingPrefs {
     /// The cursor over the plot.
     #[serde(deserialize_with = "cursor_or_default")]
     pub cursor: CursorMode,
+    /// Whether holding the button still shows the values of the bar under the pointer.
+    #[serde(deserialize_with = "values_tooltip_or_default")]
+    pub values_tooltip: bool,
 }
 
 /// `T` read from whatever the field holds, or `fallback` when this version cannot read it.
@@ -114,6 +117,10 @@ fn cursor_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Curso
     field_or(deserializer, DrawingPrefs::default().cursor)
 }
 
+fn values_tooltip_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().values_tooltip)
+}
+
 impl Default for DrawingPrefs {
     fn default() -> Self {
         Self {
@@ -126,6 +133,7 @@ impl Default for DrawingPrefs {
             forecast_tool: Tool::LongPosition,
             fib_tool: Tool::FibRetracement,
             cursor: CursorMode::Cross,
+            values_tooltip: true,
         }
     }
 }
@@ -513,6 +521,7 @@ mod tests {
             forecast_tool: Tool::DateAndPriceRange,
             fib_tool: Tool::FibRetracement,
             cursor: CursorMode::Dot,
+            values_tooltip: false,
         };
         templates.set_prefs(&chosen);
         assert_eq!(DrawingTemplateStore::new(store).prefs(), chosen);
@@ -568,8 +577,10 @@ mod tests {
     }
 
     #[test]
-    fn the_cursor_defaults_to_the_cross() {
-        assert_eq!(DrawingPrefs::default().cursor, CursorMode::Cross);
+    fn the_cursor_defaults_to_the_cross_with_the_tooltip_on() {
+        let prefs = DrawingPrefs::default();
+        assert_eq!(prefs.cursor, CursorMode::Cross);
+        assert!(prefs.values_tooltip);
     }
 
     #[test]
@@ -585,6 +596,7 @@ mod tests {
             .unwrap();
         let prefs = DrawingTemplateStore::new(store).prefs();
         assert_eq!(prefs.cursor, CursorMode::Cross);
+        assert!(prefs.values_tooltip, "on, as it always effectively was");
         assert!(!prefs.keep_drawing, "the options it had are kept");
     }
 
@@ -598,13 +610,15 @@ mod tests {
                 PREFS_KEY,
                 &serde_json::json!({
                     "cursor": "Magic",
+                    "values_tooltip": false,
                     "keep_drawing": false,
                 }),
             )
             .unwrap();
         let prefs = DrawingTemplateStore::new(store).prefs();
         assert_eq!(prefs.cursor, CursorMode::Cross);
-        assert!(!prefs.keep_drawing, "what it can read is kept");
+        assert!(!prefs.values_tooltip, "what it can read is kept");
+        assert!(!prefs.keep_drawing);
     }
 
     #[test]

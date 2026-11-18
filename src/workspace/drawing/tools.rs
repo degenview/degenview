@@ -89,6 +89,15 @@ impl DrawingTools {
         self.zoom_armed = false;
     }
 
+    /// Whether holding the button still shows the values of the bar.
+    pub(in crate::workspace) fn values_tooltip(&self) -> bool {
+        self.prefs.values_tooltip
+    }
+
+    pub(in crate::workspace) fn toggle_values_tooltip(&mut self) {
+        self.prefs.values_tooltip = !self.prefs.values_tooltip;
+    }
+
     /// Zoom In and a drawing tool are one choice: whichever was picked last holds the pointer, so
     /// an armed drawing tool puts Zoom In down.
     pub(in crate::workspace) fn give_pointer_to_tool(&mut self) {

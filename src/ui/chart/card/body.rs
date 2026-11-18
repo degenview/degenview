@@ -207,6 +207,13 @@ impl ChartCard {
                 plot,
             );
         }
+        if layout.main_visible && !held {
+            let blocked =
+                replay.selecting || self.layer.claims_drag() || self.demonstration_claims_drag();
+            self.handle_hold(ui, response, plot, blocked);
+        } else {
+            self.hold = Default::default();
+        }
         let navigation = navigation::Navigation {
             regions,
             shown: view
@@ -222,6 +229,7 @@ impl ChartCard {
             // Dragging over bars for the logs pane is not a pan.
             drawing_claims: self.layer.claims_drag()
                 || self.demonstration_claims_drag()
+                || self.values_hold_claims_drag()
                 || self.zoom_claims_drag()
                 || self.snapshot_select
                 || (replay.selecting && self.pick_kind == overlay::PickKind::LogsRange),

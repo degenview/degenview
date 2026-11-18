@@ -256,6 +256,7 @@ impl ChartWorkspace {
         let selecting_portion = self.is_selecting_portion();
         let (active_tool, zoom_armed) = (self.tools.active_tool(), self.tools.is_zoom_armed());
         let cursor = self.tools.cursor();
+        let values_tooltip = self.tools.values_tooltip();
         let selected_drawing = self.tools.selection().cloned();
         let (magnet, keep_drawing, hide_all_drawings) = (
             self.tools.magnet(),
@@ -538,6 +539,9 @@ impl ChartWorkspace {
                                             .with_style_clipboard(style_clipboard)
                                             .with_keys_blocked(dialog_open)
                                             .with_cursor(cursor)
+                                            .with_long_press_values(
+                                                values_tooltip && cursor.caps().values_on_hold,
+                                            )
                                             .with_defaults(&drawing_defaults)
                                             .with_preview(
                                                 drawing_preview
@@ -549,6 +553,7 @@ impl ChartWorkspace {
                                             );
                                             chart.chart.set_zoom_armed(zoom_armed);
                                             chart.chart.set_cursor_mode(cursor);
+                                            chart.chart.set_values_tooltip(values_tooltip);
                                             chart.chart.set_snapshot_select(selecting_portion);
                                             let for_logs = logs_chart == Some(chart_id);
                                             chart

@@ -138,6 +138,19 @@ impl ChartCard {
         let (overlay_frame, overlay_view) = info.overlays;
         self.paint_overlay_rings(painter, below_header, overlay_frame, overlay_view, index, x);
         overlay_card::remember(painter.ctx(), chart_id, index, readout_bottom);
+        if self.shows_values_tooltip() && crosshair.owner_id == chart_id && !crosshair.frozen {
+            let previous_close = match index.checked_sub(1) {
+                Some(before) => Some(candles[before].close),
+                None => info.previous_close,
+            };
+            self.draw_values_tooltip(
+                painter,
+                plot,
+                info,
+                (index, candle, previous_close),
+                show_volume,
+            );
+        }
 
         // Line, area and baseline charts follow one value: ring it on the bar under the pointer.
         if info.chart_type.data_class() == DataClass::StandardLine
@@ -169,10 +182,23 @@ impl ChartCard {
         painter: &egui::Painter,
         plot: Rect,
         info: &CrosshairBars,
-        (index, candle, previous_close): (usize, &Kline, Option<f64>),
+        bar: (usize, &Kline, Option<f64>),
         show_volume: bool,
     ) -> f32 {
-        let color = self.bar_color(candle, previous_close);
+        let color = self.bar_color(bar.1, bar.2);
+        let items = self.readout_rows(info, bar.0, bar.1, show_volume);
+        paint_ohlc_readout(painter, plot, &items, color)
+    }
+
+    /// The `(label, value)` pairs naming the bar at `index`: what the box in the corner shows, and
+    /// the first rows of the values tooltip.
+    pub(super) fn readout_rows(
+        &self,
+        info: &CrosshairBars,
+        index: usize,
+        candle: &Kline,
+        show_volume: bool,
+    ) -> Vec<(String, String)> {
         let constructed = info.synthetic.and_then(|bars| bars.get(index));
         let price_format = self.appearance.price_format();
         let mut items = readout_items(info, constructed, candle, price_format);
@@ -223,7 +249,7 @@ impl ChartCard {
                 ));
             }
         }
-        paint_ohlc_readout(painter, plot, &items, color)
+        items
     }
 }
 
@@ -243,6 +269,12 @@ pub(super) struct CrosshairBars<'a> {
     pub(super) tail: usize,
     /// The comparison lines, and the view they were resolved for.
     pub(super) overlays: (&'a overlays::OverlayFrame<'a>, &'a View),
+    /// The built-in indicators over the bars in view, already computed for the frame, and the
+    /// settings they were computed with.
+    pub(super) indicators: &'a IndicatorSeries,
+    pub(super) indicator_config: &'a IndicatorConfig,
+    /// The scripts with a pane of their own, whose plots the values tooltip lists too.
+    pub(super) pane_pine: Vec<&'a VisualOutput>,
 }
 
 /// The crosshair's values for one bar. A candle chart reads open, high, low and close; a

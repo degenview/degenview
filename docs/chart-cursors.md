@@ -90,6 +90,32 @@ draws freehand, and what was drawn **fades away after a few seconds**.
 - A translucent stroke is one path, so where it crosses itself during the fade the overlap is a
   little darker; the colour is the app's orange (**ours**).
 
+## Values tooltip on long press
+
+The switch at the foot of the cursor menu (`DrawingPrefs::values_tooltip`, in `drawing.prefs`, on by
+default). `ui/chart/card/values_tooltip.rs`.
+
+- **Long press.** The primary button goes down on the plot (not on an axis, an overlay widget or a
+  drawing), the pointer stays within 6 px (egui's click distance) for **0.5 s** (**ours**; under
+  egui's 0.8 s long touch, so touch shows it first), and the tooltip shows. Moving first is an
+  ordinary pan or drawing drag and never shows it. Works for the three cursors that leave the
+  press alone (Cross, Dot, Arrow); never for Demonstration or the Eraser.
+- **While it shows** it follows the pointer, the press is the tooltip's (the chart does not pan, a
+  drawing is not dragged), and it is gone when the button is let go. With a drawing under the press
+  the press is the drawing's.
+- **Content, all from what the frame already computed** (`CrosshairBars`; nothing is recomputed):
+  the time, the readout's rows (open, high, low, close or the constructed bar's own, volume, the
+  market's price on a constructed type, scripts' `plotcandle`/`plotbar`), the change from the
+  previous close, the built-in indicators over the bars in view (EMA, Bollinger, RSI, Supertrend
+  flip), and every script plot that asks for the data window (`display` has
+  `DISPLAY_DATA_WINDOW`), on the chart and in its pane, read at the hovered bar through
+  `series_index` (so replay-cut and constructed bars line up). At most 28 rows.
+- It sits right and below the pointer, on the other side where there is no room, and stays inside
+  the plot under the header. Drawn with the crosshair, so a snapshot never has it.
+- On a touch screen egui turns a long touch into a right-click; while the tooltip is on, the drawing
+  layer ignores that one (`DrawingFrame::long_press_values`), so it shows the values and not a menu.
+  Off, a long touch is the context menu as before. **Not tried on a touch screen.**
+
 ## What TradingView documents, and what is our choice
 
 Sources: the Help Center article on cursors (`support/solutions/43000703396`): Cross is the default,
@@ -125,6 +151,10 @@ cursor between sessions (ours does).
 - The tile's click opens the menu; it no longer disarms a drawing tool by itself (picking a cursor,
   Esc, or arming another tool still does).
 - No pointer ring, ripple or trail: nothing documents them. The fade timings and the colour are ours.
+- The tooltip: TradingView documents the hold-to-show behaviour with a switch in the cursor menu, and
+  (Charting Library 3.0) OHLC and change that follow the pointer; the **0.5 s**, the position, what
+  else it lists and the dismissal on release are ours. The menu label "Values tooltip on long
+  press" was not found in any source read.
 - DegenView has no drawing groups, so there is nothing to erase together. Ctrl/Cmd+click on one
   Fibonacci level is not implemented.
 - The inverted price scale does not exist in DegenView, so no cursor handles one.

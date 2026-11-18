@@ -94,6 +94,8 @@ pub(super) struct Harness {
     pub(super) clock: f64,
     /// The pointer as last told to egui: a still pointer sends no event, as in a real window.
     sent: Option<Pos2>,
+    /// A press or a release of the primary button to send with the next frame.
+    pub(super) button: Option<bool>,
 }
 
 impl Harness {
@@ -115,6 +117,7 @@ impl Harness {
             source: DataSource::Binance,
             clock: 0.0,
             sent: None,
+            button: None,
         }
     }
 
@@ -127,6 +130,14 @@ impl Harness {
                 .filter(|at| self.sent != Some(*at))
                 .map(egui::Event::PointerMoved)
                 .into_iter()
+                .chain(self.button.take().zip(self.pointer).map(|(pressed, pos)| {
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    }
+                }))
                 .collect(),
             ..Default::default()
         };

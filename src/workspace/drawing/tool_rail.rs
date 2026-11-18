@@ -19,6 +19,7 @@ impl ChartWorkspace {
         let input = tool_sidebar::ToolSidebarInput {
             active_tool: self.tools.active,
             cursor: self.tools.chosen_cursor(),
+            values_tooltip: self.tools.values_tooltip(),
             zoom_armed: self.tools.zoom_armed,
             can_zoom_out: self
                 .focused
@@ -66,6 +67,7 @@ impl ChartWorkspace {
                     self.tools.choose_cursor(mode);
                     self.drop_rulers();
                 }
+                ToolSidebarAction::ToggleValuesTooltip => self.tools.toggle_values_tooltip(),
                 ToolSidebarAction::SetMagnet(mode) => self.tools.prefs.magnet = mode,
                 ToolSidebarAction::ToggleKeepDrawing => {
                     self.tools.prefs.keep_drawing = !self.tools.prefs.keep_drawing
@@ -257,5 +259,15 @@ mod tests {
         );
         workspace.tools.escape();
         assert_eq!(workspace.tools.cursor(), CursorMode::Dot);
+    }
+
+    #[test]
+    fn the_values_tooltip_switch_is_saved_with_the_options() {
+        let mut workspace = empty_workspace(1);
+        let _ = workspace.drawing_templates();
+        assert!(workspace.tools.values_tooltip());
+        workspace.tools.toggle_values_tooltip();
+        workspace.save_drawing_prefs();
+        assert!(!workspace.drawing_templates().prefs().values_tooltip);
     }
 }
