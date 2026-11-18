@@ -13,6 +13,12 @@
 //! receives it as (a function that only reads its argument is not replayed). Calls of the script's
 //! functions follow the overload the type checker resolved (`Expression::Call::target`).
 //!
+//! Writes are found scope-aware: a block's own `level` is not the global of that name, an alias of
+//! a collection (`alias = samples`) is the collection, and a function that changes a global
+//! collection (not only one it is handed) writes it where it is called. Known limits: aliasing
+//! through a function's return value or a container, and handles other than collections and
+//! objects, are not followed.
+//!
 //! A name the request's own blocks declare before it (`level = 20.0` inside the `if` the request is
 //! in, a loop variable) is not the global of that name: the slice does not resolve it, so the
 //! expression reads the chart's value as it did before slices.
@@ -99,10 +105,11 @@ pub(crate) fn build(statements: &[Statement]) -> Slices {
         return Slices::new();
     }
     let references = reference_names(statements);
+    let aliases = aliases(statements);
     let functions = Functions::new(statements);
     let facts: Vec<Facts> = statements
         .iter()
-        .map(|statement| Facts::of(statement, &declared, &references, &functions))
+        .map(|statement| Facts::of(statement, &declared, &references, &aliases, &functions))
         .collect();
 
     let mut slices = Slices::new();
@@ -135,6 +142,9 @@ struct Functions<'a> {
     by_name: HashMap<&'a str, Vec<usize>>,
     /// For each function, the positions of the parameters it may change.
     mutated: Vec<HashSet<usize>>,
+    /// For each function, the globals it may change: a collection or object of the script's it
+    /// fills or assigns a field of without having been handed it.
+    global_writes: Vec<HashSet<String>>,
 }
 
 impl<'a> Functions<'a> {
@@ -155,48 +165,67 @@ impl<'a> Functions<'a> {
         }
         let mut functions = Self {
             mutated: vec![HashSet::new(); bodies.len()],
+            global_writes: vec![HashSet::new(); bodies.len()],
             bodies,
             by_name,
         };
-        functions.find_mutated_parameters();
+        functions.find_effects();
         functions
     }
 
-    /// Which parameters each function may change: one it assigns a field of, calls a mutating
-    /// function or method on, or hands to a parameter another function changes. Repeated until
-    /// nothing is added, so a chain of calls settles.
-    fn find_mutated_parameters(&mut self) {
+    /// What each function may change: the parameters it assigns a field of, calls a mutating
+    /// function or method on, or hands to a parameter another function changes, and the globals it
+    /// does the same to. Repeated until nothing is added, so a chain of calls settles.
+    fn find_effects(&mut self) {
         loop {
-            let next: Vec<HashSet<usize>> = (0..self.bodies.len())
+            let next: Vec<(HashSet<usize>, HashSet<String>)> = (0..self.bodies.len())
                 .map(|id| {
                     let (parameters, body) = self.bodies[id];
                     let names: HashSet<String> =
                         parameters.iter().map(|p| p.name.clone()).collect();
-                    let mut touched = HashSet::new();
+                    let walker = Walker {
+                        references: &names,
+                        functions: self,
+                    };
+                    let mut effects = Effects::default();
+                    let mut scope = HashSet::new();
                     for statement in body {
-                        collect_field_writes(statement, &mut touched);
-                        collect_call_writes(statement, &names, self, &mut touched);
+                        walker.statement(statement, &scope, true, &mut effects);
+                        declared_by(statement, &mut scope);
                     }
                     let mut changed: HashSet<usize> = parameters
                         .iter()
                         .enumerate()
-                        .filter(|(_, parameter)| touched.contains(&parameter.name))
+                        .filter(|(_, parameter)| effects.mutated.contains(&parameter.name))
                         .map(|(index, _)| index)
                         .collect();
                     changed.extend(self.mutated[id].iter().copied());
-                    changed
+                    let mut globals = self.global_writes[id].clone();
+                    globals.extend(effects.mutated.difference(&names).cloned());
+                    (changed, globals)
                 })
                 .collect();
-            if next == self.mutated {
+            let (mutated, global_writes): (Vec<_>, Vec<_>) = next.into_iter().unzip();
+            if mutated == self.mutated && global_writes == self.global_writes {
                 return;
             }
-            self.mutated = next;
+            self.mutated = mutated;
+            self.global_writes = global_writes;
         }
     }
 
     /// Every function or method called `name`: all overloads, for a call nothing resolved.
     fn named(&self, name: &str) -> &[usize] {
         self.by_name.get(name).map_or(&[], Vec::as_slice)
+    }
+
+    /// The definitions a call may reach: the one the type checker chose, else every one of that
+    /// name.
+    fn callees(&self, name: &str, target: Option<usize>) -> Vec<usize> {
+        match target {
+            Some(id) => vec![id],
+            None => self.named(name).to_vec(),
+        }
     }
 }
 
@@ -229,15 +258,25 @@ impl Facts {
         statement: &Statement,
         declared: &HashSet<String>,
         references: &HashSet<String>,
+        aliases: &Aliases,
         functions: &Functions,
     ) -> Self {
         let mut writes = HashSet::new();
         let mut reads = Reads::default();
         let mut requests = false;
         if !matches!(statement, Statement::Function { .. }) {
-            collect_writes(statement, false, &mut writes);
-            collect_field_writes(statement, &mut writes);
-            collect_call_writes(statement, references, functions, &mut writes);
+            let walker = Walker {
+                references,
+                functions,
+            };
+            let mut effects = Effects::default();
+            walker.statement(statement, &HashSet::new(), false, &mut effects);
+            writes = effects.assigned;
+            // A collection changed through one name is changed for every name that aliases it.
+            for name in effects.mutated {
+                writes.extend(aliases.get(&name).into_iter().flatten().cloned());
+                writes.insert(name);
+            }
             writes.retain(|name| declared.contains(name));
             collect_reads(std::slice::from_ref(statement), &mut reads);
             traversal::for_each_call(std::slice::from_ref(statement), &mut |name, _| {
@@ -446,102 +485,161 @@ fn expression_argument<'a>(name: &str, arguments: &'a [Argument]) -> Option<&'a 
     None
 }
 
-/// Names the statement declares at its top level, or reassigns anywhere inside it (`x := …`); a
-/// declaration inside a block belongs to the block.
-fn collect_writes(statement: &Statement, nested: bool, writes: &mut HashSet<String>) {
-    match statement {
-        Statement::Declaration { name, .. } if !nested => {
-            writes.insert(name.clone());
-        }
-        Statement::TupleDeclaration { names, .. } if !nested => {
-            writes.extend(names.iter().cloned())
-        }
-        Statement::Assignment { name, .. } => {
-            writes.insert(name.clone());
-        }
-        _ => {}
-    }
-    for block in traversal::nested_blocks(statement) {
-        for inner in block {
-            collect_writes(inner, true, writes);
-        }
-    }
+/// What statements do to the variables they mention.
+#[derive(Default)]
+struct Effects {
+    /// Declared at the top level, or reassigned (`x := …`).
+    assigned: HashSet<String>,
+    /// Changed through the value: a collection filled, a field assigned, an argument a function
+    /// changes, a global a function changes.
+    mutated: HashSet<String>,
 }
 
-/// The variables whose fields the statement assigns anywhere inside it (`x.field := …`).
-fn collect_field_writes(statement: &Statement, writes: &mut HashSet<String>) {
-    if let Statement::FieldAssignment { target, .. } = statement
-        && let Some(root) = root_name(target)
-    {
-        writes.insert(root);
-    }
-    for block in traversal::nested_blocks(statement) {
-        for inner in block {
-            collect_field_writes(inner, writes);
-        }
-    }
+/// Finds the effects of statements. `references` are the names known to hold a collection, for
+/// which any method that is not read-only counts as a change.
+struct Walker<'w, 'f> {
+    references: &'w HashSet<String>,
+    functions: &'w Functions<'f>,
 }
 
-/// The variables the calls in the statement may change: the collection a builtin mutator is given,
-/// a variable a mutating method is called on (`references` are the names known to hold a
-/// collection, for which any member that is not read-only counts), and what a call of the script's
-/// own functions passes for a parameter that function changes.
-fn collect_call_writes(
-    statement: &Statement,
-    references: &HashSet<String>,
-    functions: &Functions,
-    writes: &mut HashSet<String>,
-) {
-    traversal::for_each_call_with_args(
-        std::slice::from_ref(statement),
-        &mut |name, arguments, _| {
-            let (receiver, member) = match name.rsplit_once('.') {
-                Some((receiver, member)) => (Some(receiver), member),
-                None => (None, name),
-            };
-            let changes = !READ_ONLY_MEMBERS.contains(&member);
-            match receiver {
-                // `array.push(samples, x)`: only a collection is accepted as the first argument.
-                Some(namespace) if COLLECTION_NAMESPACES.contains(&namespace) => {
-                    if changes
-                        && let Some(first) = arguments.first()
-                        && let Some(root) = root_name(&first.value)
-                    {
-                        writes.insert(root);
-                    }
-                }
-                // `samples.push(x)`, or a method of the script's on the variable.
-                Some(variable) => {
-                    let root = head(variable);
-                    if (changes && references.contains(root)) || MUTATING_METHODS.contains(&member)
-                    {
-                        writes.insert(root.to_owned());
-                    }
-                    functions.arguments_changed(member, Some(root), arguments, writes);
-                }
-                None => functions.arguments_changed(name, None, arguments, writes),
+impl Walker<'_, '_> {
+    /// The effects of `statement`. `scope` holds the names the blocks around it have declared so far
+    /// (loop variables included): those are the blocks' own, not the globals of the same name.
+    /// `nested` is false for a top-level statement, whose declarations are the globals.
+    fn statement(
+        &self,
+        statement: &Statement,
+        scope: &HashSet<String>,
+        nested: bool,
+        out: &mut Effects,
+    ) {
+        match statement {
+            Statement::Declaration { name, .. } if !nested => {
+                out.assigned.insert(name.clone());
             }
-        },
-    );
-}
+            Statement::TupleDeclaration { names, .. } if !nested => {
+                out.assigned.extend(names.iter().cloned())
+            }
+            Statement::Assignment { name, .. } if !scope.contains(name) => {
+                out.assigned.insert(name.clone());
+            }
+            Statement::FieldAssignment { target, .. } => {
+                if let Some(root) = root_name(target) {
+                    self.mutate(root, scope, out);
+                }
+            }
+            _ => {}
+        }
+        for expression in traversal::expressions(statement) {
+            self.expression(expression, scope, out);
+        }
+        for block in traversal::nested_blocks(statement) {
+            let mut inner = scope.clone();
+            declared_by_loop(statement, &mut inner);
+            for child in block {
+                self.statement(child, &inner, true, out);
+                declared_by(child, &mut inner);
+            }
+        }
+    }
 
-impl Functions<'_> {
-    /// Adds to `writes` the variables a call of the script's function `name` hands to parameters the
-    /// function changes: the receiver is parameter 0, then the arguments in order (or by label).
-    fn arguments_changed(
+    fn mutate(&self, root: String, scope: &HashSet<String>, out: &mut Effects) {
+        if !scope.contains(&root) {
+            out.mutated.insert(root);
+        }
+    }
+
+    fn expression(&self, expression: &Expression, scope: &HashSet<String>, out: &mut Effects) {
+        match expression {
+            Expression::Call {
+                name,
+                arguments,
+                target,
+                ..
+            } => self.call(name, arguments, *target, scope, out),
+            Expression::MethodCall {
+                receiver,
+                name,
+                arguments,
+                target,
+                ..
+            } => {
+                let root = root_name(receiver);
+                if MUTATING_METHODS.contains(&name.as_str())
+                    && let Some(root) = root.clone()
+                {
+                    self.mutate(root, scope, out);
+                }
+                let callees = self.functions.callees(name, *target);
+                self.user_call(&callees, root, arguments, scope, out);
+            }
+            Expression::Statement(statement, _) => self.statement(statement, scope, true, out),
+            _ => {}
+        }
+        for child in traversal::children(expression) {
+            self.expression(child, scope, out);
+        }
+    }
+
+    /// A call by name: `array.push(samples, x)`, `samples.push(x)`, `f(x)` or `samples.add(x)`.
+    fn call(
         &self,
         name: &str,
-        receiver: Option<&str>,
         arguments: &[Argument],
-        writes: &mut HashSet<String>,
+        target: Option<usize>,
+        scope: &HashSet<String>,
+        out: &mut Effects,
     ) {
-        for &id in self.named(name) {
-            let changed = &self.mutated[id];
-            let (parameters, _) = self.bodies[id];
-            if let Some(receiver) = receiver
+        let (receiver, member) = match name.rsplit_once('.') {
+            Some((receiver, member)) => (Some(receiver), member),
+            None => (None, name),
+        };
+        let changes = !READ_ONLY_MEMBERS.contains(&member);
+        match receiver {
+            // Only a collection is accepted as the first argument.
+            Some(namespace) if COLLECTION_NAMESPACES.contains(&namespace) => {
+                if changes
+                    && let Some(first) = arguments.first()
+                    && let Some(root) = root_name(&first.value)
+                {
+                    self.mutate(root, scope, out);
+                }
+            }
+            Some(variable) => {
+                let root = head(variable);
+                if (changes && self.references.contains(root)) || MUTATING_METHODS.contains(&member)
+                {
+                    self.mutate(root.to_owned(), scope, out);
+                }
+                let callees = self.functions.callees(member, target);
+                self.user_call(&callees, Some(root.to_owned()), arguments, scope, out);
+            }
+            None => {
+                let callees = self.functions.callees(name, target);
+                self.user_call(&callees, None, arguments, scope, out);
+            }
+        }
+    }
+
+    /// A call of the script's functions: what each hands to a parameter it changes (the receiver is
+    /// parameter 0, then the arguments in order or by label) and the globals it changes.
+    fn user_call(
+        &self,
+        callees: &[usize],
+        receiver: Option<String>,
+        arguments: &[Argument],
+        scope: &HashSet<String>,
+        out: &mut Effects,
+    ) {
+        for &id in callees {
+            let changed = &self.functions.mutated[id];
+            let (parameters, _) = self.functions.bodies[id];
+            out.mutated
+                .extend(self.functions.global_writes[id].iter().cloned());
+            if let Some(receiver) = &receiver
                 && changed.contains(&0)
             {
-                writes.insert(receiver.to_owned());
+                self.mutate(receiver.clone(), scope, out);
             }
             let mut position = usize::from(receiver.is_some());
             for argument in arguments {
@@ -555,11 +653,59 @@ impl Functions<'_> {
                 if index.is_some_and(|index| changed.contains(&index))
                     && let Some(root) = root_name(&argument.value)
                 {
-                    writes.insert(root);
+                    self.mutate(root, scope, out);
                 }
             }
         }
     }
+}
+
+/// The names that refer to the same value because one was copied from the other
+/// (`alias = samples`, `alias := samples`): each name with every name in its group. A collection
+/// changed through one is changed for all.
+type Aliases = HashMap<String, HashSet<String>>;
+
+fn aliases(statements: &[Statement]) -> Aliases {
+    fn copies(statements: &[Statement], pairs: &mut Vec<(String, String)>) {
+        for statement in statements {
+            if matches!(statement, Statement::Function { .. }) {
+                continue;
+            }
+            if let Statement::Declaration { name, value, .. }
+            | Statement::Assignment { name, value, .. } = statement
+                && let Expression::Identifier(other, _) = value
+                && !other.contains('.')
+            {
+                pairs.push((name.clone(), other.clone()));
+            }
+            for block in traversal::nested_blocks(statement) {
+                copies(block, pairs);
+            }
+        }
+    }
+    let mut pairs = Vec::new();
+    copies(statements, &mut pairs);
+    let mut groups: Vec<HashSet<String>> = Vec::new();
+    for (a, b) in pairs {
+        let mut merged: HashSet<String> = HashSet::from([a.clone(), b.clone()]);
+        groups.retain(|group| {
+            let joins = group.contains(&a) || group.contains(&b);
+            if joins {
+                merged.extend(group.iter().cloned());
+            }
+            !joins
+        });
+        groups.push(merged);
+    }
+    groups
+        .into_iter()
+        .flat_map(|group| {
+            group
+                .iter()
+                .map(|name| (name.clone(), group.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// The variable at the start of `a.b[1].c`: `a`.
@@ -794,6 +940,58 @@ mod tests {
             "//@version=6\nindicator(\"T\")\nlevel = 10.0\nother = level * 2\nvar float x = na\nif close > 0\n    level = 20.0\n    x := request.security(syminfo.tickerid, \"D\", level + other)\nplot(x)",
         );
         assert!(sizes.is_empty(), "{sizes:?}");
+    }
+
+    #[test]
+    fn a_block_local_assignment_is_not_a_write_of_the_global() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nlevel = close\nif close > 50\n    level = 5.0\n    level += 1\nplot(request.security(syminfo.tickerid, \"D\", level))",
+        );
+        assert_eq!(sizes, [1], "only the global `level`");
+        // `:=` on a name the block did not declare is the global's.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nlevel = close\nif close > 50\n    level += 1\nplot(request.security(syminfo.tickerid, \"D\", level))",
+        );
+        assert_eq!(sizes, [2]);
+        // The same for the collection a block makes for itself, and for a loop variable.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nsamples = array.new_float()\nif close > 50\n    samples = array.new_float()\n    samples.push(1.0)\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))",
+        );
+        assert_eq!(sizes, [1]);
+    }
+
+    #[test]
+    fn a_mutation_through_an_alias_is_a_write_of_the_collection() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\nalias = samples\nalias.push(close)\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))",
+        );
+        assert_eq!(sizes, [3], "`samples`, `alias = samples`, the push");
+        // A number copied from another is a value, not an alias.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nlevel = close\ncopy = level\ncopy += 1\nplot(request.security(syminfo.tickerid, \"D\", level))",
+        );
+        assert_eq!(sizes, [1]);
+    }
+
+    #[test]
+    fn a_function_that_changes_a_global_is_a_write_of_it() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\naddSample() =>\n    array.push(samples, close)\nrecord() =>\n    addSample()\nrecord()\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))",
+        );
+        assert_eq!(sizes, [2], "`samples` and `record()`");
+        // One that only reads it is not.
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\npeek() =>\n    array.size(samples)\nunused = peek()\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))",
+        );
+        assert_eq!(sizes, [1]);
+    }
+
+    #[test]
+    fn only_the_overload_called_decides_what_is_written() {
+        let sizes = slice_sizes(
+            "//@version=6\nindicator(\"T\")\nchecked(float v) =>\n    v\nchecked(array<float> a) =>\n    array.push(a, 1.0)\n    1.0\nlevel = close\nunused = checked(level)\nplot(request.security(syminfo.tickerid, \"D\", level))",
+        );
+        assert_eq!(sizes, [1]);
     }
 
     #[test]

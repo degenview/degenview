@@ -1295,6 +1295,56 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_read_only_overload_is_not_replayed_for_the_sake_of_a_mutating_one() {
+        // `checked(float)` fails on the requested series; only `checked(array<float>)` changes
+        // its parameter, and the call is the float one.
+        assert_eq!(
+            last_plotted(
+                "checked(float v) =>\n    if v > 50\n        runtime.error(\"boom\")\n    v\nchecked(array<float> a) =>\n    array.push(a, 1.0)\n    1.0\nlevel = close\nunused = checked(level)\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_block_local_assignment_is_not_a_write_of_the_global() {
+        // The block's own `level` is changed; the global is not, so the block stays out of the
+        // request (it would raise the error on the requested series).
+        assert_eq!(
+            last_plotted(
+                "level = close\nif close > 50\n    level = 5.0\n    level += 1\n    runtime.error(\"boom\")\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_collection_changed_through_an_alias_or_a_helper_is_filled() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", array.size(samples))";
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\nalias = samples\nalias.push(close)\n{request}"
+            )),
+            Some(3.0),
+            "through an alias"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\naddSample() =>\n    array.push(samples, close)\naddSample()\n{request}"
+            )),
+            Some(3.0),
+            "a helper without arguments"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\naddSample() =>\n    array.push(samples, close)\nrecord() =>\n    addSample()\nrecord()\n{request}"
+            )),
+            Some(3.0),
+            "a helper of a helper"
+        );
+    }
+
     /// Runs `source` on one chart bar that gets two live ticks, as the session does for a bar that
     /// has not closed, and returns the last value of the first plot after each tick.
     fn plotted_after_each_tick(source: &str) -> Vec<Option<f64>> {
