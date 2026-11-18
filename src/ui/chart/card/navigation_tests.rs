@@ -35,6 +35,8 @@ struct Rig {
     drawings: Vec<Drawing>,
     scale_mode: PriceScaleMode,
     tool: Tool,
+    /// The Eraser is the workspace's cursor.
+    erase: bool,
     selected: Vec<u64>,
     time: f64,
     rect: Rect,
@@ -61,6 +63,7 @@ impl Rig {
             drawings: Vec::new(),
             scale_mode: PriceScaleMode::Regular,
             tool: Tool::Cursor,
+            erase: false,
             selected: Vec::new(),
             time: 0.0,
             rect: Rect::NOTHING,
@@ -91,13 +94,14 @@ impl Rig {
             self.scale_mode,
         );
         let (tool, selected) = (self.tool, self.selected.clone());
-        let selecting = self.selecting;
+        let (selecting, erase) = (self.selecting, self.erase);
         let (mut rect, mut commands) = (Rect::NOTHING, 0);
         let mut picked = None;
         let mut consumed = false;
         let mut output = self.ctx.run_ui(input, |ui| {
-            let mut frame =
-                DrawingFrame::new(drawings, tool, None, 100).with_selection(selected.clone());
+            let mut frame = DrawingFrame::new(drawings, tool, None, 100)
+                .with_selection(selected.clone())
+                .with_eraser(erase);
             let mut replay = ReplayChartFrame {
                 selecting,
                 active: false,
@@ -1004,6 +1008,41 @@ fn every_resting_cursor_pans_with_a_drag_and_the_dot_follows_the_hand() {
             "{mode:?} left the price scale alone"
         );
     }
+}
+
+#[test]
+fn the_eraser_holds_the_drag_so_the_chart_never_pans_but_the_axes_and_wheel_still_work() {
+    use crate::model::CursorMode;
+    let mut rig = Rig::new();
+    rig.erase = true;
+    rig.card.set_cursor_mode(CursorMode::Eraser);
+    rig.frames(&[]);
+    let from = rig.in_plot();
+    rig.drag(from, Vec2::new(120.0, 0.0));
+    assert_eq!(rig.offset(), 0.0, "no pan under the Eraser");
+    assert_eq!(rig.cursor, egui::CursorIcon::Crosshair);
+    // The price axis still stretches the scale and the wheel still zooms.
+    let axis = rig.on_price_axis();
+    rig.drag(axis, Vec2::new(-40.0, -60.0));
+    assert!(
+        rig.card.viewport.vertical.zoom > 1.0,
+        "the price axis answers"
+    );
+    let before = rig.card.viewport.horizontal.visible;
+    rig.frame(vec![
+        egui::Event::PointerMoved(from),
+        egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: Vec2::new(0.0, 60.0),
+            modifiers: Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+        },
+    ]);
+    rig.frames(&[]);
+    assert!(
+        rig.card.viewport.horizontal.visible != before,
+        "the wheel zooms"
+    );
 }
 
 #[test]

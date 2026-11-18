@@ -1540,7 +1540,7 @@ mod tests {
         let _restore = theme::RestoreDefaultTheme;
         for (name, cursor, light) in [
             ("cursor-menu-cross", CursorMode::Cross, false),
-            ("cursor-menu-arrow", CursorMode::Arrow, false),
+            ("cursor-menu-eraser", CursorMode::Eraser, false),
             ("cursor-menu-dot-light", CursorMode::Dot, true),
         ] {
             let mut screen = Screen::new(vec2(360.0, 260.0));

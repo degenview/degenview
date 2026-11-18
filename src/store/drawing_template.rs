@@ -154,6 +154,7 @@ impl DrawingPrefs {
         if !ToolGroup::FIB_MENU.contains(&self.fib_tool.spec().group) {
             self.fib_tool = defaults.fib_tool;
         }
+        self.cursor = self.cursor.resting();
         self
     }
 }
@@ -604,6 +605,22 @@ mod tests {
         let prefs = DrawingTemplateStore::new(store).prefs();
         assert_eq!(prefs.cursor, CursorMode::Cross);
         assert!(!prefs.keep_drawing, "what it can read is kept");
+    }
+
+    #[test]
+    fn a_stored_mode_of_the_moment_comes_back_as_the_cross() {
+        let store = shared();
+        store
+            .lock()
+            .unwrap()
+            .set_setting(PREFS_KEY, &serde_json::json!({ "cursor": "Eraser" }))
+            .unwrap();
+        let prefs = DrawingTemplateStore::new(store).prefs();
+        assert_eq!(
+            prefs.cursor,
+            CursorMode::Cross,
+            "the Eraser must not persist"
+        );
     }
 
     #[test]

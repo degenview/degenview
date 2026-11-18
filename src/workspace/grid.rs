@@ -537,6 +537,7 @@ impl ChartWorkspace {
                                             .with_behavior(magnet, keep_drawing)
                                             .with_style_clipboard(style_clipboard)
                                             .with_keys_blocked(dialog_open)
+                                            .with_eraser(cursor.caps().erases)
                                             .with_defaults(&drawing_defaults)
                                             .with_preview(
                                                 drawing_preview

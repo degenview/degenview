@@ -8,6 +8,7 @@ use eframe::egui::{Event, Key, Modifiers, RawInput, Sense, pos2, vec2};
 use menu::Action;
 
 mod card_tests;
+mod erase_tests;
 mod image_tests;
 mod note_tests;
 mod table_tests;
@@ -302,6 +303,8 @@ struct Rig {
     style_copied: Option<(Tool, DrawingStyle)>,
     background_click: Option<Pos2>,
     keys_blocked: bool,
+    /// The Eraser is the cursor.
+    erase: bool,
     reveal_all: bool,
     /// What is waiting to be placed by a click (a picture).
     pending: Option<crate::model::annotation::image_content::Content>,
@@ -360,6 +363,7 @@ impl Rig {
             style_copied: None,
             background_click: None,
             keys_blocked: false,
+            erase: false,
             reveal_all: false,
             pending: None,
             place_now: false,
@@ -404,7 +408,8 @@ impl Rig {
             .with_style_clipboard(self.style_clipboard)
             .with_pending_content(self.pending.clone())
             .with_picture_work(std::mem::take(&mut self.place_now), self.replace.take())
-            .with_keys_blocked(self.keys_blocked);
+            .with_keys_blocked(self.keys_blocked)
+            .with_eraser(self.erase);
         let (layer, data, scale) = (&mut self.layer, &self.data, &self.scale);
         let mut output = self.ctx.run_ui(input, |ui| {
             let response = ui.allocate_rect(PLOT, Sense::click_and_drag());

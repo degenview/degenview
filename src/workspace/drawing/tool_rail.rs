@@ -214,4 +214,41 @@ mod tests {
         workspace.toggle_zoom_in();
         assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
     }
+
+    #[test]
+    fn the_eraser_is_a_mode_of_the_moment_that_is_never_remembered() {
+        use crate::model::CursorMode;
+        let mut workspace = empty_workspace(1);
+        // The strip opens the saved options before anything is picked.
+        let _ = workspace.drawing_templates();
+        workspace.tools.choose_cursor(CursorMode::Dot);
+        workspace.tools.select(1, vec![4, 5]);
+        workspace.tools.choose_cursor(CursorMode::Eraser);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Eraser);
+        assert!(
+            workspace.tools.selection().is_none(),
+            "nothing stays picked"
+        );
+        workspace.save_drawing_prefs();
+        assert_eq!(
+            workspace.drawing_templates().prefs().cursor,
+            CursorMode::Dot,
+            "the next tab starts on the resting cursor"
+        );
+        // Esc puts the Eraser down, back to the resting cursor.
+        workspace.tools.escape();
+        assert_eq!(workspace.tools.cursor(), CursorMode::Dot);
+        // Arming a tool holds the cross; Esc then ends the tool, not the (resting) cursor.
+        workspace.tools.choose_cursor(CursorMode::Eraser);
+        workspace.toggle_tool(Tool::Rectangle);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
+        workspace.tools.escape();
+        assert_eq!(
+            workspace.tools.cursor(),
+            CursorMode::Eraser,
+            "the Eraser waits under the tool"
+        );
+        workspace.tools.escape();
+        assert_eq!(workspace.tools.cursor(), CursorMode::Dot);
+    }
 }

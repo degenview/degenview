@@ -9,6 +9,7 @@
 
 mod draw;
 mod edit;
+mod erase;
 mod fib_shapes;
 #[cfg(test)]
 mod fib_tests;
@@ -96,6 +97,8 @@ pub struct DrawingFrame<'a> {
     /// A drawing shown in place of the stored one with its id: the properties dialog's live
     /// preview of an edit not yet committed.
     pub preview: Option<&'a Drawing>,
+    /// The Eraser is the cursor: the pointer erases instead of picking, moving or drawing.
+    pub erase: bool,
     // Outputs.
     pub commands: Vec<DrawingCommand>,
     /// `Some(x)` means set the selection to `x` (`Some(vec![])` clears it).
@@ -163,6 +166,7 @@ impl<'a> DrawingFrame<'a> {
             style_clipboard: None,
             keys_blocked: false,
             preview: None,
+            erase: false,
             commands: Vec::new(),
             select: None,
             escape_consumed: false,
@@ -235,6 +239,11 @@ impl<'a> DrawingFrame<'a> {
 
     pub fn with_preview(mut self, preview: Option<&'a Drawing>) -> Self {
         self.preview = preview;
+        self
+    }
+
+    pub fn with_eraser(mut self, erase: bool) -> Self {
+        self.erase = erase;
         self
     }
 
@@ -408,6 +417,10 @@ struct CacheEntry {
 #[derive(Default)]
 pub(in crate::ui) struct DrawingLayer {
     gesture: Option<Gesture>,
+    /// The Eraser's sweep: what the pointer has passed over since the press.
+    sweep: Option<erase::Sweep>,
+    /// The Eraser is over a locked drawing, which it leaves alone.
+    erase_blocked: bool,
     hover: Option<Hit>,
     /// Escape cancelled a gesture mid-drag; keep the plot from panning until release.
     cancelled_drag: bool,
@@ -493,7 +506,7 @@ fn constrained(tool: Tool, first: Option<Pos2>, pointer: Pos2, shift: bool) -> P
 impl DrawingLayer {
     /// Whether a gesture owns the plot drag, so the card must not pan.
     pub(in crate::ui) fn claims_drag(&self) -> bool {
-        self.gesture.is_some() || self.cancelled_drag
+        self.gesture.is_some() || self.sweep.is_some() || self.cancelled_drag
     }
 
     /// The drawings whose note is open, in no particular order.
@@ -517,6 +530,7 @@ impl DrawingLayer {
     /// drawings these are not.
     pub(in crate::ui) fn abandon(&mut self) {
         self.abort();
+        self.sweep = None;
         self.text_edit = None;
         self.pending_cell = None;
         self.table_cell = None;
@@ -639,6 +653,13 @@ impl DrawingLayer {
         if matches!(&self.gesture, Some(Gesture::Draft(draft)) if draft.tool != frame.tool) {
             self.abort();
         }
+        if frame.erase {
+            self.update_eraser(ui, response, proj, frame, pointer);
+            self.set_cursor(ui, pointer, frame, plot);
+            return self.claims_drag();
+        }
+        self.sweep = None;
+        self.erase_blocked = false;
         // A cell is selected only while its table is the one thing selected.
         if let Some((id, ..)) = self.table_cell
             && frame.selected != [id]
@@ -1306,6 +1327,8 @@ impl DrawingLayer {
             Some(Gesture::Edit(_)) => Some(CursorIcon::Grabbing),
             Some(Gesture::Draft(_)) => Some(CursorIcon::Crosshair),
             None if !over_plot => None,
+            None if frame.erase && self.erase_blocked => Some(CursorIcon::NotAllowed),
+            None if frame.erase => Some(CursorIcon::Crosshair),
             None if frame.tool != Tool::Cursor => Some(CursorIcon::Crosshair),
             None if pointer.is_some_and(|point| self.text_at(frame, point).is_some()) => {
                 Some(CursorIcon::Text)
@@ -1371,8 +1394,19 @@ impl DrawingLayer {
             let id = drawing.id();
             let selected = frame.is_selected(id);
             let emphasized = selected || hovered == Some(id);
+            // What a sweep has passed over is about to go: drawn faint.
+            let marked = self.is_marked_for_erasing(id);
+            let faint;
+            let painter = if marked {
+                let mut dimmed = clipped.clone();
+                dimmed.set_opacity(0.3);
+                faint = dimmed;
+                &faint
+            } else {
+                &clipped
+            };
             self.paint_drawing(
-                &clipped,
+                painter,
                 proj,
                 drawing,
                 emphasized,

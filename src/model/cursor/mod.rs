@@ -31,6 +31,12 @@ pub struct CursorCaps {
     /// The box naming the bar under the pointer.
     pub readout: bool,
     pub pointer: PointerShape,
+    /// A drag that starts on the plot moves the chart. Off when the mode uses the drag itself.
+    pub pans: bool,
+    /// A click picks, moves and edits drawings.
+    pub edits_drawings: bool,
+    /// A press removes the drawings it passes over.
+    pub erases: bool,
 }
 
 /// The cursors of the cursor menu, in the order the menu lists them.
@@ -41,38 +47,62 @@ pub enum CursorMode {
     Cross,
     Dot,
     Arrow,
+    Eraser,
 }
 
 impl CursorMode {
-    pub const ALL: [Self; 3] = [Self::Cross, Self::Dot, Self::Arrow];
+    pub const ALL: [Self; 4] = [Self::Cross, Self::Dot, Self::Arrow, Self::Eraser];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Cross => "Cross",
             Self::Dot => "Dot",
             Self::Arrow => "Arrow",
+            Self::Eraser => "Eraser",
         }
     }
 
+    /// Whether the choice is remembered across launches. The Eraser is a mode of the moment: a
+    /// restart never opens in a mode that deletes.
+    pub fn persists(self) -> bool {
+        !matches!(self, Self::Eraser)
+    }
+
+    /// The cursor to rest on when this one is put down: itself when it persists, else the cross.
+    pub fn resting(self) -> Self {
+        if self.persists() { self } else { Self::Cross }
+    }
+
     pub fn caps(self) -> CursorCaps {
+        const BASE: CursorCaps = CursorCaps {
+            lines: false,
+            axis_tags: false,
+            readout: true,
+            pointer: PointerShape::Arrow,
+            pans: true,
+            edits_drawings: true,
+            erases: false,
+        };
         match self {
             Self::Cross => CursorCaps {
                 lines: true,
                 axis_tags: true,
-                readout: true,
                 pointer: PointerShape::Crosshair,
+                ..BASE
             },
             Self::Dot => CursorCaps {
-                lines: false,
                 axis_tags: true,
-                readout: true,
                 pointer: PointerShape::Hidden,
+                ..BASE
             },
-            Self::Arrow => CursorCaps {
-                lines: false,
-                axis_tags: false,
-                readout: true,
-                pointer: PointerShape::Arrow,
+            Self::Arrow => BASE,
+            Self::Eraser => CursorCaps {
+                readout: false,
+                pointer: PointerShape::Crosshair,
+                pans: false,
+                edits_drawings: false,
+                erases: true,
+                ..BASE
             },
         }
     }
@@ -86,7 +116,7 @@ mod tests {
     fn the_cross_is_the_default_and_nothing_is_called_magic() {
         assert_eq!(CursorMode::default(), CursorMode::Cross);
         let labels: Vec<_> = CursorMode::ALL.iter().map(|mode| mode.label()).collect();
-        assert_eq!(labels, ["Cross", "Dot", "Arrow"]);
+        assert_eq!(labels, ["Cross", "Dot", "Arrow", "Eraser"]);
         assert!(labels.iter().all(|label| !label.contains("Magic")));
     }
 
@@ -101,6 +131,33 @@ mod tests {
         let arrow = CursorMode::Arrow.caps();
         assert!(!arrow.lines && !arrow.axis_tags && arrow.readout);
         assert_eq!(arrow.pointer, PointerShape::Arrow);
+    }
+
+    #[test]
+    fn only_the_resting_cursors_persist() {
+        let kept: Vec<_> = CursorMode::ALL
+            .into_iter()
+            .filter(|mode| mode.persists())
+            .collect();
+        assert_eq!(
+            kept,
+            [CursorMode::Cross, CursorMode::Dot, CursorMode::Arrow]
+        );
+        assert_eq!(CursorMode::Eraser.resting(), CursorMode::Cross);
+        assert_eq!(CursorMode::Dot.resting(), CursorMode::Dot);
+    }
+
+    #[test]
+    fn the_eraser_uses_the_drag_and_only_it_deletes() {
+        for mode in CursorMode::ALL {
+            let caps = mode.caps();
+            assert_eq!(caps.erases, mode == CursorMode::Eraser, "{mode:?}");
+            assert_eq!(caps.pans, mode != CursorMode::Eraser, "{mode:?}");
+            assert_eq!(caps.edits_drawings, caps.pans, "{mode:?}");
+        }
+        let eraser = CursorMode::Eraser.caps();
+        assert!(!eraser.lines && !eraser.axis_tags && !eraser.readout);
+        assert_eq!(eraser.pointer, PointerShape::Crosshair);
     }
 
     #[test]

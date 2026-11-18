@@ -23,6 +23,7 @@ pub fn icon(mode: CursorMode) -> Icon {
         CursorMode::Cross => Icon::CursorCross,
         CursorMode::Dot => Icon::CursorDot,
         CursorMode::Arrow => Icon::CursorArrow,
+        CursorMode::Eraser => Icon::CursorEraser,
     }
 }
 

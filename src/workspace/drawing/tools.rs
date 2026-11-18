@@ -78,7 +78,13 @@ impl DrawingTools {
     /// Puts the pointer on `mode`: any armed drawing tool and Zoom In are put down.
     pub(in crate::workspace) fn choose_cursor(&mut self, mode: CursorMode) {
         self.cursor = mode;
-        self.prefs.cursor = mode;
+        if mode.persists() {
+            self.prefs.cursor = mode;
+        }
+        if mode.caps().erases {
+            // Nothing stays picked while the pointer erases.
+            self.selected = None;
+        }
         self.active = Tool::Cursor;
         self.zoom_armed = false;
     }
@@ -101,12 +107,15 @@ impl DrawingTools {
         self.zoom_armed = false;
     }
 
-    /// Esc steps back one level: Zoom In first, then the armed tool, then the selection.
+    /// Esc steps back one level: Zoom In first, then the armed tool, then a cursor of the moment
+    /// (the Eraser) back to the resting one, then the selection.
     pub(in crate::workspace) fn escape(&mut self) {
         if self.zoom_armed {
             self.zoom_armed = false;
         } else if self.active != Tool::Cursor {
             self.active = Tool::Cursor;
+        } else if !self.cursor.persists() {
+            self.cursor = self.prefs.cursor;
         } else {
             self.selected = None;
         }

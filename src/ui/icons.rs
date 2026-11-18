@@ -268,6 +268,8 @@ pub enum Icon {
     CursorDot,
     /// The Arrow cursor: the classic pointer, outlined.
     CursorArrow,
+    /// The Eraser cursor: a slanted block with its lower half struck solid, over a baseline.
+    CursorEraser,
 }
 
 /// Stroke width on the 16 grid.
@@ -553,6 +555,19 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             p(8.5, 9.4),
             p(12.4, 9.4),
         ]),
+        Icon::CursorEraser => {
+            closed(&[
+                p(2.4, 9.4),
+                p(8.6, 3.2),
+                p(13.2, 7.8),
+                p(7.0, 14.0),
+                p(5.6, 14.0),
+                p(2.4, 10.8),
+            ]);
+            line(&[p(5.4, 6.6), p(10.0, 11.2)]);
+            fill_poly(vec![p(5.4, 6.6), p(10.0, 11.2), p(7.0, 14.0), p(2.4, 9.4)]);
+            line(&[p(8.4, 14.2), p(14.4, 14.2)]);
+        }
         Icon::PlusCircle => {
             circle(p(8.0, 8.0), 6.4, false);
             line(&[p(8.0, 5.0), p(8.0, 11.0)]);
@@ -2647,6 +2662,7 @@ mod tests {
             CursorCross,
             CursorDot,
             CursorArrow,
+            CursorEraser,
         ];
         for icon in all {
             let ctx = egui::Context::default();
