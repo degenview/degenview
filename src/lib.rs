@@ -23,7 +23,7 @@ mod workspace;
 use app::DegenViewApp;
 use eframe::egui;
 
-pub use crash_report::install_panic_hook;
+pub use crash_report::{install_panic_hook, note as note_startup};
 pub use sync::transport::native::{CloudKitFactory, NativeApi};
 pub use sync::transport::{EventSink, TransportFactory};
 
@@ -36,10 +36,13 @@ pub fn run_gui() -> Result<(), Box<dyn std::error::Error>> {
 pub fn run_gui_with(
     sync: Option<std::sync::Arc<dyn TransportFactory>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    crash_report::begin_startup_log();
     // Started by an update on Windows or Linux: let the process it replaces exit before the database
     // opens, and do not open it at all if that process never does (two instances on one store).
     service::update::install::wait_for_predecessor()?;
+    crash_report::note("opening the database");
     let store = store::open_default()?;
+    crash_report::note("database open");
     // Before the first request: every agent and live feed follows this proxy setting.
     service::net::proxy::init(&crate::lock::lock(&store));
     // A database copied from another Mac becomes this Mac's own before anything reads its ids.
@@ -68,10 +71,17 @@ pub fn run_gui_with(
         ..Default::default()
     };
 
+    crash_report::note("creating the window and graphics");
     Ok(eframe::run_native(
         "DegenView",
         options,
         Box::new(move |creation| {
+            // Which adapter and backend was chosen is the first thing to ask about a start that
+            // shows nothing (a driver that hangs or crashes ends the log here).
+            crash_report::note(&match &creation.wgpu_render_state {
+                Some(state) => format!("graphics ready: {:?}", state.adapter.get_info()),
+                None => "graphics ready".to_owned(),
+            });
             Ok(Box::new(DegenViewApp::new(
                 creation,
                 store.clone(),
