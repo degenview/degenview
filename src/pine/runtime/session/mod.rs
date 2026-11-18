@@ -131,10 +131,15 @@ pub struct Session {
     /// The footprints `request.footprint()` built. Not part of the rolled-back state: they follow
     /// from the candles, and a handle names a bar, not an object.
     pub(crate) footprints: crate::pine::footprint::call::FootprintCache,
-    /// The chart's confirmed bars so far, kept only for a script that calls `request.security`:
-    /// a call site that did not run on a bar still has to see it (`replay_skipped_bars`). Not part
-    /// of the rolled-back state, as only confirmed bars are in it.
-    pub(crate) chart_bars: Vec<crate::model::Kline>,
+    /// The confirmed bars of the series now running, kept only for a script that calls
+    /// `request.security`: a call site that did not run on a bar still has to see it
+    /// (`replay_skipped_bars`). The chart's own bars, or, while a request's expression runs, the
+    /// candles that request has completed. Not part of the rolled-back state, as only confirmed
+    /// bars are in it.
+    pub(crate) series_bars: Vec<super::state::LoggedBar>,
+    /// The chart variables as of a skipped bar, for the one replayed evaluation that reads them
+    /// instead of the current bar's.
+    pub(crate) replay_globals: Option<FastMap<String, RuntimeValue>>,
     /// Whether `chart_bars` is kept.
     tracks_chart_bars: bool,
     pub bar_seconds: f64,
@@ -212,7 +217,7 @@ impl Session {
         self.once_per_bar_ledger.clear();
         self.emitted_alerts.clear();
         self.footprints.clear();
-        self.chart_bars.clear();
+        self.series_bars.clear();
     }
 
     /// Installs a cooperative cancellation flag. Long history runs and instruction-heavy bars

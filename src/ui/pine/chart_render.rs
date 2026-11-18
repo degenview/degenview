@@ -38,6 +38,8 @@ pub const LOSS_COLOR: u32 = 0xef53_50ff;
 const AREA_OPACITY: f32 = 0.3;
 const CROSS_HALF_SIZE: f32 = 3.0;
 const MARKER_OFFSET: f32 = 8.0;
+/// The room between a marker's near edge and the candle (or pane edge) it hangs off.
+const MARKER_GAP: f32 = 3.0;
 const LABEL_POINTER: f32 = 5.0;
 const LABEL_PADDING: Vec2 = Vec2::new(10.0, 6.0);
 
@@ -872,7 +874,7 @@ impl PineLayer<'_> {
                 } else {
                     MarkerLocation::AboveBar
                 };
-                let tip = self.marker_y(location, &[], i);
+                let tip = self.marker_y(location, &[], i, 0.0);
                 draw_arrow(
                     painter,
                     Pos2::new(self.x_at(i), tip),
@@ -971,10 +973,14 @@ impl PineLayer<'_> {
                     continue;
                 }
                 let x = self.x_at(i);
-                let y = self.marker_y(marker.location, &marker.prices, i);
+                let radius = shape_radius(marker.style, marker.size);
+                let reach = match &marker.character {
+                    Some(_) => 6.0,
+                    None => marker_half_height(marker.style, radius),
+                };
+                let y = self.marker_y(marker.location, &marker.prices, i, reach);
                 let color = rgba(self.visible_opt(&marker.colors, i).unwrap_or(marker.color));
                 let centre = Pos2::new(x, y);
-                let radius = shape_radius(marker.style, marker.size);
                 let half_height = match &marker.character {
                     Some(glyph) => {
                         text_at(painter, glyph, 12.0, color, centre, Align2::CENTER_CENTER);
@@ -1013,25 +1019,36 @@ impl PineLayer<'_> {
         }
     }
 
-    fn marker_y(&self, location: MarkerLocation, prices: &[Option<f64>], i: usize) -> f32 {
+    /// Where a marker's centre sits vertically. A marker that hangs off a bar keeps its near edge
+    /// `MARKER_GAP` clear of the candle (or the pane's edge), so one taller than the usual offset
+    /// (`half_height` is how far it reaches either side of its centre) moves out instead of
+    /// overlapping the candle or running off the pane. `location.absolute` keeps its price.
+    fn marker_y(
+        &self,
+        location: MarkerLocation,
+        prices: &[Option<f64>],
+        i: usize,
+        half_height: f32,
+    ) -> f32 {
         if location == MarkerLocation::Absolute
             && let Some(price) = self.visible_opt(prices, i)
         {
             return self.y(price);
         }
+        let offset = MARKER_OFFSET.max(half_height + MARKER_GAP);
         if self.in_pane {
             // No candles in a script pane: above/below bar pin to its edges.
             return if location.is_below() {
-                self.plot.max.y - MARKER_OFFSET
+                self.plot.max.y - offset
             } else {
-                self.plot.min.y + MARKER_OFFSET
+                self.plot.min.y + offset
             };
         }
         let candle = &self.candles[i];
         if location.is_below() {
-            self.y(candle.low) + MARKER_OFFSET
+            self.y(candle.low) + offset
         } else {
-            self.y(candle.high) - MARKER_OFFSET
+            self.y(candle.high) - offset
         }
     }
 
@@ -2191,21 +2208,35 @@ mod tests {
         assert_eq!(layer.bar_color(0), None);
         // Absolute markers sit at their price (series are right-aligned: one value is the last bar's); bar markers hang off the candle.
         assert_eq!(
-            layer.marker_y(MarkerLocation::Absolute, &[Some(150.0)], 2),
+            layer.marker_y(MarkerLocation::Absolute, &[Some(150.0)], 2, 25.0),
             y_of(150.0)
         );
         assert_eq!(
-            layer.marker_y(MarkerLocation::BelowBar, &[], 1),
+            layer.marker_y(MarkerLocation::BelowBar, &[], 1, 5.0),
             y_of(96.0) + 8.0
         );
         assert_eq!(
-            layer.marker_y(MarkerLocation::AboveBar, &[], 1),
+            layer.marker_y(MarkerLocation::AboveBar, &[], 1, 5.0),
             y_of(106.0) - 8.0
         );
         let mut in_pane = self::layer(&output, &candles, &x, &y);
         in_pane.in_pane = true;
-        assert_eq!(in_pane.marker_y(MarkerLocation::AboveBar, &[], 1), 8.0);
-        assert_eq!(in_pane.marker_y(MarkerLocation::BelowBar, &[], 1), 92.0);
+        assert_eq!(in_pane.marker_y(MarkerLocation::AboveBar, &[], 1, 5.0), 8.0);
+        assert_eq!(
+            in_pane.marker_y(MarkerLocation::BelowBar, &[], 1, 5.0),
+            92.0
+        );
+        // A tall marker moves out so that its near edge stays clear of the candle or pane edge.
+        assert_eq!(
+            layer.marker_y(MarkerLocation::BelowBar, &[], 1, 22.8),
+            y_of(96.0) + 25.8
+        );
+        assert_eq!(
+            layer.marker_y(MarkerLocation::AboveBar, &[], 1, 22.8),
+            y_of(106.0) - 25.8
+        );
+        assert!(in_pane.marker_y(MarkerLocation::AboveBar, &[], 1, 22.8) - 22.8 >= 0.0);
+        assert!(in_pane.marker_y(MarkerLocation::BelowBar, &[], 1, 22.8) + 22.8 <= 100.0);
     }
 
     #[test]

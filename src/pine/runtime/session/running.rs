@@ -297,7 +297,11 @@ impl Session {
         }
         if confirmed {
             if self.tracks_chart_bars {
-                self.chart_bars.push(candle.clone());
+                self.series_bars
+                    .push(crate::pine::runtime::state::LoggedBar {
+                        bar: candle.clone(),
+                        seconds: self.bar_seconds,
+                    });
             }
             let builtins = self.read_history_builtins(&mut context);
             self.commit_histories(candle, true, builtins);

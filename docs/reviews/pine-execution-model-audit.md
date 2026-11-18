@@ -258,11 +258,17 @@ runtime error (`PINE4006`), a `na` offset returns `na`.
 from only the chart bars visited at the call site, so a conditional call excludes the skipped bars from the
 candle's high, low and volume and from any `ta.*` inside the expression. TradingView evaluates the
 expression on every higher-timeframe bar and the condition only selects the result. **Fixed**: the
-session keeps the confirmed chart bars of a script that calls `request.security` (`Session::chart_bars`),
-and a site replays the ones it was not called on (`replay_skipped_bars`) before it takes the current bar,
-so a conditional call matches an unconditional one (`pine/tests/security_conditional.rs`). Chart's own
-symbol only; a foreign symbol or a finer timeframe already walks the provider's candles. The warm-up
-feeds the provider's candles that closed before the chart's first bar, not before the first call. ~~Chart variables used
+session keeps the confirmed bars of the series now running, each with the bar length in force when it ran
+(`Session::series_bars`: the chart's, or while a request's expression runs, the candles that request has
+completed, kept on its `SecuritySite`), and a site replays the ones it was not called on
+(`replay_skipped_bars`) before it takes the current bar, so a conditional call, a nested one and one
+resumed after a gap in the data match an unconditional call (`pine/tests/security_conditional.rs`). The
+log is kept only for a script whose parse tree calls `request.security` (or imports a library that does).
+Chart's own symbol only; a foreign symbol or a finer timeframe already walks the provider's candles. The
+warm-up feeds the provider's candles that closed before the chart's first bar, not before the first call.
+A replayed candle reads the chart variables no slice computes as of its own bar, from their histories:
+the values the bar ended with, so a variable assigned after the request in the script reads one bar fresher
+than a call that ran there would see. ~~Chart variables used
 inside the expression have no history~~: a script variable the expression reads is now computed on the
 requested series (`security_slice`), with its own history, from the code written before the request; only
 names that no slice statement computes (set by a statement that makes a request, or inside a function

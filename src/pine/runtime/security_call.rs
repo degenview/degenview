@@ -9,9 +9,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::fast_hash::FastMap;
 use super::security_slice;
 use super::session::Session;
-use super::state::{RuntimeState, SecuritySite};
+use super::state::{LoggedBar, RuntimeState, SecuritySite};
 use super::support::{ChartSpan, SecurityKey};
 use super::types::{BarFlags, RuntimeContext};
 use super::value::{RefKind, RuntimeValue};
@@ -24,6 +25,17 @@ use crate::pine::time;
 
 /// How many `request.*` expressions may contain one another.
 const SECURITY_NESTING_LIMIT: usize = 3;
+
+/// A chart bar (or a candle of the enclosing request) a call site takes in. `skipped_after` is set
+/// for a bar the site was not called on, replayed later: how many logged bars came after it.
+#[derive(Clone, Copy)]
+struct Step<'a> {
+    bar: &'a Kline,
+    seconds: f64,
+    confirmed: bool,
+    realtime: bool,
+    skipped_after: Option<usize>,
+}
 
 /// One `request.security` call's resolved arguments. `foreign` holds another symbol's series; it is
 /// None for the chart's own symbol.
@@ -495,19 +507,23 @@ impl Session {
             // History from before the chart's first bar; the chart's own bars, the ones this site
             // was not called on included, are replayed below.
             let before = self
-                .chart_bars
+                .series_bars
                 .first()
-                .map_or(bar.open_time, |first| first.open_time);
+                .map_or(bar.open_time, |first| first.bar.open_time);
             self.warm_up(&mut state, request, before)?;
         }
         self.replay_skipped_bars(&mut state, request, bar.open_time)?;
+        let seconds = self.bar_seconds;
         let (result, fresh) = self.advance_site(
             &mut state,
             request,
-            &bar,
-            context.flags.is_confirmed,
-            context.flags.is_realtime,
-            false,
+            &Step {
+                bar: &bar,
+                seconds,
+                confirmed: context.flags.is_confirmed,
+                realtime: context.flags.is_realtime,
+                skipped_after: None,
+            },
         )?;
         let result = if request.gaps_on && !fresh {
             RuntimeValue::Na
@@ -520,7 +536,8 @@ impl Session {
         Ok(result)
     }
 
-    /// Takes the confirmed chart bars before `before` that this site was not called on into its
+    /// Takes the confirmed bars of the running series (the chart's, or the candles of the request
+    /// this one sits in) before `before` that this site was not called on into its
     /// higher-timeframe candle, as TradingView evaluates the expression on every bar whether or not
     /// the call runs: a call under a condition sees the same candles and builds the same history as
     /// one that always runs.
@@ -531,31 +548,75 @@ impl Session {
         before: i64,
     ) -> Result<(), Diagnostic> {
         let start = state.processed_bar.map_or(0, |seen| {
-            self.chart_bars.partition_point(|bar| bar.open_time <= seen)
+            self.series_bars
+                .partition_point(|logged| logged.bar.open_time <= seen)
         });
         let end = self
-            .chart_bars
-            .partition_point(|bar| bar.open_time < before);
+            .series_bars
+            .partition_point(|logged| logged.bar.open_time < before);
         for index in start..end {
-            let skipped = self.chart_bars[index].clone();
-            self.advance_site(state, request, &skipped, true, false, true)?;
-            state.processed_bar = Some(skipped.open_time);
+            let LoggedBar { bar, seconds } = self.series_bars[index].clone();
+            let skipped_after = self.series_bars.len() - 1 - index;
+            self.advance_site(
+                state,
+                request,
+                &Step {
+                    bar: &bar,
+                    seconds,
+                    confirmed: true,
+                    realtime: false,
+                    skipped_after: Some(skipped_after),
+                },
+            )?;
+            state.processed_bar = Some(bar.open_time);
         }
         Ok(())
     }
 
-    /// Takes `bar` into the site's candle. Returns the expression's value for the bar and whether a
-    /// higher-timeframe bar was completed on it. A `replay` of a skipped bar only keeps the site's
-    /// state current: nothing is evaluated for the bar itself.
+    /// The chart variables (those the expression reads through `security_globals`) as they stood on
+    /// the confirmed bar `back` bars before the latest one, from their histories. A variable that did
+    /// not exist yet is `na`. The values are the ones the bar ended with, so a variable assigned
+    /// after the request in the script reads one bar fresher than a call that ran there would see.
+    fn variables_as_of(&self, back: usize) -> FastMap<String, RuntimeValue> {
+        self.working
+            .variables
+            .keys()
+            .map(|name| {
+                let value = self
+                    .working
+                    .histories
+                    .get(name)
+                    .and_then(|history| {
+                        history
+                            .len()
+                            .checked_sub(back + 1)
+                            .and_then(|at| history.get(at))
+                    })
+                    .cloned()
+                    .unwrap_or(RuntimeValue::Na);
+                (name.clone(), value)
+            })
+            .collect()
+    }
+
+    /// Takes `step`'s bar into the site's candle. Returns the expression's value for the bar and
+    /// whether a higher-timeframe bar was completed on it. A replayed bar (`skipped_after` is set)
+    /// only keeps the site's state current: nothing is evaluated for the bar itself, and a candle it
+    /// completes is evaluated with the chart variables of that bar.
     fn advance_site(
         &mut self,
         state: &mut SecuritySite,
         request: &SecurityRequest,
-        bar: &Kline,
-        confirmed: bool,
-        realtime: bool,
-        replay: bool,
+        step: &Step<'_>,
     ) -> Result<(RuntimeValue, bool), Diagnostic> {
+        let Step {
+            bar,
+            seconds,
+            confirmed,
+            realtime,
+            skipped_after,
+        } = *step;
+        let replay = skipped_after.is_some();
         let start = time::bucket::start(bar.open_time, request.interval);
         let mut fresh = false;
         if state.bucket != Some(start) {
@@ -563,6 +624,7 @@ impl Session {
             if state.has_pending_bars
                 && let Some(pending) = state.accumulated.clone()
             {
+                self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
                 state.last_result =
                     self.evaluate_higher_timeframe(state, &pending, request, true)?;
                 fresh = true;
@@ -578,10 +640,11 @@ impl Session {
         developing.push(bar.clone());
         let developing = fold_one(&developing, request.interval);
         let end = time::bucket::end(start, request.interval);
-        let closes_bucket = bar.open_time + (self.bar_seconds * 1000.0).round() as i64 >= end;
+        let closes_bucket = bar.open_time + (seconds * 1000.0).round() as i64 >= end;
 
         let result;
         if closes_bucket && confirmed {
+            self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
             result = self.evaluate_higher_timeframe(state, &developing, request, true)?;
             state.last_result = result.clone();
             state.accumulated = None;
@@ -771,10 +834,16 @@ impl Session {
             (*site.state).clone()
         };
         let mut chart = std::mem::replace(&mut self.working, site_state);
-        // The chart's variables stay readable from the expression, without a copy of the table.
+        // The series the expression runs on is this site's own candles, which a request inside it
+        // replays; the enclosing series is put back below.
+        let outer_series = std::mem::replace(&mut self.series_bars, std::mem::take(&mut site.bars));
+        // The chart's variables stay readable from the expression, without a copy of the table. A
+        // replayed candle reads their values as of its bar instead, which are a copy.
+        let replayed_globals = self.replay_globals.take();
+        let replayed = replayed_globals.is_some();
         let outer_globals = self
             .security_globals
-            .replace(std::mem::take(&mut chart.variables));
+            .replace(replayed_globals.unwrap_or_else(|| std::mem::take(&mut chart.variables)));
         // `varip` values are the chart's: the request keeps its own (empty: a `varip` there acts
         // like `var`, which the declaration reads from the site's variables).
         let outer_intrabar = std::mem::take(&mut self.intrabar);
@@ -828,8 +897,18 @@ impl Session {
             }
             *site.state = std::mem::take(&mut self.working);
         }
-        chart.variables =
+        site.bars = std::mem::replace(&mut self.series_bars, outer_series);
+        if commit && value.is_ok() {
+            site.bars.push(LoggedBar {
+                bar: candle.clone(),
+                seconds: request.interval,
+            });
+        }
+        let globals =
             std::mem::replace(&mut self.security_globals, outer_globals).unwrap_or_default();
+        if !replayed {
+            chart.variables = globals;
+        }
         self.intrabar = outer_intrabar;
         self.working = chart;
         self.bar_seconds = chart_bar_seconds;
