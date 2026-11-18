@@ -691,7 +691,7 @@ impl PineLayer<'_> {
                 painter,
                 &[Pos2::new(self.plot.min.x, y), Pos2::new(self.plot.max.x, y)],
                 Stroke::new(1.0, faded(line.color, 0.8)),
-                &[4.0, 3.0],
+                dash_pattern(line.style),
             );
         }
     }
@@ -2128,6 +2128,7 @@ mod tests {
             value: 100.0,
             color: 0x8080_80FF,
             title: None,
+            style: LineStyle::Dashed,
         });
         output.backgrounds.push(ColorOutput {
             id: 0,

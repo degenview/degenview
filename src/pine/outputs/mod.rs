@@ -493,6 +493,8 @@ pub struct HorizontalLine {
     pub value: f64,
     pub color: u32,
     pub title: Option<String>,
+    /// `hline.style_*`: solid, dotted or dashed (TradingView's default).
+    pub style: LineStyle,
 }
 
 #[derive(Clone, Debug, PartialEq)]

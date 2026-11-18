@@ -1207,6 +1207,7 @@ mod tests {
             value: 30.0,
             color: 0,
             title: None,
+            style: LineStyle::Dashed,
         });
         let (low, high) = pane_value_range(&output, 3, 0.1);
         // The plot's last three values (nan, 20, 15) plus the hline at 30.

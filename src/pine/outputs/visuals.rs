@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use super::drawings::{Arg, DEFAULT_COLOR, FromName, bind, parse};
 use super::{
     ArrowOutput, CandleBar, CandleOutput, ColorOutput, DISPLAY_ALL, FillGradient, FillOutput,
-    HorizontalLine, MarkerKind, MarkerLocation, MarkerOutput, MarkerShape, PlotOutput, PlotStyle,
-    Size,
+    HorizontalLine, LineStyle, MarkerKind, MarkerLocation, MarkerOutput, MarkerShape, PlotOutput,
+    PlotStyle, Size,
 };
 use crate::pine::builtins;
 use crate::pine::runtime::state::RuntimeState;
@@ -194,7 +194,7 @@ fn plot(args: &[Arg], site: usize, state: &mut RuntimeState) -> Result<RuntimeVa
 }
 
 fn hline(args: &[Arg], site: usize, state: &mut RuntimeState) -> Result<RuntimeValue, Diagnostic> {
-    let b = bind(args, &["price", "title", "color"]);
+    let b = bind(args, &["price", "title", "color", "linestyle"]);
     if let Some(price) = b.get("price").and_then(RuntimeValue::number) {
         state.hlines.insert(
             site,
@@ -203,10 +203,21 @@ fn hline(args: &[Arg], site: usize, state: &mut RuntimeState) -> Result<RuntimeV
                 value: price,
                 color: color_value(b.get("color"), Some(DEFAULT_COLOR)).unwrap_or(0),
                 title: text(&b, "title"),
+                style: hline_style(b.get("linestyle").and_then(RuntimeValue::text_value)),
             },
         );
     }
     Ok(RuntimeValue::Void)
+}
+
+/// `hline.style_*`; a line without one, or with a name this does not list, is dashed like
+/// TradingView's default.
+fn hline_style(name: Option<&str>) -> LineStyle {
+    match name {
+        Some("hline.style_solid") => LineStyle::Solid,
+        Some("hline.style_dotted") => LineStyle::Dotted,
+        _ => LineStyle::Dashed,
+    }
 }
 
 fn plot_marker(
@@ -610,6 +621,33 @@ mod tests {
         assert_eq!(state.hlines[&0].color, DEFAULT_COLOR);
         run(&mut state, "hline", 1, &[arg(Na)]).unwrap();
         assert!(!state.hlines.contains_key(&1));
+    }
+
+    #[test]
+    fn hline_styles_default_to_dashed() {
+        let mut state = RuntimeState::default();
+        for (site, name) in [
+            (0, None),
+            (1, Some("hline.style_solid")),
+            (2, Some("hline.style_dotted")),
+            (3, Some("hline.style_dashed")),
+        ] {
+            let mut args = vec![arg(Float(1.0))];
+            if let Some(name) = name {
+                args.push(named("linestyle", RuntimeValue::String(name.to_owned())));
+            }
+            run(&mut state, "hline", site, &args).unwrap();
+        }
+        let styles: Vec<LineStyle> = (0..4).map(|site| state.hlines[&site].style).collect();
+        assert_eq!(
+            styles,
+            [
+                LineStyle::Dashed,
+                LineStyle::Solid,
+                LineStyle::Dotted,
+                LineStyle::Dashed
+            ]
+        );
     }
 
     #[test]
