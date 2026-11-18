@@ -651,6 +651,36 @@ fn a_folded_answer_that_fills_the_request_loses_the_fragment_it_cut() {
 }
 
 #[test]
+fn a_short_answer_whose_window_began_inside_its_first_bucket_loses_that_bucket() {
+    let plan = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES);
+    // The window began at 01:00 and held hours 1 to 8: the 00:00 bucket may have had an hour
+    // before it, whatever the count says.
+    let hourly = series(HOUR_MS, HOUR_MS, 8);
+    let shown = plan.shape_since(hourly, 20, HOUR_MS, 10);
+    assert_eq!(opens(&shown), [3 * HOUR_MS, 6 * HOUR_MS]);
+}
+
+#[test]
+fn a_short_answer_whose_window_began_on_a_bucket_boundary_keeps_its_first_bucket() {
+    let plan = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES);
+    let hourly = series(0, HOUR_MS, 8);
+    let shown = plan.shape_since(hourly, 20, 0, 10);
+    assert_eq!(opens(&shown), [0, 3 * HOUR_MS, 6 * HOUR_MS]);
+    // A window that began before the first candle's bucket opened held nothing of the one before.
+    let later = series(3 * HOUR_MS, HOUR_MS, 5);
+    let shown = plan.shape_since(later, 20, 2 * HOUR_MS, 10);
+    assert_eq!(opens(&shown), [3 * HOUR_MS, 6 * HOUR_MS]);
+}
+
+#[test]
+fn a_window_answer_that_fills_the_request_still_loses_the_fragment_it_cut() {
+    let plan = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES);
+    let hourly = series(HOUR_MS, HOUR_MS, 8);
+    let shown = plan.shape_since(hourly, 8, 0, 10);
+    assert_eq!(opens(&shown), [3 * HOUR_MS, 6 * HOUR_MS]);
+}
+
+#[test]
 fn a_folded_answer_is_trimmed_after_folding() {
     let hourly = series(0, HOUR_MS, 24);
     let shown = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES).shape(hourly, 100, 3);

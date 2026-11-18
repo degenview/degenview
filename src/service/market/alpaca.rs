@@ -103,14 +103,9 @@ impl MarketSource for Alpaca {
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Alpaca, timeframe)?;
         let requested = plan.base_count(limit as usize).min(MAX_BARS);
-        let bars = fetch_bars(
-            symbol,
-            plan.base(),
-            lookback_start_ms(plan.base(), requested as i64, crate::service::now_ms()),
-            None,
-            requested,
-        )?;
-        Ok(plan.shape(bars, requested, limit as usize))
+        let since = lookback_start_ms(plan.base(), requested as i64, crate::service::now_ms());
+        let bars = fetch_bars(symbol, plan.base(), since, None, requested)?;
+        Ok(plan.shape_since(bars, requested, since, limit as usize))
     }
 
     fn fetch_klines_range(
@@ -129,7 +124,7 @@ impl MarketSource for Alpaca {
             .into_iter()
             .filter(|bar| bar.open_time < end_ms)
             .collect();
-        Ok(plan.shape(bars, requested, max))
+        Ok(plan.shape_since(bars, requested, start, max))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
