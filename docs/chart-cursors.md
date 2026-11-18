@@ -79,8 +79,10 @@ draws freehand, and what was drawn **fades away after a few seconds**.
   the frames; frames are requested every 16 ms only while a stroke is drawn or fading, and one at the
   end of the hold otherwise, so an idle chart costs nothing. At most 48 marks, 4096 points a stroke.
 - Marks are pinned to time and price through `Projection::anchor`/`point` (the drawings' own
-  mapping), so a wheel zoom during the fade keeps them on their bars. They are painted over the
-  live plot after the frame (clipped to the plot), so they are **not drawings**: never in
+  mapping), so a wheel zoom during the fade keeps them on their bars. They are painted **after
+  the chart has painted** (`body_inner`, once `paint_frame` returns: the input pass runs before it,
+  so anything drawn there would sit under the candles and a script's `bgcolor`), above the chart and
+  its overlays and clipped to the plot, so they are **not drawings**: never in
   `Chart::drawings`, a command, an undo step, a layout, an iCloud record, a template or a
   snapshot (`paint_snapshot` never sees them; a test pins it).
 - The cursor takes the plot drag (no pan while a stroke is drawn; the axes, the wheel and the

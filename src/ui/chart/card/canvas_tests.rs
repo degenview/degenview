@@ -1164,6 +1164,62 @@ fn each_cursor_keeps_only_its_own_parts_of_the_crosshair() {
     }
 }
 
+#[test]
+fn the_demonstration_marks_are_painted_over_the_chart_and_its_background() {
+    use crate::model::CursorMode;
+    // Every shape of the frame, in painting order.
+    fn flat(shape: &Shape, out: &mut Vec<Shape>) {
+        match shape {
+            Shape::Vec(shapes) => shapes.iter().for_each(|shape| flat(shape, out)),
+            other => out.push(other.clone()),
+        }
+    }
+    let marked = |harness: &mut Harness| -> Vec<Shape> {
+        let mut all = Vec::new();
+        for clipped in harness.frame().0 {
+            flat(&clipped.shape, &mut all);
+        }
+        all
+    };
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness.card.add_pine_instance(
+        None,
+        "Ground",
+        "//@version=6\nindicator(\"Ground\", overlay = true)\nbgcolor(color.new(color.red, 0))\n",
+    );
+    wait_for_run(&mut harness, id);
+    harness.card.set_cursor_mode(CursorMode::Demonstration);
+    harness.draw();
+    let at = crate::model::Anchor {
+        time_ms: harness.candles[250].open_time,
+        price: harness.candles[250].close,
+    };
+    harness.card.demo.dot(at, 0.0);
+    let shapes = marked(&mut harness);
+    let mark = shapes
+        .iter()
+        .position(
+            |shape| matches!(shape, Shape::Circle(circle) if circle.fill == crate::ui::kit::ORANGE),
+        )
+        .expect("the dot is painted");
+    let candle = shapes
+        .iter()
+        .rposition(|shape| {
+            matches!(shape, Shape::Rect(rect) if rect.fill == Color32::from_rgb(48, 209, 88)
+                || rect.fill == Color32::from_rgb(255, 69, 58))
+        })
+        .expect("candles are painted");
+    assert!(
+        mark > candle,
+        "the mark ({mark}) is under a candle ({candle})"
+    );
+    assert_eq!(
+        mark,
+        shapes.len() - 1,
+        "nothing of the chart is painted over the mark"
+    );
+}
+
 // MARK: Presentation only
 
 #[test]

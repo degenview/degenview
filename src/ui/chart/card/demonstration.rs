@@ -16,9 +16,11 @@ const DOT_RADIUS: f32 = 6.0;
 const FADE_REPAINT: Duration = Duration::from_millis(16);
 
 impl ChartCard {
-    /// One frame of the cursor: Alt (Option) with a click puts a dot, a press and drag draws a
-    /// stroke, and what is on screen is painted at its place with its fade. Takes the plot drag
-    /// while a stroke is drawn (`demonstration_claims_drag`).
+    /// One frame of the cursor's input: Alt (Option) with a click puts a dot, a press and drag
+    /// draws a stroke, and the marks that have faded are dropped. Takes the plot drag while a
+    /// stroke is drawn (`demonstration_claims_drag`). Painting is `paint_demonstration`, after the
+    /// chart has painted: the input pass runs before it, so anything drawn here would be under the
+    /// candles and a script's background.
     pub(super) fn handle_demonstration(
         &mut self,
         ui: &egui::Ui,
@@ -64,7 +66,6 @@ impl ChartCard {
             self.demo.dot(proj.anchor(point), now);
         }
         self.demo.prune(now);
-        self.paint_demonstration(&ui.painter().with_clip_rect(plot), proj, now);
         // Frames only while something changes: every one while drawing or fading, one at the end
         // of the hold otherwise.
         match self.demo.next_change(now) {
@@ -81,9 +82,18 @@ impl ChartCard {
         self.demo.is_drawing()
     }
 
-    fn paint_demonstration(&self, painter: &egui::Painter, proj: &Projection, now: f64) {
+    /// Paints the marks over everything the chart painted, clipped to the plot, at their place
+    /// with their fade. Called once the frame is painted.
+    pub(super) fn paint_demonstration(
+        &self,
+        painter: &egui::Painter,
+        plot: Rect,
+        proj: &Projection,
+        now: f64,
+    ) {
+        let painter = painter.with_clip_rect(plot);
         for mark in self.demo.marks() {
-            paint_mark(painter, proj, mark, Marks::alpha(mark, now));
+            paint_mark(&painter, proj, mark, Marks::alpha(mark, now));
         }
     }
 }
