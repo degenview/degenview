@@ -135,12 +135,18 @@ fn flag_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D
 pub const DEFAULT_TOP_GAP: f32 = 12.0;
 
 impl BarPrefs {
+    /// Whether the bar is placed in the whole window: a place saved by this build. A flag with no
+    /// readable place is not one, so the bar is where an unmoved bar is, in the charts.
+    pub fn in_window(&self) -> bool {
+        self.window && self.placement.is_some()
+    }
+
     /// The top-left corner of a bar of `size`, as `[x, y]`. Unmoved, the bar is centred near the
     /// top of the `chart` area; moved, it is where the share of its room puts it, the whole
     /// `window` for a place saved by this build and the chart area for an older one. A bar bigger
     /// than its room sits at the room's corner.
     pub fn resolve(&self, chart: Region, window: Region, size: [f32; 2]) -> [f32; 2] {
-        let room = if self.window { window } else { chart };
+        let room = if self.in_window() { window } else { chart };
         let free = [
             (room.size[0] - size[0]).max(0.0),
             (room.size[1] - size[1]).max(0.0),
@@ -350,6 +356,16 @@ mod tests {
         };
         let moved = hidden.moved_to([100.0, 100.0], WINDOW, BAR);
         assert!(moved.window && moved.hidden);
+    }
+
+    #[test]
+    fn a_window_flag_without_a_readable_place_leaves_the_bar_in_the_charts() {
+        let prefs: BarPrefs =
+            serde_json::from_str(r#"{"placement":"left","window":true}"#).unwrap();
+        assert!(prefs.window && prefs.placement.is_none());
+        assert!(!prefs.in_window());
+        assert_eq!(at(prefs), at(BarPrefs::default()));
+        assert!(at(prefs)[1] >= CHART.origin[1], "not over the toolbar");
     }
 
     #[test]

@@ -99,13 +99,20 @@ fn clamped(position: Pos2, input: &FavoritesBarInput) -> Pos2 {
 }
 
 /// Whether the bar is shown for this input: there is a favorite to show, it is not hidden, and the
-/// area has room for it.
+/// room it sits in has space for it. A bar placed in the window needs the window to have it, so
+/// opening a side panel that narrows the charts does not make it vanish; one that was never moved,
+/// or was saved by an older build, needs the charts' area to.
 pub fn is_shown(input: &FavoritesBarInput) -> bool {
     let size = bar_size(input.items.len());
+    let room = if input.prefs.in_window() {
+        input.window
+    } else {
+        input.area
+    };
     !input.items.is_empty()
         && !input.prefs.hidden
-        && input.area.width() >= size.x + MIN_ROOM
-        && input.area.height() >= size.y + MIN_ROOM
+        && room.width() >= size.x + MIN_ROOM
+        && room.height() >= size.y + MIN_ROOM
 }
 
 fn label(item: Favorite) -> &'static str {
@@ -565,6 +572,19 @@ mod tests {
             ..input(BarPrefs::default(), Tool::Cursor)
         };
         assert!(!is_shown(&small));
+        // A bar placed in the window does not depend on the charts' room: a side panel can
+        // narrow the charts below the bar's width without hiding it.
+        let moved = BarPrefs::default().moved_to([300.0, 40.0], region(WINDOW), [200.0, 36.0]);
+        let parked = FavoritesBarInput {
+            area: small.area,
+            ..input(moved, Tool::Cursor)
+        };
+        assert!(is_shown(&parked));
+        let window_too_small = FavoritesBarInput {
+            window: Rect::from_min_size(WINDOW.min, vec2(120.0, 300.0)),
+            ..parked
+        };
+        assert!(!is_shown(&window_too_small));
         let mut rig = Rig::new();
         rig.settle(&hidden);
         assert!(!rig.ctx.is_pointer_over_egui());
