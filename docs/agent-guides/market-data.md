@@ -89,6 +89,13 @@ watchlists.
   | Polymarket, Kalshi | lines: `model::market::line` | any timeframe: a point per timeframe (a week at most) over 60 candles, between a month and a year, at most 1,000 points (a 1m line reaches back 16 hours). Polymarket: the shortest `prices-history` window that holds the span and allows `fidelity` = the point spacing (`1w` allows 5 minutes, `1m` 10, `max` is the whole history only from 12 hours; where none holds the span and allows the fidelity the line is shorter). Kalshi: the longest of 1, 60 and 1,440 minutes that is no longer than a point, over at most 1,000 of it |
   | CoinMarketCap | none | ignores the timeframe |
 
+- **Alpaca feeds** (`model::market::feed`): bars of a day and longer come from SIP (consolidated
+  volume, 15 minutes late on the Basic plan, which the app cannot tell from a paid one), intraday
+  bars from real-time IEX (a single venue: 2-4% of the volume). A SIP request whose `end` falls inside
+  the delay is refused on Basic, so `end` is left out there (`bars_window`): Alpaca then applies the
+  account's entitlement, and a caller's range is trimmed by the provider. Never cap `end` to the
+  delay, which holds a paid account behind. Charts name their feed (`DataSource::chart_feed_label`);
+  `display_name()` stays `Alpaca (IEX)` because portfolio and paper keys are built from it.
 - Alpaca bars close 1 ms before the next opens (days, weeks and months keep the New York midnight
   offset, so an hour off across a clock change). Intraday fetches look back at least 7 days, so a
   tail refresh (4 bars) finds the last session over a weekend; every start is clamped to
@@ -234,6 +241,10 @@ watchlists.
 - Paper orders fill from chart prices, no own feed. `sync_paper_quotes` hands each rendered market
   chart's last close to `PaperHost`, panel open or not (closed: only instruments with a working order
   or position). Nothing fills while the app is quit/asleep or no chart for the instrument renders.
+- A chart whose bars may be late (`DataSource::bars_are_real_time`: Alpaca on SIP, 1D and longer)
+  never prices an order with its close. `sync_paper_quotes` takes the real-time IEX snapshot from
+  the watchlist quote book instead (demand owner `paper_quote_owner`), and withholds the price
+  while that snapshot is not current.
 - Quote timestamp = candle arrival (`Chart::last_data_ms`), never read time. Prices older than
   `watchlist_quote::maximum_age_secs` are withheld; Alpaca prices outside US hours carry
   `is_market_open = false`, so an old close cannot fill.

@@ -726,6 +726,8 @@ impl Drop for ChartWorkspace {
         self.quote_coordinator.release(editor::quote_owner(self.id));
         self.quote_coordinator
             .release(crate::ui::chart::symbol_picker::quote_owner(self.id));
+        self.quote_coordinator
+            .release(trade::paper::paper_quote_owner(self.id));
     }
 }
 

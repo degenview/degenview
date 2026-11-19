@@ -1,6 +1,7 @@
 use super::candles::plan;
 use super::catalog::Catalog;
 use crate::model::market::bucket;
+use crate::model::market::feed::AlpacaFeed;
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,8 @@ use serde_json::Value;
 const BARS_URL: &str = "https://data.alpaca.markets/v2/stocks";
 const DAY_MS: i64 = 86_400_000;
 /// How far behind real time the free plan serves SIP data. A SIP request ending later than this
-/// is refused, one without an end is silently cut here. A minute of margin over Alpaca's 15.
+/// is refused on that plan, one without an end is silently cut here. A minute of margin over
+/// Alpaca's 15.
 const SIP_DELAY_MS: i64 = 16 * 60_000;
 
 pub struct Alpaca;
@@ -206,24 +208,27 @@ fn parse_assets(body: &str) -> Result<Vec<Asset>, ProviderError> {
 /// 2000-01-01.
 const EARLIEST_MS: i64 = 946_684_800_000;
 
-/// The Alpaca data feed for bars of `timeframe`. IEX is a single venue: real time, but its volume
-/// is 2-4% of the consolidated one, which skews Volume, VWAP and every volume-based script. SIP
-/// carries every US venue, 15 minutes late on the free plan: invisible on a daily bar, so bars of
-/// a day and longer come from SIP, intraday bars stay on real-time IEX.
-fn feed(timeframe: Timeframe) -> &'static str {
-    if timeframe.is_intraday() {
-        "iex"
-    } else {
-        "sip"
+/// The window a request on `feed` asks Alpaca for, as `(start, end)`; `None` when the caller's
+/// range is empty (`end` not after `start`), so no request is made.
+///
+/// A SIP `end` inside the free plan's delay is refused (403), so it is left out and Alpaca applies
+/// the account's own entitlement: real time on a paid plan, cut at the delay on Basic. Capping the
+/// `end` instead would hold a paid account 16 minutes behind, and differently from a request with
+/// no `end`. The caller drops the bars its range does not hold.
+fn bars_window(
+    feed: AlpacaFeed,
+    start_ms: i64,
+    end_ms: Option<i64>,
+    now_ms: i64,
+) -> Option<(i64, Option<i64>)> {
+    if end_ms.is_some_and(|end| end <= start_ms) {
+        return None;
     }
-}
-
-/// The `end` a request on `feed` may carry: the free plan refuses SIP data newer than its delay.
-fn request_end(feed: &str, end_ms: Option<i64>, now_ms: i64) -> Option<i64> {
-    match (feed, end_ms) {
-        ("sip", Some(end)) => Some(end.min(now_ms - SIP_DELAY_MS)),
+    let end = match (feed, end_ms) {
+        (AlpacaFeed::Sip, Some(end)) if end > now_ms - SIP_DELAY_MS => None,
         (_, end) => end,
-    }
+    };
+    Some((start_ms, end))
 }
 
 /// The newest `limit` bars of `bar` that open from `start_ms` to `end_ms` (or now), oldest
@@ -236,16 +241,20 @@ fn fetch_bars(
     limit: usize,
 ) -> Result<Vec<Kline>, ProviderError> {
     let (key, secret) = credentials()?;
-    let feed = feed(bar);
+    let feed = AlpacaFeed::for_bars(bar);
+    let Some((start, end)) = bars_window(feed, start_ms, end_ms, crate::service::now_ms()) else {
+        return Ok(Vec::new());
+    };
     let mut url = format!(
-        "{BARS_URL}/{}/bars?timeframe={}&start={}&limit={}&adjustment=all&feed={feed}&sort=desc",
+        "{BARS_URL}/{}/bars?timeframe={}&start={}&limit={}&adjustment=all&feed={}&sort=desc",
         symbol.to_uppercase(),
         token(bar),
-        crate::format::iso8601(start_ms),
-        limit.clamp(1, MAX_BARS)
+        crate::format::iso8601(start),
+        limit.clamp(1, MAX_BARS),
+        feed.query()
     );
-    if let Some(end_ms) = request_end(feed, end_ms, crate::service::now_ms()) {
-        url.push_str(&format!("&end={}", crate::format::iso8601(end_ms)));
+    if let Some(end) = end {
+        url.push_str(&format!("&end={}", crate::format::iso8601(end)));
     }
     let body = crate::service::net::http::get_text(
         &url,
@@ -260,7 +269,7 @@ fn fetch_bars(
         return Err(ProviderError::Other(format!(
             "No data is available for {} on Alpaca's free {} feed.",
             symbol.to_uppercase(),
-            feed.to_uppercase()
+            feed.query().to_uppercase()
         )));
     }
     bars.sort_by_key(|candle| candle.open_time);
@@ -484,22 +493,72 @@ mod tests {
         );
     }
 
-    #[test]
-    fn daily_and_longer_bars_come_from_sip_intraday_from_iex() {
-        assert_eq!(feed(Timeframe::DAY_1), "sip");
-        assert_eq!(feed(Timeframe::WEEK_1), "sip");
-        assert_eq!(feed(Timeframe::MONTH_1), "sip");
-        assert_eq!(feed(Timeframe::HOUR_1), "iex");
-        assert_eq!(feed(Timeframe::parse("5m").unwrap()), "iex");
+    const MINUTE_MS: i64 = 60_000;
+
+    fn now() -> i64 {
+        day_ms(2026, 11, 19) + 20 * 3_600_000
     }
 
     #[test]
-    fn a_sip_request_never_ends_inside_the_free_plan_delay() {
-        let now = day_ms(2026, 11, 19) + 20 * 3_600_000;
-        assert_eq!(request_end("sip", Some(now), now), Some(now - SIP_DELAY_MS));
-        let older = now - DAY_MS;
-        assert_eq!(request_end("sip", Some(older), now), Some(older));
-        assert_eq!(request_end("sip", None, now), None);
-        assert_eq!(request_end("iex", Some(now), now), Some(now));
+    fn a_sip_end_inside_the_delay_is_left_to_the_accounts_entitlement() {
+        let start = now() - DAY_MS;
+        for end in [now(), now() - 5 * MINUTE_MS, now() - SIP_DELAY_MS + 1] {
+            assert_eq!(
+                bars_window(AlpacaFeed::Sip, start, Some(end), now()),
+                Some((start, None)),
+                "an end {} minutes back",
+                (now() - end) / MINUTE_MS
+            );
+        }
+    }
+
+    #[test]
+    fn an_end_the_plan_already_serves_is_sent() {
+        let start = now() - 3 * DAY_MS;
+        let older = now() - 20 * MINUTE_MS;
+        assert_eq!(
+            bars_window(AlpacaFeed::Sip, start, Some(older), now()),
+            Some((start, Some(older)))
+        );
+        assert_eq!(
+            bars_window(AlpacaFeed::Sip, start, None, now()),
+            Some((start, None))
+        );
+        assert_eq!(
+            bars_window(AlpacaFeed::Iex, start, Some(now()), now()),
+            Some((start, Some(now())))
+        );
+    }
+
+    #[test]
+    fn a_range_inside_the_delay_never_reaches_the_provider_reversed() {
+        let start = now() - 5 * MINUTE_MS;
+        assert_eq!(
+            bars_window(AlpacaFeed::Sip, start, Some(now()), now()),
+            Some((start, None)),
+            "no end, so no end before the start"
+        );
+    }
+
+    #[test]
+    fn an_empty_range_asks_for_nothing() {
+        let start = now() - DAY_MS;
+        assert_eq!(
+            bars_window(AlpacaFeed::Sip, start, Some(start), now()),
+            None
+        );
+        assert_eq!(
+            bars_window(AlpacaFeed::Iex, start, Some(start - 1), now()),
+            None
+        );
+        assert_eq!(
+            bars_window(
+                AlpacaFeed::Sip,
+                now() - 10 * MINUTE_MS,
+                Some(now() - 17 * MINUTE_MS),
+                now()
+            ),
+            None
+        );
     }
 }
