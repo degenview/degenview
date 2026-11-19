@@ -116,22 +116,6 @@ pub fn assigned_names(statements: &[Statement]) -> std::collections::HashSet<Str
     names
 }
 
-/// The names `statements` declare at their own level: a variable and the elements of a tuple
-/// declaration. A block's declarations are its own and are not included.
-pub fn top_level_declarations(statements: &[Statement]) -> std::collections::HashSet<String> {
-    let mut names = std::collections::HashSet::new();
-    for statement in statements {
-        match statement {
-            Statement::Declaration { name, .. } => {
-                names.insert(name.clone());
-            }
-            Statement::TupleDeclaration { names: tuple, .. } => names.extend(tuple.iter().cloned()),
-            _ => {}
-        }
-    }
-    names
-}
-
 /// Visits every call whose callee is a name, at any depth: builtins, the script's functions, and
 /// `a.b(x)` on a plain variable path, which is a [`Call`](Expression::Call) named `"a.b"`. A method
 /// called on anything else (`f().b(x)`) is a [`MethodCall`](Expression::MethodCall) and is not
@@ -141,9 +125,9 @@ pub fn for_each_call(statements: &[Statement], visit: &mut impl FnMut(&str, Sour
 }
 
 /// Like `for_each_call`, with each call's arguments.
-pub fn for_each_call_with_args(
-    statements: &[Statement],
-    visit: &mut impl FnMut(&str, &[super::ast::Argument], SourceRange),
+pub fn for_each_call_with_args<'a>(
+    statements: &'a [Statement],
+    visit: &mut impl FnMut(&'a str, &'a [super::ast::Argument], SourceRange),
 ) {
     for statement in statements {
         for expression in expressions(statement) {
@@ -155,9 +139,9 @@ pub fn for_each_call_with_args(
     }
 }
 
-fn for_each_call_in_expression(
-    expression: &Expression,
-    visit: &mut impl FnMut(&str, &[super::ast::Argument], SourceRange),
+fn for_each_call_in_expression<'a>(
+    expression: &'a Expression,
+    visit: &mut impl FnMut(&'a str, &'a [super::ast::Argument], SourceRange),
 ) {
     match expression {
         Expression::Call {

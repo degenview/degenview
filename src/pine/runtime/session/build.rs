@@ -44,7 +44,7 @@ impl Session {
         let mut enums = FastMap::default();
         let linkage = LibraryLinkage::new(&program);
         // A block's names are its own, and no function sees them.
-        let globals = crate::pine::syntax::traversal::top_level_declarations(&program.statements);
+        let globals = crate::pine::syntax::scopes::top_level_declarations(&program.statements);
         for statement in &program.statements {
             match statement {
                 Statement::TypeDeclaration { name, fields, .. } => {

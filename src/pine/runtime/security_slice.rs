@@ -46,7 +46,7 @@ use std::sync::Arc;
 
 use crate::pine::compiler::is_builtin_namespace;
 use crate::pine::syntax::ast::{Argument, DeclarationMode, Expression, Parameter, Statement};
-use crate::pine::syntax::traversal;
+use crate::pine::syntax::{scopes, traversal};
 
 /// The request functions whose third argument is the expression.
 const SLICED_REQUESTS: [&str; 2] = ["request.security", "request.security_lower_tf"];
@@ -239,7 +239,7 @@ struct Script<'a> {
 impl<'a> Script<'a> {
     fn new(statements: &'a [Statement]) -> Self {
         Self {
-            declared: traversal::top_level_declarations(statements),
+            declared: scopes::top_level_declarations(statements),
             references: reference_names(statements),
             aliases: aliases(statements),
             persistent: persistent_names(statements),
