@@ -82,7 +82,7 @@ watchlists.
   | Gate.io | 1m 5m 15m 30m 1h 4h 8h 1D 1W 1M | Public v4 API, no key, spot only; ids are `BTC_USDT`. Natives are its documented intervals `1m … 8h`, `1d`, `7d` (weeks from Monday) and `30d` (the calendar month): all cut where this app cuts, so 3M and 1Y fold from months (it also answers `3m`, `2h`, `6h` and `12h`, undocumented, so they fold). 1,000 per request, paged back with a `to` cursor through `service::market::paging`. **A request may not reach 10,000 points back** in the interval asked for (HTTP 400 "Candlestick too long ago"): the cap is 8,900 base candles (`Paging::max_candles`, capped before the fold) and `reach_left` answers an older page past it as empty, so a chart does not retry. 200 requests per 10 s per IP: no lane. A 400 is an unknown market, a 403 a country it does not serve. Held and tail-refreshed when folded (`cache::policy`) |
   | Bybit | 1m 3m 5m 15m 30m 1h 2h 4h 6h 12h 1D 1W 1M | Public v5 API, no key, spot only; symbols are Binance-style `BTCUSDT`. Every bar is cut where this app cuts (weeks Monday, months calendar), so 3M and 1Y fold from months. 1,000 per request, paged back with an `end` cursor through `service::market::paging` (60 pages, capped before the fold). Refusals are HTTP 200 with a `retCode` (`10006`/`10018` are rate limits) and some countries get HTTP 403. 600 requests per 5 s per IP: no lane. Held and tail-refreshed when folded (`cache::policy`) |
   | Kraken | 1m 5m 15m 30m 1h 4h 1D | Public API, no key. `OHLC` answers only the newest 720 candles and cannot page back past them (`KRAKEN_BARS`): 12 hours of 1m, 30 days of 1h, 2 years of 1D. The chart's first 500 leave the rest for its first older page (`supports_older_history` is true, `window`), and the next page is empty; a full window drops the fragment a fold of it would start with. Its week (`10080`) starts on a Thursday and its `21600` is 15 days counted from 1970, so 1W, 1M and 1Y fold from days. Ids are `BTC/USD` on REST and websocket alike (`XBT`/`XDG` are refused: `kraken_asset`). One request every six seconds (`net::rate_limit::kraken`: measured, a burst of about nine gets through and then only about one in six seconds; faster is `EGeneral:Too many requests`), so charts and overlays refresh on the slow schedule (the socket keeps them live) on a worker lane of its own (`work_queue::KRAKEN_LANE`: the sleep must not hold the general workers; the quote adapter does not wait, since a round joins every source); refusals are HTTP 200 with an `error` code (`is_rate_limit`) |
-  | Coinbase | 1m 5m 15m 1h 6h 1D | `MAX_PAGES` x 290 candles caps a request (a 5m series reaches back ~60 days) |
+  | Coinbase | 1m 5m 15m 1h 6h 1D | `MAX_PAGES` x 290 candles caps a request (a 5m series reaches back ~60 days). Paging is by time window, so an answer that stops at the cap with fewer candles than asked (an illiquid product) begins at the window's start, and a first bucket that opened before it is a fragment (`FoldPlan::shape_since`); an empty page is the start of the product's history, and the count rule alone applies |
   | Alpaca | 1m 5m 15m 30m 1h 1D 1W 1M | Alpaca also has `3Hour`, `4Min`, `2Month` and so on, but it does not say where those start; only lengths that divide the hour are used (an hour's start is the same in UTC and New York), the rest fold. Days, weeks and months keep Alpaca's New York-midnight stamps; a fold re-anchors them on UTC. Stocks fold intraday buckets from UTC midnight, not the session open. 10,000 bars per request |
   | DEXScreener (GeckoTerminal) | 1m 5m 15m 1h 4h 12h 1D | 1,000 per request; empty buckets are filled flat (`bucket::fill_gaps`) before a fold |
   | CoinGecko | none: prices, `model::market::samples` | `/market_chart` samples are 5 minutes for 1 day, hourly to 90 days, daily to 365; a candle is built from samples so the spacing must divide the candle: `chart_days(timeframe, limit)` is the days to ask for, or `None` (1m, and any length that is not a whole number of five minutes: 7m, 22m) |
@@ -93,7 +93,12 @@ watchlists.
   offset, so an hour off across a clock change). Intraday fetches look back at least 7 days, so a
   tail refresh (4 bars) finds the last session over a weekend; every start is clamped to
   `EARLIEST_MS`. A request is at most 10,000 bars, so a `22m` series from 1-minute bars is shorter
-  than 500.
+  than 500. Alpaca answers a time window, not a count, and its bars are sparse (IEX trades, holidays):
+  a short answer is not the start of history. `shape_since` takes the window's start (the lookback, or
+  the clamped range start) and drops a first bucket that opened before it. A bucket's first base slot
+  is its UTC start plus the offset the provider stamps its bars with (New York midnight for days and
+  months), so a window that began at the first of those bars keeps its first bucket; an answer that is
+  only a fragment of one bucket is empty.
 - **Older history** (`DataSource::supports_older_history`): Binance, Coinbase, OKX, Bybit, Gate.io (to its 8,900-candle reach), MEXC and Alpaca page back at
   any length. GeckoTerminal's free API reaches back 180 days, so it pages (one page of base candles,
   folded) only while a page of the base candle (1,000 of them) is shorter than that: bases up to 4h
@@ -143,17 +148,32 @@ watchlists.
   `apply_live` (replace the newest bar or append; a kline older than the newest is dropped, so candles
   stay ascending). For a folded one the forming bucket is rebuilt from the latest state of each base
   bar it holds (a kline is a running total, resent until its bar closes, so adding would double
-  count): the bucket's open, range and volume from before the socket's first kline are what the
-  chart held then (its already-open bar counts only from there on), and the bucket cuts where
-  `bucket` does (a `22m` day's last bucket closes at midnight). A chart and an overlay series each
-  keep their own `LiveFold`, reset when a REST answer replaces the forming bucket or the market or
-  timeframe changes. A current-or-newer WebSocket bar beats an older REST snapshot
+  count), and the bucket cuts where `bucket` does (a `22m` day's last bucket closes at midnight).
+  What the socket did not see of the bucket (the bars before it connected, or while it was quiet)
+  comes from REST: `service::fetch_klines_live` asks, after the folded answer, for the base candles
+  of the newest bucket (one extra small request per refresh, only for a folded timeframe on a
+  streamed source; `FoldPlan::newest_bucket`), and `LiveFold::merge_fetched` merges them with the
+  socket's bars per bar. One rule takes a bar's state from either side: it replaces the stored one
+  unless it has less volume (a running total only grows; on a tie the arriving state wins), so
+  nothing is counted twice and neither side rolls the other back. A bucket the socket has not
+  reached starts from the bars; one newer than them is left alone. The merged series takes the
+  forming candle in place of its newest candle only, so REST's finished copy of an earlier bucket
+  stays. If that request fails, or the answer has no bars, the held-candle rule is the fallback:
+  the bucket's open, range and volume are what the chart held when the socket's first kline
+  arrived, and that kline's volume is not counted twice (`first_volume`). The feed connects as
+  soon as the chart exists, so a kline can arrive before the first REST answer. A chart and an
+  overlay series each keep their own `LiveFold` and merge every REST answer through it; it resets
+  when an answer replaces the forming bucket (no socket bar newer than the request) or the market
+  or timeframe changes. A current-or-newer WebSocket bar beats an older REST snapshot
   (`live::merge_fetched`) only if the socket delivered after that request began
   (`LiveMark::guard_for`, carrying the bucket's open time): when it goes quiet, REST refreshes update
   the forming bar again.
 - A chart whose last answer was `UnsupportedInterval` shows it in the usual error slot and is not
   refreshed again (`Chart::refresh_due`) until its market or the timeframe changes, which fetch at
   once. An overlay market becomes `OverlayStatus::Blocked(text)` and is not retried either.
+- `service::cache::patched` merges a tail into a held series by open time: the tail's copy of a candle
+  wins and a held candle the tail skips stays. A tail that does not reach back to the series is
+  fetched whole.
 - `service::cache::fetch`: a failed tail refresh falls back to the whole fetch, except a rate limit,
   which is returned.
 - Visible watchlists share one ticker socket per source in `DataSource::QUOTE_STREAMS` (Coinbase: last

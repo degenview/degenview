@@ -83,6 +83,9 @@ fn newest(candles: &[Kline], limit: u32) -> Vec<Kline> {
 
 /// `candles` brought up to date with `tail`, a fetch of its end. `None` when the tail does not
 /// reach back to the series (the gap between them is unknown), so it must be fetched whole.
+///
+/// Across the overlap the tail's copy of a candle wins, and a candle the series holds that the tail
+/// lacks stays: a tail with a gap in it does not erase what is already known.
 fn patched(candles: &[Kline], tail: &[Kline]) -> Option<Vec<Kline>> {
     let (last, first) = (candles.last()?, tail.first()?);
     // The tail must start inside the series and not end before it does.
@@ -91,7 +94,14 @@ fn patched(candles: &[Kline], tail: &[Kline]) -> Option<Vec<Kline>> {
     }
     let keep = candles.partition_point(|candle| candle.open_time < first.open_time);
     let mut merged = candles[..keep].to_vec();
-    merged.extend_from_slice(tail);
+    let mut overlap = candles[keep..].iter().peekable();
+    for candle in tail {
+        while let Some(held) = overlap.next_if(|held| held.open_time < candle.open_time) {
+            merged.push(held.clone());
+        }
+        overlap.next_if(|held| held.open_time == candle.open_time);
+        merged.push(candle.clone());
+    }
     Some(merged)
 }
 
@@ -241,6 +251,11 @@ mod tests {
         let times: Vec<i64> = merged.iter().map(|c| c.open_time / 10).collect();
         assert_eq!(times, (0..12).collect::<Vec<_>>());
         assert_eq!(merged[8].close, 99.0, "the tail's copy of a candle wins");
+        // A candle the tail skips stays: [2, 4] over [2, 3, 4] keeps 3.
+        let gapped = [series(2..3), series(4..5)].concat();
+        let merged = patched(&series(2..5), &gapped).expect("overlaps");
+        let times: Vec<i64> = merged.iter().map(|c| c.open_time / 10).collect();
+        assert_eq!(times, [2, 3, 4]);
         // One candle past the end still joins.
         assert!(patched(&held, &series(10..12)).is_none());
         assert!(patched(&held, &series(9..12)).is_some());

@@ -562,7 +562,7 @@ impl ChartWorkspace {
         let ctx = ui.ctx().clone();
         let timeframe = self.timeframe;
         for chart in &mut self.charts {
-            chart.receive_fetch();
+            chart.receive_fetch(timeframe);
             chart.receive_older(timeframe);
             chart.request_older(timeframe, &ctx);
             if chart.refresh_due() {

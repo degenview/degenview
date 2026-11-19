@@ -34,7 +34,9 @@ pub fn apply_live(candles: &mut Vec<Kline>, kline: Kline) -> bool {
 /// bucket is rebuilt from the latest state of each base bar it holds, never added to. What the
 /// socket did not see of the bucket (the bars before it connected) is what the series held of it
 /// when its first kline arrived, so the bucket keeps its open, its range and its volume. The one
-/// bar that was open then is already in that figure, so only what it traded since counts.
+/// bar that was open then is already in that figure, so only what it traded since counts. When the
+/// REST answer brings the bucket's own base bars ([`LiveFold::merge_fetched`]), the bucket is those
+/// bars instead, and the held candle is not needed.
 #[derive(Debug, Default)]
 pub struct LiveFold {
     forming: Option<Forming>,
@@ -64,8 +66,35 @@ impl Forming {
         }
     }
 
+    /// A bucket made of base bars alone, the way REST brought them.
+    fn from_bars(target: Timeframe, open_time: i64, bars: Vec<Kline>) -> Self {
+        let mut forming = Self {
+            target,
+            open_time,
+            held: None,
+            first_volume: 0.0,
+            bars: BTreeMap::new(),
+        };
+        for bar in bars {
+            forming.take(bar);
+        }
+        forming
+    }
+
     fn is_of(&self, target: Timeframe, open_time: i64) -> bool {
         self.target == target && self.open_time == open_time
+    }
+
+    /// Takes in the state of a base bar, from the socket or from REST. A bar's volume is a running
+    /// total that only grows, so the state with more of it is the later one and replaces what is
+    /// stored; one with less is an older account and is dropped. On a tie the arriving state wins.
+    fn take(&mut self, bar: Kline) {
+        match self.bars.get(&bar.open_time) {
+            Some(stored) if bar.volume < stored.volume => {}
+            _ => {
+                self.bars.insert(bar.open_time, bar);
+            }
+        }
     }
 
     /// The bucket as a candle: its bars folded, joined with what was held before them.
@@ -97,6 +126,57 @@ impl LiveFold {
         self.forming = None;
     }
 
+    /// Merges a REST answer into `current`, the candles held, as [`merge_fetched`] does, and
+    /// tells the fold what the answer is. `bars` are the base candles of the answer's newest
+    /// bucket of `target`, fetched on their own (empty when the source has the target itself or
+    /// the request failed).
+    ///
+    /// An answer no socket bar is newer than (`live_open` is `None`) replaces the forming bucket,
+    /// so the fold starts it again. With `bars`, the forming bucket is those bars merged with the
+    /// socket's, bar by bar (the state with more volume wins), so what the socket missed before
+    /// it connected, or while it was quiet, is not lost and nothing is counted twice; a bucket
+    /// the socket has not reached yet starts from them, and one newer than them is left alone.
+    /// The merged series then takes the forming candle in place of its newest candle, never an
+    /// older one: REST's finished copy of an earlier bucket stays. With no `bars` the held-candle
+    /// rule of [`apply`](Self::apply) stands in.
+    pub fn merge_fetched(
+        &mut self,
+        target: Timeframe,
+        fetched: Vec<Kline>,
+        bars: Vec<Kline>,
+        current: &[Kline],
+        live_open: Option<i64>,
+        limit: usize,
+    ) -> Vec<Kline> {
+        if live_open.is_none() {
+            self.reset();
+        }
+        let bucket = bars
+            .last()
+            .map(|bar| bucket_start_ms(target, bar.open_time));
+        if let Some(bucket) = bucket {
+            match &mut self.forming {
+                Some(forming) if forming.is_of(target, bucket) => {
+                    for bar in bars {
+                        forming.take(bar);
+                    }
+                    forming.held = None;
+                }
+                Some(forming) if forming.target == target && forming.open_time > bucket => {}
+                _ => self.forming = Some(Forming::from_bars(target, bucket, bars)),
+            }
+        }
+        let mut merged = merge_fetched(fetched, current, live_open, limit);
+        if let Some(bucket) = bucket
+            && let Some(forming) = self.forming.as_ref().filter(|f| f.is_of(target, bucket))
+            && merged.last().is_none_or(|last| last.open_time <= bucket)
+            && let Some(candle) = forming.candle()
+        {
+            apply_live(&mut merged, candle);
+        }
+        merged
+    }
+
     /// Folds `kline`, a live kline of `base` candles, into `candles`, the series of `target`:
     /// the forming bucket's candle replaces the newest candle of its open time or follows it. A
     /// kline of a bucket older than the newest candle is ignored, so the series stays ascending.
@@ -126,7 +206,7 @@ impl LiveFold {
             Some(forming) if forming.is_of(target, open_time) => forming,
             _ => Forming::begin(target, open_time, candles.last(), &kline),
         };
-        forming.bars.insert(kline.open_time, kline);
+        forming.take(kline);
         let candle = forming.candle();
         self.forming = Some(forming);
         apply_live(candles, candle?).then_some(open_time)

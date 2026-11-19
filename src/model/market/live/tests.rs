@@ -260,3 +260,156 @@ fn a_kline_of_the_timeframe_itself_replaces_the_candle() {
     );
     assert_eq!(candles.len(), 2);
 }
+
+/// The base bars of the first bucket as REST reports them: minutes 0 to 2 trade 2, 3 and 2.
+fn rest_bars() -> Vec<Kline> {
+    vec![
+        bar(0, 100.0, 2.0),
+        bar(MINUTE, 101.0, 3.0),
+        bar(2 * MINUTE, 102.0, 2.0),
+    ]
+}
+
+/// A REST answer for the first bucket through `fold`, over `candles`.
+fn merge_rest(
+    fold: &mut LiveFold,
+    fetched: Vec<Kline>,
+    bars: Vec<Kline>,
+    candles: &[Kline],
+    live_open: Option<i64>,
+) -> Vec<Kline> {
+    fold.merge_fetched(five_minutes(), fetched, bars, candles, live_open, 500)
+}
+
+#[test]
+fn a_bar_the_socket_has_further_along_than_rest_keeps_the_socket_volume() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 8.0));
+    // The answer was cut before the bar traded more than 3.
+    let mut bars = rest_bars();
+    bars.push(bar(3 * MINUTE, 103.0, 3.0));
+    candles = merge_rest(&mut fold, vec![held_bucket()], bars, &candles, Some(0));
+    assert_eq!(candles.len(), 1);
+    assert_eq!(candles[0].volume, 15.0, "2 + 3 + 2 and the socket's 8");
+    assert_eq!(candles[0].close, 112.0);
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 113.0, 9.0));
+    assert_eq!(candles[0].volume, 16.0);
+    fold_into(&mut fold, &mut candles, bar(4 * MINUTE, 114.0, 2.0));
+    assert_eq!(candles[0].volume, 18.0);
+}
+
+#[test]
+fn a_minute_the_answer_already_has_is_not_counted_again_when_the_socket_reaches_it() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    // The answer came after the minute began: its candle and its bars both hold the 3 it traded.
+    let mut bars = rest_bars();
+    bars.push(bar(3 * MINUTE, 103.0, 3.0));
+    let fetched = Kline {
+        volume: 10.0,
+        ..held_bucket()
+    };
+    candles = merge_rest(&mut fold, vec![fetched], bars, &candles, None);
+    assert_eq!(candles[0].volume, 10.0);
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 103.0, 3.0));
+    assert_eq!(candles[0].volume, 10.0, "not 13");
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 104.0, 4.0));
+    assert_eq!(candles[0].volume, 11.0);
+}
+
+#[test]
+fn the_socket_first_and_the_answer_after_make_the_whole_bucket() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
+    assert_eq!(candles[0].volume, 3.0);
+    candles = merge_rest(
+        &mut fold,
+        vec![held_bucket()],
+        rest_bars(),
+        &candles,
+        Some(0),
+    );
+    assert_eq!(candles[0].volume, 10.0);
+    assert_eq!(candles[0].open, 99.0, "the first bar's open");
+    assert_eq!(candles[0].close, 112.0, "the socket's latest close");
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 113.0, 5.0));
+    assert_eq!(candles[0].volume, 12.0);
+}
+
+#[test]
+fn a_finished_bucket_the_answer_holds_is_not_replaced_by_the_sockets_account_of_it() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    fold_into(&mut fold, &mut candles, bar(2 * MINUTE, 20.0, 1.0));
+    let finished = Kline {
+        close: 25.0,
+        ..held_bucket()
+    };
+    let next = Kline {
+        open_time: 5 * MINUTE,
+        close_time: 10 * MINUTE - 1,
+        ..held_bucket()
+    };
+    let merged = merge_rest(
+        &mut fold,
+        vec![finished.clone(), next.clone()],
+        vec![bar(5 * MINUTE, 105.0, 4.0)],
+        &candles,
+        Some(0),
+    );
+    assert_eq!(merged.len(), 2);
+    assert_eq!(
+        merged[0], finished,
+        "REST's close of 25, not the socket's 20"
+    );
+    assert_eq!(merged[1].open_time, 5 * MINUTE);
+    assert_eq!(merged[1].volume, 4.0, "the new bucket is its bars");
+}
+
+#[test]
+fn an_answer_with_no_bars_leaves_the_held_candle_rule_as_it_was() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    candles = merge_rest(&mut fold, vec![held_bucket()], Vec::new(), &candles, None);
+    assert_eq!(candles, vec![held_bucket()]);
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 112.0, 3.0));
+    assert_eq!(candles[0].volume, 10.0);
+    fold_into(&mut fold, &mut candles, bar(3 * MINUTE, 113.0, 5.0));
+    assert_eq!(candles[0].volume, 12.0);
+}
+
+#[test]
+fn an_answer_with_no_bars_and_no_newer_socket_bar_starts_the_bucket_again() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    fold_into(&mut fold, &mut candles, bar(0, 10.0, 4.0));
+    let refreshed = Kline {
+        volume: 6.0,
+        ..candles[0].clone()
+    };
+    candles = merge_rest(&mut fold, vec![refreshed], Vec::new(), &candles, None);
+    fold_into(&mut fold, &mut candles, bar(0, 10.0, 7.0));
+    assert_eq!(candles[0].volume, 6.0);
+}
+
+#[test]
+fn a_bar_state_with_less_volume_than_the_stored_one_is_dropped_and_a_tie_replaces_it() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    fold_into(&mut fold, &mut candles, bar(0, 10.0, 5.0));
+    fold_into(&mut fold, &mut candles, bar(0, 11.0, 4.0));
+    assert_eq!((candles[0].close, candles[0].volume), (10.0, 5.0));
+    fold_into(&mut fold, &mut candles, bar(0, 12.0, 5.0));
+    assert_eq!((candles[0].close, candles[0].volume), (12.0, 5.0));
+}
+
+#[test]
+fn bars_of_a_bucket_older_than_the_forming_one_are_ignored() {
+    let (mut fold, mut candles) = (LiveFold::default(), Vec::new());
+    fold_into(&mut fold, &mut candles, bar(5 * MINUTE, 20.0, 3.0));
+    let merged = merge_rest(
+        &mut fold,
+        vec![held_bucket()],
+        rest_bars(),
+        &candles,
+        Some(5 * MINUTE),
+    );
+    assert_eq!(merged.len(), 2);
+    assert_eq!(merged[0], held_bucket());
+    assert_eq!(merged[1], candles[0]);
+}
