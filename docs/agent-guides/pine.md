@@ -50,7 +50,11 @@
   after its initializer ran (so a `:=` in the initializer is the outer variable's and stays) and
   before the local is set; `run_block` puts back down to its mark, in reverse, however the block
   ends (each branch, arm and loop iteration is its own execution). A `:=` above the declaration or
-  in another branch stays too. A loop's counters are saved around the loop. Only `var`/`varip` locals are set at entry (stash value, else unset so the
+  in another branch stays too. A loop's counters work the same way (`ForRange::shadows`,
+  `ForIn::shadows` for the index and the value): a counter that hides a visible name saves the outer
+  value after the bounds or the collection were evaluated and puts it back when the loop ends; one
+  that hides nothing stays in the table, so `i[1]` reads the previous bar's last count. Only
+  `var`/`varip` locals are set at entry (stash value, else unset so the
   declaration initialises them), so one hides a global of its name for the whole call. Scopes are
   lexical: a nested call first sets each name its calling function's locals hide back to the global
   (`uncover_caller_globals`, from the caller's `saved` on `Session::call_frames`; by induction each

@@ -164,6 +164,10 @@ pub enum Statement {
         step: Option<Expression>,
         body: Vec<Statement>,
         range: SourceRange,
+        /// Like `Declaration::shadows`, for the counter: set when it hides a name visible at the
+        /// loop. The loop saves the outer value once its bounds are evaluated and puts it back
+        /// when it ends (`Session::run_for_range`).
+        shadows: Option<ShadowId>,
     },
     /// `for value in array` / `for [index, value] in array`
     ForIn {
@@ -172,6 +176,8 @@ pub enum Statement {
         collection: Expression,
         body: Vec<Statement>,
         range: SourceRange,
+        /// Like `ForRange::shadows`, for the index and the value, in that order.
+        shadows: [Option<ShadowId>; 2],
     },
     WhileLoop {
         condition: Expression,

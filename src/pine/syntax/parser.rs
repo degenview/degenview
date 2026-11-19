@@ -510,6 +510,7 @@ impl Parser {
             collection,
             body,
             range: start,
+            shadows: [None; 2],
         })
     }
 
@@ -561,6 +562,7 @@ impl Parser {
             step,
             body,
             range: start,
+            shadows: None,
         })
     }
 

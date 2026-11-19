@@ -787,6 +787,33 @@ fn a_loop_local_keeps_the_value_of_its_last_iteration_in_its_history() {
 }
 
 #[test]
+fn a_loop_counter_keeps_the_value_of_its_last_iteration_in_its_history() {
+    // The counter hides nothing, so the slot the previous bar's run leaves is not an outer value
+    // to save and put back. The loop is longer on every bar (3, 5, 7); on the last bar `i[1]` is
+    // the previous bar's last counter, 5, at every iteration.
+    let session = run(
+        "f() =>\n    out = 0.0\n    for i = 0 to 3 + bar_index * 2\n        out := i[1]\n    out\n\
+         r = f()",
+        3,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(5));
+    // Also at the top level, and for the index and value of a `for ... in`.
+    let session = run(
+        "var a = array.new_float()\n\
+         if bar_index == 0\n    a.push(10.0)\n    a.push(20.0)\n\
+         a.push(bar_index)\n\
+         out = 0.0\n\
+         for i = 0 to 3 + bar_index * 2\n    out := i[1]\n\
+         pos = 0.0\n\
+         for [k, v] in a\n    pos := k[1]\n",
+        3,
+    );
+    assert_eq!(value(&session, "out"), RuntimeValue::Int(5));
+    // `a` holds 10, 20, 0, 1, 2 on the last bar: the previous bar's last index was 3.
+    assert_eq!(value(&session, "pos"), RuntimeValue::Int(3));
+}
+
+#[test]
 fn a_declaration_that_hides_an_outer_name_takes_it_after_its_initializer_ran() {
     // The initializer runs before the block's own `x` exists: its `x := 5` is the outer one's.
     let session = run(
@@ -1251,6 +1278,107 @@ fn a_block_that_shadows_more_names_than_fit_inline_puts_them_all_back() {
         2,
     );
     assert_eq!(value(&session, "sum"), RuntimeValue::Float(21.0));
+}
+
+#[test]
+fn a_counter_that_hides_a_global_leaves_it_and_its_history_alone() {
+    // `i` is the global's, 7 on every bar; the loop's counter is its own and ends with the loop.
+    let session = run(
+        "i = 7\n\
+         for i = 0 to 2 + bar_index\n    x = i * 2\n\
+         after = i\n\
+         lagged = i[1]",
+        3,
+    );
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(7));
+    assert_eq!(value(&session, "lagged"), RuntimeValue::Int(7));
+}
+
+#[test]
+fn a_counter_that_hides_an_enclosing_blocks_local_gives_it_back() {
+    let session = run(
+        "total = 0\n\
+         if bar_index >= 0\n    n = 100\n    for n = 0 to 2\n        total += n\n    total += n\n",
+        2,
+    );
+    // 0 + 1 + 2 from the loop, then the block's `n` is 100 again.
+    assert_eq!(value(&session, "total"), RuntimeValue::Int(103));
+}
+
+#[test]
+fn a_for_in_whose_index_and_value_hide_globals_gives_both_back() {
+    let session = run(
+        "k = 40\nv = 2.5\n\
+         a = array.new_float()\n\
+         a.push(1.0)\na.push(2.0)\na.push(3.0)\n\
+         sum = 0.0\n\
+         for [k, v] in a\n    sum += k * v\n\
+         after_k = k\nafter_v = v\n\
+         lagged_k = k[1]",
+        2,
+    );
+    assert_eq!(value(&session, "sum"), RuntimeValue::Float(8.0));
+    assert_eq!(value(&session, "after_k"), RuntimeValue::Int(40));
+    assert_eq!(value(&session, "after_v"), RuntimeValue::Float(2.5));
+    assert_eq!(value(&session, "lagged_k"), RuntimeValue::Int(40));
+}
+
+#[test]
+fn a_for_in_counters_keep_their_last_values_in_their_history() {
+    // Nothing is hidden: the previous bar's last index and element are what `[1]` reads.
+    let session = run(
+        "a = array.new_float()\n\
+         a.push(10.0 + bar_index)\na.push(20.0 + bar_index)\n\
+         if bar_index > 0\n    a.push(30.0 + bar_index)\n\
+         last_k = -1\nlast_v = 0.0\n\
+         for [k, v] in a\n    last_k := k[1]\n    last_v := v[1]",
+        3,
+    );
+    // Bar 1 ran three elements (indexes 0 to 2, last element 31), bar 2 as many.
+    assert_eq!(value(&session, "last_k"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "last_v"), RuntimeValue::Float(31.0));
+}
+
+#[test]
+fn a_counter_in_a_function_named_like_a_global_leaves_the_global_alone() {
+    let session = run(
+        "i = 7\n\
+         f() =>\n    s = 0\n    for i = 0 to 3\n        s += i\n    s\n\
+         r = f()\n\
+         after = i\n\
+         lagged = i[1]",
+        3,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(6));
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(7));
+    assert_eq!(value(&session, "lagged"), RuntimeValue::Int(7));
+}
+
+#[test]
+fn a_counter_named_like_a_builtin_variable_gives_the_builtin_back() {
+    let session = run(
+        "sum = 0.0\n\
+         for low = 1 to 3\n    sum += low\n\
+         after = low",
+        3,
+    );
+    assert_eq!(value(&session, "sum"), RuntimeValue::Float(6.0));
+    // The last bar's builtin low is 100.
+    assert_eq!(value(&session, "after"), RuntimeValue::Float(100.0));
+}
+
+#[test]
+fn a_loop_left_early_puts_its_counters_back() {
+    let session = run(
+        "j = 40\nq = 1\n\
+         f() =>\n    for q = 0 to 5\n        if q == 2\n            break\n    q\n\
+         for j = 0 to 5\n    if j == 3\n        break\n\
+         r = f()\n\
+         after = j",
+        2,
+    );
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(40));
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(1));
 }
 
 #[test]
