@@ -77,7 +77,7 @@ impl Session {
         statements: &[Statement],
         context: &mut RuntimeContext,
     ) -> Result<(Flow, RuntimeValue), Diagnostic> {
-        self.run_with(statements, context, None)
+        self.run_statements::<false>(statements, context, &mut None)
     }
 
     /// Runs one execution of a block (a branch, an arm, a loop body, a `once` body). A name an
@@ -91,26 +91,26 @@ impl Session {
         context: &mut RuntimeContext,
     ) -> Result<(Flow, RuntimeValue), Diagnostic> {
         let mut shadowed = None;
-        let result = self.run_with(statements, context, Some(&mut shadowed));
+        let result = self.run_statements::<true>(statements, context, &mut shadowed);
         if let Some(shadowed) = shadowed {
             shadowed.restore(&mut self.working.variables);
         }
         result
     }
 
-    /// The statement loop. `shadowed` is the block execution's saved names, set when `statements`
-    /// is a block.
-    fn run_with<'s>(
+    /// The statement loop. `shadowed` collects the names a block's declarations hide (`BLOCK`).
+    #[inline(always)]
+    fn run_statements<'s, const BLOCK: bool>(
         &mut self,
         statements: &'s [Statement],
         context: &mut RuntimeContext,
-        mut shadowed: Option<&mut Option<Shadowed<'s>>>,
+        shadowed: &mut Option<Shadowed<'s>>,
     ) -> Result<(Flow, RuntimeValue), Diagnostic> {
         let mut last = RuntimeValue::Void;
         for statement in statements {
             self.budget()
                 .map_err(|error| self.hook_failed(statement, context, error, false))?;
-            if let Some(shadowed) = shadowed.as_deref_mut() {
+            if BLOCK {
                 self.shadow_declared(statement, shadowed);
             }
             let hooked = self.hooks.is_some();
