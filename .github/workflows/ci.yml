@@ -12,7 +12,7 @@ permissions:
 
 env:
   # Keep in step with release.yml (see there).
-  RUST_TOOLCHAIN: "1.99.0"
+  RUST_TOOLCHAIN: "1.100.0"
   CARGO_TERM_COLOR: always
 
 # A new push to a PR supersedes the run still going for its previous commit.
