@@ -1,12 +1,16 @@
 //! Monte Carlo on a finished backtest: the closed trades are redrawn at random, with replacement,
-//! many times over, to show how much of the result was the order the trades happened to come in.
+//! many times over, to show how far the result could move had the wins and losses come out
+//! differently.
 //!
 //! Each run draws as many trades as the strategy closed and adds their profits to the initial
-//! capital one after another. Profits are taken as money, so a strategy that sizes by percent of
-//! equity is only approximated: a redrawn run does not compound. The figures describe the sample of
-//! trades, not the market; they say nothing about trades the strategy has not made.
+//! capital one after another. Drawing with replacement changes how often each trade turns up, which
+//! is what spreads the final equity; the order of the draws only shapes the path, so it matters to
+//! the drawdown and not to where a run ends. Profits are taken as money, so a strategy that sizes by
+//! percent of equity is only approximated: a redrawn run does not compound. The figures describe the
+//! sample of trades, not the market; they say nothing about trades the strategy has not made.
 //!
-//! The random stream is fixed, so one report always gives the same figures.
+//! The random stream is fixed, so one report always gives the same figures. The work is bounded:
+//! never more than [`DRAW_BUDGET`] draws, and a list too long for that many runs is refused.
 
 use super::StrategyReport;
 
@@ -14,10 +18,12 @@ use super::StrategyReport;
 pub const MIN_TRADES: usize = 10;
 /// The most runs, used while the trade list is short.
 const MAX_RUNS: usize = 1_000;
-/// The fewest runs, kept even for a long trade list.
-const MIN_RUNS: usize = 200;
+/// The fewest runs worth a percentile.
+const MIN_RUNS: usize = 100;
 /// A budget of drawn trades across all runs, so a long list takes fewer runs instead of longer.
 const DRAW_BUDGET: usize = 2_000_000;
+/// The most closed trades resampled: more would leave fewer than [`MIN_RUNS`] runs in the budget.
+pub const MAX_TRADES: usize = DRAW_BUDGET / MIN_RUNS;
 /// How many steps the fan of equity paths is sampled at.
 const FAN_STEPS: usize = 40;
 const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -43,6 +49,15 @@ impl Spread {
     }
 }
 
+/// Why a report is not resampled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum Unavailable {
+    #[error("Needs {} closed trades, {have} so far", MIN_TRADES)]
+    TooFew { have: usize },
+    #[error("Too many closed trades to reshuffle here")]
+    TooMany { have: usize },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct MonteCarlo {
     pub runs: usize,
@@ -51,39 +66,51 @@ pub struct MonteCarlo {
     /// Equity after the last trade.
     pub final_equity: Spread,
     /// The largest fall from a peak, as a fraction of the peak. The peak starts at the initial
-    /// capital, as in the report's own drawdown.
+    /// capital, as in the report's own drawdown, and the fall is not capped: equity that goes
+    /// below zero gives more than 1.
     pub max_drawdown: Spread,
-    /// The share of runs that ended below the initial capital.
+    /// The share of runs that ended below the initial capital, rounding error aside: a run that
+    /// breaks even is not a loss.
     pub loss_probability: f64,
     /// Equity at evenly spaced points along the trades, from the initial capital to the end.
     pub fan: Vec<Spread>,
 }
 
 impl MonteCarlo {
-    /// `None` while the strategy has closed fewer than [`MIN_TRADES`].
-    pub fn run(report: &StrategyReport) -> Option<Self> {
+    /// Refused while the strategy has closed fewer than [`MIN_TRADES`] or more than [`MAX_TRADES`].
+    pub fn run(report: &StrategyReport) -> Result<Self, Unavailable> {
         let profits: Vec<f64> = report.trades.iter().map(|trade| trade.profit).collect();
         let count = profits.len();
         if count < MIN_TRADES {
-            return None;
+            return Err(Unavailable::TooFew { have: count });
+        }
+        if count > MAX_TRADES {
+            return Err(Unavailable::TooMany { have: count });
         }
         let initial = report.settings.initial_capital;
         let runs = (DRAW_BUDGET / count).clamp(MIN_RUNS, MAX_RUNS);
         let steps = FAN_STEPS.min(count);
         let marks: Vec<usize> = (0..=steps).map(|step| step * count / steps).collect();
+        // The most `count` additions of profits this large can be off by.
+        let largest = profits
+            .iter()
+            .fold(0.0_f64, |most, profit| most.max(profit.abs()));
+        let rounding = f64::EPSILON * (count * count) as f64 * largest;
 
         let mut stream = Stream(SEED);
         let mut at_mark = vec![Vec::with_capacity(runs); marks.len()];
         let mut drawdowns = Vec::with_capacity(runs);
+        let mut losses = 0;
         for _ in 0..runs {
-            let (mut equity, mut peak, mut worst) = (initial, initial, 0.0_f64);
+            let (mut gained, mut peak, mut worst) = (0.0_f64, initial, 0.0_f64);
             at_mark[0].push(initial);
             let mut next_mark = 1;
             for drawn in 1..=count {
-                equity += profits[stream.below(count)];
+                gained += profits[stream.below(count)];
+                let equity = initial + gained;
                 peak = peak.max(equity);
                 if peak > 0.0 {
-                    worst = worst.max(((peak - equity) / peak).min(1.0));
+                    worst = worst.max((peak - equity) / peak);
                 }
                 if drawn == marks[next_mark] {
                     at_mark[next_mark].push(equity);
@@ -91,14 +118,15 @@ impl MonteCarlo {
                 }
             }
             drawdowns.push(worst);
+            // From the gain itself, not from `equity < initial`: two large numbers that should be
+            // equal differ by rounding, and a run that broke even would read as a loss.
+            if gained < -rounding {
+                losses += 1;
+            }
         }
 
-        let losses = at_mark[steps]
-            .iter()
-            .filter(|&&equity| equity < initial)
-            .count();
         let fan: Vec<Spread> = at_mark.iter_mut().map(|row| Spread::of(row)).collect();
-        Some(Self {
+        Ok(Self {
             runs,
             trades: count,
             initial_capital: initial,
@@ -162,8 +190,46 @@ mod tests {
 
     #[test]
     fn too_few_trades_are_not_resampled() {
-        assert!(MonteCarlo::run(&report(&[10.0; MIN_TRADES - 1])).is_none());
-        assert!(MonteCarlo::run(&report(&[10.0; MIN_TRADES])).is_some());
+        assert_eq!(
+            MonteCarlo::run(&report(&[10.0; MIN_TRADES - 1])),
+            Err(Unavailable::TooFew {
+                have: MIN_TRADES - 1
+            })
+        );
+        assert!(MonteCarlo::run(&report(&[10.0; MIN_TRADES])).is_ok());
+    }
+
+    #[test]
+    fn a_run_that_breaks_even_is_not_a_loss() {
+        // One loser among nine winners nets exactly zero, which 0.01 and 0.09 only approximate.
+        // The same list in whole cents adds exactly, and draws the same trades.
+        let fractional = report(&[0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, -0.09]);
+        let mut cents = report(&[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -9.0]);
+        cents.settings.initial_capital = 100_000.0;
+        let fractional = MonteCarlo::run(&fractional).unwrap();
+        let cents = MonteCarlo::run(&cents).unwrap();
+        assert_eq!(fractional.loss_probability, cents.loss_probability);
+        assert!(fractional.loss_probability < 0.3);
+    }
+
+    #[test]
+    fn equity_below_zero_gives_a_drawdown_above_a_whole() {
+        let result = MonteCarlo::run(&report(&[-150.0; 10])).unwrap();
+        assert_eq!(result.final_equity.median, -500.0);
+        assert_eq!(result.max_drawdown.high, 1.5);
+    }
+
+    #[test]
+    fn a_list_the_budget_cannot_cover_is_refused() {
+        let longest = MonteCarlo::run(&report(&vec![5.0; MAX_TRADES])).unwrap();
+        assert_eq!(longest.runs, MIN_RUNS);
+        assert!(longest.runs * longest.trades <= DRAW_BUDGET);
+        assert_eq!(
+            MonteCarlo::run(&report(&vec![5.0; MAX_TRADES + 1])),
+            Err(Unavailable::TooMany {
+                have: MAX_TRADES + 1
+            })
+        );
     }
 
     #[test]
@@ -228,9 +294,9 @@ mod tests {
     #[test]
     fn a_long_list_takes_fewer_runs() {
         let few = MonteCarlo::run(&report(&[5.0; 20])).unwrap();
-        let many = MonteCarlo::run(&report(&vec![5.0; 50_000])).unwrap();
+        let many = MonteCarlo::run(&report(&vec![5.0; 5_000])).unwrap();
         assert_eq!(few.runs, MAX_RUNS);
-        assert_eq!(many.runs, MIN_RUNS);
+        assert_eq!(many.runs, DRAW_BUDGET / 5_000);
     }
 
     #[test]

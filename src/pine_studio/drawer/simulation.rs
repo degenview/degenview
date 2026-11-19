@@ -6,7 +6,7 @@ use super::figures::{BLOCK_GAP, Emphasis, Figure, grid};
 use super::plot::{self, Plot};
 use super::tab_chrome::{self as chrome, panel};
 use crate::pine::strategy::StrategyReport;
-use crate::pine::strategy::monte_carlo::{MIN_TRADES, MonteCarlo, Spread};
+use crate::pine::strategy::monte_carlo::{MAX_TRADES, MonteCarlo, Spread, Unavailable};
 use crate::ui::pine::report::{self, PineReportFormat};
 use crate::ui::{kit, theme};
 use eframe::egui::{Color32, Rect, Sense, Shape, Stroke, Ui, Vec2, pos2, vec2};
@@ -22,7 +22,7 @@ const BAND_ALPHA: f32 = 0.18;
 #[derive(Clone)]
 struct Remembered {
     trades: u64,
-    result: Option<Arc<MonteCarlo>>,
+    result: Result<Arc<MonteCarlo>, Unavailable>,
 }
 
 /// A hash of what the resampling reads: the capital and each trade's profit.
@@ -37,7 +37,7 @@ fn trades_fingerprint(report: &StrategyReport) -> u64 {
 
 /// The resampling of `report`, redone only when its trades change; a live tick that closes no trade
 /// reuses the last answer.
-fn resampled(ui: &Ui, report: &StrategyReport) -> Option<Arc<MonteCarlo>> {
+fn resampled(ui: &Ui, report: &StrategyReport) -> Result<Arc<MonteCarlo>, Unavailable> {
     let id = ui.make_persistent_id("pine-report-monte-carlo");
     let trades = trades_fingerprint(report);
     if let Some(known) = ui
@@ -47,6 +47,7 @@ fn resampled(ui: &Ui, report: &StrategyReport) -> Option<Arc<MonteCarlo>> {
         return known.result;
     }
     let result = MonteCarlo::run(report).map(Arc::new);
+    // Cached by the trades it read, so a refusal is kept as well as an answer.
     ui.data_mut(|data| {
         data.insert_temp(
             id,
@@ -59,29 +60,15 @@ fn resampled(ui: &Ui, report: &StrategyReport) -> Option<Arc<MonteCarlo>> {
     result
 }
 
-/// The card under the equity. With fewer than [`MIN_TRADES`] closed trades it says so instead.
+/// The card under the equity. With too few or too many closed trades it says why there is none.
 pub(super) fn simulation_card(ui: &mut Ui, report: &StrategyReport) {
     chrome::caption(ui, "Simulation");
-    let Some(result) = resampled(ui, report) else {
-        panel(ui, |ui| {
-            ui.label(kit::text(
-                format!(
-                    "Needs {MIN_TRADES} closed trades, {} so far",
-                    report.trades.len()
-                ),
-                kit::size::CALLOUT,
-                kit::MEDIUM,
-                theme::text_secondary(),
-            ));
-            ui.add_space(3.0);
-            ui.label(kit::text(
-                "Redraws the trades at random to show how much of the result came from their order.",
-                kit::size::CAPTION,
-                kit::REGULAR,
-                theme::text_tertiary(),
-            ));
-        });
-        return;
+    let result = match resampled(ui, report) {
+        Ok(result) => result,
+        Err(unavailable) => {
+            unavailable_note(ui, unavailable);
+            return;
+        }
     };
     panel(ui, |ui| {
         ui.label(kit::text(
@@ -108,6 +95,35 @@ pub(super) fn simulation_card(ui: &mut Ui, report: &StrategyReport) {
             ui,
             plot::tone(result.final_equity.median, result.initial_capital),
         );
+    });
+}
+
+/// What the card says when there is nothing to draw: why, and what the simulation does.
+fn unavailable_note(ui: &mut Ui, unavailable: Unavailable) {
+    let what_it_does = match unavailable {
+        Unavailable::TooFew { .. } => {
+            "Draws the trades at random, repeats allowed, to show how far the result could move if the wins and losses had come out differently.".to_owned()
+        }
+        Unavailable::TooMany { have } => format!(
+            "The strategy has closed {}; the simulation takes up to {} so the tab stays quick.",
+            PineReportFormat::count(have),
+            PineReportFormat::count(MAX_TRADES)
+        ),
+    };
+    panel(ui, |ui| {
+        ui.label(kit::text(
+            unavailable.to_string(),
+            kit::size::CALLOUT,
+            kit::MEDIUM,
+            theme::text_secondary(),
+        ));
+        ui.add_space(3.0);
+        ui.label(kit::text(
+            what_it_does,
+            kit::size::CAPTION,
+            kit::REGULAR,
+            theme::text_tertiary(),
+        ));
     });
 }
 
@@ -297,12 +313,36 @@ mod tests {
     }
 
     #[test]
-    fn the_card_draws_with_too_few_trades_and_with_enough() {
+    fn the_card_draws_with_too_few_trades_too_many_and_enough() {
         let few = report(&[5.0, -3.0]);
-        let many = report(&[5.0, -3.0, 8.0, -1.0, 4.0, -6.0, 9.0, -2.0, 7.0, -4.0, 3.0]);
+        let enough = report(&[5.0, -3.0, 8.0, -1.0, 4.0, -6.0, 9.0, -2.0, 7.0, -4.0, 3.0]);
+        let too_many = report(&vec![1.0; MAX_TRADES + 1]);
         egui::__run_test_ui(|ui| {
             simulation_card(ui, &few);
-            simulation_card(ui, &many);
+            simulation_card(ui, &enough);
+            simulation_card(ui, &too_many);
+        });
+    }
+
+    #[test]
+    fn a_refusal_is_cached_with_the_trades_it_was_for() {
+        let too_many = report(&vec![1.0; MAX_TRADES + 1]);
+        egui::__run_test_ui(|ui| {
+            assert!(matches!(
+                resampled(ui, &too_many),
+                Err(Unavailable::TooMany { .. })
+            ));
+            assert!(matches!(
+                resampled(ui, &too_many),
+                Err(Unavailable::TooMany { .. })
+            ));
+            assert!(
+                resampled(
+                    ui,
+                    &report(&[1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, 5.0, -5.0])
+                )
+                .is_ok()
+            );
         });
     }
 }

@@ -4,9 +4,10 @@
 use super::plot::{self, Plot};
 use super::tab_chrome::{self as chrome, SECTION, panel};
 use crate::pine::strategy::StrategyReport;
+use crate::ui::accessibility;
 use crate::ui::pine::report::{self, PineReportFormat};
 use crate::ui::{kit, theme};
-use eframe::egui::{Color32, Sense, Ui, pos2, vec2};
+use eframe::egui::{Color32, Rect, Sense, Ui, WidgetType, pos2, vec2};
 
 /// The narrowest a figure's column gets before the grid takes fewer columns.
 const MIN_COLUMN: f32 = 92.0;
@@ -51,6 +52,15 @@ impl Figure {
         self.note = Some(note);
         self
     }
+
+    /// What a screen reader says: the name, the value and the aside, which is read even where the
+    /// column is too narrow to draw it.
+    fn spoken(&self) -> String {
+        match &self.note {
+            Some(note) => format!("{}: {}, {note}", self.label, self.value),
+            None => format!("{}: {}", self.label, self.value),
+        }
+    }
 }
 
 /// The figures card, the equity card under it, and the simulation of the trades.
@@ -82,8 +92,9 @@ pub(super) fn strategy(ui: &mut Ui, report: &StrategyReport) {
 
 /// The net profit as large as the tab gets, its return beside it.
 fn headline(ui: &mut Ui, report: &StrategyReport) {
-    let net = report.net_profit();
-    let tint = report::tint(net, theme::text_primary());
+    let net = PineReportFormat::signed_money(report.net_profit());
+    let ret = PineReportFormat::percent(report.return_fraction(), true);
+    let tint = report::tint(report.net_profit(), theme::text_primary());
     let width = ui.available_width();
     let label = kit::galley(
         ui,
@@ -95,23 +106,29 @@ fn headline(ui: &mut Ui, report: &StrategyReport) {
     );
     let value = kit::digits(
         ui,
-        &PineReportFormat::signed_money(net),
+        &net,
         kit::size::TITLE2 + 3.0,
         kit::SEMIBOLD,
         tint,
         width,
     );
     let room = width - value.size().x - 8.0;
-    let ret = kit::digits(
+    let ret_galley = kit::digits(
         ui,
-        &PineReportFormat::percent(report.return_fraction(), true),
+        &ret,
         kit::size::SUBHEADLINE,
         kit::MEDIUM,
         report::tint(report.return_fraction(), theme::text_secondary()),
         room,
     );
     let height = label.size().y + LABEL_GAP + value.size().y;
-    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    // Painted text has no widget of its own, so the screen reader is told what it says.
+    accessibility::label_as(
+        response,
+        WidgetType::Label,
+        format!("Net profit {net}, {ret}"),
+    );
     let painter = ui.painter();
     painter.galley(rect.min, label, Color32::PLACEHOLDER);
     let value_top = rect.bottom() - value.size().y;
@@ -119,10 +136,10 @@ fn headline(ui: &mut Ui, report: &StrategyReport) {
     painter.galley(pos2(rect.left(), value_top), value, Color32::PLACEHOLDER);
     if room > 30.0 {
         // On the value's baseline: both galleys end in about a fifth of their height of descent.
-        let bottom = rect.bottom() - (rect.bottom() - value_top) * 0.2 + ret.size().y * 0.2;
+        let bottom = rect.bottom() - (rect.bottom() - value_top) * 0.2 + ret_galley.size().y * 0.2;
         painter.galley(
-            pos2(value_right + 8.0, bottom - ret.size().y),
-            ret,
+            pos2(value_right + 8.0, bottom - ret_galley.size().y),
+            ret_galley,
             Color32::PLACEHOLDER,
         );
     }
@@ -243,6 +260,15 @@ pub(super) fn grid(ui: &mut Ui, figures: &[Figure], slots: usize, emphasis: Emph
             .map(|(label, value, _)| label.size().y + LABEL_GAP + value.size().y)
             .fold(0.0, f32::max);
         let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+        for (index, figure) in cells.iter().enumerate() {
+            let left = rect.left() + index as f32 * (column + COLUMN_GAP);
+            let area = Rect::from_min_size(pos2(left, rect.top()), vec2(column, rect.height()));
+            // Named by the figure: the grids of one card share their parent, so a position would
+            // give a quiet row's first figure the id of the key row's.
+            let response =
+                ui.interact(area, ui.id().with(("figure", figure.label)), Sense::hover());
+            accessibility::label_as(response, WidgetType::Label, figure.spoken());
+        }
         let painter = ui.painter();
         for (index, (label, value, note)) in galleys.into_iter().enumerate() {
             let left = rect.left() + index as f32 * (column + COLUMN_GAP);

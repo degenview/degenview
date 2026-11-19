@@ -138,6 +138,53 @@ fn strategy_of(profits: impl Iterator<Item = f64>) -> StrategyReport {
     }
 }
 
+/// The painted figures reach the accessibility tree: a screen reader finds each one by name.
+#[test]
+fn the_report_figures_are_named_for_a_screen_reader() {
+    use crate::pine::strategy::monte_carlo::MonteCarlo;
+    use crate::ui::accessibility::AccessNodes;
+    use crate::ui::pine::report::PineReportFormat;
+    use eframe::egui::{Context, Pos2, RawInput, Rect};
+
+    let report = strategy(24);
+    let simulated = MonteCarlo::run(&report).unwrap();
+    let wanted = [
+        format!(
+            "Net profit {}, {}",
+            PineReportFormat::signed_money(report.net_profit()),
+            PineReportFormat::percent(report.return_fraction(), true)
+        ),
+        format!(
+            "Win rate: {}, {} of 24",
+            PineReportFormat::percent(report.win_rate().unwrap(), false),
+            report.win_count()
+        ),
+        "Closed trades: 24".to_owned(),
+        format!(
+            "Chance of a loss: {}",
+            PineReportFormat::percent(simulated.loss_probability, false)
+        ),
+    ];
+
+    let ctx = Context::default();
+    let mut nodes = AccessNodes::start(&ctx);
+    let visual = VisualOutput {
+        strategy: Some(report),
+        ..Default::default()
+    };
+    for frame in 0..3 {
+        let raw = RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(900.0, 1400.0))),
+            time: Some(f64::from(frame) * 0.1),
+            ..Default::default()
+        };
+        nodes.absorb(ctx.run_ui(raw, |ui| drawer::report(ui, Some(&visual))));
+    }
+    for label in &wanted {
+        assert!(nodes.find(label).is_some(), "no node named {label:?}");
+    }
+}
+
 #[test]
 fn inputs_fit_the_drawer() {
     use crate::pine::syntax::token::ValueType;
@@ -346,10 +393,14 @@ fn gallery_of_the_report() {
     use eframe::egui::{Event, pos2};
     let _restore = RestoreDefaultTheme;
     let losing = strategy_of((1..=36).map(|id| if id % 3 == 0 { 70.0 } else { -45.0 }));
+    // More trades than the simulation takes; the equity stays short so the picture is quick.
+    let mut too_many = strategy(4);
+    too_many.trades = (1..=20_001).map(|id| trade(id, true, 1.0)).collect();
     let cases = [
         ("winning", strategy(24)),
         ("losing", losing),
         ("few", strategy(4)),
+        ("too-many", too_many),
         ("empty", strategy(0)),
     ];
     let sizes = [("narrow", 380.0, 1_000.0), ("wide", 1_000.0, 900.0)];
