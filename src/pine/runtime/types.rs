@@ -93,6 +93,11 @@ pub struct RuntimeFunction {
     pub body: std::sync::Arc<Vec<Statement>>,
     /// Parameters and every name declared in the body; restored after each call.
     pub locals: std::sync::Arc<HashSet<String>>,
+    /// `locals` in the order of a call's `saved`: the `global_locals` that are also the names of
+    /// script globals come first.
+    pub saved_order: std::sync::Arc<Vec<String>>,
+    /// How many of `saved_order`'s names, from the start, a script global has too.
+    pub global_locals: usize,
     /// `var`/`varip` locals, which persist per call site between calls.
     pub persistent_locals: std::sync::Arc<HashSet<String>>,
     /// The locals (and parameters) whose history the body reads: only those keep a series.
@@ -114,15 +119,31 @@ impl RuntimeFunction {
             .into_iter()
             .filter(|name| locals.contains(name))
             .collect();
+        let saved_order: Vec<String> = locals.iter().cloned().collect();
         Self {
             parameters: parameters.into(),
             body: body.into(),
             locals: locals.into(),
+            saved_order: saved_order.into(),
+            global_locals: 0,
             persistent_locals: persistent.into(),
             history_locals: history.into(),
             scope: None,
             is_exported: true,
         }
+    }
+
+    /// Puts the locals that share a name with one of the script's `globals` first in
+    /// `saved_order`: the names a call of this function hides a global under.
+    pub fn mark_globals(&mut self, globals: &HashSet<String>) {
+        let (mut order, others): (Vec<String>, Vec<String>) = self
+            .saved_order
+            .iter()
+            .cloned()
+            .partition(|local| globals.contains(local));
+        self.global_locals = order.len();
+        order.extend(others);
+        self.saved_order = order.into();
     }
 }
 

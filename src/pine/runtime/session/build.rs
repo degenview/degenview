@@ -43,6 +43,7 @@ impl Session {
         let mut types = FastMap::default();
         let mut enums = FastMap::default();
         let linkage = LibraryLinkage::new(&program);
+        let globals = global_names(&program.statements);
         for statement in &program.statements {
             match statement {
                 Statement::TypeDeclaration { name, fields, .. } => {
@@ -57,13 +58,14 @@ impl Session {
                     body,
                     ..
                 } => {
-                    let function = RuntimeFunction::new(
+                    let mut function = RuntimeFunction::new(
                         parameters
                             .iter()
                             .map(|p| linkage.canonical(p, "", &HashSet::new()))
                             .collect(),
                         body.clone(),
                     );
+                    function.mark_globals(&globals);
                     callables.push(function.clone());
                     if let Some(previous) = functions.insert(name.clone(), function.clone()) {
                         let known: &mut Vec<RuntimeFunction> =
@@ -169,6 +171,7 @@ impl Session {
             varip_fields,
             last_open_time: None,
             security_globals: None,
+            call_frames: Vec::new(),
             security_slices,
             theme: crate::pine::compiler::program::ChartTheme::DARK,
             security_depth: 0,
@@ -227,6 +230,24 @@ impl Session {
 
 /// The builtin variable names (`low`, `time`) that `statements` declare anew anywhere: a global, a
 /// local, a loop counter or a tuple element.
+/// The script's global variables: what its top-level statements declare (a block's names are its
+/// own, and no function sees them).
+fn global_names(statements: &[Statement]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for statement in statements {
+        match statement {
+            Statement::Declaration { name, .. } => {
+                names.insert(name.clone());
+            }
+            Statement::TupleDeclaration { names: tuple, .. } => {
+                names.extend(tuple.iter().cloned());
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
 fn declared_builtin_names(statements: &[Statement]) -> Vec<String> {
     fn visit(statements: &[Statement], found: &mut Vec<String>) {
         for statement in statements {

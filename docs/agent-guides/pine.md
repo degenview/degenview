@@ -39,6 +39,19 @@
 - Execution-model gaps: [the audit](../reviews/pine-execution-model-audit.md); read it before relying
   on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
   do not halt the script.
+- Function locals (`Session::invoke_with`): the variable table is flat. An ordinary local hides an
+  outer variable of its name only from its declaration on: a block's to the end of its block
+  (`run_statement`'s `Shadowed` puts the outer value back), a top-level one to the end of the call
+  (the call's `saved`). Only `var`/`varip` locals are set at entry (stash value, else unset so the
+  declaration initialises them), so one hides a global of its name for the whole call. Scopes are
+  lexical: a nested call first sets each name its calling function's locals hide back to the global
+  (`uncover_caller_globals`, from the caller's `saved` on `Session::call_frames`; by induction each
+  call starts on the globals) and gives the caller its values back after
+  (`cover_caller_globals`). Only locals named like a script global (top-level declarations,
+  `global_names`; first in `RuntimeFunction::saved_order`, `global_locals` of them) are looked at:
+  a call from the script's top level, or from a function whose locals share no global's name,
+  costs nothing. The debugger's frame gets the caller's values first, then `saved`.
+  `call_frames` is kept inside `request.security`: a function there reads the chart's global.
 - `varip` (`Session::intrabar`): globals kept by name, user-function locals by call-site stash key
   (`invoke_with`'s `stash_key`, via `intrabar_key`). After an unconfirmed tick
   `capture_intrabar_objects` keeps what each `varip` variable and `varip` UDT field points at plus

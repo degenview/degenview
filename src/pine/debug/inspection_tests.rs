@@ -182,6 +182,38 @@ plot(y)
 }
 
 #[test]
+fn a_callee_shows_the_global_and_its_caller_its_own_local_of_that_name() {
+    let body = "len = 1.0
+g() =>
+    len * 2
+f() =>
+    len = 50.0
+    g() + len
+y = f()
+plot(y)
+";
+    let (probe, captured) = capture_all();
+    at_lines(body, 1, &[5], probe);
+    let captured = captured.lock().unwrap();
+    let frames = &captured[0].frames;
+    assert_eq!(
+        value_of(&frames[0].1, "len").as_deref(),
+        Some("1"),
+        "g reads the global"
+    );
+    assert_eq!(
+        value_of(&frames[1].1, "len").as_deref(),
+        Some("50"),
+        "f's own len"
+    );
+    assert_eq!(
+        value_of(&frames[2].1, "len").as_deref(),
+        Some("1"),
+        "the script's len"
+    );
+}
+
+#[test]
 fn an_if_blocks_names_are_visible_inside_it_and_gone_after_it() {
     let body = "x = 0.0
 if close > open
