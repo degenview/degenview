@@ -177,6 +177,18 @@ pub(crate) fn straight_line(statements: usize) -> String {
     source
 }
 
+/// One block with many distinct locals, none hiding anything: what declaring in a block costs per
+/// declaration as the block grows.
+pub(crate) fn wide_block(locals: usize) -> String {
+    let mut source =
+        String::from("//@version=6\nindicator(\"Wide block\")\ntotal = 0.0\nif bar_index >= 0\n");
+    for index in 0..locals {
+        source.push_str(&format!("    w{index} = close + {index}\n"));
+    }
+    source.push_str(&format!("    total := w0 + w{}\nplot(total)\n", locals - 1));
+    source
+}
+
 pub(crate) const MANY_TA: &str = "//@version=6
 indicator(\"Many ta\")
 a = ta.sma(close, 20)
@@ -720,6 +732,14 @@ fn workloads() -> Vec<Workload> {
     {
         let data = minute.clone();
         add("blocks", Box::new(move || evaluate(BLOCKS, &data, false)));
+    }
+    {
+        let data = bars(800, MINUTE_MS);
+        let source = wide_block(300);
+        add(
+            "wide_block",
+            Box::new(move || evaluate(&source, &data, false)),
+        );
     }
     {
         let data = minute.clone();
