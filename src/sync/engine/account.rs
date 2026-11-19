@@ -2,12 +2,11 @@
 //! changes. The rule that matters: data never moves between accounts without the user choosing
 //! how. A database is bound to exactly one account; any other account is a pause, not a sync.
 
+use crate::build_info::ICLOUD_CONTAINER;
 use crate::store::Store;
 use crate::store::sync::SyncState;
 use crate::sync::engine::SyncError;
 use std::path::{Path, PathBuf};
-
-pub const CONTAINER: &str = "iCloud.es.nico.degenview";
 
 /// What a database keeps of an iCloud account: a hash, never the identifier itself. The Swift
 /// bridge computes it (`Codec.hashUser`); this copy pins the format in a test.
@@ -37,7 +36,7 @@ pub fn enable(
 ) -> Result<SyncState, SyncError> {
     let mut state = store.ensure_sync_state(device_name, hardware_hash)?;
     state.enabled = true;
-    state.container_id = Some(CONTAINER.to_string());
+    state.container_id = Some(ICLOUD_CONTAINER.to_string());
     state.environment = Some(environment.to_string());
     store.save_sync_state(&state)?;
     Ok(state)
@@ -227,9 +226,9 @@ mod tests {
 
     #[test]
     fn the_account_hash_is_stable_and_not_the_identifier() {
-        let a = hash_user(CONTAINER, "_abc123");
-        assert_eq!(a, hash_user(CONTAINER, "_abc123"));
-        assert_ne!(a, hash_user(CONTAINER, "_abc124"));
+        let a = hash_user(ICLOUD_CONTAINER, "_abc123");
+        assert_eq!(a, hash_user(ICLOUD_CONTAINER, "_abc123"));
+        assert_ne!(a, hash_user(ICLOUD_CONTAINER, "_abc124"));
         assert_ne!(a, hash_user("iCloud.other", "_abc123"));
         assert!(!a.contains("abc123"));
         assert_eq!(a.len(), 64);
@@ -240,7 +239,7 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let state = enable(&store, "Studio", "hw", "Development").unwrap();
         assert!(state.enabled);
-        assert_eq!(state.container_id.as_deref(), Some(CONTAINER));
+        assert_eq!(state.container_id.as_deref(), Some(ICLOUD_CONTAINER));
         assert_eq!(state.environment.as_deref(), Some("Development"));
         assert!(state.account_hash.is_none());
         assert!(!state.initial_sync_done);

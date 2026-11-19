@@ -302,7 +302,7 @@ impl Mac {
     /// Re-reads the script library and queues what changed, as the app does on a timer.
     pub(in crate::sync) fn scan_scripts(&mut self) {
         let store = self.store.lock().unwrap();
-        crate::sync::record::scripts::scan_scripts(&store, &mut self.library, &self.script_cache)
+        crate::sync::engine::scripts::scan_scripts(&store, &mut self.library, &self.script_cache)
             .unwrap();
     }
 

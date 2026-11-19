@@ -117,9 +117,11 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
             "workspace",
         ],
     ),
-    ("service", &["app", "host", "ui", "workspace"]),
+    ("service", &["app", "host", "sync", "ui", "workspace"]),
     ("store", &["app", "host", "ui", "workspace"]),
     ("sync", &["app", "host", "ui", "workspace"]),
+    // What a record is and which tables sync: the store builds on it, so it may not need the store.
+    ("sync/record", &["store"]),
     ("mcp", &["app", "ui", "workspace"]),
     ("trading", &["app", "ui", "workspace"]),
     ("host", &["app"]),

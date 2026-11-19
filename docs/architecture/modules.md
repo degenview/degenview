@@ -150,8 +150,8 @@ beside them, not SQLite) and `sync/`. `sync/` keeps one file per table or concer
 
 | Directory | Holds |
 | --- | --- |
-| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge/`, `outbox`, `account`, and `apply/` (the batch and dispatch in `mod.rs`, one file per record kind: `simple`, `asset`, `script`, `alert`, `layout`, `drawing`, `paper`, `portfolio`; inbox retries in `retry`) |
-| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project/`, `validate/`, `paper`, `scripts` |
+| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge/`, `outbox`, `account`, `scripts` (the library scan that queues script files), and `apply/` (the batch and dispatch in `mod.rs`, one file per record kind: `simple`, `asset`, `script`, `alert`, `layout`, `drawing`, `paper`, `portfolio`; inbox retries in `retry`) |
+| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project/`, `validate/`, `paper`, `scripts` (the script sink). The store builds on it, so it imports nothing from `store/` (`layout_tests.rs`) |
 | `transport/` | The CloudKit boundary: `mod.rs` the trait, its factory, the event sink and events, `native/` (the Swift bridge), `mock` (tests) |
 | `tests/` | End-to-end sync tests, one file per concern |
 
