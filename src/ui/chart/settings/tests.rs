@@ -271,7 +271,7 @@ fn the_price_axis_hints_say_what_each_choice_does() {
 #[test]
 fn the_example_prices_follow_the_chosen_format() {
     let write = |format: PriceFormat| PRICE_SAMPLES.map(|(_, price)| format.format(price));
-    assert_eq!(write(PriceFormat::AUTO), ["67,432", "0.12", "0.0₅278"]);
+    assert_eq!(write(PriceFormat::AUTO), ["67,432", "0.1235", "0.0₅278"]);
     let pinned = PriceFormat {
         decimals: Some(2),
         small: SmallPrices::Decimals,

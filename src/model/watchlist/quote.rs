@@ -518,7 +518,7 @@ mod tests {
         };
         assert_eq!(last_text(Some(&quote), None), "67,432");
         assert_eq!(change_text(Some(&quote), None), "-12.50");
-        // Large moves lose the cents' fourth place, small ones keep two significant digits.
+        // Large moves lose the cents' fourth place, small ones keep four significant digits.
         let big = WatchlistQuote {
             change: Some(792.01),
             ..quote.clone()
@@ -528,7 +528,7 @@ mod tests {
             change: Some(-0.003_14),
             ..quote.clone()
         };
-        assert_eq!(change_text(Some(&small), None), "-0.0031");
+        assert_eq!(change_text(Some(&small), None), "-0.003140");
         assert_eq!(
             percent_text(Some(&quote), Some(DataSource::Binance)),
             "-1.23%"

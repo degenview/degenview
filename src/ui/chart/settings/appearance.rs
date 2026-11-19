@@ -147,7 +147,7 @@ pub(super) fn price_axis(
 
 pub(super) fn decimals_hint(decimals: Option<u8>) -> String {
     match decimals {
-        None => "Picks the precision from the price: 67,432, 12.35, 0.12, 0.0031.".to_owned(),
+        None => "Picks the precision from the price: 67,432, 12.35, 0.5864, 0.05864.".to_owned(),
         Some(places) => format!(
             "Shows {places} decimal place{} on the price axis.",
             if places == 1 { "" } else { "s" }
