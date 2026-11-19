@@ -97,6 +97,7 @@ pub(super) fn show_tab(
             workspace.set_card_env(&env.card_env);
             workspace.set_trading_hub(&env.trading_hub);
             workspace.set_snapshots(&env.snapshots);
+            workspace.set_liquidations(&env.liquidations);
             workspace.set_link_host(env.tabs.links());
             let actions = workspace.ui(ui, &env.paper_host);
             if workspace.has_link_signals() {

@@ -10,6 +10,7 @@ pub mod fib;
 pub mod forecast;
 pub mod ids;
 pub mod indicators;
+pub mod liquidation;
 pub mod market;
 pub mod mcp;
 pub mod overlay;

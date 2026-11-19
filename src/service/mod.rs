@@ -4,6 +4,7 @@ pub mod cache;
 pub mod editor_theme;
 pub mod image;
 pub mod keychain;
+pub mod liquidation;
 pub mod llm;
 pub mod market;
 pub mod net;

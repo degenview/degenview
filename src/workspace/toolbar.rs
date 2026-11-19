@@ -69,6 +69,7 @@ impl ChartWorkspace {
             layouts,
             active_layout: active_view_id,
             watchlist_visible: self.watchlist_pane.is_visible(),
+            liquidations_visible: self.liquidations.is_visible(),
             symbol: symbol.as_deref(),
             chart: self
                 .focused_market_chart()
@@ -113,6 +114,7 @@ impl ChartWorkspace {
                 ToolbarAction::ToggleWatchlist => {
                     self.watchlist_pane.toggle();
                 }
+                ToolbarAction::ToggleLiquidations => self.liquidations.toggle(),
                 ToolbarAction::OpenPortfolio => actions.push(WorkspaceAction::OpenPortfolio),
                 ToolbarAction::OpenPineStudio => {
                     actions.push(WorkspaceAction::OpenPineScripts);

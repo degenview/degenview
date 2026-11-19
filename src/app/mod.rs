@@ -143,6 +143,8 @@ pub struct DegenViewApp {
     settings_host: Arc<Mutex<SettingsHost>>,
     /// What the user chose about chart snapshots, shared by every window and Settings.
     snapshots: SnapshotHost,
+    /// The forced-liquidation feed every window's panel reads.
+    liquidations: crate::host::liquidation::LiquidationHost,
     /// The editor's themes and typography, shared by every window and Settings.
     editor_themes: EditorThemeHost,
     /// The MCP server, the questions its clients raise, and what the app remembers between
@@ -385,6 +387,7 @@ impl DegenViewApp {
             trading_hub,
             settings_host,
             snapshots,
+            liquidations: crate::host::liquidation::LiquidationHost::default(),
             editor_themes,
             mcp,
             alerts,
