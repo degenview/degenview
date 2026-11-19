@@ -544,9 +544,10 @@ fn find(parent: &mut [usize], mut id: usize) -> usize {
     id
 }
 
-/// The copies of one global name into another: `alias = samples` at the top level, `alias := other`
-/// anywhere outside the functions. A name a block declares is not a global, and neither side of a
-/// copy may be one. The statements an expression holds (`x = if …`) are not searched.
+/// The copies of one script global into another: `alias = samples` at the top level, `alias := other`
+/// anywhere outside the functions, also in the blocks of an expression (`x = if …`). Both sides must
+/// be globals: a name a block declares is its own, and a builtin (`a = close`) is no object two
+/// names could share.
 fn copies<'a>(
     bindings: &Bindings<'a>,
     statements: &'a [Statement],
@@ -562,14 +563,31 @@ fn copies<'a>(
         if let Some(value) = value
             && let Expression::Identifier(other, _) = value
             && !other.contains('.')
-            && let Some(alias) = target.and_then(Binding::name)
-            && let Some(original) = bindings.occurrence(value).and_then(Binding::name)
+            && let Some(Binding::Global(alias)) = target
+            && let Some(Binding::Global(original)) = bindings.occurrence(value)
         {
             pairs.push((alias, original));
         }
         for block in traversal::nested_blocks(statement) {
             copies(bindings, block, pairs);
         }
+        for expression in traversal::expressions(statement) {
+            copies_held_by(bindings, expression, pairs);
+        }
+    }
+}
+
+/// The copies in the statements `expression` holds (`x = if …`), however deep.
+fn copies_held_by<'a>(
+    bindings: &Bindings<'a>,
+    expression: &'a Expression,
+    pairs: &mut Vec<(&'a str, &'a str)>,
+) {
+    if let Expression::Statement(statement, _) = expression {
+        copies(bindings, std::slice::from_ref(statement.as_ref()), pairs);
+    }
+    for child in traversal::children(expression) {
+        copies_held_by(bindings, child, pairs);
     }
 }
 

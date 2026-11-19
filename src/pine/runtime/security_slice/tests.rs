@@ -502,3 +502,20 @@ fn the_slices_of_a_large_script_build_quickly() {
         total / runs
     );
 }
+
+#[test]
+fn an_alias_made_in_the_block_of_an_expression_writes_the_collection() {
+    let sizes = slice_sizes(
+        "//@version=6\nindicator(\"T\")\nvar samples = array.new_float()\nvar alias = array.new_float()\nflag = if close > 0\n    alias := samples\n    1.0\nelse\n    0.0\nalias.push(close)\nplot(request.security(syminfo.tickerid, \"D\", array.size(samples)))",
+    );
+    // `samples`, `alias`, the `flag` statement that assigns it, the push.
+    assert_eq!(sizes, [4]);
+}
+
+#[test]
+fn globals_copied_from_a_builtin_are_not_aliases() {
+    let sizes = slice_sizes(
+        "//@version=6\nindicator(\"T\")\na = close\nb = close\na.push(1.0)\nplot(request.security(syminfo.tickerid, \"D\", b))",
+    );
+    assert_eq!(sizes, [1], "only `b`, not the write to `a`");
+}

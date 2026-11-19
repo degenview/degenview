@@ -1705,6 +1705,37 @@ mod tests {
     }
 
     #[test]
+    fn an_alias_an_expression_block_makes_is_followed() {
+        // `alias := samples` sits in the block of `y = if …`; the push through `alias` fills
+        // `samples`, on the chart (three bars) and in the request.
+        let script = "var samples = array.new_float()\nvar alias = array.new_float()\ny = if close > 0\n    alias := samples\n    1.0\nelse\n    0.0\nalias.push(close)\n";
+        assert_eq!(
+            last_plotted(&format!("{script}x = array.size(samples)")),
+            Some(3.0),
+            "on the chart"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            )),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn two_globals_copied_from_a_builtin_are_not_aliases() {
+        // `a` and `b` both hold `close`, which is no object: filling one fills nothing, and what
+        // the unreached branch does to `a` (it fails on ETHUSDT, whose closes are above 50) is not
+        // a reason to replay it for the request that reads `b`.
+        assert_eq!(
+            last_plotted(
+                "a = close\nb = close\nif close > 50\n    a.push(1.0)\nx = request.security(\"ETHUSDT\", \"1\", b)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
     fn a_write_in_the_block_of_the_request_before_it_follows_the_series() {
         assert_eq!(
             last_plotted(
