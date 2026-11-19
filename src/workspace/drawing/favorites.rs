@@ -51,9 +51,15 @@ impl ChartWorkspace {
         favorites_bar::close_menu_on_escape(ctx, self.favorites_bar_id());
     }
 
-    /// Draws the bar over `area` (the charts) and applies what it asks for. It is not shown while
-    /// a mode that owns the whole chart area is up.
-    pub(in crate::workspace) fn show_favorites_bar(&mut self, ctx: &Context, area: Rect) {
+    /// Draws the bar and applies what it asks for. It sits in `area` (the charts) until it is
+    /// moved, and may be moved anywhere in `window`. It is not shown while a mode that owns the
+    /// whole chart area is up.
+    pub(in crate::workspace) fn show_favorites_bar(
+        &mut self,
+        ctx: &Context,
+        area: Rect,
+        window: Rect,
+    ) {
         if self.is_selecting_portion() || self.replay.is_selecting_start() {
             return;
         }
@@ -72,6 +78,7 @@ impl ChartWorkspace {
             zoom_armed: self.tools.is_zoom_armed(),
             prefs: *prefs,
             area,
+            window,
         };
         for action in favorites_bar::show(ctx, &input) {
             match action {
@@ -79,9 +86,10 @@ impl ChartWorkspace {
                     self.press_favorite(item);
                     self.save_drawing_prefs();
                 }
-                FavoritesBarAction::Moved(placement) => {
-                    self.change_favorites_bar(|bar| bar.placement = Some(placement))
-                }
+                FavoritesBarAction::Moved(moved) => self.change_favorites_bar(|bar| {
+                    bar.placement = moved.placement;
+                    bar.window = moved.window;
+                }),
                 FavoritesBarAction::Hide => self.change_favorites_bar(|bar| bar.hidden = true),
             }
         }

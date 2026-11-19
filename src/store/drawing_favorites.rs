@@ -141,6 +141,7 @@ mod tests {
         assert_eq!(store.favorites_bar(), BarPrefs::default());
         let prefs = BarPrefs {
             placement: Some(BarPlacement { x: 0.25, y: 0.75 }),
+            window: true,
             hidden: true,
         };
         store.set_favorites_bar(prefs).unwrap();
@@ -154,6 +155,7 @@ mod tests {
         store
             .set_favorites_bar(BarPrefs {
                 placement: place,
+                window: true,
                 hidden: true,
             })
             .unwrap();
@@ -180,6 +182,7 @@ mod tests {
         store
             .set_favorites_bar(BarPrefs {
                 placement: None,
+                window: false,
                 hidden: true,
             })
             .unwrap();
