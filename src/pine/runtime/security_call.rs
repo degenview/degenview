@@ -1723,6 +1723,45 @@ mod tests {
     }
 
     #[test]
+    fn an_alias_made_after_the_mutation_does_not_make_the_request_replay_it() {
+        // `a` and `b` are new on every bar. The chart fills and updates `a`; the request reads `b`
+        // on 5m bars, where `a` is empty, so replaying `a.set(0, 7)` there would stop the script.
+        // `a := b` comes after: it makes them one array only from there on.
+        let head = "a = array.new_float()\nb = array.new_float()\nif close < 50\n    a.push(close)\na.set(0, 7.0)\n";
+        let request = "x = request.security(\"ETHUSDT\", \"1\", array.size(b))";
+        for copy in [
+            "flag = if close > 0\n    a := b\n    1.0\nelse\n    0.0\n",
+            "a := b\n",
+        ] {
+            assert_eq!(
+                last_plotted(&format!("{head}{copy}{request}")),
+                Some(0.0),
+                "{copy}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_var_alias_written_after_the_mutation_still_counts() {
+        // `a` is persistent: the copy `a := b` at the end of one bar is what the next bar's
+        // `a.push` fills, so the request must replay that push to see `b` filled: on the second and
+        // third bar, as on the chart.
+        let script =
+            "var a = array.new_float()\nvar b = array.new_float()\na.push(close)\na := b\n";
+        assert_eq!(
+            last_plotted(&format!("{script}x = array.size(b)")),
+            Some(2.0),
+            "on the chart"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(b))"
+            )),
+            Some(2.0)
+        );
+    }
+
+    #[test]
     fn two_globals_copied_from_a_builtin_are_not_aliases() {
         // `a` and `b` both hold `close`, which is no object: filling one fills nothing, and what
         // the unreached branch does to `a` (it fails on ETHUSDT, whose closes are above 50) is not

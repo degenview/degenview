@@ -26,7 +26,8 @@
 //! helper too, and one an inner block reassigns) is the collection, a collection argument is found
 //! by its label (`id`) or its position, and a function that changes a global collection (not only
 //! one it is handed) writes it where it is called. Aliases are per variable (two blocks' `alias`
-//! are different locals), a builtin namespace's functions (`ta.sma`) are never the script's `sma`,
+//! are different locals), a copy of one global into another (`a := b`) reaches the changes that come
+//! after it in the source, and the next bar's when it is copied into a `var` or `varip`, a builtin namespace's functions (`ta.sma`) are never the script's `sma`,
 //! and a method the type checker resolved to the script's own definition has that definition's
 //! effects, not the builtin ones of its name. Known limits: aliasing through a function's return
 //! value or a container, and handles other than collections and objects, are not followed.
@@ -165,9 +166,10 @@ impl<'a> Script<'a> {
             }
         }
         let Walker { effects, spans, .. } = walker;
+        let persistent = persistent_names(statements);
         Some(Self {
-            persistent: persistent_names(statements),
-            aliases: Aliases::new(&bindings, statements),
+            aliases: Aliases::new(&bindings, statements, persistent.clone()),
+            persistent,
             functions,
             effects,
             spans: spans.unwrap_or_default(),
@@ -212,11 +214,10 @@ impl<'a> Facts<'a> {
                 Effect::Assigned(name) => {
                     facts.assigned.insert(name);
                 }
-                Effect::Mutated(Origin::Name(name)) => {
-                    facts.mutated.extend(script.aliases.group(name));
-                    facts.mutated.insert(name);
+                Effect::Mutated(Origin::Name(name), at) => {
+                    facts.mutated.extend(script.aliases.reaching(name, at));
                 }
-                Effect::Mutated(Origin::Parameter(_)) => {}
+                Effect::Mutated(Origin::Parameter(_), _) => {}
             }
         }
         facts

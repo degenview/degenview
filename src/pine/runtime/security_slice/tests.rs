@@ -532,3 +532,23 @@ fn a_block_that_redeclares_a_name_passes_on_what_it_assigned_before() {
     assert_eq!(slice_sizes(&source("a")), [3]);
     assert_eq!(slice_sizes(&source("b")), [3]);
 }
+
+#[test]
+fn a_copy_reaches_only_the_mutations_after_it() {
+    let source = |copy: &str, read: &str| {
+        format!(
+            "//@version=6\nindicator(\"T\")\na = array.new_float()\nb = array.new_float()\na.push(close)\n{copy}plot(request.security(syminfo.tickerid, \"D\", array.size({read})))"
+        )
+    };
+    // The copy comes after the push: `b` is not what it fills.
+    assert_eq!(slice_sizes(&source("a := b\n", "b")), [1], "only `b`");
+    // Before it, it is: `a`, `b`, the copy and the push.
+    let before = "//@version=6\nindicator(\"T\")\na = array.new_float()\nb = array.new_float()\na := b\na.push(close)\nplot(request.security(syminfo.tickerid, \"D\", array.size(b)))";
+    assert_eq!(slice_sizes(before), [4]);
+    // A persistent name keeps the copy for the next bar, wherever it sits.
+    let persistent = "//@version=6\nindicator(\"T\")\nvar a = array.new_float()\nvar b = array.new_float()\na.push(close)\na := b\nplot(request.security(syminfo.tickerid, \"D\", array.size(b)))";
+    assert_eq!(slice_sizes(persistent), [4]);
+    // In the block of an expression too.
+    let expression = "//@version=6\nindicator(\"T\")\na = array.new_float()\nb = array.new_float()\na.push(close)\nflag = if close > 0\n    a := b\n    1.0\nelse\n    0.0\nplot(request.security(syminfo.tickerid, \"D\", array.size(b)))";
+    assert_eq!(slice_sizes(expression), [1]);
+}
