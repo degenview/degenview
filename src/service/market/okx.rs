@@ -12,7 +12,6 @@ use super::search_rank::normalize;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
-use degenview_market::bucket::next_bucket_start_ms;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -118,60 +117,7 @@ fn fetch_page(
         url.push_str(&format!("&after={after}"));
     }
     let body = http::get_text(&url, &[], http::Retry::Transient)?;
-    parse_candles(&body, base)
-}
-
-/// The `data` rows of an answer, or OKX's own message when its `code` says it failed.
-fn data_rows(body: &str) -> Result<Vec<Value>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
-    if value.get("code").and_then(Value::as_str) != Some("0") {
-        let message = value
-            .get("msg")
-            .and_then(Value::as_str)
-            .filter(|message| !message.is_empty())
-            .unwrap_or("The request failed");
-        return Err(ProviderError::other(format!("OKX: {message}")));
-    }
-    value
-        .get("data")
-        .and_then(Value::as_array)
-        .cloned()
-        .ok_or_else(|| ProviderError::data("expected a data array"))
-}
-
-/// Candles of length `base`, oldest first.
-fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let mut candles = data_rows(body)?
-        .iter()
-        .map(|row| parse_row(row, base))
-        .collect::<Result<Vec<_>, _>>()?;
-    candles.sort_by_key(|candle| candle.open_time);
-    Ok(candles)
-}
-
-pub(crate) fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
-    let text = |index: usize| -> Result<&str, ProviderError> {
-        row.get(index)
-            .and_then(Value::as_str)
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
-    };
-    let number = |index: usize| -> Result<f64, ProviderError> {
-        text(index)?
-            .parse()
-            .map_err(|_| ProviderError::data(format!("invalid field {index}")))
-    };
-    let open_time: i64 = text(0)?
-        .parse()
-        .map_err(|_| ProviderError::data("invalid timestamp"))?;
-    Ok(Kline {
-        open_time,
-        close_time: next_bucket_start_ms(base, open_time) - 1,
-        open: number(1)?,
-        high: number(2)?,
-        low: number(3)?,
-        close: number(4)?,
-        volume: number(5)?,
-    })
+    degenview_market::okx::parse_candles(&body, base).map_err(ProviderError::from)
 }
 
 /// The listed markets whose name, without its dash, contains `needle` (letters and digits, upper
@@ -213,7 +159,7 @@ fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
 }
 
 fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
-    Ok(data_rows(body)?
+    Ok(degenview_market::okx::data_rows(body)?
         .iter()
         .filter(|row| row.get("state").and_then(Value::as_str) == Some("live"))
         .filter_map(|row| {
@@ -271,52 +217,6 @@ mod tests {
         assert_eq!(instrument_id("btc-usdt"), "BTC-USDT");
         assert_eq!(instrument_id("ETH/USDC"), "ETH-USDC");
         assert_eq!(instrument_id("sol"), "SOL-USDT");
-    }
-
-    const ROWS: &str = r#"{"code":"0","msg":"","data":[
-        ["1700002800000","11","13","10","12","5.5","60","60","0"],
-        ["1699999200000","10","12","9","11","42.5","450","450","1"]
-    ]}"#;
-
-    #[test]
-    fn rows_come_newest_first_and_leave_oldest_first() {
-        let candles = parse_candles(ROWS, Timeframe::HOUR_1).expect("valid response");
-        assert_eq!(candles.len(), 2);
-        assert_eq!(
-            candles[0],
-            Kline {
-                open_time: 1_699_999_200_000,
-                close_time: 1_700_002_799_999,
-                open: 10.0,
-                high: 12.0,
-                low: 9.0,
-                close: 11.0,
-                volume: 42.5,
-            }
-        );
-        assert_eq!(candles[1].open_time, 1_700_002_800_000);
-    }
-
-    #[test]
-    fn a_month_closes_when_the_next_calendar_month_opens() {
-        // 2026-02-01 00:00 UTC.
-        let row = serde_json::json!(["1769904000000", "1", "2", "0.5", "1.5", "3", "4", "4", "1"]);
-        let candle = parse_row(&row, Timeframe::MONTH_1).expect("row");
-        // 2026-03-01 00:00 UTC, less a millisecond: February has 28 days.
-        assert_eq!(candle.close_time, 1_772_323_200_000 - 1);
-    }
-
-    #[test]
-    fn an_error_answer_is_okxs_message() {
-        let body = r#"{"code":"51001","msg":"Instrument ID doesn't exist.","data":[]}"#;
-        assert_eq!(
-            parse_candles(body, Timeframe::HOUR_1),
-            Err(ProviderError::other("OKX: Instrument ID doesn't exist."))
-        );
-        assert!(parse_candles("not json", Timeframe::HOUR_1).is_err());
-        assert!(parse_candles(r#"{"code":"0"}"#, Timeframe::HOUR_1).is_err());
-        let bad_field = r#"{"code":"0","data":[["1700000000000","x","1","1","1","1"]]}"#;
-        assert!(parse_candles(bad_field, Timeframe::HOUR_1).is_err());
     }
 
     /// Run with `cargo test --lib okx::tests::live -- --ignored --nocapture`.

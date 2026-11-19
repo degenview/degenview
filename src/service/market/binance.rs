@@ -39,7 +39,11 @@ impl MarketSource for Binance {
             &[],
             crate::service::net::http::Retry::Transient,
         )?;
-        Ok(plan.shape(parse_klines(&body)?, requested, limit as usize))
+        Ok(plan.shape(
+            degenview_market::binance::parse_candles(&body).map_err(ProviderError::from)?,
+            requested,
+            limit as usize,
+        ))
     }
 
     fn fetch_klines_range(
@@ -78,7 +82,7 @@ impl MarketSource for Binance {
                             );
                             let body =
                                 crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)?;
-                            parse_klines(&body)
+                            degenview_market::binance::parse_candles(&body).map_err(ProviderError::from)
                         })
                     })
                     .collect();
@@ -175,38 +179,6 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
         .collect())
 }
 
-fn parse_klines(body: &str) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
-    let rows = value
-        .as_array()
-        .ok_or_else(|| ProviderError::data("expected a candle array"))?;
-    rows.iter().map(parse_row).collect()
-}
-
-fn parse_row(row: &Value) -> Result<Kline, ProviderError> {
-    let value = |index: usize| -> Result<f64, ProviderError> {
-        row.get(index)
-            .and_then(Value::as_str)
-            .and_then(|text| text.parse().ok())
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
-    };
-    let time = |index: usize| -> Result<i64, ProviderError> {
-        row.get(index)
-            .and_then(Value::as_i64)
-            .ok_or_else(|| ProviderError::data(format!("invalid timestamp {index}")))
-    };
-
-    Ok(Kline {
-        open_time: time(0)?,
-        open: value(1)?,
-        high: value(2)?,
-        low: value(3)?,
-        close: value(4)?,
-        volume: value(5)?,
-        close_time: time(6)?,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,25 +203,6 @@ mod tests {
             assert_eq!(found[0].symbol, "BTCUSDT");
         }
         assert_eq!(matching_pairs(&pairs, "BTC").len(), 2);
-    }
-
-    #[test]
-    fn parses_binance_rows() {
-        let body = r#"[[1700000000000,"10.0","12.0","9.0","11.0","42.5",1700003599999]]"#;
-        let candles = parse_klines(body).expect("valid response");
-        assert_eq!(candles.len(), 1);
-        assert_eq!(
-            candles[0],
-            Kline {
-                open_time: 1_700_000_000_000,
-                close_time: 1_700_003_599_999,
-                open: 10.0,
-                high: 12.0,
-                low: 9.0,
-                close: 11.0,
-                volume: 42.5,
-            }
-        );
     }
 
     fn base_of(timeframe: &str) -> (String, usize) {
@@ -292,13 +245,6 @@ mod tests {
             .unwrap()
             .base_count(crate::service::cache::TAIL_LIMIT as usize);
         assert!(tail <= MAX_PER_REQUEST);
-    }
-
-    #[test]
-    fn rejects_error_objects() {
-        let error = parse_klines(r#"{"code":-1121,"msg":"Invalid symbol."}"#)
-            .expect_err("object must fail");
-        assert_eq!(error, ProviderError::data("expected a candle array"));
     }
 
     #[test]

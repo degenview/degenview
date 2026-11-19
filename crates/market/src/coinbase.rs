@@ -1,29 +1,21 @@
 //! Coinbase Exchange message shapes: candle rows and the websocket feed's subscription and
 //! `ticker` messages. The transport (HTTP, paging, sockets, rate limits) is the caller's.
 
-use serde_json::{Value, json};
-use thiserror::Error;
-
-use crate::Kline;
 use crate::calendar::parse_iso8601;
+use crate::{Kline, ParseError};
+use serde_json::{Value, json};
 
 /// The websocket feed's host; connect to `wss://` and this.
 pub const STREAM_HOST: &str = "ws-feed.exchange.coinbase.com";
-
-#[derive(Debug, Error)]
-pub enum ParseError {
-    #[error("{0}")]
-    Json(#[from] serde_json::Error),
-    #[error("expected a candle array")]
-    NotAnArray,
-}
 
 /// Reads a `/products/{id}/candles` body: rows of `[time s, low, high, open, close, volume]`,
 /// newest first. The result is oldest first, a bar being `granularity_secs` long. A row that is
 /// not six numbers is skipped (a missing volume reads as 0).
 pub fn parse_candles(body: &str, granularity_secs: i64) -> Result<Vec<Kline>, ParseError> {
     let value: Value = serde_json::from_str(body)?;
-    let rows = value.as_array().ok_or(ParseError::NotAnArray)?;
+    let rows = value
+        .as_array()
+        .ok_or_else(|| ParseError::invalid("expected a candle array"))?;
     let mut candles = Vec::with_capacity(rows.len());
     for row in rows {
         let Some(fields) = row.as_array() else {
@@ -150,7 +142,7 @@ mod tests {
     #[test]
     fn an_error_object_is_not_a_candle_array() {
         let error = parse_candles(r#"{"message":"NotFound"}"#, 60).unwrap_err();
-        assert!(matches!(error, ParseError::NotAnArray));
+        assert!(matches!(error, ParseError::Invalid(_)));
         assert_eq!(error.to_string(), "expected a candle array");
         assert!(matches!(
             parse_candles("<html>", 60),

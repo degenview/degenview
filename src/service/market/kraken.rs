@@ -11,7 +11,7 @@ use crate::model::market::natives::KRAKEN_BARS;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::{http, rate_limit};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
-use degenview_market::bucket::{FoldPlan, bucket_start_ms, next_bucket_start_ms};
+use degenview_market::bucket::{FoldPlan, bucket_start_ms};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -128,87 +128,13 @@ fn fetch_ohlc(
         let since = crate::clock::now_ms() / 1_000 - (count as i64 + 1) * i64::from(minutes) * 60;
         url.push_str(&format!("&since={since}"));
     }
-    parse_ohlc(&get(&url)?, base)
+    degenview_market::kraken::parse_candles(&get(&url)?, base).map_err(ProviderError::from)
 }
 
 /// A request on Kraken's one-a-second schedule.
 fn get(url: &str) -> Result<String, ProviderError> {
     rate_limit::kraken().wait_for_slot();
     Ok(http::get_text(url, &[], http::Retry::Transient)?)
-}
-
-/// Whether a Kraken error code says to slow down: `EAPI:Rate limit exceeded`,
-/// `EGeneral:Too many requests`, `EService:Throttled`, `EGeneral:Temporary lockout`.
-pub(crate) fn is_rate_limit(code: &str) -> bool {
-    code.starts_with("EAPI:Rate limit")
-        || code.starts_with("EService:Throttled")
-        || code.starts_with("EGeneral:Temporary lockout")
-        || code.starts_with("EGeneral:Too many requests")
-}
-
-/// The `result` of an answer, or the provider's refusal.
-pub(crate) fn result_of(body: &str) -> Result<Value, ProviderError> {
-    let mut value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
-    if let Some(error) = value
-        .get("error")
-        .and_then(Value::as_array)
-        .and_then(|errors| errors.first())
-        .and_then(Value::as_str)
-    {
-        return Err(refusal(error));
-    }
-    value
-        .get_mut("result")
-        .map(Value::take)
-        .ok_or_else(|| ProviderError::data("expected a result"))
-}
-
-/// What a Kraken error code (`EAPI:Rate limit exceeded`, `EQuery:Unknown asset pair`) means.
-fn refusal(code: &str) -> ProviderError {
-    if is_rate_limit(code) {
-        return ProviderError::Network(http::Error::Status(429));
-    }
-    let text = code.split_once(':').map_or(code, |(_, text)| text);
-    ProviderError::other(format!("Kraken: {text}"))
-}
-
-/// Candles of length `base`, oldest first.
-fn parse_ohlc(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let result = result_of(body)?;
-    let rows = result
-        .as_object()
-        .and_then(|result| result.iter().find(|(key, _)| key.as_str() != "last"))
-        .and_then(|(_, rows)| rows.as_array())
-        .ok_or_else(|| ProviderError::data("expected a candle array"))?;
-    let mut candles = rows
-        .iter()
-        .map(|row| parse_row(row, base))
-        .collect::<Result<Vec<_>, _>>()?;
-    candles.sort_by_key(|candle| candle.open_time);
-    Ok(candles)
-}
-
-fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
-    let number = |index: usize| -> Result<f64, ProviderError> {
-        row.get(index)
-            .and_then(Value::as_str)
-            .and_then(|text| text.parse().ok())
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
-    };
-    let open_time = row
-        .get(0)
-        .and_then(Value::as_i64)
-        .ok_or_else(|| ProviderError::data("invalid timestamp"))?
-        * 1_000;
-    Ok(Kline {
-        open_time,
-        close_time: next_bucket_start_ms(base, open_time) - 1,
-        open: number(1)?,
-        high: number(2)?,
-        low: number(3)?,
-        close: number(4)?,
-        volume: number(6)?,
-    })
 }
 
 /// The listed markets whose name, without its slash, contains `needle` (letters and digits,
@@ -246,7 +172,7 @@ fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
 
 /// `wsname` is `XBT/USD`: the market as `BTC/USD`, which is how every Kraken API spells it.
 fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
-    let result = result_of(body)?;
+    let result = degenview_market::kraken::result_of(body)?;
     let pairs = result
         .as_object()
         .ok_or_else(|| ProviderError::data("expected a pair list"))?;
@@ -321,49 +247,6 @@ mod tests {
         [1700002800,"11.0","13.0","10.0","12.0","11.5","5.5",3]
     ],"last":1699999200}}"#;
 
-    #[test]
-    fn rows_are_candles_with_the_close_of_their_bucket_and_the_last_key_is_not_a_pair() {
-        let candles = parse_ohlc(OHLC, Timeframe::HOUR_1).expect("valid response");
-        assert_eq!(candles.len(), 2);
-        assert_eq!(
-            candles[0],
-            Kline {
-                open_time: 1_699_999_200_000,
-                close_time: 1_700_002_799_999,
-                open: 10.0,
-                high: 12.0,
-                low: 9.0,
-                close: 11.0,
-                volume: 42.5,
-            }
-        );
-        assert_eq!(candles[1].open_time, 1_700_002_800_000);
-    }
-
-    #[test]
-    fn a_refusal_is_krakens_message_and_a_rate_limit_is_one() {
-        let unknown = r#"{"error":["EQuery:Unknown asset pair"]}"#;
-        assert_eq!(
-            parse_ohlc(unknown, Timeframe::HOUR_1),
-            Err(ProviderError::other("Kraken: Unknown asset pair"))
-        );
-        for code in [
-            "EAPI:Rate limit exceeded",
-            "EGeneral:Too many requests",
-            "EService:Throttled: 1700000000",
-        ] {
-            let limited = format!(r#"{{"error":["{code}"]}}"#);
-            let error = parse_ohlc(&limited, Timeframe::HOUR_1).unwrap_err();
-            assert!(error.is_rate_limited(), "{code}: {error}");
-        }
-        assert!(parse_ohlc("not json", Timeframe::HOUR_1).is_err());
-        assert!(parse_ohlc(r#"{"error":[]}"#, Timeframe::HOUR_1).is_err());
-        assert!(parse_ohlc(r#"{"error":[],"result":{"last":1}}"#, Timeframe::HOUR_1).is_err());
-        let bad_field =
-            r#"{"error":[],"result":{"BTC/USD":[[1699999200,"x","1","1","1","1","1",1]]}}"#;
-        assert!(parse_ohlc(bad_field, Timeframe::HOUR_1).is_err());
-    }
-
     const DAY: i64 = 86_400_000;
     /// 2026-11-17 00:00 UTC.
     const TODAY: i64 = 1_794_873_600_000;
@@ -428,7 +311,7 @@ mod tests {
 
     #[test]
     fn a_range_keeps_the_candles_that_open_in_it() {
-        let candles = parse_ohlc(OHLC, Timeframe::HOUR_1).unwrap();
+        let candles = degenview_market::kraken::parse_candles(OHLC, Timeframe::HOUR_1).unwrap();
         let mut inside = candles.clone();
         inside.retain(|candle| candle.open_time >= 1_700_000_000_000);
         assert_eq!(inside.len(), 1);

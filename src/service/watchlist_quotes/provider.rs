@@ -594,7 +594,7 @@ pub fn parse_bybit(
         .and_then(Value::as_i64)
         .ok_or_else(|| QuoteFailure::Failed("Unexpected Bybit response".to_owned()))?;
     if code != 0 {
-        return Err(if crate::service::market::bybit::is_rate_limit(code) {
+        return Err(if degenview_market::bybit::is_rate_limit(code) {
             QuoteFailure::RateLimited
         } else {
             let message = value
@@ -651,7 +651,7 @@ pub fn parse_kraken(
             .split_once(':')
             .map_or(code, |(_, text)| text)
             .to_owned();
-        return Err(if crate::service::market::kraken::is_rate_limit(code) {
+        return Err(if degenview_market::kraken::is_rate_limit(code) {
             QuoteFailure::RateLimited
         } else if code.starts_with("EQuery:") {
             QuoteFailure::Rejected(text)

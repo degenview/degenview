@@ -6,7 +6,8 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::Response;
 
 use degenview_market::bucket::FoldPlan;
-use degenview_market::coinbase::{ParseError, parse_candles};
+use degenview_market::ParseError;
+use degenview_market::coinbase::parse_candles;
 use degenview_market::{Kline, TimeUnit, Timeframe, TimeframeParseError, normalize};
 
 const ENDPOINT: &str = "https://api.exchange.coinbase.com/products";

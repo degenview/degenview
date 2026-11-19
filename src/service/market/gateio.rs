@@ -11,7 +11,7 @@ use super::search_rank::normalize;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
-use degenview_market::bucket::{FoldPlan, next_bucket_start_ms};
+use degenview_market::bucket::FoldPlan;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -164,7 +164,7 @@ fn fetch_page(
     if let Some(to_s) = to_s {
         url.push_str(&format!("&to={to_s}"));
     }
-    parse_candles(&get(&url)?, base)
+    degenview_market::gateio::parse_candles(&get(&url)?, base).map_err(ProviderError::from)
 }
 
 /// A request, with Gate.io's refusals told apart from a network failure: a 400 names a market it
@@ -181,45 +181,6 @@ pub(crate) fn get(url: &str) -> Result<String, ProviderError> {
         )),
         Err(error) => Err(error.into()),
     }
-}
-
-/// Candles of length `base`, oldest first.
-fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
-    let mut candles = value
-        .as_array()
-        .ok_or_else(|| ProviderError::data("expected a candle array"))?
-        .iter()
-        .map(|row| parse_row(row, base))
-        .collect::<Result<Vec<_>, _>>()?;
-    candles.sort_by_key(|candle| candle.open_time);
-    Ok(candles)
-}
-
-fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
-    let text = |index: usize| -> Result<&str, ProviderError> {
-        row.get(index)
-            .and_then(Value::as_str)
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
-    };
-    let number = |index: usize| -> Result<f64, ProviderError> {
-        text(index)?
-            .parse()
-            .map_err(|_| ProviderError::data(format!("invalid field {index}")))
-    };
-    let seconds: i64 = text(0)?
-        .parse()
-        .map_err(|_| ProviderError::data("invalid timestamp"))?;
-    let open_time = seconds * 1_000;
-    Ok(Kline {
-        open_time,
-        close_time: next_bucket_start_ms(base, open_time) - 1,
-        open: number(5)?,
-        high: number(3)?,
-        low: number(4)?,
-        close: number(2)?,
-        volume: number(6)?,
-    })
 }
 
 /// The listed markets whose name, without its underscore, contains `needle` (letters and digits,
@@ -276,6 +237,7 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use degenview_market::bucket::next_bucket_start_ms;
 
     #[test]
     fn every_native_has_its_interval_and_nothing_else_does() {
@@ -481,55 +443,6 @@ mod tests {
         assert_eq!(pair_id("eth-usdc"), "ETH_USDC");
         assert_eq!(pair_id("ETH_BTC"), "ETH_BTC");
         assert_eq!(pair_id("sol"), "SOL_USDT");
-    }
-
-    // The close is the third field and the open the sixth; the base volume is the seventh.
-    const ROWS: &str = r#"[
-        ["1699999200","450","11","12","9","10","42.5","true"],
-        ["1700002800","60","12","13","10","11","5.5","false"]
-    ]"#;
-
-    #[test]
-    fn rows_are_candles_with_the_close_of_their_bucket() {
-        let candles = parse_candles(ROWS, Timeframe::HOUR_1).expect("valid response");
-        assert_eq!(candles.len(), 2);
-        assert_eq!(
-            candles[0],
-            Kline {
-                open_time: 1_699_999_200_000,
-                close_time: 1_700_002_799_999,
-                open: 10.0,
-                high: 12.0,
-                low: 9.0,
-                close: 11.0,
-                volume: 42.5,
-            }
-        );
-        assert_eq!(candles[1].open_time, 1_700_002_800_000);
-    }
-
-    #[test]
-    fn a_month_closes_when_the_next_calendar_month_opens() {
-        // 2026-02-01 00:00 UTC.
-        let row = serde_json::json!(["1769904000", "4", "1.5", "2", "0.5", "1", "3", "true"]);
-        let candle = parse_row(&row, Timeframe::MONTH_1).expect("row");
-        assert_eq!(candle.close_time, 1_772_323_200_000 - 1);
-    }
-
-    #[test]
-    fn odd_answers_are_errors() {
-        assert!(parse_candles("not json", Timeframe::HOUR_1).is_err());
-        assert!(parse_candles(r#"{"label":"INVALID_PARAM_VALUE"}"#, Timeframe::HOUR_1).is_err());
-        assert_eq!(parse_candles("[]", Timeframe::HOUR_1), Ok(Vec::new()));
-        let bad_field = r#"[["1700000000","1","x","1","1","1","1","true"]]"#;
-        assert!(parse_candles(bad_field, Timeframe::HOUR_1).is_err());
-        assert!(
-            parse_candles(
-                r#"[["x","1","1","1","1","1","1","true"]]"#,
-                Timeframe::HOUR_1
-            )
-            .is_err()
-        );
     }
 
     #[test]

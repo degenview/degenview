@@ -4,7 +4,10 @@
 
 1. `bars::source::DataSource` metadata: display name, watchlist slug, prediction-market flag,
    volume support, line/candle mode.
-2. Implement `service::MarketSource`; `search_tickers` if supported; a parser for a new kline shape.
+2. Implement `service::MarketSource`; `search_tickers` if supported; a parser for a new kline shape, which goes in `crates/market` as one
+   module per exchange (`parse_candles` returning `degenview_market::ParseError`, which the provider
+   turns into a `ProviderError` with `?`; a refusal that means "slow down" sets `rate_limited` there,
+   so nothing matches on text) and is unit-tested there.
    Declare its candle lengths in `model::market::natives` and plan every request through
    `DataSource::plan` (see Timeframes), so `serves` and the fetch agree.
 3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active

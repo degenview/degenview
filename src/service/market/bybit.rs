@@ -11,7 +11,6 @@ use super::search_rank::normalize;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
-use degenview_market::bucket::next_bucket_start_ms;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -114,7 +113,7 @@ fn fetch_page(
     if let Some(end_ms) = end_ms {
         url.push_str(&format!("&end={end_ms}"));
     }
-    parse_candles(&get(&url)?, base)
+    degenview_market::bybit::parse_candles(&get(&url)?, base).map_err(ProviderError::from)
 }
 
 /// A request, with Bybit's regional refusal told apart from a network failure.
@@ -127,75 +126,6 @@ pub(crate) fn get(url: &str) -> Result<String, ProviderError> {
         )),
         Err(error) => Err(error.into()),
     }
-}
-
-/// Whether a `retCode` says to slow down: 10006 (too many visits) and 10018 (the IP limit).
-pub(crate) fn is_rate_limit(code: i64) -> bool {
-    matches!(code, 10_006 | 10_018)
-}
-
-/// The `result` of an answer, or the provider's refusal.
-fn result_of(body: &str) -> Result<Value, ProviderError> {
-    let mut value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
-    let code = value
-        .get("retCode")
-        .and_then(Value::as_i64)
-        .ok_or_else(|| ProviderError::data("expected a retCode"))?;
-    if code != 0 {
-        if is_rate_limit(code) {
-            return Err(ProviderError::Network(http::Error::Status(429)));
-        }
-        let message = value
-            .get("retMsg")
-            .and_then(Value::as_str)
-            .filter(|message| !message.is_empty())
-            .unwrap_or("The request failed");
-        return Err(ProviderError::other(format!("Bybit: {message}")));
-    }
-    value
-        .get_mut("result")
-        .map(Value::take)
-        .ok_or_else(|| ProviderError::data("expected a result"))
-}
-
-/// Candles of length `base`, oldest first.
-fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let result = result_of(body)?;
-    let mut candles = result
-        .get("list")
-        .and_then(Value::as_array)
-        .ok_or_else(|| ProviderError::data("expected a candle list"))?
-        .iter()
-        .map(|row| parse_row(row, base))
-        .collect::<Result<Vec<_>, _>>()?;
-    candles.sort_by_key(|candle| candle.open_time);
-    Ok(candles)
-}
-
-/// One kline of a push (`start`, `open`, …) is the same row as an object: see `live/bybit.rs`.
-fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
-    let text = |index: usize| -> Result<&str, ProviderError> {
-        row.get(index)
-            .and_then(Value::as_str)
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
-    };
-    let number = |index: usize| -> Result<f64, ProviderError> {
-        text(index)?
-            .parse()
-            .map_err(|_| ProviderError::data(format!("invalid field {index}")))
-    };
-    let open_time: i64 = text(0)?
-        .parse()
-        .map_err(|_| ProviderError::data("invalid timestamp"))?;
-    Ok(Kline {
-        open_time,
-        close_time: next_bucket_start_ms(base, open_time) - 1,
-        open: number(1)?,
-        high: number(2)?,
-        low: number(3)?,
-        close: number(4)?,
-        volume: number(5)?,
-    })
 }
 
 /// The listed markets whose name contains `needle` (letters and digits, upper case).
@@ -246,7 +176,7 @@ fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
 
 /// The trading markets of a page and the cursor of the next one, if there is one.
 fn parse_pairs(body: &str) -> Result<(Vec<Pair>, Option<String>), ProviderError> {
-    let result = result_of(body)?;
+    let result = degenview_market::bybit::result_of(body)?;
     let pairs = result
         .get("list")
         .and_then(Value::as_array)
@@ -324,59 +254,6 @@ mod tests {
         assert_eq!(symbol_id("ETH-USDC"), "ETHUSDC");
         assert_eq!(symbol_id("sol"), "SOLUSDT");
         assert_eq!(symbol_id("WBTC"), "WBTCUSDT");
-    }
-
-    const ROWS: &str = r#"{"retCode":0,"retMsg":"OK","result":{"category":"spot","symbol":"BTCUSDT","list":[
-        ["1700002800000","11","13","10","12","5.5","60"],
-        ["1699999200000","10","12","9","11","42.5","450"]
-    ]}}"#;
-
-    #[test]
-    fn rows_come_newest_first_and_leave_oldest_first_with_the_close_of_their_bucket() {
-        let candles = parse_candles(ROWS, Timeframe::HOUR_1).expect("valid response");
-        assert_eq!(candles.len(), 2);
-        assert_eq!(
-            candles[0],
-            Kline {
-                open_time: 1_699_999_200_000,
-                close_time: 1_700_002_799_999,
-                open: 10.0,
-                high: 12.0,
-                low: 9.0,
-                close: 11.0,
-                volume: 42.5,
-            }
-        );
-        assert_eq!(candles[1].open_time, 1_700_002_800_000);
-    }
-
-    #[test]
-    fn a_month_closes_when_the_next_calendar_month_opens() {
-        // 2026-02-01 00:00 UTC.
-        let row = serde_json::json!(["1769904000000", "1", "2", "0.5", "1.5", "3", "4"]);
-        let candle = parse_row(&row, Timeframe::MONTH_1).expect("row");
-        assert_eq!(candle.close_time, 1_772_323_200_000 - 1);
-    }
-
-    #[test]
-    fn a_refusal_is_bybits_message_and_the_limits_are_rate_limits() {
-        let unknown = r#"{"retCode":10001,"retMsg":"Not supported symbols","result":{}}"#;
-        assert_eq!(
-            parse_candles(unknown, Timeframe::HOUR_1),
-            Err(ProviderError::other("Bybit: Not supported symbols"))
-        );
-        for code in [10_006, 10_018] {
-            let limited =
-                format!(r#"{{"retCode":{code},"retMsg":"Too many visits!","result":{{}}}}"#);
-            let error = parse_candles(&limited, Timeframe::HOUR_1).unwrap_err();
-            assert!(error.is_rate_limited(), "{code}: {error}");
-        }
-        assert!(parse_candles("not json", Timeframe::HOUR_1).is_err());
-        assert!(parse_candles(r#"{"retCode":0,"result":{}}"#, Timeframe::HOUR_1).is_err());
-        assert!(parse_candles(r#"{"result":{"list":[]}}"#, Timeframe::HOUR_1).is_err());
-        let bad_field =
-            r#"{"retCode":0,"result":{"list":[["1700000000000","x","1","1","1","1","1"]]}}"#;
-        assert!(parse_candles(bad_field, Timeframe::HOUR_1).is_err());
     }
 
     #[test]
