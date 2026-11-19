@@ -620,7 +620,7 @@ impl Session {
             .collect();
         // An ordinary local hides an outer variable of its name only from its declaration on: to
         // the end of the call at the body's top level, to the end of its block in a branch or loop
-        // (`run_statement` puts the outer value back). So above the declaration, and outside a
+        // (`run_block` puts the outer value back). So above the declaration, and outside a
         // block that declares it, the name still reads the global.
         // A `var` local that has run before resumes with its value; on the first call it is left
         // unset so its declaration initialises it rather than taking a global's value.

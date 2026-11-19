@@ -34,8 +34,9 @@ pub(super) enum Effect<'a> {
     Assigned(&'a str),
     /// Changed through the value: a collection filled, a field assigned, an argument or a global a
     /// function changes. A collection changed through one name is changed for every name that
-    /// aliases it.
-    Mutated(Origin<'a>),
+    /// aliases it. The offset is where the changing statement starts, which decides which copies
+    /// of a global have been made by then (`Aliases::reaching`).
+    Mutated(Origin<'a>, usize),
 }
 
 /// The script's top-level functions and methods. A call's `target` is the position among them.
@@ -101,27 +102,17 @@ impl<'a> Functions<'a> {
                     let mut changed = self.mutated[id].clone();
                     let mut globals = self.global_writes[id].clone();
                     for effect in walker.effects {
-                        let Effect::Mutated(origin) = effect else {
-                            continue;
-                        };
-                        match origin {
-                            Origin::Parameter(position) => {
+                        match effect {
+                            Effect::Mutated(Origin::Parameter(position), _) => {
                                 changed.insert(position);
                             }
-                            // A global's name that a parameter is also called is that parameter:
-                            // the variable table is keyed by name.
-                            Origin::Name(name) => {
-                                let mut handed_in = false;
-                                for (position, parameter) in parameters.iter().enumerate() {
-                                    if parameter.name == name {
-                                        changed.insert(position);
-                                        handed_in = true;
-                                    }
-                                }
-                                if !handed_in {
-                                    globals.insert(name);
-                                }
+                            // A name in the body that is a parameter is `Origin::Parameter`; this
+                            // one is a global a callee fills. The callee runs with its own lexical
+                            // scope, so it is not the parameter of the same name, if any.
+                            Effect::Mutated(Origin::Name(name), _) => {
+                                globals.insert(name);
                             }
+                            Effect::Assigned(_) => {}
                         }
                     }
                     (changed, globals)
@@ -189,6 +180,8 @@ pub(super) struct Walker<'w, 'a> {
     /// statement ends.
     pending: Vec<(LocalId, Origin<'a>)>,
     pub effects: Vec<Effect<'a>>,
+    /// Where the statement being walked starts.
+    current: usize,
     /// Where in `effects` the effects of each statement of a block are. Kept when asked for.
     pub spans: Option<HashMap<*const Statement, Range<usize>>>,
 }
@@ -207,6 +200,7 @@ impl<'w, 'a> Walker<'w, 'a> {
             additions: Vec::new(),
             pending: Vec::new(),
             effects: Vec::new(),
+            current: 0,
             spans: None,
         }
     }
@@ -229,6 +223,12 @@ impl<'w, 'a> Walker<'w, 'a> {
     }
 
     fn visit(&mut self, statement: &'a Statement) {
+        let outer = std::mem::replace(&mut self.current, statement.range().start.offset);
+        self.visit_in_place(statement);
+        self.current = outer;
+    }
+
+    fn visit_in_place(&mut self, statement: &'a Statement) {
         match statement {
             Statement::Declaration { .. } | Statement::TupleDeclaration { .. } => {
                 for binding in self.bindings.introduced(statement) {
@@ -273,40 +273,15 @@ impl<'w, 'a> Walker<'w, 'a> {
             return;
         }
         let outside = owner.range().start.offset;
-        let redeclared = self.redeclared(owner, block);
         while self.additions.len() > mark {
             if let Some((local, origin)) = self.additions.pop() {
                 self.sources[local].retain(|source| *source != origin);
                 let info = self.bindings.local(local);
-                if info.site < outside && !redeclared.contains(info.name) {
+                if info.site < outside {
                     self.pending.push((local, origin));
                 }
             }
         }
-    }
-
-    /// The names `block`, or the loop `owner`, declares variables of its own for, anywhere in it.
-    /// The sources a block adds to an outer local of such a name are dropped, even those added
-    /// before the declaration: the name-keyed walk this replaces took the name as hidden for the
-    /// whole block, and which statements a request gets must not change with the rewrite.
-    fn redeclared(&self, owner: &'a Statement, block: &'a [Statement]) -> HashSet<&'a str> {
-        let declared = block
-            .iter()
-            .filter(|statement| {
-                matches!(
-                    statement,
-                    Statement::Declaration { .. } | Statement::TupleDeclaration { .. }
-                )
-            })
-            .flat_map(|statement| self.bindings.introduced(statement));
-        self.bindings
-            .introduced(owner)
-            .chain(declared)
-            .filter_map(|binding| match binding {
-                Binding::Local(id) => Some(self.bindings.local(id).name),
-                _ => None,
-            })
-            .collect()
     }
 
     fn add(&mut self, local: LocalId, origin: Origin<'a>) {
@@ -364,15 +339,18 @@ impl<'w, 'a> Walker<'w, 'a> {
             Binding::Local(id) => {
                 for index in 0..self.sources[id].len() {
                     let origin = self.sources[id][index];
-                    self.effects.push(Effect::Mutated(origin));
+                    let at = self.current;
+                    self.effects.push(Effect::Mutated(origin, at));
                 }
             }
             Binding::Parameter { position, .. } => {
+                let at = self.current;
                 self.effects
-                    .push(Effect::Mutated(Origin::Parameter(position)));
+                    .push(Effect::Mutated(Origin::Parameter(position), at));
             }
             Binding::Global(name) | Binding::Free(name) => {
-                self.effects.push(Effect::Mutated(Origin::Name(name)));
+                let at = self.current;
+                self.effects.push(Effect::Mutated(Origin::Name(name), at));
             }
         }
     }
@@ -467,7 +445,8 @@ impl<'w, 'a> Walker<'w, 'a> {
             let changed = &functions.mutated[id];
             let (parameters, _) = functions.bodies[id];
             for global in &functions.global_writes[id] {
-                self.effects.push(Effect::Mutated(Origin::Name(global)));
+                let at = self.current;
+                self.effects.push(Effect::Mutated(Origin::Name(global), at));
             }
             if let Some(receiver) = receiver
                 && changed.contains(&0)
@@ -493,75 +472,68 @@ impl<'w, 'a> Walker<'w, 'a> {
     }
 }
 
+/// One copy of a script global into another: `into = from` or `into := from`.
+struct Copy<'a> {
+    into: &'a str,
+    from: &'a str,
+    /// Where the copying statement starts.
+    at: usize,
+}
+
 /// The globals that refer to the same value because one was copied from the other
-/// (`alias = samples`, `alias := samples`): each name with every name in its group. A collection
-/// changed through one is changed for all. Only globals: a name a block declares is its own, and
-/// the walker follows it per block.
+/// (`alias = samples`, `alias := samples`). A collection changed through one is changed for the
+/// other, once the copy has run: in the same bar, a copy reaches the changes after it in the source,
+/// and a `var`/`varip` copied into keeps it for the next bar's changes wherever they sit. Only
+/// globals: a name a block declares is its own, and the walker follows it per block.
 pub(super) struct Aliases<'a> {
-    group_of: HashMap<&'a str, usize>,
-    groups: Vec<Vec<&'a str>>,
+    copies: Vec<Copy<'a>>,
+    persistent: HashSet<&'a str>,
 }
 
 impl<'a> Aliases<'a> {
-    pub fn new(bindings: &Bindings<'a>, statements: &'a [Statement]) -> Self {
-        let mut pairs = Vec::new();
-        copies(bindings, statements, &mut pairs);
-        // Union-find over the names the copies mention.
-        let mut names: Vec<&'a str> = Vec::new();
-        let mut ids: HashMap<&'a str, usize> = HashMap::new();
-        let mut parent: Vec<usize> = Vec::new();
-        for (alias, original) in pairs {
-            let mut ends = [alias, original].map(|name| {
-                *ids.entry(name).or_insert_with(|| {
-                    names.push(name);
-                    parent.push(parent.len());
-                    parent.len() - 1
-                })
-            });
-            for end in &mut ends {
-                *end = find(&mut parent, *end);
+    pub fn new(
+        bindings: &Bindings<'a>,
+        statements: &'a [Statement],
+        persistent: HashSet<&'a str>,
+    ) -> Self {
+        let mut copies = Vec::new();
+        copies_in(bindings, statements, &mut copies);
+        Self { copies, persistent }
+    }
+
+    /// `name` and every name a change of it at `position` (where the changing statement starts)
+    /// reaches: through the copies already made by then, however many are chained.
+    pub fn reaching(&self, name: &'a str, position: usize) -> Vec<&'a str> {
+        let mut reached = vec![name];
+        let mut next = 0;
+        while next < reached.len() {
+            let current = reached[next];
+            next += 1;
+            for copy in &self.copies {
+                if copy.at >= position && !self.persistent.contains(copy.into) {
+                    continue;
+                }
+                let other = if copy.into == current {
+                    copy.from
+                } else if copy.from == current {
+                    copy.into
+                } else {
+                    continue;
+                };
+                if !reached.contains(&other) {
+                    reached.push(other);
+                }
             }
-            parent[ends[0]] = ends[1];
         }
-        let mut groups: Vec<Vec<&'a str>> = Vec::new();
-        let mut group_of = HashMap::new();
-        let mut group_ids: HashMap<usize, usize> = HashMap::new();
-        for (id, name) in names.iter().enumerate() {
-            let top = find(&mut parent, id);
-            let group = *group_ids.entry(top).or_insert_with(|| {
-                groups.push(Vec::new());
-                groups.len() - 1
-            });
-            groups[group].push(name);
-            group_of.insert(*name, group);
-        }
-        Self { group_of, groups }
-    }
-
-    /// `name` and every name it aliases; empty for a name that was never copied.
-    pub fn group(&self, name: &str) -> &[&'a str] {
-        self.group_of
-            .get(name)
-            .map_or(&[], |group| self.groups[*group].as_slice())
+        reached
     }
 }
 
-fn find(parent: &mut [usize], mut id: usize) -> usize {
-    while parent[id] != id {
-        parent[id] = parent[parent[id]];
-        id = parent[id];
-    }
-    id
-}
-
-/// The copies of one global name into another: `alias = samples` at the top level, `alias := other`
-/// anywhere outside the functions. A name a block declares is not a global, and neither side of a
-/// copy may be one. The statements an expression holds (`x = if …`) are not searched.
-fn copies<'a>(
-    bindings: &Bindings<'a>,
-    statements: &'a [Statement],
-    pairs: &mut Vec<(&'a str, &'a str)>,
-) {
+/// The copies of one script global into another: `alias = samples` at the top level, `alias := other`
+/// anywhere outside the functions, also in the blocks of an expression (`x = if …`). Both sides must
+/// be globals: a name a block declares is its own, and a builtin (`a = close`) is no object two
+/// names could share.
+fn copies_in<'a>(bindings: &Bindings<'a>, statements: &'a [Statement], found: &mut Vec<Copy<'a>>) {
     for statement in statements {
         let (value, target) = match statement {
             Statement::Function { .. } => continue,
@@ -572,14 +544,35 @@ fn copies<'a>(
         if let Some(value) = value
             && let Expression::Identifier(other, _) = value
             && !other.contains('.')
-            && let Some(alias) = target.and_then(Binding::name)
-            && let Some(original) = bindings.occurrence(value).and_then(Binding::name)
+            && let Some(Binding::Global(into)) = target
+            && let Some(Binding::Global(from)) = bindings.occurrence(value)
         {
-            pairs.push((alias, original));
+            found.push(Copy {
+                into,
+                from,
+                at: statement.range().start.offset,
+            });
         }
         for block in traversal::nested_blocks(statement) {
-            copies(bindings, block, pairs);
+            copies_in(bindings, block, found);
         }
+        for expression in traversal::expressions(statement) {
+            copies_held_by(bindings, expression, found);
+        }
+    }
+}
+
+/// The copies in the statements `expression` holds (`x = if …`), however deep.
+fn copies_held_by<'a>(
+    bindings: &Bindings<'a>,
+    expression: &'a Expression,
+    found: &mut Vec<Copy<'a>>,
+) {
+    if let Expression::Statement(statement, _) = expression {
+        copies_in(bindings, std::slice::from_ref(statement.as_ref()), found);
+    }
+    for child in traversal::children(expression) {
+        copies_held_by(bindings, child, found);
     }
 }
 

@@ -102,6 +102,125 @@ pub fn for_each_nested_block<'a>(statement: &'a Statement, mut visit: impl FnMut
     }
 }
 
+/// `children`, mutably.
+fn children_mut(expression: &mut Expression) -> Vec<&mut Expression> {
+    match expression {
+        Expression::Literal(_, _) | Expression::Identifier(_, _) | Expression::Statement(_, _) => {
+            Vec::new()
+        }
+        Expression::Unary { operand, .. } => vec![operand.as_mut()],
+        Expression::Binary { lhs, rhs, .. } => vec![lhs.as_mut(), rhs.as_mut()],
+        Expression::Ternary {
+            condition,
+            when_true,
+            when_false,
+            ..
+        } => vec![condition.as_mut(), when_true.as_mut(), when_false.as_mut()],
+        Expression::Call { arguments, .. } => arguments.iter_mut().map(|a| &mut a.value).collect(),
+        Expression::History { base, offset, .. } => vec![base.as_mut(), offset.as_mut()],
+        Expression::Tuple(values, _) => values.iter_mut().collect(),
+        Expression::Member { base, .. } => vec![base.as_mut()],
+        Expression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            let mut out = vec![receiver.as_mut()];
+            out.extend(arguments.iter_mut().map(|a| &mut a.value));
+            out
+        }
+    }
+}
+
+/// Calls `visit` on every statement of `statements`, the ones nested in them (branches, loop and
+/// function bodies, switch arms) and the ones their expressions hold (`x = if …`), outer first.
+pub fn for_each_statement_mut(
+    statements: &mut [Statement],
+    visit: &mut impl FnMut(&mut Statement),
+) {
+    for statement in statements {
+        visit(statement);
+        match statement {
+            Statement::Declaration { value, .. }
+            | Statement::Assignment { value, .. }
+            | Statement::TupleDeclaration { value, .. } => held_statements(value, visit),
+            Statement::FieldAssignment { target, value, .. } => {
+                held_statements(target, visit);
+                held_statements(value, visit);
+            }
+            Statement::Expression(expression) => held_statements(expression, visit),
+            Statement::Conditional {
+                condition,
+                when_true,
+                when_false,
+                ..
+            } => {
+                held_statements(condition, visit);
+                for_each_statement_mut(when_true, visit);
+                for_each_statement_mut(when_false, visit);
+            }
+            Statement::ForRange {
+                from,
+                to,
+                step,
+                body,
+                ..
+            } => {
+                held_statements(from, visit);
+                held_statements(to, visit);
+                if let Some(step) = step {
+                    held_statements(step, visit);
+                }
+                for_each_statement_mut(body, visit);
+            }
+            Statement::ForIn {
+                collection, body, ..
+            } => {
+                held_statements(collection, visit);
+                for_each_statement_mut(body, visit);
+            }
+            Statement::WhileLoop {
+                condition, body, ..
+            } => {
+                held_statements(condition, visit);
+                for_each_statement_mut(body, visit);
+            }
+            Statement::Once {
+                condition, body, ..
+            } => {
+                if let Some(condition) = condition {
+                    held_statements(condition, visit);
+                }
+                for_each_statement_mut(body, visit);
+            }
+            Statement::Switch { subject, arms, .. } => {
+                if let Some(subject) = subject {
+                    held_statements(subject, visit);
+                }
+                for arm in arms {
+                    if let Some(condition) = &mut arm.condition {
+                        held_statements(condition, visit);
+                    }
+                    for_each_statement_mut(&mut arm.body, visit);
+                }
+            }
+            Statement::Function { body, .. } => for_each_statement_mut(body, visit),
+            Statement::LoopControl(..)
+            | Statement::TypeDeclaration { .. }
+            | Statement::EnumDeclaration { .. } => {}
+        }
+    }
+}
+
+fn held_statements(expression: &mut Expression, visit: &mut impl FnMut(&mut Statement)) {
+    if let Expression::Statement(statement, _) = expression {
+        for_each_statement_mut(std::slice::from_mut(statement.as_mut()), visit);
+    }
+    for child in children_mut(expression) {
+        held_statements(child, visit);
+    }
+}
+
 /// Names that are the target of `:=` or a compound assignment anywhere in `statements`.
 pub fn assigned_names(statements: &[Statement]) -> std::collections::HashSet<String> {
     let mut names = std::collections::HashSet::new();

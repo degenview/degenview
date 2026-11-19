@@ -1680,6 +1680,127 @@ mod tests {
     }
 
     #[test]
+    fn a_global_a_callee_fills_is_not_the_callers_parameter_of_that_name() {
+        // `fill` runs with its own lexical scope: it fills the global `samples`, not the `samples`
+        // that `f` is handed (`other`). The chart does the same, so the request must too.
+        let script = "var samples = array.new_float()\nvar other = array.new_float()\nfill() =>\n    array.push(samples, close)\n    1.0\nf(samples) =>\n    fill()\nf(other)\n";
+        assert_eq!(
+            last_plotted(&format!("{script}x = array.size(samples)")),
+            Some(3.0),
+            "on the chart"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            )),
+            Some(3.0)
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(other))"
+            )),
+            Some(0.0),
+            "`other` is never filled"
+        );
+    }
+
+    #[test]
+    fn an_alias_an_expression_block_makes_is_followed() {
+        // `alias := samples` sits in the block of `y = if …`; the push through `alias` fills
+        // `samples`, on the chart (three bars) and in the request.
+        let script = "var samples = array.new_float()\nvar alias = array.new_float()\ny = if close > 0\n    alias := samples\n    1.0\nelse\n    0.0\nalias.push(close)\n";
+        assert_eq!(
+            last_plotted(&format!("{script}x = array.size(samples)")),
+            Some(3.0),
+            "on the chart"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            )),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn an_alias_made_after_the_mutation_does_not_make_the_request_replay_it() {
+        // `a` and `b` are new on every bar. The chart fills and updates `a`; the request reads `b`
+        // on 5m bars, where `a` is empty, so replaying `a.set(0, 7)` there would stop the script.
+        // `a := b` comes after: it makes them one array only from there on.
+        let head = "a = array.new_float()\nb = array.new_float()\nif close < 50\n    a.push(close)\na.set(0, 7.0)\n";
+        let request = "x = request.security(\"ETHUSDT\", \"1\", array.size(b))";
+        for copy in [
+            "flag = if close > 0\n    a := b\n    1.0\nelse\n    0.0\n",
+            "a := b\n",
+        ] {
+            assert_eq!(
+                last_plotted(&format!("{head}{copy}{request}")),
+                Some(0.0),
+                "{copy}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_var_alias_written_after_the_mutation_still_counts() {
+        // `a` is persistent: the copy `a := b` at the end of one bar is what the next bar's
+        // `a.push` fills, so the request must replay that push to see `b` filled: on the second and
+        // third bar, as on the chart.
+        let script =
+            "var a = array.new_float()\nvar b = array.new_float()\na.push(close)\na := b\n";
+        assert_eq!(
+            last_plotted(&format!("{script}x = array.size(b)")),
+            Some(2.0),
+            "on the chart"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(b))"
+            )),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn two_globals_copied_from_a_builtin_are_not_aliases() {
+        // `a` and `b` both hold `close`, which is no object: filling one fills nothing, and what
+        // the unreached branch does to `a` (it fails on ETHUSDT, whose closes are above 50) is not
+        // a reason to replay it for the request that reads `b`.
+        assert_eq!(
+            last_plotted(
+                "a = close\nb = close\nif close > 50\n    a.push(1.0)\nx = request.security(\"ETHUSDT\", \"1\", b)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_block_that_redeclares_a_name_keeps_what_it_assigned_before() {
+        // `c0 := b` runs before the inner block's own `c0 = c0` and is the outer `c0`'s: while
+        // `close > 1` the push below fills `b`, and `a` gets the other bars'. The chart's bars 2
+        // and 3 qualify, and so do all of ETHUSDT's, so the request must fill `b` as well.
+        let script = "var a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    c0 = a\n    if close > 1\n        c0 := b\n        c0 = c0\n    c0.push(close)\n";
+        // The same through a sibling branch that declares a `c0` of its own.
+        let sibling = "var a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    c0 = a\n    if close > 1\n        c0 := b\n    else\n        c0 = array.new_float()\n    c0.push(close)\n";
+        for script in [script, sibling] {
+            for (read, on_chart, requested) in [("a", 1.0, 0.0), ("b", 2.0, 3.0)] {
+                assert_eq!(
+                    last_plotted(&format!("{script}x = array.size({read})")),
+                    Some(on_chart),
+                    "{read} on the chart"
+                );
+                assert_eq!(
+                    last_plotted(&format!(
+                        "{script}x = request.security(\"ETHUSDT\", \"1\", array.size({read}))"
+                    )),
+                    Some(requested),
+                    "{read} in the request"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_write_in_the_block_of_the_request_before_it_follows_the_series() {
         assert_eq!(
             last_plotted(

@@ -690,6 +690,115 @@ fn a_block_can_declare_a_name_an_outer_scope_already_has() {
 }
 
 #[test]
+fn an_assignment_above_a_blocks_own_declaration_writes_the_outer_variable() {
+    // `x := 5.0` runs before the block's own `x = 9.0` hides the outer `x`, so it sticks.
+    let session = run(
+        "x = 1.0\n\
+         if bar_index >= 0\n    x := 5.0\n    x = 9.0\n\
+         y = x",
+        2,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(5.0));
+    // Two blocks down, and in a loop: each iteration's `x := x + 1` is the outer `x`'s.
+    let session = run(
+        "x = 1.0\n\
+         if bar_index >= 0\n    x := 5.0\n    if true\n        n = 2.0\n        if true\n            x = 9.0\n\
+         y = x\n\
+         z = 0.0\n\
+         for i = 0 to 2\n    z := z + 1\n    z = 100.0\n",
+        2,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(5.0));
+    assert_eq!(value(&session, "z"), RuntimeValue::Float(3.0));
+}
+
+#[test]
+fn a_declaration_in_one_branch_does_not_undo_an_assignment_in_the_other() {
+    let source = |condition: &str| {
+        format!(
+            "x = 1.0\n\
+             if {condition}\n    x := 5.0\nelse\n    x = 7.0\n\
+             y = x"
+        )
+    };
+    let session = run(&source("bar_index >= 0"), 2);
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(5.0));
+    // The `else` declares its own `x`: the outer one is untouched.
+    let session = run(&source("bar_index < 0"), 2);
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(1.0));
+    // A `switch` arm and its sibling.
+    let session = run(
+        "x = 1.0\n\
+         switch bar_index\n    0 => x := 5.0\n    => x = 7.0\n\
+         y = x",
+        1,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(5.0));
+}
+
+#[test]
+fn a_collection_assigned_above_a_blocks_own_declaration_is_the_outer_ones() {
+    // `c0 := b` hits the outer `c0`; the inner `c0 = c0` is a local that ends with the inner block.
+    // The push below goes to `b` while `close > 101` (bars 2 and 3), to `a` before.
+    let session = run(
+        "var a = array.new_float()\nvar b = array.new_float()\n\
+         if bar_index >= 0\n    c0 = a\n    if close > 101\n        c0 := b\n        c0 = c0\n    c0.push(close)\n\
+         in_a = array.size(a)\nin_b = array.size(b)",
+        3,
+    );
+    assert_eq!(value(&session, "in_a"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "in_b"), RuntimeValue::Int(2));
+    // The same through a sibling branch that declares its own `c0`.
+    let session = run(
+        "var a = array.new_float()\nvar b = array.new_float()\n\
+         c0 = a\n\
+         if close > 101\n    c0 := b\nelse\n    c0 = array.new_float()\n\
+         c0.push(close)\n\
+         in_a = array.size(a)\nin_b = array.size(b)",
+        3,
+    );
+    assert_eq!(value(&session, "in_a"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "in_b"), RuntimeValue::Int(2));
+}
+
+#[test]
+fn a_block_left_early_still_puts_the_outer_value_back() {
+    // `break` leaves the body after its declaration, `continue` before it.
+    let session = run(
+        "x = 1.0\n\
+         for i = 0 to 3\n    x := x + 1\n    if i == 1\n        continue\n    x = 50.0\n    if i == 2\n        break\n\
+         y = x",
+        2,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(4.0));
+}
+
+#[test]
+fn a_loop_local_keeps_the_value_of_its_last_iteration_in_its_history() {
+    // `sample` hides nothing: it is a name of the loop body alone, so the slot the first
+    // iteration leaves is not an outer value for the second to save and put back. On the last bar
+    // (2), `sample[1]` is the previous bar's last value, 1 * 10 + 2.
+    let session = run(
+        "f() =>\n    out = 0.0\n    for i = 0 to 2\n        sample = bar_index * 10 + i\n        out := sample[1]\n    out\n\
+         r = f()",
+        3,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(12));
+}
+
+#[test]
+fn a_declaration_that_hides_an_outer_name_takes_it_after_its_initializer_ran() {
+    // The initializer runs before the block's own `x` exists: its `x := 5` is the outer one's.
+    let session = run(
+        "x = 1\n\
+         if bar_index >= 0\n    x = if bar_index >= 0\n        x := 5\n        9\n    else\n        8\n\
+         y = x",
+        2,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Int(5));
+}
+
+#[test]
 fn a_function_reads_the_global_its_branch_declares_again_outside_that_branch() {
     // `level = 1.0` is a local of its `if` alone: after the branch, taken or not, and above a
     // declaration of the function's own, `level` is the global.
