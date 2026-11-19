@@ -1736,6 +1736,29 @@ mod tests {
     }
 
     #[test]
+    fn a_block_that_redeclares_a_name_puts_back_what_the_outer_one_held() {
+        // The runtime's variable table is flat: a statement whose block declares `c0` puts the
+        // outer `c0` back when it ends, so `c0 := b` before that declaration is undone, on the
+        // chart and on the requested series alike. `b` stays empty and `a` takes every push, and
+        // the slice must not treat `b` as filled.
+        let script = "var a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    c0 = a\n    if close > 1\n        c0 := b\n        c0 = c0\n    c0.push(close)\n";
+        for (read, on_chart, requested) in [("a", 3.0, 3.0), ("b", 0.0, 0.0)] {
+            assert_eq!(
+                last_plotted(&format!("{script}x = array.size({read})")),
+                Some(on_chart),
+                "{read} on the chart"
+            );
+            assert_eq!(
+                last_plotted(&format!(
+                    "{script}x = request.security(\"ETHUSDT\", \"1\", array.size({read}))"
+                )),
+                Some(requested),
+                "{read} in the request"
+            );
+        }
+    }
+
+    #[test]
     fn a_write_in_the_block_of_the_request_before_it_follows_the_series() {
         assert_eq!(
             last_plotted(

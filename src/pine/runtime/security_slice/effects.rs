@@ -277,8 +277,9 @@ impl<'w, 'a> Walker<'w, 'a> {
 
     /// The names `block`, or the loop `owner`, declares variables of its own for, anywhere in it.
     /// The sources a block adds to an outer local of such a name are dropped, even those added
-    /// before the declaration: the name-keyed walk this replaces took the name as hidden for the
-    /// whole block, and which statements a request gets must not change with the rewrite.
+    /// before the declaration, because the runtime does the same: its variable table is flat, and
+    /// `Session::run_statement` puts the outer value of every name a statement's blocks declare back
+    /// when the statement ends, undoing a `:=` that came before the declaration.
     fn redeclared(&self, owner: &'a Statement, block: &'a [Statement]) -> HashSet<&'a str> {
         let declared = block
             .iter()
