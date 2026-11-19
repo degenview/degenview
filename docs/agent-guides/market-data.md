@@ -120,7 +120,7 @@ watchlists.
   the buckets the same way as everything else, a length that is no timeframe flooring onto the epoch.
   `request.security_lower_tf` intrabars are folded in the Pine host from the coarsest of its own
   base list that nests (`INTRABAR_BASES`), bounded by `MAX_INTRABAR_CANDLES` base candles.
-- `service::fetch_klines` runs every provider through `service::normalize` (ascending, one candle per
+- `service::fetch_klines` runs every provider through `degenview_market::normalize` (ascending, one candle per
   open time, finite prices, range holds open and close). GeckoTerminal lists only traded intervals;
   `bucket::fill_gaps` adds flat zero-volume candles for even spacing. Volume units differ (base asset,
   shares, USD); CoinGecko has none.

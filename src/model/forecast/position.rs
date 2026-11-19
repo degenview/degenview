@@ -11,7 +11,7 @@
 //! the wrong side of the entry, a zero distance) reports `None` for what it cannot say instead of a
 //! number that would mislead. Pure: no egui types.
 
-use crate::model::market::kline::Kline;
+use crate::model::Kline;
 use serde::{Deserialize, Serialize};
 
 /// Which way the trade is taken.

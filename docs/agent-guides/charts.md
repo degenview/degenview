@@ -95,7 +95,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 - `ChartAppearance::canvas` is presentation-only: never alters candles, rebuilds constructed bars,
   or reruns indicators/Pine. New colors: `Option<Rgba>` (`None` follows theme).
 - Resolve canvas/theme once per frame with `CanvasStyle::resolve`; painters never read canvas colors
-  from `theme::*`. Grid and axis labels share `canvas::{price_ticks,time_ticks}`. Price range,
+  from `theme::*`. Grid and axis labels share `degenview_market::price_ticks` and `canvas::time_ticks`. Price range,
   visible-window, pane-split geometry stay pure in `model/chart/canvas/mod.rs`.
 - Pane order/collapse live on `PineInstance`; maximize is card view state. Buttons report clicks,
   `ChartCard` applies them.

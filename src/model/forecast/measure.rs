@@ -6,8 +6,8 @@
 //! caller from the bars the chart draws (they depend on the chart type and the replay cut). Pure:
 //! no egui types.
 
+use crate::model::Kline;
 use crate::model::drawings::tool::Tool;
-use crate::model::market::kline::Kline;
 use serde::{Deserialize, Serialize};
 
 /// Which measurer a [`Geometry::Measure`](crate::model::drawings::Geometry::Measure) is.

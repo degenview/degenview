@@ -1,6 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 use super::*;
 use crate::model::ChartAppearance;
+use degenview_market::price_ticks;
 
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0)
@@ -231,73 +232,6 @@ fn the_price_range_stays_finite_for_extreme_and_bad_input() {
             );
         }
     }
-}
-
-// MARK: Ticks
-
-#[test]
-fn linear_ticks_are_round_multiples_inside_the_range() {
-    let ticks = price_ticks(98.0, 207.0, false, 6);
-    assert!(!ticks.is_empty() && ticks.len() <= 6, "{ticks:?}");
-    assert!(ticks.iter().all(|tick| (98.0..=207.0).contains(tick)));
-    let step = ticks[1] - ticks[0];
-    assert!(
-        close(step, 20.0) || close(step, 25.0) || close(step, 50.0),
-        "{step}"
-    );
-    assert!(ticks.windows(2).all(|pair| close(pair[1] - pair[0], step)));
-    assert!(
-        ticks
-            .iter()
-            .all(|tick| close(tick / step, (tick / step).round()))
-    );
-}
-
-#[test]
-fn ticks_cope_with_tiny_and_huge_prices() {
-    let tiny = price_ticks(0.000_001_2, 0.000_001_9, false, 5);
-    assert!(!tiny.is_empty());
-    assert!(
-        tiny.iter()
-            .all(|tick| *tick >= 0.000_001_2 && *tick <= 0.000_001_9)
-    );
-    let huge = price_ticks(1.0e9, 3.5e9, false, 5);
-    assert!(!huge.is_empty());
-    assert!(huge.iter().all(|tick| tick.is_finite()));
-}
-
-#[test]
-fn ticks_cross_zero_for_negative_values() {
-    let ticks = price_ticks(-30.0, 40.0, false, 7);
-    assert!(ticks.contains(&0.0), "{ticks:?}");
-    assert!(ticks.iter().any(|tick| *tick < 0.0));
-}
-
-#[test]
-fn logarithmic_ticks_are_decades_and_thin_to_fit() {
-    let roomy = price_ticks(1.0, 1000.0, true, 12);
-    assert!(roomy.contains(&1.0) && roomy.contains(&10.0) && roomy.contains(&100.0));
-    assert!(roomy.contains(&1000.0));
-    assert!(roomy.len() > 4, "{roomy:?}");
-    let tight = price_ticks(1.0, 1000.0, true, 4);
-    assert_eq!(tight, vec![1.0, 10.0, 100.0, 1000.0]);
-    let tighter = price_ticks(1e-3, 1e9, true, 4);
-    assert!(!tighter.is_empty() && tighter.len() <= 4, "{tighter:?}");
-}
-
-#[test]
-fn a_narrow_logarithmic_range_falls_back_to_round_prices() {
-    let ticks = price_ticks(100.0, 140.0, true, 6);
-    assert!(ticks.len() >= 2);
-    assert!(ticks.iter().all(|tick| (100.0..=140.0).contains(tick)));
-}
-
-#[test]
-fn ticks_are_empty_for_a_degenerate_scale() {
-    assert!(price_ticks(5.0, 5.0, false, 6).is_empty());
-    assert!(price_ticks(f64::NAN, 5.0, false, 6).is_empty());
-    assert!(price_ticks(1.0, 5.0, false, 0).is_empty());
-    assert!(price_ticks(9.0, 1.0, false, 4).is_empty());
 }
 
 #[test]

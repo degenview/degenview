@@ -61,7 +61,7 @@ impl PriceScale {
     pub(in crate::ui) fn axis_ticks(&self, budget: usize) -> AxisTicks {
         let Some((mode, reference)) = self.reading() else {
             let prices =
-                chart::canvas::price_ticks(self.minimum, self.maximum, self.logarithmic, budget);
+                degenview_market::price_ticks(self.minimum, self.maximum, self.logarithmic, budget);
             let step = tick_step(&prices);
             return AxisTicks { prices, step };
         };
@@ -72,7 +72,7 @@ impl PriceScale {
                 step: 0.0,
             };
         };
-        let values = chart::canvas::price_ticks(low, high, false, budget);
+        let values = degenview_market::price_ticks(low, high, false, budget);
         let step = tick_step(&values);
         let prices = values
             .into_iter()

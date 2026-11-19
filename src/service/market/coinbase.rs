@@ -247,53 +247,8 @@ impl Coinbase {
             &[],
             crate::service::net::http::Retry::Transient,
         )?;
-        parse_page(&body, granularity)
+        degenview_market::coinbase::parse_candles(&body, granularity).map_err(ProviderError::data)
     }
-}
-
-/// `[time s, low, high, open, close, volume]`, newest first.
-fn parse_page(body: &str, granularity: i64) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
-    let rows = value
-        .as_array()
-        .ok_or_else(|| ProviderError::data("expected a candle array"))?;
-    let mut candles = Vec::with_capacity(rows.len());
-    for row in rows {
-        let Some(fields) = row.as_array() else {
-            continue;
-        };
-        if fields.len() < 6 {
-            continue;
-        }
-        let Some(seconds) = fields[0].as_f64() else {
-            continue;
-        };
-        let Some(low) = fields[1].as_f64() else {
-            continue;
-        };
-        let Some(high) = fields[2].as_f64() else {
-            continue;
-        };
-        let Some(open) = fields[3].as_f64() else {
-            continue;
-        };
-        let Some(close) = fields[4].as_f64() else {
-            continue;
-        };
-        let volume = fields[5].as_f64().unwrap_or(0.0);
-        let open_time = (seconds * 1_000.0) as i64;
-        candles.push(Kline {
-            open_time,
-            close_time: open_time + granularity * 1_000 - 1,
-            open,
-            high,
-            low,
-            close,
-            volume,
-        });
-    }
-    candles.sort_by_key(|candle| candle.open_time);
-    Ok(candles)
 }
 
 #[cfg(test)]
@@ -468,17 +423,5 @@ mod tests {
         assert_eq!(weekly[0].low, 9.0);
         assert_eq!(weekly[0].close, 11.5);
         assert_eq!(weekly[0].volume, 3.0);
-    }
-
-    #[test]
-    fn parses_coinbase_page() {
-        let body = r#"[[1700000000,9.0,12.0,10.0,11.0,42.5],[1700003600,10.0,11.0,11.0,10.5,1.0]]"#;
-        let candles = parse_page(body, 3600).expect("valid");
-        assert_eq!(candles.len(), 2);
-        assert_eq!(candles[0].open_time, 1_700_000_000_000);
-        assert_eq!(candles[0].high, 12.0);
-        assert_eq!(candles[0].low, 9.0);
-        assert_eq!(candles[0].open, 10.0);
-        assert_eq!(candles[0].close, 11.0);
     }
 }

@@ -23,7 +23,6 @@ pub use market::alpaca::test_connection as alpaca_test_connection;
 pub use market::error::ProviderError;
 
 use crate::model::{DataSource, Kline, PmSeries, Timeframe};
-pub(crate) use market::candles::normalize;
 pub(crate) use market::search_rank::rank_results;
 
 /// A search hit on one provider: a display label, the provider's own id, and the
@@ -210,7 +209,7 @@ pub fn fetch_klines(
     let fetch = |limit: u32| {
         provider
             .fetch_klines(symbol, timeframe, limit)
-            .map(normalize)
+            .map(degenview_market::normalize)
     };
     match cache::policy(source, timeframe) {
         Some(policy) => cache::fetch(source, symbol, timeframe, limit, policy, fetch),
@@ -271,7 +270,7 @@ pub fn fetch_klines_range(
 ) -> Result<Vec<Kline>, ProviderError> {
     for_source(source)
         .fetch_klines_range(symbol, timeframe, start_ms, end_ms, max)
-        .map(normalize)
+        .map(degenview_market::normalize)
 }
 
 /// How many choices of an event are fetched at once.

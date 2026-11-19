@@ -10,7 +10,7 @@
 //!
 //! Pure: no egui types, no clock, no global random number generator.
 
-use crate::model::market::kline::Kline;
+use crate::model::Kline;
 
 /// The most candles one ghost feed makes.
 pub const MAX_CANDLES: usize = 500;

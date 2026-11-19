@@ -5,7 +5,6 @@ pub use crate::bars::source::cmc;
 pub mod feed;
 pub mod history;
 pub(in crate::model) mod instrument;
-pub(in crate::model) use crate::bars::kline;
 pub mod line;
 pub mod live;
 pub mod natives;

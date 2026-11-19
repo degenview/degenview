@@ -30,6 +30,8 @@ dev-unsealed-mcp = []
 dev-mock-broker = ["degenview-brokers/testing"]
 
 [dependencies]
+# Candle model, Coinbase parsing and price ticks, shared with the WebAssembly build.
+degenview-market = { version = "0.1.0", path = "crates/market" }
 eframe = { version = "0.36.2", features = ["persistence"] }
 # Reads the name and post tables of installed fonts to list the monospaced families (the same
 # version egui already builds).
@@ -145,6 +147,11 @@ objc2-user-notifications = { version = "0.3.2", features = [
     "UNNotificationTrigger",
     "UNUserNotificationCenter",
 ] }
+
+[workspace]
+members = ["crates/market"]
+# `cargo test` and `cargo clippy` check the shared crates along with the app.
+default-members = [".", "crates/market"]
 
 [lib]
 # The only doc blocks are `text`/`json` illustrations, so the rustdoc pass of `cargo test` ran nothing.

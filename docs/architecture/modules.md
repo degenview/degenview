@@ -98,7 +98,8 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | `ids/` | The id space engines mint into (`LEGACY_LIMIT`, `GLOBAL_BASE`); sync tags it in `sync::record::ids` |
 | `encoding/` | Standard base64 (`base64_encode`, `base64_decode`) for MCP images, the CloudKit bridge, stored pictures and proxy sign-in |
 
-Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, `model::ChartType`).
+Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, which is
+`degenview_market::Kline`, and `model::ChartType`).
 A new module goes in the matching directory; a new domain gets its own directory and a row here.
 
 ## `service/`, `host/`, `store/`, `sync/`, `mcp/`, `workspace/` and `trading/` layout

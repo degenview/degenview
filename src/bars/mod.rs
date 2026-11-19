@@ -10,13 +10,12 @@
 pub mod alert_message;
 pub mod bucket;
 pub mod kind;
-pub mod kline;
 pub mod source;
 pub mod synthetic;
 pub mod timeframe;
 pub mod volume_profile;
 
 pub use kind::ChartKind;
-pub use kline::Kline;
+pub use degenview_market::Kline;
 pub use source::DataSource;
 pub use timeframe::{TimeUnit, Timeframe};
