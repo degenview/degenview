@@ -342,17 +342,18 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
                 .icon(Icon::AngleBrackets)
                 .on_click(ToolbarAction::OpenPineStudio),
         ),
-        Item::Button(
-            Button::new("watchlist", watchlist_tip)
-                .icon(Icon::List)
-                .active(input.watchlist_visible)
-                .on_click(ToolbarAction::ToggleWatchlist),
-        ),
+        Item::Separator,
         Item::Button(
             Button::new("liquidations", liquidations_tip)
                 .icon(Icon::Flame)
                 .active(input.liquidations_visible)
                 .on_click(ToolbarAction::ToggleLiquidations),
+        ),
+        Item::Button(
+            Button::new("watchlist", watchlist_tip)
+                .icon(Icon::List)
+                .active(input.watchlist_visible)
+                .on_click(ToolbarAction::ToggleWatchlist),
         ),
     ]
 }
