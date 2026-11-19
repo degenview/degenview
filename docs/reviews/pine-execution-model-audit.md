@@ -211,7 +211,7 @@ plot(hlcc4[1] == hlcc4[1] ? 1 : 0)   // 0 (na == na is false)
 ```
 
 **6. Block locals keep stale values** (`session.rs:1480-1520`). Locals are not removed after their block;
-`shadowed_by` saves only names that already exist, and the flat `variables` map keeps the stale value, which
+`Session::shadow` saves only names that already exist, and the flat `variables` map keeps the stale value, which
 `commit_histories` pushes every bar. `v[1]` happens to match TradingView; `v[2]` and further differ. Two blocks
 that declare the same name share one history.
 
@@ -371,7 +371,8 @@ Deferred, each because it changes the history model, needs a TradingView compari
 
 - Local-scope buffers (6, 7, 8, 21): a change of `commit_histories` and `eval_history`; bench-sensitive.
 - The runtime's three save/restore scoping patches (`invoke_with`'s `saved`, `Shadowed` in
-  `run_statement`, `uncover_caller_globals`/`cover_caller_globals`) should move onto `syntax::scopes`
+  `run_block`, `uncover_caller_globals`/`cover_caller_globals`; `Shadowed` now saves a name where
+  its declaration runs and restores it when that execution of the block ends) should move onto `syntax::scopes`
   (which resolves every variable to a `Global`, `Local` or `Parameter` binding once, for static
   analysis): for example alpha-renaming the locals that hide a global at build time, so the flat
   variable table needs no restoring. Do that, not a fourth patch.

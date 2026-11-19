@@ -40,8 +40,11 @@
   on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
   do not halt the script.
 - Function locals (`Session::invoke_with`): the variable table is flat. An ordinary local hides an
-  outer variable of its name only from its declaration on: a block's to the end of its block
-  (`run_statement`'s `Shadowed` puts the outer value back), a top-level one to the end of the call
+  outer variable of its name only from its declaration on: a block's to the end of that execution of
+  the block (`run_block` saves the outer value when the declaration runs and puts it back when the
+  block ends, however it ends: each branch, arm and loop iteration is its own execution, and a `:=`
+  above the declaration, or in another branch, is the outer variable's and stays; a loop's counters
+  are saved around the loop), a top-level one to the end of the call
   (the call's `saved`). Only `var`/`varip` locals are set at entry (stash value, else unset so the
   declaration initialises them), so one hides a global of its name for the whole call. Scopes are
   lexical: a nested call first sets each name its calling function's locals hide back to the global
@@ -218,11 +221,7 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   a global of that name the request gets no slice. A statement that makes a `request.*` call is never
   in a slice (nesting; its names keep the chart's value via `security_globals`), and requests inside
   functions are not sliced.
-- **A redeclaring block.** A block (or loop) that declares a variable of the same name as an outer
-  local drops the sources it added to that local, even before the declaration: the runtime's flat
-  variable table puts the outer value back when the statement ends, so the slicer follows it
-  (`Walker::redeclared`). Only script globals (`Binding::Global` on both sides of a copy) join an
-  alias group.
+- **Alias groups.** Only script globals (`Binding::Global` on both sides of a copy) join one.
 - **Alerts.** `alert()` does nothing while a request runs (`security_depth > 0`: a slice, or a
   function the expression calls): only the chart's own run fires alerts, and the once-per-bar ledger
   stays its own.
