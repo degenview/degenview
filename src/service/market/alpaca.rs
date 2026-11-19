@@ -208,8 +208,14 @@ fn parse_assets(body: &str) -> Result<Vec<Asset>, ProviderError> {
 /// 2000-01-01.
 const EARLIEST_MS: i64 = 946_684_800_000;
 
-/// The window a request on `feed` asks Alpaca for, as `(start, end)`; `None` when the caller's
-/// range is empty (`end` not after `start`), so no request is made.
+/// The window a request on `feed` asks Alpaca for, as `(start, end)`; `None` when no request is
+/// worth making: the caller's range is empty (`end` not after `start`), or a SIP `start` falls
+/// inside the free plan's delay.
+///
+/// Alpaca refuses a SIP `start` that recent on the free plan (403, with or without an `end`,
+/// measured on `1Day` and `1Min`). SIP only serves bars of a day and longer, and such a bar opens
+/// at the session start, so a bar opening at or after a `start` in the last minutes does not exist
+/// yet on any plan: skipping the request loses nothing.
 ///
 /// A SIP `end` inside the free plan's delay is refused (403), so it is left out and Alpaca applies
 /// the account's own entitlement: real time on a paid plan, cut at the delay on Basic. Capping the
@@ -222,6 +228,9 @@ fn bars_window(
     now_ms: i64,
 ) -> Option<(i64, Option<i64>)> {
     if end_ms.is_some_and(|end| end <= start_ms) {
+        return None;
+    }
+    if feed == AlpacaFeed::Sip && start_ms > now_ms - SIP_DELAY_MS {
         return None;
     }
     let end = match (feed, end_ms) {
@@ -531,12 +540,31 @@ mod tests {
     }
 
     #[test]
-    fn a_range_inside_the_delay_never_reaches_the_provider_reversed() {
-        let start = now() - 5 * MINUTE_MS;
+    fn a_sip_start_inside_the_delay_asks_for_nothing() {
+        // The free plan answers 403 to these, with an end or without one.
+        for start in [now() - 5 * MINUTE_MS, now() - SIP_DELAY_MS + 1, now()] {
+            for end in [None, Some(now())] {
+                assert_eq!(
+                    bars_window(AlpacaFeed::Sip, start, end, now()),
+                    None,
+                    "a start {} minutes back",
+                    (now() - start) / MINUTE_MS
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_sip_start_just_outside_the_delay_is_sent_and_iex_is_never_held_back() {
+        let start = now() - SIP_DELAY_MS;
         assert_eq!(
-            bars_window(AlpacaFeed::Sip, start, Some(now()), now()),
-            Some((start, None)),
-            "no end, so no end before the start"
+            bars_window(AlpacaFeed::Sip, start, None, now()),
+            Some((start, None))
+        );
+        let recent = now() - MINUTE_MS;
+        assert_eq!(
+            bars_window(AlpacaFeed::Iex, recent, None, now()),
+            Some((recent, None))
         );
     }
 
