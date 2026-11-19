@@ -985,3 +985,55 @@ fn bench_workloads() {
         );
     }
 }
+
+/// What building a session costs on a large script, and the part of it that flags the declarations
+/// that hide a name (`scopes::mark_shadowing`, one `resolve` over the tree).
+#[test]
+#[ignore = "benchmark: cargo test --release --lib session_build_cost -- --ignored --nocapture"]
+fn session_build_cost() {
+    use crate::pine::compiler::symbol_catalog::is_variable;
+    use crate::pine::syntax::scopes::{ShadowNames, mark_shadowing};
+
+    fn median(mut times: Vec<u128>) -> u128 {
+        times.sort_unstable();
+        times[times.len() / 2]
+    }
+    for (name, source) in [
+        ("straight_line_5000", straight_line(5_000)),
+        ("wide_block_2000", wide_block(2_000)),
+        ("blocks", BLOCKS.to_owned()),
+    ] {
+        let program = compile(&source);
+        let build = median(
+            (0..9)
+                .map(|_| {
+                    let program = program.clone();
+                    let started = Instant::now();
+                    let session = Session::new(
+                        program,
+                        HashMap::new(),
+                        limits(),
+                        None,
+                        symbol(),
+                        None,
+                        None,
+                    );
+                    let elapsed = started.elapsed().as_nanos();
+                    drop(session);
+                    elapsed
+                })
+                .collect(),
+        );
+        let marking = median(
+            (0..9)
+                .map(|_| {
+                    let mut statements = program.statements.clone();
+                    let started = Instant::now();
+                    mark_shadowing(&mut statements, &is_variable, &mut ShadowNames::default());
+                    started.elapsed().as_nanos()
+                })
+                .collect(),
+        );
+        println!("BUILD {name} session_new_ns={build} marking_ns={marking}");
+    }
+}
