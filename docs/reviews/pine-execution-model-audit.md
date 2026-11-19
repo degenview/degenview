@@ -371,8 +371,9 @@ Deferred, each because it changes the history model, needs a TradingView compari
 
 - Local-scope buffers (6, 7, 8, 21): a change of `commit_histories` and `eval_history`; bench-sensitive.
 - The runtime's three save/restore scoping patches (`invoke_with`'s `saved`, `Shadowed` in
-  `run_block`, `uncover_caller_globals`/`cover_caller_globals`; `Shadowed` now saves a name where
-  its declaration runs and restores it when that execution of the block ends) should move onto `syntax::scopes`
+  `run_block`, `uncover_caller_globals`/`cover_caller_globals`; the block shadowing now saves a name where
+  its flagged declaration runs, after the initializer, and restores it when that execution of the
+  block ends) should move onto `syntax::scopes`
   (which resolves every variable to a `Global`, `Local` or `Parameter` binding once, for static
   analysis): for example alpha-renaming the locals that hide a global at build time, so the flat
   variable table needs no restoring. Do that, not a fourth patch.
