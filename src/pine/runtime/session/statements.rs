@@ -11,13 +11,13 @@ use crate::pine::syntax::ast::{
 };
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
 
-/// How many shadowed names a block statement keeps without touching the heap: a loop counter and
+/// How many shadowed names a block execution keeps without touching the heap: a loop counter and
 /// the few names its body declares.
 const SHADOWED_INLINE: usize = 4;
 
-/// The values a block statement's declared names held outside it, to put back when it ends. The
-/// names borrow from the statement, so saving one builds no `String`, and a block that shadows a few
-/// names allocates nothing.
+/// The values the names a block execution declared held outside it, to put back when the block ends.
+/// The names borrow from the statements, so saving one builds no `String`, and a block that
+/// shadows a few names allocates nothing.
 struct Shadowed<'s> {
     inline: [Option<(&'s str, Option<RuntimeValue>)>; SHADOWED_INLINE],
     used: usize,
@@ -35,6 +35,13 @@ impl Default for Shadowed<'_> {
 }
 
 impl<'s> Shadowed<'s> {
+    fn contains(&self, name: &str) -> bool {
+        let saved = self.inline.iter().flatten().map(|(saved, _)| saved);
+        saved
+            .chain(self.overflow.iter().map(|(saved, _)| saved))
+            .any(|saved| *saved == name)
+    }
+
     /// `value` is what `name` holds now; None for a builtin's name, which has no variable.
     fn push(&mut self, name: &'s str, value: Option<RuntimeValue>) {
         if self.used < SHADOWED_INLINE {
@@ -63,15 +70,49 @@ impl<'s> Shadowed<'s> {
 }
 
 impl Session {
+    /// Runs the statements of the script's top level or of a function body: their declarations are
+    /// the script's globals or the call's locals (`invoke_with`'s `saved`), not a block's.
     pub(crate) fn run(
         &mut self,
         statements: &[Statement],
         context: &mut RuntimeContext,
     ) -> Result<(Flow, RuntimeValue), Diagnostic> {
+        self.run_with(statements, context, None)
+    }
+
+    /// Runs one execution of a block (a branch, an arm, a loop body, a `once` body). A name an
+    /// ordinary declaration in it gives a value of its own hides the outer variable of that name
+    /// only from the declaration to the end of this execution: the variable table is flat, so the
+    /// outer value, as it stood at the declaration, is put back when the block ends, however it
+    /// ends. A `:=` above the declaration, or in another branch, is the outer variable's and stays.
+    fn run_block(
+        &mut self,
+        statements: &[Statement],
+        context: &mut RuntimeContext,
+    ) -> Result<(Flow, RuntimeValue), Diagnostic> {
+        let mut shadowed = None;
+        let result = self.run_with(statements, context, Some(&mut shadowed));
+        if let Some(shadowed) = shadowed {
+            shadowed.restore(&mut self.working.variables);
+        }
+        result
+    }
+
+    /// The statement loop. `shadowed` is the block execution's saved names, set when `statements`
+    /// is a block.
+    fn run_with<'s>(
+        &mut self,
+        statements: &'s [Statement],
+        context: &mut RuntimeContext,
+        mut shadowed: Option<&mut Option<Shadowed<'s>>>,
+    ) -> Result<(Flow, RuntimeValue), Diagnostic> {
         let mut last = RuntimeValue::Void;
         for statement in statements {
             self.budget()
                 .map_err(|error| self.hook_failed(statement, context, error, false))?;
+            if let Some(shadowed) = shadowed.as_deref_mut() {
+                self.shadow_declared(statement, shadowed);
+            }
             let hooked = self.hooks.is_some();
             if hooked {
                 self.hook_before(statement, context)?;
@@ -92,70 +133,60 @@ impl Session {
         Ok((Flow::Normal, last))
     }
 
+    /// Saves what the names `statement` declares hold now, if it is an ordinary declaration of a
+    /// block and they are not saved yet in this execution of it.
+    fn shadow_declared<'s>(&self, statement: &'s Statement, shadowed: &mut Option<Shadowed<'s>>) {
+        match statement {
+            Statement::Declaration {
+                name,
+                mode: DeclarationMode::Ordinary,
+                ..
+            } => self.shadow(name, shadowed),
+            Statement::TupleDeclaration { names, .. } => {
+                for name in names {
+                    self.shadow(name, shadowed);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Saves what `name` holds now, for those that already exist outside the block. A name that is a
+    /// builtin (`low`) has no variable outside the block, so it is removed after.
+    fn shadow<'s>(&self, name: &'s str, shadowed: &mut Option<Shadowed<'s>>) {
+        let value = match self.working.variables.get(name) {
+            Some(value) => Some(value.clone()),
+            None if self.shadowing_builtins.iter().any(|shadow| shadow == name) => None,
+            None => return,
+        };
+        let shadowed = shadowed.get_or_insert_with(Shadowed::default);
+        if !shadowed.contains(name) {
+            shadowed.push(name, value);
+        }
+    }
+
     fn run_statement(
         &mut self,
         statement: &Statement,
         context: &mut RuntimeContext,
     ) -> Result<Step, Diagnostic> {
-        // A name a block declares shadows an outer variable of the same name only inside the block;
-        // the variable table is flat, so the outer value is put back when the statement ends.
-        if !matches!(
-            statement,
-            Statement::ForRange { .. }
-                | Statement::ForIn { .. }
-                | Statement::Conditional { .. }
-                | Statement::WhileLoop { .. }
-                | Statement::Once { .. }
-                | Statement::Switch { .. }
-        ) {
-            return self.run_statement_unscoped(statement, context);
-        }
-        let shadowed = self.shadowed_by(statement);
-        let result = self.run_statement_unscoped(statement, context);
-        shadowed.restore(&mut self.working.variables);
-        result
-    }
-
-    /// The current values of the variables that `statement`'s blocks declare anew (a loop counter,
-    /// an ordinary `x = …` in a branch or body), for those that already exist outside it.
-    fn shadowed_by<'s>(&self, statement: &'s Statement) -> Shadowed<'s> {
-        let mut saved = Shadowed::default();
-        // A name that is a builtin (`low`) has no variable outside the block, so it is removed after.
-        let mut save = |name: &'s str| match self.working.variables.get(name) {
-            Some(value) => saved.push(name, Some(value.clone())),
-            None if self.shadowing_builtins.iter().any(|shadow| shadow == name) => {
-                saved.push(name, None);
-            }
-            None => {}
-        };
+        // A loop's counters are the loop's own: set before its body runs, put back after it.
+        let mut shadowed = None;
         match statement {
-            Statement::ForRange { variable, .. } => save(variable),
+            Statement::ForRange { variable, .. } => self.shadow(variable, &mut shadowed),
             Statement::ForIn { index, value, .. } => {
                 if let Some(index) = index.as_deref() {
-                    save(index);
+                    self.shadow(index, &mut shadowed);
                 }
-                save(value);
+                self.shadow(value, &mut shadowed);
             }
-            _ => {}
+            _ => return self.run_statement_unscoped(statement, context),
         }
-        crate::pine::syntax::traversal::for_each_nested_block(statement, |block| {
-            for inner in block {
-                match inner {
-                    Statement::Declaration {
-                        name,
-                        mode: DeclarationMode::Ordinary,
-                        ..
-                    } => save(name),
-                    Statement::TupleDeclaration { names: tuple, .. } => {
-                        for name in tuple {
-                            save(name);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        });
-        saved
+        let result = self.run_statement_unscoped(statement, context);
+        if let Some(shadowed) = shadowed {
+            shadowed.restore(&mut self.working.variables);
+        }
+        result
     }
 
     fn run_statement_unscoped(
@@ -363,7 +394,7 @@ impl Session {
             "if condition must be bool; numeric-to-bool coercion is not allowed in v6.",
             condition.range(),
         )?;
-        let (flow, value) = self.run(if test { when_true } else { when_false }, context)?;
+        let (flow, value) = self.run_block(if test { when_true } else { when_false }, context)?;
         Ok(Step { flow, value })
     }
 
@@ -393,7 +424,7 @@ impl Session {
         if self.working.once_finished.contains(&key) {
             return Ok(Step::normal(RuntimeValue::Void));
         }
-        let (flow, _) = self.run(body, context)?;
+        let (flow, _) = self.run_block(body, context)?;
         self.working.once_finished.push(key);
         Ok(Step {
             flow,
@@ -467,7 +498,7 @@ impl Session {
                     RuntimeValue::Float(i)
                 },
             );
-            let (flow, value) = self.run(body, context)?;
+            let (flow, value) = self.run_block(body, context)?;
             last = value;
             if flow == Flow::Break {
                 break;
@@ -513,7 +544,7 @@ impl Session {
                 self.set_variable(index_name, RuntimeValue::Int(offset as i64));
             }
             self.set_variable(value_name, item);
-            let (flow, value) = self.run(body, context)?;
+            let (flow, value) = self.run_block(body, context)?;
             last = value;
             if flow == Flow::Break {
                 break;
@@ -540,7 +571,7 @@ impl Session {
             if !test {
                 break;
             }
-            let (flow, value) = self.run(body, context)?;
+            let (flow, value) = self.run_block(body, context)?;
             last = value;
             if flow == Flow::Break {
                 break;
@@ -569,7 +600,7 @@ impl Session {
                 value: RuntimeValue::Na,
             });
         };
-        let (flow, value) = self.run(&arms[chosen].body, context)?;
+        let (flow, value) = self.run_block(&arms[chosen].body, context)?;
         Ok(Step { flow, value })
     }
 
