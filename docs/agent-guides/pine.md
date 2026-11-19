@@ -145,28 +145,41 @@
   (`mwTRA4dO`, `aVFtPnUh`, `5YEHyvSL`). Parameters may reuse the name with a warning. TradingView's
   message text is undocumented.
 - `request.security` expressions that read script variables (`longTrend` in
-  `request.security(sym, "15", longTrend)`): `runtime::security_slice` finds at build time the top-level
+  `request.security(sym, "15", longTrend)`): `runtime::security_slice` finds at build time the
   statements **before the request** that declare, `:=`-reassign or may fill (`array.push(samples, x)`,
   `samples.push(x)`, a call of the script's own function that changes the parameter it gets the
   variable as, or the global collection it changes: `Functions::{mutated, global_writes}`, a
   fixpoint over the call graph; a function that only reads its argument is not replayed; the overload
   the type checker chose, else every one of that name) what the expression reads, scope-aware (a
   block's own `level` is not the global, for reads as for writes) and through plain-copy aliases
-  (`alias = samples`, also one a block or a helper makes; a builtin's collection argument is found by
-  its `id` label or its position), through other statements and the script's functions (the overload the type
-  checker resolved, `Call::target`; all same-name ones when unresolved; a function's locals are not
-  reads of a global). `evaluate_higher_timeframe` runs them in the request's own state, with its own
-  empty `Session::intrabar` (a `varip` there acts like `var`; the chart's is untouched), before the
+  (`alias = samples`, also one a block or a helper makes, and one an inner block reassigns; a
+  builtin's collection argument is found by its `id` label or its position), through other
+  statements and the script's functions (the overload the type checker resolved, `Call::target`; all
+  same-name ones when unresolved; a function's parameters, and the names its body declared before
+  reading them, are not reads of a global; the interpreter itself hides every name a function declares
+  anywhere in its body from the variables during a call, `invoke_with`). The statements are the
+  top-level ones before the request's own, and those before the request in the blocks around it
+  (`Location`, found by `locate`; replayed without re-checking the block's condition, since the request
+  was reached). A name that is rebound (declared, `:=`) counts only before the statement that reads
+  it (`Facts::writes_needed`, a limit per needed name); a collection changed through its value, a
+  `var`/`varip` and a `level[1]` read also see later writes. A statement in a block cannot be
+  replayed when it declares something, reads a name a block declared, or sits in a loop or `once`
+  body: when it would be part of the slice, the request gets no slice and reads the chart's values.
+  `evaluate_higher_timeframe` runs the slice in the request's own state, with its own empty
+  `Session::intrabar` (a `varip` there acts like `var`; the chart's is untouched), before the
   expression. A name that a block around the request declares before it (`level = 20.0` in the `if` it is in,
   a loop variable) is not resolved to the global of that name: the expression reads the chart's value
   (`security_globals`), and when the slice would define a global of that name the request gets no
   slice. A statement that makes a `request.*` call is never in a slice (nesting; its names keep
-  the chart's value via `security_globals`); requests inside functions are not sliced. Known gap:
-  `alert()` in a statement of a slice emits from the other series. Unknown collection members count as
-  mutating (`READ_ONLY_MEMBERS` lists the array/map/matrix queries that do not: add a new query there).
-  Aliases of a collection are per block (two blocks' `alias` are different variables), a dotted call
-  of a builtin namespace (`ta.sma`) never matches a script function called `sma`, and a call the type
-  checker resolved to a script method has that method's own effects, not the builtin ones of its name.
+  the chart's value via `security_globals`); requests inside functions are not sliced. `alert()`
+  does nothing while a request runs (`security_depth > 0`: a slice, or a function the expression
+  calls): only the chart's own run fires alerts, and the once-per-bar ledger stays its own.
+  Unknown collection members count as mutating (`READ_ONLY_MEMBERS` lists the array/map/matrix
+  queries and matrix predicates that do not: add a new query there). Aliases of a collection are per
+  block (two blocks' `alias` are different variables), a dotted call of a builtin namespace
+  (`ta.sma`) never matches a script function called `sma`, for writes as for reads, and a call the
+  type checker resolved to a script method has that method's own effects, not the builtin ones of
+  its name.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, share function bodies
   with `Arc`. Benchmark: `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

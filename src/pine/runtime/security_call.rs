@@ -1569,9 +1569,85 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_matrix_predicate_is_not_replayed_in_the_request() {
+        assert_eq!(
+            last_plotted(&format!(
+                "{FAILS_ON_ETH}m = matrix.new<float>(2, 2, 0.0)\nunused = matrix.is_zero(m) ? bad : 0.0\nx = request.security(\"ETHUSDT\", \"1\", matrix.rows(m))"
+            )),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn a_namespaced_builtin_does_not_replay_the_script_function_that_fills_a_global() {
+        assert_eq!(
+            last_plotted(&format!(
+                "{FAILS_ON_ETH}var samples = array.new_float()\nsma(float src, int len) =>\n    array.push(samples, src)\n    src\nunused = bad + ta.sma(close, 2)\nx = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            )),
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn an_alias_reassigned_in_an_inner_block_is_filled_through_both_sources() {
+        // On the chart (closes 1, 2, 3) `b` gets two values; on ETHUSDT (all above 1) three.
+        assert_eq!(
+            last_plotted(
+                "var a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    alias = a\n    if close > 1\n        alias := b\n    alias.push(close)\nx = request.security(\"ETHUSDT\", \"1\", array.size(b))"
+            ),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn a_write_in_the_block_of_the_request_before_it_follows_the_series() {
+        assert_eq!(
+            last_plotted(
+                "level = 0.0\nx = 0.0\nif close > 0\n    level := close\n    x := request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_name_an_expression_statement_declares_is_read_as_declared() {
+        assert_eq!(
+            last_plotted(
+                "level = close\nx = if close > 0\n    level = 20.0\n    request.security(\"ETHUSDT\", \"1\", level)\nelse\n    0.0"
+            ),
+            Some(20.0)
+        );
+    }
+
+    #[test]
+    fn a_variable_is_computed_as_it_stands_where_it_is_read() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", snapshot)";
+        // The later `level` fails on the requested series (ETHUSDT closes above 50).
+        assert_eq!(
+            last_plotted(&format!(
+                "arr = array.new_float()\nlevel = close\nsnapshot = level\nlevel := close > 50 ? array.get(arr, 5) : close\n{request}"
+            )),
+            Some(120.0)
+        );
+        // A `var` and a history read see what the previous bar wrote after them.
+        assert_eq!(
+            last_plotted(&format!(
+                "var level = 0.0\nsnapshot = level\nlevel := close\n{request}"
+            )),
+            Some(110.0)
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "level = close\nsnapshot = level[1]\nlevel := level + 1\n{request}"
+            )),
+            Some(111.0)
+        );
+    }
+
     /// Runs `source` on one chart bar that gets two live ticks, as the session does for a bar that
-    /// has not closed, and returns the last value of the first plot after each tick.
-    fn plotted_after_each_tick(source: &str) -> Vec<Option<f64>> {
+    /// has not closed, and returns what `read` makes of the session after each tick.
+    fn after_each_tick<T>(source: &str, read: impl Fn(&Session) -> T) -> Vec<T> {
         let body = format!("//@version=6\nindicator(\"T\")\n{source}");
         let program = compiler::compile(&body, Limits::default(), &NoLibraries);
         let mut session = Session::new(
@@ -1594,9 +1670,27 @@ mod tests {
                     true,
                     None,
                 );
-                session.output().plots[0].values.last().copied().flatten()
+                read(&session)
             })
             .collect()
+    }
+
+    /// The last value of the first plot after each tick.
+    fn plotted_after_each_tick(source: &str) -> Vec<Option<f64>> {
+        after_each_tick(source, |session| {
+            session.output().plots[0].values.last().copied().flatten()
+        })
+    }
+
+    /// The messages of the alerts the session emitted for each tick.
+    fn alerts_after_each_tick(source: &str) -> Vec<Vec<String>> {
+        after_each_tick(source, |session| {
+            session
+                .emitted_alerts
+                .iter()
+                .map(|alert| alert.message.clone())
+                .collect()
+        })
     }
 
     #[test]
@@ -1609,6 +1703,37 @@ mod tests {
             "{counter}ignored = request.security(\"ETHUSDT\", \"1\", n)"
         ));
         assert_eq!(requested, alone);
+    }
+
+    #[test]
+    fn an_alert_in_a_slice_does_not_fire_from_the_requested_series() {
+        let request = "ignored = request.security(\"ETHUSDT\", \"1\", level)";
+        // The slice replays the whole `if`, alert included; only the chart's own run fires it.
+        assert_eq!(
+            alerts_after_each_tick(&format!(
+                "level = 0.0\nif close > 0\n    level := close\n    alert(\"hi\", alert.freq_all)\n{request}"
+            )),
+            [["hi"], ["hi"]]
+        );
+        assert_eq!(
+            alerts_after_each_tick(&format!(
+                "level = 0.0\nnotify() =>\n    alert(\"hi\", alert.freq_all)\n    close\nif close > 0\n    level := notify()\n{request}"
+            )),
+            [["hi"], ["hi"]],
+            "through a function the slice calls"
+        );
+    }
+
+    #[test]
+    fn a_request_does_not_use_up_the_once_per_bar_alert() {
+        // The request runs `notify` first: on ETHUSDT (closes above 50) the message would read `true`
+        // and the chart's own call would find the bar's alert already given.
+        assert_eq!(
+            alerts_after_each_tick(
+                "notify() =>\n    alert(str.tostring(close > 50), alert.freq_once_per_bar)\n    close\nignored = request.security(\"ETHUSDT\", \"1\", notify())\nplot(notify())"
+            ),
+            [vec!["false"], vec![]]
+        );
     }
 
     #[test]

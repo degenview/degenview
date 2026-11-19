@@ -170,6 +170,12 @@ impl Session {
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
+        // A request evaluates another series, and the chart's own run is what fires alerts: an event
+        // from a slice or a function the expression calls would repeat the chart's and use up its
+        // once-per-bar ledger.
+        if self.security_depth > 0 {
+            return Ok(RuntimeValue::Void);
+        }
         let args = self.eval_args(arguments, context)?;
         let key = self.site_key(site, context);
         if let Some(event) = alert::call(
