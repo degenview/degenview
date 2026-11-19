@@ -7,11 +7,11 @@
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::search_rank::normalize;
-use crate::model::market::bucket::{FoldPlan, bucket_start_ms, next_bucket_start_ms};
 use crate::model::market::natives::KRAKEN_BARS;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::{http, rate_limit};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
+use degenview_market::bucket::{FoldPlan, bucket_start_ms, next_bucket_start_ms};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

@@ -1,10 +1,10 @@
 //! Request planning shared by every provider, so one market is cut the same whichever source serves
-//! it. Bucket boundaries, folds and gap filling are `model::market::bucket`; the clean-up every
+//! it. Bucket boundaries, folds and gap filling are `degenview_market::bucket`; the clean-up every
 //! answer passes through is `degenview_market::normalize`.
 
-use crate::model::market::bucket::FoldPlan;
 use crate::model::{DataSource, Timeframe};
 use crate::service::ProviderError;
+use degenview_market::bucket::FoldPlan;
 
 /// How `source` makes `timeframe` from the candles it has, or the error that it cannot.
 pub(crate) fn plan(source: DataSource, timeframe: Timeframe) -> Result<FoldPlan, ProviderError> {

@@ -54,7 +54,7 @@ mod old {
             let monday_days = (days - 4).div_euclid(7) * 7 + 4;
             return monday_days * DAY_MS;
         }
-        let (year, month, _) = crate::format::civil_from_days(days);
+        let (year, month, _) = crate::calendar::civil_from_days(days);
         let (target_year, target_month) = if interval_secs < 7_000_000 {
             (year, month)
         } else if interval_secs < 30_000_000 {
@@ -62,7 +62,7 @@ mod old {
         } else {
             (year, 1)
         };
-        crate::format::days_from_civil(target_year, target_month, 1) * DAY_MS
+        crate::calendar::days_from_civil(target_year, target_month, 1) * DAY_MS
     }
 
     pub fn next_bucket_start_ms(bucket: i64, interval_secs: i64) -> i64 {

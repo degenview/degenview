@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::market::bucket::fold_base;
+use degenview_market::bucket::fold_base;
 
 fn tf(text: &str) -> Timeframe {
     Timeframe::parse(text).unwrap()

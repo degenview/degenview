@@ -38,6 +38,7 @@ pub use chart::saved_view::SavedView;
 pub use chart::sync::ChartSyncSettings;
 pub use cursor::{CursorMode, PointerShape};
 pub use degenview_market::Kline;
+pub use degenview_market::{Section, TimeUnit, Timeframe, TimeframeParseError};
 pub use drawings::style::{DrawingStyle, Visibility, VisibilityRow};
 pub use drawings::tool::{Caps, MagnetMode, Placement, Tool, ToolGroup};
 pub use drawings::{
@@ -53,4 +54,3 @@ pub use indicators::{bollinger, ema, rsi, supertrend_flips};
 pub use market::instrument::InstrumentId;
 pub use market::pm_series::PmSeries;
 pub use market::source::DataSource;
-pub use market::timeframe::{Section, TimeUnit, Timeframe, TimeframeParseError};

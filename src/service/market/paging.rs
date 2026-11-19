@@ -2,8 +2,8 @@
 //! number of rows and takes an end cursor (OKX, Bybit).
 
 use crate::model::Kline;
-use crate::model::market::bucket::FoldPlan;
 use crate::service::ProviderError;
+use degenview_market::bucket::FoldPlan;
 use std::time::Duration;
 
 /// How an exchange's history is paged.

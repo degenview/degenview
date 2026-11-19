@@ -32,7 +32,7 @@ every six hours, then exposes availability, byte progress, failure, and restart 
 1. A market chart owns symbol/source, candles, fetch state, and `ChartCard`.
 2. `service::for_source` selects `MarketSource`; results are cached by source/symbol/interval.
 3. Binance streams replace the forming candle; five-second REST refresh covers other providers and
-   recovery. `model::market::live` folds both: it drops an older kline and keeps live bars over a REST snapshot.
+   recovery. `degenview_market::live` folds both: it drops an older kline and keeps live bars over a REST snapshot.
 4. Indicators compute over full history, trim to the visible tail, then render through
    `egui::Painter`.
 

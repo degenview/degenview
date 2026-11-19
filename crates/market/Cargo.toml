@@ -10,5 +10,6 @@ publish = false
 # Keep this crate free of anything that does not build for wasm32-unknown-unknown (HTTP clients,
 # threads, SQLite, egui): the web build depends on it. CI checks the wasm target.
 [dependencies]
+serde = "1.0.229"
 serde_json = "1.0.151"
 thiserror = "2.0.21"

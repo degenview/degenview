@@ -90,7 +90,7 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | `alert/`, `webhook/` | Price and Pine alerts (engine, feed, line, messages, notifications, the `draft` the sheet and MCP build) and webhook endpoints and policy |
 | `paper/`, `portfolio/`, `watchlist/`, `broker/` | Paper trading, the portfolio ledger and its statistics, watchlists, and the shared live-trading values |
 | `chart/` | One chart: appearance, canvas, viewport, price scale, kind, layout, templates, context menu, linked-chart sync, snapshots (`snapshot/`: limits, file names, hosting and prefs, plus the Screenshot Studio's `studio`, `framing`, `composition` and `selection`), replay (the clock and what an agent asks of it); `kind` and `synthetic` are `bars`', re-exported |
-| `market/` | Instruments, live-kline folding (`live`), history paging, prediction-market series; sources, timeframes, buckets, candles and `cmc` are `bars`', re-exported here |
+| `market/` | Instruments, native candle lengths, history paging, prediction-market series; sources and `cmc` are `bars`', re-exported here |
 | `drawings/`, `annotation/`, `pattern/`, `fib/`, `forecast/` | Drawings and their tools: the shared model and styles, text/image/post/table content, patterns and Elliott waves, Fibonacci and Gann, positions and measurers |
 | `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart, script value types (`script`) and the Pine indicators bundled with the app (`bundled/`) |
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
@@ -98,8 +98,8 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | `ids/` | The id space engines mint into (`LEGACY_LIMIT`, `GLOBAL_BASE`); sync tags it in `sync::record::ids` |
 | `encoding/` | Standard base64 (`base64_encode`, `base64_decode`) for MCP images, the CloudKit bridge, stored pictures and proxy sign-in |
 
-Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, which is
-`degenview_market::Kline`, and `model::ChartType`).
+Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, `model::Timeframe`
+and `model::TimeUnit`, which are `degenview_market`'s, and `model::ChartType`).
 A new module goes in the matching directory; a new domain gets its own directory and a row here.
 
 ## `service/`, `host/`, `store/`, `sync/`, `mcp/`, `workspace/` and `trading/` layout

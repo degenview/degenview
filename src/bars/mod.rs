@@ -8,14 +8,12 @@
 //! unchanged. Pure logic: no I/O and nothing of the app's own beyond `format`.
 
 pub mod alert_message;
-pub mod bucket;
 pub mod kind;
 pub mod source;
 pub mod synthetic;
-pub mod timeframe;
 pub mod volume_profile;
 
 pub use kind::ChartKind;
 pub use degenview_market::Kline;
 pub use source::DataSource;
-pub use timeframe::{TimeUnit, Timeframe};
+pub use degenview_market::{TimeUnit, Timeframe, bucket};

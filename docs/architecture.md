@@ -13,7 +13,7 @@ architecture index; use the topic documents for detail.
 | `service/` | Providers, network, caches, Keychain, and OS services |
 | `store/` | SQLite persistence and Swift import |
 | `sync/`, `native/swift/` | iCloud Sync: pure policy, merge and outbox logic, and the CloudKit bridge |
-| `crates/market/` | The `degenview-market` workspace crate: `Kline`, `normalize`, Coinbase candle parsing and `price_ticks`. Pure and wasm-safe, shared with the WebAssembly build |
+| `crates/market/` | The `degenview-market` workspace crate: `Kline`, `Timeframe`, buckets and folds (`bucket`), the live-candle fold (`live`), UTC calendar helpers (`calendar`), `normalize`, Coinbase candle parsing and `price_ticks`. Pure and wasm-safe, shared with the WebAssembly build |
 | `trading/` | Order entry for every venue (paper and brokers) behind one trait; brokers come from the `degenview-brokers` crate |
 | `ui/` | Immediate-mode egui rendering |
 | `pine/` | Pure Pine compiler, interpreter, strategy broker, debugger, profiler, and outputs |

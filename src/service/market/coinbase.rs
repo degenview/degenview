@@ -1,9 +1,9 @@
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::search_rank::normalize;
-use crate::model::market::bucket::FoldPlan;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
+use degenview_market::bucket::FoldPlan;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -272,7 +272,7 @@ mod tests {
     }
 
     use super::*;
-    use crate::model::market::bucket;
+    use degenview_market::bucket;
 
     #[test]
     fn a_product_is_found_however_it_is_separated() {

@@ -1,7 +1,7 @@
-use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
 use crate::model::market::samples;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult};
+use degenview_market::bucket::{bucket_start_ms, next_bucket_start_ms};
 use serde_json::Value;
 
 const BASE_URL: &str = "https://api.coingecko.com/api/v3";

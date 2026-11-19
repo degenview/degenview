@@ -1,10 +1,10 @@
 //! The live candle feeds: one per streamed source on the workspace, folding its candles into the
 //! charts.
 
-use crate::model::market::live::LiveMark;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::market::live::LiveFeed;
 use crate::workspace::ChartWorkspace;
+use degenview_market::live::LiveMark;
 use eframe::egui;
 use std::time::Instant;
 

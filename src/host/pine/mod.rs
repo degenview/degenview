@@ -11,7 +11,6 @@ pub mod subscription;
 use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::chart::synthetic::ticker;
-use crate::model::market::bucket;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
@@ -22,6 +21,7 @@ use crate::pine::runtime::support::{
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity, Limits};
 use crate::pine::time::bucket::timeframe_of;
 use crate::store::scripts::registry::LibraryRegistry;
+use degenview_market::bucket;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
