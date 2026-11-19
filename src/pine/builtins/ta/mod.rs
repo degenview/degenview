@@ -109,11 +109,6 @@ pub fn evaluate(
     state: &mut State,
 ) -> RuntimeValue {
     state.inputs.push(source.clone());
-    if name == "ta.rsi" {
-        let result = extra::rsi(state, length);
-        state.results.push(result.clone());
-        return result;
-    }
     // A length that is not a positive count reads as no window (most indicators then yield `na`).
     let count = usize::try_from(length).unwrap_or(0);
     let inputs = &state.inputs;
@@ -129,6 +124,7 @@ pub fn evaluate(
         "ta.falling" => trend(inputs, count, false),
         "ta.mom" | "ta.roc" => momentum(inputs, count, name == "ta.roc"),
         "ta.macd" => macd(state),
+        "ta.rsi" => extra::rsi(&mut *state, length),
         "ta.median" => statistic(inputs, count, median),
         "ta.range" => statistic(inputs, count, |values| {
             let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
