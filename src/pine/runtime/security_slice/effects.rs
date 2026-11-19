@@ -263,41 +263,15 @@ impl<'w, 'a> Walker<'w, 'a> {
             return;
         }
         let outside = owner.range().start.offset;
-        let redeclared = self.redeclared(owner, block);
         while self.additions.len() > mark {
             if let Some((local, origin)) = self.additions.pop() {
                 self.sources[local].retain(|source| *source != origin);
                 let info = self.bindings.local(local);
-                if info.site < outside && !redeclared.contains(info.name) {
+                if info.site < outside {
                     self.pending.push((local, origin));
                 }
             }
         }
-    }
-
-    /// The names `block`, or the loop `owner`, declares variables of its own for, anywhere in it.
-    /// The sources a block adds to an outer local of such a name are dropped, even those added
-    /// before the declaration, because the runtime does the same: its variable table is flat, and
-    /// `Session::run_statement` puts the outer value of every name a statement's blocks declare back
-    /// when the statement ends, undoing a `:=` that came before the declaration.
-    fn redeclared(&self, owner: &'a Statement, block: &'a [Statement]) -> HashSet<&'a str> {
-        let declared = block
-            .iter()
-            .filter(|statement| {
-                matches!(
-                    statement,
-                    Statement::Declaration { .. } | Statement::TupleDeclaration { .. }
-                )
-            })
-            .flat_map(|statement| self.bindings.introduced(statement));
-        self.bindings
-            .introduced(owner)
-            .chain(declared)
-            .filter_map(|binding| match binding {
-                Binding::Local(id) => Some(self.bindings.local(id).name),
-                _ => None,
-            })
-            .collect()
     }
 
     fn add(&mut self, local: LocalId, origin: Origin<'a>) {

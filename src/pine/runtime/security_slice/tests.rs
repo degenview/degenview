@@ -521,18 +521,14 @@ fn globals_copied_from_a_builtin_are_not_aliases() {
 }
 
 #[test]
-fn a_block_that_redeclares_a_name_does_not_pass_on_what_it_assigned_before() {
-    // The runtime puts the outer `c0` back when the inner `if` ends, undoing `c0 := b`
-    // (see `security_call`'s test of the same name), so the push below fills `a` only.
+fn a_block_that_redeclares_a_name_passes_on_what_it_assigned_before() {
+    // `c0 := b` is the outer `c0`'s, so the push below fills `b` too (and `a`): a request reading
+    // either gets `a`, `b` and the block.
     let source = |read: &str| {
         format!(
             "//@version=6\nindicator(\"T\")\nvar a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    c0 = a\n    if close > 1\n        c0 := b\n        c0 = c0\n    c0.push(close)\nplot(request.security(syminfo.tickerid, \"D\", array.size({read})))"
         )
     };
-    assert_eq!(
-        slice_sizes(&source("a")),
-        [3],
-        "`a`, `b` (the block reads it) and the block"
-    );
-    assert_eq!(slice_sizes(&source("b")), [1], "`b` alone");
+    assert_eq!(slice_sizes(&source("a")), [3]);
+    assert_eq!(slice_sizes(&source("b")), [3]);
 }

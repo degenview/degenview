@@ -1738,14 +1738,26 @@ mod tests {
     #[test]
     fn a_block_that_redeclares_a_name_keeps_what_it_assigned_before() {
         // `c0 := b` runs before the inner block's own `c0 = c0` and is the outer `c0`'s: while
-        // `close > 1` (the chart's bars 2 and 3) the push below fills `b`, and `a` gets bar 1's.
+        // `close > 1` the push below fills `b`, and `a` gets the other bars'. The chart's bars 2
+        // and 3 qualify, and so do all of ETHUSDT's, so the request must fill `b` as well.
         let script = "var a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    c0 = a\n    if close > 1\n        c0 := b\n        c0 = c0\n    c0.push(close)\n";
-        for (read, on_chart) in [("a", 1.0), ("b", 2.0)] {
-            assert_eq!(
-                last_plotted(&format!("{script}x = array.size({read})")),
-                Some(on_chart),
-                "{read} on the chart"
-            );
+        // The same through a sibling branch that declares a `c0` of its own.
+        let sibling = "var a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    c0 = a\n    if close > 1\n        c0 := b\n    else\n        c0 = array.new_float()\n    c0.push(close)\n";
+        for script in [script, sibling] {
+            for (read, on_chart, requested) in [("a", 1.0, 0.0), ("b", 2.0, 3.0)] {
+                assert_eq!(
+                    last_plotted(&format!("{script}x = array.size({read})")),
+                    Some(on_chart),
+                    "{read} on the chart"
+                );
+                assert_eq!(
+                    last_plotted(&format!(
+                        "{script}x = request.security(\"ETHUSDT\", \"1\", array.size({read}))"
+                    )),
+                    Some(requested),
+                    "{read} in the request"
+                );
+            }
         }
     }
 
