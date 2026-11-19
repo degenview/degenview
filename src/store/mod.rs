@@ -17,7 +17,7 @@ pub mod chart;
 pub mod drawing_favorites;
 pub mod drawing_template;
 pub mod editor_theme;
-mod frame_cache;
+pub mod frame_cache;
 pub mod identity;
 pub mod mcp;
 pub mod paper;

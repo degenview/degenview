@@ -10,10 +10,12 @@ use crate::service::cache::control;
 use crate::service::cache::disk::{CacheStats, ClearOutcome};
 use crate::service::keychain::webhook_secrets::KeychainWebhookSecretStore;
 use crate::service::llm::prefs::AiPrefs;
+use crate::service::net::proxy::ProxyConfig;
 use crate::service::net::proxy::{self, ApplyReport};
 use crate::service::webhook::delivery::{self, Mode, UreqTransport, WebhookSecretStore};
 use crate::service::work_queue::{self, Pending};
 use crate::store::Store;
+use crate::store::frame_cache::ChangeCached;
 use crate::ui::settings::card::StatusMessage;
 use crate::ui::settings::network::NetworkAction;
 use crate::ui::settings::snapshots::SnapshotsAction;
@@ -68,6 +70,8 @@ pub struct SettingsHost {
     /// The saved assistant settings, read from the store when Settings first needs them.
     ai_prefs: Option<AiPrefs>,
     ai_prefs_read_at: Option<std::time::Instant>,
+    /// The `net.proxy` setting the Network page shows, read again only after a write.
+    network_config: ChangeCached<ProxyConfig>,
     /// When the snapshot choices were last read again, for what iCloud Sync applied meanwhile.
     snapshots_read_at: Option<std::time::Instant>,
     state: SettingsState,
@@ -186,7 +190,9 @@ impl SettingsHost {
             self.ai_prefs_read_at = Some(std::time::Instant::now());
         }
         let ai_prefs = self.ai_prefs.clone().unwrap_or_default();
-        let network_config = store.proxy_config_cached();
+        let network_config = self
+            .network_config
+            .get(store.change_stamp(), || ProxyConfig::load(store));
         let proxy_status = proxy::status();
         self.collect_network();
         let input = SettingsInput {

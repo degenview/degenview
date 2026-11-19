@@ -118,7 +118,7 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
         ],
     ),
     ("service", &["app", "host", "sync", "ui", "workspace"]),
-    ("store", &["app", "host", "ui", "workspace"]),
+    ("store", &["app", "host", "service", "ui", "workspace"]),
     ("sync", &["app", "host", "ui", "workspace"]),
     // What a record is and which tables sync: the store builds on it, so it may not need the store.
     ("sync/record", &["store"]),
