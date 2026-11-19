@@ -370,6 +370,11 @@ runs over the whole history, so `barstate.isfirst` and `var` initialisation are 
 Deferred, each because it changes the history model, needs a TradingView comparison, or is large:
 
 - Local-scope buffers (6, 7, 8, 21): a change of `commit_histories` and `eval_history`; bench-sensitive.
+- The runtime's three save/restore scoping patches (`invoke_with`'s `saved`, `Shadowed` in
+  `run_statement`, `uncover_caller_globals`/`cover_caller_globals`) should move onto `syntax::scopes`
+  (which resolves every variable to a `Global`, `Local` or `Parameter` binding once, for static
+  analysis): for example alpha-renaming the locals that hide a global at build time, so the flat
+  variable table needs no restoring. Do that, not a fourth patch.
 - A broker that survives rolled-back ticks and real `calc_on_order_fills` re-execution (14, 15).
 - `process_orders_on_close` for conditional orders (16); trailing stops (27, beyond the warning).
 - The `na`-window rule (23) and `ta.atr` previous close (9): compare with TradingView output first.
