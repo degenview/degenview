@@ -611,6 +611,22 @@ impl ApplyPlan {
     }
 }
 
+/// Whether a chart on `market` can take the chart type of `look`: a market drawn as a line has
+/// no chart types, and some markets cannot draw every type.
+fn takes_chart_type(look: &ChartAppearance, market: DataSource) -> bool {
+    !market.is_line_chart() && look.style.chart_type.supported_by(market)
+}
+
+/// What a new chart on `market` takes from `look`, the template new charts start from: all of it
+/// when the market can draw its chart type, otherwise the colors and canvas.
+pub fn scope_for_new_chart(look: &ChartAppearance, market: DataSource) -> ApplyScope {
+    if takes_chart_type(look, market) {
+        ApplyScope::AppearanceAndCanvas
+    } else {
+        ApplyScope::ColorsAndCanvas
+    }
+}
+
 /// Plans giving `look` to every chart in `charts` (id and market) except `source`. A chart whose
 /// market cannot draw the look's chart type, or is drawn as a line and has no types at all, takes
 /// the colors and canvas only; the first kind is counted so it can be reported.
@@ -625,9 +641,8 @@ pub fn plan_apply_to_all(
         .iter()
         .filter(|(id, _)| *id != source)
         .map(|(id, market)| {
-            let takes_type = scope == ApplyScope::AppearanceAndCanvas
-                && !market.is_line_chart()
-                && look.style.chart_type.supported_by(*market);
+            let takes_type =
+                scope == ApplyScope::AppearanceAndCanvas && takes_chart_type(look, *market);
             if scope == ApplyScope::AppearanceAndCanvas && !takes_type && !market.is_line_chart() {
                 kept_type += 1;
             }

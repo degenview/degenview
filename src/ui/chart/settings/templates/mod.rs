@@ -6,6 +6,7 @@
 //! The saved templates are read when the sheet opens and again before every change (see
 //! [`ChartTemplateStore`]); there is no database access in the paint path.
 
+use crate::lock::lock;
 use crate::model::ChartAppearance;
 use crate::model::chart::template::{
     ApplyScope, MAX_DESCRIPTION_CHARS, MAX_NAME_CHARS, TemplateEntry, TemplateId, clean_name,
@@ -623,6 +624,16 @@ enum ManageOutcome {
     Open(Dialog),
 }
 
+/// What the rows of the manager asked for this frame, applied once they are all drawn.
+struct RowActions {
+    apply: Option<TemplateEntry>,
+    /// `Some(Some(id))` starts new charts from `id`, `Some(None)` stops using a template.
+    new_charts: Option<Option<TemplateId>>,
+    duplicate: Option<TemplateId>,
+    rename_commit: Option<Renaming>,
+    outcome: ManageOutcome,
+}
+
 /// A small square icon button with a tooltip, always drawn.
 fn icon_button(ui: &mut Ui, icon: Icon, tooltip: &str, enabled: bool) -> bool {
     let (rect, response) = ui.allocate_exact_size(
@@ -663,10 +674,14 @@ fn manage_dialog(
     let entries = state.templates(store).book().entries();
     let load_error = state.templates(store).load_error().map(str::to_owned);
     let scope = state.scope;
-    let mut outcome = ManageOutcome::Stay;
-    let mut apply: Option<TemplateEntry> = None;
-    let mut duplicate: Option<TemplateId> = None;
-    let mut rename_commit: Option<Renaming> = None;
+    let new_charts = lock(store).default_chart_template_cached().id;
+    let mut actions = RowActions {
+        apply: None,
+        new_charts: None,
+        duplicate: None,
+        rename_commit: None,
+        outcome: ManageOutcome::Stay,
+    };
     sheet::show(ctx, Id::new("chart-template-manage"), MANAGE_WIDTH, |ui| {
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
@@ -674,7 +689,7 @@ fn manage_dialog(
                 ui,
                 Icon::Sliders,
                 "Manage Templates",
-                "Saved looks for charts. Presets are fixed; duplicate one to make it your own.",
+                "Saved looks for charts. Star one to start new charts with it. Presets are fixed; duplicate one to make it your own.",
                 theme::ACCENT,
             );
             ui.add_space(16.0);
@@ -700,11 +715,9 @@ fn manage_dialog(
                         template_row(
                             ui,
                             entry,
+                            new_charts == Some(entry.id),
                             manage,
-                            &mut apply,
-                            &mut duplicate,
-                            &mut rename_commit,
-                            &mut outcome,
+                            &mut actions,
                         );
                     }
                 });
@@ -719,21 +732,27 @@ fn manage_dialog(
         });
         sheet::footer(ui, |ui| {
             if kit::sheet_button(ui, "Done", true, true).clicked() {
-                outcome = ManageOutcome::Close;
+                actions.outcome = ManageOutcome::Close;
             }
         });
     });
-    if let Some(entry) = apply {
+    if let Some(entry) = actions.apply.take() {
         card.apply_template(&entry.appearance, scope);
         state.say(format!("Applied “{}”.", entry.name));
     }
-    if let Some(id) = duplicate {
+    if let Some(choice) = actions.new_charts {
+        match state.templates(store).set_default(choice) {
+            Ok(()) => manage.error = None,
+            Err(message) => manage.error = Some(message),
+        }
+    }
+    if let Some(id) = actions.duplicate {
         match state.templates(store).duplicate(id) {
             Ok(_) => manage.error = None,
             Err(message) => manage.error = Some(message),
         }
     }
-    if let Some(done) = rename_commit {
+    if let Some(done) = actions.rename_commit.take() {
         match state
             .templates(store)
             .rename(done.id, &done.name, &done.description)
@@ -749,20 +768,18 @@ fn manage_dialog(
         if manage.renaming.is_some() {
             manage.renaming = None;
         } else {
-            outcome = ManageOutcome::Close;
+            actions.outcome = ManageOutcome::Close;
         }
     }
-    outcome
+    actions.outcome
 }
 
 fn template_row(
     ui: &mut Ui,
     entry: &TemplateEntry,
+    for_new_charts: bool,
     manage: &mut Manage,
-    apply: &mut Option<TemplateEntry>,
-    duplicate: &mut Option<TemplateId>,
-    rename_commit: &mut Option<Renaming>,
-    outcome: &mut ManageOutcome,
+    actions: &mut RowActions,
 ) {
     let width = ui.available_width();
     kit::card_frame(false)
@@ -802,7 +819,7 @@ fn template_row(
                     if kit::push_button(ui, None, "Save", valid).clicked()
                         || (valid && ui.input(|input| input.key_pressed(egui::Key::Enter)))
                     {
-                        *rename_commit = Some(candidate.clone());
+                        actions.rename_commit = Some(candidate.clone());
                     }
                     cancelled = kit::push_button(ui, None, "Cancel", true).clicked();
                 });
@@ -813,7 +830,7 @@ fn template_row(
             }
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.set_max_width((ui.available_width() - 190.0).max(120.0));
+                    ui.set_max_width((ui.available_width() - 220.0).max(120.0));
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
@@ -828,6 +845,9 @@ fn template_row(
                         );
                         if entry.built_in {
                             kit::status_badge(ui, "Built-in", kit::Tone::Neutral);
+                        }
+                        if for_new_charts {
+                            kit::status_badge(ui, "New charts", kit::Tone::Neutral);
                         }
                     });
                     let detail = match (&entry.description, entry.built_in) {
@@ -863,10 +883,10 @@ fn template_row(
                     ui.spacing_mut().item_spacing.x = 2.0;
                     let saved = !entry.built_in;
                     if icon_button(ui, Icon::Trash, "Delete template", saved) {
-                        *outcome = ManageOutcome::Open(Dialog::Delete(entry.id));
+                        actions.outcome = ManageOutcome::Open(Dialog::Delete(entry.id));
                     }
                     if icon_button(ui, Icon::Download, "Update from this chart", saved) {
-                        *outcome = ManageOutcome::Open(Dialog::Update(entry.id));
+                        actions.outcome = ManageOutcome::Open(Dialog::Update(entry.id));
                     }
                     if icon_button(ui, Icon::Pencil, "Rename template", saved) {
                         manage.renaming = Some(Renaming {
@@ -877,10 +897,21 @@ fn template_row(
                         });
                     }
                     if icon_button(ui, Icon::CopyDoc, "Duplicate template", true) {
-                        *duplicate = Some(entry.id);
+                        actions.duplicate = Some(entry.id);
                     }
                     if icon_button(ui, Icon::Check, "Apply to this chart", true) {
-                        *apply = Some(entry.clone());
+                        actions.apply = Some(entry.clone());
+                    }
+                    let (icon, tooltip) = if for_new_charts {
+                        (
+                            Icon::StarFill,
+                            "New charts start with this template. Click to stop.",
+                        )
+                    } else {
+                        (Icon::Star, "Start new charts with this template")
+                    };
+                    if icon_button(ui, icon, tooltip, true) {
+                        actions.new_charts = Some((!for_new_charts).then_some(entry.id));
                     }
                 });
             });

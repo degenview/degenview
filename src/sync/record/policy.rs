@@ -262,7 +262,8 @@ pub fn setting_policy(key: &str) -> SettingPolicy {
         | "snapshot.prefs"
         | "editor.prefs"
         | "indicatorPicker.favorites"
-        | "timeframePicker.pinned" => SettingPolicy::Portable(Merge::LastWriterWins),
+        | "timeframePicker.pinned"
+        | "chart.defaultTemplate" => SettingPolicy::Portable(Merge::LastWriterWins),
         "watchlist.flags" => SettingPolicy::Portable(Merge::ThreeWay),
         _ => SettingPolicy::Local,
     }
