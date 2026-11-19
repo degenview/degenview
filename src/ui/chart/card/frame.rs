@@ -396,7 +396,10 @@ impl ChartCard {
             let mut subtitle = self
                 .timeframe
                 .map_or_else(String::new, |timeframe| format!("{} · ", timeframe.label()));
-            subtitle.push_str(data.source.display_name());
+            subtitle.push_str(self.timeframe.map_or_else(
+                || data.source.display_name(),
+                |timeframe| data.source.chart_feed_label(timeframe),
+            ));
             if decor.replay_active {
                 subtitle.push_str(" · Replay");
             }
