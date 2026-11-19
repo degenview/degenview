@@ -218,12 +218,11 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   a global of that name the request gets no slice. A statement that makes a `request.*` call is never
   in a slice (nesting; its names keep the chart's value via `security_globals`), and requests inside
   functions are not sliced.
-- **Quirks kept from the name-keyed walk** (changing one changes which statements a slice holds, so
-  do it deliberately): a block that redeclares a name drops the sources it added to the outer local
-  of that name, even before the redeclaration; a global that a callee fills counts as a parameter of
-  the calling function that has the same name; global alias groups ignore the blocks inside expressions
-  (`x = if …`), and two globals copied from the same builtin (`a = close`, `b = close`) join one
-  group.
+- **A redeclaring block.** A block (or loop) that declares a variable of the same name as an outer
+  local drops the sources it added to that local, even before the declaration: the runtime's flat
+  variable table puts the outer value back when the statement ends, so the slicer follows it
+  (`Walker::redeclared`). Only script globals (`Binding::Global` on both sides of a copy) join an
+  alias group.
 - **Alerts.** `alert()` does nothing while a request runs (`security_depth > 0`: a slice, or a
   function the expression calls): only the chart's own run fires alerts, and the once-per-bar ledger
   stays its own.
