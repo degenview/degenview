@@ -49,7 +49,7 @@ use crate::pine::syntax::ast::{Argument, DeclarationMode, Expression, Parameter,
 use crate::pine::syntax::traversal;
 
 /// The request functions whose third argument is the expression.
-const REQUESTS: [&str; 2] = ["request.security", "request.security_lower_tf"];
+const SLICED_REQUESTS: [&str; 2] = ["request.security", "request.security_lower_tf"];
 /// Their parameters in order, the first three being `symbol`, `timeframe` and `expression`.
 const EXPRESSION_POSITION: usize = 2;
 /// The namespaces whose functions take the collection as their first argument.
@@ -156,6 +156,17 @@ pub(crate) type ExpressionKey = (usize, usize);
 
 pub(crate) type Slices = HashMap<ExpressionKey, Arc<Vec<Statement>>>;
 
+/// Whether `name` is a request that evaluates an expression on another series, and so gets a slice.
+fn is_sliced_request(name: &str) -> bool {
+    SLICED_REQUESTS.contains(&name)
+}
+
+/// Whether `name` is any `request.*` function. A statement that calls one is never part of a slice:
+/// run inside another request it would nest requests.
+fn makes_request(name: &str) -> bool {
+    name.starts_with("request.")
+}
+
 pub(crate) fn key(expression: &Expression) -> ExpressionKey {
     let range = expression.range();
     (range.start.offset, range.end.offset)
@@ -165,6 +176,9 @@ pub(crate) fn key(expression: &Expression) -> ExpressionKey {
 /// (inside one, a parameter may share a name with a global), for the requests that read a name the
 /// script declares at its top level.
 pub(crate) fn build(statements: &[Statement]) -> Slices {
+    if !has_sliced_request(statements) {
+        return Slices::new();
+    }
     let script = Script::new(statements);
     if script.declared.is_empty() {
         return Slices::new();
@@ -197,6 +211,20 @@ pub(crate) fn build(statements: &[Statement]) -> Slices {
     slices
 }
 
+/// Whether a statement outside the functions calls a request that gets a slice.
+fn has_sliced_request(statements: &[Statement]) -> bool {
+    let mut found = false;
+    for statement in statements {
+        if matches!(statement, Statement::Function { .. }) {
+            continue;
+        }
+        traversal::for_each_call(std::slice::from_ref(statement), &mut |name, _| {
+            found |= is_sliced_request(name);
+        });
+    }
+    found
+}
+
 /// What the script declares at its top level, as `build` needs it.
 struct Script<'a> {
     declared: HashSet<String>,
@@ -211,7 +239,7 @@ struct Script<'a> {
 impl<'a> Script<'a> {
     fn new(statements: &'a [Statement]) -> Self {
         Self {
-            declared: declared_names(statements),
+            declared: traversal::top_level_declarations(statements),
             references: reference_names(statements),
             aliases: aliases(statements),
             persistent: persistent_names(statements),
@@ -419,7 +447,7 @@ impl Facts {
             facts.reads_local = !all.names.is_disjoint(&locals);
         }
         traversal::for_each_call(std::slice::from_ref(statement), &mut |name, _| {
-            facts.requests |= name.starts_with("request.");
+            facts.requests |= makes_request(name);
         });
         facts
     }
@@ -683,21 +711,6 @@ fn declared_by_loop(statement: &Statement, names: &mut HashSet<String>) {
     }
 }
 
-/// The names a script declares at its top level: variables and tuple elements.
-fn declared_names(statements: &[Statement]) -> HashSet<String> {
-    let mut names = HashSet::new();
-    for statement in statements {
-        match statement {
-            Statement::Declaration { name, .. } => {
-                names.insert(name.clone());
-            }
-            Statement::TupleDeclaration { names: tuple, .. } => names.extend(tuple.iter().cloned()),
-            _ => {}
-        }
-    }
-    names
-}
-
 /// The names a script declares at its top level with `var` or `varip`.
 fn persistent_names(statements: &[Statement]) -> HashSet<String> {
     statements
@@ -738,7 +751,7 @@ fn returns_reference(callee: &str) -> bool {
 /// The `expression` argument of a request call, found the way the call binds its arguments: by
 /// name, or as the third argument that has none.
 fn expression_argument<'a>(name: &str, arguments: &'a [Argument]) -> Option<&'a Expression> {
-    if !REQUESTS.contains(&name) {
+    if !is_sliced_request(name) {
         return None;
     }
     let mut position = 0;

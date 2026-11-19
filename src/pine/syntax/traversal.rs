@@ -116,6 +116,22 @@ pub fn assigned_names(statements: &[Statement]) -> std::collections::HashSet<Str
     names
 }
 
+/// The names `statements` declare at their own level: a variable and the elements of a tuple
+/// declaration. A block's declarations are its own and are not included.
+pub fn top_level_declarations(statements: &[Statement]) -> std::collections::HashSet<String> {
+    let mut names = std::collections::HashSet::new();
+    for statement in statements {
+        match statement {
+            Statement::Declaration { name, .. } => {
+                names.insert(name.clone());
+            }
+            Statement::TupleDeclaration { names: tuple, .. } => names.extend(tuple.iter().cloned()),
+            _ => {}
+        }
+    }
+    names
+}
+
 /// Visits every call whose callee is a name, at any depth: builtins, the script's functions, and
 /// `a.b(x)` on a plain variable path, which is a [`Call`](Expression::Call) named `"a.b"`. A method
 /// called on anything else (`f().b(x)`) is a [`MethodCall`](Expression::MethodCall) and is not

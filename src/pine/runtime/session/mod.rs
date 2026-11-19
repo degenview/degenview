@@ -145,8 +145,8 @@ pub struct Session {
     /// The chart variables as of a skipped bar, for the one replayed evaluation that reads them
     /// instead of the current bar's.
     pub(crate) replay_globals: Option<FastMap<String, RuntimeValue>>,
-    /// Whether `chart_bars` is kept.
-    tracks_chart_bars: bool,
+    /// Whether `series_bars` is kept.
+    keeps_series_bars: bool,
     pub bar_seconds: f64,
     /// The chart's own bar length while a `request.*()` call evaluates on another timeframe, which is
     /// when `bar_seconds` is that timeframe's.
