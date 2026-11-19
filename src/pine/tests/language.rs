@@ -774,6 +774,31 @@ fn a_block_left_early_still_puts_the_outer_value_back() {
 }
 
 #[test]
+fn a_loop_local_keeps_the_value_of_its_last_iteration_in_its_history() {
+    // `sample` hides nothing: it is a name of the loop body alone, so the slot the first
+    // iteration leaves is not an outer value for the second to save and put back. On the last bar
+    // (2), `sample[1]` is the previous bar's last value, 1 * 10 + 2.
+    let session = run(
+        "f() =>\n    out = 0.0\n    for i = 0 to 2\n        sample = bar_index * 10 + i\n        out := sample[1]\n    out\n\
+         r = f()",
+        3,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(12));
+}
+
+#[test]
+fn a_declaration_that_hides_an_outer_name_takes_it_after_its_initializer_ran() {
+    // The initializer runs before the block's own `x` exists: its `x := 5` is the outer one's.
+    let session = run(
+        "x = 1\n\
+         if bar_index >= 0\n    x = if bar_index >= 0\n        x := 5\n        9\n    else\n        8\n\
+         y = x",
+        2,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Int(5));
+}
+
+#[test]
 fn a_function_reads_the_global_its_branch_declares_again_outside_that_branch() {
     // `level = 1.0` is a local of its `if` alone: after the branch, taken or not, and above a
     // declaration of the function's own, `level` is the global.

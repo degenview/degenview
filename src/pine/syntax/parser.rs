@@ -604,6 +604,7 @@ impl Parser {
             names,
             value,
             range,
+            shadows: Vec::new(),
         })
     }
 
@@ -1105,6 +1106,7 @@ impl Parser {
             mode,
             value,
             range,
+            shadows: None,
         })
     }
 

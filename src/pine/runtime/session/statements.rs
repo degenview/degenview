@@ -7,112 +7,58 @@ use crate::pine::runtime::operators;
 use crate::pine::runtime::types::{Flow, RuntimeContext};
 use crate::pine::runtime::value::{RefKind, RuntimeValue};
 use crate::pine::syntax::ast::{
-    AssignmentOperator, BinaryOperator, DeclarationMode, Expression, Statement, SwitchArm,
+    AssignmentOperator, BinaryOperator, DeclarationMode, Expression, ShadowId, Statement, SwitchArm,
 };
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
 
-/// How many shadowed names a block execution keeps without touching the heap: a loop counter and
-/// the few names its body declares.
-const SHADOWED_INLINE: usize = 4;
+/// The values a loop's counters held outside it, to put back when it ends: an index and a value at
+/// most. The names borrow from the statement, so saving one builds no `String`.
+#[derive(Default)]
+struct Counters<'s>([Option<(&'s str, Option<RuntimeValue>)>; 2]);
 
-/// The values the names a block execution declared held outside it, to put back when the block ends.
-/// The names borrow from the statements, so saving one builds no `String`, and a block that
-/// shadows a few names allocates nothing.
-struct Shadowed<'s> {
-    inline: [Option<(&'s str, Option<RuntimeValue>)>; SHADOWED_INLINE],
-    used: usize,
-    overflow: Vec<(&'s str, Option<RuntimeValue>)>,
-}
-
-impl Default for Shadowed<'_> {
-    fn default() -> Self {
-        Self {
-            inline: [const { None }; SHADOWED_INLINE],
-            used: 0,
-            overflow: Vec::new(),
-        }
-    }
-}
-
-impl<'s> Shadowed<'s> {
-    fn contains(&self, name: &str) -> bool {
-        let saved = self.inline.iter().flatten().map(|(saved, _)| saved);
-        saved
-            .chain(self.overflow.iter().map(|(saved, _)| saved))
-            .any(|saved| *saved == name)
-    }
-
+impl<'s> Counters<'s> {
     /// `value` is what `name` holds now; None for a builtin's name, which has no variable.
     fn push(&mut self, name: &'s str, value: Option<RuntimeValue>) {
-        if self.used < SHADOWED_INLINE {
-            self.inline[self.used] = Some((name, value));
-            self.used += 1;
-        } else {
-            self.overflow.push((name, value));
+        if let Some(slot) = self.0.iter_mut().find(|slot| slot.is_none()) {
+            *slot = Some((name, value));
         }
     }
 
-    /// Puts every name back, in the order it was saved.
     fn restore(self, variables: &mut FastMap<String, RuntimeValue>) {
-        let saved = self.inline.into_iter().flatten().chain(self.overflow);
-        for (name, value) in saved {
-            match (value, variables.get_mut(name)) {
-                (Some(value), Some(slot)) => *slot = value,
-                (Some(value), None) => {
-                    variables.insert(name.to_owned(), value);
-                }
-                (None, _) => {
-                    variables.remove(name);
-                }
-            }
+        for (name, value) in self.0.into_iter().flatten() {
+            put_back(variables, name, value);
+        }
+    }
+}
+
+/// Gives `name` the value it held outside a block, or removes it (a builtin's name has no variable).
+fn put_back(
+    variables: &mut FastMap<String, RuntimeValue>,
+    name: &str,
+    value: Option<RuntimeValue>,
+) {
+    match (value, variables.get_mut(name)) {
+        (Some(value), Some(slot)) => *slot = value,
+        (Some(value), None) => {
+            variables.insert(name.to_owned(), value);
+        }
+        (None, _) => {
+            variables.remove(name);
         }
     }
 }
 
 impl Session {
-    /// Runs the statements of the script's top level or of a function body: their declarations are
-    /// the script's globals or the call's locals (`invoke_with`'s `saved`), not a block's.
+    /// Runs a list of statements: the script's top level, a function body or a block.
     pub(crate) fn run(
         &mut self,
         statements: &[Statement],
         context: &mut RuntimeContext,
     ) -> Result<(Flow, RuntimeValue), Diagnostic> {
-        self.run_statements::<false>(statements, context, &mut None)
-    }
-
-    /// Runs one execution of a block (a branch, an arm, a loop body, a `once` body). A name an
-    /// ordinary declaration in it gives a value of its own hides the outer variable of that name
-    /// only from the declaration to the end of this execution: the variable table is flat, so the
-    /// outer value, as it stood at the declaration, is put back when the block ends, however it
-    /// ends. A `:=` above the declaration, or in another branch, is the outer variable's and stays.
-    fn run_block(
-        &mut self,
-        statements: &[Statement],
-        context: &mut RuntimeContext,
-    ) -> Result<(Flow, RuntimeValue), Diagnostic> {
-        let mut shadowed = None;
-        let result = self.run_statements::<true>(statements, context, &mut shadowed);
-        if let Some(shadowed) = shadowed {
-            shadowed.restore(&mut self.working.variables);
-        }
-        result
-    }
-
-    /// The statement loop. `shadowed` collects the names a block's declarations hide (`BLOCK`).
-    #[inline(always)]
-    fn run_statements<'s, const BLOCK: bool>(
-        &mut self,
-        statements: &'s [Statement],
-        context: &mut RuntimeContext,
-        shadowed: &mut Option<Shadowed<'s>>,
-    ) -> Result<(Flow, RuntimeValue), Diagnostic> {
         let mut last = RuntimeValue::Void;
         for statement in statements {
             self.budget()
                 .map_err(|error| self.hook_failed(statement, context, error, false))?;
-            if BLOCK {
-                self.shadow_declared(statement, shadowed);
-            }
             let hooked = self.hooks.is_some();
             if hooked {
                 self.hook_before(statement, context)?;
@@ -133,35 +79,45 @@ impl Session {
         Ok((Flow::Normal, last))
     }
 
-    /// Saves what the names `statement` declares hold now, if it is an ordinary declaration of a
-    /// block and they are not saved yet in this execution of it.
-    fn shadow_declared<'s>(&self, statement: &'s Statement, shadowed: &mut Option<Shadowed<'s>>) {
-        match statement {
-            Statement::Declaration {
-                name,
-                mode: DeclarationMode::Ordinary,
-                ..
-            } => self.shadow(name, shadowed),
-            Statement::TupleDeclaration { names, .. } => {
-                for name in names {
-                    self.shadow(name, shadowed);
-                }
-            }
-            _ => {}
+    /// Runs one execution of a block (a branch, an arm, a loop body, a `once` body). A declaration
+    /// in it that hides an outer name (`Declaration::shadows`) saves the outer value as it stands
+    /// when the declaration is about to give the name a value of its own, and the block puts the
+    /// saved values back, innermost first, when it ends, however it ends. The variable table is
+    /// flat, so this is what makes the name the outer one again outside the block; a `:=` above the
+    /// declaration, in the declaration's own value or in another branch is the outer variable's
+    /// and stays. Declarations that hide nothing save nothing.
+    fn run_block(
+        &mut self,
+        statements: &[Statement],
+        context: &mut RuntimeContext,
+    ) -> Result<(Flow, RuntimeValue), Diagnostic> {
+        let mark = self.shadow_stack.len();
+        let result = self.run(statements, context);
+        if self.shadow_stack.len() > mark {
+            self.unshadow(mark);
         }
+        result
     }
 
-    /// Saves what `name` holds now, for those that already exist outside the block. A name that is a
-    /// builtin (`low`) has no variable outside the block, so it is removed after.
-    fn shadow<'s>(&self, name: &'s str, shadowed: &mut Option<Shadowed<'s>>) {
-        let value = match self.working.variables.get(name) {
+    /// Saves what the name `id` holds now, for the declaration about to hide it. A name with no
+    /// variable yet saves nothing, except a builtin's (`low`), which is removed after.
+    fn shadow(&mut self, id: ShadowId) {
+        let name = &self.shadow_names[id as usize];
+        let value = match self.working.variables.get(name.as_str()) {
             Some(value) => Some(value.clone()),
-            None if self.shadowing_builtins.iter().any(|shadow| shadow == name) => None,
+            None if self.shadowing_builtins.contains(name) => None,
             None => return,
         };
-        let shadowed = shadowed.get_or_insert_with(Shadowed::default);
-        if !shadowed.contains(name) {
-            shadowed.push(name, value);
+        self.shadow_stack.push((id, value));
+    }
+
+    /// Puts back what the blocks since `mark` saved.
+    fn unshadow(&mut self, mark: usize) {
+        while self.shadow_stack.len() > mark {
+            if let Some((id, value)) = self.shadow_stack.pop() {
+                let name = &self.shadow_names[id as usize];
+                put_back(&mut self.working.variables, name, value);
+            }
         }
     }
 
@@ -171,22 +127,32 @@ impl Session {
         context: &mut RuntimeContext,
     ) -> Result<Step, Diagnostic> {
         // A loop's counters are the loop's own: set before its body runs, put back after it.
-        let mut shadowed = None;
+        let mut counters = Counters::default();
         match statement {
-            Statement::ForRange { variable, .. } => self.shadow(variable, &mut shadowed),
+            Statement::ForRange { variable, .. } => self.save_counter(variable, &mut counters),
             Statement::ForIn { index, value, .. } => {
                 if let Some(index) = index.as_deref() {
-                    self.shadow(index, &mut shadowed);
+                    self.save_counter(index, &mut counters);
                 }
-                self.shadow(value, &mut shadowed);
+                self.save_counter(value, &mut counters);
             }
             _ => return self.run_statement_unscoped(statement, context),
         }
         let result = self.run_statement_unscoped(statement, context);
-        if let Some(shadowed) = shadowed {
-            shadowed.restore(&mut self.working.variables);
-        }
+        counters.restore(&mut self.working.variables);
         result
+    }
+
+    /// Saves what a loop counter holds outside the loop, if it holds anything; a builtin's name has
+    /// no variable, so it is removed after.
+    fn save_counter<'s>(&self, name: &'s str, counters: &mut Counters<'s>) {
+        match self.working.variables.get(name) {
+            Some(value) => counters.push(name, Some(value.clone())),
+            None if self.shadowing_builtins.iter().any(|shadow| shadow == name) => {
+                counters.push(name, None);
+            }
+            None => {}
+        }
     }
 
     fn run_statement_unscoped(
@@ -196,8 +162,12 @@ impl Session {
     ) -> Result<Step, Diagnostic> {
         match statement {
             Statement::Declaration {
-                name, mode, value, ..
-            } => self.run_declaration(name, *mode, value, context),
+                name,
+                mode,
+                value,
+                shadows,
+                ..
+            } => self.run_declaration(name, *mode, value, *shadows, context),
             Statement::Assignment {
                 name, op, value, ..
             } => self.run_assignment(name, *op, value, context),
@@ -236,9 +206,12 @@ impl Session {
                 arms,
                 range,
             } => self.run_switch(subject.as_ref(), arms, *range, context),
-            Statement::TupleDeclaration { names, value, .. } => {
-                self.run_tuple_declaration(names, value, context)
-            }
+            Statement::TupleDeclaration {
+                names,
+                value,
+                shadows,
+                ..
+            } => self.run_tuple_declaration(names, shadows, value, context),
             Statement::LoopControl(control, _) => Ok(Step {
                 flow: if *control == crate::pine::syntax::ast::LoopControl::Break {
                     Flow::Break
@@ -267,6 +240,7 @@ impl Session {
         name: &str,
         mode: DeclarationMode,
         expression: &Expression,
+        shadows: Option<ShadowId>,
         context: &mut RuntimeContext,
     ) -> Result<Step, Diagnostic> {
         if mode == DeclarationMode::Variable
@@ -293,6 +267,11 @@ impl Session {
             return Ok(Step::normal(value));
         }
         let value = self.eval(expression, context)?;
+        // The value is done: what the name holds now is the outer variable, as the initializer left
+        // it.
+        if let Some(id) = shadows {
+            self.shadow(id);
+        }
         self.set_variable(name, value.clone());
         context.record(mode, name);
         Ok(Step::normal(value))
@@ -365,6 +344,7 @@ impl Session {
     fn run_tuple_declaration(
         &mut self,
         names: &[String],
+        shadows: &[Option<ShadowId>],
         expression: &Expression,
         context: &mut RuntimeContext,
     ) -> Result<Step, Diagnostic> {
@@ -375,6 +355,9 @@ impl Session {
         };
         for (i, name) in names.iter().enumerate() {
             if name != "_" {
+                if let Some(Some(id)) = shadows.get(i) {
+                    self.shadow(*id);
+                }
                 self.set_variable(name, items.get(i).cloned().unwrap_or(RuntimeValue::Na));
             }
         }

@@ -14,6 +14,7 @@ use crate::pine::runtime::support::{LibraryLinkage, SecurityDataProvider};
 use crate::pine::runtime::types::RuntimeFunction;
 use crate::pine::strategy::broker::Broker;
 use crate::pine::syntax::ast::{Expression, Statement};
+use crate::pine::syntax::scopes::ShadowNames;
 
 impl Session {
     #[allow(clippy::too_many_arguments)]
@@ -28,6 +29,8 @@ impl Session {
     ) -> Self {
         let mut program = program;
         crate::pine::runtime::call_binding::bind(&mut program);
+        let mut shadow_names = ShadowNames::default();
+        mark_shadowing(&mut program, &mut shadow_names);
         let supplied_mintick = mintick.filter(|m| *m > 0.0 && m.is_finite());
         let drawing_limits = drawings::DrawingLimits {
             max_lines: program.declaration.max_lines_count,
@@ -177,6 +180,8 @@ impl Session {
             theme: crate::pine::compiler::program::ChartTheme::DARK,
             security_depth: 0,
             shadowing_builtins,
+            shadow_names: shadow_names.into_names(),
+            shadow_stack: Vec::new(),
             history_builtins,
             #[cfg(any(test, feature = "corpus"))]
             ignore_routes: false,
@@ -225,6 +230,21 @@ impl Session {
             // The first bar executes as bar 0.
             bar_index: -1,
             ..RuntimeState::default()
+        }
+    }
+}
+
+/// Flags the declarations of the program and of the libraries it imports that hide an outer name
+/// (`Declaration::shadows`), so that running a block saves only those.
+fn mark_shadowing(program: &mut CompiledProgram, names: &mut ShadowNames) {
+    crate::pine::syntax::scopes::mark_shadowing(
+        &mut program.statements,
+        &crate::pine::compiler::symbol_catalog::is_variable,
+        names,
+    );
+    for import in &mut program.imports {
+        if let Some(library) = &mut import.library {
+            mark_shadowing(library, names);
         }
     }
 }

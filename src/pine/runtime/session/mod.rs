@@ -112,6 +112,11 @@ pub struct Session {
     /// Builtin variable names (`low`) the script declares itself: removed at the start of each bar so
     /// a read before the declaration still means the builtin.
     shadowing_builtins: Vec<String>,
+    /// The names a block's declaration may hide (`Declaration::shadows` indexes them).
+    shadow_names: Vec<String>,
+    /// The outer values the running blocks' shadowing declarations saved, innermost last: each
+    /// block puts back the ones above the mark it began at (`run_block`).
+    shadow_stack: Vec<(crate::pine::syntax::ast::ShadowId, Option<RuntimeValue>)>,
     /// Builtin variables the program reads a history of (`hlcc4[1]`, `ta.tr[1]`,
     /// `strategy.closedtrades[1]`) that `commit_histories` does not record on its own. Each is read at
     /// the end of every confirmed bar and kept like a variable. Empty for most scripts.
