@@ -24,6 +24,13 @@ into copies of the manifest and metainfo, and lints them with `desktop-file-vali
 `ubuntu-latest` and aarch64 natively on GitHub's free `ubuntu-24.04-arm` runner (the container
 image is multi-arch; no emulation). `cargo-sources.json` is the same for both and is never committed.
 
+The build step runs up to three times (`build-1` to `build-3`, pausing 30 then 60 seconds and clearing
+`repo`, `flatpak_app` and `.flatpak-builder` between attempts). The Flathub container sometimes fails
+before it builds anything (`Invalid cross-device link` while updating the SDK, then an `xvfb-run`
+segfault), and Actions has no step retry, so the step is written out three times. **Not verified:**
+whether a retry on the same runner clears that particular error; if it does not, retrying needs to
+start a fresh runner (re-run the failed job).
+
 The check is not triggered by dependency changes: the build has no cache and takes 10-20 minutes,
 and a crate that builds on the host nearly always builds in the sandbox. The weekly run on `main`
 (Mondays) and the release build catch the rare one that does not. Dispatch `Flatpak check` by hand
