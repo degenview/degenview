@@ -1680,6 +1680,31 @@ mod tests {
     }
 
     #[test]
+    fn a_global_a_callee_fills_is_not_the_callers_parameter_of_that_name() {
+        // `fill` runs with its own lexical scope: it fills the global `samples`, not the `samples`
+        // that `f` is handed (`other`). The chart does the same, so the request must too.
+        let script = "var samples = array.new_float()\nvar other = array.new_float()\nfill() =>\n    array.push(samples, close)\n    1.0\nf(samples) =>\n    fill()\nf(other)\n";
+        assert_eq!(
+            last_plotted(&format!("{script}x = array.size(samples)")),
+            Some(3.0),
+            "on the chart"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            )),
+            Some(3.0)
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(other))"
+            )),
+            Some(0.0),
+            "`other` is never filled"
+        );
+    }
+
+    #[test]
     fn a_write_in_the_block_of_the_request_before_it_follows_the_series() {
         assert_eq!(
             last_plotted(

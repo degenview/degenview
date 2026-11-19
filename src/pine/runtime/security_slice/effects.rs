@@ -101,27 +101,17 @@ impl<'a> Functions<'a> {
                     let mut changed = self.mutated[id].clone();
                     let mut globals = self.global_writes[id].clone();
                     for effect in walker.effects {
-                        let Effect::Mutated(origin) = effect else {
-                            continue;
-                        };
-                        match origin {
-                            Origin::Parameter(position) => {
+                        match effect {
+                            Effect::Mutated(Origin::Parameter(position)) => {
                                 changed.insert(position);
                             }
-                            // A global's name that a parameter is also called is that parameter:
-                            // the variable table is keyed by name.
-                            Origin::Name(name) => {
-                                let mut handed_in = false;
-                                for (position, parameter) in parameters.iter().enumerate() {
-                                    if parameter.name == name {
-                                        changed.insert(position);
-                                        handed_in = true;
-                                    }
-                                }
-                                if !handed_in {
-                                    globals.insert(name);
-                                }
+                            // A name in the body that is a parameter is `Origin::Parameter`; this
+                            // one is a global a callee fills. The callee runs with its own lexical
+                            // scope, so it is not the parameter of the same name, if any.
+                            Effect::Mutated(Origin::Name(name)) => {
+                                globals.insert(name);
                             }
+                            Effect::Assigned(_) => {}
                         }
                     }
                     (changed, globals)
