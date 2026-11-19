@@ -1,10 +1,13 @@
-//! The liquidations panel of a tab: whether it shows, its filter, and drawing it at the right of
-//! the window. The sockets are the app's (`host::liquidation`), shared by every tab; a panel that
-//! is not drawn stops renewing their lease.
+//! The market-flow panel of a tab: whether it shows, which mode, its filter, and drawing it at the
+//! right of the window. The sockets are the app's (`host::liquidation`, `host::taker_flow`),
+//! shared by every tab; only the mode on show asks for its feed, and a panel that is not drawn
+//! stops renewing the lease.
 
 use super::ChartWorkspace;
 use crate::host::liquidation::LiquidationHost;
-use crate::ui::liquidation::{self, Action, LiquidationsState};
+use crate::host::taker_flow::TakerFlowHost;
+use crate::model::taker_flow::asset_of;
+use crate::ui::liquidation::{self, Action, Body, FlowBody, LiquidationsState, Mode};
 use eframe::egui;
 
 /// What a tab holds of the panel. A tab always starts with it closed, like the Paper panel.
@@ -12,7 +15,7 @@ use eframe::egui;
 pub(super) struct LiquidationsPane {
     visible: bool,
     view: LiquidationsState,
-    host: Option<LiquidationHost>,
+    hosts: Option<(LiquidationHost, TakerFlowHost)>,
 }
 
 impl LiquidationsPane {
@@ -26,22 +29,49 @@ impl LiquidationsPane {
 }
 
 impl ChartWorkspace {
-    /// Gives the tab the feed every window shares. Cheap to call every frame.
-    pub fn set_liquidations(&mut self, host: &LiquidationHost) {
-        if self.liquidations.host.is_none() {
-            self.liquidations.host = Some(host.clone());
+    /// Gives the tab the feeds every window shares. Cheap to call every frame.
+    pub fn set_liquidations(&mut self, liquidations: &LiquidationHost, taker_flow: &TakerFlowHost) {
+        if self.liquidations.hosts.is_none() {
+            self.liquidations.hosts = Some((liquidations.clone(), taker_flow.clone()));
         }
+    }
+
+    /// The asset the focused chart's market is of, when it is a crypto one.
+    fn focused_flow_asset(&self) -> Option<String> {
+        let chart = self.focused_market_chart()?;
+        asset_of(chart.source, &chart.symbol)
     }
 
     /// The panel at the right while it is shown.
     pub(super) fn show_liquidations_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        if !self.liquidations.visible {
+            return;
+        }
+        let asset = (self.liquidations.view.mode == Mode::TakerFlow)
+            .then(|| self.focused_flow_asset())
+            .flatten();
+        let id = egui::Id::new(("liquidations", self.id));
         let pane = &mut self.liquidations;
-        let Some(host) = pane.host.as_ref().filter(|_| pane.visible) else {
+        let Some((liquidations, taker_flow)) = pane.hosts.as_ref() else {
             return;
         };
-        let snapshot = host.watch(ctx, pane.view.minimum);
+        // Only the mode on show keeps its sockets open.
+        let (liquidated, flow) = match pane.view.mode {
+            Mode::Liquidations => (Some(liquidations.watch(ctx, pane.view.minimum)), None),
+            Mode::TakerFlow => (
+                None,
+                asset.as_deref().map(|asset| taker_flow.watch(ctx, asset)),
+            ),
+        };
+        let body = match (&liquidated, pane.view.mode) {
+            (Some(snapshot), _) => Body::Liquidations(snapshot),
+            (None, _) => Body::TakerFlow(FlowBody {
+                asset: asset.as_deref(),
+                snapshot: flow.as_deref(),
+            }),
+        };
         let mut closed = false;
-        egui::Panel::right(egui::Id::new(("liquidations", self.id)))
+        egui::Panel::right(id)
             .resizable(true)
             .default_size(340.0)
             .min_size(280.0)
@@ -52,7 +82,7 @@ impl ChartWorkspace {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ui, |ui| {
-                closed = liquidation::show(ui, &mut pane.view, &snapshot) == Some(Action::Close);
+                closed = liquidation::show(ui, &mut pane.view, &body) == Some(Action::Close);
             });
         if closed {
             pane.visible = false;
@@ -72,5 +102,10 @@ mod tests {
         assert!(pane.is_visible());
         pane.toggle();
         assert!(!pane.is_visible());
+    }
+
+    #[test]
+    fn the_panel_opens_on_the_liquidations() {
+        assert_eq!(LiquidationsPane::default().view.mode, Mode::Liquidations);
     }
 }

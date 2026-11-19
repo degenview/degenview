@@ -13,6 +13,7 @@ pub mod snapshot;
 pub mod sound;
 pub mod stream;
 pub mod system;
+pub mod taker_flow;
 pub mod update;
 pub mod watchlist_quotes;
 pub mod webhook;

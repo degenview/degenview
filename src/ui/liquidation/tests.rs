@@ -1,5 +1,6 @@
 use super::*;
 use crate::model::liquidation::{Exchange, Tape};
+use crate::model::taker_flow::{Flow, Taker, Trade, Venue};
 use crate::ui::render_tests::Screen;
 
 const NOW: i64 = 1_795_000_000_000;
@@ -59,17 +60,61 @@ fn longs_read_red_and_shorts_green() {
     assert_eq!(side_color(Side::Short), theme::UP);
 }
 
+/// Half an hour of trades on every venue, the buyers ahead early and the sellers late.
+fn busy_flow() -> taker_flow::Snapshot {
+    let mut flow = Flow::default();
+    for second in 0..1_800_i64 {
+        for (index, venue) in Venue::ALL.iter().enumerate() {
+            let leaning_up = second > 900;
+            let taker = if (second + index as i64) % 5 < if leaning_up { 3 } else { 2 } {
+                Taker::Buy
+            } else {
+                Taker::Sell
+            };
+            flow.push(
+                Trade {
+                    venue: *venue,
+                    notional: 40_000.0 + 25_000.0 * ((second * 7 + index as i64) % 11) as f64,
+                    taker,
+                    time_ms: NOW - second * 1_000,
+                },
+                NOW,
+            );
+        }
+    }
+    flow.snapshot(NOW)
+}
+
 #[test]
-fn the_panel_draws_empty_filtered_and_full() {
+fn the_panel_draws_every_state_of_both_modes() {
     let mut state = LiquidationsState::default();
     let full = busy_snapshot(MinSize::Any);
     let filtered = Snapshot {
         latest: Vec::new(),
         ..full.clone()
     };
-    for snapshot in [Snapshot::default(), filtered, full] {
+    let flow = busy_flow();
+    let quiet = taker_flow::Snapshot::default();
+    let bodies = [
+        Body::Liquidations(&Snapshot::default()),
+        Body::Liquidations(&filtered),
+        Body::Liquidations(&full),
+        Body::TakerFlow(FlowBody {
+            asset: None,
+            snapshot: None,
+        }),
+        Body::TakerFlow(FlowBody {
+            asset: Some("BTC"),
+            snapshot: Some(&quiet),
+        }),
+        Body::TakerFlow(FlowBody {
+            asset: Some("BTC"),
+            snapshot: Some(&flow),
+        }),
+    ];
+    for body in &bodies {
         egui::__run_test_ui(|ui| {
-            assert_eq!(show(ui, &mut state, &snapshot), None);
+            assert_eq!(show(ui, &mut state, body), None);
         });
     }
 }
@@ -79,39 +124,87 @@ fn the_panel_draws_empty_filtered_and_full() {
 fn gallery_of_the_panel() {
     use crate::ui::theme::{self, AppTheme, RestoreDefaultTheme};
     let _restore = RestoreDefaultTheme;
-    let cases = [
-        ("busy", busy_snapshot(MinSize::Any), MinSize::Any),
+    let busy = busy_snapshot(MinSize::Any);
+    let big = busy_snapshot(MinSize::HundredThousand);
+    let filtered = Snapshot {
+        latest: Vec::new(),
+        ..busy.clone()
+    };
+    let empty = Snapshot::default();
+    let flow = busy_flow();
+    let quiet = taker_flow::Snapshot::default();
+    let cases: Vec<(&str, Mode, MinSize, Body<'_>)> = vec![
+        (
+            "busy",
+            Mode::Liquidations,
+            MinSize::Any,
+            Body::Liquidations(&busy),
+        ),
         (
             "big",
-            busy_snapshot(MinSize::HundredThousand),
+            Mode::Liquidations,
             MinSize::HundredThousand,
+            Body::Liquidations(&big),
         ),
-        ("empty", Snapshot::default(), MinSize::Any),
+        (
+            "empty",
+            Mode::Liquidations,
+            MinSize::Any,
+            Body::Liquidations(&empty),
+        ),
         (
             "filtered",
-            Snapshot {
-                latest: Vec::new(),
-                ..busy_snapshot(MinSize::Any)
-            },
+            Mode::Liquidations,
             MinSize::Million,
+            Body::Liquidations(&filtered),
+        ),
+        (
+            "flow",
+            Mode::TakerFlow,
+            MinSize::Any,
+            Body::TakerFlow(FlowBody {
+                asset: Some("BTC"),
+                snapshot: Some(&flow),
+            }),
+        ),
+        (
+            "flow-waiting",
+            Mode::TakerFlow,
+            MinSize::Any,
+            Body::TakerFlow(FlowBody {
+                asset: Some("PEPE"),
+                snapshot: Some(&quiet),
+            }),
+        ),
+        (
+            "flow-none",
+            Mode::TakerFlow,
+            MinSize::Any,
+            Body::TakerFlow(FlowBody {
+                asset: None,
+                snapshot: None,
+            }),
         ),
     ];
     for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
-        for (name, snapshot, minimum) in &cases {
-            for (size_name, width) in [("default", 340.0), ("narrow", 260.0)] {
+        for (name, mode, minimum, body) in &cases {
+            for (size_name, width) in [("default", 340.0), ("narrow", 280.0)] {
                 let mut screen = Screen::new(vec2(width, 640.0));
                 theme::apply(&screen.ctx, app_theme);
-                let mut state = LiquidationsState { minimum: *minimum };
+                let mut state = LiquidationsState {
+                    mode: *mode,
+                    minimum: *minimum,
+                };
                 let mut last = None;
                 for _ in 0..4 {
                     last = Some(screen.run(Vec::new(), |ui| {
                         ui.painter()
                             .rect_filled(ui.max_rect(), 0.0, theme::chrome());
-                        show(ui, &mut state, snapshot);
+                        show(ui, &mut state, body);
                     }));
                 }
                 screen.save(
-                    &format!("liquidations-{name}-{size_name}-{theme_name}"),
+                    &format!("panel-{name}-{size_name}-{theme_name}"),
                     last.expect("a frame"),
                 );
             }

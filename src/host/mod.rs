@@ -10,5 +10,6 @@ pub mod settings;
 pub mod snapshot;
 pub mod sync;
 pub mod tab;
+pub mod taker_flow;
 pub mod trading;
 pub mod update;

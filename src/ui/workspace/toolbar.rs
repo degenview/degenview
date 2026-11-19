@@ -318,9 +318,9 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
         "Show Watchlists"
     };
     let liquidations_tip = if input.liquidations_visible {
-        "Hide Liquidations"
+        "Hide Market Flow"
     } else {
-        "Show Liquidations"
+        "Show Market Flow"
     };
     vec![
         Item::Button(layout),

@@ -72,6 +72,7 @@ pub(super) struct WindowEnv {
     pub(super) updates: UpdateHost,
     pub(super) snapshots: SnapshotHost,
     pub(super) liquidations: crate::host::liquidation::LiquidationHost,
+    pub(super) taker_flow: crate::host::taker_flow::TakerFlowHost,
     pub(super) mcp_questions: McpQuestions,
     /// The shared quotes the tab strip reads its prices from.
     pub(super) quote_book: WatchlistQuoteBook,
@@ -344,6 +345,7 @@ impl DegenViewApp {
             updates: self.updates.clone(),
             snapshots: self.snapshots.clone(),
             liquidations: self.liquidations.clone(),
+            taker_flow: self.taker_flow.clone(),
             mcp_questions: self.mcp.questions().clone(),
             quote_book: self.quote_book.clone(),
         };

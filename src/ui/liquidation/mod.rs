@@ -1,10 +1,14 @@
-//! The Liquidations panel: what the last minute, five minutes and hour of forced liquidations added
-//! up to, and a tape of the latest ones. Drawn from a [`Snapshot`]; nothing here opens a socket.
+//! The market-flow panel, in two modes: the Liquidations (what the last minute, five minutes and
+//! hour of forced liquidations added up to, and a tape of the latest ones) and the Taker flow of
+//! the focused chart's asset (who crossed the spread, by venue). Drawn from snapshots; nothing here
+//! opens a socket.
 
+mod flow;
 #[cfg(test)]
 mod tests;
 
 use crate::model::liquidation::{Liquidation, MinSize, Side, Snapshot, Totals};
+use crate::model::taker_flow;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::theme;
@@ -21,10 +25,33 @@ const BAR_HEIGHT: f32 = 4.0;
 /// From this size a liquidation's figure is set heavier: a big one is what the eye is after.
 const BIG: f64 = 100_000.0;
 
+/// What the panel shows.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Mode {
+    #[default]
+    Liquidations,
+    TakerFlow,
+}
+
 /// What the panel remembers between frames.
 #[derive(Default)]
 pub struct LiquidationsState {
+    pub mode: Mode,
     pub minimum: MinSize,
+}
+
+/// What the taker-flow mode draws: the asset it follows (none while the focused chart has no crypto
+/// market) and what its venues have traded.
+#[derive(Clone, Copy)]
+pub struct FlowBody<'a> {
+    pub asset: Option<&'a str>,
+    pub snapshot: Option<&'a taker_flow::Snapshot>,
+}
+
+/// The data for the mode on show.
+pub enum Body<'a> {
+    Liquidations(&'a Snapshot),
+    TakerFlow(FlowBody<'a>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,14 +90,22 @@ pub fn usd(value: f64) -> String {
     }
 }
 
-pub fn show(ui: &mut Ui, state: &mut LiquidationsState, snapshot: &Snapshot) -> Option<Action> {
+pub fn show(ui: &mut Ui, state: &mut LiquidationsState, body: &Body<'_>) -> Option<Action> {
     let mut action = None;
     header(ui, state, &mut action);
     kit::divider(ui);
     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+    match body {
+        Body::Liquidations(snapshot) => liquidations(ui, state, snapshot),
+        Body::TakerFlow(body) => flow::show(ui, body),
+    }
+    action
+}
+
+fn liquidations(ui: &mut Ui, state: &mut LiquidationsState, snapshot: &Snapshot) {
     totals(ui, snapshot);
     kit::divider(ui);
-    let footnote_height = footnote_height(ui);
+    let footnote_height = footnote_height(ui, LIQUIDATIONS_FOOTNOTE);
     let list_height = (ui.available_height() - footnote_height).max(60.0);
     let (list, _) = ui.allocate_exact_size(vec2(ui.available_width(), list_height), Sense::hover());
     let mut list_ui = ui.new_child(
@@ -78,9 +113,8 @@ pub fn show(ui: &mut Ui, state: &mut LiquidationsState, snapshot: &Snapshot) -> 
             .max_rect(list)
             .layout(Layout::top_down(Align::Min)),
     );
-    tape(&mut list_ui, snapshot);
-    footnote(ui);
-    action
+    tape(&mut list_ui, state, snapshot);
+    footnote(ui, LIQUIDATIONS_FOOTNOTE);
 }
 
 fn header(ui: &mut Ui, state: &mut LiquidationsState, action: &mut Option<Action>) {
@@ -91,12 +125,15 @@ fn header(ui: &mut Ui, state: &mut LiquidationsState, action: &mut Option<Action
         |ui| {
             ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
             ui.add_space(MARGIN);
-            ui.label(kit::text(
-                "Liquidations",
-                size::HEADLINE,
-                SEMIBOLD,
-                theme::text_primary(),
-            ));
+            kit::segmented(
+                ui,
+                egui::Id::new("market-flow-mode"),
+                &[
+                    (Mode::Liquidations, "Liquidations"),
+                    (Mode::TakerFlow, "Taker flow"),
+                ],
+                &mut state.mode,
+            );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(MARGIN - 2.0);
                 if icons::button(
@@ -104,22 +141,11 @@ fn header(ui: &mut Ui, state: &mut LiquidationsState, action: &mut Option<Action
                     Icon::Xmark,
                     26.0,
                     theme::text_secondary(),
-                    "Close liquidations",
+                    "Close market flow",
                 )
                 .clicked()
                 {
                     *action = Some(Action::Close);
-                }
-                let labels: Vec<String> = MinSize::ALL
-                    .iter()
-                    .map(|size| size.label().to_owned())
-                    .collect();
-                let selected = MinSize::ALL
-                    .iter()
-                    .position(|size| *size == state.minimum)
-                    .unwrap_or(0);
-                if let Some(chosen) = kit::menu_picker(ui, FILTER_WIDTH, &labels, selected, true) {
-                    state.minimum = MinSize::ALL[chosen];
                 }
             });
         },
@@ -227,8 +253,40 @@ fn legend(ui: &mut Ui) {
     });
 }
 
-fn tape(ui: &mut Ui, snapshot: &Snapshot) {
-    let area = ui.max_rect();
+/// The row above the tape: what it lists, and the smallest size it lists.
+fn filter_row(ui: &mut Ui, state: &mut LiquidationsState) {
+    let width = ui.available_width();
+    ui.allocate_ui_with_layout(
+        vec2(width, 36.0),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.add_space(MARGIN);
+            ui.label(kit::text(
+                "Latest",
+                size::CAPTION,
+                MEDIUM,
+                theme::text_secondary(),
+            ));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(MARGIN);
+                let labels: Vec<String> = MinSize::ALL
+                    .iter()
+                    .map(|size| size.label().to_owned())
+                    .collect();
+                let selected = MinSize::ALL
+                    .iter()
+                    .position(|size| *size == state.minimum)
+                    .unwrap_or(0);
+                if let Some(chosen) = kit::menu_picker(ui, FILTER_WIDTH, &labels, selected, true) {
+                    state.minimum = MinSize::ALL[chosen];
+                }
+            });
+        },
+    );
+}
+
+fn tape(ui: &mut Ui, state: &mut LiquidationsState, snapshot: &Snapshot) {
+    filter_row(ui, state);
     if snapshot.latest.is_empty() {
         let (title, detail) = if snapshot.count == 0 {
             (
@@ -241,7 +299,13 @@ fn tape(ui: &mut Ui, snapshot: &Snapshot) {
                 "Lower the size to see the smaller ones.",
             )
         };
-        kit::empty_state(ui, area, Icon::Flame, title, detail);
+        kit::empty_state(
+            ui,
+            ui.available_rect_before_wrap(),
+            Icon::Flame,
+            title,
+            detail,
+        );
         return;
     }
     columns_header(ui);
@@ -363,12 +427,12 @@ fn row(ui: &mut Ui, liquidation: &Liquidation, index: usize) {
     ));
 }
 
-const FOOTNOTE: &str = "Binance sends at most the latest liquidation of each market a second, and Bybit's 60 busiest markets are followed, so a busy moment adds up to less than it was.";
+const LIQUIDATIONS_FOOTNOTE: &str = "Binance sends at most the latest liquidation of each market a second, and Bybit's 60 busiest markets are followed, so a busy moment adds up to less than it was.";
 
-fn footnote_height(ui: &Ui) -> f32 {
+fn footnote_height(ui: &Ui, text: &str) -> f32 {
     let galley = kit::galley_rows(
         ui,
-        FOOTNOTE,
+        text,
         size::CAPTION,
         REGULAR,
         theme::text_tertiary(),
@@ -378,14 +442,14 @@ fn footnote_height(ui: &Ui) -> f32 {
     galley.size().y + 20.0
 }
 
-fn footnote(ui: &mut Ui) {
+fn footnote(ui: &mut Ui, text: &str) {
     kit::divider(ui);
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.add_space(MARGIN);
         ui.add(
             egui::Label::new(kit::text(
-                FOOTNOTE,
+                text,
                 size::CAPTION,
                 REGULAR,
                 theme::text_tertiary(),
