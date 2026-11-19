@@ -181,3 +181,37 @@ fn a_row_that_turns_bad_after_the_sheet_opened_blocks_the_next_change() {
     assert!(templates.load_error().is_some());
     assert!(templates.delete(templates.book().saved()[0].id).is_err());
 }
+
+#[test]
+fn deleting_the_template_new_charts_use_puts_them_back_to_the_app_look() {
+    let store = shared();
+    let mut templates = ChartTemplateStore::new(store.clone());
+    let id = templates.save("Mine", "", &look()).expect("saved");
+    let other = templates.save("Other", "", &look()).expect("saved");
+    templates.set_default(Some(id)).expect("chosen");
+    assert_eq!(
+        lock(&store).default_chart_template().look,
+        Some(look()),
+        "new charts start from it"
+    );
+
+    templates.delete(other).expect("deleted");
+    assert_eq!(lock(&store).default_chart_template().id, Some(id));
+
+    templates.delete(id).expect("deleted");
+    assert_eq!(lock(&store).default_chart_template().id, None);
+}
+
+#[test]
+fn a_template_that_does_not_exist_cannot_become_the_default() {
+    let store = shared();
+    let mut templates = ChartTemplateStore::new(store.clone());
+    assert!(templates.set_default(Some(424_242)).is_err());
+    assert_eq!(lock(&store).default_chart_template().id, None);
+    // A preset can.
+    let preset = BUILT_INS[2].id;
+    templates.set_default(Some(preset)).expect("chosen");
+    assert_eq!(lock(&store).default_chart_template().id, Some(preset));
+    templates.set_default(None).expect("cleared");
+    assert_eq!(lock(&store).default_chart_template().id, None);
+}

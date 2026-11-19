@@ -209,10 +209,29 @@ impl ChartWorkspace {
         self.charts.first().map(|chart| chart.id)
     }
 
+    /// A chart on `symbol` that starts fetching, in the look the user chose for new charts (see
+    /// `default_chart_template`), or the app's own when none is chosen. Charts that are restored
+    /// or duplicated keep their own look and do not come through here.
+    pub(in crate::workspace) fn new_chart(
+        &self,
+        id: u64,
+        symbol: impl Into<String>,
+        source: DataSource,
+        ctx: &egui::Context,
+    ) -> Chart {
+        let mut chart = Chart::new(id, symbol, source, self.timeframe, ctx);
+        let chosen = crate::lock::lock(&self.store).default_chart_template_cached();
+        if let Some(look) = &chosen.look {
+            let scope = crate::model::chart::template::scope_for_new_chart(look, source);
+            chart.chart.apply_template(look, scope);
+        }
+        chart
+    }
+
     fn add_chart_with_symbol(&mut self, symbol: &str, source: DataSource, ctx: &egui::Context) {
         let id = self.fresh_id();
-        self.charts
-            .push(Chart::new(id, symbol, source, self.timeframe, ctx));
+        let chart = self.new_chart(id, symbol, source, ctx);
+        self.charts.push(chart);
         self.place_in_grid(id);
         self.focused = Some(id);
     }
@@ -477,6 +496,101 @@ mod tests {
     use crate::workspace::PersistedWorkspace;
     use crate::workspace::test_support::empty_workspace;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn a_new_chart_starts_from_the_default_template_and_the_others_keep_their_look() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(8);
+        let before =
+            workspace.add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx);
+        let app_look = crate::model::ChartAppearance::default();
+        let look_of = |workspace: &ChartWorkspace, id: u64| {
+            workspace
+                .charts
+                .iter()
+                .find(|chart| chart.id == id)
+                .expect("chart")
+                .chart
+                .appearance()
+        };
+        assert_eq!(
+            look_of(&workspace, before.chart_id),
+            app_look,
+            "none chosen"
+        );
+
+        let preset = &crate::model::chart::template::BUILT_INS[3];
+        crate::lock::lock(&workspace.store)
+            .set_default_chart_template(Some(preset.id))
+            .expect("chosen");
+        let after =
+            workspace.add_chart_for(&InstrumentId::new(DataSource::Binance, "ETHUSDT"), &ctx);
+        assert_eq!(
+            look_of(&workspace, after.chart_id).canvas,
+            preset.appearance().canvas
+        );
+        assert_ne!(preset.appearance().canvas, app_look.canvas);
+        assert_eq!(
+            look_of(&workspace, before.chart_id),
+            app_look,
+            "an open chart is left alone"
+        );
+
+        // Choosing none again puts the app's look back for the next chart.
+        crate::lock::lock(&workspace.store)
+            .set_default_chart_template(None)
+            .expect("cleared");
+        let last =
+            workspace.add_chart_for(&InstrumentId::new(DataSource::Binance, "SOLUSDT"), &ctx);
+        assert_eq!(look_of(&workspace, last.chart_id), app_look);
+    }
+
+    #[test]
+    fn a_new_chart_on_a_market_that_cannot_draw_the_templates_type_keeps_its_own() {
+        use crate::model::chart::template::ChartAppearanceTemplate;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(9);
+        let look = crate::model::ChartAppearance {
+            bullish: [1, 2, 3],
+            style: crate::model::ChartStyle {
+                chart_type: ChartType::Renko,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        {
+            let store = crate::lock::lock(&workspace.store);
+            store
+                .replace_chart_templates(&[ChartAppearanceTemplate {
+                    id: 2_000,
+                    name: "Renko".into(),
+                    description: None,
+                    appearance: look,
+                    created_at: 1,
+                    updated_at: 1,
+                }])
+                .expect("saved");
+            store
+                .set_default_chart_template(Some(2_000))
+                .expect("chosen");
+        }
+        let prediction = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Polymarket, "111"), &ctx)
+            .chart_id;
+        let appearance = workspace
+            .charts
+            .iter()
+            .find(|chart| chart.id == prediction)
+            .expect("chart")
+            .chart
+            .appearance();
+        assert_eq!(appearance.bullish, [1, 2, 3], "the colors come");
+        assert_ne!(
+            appearance.style.chart_type,
+            ChartType::Renko,
+            "a line has no types"
+        );
+    }
 
     #[test]
     fn add_chart_for_places_focuses_and_reuses() {

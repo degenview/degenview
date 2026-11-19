@@ -351,9 +351,8 @@ impl ChartWorkspace {
             store,
         );
         let chart_id = workspace.fresh_id();
-        workspace
-            .charts
-            .push(Chart::new(chart_id, symbol, source, timeframe, ctx));
+        let chart = workspace.new_chart(chart_id, symbol, source, ctx);
+        workspace.charts.push(chart);
         let chart_ids = [chart_id];
         workspace.columns = ChartColumn::resolved(None, &chart_ids, &mut workspace.next_id);
         workspace.focused = Some(chart_id);

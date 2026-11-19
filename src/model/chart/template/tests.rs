@@ -495,3 +495,30 @@ fn the_apply_to_all_message_counts_and_explains() {
     );
     assert_eq!(skipped.steps.len(), 2);
 }
+
+#[test]
+fn a_new_chart_takes_the_chart_type_only_where_its_market_draws_it() {
+    let look = styled();
+    // A market drawn as a line has no chart types.
+    assert_eq!(
+        scope_for_new_chart(&look, DataSource::Polymarket),
+        ApplyScope::ColorsAndCanvas
+    );
+    for market in [
+        DataSource::Binance,
+        DataSource::Coinbase,
+        DataSource::CoinGecko,
+    ] {
+        let draws = ChartType::Renko.supported_by(market) && !market.is_line_chart();
+        assert_eq!(
+            scope_for_new_chart(&look, market) == ApplyScope::AppearanceAndCanvas,
+            draws,
+            "{market:?}"
+        );
+    }
+    // The app's own look is candles, which every market that has types draws.
+    assert_eq!(
+        scope_for_new_chart(&ChartAppearance::default(), DataSource::Binance),
+        ApplyScope::AppearanceAndCanvas
+    );
+}

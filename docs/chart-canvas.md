@@ -162,6 +162,16 @@ market, not the look.
   code, never stored, cannot be changed and can be duplicated into editable templates.
 - **Manage**: apply, duplicate (`<name> copy`, numbered), rename (with description), update from
   this chart (asks first, never silent), delete (asks first), created/updated time.
+- **New charts** start from one template, chosen with the star on its row in Manage (a preset
+  can be chosen; the star again goes back to the app's own look). The choice is the setting
+  `chart.defaultTemplate`, an id, so updating or renaming the template changes what new charts get,
+  and deleting it clears the choice. It applies where a chart is added (Add Chart, ⌘K, a
+  watchlist row, MCP `add_chart`, a new tab), through `ChartWorkspace::new_chart`, with the same
+  rule as Apply to all: a market that cannot draw the template's chart type, or is drawn as a
+  line, takes its colors and canvas only (`scope_for_new_chart`). Charts that already exist, saved
+  layouts and duplicated charts keep their own look, and *Reset chart appearance* still returns to
+  the app's own defaults. A Mac that has the choice but not yet the template (iCloud) starts
+  charts from the app's look until it arrives.
 - **Names** are trimmed, 1–48 characters, no control characters, unique ignoring case (presets
   included); descriptions are up to 200 characters.
 - **Storage**: the `chart_template` document table (`id/position/payload`). The sheet reads it

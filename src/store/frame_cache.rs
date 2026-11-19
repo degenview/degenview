@@ -8,6 +8,7 @@
 //! writer can be forgotten, at the cost of one rebuild per write.
 
 use super::Store;
+use super::chart::template::default_look::DefaultTemplate;
 use crate::model::Timeframe;
 use crate::model::alert::pine::PineAlertSubscription;
 use crate::model::drawings::favorites::{BarPrefs, Favorite};
@@ -112,6 +113,8 @@ pub(crate) struct FrameCaches {
     drawing_favorites: ChangeCached<Vec<Favorite>>,
     /// The favorites bar's place and hidden flag.
     favorites_bar: ChangeCached<BarPrefs>,
+    /// The template new charts start from, which every added chart and the template manager read.
+    default_chart_template: ChangeCached<DefaultTemplate>,
 }
 
 impl Store {
@@ -169,6 +172,13 @@ impl Store {
         self.frame_caches
             .favorites_bar
             .get(self.change_stamp(), || self.favorites_bar())
+    }
+
+    /// `default_chart_template`, read again only after a write.
+    pub fn default_chart_template_cached(&self) -> Arc<DefaultTemplate> {
+        self.frame_caches
+            .default_chart_template
+            .get(self.change_stamp(), || self.default_chart_template())
     }
 
     /// The saved proxy setting (`ProxyConfig::load`), read again only after a write.
@@ -310,5 +320,21 @@ mod tests {
             .claim_webhook_delivery(1, WebhookDeliverySource::Price, 9, 1_000)
             .expect("claim");
         assert_eq!(store.webhook_delivery_summary(9), Some((0, 1)));
+    }
+
+    #[test]
+    fn the_default_chart_template_is_reused_until_it_changes() {
+        use crate::model::chart::template::BUILT_INS;
+        let store = Store::open_in_memory().expect("open");
+        let none = store.default_chart_template_cached();
+        assert_eq!(none.id, None);
+        assert!(Arc::ptr_eq(&none, &store.default_chart_template_cached()));
+
+        store
+            .set_default_chart_template(Some(BUILT_INS[0].id))
+            .expect("write");
+        let chosen = store.default_chart_template_cached();
+        assert_eq!(chosen.id, Some(BUILT_INS[0].id));
+        assert_eq!(chosen.look, Some(BUILT_INS[0].appearance()));
     }
 }
