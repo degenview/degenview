@@ -124,6 +124,50 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
     ("trading", &["app", "ui", "workspace"]),
     ("host", &["app"]),
     ("ui", &["app"]),
+    // Leaves every layer may use: they import nothing of the app's own.
+    ("build_info", EVERY_MODULE),
+    ("format", EVERY_MODULE),
+    ("lock", EVERY_MODULE),
+    ("paths", EVERY_MODULE),
+    // Runs from the panic hook, before and after the store opens: it may not need either.
+    (
+        "crash_report",
+        &[
+            "app",
+            "host",
+            "mcp",
+            "pine_studio",
+            "service",
+            "store",
+            "sync",
+            "trading",
+            "ui",
+            "workspace",
+        ],
+    ),
+];
+
+/// Every top-level module, for the leaves that may import none of them.
+const EVERY_MODULE: &[&str] = &[
+    "app",
+    "build_info",
+    "crash_report",
+    "format",
+    "host",
+    "lock",
+    "mcp",
+    "model",
+    "native_bridge",
+    "paths",
+    "pine",
+    "pine_studio",
+    "platform",
+    "service",
+    "store",
+    "sync",
+    "trading",
+    "ui",
+    "workspace",
 ];
 
 /// Imports that break [`FORBIDDEN_IMPORTS`] today, as `(file under src/, module imported)`. Each is
@@ -196,9 +240,28 @@ fn production_code(source: &str) -> String {
         .join("\n")
 }
 
-/// Every non-test `.rs` file under `src/<module>/`, relative to `src/`.
+#[test]
+fn every_module_names_each_module_of_the_crate() {
+    let lib = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
+        .expect("lib.rs readable");
+    let declared: BTreeSet<&str> = lib
+        .lines()
+        .filter_map(|line| line.strip_prefix("mod ")?.strip_suffix(';'))
+        .filter(|module| !["alloc_count", "layout_tests"].contains(module))
+        .collect();
+    let listed: BTreeSet<&str> = EVERY_MODULE.iter().copied().collect();
+    assert_eq!(declared, listed, "keep EVERY_MODULE in step with lib.rs");
+}
+
+/// Every non-test `.rs` file of `module` (`src/<module>/` or the single file `src/<module>.rs`),
+/// relative to `src/`.
 fn module_sources(module: &str) -> Vec<(String, String)> {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let single = src.join(format!("{module}.rs"));
+    if single.is_file() {
+        let text = fs::read_to_string(&single).expect("source readable");
+        return vec![(format!("{module}.rs"), text)];
+    }
     let mut files = Vec::new();
     let mut pending = vec![src.join(module)];
     while let Some(dir) = pending.pop() {
@@ -234,7 +297,9 @@ fn no_layer_imports_a_layer_above_it() {
     for (module, forbidden) in FORBIDDEN_IMPORTS {
         for (file, text) in module_sources(module) {
             for import in crate_imports(&text) {
-                if !forbidden.contains(&import.as_str()) {
+                // A module's own paths (`crate::format::…` inside `format.rs`) are no dependency.
+                let own = module.split('/').next() == Some(import.as_str());
+                if own || !forbidden.contains(&import.as_str()) {
                     continue;
                 }
                 if KNOWN_LAYERING_DEBT.contains(&(file.as_str(), import.as_str())) {

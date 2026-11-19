@@ -130,7 +130,7 @@ impl ScriptStore {
 
     /// The store under the app's data directory.
     pub fn default_location() -> Option<Self> {
-        let base = crate::store::data_dir()?;
+        let base = crate::paths::data_dir()?;
         Some(Self::new(base.join("Scripts"), base.join("ScriptMetadata")))
     }
 
@@ -860,7 +860,7 @@ fn trash(file: &Path) -> std::io::Result<()> {
     let trash_dir = if cfg!(target_os = "macos") {
         std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".Trash"))
     } else {
-        crate::store::data_dir().map(|dir| dir.join("Trash"))
+        crate::paths::data_dir().map(|dir| dir.join("Trash"))
     }
     .ok_or_else(|| std::io::Error::other("no home directory"))?;
     fs::create_dir_all(&trash_dir)?;

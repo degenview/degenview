@@ -14,7 +14,7 @@ inventory.
 | `native_bridge.rs` | AppKit menus, window behavior, cursor, Keychain/accessibility boundaries |
 | `host/update/mod.rs` | Update checks, install progress, and restart state |
 | `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
-| `format.rs`, `platform.rs`, `lock.rs` | Leaf helpers every layer imports: number/price text, per-platform wording, and locks that survive a poisoning panic |
+| `format.rs`, `platform.rs`, `lock.rs`, `paths.rs`, `build_info.rs` | Leaf helpers every layer imports: number/price text, per-platform wording, locks that survive a poisoning panic, the data and cache folders, and the build's version and commit. `layout_tests.rs` keeps them free of the app's other modules |
 
 Feature hosts in `host/` (one directory per domain, see `host/` layout below) bridge pure engines,
 persistence, workers, and UI. `host/alert/runtime.rs` is the alert loop shared by the GUI fallback and

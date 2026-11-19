@@ -38,7 +38,7 @@ container tag in `flatpak.yml`. The `rust-stable` extension must ship rustc at l
 
 `--share=network`, `--share=ipc`, `--socket=wayland`, `--socket=fallback-x11` and `--device=dri`.
 No filesystem access. The data and cache directories follow `XDG_DATA_HOME` and `XDG_CACHE_HOME`
-(`store::data_dir`, `cache_dir`), which Flatpak points at the app's own folders. The MCP server
+(`paths::data_dir`, `cache_dir`), which Flatpak points at the app's own folders. The MCP server
 listens on `127.0.0.1`; `--share=network` uses the host network, so clients on the host reach it.
 `degenview-alert-agent` is the macOS login item and is not installed.
 

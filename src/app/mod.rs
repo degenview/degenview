@@ -274,7 +274,7 @@ impl DegenViewApp {
         }));
         let sync = {
             let ctx = creation.egui_ctx.clone();
-            let backups = crate::store::data_dir()
+            let backups = crate::paths::data_dir()
                 .map(|dir| dir.join("SyncBackups"))
                 .unwrap_or_else(|| std::env::temp_dir().join("DegenViewSyncBackups"));
             crate::host::sync::SyncHost::new(

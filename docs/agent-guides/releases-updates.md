@@ -200,7 +200,7 @@ nothing here holds a token for it. Never add a "bump the tap" step to `release.y
   is user-writable for an admin, so `install_target` passes.
 - `depends_on macos: :sonoma` mirrors `LSMinimumSystemVersion` (14.0) in `tools/bundle.sh`; change
   together. `zap` lists `es.nico.degenview` under Application Support, Caches, Preferences, Saved
-  Application State (`APP_DIR` in `store/mod.rs`); update if those move.
+  Application State (`APP_DIR` in `src/paths.rs`); update if those move.
 - **Verified**: `scripts/bump.sh` against v0.6.0-rc.15 (all steps pass, hashes equal API digests);
   `brew style`, `brew audit --cask --strict --online` (only "is a GitHub pre-release" for rc) and
   `brew fetch --cask` (hash checked) on a local tap copy, Homebrew 7.0.12, macOS.

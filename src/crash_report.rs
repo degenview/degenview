@@ -43,14 +43,14 @@ fn since_start() -> f64 {
 
 /// Starts a fresh `startup.log` with the facts that say which build and machine it came from.
 pub fn begin_startup_log() {
-    let Some(dir) = crate::store::data_dir() else {
+    let Some(dir) = crate::paths::data_dir() else {
         return;
     };
     let _ = std::fs::create_dir_all(&dir);
     let header = format!(
         "DegenView {} ({}) on {} {}, started at unix {}\n",
-        env!("CARGO_PKG_VERSION"),
-        crate::host::update::BUILD_ID,
+        crate::build_info::VERSION,
+        crate::build_info::BUILD_ID,
         std::env::consts::OS,
         std::env::consts::ARCH,
         unix_seconds(),
@@ -61,7 +61,7 @@ pub fn begin_startup_log() {
 
 /// Appends one stage to `startup.log`, with the seconds since the log began.
 pub fn note(stage: &str) {
-    let Some(dir) = crate::store::data_dir() else {
+    let Some(dir) = crate::paths::data_dir() else {
         return;
     };
     let line = format!("[+{:.3}s] {stage}\n", since_start());
@@ -149,8 +149,8 @@ fn format_report(
 ) -> String {
     format!(
         "--- DegenView {} ({}) on {} {}, unix {at}\nthread: {thread}\npanic: {message}\nat: {}\n{backtrace}\n\n",
-        env!("CARGO_PKG_VERSION"),
-        crate::host::update::BUILD_ID,
+        crate::build_info::VERSION,
+        crate::build_info::BUILD_ID,
         std::env::consts::OS,
         std::env::consts::ARCH,
         location.unwrap_or("unknown location"),
@@ -198,7 +198,7 @@ pub fn install_panic_hook(notify: fn(&str)) {
             .location()
             .map(|at| format!("{}:{}:{}", at.file(), at.line(), at.column()));
         let backtrace = std::backtrace::Backtrace::force_capture().to_string();
-        let dir: Option<PathBuf> = crate::store::data_dir();
+        let dir: Option<PathBuf> = crate::paths::data_dir();
         // Only a log that was written is named to the user.
         let saved_in = dir.as_deref().filter(|dir| {
             write_report(

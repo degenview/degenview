@@ -159,7 +159,7 @@ impl McpHost {
             tls_dir: if cfg!(test) {
                 None
             } else {
-                crate::store::data_dir()
+                crate::paths::data_dir()
             },
             tls_fingerprint: None,
         };

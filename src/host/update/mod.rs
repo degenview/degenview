@@ -5,6 +5,7 @@
 //! stateful bridge that runs them on `work_queue::UPDATES`, remembers the outcome, and exposes it
 //! as a plain `UpdateView` both UIs draw. Nothing here is persisted: a launch starts unchecked.
 
+use crate::build_info::VERSION;
 use crate::lock::lock;
 use crate::service::update::check::{self, Channel, Release, UpdateOutcome};
 use crate::service::update::install::{self, Prepared, Progress, Stage};
@@ -16,10 +17,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-/// The commit this build came from (`-dirty` when it had uncommitted changes), set by `build.rs`.
-/// Shown in Settings ▸ About for bug reports; nothing reads it.
-pub const BUILD_ID: &str = env!("DEGENVIEW_BUILD_ID");
 /// The `setting` key holding the chosen update channel. Local to this Mac: not in `sync::record::policy`.
 pub const CHANNEL_KEY: &str = "update.channel";
 
@@ -1023,11 +1020,5 @@ mod tests {
         assert!(!host.view().checking);
         assert_eq!(host.view().phase, Phase::Unchecked);
         assert!(host.lock().last_started.is_none());
-    }
-
-    #[test]
-    fn the_build_id_is_one_word() {
-        assert!(!BUILD_ID.is_empty());
-        assert!(!BUILD_ID.contains(char::is_whitespace));
     }
 }

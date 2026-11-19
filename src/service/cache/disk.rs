@@ -3,7 +3,7 @@
 //! Everything here can be deleted at any time and rebuilt from the network, so a failure to read
 //! or write is never an error — it is a miss. User data lives in SQLite (`store`), never here.
 //!
-//! Layout under the cache root (`store::cache_dir`):
+//! Layout under the cache root (`paths::cache_dir`):
 //!
 //! ```text
 //! images/<aa>/<sha256>     one file per icon URL
@@ -130,7 +130,7 @@ pub fn global() -> &'static DiskCache {
         if cfg!(test) {
             DiskCache::disabled()
         } else {
-            DiskCache::new(crate::store::cache_dir())
+            DiskCache::new(crate::paths::cache_dir())
         }
     })
 }
