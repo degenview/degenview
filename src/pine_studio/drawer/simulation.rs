@@ -1,17 +1,22 @@
 //! The Report tab's Simulation card: the closed trades redrawn at random many times over
-//! (`pine::strategy::monte_carlo`), as a few figures and a fan of the equity paths they make.
+//! (`pine::strategy::monte_carlo`), as a few figures and a fan of the equity paths they make, with
+//! a legend saying what the band and the lines are.
 
-use super::tab_chrome::{self as chrome, card};
+use super::figures::{BLOCK_GAP, Emphasis, Figure, grid};
+use super::plot::{self, Plot};
+use super::tab_chrome::{self as chrome, panel};
 use crate::pine::strategy::StrategyReport;
 use crate::pine::strategy::monte_carlo::{MIN_TRADES, MonteCarlo, Spread};
-use crate::ui::pine::report::{PineReportFormat, metric_cells};
-use crate::ui::theme;
-use eframe::egui::{self, Align2, FontId, Margin, RichText, Shape, Stroke, Ui, pos2, vec2};
+use crate::ui::pine::report::{self, PineReportFormat};
+use crate::ui::{kit, theme};
+use eframe::egui::{Color32, Rect, Sense, Shape, Stroke, Ui, Vec2, pos2, vec2};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-const FAN_HEIGHT: f32 = 72.0;
+const FAN_HEIGHT: f32 = 96.0;
+/// How strongly the band of the middle 90% is filled.
+const BAND_ALPHA: f32 = 0.18;
 
 /// What a frame remembers of the last resampling: which trades it was for, and its answer.
 #[derive(Clone)]
@@ -54,153 +59,212 @@ fn resampled(ui: &Ui, report: &StrategyReport) -> Option<Arc<MonteCarlo>> {
     result
 }
 
-/// The card under the figures. With fewer than [`MIN_TRADES`] closed trades it says so instead.
+/// The card under the equity. With fewer than [`MIN_TRADES`] closed trades it says so instead.
 pub(super) fn simulation_card(ui: &mut Ui, report: &StrategyReport) {
     chrome::caption(ui, "Simulation");
-    let padded = Margin::symmetric(12, 10);
     let Some(result) = resampled(ui, report) else {
-        card(ui, |ui| {
-            egui::Frame::new().inner_margin(padded).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.label(
-                    RichText::new(format!(
-                        "Needs {MIN_TRADES} closed trades to reshuffle; {} so far.",
-                        report.trades.len()
-                    ))
-                    .size(10.0)
-                    .color(theme::text_tertiary()),
-                );
-            });
+        panel(ui, |ui| {
+            ui.label(kit::text(
+                format!(
+                    "Needs {MIN_TRADES} closed trades, {} so far",
+                    report.trades.len()
+                ),
+                kit::size::CALLOUT,
+                kit::MEDIUM,
+                theme::text_secondary(),
+            ));
+            ui.add_space(3.0);
+            ui.label(kit::text(
+                "Redraws the trades at random to show how much of the result came from their order.",
+                kit::size::CAPTION,
+                kit::REGULAR,
+                theme::text_tertiary(),
+            ));
         });
         return;
     };
-    card(ui, |ui| {
-        egui::Frame::new().inner_margin(padded).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing.y = 10.0;
-            ui.label(
-                RichText::new(format!(
-                    "{} reshuffles of the {} closed trades, drawn with replacement. Profits are added as money, so position sizing does not compound.",
-                    result.runs, result.trades
-                ))
-                .size(9.0)
-                .color(theme::text_secondary()),
-            );
-            figures(ui, &result);
-            fan_chart(ui, &result);
-        });
+    panel(ui, |ui| {
+        ui.label(kit::text(
+            format!(
+                "{} runs, each drawing {} of the closed trades at random, repeats allowed. Profits add up as money, so position sizing does not compound.",
+                PineReportFormat::count(result.runs),
+                result.trades
+            ),
+            kit::size::CAPTION,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
+        ui.add_space(BLOCK_GAP);
+        let key = key_figures(&result);
+        grid(ui, &key, key.len(), Emphasis::Key);
+        ui.add_space(BLOCK_GAP);
+        grid(ui, &quiet_figures(&result), key.len(), Emphasis::Quiet);
+        ui.add_space(BLOCK_GAP);
+        chrome::rule(ui);
+        ui.add_space(BLOCK_GAP);
+        fan_chart(ui, &result);
+        ui.add_space(8.0);
+        legend(
+            ui,
+            plot::tone(result.final_equity.median, result.initial_capital),
+        );
     });
 }
 
-fn figures(ui: &mut Ui, result: &MonteCarlo) {
-    let money = PineReportFormat::money;
-    let drawdown = |fraction| PineReportFormat::percent(fraction, false);
-    let ending = result.final_equity;
-    metric_cells(
-        ui,
-        "pine-report-simulation",
-        [
-            (
-                "Final equity, median",
-                money(ending.median),
-                ending.median - result.initial_capital,
-            ),
-            (
-                "Final equity, 5th to 95th",
-                format!("{} to {}", money(ending.low), money(ending.high)),
-                0.0,
-            ),
-            (
-                "Max drawdown, median",
-                drawdown(result.max_drawdown.median),
-                0.0,
-            ),
-            (
-                "Max drawdown, worst 5%",
-                drawdown(result.max_drawdown.high),
-                0.0,
-            ),
-            (
-                "Chance of ending in loss",
-                PineReportFormat::percent(result.loss_probability, false),
-                0.0,
-            ),
-        ],
-        theme::text_primary(),
-    );
+/// Where the runs ended, as profit on the capital: the median and the band's edges, and how often
+/// a run lost.
+fn key_figures(result: &MonteCarlo) -> [Figure; 4] {
+    let ended = |equity: f64| {
+        let profit = equity - result.initial_capital;
+        (
+            PineReportFormat::signed_money(profit),
+            report::tint(profit, theme::text_primary()),
+        )
+    };
+    let figure = |label, (value, color)| Figure::new(label, value, color);
+    [
+        figure("Median result", ended(result.final_equity.median)),
+        figure("5th percentile", ended(result.final_equity.low)),
+        figure("95th percentile", ended(result.final_equity.high)),
+        Figure::new(
+            "Chance of a loss",
+            PineReportFormat::percent(result.loss_probability, false),
+            theme::text_primary(),
+        ),
+    ]
 }
 
-/// The 5th to 95th percentile of equity along the trades as a band, the median through it, and the
-/// initial capital as a dashed line.
+/// How deep the runs fell from a peak: typically, and in the worst twentieth.
+fn quiet_figures(result: &MonteCarlo) -> [Figure; 2] {
+    let drawdown = |fraction| PineReportFormat::percent(fraction, false);
+    [
+        Figure::new(
+            "Median drawdown",
+            drawdown(result.max_drawdown.median),
+            theme::text_secondary(),
+        ),
+        Figure::new(
+            "Drawdown, worst 5%",
+            drawdown(result.max_drawdown.high),
+            theme::text_secondary(),
+        ),
+    ]
+}
+
+/// The middle 90% of the runs' equity along the trades as a band, the median through it, and the
+/// initial capital as a dashed line; the pointer reads them after that many trades.
 fn fan_chart(ui: &mut Ui, result: &MonteCarlo) {
-    let (rect, _) =
-        ui.allocate_exact_size(vec2(ui.available_width(), FAN_HEIGHT), egui::Sense::hover());
-    let painter = ui.painter_at(rect);
-    let weak = theme::text_secondary();
     let low = result
         .fan
         .iter()
         .map(|step| step.low)
-        .fold(result.initial_capital, f64::min);
+        .fold(f64::MAX, f64::min);
     let high = result
         .fan
         .iter()
         .map(|step| step.high)
-        .fold(result.initial_capital, f64::max);
-    let span = (high - low).max(1e-9);
-    let inset = 2.0;
-    let usable = rect.height() - 2.0 * inset;
-    let y = |value: f64| rect.max.y - ((value - low) / span) as f32 * usable - inset;
-    let last = (result.fan.len() - 1) as f32;
-    let x = |index: usize| rect.min.x + rect.width() * index as f32 / last;
-
-    let baseline = y(result.initial_capital);
-    painter.extend(Shape::dashed_line(
-        &[pos2(rect.min.x, baseline), pos2(rect.max.x, baseline)],
-        Stroke::new(1.0, theme::with_alpha(weak, 0.5)),
-        3.0,
-        3.0,
-    ));
-
-    let tone = if result.final_equity.median >= result.initial_capital {
-        theme::WIN
-    } else {
-        theme::LOSS
-    };
-    let band = theme::with_alpha(tone, 0.18);
-    for (index, pair) in result.fan.windows(2).enumerate() {
+        .fold(f64::MIN, f64::max);
+    let (plot, hovered) = Plot::show(
+        ui,
+        FAN_HEIGHT,
+        result.fan.len(),
+        low,
+        high,
+        result.initial_capital,
+    );
+    let tone = plot::tone(result.final_equity.median, result.initial_capital);
+    let band = theme::with_alpha(tone, BAND_ALPHA);
+    for (step, pair) in result.fan.windows(2).enumerate() {
         let [from, to]: [&Spread; 2] = [&pair[0], &pair[1]];
-        painter.add(Shape::convex_polygon(
+        plot.painter().add(Shape::convex_polygon(
             vec![
-                pos2(x(index), y(from.high)),
-                pos2(x(index + 1), y(to.high)),
-                pos2(x(index + 1), y(to.low)),
-                pos2(x(index), y(from.low)),
+                pos2(plot.x(step), plot.y(from.high)),
+                pos2(plot.x(step + 1), plot.y(to.high)),
+                pos2(plot.x(step + 1), plot.y(to.low)),
+                pos2(plot.x(step), plot.y(from.low)),
             ],
             band,
             Stroke::NONE,
         ));
     }
-    let median = result
-        .fan
-        .iter()
-        .enumerate()
-        .map(|(index, step)| pos2(x(index), y(step.median)))
-        .collect();
-    painter.add(Shape::line(median, Stroke::new(1.5, tone)));
-    painter.text(
-        rect.min + vec2(4.0, 4.0),
-        Align2::LEFT_TOP,
-        "Equity, 5th to 95th percentile",
-        FontId::proportional(9.0),
-        weak,
-    );
+    plot.line(result.fan.iter().map(|step| step.median), tone);
+    if let Some(step) = hovered {
+        let spread = result.fan[step];
+        let span = high.max(result.initial_capital) - low.min(result.initial_capital);
+        let axis = |value| PineReportFormat::axis(value, span);
+        let trades = result.trades_at(step);
+        plot.readout(
+            step,
+            &[(spread.median, tone)],
+            &[
+                format!("After {trades} trade{}", if trades == 1 { "" } else { "s" }),
+                format!("Median {}", axis(spread.median)),
+                format!("90% within {} to {}", axis(spread.low), axis(spread.high)),
+            ],
+        );
+    }
+}
+
+/// What the band, the line and the dashes are, wrapping under each other when narrow.
+fn legend(ui: &mut Ui, tone: Color32) {
+    const SWATCH: Vec2 = vec2(14.0, 8.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(14.0, 4.0);
+        let entries: [(&str, Key); 3] = [
+            ("Middle 90% of runs", Key::Band),
+            ("Median", Key::Line),
+            ("Initial capital", Key::Dashes),
+        ];
+        for (text, key) in entries {
+            let words = kit::galley(
+                ui,
+                text,
+                kit::size::CAPTION,
+                kit::REGULAR,
+                theme::text_secondary(),
+                f32::INFINITY,
+            );
+            let size = vec2(SWATCH.x + 5.0 + words.size().x, words.size().y);
+            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+            let swatch =
+                Rect::from_center_size(pos2(rect.left() + SWATCH.x / 2.0, rect.center().y), SWATCH);
+            let painter = ui.painter();
+            let y = swatch.center().y;
+            match key {
+                Key::Band => {
+                    painter.rect_filled(swatch, 2.0, theme::with_alpha(tone, BAND_ALPHA));
+                }
+                Key::Line => {
+                    painter.hline(swatch.x_range(), y, Stroke::new(1.5, tone));
+                }
+                Key::Dashes => painter.extend(Shape::dashed_line(
+                    &[pos2(swatch.left(), y), pos2(swatch.right(), y)],
+                    Stroke::new(1.0, theme::with_alpha(theme::text_secondary(), 0.5)),
+                    3.0,
+                    3.0,
+                )),
+            }
+            painter.galley(
+                pos2(swatch.right() + 5.0, rect.top()),
+                words,
+                Color32::PLACEHOLDER,
+            );
+        }
+    });
+}
+
+/// The mark a legend entry shows.
+enum Key {
+    Band,
+    Line,
+    Dashes,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pine::strategy::{StrategySettings, Trade};
+    use eframe::egui;
 
     fn report(profits: &[f64]) -> StrategyReport {
         StrategyReport {

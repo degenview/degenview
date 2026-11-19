@@ -350,8 +350,12 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   with `DEGENVIEW_GALLERY_DIR` set.
 - Problems copy button copies all problems (errors first); right-click a row copies it or just its
   message.
-- `pine_report::show` / `report_content` (chart settings) keep the compact look; the drawer lays out
-  `metric_grid`, `equity_curve` itself.
+- `pine_report::show` / `report_content` (chart settings) keep the compact look. The drawer's Report
+  has its own: `drawer/figures.rs` (net profit large, key figures, quieter ones, aligned `grid`),
+  `drawer/plot.rs` (the equity and simulation charts: scale at the right edge with the capital,
+  readout under the pointer), `drawer/trades.rs` (aligned columns; bars held gives way first when
+  narrow). Pictures in both themes: `cargo test --lib gallery_of_the_report -- --ignored` with
+  `DEGENVIEW_GALLERY_DIR`.
 - Report's Simulation card (`drawer/simulation.rs`) shows `pine::strategy::monte_carlo`: closed
   trades redrawn with replacement (fixed seed, so a report always gives the same figures; runs
   shrink from 1,000 to 200 as the list grows, bounding the work). Profits are added as money, so a

@@ -88,6 +88,17 @@ impl PineReportFormat {
         }
     }
 
+    /// A value on a chart's scale, as precise as the chart's `span` needs: whole units once it
+    /// covers a hundred or more (`10,720`), two decimals below that (`1,000.35`).
+    pub fn axis(value: f64, span: f64) -> String {
+        grouped(value, if span.abs() >= 100.0 { 0 } else { 2 })
+    }
+
+    /// A count, grouped: `1,000`.
+    pub fn count(value: usize) -> String {
+        group(&value.to_string())
+    }
+
     /// A plain ratio with two decimals: `1.23`.
     pub fn ratio(value: f64) -> String {
         format!("{value:.2}")
@@ -141,13 +152,7 @@ pub fn show(ui: &mut egui::Ui, report: Option<&StrategyReport>) {
             );
         }
         metric_grid(ui, report, neutral);
-        equity_curve(
-            ui,
-            &report.equity,
-            report.settings.initial_capital,
-            EQUITY_HEIGHT,
-            true,
-        );
+        equity_curve(ui, &report.equity, report.settings.initial_capital);
         if !report.trades.is_empty() {
             trade_list(ui, report, neutral);
         }
@@ -173,7 +178,7 @@ pub fn synthetic_fill_notice(chart: crate::model::ChartKind) -> Option<String> {
     ))
 }
 
-pub(crate) fn metric_grid(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
+fn metric_grid(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
     let drawdown = report.max_drawdown();
     let net = report.net_profit();
     let win_rate = report
@@ -220,21 +225,12 @@ pub(crate) fn metric_grid(ui: &mut egui::Ui, report: &StrategyReport, neutral: C
             0.0,
         ),
     ];
-    metric_cells(ui, "pine-report-metrics", metrics, neutral);
-}
 
-/// Titled figures in a grid with as many columns as fit (`LazyVGrid(.adaptive(minimum: 130),
-/// spacing: 8)`). Each tone tints its value green above zero and red below.
-pub(crate) fn metric_cells<const N: usize>(
-    ui: &mut egui::Ui,
-    id: &str,
-    metrics: [(&str, String, f64); N],
-    neutral: Color32,
-) {
+    // `LazyVGrid(.adaptive(minimum: 130), spacing: 8)`: as many columns as fit.
     let width = ui.available_width();
     let columns = (((width + 8.0) / (130.0 + 8.0)).floor() as usize).max(1);
     let column_width = (width - 8.0 * (columns - 1) as f32) / columns as f32;
-    egui::Grid::new(id)
+    egui::Grid::new("pine-report-metrics")
         .num_columns(columns)
         .spacing(egui::vec2(8.0, 8.0))
         .min_col_width(column_width)
@@ -341,14 +337,8 @@ pub(crate) fn trade_summary(trade: &crate::pine::strategy::Trade) -> String {
 const EQUITY_HEIGHT: f32 = 64.0;
 
 /// Draws the equity curve against the starting capital, downsampled to `POINT_LIMIT` points, with
-/// its name in the corner when `labelled`.
-pub(crate) fn equity_curve(
-    ui: &mut egui::Ui,
-    equity: &[f64],
-    initial_capital: f64,
-    height: f32,
-    labelled: bool,
-) {
+/// its name in the corner.
+fn equity_curve(ui: &mut egui::Ui, equity: &[f64], initial_capital: f64) {
     const POINT_LIMIT: usize = 400;
     const INSET: f32 = 2.0;
 
@@ -358,7 +348,7 @@ pub(crate) fn equity_curve(
     }
     let rect = ui
         .allocate_exact_size(
-            egui::vec2(ui.available_width(), height),
+            egui::vec2(ui.available_width(), EQUITY_HEIGHT),
             egui::Sense::hover(),
         )
         .0;
@@ -403,25 +393,32 @@ pub(crate) fn equity_curve(
         .collect();
     painter.add(egui::Shape::line(points, Stroke::new(1.5, tone)));
 
-    if labelled {
-        painter.text(
-            rect.min + egui::vec2(4.0, 4.0),
-            Align2::LEFT_TOP,
-            "Equity",
-            FontId::proportional(9.0),
-            weak,
-        );
-    }
+    painter.text(
+        rect.min + egui::vec2(4.0, 4.0),
+        Align2::LEFT_TOP,
+        "Equity",
+        FontId::proportional(9.0),
+        weak,
+    );
 }
 
 /// Keeps the first and last points and evenly spaced ones between.
-fn downsample(values: &[f64], limit: usize) -> Vec<f64> {
+pub(crate) fn downsample(values: &[f64], limit: usize) -> Vec<f64> {
     if values.len() <= limit || limit <= 1 {
         return values.to_vec();
     }
     (0..limit)
-        .map(|index| values[index * (values.len() - 1) / (limit - 1)])
+        .map(|index| values[sampled_index(values.len(), limit, index)])
         .collect()
+}
+
+/// Which of `len` values the `index`th point of [`downsample`]`(_, limit)` is.
+pub(crate) fn sampled_index(len: usize, limit: usize, index: usize) -> usize {
+    if len <= limit || limit <= 1 {
+        index
+    } else {
+        index * (len - 1) / (limit - 1)
+    }
 }
 
 #[cfg(test)]
@@ -462,6 +459,19 @@ mod tests {
         assert_eq!(sampled.first(), Some(&0.0));
         assert_eq!(sampled.last(), Some(&99.0));
         assert_eq!(sampled.len(), 11);
+        assert_eq!(sampled_index(100, 11, 10), 99);
+        assert_eq!(sampled_index(100, 11, 5), 49);
+        assert_eq!(sampled_index(5, 11, 3), 3, "a short list is not sampled");
+    }
+
+    #[test]
+    fn axis_values_are_as_precise_as_the_span_needs() {
+        assert_eq!(PineReportFormat::axis(1_074_760.71, 74_760.0), "1,074,761");
+        assert_eq!(PineReportFormat::axis(10_000.0, 720.0), "10,000");
+        assert_eq!(PineReportFormat::axis(1_000.354, 12.0), "1,000.35");
+        assert_eq!(PineReportFormat::axis(-42.0, 300.0), "-42");
+        assert_eq!(PineReportFormat::count(1_000), "1,000");
+        assert_eq!(PineReportFormat::count(200), "200");
     }
 
     #[test]

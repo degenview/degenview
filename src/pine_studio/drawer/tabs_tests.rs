@@ -103,15 +103,36 @@ fn alert(id: usize, live: bool) -> AlertEvent {
 }
 
 fn strategy(trades: usize) -> StrategyReport {
+    strategy_of((1..=trades).map(|id| if id % 3 == 0 { -40.0 } else { 65.0 }))
+}
+
+/// A strategy that closed a trade for each of `profits`, three bars apart, on 10,000 of capital,
+/// its equity the closed profits plus a little open-trade drift.
+fn strategy_of(profits: impl Iterator<Item = f64>) -> StrategyReport {
+    let trades: Vec<Trade> = profits
+        .enumerate()
+        .map(|(index, profit)| trade(index + 1, index % 2 == 1, profit))
+        .collect();
+    let capital = 10_000.0;
+    let bars = trades.len() * 3 + 6;
+    let equity = (0..bars)
+        .map(|bar| {
+            let closed: f64 = trades
+                .iter()
+                .filter(|trade| trade.exit_bar <= bar)
+                .map(|trade| trade.profit)
+                .sum();
+            capital + closed + (bar as f64 * 0.9).sin() * 12.0
+        })
+        .collect();
     StrategyReport {
-        settings: Default::default(),
-        trades: (1..=trades)
-            .map(|id| trade(id, id % 2 == 0, if id % 3 == 0 { -40.0 } else { 65.0 }))
-            .collect(),
+        settings: crate::pine::strategy::StrategySettings {
+            initial_capital: capital,
+            ..Default::default()
+        },
+        trades,
         open_trades: Vec::new(),
-        equity: (0..80)
-            .map(|i| 1_000_000.0 + (i as f64 * 0.4).sin() * 20_000.0 + i as f64 * 900.0)
-            .collect(),
+        equity,
         open_profit: 0.0,
         chart: crate::model::ChartKind::Standard,
     }
@@ -268,7 +289,7 @@ fn problems_are_counted_in_words() {
 
 #[test]
 fn report_fits_the_drawer() {
-    let cases: [(&str, Option<VisualOutput>); 5] = [
+    let cases: [(&str, Option<VisualOutput>); 6] = [
         ("none", None),
         (
             "alerts",
@@ -292,6 +313,13 @@ fn report_fits_the_drawer() {
             }),
         ),
         (
+            "few-trades",
+            Some(VisualOutput {
+                strategy: Some(strategy(4)),
+                ..Default::default()
+            }),
+        ),
+        (
             "both",
             Some(VisualOutput {
                 strategy: Some(strategy(130)),
@@ -305,6 +333,58 @@ fn report_fits_the_drawer() {
             fits("report", state, size, |ui| {
                 drawer::report(ui, visual.as_ref());
             });
+        }
+    }
+}
+
+/// The Report tab in both themes, narrow and wide, with a strategy that wins, one that loses, one
+/// with too few trades to simulate and one with none, and the pointer on a chart.
+#[test]
+#[ignore = "writes pictures"]
+fn gallery_of_the_report() {
+    use crate::ui::theme::{self, AppTheme, RestoreDefaultTheme};
+    use eframe::egui::{Event, pos2};
+    let _restore = RestoreDefaultTheme;
+    let losing = strategy_of((1..=36).map(|id| if id % 3 == 0 { 70.0 } else { -45.0 }));
+    let cases = [
+        ("winning", strategy(24)),
+        ("losing", losing),
+        ("few", strategy(4)),
+        ("empty", strategy(0)),
+    ];
+    let sizes = [("narrow", 380.0, 1_000.0), ("wide", 1_000.0, 900.0)];
+    for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        for (state, report) in &cases {
+            let visual = VisualOutput {
+                strategy: Some(report.clone()),
+                ..Default::default()
+            };
+            for (size_name, width, height) in sizes {
+                let hovers: &[(&str, Option<(f32, f32)>)] = match (*state, size_name) {
+                    ("winning", "narrow") => &[("", None), ("-equity", Some((200.0, 395.0)))],
+                    ("winning", "wide") => &[("", None), ("-fan", Some((300.0, 640.0)))],
+                    _ => &[("", None)],
+                };
+                for (suffix, hover) in hovers {
+                    let mut screen = Screen::new(vec2(width, height));
+                    theme::apply(&screen.ctx, app_theme);
+                    let mut last = None;
+                    for _ in 0..4 {
+                        let events = hover
+                            .map(|(x, y)| vec![Event::PointerMoved(pos2(x, y))])
+                            .unwrap_or_default();
+                        last = Some(screen.run(events, |ui| {
+                            ui.painter()
+                                .rect_filled(ui.max_rect(), 0.0, theme::background());
+                            drawer::report(ui, Some(&visual));
+                        }));
+                    }
+                    screen.save(
+                        &format!("report-{state}-{size_name}-{theme_name}{suffix}"),
+                        last.expect("a frame"),
+                    );
+                }
+            }
         }
     }
 }

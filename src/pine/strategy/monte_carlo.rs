@@ -108,6 +108,12 @@ impl MonteCarlo {
             fan,
         })
     }
+
+    /// How many trades in the fan's point `step` stands, the same marks the runs were read at.
+    pub fn trades_at(&self, step: usize) -> usize {
+        let steps = self.fan.len().saturating_sub(1).max(1);
+        step.min(steps) * self.trades / steps
+    }
 }
 
 /// SplitMix64: a small, well-mixed generator. It needs no seed from the system, so the figures
@@ -204,6 +210,8 @@ mod tests {
         assert_eq!(result.fan.len(), result.trades.min(FAN_STEPS) + 1);
         assert_eq!(result.fan[0].median, 1_000.0);
         assert_eq!(result.fan.last(), Some(&result.final_equity));
+        assert_eq!(result.trades_at(0), 0);
+        assert_eq!(result.trades_at(result.fan.len() - 1), result.trades);
         for step in &result.fan {
             assert!(step.low <= step.median && step.median <= step.high);
         }
