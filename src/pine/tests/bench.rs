@@ -220,6 +220,34 @@ l = math.avg(a, b, c)
 plot(a + b + c + d + e + f + g + h + i + j + k + l)
 ";
 
+/// Many blocks per bar, some declaring a name of their own (one that hides an outer variable, one
+/// that does not exist outside) and most not: what a block costs to enter and leave.
+pub(crate) const BLOCKS: &str = "//@version=6
+indicator(\"Blocks\")
+float total = 0.0
+float level = close
+for i = 0 to 15
+    float step = i * 0.5
+    if step > 4.0
+        total += step
+    else
+        total -= 0.25
+    for j = 0 to 2
+        total += j * 0.1
+    if close > open
+        float level = high - low
+        total += level
+    else
+        total += 0.5
+    switch i % 3
+        0 => total += 1.0
+        1 =>
+            float k = step * 2
+            total += k
+        => total += 2.0
+plot(total + level)
+";
+
 /// Six `str.*` calls per bar.
 pub(crate) const MANY_STR: &str = "//@version=6
 indicator(\"Many str\")
@@ -688,6 +716,10 @@ fn workloads() -> Vec<Workload> {
             "many_math",
             Box::new(move || evaluate(MANY_MATH, &data, false)),
         );
+    }
+    {
+        let data = minute.clone();
+        add("blocks", Box::new(move || evaluate(BLOCKS, &data, false)));
     }
     {
         let data = minute.clone();
