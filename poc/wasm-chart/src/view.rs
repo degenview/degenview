@@ -125,6 +125,15 @@ impl View {
         );
     }
 
+    /// The series is now `total` bars long: `added` of them arrived after the newest. A drag under
+    /// way measures from the bars it began over, so it counts them.
+    pub fn bars_changed(&mut self, total: usize, added: usize) {
+        self.total = total;
+        if let Some(drag) = self.drag.as_mut() {
+            drag.gesture.arrived(added as f64);
+        }
+    }
+
     pub fn release(&mut self) {
         self.drag = None;
     }

@@ -46,6 +46,7 @@
     #status { margin-left: auto; color: var(--muted); }
     @media (max-width: 700px) { #hint { display: none; } }
     #status.error { color: var(--down); }
+    #status.live { color: var(--up); }
     main { position: relative; flex: 1; min-height: 0; }
     canvas {
       position: absolute;
@@ -82,16 +83,16 @@
   <main><canvas id="chart"></canvas></main>
 
   <script type="module">
-    import init, { load_chart } from "./pkg/wasm_chart.js";
+    import init, { load_chart, load_snapshot } from "./pkg/wasm_chart.js";
 
     const $ = (id) => document.getElementById(id);
     const canvas = $("chart");
     let chart = null;
     let request = 0;
 
-    function setStatus(text, isError = false) {
+    function setStatus(text, state = "") {
       $("status").textContent = text;
-      $("status").classList.toggle("error", isError);
+      $("status").className = state;
     }
 
     // Paints once per frame however many events arrived.
@@ -117,18 +118,72 @@
       $("change").className = change >= 0 ? "up" : "down";
     }
 
+    // The live feed of the chart on screen: its trades are folded into the chart by Rust, and a
+    // REST snapshot is merged over them now and then to catch what the socket missed.
+    const RECONCILE_MS = 30_000;
+    let feed = null;
+
+    function stopFeed() {
+      if (!feed) return;
+      clearInterval(feed.timer);
+      clearTimeout(feed.retry);
+      feed.socket.onclose = null;
+      feed.socket.close();
+      feed = null;
+    }
+
+    function startFeed(current, product, timeframe) {
+      stopFeed();
+      const mine = (feed = { timer: null, retry: null, socket: null });
+      const connect = (attempt) => {
+        const socket = (mine.socket = new WebSocket(current.feed_url));
+        socket.onopen = () => {
+          socket.send(current.subscribe_message);
+          setStatus("Live · Coinbase Exchange", "live");
+          if (attempt > 0) reconcile();
+        };
+        socket.onmessage = (event) => {
+          if (chart === current && current.on_message(event.data, performance.now())) {
+            showHeader();
+            redraw();
+          }
+        };
+        socket.onclose = () => {
+          setStatus("Reconnecting…");
+          mine.retry = setTimeout(() => connect(attempt + 1), Math.min(1000 * 2 ** attempt, 15_000));
+        };
+      };
+      const reconcile = async () => {
+        const started = performance.now();
+        try {
+          const snapshot = await load_snapshot(product, timeframe);
+          if (chart !== current) return;
+          current.merge(snapshot, started);
+          showHeader();
+          redraw();
+        } catch {
+          // The next round tries again; the feed keeps the chart current meanwhile.
+        }
+      };
+      mine.timer = setInterval(reconcile, RECONCILE_MS);
+      connect(0);
+    }
+
     async function refresh() {
       const mine = ++request;
+      stopFeed();
       setStatus("Loading…");
+      const product = $("product").value;
+      const timeframe = $("timeframe").value;
       try {
-        const loaded = await load_chart($("product").value, $("timeframe").value);
+        const loaded = await load_chart(product, timeframe);
         if (mine !== request) return; // a newer selection superseded this one
         chart = loaded;
         showHeader();
         chart.draw(canvas);
-        setStatus("Coinbase Exchange · Rust → WebAssembly");
+        startFeed(loaded, product, timeframe);
       } catch (error) {
-        if (mine === request) setStatus(String(error), true);
+        if (mine === request) setStatus(String(error), "error");
       }
     }
 

@@ -14,6 +14,12 @@ the viewport (pan, zoom, `visible_window`), `PriceFormat`, the Coinbase row pars
 - `src/view.rs` holds the app's `ChartViewport` and turns pointer events into edits of it: drag pans
   in time (and in price once the drag strays vertically), the wheel zooms about the pointer, a
   double-click resets. It is pure and tested natively.
+- `src/live.rs` keeps the chart live. Coinbase has no candle channel, so the page opens the `ticker`
+  feed (`degenview_market::coinbase` builds the subscription and reads the messages) and Rust
+  builds the running base bar from its trades; the crate's `LiveFold` folds that into the chart's
+  candles the way the app folds live klines. Every 30 s, and after a reconnect, a REST snapshot is
+  merged over the result with `LiveFold::merge_fetched`, where bars the feed delivered after the
+  request began win (`LiveMark`, here over `performance.now()`).
 - `src/render.rs` paints the bars the viewport shows (`visible_window`), the axes, the last price
   and a crosshair with the hovered bar's figures on a Canvas 2D context, and reports where it put
   the plot; `src/lib.rs` exports `load_chart` and `Chart` through `wasm-bindgen`.
@@ -31,6 +37,5 @@ cargo install wasm-bindgen-cli --version 0.2.130 --locked
 
 ## Not in scope
 
-Live updates (Coinbase's WebSocket), older history beyond the first 300 candles, volume and
-indicators. Coinbase returns
-at most 300 candles per request.
+Older history beyond the first 300 candles (Coinbase returns at most 300 per request), volume and
+indicators.

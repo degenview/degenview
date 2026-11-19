@@ -51,17 +51,33 @@ impl From<CoinbaseError> for JsValue {
     }
 }
 
-/// The newest candles of `product`, e.g. `BTC-USD`, at `timeframe`, oldest first: the candles
-/// Coinbase has when it serves that length, else a finer length folded the way the app folds it.
+/// The newest candles of a product at a timeframe, and what they were made from.
+pub struct Fetched {
+    pub plan: FoldPlan,
+    /// How many candles of the plan's timeframe one request can fill.
+    pub limit: usize,
+    /// The timeframe's candles, oldest first: Coinbase's own when it serves that length, else a
+    /// finer length folded the way the app folds it.
+    pub candles: Vec<Kline>,
+    /// The candles Coinbase answered with, of the plan's base length.
+    pub base: Vec<Kline>,
+}
+
+/// The newest candles of `product`, e.g. `BTC-USD`, at `timeframe`.
 pub async fn fetch_timeframe(
     product: &str,
     timeframe: Timeframe,
-) -> Result<Vec<Kline>, CoinbaseError> {
+) -> Result<Fetched, CoinbaseError> {
     let plan = plan(timeframe)?;
-    let shown = window(plan);
-    let requested = plan.base_count(shown);
+    let limit = window(plan);
+    let requested = plan.base_count(limit);
     let base = fetch_candles(product, base_seconds(plan)).await?;
-    Ok(plan.shape(base, requested, shown))
+    Ok(Fetched {
+        plan,
+        limit,
+        candles: plan.shape(base.clone(), requested, limit),
+        base,
+    })
 }
 
 /// How `timeframe` is served from Coinbase's own candle lengths.

@@ -4,6 +4,7 @@
 //! [`Chart::draw`] to paint them on a `<canvas>`.
 
 mod coinbase;
+mod live;
 mod render;
 mod view;
 
@@ -11,7 +12,11 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
+use degenview_market::coinbase::{STREAM_HOST, parse_ticker, subscribe_message};
 use degenview_market::{Kline, Timeframe};
+
+use coinbase::Fetched;
+use live::Live;
 
 use render::Frame;
 use view::View;
@@ -26,8 +31,14 @@ fn start() {
 pub struct Chart {
     candles: Vec<Kline>,
     granularity: u32,
+    product: String,
     view: View,
+    live: Live,
 }
+
+/// A fresh REST answer to merge into a chart that has been taking live trades.
+#[wasm_bindgen]
+pub struct Snapshot(Fetched);
 
 #[wasm_bindgen]
 impl Chart {
@@ -93,6 +104,43 @@ impl Chart {
         self.view.reset();
     }
 
+    fn bars_changed(&mut self, before: usize) {
+        let now = self.candles.len();
+        self.view.bars_changed(now, now.saturating_sub(before));
+    }
+
+    /// The websocket feed's address.
+    #[wasm_bindgen(getter)]
+    pub fn feed_url(&self) -> String {
+        format!("wss://{STREAM_HOST}")
+    }
+
+    /// What to send once the feed's socket is open.
+    #[wasm_bindgen(getter)]
+    pub fn subscribe_message(&self) -> String {
+        subscribe_message(&[&self.product])
+    }
+
+    /// Folds a feed message that arrived at `now` (the page's `performance.now()`) into the
+    /// candles. Returns whether they changed.
+    pub fn on_message(&mut self, text: &str, now: f64) -> bool {
+        let Some(tick) = parse_ticker(text).filter(|tick| tick.product_id == self.product) else {
+            return false;
+        };
+        let before = self.candles.len();
+        let changed = self.live.apply(&tick, now, &mut self.candles);
+        self.bars_changed(before);
+        changed
+    }
+
+    /// Merges a REST answer whose request began at `started` (`performance.now()`): the bars the
+    /// feed delivered since win over it.
+    pub fn merge(&mut self, snapshot: &Snapshot, started: f64) {
+        let before = self.candles.len();
+        self.live.merge(&snapshot.0, started, &mut self.candles);
+        self.bars_changed(before);
+    }
+
     /// Close of the newest bar, or NaN when Coinbase returned none.
     #[wasm_bindgen(getter)]
     pub fn last_close(&self) -> f64 {
@@ -115,10 +163,21 @@ impl Chart {
 #[wasm_bindgen]
 pub async fn load_chart(product: String, timeframe: String) -> Result<Chart, JsValue> {
     let timeframe = Timeframe::parse(&timeframe).map_err(coinbase::CoinbaseError::from)?;
-    let candles = coinbase::fetch_timeframe(&product, timeframe).await?;
+    let fetched = coinbase::fetch_timeframe(&product, timeframe).await?;
     Ok(Chart {
-        view: View::new(candles.len()),
-        candles,
+        view: View::new(fetched.candles.len()),
+        live: Live::new(&fetched),
+        candles: fetched.candles,
         granularity: (timeframe.nominal_ms() / 1_000) as u32,
+        product: product.to_uppercase(),
     })
+}
+
+/// The same request as [`load_chart`], to merge into a chart already on screen.
+#[wasm_bindgen]
+pub async fn load_snapshot(product: String, timeframe: String) -> Result<Snapshot, JsValue> {
+    let timeframe = Timeframe::parse(&timeframe).map_err(coinbase::CoinbaseError::from)?;
+    Ok(Snapshot(
+        coinbase::fetch_timeframe(&product, timeframe).await?,
+    ))
 }
