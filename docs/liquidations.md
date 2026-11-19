@@ -24,19 +24,25 @@ numbers undercount a busy moment (below).
   3 s `Lease`, starts the feed if there is none (with an empty tape: a record with a gap in it adds
   up wrongly) and returns an `Arc<Snapshot>`, rebuilt only when the tape's revision, the size filter
   or the second changed. Two tabs share one feed.
-- Each exchange runs a `net::ws::Session` on its own thread. A thread ends at its first message
-  after the lease lapsed; `LiquidationFeed::is_running` then goes false and the next `watch`
-  starts a new feed. Dropping the feed sets the shutdown flag. No panel drawn, no socket.
+- `service::stream::Stream` runs each exchange's `net::ws::Session` on its own thread, with a
+  watchdog on the lease: when it lapses the watchdog sets the shutdown flag, which every thread
+  honours while reading, waiting to reconnect or (Bybit) retrying its market list, so nothing keeps
+  retrying for a viewer that left. `is_running` is true only while **every** thread started still
+  runs: one that ended leaves a stream short of an exchange, so `watch` replaces the whole feed
+  (with an empty tape) rather than serving half of it. Dropping the feed shuts it down at once.
 - A burst asks for a repaint at most every 250 ms (`REPAINT_EVERY_MS`); `watch` also asks for one a
   second later, because the totals roll off with time even when nothing arrives.
-- The tape keeps the last hour and at most 20,000 events (`Tape::push`); the panel lists the newest
-  300 (`TAPE_ROWS`). The size filter (`MinSize`) only filters the rows: the totals count everything.
+- The tape has two records. The rows (at most 20,000, the newest 300 listed: `TAPE_ROWS`) are
+  placed by **exchange time**, not arrival, because two sockets deliver in their own order. The
+  totals are kept by second and are not capped, so a cascade that drops old rows still counts every
+  liquidation of the hour; a span may hold up to a second more than its name says. The size filter
+  (`MinSize`) only filters the rows.
 
 ## The exchanges (verified against the live sockets)
 
 | Exchange | Socket | What it sends | Side |
 | --- | --- | --- | --- |
-| Binance USDⓈ-M | `wss://fstream.binance.com/market/ws/!forceOrder@arr`, all markets, nothing sent | `e: forceOrder`, `o`: `s`, `S`, `ap` (average price), `z` (filled size), `T`; at most the **latest liquidation of each symbol per second** | The order is a `SELL` when a long is liquidated: `SELL` is `Side::Long`. Not stated on Binance's page; the standard reading |
+| Binance USDⓈ-M | `wss://fstream.binance.com/market/ws/!forceOrder@arr`, all markets, nothing sent | `e: forceOrder`, `st`, `o`: `s`, `S`, `ap` (average price), `z` (filled size), `T`; at most the **latest liquidation of each symbol per second**. The stream also carries COIN-M contracts (`st: 2`, sized in contracts worth a fixed dollar amount): they are dropped. An order with `z` of 0 has liquidated nothing yet and is dropped. There is no order id, so the same order seen in two snapshots would count twice | The order is a `SELL` when a long is liquidated: `SELL` is `Side::Long`. Not stated on Binance's page; the standard reading |
 | Bybit linear | `wss://stream.bybit.com/v5/public/linear`, one subscribe per `allLiquidation.<SYMBOL>` | `data[]`: `T`, `s`, `S`, `v` (size in the base coin), `p` | Documented: a `Buy` is a long liquidated |
 
 - Bybit has no all-markets topic, so the 60 markets with the most 24 h turnover

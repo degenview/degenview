@@ -11,6 +11,7 @@ pub mod net;
 pub mod portfolio;
 pub mod snapshot;
 pub mod sound;
+pub mod stream;
 pub mod system;
 pub mod update;
 pub mod watchlist_quotes;

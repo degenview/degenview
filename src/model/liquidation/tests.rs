@@ -96,17 +96,68 @@ fn the_tape_lists_the_newest_first_and_only_the_size_asked_for() {
 }
 
 #[test]
-fn a_busy_hour_is_capped_at_the_most_rows_and_events() {
+fn a_busy_hour_keeps_the_most_rows_but_every_liquidation_in_the_totals() {
     let mut tape = Tape::default();
-    for index in 0..(MAX_EVENTS + 50) {
+    let events = MAX_EVENTS + 50;
+    for index in 0..events {
         tape.push(
             liquidation(Side::Long, 100.0, 1_000 + index as i64 % 500),
             NOW,
         );
     }
     let snapshot = tape.snapshot(NOW, MinSize::Any);
-    assert_eq!(snapshot.count, MAX_EVENTS);
     assert_eq!(snapshot.latest.len(), TAPE_ROWS);
+    assert_eq!(tape.events.len(), MAX_EVENTS);
+    assert_eq!(
+        snapshot.count, events,
+        "the cap is on rows, not on what is counted"
+    );
+    assert_eq!(snapshot.hour.long, 100.0 * events as f64);
+}
+
+#[test]
+fn liquidations_are_placed_by_exchange_time_not_by_arrival() {
+    let mut tape = Tape::default();
+    // The newer one arrives first, then an older one from the other socket.
+    tape.push(liquidation(Side::Short, 2_000.0, 20_000), NOW);
+    tape.push(liquidation(Side::Long, 1_000.0, 50_000), NOW);
+    let times: Vec<i64> = tape
+        .snapshot(NOW, MinSize::Any)
+        .latest
+        .iter()
+        .map(|row| row.time_ms)
+        .collect();
+    assert_eq!(
+        times,
+        [NOW - 20_000, NOW - 50_000],
+        "newest first by its own time"
+    );
+}
+
+#[test]
+fn an_old_arrival_expires_alone_and_the_newer_one_is_still_counted() {
+    let mut tape = Tape::default();
+    tape.push(liquidation(Side::Short, 2_000.0, 20_000), NOW);
+    tape.push(liquidation(Side::Long, 1_000.0, 50_000), NOW);
+    // Far enough on that only the older one has left the hour.
+    let later = NOW + HOUR_MS - 40_000;
+    let snapshot = tape.snapshot(later, MinSize::Any);
+    assert_eq!(snapshot.count, 1);
+    assert_eq!(
+        snapshot.hour,
+        Totals {
+            long: 0.0,
+            short: 2_000.0
+        }
+    );
+    assert_eq!(snapshot.latest.len(), 1);
+}
+
+#[test]
+fn a_liquidation_already_older_than_an_hour_is_not_added() {
+    let mut tape = Tape::default();
+    tape.push(liquidation(Side::Long, 100.0, HOUR_MS + 1_000), NOW);
+    assert_eq!(tape.snapshot(NOW, MinSize::Any), Snapshot::default());
 }
 
 #[test]
