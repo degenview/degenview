@@ -41,11 +41,16 @@
   do not halt the script.
 - Function locals (`Session::invoke_with`): the variable table is flat. An ordinary local hides an
   outer variable of its name only from its declaration on: a block's to the end of that execution of
-  the block (`run_block` saves the outer value when the declaration runs and puts it back when the
-  block ends, however it ends: each branch, arm and loop iteration is its own execution, and a `:=`
-  above the declaration, or in another branch, is the outer variable's and stays; a loop's counters
-  are saved around the loop), a top-level one to the end of the call
-  (the call's `saved`). Only `var`/`varip` locals are set at entry (stash value, else unset so the
+  the block, a top-level one to the end of the call (the call's `saved`). Which block declarations
+  hide something is decided statically: `scopes::mark_shadowing` (at session build, for the script
+  and its libraries) flags an ordinary declaration in a block whose name was a global, local,
+  parameter or builtin variable just before it (`Declaration::shadows`, an id into
+  `Session::shadow_names`); a name that only a slot left by an earlier iteration or bar holds is not
+  an outer binding. Only a flagged declaration saves the outer value, onto `Session::shadow_stack`,
+  after its initializer ran (so a `:=` in the initializer is the outer variable's and stays) and
+  before the local is set; `run_block` puts back down to its mark, in reverse, however the block
+  ends (each branch, arm and loop iteration is its own execution). A `:=` above the declaration or
+  in another branch stays too. A loop's counters are saved around the loop. Only `var`/`varip` locals are set at entry (stash value, else unset so the
   declaration initialises them), so one hides a global of its name for the whole call. Scopes are
   lexical: a nested call first sets each name its calling function's locals hide back to the global
   (`uncover_caller_globals`, from the caller's `saved` on `Session::call_frames`; by induction each
@@ -221,7 +226,10 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   a global of that name the request gets no slice. A statement that makes a `request.*` call is never
   in a slice (nesting; its names keep the chart's value via `security_globals`), and requests inside
   functions are not sliced.
-- **Alias groups.** Only script globals (`Binding::Global` on both sides of a copy) join one.
+- **Alias groups.** Only script globals (`Binding::Global` on both sides of a copy) alias, and a
+  copy (`a := b`, `a = b`, also in the blocks of an expression) reaches only the changes that start
+  after it in the source, or any when it copies into a `var`/`varip`, which keeps it for the next
+  bar (`Aliases::reaching`). A copy after a change in the same loop body is not seen as reaching it.
 - **Alerts.** `alert()` does nothing while a request runs (`security_depth > 0`: a slice, or a
   function the expression calls): only the chart's own run fires alerts, and the once-per-bar ledger
   stays its own.
