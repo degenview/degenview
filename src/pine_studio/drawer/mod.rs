@@ -3,18 +3,22 @@
 //! `PineDiagnosticsListView`.
 
 pub(in crate::pine_studio) mod bottom_bar;
+mod figures;
 pub(in crate::pine_studio) mod intro;
 pub(in crate::pine_studio) mod logs;
+mod plot;
 pub(in crate::pine_studio) mod problems;
+mod simulation;
 pub(in crate::pine_studio) mod tab_chrome;
 #[cfg(test)]
 pub(in crate::pine_studio) mod tabs_tests;
+mod trades;
 
 use super::library::prefs::DrawerTab;
 use crate::model::alert::pine::frequency_name;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::runtime::state::AlertEvent;
-use crate::pine::strategy::{StrategyReport, Trade};
+use crate::pine::strategy::StrategyReport;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
@@ -591,8 +595,8 @@ pub fn report_summary(strategy: Option<&StrategyReport>, alerts: usize) -> Strin
 }
 
 /// The Report tab: a toolbar with what the script reported, and under it the strategy's figures,
-/// equity curve and trades, and the alerts the script raised, as cards. Where the width allows, the
-/// trades stand beside the figures.
+/// equity curve, simulation and trades, and the alerts the script raised, as cards. Where the width
+/// allows, the trades stand beside the figures.
 pub fn report(ui: &mut Ui, visual: Option<&VisualOutput>) {
     let strategy = visual.and_then(|v| v.strategy.as_ref());
     let alerts: &[AlertEvent] = visual.map_or(&[], |v| v.alerts.as_slice());
@@ -626,162 +630,33 @@ pub fn report(ui: &mut Ui, visual: Option<&VisualOutput>) {
     }
     chrome::scroll(ui, "script-report-scroll", |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        match strategy {
-            Some(report) if !report.trades.is_empty() && chrome::wide(ui) => {
-                chrome::columns(
-                    ui,
-                    0.5,
-                    |ui| {
-                        figures_card(ui, report);
-                        if !alerts.is_empty() {
-                            ui.add_space(16.0);
-                            alerts_card(ui, alerts);
-                        }
-                    },
-                    |ui| trades_card(ui, report),
-                );
+        let Some(report) = strategy else {
+            alerts_card(ui, alerts);
+            return;
+        };
+        let alerts_below = |ui: &mut Ui| {
+            if !alerts.is_empty() {
+                ui.add_space(chrome::SECTION);
+                alerts_card(ui, alerts);
             }
-            Some(report) => {
-                figures_card(ui, report);
-                if !report.trades.is_empty() {
-                    ui.add_space(16.0);
-                    trades_card(ui, report);
-                }
-                if !alerts.is_empty() {
-                    ui.add_space(16.0);
-                    alerts_card(ui, alerts);
-                }
-            }
-            None => alerts_card(ui, alerts),
+        };
+        if !report.trades.is_empty() && chrome::wide(ui) {
+            chrome::columns(
+                ui,
+                0.5,
+                |ui| {
+                    figures::strategy(ui, report);
+                    alerts_below(ui);
+                },
+                |ui| trades::trades_card(ui, report),
+            );
+        } else {
+            figures::strategy(ui, report);
+            ui.add_space(chrome::SECTION);
+            trades::trades_card(ui, report);
+            alerts_below(ui);
         }
     });
-}
-
-/// The strategy's headline figures and its equity curve.
-fn figures_card(ui: &mut Ui, report: &StrategyReport) {
-    if let Some(notice) = report::synthetic_fill_notice(report.chart) {
-        chrome::banner(ui, &notice);
-    }
-    let padded = egui::Margin::symmetric(12, 10);
-    chrome::caption(ui, "Figures");
-    card(ui, |ui| {
-        egui::Frame::new().inner_margin(padded).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            report::metric_grid(ui, report, theme::text_primary());
-        });
-    });
-    if report.equity.len() > 1 {
-        ui.add_space(16.0);
-        chrome::caption(ui, "Equity");
-        card(ui, |ui| {
-            egui::Frame::new().inner_margin(padded).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                report::equity_curve(
-                    ui,
-                    &report.equity,
-                    report.settings.initial_capital,
-                    72.0,
-                    false,
-                );
-            });
-        });
-    }
-}
-
-const TRADE_LIMIT: usize = 100;
-
-/// The closed trades, newest first.
-fn trades_card(ui: &mut Ui, report: &StrategyReport) {
-    chrome::caption(ui, &format!("Trades ({})", report.trades.len()));
-    card(ui, |ui| {
-        for (index, trade) in report.trades.iter().rev().take(TRADE_LIMIT).enumerate() {
-            if index > 0 {
-                hairline(ui);
-            }
-            trade_row(ui, trade);
-        }
-    });
-    if report.trades.len() > TRADE_LIMIT {
-        ui.add_space(6.0);
-        ui.label(
-            RichText::new(format!(
-                "Showing the latest {TRADE_LIMIT} of {}",
-                report.trades.len()
-            ))
-            .size(9.0)
-            .color(theme::text_tertiary()),
-        );
-    }
-}
-
-/// One trade: its number and side, where it went in and out, and what it made.
-fn trade_row(ui: &mut Ui, trade: &Trade) {
-    const HEIGHT: f32 = 28.0;
-    const PAD_X: f32 = 12.0;
-    let (rect, response) =
-        ui.allocate_exact_size(vec2(ui.available_width(), HEIGHT), Sense::hover());
-    let painter = ui.painter().with_clip_rect(rect);
-    let mid = rect.center().y;
-    let number = painter.layout_no_wrap(
-        format!("#{}", trade.id),
-        FontId::monospace(10.0),
-        theme::text_tertiary(),
-    );
-    painter.galley(
-        pos2(rect.left() + PAD_X, mid - number.size().y / 2.0),
-        number,
-        theme::text_tertiary(),
-    );
-    let (side, tint) = if trade.is_long {
-        ("Long", kit::ACCENT)
-    } else {
-        ("Short", kit::ORANGE)
-    };
-    let capsule_x = rect.left() + PAD_X + 40.0;
-    let galley = painter.layout_no_wrap(side.to_owned(), FontId::proportional(9.0), tint);
-    let capsule = Rect::from_min_size(
-        pos2(capsule_x, mid - 7.5),
-        vec2(galley.size().x + 14.0, 15.0),
-    );
-    painter.rect_filled(capsule, 8.0, theme::with_alpha(tint, 0.14));
-    painter.galley(
-        pos2(capsule.left() + 7.0, mid - galley.size().y / 2.0),
-        galley,
-        tint,
-    );
-    let profit = painter.layout_no_wrap(
-        PineReportFormat::signed_money(trade.profit),
-        FontId::monospace(10.5),
-        report::tint(trade.profit, theme::text_primary()),
-    );
-    let profit_x = rect.right() - PAD_X - profit.size().x;
-    painter.galley(
-        pos2(profit_x, mid - profit.size().y / 2.0),
-        profit,
-        Color32::PLACEHOLDER,
-    );
-    let prices_x = capsule.right() + 10.0;
-    let room = profit_x - 10.0 - prices_x;
-    if room > 30.0 {
-        let prices = kit::galley(
-            ui,
-            &format!(
-                "{} \u{2192} {}",
-                PineReportFormat::price(trade.entry_price),
-                PineReportFormat::price(trade.exit_price)
-            ),
-            kit::size::SUBHEADLINE,
-            kit::REGULAR,
-            theme::text_secondary(),
-            room,
-        );
-        painter.galley(
-            pos2(prices_x, mid - prices.size().y / 2.0),
-            prices,
-            theme::text_secondary(),
-        );
-    }
-    response.on_hover_text(crate::ui::pine::report::trade_summary(trade));
 }
 
 /// The alerts the script raised, newest first, with how many were live.
@@ -846,14 +721,9 @@ fn alerts_card(ui: &mut Ui, alerts: &[AlertEvent]) {
         }
     });
     if alerts.len() > ALERT_LIMIT {
-        ui.add_space(6.0);
-        ui.label(
-            RichText::new(format!(
-                "Showing the latest {ALERT_LIMIT} of {}",
-                alerts.len()
-            ))
-            .size(9.0)
-            .color(theme::text_tertiary()),
+        chrome::footnote(
+            ui,
+            &format!("Showing the latest {ALERT_LIMIT} of {}", alerts.len()),
         );
     }
 }

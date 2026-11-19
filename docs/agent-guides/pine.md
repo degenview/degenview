@@ -350,8 +350,24 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   with `DEGENVIEW_GALLERY_DIR` set.
 - Problems copy button copies all problems (errors first); right-click a row copies it or just its
   message.
-- `pine_report::show` / `report_content` (chart settings) keep the compact look; the drawer lays out
-  `metric_grid`, `equity_curve` itself.
+- `pine_report::show` / `report_content` (chart settings) keep the compact look. The drawer's Report
+  has its own: `drawer/figures.rs` (net profit large, key figures, quieter ones, aligned `grid`),
+  `drawer/plot.rs` (the equity and simulation charts: scale at the right edge with the capital,
+  readout under the pointer), `drawer/trades.rs` (aligned columns; bars held gives way first when
+  narrow). Pictures in both themes: `cargo test --lib gallery_of_the_report -- --ignored` with
+  `DEGENVIEW_GALLERY_DIR`.
+- Report's Simulation card (`drawer/simulation.rs`) shows `pine::strategy::monte_carlo`: closed
+  trades redrawn with replacement (fixed seed, so a report always gives the same figures). Drawing
+  with replacement is what spreads the final equity (a sum of the drawn profits, so order never
+  changes it); order only shapes the path, so it matters to drawdown. Say that, never "how much came
+  from the order". Profits are added as money, so a percent-of-equity strategy is approximated, not
+  compounded. Takes `MIN_TRADES` (10) to `MAX_TRADES` (20,000) closed trades: runs shrink from 1,000
+  to 100 as the list grows, and `DRAW_BUDGET` is never exceeded, which is why a longer list is
+  refused (`Unavailable`) instead of run. A loss is judged on the run's accumulated gain with a
+  rounding tolerance, not `equity < initial`, and drawdown is not capped at 100%. Frames reuse the
+  answer (or the refusal) until `trades_fingerprint` changes; never run the resampling per frame.
+  Figures are painted galleys, so each carries an accessibility label (`Figure::spoken`). Compact
+  chart settings report does not show it.
 
 ## Manager lifecycle
 

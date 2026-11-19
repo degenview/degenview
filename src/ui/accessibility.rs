@@ -63,8 +63,11 @@ impl AccessNodes {
         }
     }
 
-    /// The node an app named `label` (its toggled state is `node.toggled()`).
+    /// The node an app named `label` (its toggled state is `node.toggled()`). A [`WidgetType::Label`]
+    /// carries its text as its value, which is matched as well.
     pub(crate) fn find(&self, label: &str) -> Option<&eframe::egui::accesskit::Node> {
-        self.nodes.values().find(|node| node.label() == Some(label))
+        self.nodes
+            .values()
+            .find(|node| node.label() == Some(label) || node.value() == Some(label))
     }
 }

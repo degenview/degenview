@@ -3,6 +3,7 @@
 
 pub mod broker;
 pub mod builtins;
+pub mod monte_carlo;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QuantityType {
