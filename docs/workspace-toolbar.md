@@ -59,7 +59,7 @@ Left to right: symbol (the focused chart's market, opens the [symbol picker](sym
 ⊕ beside it that compares another market (the same picker in Compare mode as the chart settings'
 Compare page, `open_compare_picker`; disabled where a chart cannot take one) |
 timeframe dropdown (one button, the current timeframe and a chevron that
-turns up while the picker is open) | Indicators | chart type | Replay, Alert | Undo, Redo. Right end, from the edge inwards: watchlist toggle, Pine Studio, Portfolio |
+turns up while the picker is open) | Indicators | chart type | Replay, Alert | Undo, Redo. Right end, from the edge inwards: Market flow toggle, watchlist toggle, Pine Studio, Portfolio |
 snapshot menu, chart settings | layout menu.
 
 - Every button is a `Button` (id, glyph, label, tooltip, enabled, lit, action). `measure` lays the

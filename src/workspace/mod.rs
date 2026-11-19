@@ -48,6 +48,7 @@ mod empty_page;
 mod grid;
 mod input;
 mod layout;
+mod liquidations;
 mod overlay;
 mod pine;
 mod replay;
@@ -185,6 +186,8 @@ pub struct ChartWorkspace {
     quote_coordinator: WatchlistQuoteCoordinator,
     /// The watchlist sidebar and what it asks of the tab.
     watchlist_pane: WatchlistPane,
+    /// The liquidations panel: shown or not, and its filter. A tab starts without it.
+    liquidations: liquidations::LiquidationsPane,
     /// The order sheet and the orders panel, and the venue they trade on.
     trade: TradeSide,
     /// The chart menu's state: the open menu, its messages, and the panels it toggles.
@@ -314,6 +317,7 @@ impl ChartWorkspace {
             quote_book,
             quote_coordinator,
             watchlist_pane: WatchlistPane::default(),
+            liquidations: liquidations::LiquidationsPane::default(),
             trade: TradeSide::default(),
             context: ContextState::default(),
             snapshot: SnapshotState::default(),
@@ -617,6 +621,7 @@ impl ChartWorkspace {
         actions.extend(rail_actions);
 
         self.show_watchlist_panel(ui, &ctx);
+        self.show_liquidations_panel(ui, &ctx);
 
         actions.extend(self.show_trade_panels(ui, paper));
 

@@ -22,6 +22,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Position, forecast, volume profile, VWAP or measurement drawings | [Forecasting, volume and measurement tools](docs/forecast-tools.md) |
 | Fibonacci or Gann drawings, level lists, fans, circles, arcs, spirals or Gann angles | [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) |
 | Session statistics: gap fills, prior-day breaks, weekday effects, `degenview_get_session_stats` | [Session statistics](docs/session-stats.md) |
+| The Liquidations / Taker flow panel, the exchanges' liquidation or trade sockets, or adding an exchange to them | [Liquidations and taker flow](docs/liquidations.md) |
 | Pine language/runtime, Pine Studio, editor behavior, or example scripts | [Pine and scripts](docs/agent-guides/pine.md) |
 | Adding an indicator to a chart: the toolbar's Indicators button, the indicator catalog, or the Pine indicators bundled with the app | [Indicator catalog](docs/indicator-picker.md) |
 | User-defined functions or methods, overloads, call resolution, or the Pine type checker | [User-defined methods](docs/pine-user-methods.md) |
@@ -148,7 +149,7 @@ old output). Finished worktrees are where the disk goes.
   [Tab Linking](docs/tab-linking.md), [Annotation tools](docs/annotation-tools.md),
   [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md),
   [Forecasting, volume and measurement tools](docs/forecast-tools.md),
-  [Session statistics](docs/session-stats.md), [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md),
+  [Session statistics](docs/session-stats.md), [Liquidations and taker flow](docs/liquidations.md), [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md),
   [Symbol picker](docs/symbol-picker.md), [Workspace toolbar](docs/workspace-toolbar.md),
   [Indicator catalog](docs/indicator-picker.md), [Pine colour picker](docs/pine-color-picker.md),
   [Pine debugger](docs/pine-debugger.md), [Pine profiler](docs/pine-profiler.md),

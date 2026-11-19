@@ -10,6 +10,7 @@ pub mod fib;
 pub mod forecast;
 pub mod ids;
 pub mod indicators;
+pub mod liquidation;
 pub mod market;
 pub mod mcp;
 pub mod overlay;
@@ -19,6 +20,7 @@ pub mod pine;
 pub mod portfolio;
 pub mod session_stats;
 pub mod tab;
+pub mod taker_flow;
 pub mod watchlist;
 pub mod webhook;
 

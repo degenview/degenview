@@ -93,6 +93,7 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | `drawings/`, `annotation/`, `pattern/`, `fib/`, `forecast/` | Drawings and their tools: the shared model and styles, text/image/post/table content, patterns and Elliott waves, Fibonacci and Gann, positions and measurers |
 | `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart, script value types (`script`) and the Pine indicators bundled with the app (`bundled/`) |
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
+| `liquidation/`, `taker_flow/` | Forced liquidations (`Liquidation`, the rolling `Tape` and its `Snapshot` of totals and rows) and taker flow (`Trade`, `Venue`, the per-second `Flow` and its `Snapshot`, `asset_of`). Pure |
 | `ids/` | The id space engines mint into (`LEGACY_LIMIT`, `GLOBAL_BASE`); sync tags it in `sync::record::ids` |
 | `encoding/` | Standard base64 (`base64_encode`, `base64_decode`) for MCP images, the CloudKit bridge, stored pictures and proxy sign-in |
 
@@ -124,6 +125,7 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 | `system/` | `entitlements`, `file_dialog`, `sandbox`, `timezone` |
 | `sound/` | Short system sounds through the platform's own player (`NSSound`, `PlaySoundW`, `canberra-gtk-play`), no audio crate; `Sounder` is the seam tests replace. The paper-fill sound: `PaperHost` counts fills this Mac made (`drain_fills`, never a reload or a mirrored account), `app/background.rs` plays one sound per frame, and the Notifications page's "Fill sound" switch is the local setting `paper.prefs` |
 | `llm/`, `watchlist_quotes/` | The AI providers; the shared quote stream |
+| `liquidation/`, `taker_flow/`, `stream/` | The exchanges' public liquidation sockets and trade sockets (`binance`, `bybit` each) filling one `Tape` or `Flow`; `stream` is the lease, watchdog and thread runner both share |
 
 `host/` has only `mod.rs` at its root. One directory per domain, the host in `mod.rs` and its helpers
 beside it: `alert/` (with `runtime`), `broker/`, `editor_theme/`, `mcp/` (with `confirmation`), `paper/`,

@@ -1,6 +1,7 @@
 pub mod alert;
 pub mod broker;
 pub mod editor_theme;
+pub mod liquidation;
 pub mod mcp;
 pub mod paper;
 pub mod pine;
@@ -9,5 +10,6 @@ pub mod settings;
 pub mod snapshot;
 pub mod sync;
 pub mod tab;
+pub mod taker_flow;
 pub mod trading;
 pub mod update;
