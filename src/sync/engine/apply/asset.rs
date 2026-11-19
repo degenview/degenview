@@ -2,7 +2,8 @@
 //! and never deleted by another Mac.
 
 use super::{EntityKind, EntityLink, RemoteRecord, Work, canonical_json, sha256_hex};
-use crate::store::asset_store::StoredAsset;
+use crate::model::annotation::asset::StoredAsset;
+use crate::service::annotation::ingest;
 use crate::sync::engine::SyncError;
 
 impl Work<'_> {
@@ -13,7 +14,7 @@ impl Work<'_> {
         let Ok(asset) = serde_json::from_value::<StoredAsset>(record.value.clone()) else {
             return self.keep(record, "invalid");
         };
-        if asset.id != id || asset.verified_bytes().is_none() {
+        if asset.id != id || ingest::verified_bytes(&asset).is_none() {
             return self.keep(record, "invalid");
         }
         if self.store.put_asset_from_cloud(&asset)? {

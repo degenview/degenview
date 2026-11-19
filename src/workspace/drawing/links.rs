@@ -270,9 +270,7 @@ impl ChartWorkspace {
                     // The author's picture is kept like any other: stored once by its hash, named
                     // on the preview. If it cannot be stored the preview simply has none.
                     let avatar = preview.avatar.and_then(|picture| {
-                        let kept = store.lock().ok()?.put_asset(
-                            &crate::store::asset_store::StoredAsset::from_ingested(&picture),
-                        );
+                        let kept = store.lock().ok()?.put_asset(&picture.stored());
                         kept.ok().map(|_| picture.id)
                     });
                     LinkMeta {

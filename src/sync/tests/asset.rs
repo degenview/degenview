@@ -1,8 +1,8 @@
 //! Pictures between two Macs: they travel whole, once, and never come back as a deletion.
 
 use super::apply::{layout_of, outbox_len, pair, put_layouts, rows, settle};
+use crate::model::annotation::asset::StoredAsset;
 use crate::service::annotation::ingest::{self, Ingested};
-use crate::store::asset_store::StoredAsset;
 use crate::sync::record::policy::EntityKind;
 use crate::sync::transport::mock::name_of;
 
@@ -20,7 +20,7 @@ fn picture(seed: u8) -> StoredAsset {
     )
     .unwrap();
     let kept: Ingested = ingest::ingest(&png).unwrap();
-    StoredAsset::from_ingested(&kept)
+    kept.stored()
 }
 
 #[test]
@@ -35,7 +35,7 @@ fn a_picture_reaches_the_other_mac_whole_and_does_not_echo_back() {
     let on_b = b.store.lock().unwrap().asset(&kept.id).unwrap();
     assert_eq!(on_b.as_ref(), Some(&kept));
     assert!(
-        on_b.unwrap().verified_bytes().is_some(),
+        crate::service::annotation::ingest::verified_bytes(&on_b.unwrap()).is_some(),
         "the bytes are the picture"
     );
     assert_eq!(
@@ -240,5 +240,5 @@ fn a_drawing_that_arrives_before_its_picture_is_kept_and_the_picture_follows() {
     settle(&mut a, &mut b);
     let arrived = b.store.lock().unwrap().asset(&kept.id).unwrap();
     assert_eq!(arrived.as_ref(), Some(&kept));
-    assert!(arrived.unwrap().verified_bytes().is_some());
+    assert!(crate::service::annotation::ingest::verified_bytes(&arrived.unwrap()).is_some());
 }
