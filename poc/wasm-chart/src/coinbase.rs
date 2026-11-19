@@ -5,13 +5,25 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::Response;
 
+use degenview_market::bucket::FoldPlan;
 use degenview_market::coinbase::{ParseError, parse_candles};
-use degenview_market::{Kline, normalize};
+use degenview_market::{Kline, TimeUnit, Timeframe, TimeframeParseError, normalize};
 
 const ENDPOINT: &str = "https://api.exchange.coinbase.com/products";
 
-/// Bar lengths, in seconds, that the candles endpoint accepts.
-pub const GRANULARITIES: [u32; 6] = [60, 300, 900, 3600, 21_600, 86_400];
+/// The most candles one request returns.
+const MAX_CANDLES: usize = 300;
+
+/// The bar lengths the candles endpoint serves: seconds, and the same as a count of a unit. Every
+/// other timeframe is folded from one of these.
+const NATIVES: [(u32, u16, TimeUnit); 6] = [
+    (60, 1, TimeUnit::Minute),
+    (300, 5, TimeUnit::Minute),
+    (900, 15, TimeUnit::Minute),
+    (3_600, 1, TimeUnit::Hour),
+    (21_600, 6, TimeUnit::Hour),
+    (86_400, 1, TimeUnit::Day),
+];
 
 #[derive(Debug, Error)]
 pub enum CoinbaseError {
@@ -19,6 +31,10 @@ pub enum CoinbaseError {
     BadProduct(String),
     #[error("Coinbase does not serve {0}-second candles")]
     BadGranularity(u32),
+    #[error("{0}")]
+    Timeframe(#[from] TimeframeParseError),
+    #[error("Coinbase has no candles {0} can be built from")]
+    Unsupported(String),
     #[error("no browser window")]
     NoWindow,
     #[error("request failed: {0}")]
@@ -35,8 +51,43 @@ impl From<CoinbaseError> for JsValue {
     }
 }
 
-/// The newest (up to 300) candles of `product`, e.g. `BTC-USD`, oldest first.
-pub async fn fetch_candles(product: &str, granularity: u32) -> Result<Vec<Kline>, CoinbaseError> {
+/// The newest candles of `product`, e.g. `BTC-USD`, at `timeframe`, oldest first: the candles
+/// Coinbase has when it serves that length, else a finer length folded the way the app folds it.
+pub async fn fetch_timeframe(
+    product: &str,
+    timeframe: Timeframe,
+) -> Result<Vec<Kline>, CoinbaseError> {
+    let plan = plan(timeframe)?;
+    let shown = window(plan);
+    let requested = plan.base_count(shown);
+    let base = fetch_candles(product, base_seconds(plan)).await?;
+    Ok(plan.shape(base, requested, shown))
+}
+
+/// How `timeframe` is served from Coinbase's own candle lengths.
+fn plan(timeframe: Timeframe) -> Result<FoldPlan, CoinbaseError> {
+    let natives: Vec<Timeframe> = NATIVES
+        .iter()
+        .filter_map(|&(_, count, unit)| Timeframe::new(count, unit).ok())
+        .collect();
+    FoldPlan::new(timeframe, &natives).ok_or_else(|| CoinbaseError::Unsupported(timeframe.label()))
+}
+
+fn base_seconds(plan: FoldPlan) -> u32 {
+    (plan.base().nominal_ms() / 1_000) as u32
+}
+
+/// How many whole candles of the plan's timeframe one request can fill. A fold needs one more
+/// candle's worth of base candles for the fragment the request's start cuts off.
+fn window(plan: FoldPlan) -> usize {
+    if plan.is_native() {
+        MAX_CANDLES
+    } else {
+        (MAX_CANDLES / plan.per_target()).saturating_sub(1).max(1)
+    }
+}
+
+async fn fetch_candles(product: &str, granularity: u32) -> Result<Vec<Kline>, CoinbaseError> {
     let url = candles_url(product, granularity)?;
     let window = web_sys::window().ok_or(CoinbaseError::NoWindow)?;
     let response: Response = JsFuture::from(window.fetch_with_str(&url))
@@ -65,7 +116,7 @@ fn candles_url(product: &str, granularity: u32) -> Result<String, CoinbaseError>
     if !valid {
         return Err(CoinbaseError::BadProduct(product.to_owned()));
     }
-    if !GRANULARITIES.contains(&granularity) {
+    if !NATIVES.iter().any(|&(seconds, ..)| seconds == granularity) {
         return Err(CoinbaseError::BadGranularity(granularity));
     }
     Ok(format!(
@@ -99,6 +150,27 @@ mod tests {
             candles_url("", 60),
             Err(CoinbaseError::BadProduct(_))
         ));
+    }
+
+    fn served(text: &str) -> (Timeframe, u32, usize) {
+        let timeframe = Timeframe::parse(text).unwrap();
+        let plan = plan(timeframe).unwrap();
+        (plan.base(), base_seconds(plan), window(plan))
+    }
+
+    #[test]
+    fn a_length_coinbase_has_is_asked_for_as_it_is() {
+        assert_eq!(served("1h"), (Timeframe::HOUR_1, 3_600, 300));
+        assert_eq!(served("1D"), (Timeframe::DAY_1, 86_400, 300));
+    }
+
+    #[test]
+    fn other_lengths_fold_from_the_coarsest_native_that_nests() {
+        // Hours of four, twelve and a week are built from hours, 6-hour bars and days.
+        assert_eq!(served("4h"), (Timeframe::HOUR_1, 3_600, 74));
+        assert_eq!(served("12h").1, 21_600);
+        assert_eq!(served("1W"), (Timeframe::DAY_1, 86_400, 41));
+        assert_eq!(served("22m").1, 60);
     }
 
     #[test]

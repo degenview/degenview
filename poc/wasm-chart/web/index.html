@@ -30,7 +30,7 @@
       padding: 12px 16px;
       border-bottom: 1px solid var(--line);
     }
-    select {
+    select, input {
       padding: 4px 8px;
       color: inherit;
       font: inherit;
@@ -57,14 +57,13 @@
       <option>SOL-USD</option>
       <option>DOGE-USD</option>
     </select>
-    <select id="granularity" aria-label="Timeframe">
-      <option value="60">1m</option>
-      <option value="300">5m</option>
-      <option value="900">15m</option>
-      <option value="3600" selected>1h</option>
-      <option value="21600">6h</option>
-      <option value="86400">1D</option>
-    </select>
+    <input id="timeframe" value="4h" list="timeframes" size="5" spellcheck="false"
+           autocomplete="off" aria-label="Timeframe (for example 22m, 4h, 2D, 1W)">
+    <datalist id="timeframes">
+      <option>1m</option><option>5m</option><option>15m</option><option>1h</option>
+      <option>4h</option><option>12h</option><option>1D</option><option>1W</option>
+      <option>1M</option>
+    </datalist>
     <span id="price"></span>
     <span id="change"></span>
     <span id="status">Loading WebAssembly…</span>
@@ -100,7 +99,7 @@
       const mine = ++request;
       setStatus("Loading…");
       try {
-        const loaded = await load_chart($("product").value, Number($("granularity").value));
+        const loaded = await load_chart($("product").value, $("timeframe").value);
         if (mine !== request) return; // a newer selection superseded this one
         chart = loaded;
         showHeader();
@@ -113,7 +112,7 @@
 
     await init();
     $("product").addEventListener("change", refresh);
-    $("granularity").addEventListener("change", refresh);
+    $("timeframe").addEventListener("change", refresh);
     new ResizeObserver(() => chart?.draw(canvas)).observe(canvas);
     refresh();
   </script>

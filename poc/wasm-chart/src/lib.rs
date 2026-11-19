@@ -10,7 +10,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
-use degenview_market::Kline;
+use degenview_market::{Kline, Timeframe};
 
 #[wasm_bindgen(start)]
 fn start() {
@@ -61,13 +61,15 @@ impl Chart {
     }
 }
 
-/// Fetches the latest candles of `product` (for example `BTC-USD`). `granularity` is a bar's
-/// length in seconds: 60, 300, 900, 3600, 21600 or 86400.
+/// Fetches the latest candles of `product` (for example `BTC-USD`) at `timeframe`: any length
+/// the app takes, such as `1h`, `4h`, `22m`, `2D` or `1W`. Lengths Coinbase does not serve are
+/// folded from finer candles.
 #[wasm_bindgen]
-pub async fn load_chart(product: String, granularity: u32) -> Result<Chart, JsValue> {
-    let candles = coinbase::fetch_candles(&product, granularity).await?;
+pub async fn load_chart(product: String, timeframe: String) -> Result<Chart, JsValue> {
+    let timeframe = Timeframe::parse(&timeframe).map_err(coinbase::CoinbaseError::from)?;
+    let candles = coinbase::fetch_timeframe(&product, timeframe).await?;
     Ok(Chart {
         candles,
-        granularity,
+        granularity: (timeframe.nominal_ms() / 1_000) as u32,
     })
 }
