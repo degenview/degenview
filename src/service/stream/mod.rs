@@ -7,7 +7,7 @@
 //! to reconnect or still looking something up, so nothing keeps retrying for a viewer that left.
 //! Dropping the stream closes them at once.
 
-use crate::service::net::ws::Session;
+use crate::service::net::ws::{Frame, Session};
 use crate::service::now_ms;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
@@ -53,6 +53,20 @@ impl Worker {
     /// the lease lapses. `on_text` answers whether to keep reading.
     pub fn run(&self, session: &Session, mut on_text: impl FnMut(&str) -> bool) {
         session.run(&self.shutdown, |text| self.is_wanted() && on_text(text));
+    }
+
+    /// Like [`Self::run`], and `on_link` hears when the socket is up or down; see
+    /// [`Session::run_linked`].
+    pub fn run_linked(
+        &self,
+        session: &Session,
+        on_link: impl FnMut(bool),
+        mut on_text: impl FnMut(&str) -> bool,
+    ) {
+        session.run_linked(&self.shutdown, on_link, |frame| match frame {
+            Frame::Text(text) => self.is_wanted() && on_text(text),
+            Frame::Binary(_) => true,
+        });
     }
 
     /// Whether anybody still wants the feed.

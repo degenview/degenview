@@ -238,7 +238,19 @@ impl Session {
     }
 
     /// Like [`Self::run`], for a feed that also sends binary messages.
-    pub fn run_frames(&self, shutdown: &AtomicBool, mut on_frame: impl FnMut(Frame<'_>) -> bool) {
+    pub fn run_frames(&self, shutdown: &AtomicBool, on_frame: impl FnMut(Frame<'_>) -> bool) {
+        self.run_linked(shutdown, |_| {}, on_frame);
+    }
+
+    /// Like [`Self::run_frames`], and `on_link` hears when the socket is up (`true`, once
+    /// connected and subscribed) and when it is down again (`false`, however it ended): for a feed
+    /// that has to tell a quiet market from a socket that was not there.
+    pub fn run_linked(
+        &self,
+        shutdown: &AtomicBool,
+        mut on_link: impl FnMut(bool),
+        mut on_frame: impl FnMut(Frame<'_>) -> bool,
+    ) {
         let mut backoff = Backoff::new();
         while !shutdown.load(Ordering::Acquire) {
             if let Ok((mut socket, route)) = connect(&self.url, &self.host, self.port) {
@@ -248,23 +260,25 @@ impl Session {
                     .all(|message| socket.send(Message::Text(message.as_str().into())).is_ok());
                 if subscribed {
                     let mut health = Health::new(self.max_data_silence, self.keepalive, route);
-                    while !shutdown.load(Ordering::Acquire) {
+                    on_link(true);
+                    let mut listening = true;
+                    while listening && !shutdown.load(Ordering::Acquire) {
                         match health.read(&mut socket) {
                             Ok(Some(Message::Text(text))) => {
                                 backoff.reset();
-                                if !on_frame(Frame::Text(text.as_str())) {
-                                    return;
-                                }
+                                listening = on_frame(Frame::Text(text.as_str()));
                             }
                             Ok(Some(Message::Binary(bytes))) => {
                                 backoff.reset();
-                                if !on_frame(Frame::Binary(&bytes)) {
-                                    return;
-                                }
+                                listening = on_frame(Frame::Binary(&bytes));
                             }
                             Ok(Some(Message::Close(_))) | Err(_) => break,
                             Ok(_) => {}
                         }
+                    }
+                    on_link(false);
+                    if !listening {
+                        return;
                     }
                 }
             }

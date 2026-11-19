@@ -63,6 +63,9 @@ fn longs_read_red_and_shorts_green() {
 /// Half an hour of trades on every venue, the buyers ahead early and the sellers late.
 fn busy_flow() -> taker_flow::Snapshot {
     let mut flow = Flow::default();
+    for venue in Venue::ALL {
+        flow.link(venue, true, NOW - 3_600_000);
+    }
     for second in 0..1_800_i64 {
         for (index, venue) in Venue::ALL.iter().enumerate() {
             let leaning_up = second > 900;
@@ -85,6 +88,31 @@ fn busy_flow() -> taker_flow::Snapshot {
     flow.snapshot(NOW)
 }
 
+/// A panel just opened: one venue heard a trade a few seconds after connecting, one never
+/// connected, and an outage left a hole in the bars.
+fn partial_flow() -> taker_flow::Snapshot {
+    let mut flow = Flow::default();
+    flow.link(Venue::ALL[0], true, NOW - 5 * 60_000);
+    flow.link(Venue::ALL[0], false, NOW - 3 * 60_000);
+    flow.link(Venue::ALL[0], true, NOW - 2 * 60_000);
+    flow.link(Venue::ALL[1], true, NOW - 20_000);
+    for (index, age) in [(0, 150_000), (0, 30_000), (1, 5_000)]
+        .into_iter()
+        .enumerate()
+    {
+        flow.push(
+            Trade {
+                venue: Venue::ALL[age.0],
+                notional: 80_000.0 + 40_000.0 * index as f64,
+                taker: if index == 1 { Taker::Buy } else { Taker::Sell },
+                time_ms: NOW - age.1,
+            },
+            NOW,
+        );
+    }
+    flow.snapshot(NOW)
+}
+
 #[test]
 fn the_panel_draws_every_state_of_both_modes() {
     let mut state = LiquidationsState::default();
@@ -94,6 +122,7 @@ fn the_panel_draws_every_state_of_both_modes() {
         ..full.clone()
     };
     let flow = busy_flow();
+    let partial = partial_flow();
     let quiet = taker_flow::Snapshot::default();
     let bodies = [
         Body::Liquidations(&Snapshot::default()),
@@ -110,6 +139,10 @@ fn the_panel_draws_every_state_of_both_modes() {
         Body::TakerFlow(FlowBody {
             asset: Some("BTC"),
             snapshot: Some(&flow),
+        }),
+        Body::TakerFlow(FlowBody {
+            asset: Some("BTC"),
+            snapshot: Some(&partial),
         }),
     ];
     for body in &bodies {
@@ -132,6 +165,7 @@ fn gallery_of_the_panel() {
     };
     let empty = Snapshot::default();
     let flow = busy_flow();
+    let partial = partial_flow();
     let quiet = taker_flow::Snapshot::default();
     let cases: Vec<(&str, Mode, MinSize, Body<'_>)> = vec![
         (
@@ -165,6 +199,15 @@ fn gallery_of_the_panel() {
             Body::TakerFlow(FlowBody {
                 asset: Some("BTC"),
                 snapshot: Some(&flow),
+            }),
+        ),
+        (
+            "flow-partial",
+            Mode::TakerFlow,
+            MinSize::Any,
+            Body::TakerFlow(FlowBody {
+                asset: Some("BTC"),
+                snapshot: Some(&partial),
             }),
         ),
         (

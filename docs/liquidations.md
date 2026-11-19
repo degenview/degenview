@@ -62,7 +62,8 @@ numbers undercount a busy moment (below).
 `model/taker_flow` (pure), `service/taker_flow` (`binance.rs`, `bybit.rs`), `host/taker_flow`
 (`TakerFlowHost`), the body in `ui/liquidation/flow.rs`. The asset is the focused chart's:
 `taker_flow::asset_of(source, symbol)` is its base (Kraken's `XBT` is `BTC`), for the crypto
-exchanges only; a stock or prediction market shows "No flow for this market". Its `{ASSET}USDT`
+exchanges only (a one-letter asset such as `S` counts: Binance's and Bybit's `SUSDT` are split on
+their dollar quote); a stock or prediction market shows "No flow for this market". Its `{ASSET}USDT`
 markets on four venues are followed: Binance spot and USDⓈ-M perpetual, Bybit spot and linear.
 
 | Venue | Socket | Taker side |
@@ -74,8 +75,19 @@ markets on four venues are followed: Binance spot and USDⓈ-M perpetual, Bybit 
 - Notional is price × size in the base coin, taken as dollars. A trade is added to its second of
   **exchange time**; each venue keeps one total per second for the hour, so memory does not grow
   with trading. Net is buy minus sell; the bar under each total is the buy/sell split.
-- Changing the focused chart to another asset restarts the feed with an empty record (the old
-  sockets close first). Only the mode on show keeps its sockets: the other lapses within 3 s.
+- **One feed per asset.** `TakerFlowHost` keeps an entry for each asset a panel asks about, each
+  with its own record, lease and sockets, so two windows on two assets both accumulate. An entry
+  nobody asked about for 3 s is dropped (its sockets close), and one whose sockets stopped is
+  replaced by a fresh one. A record is never reused for another asset: a socket still reading a
+  frame of the old one writes into the record it was handed, which nothing shows any more. Only
+  the mode on show keeps its sockets: the other lapses within 3 s.
+- **What was observed.** A quiet market and a socket that was not there look alike in the trades,
+  so the record also keeps when each venue's socket was connected (`Flow::link`, fed by
+  `Session::run_linked` on every connect and drop). A span is whole when all of it was observed
+  (2 s of slack): otherwise its total reads "partial" under the bar, its figures in the venue
+  table are muted, and the minute bars it touches are faded (not drawn, on a dark cell, for a
+  minute no socket was connected). Totals are partial when any venue's is, so a panel just opened
+  shows every span partial until an hour has passed.
 - A venue that does not list the market (many perpetuals are `1000PEPEUSDT`) simply stays empty;
   the panel says "Waiting for ... trades" only until any venue has traded.
 - Flow is not advice: it says who was aggressive, not who was right.

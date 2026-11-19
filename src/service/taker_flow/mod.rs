@@ -19,7 +19,6 @@ type Parser = fn(Venue, &str) -> Vec<Trade>;
 /// The running sockets of one asset; dropping it closes them.
 pub struct TakerFlowFeed {
     stream: Stream,
-    asset: String,
 }
 
 impl TakerFlowFeed {
@@ -39,15 +38,7 @@ impl TakerFlowFeed {
                 follow(worker, &flow, &session, venue, parse);
             });
         }
-        Self {
-            stream,
-            asset: asset.to_owned(),
-        }
-    }
-
-    /// The asset this feed was started for.
-    pub fn asset(&self) -> &str {
-        &self.asset
+        Self { stream }
     }
 
     /// Whether every stream still runs; see [`Stream::is_running`].
@@ -57,12 +48,19 @@ impl TakerFlowFeed {
 }
 
 fn follow(worker: &Worker, flow: &Mutex<Flow>, session: &Session, venue: Venue, parse: Parser) {
-    worker.run(session, |text| {
-        if add(flow, parse(venue, text)) {
+    worker.run_linked(
+        session,
+        |up| {
+            lock(flow).link(venue, up, now_ms());
             worker.wake();
-        }
-        true
-    });
+        },
+        |text| {
+            if add(flow, parse(venue, text)) {
+                worker.wake();
+            }
+            true
+        },
+    );
 }
 
 /// Puts a message's trades on the flow; whether there were any.
@@ -127,7 +125,8 @@ mod tests {
             }
         }
         assert!(feed.is_running());
-        assert_eq!(feed.asset(), "BTC");
         assert!(heard.iter().all(|seen| *seen), "heard from {heard:?}");
+        let observed = lock(&flow).snapshot(now_ms()).all.observed;
+        assert!(observed.minute > 0, "every socket reported being connected");
     }
 }
