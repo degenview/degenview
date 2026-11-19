@@ -6,11 +6,14 @@
 pub mod bucket;
 pub mod calendar;
 pub mod coinbase;
+pub mod format;
 mod kline;
 pub mod live;
 mod normalize;
+pub mod price_format;
 mod ticks;
 mod timeframe;
+pub mod viewport;
 
 pub use kline::Kline;
 pub use normalize::normalize;

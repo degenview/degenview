@@ -39,7 +39,7 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
 
 ## Navigation
 
-- `model::chart::viewport::ChartViewport` is the only view state (bars, fractional offset from
+- `degenview_market::viewport::ChartViewport` is the only view state (bars, fractional offset from
   newest bar, manual price range), edited by gestures in `ui/chart/card/navigation.rs`. Never keep
   another offset or range in a painter, the drawing layer or Pine rendering.
 - Continuous window, edge bars may be cut: clip to the plot, place bars with `Window::lead`, never
@@ -49,7 +49,7 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
   chart/layout state, not template.
 - Gestures, history paging, unverified items: [chart navigation](../chart-navigation.md).
 - Zoom In is a workspace mode, not a `Tool`: transient `ChartCard` rectangle, maths in
-  `model::chart::viewport::zoom`, edits the same `ChartViewport` in-frame so linked charts follow.
+  `degenview_market::viewport::zoom`, edits the same `ChartViewport` in-frame so linked charts follow.
   No second viewport; never store the rectangle as a drawing
   ([chart navigation](../chart-navigation.md#zoom-in)).
 - The cursor (Cross, Dot, Arrow, …) is workspace state pushed to every card each frame

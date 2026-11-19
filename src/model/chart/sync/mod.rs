@@ -31,7 +31,7 @@
 //! Vertical state is not described by a [`HorizontalChange`], so it cannot be carried over.
 
 use crate::model::Kline;
-use crate::model::chart::viewport::HorizontalViewport;
+use degenview_market::viewport::HorizontalViewport;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

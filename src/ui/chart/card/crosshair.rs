@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::model::chart::sync::TimeAxis;
-use crate::model::chart::viewport::zoom::Slots;
+use degenview_market::viewport::zoom::Slots;
 
 impl ChartCard {
     /// Where the crosshair's column lies on this chart's plot. The owner's is under its pointer.

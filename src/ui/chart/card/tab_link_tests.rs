@@ -4,12 +4,12 @@
 
 use super::*;
 use crate::model::chart::sync::{SyncHub, TimeAxis, TimeRange};
-use crate::model::chart::viewport::HorizontalViewport;
 use crate::model::tab::link::{
     LinkColor, LinkHub, LinkSignal, LinkTable, LinkToggles, Member as LinkMember,
 };
 use crate::model::{IndicatorConfig, Tool};
 use crate::ui::replay::overlay::ReplayChartFrame;
+use degenview_market::viewport::HorizontalViewport;
 use eframe::egui::Modifiers;
 
 const HOUR: i64 = 3_600_000;
@@ -366,7 +366,7 @@ fn a_zoom_made_while_the_other_tab_is_loading_reaches_it_when_its_bars_arrive() 
     let leader_zoom = tabs.view(0).visible;
     assert_ne!(
         leader_zoom,
-        crate::model::chart::viewport::DEFAULT_VISIBLE,
+        degenview_market::viewport::DEFAULT_VISIBLE,
         "the leader zoomed"
     );
     // Many frames pass with the other tab still empty.
@@ -375,7 +375,7 @@ fn a_zoom_made_while_the_other_tab_is_loading_reaches_it_when_its_bars_arrive() 
     tabs.frames(4);
     assert_ne!(
         tabs.view(1).visible,
-        crate::model::chart::viewport::DEFAULT_VISIBLE,
+        degenview_market::viewport::DEFAULT_VISIBLE,
         "the follower took the zoom"
     );
 }

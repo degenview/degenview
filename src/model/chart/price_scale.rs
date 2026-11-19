@@ -15,7 +15,7 @@
 //! cut by the plot's edge and still count is inferred, and no live TradingView chart was compared.
 
 use crate::format::group_thousands;
-use crate::model::chart::price_format::places_for_step;
+use degenview_market::price_format::places_for_step;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A chart's price-scale mode. Exactly one is active, so the combinations that would contradict

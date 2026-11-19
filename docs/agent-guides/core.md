@@ -41,12 +41,13 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
   `workspace/`) or when anything outside the view layers draws (`egui::Ui`, a window or a panel). Its
   debt lists only shrink: fix the import instead of adding to them.
 - **Shared crate.** `crates/market` (`degenview-market`) holds the pure candle logic the WebAssembly
-  build also uses: `Kline`, `Timeframe`, `bucket`, `live`, `calendar`, `normalize`, Coinbase candle
+  build also uses: `Kline`, `Timeframe`, `bucket`, `live`, `calendar`, `viewport`, `price_format`, `normalize`, Coinbase candle
   parsing, `price_ticks`. It does no I/O and
   imports no app module; a dependency that does not build for `wasm32-unknown-unknown` (HTTP client,
   threads, SQLite, egui) never goes in it (the `market-wasm` CI job checks). A path dependency carries
-  a `version` (`cargo deny` refuses wildcards). `model::Kline`, `model::Timeframe` and `model::TimeUnit` re-export the crate's types, and
-  `format::{civil_from_days, days_from_civil, iso8601, parse_iso8601}` its calendar functions, so the
+  a `version` (`cargo deny` refuses wildcards). `model::Kline`, `model::Timeframe`, `model::TimeUnit` and `model::PriceFormat` re-export the crate's types, and
+  `format::{civil_from_days, days_from_civil, iso8601, parse_iso8601, group_thousands}` its calendar and
+  number functions, so the
   app's ~1,000 uses keep one vocabulary; new shared items are used as `degenview_market::…`, with no
   alias.
 - **Frame performance.** Code reached from `update`/`ui` must never parse JSON, make blocking system calls (XPC, `SMAppService`), or query SQLite beyond cheap change checks. Cache by change signal (e.g. `Store::layout_index` and the other `store::frame_cache` reads, see [Storage](storage.md)) or run it on a worker and poll (`work_queue::Pending`, see Background work).

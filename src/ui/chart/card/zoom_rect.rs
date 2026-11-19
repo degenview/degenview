@@ -10,9 +10,9 @@ use eframe::egui::{self, CursorIcon, Painter, Pos2, Rect, Response, Stroke, Stro
 
 use super::navigation::{Region, Regions};
 use super::{ChartCard, View};
-use crate::model::chart::viewport::ChartViewport;
-use crate::model::chart::viewport::zoom::{MAX_BACK, Selection};
 use crate::ui::kit;
+use degenview_market::viewport::ChartViewport;
+use degenview_market::viewport::zoom::{MAX_BACK, Selection};
 
 /// The rectangle being dragged.
 #[derive(Clone, Copy, Debug)]
@@ -278,8 +278,8 @@ impl ChartCard {
     /// Applies a zoom: the view it leaves is Zoom out's newest entry and the workspace's undo step.
     fn commit_zoom(
         &mut self,
-        horizontal: crate::model::chart::viewport::HorizontalViewport,
-        prices: Option<crate::model::chart::viewport::PriceRange>,
+        horizontal: degenview_market::viewport::HorizontalViewport,
+        prices: Option<degenview_market::viewport::PriceRange>,
     ) {
         let before = self.view_step();
         self.remember_back(before);
@@ -299,7 +299,7 @@ impl ChartCard {
     /// A zoom made without a pointer, for tests that need a stored view.
     #[cfg(test)]
     pub(crate) fn zoom_to_for_test(&mut self, visible: usize, right_offset: f64) {
-        let horizontal = crate::model::chart::viewport::HorizontalViewport {
+        let horizontal = degenview_market::viewport::HorizontalViewport {
             visible,
             right_offset,
         };

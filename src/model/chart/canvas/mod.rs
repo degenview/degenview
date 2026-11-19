@@ -459,60 +459,6 @@ fn spread(low: f64, high: f64, top: f64, bottom: f64, usable: f64) -> (f64, f64)
     (centred - total * bottom, centred + span + total * top)
 }
 
-// MARK: Visible window
-
-/// Which bars the plot shows and where they sit in its slots.
-///
-/// The plot always has `visible + reserved` equally wide slots. `reserved` are the empty slots
-/// the right margin (or an overlay script) keeps past the newest bar; scrolled back by
-/// `right_offset` bars they fill with the bars that follow, so the bar spacing never changes as
-/// the chart scrolls. The offset is continuous: between two whole bars the first and last shown
-/// bar are cut by the plot's edge (the painter clips them) and `lead` carries the fraction.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Window {
-    /// The first shown bar and one past the last, as indices into the series.
-    pub start: usize,
-    pub end: usize,
-    /// Slots between the plot's left edge and the first shown bar's own slot: positive for the
-    /// empty slots before a series shorter than the window, negative when the first bar is cut
-    /// by the edge.
-    pub lead: f32,
-    /// All the slots of the plot.
-    pub slots: usize,
-}
-
-impl Window {
-    /// How many bars are shown.
-    pub fn count(&self) -> usize {
-        self.end - self.start
-    }
-}
-
-/// An offset a float sum left a hair off a whole bar is that whole bar.
-fn snapped(value: f64) -> f64 {
-    (value * 1e6).round() / 1e6
-}
-
-pub fn visible_window(len: usize, visible: usize, right_offset: f64, reserved: usize) -> Window {
-    let slots = visible.saturating_add(reserved).max(1);
-    let offset = if right_offset.is_finite() {
-        right_offset
-    } else {
-        0.0
-    };
-    // The slot edge the plot's right side lies on, in bars from the first.
-    let edge = snapped((len as f64) + reserved as f64 - offset).max(0.0);
-    let first = snapped(edge - slots as f64);
-    let start = (first.floor().max(0.0) as usize).min(len);
-    let end = (edge.ceil() as usize).min(len).max(start);
-    Window {
-        start,
-        end,
-        lead: (start as f64 - first) as f32,
-        slots,
-    }
-}
-
 // MARK: Panes
 
 /// Height of a collapsed pane: its title strip.

@@ -96,7 +96,7 @@ impl ChartCard {
 
     /// The horizontal viewport, for tests and diagnostics.
     #[cfg(test)]
-    pub fn horizontal(&self) -> crate::model::chart::viewport::HorizontalViewport {
+    pub fn horizontal(&self) -> degenview_market::viewport::HorizontalViewport {
         self.viewport.horizontal
     }
 }

@@ -2,7 +2,7 @@
 
 ## One viewport
 
-`model::chart::viewport::ChartViewport` is the only description of what part of a chart is on screen. It
+`degenview_market::viewport::ChartViewport` is the only description of what part of a chart is on screen. It
 lives in `ChartCard::viewport`; every gesture edits it and every painter reads what it resolves to.
 Nothing else keeps an offset, a bar count or a price range.
 
@@ -13,7 +13,7 @@ Nothing else keeps an offset, a bar count or a price range.
 | `vertical.zoom` | The price-axis drag's stretch of the *automatic* range about its centre. Saved as `y_zoom`. |
 | `vertical.manual` | A price range the user placed by dragging the chart. While set, autoscale is off. |
 
-`canvas::visible_window(len, visible, right_offset, reserved)` turns it into the bars to draw. The
+`degenview_market::viewport::visible_window(len, visible, right_offset, reserved)` turns it into the bars to draw. The
 offset is continuous, so the first and last bar may be cut by the plot's edge; `Window::lead` is
 the (fractional) number of slots between the plot's left edge and the first shown bar. Painters
 that draw bars are clipped to the plot for that reason.
@@ -85,7 +85,7 @@ Escape) puts it down; a finished zoom does too, whatever the Keep drawing settin
 | Axes, script panes | Behave as before (the price axis still stretches, panes still pan). Only the main plot is a zoom surface. |
 | Cursor | `ZoomIn` over the plot and while a rectangle is dragged. |
 
-The maths is `model::chart::viewport::zoom`, over the geometry the card already draws with:
+The maths is `degenview_market::viewport::zoom`, over the geometry the card already draws with:
 
 - **Time.** The rectangle's sides are slot coordinates (`first + (x - left) / slot_width`, `first` being
   the first drawn bar minus its `lead`). `visible` is the width in slots minus the reserved right
@@ -144,7 +144,7 @@ cursor glyph; clamping a release to the plot; the rectangle's colour (TradingVie
 neutral by the app's no-blue rule); that Keep drawing does not apply; no keyboard shortcut; that Zoom out is itself an undo step (TradingView's
 undo button turned on after a zoom, nothing more was checked); behaviour on log scales and in indicator panes.
 
-Tests: `model/chart/viewport/tests.rs` (`zoom_to_a_rectangle`), `chart_card/navigation_tests.rs` (`zoom_in`),
+Tests: `crates/market/src/viewport/tests.rs` (`zoom_to_a_rectangle`), `chart_card/navigation_tests.rs` (`zoom_in`),
 `sync_tests.rs`, `workspace/drawing/tool_rail.rs`, `workspace/tool_sidebar.rs`. Pictures: `gallery_of_zoom_in` (strip and chart)
 and `gallery_of_the_zoom_icons`, run by hand with `DEGENVIEW_GALLERY_DIR`.
 
@@ -236,7 +236,7 @@ scripts hashes it only when its bars changed (`host::pine::chart`).
 
 ## Verified and not verified
 
-Verified by tests (`model/chart/viewport/tests.rs`, `ui/chart/card/navigation_tests.rs`, `model/history`,
+Verified by tests (`crates/market/src/viewport/tests.rs`, `ui/chart/card/navigation_tests.rs`, `model/history`,
 `workspace`): the pan maths, fractional offsets, bounded whitespace, vertical pan on linear and log
 scales, autoscale versus manual range, axis drags and double-clicks, Escape, release outside the
 chart, drawing ownership (handle, locked drawing, tool), a drawing's anchors unchanged and no

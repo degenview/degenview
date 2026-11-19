@@ -3,6 +3,7 @@
 use wasm_bindgen::JsValue;
 use web_sys::CanvasRenderingContext2d;
 
+use degenview_market::price_format::PriceFormat;
 use degenview_market::{Kline, price_ticks};
 
 const AXIS_WIDTH: f64 = 70.0;
@@ -11,6 +12,9 @@ const PAD_TOP: f64 = 12.0;
 const PAD_LEFT: f64 = 8.0;
 const PRICE_ROW_PX: f64 = 56.0;
 const TIME_LABEL_PX: f64 = 84.0;
+
+/// How the app prints prices: adaptive precision, thousands grouped.
+const PRICES: PriceFormat = PriceFormat::AUTO;
 
 const BACKGROUND: &str = "#131722";
 const GRID: &str = "#232733";
@@ -102,7 +106,10 @@ fn draw_price_axis(ctx: &CanvasRenderingContext2d, plot: &Plot) -> Result<(), Js
         ctx.set_line_width(1.0);
         line(ctx, plot.left, y, plot.right(), y);
         ctx.set_fill_style_str(TEXT);
-        let label = format_price(price, step.unwrap_or_else(|| resolution(price)));
+        let label = match step {
+            Some(step) => PRICES.format_tick(price, step),
+            None => PRICES.format(price),
+        };
         ctx.fill_text(&label, plot.right() + 8.0, y)?;
     }
     Ok(())
@@ -169,11 +176,7 @@ fn draw_last_price(
     ctx.set_fill_style_str("#ffffff");
     ctx.set_text_align("left");
     ctx.set_text_baseline("middle");
-    ctx.fill_text(
-        &format_price(last.close, resolution(last.close)),
-        plot.right() + 8.0,
-        y,
-    )
+    ctx.fill_text(&PRICES.format(last.close), plot.right() + 8.0, y)
 }
 
 fn line(ctx: &CanvasRenderingContext2d, x0: f64, y0: f64, x1: f64, y1: f64) {
@@ -181,17 +184,6 @@ fn line(ctx: &CanvasRenderingContext2d, x0: f64, y0: f64, x1: f64, y1: f64) {
     ctx.move_to(x0, y0);
     ctx.line_to(x1, y1);
     ctx.stroke();
-}
-
-/// A step that prints `price` to about five significant digits, for a price that is not on a tick.
-fn resolution(price: f64) -> f64 {
-    (price.abs() / 100_000.0).max(1e-10)
-}
-
-/// `price` with just enough decimals to tell `step` apart.
-fn format_price(price: f64, step: f64) -> String {
-    let decimals = (-step.log10().floor()).clamp(0.0, 10.0) as usize;
-    format!("{price:.decimals$}")
 }
 
 fn time_label(open_time_ms: i64, granularity: u32) -> String {
@@ -214,13 +206,6 @@ fn time_label(open_time_ms: i64, granularity: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn format_price_matches_the_step() {
-        assert_eq!(format_price(91_500.0, 500.0), "91500");
-        assert_eq!(format_price(3.5, 0.5), "3.5");
-        assert_eq!(format_price(0.1234, 0.001), "0.123");
-    }
 
     #[test]
     fn price_y_axis_is_inverted() {

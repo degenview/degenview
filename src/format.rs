@@ -1,6 +1,7 @@
 pub(crate) use degenview_market::calendar::{
     civil_from_days, days_from_civil, iso8601, parse_iso8601,
 };
+pub(crate) use degenview_market::format::group_thousands;
 
 pub fn price(value: f64) -> String {
     let magnitude = value.abs();
@@ -33,25 +34,6 @@ pub fn headline(value: f64, probability: bool) -> String {
     let fraction = format!("{fraction:0<2}");
     let sign = if value < 0.0 { "-" } else { "" };
     format!("{sign}${}.{fraction}", group_thousands(integer))
-}
-
-pub(crate) fn group_thousands(text: &str) -> String {
-    let (integer, fraction) = text.split_once('.').unwrap_or((text, ""));
-    let (sign, digits) = integer
-        .strip_prefix('-')
-        .map_or(("", integer), |remaining| ("-", remaining));
-    let mut output = String::new();
-    for (index, character) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
-            output.push(',');
-        }
-        output.push(character);
-    }
-    if fraction.is_empty() {
-        format!("{sign}{output}")
-    } else {
-        format!("{sign}{output}.{fraction}")
-    }
 }
 
 pub fn timestamp(epoch_ms: i64) -> String {

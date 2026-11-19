@@ -5,7 +5,7 @@ use super::composition::{
 use super::framing::Base;
 use super::studio::{Area, AspectRatio, Background, StudioConfig, Style};
 use super::{MAX_PIXELS, MAX_SIDE_PX, SnapshotDimensions, SnapshotScale};
-use crate::model::chart::viewport::{HorizontalViewport, PriceRange};
+use degenview_market::viewport::{HorizontalViewport, PriceRange};
 use eframe::egui::{Rect, Vec2, pos2, vec2};
 
 fn config(style: Style, size: AspectRatio, background: Background) -> StudioConfig {

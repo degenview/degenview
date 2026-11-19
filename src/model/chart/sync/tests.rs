@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::chart::viewport::MIN_VISIBLE;
+use degenview_market::viewport::MIN_VISIBLE;
 
 const MINUTE: i64 = 60_000;
 const HOUR: i64 = 60 * MINUTE;

@@ -2,7 +2,6 @@
 //! and the line colours with their preview.
 
 use super::{ChartSettingsAction, ChartSettingsContext, templates};
-use crate::model::chart::price_format::MAX_DECIMALS;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::{ChartAppearance, PriceFormat, SmallPrices};
 use crate::store::SharedStore;
@@ -12,6 +11,7 @@ use crate::ui::icons::Icon;
 use crate::ui::kit;
 use crate::ui::settings::card;
 use crate::ui::theme;
+use degenview_market::price_format::MAX_DECIMALS;
 use eframe::egui::{
     self, Align, Align2, Color32, FontId, Id, Layout, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2,
 };

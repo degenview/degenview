@@ -98,7 +98,7 @@ opacity. Every row writes straight into the chart, which repaints at once.
 
 ### The right margin
 
-The plot always has `visible + reserved` equal slots (`model::chart::canvas::visible_window`), where
+The plot always has `visible + reserved` equal slots (`degenview_market::viewport::visible_window`), where
 `reserved` is the larger of the right margin and what an overlay script reserves. At rest the
 newest bar is `reserved` slots from the right edge. Scrolling back by `n` bars fills those slots
 with the bars that follow, so the bar spacing never changes as you scroll or at the moment the

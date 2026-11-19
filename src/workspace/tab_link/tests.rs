@@ -551,7 +551,7 @@ fn a_switch_to_the_market_already_shown_keeps_a_pending_view() {
 #[test]
 fn a_zoom_waits_for_a_chart_that_has_no_bars_yet() {
     use crate::model::chart::sync::{ChartSyncSettings, HorizontalChange, TimeAxis, TimeRange};
-    use crate::model::chart::viewport::HorizontalViewport;
+    use degenview_market::viewport::HorizontalViewport;
     let zoom_only = ChartSyncSettings {
         horizontal_position: false,
         horizontal_zoom: true,

@@ -2,9 +2,9 @@
 //! chart answers its own gesture, and that moving the view never edits a drawing or the data.
 
 use super::*;
-use crate::model::chart::viewport::{DEFAULT_VISIBLE, MIN_VISIBLE};
 use crate::model::{Anchor, Drawing, IndicatorConfig, Tool};
 use crate::ui::replay::overlay::{PickKind, ReplayChartFrame};
+use degenview_market::viewport::{DEFAULT_VISIBLE, MIN_VISIBLE};
 use eframe::egui::Modifiers;
 
 const HOUR: i64 = 3_600_000;
@@ -2313,7 +2313,7 @@ mod zoom_in {
             rig.card.zoom_out();
             steps += 1;
         }
-        assert_eq!(steps, crate::model::chart::viewport::zoom::MAX_BACK);
+        assert_eq!(steps, degenview_market::viewport::zoom::MAX_BACK);
     }
 
     #[test]
