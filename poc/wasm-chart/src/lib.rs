@@ -1,9 +1,12 @@
-//! A Coinbase candlestick chart, fetched and drawn by Rust running as WebAssembly.
+//! A candlestick chart of any of several exchanges, fetched and drawn by Rust running as
+//! WebAssembly.
 //!
 //! JavaScript only wires the page: it calls [`load_chart`] to fetch candles and
 //! [`Chart::draw`] to paint them on a `<canvas>`.
 
-mod coinbase;
+mod error;
+mod exchange;
+mod fetch;
 mod live;
 mod render;
 mod view;
@@ -15,7 +18,9 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 use degenview_market::coinbase::{STREAM_HOST, parse_ticker, subscribe_message};
 use degenview_market::{Kline, Timeframe};
 
-use coinbase::Fetched;
+use error::ChartError;
+use exchange::Exchange;
+use fetch::Fetched;
 use live::Live;
 
 use render::Frame;
@@ -31,7 +36,8 @@ fn start() {
 pub struct Chart {
     candles: Vec<Kline>,
     granularity: u32,
-    product: String,
+    exchange: Exchange,
+    symbol: String,
     view: View,
     live: Live,
 }
@@ -109,22 +115,34 @@ impl Chart {
         self.view.bars_changed(now, now.saturating_sub(before));
     }
 
-    /// The websocket feed's address.
+    /// Whether a websocket feed keeps this chart live; otherwise the page polls.
+    #[wasm_bindgen(getter)]
+    pub fn live_feed(&self) -> bool {
+        self.exchange.has_live_feed()
+    }
+
+    /// The exchange's name, for the page's status line.
+    #[wasm_bindgen(getter)]
+    pub fn exchange_name(&self) -> String {
+        self.exchange.label().to_owned()
+    }
+
+    /// The websocket feed's address (Coinbase only).
     #[wasm_bindgen(getter)]
     pub fn feed_url(&self) -> String {
         format!("wss://{STREAM_HOST}")
     }
 
-    /// What to send once the feed's socket is open.
+    /// What to send once the feed's socket is open (Coinbase only).
     #[wasm_bindgen(getter)]
     pub fn subscribe_message(&self) -> String {
-        subscribe_message(&[&self.product])
+        subscribe_message(&[&self.symbol])
     }
 
     /// Folds a feed message that arrived at `now` (the page's `performance.now()`) into the
     /// candles. Returns whether they changed.
     pub fn on_message(&mut self, text: &str, now: f64) -> bool {
-        let Some(tick) = parse_ticker(text).filter(|tick| tick.product_id == self.product) else {
+        let Some(tick) = parse_ticker(text).filter(|tick| tick.product_id == self.symbol) else {
             return false;
         };
         let before = self.candles.len();
@@ -157,27 +175,41 @@ impl Chart {
     }
 }
 
-/// Fetches the latest candles of `product` (for example `BTC-USD`) at `timeframe`: any length
-/// the app takes, such as `1h`, `4h`, `22m`, `2D` or `1W`. Lengths Coinbase does not serve are
-/// folded from finer candles.
+/// Fetches the latest candles of `asset` (for example `BTC`) on `exchange` (`coinbase`,
+/// `binance`, `okx`, `bybit`, `kraken` or `gate`) at `timeframe`: any length the app takes, such
+/// as `1h`, `4h`, `22m`, `2D` or `1W`. Lengths the exchange does not serve are folded from finer
+/// candles.
 #[wasm_bindgen]
-pub async fn load_chart(product: String, timeframe: String) -> Result<Chart, JsValue> {
-    let timeframe = Timeframe::parse(&timeframe).map_err(coinbase::CoinbaseError::from)?;
-    let fetched = coinbase::fetch_timeframe(&product, timeframe).await?;
+pub async fn load_chart(
+    exchange: String,
+    asset: String,
+    timeframe: String,
+) -> Result<Chart, JsValue> {
+    let exchange = Exchange::parse(&exchange)?;
+    let symbol = exchange.symbol(&asset)?;
+    let timeframe = Timeframe::parse(&timeframe).map_err(ChartError::from)?;
+    let fetched = fetch::fetch_timeframe(exchange, &symbol, timeframe).await?;
     Ok(Chart {
         view: View::new(fetched.candles.len()),
         live: Live::new(&fetched),
         candles: fetched.candles,
         granularity: (timeframe.nominal_ms() / 1_000) as u32,
-        product: product.to_uppercase(),
+        exchange,
+        symbol,
     })
 }
 
 /// The same request as [`load_chart`], to merge into a chart already on screen.
 #[wasm_bindgen]
-pub async fn load_snapshot(product: String, timeframe: String) -> Result<Snapshot, JsValue> {
-    let timeframe = Timeframe::parse(&timeframe).map_err(coinbase::CoinbaseError::from)?;
+pub async fn load_snapshot(
+    exchange: String,
+    asset: String,
+    timeframe: String,
+) -> Result<Snapshot, JsValue> {
+    let exchange = Exchange::parse(&exchange)?;
+    let symbol = exchange.symbol(&asset)?;
+    let timeframe = Timeframe::parse(&timeframe).map_err(ChartError::from)?;
     Ok(Snapshot(
-        coinbase::fetch_timeframe(&product, timeframe).await?,
+        fetch::fetch_timeframe(exchange, &symbol, timeframe).await?,
     ))
 }

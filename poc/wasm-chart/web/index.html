@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Coinbase chart in WebAssembly</title>
+  <title>Crypto chart in WebAssembly</title>
   <style>
     :root {
       --bg: #131722;
@@ -62,11 +62,19 @@
 </head>
 <body>
   <header>
-    <select id="product" aria-label="Market">
-      <option>BTC-USD</option>
-      <option>ETH-USD</option>
-      <option>SOL-USD</option>
-      <option>DOGE-USD</option>
+    <select id="exchange" aria-label="Exchange">
+      <option value="coinbase">Coinbase</option>
+      <option value="binance">Binance</option>
+      <option value="okx">OKX</option>
+      <option value="bybit">Bybit</option>
+      <option value="kraken">Kraken</option>
+      <option value="gate">Gate.io</option>
+    </select>
+    <select id="asset" aria-label="Asset">
+      <option>BTC</option>
+      <option>ETH</option>
+      <option>SOL</option>
+      <option>DOGE</option>
     </select>
     <input id="timeframe" value="4h" list="timeframes" size="5" spellcheck="false"
            autocomplete="off" aria-label="Timeframe (for example 22m, 4h, 2D, 1W)">
@@ -118,28 +126,49 @@
       $("change").className = change >= 0 ? "up" : "down";
     }
 
-    // The live feed of the chart on screen: its trades are folded into the chart by Rust, and a
-    // REST snapshot is merged over them now and then to catch what the socket missed.
+    // What keeps the chart on screen current. Coinbase has a websocket feed whose trades Rust folds
+    // into the chart, with a REST snapshot merged over them now and then to catch what the socket
+    // missed. The other exchanges are polled: the same snapshot, merged every few seconds.
     const RECONCILE_MS = 30_000;
+    const POLL_MS = 10_000;
     let feed = null;
 
     function stopFeed() {
       if (!feed) return;
       clearInterval(feed.timer);
       clearTimeout(feed.retry);
-      feed.socket.onclose = null;
-      feed.socket.close();
+      if (feed.socket) {
+        feed.socket.onclose = null;
+        feed.socket.close();
+      }
       feed = null;
     }
 
-    function startFeed(current, product, timeframe) {
+    function startFeed(current, request) {
       stopFeed();
       const mine = (feed = { timer: null, retry: null, socket: null });
+      const reconcile = async () => {
+        const started = performance.now();
+        try {
+          const snapshot = await load_snapshot(request.exchange, request.asset, request.timeframe);
+          if (chart !== current) return;
+          current.merge(snapshot, started);
+          showHeader();
+          redraw();
+        } catch {
+          // The next round tries again; the chart stays as it is meanwhile.
+        }
+      };
+      if (!current.live_feed) {
+        setStatus(`${current.exchange_name} · refreshed every ${POLL_MS / 1000} s`, "live");
+        mine.timer = setInterval(reconcile, POLL_MS);
+        return;
+      }
       const connect = (attempt) => {
         const socket = (mine.socket = new WebSocket(current.feed_url));
         socket.onopen = () => {
           socket.send(current.subscribe_message);
-          setStatus("Live · Coinbase Exchange", "live");
+          setStatus(`Live · ${current.exchange_name}`, "live");
           if (attempt > 0) reconcile();
         };
         socket.onmessage = (event) => {
@@ -153,18 +182,6 @@
           mine.retry = setTimeout(() => connect(attempt + 1), Math.min(1000 * 2 ** attempt, 15_000));
         };
       };
-      const reconcile = async () => {
-        const started = performance.now();
-        try {
-          const snapshot = await load_snapshot(product, timeframe);
-          if (chart !== current) return;
-          current.merge(snapshot, started);
-          showHeader();
-          redraw();
-        } catch {
-          // The next round tries again; the feed keeps the chart current meanwhile.
-        }
-      };
       mine.timer = setInterval(reconcile, RECONCILE_MS);
       connect(0);
     }
@@ -173,22 +190,26 @@
       const mine = ++request;
       stopFeed();
       setStatus("Loading…");
-      const product = $("product").value;
-      const timeframe = $("timeframe").value;
+      const selected = {
+        exchange: $("exchange").value,
+        asset: $("asset").value,
+        timeframe: $("timeframe").value,
+      };
       try {
-        const loaded = await load_chart(product, timeframe);
+        const loaded = await load_chart(selected.exchange, selected.asset, selected.timeframe);
         if (mine !== request) return; // a newer selection superseded this one
         chart = loaded;
         showHeader();
         chart.draw(canvas);
-        startFeed(loaded, product, timeframe);
+        startFeed(loaded, selected);
       } catch (error) {
         if (mine === request) setStatus(String(error), "error");
       }
     }
 
     await init();
-    $("product").addEventListener("change", refresh);
+    $("exchange").addEventListener("change", refresh);
+    $("asset").addEventListener("change", refresh);
     $("timeframe").addEventListener("change", refresh);
     new ResizeObserver(redraw).observe(canvas);
 

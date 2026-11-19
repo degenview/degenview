@@ -10,7 +10,7 @@ use degenview_market::bucket::{FoldPlan, bucket_start_ms, next_bucket_start_ms};
 use degenview_market::coinbase::Ticker;
 use degenview_market::live::{LiveFold, LiveMark};
 
-use crate::coinbase::Fetched;
+use crate::fetch::Fetched;
 
 pub struct Live {
     plan: FoldPlan,
