@@ -37,6 +37,24 @@ struct Step<'a> {
     skipped_after: Option<usize>,
 }
 
+/// The session state that belongs to the series now running, which a request's expression swaps for
+/// its own (`Session::enter_series`, `leave_series`). `bar_index` and `instructions` of `working`
+/// are the request's to advance, and the nesting depth is counted by the caller: neither travels.
+struct SeriesFrame {
+    /// The bar-by-bar state: the chart's, or the call site's own.
+    working: RuntimeState,
+    /// The confirmed bars of the series (`Session::series_bars`).
+    bars: Vec<LoggedBar>,
+    /// The chart variables the running expression reads (`Session::security_globals`); none on the
+    /// chart itself.
+    globals: Option<FastMap<String, RuntimeValue>>,
+    /// The `varip` values of the series.
+    intrabar: FastMap<String, RuntimeValue>,
+    bar_seconds: f64,
+    /// The chart's own bar length, known only while a request runs.
+    chart_bar_seconds: Option<f64>,
+}
+
 /// One `request.security` call's resolved arguments. `foreign` holds another symbol's series; it is
 /// None for the chart's own symbol.
 struct SecurityRequest {
@@ -822,9 +840,6 @@ impl Session {
         commit: bool,
     ) -> Result<RuntimeValue, Diagnostic> {
         let chart_bar_seconds = self.bar_seconds;
-        // The outermost request remembers the chart's own bar length for `timeframe.main_period`.
-        let outer_chart_seconds = self.chart_bar_seconds;
-        self.chart_bar_seconds = Some(outer_chart_seconds.unwrap_or(chart_bar_seconds));
         self.security_depth += 1;
         // The chart's state steps aside and the site's takes its place. A commit moves the site's
         // state in and back out; copying it for every call would make a run quadratic in its length.
@@ -833,23 +848,29 @@ impl Session {
         } else {
             (*site.state).clone()
         };
-        let mut chart = std::mem::replace(&mut self.working, site_state);
-        // The series the expression runs on is this site's own candles, which a request inside it
-        // replays; the enclosing series is put back below.
-        let outer_series = std::mem::replace(&mut self.series_bars, std::mem::take(&mut site.bars));
         // The chart's variables stay readable from the expression, without a copy of the table. A
         // replayed candle reads their values as of its bar instead, which are a copy.
-        let replayed_globals = self.replay_globals.take();
-        let replayed = replayed_globals.is_some();
-        let outer_globals = self
-            .security_globals
-            .replace(replayed_globals.unwrap_or_else(|| std::mem::take(&mut chart.variables)));
-        // `varip` values are the chart's: the request keeps its own (empty: a `varip` there acts
-        // like `var`, which the declaration reads from the site's variables).
-        let outer_intrabar = std::mem::take(&mut self.intrabar);
+        let replayed = self.replay_globals.is_some();
+        let globals = self
+            .replay_globals
+            .take()
+            .unwrap_or_else(|| std::mem::take(&mut self.working.variables));
+        let mut chart = self.enter_series(SeriesFrame {
+            working: site_state,
+            // The series the expression runs on is this site's own candles, which a request inside
+            // it replays.
+            bars: std::mem::take(&mut site.bars),
+            globals: Some(globals),
+            // `varip` values are the chart's: the request keeps its own (empty: a `varip` there
+            // acts like `var`, which the declaration reads from the site's variables).
+            intrabar: FastMap::default(),
+            bar_seconds: request.interval,
+            // The outermost request remembers the chart's own bar length for
+            // `timeframe.main_period`.
+            chart_bar_seconds: Some(self.chart_bar_seconds.unwrap_or(chart_bar_seconds)),
+        });
         self.working.instructions = 0;
         self.working.bar_index += 1;
-        self.bar_seconds = request.interval;
 
         let flags = BarFlags {
             is_first: self.working.bar_index == 0,
@@ -889,32 +910,56 @@ impl Session {
             self.debug_leave();
         }
         // A returned collection or object lives in the site's state; the chart gets a copy of its own.
-        let value = evaluated
-            .map(|evaluated| ReferenceExport::new(&self.working).export(evaluated, &mut chart));
-        if commit {
-            if value.is_ok() {
-                self.commit_histories(candle.clone(), false, Vec::new());
-            }
-            *site.state = std::mem::take(&mut self.working);
+        let value = evaluated.map(|evaluated| {
+            ReferenceExport::new(&self.working).export(evaluated, &mut chart.working)
+        });
+        if commit && value.is_ok() {
+            self.commit_histories(candle.clone(), false, Vec::new());
         }
-        site.bars = std::mem::replace(&mut self.series_bars, outer_series);
+        let request_frame = self.leave_series(chart);
+        if commit {
+            *site.state = request_frame.working;
+        }
+        site.bars = request_frame.bars;
         if commit && value.is_ok() {
             site.bars.push(LoggedBar {
                 bar: candle.clone(),
                 seconds: request.interval,
             });
         }
-        let globals =
-            std::mem::replace(&mut self.security_globals, outer_globals).unwrap_or_default();
         if !replayed {
-            chart.variables = globals;
+            self.working.variables = request_frame.globals.unwrap_or_default();
         }
-        self.intrabar = outer_intrabar;
-        self.working = chart;
-        self.bar_seconds = chart_bar_seconds;
-        self.chart_bar_seconds = outer_chart_seconds;
         self.security_depth -= 1;
         value
+    }
+
+    /// Puts `inner`, a request's series, in place of the one now running and returns what it
+    /// displaced, which `leave_series` puts back.
+    fn enter_series(&mut self, inner: SeriesFrame) -> SeriesFrame {
+        self.swap_series(inner)
+    }
+
+    /// Puts the `outer` series back and returns the request's own, for its state and candles to be
+    /// kept.
+    fn leave_series(&mut self, outer: SeriesFrame) -> SeriesFrame {
+        self.swap_series(outer)
+    }
+
+    /// Exchanges the session's per-series state with `frame`. Entering and leaving are the same
+    /// exchange, so every field travels in both directions and none is left behind on an exit.
+    fn swap_series(&mut self, frame: SeriesFrame) -> SeriesFrame {
+        SeriesFrame {
+            working: std::mem::replace(&mut self.working, frame.working),
+            bars: std::mem::replace(&mut self.series_bars, frame.bars),
+            globals: std::mem::replace(&mut self.security_globals, frame.globals),
+            intrabar: std::mem::replace(&mut self.intrabar, frame.intrabar),
+            bar_seconds: std::mem::replace(&mut self.bar_seconds, frame.bar_seconds),
+            chart_bar_seconds: std::mem::replace(
+                &mut self.chart_bar_seconds,
+                frame.chart_bar_seconds,
+            ),
+        }
     }
 
     /// A fresh array holding `items`.

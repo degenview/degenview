@@ -48,7 +48,8 @@
   (`uncover_caller_globals`, from the caller's `saved` on `Session::call_frames`; by induction each
   call starts on the globals) and gives the caller its values back after
   (`cover_caller_globals`). Only locals named like a script global (top-level declarations,
-  `global_names`; first in `RuntimeFunction::saved_order`, `global_locals` of them) are looked at:
+  `scopes::top_level_declarations`; first in `RuntimeFunction::saved_order`, `global_locals` of
+  them) are looked at:
   a call from the script's top level, or from a function whose locals share no global's name,
   costs nothing. The debugger's frame gets the caller's values first, then `saved`.
   `call_frames` is kept inside `request.security`: a function there reads the chart's global.
@@ -157,44 +158,77 @@
   local shadow outside its block (`aVFtPnUh`) and unread shadows of `low`, `hl2`, `second`
   (`mwTRA4dO`, `aVFtPnUh`, `5YEHyvSL`). Parameters may reuse the name with a warning. TradingView's
   message text is undocumented.
-- `request.security` expressions that read script variables (`longTrend` in
-  `request.security(sym, "15", longTrend)`): `runtime::security_slice` finds at build time the
-  statements **before the request** that declare, `:=`-reassign or may fill (`array.push(samples, x)`,
-  `samples.push(x)`, a call of the script's own function that changes the parameter it gets the
-  variable as, or the global collection it changes: `Functions::{mutated, global_writes}`, a
-  fixpoint over the call graph; a function that only reads its argument is not replayed; the overload
-  the type checker chose, else every one of that name) what the expression reads, scope-aware (a
-  block's own `level` is not the global, for reads as for writes) and through plain-copy aliases
-  (`alias = samples`, also one a block or a helper makes, and one an inner block reassigns; a
-  builtin's collection argument is found by its `id` label or its position), through other
-  statements and the script's functions (the overload the type checker resolved, `Call::target`; all
-  same-name ones when unresolved; a function's parameters, and the names its body declared before
-  reading them, are not reads of a global, the same scoping `invoke_with` runs them with). The
-  statements are the top-level ones before the request's own, and those before the request in the
-  blocks around it (`Location`, found by `locate`; replayed without re-checking the block's
-  condition, since the request was reached). A name that is rebound (declared, `:=`) counts only
-  before the statement that reads it (`Facts::writes_needed`, a limit per needed name); a collection
-  changed through its value, a `var`/`varip` and a `level[1]` read also see later writes. A statement in a block cannot be
-  replayed when it declares something, reads a name a block declared, or sits in a loop or `once`
-  body: when it would be part of the slice, the request gets no slice and reads the chart's values.
-  `evaluate_higher_timeframe` runs the slice in the request's own state, with its own empty
-  `Session::intrabar` (a `varip` there acts like `var`; the chart's is untouched), before the
-  expression. A name that a block around the request declares before it (`level = 20.0` in the `if` it is in,
-  a loop variable) is not resolved to the global of that name: the expression reads the chart's value
-  (`security_globals`), and when the slice would define a global of that name the request gets no
-  slice. A statement that makes a `request.*` call is never in a slice (nesting; its names keep
-  the chart's value via `security_globals`); requests inside functions are not sliced. `alert()`
-  does nothing while a request runs (`security_depth > 0`: a slice, or a function the expression
-  calls): only the chart's own run fires alerts, and the once-per-bar ledger stays its own.
-  Unknown collection members count as mutating (`READ_ONLY_MEMBERS` lists the array/map/matrix
-  queries and matrix predicates that do not: add a new query there). Aliases of a collection are per
-  block (two blocks' `alias` are different variables), a dotted call of a builtin namespace
-  (`ta.sma`) never matches a script function called `sma`, for writes as for reads, and a call the
-  type checker resolved to a script method has that method's own effects, not the builtin ones of
-  its name.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, share function bodies
   with `Arc`. Benchmark: `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.
+
+### request.security slices
+
+A `request.security` expression that reads script variables (`longTrend` in
+`request.security(sym, "15", longTrend)`) needs the statements that compute them run on the requested
+series. `runtime::security_slice` finds them at build time, per request.
+
+`syntax::scopes` (`resolve`, once per `build`) is the single scoping authority for static analysis:
+it maps every identifier read, call head, declaration, assignment target, loop variable and function
+parameter to a `Binding` (`Global`, `Local(LocalId)`, `Parameter { function, position }`, `Free`).
+Keyed by source offsets, so it survives cloning the tree. An analysis asks it; it does not re-derive
+Pine's scoping from names. Its rules are the ones `invoke_with` runs with (below), so a change to
+how a name is scoped changes `scopes.rs` and its tests, not each analysis.
+
+The module is a directory: `mod.rs` (`build`, `slice_for`, the position rule), `effects.rs` (what
+functions and statements change), `reads.rs`, `locate.rs` (the blocks around a request), `members.rs`
+(the builtin member tables).
+
+- **What is sliced.** The statements **before the request** that declare, `:=`-reassign or may fill
+  what the expression reads, through other statements and the script's functions. A statement may
+  fill a collection through `array.push(samples, x)`, `samples.push(x)`, a call of the script's own
+  function that changes the parameter it gets the variable as, or the global collection it changes
+  (`Functions::{mutated, global_writes}`, a fixpoint over the call graph). A function that only reads
+  its argument is not replayed. Unknown collection members count as mutating: `READ_ONLY_MEMBERS`
+  lists the array/map/matrix queries and matrix predicates that do not.
+- **Where the statements come from.** The top-level ones before the request's own, and those before
+  the request in the blocks around it (`Location`, found by `locate`; replayed without re-checking
+  the block's condition, since the request was reached). `evaluate_higher_timeframe` runs the slice
+  in the request's own state, before the expression, with its own empty `Session::intrabar` (a
+  `varip` there acts like `var`; the chart's is untouched).
+- **Scoping, aliases and overloads.** Reads and writes are scope-aware, through the bindings: a
+  block's own `level` is not the global. Plain-copy aliases are followed (`alias = samples`, also one
+  a block or a helper makes, and one an inner block reassigns); a builtin's collection argument is
+  found by its `id` label or its position. Aliases are per local (two blocks' `alias` are different
+  `LocalId`s): `Walker` keeps what each was copied from as it walks in source order, a block's
+  additions reach the enclosing block when the statement they belong to ends and never a sibling
+  block, and the globals' aliases are groups of names (`Aliases`). Decisions that depend on the
+  runtime's name-keyed variable table stay by name (a slice that would define a global a
+  request-block local of the same name hides gets no slice). A function call follows the overload
+  the type checker resolved (`Call::target`), all same-name ones when unresolved; a function's
+  parameters, and the names its body declared before reading them, are not
+  reads of a global (a `Local` or `Parameter` binding), the same scoping `invoke_with` runs them
+  with. A dotted call of a builtin namespace (`ta.sma`) never matches a script function called
+  `sma`, for writes as for reads, and a call the type checker resolved to a script method has that
+  method's own effects, not the builtin ones of its name.
+- **Position rule.** A name that is rebound (declared, `:=`) counts only before the statement that
+  reads it (`Facts::writes_needed`, a limit per needed name). A statement's `Facts` are computed once
+  (`FactsCache`), however many requests it precedes. A collection changed through its value,
+  a `var`/`varip` and a `level[1]` read also see later writes.
+- **No slice.** A statement in a block cannot be replayed when it declares something, reads a name a
+  block declared, or sits in a loop or `once` body: when it would be part of the slice, the request
+  gets no slice and reads the chart's values. A name that a block around the request declares before
+  it (`level = 20.0` in the `if` it is in, a loop variable) is not resolved to the global of that
+  name: the expression reads the chart's value (`security_globals`), and when the slice would define
+  a global of that name the request gets no slice. A statement that makes a `request.*` call is never
+  in a slice (nesting; its names keep the chart's value via `security_globals`), and requests inside
+  functions are not sliced.
+- **Quirks kept from the name-keyed walk** (changing one changes which statements a slice holds, so
+  do it deliberately): a block that redeclares a name drops the sources it added to the outer local
+  of that name, even before the redeclaration; a global that a callee fills counts as a parameter of
+  the calling function that has the same name; global alias groups ignore the blocks inside expressions
+  (`x = if …`), and two globals copied from the same builtin (`a = close`, `b = close`) join one
+  group.
+- **Alerts.** `alert()` does nothing while a request runs (`security_depth > 0`: a slice, or a
+  function the expression calls): only the chart's own run fires alerts, and the once-per-bar ledger
+  stays its own.
+- **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
+  slice will treat it as a write and replay more than needed.
 
 ## Editor
 

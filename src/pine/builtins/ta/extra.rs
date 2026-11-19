@@ -78,9 +78,12 @@ impl Derived {
     }
 
     /// The RMA (Wilder's smoothing, alpha 1/`length`) of everything pushed so far, seeded with the
-    /// simple average of the first `length` values like `ta.rma`.
+    /// simple average of the first `length` values like `ta.rma`. Only that seed window is kept: once
+    /// the average exists, a value is folded into it and not stored.
     fn rma(&mut self, value: f64, length: usize) -> Option<f64> {
-        self.values.push(Some(value));
+        if self.last.is_none() {
+            self.values.push(Some(value));
+        }
         let result = match self.last {
             _ if length == 0 => None,
             Some(prior) => {

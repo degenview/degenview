@@ -125,9 +125,9 @@ pub fn for_each_call(statements: &[Statement], visit: &mut impl FnMut(&str, Sour
 }
 
 /// Like `for_each_call`, with each call's arguments.
-pub fn for_each_call_with_args(
-    statements: &[Statement],
-    visit: &mut impl FnMut(&str, &[super::ast::Argument], SourceRange),
+pub fn for_each_call_with_args<'a>(
+    statements: &'a [Statement],
+    visit: &mut impl FnMut(&'a str, &'a [super::ast::Argument], SourceRange),
 ) {
     for statement in statements {
         for expression in expressions(statement) {
@@ -139,9 +139,9 @@ pub fn for_each_call_with_args(
     }
 }
 
-fn for_each_call_in_expression(
-    expression: &Expression,
-    visit: &mut impl FnMut(&str, &[super::ast::Argument], SourceRange),
+fn for_each_call_in_expression<'a>(
+    expression: &'a Expression,
+    visit: &mut impl FnMut(&'a str, &'a [super::ast::Argument], SourceRange),
 ) {
     match expression {
         Expression::Call {

@@ -296,7 +296,7 @@ impl Session {
             self.capture_intrabar_objects();
         }
         if confirmed {
-            if self.tracks_chart_bars {
+            if self.keeps_series_bars {
                 self.series_bars
                     .push(crate::pine::runtime::state::LoggedBar {
                         bar: candle.clone(),

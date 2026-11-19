@@ -43,7 +43,8 @@ impl Session {
         let mut types = FastMap::default();
         let mut enums = FastMap::default();
         let linkage = LibraryLinkage::new(&program);
-        let globals = global_names(&program.statements);
+        // A block's names are its own, and no function sees them.
+        let globals = crate::pine::syntax::scopes::top_level_declarations(&program.statements);
         for statement in &program.statements {
             match statement {
                 Statement::TypeDeclaration { name, fields, .. } => {
@@ -107,7 +108,7 @@ impl Session {
         let history_builtins =
             history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
         let security_slices = security_slice::build(&program.statements);
-        let tracks_chart_bars = requests_security(&program);
+        let keeps_series_bars = replays_chart_bars(&program);
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
@@ -191,7 +192,7 @@ impl Session {
             footprints: Default::default(),
             series_bars: Vec::new(),
             replay_globals: None,
-            tracks_chart_bars,
+            keeps_series_bars,
             bar_seconds: 0.0,
             chart_bar_seconds: None,
             alert_mode: false,
@@ -230,24 +231,6 @@ impl Session {
 
 /// The builtin variable names (`low`, `time`) that `statements` declare anew anywhere: a global, a
 /// local, a loop counter or a tuple element.
-/// The script's global variables: what its top-level statements declare (a block's names are its
-/// own, and no function sees them).
-fn global_names(statements: &[Statement]) -> HashSet<String> {
-    let mut names = HashSet::new();
-    for statement in statements {
-        match statement {
-            Statement::Declaration { name, .. } => {
-                names.insert(name.clone());
-            }
-            Statement::TupleDeclaration { names: tuple, .. } => {
-                names.extend(tuple.iter().cloned());
-            }
-            _ => {}
-        }
-    }
-    names
-}
-
 fn declared_builtin_names(statements: &[Statement]) -> Vec<String> {
     fn visit(statements: &[Statement], found: &mut Vec<String>) {
         for statement in statements {
@@ -335,8 +318,10 @@ fn history_builtin_names(
 }
 
 /// Whether the script, or a library it imports, calls `request.security` anywhere (in a function
-/// body or a block too). Read off the parsed calls, so the way the call is spelled cannot hide it.
-fn requests_security(program: &CompiledProgram) -> bool {
+/// body or a block too), so that a call site which skipped a chart bar has to replay it
+/// (`replay_skipped_bars`). Read off the parsed calls, so the way the call is spelled cannot hide
+/// it. `request.security_lower_tf` is not counted: it does not replay skipped chart bars.
+fn replays_chart_bars(program: &CompiledProgram) -> bool {
     let mut found = false;
     crate::pine::syntax::traversal::for_each_call(&program.statements, &mut |name, _| {
         found |= name == "request.security";
@@ -345,7 +330,7 @@ fn requests_security(program: &CompiledProgram) -> bool {
         || program
             .imports
             .iter()
-            .any(|import| import.library.as_deref().is_some_and(requests_security))
+            .any(|import| import.library.as_deref().is_some_and(replays_chart_bars))
 }
 
 #[cfg(test)]
@@ -358,7 +343,7 @@ mod request_detection_tests {
         let source = format!("//@version=6\nindicator(\"T\")\n{body}\n");
         let program = compiler::compile(&source, Limits::default(), &NoLibraries);
         assert!(program.is_valid(), "{:?}", program.diagnostics);
-        requests_security(&program)
+        replays_chart_bars(&program)
     }
 
     #[test]
