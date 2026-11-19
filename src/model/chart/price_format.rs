@@ -1,9 +1,10 @@
 //! How a chart prints a price: adaptive precision, with a choice of how the very small ones read.
 //!
-//! * Automatic precision keeps a price readable, not exact: no decimals from 1,000, two from 1,
-//!   then two significant digits below 1. `67,432`, `3,456`, `12.34`, `0.12`, `0.056`, `0.0031`.
-//!   (The Swift app's `PriceFormatter` gave four to six places there; this is a deliberate change.
-//!   An axis label still takes the places its tick spacing needs, see [`PriceFormat::format_tick`].)
+//! * Automatic precision: no decimals from 1,000, two from 1, then four significant digits below
+//!   1 (`67,432`, `3,456`, `12.34`, `0.5864`, `0.05864`, `0.003142`). A price tag, the crosshair
+//!   and the SELL / BUY pills show the digits a market's price moves in; the exchange's own tick
+//!   size is not known, so a price that needs more is pinned in the chart's settings. An axis
+//!   label takes the places its tick spacing needs, see [`PriceFormat::format_tick`].
 //! * Under 0.001 the zeros are counted, CoinMarketCap style: `0.00000278` reads `0.0₅278`.
 //! * A fixed number of decimal places replaces the automatic precision. The Swift app still
 //!   counts the zeros of a tiny price then; [`SmallPrices::Decimals`] spells it out instead.
@@ -74,13 +75,13 @@ impl PriceFormat {
     /// `value` as this chart prints it. Not finite reads `—`; zero reads `0` (`0.00` once the
     /// places are fixed); a negative keeps its sign unless it rounds to nothing.
     pub fn format(self, value: f64) -> String {
-        self.format_at(value, 0)
+        self.format_at(value, None)
     }
 
     /// An axis tick: like [`format`](Self::format), but automatic precision never shows fewer
     /// places than `step` (the distance to the next tick) needs, so neighbouring labels differ.
     pub fn format_tick(self, value: f64, step: f64) -> String {
-        self.format_at(value, places_for_step(step))
+        self.format_at(value, Some(step))
     }
 
     /// `value` as a bare number for the clipboard or an editor field: no thousands commas and no
@@ -110,7 +111,7 @@ impl PriceFormat {
     }
 
     /// One step of the last place this chart prints `price` to: `1` for 67,432, `0.01` for 12.34,
-    /// `0.001` for 0.056. It is not an exchange's tick (this build knows no market's real tick
+    /// `0.00001` for 0.056. It is not an exchange's tick (this build knows no market's real tick
     /// size); measurements that count ticks count these, and say so.
     pub fn tick_size(self, price: f64) -> f64 {
         let magnitude = price.abs();
@@ -126,12 +127,12 @@ impl PriceFormat {
         10f64.powi(-(places as i32))
     }
 
-    fn format_at(self, value: f64, at_least: usize) -> String {
+    fn format_at(self, value: f64, step: Option<f64>) -> String {
         if !value.is_finite() {
             return "—".to_owned();
         }
         let magnitude = value.abs();
-        let text = self.magnitude_text(magnitude, at_least);
+        let text = self.magnitude_text(magnitude, step);
         if value < 0.0 && text.chars().any(|c| c.is_ascii_digit() && c != '0') {
             format!("-{text}")
         } else {
@@ -139,7 +140,7 @@ impl PriceFormat {
         }
     }
 
-    fn magnitude_text(self, magnitude: f64, at_least: usize) -> String {
+    fn magnitude_text(self, magnitude: f64, step: Option<f64>) -> String {
         let fixed = self
             .decimals
             .map(|places| usize::from(places.min(MAX_DECIMALS)));
@@ -149,7 +150,10 @@ impl PriceFormat {
         if magnitude < SMALL_BELOW {
             return self.small_text(magnitude, fixed);
         }
-        let places = fixed.unwrap_or_else(|| auto_places(magnitude).max(at_least));
+        let places = fixed.unwrap_or_else(|| match step {
+            None => auto_places(magnitude),
+            Some(step) => places_for_step(step).max(tick_places(magnitude, step)),
+        });
         group_thousands(&format!("{magnitude:.places$}"))
     }
 
@@ -171,19 +175,34 @@ impl PriceFormat {
     }
 }
 
+/// Significant digits automatic precision keeps below 1.
+const SMALL_SIGNIFICANT: usize = 4;
+
 /// The places automatic precision gives a price (>= 0.001): none once it is large enough that
-/// decimals are noise, two from 1, then enough to keep two significant digits (`0.12`, `0.056`,
-/// `0.0031`). Under 0.001 the zeros are counted instead.
+/// decimals are noise, two from 1, then enough to keep four significant digits (`0.5864`,
+/// `0.05864`, `0.003142`). Under 0.001 the zeros are counted instead.
 fn auto_places(magnitude: f64) -> usize {
     if magnitude >= GROUPED_FROM {
         0
-    } else if magnitude >= 0.1 {
+    } else if magnitude >= 1.0 {
         2
-    } else if magnitude >= 0.01 {
-        3
     } else {
-        4
+        // 0.5 has no zeros after the point, 0.05 has one: the digits start that much later.
+        let (_, exponent) = scientific(magnitude);
+        (-exponent) as usize - 1 + SMALL_SIGNIFICANT
     }
+}
+
+/// The least places an axis label has: what a price of this size is printed with, but for a price
+/// under 1 taken from the tick spacing, not the label's own size. The labels of one axis cross
+/// 0.1 or 0.01 and would otherwise change places in the middle of the column (`0.11`, `0.10`,
+/// `0.090`).
+fn tick_places(value: f64, step: f64) -> usize {
+    let magnitude = value.abs();
+    if magnitude >= 1.0 || !step.is_finite() || step <= 0.0 {
+        return auto_places(magnitude);
+    }
+    auto_places(magnitude).min(auto_places(step * 10.0))
 }
 
 /// Decimal places that tell apart two ticks `step` apart: `0.5` needs one, `0.25` two, `5` none.
@@ -251,21 +270,22 @@ mod tests {
     }
 
     #[test]
-    fn automatic_precision_keeps_two_significant_digits_under_one() {
+    fn automatic_precision_keeps_four_significant_digits_under_one() {
         assert_eq!(AUTO.format(67_432.19), "67,432");
         assert_eq!(AUTO.format(1_000.0), "1,000");
         assert_eq!(AUTO.format(999.994), "999.99");
         assert_eq!(AUTO.format(45.231), "45.23");
         assert_eq!(AUTO.format(1.0), "1.00");
-        assert_eq!(AUTO.format(0.999), "1.00");
-        assert_eq!(AUTO.format(0.5), "0.50");
-        assert_eq!(AUTO.format(0.123_456), "0.12");
-        assert_eq!(AUTO.format(0.1), "0.10");
-        assert_eq!(AUTO.format(0.056_78), "0.057");
-        assert_eq!(AUTO.format(0.01), "0.010");
-        assert_eq!(AUTO.format(0.009_1), "0.0091");
-        assert_eq!(AUTO.format(0.003_14), "0.0031");
-        assert_eq!(AUTO.format(0.001_234_6), "0.0012");
+        assert_eq!(AUTO.format(0.999), "0.9990");
+        assert_eq!(AUTO.format(0.5), "0.5000");
+        assert_eq!(AUTO.format(0.123_456), "0.1235");
+        assert_eq!(AUTO.format(0.1), "0.1000");
+        assert_eq!(AUTO.format(0.056_78), "0.05678");
+        assert_eq!(AUTO.format(0.058_641), "0.05864");
+        assert_eq!(AUTO.format(0.01), "0.01000");
+        assert_eq!(AUTO.format(0.009_1), "0.009100");
+        assert_eq!(AUTO.format(0.003_14), "0.003140");
+        assert_eq!(AUTO.format(0.001_234_6), "0.001235");
         assert_eq!(AUTO.format(1_234_567.8), "1,234,568");
     }
 
@@ -357,6 +377,19 @@ mod tests {
     }
 
     #[test]
+    fn an_axis_below_one_keeps_its_places_across_a_decade() {
+        // 0.11 and 0.09 sit on one axis: the column must not go from two places to three.
+        let labels: Vec<_> = [0.11, 0.10, 0.09, 0.08]
+            .into_iter()
+            .map(|value| AUTO.format_tick(value, 0.01))
+            .collect();
+        assert_eq!(labels, ["0.1100", "0.1000", "0.0900", "0.0800"]);
+        // A finer step is not cut to the coarser column.
+        assert_eq!(AUTO.format_tick(0.058_5, 0.000_5), "0.05850");
+        assert_eq!(AUTO.format_tick(0.058_55, 0.000_05), "0.05855");
+    }
+
+    #[test]
     fn the_step_places() {
         assert_eq!(places_for_step(5.0), 0);
         assert_eq!(places_for_step(0.5), 1);
@@ -391,8 +424,8 @@ mod tests {
     fn plain_is_a_parseable_number_with_the_charts_places() {
         assert_eq!(AUTO.plain(118_150.99), "118150.99");
         assert_eq!(AUTO.plain(45.231), "45.23");
-        assert_eq!(AUTO.plain(0.123_456), "0.12");
-        assert_eq!(AUTO.plain(0.003_14), "0.0031");
+        assert_eq!(AUTO.plain(0.123_456), "0.1235");
+        assert_eq!(AUTO.plain(0.003_14), "0.003140");
         assert_eq!(AUTO.plain(0.000_002_78), "0.00000278");
         assert_eq!(AUTO.plain(0.0), "0");
         assert_eq!(AUTO.plain(-12.345), "-12.35");
@@ -412,9 +445,9 @@ mod tests {
         assert_eq!(auto.tick_size(67_432.0), 1.0);
         assert_eq!(auto.tick_size(1_000.0), 1.0);
         assert_eq!(auto.tick_size(12.34), 0.01);
-        assert_eq!(auto.tick_size(0.5), 0.01);
-        assert_eq!(auto.tick_size(0.056), 0.001);
-        assert_eq!(auto.tick_size(0.0031), 0.0001);
+        assert_eq!(auto.tick_size(0.5), 0.0001);
+        assert_eq!(auto.tick_size(0.056), 0.00001);
+        assert_eq!(auto.tick_size(0.0031), 0.000001);
         // Under 0.001 it is the place of the third digit after the zeros: 0.0000278 -> 7 places.
         assert_eq!(auto.tick_size(0.0000278), 1e-7);
         // A sign changes nothing; nothing to go on is a cent.
