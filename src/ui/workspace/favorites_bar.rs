@@ -9,7 +9,7 @@
 //! position in egui's memory until the pointer is let go, and only then reports `Moved` for the
 //! caller to save.
 
-use crate::model::drawings::favorites::{BarPlacement, BarPrefs, Favorite, placement_from};
+use crate::model::drawings::favorites::{BarPrefs, Favorite, Region};
 use crate::model::{CursorMode, Tool};
 use crate::ui::workspace::cursor_menu;
 use crate::ui::workspace::tool_sidebar::tool_icon;
@@ -41,8 +41,11 @@ pub struct FavoritesBarInput<'a> {
     pub cursor: CursorMode,
     pub zoom_armed: bool,
     pub prefs: BarPrefs,
-    /// The part of the window the bar may be moved over: the charts.
+    /// The charts' area, where a bar that was never moved sits.
     pub area: Rect,
+    /// The part of the window the bar may be moved over: all of it below the tab strip, so it can
+    /// be put over the toolbar or a side panel as well as the charts.
+    pub window: Rect,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -50,7 +53,8 @@ pub enum FavoritesBarAction {
     /// The button of this favorite was pressed.
     Select(Favorite),
     /// The bar was moved and let go here.
-    Moved(BarPlacement),
+    /// The bar was let go here: the prefs to save.
+    Moved(BarPrefs),
     /// Hide the bar (its stars stay).
     Hide,
 }
@@ -72,31 +76,26 @@ fn corner(at: [f32; 2]) -> Pos2 {
     pos2(at[0], at[1])
 }
 
-/// Where the bar's top-left corner is: its saved place, or the default one.
-pub fn resolve(prefs: &BarPrefs, area: Rect, count: usize) -> Pos2 {
-    corner(prefs.resolve(
-        pair(area.min.to_vec2()),
-        pair(area.size()),
-        pair(bar_size(count)),
-    ))
+fn region(rect: Rect) -> Region {
+    Region {
+        origin: pair(rect.min.to_vec2()),
+        size: pair(rect.size()),
+    }
 }
 
-/// `position`, brought inside the area.
-fn clamped(position: Pos2, area: Rect, count: usize) -> Pos2 {
-    let placement = placement_from(
+/// Where the bar's top-left corner is: its saved place, or the default one.
+pub fn resolve(prefs: &BarPrefs, area: Rect, window: Rect, count: usize) -> Pos2 {
+    corner(prefs.resolve(region(area), region(window), pair(bar_size(count))))
+}
+
+/// `position`, brought inside the window.
+fn clamped(position: Pos2, input: &FavoritesBarInput) -> Pos2 {
+    let moved = BarPrefs::default().moved_to(
         pair(position.to_vec2()),
-        pair(area.min.to_vec2()),
-        pair(area.size()),
-        pair(bar_size(count)),
+        region(input.window),
+        pair(bar_size(input.items.len())),
     );
-    resolve(
-        &BarPrefs {
-            placement: Some(placement),
-            hidden: false,
-        },
-        area,
-        count,
-    )
+    resolve(&moved, input.area, input.window, input.items.len())
 }
 
 /// Whether the bar is shown for this input: there is a favorite to show, it is not hidden, and the
@@ -189,14 +188,10 @@ pub fn show(ctx: &Context, input: &FavoritesBarInput) -> Vec<FavoritesBarAction>
     let mut live = drag_in_progress(ctx, drag_id);
     if let Some(at) = live.as_mut() {
         // Follows the pointer in this frame, not the next one.
-        *at = clamped(
-            *at + ctx.input(|input| input.pointer.delta()),
-            input.area,
-            count,
-        );
+        *at = clamped(*at + ctx.input(|input| input.pointer.delta()), input);
         keep_drag(ctx, drag_id, *at);
     }
-    let position = live.unwrap_or_else(|| resolve(&input.prefs, input.area, count));
+    let position = live.unwrap_or_else(|| resolve(&input.prefs, input.area, input.window, count));
 
     egui::Area::new(input.id)
         // Above the charts but below every popup, menu, drawing toolbar and dialog, however late
@@ -248,18 +243,13 @@ fn bar_body(
         let travelled = pressed_at
             .zip(now)
             .map_or(Vec2::ZERO, |(from, to)| to - from);
-        keep_drag(
-            ui.ctx(),
-            drag_id,
-            clamped(position + travelled, input.area, count),
-        );
+        keep_drag(ui.ctx(), drag_id, clamped(position + travelled, input));
     }
     if grip.drag_stopped_by(PointerButton::Primary) {
         ui.ctx().data_mut(|data| data.remove::<Drag>(drag_id));
-        actions.push(FavoritesBarAction::Moved(placement_from(
+        actions.push(FavoritesBarAction::Moved(input.prefs.moved_to(
             pair(position.to_vec2()),
-            pair(input.area.min.to_vec2()),
-            pair(input.area.size()),
+            region(input.window),
             pair(bar_size(count)),
         )));
     }
@@ -371,11 +361,18 @@ const HIDE_LABEL: &str = "Hide favorites toolbar";
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::drawings::favorites::BarPlacement;
     use crate::ui::render_tests::{Screen, gallery_dir};
 
     const AREA: Rect = Rect {
         min: pos2(44.0, 40.0),
         max: pos2(944.0, 640.0),
+    };
+    /// The whole window below the tab strip: it holds the toolbar above the charts and the tool
+    /// rail beside them.
+    const WINDOW: Rect = Rect {
+        min: pos2(0.0, 0.0),
+        max: pos2(1000.0, 700.0),
     };
     const TOOLS: [Favorite; 3] = [
         Favorite::Tool(Tool::Brush),
@@ -392,6 +389,7 @@ mod tests {
             zoom_armed: false,
             prefs,
             area: AREA,
+            window: WINDOW,
         }
     }
 
@@ -518,7 +516,7 @@ mod tests {
             items: &items,
             ..input(prefs, Tool::Cursor)
         };
-        let at = resolve(&prefs, AREA, items.len());
+        let at = resolve(&prefs, AREA, WINDOW, items.len());
         let mut rig = Rig::new();
         rig.settle(&input);
         let actions = rig.click(center(at, Some(0)), &input);
@@ -535,7 +533,7 @@ mod tests {
     #[test]
     fn a_button_arms_its_tool_and_nothing_else() {
         let prefs = BarPrefs::default();
-        let at = resolve(&prefs, AREA, TOOLS.len());
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
         for (index, tool) in TOOLS.into_iter().enumerate() {
             let mut rig = Rig::new();
             let input = input(prefs, Tool::Cursor);
@@ -576,7 +574,7 @@ mod tests {
     #[test]
     fn the_bar_takes_the_pointer_where_it_is_and_nowhere_else() {
         let prefs = BarPrefs::default();
-        let at = resolve(&prefs, AREA, TOOLS.len());
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
         let input = input(prefs, Tool::Cursor);
         let mut rig = Rig::new();
         rig.settle(&input);
@@ -595,7 +593,7 @@ mod tests {
     #[test]
     fn dragging_the_grip_moves_the_bar_and_reports_where_it_was_let_go() {
         let prefs = BarPrefs::default();
-        let at = resolve(&prefs, AREA, TOOLS.len());
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
         let start = center(at, None);
         let mut rig = Rig::new();
         let before = input(prefs, Tool::Cursor);
@@ -608,25 +606,19 @@ mod tests {
             actions.extend(rig.frame(vec![egui::Event::PointerMoved(at_pointer)], &before));
         }
         actions.extend(rig.button(at_pointer, egui::PointerButton::Primary, false, &before));
-        let [FavoritesBarAction::Moved(placement)] = actions[..] else {
+        let [FavoritesBarAction::Moved(saved)] = actions[..] else {
             panic!("a drag asked for {actions:?}");
         };
-        let moved = resolve(
-            &BarPrefs {
-                placement: Some(placement),
-                hidden: false,
-            },
-            AREA,
-            TOOLS.len(),
-        );
+        assert!(saved.window, "the place is a share of the whole window");
+        let moved = resolve(&saved, AREA, WINDOW, TOOLS.len());
         assert!((moved.x - (at.x - 120.0)).abs() < 1.0, "{moved:?}");
         assert!((moved.y - (at.y + 250.0)).abs() < 1.0, "{moved:?}");
     }
 
     #[test]
-    fn a_bar_dragged_out_of_the_window_stays_in_the_chart_area() {
+    fn a_bar_dragged_out_of_the_window_stays_in_the_window() {
         let prefs = BarPrefs::default();
-        let at = resolve(&prefs, AREA, TOOLS.len());
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
         let start = center(at, None);
         let mut rig = Rig::new();
         let input = input(prefs, Tool::Cursor);
@@ -636,16 +628,53 @@ mod tests {
         let far = pos2(5000.0, 5000.0);
         rig.frame(vec![egui::Event::PointerMoved(far)], &input);
         let actions = rig.button(far, egui::PointerButton::Primary, false, &input);
-        let [FavoritesBarAction::Moved(placement)] = actions[..] else {
+        let [FavoritesBarAction::Moved(saved)] = actions[..] else {
             panic!("a drag asked for {actions:?}");
         };
-        assert_eq!(placement, BarPlacement { x: 1.0, y: 1.0 });
+        assert_eq!(saved.placement, Some(BarPlacement { x: 1.0, y: 1.0 }));
+        let at = resolve(&saved, AREA, WINDOW, TOOLS.len());
+        let size = bar_size(TOOLS.len());
+        assert_eq!(at, pos2(WINDOW.right() - size.x, WINDOW.bottom() - size.y));
+    }
+
+    #[test]
+    fn the_bar_can_be_dragged_above_the_charts_and_comes_back_there() {
+        let prefs = BarPrefs::default();
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
+        assert!(at.y >= AREA.top(), "unmoved, it starts in the charts");
+        let start = center(at, None);
+        let mut rig = Rig::new();
+        let input = input(prefs, Tool::Cursor);
+        rig.settle(&input);
+        rig.frame(vec![egui::Event::PointerMoved(start)], &input);
+        rig.button(start, egui::PointerButton::Primary, true, &input);
+        // Up into the toolbar, which lies above the charts' area.
+        let target = pos2(start.x, WINDOW.top() + 12.0);
+        let mut pointer = start;
+        for step in 1..=10 {
+            pointer = start + (target - start) * (step as f32 / 10.0);
+            rig.frame(vec![egui::Event::PointerMoved(pointer)], &input);
+        }
+        let actions = rig.button(pointer, egui::PointerButton::Primary, false, &input);
+        let [FavoritesBarAction::Moved(saved)] = actions[..] else {
+            panic!("a drag asked for {actions:?}");
+        };
+        let moved = resolve(&saved, AREA, WINDOW, TOOLS.len());
+        assert!(moved.y < AREA.top(), "{moved:?} is still inside the charts");
+        assert!(moved.y >= WINDOW.top());
+        // Saved and read back, a later frame draws it in the same place.
+        let again = FavoritesBarInput {
+            prefs: saved,
+            ..input
+        };
+        rig.settle(&again);
+        assert!((rig.bar_at().y - moved.y).abs() < 0.5);
     }
 
     #[test]
     fn a_right_click_offers_to_hide_the_bar() {
         let prefs = BarPrefs::default();
-        let at = resolve(&prefs, AREA, TOOLS.len());
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
         let target = center(at, Some(0));
         let input = input(prefs, Tool::Cursor);
         let mut rig = Rig::new();
@@ -687,7 +716,7 @@ mod tests {
     /// go meanwhile. When the bar is back, moving the pointer with no button held must not move it.
     fn a_drag_cut_short_is_not_resumed(away: impl Fn(&mut Rig, Vec<egui::Event>)) {
         let prefs = BarPrefs::default();
-        let at = resolve(&prefs, AREA, TOOLS.len());
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
         let shown = input(prefs, Tool::Cursor);
         let start = center(at, None);
         let mut rig = Rig::new();
@@ -749,7 +778,7 @@ mod tests {
     #[test]
     fn a_drag_with_no_button_down_is_dropped_even_while_the_bar_is_drawn() {
         let prefs = BarPrefs::default();
-        let at = resolve(&prefs, AREA, TOOLS.len());
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
         let shown = input(prefs, Tool::Cursor);
         let mut rig = Rig::new();
         rig.settle(&shown);
@@ -801,7 +830,7 @@ mod tests {
     #[test]
     fn escape_closes_the_menu_and_is_spent_before_the_charts_see_it() {
         let prefs = BarPrefs::default();
-        let at = resolve(&prefs, AREA, TOOLS.len());
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
         // Opened from a tool's button and from the grip.
         for on in [center(at, Some(1)), center(at, None)] {
             let input = input(prefs, Tool::Cursor);
@@ -856,7 +885,7 @@ mod tests {
     #[test]
     fn a_right_click_on_the_grip_offers_to_hide_the_bar() {
         let prefs = BarPrefs::default();
-        let at = resolve(&prefs, AREA, TOOLS.len());
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
         let target = center(at, None);
         let input = input(prefs, Tool::Cursor);
         let mut rig = Rig::new();
@@ -873,7 +902,7 @@ mod tests {
     #[test]
     fn only_the_main_button_moves_the_bar_and_a_plain_click_on_the_grip_does_nothing() {
         let prefs = BarPrefs::default();
-        let at = resolve(&prefs, AREA, TOOLS.len());
+        let at = resolve(&prefs, AREA, WINDOW, TOOLS.len());
         let start = center(at, None);
         let input = input(prefs, Tool::Cursor);
 
@@ -932,6 +961,7 @@ mod tests {
                 zoom_armed: false,
                 prefs: BarPrefs::default(),
                 area: Rect::from_min_size(pos2(0.0, 0.0), vec2(700.0, 200.0)),
+                window: Rect::from_min_size(pos2(0.0, 0.0), vec2(700.0, 200.0)),
             };
             let mut output = None;
             for _ in 0..3 {

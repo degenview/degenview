@@ -87,8 +87,15 @@ impl FavoriteTools {
     }
 }
 
+/// A rectangle the bar is placed in: its top-left corner and its size.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Region {
+    pub origin: [f32; 2],
+    pub size: [f32; 2],
+}
+
 /// Where the bar sits, as the share of its room (0 at the top-left corner, 1 at the bottom-right
-/// one) that lies before it. Whatever the window's size, the whole bar is inside the chart area.
+/// one) that lies before it. Whatever the window's size, the whole bar is inside the room.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BarPlacement {
     pub x: f32,
@@ -103,7 +110,12 @@ pub struct BarPlacement {
 pub struct BarPrefs {
     #[serde(deserialize_with = "placement_or_default")]
     pub placement: Option<BarPlacement>,
-    #[serde(deserialize_with = "hidden_or_default")]
+    /// Whether `placement` is a share of the whole window. A place saved before the bar could
+    /// leave the charts is a share of the charts' area and has this off, so it comes back where
+    /// it was left; the next move saves a window place.
+    #[serde(deserialize_with = "flag_or_default")]
+    pub window: bool,
+    #[serde(deserialize_with = "flag_or_default")]
     pub hidden: bool,
 }
 
@@ -114,7 +126,7 @@ fn placement_or_default<'de, D: Deserializer<'de>>(
     Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
-fn hidden_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+fn flag_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
     let value = serde_json::Value::deserialize(deserializer)?;
     Ok(serde_json::from_value(value).unwrap_or_default())
 }
@@ -123,16 +135,33 @@ fn hidden_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool,
 pub const DEFAULT_TOP_GAP: f32 = 12.0;
 
 impl BarPrefs {
-    /// The top-left corner of a bar of `size` inside the area at `origin` of `area` size, as
-    /// `[x, y]`. Unmoved, the bar is centred near the top. A bar bigger than the area sits at its
-    /// corner.
-    pub fn resolve(&self, origin: [f32; 2], area: [f32; 2], size: [f32; 2]) -> [f32; 2] {
-        let room = [(area[0] - size[0]).max(0.0), (area[1] - size[1]).max(0.0)];
+    /// The top-left corner of a bar of `size`, as `[x, y]`. Unmoved, the bar is centred near the
+    /// top of the `chart` area; moved, it is where the share of its room puts it, the whole
+    /// `window` for a place saved by this build and the chart area for an older one. A bar bigger
+    /// than its room sits at the room's corner.
+    pub fn resolve(&self, chart: Region, window: Region, size: [f32; 2]) -> [f32; 2] {
+        let room = if self.window { window } else { chart };
+        let free = [
+            (room.size[0] - size[0]).max(0.0),
+            (room.size[1] - size[1]).max(0.0),
+        ];
         let (fx, y) = match self.placement {
-            Some(place) => (place.x, place.y.clamp(0.0, 1.0) * room[1]),
-            None => (0.5, DEFAULT_TOP_GAP.min(room[1])),
+            Some(place) => (place.x, place.y.clamp(0.0, 1.0) * free[1]),
+            None => (0.5, DEFAULT_TOP_GAP.min(free[1])),
         };
-        [origin[0] + fx.clamp(0.0, 1.0) * room[0], origin[1] + y]
+        [
+            room.origin[0] + fx.clamp(0.0, 1.0) * free[0],
+            room.origin[1] + y,
+        ]
+    }
+
+    /// These prefs with the bar left with its top-left corner at `position` in the `window`.
+    pub fn moved_to(self, position: [f32; 2], window: Region, size: [f32; 2]) -> Self {
+        Self {
+            placement: Some(placement_from(position, window.origin, window.size, size)),
+            window: true,
+            ..self
+        }
     }
 }
 
@@ -261,67 +290,107 @@ mod tests {
         );
     }
 
-    const ORIGIN: [f32; 2] = [44.0, 40.0];
-    const AREA: [f32; 2] = [1000.0, 600.0];
+    const CHART: Region = Region {
+        origin: [44.0, 90.0],
+        size: [1000.0, 560.0],
+    };
+    const WINDOW: Region = Region {
+        origin: [0.0, 40.0],
+        size: [1200.0, 700.0],
+    };
     const BAR: [f32; 2] = [200.0, 36.0];
 
-    #[test]
-    fn an_unmoved_bar_is_centred_near_the_top() {
-        let [x, y] = BarPrefs::default().resolve(ORIGIN, AREA, BAR);
-        assert_eq!(x, ORIGIN[0] + (AREA[0] - BAR[0]) / 2.0);
-        assert_eq!(y, ORIGIN[1] + DEFAULT_TOP_GAP);
+    fn at(prefs: BarPrefs) -> [f32; 2] {
+        prefs.resolve(CHART, WINDOW, BAR)
     }
 
     #[test]
-    fn a_moved_bar_comes_back_where_it_was_left() {
-        let place = placement_from([300.0, 200.0], ORIGIN, AREA, BAR);
-        let prefs = BarPrefs {
-            placement: Some(place),
-            hidden: false,
-        };
-        let [x, y] = prefs.resolve(ORIGIN, AREA, BAR);
-        assert!((x - 300.0).abs() < 0.01 && (y - 200.0).abs() < 0.01);
+    fn an_unmoved_bar_is_centred_near_the_top_of_the_charts() {
+        let [x, y] = at(BarPrefs::default());
+        assert_eq!(x, CHART.origin[0] + (CHART.size[0] - BAR[0]) / 2.0);
+        assert_eq!(y, CHART.origin[1] + DEFAULT_TOP_GAP);
     }
 
     #[test]
-    fn a_bar_dragged_past_an_edge_stays_in_the_area() {
-        let far = placement_from([5000.0, -300.0], ORIGIN, AREA, BAR);
-        assert_eq!(far, BarPlacement { x: 1.0, y: 0.0 });
-        let prefs = BarPrefs {
-            placement: Some(far),
+    fn a_moved_bar_comes_back_where_it_was_left_even_outside_the_charts() {
+        // Over the toolbar: above the charts' top edge, left of their left edge.
+        for position in [[300.0, 200.0], [10.0, 50.0], [900.0, 60.0]] {
+            let prefs = BarPrefs::default().moved_to(position, WINDOW, BAR);
+            assert!(prefs.window);
+            let [x, y] = at(prefs);
+            assert!(
+                (x - position[0]).abs() < 0.01 && (y - position[1]).abs() < 0.01,
+                "{position:?} came back at {x},{y}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bar_dragged_past_an_edge_stays_in_the_window() {
+        let prefs = BarPrefs::default().moved_to([5000.0, -300.0], WINDOW, BAR);
+        assert_eq!(prefs.placement, Some(BarPlacement { x: 1.0, y: 0.0 }));
+        let [x, y] = at(prefs);
+        assert_eq!(x + BAR[0], WINDOW.origin[0] + WINDOW.size[0]);
+        assert_eq!(y, WINDOW.origin[1]);
+    }
+
+    #[test]
+    fn a_place_saved_before_the_bar_could_leave_the_charts_stays_in_the_charts() {
+        // Top of the charts, as an older build saved it: a share of the charts' area.
+        let old = BarPrefs {
+            placement: Some(BarPlacement { x: 0.0, y: 0.0 }),
+            window: false,
             hidden: false,
         };
-        let [x, y] = prefs.resolve(ORIGIN, AREA, BAR);
-        assert_eq!(x + BAR[0], ORIGIN[0] + AREA[0]);
-        assert_eq!(y, ORIGIN[1]);
+        assert_eq!(at(old), CHART.origin);
+        // Moving it again saves a window place and keeps the hidden flag.
+        let hidden = BarPrefs {
+            hidden: true,
+            ..old
+        };
+        let moved = hidden.moved_to([100.0, 100.0], WINDOW, BAR);
+        assert!(moved.window && moved.hidden);
     }
 
     #[test]
     fn a_smaller_window_keeps_the_bar_reachable() {
         let prefs = BarPrefs {
             placement: Some(BarPlacement { x: 1.0, y: 1.0 }),
+            window: true,
             hidden: false,
         };
-        let small = [260.0, 120.0];
-        let [x, y] = prefs.resolve(ORIGIN, small, BAR);
-        assert!(x >= ORIGIN[0] && x + BAR[0] <= ORIGIN[0] + small[0] + 0.01);
-        assert!(y >= ORIGIN[1] && y + BAR[1] <= ORIGIN[1] + small[1] + 0.01);
-        // An area smaller than the bar pins the bar to its corner.
-        assert_eq!(prefs.resolve(ORIGIN, [100.0, 20.0], BAR), ORIGIN);
+        let small = Region {
+            origin: WINDOW.origin,
+            size: [260.0, 120.0],
+        };
+        let [x, y] = prefs.resolve(CHART, small, BAR);
+        assert!(x >= small.origin[0] && x + BAR[0] <= small.origin[0] + small.size[0] + 0.01);
+        assert!(y >= small.origin[1] && y + BAR[1] <= small.origin[1] + small.size[1] + 0.01);
+        // A room smaller than the bar pins the bar to its corner.
+        let tiny = Region {
+            origin: WINDOW.origin,
+            size: [100.0, 20.0],
+        };
+        assert_eq!(prefs.resolve(CHART, tiny, BAR), WINDOW.origin);
     }
 
     #[test]
     fn a_stored_value_this_build_cannot_read_resets_only_its_own_field() {
         let prefs: BarPrefs =
-            serde_json::from_str(r#"{"placement":"left","hidden":true}"#).unwrap();
+            serde_json::from_str(r#"{"placement":"left","window":"yes","hidden":true}"#).unwrap();
         assert_eq!(
             prefs,
             BarPrefs {
                 placement: None,
+                window: false,
                 hidden: true
             }
         );
         let prefs: BarPrefs = serde_json::from_str("{}").unwrap();
         assert_eq!(prefs, BarPrefs::default());
+        // What an older build saved has no `window` and reads as a place in the charts.
+        let old: BarPrefs =
+            serde_json::from_str(r#"{"placement":{"x":0.25,"y":0.5},"hidden":false}"#).unwrap();
+        assert!(!old.window);
     }
 }

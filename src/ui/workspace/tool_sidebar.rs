@@ -2036,6 +2036,7 @@ mod tests {
                     zoom_armed: false,
                     prefs,
                     area: Rect::from_min_size(pos2(WIDTH, 0.0), vec2(size.x - WIDTH, size.y)),
+                    window: Rect::from_min_size(Pos2::ZERO, size),
                 },
             );
         });

@@ -233,7 +233,7 @@ hollow control points on curves).
 A star at the right end of every row of the six flyouts stars that tool (`Tool::GROUPED`, so a tool
 added there gets one; the ruler has no row), and every row of the cursor menu stars that cursor
 ([Chart cursors](chart-cursors.md#favorites)). Starred tools and cursors show in a small floating
-bar over the charts: a grip of dots, then one button per favorite.
+bar over the window: a grip of dots, then one button per favorite.
 
 - **Doc** (TradingView's help on favoriting, not detailed): a star beside a tool in the dropdown adds it
   to a separate floating panel. Third-party posts say the panel can be moved and that a star toggle hides
@@ -253,10 +253,15 @@ bar over the charts: a grip of dots, then one button per favorite.
   `drawing.favoritesBar` is the place and a hidden flag and stays on the device (`store::drawing_favorites`,
   `model::drawings::favorites`). A name this build does not know is kept when the list is written and
   left out of the bar. Starring a tool shows a hidden bar again.
-- **Place.** The place is the share of the room the bar has to move in (0 top-left, 1 bottom-right), so a
-  resized window keeps it inside the charts' area; a bar bigger than that room sits at its corner, and a
-  chart area too small for it hides it. It is saved when the grip is let go, not while it moves. The bar
-  is not shown while a portion of the chart is being selected or a replay start is being picked.
+- **Place.** The bar starts centred near the top of the charts' area and can be dragged anywhere in the
+  window below the tab strip: over the toolbar, the replay bar, the tool rail or a side panel, not only the
+  charts. The place is the share of the room the bar has to move in (0 top-left, 1 bottom-right) of that
+  whole area (`BarPrefs::window`), so a resized window keeps it inside; a bar bigger than that room sits at
+  its corner, and a chart area too small for it hides it. A place saved before the bar could leave the
+  charts (no `window` flag) is read as a share of the charts' area, so it comes back where it was left, and
+  the next move saves a window place. It is saved when the grip is let go, not while it moves. The bar is
+  not shown while a portion of the chart is being selected or a replay start is being picked. Over the
+  toolbar it covers what is under it, as any floating bar does; drag it away to reach that.
 - **Escape.** An open menu of the bar takes Escape first (`favorites_bar::close_menu_on_escape`, called before the
   charts are drawn, as the scale menu does): it closes the menu and spends the key, so a draft, the armed tool and the
   selection behind it stay as they were.

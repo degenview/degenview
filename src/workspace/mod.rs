@@ -559,6 +559,8 @@ impl ChartWorkspace {
         paper: &std::sync::Arc<std::sync::Mutex<PaperHost>>,
     ) -> Vec<WorkspaceAction> {
         let ctx = ui.ctx().clone();
+        // Everything below the tab strip: the favorites bar may be moved over all of it.
+        let window = ui.max_rect();
         let timeframe = self.timeframe;
         for chart in &mut self.charts {
             chart.receive_fetch(timeframe);
@@ -674,7 +676,7 @@ impl ChartWorkspace {
                     .fill(ui::theme::background())
                     .inner_margin(egui::Margin::same(10)),
             )
-            .show(ui, |ui| self.render_grid(ui, &mut lock(paper)));
+            .show(ui, |ui| self.render_grid(ui, &mut lock(paper), window));
         if let Some(item) = self.watchlist_pane.take_new_tab_request() {
             actions.push(WorkspaceAction::OpenWatchlistInNewTab(item));
         }

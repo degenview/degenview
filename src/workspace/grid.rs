@@ -220,7 +220,12 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn render_grid(&mut self, ui: &mut egui::Ui, paper_host: &mut PaperHost) {
+    pub(super) fn render_grid(
+        &mut self,
+        ui: &mut egui::Ui,
+        paper_host: &mut PaperHost,
+        window: egui::Rect,
+    ) {
         if self.charts.is_empty() {
             self.show_empty_state(ui);
             return;
@@ -754,7 +759,7 @@ impl ChartWorkspace {
             &mut commands,
         );
         drawing_escape |= self.drive_portion_selection(&ctx, grid_rect);
-        self.show_favorites_bar(&ctx, grid_rect);
+        self.show_favorites_bar(&ctx, grid_rect, window);
 
         if !favorite_toggles.is_empty() || !watchlist_changes.is_empty() {
             let mut store = lock(&self.watchlist);

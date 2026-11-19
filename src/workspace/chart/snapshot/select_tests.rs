@@ -133,7 +133,10 @@ impl Rig {
         }
         egui::CentralPanel::default()
             .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
-            .show(ui, |ui| workspace.render_grid(ui, paper));
+            .show(ui, |ui| {
+                let window = ui.max_rect();
+                workspace.render_grid(ui, paper, window)
+            });
         if self.studio {
             let ctx = ui.ctx().clone();
             workspace.show_studio(&ctx);
