@@ -269,24 +269,27 @@ impl<'w, 'a> Walker<'w, 'a> {
         for statement in block {
             self.statement(statement);
         }
+        if self.additions.len() == mark {
+            return;
+        }
         let outside = owner.range().start.offset;
+        let redeclared = self.redeclared(owner, block);
         while self.additions.len() > mark {
             if let Some((local, origin)) = self.additions.pop() {
                 self.sources[local].retain(|source| *source != origin);
-                if self.bindings.local(local).site < outside
-                    && !self.redeclares(owner, block, self.bindings.local(local).name)
-                {
+                let info = self.bindings.local(local);
+                if info.site < outside && !redeclared.contains(info.name) {
                     self.pending.push((local, origin));
                 }
             }
         }
     }
 
-    /// Whether `block`, or the loop `owner`, declares a variable called `name` of its own anywhere.
-    /// The sources a block adds to an outer local of that name are dropped, even those added
+    /// The names `block`, or the loop `owner`, declares variables of its own for, anywhere in it.
+    /// The sources a block adds to an outer local of such a name are dropped, even those added
     /// before the declaration: the name-keyed walk this replaces took the name as hidden for the
     /// whole block, and which statements a request gets must not change with the rewrite.
-    fn redeclares(&self, owner: &Statement, block: &[Statement], name: &str) -> bool {
+    fn redeclared(&self, owner: &'a Statement, block: &'a [Statement]) -> HashSet<&'a str> {
         let declared = block
             .iter()
             .filter(|statement| {
@@ -296,9 +299,14 @@ impl<'w, 'a> Walker<'w, 'a> {
                 )
             })
             .flat_map(|statement| self.bindings.introduced(statement));
-        self.bindings.introduced(owner).chain(declared).any(
-            |binding| matches!(binding, Binding::Local(id) if self.bindings.local(id).name == name),
-        )
+        self.bindings
+            .introduced(owner)
+            .chain(declared)
+            .filter_map(|binding| match binding {
+                Binding::Local(id) => Some(self.bindings.local(id).name),
+                _ => None,
+            })
+            .collect()
     }
 
     fn add(&mut self, local: LocalId, origin: Origin<'a>) {

@@ -28,9 +28,8 @@
 //! one it is handed) writes it where it is called. Aliases are per variable (two blocks' `alias`
 //! are different locals), a builtin namespace's functions (`ta.sma`) are never the script's `sma`,
 //! and a method the type checker resolved to the script's own definition has that definition's
-//! effects, not the builtin
-//! ones of its name. Known limits: aliasing through a function's return value or a container, and
-//! handles other than collections and objects, are not followed.
+//! effects, not the builtin ones of its name. Known limits: aliasing through a function's return
+//! value or a container, and handles other than collections and objects, are not followed.
 //!
 //! A statement in a block around the request is replayed as written, whatever the block's condition
 //! says: the request was reached, so the block ran. It can only be replayed when it declares nothing

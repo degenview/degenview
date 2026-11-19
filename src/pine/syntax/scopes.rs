@@ -234,7 +234,6 @@ struct Resolver<'a> {
     visible: HashMap<&'a str, Binding<'a>>,
     /// What each entry of `visible` replaced, to put it back when its block ends.
     trail: Vec<(&'a str, Option<Binding<'a>>)>,
-    /// The top-level function whose body is being resolved.
     /// How many top-level functions were seen.
     functions: usize,
 }
