@@ -220,12 +220,21 @@ pub(crate) fn metric_grid(ui: &mut egui::Ui, report: &StrategyReport, neutral: C
             0.0,
         ),
     ];
+    metric_cells(ui, "pine-report-metrics", metrics, neutral);
+}
 
-    // `LazyVGrid(.adaptive(minimum: 130), spacing: 8)`: as many columns as fit.
+/// Titled figures in a grid with as many columns as fit (`LazyVGrid(.adaptive(minimum: 130),
+/// spacing: 8)`). Each tone tints its value green above zero and red below.
+pub(crate) fn metric_cells<const N: usize>(
+    ui: &mut egui::Ui,
+    id: &str,
+    metrics: [(&str, String, f64); N],
+    neutral: Color32,
+) {
     let width = ui.available_width();
     let columns = (((width + 8.0) / (130.0 + 8.0)).floor() as usize).max(1);
     let column_width = (width - 8.0 * (columns - 1) as f32) / columns as f32;
-    egui::Grid::new("pine-report-metrics")
+    egui::Grid::new(id)
         .num_columns(columns)
         .spacing(egui::vec2(8.0, 8.0))
         .min_col_width(column_width)

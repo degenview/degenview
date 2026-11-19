@@ -6,6 +6,7 @@ pub(in crate::pine_studio) mod bottom_bar;
 pub(in crate::pine_studio) mod intro;
 pub(in crate::pine_studio) mod logs;
 pub(in crate::pine_studio) mod problems;
+mod simulation;
 pub(in crate::pine_studio) mod tab_chrome;
 #[cfg(test)]
 pub(in crate::pine_studio) mod tabs_tests;
@@ -685,6 +686,10 @@ fn figures_card(ui: &mut Ui, report: &StrategyReport) {
                 );
             });
         });
+    }
+    if !report.trades.is_empty() {
+        ui.add_space(16.0);
+        simulation::simulation_card(ui, report);
     }
 }
 

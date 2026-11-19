@@ -352,6 +352,12 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   message.
 - `pine_report::show` / `report_content` (chart settings) keep the compact look; the drawer lays out
   `metric_grid`, `equity_curve` itself.
+- Report's Simulation card (`drawer/simulation.rs`) shows `pine::strategy::monte_carlo`: closed
+  trades redrawn with replacement (fixed seed, so a report always gives the same figures; runs
+  shrink from 1,000 to 200 as the list grows, bounding the work). Profits are added as money, so a
+  percent-of-equity strategy is approximated, not compounded. Needs `MIN_TRADES` (10). Frames reuse
+  the answer until `trades_fingerprint` changes; never run the resampling per frame. Compact chart
+  settings report does not show it.
 
 ## Manager lifecycle
 
