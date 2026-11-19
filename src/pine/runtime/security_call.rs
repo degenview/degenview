@@ -1340,6 +1340,17 @@ mod tests {
     }
 
     #[test]
+    fn a_helper_reads_the_requested_global_after_its_unused_branch() {
+        // Only the helper reads `level`; the request still computes it on ETHUSDT.
+        assert_eq!(
+            last_plotted(
+                "level = close\nf() =>\n    if false\n        level = 1.0\n    level\nx = request.security(\"ETHUSDT\", \"1\", f())"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
     fn a_function_reads_the_requested_global_its_unused_branch_declares_again() {
         // The expression reads `level` itself, so the request computes it on ETHUSDT; the helper's
         // branch-local `level` must not hide that value after the branch.
