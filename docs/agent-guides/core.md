@@ -42,7 +42,7 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
   debt lists only shrink: fix the import instead of adding to them.
 - **Shared crate.** `crates/market` (`degenview-market`) holds the pure candle logic the WebAssembly
   build also uses: `Kline`, `Timeframe`, `bucket`, `live`, `calendar`, `viewport`, `price_format`, `normalize`, Coinbase candle
-  parsing, `price_ticks`. It does no I/O and
+  and ticker parsing (`coinbase`), `price_ticks`. It does no I/O and
   imports no app module; a dependency that does not build for `wasm32-unknown-unknown` (HTTP client,
   threads, SQLite, egui) never goes in it (the `market-wasm` CI job checks). A path dependency carries
   a `version` (`cargo deny` refuses wildcards). `model::Kline`, `model::Timeframe`, `model::TimeUnit` and `model::PriceFormat` re-export the crate's types, and
