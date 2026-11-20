@@ -1152,6 +1152,41 @@ mod tests {
     }
 
     #[test]
+    fn a_candidate_fix_first_shipped_in_the_stable_release_is_hidden_in_its_body_and_still_read() {
+        // As `tools/changelog.sh notes` writes a stable body: the fix is in an HTML comment, which
+        // GitHub does not draw, and no candidate's own release lists it.
+        let stable = "\
+## 0.6.0 (2026-11-20)
+
+### Fixed
+
+- Public fix.
+
+<!-- release-candidate fixes
+### Fixed in release candidates
+
+- A bug the last candidate had.
+-->
+";
+        let releases = [
+            release_noted("v0.6.0", stable),
+            release_noted("v0.6.0-rc.1", &changes("0.6.0-rc.1", &["One."], &[])),
+            release_noted("v0.5.1", ""),
+        ];
+        // Someone on the first candidate may have hit that bug, so they are told.
+        let release = available(eval(&releases, "0.6.0-rc.1", Channel::Stable));
+        assert_eq!(release.version, "0.6.0");
+        assert_eq!(
+            release.notes.fixed,
+            ["Public fix.", "A bug the last candidate had."]
+        );
+        // Someone coming from a stable release never had it.
+        let release = available(eval(&releases, "0.5.1", Channel::Stable));
+        assert_eq!(release.notes.fixed, ["Public fix."]);
+        assert_eq!(release.notes.omitted, 0);
+    }
+
+    #[test]
     fn notes_come_only_from_published_releases_of_the_workflow() {
         let draft = noted(
             r#"{"tag_name":"v0.6.0-rc.2","draft":true,"prerelease":true}"#.to_owned(),

@@ -273,6 +273,27 @@ fn the_line_that_ends_a_cut_list_counts_what_was_left_out() {
 }
 
 #[test]
+fn a_body_cut_short_ends_the_list_without_a_count() {
+    let cut = |omitted, truncated| ReleaseNotes {
+        omitted,
+        truncated,
+        ..notes()
+    };
+    assert_eq!(closing_line(&cut(0, false)), None);
+    assert_eq!(
+        closing_line(&cut(3, false)).as_deref(),
+        Some("And 3 more changes in the full release notes.")
+    );
+    for omitted in [0, 3] {
+        assert_eq!(
+            closing_line(&cut(omitted, true)).as_deref(),
+            Some("And more changes in the full release notes."),
+            "a count would be too low"
+        );
+    }
+}
+
+#[test]
 fn the_line_about_releases_with_no_summary_counts_them() {
     assert_eq!(
         unsummarized_line(1),
@@ -335,6 +356,49 @@ fn a_return_from_before_the_sheet_opened_does_not_confirm_it() {
 }
 
 #[test]
+fn a_return_that_reopens_a_dismissed_sheet_does_not_confirm_it() {
+    let host = UpdateHost::at_phase(&Phase::Available {
+        version: "9.9.9".to_owned(),
+        url: "https://example.test/release".to_owned(),
+        installable: true,
+        note: None,
+        notes: Arc::new(notes()),
+    });
+    let mut screen = Screen::new(Vec2::new(700.0, 760.0));
+    let root = egui::ViewportId::ROOT;
+    host.review(root);
+    for events in [vec![], vec![], vec![], vec![key(Key::Escape)]] {
+        screen.run(events, |ui| {
+            show_review(ui.ctx(), &host, &host.view());
+        });
+    }
+    assert!(!host.review_open_in(root), "Escape closed it");
+    // A frame without the sheet: it is a new one when it comes back.
+    screen.run(vec![], |ui| {
+        show_review(ui.ctx(), &host, &host.view());
+    });
+
+    // The key press that clicks the tab mark arrives in the frame that draws the sheet again.
+    // egui runs no sizing pass for a sheet it has laid out before, so nothing else keeps that
+    // press away from the focused button.
+    host.review(root);
+    for events in [vec![key(Key::Enter)], vec![], vec![], vec![]] {
+        screen.run(events, |ui| {
+            show_review(ui.ctx(), &host, &host.view());
+        });
+        assert!(
+            matches!(host.view().phase, Phase::Available { .. }),
+            "nothing installs until a Return on a later frame"
+        );
+    }
+    assert!(host.review_open_in(root), "the sheet is still waiting");
+    screen.run(vec![key(Key::Enter)], |ui| {
+        show_review(ui.ctx(), &host, &host.view());
+    });
+    assert!(matches!(host.view().phase, Phase::Installing(_)));
+}
+
+#[test]
 fn an_offer_replaced_since_the_sheet_drew_keeps_the_sheet_open_and_installs_nothing() {
     let host = UpdateHost::at_phase(&Phase::Available {
         version: "9.9.9".to_owned(),
@@ -366,6 +430,45 @@ fn an_offer_replaced_since_the_sheet_drew_keeps_the_sheet_open_and_installs_noth
     assert!(matches!(host.view().phase, Phase::Available { .. }));
 }
 
+fn offer(version: &str) -> Phase {
+    Phase::Available {
+        version: version.to_owned(),
+        url: "https://example.test/release".to_owned(),
+        installable: true,
+        note: None,
+        notes: Arc::new(notes()),
+    }
+}
+
+#[test]
+fn an_offer_that_replaces_the_one_on_screen_is_not_confirmed_in_its_first_frame() {
+    let host = UpdateHost::at_phase(&offer("9.9.9"));
+    let mut screen = Screen::new(Vec2::new(700.0, 760.0));
+    let root = egui::ViewportId::ROOT;
+    host.review(root);
+    for _ in 0..4 {
+        screen.run(vec![], |ui| {
+            show_review(ui.ctx(), &host, &host.view());
+        });
+    }
+    // A check puts 9.9.10 on offer; the Return that was meant for 9.9.9 lands in the first frame
+    // that shows it.
+    host.stand_at(&offer("9.9.10"));
+    screen.run(vec![key(Key::Enter)], |ui| {
+        show_review(ui.ctx(), &host, &host.view());
+    });
+    assert!(
+        matches!(host.view().phase, Phase::Available { ref version, .. } if version == "9.9.10"),
+        "nothing installs"
+    );
+    assert!(host.review_open_in(root), "the sheet stays open");
+
+    screen.run(vec![key(Key::Enter)], |ui| {
+        show_review(ui.ctx(), &host, &host.view());
+    });
+    assert!(matches!(host.view().phase, Phase::Installing(_)));
+}
+
 #[test]
 fn cancelling_closes_the_sheet_and_leaves_the_update_on_offer() {
     let host = UpdateHost::at_phase(&Phase::Available {
@@ -389,7 +492,7 @@ fn cancelling_closes_the_sheet_and_leaves_the_update_on_offer() {
 
 /// The sheet as pictures, in both themes: an installable update with both lists (one entry long
 /// enough to wrap twice), one that cannot install itself, a release with no notes, and lists that
-/// end with how many releases had no summary. Run by hand:
+/// end with how many releases had no summary or that the notes were cut short. Run by hand:
 /// `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib update_sheet_gallery -- --ignored`.
 #[test]
 #[ignore = "writes pictures; run by hand"]
@@ -402,6 +505,11 @@ fn update_sheet_gallery() {
     };
     let truncated = ReleaseNotes {
         omitted: 49,
+        ..flood()
+    };
+    let cut_short = ReleaseNotes {
+        truncated: true,
+        omitted: 12,
         ..flood()
     };
     let gaps = ReleaseNotes {
@@ -458,6 +566,13 @@ fn update_sheet_gallery() {
         (
             "truncated-scrolled-end",
             available(true, truncated),
+            roomy,
+            -5000.0,
+            0,
+        ),
+        (
+            "cut-short-scrolled-end",
+            available(true, cut_short),
             roomy,
             -5000.0,
             0,

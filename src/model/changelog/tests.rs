@@ -7,8 +7,7 @@ fn section(version: &str, new: &[&str], fixed: &[&str]) -> Section {
         version: version.to_owned(),
         new: new.iter().map(|&text| text.to_owned()).collect(),
         fixed: fixed.iter().map(|&text| text.to_owned()).collect(),
-        fixed_rc: Vec::new(),
-        omitted: 0,
+        ..Section::default()
     }
 }
 
@@ -372,13 +371,11 @@ fn release_candidate_fixes_share_the_caps_and_omitted_counting() {
     );
     let parsed = parse(&body);
     assert_eq!(parsed[0].fixed_rc.len(), MAX_ENTRIES);
-    assert_eq!(parsed[0].omitted, 3);
+    assert_eq!((parsed[0].omitted, parsed[0].omitted_rc), (0, 3));
 
-    // What the reader's cap left out stays counted whether or not the fixes are shown...
-    assert_eq!(
-        ReleaseNotes::from_sections(parsed.clone(), false).omitted,
-        3
-    );
+    // What the cap left out counts only for a reader who is shown the fixes...
+    assert_eq!(ReleaseNotes::from_sections(parsed.clone(), true).omitted, 3);
+    assert_eq!(ReleaseNotes::from_sections(parsed, false).omitted, 0);
     // ...and fixes merged into `fixed` count against the merged cap with the rest.
     let flood = ReleaseNotes::from_sections(
         (0..4).map(|n| section_with_rc_fixes(&n.to_string(), &[], &["y"; MAX_ENTRIES])),
@@ -391,6 +388,68 @@ fn release_candidate_fixes_share_the_caps_and_omitted_counting() {
         false,
     );
     assert_eq!((hidden.fixed.len(), hidden.omitted), (0, 0));
+}
+
+#[test]
+fn candidate_fix_overflow_is_not_a_public_omission() {
+    let body = format!(
+        "## 2.0.0\n\n### Fixed\n\n- Public.\n\n### Fixed in release candidates\n\n{}",
+        "- Fix.\n".repeat(MAX_ENTRIES + 5),
+    );
+    let parsed = parse(&body);
+    assert_eq!(parsed[0].omitted_rc, 5);
+    assert_eq!(
+        ReleaseNotes::from_sections(parsed.clone(), false).omitted,
+        0
+    );
+    let candidate = ReleaseNotes::from_sections(parsed, true);
+    assert_eq!(candidate.omitted, 5);
+    assert_eq!(candidate.fixed.len(), 1 + MAX_ENTRIES);
+
+    // The same for candidate fixes in sections past the section cap.
+    let one = "## 1.0.0\n\n### Fixed in release candidates\n\n- R.\n\n### Fixed\n\n- P.\n\n";
+    let sections = parse(&one.repeat(MAX_SECTIONS + 2));
+    let last = &sections[MAX_SECTIONS - 1];
+    assert_eq!((last.omitted, last.omitted_rc), (2, 2));
+    assert_eq!(
+        ReleaseNotes::from_sections(sections.clone(), false).omitted,
+        2
+    );
+    assert_eq!(ReleaseNotes::from_sections(sections, true).omitted, 4);
+}
+
+#[test]
+fn a_body_over_the_bound_is_cut_at_a_whole_line_and_the_open_section_says_so() {
+    // 60 sections of four long entries, each ending in a marker a half entry would lack.
+    let entry = |n: usize| format!("- Entry {n}: {} END\n", "word ".repeat(60));
+    let section = |release: usize| {
+        let entries: String = (0..4).map(entry).collect();
+        format!("## 1.0.{release} (2026-11-20)\n\n### New\n\n{entries}\n")
+    };
+    let body: String = (0..60).rev().map(section).collect();
+    assert!(body.len() > MAX_BODY_BYTES);
+    let parsed = parse(&body);
+    let (last, earlier) = parsed.split_last().expect("sections were read");
+    assert!(parsed.len() < 60, "the rest was never read");
+    assert!(last.truncated);
+    assert!(earlier.iter().all(|section| !section.truncated));
+    for section in &parsed {
+        assert!(
+            section.new.iter().all(|entry| entry.ends_with(" END")),
+            "{}: an entry was cut mid-line",
+            section.version
+        );
+    }
+    assert!(ReleaseNotes::from_sections(parsed, false).truncated);
+
+    // A body that fits is not truncated, and neither is a cut in a folded commit list.
+    assert!(!parse(&entry(1)).iter().any(|section| section.truncated));
+    let folded = format!(
+        "## 1.0.0\n\n### New\n\n- A.\n\n<details>\n{}",
+        "- abc1234 A commit.\n".repeat(5_000)
+    );
+    assert!(folded.len() > MAX_BODY_BYTES);
+    assert!(!parse(&folded)[0].truncated);
 }
 
 // MARK: The repository's own files
@@ -418,6 +477,10 @@ fn fragment_problems<'a>(fragments: impl IntoIterator<Item = (&'a str, &'a str)>
         for (index, line) in text.lines().enumerate() {
             let at = format!("changes/{name}:{}", index + 1);
             if line.trim().is_empty() {
+                continue;
+            }
+            if line.contains("<!--") || line.contains("-->") {
+                problems.push(format!("{at}: a change cannot contain `<!--` or `-->`"));
                 continue;
             }
             let Some(change) = change_text(line) else {
@@ -490,6 +553,21 @@ fn a_fragment_line_is_a_new_fixed_or_fixed_in_candidates_change() {
     ] {
         assert!(change_text(line).is_none(), "{line}");
     }
+}
+
+#[test]
+fn a_change_cannot_carry_the_marker_that_hides_candidate_fixes() {
+    let problems = fragment_problems([
+        ("one", "fixed-rc: Arrows --> no longer break.\n"),
+        ("two", "new: An <!-- opener.\n"),
+    ]);
+    assert_eq!(
+        problems,
+        [
+            "changes/one:1: a change cannot contain `<!--` or `-->`",
+            "changes/two:1: a change cannot contain `<!--` or `-->`",
+        ]
+    );
 }
 
 #[test]
@@ -611,9 +689,12 @@ fn an_archive_longer_than_a_release_body_may_be_is_still_valid() {
 /// script in a scratch tree so the repository's own files are never touched.
 #[cfg(unix)]
 fn notes_of(changelog: &str, tag: &str, previous: &str) -> String {
+    // Tests run in parallel and may ask for the same tag, so each call gets its own tree.
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let root = std::env::temp_dir().join(format!(
-        "degenview-changelog-notes-{}-{}",
+        "degenview-changelog-notes-{}-{}-{}",
         std::process::id(),
+        CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         tag
     ));
     let _ = std::fs::remove_dir_all(&root);
@@ -631,10 +712,10 @@ fn notes_of(changelog: &str, tag: &str, previous: &str) -> String {
     String::from_utf8(output.stdout).expect("text")
 }
 
+/// A changelog with a stable release made only of candidate fixes, candidates that fixed only
+/// candidate bugs, and one that also changed something a stable reader sees.
 #[cfg(unix)]
-#[test]
-fn a_stable_releases_notes_leave_out_sections_that_only_fixed_candidates() {
-    let changelog = "\
+const CANDIDATE_CHANGELOG: &str = "\
 # Changelog
 
 ## 0.6.0 (2026-11-20)
@@ -655,6 +736,10 @@ fn a_stable_releases_notes_leave_out_sections_that_only_fixed_candidates() {
 
 - A new thing.
 
+### Fixed
+
+- A public fix.
+
 ### Fixed in release candidates
 
 - Another candidate fix.
@@ -671,22 +756,100 @@ fn a_stable_releases_notes_leave_out_sections_that_only_fixed_candidates() {
 
 - Old.
 ";
+
+#[cfg(unix)]
+#[test]
+fn a_stable_releases_notes_hide_the_candidate_fixes_in_a_comment_instead_of_dropping_them() {
     assert_eq!(
-        notes_of(changelog, "v0.6.0", "v0.5.0"),
-        "## 0.6.0-rc.2 (2026-11-18)\n\n### New\n\n- A new thing.\n",
-        "the sections left with a bare heading go, the first one included"
+        notes_of(CANDIDATE_CHANGELOG, "v0.6.0", "v0.5.0"),
+        "\
+<!-- release-candidate fixes
+## 0.6.0 (2026-11-20)
+
+### Fixed in release candidates
+
+- Fixed only in this one.
+-->
+
+<!-- release-candidate fixes
+## 0.6.0-rc.3 (2026-11-19)
+
+### Fixed in release candidates
+
+- A candidate-only fix.
+-->
+
+## 0.6.0-rc.2 (2026-11-18)
+
+### New
+
+- A new thing.
+
+### Fixed
+
+- A public fix.
+
+<!-- release-candidate fixes
+### Fixed in release candidates
+
+- Another candidate fix.
+-->
+
+<!-- release-candidate fixes
+## 0.6.0-rc.1 (2026-11-17)
+
+### Fixed in release candidates
+
+- A candidate-only fix, first.
+-->
+",
+        "a section of candidate fixes only is one comment, heading included"
     );
     assert_eq!(
-        notes_of(changelog, "v0.6.0-rc.3", "v0.6.0-rc.2"),
+        notes_of(CANDIDATE_CHANGELOG, "v0.6.0-rc.3", "v0.6.0-rc.2"),
         "## 0.6.0-rc.3 (2026-11-19)\n\n### Fixed in release candidates\n\n- A candidate-only fix.\n",
-        "a candidate's own notes keep them"
+        "a candidate's own notes show them"
+    );
+    assert_eq!(
+        notes_of(CANDIDATE_CHANGELOG, "v0.6.0-rc.2", "v0.6.0-rc.1"),
+        "## 0.6.0-rc.2 (2026-11-18)\n\n### New\n\n- A new thing.\n\n### Fixed\n\n- A public fix.\n\n### Fixed in release candidates\n\n- Another candidate fix.\n"
     );
 
-    // A release that had no fragments keeps its heading: nothing was filtered out of it.
+    // A release that had no fragments keeps its heading: nothing was hidden in it.
     let bare =
         "# Changelog\n\n## 0.6.0 (2026-11-20)\n\n## 0.5.0 (2026-11-01)\n\n### New\n\n- Old.\n";
     assert_eq!(
         notes_of(bare, "v0.6.0", "v0.5.0"),
         "## 0.6.0 (2026-11-20)\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_app_reads_the_hidden_candidate_fixes_of_a_stable_body_for_candidates_only() {
+    let body = notes_of(CANDIDATE_CHANGELOG, "v0.6.0", "v0.5.0");
+    let parsed = parse(&body);
+    let versions: Vec<_> = parsed.iter().map(|s| s.version.as_str()).collect();
+    assert_eq!(
+        versions,
+        ["0.6.0", "0.6.0-rc.3", "0.6.0-rc.2", "0.6.0-rc.1"]
+    );
+    assert_eq!(parsed[0].fixed_rc, ["Fixed only in this one."]);
+    assert_eq!(parsed[2].fixed_rc, ["Another candidate fix."]);
+
+    let stable = ReleaseNotes::from_sections(parsed.clone(), false);
+    assert_eq!(stable.new, ["A new thing."]);
+    assert_eq!(stable.fixed, ["A public fix."]);
+
+    let candidate = ReleaseNotes::from_sections(parsed, true);
+    assert_eq!(
+        candidate.fixed,
+        [
+            "Fixed only in this one.",
+            "A candidate-only fix.",
+            "A public fix.",
+            "Another candidate fix.",
+            "A candidate-only fix, first.",
+        ]
     );
 }

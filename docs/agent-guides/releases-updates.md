@@ -37,8 +37,10 @@ final `0.6.0` is a new tag rebuilt from the last commit, never a promoted RC bin
 2. Preview with `tools/release.sh <version> --dry-run`.
 3. Run `tools/release.sh <version>` (`--yes` skips confirmation): creates `release/v<version>`,
    bumps Cargo files, writes the changelog section and deletes the fragments, opens a PR,
-   merge-commits it, then creates and pushes a signed tag on merged `main`. Hyphenated versions
-   publish as GitHub prereleases; only Release Candidate offers `-rc.N`.
+   merge-commits it, then creates and pushes a signed tag on the release commit (not `main`'s tip:
+   a pull request merged while the release was open would ship in the tag without a changelog line). Before tagging it checks `main` contains that commit, its `Cargo.toml` has
+   the version and `changes/` holds only `README.md`; any failure says no tag was created. Hyphenated
+   versions publish as GitHub prereleases; only Release Candidate offers `-rc.N`.
 4. The tag-triggered Release workflow verifies tag identity/version, builds macOS arm64/x64 (zip +
    disk image each), Windows x64/ARM64 (zip + per-user installer each), Linux x64/arm64 tarballs and a
    Flatpak per Linux CPU, then publishes. Watch with `gh run watch`; confirm all twelve assets.
@@ -86,7 +88,9 @@ What a person using the app notices, per release, in plain words. Three stages, 
 2. **`CHANGELOG.md`**, newest first. `tools/release.sh` renders the fragments into a new section
    (`tools/changelog.sh render|insert`), deletes them and commits both with the version bump in the
    release pull request. `--dry-run` prints the section; a malformed fragment fails with
-   `file:line` before anything is touched. A release with no fragments still gets its heading.
+   `file:line` before anything is touched, and so does one that is untracked, ignored or has
+   uncommitted changes (it names the file; otherwise `git rm` would fail after the Cargo and
+   changelog edits). A release with no fragments still gets its heading.
    `fixed-rc:` lines render under `### Fixed in release candidates`, after `### Fixed`, and the
    subsection is left out when empty. Run `tools/release.sh <v> --dry-run` before cutting a release
    and merge or reword the fragments in a normal pull request first. Never edit old sections by
@@ -96,21 +100,28 @@ What a person using the app notices, per release, in plain words. Three stages, 
    `0.6.0` carries every `0.6.0-rc.N` section; release candidate: after the previous tag) verbatim
    with no wrapper heading, then the commit list folded in `<details><summary>All commits</summary>`,
    the Full diff line and the Downloads table. A tag with no section writes only the rest. For a
-   stable tag the `### Fixed in release candidates` subsections (the aggregate's and the candidates'
-   own) are dropped, since a reader coming from a stable release never had those bugs; a candidate's
-   notes keep them. A section that held only those fixes would be left a bare heading, so it is
-   dropped too (an empty release's own heading stays). Releases before the changelog existed keep their commit-list bodies.
+   stable tag each `### Fixed in release candidates` subsection (the aggregate's and the candidates'
+   own) is wrapped in an HTML comment, a `<!-- release-candidate fixes` line before its heading and
+   a `-->` line after its last entry, so GitHub does not show bugs a reader coming from a stable
+   release never had; a candidate's notes show them. A section that held only those fixes is wrapped
+   whole in one such comment, heading included (an empty release's own heading stays). They are
+   hidden, not dropped, because a fix first shipped in the stable release is in no candidate's body,
+   and a person on `0.6.0-rc.1` reads it only here. `check` refuses a change containing `<!--` or
+   `-->`, which would break the comment. Releases before the changelog existed keep their commit-list bodies.
 
 The shape is a contract with the app. `model::changelog::parse` reads release bodies for the update
 sheet: a `## <version> ...` heading (optional `v`) opens a section, `### New` / `### Fixed` /
 `### Fixed in release candidates` set the list (the last is `Section::fixed_rc`), `- ` bullets are
 the entries; any other `#`/`##` heading ends the section (so `## Downloads` and the old
-`## Changes since ...` commit-log bodies yield nothing) and `<details>` blocks are skipped.
+`## Changes since ...` commit-log bodies yield nothing) and `<details>` blocks are skipped. The
+comment's two marker lines are neither headings nor bullets, so they are ignored and what is
+between them is read like any other text.
 `notes_between` builds the sheet's lists with `ReleaseNotes::from_sections(sections,
 include_rc_fixes)`, passing true only when the running version is a prerelease: then the candidate
 fixes follow each section's own fixes in the sheet's Fixed list; otherwise they are dropped and not
-counted as omitted, so a person updating from a stable version never sees them, whatever the
-release body holds. `notes_between` also sets `ReleaseNotes::unsummarized`: the published releases
+counted as omitted (`Section::omitted_rc` holds what the caps left out of them, added to `omitted`
+only then), so a person updating from a stable version never sees them, whatever the release body
+holds. `notes_between` also sets `ReleaseNotes::unsummarized`: the published releases
 in the range (any author, drafts excluded) whose version no trusted body has a section for, such as
 releases from before the changelog. When the lists are not empty the sheet ends with "N releases
 since your version have no summary, so their changes are not listed."; with nothing to list it shows
@@ -118,7 +129,9 @@ only "No summary of changes is available for this version." Changing the heading
 the sheet. `cargo test` checks the fragments and `CHANGELOG.md` against the same rules, so CI
 catches a malformed one; the archive is checked section by section, since the caps below are for one
 release body and the file grows with every release. Input is bounded (64 KiB body, 64 sections, 100 entries per list per
-section, 400 characters per entry, 300 entries per merged list). Not verified: a real release body
+section, 400 characters per entry, 300 entries per merged list). A body over 64 KiB is cut back to
+its last whole line and the section being read there is `truncated`; the sheet then ends with "And
+more changes in the full release notes." instead of a count, which would be too low. Not verified: a real release body
 produced by the workflow, and the sheet against a live GitHub reply; both wait for the first
 release cut with fragments.
 
@@ -463,9 +476,13 @@ executables). Deploy Production's CloudKit schema before a release that changes 
   (About's button reads **View Release…**, so the page opens only from the sheet). The primary
   button takes the keyboard focus when the sheet opens (`kit::focus::start_on`, as in `kit::dialog`)
   and the sheet reads no Return of its own: the Return that pressed About's button must not confirm
-  the sheet in the same frame. Update installs the version the sheet drew
+  the sheet in the same frame. `start_on` asks for the focus from the frame after the opening one,
+  because egui runs no sizing pass for a sheet it has drawn before, so a focused button would answer
+  the opening Return. Update installs the version the sheet drew
   (`UpdateHost::install(ctx, version)` does nothing when a check has replaced the offer meanwhile,
-  and the sheet stays open on the new one). The list takes the height the window leaves after the
+  and the sheet stays open on the new one); a version drawn for the first time in a frame is not
+  answered either (`UpdateHost::note_shown`), so a Return meant for the old offer does not install
+  the new one. Cancel always counts. The list takes the height the window leaves after the
   rest of the sheet (measured on the previous frame), between 96 and 360 pt, so the footer stays
   inside the app's smallest windows. The
   host holds which window shows it (`UpdateHost::review`, `review_open_in`, `close_review`; memory

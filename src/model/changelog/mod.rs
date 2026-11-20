@@ -17,10 +17,17 @@
 //! - A bug only the candidates had.
 //! ```
 //!
+//! A stable release's body wraps each `Fixed in release candidates` subsection in an HTML comment
+//! (`<!-- release-candidate fixes` before it, `-->` after it; a section with nothing else is wrapped
+//! whole, heading included) so GitHub does not draw bugs a stable reader never had. The two marker
+//! lines are neither headings nor bullets, so they are ignored here and the heading and bullets
+//! between them are read like any other: a person running a candidate still sees those fixes.
+//!
 //! The text comes from a GitHub release body, so it is bounded and never trusted to be well formed:
 //! anything that is not a version heading, a `New`/`Fixed`/`Fixed in release candidates` subheading
 //! or a bullet under one is ignored, which is why the commit-list bodies of older releases yield
-//! nothing.
+//! nothing. A body longer than the bound is cut at the end of a whole line, and the section being
+//! read there is marked `truncated`.
 
 #[cfg(test)]
 mod tests;
@@ -49,6 +56,13 @@ pub struct Section {
     /// Entries the reader's caps left out. A section past `MAX_SECTIONS` has no place of its own, so
     /// its entries are counted here, in the last section kept.
     pub omitted: usize,
+    /// The same for the release-candidate fixes, counted apart: a reader who is not shown those
+    /// fixes (`ReleaseNotes::from_sections`) was not told about them, so they are not "more".
+    pub omitted_rc: usize,
+    /// The body ended before the text did while this section was being read (`MAX_BODY_BYTES`), so
+    /// it may hold more than it lists, and later sections may be missing. `omitted` cannot say how
+    /// many.
+    pub truncated: bool,
 }
 
 /// The changes of several releases together, newest release first, as an update sheet lists them.
@@ -56,8 +70,11 @@ pub struct Section {
 pub struct ReleaseNotes {
     pub new: Vec<String>,
     pub fixed: Vec<String>,
-    /// How many more changes there were than the lists hold, whichever cap left them out.
+    /// How many more changes there were than the lists hold, whichever cap left them out. Not
+    /// counting what `truncated` cut off.
     pub omitted: usize,
+    /// A body was cut short: there are more changes than `omitted` counts.
+    pub truncated: bool,
     /// How many releases in the range had no section of their own anywhere, so the lists may not
     /// hold everything they changed: releases from before the changelog, or with notes the app does
     /// not trust. Set by whoever knows the range; `from_sections` leaves it at zero.
@@ -70,7 +87,8 @@ impl ReleaseNotes {
     ///
     /// With `include_rc_fixes` a section's release-candidate fixes follow its own fixes in `fixed`
     /// (a person running a candidate may have had those bugs). Without it they are dropped and not
-    /// counted as omitted: they are not part of what this reader is told about.
+    /// counted as omitted, those a section's cap left out included: they are not part of what this
+    /// reader is told about.
     pub fn from_sections(
         sections: impl IntoIterator<Item = Section>,
         include_rc_fixes: bool,
@@ -81,8 +99,10 @@ impl ReleaseNotes {
             notes.fixed.extend(section.fixed);
             if include_rc_fixes {
                 notes.fixed.extend(section.fixed_rc);
+                notes.omitted = notes.omitted.saturating_add(section.omitted_rc);
             }
             notes.omitted = notes.omitted.saturating_add(section.omitted);
+            notes.truncated |= section.truncated;
         }
         for list in [&mut notes.new, &mut notes.fixed] {
             notes.omitted = notes
@@ -115,7 +135,8 @@ pub fn parse(text: &str) -> Vec<Section> {
     let mut category = None;
     // How many `<details>` blocks the line is inside: the commit list lives in one.
     let mut folded = 0_usize;
-    for line in bounded(text).lines() {
+    let (text, cut) = bounded(text);
+    for line in text.lines() {
         let trimmed = line.trim();
         let lower = trimmed.to_ascii_lowercase();
         if lower.starts_with("<details") {
@@ -168,19 +189,38 @@ pub fn parse(text: &str) -> Vec<Section> {
         if open && list.len() < MAX_ENTRIES {
             list.push(entry);
         } else {
-            section.omitted = section.omitted.saturating_add(1);
+            let left_out = if category == Category::FixedInCandidates {
+                &mut section.omitted_rc
+            } else {
+                &mut section.omitted
+            };
+            *left_out = left_out.saturating_add(1);
         }
+    }
+    // The cut fell in a section's own text (not in a folded commit list or between sections), so
+    // what follows may have been changes.
+    if cut
+        && (open || dropped)
+        && folded == 0
+        && let Some(section) = sections.last_mut()
+    {
+        section.truncated = true;
     }
     sections
 }
 
-/// `text` up to `MAX_BODY_BYTES`, cut on a character boundary.
-fn bounded(text: &str) -> &str {
-    let mut end = text.len().min(MAX_BODY_BYTES);
+/// `text` up to `MAX_BODY_BYTES`, cut back to the end of a whole line, and whether it was cut. A
+/// line cut in half could be a shorter entry that reads as complete.
+fn bounded(text: &str) -> (&str, bool) {
+    if text.len() <= MAX_BODY_BYTES {
+        return (text, false);
+    }
+    let mut end = MAX_BODY_BYTES;
     while !text.is_char_boundary(end) {
         end -= 1;
     }
-    &text[..end]
+    let whole_lines = text[..end].rfind('\n').map_or(0, |at| at + 1);
+    (&text[..whole_lines], true)
 }
 
 /// A markdown ATX heading: how many `#`, and its text.

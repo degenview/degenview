@@ -29,6 +29,7 @@ const GROUP_GAP: f32 = 16.0;
 /// The picture's card starts this far left of its box so it lines up with the list under it.
 const PICTURE_LEAD: f32 = 16.0;
 const NO_NOTES: &str = "No summary of changes is available for this version.";
+const TRUNCATED_LINE: &str = "And more changes in the full release notes.";
 
 /// How the person answered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,7 +43,9 @@ pub enum Outcome {
 /// installs, View Release opens the page, either one and Cancel close the sheet.
 ///
 /// Update installs the release the sheet showed, not whichever one is on offer by the time it is
-/// pressed: a check that replaced the offer in between leaves the sheet open on the new one.
+/// pressed: a check that replaced the offer in between leaves the sheet open on the new one. A new
+/// offer drawn for the first time in the frame of a press is not answered either: the person has
+/// not seen it yet (`UpdateHost::note_shown`). Cancel always counts.
 pub fn show_review(ctx: &egui::Context, host: &UpdateHost, view: &UpdateView) {
     if !host.review_open_in(ctx.viewport_id()) {
         return;
@@ -50,9 +53,13 @@ pub fn show_review(ctx: &egui::Context, host: &UpdateHost, view: &UpdateView) {
     let Phase::Available { version, url, .. } = &view.phase else {
         return;
     };
+    let seen = host.note_shown(version);
     let Some(outcome) = show(ctx, view, VERSION) else {
         return;
     };
+    if !seen && outcome != Outcome::Cancel {
+        return;
+    }
     match outcome {
         Outcome::Update => {
             if !host.install(ctx, version) {
@@ -193,8 +200,9 @@ fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, height: f32) -> f32 {
     output.inner_rect.height()
 }
 
-/// New, then Fixed, each only when it has entries, then how many more there were and how many
-/// releases had no summary; a calm line when there are none.
+/// New, then Fixed, each only when it has entries, then how many more there were (or that there are
+/// more, when a body was cut short and the count would be wrong) and how many releases had no
+/// summary; a calm line when there are none.
 fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
     ui.spacing_mut().item_spacing.y = 0.0;
     if notes.is_empty() {
@@ -233,7 +241,7 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
         }
     }
     let closing = [
-        (notes.omitted > 0).then(|| omitted_line(notes.omitted)),
+        closing_line(notes),
         (notes.unsummarized > 0).then(|| unsummarized_line(notes.unsummarized)),
     ];
     for line in closing.into_iter().flatten() {
@@ -247,6 +255,16 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
             ))
             .wrap(),
         );
+    }
+}
+
+/// What ends a list that left changes out: how many, unless a body was cut short, which makes any
+/// count too low.
+fn closing_line(notes: &ReleaseNotes) -> Option<String> {
+    if notes.truncated {
+        Some(TRUNCATED_LINE.to_owned())
+    } else {
+        (notes.omitted > 0).then(|| omitted_line(notes.omitted))
     }
 }
 

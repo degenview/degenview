@@ -22,8 +22,9 @@ The list is what a trader would tell a friend about the update, so it is short.
   - "Pine scripts with loops now show the right values when a loop runs a different number of times
     from bar to bar."
 - A bug that only ever existed in release candidates, never in a stable release: `fixed-rc:`. These
-  are listed for people running a candidate, and left out of the notes of a stable release, because
-  people coming from a stable version never had the bug.
+  are listed for people running a candidate, and hidden (an HTML comment) in the notes of a stable
+  release, because people coming from a stable version never had the bug. So no change may contain
+  `<!--` or `-->`.
 
 No fragment for:
 

@@ -12,7 +12,8 @@
 #
 # Cargo.toml is the single source of the app's version (Settings > About, the update check, the
 # app bundle's Info.plist). Pushing the tag starts the Release workflow, which refuses a tag that
-# does not match Cargo.toml, so never tag by hand.
+# does not match Cargo.toml, so never tag by hand. The tag is on the release commit itself, which
+# main contains after the merge, so changes merged later are not claimed by the release.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -113,6 +114,35 @@ today=$(date +%Y-%m-%d)
 section=$(tools/changelog.sh render "$version" "$today")
 fragments=$(tools/changelog.sh files)
 
+# Everything the release consumes must be in the repository: `files` lists what is on disk, so an
+# untracked or ignored fragment would pass the checks above and then fail `git rm` halfway through,
+# after Cargo.toml and CHANGELOG.md were already edited. An uncommitted change to one would be
+# released as text nobody reviewed on main.
+unreleasable=0
+for path in $fragments; do
+    if ! git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+        echo "error: $path is not tracked by git; commit it (or move it out of changes/) first" >&2
+        unreleasable=1
+    elif [ -n "$(git status --porcelain -- "$path")" ]; then
+        echo "error: $path has uncommitted changes; commit them first" >&2
+        unreleasable=1
+    fi
+done
+# Any other untracked note in changes/ would be left behind by the release too.
+listed=$(printf ' %s' $fragments)
+for path in $(git ls-files --others --exclude-standard -- 'changes/*.md'); do
+    case "$listed " in
+        *" $path "*) ;;
+        *)
+            echo "error: $path is untracked; commit it (or move it out of changes/) first" >&2
+            unreleasable=1 ;;
+    esac
+done
+if [ "$unreleasable" = 1 ]; then
+    echo "error: nothing was changed." >&2
+    exit 1
+fi
+
 case "$version" in
     *-rc.*) channel="Release Candidate channel only" ;;
     *-*) channel="no channel (the app's updater ignores alpha/beta tags)" ;;
@@ -122,7 +152,8 @@ echo "Release $tag ($channel)"
 echo "  1. Cargo.toml / Cargo.lock: $current -> $version"
 echo "  2. CHANGELOG.md: add the section below and delete the fragments in changes/"
 echo "  3. commit 'Release $tag' on branch release/$tag, open a PR, merge it with a merge commit"
-echo "  4. signed tag $tag on the merged main (verified locally), then git push origin $tag"
+echo "  4. signed tag $tag on the release commit, once main has it (verified locally), then"
+echo "     git push origin $tag"
 echo "     (starts the Release workflow)"
 echo
 echo "$section"
@@ -171,6 +202,9 @@ if [ -n "$fragments" ]; then
 fi
 git add Cargo.toml Cargo.lock CHANGELOG.md
 git commit -m "Release $tag"
+# What gets tagged: pull requests merged after this branch was cut are in main's tip but not in the
+# changelog section or the version this commit holds.
+release_sha=$(git rev-parse HEAD)
 git push origin "$branch"
 # A merge commit, never squash/rebase: the release commit's SHA is what the tag will cover.
 pr=$(gh pr create --base main --head "$branch" --title "Release $tag" \
@@ -180,11 +214,25 @@ gh pr merge "$pr" --merge
 # Tag only once main has the bump: a refused merge must not leave a tag (and a running workflow).
 git switch main
 git pull --ff-only origin main
-if ! grep -q "^version = \"$version\"" Cargo.toml; then
-    echo "error: main does not have version $version after the merge; no tag was created." >&2
+if ! git merge-base --is-ancestor "$release_sha" HEAD; then
+    echo "error: main does not contain the release commit $release_sha after the merge; no tag was created." >&2
     exit 1
 fi
-git tag -s "$tag" -m "DegenView $tag"
+if ! git show "$release_sha:Cargo.toml" | grep -q "^version = \"$version\""; then
+    echo "error: the release commit $release_sha does not have version $version; no tag was created." >&2
+    exit 1
+fi
+# Fragments merged while the release was open are the next release's; one left in the release
+# commit's tree would be documented twice.
+left=$(git ls-tree --name-only "$release_sha" changes/ | grep -v '^changes/README\.md$' || true)
+if [ -n "$left" ]; then
+    echo "error: the release commit $release_sha still has fragments:" >&2
+    echo "$left" >&2
+    echo "No tag was created." >&2
+    exit 1
+fi
+# The tag covers the release commit, not main's tip, which may hold later merges.
+git tag -s "$tag" -m "DegenView $tag" "$release_sha"
 # The app only installs updates whose tag GitHub reports as verified, so catch a bad signature
 # here, before pushing. Needs gpg.ssh.allowedSignersFile; without it GitHub is the only check.
 if [ -n "$(git config gpg.ssh.allowedSignersFile)" ]; then

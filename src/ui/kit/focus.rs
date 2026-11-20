@@ -3,14 +3,14 @@
 
 use eframe::egui::{self, Id, Painter, Rect, Stroke, StrokeKind};
 
-/// Puts the focus on `first` when a modal opens, and leaves it alone afterwards. The first frame
-/// of an egui modal is a sizing pass whose widgets do not count, so the request repeats until the
-/// button has the focus. A modal that was not drawn on the previous frame is a new one, so call
-/// this on every frame it is drawn and on no other.
+/// Puts the focus on `first` from the frame after a modal opens, and leaves it alone afterwards.
+/// The request repeats until the button has the focus. A modal that was not drawn on the previous
+/// frame is a new one, so call this on every frame it is drawn and on no other.
 ///
-/// A key that opened the modal (Enter on the button that asked for it) is then answered by `first`
-/// only if that button is activated, never by the modal reading the key itself: read the answer
-/// from the button's response.
+/// The opening frame asks for nothing. egui lays a modal out in a sizing pass the first time only,
+/// so a modal it has drawn before is live at once, and a button focused in that frame would answer
+/// the very Enter that asked for the modal. From the next frame on that key is gone, and a press is
+/// the person's own. Read the answer from the button's response, never from the key.
 ///
 /// Returns whether the keyboard has moved the focus since the modal opened: only then is the ring
 /// drawn, so a mouse user opens a clean modal.
@@ -20,11 +20,13 @@ pub fn start_on(ctx: &egui::Context, id: Id, first: Option<Id>) -> bool {
     let (last, mut placed, mut keyboard): (u64, bool, bool) = ctx
         .data(|data| data.get_temp(key))
         .unwrap_or((u64::MAX, false, false));
-    if last == u64::MAX || frame > last + 1 {
+    let opening = last == u64::MAX || frame > last + 1;
+    if opening {
         (placed, keyboard) = (false, false);
     }
     if let Some(first) = first
         && !placed
+        && !opening
     {
         if ctx.memory(|memory| memory.has_focus(first)) {
             placed = true;

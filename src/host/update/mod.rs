@@ -72,13 +72,20 @@ struct State {
     restart_prompt: bool,
     /// The window showing the sheet that lists what an available update changes. Only one shows
     /// it, and only while an update is on offer (`review_open_in`).
-    review: Option<egui::ViewportId>,
+    review: Option<Review>,
     /// The user chose "Restart Now" and the quit that follows has not been called off: when the app
     /// exits, the new version is started. Cleared when the quit is called off.
     relaunch_on_exit: bool,
     born: Instant,
     /// Viewports that draw this state; a worker's answer repaints exactly these.
     viewers: HashSet<egui::ViewportId>,
+}
+
+/// The open review sheet.
+struct Review {
+    viewport: egui::ViewportId,
+    /// The version the sheet drew on its previous frame (`note_shown`); none on the first frame.
+    shown: Option<String>,
 }
 
 /// What the UIs draw: the state of the update flow, nothing about how it is run.
@@ -183,6 +190,14 @@ impl UpdateHost {
             Ok(PathBuf::from("/Applications/DegenView.app")),
             Channel::Stable,
         );
+        host.stand_at(phase);
+        host
+    }
+
+    /// Moves a host built by `at_phase` to `phase`: a background check that put another release
+    /// on offer.
+    #[cfg(test)]
+    pub(crate) fn stand_at(&self, phase: &Phase) {
         let release = |installable: bool, notes: Arc<ReleaseNotes>| Release {
             tag: "v9.9.9".to_owned(),
             version: "9.9.9".to_owned(),
@@ -197,7 +212,7 @@ impl UpdateHost {
             notes,
         };
         {
-            let mut state = host.lock();
+            let mut state = self.lock();
             match phase {
                 Phase::Unchecked => {}
                 Phase::Checking => state.checking = true,
@@ -206,12 +221,14 @@ impl UpdateHost {
                     state.last = Some((UpdateOutcome::Failed(message.clone()), Instant::now()));
                 }
                 Phase::Available {
-                    installable, notes, ..
+                    version,
+                    installable,
+                    notes,
+                    ..
                 } => {
-                    state.last = Some((
-                        UpdateOutcome::Available(release(*installable, Arc::clone(notes))),
-                        Instant::now(),
-                    ));
+                    let mut offer = release(*installable, Arc::clone(notes));
+                    offer.version.clone_from(version);
+                    state.last = Some((UpdateOutcome::Available(offer), Instant::now()));
                 }
                 Phase::Installing(progress) => {
                     state.last = Some((
@@ -239,7 +256,6 @@ impl UpdateHost {
                 }
             }
         }
-        host
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
@@ -460,7 +476,26 @@ impl UpdateHost {
     /// Opens the sheet that lists what the available update changes in `viewport`, closing it in
     /// any other window.
     pub fn review(&self, viewport: egui::ViewportId) {
-        self.lock().review = Some(viewport);
+        self.lock().review = Some(Review {
+            viewport,
+            shown: None,
+        });
+    }
+
+    /// Records that the sheet draws `version` this frame and tells whether it drew that same
+    /// version on its previous frame. An answer to the sheet counts only then: an offer that
+    /// replaced the one on screen, or a sheet that was only just opened, has not been seen by the
+    /// person yet, so a key held over from before must not confirm it.
+    pub fn note_shown(&self, version: &str) -> bool {
+        let mut state = self.lock();
+        let Some(review) = state.review.as_mut() else {
+            return false;
+        };
+        let seen = review.shown.as_deref() == Some(version);
+        if !seen {
+            review.shown = Some(version.to_owned());
+        }
+        seen
     }
 
     /// Whether `viewport` shows the review sheet now. It ends by itself once no update is on offer
@@ -471,7 +506,10 @@ impl UpdateHost {
         if !matches!(phase(&state), Phase::Available { .. }) {
             state.review = None;
         }
-        state.review == Some(viewport)
+        state
+            .review
+            .as_ref()
+            .is_some_and(|review| review.viewport == viewport)
     }
 
     pub fn close_review(&self) {
@@ -1116,6 +1154,22 @@ mod tests {
 
         assert!(host.install(&ctx(), "9.9.10"));
         assert!(matches!(host.view().phase, Phase::Installing(_)));
+    }
+
+    #[test]
+    fn a_version_counts_as_seen_from_the_second_frame_it_is_drawn() {
+        let host = on_offer();
+        assert!(!host.note_shown("9.9.9"), "no sheet is open");
+        host.review(MAIN);
+        assert!(!host.note_shown("9.9.9"), "its first frame");
+        assert!(host.note_shown("9.9.9"));
+        assert!(
+            !host.note_shown("9.9.10"),
+            "a different release starts over"
+        );
+        assert!(host.note_shown("9.9.10"));
+        host.review(MAIN);
+        assert!(!host.note_shown("9.9.10"), "a reopened sheet starts over");
     }
 
     #[test]
