@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::runtime::support::{ChartSpan, SecurityDataProvider, SecurityKey};
 
 pub struct WaitMeter {

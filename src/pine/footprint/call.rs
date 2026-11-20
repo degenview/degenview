@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::Footprint;
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::builtins::array;
 use crate::pine::footprint;
 use crate::pine::runtime::session::Session;

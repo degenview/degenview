@@ -101,14 +101,42 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
             "workspace",
         ],
     ),
+    // The engine reads bars, timeframes and chart kinds from `bars`, never from `model`, which
+    // builds on it (script instances, alerts, logs): the two would otherwise be one crate.
     (
         "pine",
         &[
             "app",
             "host",
             "mcp",
+            "model",
             "native_bridge",
             "pine_studio",
+            "service",
+            "store",
+            "sync",
+            "trading",
+            "ui",
+            "workspace",
+        ],
+    ),
+    // Under both `model` and `pine`: pure bar logic that needs only the calendar in `format`.
+    (
+        "bars",
+        &[
+            "app",
+            "build_info",
+            "clock",
+            "crash_report",
+            "host",
+            "lock",
+            "mcp",
+            "model",
+            "native_bridge",
+            "paths",
+            "pine",
+            "pine_studio",
+            "platform",
             "service",
             "store",
             "sync",
@@ -159,6 +187,7 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
 /// Every top-level module, for the leaves that may import none of them.
 const EVERY_MODULE: &[&str] = &[
     "app",
+    "bars",
     "build_info",
     "clock",
     "crash_report",

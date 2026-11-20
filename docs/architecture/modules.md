@@ -64,6 +64,7 @@ part. The children are grouped by domain, like `model/` and `ui/`:
 
 | Directory | Contents |
 | --- | --- |
+| `bars/` | Price bars and what is built from them, under both `model/` and `pine/`: `Kline`, timeframes (`timeframe/`), candle buckets, folds and gap filling (`bucket/`), sources (`source/`, with CoinMarketCap's chart keys in `cmc`), chart types and their settings (`kind`), constructed bars (`synthetic/`), volume profiles and VWAP (`volume_profile`), and the `{{placeholder}}` text of alert messages (`alert_message`). `model` re-exports each at its old path |
 | `model/` | Alerts, charts/canvas/types, drawings, indicators, instruments, layouts, paper/portfolio engines, replay, tabs, watchlists, and webhooks |
 | `pine/` | Lexer → parser → compiler → session, builtins, strategies, alerts, drawings, libraries, `request.*`, and corpus tests |
 | `pine_studio/` | The script library (script picker, demos), editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
@@ -88,8 +89,8 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | --- | --- |
 | `alert/`, `webhook/` | Price and Pine alerts (engine, feed, line, messages, notifications, the `draft` the sheet and MCP build) and webhook endpoints and policy |
 | `paper/`, `portfolio/`, `watchlist/`, `broker/` | Paper trading, the portfolio ledger and its statistics, watchlists, and the shared live-trading values |
-| `chart/` | One chart: appearance, canvas, viewport, price scale, kind, layout, templates, context menu, linked-chart sync, snapshots (`snapshot/`: limits, file names, hosting and prefs, plus the Screenshot Studio's `studio`, `framing`, `composition` and `selection`), replay (the clock and what an agent asks of it), constructed bars (`synthetic/`) |
-| `market/` | Instruments, sources, timeframes (`timeframe/`), candle buckets, folds and gap filling (`bucket/`), candles, live-kline folding (`live`), history paging, prediction-market series, CoinMarketCap chart keys and titles (`cmc`) |
+| `chart/` | One chart: appearance, canvas, viewport, price scale, kind, layout, templates, context menu, linked-chart sync, snapshots (`snapshot/`: limits, file names, hosting and prefs, plus the Screenshot Studio's `studio`, `framing`, `composition` and `selection`), replay (the clock and what an agent asks of it); `kind` and `synthetic` are `bars`', re-exported |
+| `market/` | Instruments, live-kline folding (`live`), history paging, prediction-market series; sources, timeframes, buckets, candles and `cmc` are `bars`', re-exported here |
 | `drawings/`, `annotation/`, `pattern/`, `fib/`, `forecast/` | Drawings and their tools: the shared model and styles, text/image/post/table content, patterns and Elliott waves, Fibonacci and Gann, positions and measurers |
 | `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart, script value types (`script`) and the Pine indicators bundled with the app (`bundled/`) |
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
@@ -256,7 +257,8 @@ A new screen goes in its domain's directory; a new domain gets a directory and a
 
 ## Boundaries
 
-- `model/` and `pine/` stay pure and egui-free.
+- `bars/`, `model/` and `pine/` stay pure and egui-free. `pine/` imports `bars/`, never `model/`;
+  `model/` builds on both. A type both need goes in `bars/`.
 - UI renders supplied state; it does not own network or persistence.
 - `service/` performs external I/O; `store/` alone owns SQLite details.
 - Hosts in `host/` are the stateful seams. Do not bypass them from workers or views.

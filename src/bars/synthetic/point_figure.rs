@@ -13,8 +13,8 @@
 //! unconfirmed.
 
 use super::{BarShape, SyntheticBar, price_path};
-use crate::model::Kline;
-use crate::model::chart::kind::ConstructionSource;
+use crate::bars::Kline;
+use crate::bars::kind::ConstructionSource;
 
 struct Column {
     rising: bool,

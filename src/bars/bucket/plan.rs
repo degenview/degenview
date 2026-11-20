@@ -3,7 +3,7 @@
 //! chart (`DataSource::serves`) and what its fetch asks for cannot drift apart.
 
 use super::{DAY_MS, bucket_start_ms, fold, fold_base};
-use crate::model::{Kline, TimeUnit, Timeframe};
+use crate::bars::{Kline, TimeUnit, Timeframe};
 
 /// The most days a calendar month has, for sizing a fold that must hold a whole month.
 const LONGEST_MONTH_DAYS: i64 = 31;

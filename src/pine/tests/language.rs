@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::session::Session;

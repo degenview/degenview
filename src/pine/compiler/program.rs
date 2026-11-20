@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::outputs::{
     ArrowOutput, BoxOutput, CandleOutput, ColorOutput, DISPLAY_PANE, FillOutput, HorizontalLine,
     LabelOutput, LineOutput, LinefillOutput, MarkerOutput, PlotOutput, PolylineOutput, TableOutput,
@@ -160,7 +160,7 @@ pub struct SymbolInfo {
     pub base_currency: Option<String>,
     /// How the chart the script runs on is drawn: `chart.is_*` reads this, and a script on a
     /// price-based chart is fed that chart's constructed bars.
-    pub chart: crate::model::ChartKind,
+    pub chart: crate::bars::ChartKind,
 }
 
 impl Default for SymbolInfo {
@@ -171,7 +171,7 @@ impl Default for SymbolInfo {
             currency: "USD".to_owned(),
             kind: "crypto".to_owned(),
             base_currency: None,
-            chart: crate::model::ChartKind::Standard,
+            chart: crate::bars::ChartKind::Standard,
         }
     }
 }

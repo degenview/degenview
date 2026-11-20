@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use super::{INTERNAL_PREFIX, IntrabarObject, RunError, STRATEGY_SERIES, Session};
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::runtime::fast_hash::FastMap;
 use crate::pine::runtime::types::RuntimeContext;
 use crate::pine::runtime::value::{RefKind, RuntimeValue};

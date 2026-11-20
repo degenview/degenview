@@ -27,8 +27,8 @@ mod range;
 mod renko;
 pub mod ticker;
 
-use crate::model::Kline;
-use crate::model::chart::kind::{ChartStyle, ChartType, ConstructionSource, SizeRule};
+use crate::bars::Kline;
+use crate::bars::kind::{ChartStyle, ChartType, ConstructionSource, SizeRule};
 
 /// Open time and close time of a bar that can still change: far enough ahead that a script's
 /// runtime treats it as the forming bar.
@@ -307,7 +307,7 @@ fn tolerance(size: f64) -> f64 {
 
 #[cfg(test)]
 pub(crate) mod testing {
-    use crate::model::Kline;
+    use crate::bars::Kline;
 
     pub const STEP: i64 = 3_600_000;
 

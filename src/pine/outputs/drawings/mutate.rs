@@ -4,7 +4,7 @@ use super::coordinates::{known_index, known_price, point_coordinates, x_index};
 use super::names::size_of;
 use super::table::set_cell_setter;
 use super::{Arg, FromName, parse, runtime_error, unknown_function};
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::outputs::{
     BoxOutput, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle, LinefillOutput,
     TableOutput,

@@ -184,7 +184,7 @@ mod tests {
             open_trades: Vec::new(),
             equity: Vec::new(),
             open_profit: 0.0,
-            chart: crate::model::ChartKind::Standard,
+            chart: crate::bars::ChartKind::Standard,
         }
     }
 

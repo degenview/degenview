@@ -2,10 +2,10 @@
 //! constructed bars on a price-based one. `chart.is_*`, series history, `request.security()` and
 //! the `ticker.*` builders are checked end to end through the real compiler and session.
 
-use crate::model::chart::kind::{ConstructionSource, SizeMethod, SizeRule};
-use crate::model::chart::synthetic::ticker::{self, TickerModifier};
-use crate::model::chart::synthetic::{Construction, build_with};
-use crate::model::{ChartKind, Kline};
+use crate::bars::kind::{ConstructionSource, SizeMethod, SizeRule};
+use crate::bars::synthetic::ticker::{self, TickerModifier};
+use crate::bars::synthetic::{Construction, build_with};
+use crate::bars::{ChartKind, Kline};
 use crate::pine::compiler::program::{SymbolInfo, VisualOutput};
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::execution::ExecutionController;

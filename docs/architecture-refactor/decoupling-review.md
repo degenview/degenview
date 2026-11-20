@@ -4,7 +4,7 @@ A second architecture pass after [the first refactor series](plan.md). It asks f
 how tightly components are coupled, whether concerns are separated, what would break if
 components were extracted into crates, and whether the code follows clean-code rules. Numbers come
 from the source on `main` at `339e200b` (v0.6.0-rc.32), counted by script (test files and inline
-test modules left out unless stated). The stacked pull requests #638–#645 fix what could be fixed
+test modules left out unless stated). The stacked pull requests #638–#645 and #648 fix what could be fixed
 without changing behaviour. The rest is listed under [Left to do](#left-to-do), most important
 first.
 
@@ -33,7 +33,7 @@ outside tests):
 | `store → pine_studio` | 1 | `store::scripts` imported the editor's name rules and library registry, the one item the first plan named before a crate split | Fixed (#642) |
 | `service → mcp`, `service → sync` | 1 / 1 | The seal key size lived in the MCP transport; the iCloud container id lived in the sync engine | Fixed (#640, #643) |
 | `crash_report → store`, `crash_report → host` | 1 / 1 | Only to find the data folder and name the build | Fixed (#638): `paths` and `build_info` are leaves |
-| `model ↔ pine` | 5 / 26 | `pine` uses `Kline`, `Timeframe`, `ChartKind`, `market::bucket`, the synthetic ticker, the volume-profile POC and alert-message rendering from `model`; `model::pine::*`, `model::alert::pine` and `session_stats` use engine types from `pine` | **Open**, the main crate blocker (see Left to do) |
+| `model ↔ pine` | 5 / 26 | `pine` uses `Kline`, `Timeframe`, `ChartKind`, `market::bucket`, the synthetic ticker, the volume-profile POC and alert-message rendering from `model`; `model::pine::*`, `model::alert::pine` and `session_stats` use engine types from `pine` | Fixed (#648): what both need is the new `bars` module, `pine` imports `bars` only, and the test holds `pine` off `model` |
 | `trading → host`, `pine_studio → host` | 2 / 7 | Venue adapters over the paper and broker hosts; the studio reaching hosts for the Pine worker and themes | Acceptable today: both are coordinator-level code |
 
 ### 2. Coupling through god objects and globals
@@ -100,17 +100,18 @@ Pine registry is fine because it is immutable. The mutable ones (`store::scripts
 | [#643](https://github.com/degenview/degenview/pull/643) | One `clock::now_ms`, `model::encoding::{hex, hex_decode_array, sha256_hex}`, `format::plural`, one calendar | `clock` is a leaf; `service` imports no `mcp` |
 | [#644](https://github.com/degenview/degenview/pull/644) | The model list goes through `work_queue::Pending` | `ui/` and `pine_studio/` start no threads or channels (one listed exception) |
 | [#645](https://github.com/degenview/degenview/pull/645) | CloudKit's schema error is read at the sync boundary | |
+| [#648](https://github.com/degenview/degenview/pull/648) | `Kline`, timeframes, buckets, sources, chart kinds, constructed bars, volume profiles and alert placeholders move to a new `bars` module; `model` re-exports each at its old path | `pine` imports no `model`; `bars` imports nothing but `format` |
 
 ## Left to do
 
 In order of how much each one blocks a crate split or invites bugs:
 
-1. **Break `model ↔ pine`.** Put a `core` crate under both. It would hold `Kline`, `Timeframe`,
-   `TimeUnit`, `ChartKind` and its construction rules, `market::bucket`, the synthetic ticker,
-   volume-profile POC/value-area and alert-message rendering. Then `pine` depends on `core` only,
-   and `model` on `core` and `pine`. The unpushed `refactor/market-crate` branch already moves
-   `Kline`, `Timeframe`, `bucket`, the calendar and the viewport into `crates/market`. Finish that
-   branch and the rest follows. Add `("pine", ["model"])` to the test once it holds.
+1. **Make `bars` a crate.** `bars` is the `core` this review asked for: `pine` depends on it alone
+   and `model` on it and `pine`, so the three can be three crates. The unpushed
+   `refactor/market-crate` branch moves `Kline`, `Timeframe`, `bucket`, the calendar and the
+   viewport into `crates/market`; rebased on this stack, it moves `src/bars/` instead and keeps
+   `model`'s re-exports pointing there. The re-exports themselves can go once callers name `bars`
+   directly, file by file as feature branches merge (every open branch touches these imports).
 2. **A storage seam.** Give each domain that persists a small trait in its own layer (`AlertStore`,
    `PaperStore`, `SettingsStore`, …) and have `Store` implement them. Hosts, sync and MCP take the
    trait, so they can move to crates that don't depend on SQLite. This is the plan's "Store as

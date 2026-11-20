@@ -16,7 +16,7 @@ use super::state::{LoggedBar, RuntimeState, SecuritySite};
 use super::support::{ChartSpan, SecurityKey};
 use super::types::{BarFlags, RuntimeContext};
 use super::value::{RefKind, RuntimeValue};
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::builtins::array;
 use crate::pine::logs::LogRequest;
 use crate::pine::syntax::ast::{Argument, Expression, Statement};

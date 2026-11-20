@@ -13,7 +13,7 @@
 //! A deeper history changes the earliest bars slightly and converges quickly, as on TradingView.
 
 use super::{BarShape, SyntheticBar};
-use crate::model::Kline;
+use crate::bars::Kline;
 
 pub(super) fn build(source: &[Kline], forming: Option<usize>) -> Vec<SyntheticBar> {
     let mut bars: Vec<SyntheticBar> = Vec::with_capacity(source.len());

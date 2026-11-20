@@ -152,7 +152,7 @@ of drawing a line it made up. A bar that is not a number is skipped.
 
 ## Volume profiles
 
-`model/forecast/volume_profile.rs`, and one engine for both tools: they differ only in which bars they cover (two
+`bars/volume_profile.rs`, and one engine for both tools: they differ only in which bars they cover (two
 anchors, or an anchor to the latest bar).
 
 - The rows span the lowest low to the highest high of the bars, as a number of rows (default 24, at

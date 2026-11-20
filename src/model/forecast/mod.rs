@@ -4,4 +4,4 @@ pub mod ghost;
 pub mod measure;
 pub mod position;
 pub mod style;
-pub mod volume_profile;
+pub use crate::bars::volume_profile;

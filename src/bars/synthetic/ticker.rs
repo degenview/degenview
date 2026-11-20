@@ -9,8 +9,8 @@
 //! of that type uses.
 
 use super::{Construction, build_with};
-use crate::model::Kline;
-use crate::model::chart::kind::{ConstructionSource, SizeMethod, SizeRule};
+use crate::bars::Kline;
+use crate::bars::kind::{ConstructionSource, SizeMethod, SizeRule};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TickerModifier {

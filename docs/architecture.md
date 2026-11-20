@@ -8,6 +8,7 @@ architecture index; use the topic documents for detail.
 | Layer | Responsibility |
 | --- | --- |
 | `app/`, `workspace/mod.rs`, `workspace/`, `host/` | Stateful coordination: the app, one chart tab (`workspace/` holds its concerns), and one host per feature |
+| `bars/` | Pure bar logic under both `model/` and `pine/`: candles, timeframes, buckets, sources, chart kinds, constructed bars |
 | `model/` | Pure domain values and engines, one directory per domain |
 | `service/` | Providers, network, caches, Keychain, and OS services |
 | `store/` | SQLite persistence and Swift import |

@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Instant;
 
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::compiler::LibraryResolver;
 use crate::pine::compiler::program::{ChartTheme, InputValue, SymbolInfo};
 use crate::pine::runtime::execution::ExecutionController;

@@ -1,10 +1,10 @@
 //! Where a higher-timeframe bar opens and closes, for a bar length in seconds (as Pine states
-//! timeframes, a month being 30 days). The cutting is `model::market::bucket`'s: a length that is
+//! timeframes, a month being 30 days). The cutting is `bars::bucket`'s: a length that is
 //! a whole timeframe (`5` minutes, `1D`, `2W`, `3M`, `12M`) gets its buckets, quarters and years
 //! included. Any other length (`30S`, 90 seconds) floors onto the epoch.
 
-use crate::model::market::bucket;
-use crate::model::{TimeUnit, Timeframe};
+use crate::bars::bucket;
+use crate::bars::{TimeUnit, Timeframe};
 
 const MINUTE: i64 = 60;
 const DAY: i64 = 86_400;

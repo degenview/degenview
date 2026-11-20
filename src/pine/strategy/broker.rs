@@ -2,7 +2,7 @@
 //! value type the runtime keeps inside its per-bar state.
 
 use super::{OpenTrade, StrategyReport, StrategySettings, Trade};
-use crate::model::Kline;
+use crate::bars::Kline;
 
 pub const EPSILON: f64 = 1e-12;
 const MAX_FILLS_PER_SEGMENT: usize = 64;
@@ -260,7 +260,7 @@ impl Broker {
             open_trades: self.open_trades.clone(),
             equity: self.equity_curve.clone(),
             open_profit: self.open_profit(self.last_close) - self.open_entry_commission(),
-            chart: crate::model::ChartKind::Standard,
+            chart: crate::bars::ChartKind::Standard,
         }
     }
 

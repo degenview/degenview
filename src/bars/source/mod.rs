@@ -1,3 +1,5 @@
+pub mod cmc;
+
 use serde::{Deserialize, Serialize};
 
 /// A market data provider. The symbol alone never identifies a market: `BTCUSDT`
@@ -153,7 +155,7 @@ impl DataSource {
             | Self::Mexc
             | Self::CoinGecko
             | Self::Alpaca => raw.to_uppercase(),
-            Self::CoinMarketCap => super::cmc::title(raw).to_owned(),
+            Self::CoinMarketCap => cmc::title(raw).to_owned(),
             _ => raw.to_owned(),
         }
     }
