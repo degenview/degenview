@@ -18,6 +18,7 @@ const FLOAT_SERIES: &[&str] = &[
     "ohlc4",
     "hlcc4",
     "ta.tr",
+    "ta.vwap",
     "strategy.position_size",
     "strategy.position_avg_price",
     "strategy.equity",

@@ -183,3 +183,22 @@ plot(ta.sar(0.02, 0.02, 0.2))
     assert_same("sar, reordered", &plotted[6], &plotted[7]);
     assert_same("sar defaults", &plotted[8], &plotted[9]);
 }
+
+#[test]
+fn the_vwap_variable_equals_vwap_of_hlc3_and_can_be_read_more_than_once() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Vwap\", overlay = true)
+plot(ta.vwap)
+plot(ta.vwap(hlc3))
+plot(ta.vwap + 0)
+plot(ta.vwap[1])
+plot(ta.vwap(hlc3)[1])
+",
+        3_000,
+    );
+    assert_same("variable", &plotted[0], &plotted[1]);
+    assert_same("second read", &plotted[0], &plotted[2]);
+    assert_same("history", &plotted[3], &plotted[4]);
+    assert!(plotted[0].iter().flatten().count() > 2_900);
+}
