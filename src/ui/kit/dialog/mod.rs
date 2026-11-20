@@ -115,7 +115,7 @@ pub fn show(
     } else {
         Some(accept_id)
     };
-    let ring = start_on(ctx, id, first.filter(|_| !spec.focus_body));
+    let ring = kit::focus::start_on(ctx, id, first.filter(|_| !spec.focus_body));
 
     let mut outcome = None;
     let modal = egui::Modal::new(id)
@@ -261,38 +261,6 @@ pub fn show(
     outcome
 }
 
-/// Puts the focus on `first` when the dialog opens, and leaves it alone afterwards. The first
-/// frame of an egui modal is a sizing pass whose widgets do not count, so the request repeats until
-/// the button has the focus. A dialog that was not drawn on the previous frame is a new one.
-/// Returns whether the keyboard has moved the focus since it opened: only then is the focus ring
-/// drawn, so a mouse user opens a clean dialog.
-fn start_on(ctx: &egui::Context, id: Id, first: Option<Id>) -> bool {
-    let key = id.with("focus-state");
-    let frame = ctx.cumulative_frame_nr();
-    let (last, mut placed, mut keyboard): (u64, bool, bool) = ctx
-        .data(|data| data.get_temp(key))
-        .unwrap_or((u64::MAX, false, false));
-    if last == u64::MAX || frame > last + 1 {
-        (placed, keyboard) = (false, false);
-    }
-    if let Some(first) = first
-        && !placed
-    {
-        if ctx.memory(|memory| memory.has_focus(first)) {
-            placed = true;
-        } else {
-            ctx.memory_mut(|memory| memory.request_focus(first));
-        }
-    }
-    keyboard |= ctx.input(|input| {
-        input.key_pressed(egui::Key::Tab)
-            || input.key_pressed(egui::Key::ArrowLeft)
-            || input.key_pressed(egui::Key::ArrowRight)
-    });
-    ctx.data_mut(|data| data.insert_temp(key, (frame, placed, keyboard)));
-    keyboard
-}
-
 /// The X in the corner: a quiet glyph that takes a tint on hover.
 fn close_button(ui: &mut Ui, id: Id, rect: Rect) -> Response {
     // Escape closes too, so the Tab order is the buttons alone.
@@ -408,13 +376,7 @@ fn button(
         painter.rect_stroke(rect, 8.0, stroke, StrokeKind::Inside);
     }
     if ring && response.has_focus() {
-        // Never blue: the ring is the ink colour.
-        painter.rect_stroke(
-            rect.expand(2.0),
-            10.0,
-            Stroke::new(1.5, theme::ink(80)),
-            StrokeKind::Outside,
-        );
+        kit::focus::paint_ring(painter, rect, 8.0);
     }
     let galley = kit::galley(ui, label, size::BODY, weight, text, rect.width());
     ui.painter()

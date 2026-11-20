@@ -82,6 +82,7 @@ content they act on.
 | Cards (`card`) | `card_frame`, `CARD_RADIUS`, `paint_card_badge`, `paint_well`, `divider` (hairline across), `panel_divider` (a docked panel's separator line) |
 | Pages (`page`) | `empty_state`, `footer_bar`, `notice_card` |
 | Dialogs (`confirm`) | `confirm`, `alert`, `notice` over `kit::dialog` |
+| Modal focus (`focus`) | `start_on` (the opening focus of a dialog or sheet, repeated through egui's sizing pass), `paint_ring`; a sheet's focusable buttons: `sheet_button_focusable` |
 | Times (`time_text`, by path) | `date_text`, `clock_time`, `clock_time_seconds` (a table's hh:mm:ss cell), `relative_time` |
 
 ## Sidebar and page layout

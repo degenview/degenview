@@ -17,10 +17,13 @@ mod art;
 mod tests;
 
 const WIDTH: f32 = 480.0;
-/// The notes scroll beyond this share of the window's height, and never grow past `MAX_LIST`.
-const LIST_SHARE: f32 = 0.55;
+/// The notes scroll beyond what the window leaves them, and never grow past `MAX_LIST`.
 const MAX_LIST: f32 = 360.0;
-const MIN_LIST: f32 = 120.0;
+/// The least the notes keep when the window is too short for everything else, so a list is never
+/// squeezed to nothing. The smallest windows the app opens still hold the whole sheet at this.
+const MIN_LIST: f32 = 96.0;
+/// Clear space kept between the sheet and the top and bottom of its window.
+const EDGE_MARGIN: f32 = 16.0;
 /// Between the list and the link and note under it, and between the two lists.
 const GROUP_GAP: f32 = 16.0;
 /// The picture's card starts this far left of its box so it lines up with the list under it.
@@ -37,28 +40,37 @@ pub enum Outcome {
 
 /// Draws the sheet when `host` names this window for it, and carries out the answer: Update
 /// installs, View Release opens the page, either one and Cancel close the sheet.
+///
+/// Update installs the release the sheet showed, not whichever one is on offer by the time it is
+/// pressed: a check that replaced the offer in between leaves the sheet open on the new one.
 pub fn show_review(ctx: &egui::Context, host: &UpdateHost, view: &UpdateView) {
     if !host.review_open_in(ctx.viewport_id()) {
         return;
     }
+    let Phase::Available { version, url, .. } = &view.phase else {
+        return;
+    };
     let Some(outcome) = show(ctx, view, VERSION) else {
         return;
     };
     match outcome {
-        Outcome::Update => host.install(ctx),
-        Outcome::ViewRelease => {
-            if let Phase::Available { url, .. } = &view.phase {
-                ctx.open_url(egui::OpenUrl::new_tab(url));
+        Outcome::Update => {
+            if !host.install(ctx, version) {
+                return;
             }
         }
+        Outcome::ViewRelease => ctx.open_url(egui::OpenUrl::new_tab(url)),
         Outcome::Cancel => {}
     }
     host.close_review();
 }
 
 /// The sheet for the update `view` offers, over a build at `installed`; none when no update is on
-/// offer. The answer comes back once: a click on a button, Return for the primary one, Escape or a
-/// click outside for Cancel.
+/// offer. The answer comes back once: a press of a button, Escape or a click outside for Cancel.
+///
+/// The primary button takes the keyboard focus when the sheet opens, so Return or Space confirms
+/// it like any focused button. Nothing reads Return itself: the key that pressed the button which
+/// opened the sheet would otherwise confirm it in the same frame.
 pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<Outcome> {
     let Phase::Available {
         version,
@@ -70,14 +82,12 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
     else {
         return None;
     };
+    let id = Id::new("update-review");
+    let primary_id = id.with("primary");
+    let ring = kit::focus::start_on(ctx, id, Some(primary_id));
     let mut outcome = None;
-    let list_height = (ctx.content_rect().height() * LIST_SHARE).clamp(MIN_LIST, MAX_LIST);
-    let primary = if *installable {
-        Outcome::Update
-    } else {
-        Outcome::ViewRelease
-    };
-    let ((), outside) = sheet::show_dismissable(ctx, Id::new("update-review"), WIDTH, |ui| {
+    let list_height = list_height(ctx.content_rect().height(), remembered_chrome(ctx, id));
+    let ((), outside) = sheet::show_dismissable(ctx, id, WIDTH, |ui| {
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
             sheet::header_picture(
@@ -90,7 +100,7 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
             );
         });
         ui.add_space(20.0);
-        notes_list(ui, notes, list_height);
+        let shown_list = notes_list(ui, notes, list_height);
         ui.add_space(GROUP_GAP);
         sheet::inset(ui, |ui| {
             if !installable && let Some(note) = note {
@@ -114,34 +124,55 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
             } else {
                 "View Release"
             };
-            if kit::sheet_button(ui, label, true, true).clicked() {
-                outcome = Some(primary);
+            if kit::sheet_button_focusable(ui, primary_id, ring, label, true, true).clicked() {
+                outcome = Some(if *installable {
+                    Outcome::Update
+                } else {
+                    Outcome::ViewRelease
+                });
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button_focusable(ui, id.with("cancel"), ring, "Cancel", false, true)
+                .clicked()
+            {
                 outcome = Some(Outcome::Cancel);
             }
         });
+        remember_chrome(ui, id, ui.min_rect().height() - shown_list);
     });
-    let (enter, escape) = ctx.input(|input| {
-        (
-            input.key_pressed(Key::Enter),
-            input.key_pressed(Key::Escape),
-        )
-    });
-    if outcome.is_none() {
-        if enter {
-            outcome = Some(primary);
-        } else if escape || outside {
-            outcome = Some(Outcome::Cancel);
-        }
+    if outcome.is_none() && (outside || ctx.input(|input| input.key_pressed(Key::Escape))) {
+        outcome = Some(Outcome::Cancel);
     }
     outcome
 }
 
+/// How tall the notes may be in a window `window` points high, when everything else in the sheet
+/// takes `chrome`: what is left between the margins, never more than `MAX_LIST` and, when even
+/// that is too little, `MIN_LIST` all the same.
+fn list_height(window: f32, chrome: f32) -> f32 {
+    (window - chrome - 2.0 * EDGE_MARGIN).clamp(MIN_LIST, MAX_LIST)
+}
+
+/// The height of the sheet without its notes, as the previous frame laid it out (the header, the
+/// note under the list, the link, the footer). The first frame of a sheet is a sizing pass nobody
+/// sees, so it may assume the list is free to grow.
+fn remembered_chrome(ctx: &egui::Context, id: Id) -> f32 {
+    ctx.data(|data| data.get_temp(id.with("chrome")))
+        .unwrap_or(0.0)
+}
+
+fn remember_chrome(ui: &Ui, id: Id, chrome: f32) {
+    let ctx = ui.ctx();
+    let before = remembered_chrome(ctx, id);
+    ctx.data_mut(|data| data.insert_temp(id.with("chrome"), chrome));
+    if (chrome - before).abs() > 0.5 {
+        ctx.request_repaint();
+    }
+}
+
 /// The changes in a list that scrolls past `height`. While there is more above or below the
 /// visible part its edge fades into the sheet and the bar stays in view, so a list never looks
-/// finished where it is only cut.
-fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, height: f32) {
+/// finished where it is only cut. Returns the height the list took.
+fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, height: f32) -> f32 {
     let output = ui
         .scope(|ui| {
             kit::scroll::keep_bars_visible(ui);
@@ -159,6 +190,7 @@ fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, height: f32) {
         output.inner_rect.height(),
     );
     kit::scroll::fade_edges(ui.painter(), output.inner_rect, theme::chrome(), beyond);
+    output.inner_rect.height()
 }
 
 /// New, then Fixed, each only when it has entries, then how many more there were; a calm line

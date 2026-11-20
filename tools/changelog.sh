@@ -183,10 +183,27 @@ case "$command" in
             *-*) stable=0 ;;
         esac
         # From the tag's heading down to, not including, the previous release's heading (or the end
-        # when the previous release has none); nothing when the tag has no section.
+        # when the previous release has none); nothing when the tag has no section. A section is
+        # held until its end: in a stable tag's notes one whose only entries were release-candidate
+        # fixes is left with a bare heading, so it is dropped.
         awk -v tag="$tag_version" -v previous="$previous" -v stable="$stable" '
+            function keep(line) {
+                held[++lines] = line
+                if (line ~ /^[-*] /) entries++
+            }
+            function flush(   at) {
+                if (lines > 0 && !(removed && entries == 0)) {
+                    at = 1
+                    # Nothing before the first section: its separating blank lines are not output.
+                    while (!printed && at <= lines && held[at] == "") at++
+                    for (; at <= lines; at++) print held[at]
+                    printed = 1
+                }
+                lines = 0; entries = 0; removed = 0
+            }
             { sub(/\r$/, "") }
             /^## / {
+                flush()
                 token = $2
                 sub(/^v/, "", token)
                 if (token == tag) active = 1
@@ -194,16 +211,17 @@ case "$command" in
                 else if (!active) next
             }
             active && stable {
-                if (tolower($0) ~ /^### +fixed in release candidates[ \t]*$/) { skipping = 1; next }
+                if (tolower($0) ~ /^### +fixed in release candidates[ \t]*$/) { skipping = 1; removed = 1; next }
                 if (skipping && /^#/) skipping = 0
                 if (skipping) next
             }
             active {
                 if ($0 == "") { blanks++; next }
-                while (blanks > 0) { print ""; blanks-- }
-                print
+                while (blanks > 0) { keep(""); blanks-- }
+                keep($0)
             }
             !active { blanks = 0 }
+            END { flush() }
         ' "$changelog"
         ;;
     *) usage ;;

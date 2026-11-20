@@ -291,13 +291,13 @@ fn card(view: &UpdateView) -> Card {
 /// The one button the card offers, if the phase calls for one.
 #[derive(Debug, PartialEq)]
 enum Action {
-    /// Opens the sheet that lists what the update changes; installing starts there.
+    /// Opens the sheet that lists what the update changes; installing, or for a build that cannot
+    /// install, opening the release page, is that sheet's answer.
     Review,
-    /// Starts a failed install again: the changes were reviewed the first time.
-    Install,
+    /// Starts the failed install of this version again: the changes were reviewed the first time.
+    Install(String),
     Restart,
     CheckAgain,
-    OpenRelease(String),
 }
 
 fn primary_action(view: &UpdateView) -> Option<(&'static str, Action)> {
@@ -305,24 +305,20 @@ fn primary_action(view: &UpdateView) -> Option<(&'static str, Action)> {
         Phase::Available {
             installable: true, ..
         } => Some(("Update…", Action::Review)),
-        Phase::Available { url, .. } => Some(("View Release", Action::OpenRelease(url.clone()))),
+        Phase::Available { .. } => Some(("View Release…", Action::Review)),
         Phase::Ready { .. } => Some(("Restart to Update", Action::Restart)),
-        Phase::InstallFailed { .. } => Some(("Try Again", Action::Install)),
+        Phase::InstallFailed { version, .. } => {
+            Some(("Try Again", Action::Install(version.clone())))
+        }
         Phase::CheckFailed(_) => Some(("Try Again", Action::CheckAgain)),
         Phase::Unchecked | Phase::Checking | Phase::UpToDate | Phase::Installing(_) => None,
     }
 }
 
-/// The release page, for the footer's "Release Notes" link, when the primary button is not
-/// already the way there.
+/// The release page, for the footer's "Release Notes" link.
 fn release_link(view: &UpdateView) -> Option<&str> {
     match &view.phase {
-        Phase::Available {
-            installable: true,
-            url,
-            ..
-        }
-        | Phase::InstallFailed { url, .. } => Some(url),
+        Phase::Available { url, .. } | Phase::InstallFailed { url, .. } => Some(url),
         _ => None,
     }
 }
@@ -398,11 +394,10 @@ fn update_status_card(ui: &mut Ui, host: &UpdateHost, channel: &mut Option<Chann
                                     host.review(ui.ctx().viewport_id());
                                     ui.ctx().request_repaint();
                                 }
-                                Action::Install => host.install(ui.ctx()),
-                                Action::CheckAgain => host.check_now(ui.ctx()),
-                                Action::OpenRelease(url) => {
-                                    ui.ctx().open_url(egui::OpenUrl::new_tab(url.as_str()));
+                                Action::Install(version) => {
+                                    host.install(ui.ctx(), version);
                                 }
+                                Action::CheckAgain => host.check_now(ui.ctx()),
                                 Action::Restart => quit = host.restart().is_ok(),
                             }
                         }
@@ -990,16 +985,13 @@ mod tests {
         // Release Notes moves to the footer, so it isn't a second button.
         assert_eq!(release_link(&installable), Some("https://example.test/r"));
 
+        // A build that cannot install gets the same review: the sheet's View Release opens the page.
         let manual = view(available(false));
         assert_eq!(
             primary_action(&manual),
-            Some((
-                "View Release",
-                Action::OpenRelease("https://example.test/r".to_owned())
-            ))
+            Some(("View Release…", Action::Review))
         );
-        // The button already goes there; the footer doesn't repeat it.
-        assert_eq!(release_link(&manual), None);
+        assert_eq!(release_link(&manual), Some("https://example.test/r"));
         assert_eq!(card(&manual).detail, "Download it manually.");
     }
 
@@ -1067,6 +1059,80 @@ mod tests {
         assert_eq!(ago(Duration::from_secs(12 * 60)), "12 min ago");
         assert_eq!(ago(Duration::from_secs(3 * 3_600)), "3 h ago");
         assert_eq!(ago(Duration::from_secs(2 * 86_400)), "2 d ago");
+    }
+
+    fn press(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// The About card over `host`, one frame per entry of `frames`, each with its events. True
+    /// when any frame asked the platform to open a page.
+    fn run_card(
+        screen: &mut crate::ui::render_tests::Screen,
+        host: &UpdateHost,
+        frames: Vec<Vec<egui::Event>>,
+    ) -> bool {
+        let mut opened_page = false;
+        for events in frames {
+            let output = screen.run(events, |ui| {
+                update_status_card(ui, host, &mut None);
+            });
+            opened_page |= output
+                .platform_output
+                .commands
+                .iter()
+                .any(|command| matches!(command, egui::OutputCommand::OpenUrl(_)));
+        }
+        opened_page
+    }
+
+    #[test]
+    fn the_return_that_presses_update_does_not_also_confirm_the_sheet() {
+        let host = UpdateHost::at_phase(&available(true));
+        let mut screen = crate::ui::render_tests::Screen::new(Vec2::new(700.0, 760.0));
+        let root = egui::ViewportId::ROOT;
+        // The keyboard reaches the button, then one Return presses it and opens the sheet.
+        run_card(
+            &mut screen,
+            &host,
+            vec![vec![], vec![press(egui::Key::Tab)], vec![]],
+        );
+        run_card(&mut screen, &host, vec![vec![press(egui::Key::Enter)]]);
+        assert!(
+            host.review_open_in(root),
+            "the button opened the sheet: {:?}",
+            host.view().phase
+        );
+        assert!(
+            matches!(host.view().phase, Phase::Available { .. }),
+            "the same key must not start the install: {:?}",
+            host.view().phase
+        );
+        run_card(&mut screen, &host, vec![vec![]; 4]);
+        assert!(matches!(host.view().phase, Phase::Available { .. }));
+        // A fresh Return, with the sheet already showing, confirms.
+        run_card(&mut screen, &host, vec![vec![press(egui::Key::Enter)]]);
+        assert!(matches!(host.view().phase, Phase::Installing(_)));
+    }
+
+    #[test]
+    fn a_manual_update_opens_the_sheet_instead_of_the_browser() {
+        let host = UpdateHost::at_phase(&available(false));
+        let mut screen = crate::ui::render_tests::Screen::new(Vec2::new(700.0, 760.0));
+        run_card(
+            &mut screen,
+            &host,
+            vec![vec![], vec![press(egui::Key::Tab)], vec![]],
+        );
+        let opened_page = run_card(&mut screen, &host, vec![vec![press(egui::Key::Enter)]]);
+        assert!(host.review_open_in(egui::ViewportId::ROOT));
+        assert!(!opened_page, "only the sheet's View Release opens the page");
     }
 
     #[test]

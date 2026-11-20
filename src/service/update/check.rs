@@ -1222,10 +1222,14 @@ mod tests {
     #[test]
     fn the_changelog_lists_versions_newest_first() {
         let text = include_str!("../../../CHANGELOG.md");
-        let versions: Vec<Version> = changelog::parse(text)
-            .iter()
+        // Section by section: `parse` caps one release body, and the archive outgrows that.
+        let versions: Vec<Version> = text
+            .split("\n## ")
+            .skip(1)
+            .flat_map(|section| changelog::parse(&format!("## {section}")))
             .map(|section| Version::parse(&section.version).expect("a readable version"))
             .collect();
+        assert_eq!(versions.len(), text.matches("\n## ").count());
         assert!(
             versions.windows(2).all(|pair| pair[0] > pair[1]),
             "CHANGELOG.md sections are not strictly newest first"

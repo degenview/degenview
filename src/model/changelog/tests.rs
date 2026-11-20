@@ -525,21 +525,22 @@ fn a_line_that_is_not_a_change_is_refused_with_its_place() {
     assert!(problems[1].starts_with("changes/one:4: expected"));
 }
 
-#[test]
-fn the_changelog_is_made_of_sections_the_app_can_read() {
-    let text = std::fs::read_to_string(repo("CHANGELOG.md")).expect("CHANGELOG.md exists");
+/// Panics, naming the line, unless `text` is a changelog the app can read: the heading, then
+/// sections in the shape `tools/changelog.sh` writes, each of which `parse` reads on its own.
+///
+/// Section by section, not the whole file at once: `parse` caps a release body (`MAX_SECTIONS`,
+/// `MAX_BODY_BYTES`), a limit that suits what one release carries and that the archive, which grows
+/// with every release, must not be held to.
+fn assert_changelog_readable(text: &str) {
     assert!(text.starts_with("# Changelog\n"));
-    let mut sections = 0;
+    let mut sections: Vec<(String, String)> = Vec::new();
     let mut subheading = None;
     for (index, line) in text.lines().enumerate().skip(1) {
         let at = || format!("CHANGELOG.md:{}: {line}", index + 1);
-        if line.is_empty() {
-            continue;
-        }
         if let Some(rest) = line.strip_prefix("## ") {
             // `## <version> (<date>)`, the shape tools/changelog.sh writes.
             let (version, date) = rest.split_once(" (").unwrap_or_else(|| panic!("{}", at()));
-            assert!(version_of(version).is_some(), "{}", at());
+            let version = version_of(version).unwrap_or_else(|| panic!("{}", at()));
             let date = date.strip_suffix(')').unwrap_or_else(|| panic!("{}", at()));
             let digits = |part: &str, len: usize| {
                 part.len() == len && part.bytes().all(|byte| byte.is_ascii_digit())
@@ -553,19 +554,139 @@ fn the_changelog_is_made_of_sections_the_app_can_read() {
                 "{}",
                 at()
             );
-            sections += 1;
+            sections.push((version, String::new()));
             subheading = None;
         } else if matches!(
             line,
             "### New" | "### Fixed" | "### Fixed in release candidates"
         ) {
-            assert!(sections > 0 && subheading != Some(line), "{}", at());
+            assert!(!sections.is_empty() && subheading != Some(line), "{}", at());
             subheading = Some(line);
         } else if let Some(entry) = line.strip_prefix("- ") {
             assert!(subheading.is_some() && !entry.trim().is_empty(), "{}", at());
-        } else {
-            assert!(sections == 0, "{}", at());
+        } else if !line.is_empty() {
+            assert!(sections.is_empty(), "{}", at());
+        }
+        if let Some((_, chunk)) = sections.last_mut() {
+            chunk.push_str(line);
+            chunk.push('\n');
         }
     }
-    assert_eq!(parse(&text).len(), sections, "a section is not read");
+    for (version, chunk) in &sections {
+        let read = parse(chunk);
+        assert!(
+            matches!(read.as_slice(), [one] if one.version == *version),
+            "the section for {version} is not read as one section: {read:?}"
+        );
+    }
+}
+
+#[test]
+fn the_changelog_is_made_of_sections_the_app_can_read() {
+    let text = std::fs::read_to_string(repo("CHANGELOG.md")).expect("CHANGELOG.md exists");
+    assert_changelog_readable(&text);
+}
+
+#[test]
+fn an_archive_longer_than_a_release_body_may_be_is_still_valid() {
+    let section = |release: usize| {
+        let entries: String = (0..14)
+            .map(|n| format!("- Change {n} of release {release}, worded at some length.\n"))
+            .collect();
+        format!("## 0.6.{release} (2026-11-20)\n\n### New\n\n{entries}\n### Fixed\n\n{entries}\n")
+    };
+    let archive: String = std::iter::once("# Changelog\n\nIntro.\n\n".to_owned())
+        .chain((0..MAX_SECTIONS + 6).rev().map(section))
+        .collect();
+    assert!(archive.len() > MAX_BODY_BYTES);
+    assert!(
+        parse(&archive).len() <= MAX_SECTIONS,
+        "the display cap holds"
+    );
+
+    assert_changelog_readable(&archive);
+}
+
+/// What `tools/changelog.sh notes <tag> <previous>` prints for `changelog`, run on a copy of the
+/// script in a scratch tree so the repository's own files are never touched.
+#[cfg(unix)]
+fn notes_of(changelog: &str, tag: &str, previous: &str) -> String {
+    let root = std::env::temp_dir().join(format!(
+        "degenview-changelog-notes-{}-{}",
+        std::process::id(),
+        tag
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("tools")).expect("scratch tree");
+    std::fs::copy(repo("tools/changelog.sh"), root.join("tools/changelog.sh"))
+        .expect("script copied");
+    std::fs::write(root.join("CHANGELOG.md"), changelog).expect("changelog written");
+    let output = std::process::Command::new("sh")
+        .arg(root.join("tools/changelog.sh"))
+        .args(["notes", tag, previous])
+        .output()
+        .expect("sh runs");
+    let _ = std::fs::remove_dir_all(&root);
+    assert!(output.status.success(), "{output:?}");
+    String::from_utf8(output.stdout).expect("text")
+}
+
+#[cfg(unix)]
+#[test]
+fn a_stable_releases_notes_leave_out_sections_that_only_fixed_candidates() {
+    let changelog = "\
+# Changelog
+
+## 0.6.0 (2026-11-20)
+
+### Fixed in release candidates
+
+- Fixed only in this one.
+
+## 0.6.0-rc.3 (2026-11-19)
+
+### Fixed in release candidates
+
+- A candidate-only fix.
+
+## 0.6.0-rc.2 (2026-11-18)
+
+### New
+
+- A new thing.
+
+### Fixed in release candidates
+
+- Another candidate fix.
+
+## 0.6.0-rc.1 (2026-11-17)
+
+### Fixed in release candidates
+
+- A candidate-only fix, first.
+
+## 0.5.0 (2026-11-01)
+
+### New
+
+- Old.
+";
+    assert_eq!(
+        notes_of(changelog, "v0.6.0", "v0.5.0"),
+        "## 0.6.0-rc.2 (2026-11-18)\n\n### New\n\n- A new thing.\n",
+        "the sections left with a bare heading go, the first one included"
+    );
+    assert_eq!(
+        notes_of(changelog, "v0.6.0-rc.3", "v0.6.0-rc.2"),
+        "## 0.6.0-rc.3 (2026-11-19)\n\n### Fixed in release candidates\n\n- A candidate-only fix.\n",
+        "a candidate's own notes keep them"
+    );
+
+    // A release that had no fragments keeps its heading: nothing was filtered out of it.
+    let bare =
+        "# Changelog\n\n## 0.6.0 (2026-11-20)\n\n## 0.5.0 (2026-11-01)\n\n### New\n\n- Old.\n";
+    assert_eq!(
+        notes_of(bare, "v0.6.0", "v0.5.0"),
+        "## 0.6.0 (2026-11-20)\n"
+    );
 }

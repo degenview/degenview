@@ -146,6 +146,53 @@ fn a_sheet_with_a_great_many_changes_stays_within_its_cap() {
     );
 }
 
+/// The smallest windows the app opens: a Pine Studio tab window and the Settings window.
+const SMALLEST_WINDOWS: [Vec2; 2] = [Vec2::new(620.0, 420.0), Vec2::new(520.0, 480.0)];
+
+/// The sheet's rectangle once it settled in a window of `size`, after `wheeled` frames.
+fn settled_rect(size: Vec2, view: &UpdateView) -> egui::Rect {
+    let mut screen = Screen::new(size);
+    for _ in 0..6 {
+        screen.run(vec![], |ui| {
+            show(ui.ctx(), view, INSTALLED);
+        });
+    }
+    screen
+        .ctx
+        .memory(|memory| memory.area_rect(Id::new("update-review")))
+        .expect("the sheet is on screen")
+}
+
+#[test]
+fn the_whole_sheet_fits_the_smallest_windows_whatever_the_list_holds() {
+    let manual_note = "Not published by the release workflow, so it needs a manual download, and this build cannot say more than that without wrapping.";
+    let mut manual = available(false, flood());
+    if let Phase::Available { note, .. } = &mut manual.phase {
+        *note = Some(manual_note.to_owned());
+    }
+    for size in SMALLEST_WINDOWS {
+        for (name, view) in [
+            ("installable", available(true, flood())),
+            ("manual", manual.clone()),
+            ("empty", available(true, ReleaseNotes::default())),
+        ] {
+            let rect = settled_rect(size, &view);
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            assert!(
+                screen.contains_rect(rect),
+                "{name} in {size:?}: the sheet {rect:?} leaves the window"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_list_gets_what_the_window_leaves_and_never_less_than_its_floor() {
+    assert_eq!(list_height(2000.0, 200.0), MAX_LIST);
+    assert_eq!(list_height(500.0, 230.0), 500.0 - 230.0 - 2.0 * EDGE_MARGIN);
+    assert_eq!(list_height(300.0, 280.0), MIN_LIST);
+}
+
 fn flood() -> ReleaseNotes {
     ReleaseNotes {
         new: (1..=14)
@@ -247,6 +294,67 @@ fn updating_from_the_sheet_starts_the_install_and_closes_it() {
 }
 
 #[test]
+fn a_return_from_before_the_sheet_opened_does_not_confirm_it() {
+    let host = UpdateHost::at_phase(&Phase::Available {
+        version: "9.9.9".to_owned(),
+        url: "https://example.test/release".to_owned(),
+        installable: true,
+        note: None,
+        notes: Arc::new(notes()),
+    });
+    let mut screen = Screen::new(Vec2::new(700.0, 760.0));
+    let root = egui::ViewportId::ROOT;
+    host.review(root);
+    // The opening frame carries the key that asked for the sheet.
+    for events in [vec![key(Key::Enter)], vec![], vec![], vec![]] {
+        screen.run(events, |ui| {
+            show_review(ui.ctx(), &host, &host.view());
+        });
+        assert!(
+            matches!(host.view().phase, Phase::Available { .. }),
+            "nothing installs until a Return on a later frame"
+        );
+    }
+    assert!(host.review_open_in(root), "the sheet is still waiting");
+    screen.run(vec![key(Key::Enter)], |ui| {
+        show_review(ui.ctx(), &host, &host.view());
+    });
+    assert!(matches!(host.view().phase, Phase::Installing(_)));
+}
+
+#[test]
+fn an_offer_replaced_since_the_sheet_drew_keeps_the_sheet_open_and_installs_nothing() {
+    let host = UpdateHost::at_phase(&Phase::Available {
+        version: "9.9.9".to_owned(),
+        url: "https://example.test/release".to_owned(),
+        installable: true,
+        note: None,
+        notes: Arc::new(notes()),
+    });
+    // What the sheet drew was an older offer than the host holds now.
+    let stale = UpdateView {
+        phase: Phase::Available {
+            version: "9.9.8".to_owned(),
+            url: "https://example.test/old".to_owned(),
+            installable: true,
+            note: None,
+            notes: Arc::new(notes()),
+        },
+        ..host.view()
+    };
+    let mut screen = Screen::new(Vec2::new(700.0, 760.0));
+    let root = egui::ViewportId::ROOT;
+    host.review(root);
+    for events in [vec![], vec![], vec![], vec![key(Key::Enter)]] {
+        screen.run(events, |ui| {
+            show_review(ui.ctx(), &host, &stale);
+        });
+    }
+    assert!(host.review_open_in(root));
+    assert!(matches!(host.view().phase, Phase::Available { .. }));
+}
+
+#[test]
 fn cancelling_closes_the_sheet_and_leaves_the_update_on_offer() {
     let host = UpdateHost::at_phase(&Phase::Available {
         version: "9.9.9".to_owned(),
@@ -283,25 +391,82 @@ fn update_sheet_gallery() {
         omitted: 49,
         ..flood()
     };
-    // Each picture: its name, what the sheet shows, and how far the list was wheeled first.
+    let long_note = "Not published by the release workflow, so it needs a manual download, and this build cannot say more than that without wrapping.";
+    let mut manual = available(false, flood());
+    if let Phase::Available { note, .. } = &mut manual.phase {
+        *note = Some(long_note.to_owned());
+    }
+    let roomy = Vec2::new(620.0, 700.0);
+    // Each picture: its name, what the sheet shows, the window, how far the list was wheeled
+    // first, and how many times Tab moved the focus before the picture.
     let cases = [
-        ("installable", available(true, notes()), 0.0),
-        ("manual", available(false, notes()), 0.0),
-        ("empty", available(true, ReleaseNotes::default()), 0.0),
-        ("one-list", available(true, only_new), 0.0),
-        ("many", available(true, flood()), 0.0),
-        ("many-scrolled", available(true, flood()), -150.0),
-        ("many-scrolled-end", available(true, flood()), -5000.0),
-        ("truncated", available(true, truncated.clone()), 0.0),
+        ("installable", available(true, notes()), roomy, 0.0, 0),
+        ("manual", available(false, notes()), roomy, 0.0, 0),
+        (
+            "empty",
+            available(true, ReleaseNotes::default()),
+            roomy,
+            0.0,
+            0,
+        ),
+        ("one-list", available(true, only_new), roomy, 0.0, 0),
+        ("many", available(true, flood()), roomy, 0.0, 0),
+        ("many-scrolled", available(true, flood()), roomy, -150.0, 0),
+        (
+            "many-scrolled-end",
+            available(true, flood()),
+            roomy,
+            -5000.0,
+            0,
+        ),
+        (
+            "truncated",
+            available(true, truncated.clone()),
+            roomy,
+            0.0,
+            0,
+        ),
         (
             "truncated-scrolled-end",
             available(true, truncated),
+            roomy,
             -5000.0,
+            0,
         ),
+        (
+            "keyboard-focus-cancel",
+            available(true, notes()),
+            roomy,
+            0.0,
+            1,
+        ),
+        (
+            "keyboard-focus-update",
+            available(true, notes()),
+            roomy,
+            0.0,
+            4,
+        ),
+        (
+            "small-installable",
+            available(true, flood()),
+            SMALLEST_WINDOWS[0],
+            0.0,
+            0,
+        ),
+        ("small-manual", manual.clone(), SMALLEST_WINDOWS[0], 0.0, 0),
+        (
+            "small-settings",
+            available(true, flood()),
+            SMALLEST_WINDOWS[1],
+            0.0,
+            0,
+        ),
+        ("small-settings-manual", manual, SMALLEST_WINDOWS[1], 0.0, 0),
     ];
     for light in [false, true] {
-        for (name, view, wheeled) in &cases {
-            let mut screen = Screen::new(Vec2::new(620.0, 700.0));
+        for (name, view, size, wheeled, tabs) in &cases {
+            let mut screen = Screen::new(*size);
             screen.ctx.set_theme(if light {
                 egui::ThemePreference::Light
             } else {
@@ -310,6 +475,7 @@ fn update_sheet_gallery() {
             let mut last = None;
             let frames = (0..5)
                 .map(|_| vec![])
+                .chain((0..*tabs).map(|_| vec![key(Key::Tab)]))
                 .chain([wheel(*wheeled)].into_iter().filter(|_| *wheeled != 0.0))
                 .chain((0..20).map(|_| vec![]));
             for events in frames {

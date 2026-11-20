@@ -384,19 +384,23 @@ impl UpdateHost {
         state.last = Some((outcome, Instant::now()));
     }
 
-    /// Downloads and verifies the available release on a worker thread; nothing is replaced until
-    /// `restart`.
-    pub fn install(&self, ctx: &egui::Context) {
+    /// Downloads and verifies release `version` on a worker thread; nothing is replaced until
+    /// `restart`. The caller names the version its person looked at: if a check has put a different
+    /// release on offer since, nothing starts. True when the install started.
+    pub fn install(&self, ctx: &egui::Context, version: &str) -> bool {
         let (app, release) = {
             let mut state = self.lock();
             let Ok(app) = state.target.clone() else {
-                return;
+                return false;
             };
             let Some((UpdateOutcome::Available(release), _)) = &state.last else {
-                return;
+                return false;
             };
-            if release.asset.is_none() || matches!(state.install, Install::Working(_)) {
-                return;
+            if release.version != version
+                || release.asset.is_none()
+                || matches!(state.install, Install::Working(_))
+            {
+                return false;
             }
             let release = release.clone();
             state.review = None;
@@ -404,7 +408,7 @@ impl UpdateHost {
             (app, release)
         };
         if cfg!(test) {
-            return;
+            return true;
         }
         let host = self.clone();
         let ctx = ctx.clone();
@@ -417,6 +421,7 @@ impl UpdateHost {
             host.finish_install(release.version, result);
             host.repaint(&ctx);
         });
+        true
     }
 
     fn finish_install(&self, version: String, result: Result<Prepared, String>) {
@@ -444,7 +449,9 @@ impl UpdateHost {
                 self.review(ctx.viewport_id());
                 ctx.request_repaint();
             }
-            Phase::InstallFailed { .. } => self.install(ctx),
+            Phase::InstallFailed { version, .. } => {
+                self.install(ctx, &version);
+            }
             Phase::Ready { .. } => self.prompt_restart(),
             _ => {}
         }
@@ -750,7 +757,7 @@ mod tests {
         assert!(!installable);
         assert_eq!(note.as_deref(), Some("Move DegenView to Applications."));
         // Nothing starts for a build that cannot install.
-        blocked.install(&ctx());
+        assert!(!blocked.install(&ctx(), "9.9.9"));
         assert!(matches!(blocked.view().phase, Phase::Available { .. }));
     }
 
@@ -761,13 +768,13 @@ mod tests {
             UpdateOutcome::Available(release(None, true)),
             Channel::Stable,
         );
-        host.install(&ctx());
+        assert!(host.install(&ctx(), "9.9.9"));
         assert_eq!(
             host.view().phase,
             Phase::Installing(Progress::new(Stage::Verifying))
         );
         // A second click while it runs does nothing.
-        host.install(&ctx());
+        assert!(!host.install(&ctx(), "9.9.9"));
         host.check_now(&ctx());
         assert!(!host.view().checking);
 
@@ -1071,20 +1078,43 @@ mod tests {
     fn installing_from_the_review_closes_it_and_a_retry_installs_without_asking_again() {
         let host = on_offer();
         host.review(MAIN);
-        host.install(&ctx());
+        assert!(host.install(&ctx(), "9.9.9"));
         assert!(!host.review_open_in(MAIN));
         assert!(matches!(host.view().phase, Phase::Installing(_)));
 
         // Installing from another window while the sheet is open elsewhere ends it there.
         let other = on_offer();
         other.review(MAIN);
-        other.install(&ctx());
+        assert!(other.install(&ctx(), "9.9.9"));
         assert!(!other.review_open_in(MAIN));
 
         // After a failure the person has already seen the changes: the mark retries directly.
         host.finish_install("9.9.9".to_owned(), Err("checksum".to_owned()));
         host.activate(&ctx());
         assert!(!host.review_open_in(MAIN));
+        assert!(matches!(host.view().phase, Phase::Installing(_)));
+    }
+
+    #[test]
+    fn confirming_installs_only_the_release_that_was_reviewed() {
+        let host = on_offer();
+        host.review(MAIN);
+        // A background check replaces the offer after the sheet drew version 9.9.9.
+        let mut newer = release(None, true);
+        newer.version = "9.9.10".to_owned();
+        host.finish_check(UpdateOutcome::Available(newer), Channel::Stable);
+
+        assert!(!host.install(&ctx(), "9.9.9"));
+        assert!(
+            matches!(host.view().phase, Phase::Available { ref version, .. } if version == "9.9.10"),
+            "the new offer is still waiting, uninstalled"
+        );
+        assert!(
+            host.review_open_in(MAIN),
+            "the sheet stays for the new offer"
+        );
+
+        assert!(host.install(&ctx(), "9.9.10"));
         assert!(matches!(host.view().phase, Phase::Installing(_)));
     }
 

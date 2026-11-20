@@ -98,7 +98,8 @@ What a person using the app notices, per release, in plain words. Three stages, 
    the Full diff line and the Downloads table. A tag with no section writes only the rest. For a
    stable tag the `### Fixed in release candidates` subsections (the aggregate's and the candidates'
    own) are dropped, since a reader coming from a stable release never had those bugs; a candidate's
-   notes keep them. Releases before the changelog existed keep their commit-list bodies.
+   notes keep them. A section that held only those fixes would be left a bare heading, so it is
+   dropped too (an empty release's own heading stays). Releases before the changelog existed keep their commit-list bodies.
 
 The shape is a contract with the app. `model::changelog::parse` reads release bodies for the update
 sheet: a `## <version> ...` heading (optional `v`) opens a section, `### New` / `### Fixed` /
@@ -111,7 +112,8 @@ fixes follow each section's own fixes in the sheet's Fixed list; otherwise they 
 counted as omitted, so a person updating from a stable version never sees them, whatever the
 release body holds. Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks
 the sheet. `cargo test` checks the fragments and `CHANGELOG.md` against the same rules, so CI
-catches a malformed one. Input is bounded (64 KiB body, 64 sections, 100 entries per list per
+catches a malformed one; the archive is checked section by section, since the caps below are for one
+release body and the file grows with every release. Input is bounded (64 KiB body, 64 sections, 100 entries per list per
 section, 400 characters per entry, 300 entries per merged list). Not verified: a real release body
 produced by the workflow, and the sheet against a live GitHub reply; both wait for the first
 release cut with fragments.
@@ -453,7 +455,15 @@ executables). Deploy Production's CloudKit schema before a release that changes 
   at app start; until then an available update says so and is not installable.
 - **Review sheet.** Clicking the tab-bar mark or About's **Update…** on an available update opens
   `ui::window::update_sheet` (New / Fixed lists, Update and Cancel); installing starts only from its
-  Update. A build that cannot install gets the same sheet with **View Release** as the primary. The
+  Update. A build that cannot install gets the same sheet with **View Release** as the primary
+  (About's button reads **View Release…**, so the page opens only from the sheet). The primary
+  button takes the keyboard focus when the sheet opens (`kit::focus::start_on`, as in `kit::dialog`)
+  and the sheet reads no Return of its own: the Return that pressed About's button must not confirm
+  the sheet in the same frame. Update installs the version the sheet drew
+  (`UpdateHost::install(ctx, version)` does nothing when a check has replaced the offer meanwhile,
+  and the sheet stays open on the new one). The list takes the height the window leaves after the
+  rest of the sheet (measured on the previous frame), between 96 and 360 pt, so the footer stays
+  inside the app's smallest windows. The
   host holds which window shows it (`UpdateHost::review`, `review_open_in`, `close_review`; memory
   only, one window): it ends when the phase leaves `Available` (channel switch, install started
   elsewhere) and does not return for a later update. A failed install retries from the mark without

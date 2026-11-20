@@ -15,6 +15,7 @@ pub mod date_picker;
 pub mod dialog;
 pub mod error_notice;
 mod field;
+pub mod focus;
 mod form;
 pub mod header_controls;
 pub mod hints;
@@ -44,7 +45,7 @@ pub use autosave::Autosave;
 pub use button::{
     FooterButton, cta_button, destructive_button, destructive_sheet_button, footer_button,
     hover_button, large_button, large_prominent_button, neutral_button, open_button, push_button,
-    sheet_button, tinted_button,
+    sheet_button, sheet_button_focusable, tinted_button,
 };
 pub use card::{CARD_RADIUS, card_frame, divider, paint_card_badge, paint_well, panel_divider};
 pub use confirm::{Alert, Confirm, ConfirmOutcome, Notice, alert, confirm, notice, notice_with};
