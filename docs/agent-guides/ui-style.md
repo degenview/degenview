@@ -6,6 +6,9 @@ do not restyle screens you were not asked to touch, and do not copy their older 
 
 ## Rules
 
+- **One bundled UI font.** Text is Inter Regular on every platform (`theme::bundled_ui_font`, first of the
+  proportional family); never reintroduce a system font for text. One weight only: `strong()` brightens, it
+  does not embolden. No tabular digits (egui has no OpenType features). Details: `assets/fonts/README.md`.
 - **Flat surfaces.** Faint fill (`theme::card_fill`), 1px hairline (`theme::card_border`, a clearly
   visible lighter gray, not faint), radius `kit::CARD_RADIUS` (10). Build cards with `kit::card_frame`.
   No gradients, lit top edge or drop shadows; shadows only for things floating above the app (menus,

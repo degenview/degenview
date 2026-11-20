@@ -13,17 +13,10 @@ use eframe::egui;
 /// `menu_widths_fit_their_rows`, which fails if either drifts too narrow or wide. (The list menu
 /// is sized from its list names when it opens.)
 ///
-/// The system font sets the width: macOS's measures 179 and 173, the font a Linux machine with no
-/// system fonts falls back to (egui's own) 190 and 179, so the other platforms get a few points
-/// more rather than a cut label. Windows is not measured; its UI font is assumed no wider.
-#[cfg(target_os = "macos")]
-pub(super) const MENU_WIDTH: f32 = 186.0;
-#[cfg(target_os = "macos")]
-pub(super) const SUBMENU_WIDTH: f32 = 178.0;
-#[cfg(not(target_os = "macos"))]
-pub(super) const MENU_WIDTH: f32 = 194.0;
-#[cfg(not(target_os = "macos"))]
-pub(super) const SUBMENU_WIDTH: f32 = 184.0;
+/// The bundled UI font (Inter) sets the width, the same on every platform: the rows need 195.4 and
+/// 187.8, so these are a point or so over.
+pub(super) const MENU_WIDTH: f32 = 196.0;
+pub(super) const SUBMENU_WIDTH: f32 = 189.0;
 /// What the menu frame's margins take from its width.
 pub(super) const MENU_FRAME: f32 = 10.0;
 
