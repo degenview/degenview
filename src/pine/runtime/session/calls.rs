@@ -686,18 +686,20 @@ impl Session {
         context.history_locals = caller_history_locals;
 
         // What the call leaves in a local that is read as `local[n]` becomes that call site's next
-        // value of the series, one per bar.
+        // value of the series, one per bar. A local the call did not reach (its block did not run)
+        // keeps its last committed value, so `local[n]` is the value as of the bar `n` back.
         if result.is_ok() {
             let bar = self.working.bar_index;
             for local in function.history_locals.iter() {
+                let key = format!("fn:{prefix}:{local}");
+                let series = self.working.histories.entry(key.clone()).or_default();
                 let value = self
                     .working
                     .variables
                     .get(local)
+                    .or_else(|| series.last())
                     .cloned()
                     .unwrap_or(RuntimeValue::Na);
-                let key = format!("fn:{prefix}:{local}");
-                let series = self.working.histories.entry(key.clone()).or_default();
                 if self.working.local_history_bar.get(&key) == Some(&bar) {
                     if let Some(last) = series.last_mut() {
                         *last = value;

@@ -1180,6 +1180,28 @@ fn a_function_local_keeps_a_history_per_call_site() {
 }
 
 #[test]
+fn the_history_of_a_local_in_a_block_carries_over_the_bars_the_block_did_not_run() {
+    // `u` is set on even bars only. `u[1]` is its last committed value as of the bar before: on
+    // bar 2 that is the value bar 0 left (bar 1 did not run the block), not `na`.
+    let session = run(
+        "f() =>\n    out = -1.0\n    if bar_index % 2 == 0\n        u = bar_index * 10.0\n        out := nz(u[1], -5.0)\n    out\n\
+         r = f()",
+        5,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(20.0));
+    let first = run(
+        "f() =>\n    out = -1.0\n    if bar_index % 2 == 0\n        u = bar_index * 10.0\n        out := nz(u[1], -5.0)\n    out\n\
+         r = f()",
+        1,
+    );
+    assert_eq!(
+        value(&first, "r"),
+        RuntimeValue::Float(-5.0),
+        "no earlier value on the first bar"
+    );
+}
+
+#[test]
 fn trade_properties_read_the_closed_and_open_trades() {
     let source = "//@version=6\nstrategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 2)\n\
          if bar_index == 1\n    strategy.entry(\"L\", strategy.long)\n\
