@@ -1,6 +1,7 @@
 pub mod alert;
 pub mod annotation;
 pub mod broker;
+pub mod changelog;
 pub mod chart;
 pub mod cursor;
 pub mod drawings;

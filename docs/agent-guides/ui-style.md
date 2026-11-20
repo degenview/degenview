@@ -35,6 +35,7 @@ do not restyle screens you were not asked to touch, and do not copy their older 
   its text, centred); a progress toast puts a 48 one above its text, as the snapshot notice does.
   Every busy state in the app uses it: the large ones above, and the small inline ones (Test
   buttons, busy buttons, field adornments, import rows) at 10-16.
+- **Lists that scroll say so.** A scrolling list in a sheet keeps its bar in view (`kit::scroll::keep_bars_visible` around the `ScrollArea`) and fades the edge that has more past it (`kit::scroll::Beyond::of` from the area's offset, content and viewport, then `fade_edges`), so a cut list never looks finished. The update sheet is the reference.
 - **One scale of text.** Page title `kit::size::TITLE2 + 3`, section heading `HEADLINE` bold, body
   `BODY`, hints `CAPTION` in `text_secondary`. Sizes only from `kit::size`.
 
@@ -84,6 +85,7 @@ content they act on.
 | Cards (`card`) | `card_frame`, `CARD_RADIUS`, `paint_card_badge`, `paint_well`, `divider` (hairline across), `panel_divider` (a docked panel's separator line) |
 | Pages (`page`) | `empty_state`, `footer_bar`, `notice_card` |
 | Dialogs (`confirm`) | `confirm`, `alert`, `notice` over `kit::dialog` |
+| Modal focus (`focus`) | `start_on` (the opening focus of a dialog or sheet, repeated through egui's sizing pass), `paint_ring`; a sheet's focusable buttons: `sheet_button_focusable` |
 | Times (`time_text`, by path) | `date_text`, `clock_time`, `clock_time_seconds` (a table's hh:mm:ss cell), `relative_time` |
 
 ## Sidebar and page layout

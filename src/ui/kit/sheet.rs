@@ -3,7 +3,7 @@
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
 use crate::ui::theme;
-use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Color32, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 pub const INSET: i8 = 24;
 
@@ -82,6 +82,53 @@ pub fn header_with(ui: &mut Ui, title: &str, subtitle: &str, badge: impl FnOnce(
             );
         });
     });
+}
+
+/// `header_with` for a scene picture (`kit::art`): the picture's `size` box, the title and the
+/// one-line description centred on its height, the way a Settings page's header is. `paint` draws
+/// into the box, which starts `lead` points left of the sheet's inset so the picture's card lines
+/// up with the body's left edge.
+pub fn header_picture(
+    ui: &mut Ui,
+    size: Vec2,
+    lead: f32,
+    title: &str,
+    subtitle: &str,
+    paint: impl FnOnce(&Ui, Rect),
+) {
+    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), size.y), Sense::hover());
+    paint(
+        ui,
+        Rect::from_min_size(row.min - Vec2::new(lead, 0.0), size),
+    );
+    let left = row.min.x + size.x - lead + 14.0;
+    let width = row.right() - left;
+    let title = kit::galley(
+        ui,
+        title,
+        size::TITLE2 + 1.0,
+        SEMIBOLD,
+        theme::text_primary(),
+        width,
+    );
+    let detail = kit::galley(
+        ui,
+        subtitle,
+        size::SUBHEADLINE + 1.0,
+        REGULAR,
+        theme::text_secondary(),
+        width,
+    );
+    let gap = 3.0;
+    let top = row.center().y - (title.size().y + gap + detail.size().y) / 2.0;
+    let title_height = title.size().y;
+    ui.painter()
+        .galley(Pos2::new(left, top), title, theme::text_primary());
+    ui.painter().galley(
+        Pos2::new(left, top + title_height + gap),
+        detail,
+        theme::text_secondary(),
+    );
 }
 
 pub fn inset<R>(ui: &mut Ui, body: impl FnOnce(&mut Ui) -> R) -> R {
