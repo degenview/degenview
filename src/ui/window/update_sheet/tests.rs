@@ -265,65 +265,55 @@ fn the_list_fades_where_more_lies_beyond_the_visible_part() {
     assert_eq!(fades(&scrolled(&mut Screen::new(size), &none, &[])), 0);
 }
 
-#[test]
-fn the_line_that_ends_a_cut_list_counts_what_was_left_out() {
-    assert_eq!(
-        omitted_line(1),
-        "And 1 more change in the full release notes."
-    );
-    assert_eq!(
-        omitted_line(42),
-        "And 42 more changes in the full release notes."
-    );
+/// The text of every label a frame painted.
+fn texts(output: &egui::FullOutput) -> Vec<String> {
+    output
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+            _ => None,
+        })
+        .collect()
 }
 
 #[test]
-fn a_body_cut_short_ends_the_list_without_a_count() {
-    let cut = |omitted, truncated| ReleaseNotes {
-        omitted,
-        truncated,
+fn the_sheet_draws_the_footnotes_the_notes_and_coverage_give() {
+    let size = Vec2::new(700.0, 760.0);
+    let cut = ReleaseNotes {
+        omitted: 3,
         ..notes()
     };
-    assert_eq!(closing_line(&cut(0, false)), None);
-    assert_eq!(
-        closing_line(&cut(3, false)).as_deref(),
-        Some("And 3 more changes in the full release notes.")
-    );
-    for omitted in [0, 3] {
-        assert_eq!(
-            closing_line(&cut(omitted, true)).as_deref(),
-            Some("And more changes in the full release notes."),
-            "a count would be too low"
-        );
-    }
-}
-
-#[test]
-fn the_line_about_releases_with_no_summary_counts_them() {
-    assert_eq!(
-        unsummarized_line(1),
-        "1 release since your version has no summary, so its changes are not listed."
-    );
-    assert_eq!(
-        unsummarized_line(31),
-        "31 releases since your version have no summary, so their changes are not listed."
-    );
-}
-
-#[test]
-fn the_sheet_ends_with_a_line_when_older_releases_were_not_listed() {
-    let partial = Coverage {
+    let coverage = Coverage {
         unsummarized: 2,
         history_incomplete: true,
     };
-    assert_eq!(
-        closing_lines(&notes(), &partial).collect::<Vec<_>>(),
-        [
-            "2 releases since your version have no summary, so their changes are not listed.",
-            "Older releases are not listed here, so some changes may be missing.",
-        ]
+    let footnotes = cut.footnotes(&coverage);
+    assert_eq!(footnotes.len(), 3);
+    let view = available_with(true, cut, coverage);
+    let drawn = texts(&scrolled(&mut Screen::new(size), &view, &[]));
+    for line in &footnotes {
+        assert!(drawn.contains(line), "{line} is not drawn in {drawn:?}");
+    }
+
+    // Nothing to say about a range that was read in full.
+    let plain = available(true, notes());
+    let drawn = texts(&scrolled(&mut Screen::new(size), &plain, &[]));
+    assert!(
+        drawn
+            .iter()
+            .all(|text| !text.contains("full release notes.") && !text.contains("no summary")),
+        "{drawn:?}"
     );
-    assert_eq!(closing_lines(&notes(), &Coverage::default()).count(), 0);
+
+    // With nothing to list the sheet says so and nothing more.
+    let empty = available_with(true, ReleaseNotes::default(), coverage);
+    let drawn = texts(&scrolled(&mut Screen::new(size), &empty, &[]));
+    assert!(drawn.iter().any(|text| text == NO_NOTES));
+    assert!(
+        drawn.iter().all(|text| !footnotes.contains(text)),
+        "{drawn:?}"
+    );
 }
 
 #[test]

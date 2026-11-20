@@ -1310,3 +1310,81 @@ fn an_incomplete_listing_is_passed_through_not_counted() {
         assert_eq!(coverage.unsummarized, 1);
     }
 }
+
+#[test]
+fn the_footnote_that_ends_a_cut_list_counts_what_was_left_out() {
+    let cut = |omitted| ReleaseNotes {
+        omitted,
+        ..ReleaseNotes::default()
+    };
+    let none = Coverage::default();
+    assert!(cut(0).footnotes(&none).is_empty());
+    assert_eq!(
+        cut(1).footnotes(&none),
+        ["And 1 more change in the full release notes."]
+    );
+    assert_eq!(
+        cut(42).footnotes(&none),
+        ["And 42 more changes in the full release notes."]
+    );
+}
+
+#[test]
+fn a_body_cut_short_ends_the_list_without_a_count() {
+    let none = Coverage::default();
+    for omitted in [0, 3] {
+        let notes = ReleaseNotes {
+            omitted,
+            truncated: true,
+            ..ReleaseNotes::default()
+        };
+        assert_eq!(
+            notes.footnotes(&none),
+            ["And more changes in the full release notes."],
+            "a count would be too low"
+        );
+    }
+}
+
+#[test]
+fn the_footnote_about_releases_with_no_summary_counts_them() {
+    let notes = ReleaseNotes::default();
+    let gaps = |unsummarized| Coverage {
+        unsummarized,
+        history_incomplete: false,
+    };
+    assert_eq!(
+        notes.footnotes(&gaps(1)),
+        ["1 release since your version has no summary, so its changes are not listed."]
+    );
+    assert_eq!(
+        notes.footnotes(&gaps(31)),
+        ["31 releases since your version have no summary, so their changes are not listed."]
+    );
+}
+
+#[test]
+fn the_footnotes_come_in_order_and_older_releases_not_listed_end_them() {
+    let notes = ReleaseNotes {
+        omitted: 3,
+        ..ReleaseNotes::default()
+    };
+    let partial = Coverage {
+        unsummarized: 2,
+        history_incomplete: true,
+    };
+    assert_eq!(
+        notes.footnotes(&partial),
+        [
+            "And 3 more changes in the full release notes.",
+            "2 releases since your version have no summary, so their changes are not listed.",
+            "Older releases are not listed here, so some changes may be missing.",
+        ]
+    );
+    assert!(notes.footnotes(&Coverage::default()).len() == 1);
+    assert!(
+        ReleaseNotes::default()
+            .footnotes(&Coverage::default())
+            .is_empty()
+    );
+}

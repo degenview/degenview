@@ -48,6 +48,11 @@ pub const MAX_ENTRIES: usize = 100;
 const MAX_ENTRY_CHARS: usize = 400;
 /// The most entries merged notes keep in each list. The release page has the rest.
 pub const MAX_NOTES: usize = 300;
+/// Ends a list that a cut-short body left incomplete.
+const TRUNCATED_LINE: &str = "And more changes in the full release notes.";
+/// Ends a list whose releases the update check read only the newest of.
+const HISTORY_INCOMPLETE_LINE: &str =
+    "Older releases are not listed here, so some changes may be missing.";
 
 /// What one release added to the changelog.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -147,6 +152,45 @@ impl ReleaseNotes {
 
     pub fn is_empty(&self) -> bool {
         self.new.is_empty() && self.fixed.is_empty()
+    }
+
+    /// The lines that end the lists, in order: what the caps left out (not as a count when a body
+    /// was cut short, which makes any count too low), then the releases with no summary, then the
+    /// releases that were never listed. A reader draws them after a list; with nothing to list it
+    /// says so and nothing more.
+    pub fn footnotes(&self, coverage: &Coverage) -> Vec<String> {
+        let left_out = if self.truncated {
+            Some(TRUNCATED_LINE.to_owned())
+        } else {
+            (self.omitted > 0).then(|| omitted_line(self.omitted))
+        };
+        [
+            left_out,
+            (coverage.unsummarized > 0).then(|| unsummarized_line(coverage.unsummarized)),
+            coverage
+                .history_incomplete
+                .then(|| HISTORY_INCOMPLETE_LINE.to_owned()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+}
+
+/// What ends a list that left `count` changes out.
+fn omitted_line(count: usize) -> String {
+    let changes = if count == 1 { "change" } else { "changes" };
+    format!("And {count} more {changes} in the full release notes.")
+}
+
+/// What ends a list that is missing the changes of `count` releases with no summary.
+fn unsummarized_line(count: usize) -> String {
+    if count == 1 {
+        "1 release since your version has no summary, so its changes are not listed.".to_owned()
+    } else {
+        format!(
+            "{count} releases since your version have no summary, so their changes are not listed."
+        )
     }
 }
 

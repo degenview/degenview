@@ -29,10 +29,6 @@ const GROUP_GAP: f32 = 16.0;
 /// The picture's card starts this far left of its box so it lines up with the list under it.
 const PICTURE_LEAD: f32 = 16.0;
 const NO_NOTES: &str = "No summary of changes is available for this version.";
-const TRUNCATED_LINE: &str = "And more changes in the full release notes.";
-/// The update check read only the newest releases, so older ones in the range may be missing.
-const HISTORY_INCOMPLETE_LINE: &str =
-    "Older releases are not listed here, so some changes may be missing.";
 
 /// How the person answered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -244,7 +240,7 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes, coverage: &Coverage) {
             bullet(ui, entry);
         }
     }
-    for line in closing_lines(notes, coverage) {
+    for line in notes.footnotes(coverage) {
         ui.add_space(GROUP_GAP);
         ui.add(
             egui::Label::new(kit::text(
@@ -255,48 +251,6 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes, coverage: &Coverage) {
             ))
             .wrap(),
         );
-    }
-}
-
-/// The lines that end the lists, in order: what the caps left out, then the releases with no
-/// summary, then the releases that were never listed. Only shown after a list; with nothing to list
-/// the sheet says so and nothing more.
-fn closing_lines(notes: &ReleaseNotes, coverage: &Coverage) -> impl Iterator<Item = String> {
-    [
-        closing_line(notes),
-        (coverage.unsummarized > 0).then(|| unsummarized_line(coverage.unsummarized)),
-        coverage
-            .history_incomplete
-            .then(|| HISTORY_INCOMPLETE_LINE.to_owned()),
-    ]
-    .into_iter()
-    .flatten()
-}
-
-/// What ends a list that left changes out: how many, unless a body was cut short, which makes any
-/// count too low.
-fn closing_line(notes: &ReleaseNotes) -> Option<String> {
-    if notes.truncated {
-        Some(TRUNCATED_LINE.to_owned())
-    } else {
-        (notes.omitted > 0).then(|| omitted_line(notes.omitted))
-    }
-}
-
-/// What ends a list that left `count` changes out.
-fn omitted_line(count: usize) -> String {
-    let changes = if count == 1 { "change" } else { "changes" };
-    format!("And {count} more {changes} in the full release notes.")
-}
-
-/// What ends a list that is missing the changes of `count` releases with no summary.
-fn unsummarized_line(count: usize) -> String {
-    if count == 1 {
-        "1 release since your version has no summary, so its changes are not listed.".to_owned()
-    } else {
-        format!(
-            "{count} releases since your version have no summary, so their changes are not listed."
-        )
     }
 }
 
