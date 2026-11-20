@@ -50,7 +50,8 @@ pub struct Supertrend {
     pub line: f64,
 }
 
-/// `ta.macd`'s lengths when a call leaves them out (TradingView requires all three).
+/// `ta.macd`'s lengths when a call leaves them out (TradingView requires all three; the session
+/// binds them in `inline_call`).
 pub const MACD_DEFAULTS: [i64; 3] = [12, 26, 9];
 
 /// One exponential average of `ta.macd`. A missing value gives no result and leaves the average
@@ -89,7 +90,7 @@ impl MacdLeg {
 
 /// The `ta.*` names `evaluate` computes from one source series and a length. The bar-relative ones
 /// (`ta.sar`, `ta.supertrend`) go through `evaluate_price` instead.
-pub const SUPPORTED: [&str; 30] = [
+pub const SUPPORTED: [&str; 29] = [
     "ta.sma",
     "ta.ema",
     "ta.rma",
@@ -103,7 +104,6 @@ pub const SUPPORTED: [&str; 30] = [
     "ta.mom",
     "ta.roc",
     "ta.rsi",
-    "ta.macd",
     "ta.cross",
     "ta.crossover",
     "ta.crossunder",
@@ -142,10 +142,6 @@ pub fn evaluate(
     length: i64,
     state: &mut State,
 ) -> RuntimeValue {
-    if name == "ta.macd" {
-        let [fast, slow, signal] = MACD_DEFAULTS;
-        return evaluate_macd(source, fast, slow, signal, state);
-    }
     state.inputs.push(source.clone());
     // A length that is not a positive count reads as no window (most indicators then yield `na`).
     let count = usize::try_from(length).unwrap_or(0);
@@ -1417,11 +1413,12 @@ mod tests {
         let mut state = State::default();
         let mut results = Vec::new();
         for value in &series {
-            results.push(evaluate(
-                "ta.macd",
+            let [fast, slow, signal] = MACD_DEFAULTS;
+            results.push(evaluate_macd(
                 &float(*value),
-                &RuntimeValue::Na,
-                0,
+                fast,
+                slow,
+                signal,
                 &mut state,
             ));
         }
