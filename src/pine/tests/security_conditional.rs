@@ -106,6 +106,11 @@ fn a_call_first_reached_late_builds_the_history_from_the_first_bar() {
 }
 
 #[test]
+fn a_call_that_skips_some_bars_still_records_the_builtins_it_indexes() {
+    assert_same("bar_index % 3 != 1", "ta.tr[1] + hlcc4[1] + dayofweek[1]");
+}
+
+#[test]
 fn a_call_on_every_bar_is_unchanged() {
     assert_same("true", "ta.rsi(close, 5)");
 }
