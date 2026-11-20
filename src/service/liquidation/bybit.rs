@@ -4,8 +4,8 @@
 
 use crate::model::exchange::Exchange;
 use crate::model::liquidation::{Liquidation, Side};
-use crate::service::market::bybit::get;
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::market::bybit::{KEEPALIVE, get};
+use crate::service::net::ws::Session;
 use crate::service::stream::Worker;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -40,7 +40,7 @@ fn session_for(symbols: &[String]) -> Session {
             .collect(),
         // A calm hour can pass without one: the pong says the socket is alive.
         max_data_silence: Duration::from_secs(600),
-        keepalive: Keepalive::BYBIT,
+        keepalive: KEEPALIVE,
     }
 }
 
@@ -128,7 +128,7 @@ mod tests {
                 json!({"op": "subscribe", "args": ["allLiquidation.ETHUSDT"]}),
             ]
         );
-        assert!(matches!(session.keepalive, Keepalive::Text { .. }));
+        assert_eq!(session.keepalive, KEEPALIVE);
     }
 
     #[test]

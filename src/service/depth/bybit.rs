@@ -9,8 +9,9 @@ use crate::model::depth::{
     BookEvent, BookSync, Delta, Event, Levels, Price, Snapshot, SnapshotAndDeltas, Trade,
 };
 use crate::model::taker_flow::Taker;
+use crate::service::market::bybit::KEEPALIVE;
 use crate::service::net::http::{self, Retry};
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::net::ws::Session;
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -33,7 +34,7 @@ impl DepthVenue for Bybit {
             subscribe: vec![json!({"op": "subscribe", "args": topics}).to_string()],
             // A thin market can be quiet for a long while: the pong says the socket is alive.
             max_data_silence: Duration::from_secs(600),
-            keepalive: Keepalive::BYBIT,
+            keepalive: KEEPALIVE,
         }
     }
 
@@ -168,7 +169,7 @@ mod tests {
             json!({"op": "subscribe", "args": ["orderbook.200.BTCUSDT", "publicTrade.BTCUSDT"]})
         );
         assert_eq!(session.subscribe.len(), 1);
-        assert_eq!(session.keepalive, Keepalive::BYBIT);
+        assert_eq!(session.keepalive, KEEPALIVE);
     }
 
     #[test]

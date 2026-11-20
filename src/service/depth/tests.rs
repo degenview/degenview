@@ -234,7 +234,7 @@ fn each_exchange_judges_its_book_by_its_own_rules() {
 
 /// Listens to the real sockets of BTCUSDT until each venue has a book and a trade, and prints the
 /// best bid and ask and a trade of each. Run with
-/// `cargo test --lib service::depth::tests::live_books -- --ignored --nocapture`.
+/// `cargo test --lib service::depth::tests::live_books_fill -- --ignored --nocapture`.
 #[test]
 #[ignore = "needs the network"]
 fn live_books_fill() {

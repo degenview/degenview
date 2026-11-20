@@ -1,4 +1,4 @@
-# Liquidations, taker flow and order book
+# Market flow: liquidations, taker flow and order book
 
 A docked panel on the right of a tab (toolbar flame button, next to the watchlist toggle) with three
 modes, chosen at its top. It listens to the exchanges' public sockets only while a panel is drawn,
@@ -8,6 +8,7 @@ and only for the mode on show. Nothing is stored: each record is the last hour, 
   between longs and shorts, and a tape of the latest ones.
 - **Taker flow**: for the asset of the focused chart, what takers bought minus what they sold
   (net flow) over the same spans, a bar per minute for the last half hour, and the same by venue.
+- **Order book**: the focused chart's market as its exchange's book and trades (below).
 
 **Read the footnote before the totals.** The exchanges do not send every liquidation, so the
 numbers undercount a busy moment (below).
@@ -16,6 +17,7 @@ numbers undercount a busy moment (below).
 
 | Piece | File |
 | --- | --- |
+| `Exchange`, `Market` and `Venue`: which exchange and market a feed is about, shared by all three modes | `model/exchange/mod.rs` |
 | `Liquidation`, `Side`, `MinSize`, the rolling `Tape` and its `Snapshot` (totals, rows) | `model/liquidation/mod.rs` (pure; tests in `tests.rs`) |
 | The sockets and the lease | `service/liquidation/mod.rs`; one module per exchange (`binance.rs`, `bybit.rs`: session and parser) |
 | Owning the feed, the per-frame snapshot cache | `host/liquidation/mod.rs` (`LiquidationHost`, one for the app, in `WindowEnv`) |
@@ -101,15 +103,28 @@ Read-only: nothing here places an order. Charts are spot, so these are spot book
 
 ### Layers
 
-One concern to a layer, and an exchange is a plug-in at each: adding OKX, or a perpetual market,
-means one new file in `model/depth/sync/`, one in `service/depth/`, and a line in the registry
-(`venue::for_exchange`) and in `market_of`. A venue supplies its own `BookSync`, so the protocol is
-stated once. Nothing shared is edited.
+One concern to a layer, and an exchange is a plug-in at each. A venue supplies its own `BookSync`
+(`DepthVenue::book_sync`), so the protocol is stated once and `DepthRecord`, the host and the panel
+never name an exchange.
+
+To add an exchange (OKX, say), for the order book:
+
+- `model/depth/sync/<x>.rs` and its export in `sync/mod.rs`, only if its update protocol is not one
+  of the two there (a diff stream with ids, or snapshot and deltas); otherwise reuse that `BookSync`.
+- A variant of `model::exchange::Exchange`, with its `name`.
+- `service/depth/<x>.rs`, a `DepthVenue` (session, tick size, `book_sync`, REST snapshot if needed,
+  parser), and its one line in `venue::for_exchange`.
+- The `DataSource` that charts use for it, in `market_of` (`model/depth/market.rs`).
+
+The new variant is also an exhaustive `match` in `service/taker_flow/mod.rs`, and `Venue::ALL`
+(which sizes the taker flow table) lists every venue, so those two places need a decision even when
+the exchange has no taker flow; liquidations are one module per exchange in `service/liquidation/`
+and are not required. Nothing else shared is edited.
 
 | Layer | What it holds |
 | --- | --- |
-| `model/depth/` (pure) | `Price` (an exact `i64` of 1e-8, parsed from the exchange's decimal text, so no float keys), `Book`, `Tape` (the latest 300 trades; traded volume by price, the 2,000 prices nearest the market), `PullStack`, `group` (row sizes, private), `View`, `Ladder` (the rows) and `TapeView` (the trades) inside a `DepthSnapshot`, `Event`. `Side::of_taker` and `Side::row_of` are the one statement of where a trade and a resting order fold. `DepthRecord` is the single door and the only owner of the `Book`: `apply(event, now)`, `link(up)`, `needs_snapshot()`, `snapshot(view, now) -> DepthSnapshot`, `revision()`. A `BookSync` per exchange protocol (`sync/binance.rs`, `sync/bybit.rs`) only judges each update (`Verdict`: replace, apply, stale, gap); the record acts on it |
-| `service/depth/` | `DepthFeed` (one `Stream` thread per market) only routes: tick size, then the socket, then events into the record. `new_record(market)` makes the record, with the venue's `BookSync`. What differs is behind the `DepthVenue` trait (`session`, `tick_size`, `book_sync`, `snapshot`, `parse`) in `binance.rs` and `bybit.rs`, picked by `venue::for_exchange`; `snapshot` is fetched only while the record `needs_snapshot()`, and a venue whose socket sends its own answers `DepthError::Unsupported` and is never asked; `DepthError` (`Http`, `Parse`, `UnknownSymbol`, `Unsupported`) is the look-ups' error; `levels.rs` is the book side shape both send |
+| `model/depth/` (pure) | `Price` (an exact `i64` of 1e-8, parsed from the exchange's decimal text, so no float keys), `Book`, `Tape` (the latest 300 trades; traded volume by price, the 2,000 prices nearest the market), `PullStack`, `group` (row sizes, private), `View` (row size, centre and `rows`, how many the panel has room for), `Ladder` (the rows) and `TapeView` (the trades) inside a `DepthSnapshot { link, tick, ladder, tape }`, `Event`. `Side::of_taker` and `Side::row_of` are the one statement of where a trade and a resting order fold. `DepthRecord` is the single door and the only owner of the `Book`: `apply(event, now)`, `link(up)`, `needs_snapshot()`, `snapshot(view, now) -> DepthSnapshot`, `revision()`. A `BookSync` per exchange protocol (`sync/binance.rs`, `sync/bybit.rs`) only judges each update (`Verdict`: replace, apply, stale, gap); the record acts on it. Which exchange a market is on is `model::exchange` |
+| `service/depth/` | `DepthFeed` (one `Stream` thread per market) only routes: tick size, then the socket, then events into the record. `new_record(market)` makes the record, with the venue's `BookSync` (`for_exchange(..).book_sync()`). What differs is behind the `DepthVenue` trait (`session`, `tick_size`, `book_sync`, `snapshot`, `parse`) in `binance.rs` and `bybit.rs`, picked by `venue::for_exchange`; `snapshot` is fetched only while the record `needs_snapshot()`, and a venue whose socket sends its own answers `DepthError::Unsupported` and is never asked; `DepthError` (`Http`, `Parse`, `UnknownSymbol`, `Unsupported`) is the look-ups' error; `levels.rs` is the book side shape both send |
 | `host/depth/` | `DepthHost::watch(ctx, market, view) -> Arc<DepthSnapshot>`: lifetimes and caching only, on `host::lease_map`; it knows no sync rules (the record comes from `new_record`) |
 | `ui/market_flow/book/` | Draws a `DepthSnapshot` (`ladder.rs`, `tape.rs`, `toolbar.rs`; the viewer's choices in `state.rs`). It never sees a `Book`, a socket or an exchange beyond its name |
 
@@ -120,8 +135,8 @@ the host, which caches the snapshot by (record revision, second, view). A new ma
 
 The model builds exactly `View::rows` rows, so it knows nothing of the screen. The ladder is drawn
 after the host is asked, so the panel measures how many lines fit (`body height / row height`, at
-least one; the spread line takes the place of the last row when it is in view) and keeps that in `BookViewState::rows` for the next frame: a resize
-shows with a frame's delay (the panel asks for a repaint when the count changed), and the first
+least one; the spread line takes the place of the last row when it is in view) and keeps that in
+`BookViewState::rows` for the next frame: a resize shows with a frame's delay (the panel asks for a repaint when the count changed), and the first
 frame asks for a default.
 
 ### The exchanges (verified against the live sockets)
@@ -205,7 +220,7 @@ models, parsers (inline samples), lease and view tests. The live checks, which w
 ```bash
 cargo test --lib liquidation::tests::live_exchanges -- --ignored --nocapture
 cargo test --lib taker_flow::tests::live_venues -- --ignored --nocapture
-cargo test --lib service::depth::tests::live_books -- --ignored --nocapture
+cargo test --lib service::depth::tests::live_books_fill -- --ignored --nocapture
 ```
 
 The last one starts a feed for BTCUSDT on each exchange, waits for a live book and a trade, prints

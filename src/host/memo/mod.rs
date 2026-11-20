@@ -2,6 +2,9 @@
 
 use std::sync::Arc;
 
+#[cfg(test)]
+mod tests;
+
 pub struct Memo<Q, V> {
     kept: Option<(Q, Arc<V>)>,
 }

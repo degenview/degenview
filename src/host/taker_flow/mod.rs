@@ -4,7 +4,9 @@
 //! a [`LeaseMap`], one entry per asset.
 
 use crate::clock::now_ms;
-use crate::host::lease_map::{LeaseMap, Memo, Running};
+use crate::host::lease_map::{LeaseMap, Running};
+use crate::host::memo::Memo;
+use crate::host::repaint_of;
 use crate::lock::lock;
 use crate::model::taker_flow::{Flow, Snapshot};
 use crate::service::taker_flow::TakerFlowFeed;
@@ -47,11 +49,7 @@ impl TakerFlowHost {
         let mut feeds = lock(&self.feeds);
         let now = now_ms();
         let entry = feeds.entry_for(&asset.to_owned(), now, Flow::default, |flow, lease| {
-            let repaint = {
-                let ctx = ctx.clone();
-                Arc::new(move || ctx.request_repaint())
-            };
-            TakerFlowFeed::start(asset, Arc::clone(flow), lease.clone(), repaint)
+            TakerFlowFeed::start(asset, Arc::clone(flow), lease.clone(), repaint_of(ctx))
         });
         ctx.request_repaint_after(REFRESH);
         snapshot(&entry.record, &mut entry.cache, now)

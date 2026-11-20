@@ -4,7 +4,9 @@
 //! [`LeaseMap`], one entry per market.
 
 use crate::clock::now_ms;
-use crate::host::lease_map::{LeaseMap, Memo, Running};
+use crate::host::lease_map::{LeaseMap, Running};
+use crate::host::memo::Memo;
+use crate::host::repaint_of;
 use crate::lock::lock;
 use crate::model::depth::{DepthMarket, DepthRecord, DepthSnapshot, View};
 use crate::service::depth::{DepthFeed, new_record};
@@ -57,11 +59,12 @@ impl DepthHost {
             now,
             || new_record(market),
             |record, lease| {
-                let repaint = {
-                    let ctx = ctx.clone();
-                    Arc::new(move || ctx.request_repaint())
-                };
-                DepthFeed::start(market.clone(), Arc::clone(record), lease.clone(), repaint)
+                DepthFeed::start(
+                    market.clone(),
+                    Arc::clone(record),
+                    lease.clone(),
+                    repaint_of(ctx),
+                )
             },
         );
         ctx.request_repaint_after(REFRESH);

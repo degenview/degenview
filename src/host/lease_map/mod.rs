@@ -6,11 +6,8 @@
 //! disturb each other, and a socket of one key that is slow to close can never write into the
 //! record of another.
 
-mod memo;
 #[cfg(test)]
 mod tests;
-
-pub use memo::Memo;
 
 use crate::service::stream::Lease;
 use std::collections::HashMap;

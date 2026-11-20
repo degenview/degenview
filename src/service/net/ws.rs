@@ -67,15 +67,6 @@ pub enum Keepalive {
     },
 }
 
-impl Keepalive {
-    /// Bybit's heartbeat on every public socket: `{"op":"ping"}`, answered by a reply that starts
-    /// `{"success":true,"ret_msg":"pong"`.
-    pub const BYBIT: Self = Self::Text {
-        ping: r#"{"op":"ping"}"#,
-        pong: r#"{"success":true,"ret_msg":"pong""#,
-    };
-}
-
 pub struct Health {
     route: Route,
     route_checked: Instant,

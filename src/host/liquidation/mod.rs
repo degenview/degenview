@@ -3,6 +3,7 @@
 //! without blocking or recomputing it when nothing changed.
 
 use crate::clock::now_ms;
+use crate::host::repaint_of;
 use crate::lock::lock;
 use crate::model::liquidation::{MinSize, Snapshot, Tape};
 use crate::service::liquidation::{Lease, LiquidationFeed};
@@ -58,12 +59,11 @@ impl LiquidationHost {
         inner.lease.renew(LEASE);
         if inner.feed.as_ref().is_none_or(|feed| !feed.is_running()) {
             lock(&inner.tape).clear();
-            let repaint = {
-                let ctx = ctx.clone();
-                Arc::new(move || ctx.request_repaint())
-            };
-            let feed =
-                LiquidationFeed::start(Arc::clone(&inner.tape), inner.lease.clone(), repaint);
+            let feed = LiquidationFeed::start(
+                Arc::clone(&inner.tape),
+                inner.lease.clone(),
+                repaint_of(ctx),
+            );
             inner.feed = Some(feed);
         }
         ctx.request_repaint_after(REFRESH);

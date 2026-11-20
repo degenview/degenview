@@ -4,7 +4,8 @@
 
 use crate::model::exchange::{Market, Venue};
 use crate::model::taker_flow::{Taker, Trade};
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::market::bybit::KEEPALIVE;
+use crate::service::net::ws::Session;
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -25,7 +26,7 @@ pub(super) fn session(market: Market, asset: &str) -> Session {
         ],
         // A thin market can be quiet for a long while: the pong says the socket is alive.
         max_data_silence: Duration::from_secs(600),
-        keepalive: Keepalive::BYBIT,
+        keepalive: KEEPALIVE,
     }
 }
 
@@ -90,7 +91,7 @@ mod tests {
         assert_eq!(spot.subscribe.len(), 1);
         let perp = session(Market::Perpetual, "ETH");
         assert_eq!(perp.url, "wss://stream.bybit.com/v5/public/linear");
-        assert!(matches!(perp.keepalive, Keepalive::Text { .. }));
+        assert_eq!(perp.keepalive, KEEPALIVE);
     }
 
     #[test]
