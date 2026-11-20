@@ -1105,6 +1105,29 @@ mod tests {
     }
 
     #[test]
+    fn changes_the_sheet_cannot_hold_are_counted_once_not_per_copy() {
+        let lines: Vec<String> = (0..changelog::MAX_ENTRIES + 5)
+            .map(|n| format!("Change {n}."))
+            .collect();
+        let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+        // The stable release repeats the candidate's section with more entries than the
+        // candidate's own release lists; only the own copy is read, so only its 5 are left out.
+        let repeated: Vec<&str> = lines.iter().copied().chain(["Extra.", "More."]).collect();
+        let stable = [
+            changes("0.6.0", &["Final."], &[]),
+            changes("0.6.0-rc.1", &repeated, &[]),
+        ]
+        .join("\n");
+        let releases = [
+            release_noted("v0.6.0", &stable),
+            release_noted("v0.6.0-rc.1", &changes("0.6.0-rc.1", &lines, &[])),
+        ];
+        let release = available(eval(&releases, "0.5.1", Channel::Stable));
+        assert_eq!(release.notes.new.len(), 1 + changelog::MAX_ENTRIES);
+        assert_eq!(release.notes.omitted, 5);
+    }
+
+    #[test]
     fn sections_outside_the_range_or_without_a_readable_version_are_left_out() {
         let body = [
             changes("0.6.0-rc.9", &["Newer than the offer."], &[]),

@@ -16,6 +16,7 @@ fn notes() -> ReleaseNotes {
             "Alpaca stock charts on the free plan no longer hit a data error.".to_owned(),
             long_entry(),
         ],
+        ..ReleaseNotes::default()
     }
 }
 
@@ -122,6 +123,7 @@ fn a_sheet_with_a_great_many_changes_stays_within_its_cap() {
     let flood = ReleaseNotes {
         new: (0..60).map(|n| format!("Change number {n}.")).collect(),
         fixed: (0..60).map(|_| long_entry()).collect(),
+        ..ReleaseNotes::default()
     };
     let heights = |view: &UpdateView| {
         let mut screen = Screen::new(Vec2::new(700.0, 900.0));
@@ -141,6 +143,85 @@ fn a_sheet_with_a_great_many_changes_stays_within_its_cap() {
     assert!(
         tall > short && tall < short + MAX_LIST + 1.0,
         "{tall} vs {short}"
+    );
+}
+
+fn flood() -> ReleaseNotes {
+    ReleaseNotes {
+        new: (1..=14)
+            .map(|n| format!("A new thing, number {n}."))
+            .collect(),
+        fixed: (1..=8).map(|_| long_entry()).collect(),
+        ..ReleaseNotes::default()
+    }
+}
+
+/// A turn of the mouse wheel over the list, `delta` points (negative scrolls down).
+fn wheel(delta: f32) -> Vec<Event> {
+    vec![
+        Event::PointerMoved(pos2(310.0, 400.0)),
+        Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: Vec2::new(0.0, delta),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        },
+    ]
+}
+
+/// Frames of the sheet over `view`, the last of them after the notes were wheeled by each of
+/// `wheels` and the scrolling settled.
+fn scrolled(screen: &mut Screen, view: &UpdateView, wheels: &[f32]) -> egui::FullOutput {
+    let mut frames = vec![vec![]; 3];
+    frames.extend(wheels.iter().map(|&delta| wheel(delta)));
+    frames.extend(vec![vec![]; 20]);
+    let mut last = None;
+    for events in frames {
+        last = Some(screen.run(events, |ui| {
+            show(ui.ctx(), view, INSTALLED);
+        }));
+    }
+    last.expect("ran")
+}
+
+/// How many edge fades a frame painted over the list.
+fn fades(output: &egui::FullOutput) -> usize {
+    output
+        .shapes
+        .iter()
+        .filter(|clipped| match &clipped.shape {
+            egui::Shape::Mesh(mesh) => mesh.vertices.len() == kit::scroll::FADE_VERTICES,
+            _ => false,
+        })
+        .count()
+}
+
+#[test]
+fn the_list_fades_where_more_lies_beyond_the_visible_part() {
+    let size = Vec2::new(700.0, 760.0);
+    let view = available(true, flood());
+    let top = scrolled(&mut Screen::new(size), &view, &[]);
+    assert_eq!(fades(&top), 1, "only the bottom while at the top");
+    let middle = scrolled(&mut Screen::new(size), &view, &[-150.0]);
+    assert_eq!(fades(&middle), 2, "both ends part-way down");
+    let end = scrolled(&mut Screen::new(size), &view, &[-5000.0]);
+    assert_eq!(fades(&end), 1, "only the top once the end is reached");
+
+    let short = available(true, notes());
+    assert_eq!(fades(&scrolled(&mut Screen::new(size), &short, &[])), 0);
+    let none = available(true, ReleaseNotes::default());
+    assert_eq!(fades(&scrolled(&mut Screen::new(size), &none, &[])), 0);
+}
+
+#[test]
+fn the_line_that_ends_a_cut_list_counts_what_was_left_out() {
+    assert_eq!(
+        omitted_line(1),
+        "And 1 more change in the full release notes."
+    );
+    assert_eq!(
+        omitted_line(42),
+        "And 42 more changes in the full release notes."
     );
 }
 
@@ -196,27 +277,30 @@ fn update_sheet_gallery() {
     let only_new = ReleaseNotes {
         new: vec!["Updating shows what is new and fixed before it installs.".to_owned()],
         fixed: vec![],
+        ..ReleaseNotes::default()
     };
+    let truncated = ReleaseNotes {
+        omitted: 49,
+        ..flood()
+    };
+    // Each picture: its name, what the sheet shows, and how far the list was wheeled first.
     let cases = [
-        ("installable", available(true, notes())),
-        ("manual", available(false, notes())),
-        ("empty", available(true, ReleaseNotes::default())),
-        ("one-list", available(true, only_new)),
+        ("installable", available(true, notes()), 0.0),
+        ("manual", available(false, notes()), 0.0),
+        ("empty", available(true, ReleaseNotes::default()), 0.0),
+        ("one-list", available(true, only_new), 0.0),
+        ("many", available(true, flood()), 0.0),
+        ("many-scrolled", available(true, flood()), -150.0),
+        ("many-scrolled-end", available(true, flood()), -5000.0),
+        ("truncated", available(true, truncated.clone()), 0.0),
         (
-            "many",
-            available(
-                true,
-                ReleaseNotes {
-                    new: (1..=14)
-                        .map(|n| format!("A new thing, number {n}."))
-                        .collect(),
-                    fixed: (1..=8).map(|_| long_entry()).collect(),
-                },
-            ),
+            "truncated-scrolled-end",
+            available(true, truncated),
+            -5000.0,
         ),
     ];
     for light in [false, true] {
-        for (name, view) in &cases {
+        for (name, view, wheeled) in &cases {
             let mut screen = Screen::new(Vec2::new(620.0, 700.0));
             screen.ctx.set_theme(if light {
                 egui::ThemePreference::Light
@@ -224,8 +308,12 @@ fn update_sheet_gallery() {
                 egui::ThemePreference::Dark
             });
             let mut last = None;
-            for _ in 0..5 {
-                last = Some(screen.run(vec![], |ui| {
+            let frames = (0..5)
+                .map(|_| vec![])
+                .chain([wheel(*wheeled)].into_iter().filter(|_| *wheeled != 0.0))
+                .chain((0..20).map(|_| vec![]));
+            for events in frames {
+                last = Some(screen.run(events, |ui| {
                     theme::sync(ui.ctx());
                     ui.painter()
                         .rect_filled(ui.max_rect(), 0.0, theme::background());

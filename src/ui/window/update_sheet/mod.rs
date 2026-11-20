@@ -90,13 +90,7 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
             );
         });
         ui.add_space(20.0);
-        egui::ScrollArea::vertical()
-            .id_salt("update-review-notes")
-            .max_height(list_height)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                sheet::inset(ui, |ui| changes(ui, notes));
-            });
+        notes_list(ui, notes, list_height);
         ui.add_space(GROUP_GAP);
         sheet::inset(ui, |ui| {
             if !installable && let Some(note) = note {
@@ -144,7 +138,31 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
     outcome
 }
 
-/// New, then Fixed, each only when it has entries; a calm line when there are none.
+/// The changes in a list that scrolls past `height`. While there is more above or below the
+/// visible part its edge fades into the sheet and the bar stays in view, so a list never looks
+/// finished where it is only cut.
+fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, height: f32) {
+    let output = ui
+        .scope(|ui| {
+            kit::scroll::keep_bars_visible(ui);
+            egui::ScrollArea::vertical()
+                .id_salt("update-review-notes")
+                .max_height(height)
+                .auto_shrink([false, true])
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+                .show(ui, |ui| sheet::inset(ui, |ui| changes(ui, notes)))
+        })
+        .inner;
+    let beyond = kit::scroll::Beyond::of(
+        output.state.offset.y,
+        output.content_size.y,
+        output.inner_rect.height(),
+    );
+    kit::scroll::fade_edges(ui.painter(), output.inner_rect, theme::chrome(), beyond);
+}
+
+/// New, then Fixed, each only when it has entries, then how many more there were; a calm line
+/// when there are none.
 fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
     ui.spacing_mut().item_spacing.y = 0.0;
     if notes.is_empty() {
@@ -182,6 +200,21 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
             bullet(ui, entry);
         }
     }
+    if notes.omitted > 0 {
+        ui.add_space(GROUP_GAP);
+        ui.label(kit::text(
+            omitted_line(notes.omitted),
+            size::SUBHEADLINE + 1.0,
+            REGULAR,
+            theme::text_secondary(),
+        ));
+    }
+}
+
+/// What ends a list that left `count` changes out.
+fn omitted_line(count: usize) -> String {
+    let changes = if count == 1 { "change" } else { "changes" };
+    format!("And {count} more {changes} in the full release notes.")
 }
 
 /// One change: a bullet, and its text wrapped to the width left beside it so a long line hangs

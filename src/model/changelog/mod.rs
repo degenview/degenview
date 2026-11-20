@@ -25,7 +25,7 @@ const MAX_BODY_BYTES: usize = 64 * 1024;
 /// The most sections one body yields.
 const MAX_SECTIONS: usize = 64;
 /// The most entries one section keeps in each of its two lists.
-const MAX_ENTRIES: usize = 100;
+pub const MAX_ENTRIES: usize = 100;
 /// The longest entry kept, in characters; a longer one is cut with an ellipsis.
 const MAX_ENTRY_CHARS: usize = 400;
 /// The most entries merged notes keep in each list. The release page has the rest.
@@ -38,6 +38,9 @@ pub struct Section {
     pub version: String,
     pub new: Vec<String>,
     pub fixed: Vec<String>,
+    /// Entries the reader's caps left out. A section past `MAX_SECTIONS` has no place of its own, so
+    /// its entries are counted here, in the last section kept.
+    pub omitted: usize,
 }
 
 /// The changes of several releases together, newest release first, as an update sheet lists them.
@@ -45,19 +48,26 @@ pub struct Section {
 pub struct ReleaseNotes {
     pub new: Vec<String>,
     pub fixed: Vec<String>,
+    /// How many more changes there were than the lists hold, whichever cap left them out.
+    pub omitted: usize,
 }
 
 impl ReleaseNotes {
     /// `sections` in the order they are to read: the lists are concatenated, `MAX_NOTES` entries at
-    /// most each.
+    /// most each, and what the sections and this cap leave out is counted.
     pub fn from_sections(sections: impl IntoIterator<Item = Section>) -> Self {
         let mut notes = Self::default();
         for section in sections {
             notes.new.extend(section.new);
             notes.fixed.extend(section.fixed);
+            notes.omitted = notes.omitted.saturating_add(section.omitted);
         }
-        notes.new.truncate(MAX_NOTES);
-        notes.fixed.truncate(MAX_NOTES);
+        for list in [&mut notes.new, &mut notes.fixed] {
+            notes.omitted = notes
+                .omitted
+                .saturating_add(list.len().saturating_sub(MAX_NOTES));
+            list.truncate(MAX_NOTES);
+        }
         notes
     }
 
@@ -77,6 +87,8 @@ enum Category {
 pub fn parse(text: &str) -> Vec<Section> {
     let mut sections: Vec<Section> = Vec::new();
     let mut open = false;
+    // Inside a section past `MAX_SECTIONS`: its entries are counted, not kept.
+    let mut dropped = false;
     let mut category = None;
     // How many `<details>` blocks the line is inside: the commit list lives in one.
     let mut folded = 0_usize;
@@ -99,18 +111,22 @@ pub fn parse(text: &str) -> Vec<Section> {
                 1 | 2 => {
                     category = None;
                     open = false;
+                    dropped = false;
                     if level == 2
                         && let Some(version) = version_of(title)
-                        && sections.len() < MAX_SECTIONS
                     {
-                        sections.push(Section {
-                            version,
-                            ..Section::default()
-                        });
-                        open = true;
+                        if sections.len() < MAX_SECTIONS {
+                            sections.push(Section {
+                                version,
+                                ..Section::default()
+                            });
+                            open = true;
+                        } else {
+                            dropped = true;
+                        }
                     }
                 }
-                _ if open => category = category_of(title),
+                _ if open || dropped => category = category_of(title),
                 _ => {}
             }
             continue;
@@ -118,15 +134,17 @@ pub fn parse(text: &str) -> Vec<Section> {
         let (Some(category), Some(entry)) = (category, bullet(line)) else {
             continue;
         };
-        let Some(section) = sections.last_mut().filter(|_| open) else {
+        let Some(section) = sections.last_mut().filter(|_| open || dropped) else {
             continue;
         };
         let list = match category {
             Category::New => &mut section.new,
             Category::Fixed => &mut section.fixed,
         };
-        if list.len() < MAX_ENTRIES {
+        if open && list.len() < MAX_ENTRIES {
             list.push(entry);
+        } else {
+            section.omitted = section.omitted.saturating_add(1);
         }
     }
     sections

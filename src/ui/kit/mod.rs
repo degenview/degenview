@@ -28,6 +28,7 @@ mod palette;
 mod pill;
 pub mod popover;
 pub mod ruler;
+pub mod scroll;
 pub mod search_box;
 pub mod sheet;
 pub mod source_logo;

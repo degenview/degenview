@@ -6,6 +6,7 @@ fn section(version: &str, new: &[&str], fixed: &[&str]) -> Section {
         version: version.to_owned(),
         new: new.iter().map(|&text| text.to_owned()).collect(),
         fixed: fixed.iter().map(|&text| text.to_owned()).collect(),
+        omitted: 0,
     }
 }
 
@@ -182,6 +183,7 @@ fn a_hostile_body_is_bounded() {
     let many_entries = format!("## 1.0.0\n\n### New\n\n{}", "- Line.\n".repeat(10_000));
     let parsed = parse(&many_entries);
     assert_eq!(parsed[0].new.len(), MAX_ENTRIES);
+    assert!(parsed[0].omitted > 0);
 
     let long_entry = format!("## 1.0.0\n\n### New\n\n- {}\n", "é".repeat(5_000));
     let entry = &parse(&long_entry)[0].new[0];
@@ -195,6 +197,77 @@ fn a_hostile_body_is_bounded() {
     let padding = "x".repeat(MAX_BODY_BYTES - 1);
     let late = format!("{padding}é\n## 1.0.0\n\n### New\n\n- Too late.\n");
     assert_eq!(parse(&late), []);
+}
+
+#[test]
+fn entries_over_a_cap_are_counted_not_lost_silently() {
+    let body = format!(
+        "## 2.0.0\n\n### New\n\n{}\n### Fixed\n\n{}",
+        "- Line.\n".repeat(MAX_ENTRIES + 3),
+        "- Fix.\n".repeat(MAX_ENTRIES + 4),
+    );
+    let section = &parse(&body)[0];
+    assert_eq!(
+        (section.new.len(), section.fixed.len(), section.omitted),
+        (MAX_ENTRIES, MAX_ENTRIES, 7)
+    );
+    // Within the caps nothing is left out.
+    assert_eq!(parse("## 1.0.0\n\n### New\n\n- A.\n")[0].omitted, 0);
+}
+
+#[test]
+fn a_section_past_the_section_cap_is_counted_in_the_last_one_kept() {
+    let one = "## 1.0.0\n\n### New\n\n- A.\n\n### Fixed\n\n- B.\n\n";
+    let sections = parse(&one.repeat(MAX_SECTIONS + 3));
+    assert_eq!(sections.len(), MAX_SECTIONS);
+    let omitted: Vec<usize> = sections.iter().map(|section| section.omitted).collect();
+    assert_eq!(
+        omitted[MAX_SECTIONS - 1],
+        6,
+        "three sections of two entries"
+    );
+    assert!(omitted[..MAX_SECTIONS - 1].iter().all(|&count| count == 0));
+
+    // Text under a heading that is not a section, or after one that closes it, is not counted.
+    let body = format!(
+        "{}## 9.9.9\n\n### Other\n\n- Not a change.\n\n# Notes\n\n### New\n\n- Closed.\n",
+        one.repeat(MAX_SECTIONS)
+    );
+    assert_eq!(parse(&body)[MAX_SECTIONS - 1].omitted, 0);
+}
+
+#[test]
+fn merged_notes_count_what_the_sections_and_their_own_cap_leave_out() {
+    let mut first = section("2.0.0", &["B."], &[]);
+    first.omitted = 4;
+    let mut second = section("1.0.0", &["A."], &["F."]);
+    second.omitted = 2;
+    assert_eq!(ReleaseNotes::from_sections([first, second]).omitted, 6);
+
+    let flood = ReleaseNotes::from_sections((0..3).map(|n| {
+        let text = n.to_string();
+        section(&text, &["x"; MAX_ENTRIES], &["y"; MAX_ENTRIES])
+    }));
+    assert_eq!(flood.omitted, 0, "300 entries a list, at the cap");
+    let flood = ReleaseNotes::from_sections((0..4).map(|n| {
+        let mut flooded = section(&n.to_string(), &["x"; MAX_ENTRIES], &["y"; 1]);
+        flooded.omitted = 1;
+        flooded
+    }));
+    assert_eq!(
+        flood.omitted,
+        4 + (4 * MAX_ENTRIES - MAX_NOTES),
+        "each section's own, then what the merged list cuts"
+    );
+
+    let mut huge = section("1.0.0", &[], &[]);
+    huge.omitted = usize::MAX;
+    let mut more = section("0.9.0", &[], &[]);
+    more.omitted = 5;
+    assert_eq!(
+        ReleaseNotes::from_sections([huge, more]).omitted,
+        usize::MAX
+    );
 }
 
 #[test]

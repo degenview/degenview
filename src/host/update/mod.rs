@@ -647,6 +647,7 @@ mod tests {
         ReleaseNotes {
             new: vec!["A new thing.".to_owned()],
             fixed: vec!["A fixed thing.".to_owned()],
+            ..ReleaseNotes::default()
         }
     }
 
