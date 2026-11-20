@@ -702,13 +702,16 @@ impl PineLayer<'_> {
 
     pub fn draw_boxes(&self, painter: &Painter) {
         for item in self.pine.boxes.iter().filter(|b| b.is_complete()) {
-            let mut left = self.x_bar(item.left);
-            let mut right = self.x_bar(item.right);
+            let (mut left, mut right) = (
+                self.x_bar(item.left).min(self.x_bar(item.right)),
+                self.x_bar(item.left).max(self.x_bar(item.right)),
+            );
+            // As a line does, an extended box runs on to the plot's edge.
             if item.extend.extends_left() {
-                left = left.min(right) - self.plot.width() * 2.0;
+                left = left.min(self.plot.left());
             }
             if item.extend.extends_right() {
-                right = left.max(right) + self.plot.width() * 2.0;
+                right = right.max(self.plot.right());
             }
             let (top, bottom) = (self.y(item.top), self.y(item.bottom));
             let rect = Rect::from_min_max(

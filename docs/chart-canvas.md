@@ -115,10 +115,14 @@ so one line drawn hundreds of bars ahead never squeezes the candles; pan right t
 The price axis and every script pane fit their range to the script bars the plot shows, wherever
 the chart is scrolled (`ui::pine::geometry::VisibleBars`: count, `tail` newer bars off the right
 edge, and the empty slots on screen past the newest bar). Series values and drawings (boxes, lines,
-labels, polylines) outside those bars add nothing. Only an overlay script's drawings may use the
-empty slots; a pane has none. The live chart, the Screenshot Studio, Select portion and the MCP
-snapshot all read this through `ChartCard::extent_of`, which sizes the reserved slots first and
-then lays the bars out again in the plot they make.
+labels, polylines) outside those bars add nothing. A pane is drawn across the whole plot, margin
+included, so a drawing in the empty slots on screen counts for the pane as for the main chart. A
+line or box that extends runs the plot's width: it counts when it crosses the bars shown, a line
+by its prices where it enters and leaves them (a vertical line never extends). The live chart, the
+Screenshot Studio, Select portion and the MCP snapshot all read this through
+`ChartCard::extent_of`, which sizes the reserved slots first and then lays the bars out again in
+the plot they make. Not counted: the quad of a linefill, which is drawn but adds no price of its
+own.
 
 ### Panes
 

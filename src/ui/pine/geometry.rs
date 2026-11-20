@@ -7,8 +7,9 @@
 use crate::model::chart::canvas::Window;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, Horizontal, LabelStyle, LineExtend, LineStyle, MarkerShape, PlotStyle, Size,
-    TableCell, TableOutput, TablePosition, TextAlign, Vertical, YLocation, index_is_known,
+    DISPLAY_PANE, Horizontal, LabelStyle, LineExtend, LineOutput, LineStyle, MarkerShape,
+    PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical, YLocation,
+    index_is_known,
 };
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
 
@@ -636,11 +637,6 @@ impl VisibleBars {
         }
     }
 
-    /// The same bars without the empty slots: a script pane draws nothing past its newest bar.
-    pub fn in_pane(self) -> Self {
-        Self { future: 0, ..self }
-    }
-
     /// The part of a per-bar series of `len` values these bars show.
     fn series_range(self, len: usize) -> std::ops::Range<usize> {
         let end = len.saturating_sub(self.tail);
@@ -676,27 +672,61 @@ fn series_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     values
 }
 
+/// The bars a box or line covers: from its first anchor to its last, run on without end towards
+/// the side `extend` pushes it to.
+fn covered_bars(a: i64, b: i64, extend: LineExtend) -> (i64, i64) {
+    (
+        if extend.extends_left() {
+            i64::MIN
+        } else {
+            a.min(b)
+        },
+        if extend.extends_right() {
+            i64::MAX
+        } else {
+            a.max(b)
+        },
+    )
+}
+
+/// The price of a line at `bar`, along its slope.
+fn line_price_at(line: &LineOutput, bar: i64) -> f64 {
+    let slope = (line.y2 - line.y1) / (line.x2 - line.x1) as f64;
+    line.y1 + slope * (bar - line.x1) as f64
+}
+
 /// Boxes, lines, labels and polylines that overlap the visible bars (and the empty slots on
-/// screen past the newest).
+/// screen past the newest). A box or a line that extends is as long as the plot: it counts when
+/// it crosses the bars shown, and a line by its prices where it enters and leaves them.
 pub fn drawing_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     let Some((first, last)) = visible.bar_span(pine.bar_count) else {
         return Vec::new();
     };
-    let in_view = |a: i64, b: i64| a.min(b) <= last && a.max(b) >= first;
+    let in_view = |(low, high): (i64, i64)| low <= last && high >= first;
     let mut values = Vec::new();
     for item in pine
         .boxes
         .iter()
-        .filter(|b| b.is_complete() && in_view(b.left, b.right))
+        .filter(|b| b.is_complete() && in_view(covered_bars(b.left, b.right, b.extend)))
     {
         values.extend([item.top, item.bottom]);
     }
-    for item in pine
-        .lines
-        .iter()
-        .filter(|l| l.is_complete() && in_view(l.x1, l.x2))
-    {
-        values.extend([item.y1, item.y2]);
+    for item in pine.lines.iter().filter(|l| l.is_complete()) {
+        // A vertical line never extends.
+        let extend = if item.x1 == item.x2 {
+            LineExtend::None
+        } else {
+            item.extend
+        };
+        let (low, high) = covered_bars(item.x1, item.x2, extend);
+        if !in_view((low, high)) {
+            continue;
+        }
+        if extend == LineExtend::None {
+            values.extend([item.y1, item.y2]);
+        } else {
+            values.extend([low.max(first), high.min(last)].map(|bar| line_price_at(item, bar)));
+        }
     }
     for item in pine
         .labels
@@ -710,18 +740,19 @@ pub fn drawing_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
         let (Some(low), Some(high)) = (indexes.clone().min(), indexes.max()) else {
             continue;
         };
-        if index_is_known(low) && in_view(low, high) {
+        if index_is_known(low) && in_view((low, high)) {
             values.extend(polyline.points.iter().map(|point| point.price));
         }
     }
     values
 }
 
-/// Vertical domain for a script pane: every value-anchored output in view, padded so nothing
+/// Vertical domain for a script pane: every value-anchored output in view (a pane is drawn across
+/// the whole plot, so the empty slots on screen count), padded so nothing
 /// touches the frame (`padding` is a share of the range, as for the chart's price range).
 pub fn pane_value_range(pine: &VisualOutput, visible: VisibleBars, padding: f64) -> (f64, f64) {
-    let mut values = series_values(pine, visible.in_pane());
-    values.extend(drawing_values(pine, visible.in_pane()));
+    let mut values = series_values(pine, visible);
+    values.extend(drawing_values(pine, visible));
     values.extend(pine.hlines.iter().map(|line| line.value));
     values.retain(|value| value.is_finite());
     let (Some(low), Some(high)) = (
@@ -863,8 +894,8 @@ fn series_values_in_pane(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> 
 mod tests {
     use super::*;
     use crate::pine::outputs::{
-        BoxOutput, CandleBar, CandleOutput, HorizontalLine, LabelOutput, LineOutput, MISSING_INDEX,
-        PlotOutput, PolylineOutput, PolylinePoint,
+        BoxOutput, CandleBar, CandleOutput, HorizontalLine, LabelOutput, MISSING_INDEX, PlotOutput,
+        PolylineOutput, PolylinePoint,
     };
 
     fn plot(values: Vec<Option<f64>>, style: PlotStyle) -> PlotOutput {
@@ -1584,12 +1615,112 @@ mod tests {
         );
         let with_future = VisibleBars {
             future: 8,
-            ..scrolled(3, 3)
+            ..newest(3)
         };
         assert_eq!(
             pane_value_range(&output, with_future, 0.0),
-            (5.0, 7.0),
-            "a pane has no slots past its newest bar"
+            (8.0, 1_000.0),
+            "empty slots add no series values"
+        );
+    }
+
+    fn output_with_line(x1: i64, y1: f64, x2: i64, y2: f64, extend: LineExtend) -> VisualOutput {
+        let mut output = visual(300);
+        output.lines.push(LineOutput {
+            extend,
+            ..line(x1, y1, x2, y2)
+        });
+        output
+    }
+
+    /// The prices a drawing contributes to the bars 60-99 of 300.
+    fn in_window_60_to_99(output: &VisualOutput) -> Vec<f64> {
+        let mut values = drawing_values(output, scrolled(40, 200));
+        values.sort_by(f64::total_cmp);
+        values
+    }
+
+    #[test]
+    fn a_line_extended_into_the_window_counts_where_it_crosses_it() {
+        let ahead = |extend| output_with_line(250, 10.0, 260, 20.0, extend);
+        assert_eq!(
+            in_window_60_to_99(&ahead(LineExtend::Left)),
+            [-180.0, -141.0],
+            "the prices at the window's edges, not the endpoints off screen"
+        );
+        assert_eq!(
+            in_window_60_to_99(&ahead(LineExtend::Both)),
+            [-180.0, -141.0]
+        );
+        assert!(
+            in_window_60_to_99(&ahead(LineExtend::None)).is_empty(),
+            "an unextended line anchored off screen is not on it"
+        );
+        assert!(
+            in_window_60_to_99(&ahead(LineExtend::Right)).is_empty(),
+            "extending away from the window does not reach it"
+        );
+        let behind = |extend| output_with_line(10, 5.0, 20, 15.0, extend);
+        assert_eq!(in_window_60_to_99(&behind(LineExtend::Right)), [55.0, 94.0]);
+        assert_eq!(in_window_60_to_99(&behind(LineExtend::Both)), [55.0, 94.0]);
+        assert!(in_window_60_to_99(&behind(LineExtend::Left)).is_empty());
+    }
+
+    #[test]
+    fn an_extended_line_that_ends_in_the_window_is_cut_at_its_end() {
+        let ends_inside = output_with_line(80, 10.0, 90, 20.0, LineExtend::Left);
+        assert_eq!(in_window_60_to_99(&ends_inside), [-10.0, 20.0]);
+    }
+
+    #[test]
+    fn a_vertical_line_never_extends() {
+        let vertical = output_with_line(250, 10.0, 250, 20.0, LineExtend::Both);
+        assert!(in_window_60_to_99(&vertical).is_empty());
+    }
+
+    #[test]
+    fn a_box_extended_into_the_window_counts() {
+        let boxed = |left, right, extend| {
+            let mut output = visual(300);
+            output.boxes.push(BoxOutput {
+                extend,
+                ..box_between(left, right, 30.0, 20.0)
+            });
+            output
+        };
+        assert_eq!(
+            in_window_60_to_99(&boxed(250, 260, LineExtend::Left)),
+            [20.0, 30.0]
+        );
+        assert_eq!(
+            in_window_60_to_99(&boxed(10, 20, LineExtend::Right)),
+            [20.0, 30.0]
+        );
+        assert!(in_window_60_to_99(&boxed(250, 260, LineExtend::None)).is_empty());
+        assert!(in_window_60_to_99(&boxed(250, 260, LineExtend::Right)).is_empty());
+    }
+
+    #[test]
+    fn a_pane_counts_a_label_in_the_empty_slots_it_is_drawn_in() {
+        let mut output = VisualOutput {
+            overlay: false,
+            ..visual(300)
+        };
+        output.labels.push(label_at(300, 99.0));
+        let margin = VisibleBars {
+            future: 6,
+            ..newest(40)
+        };
+        assert_eq!(
+            pane_value_range(&output, margin, 0.1),
+            (99.0 - 0.99, 99.0 + 0.99),
+            "the label sits in the margin, which the pane draws across"
+        );
+        assert_eq!(pane_value_range(&output, newest(40), 0.1), (0.0, 1.0));
+        assert_eq!(
+            pane_value_range(&output, scrolled(40, 20), 0.1),
+            (0.0, 1.0),
+            "scrolled back there is no margin on screen"
         );
     }
 

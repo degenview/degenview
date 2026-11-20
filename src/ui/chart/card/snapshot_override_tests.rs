@@ -37,6 +37,26 @@ if barstate.islast
     line.new(bar_index, close, bar_index + 500, close)
 ";
 
+/// A line drawn on the last bar, anchored 50 bars ahead, that `extend.left` carries back across
+/// every bar on screen. Its price on bar `x` is `close * 20 + (x - bar_index - 50) / 10`.
+fn extended_line_script(extend: &str) -> String {
+    format!(
+        "//@version=6
+indicator(\"Extended\", overlay = true)
+if barstate.islast
+    line.new(bar_index + 50, close * 20, bar_index + 60, close * 20 + 1, extend = extend.{extend})
+"
+    )
+}
+
+/// A pane with the close and a label two slots past the last bar, at a price far below it.
+const MARGIN_LABEL_PANE: &str = "//@version=6
+indicator(\"Margin label\")
+plot(close)
+if barstate.islast
+    label.new(bar_index + 2, 99.0, \"x\")
+";
+
 fn painted(harness: &Harness, input: &SnapshotInput) -> Vec<ClippedShape> {
     let rect = Rect::from_min_size(Pos2::ZERO, harness.card.snapshot_size());
     let ctx = egui::Context::default();
@@ -174,6 +194,59 @@ fn scripts_scrolled_back_fit_the_prices_on_screen_not_the_newest_bars() {
         None,
     ));
     assert!(geometry(&harness, &input).view.maximum > 1_000.0);
+}
+
+#[test]
+fn an_extended_line_crossing_the_screen_is_on_the_scrolled_back_axis() {
+    let maximum_scrolled_back = |extend: &str| {
+        let mut harness = Harness::new(ChartCanvas::default());
+        let id = harness
+            .card
+            .add_pine_instance(None, "Extended", &extended_line_script(extend));
+        wait_for_run(&mut harness, id);
+        settled(&mut harness);
+        let mut input = input(&harness, false);
+        input.frame.viewport = Some(scrolled_back());
+        geometry(&harness, &input).view.maximum
+    };
+    assert!(
+        maximum_scrolled_back("left") > 4_000.0,
+        "the line's price where it crosses the bars on screen fits the axis"
+    );
+    assert!(
+        maximum_scrolled_back("none") < 400.0,
+        "the same line without extend is far off screen"
+    );
+}
+
+#[test]
+fn a_pane_label_in_the_right_margin_is_on_the_panes_axis() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Margin label", MARGIN_LABEL_PANE);
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 40,
+            right_offset: 0.0,
+        },
+        None,
+    ));
+    let view = geometry(&harness, &input).view;
+    let axis: Vec<f64> = gather(&painted(&harness, &input))
+        .texts
+        .iter()
+        .filter(|(pos, ..)| pos.x > view.plot.right() && pos.y > view.plot.bottom())
+        .filter_map(|(_, text, _)| text.replace(',', "").parse().ok())
+        .collect();
+    let lowest = axis.iter().copied().fold(f64::MAX, f64::min);
+    assert!(
+        lowest < 120.0,
+        "the pane reaches the label at 99 (the close is above 200): {axis:?}"
+    );
 }
 
 #[test]
