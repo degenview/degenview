@@ -1135,6 +1135,8 @@ dependencies = [
 [[package]]
 name = "degenview-eframe"
 version = "0.36.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59c75f4655fbe53bbf18160e4a1ecf774ff0f39ebc955d2f5557aa6e0267d201"
 dependencies = [
  "ahash",
  "bytemuck",
