@@ -112,6 +112,23 @@ impl Session {
             let state = self.working.ta_states.entry(key).or_default();
             return Ok(ta::evaluate_macd(&source, fast, slow, signal, state));
         }
+        if matches!(name, "ta.stdev" | "ta.variance") {
+            let bound = self.bind_named(arguments, &["source", "length", "biased"], context)?;
+            let source = bound.get("source").cloned().unwrap_or(RuntimeValue::Na);
+            let length = bound
+                .get("length")
+                .and_then(RuntimeValue::int_value)
+                .unwrap_or(0);
+            let biased = bound
+                .get("biased")
+                .and_then(RuntimeValue::bool)
+                .unwrap_or(true);
+            let key = self.site_key(site, context);
+            let state = self.working.ta_states.entry(key).or_default();
+            return Ok(ta::evaluate_dispersion(
+                name, &source, length, biased, state,
+            ));
+        }
         let default_source = match name {
             "ta.highest" | "ta.highestbars" => Some("high"),
             "ta.lowest" | "ta.lowestbars" => Some("low"),

@@ -664,7 +664,8 @@ pub fn bollinger_width(
     };
     match (parts[0].number(), parts[1].number(), parts[2].number()) {
         (Some(basis), Some(upper), Some(lower)) if basis != 0.0 => {
-            out(Some((upper - lower) / basis))
+            // TradingView scales the width to percent, like the reference code printed for it.
+            out(Some((upper - lower) / basis * 100.0))
         }
         _ => RuntimeValue::Na,
     }
@@ -768,12 +769,17 @@ fn fold(name: &str, bar: &Kline, before: Option<&Kline>, prior: Option<f64>) -> 
     let span = bar.high - bar.low;
     let change = before.map(|b| bar.close - b.close);
     match name {
+        // `ta.cum(math.sign(ta.change(close)) * volume)`: `ta.change` is na on the first bar, so the
+        // sum starts on the second (`out` turns the NaN into na).
         "ta.obv" => {
-            let direction = change.map_or(0.0, |c| match c {
+            let Some(change) = change else {
+                return f64::NAN;
+            };
+            let direction = match change {
                 c if c > 0.0 => 1.0,
                 c if c < 0.0 => -1.0,
                 _ => 0.0,
-            });
+            };
             total + direction * bar.volume
         }
         "ta.accdist" => {
@@ -783,17 +789,19 @@ fn fold(name: &str, bar: &Kline, before: Option<&Kline>, prior: Option<f64>) -> 
                 total + (2.0 * bar.close - bar.low - bar.high) / span * bar.volume
             }
         }
+        // Not cumulative, whatever its name suggests (TradingView, probe P01): per bar,
+        // `(2 * close - high - low) / (high - low) * volume`, na on a bar without a range.
         "ta.iii" => {
-            let denominator = span * bar.volume;
-            if denominator == 0.0 {
-                total
+            if span == 0.0 {
+                f64::NAN
             } else {
-                total + (2.0 * bar.close - bar.high - bar.low) / denominator
+                (2.0 * bar.close - bar.high - bar.low) / span * bar.volume
             }
         }
         "ta.pvt" => match before {
+            None => f64::NAN,
             Some(b) if b.close != 0.0 => total + (bar.close - b.close) / b.close * bar.volume,
-            _ => total,
+            Some(_) => total,
         },
         "ta.nvi" | "ta.pvi" => {
             let level = prior.filter(|p| *p != 0.0).unwrap_or(1.0);
