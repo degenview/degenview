@@ -159,7 +159,10 @@ pub struct DegenViewApp {
     actions: Arc<Mutex<Vec<AppAction>>>,
     session: SessionState,
     /// The root window is a hidden 1×1 surface; it is asked to hide once, because every viewport
-    /// command asks egui for another frame.
+    /// command asks egui for another frame. Windows, macOS and X11 show it for eframe's first frame
+    /// and this hides it. Wayland cannot hide a window, so the root is built hidden and
+    /// `degenview-eframe` (eframe with a Wayland fix) never presents it there; it never maps, and its
+    /// passes never wait on frame callbacks.
     root_hidden: bool,
 }
 

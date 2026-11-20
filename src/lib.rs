@@ -70,7 +70,12 @@ pub fn run_gui_with(
             .with_transparent(ui::window::chrome::rounded_corners())
             .with_icon(icon)
             .with_inner_size([1.0, 1.0])
-            .with_position([-10_000.0, -10_000.0]),
+            .with_position([-10_000.0, -10_000.0])
+            // The root is only the coordinator. Wayland cannot hide a window, so `degenview-eframe`
+            // (eframe with a Wayland fix) never presents a viewport asked to be hidden: the root
+            // stays unmapped.
+            // Elsewhere eframe still shows it for its first frame, and `DegenViewApp::ui` hides it.
+            .with_visible(false),
         ..Default::default()
     };
 
