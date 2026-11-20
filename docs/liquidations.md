@@ -102,14 +102,15 @@ Read-only: nothing here places an order. Charts are spot, so these are spot book
 ### Layers
 
 One concern to a layer, and an exchange is a plug-in at each: adding OKX, or a perpetual market,
-means one new file in `model/depth/sync/`, one in `service/depth/`, and a line in each registry
-(`sync::for_exchange`, `venue::for_exchange`, `market_of`). Nothing shared is edited.
+means one new file in `model/depth/sync/`, one in `service/depth/`, and a line in the registry
+(`venue::for_exchange`) and in `market_of`. A venue supplies its own `BookSync`, so the protocol is
+stated once. Nothing shared is edited.
 
 | Layer | What it holds |
 | --- | --- |
-| `model/depth/` (pure) | `Price` (an exact `i64` of 1e-8, parsed from the exchange's decimal text, so no float keys), `Book`, `Tape` (the latest 300 trades; traded volume by price, the 2,000 prices nearest the market), `PullStack`, `group` (row sizes), `Ladder` and `View`, `Event`. `DepthRecord` is the single door: `apply(event, now)`, `link(up)`, `ladder(view, now)`, `revision()`. A `BookSync` per exchange protocol (`sync/binance.rs`, `sync/bybit.rs`) keeps the book right |
-| `service/depth/` | `DepthFeed` (one `Stream` thread per market) only routes: tick size, then the socket, then events into the record. What differs is behind the `DepthVenue` trait (`session`, `tick_size`, `snapshot`, `parse`) in `binance.rs` and `bybit.rs`; `DepthError` (`Http`, `Parse`, `UnknownSymbol`) is the look-ups' error; `levels.rs` is the book side shape both send |
-| `host/depth/` | `DepthHost::watch(ctx, market, view) -> Arc<Ladder>`: lifetimes and caching only, on `host::lease_map` |
+| `model/depth/` (pure) | `Price` (an exact `i64` of 1e-8, parsed from the exchange's decimal text, so no float keys), `Book`, `Tape` (the latest 300 trades; traded volume by price, the 2,000 prices nearest the market), `PullStack`, `group` (row sizes), `Ladder` and `View`, `Event`. `DepthRecord` is the single door and the only owner of the `Book`: `apply(event, now)`, `link(up)`, `needs_snapshot()`, `ladder(view, now)`, `revision()`. A `BookSync` per exchange protocol (`sync/binance.rs`, `sync/bybit.rs`) only judges each update (`Verdict`: replace, apply, stale, gap); the record acts on it |
+| `service/depth/` | `DepthFeed` (one `Stream` thread per market) only routes: tick size, then the socket, then events into the record. `new_record(market)` makes the record, with the venue's `BookSync`. What differs is behind the `DepthVenue` trait (`session`, `tick_size`, `book_sync`, `snapshot`, `parse`) in `binance.rs` and `bybit.rs`, picked by `venue::for_exchange`; `snapshot` is fetched only while the record `needs_snapshot()`, and a venue whose socket sends its own answers `DepthError::Unsupported` and is never asked; `DepthError` (`Http`, `Parse`, `UnknownSymbol`, `Unsupported`) is the look-ups' error; `levels.rs` is the book side shape both send |
+| `host/depth/` | `DepthHost::watch(ctx, market, view) -> Arc<Ladder>`: lifetimes and caching only, on `host::lease_map`; it knows no sync rules (the record comes from `new_record`) |
 | `ui/market_flow/book/` | Draws a `Ladder` (`ladder.rs`, `tape.rs`, `toolbar.rs`; the viewer's choices in `state.rs`). It never sees a `Book`, a socket or an exchange beyond its name |
 
 The viewer's choices (`BookViewState`: row size, scroll, big-trade threshold) are not data: the tab
@@ -129,6 +130,9 @@ symbol), Bybit `/v5/market/instruments-info?category=spot&symbol=` (`priceFilter
 list for an unknown one).
 
 ### Keeping the book right (`BookSync`)
+
+A `BookSync` keeps only its own state (update ids) and judges; `DepthRecord` places the levels, and
+feeds pull/stack from the levels the book says changed.
 
 - **Binance.** The socket is opened, then the snapshot fetched (the socket's frames wait in its
   buffer meanwhile), then frames are read. A diff with `u <=` the snapshot's id is dropped; the first

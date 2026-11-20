@@ -5,7 +5,9 @@
 use super::DepthError;
 use super::levels;
 use super::venue::DepthVenue;
-use crate::model::depth::{BookEvent, Delta, Event, Levels, Price, Snapshot, Trade};
+use crate::model::depth::{
+    BookEvent, BookSync, Delta, Event, Levels, Price, Snapshot, SnapshotAndDeltas, Trade,
+};
 use crate::model::taker_flow::Taker;
 use crate::service::net::http::{self, Retry};
 use crate::service::net::ws::{Keepalive, Session};
@@ -41,8 +43,12 @@ impl DepthVenue for Bybit {
         parse_tick_size(&body, symbol)
     }
 
-    fn snapshot(&self, _symbol: &str) -> Option<Result<Snapshot, DepthError>> {
-        None
+    fn book_sync(&self) -> Box<dyn BookSync> {
+        Box::new(SnapshotAndDeltas::default())
+    }
+
+    fn snapshot(&self, _symbol: &str) -> Result<Snapshot, DepthError> {
+        Err(DepthError::Unsupported)
     }
 
     fn parse(&self, text: &str) -> Vec<Event> {
@@ -167,7 +173,8 @@ mod tests {
 
     #[test]
     fn the_socket_sends_its_own_snapshot_so_none_is_fetched() {
-        assert!(Bybit.snapshot("BTCUSDT").is_none());
+        assert_eq!(Bybit.snapshot("BTCUSDT"), Err(DepthError::Unsupported));
+        assert!(!Bybit.book_sync().needs_snapshot());
     }
 
     #[test]

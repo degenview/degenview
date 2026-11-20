@@ -2,40 +2,42 @@
 //! restarts the book (its `u` is then 1); deltas in between. A snapshot replaces the book; a delta
 //! older than the last update seen is dropped. Bybit sends no gaps, only fresh snapshots.
 
-use super::{BookSync, SyncOutcome};
-use crate::model::depth::{Book, BookEvent};
+use super::{BookSync, Verdict};
+use crate::model::depth::BookEvent;
 
+/// Snapshots from the socket itself, then deltas.
 #[derive(Debug, Default)]
-pub(super) struct SnapshotAndDeltas {
+pub struct SnapshotAndDeltas {
     /// The update id the book is at, once a snapshot is in.
     last: Option<u64>,
 }
 
 impl BookSync for SnapshotAndDeltas {
-    fn apply(&mut self, book: &mut Book, event: BookEvent) -> SyncOutcome {
+    fn judge(&mut self, event: &BookEvent) -> Verdict {
         match event {
             BookEvent::Snapshot(snapshot) => {
-                book.replace(&snapshot.levels);
                 self.last = Some(snapshot.id);
-                SyncOutcome::Applied
+                Verdict::Replace
             }
             BookEvent::Delta(delta) => match self.last {
                 Some(last) if delta.last > last => {
-                    book.apply(&delta.levels);
                     self.last = Some(delta.last);
-                    SyncOutcome::Applied
+                    Verdict::Apply
                 }
-                _ => SyncOutcome::Stale,
+                _ => Verdict::Stale,
             },
         }
+    }
+
+    fn needs_snapshot(&self) -> bool {
+        false
     }
 
     fn is_synced(&self) -> bool {
         self.last.is_some()
     }
 
-    fn reset(&mut self, book: &mut Book) {
-        book.clear();
+    fn reset(&mut self) {
         self.last = None;
     }
 }

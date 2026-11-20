@@ -5,7 +5,9 @@
 use super::DepthError;
 use super::levels;
 use super::venue::DepthVenue;
-use crate::model::depth::{BookEvent, Delta, Event, Levels, Price, Snapshot, Trade};
+use crate::model::depth::{
+    BookEvent, BookSync, Delta, DiffStream, Event, Levels, Price, Snapshot, Trade,
+};
 use crate::model::taker_flow::Taker;
 use crate::service::net::http::{self, Retry};
 use crate::service::net::ws::{Keepalive, Session};
@@ -37,9 +39,13 @@ impl DepthVenue for Binance {
         parse_tick_size(&body)
     }
 
-    fn snapshot(&self, symbol: &str) -> Option<Result<Snapshot, DepthError>> {
+    fn book_sync(&self) -> Box<dyn BookSync> {
+        Box::new(DiffStream::default())
+    }
+
+    fn snapshot(&self, symbol: &str) -> Result<Snapshot, DepthError> {
         let url = format!("{REST}/depth?symbol={symbol}&limit={SNAPSHOT_LEVELS}");
-        Some(get(&url, symbol).and_then(|body| parse_snapshot(&body)))
+        get(&url, symbol).and_then(|body| parse_snapshot(&body))
     }
 
     fn parse(&self, text: &str) -> Vec<Event> {

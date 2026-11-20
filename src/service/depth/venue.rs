@@ -2,7 +2,7 @@
 //! `bybit.rs`); the feed holds a `dyn DepthVenue` and never knows which exchange it runs on.
 
 use super::{DepthError, binance, bybit};
-use crate::model::depth::{Event, Price, Snapshot};
+use crate::model::depth::{BookSync, Event, Price, Snapshot};
 use crate::model::exchange::Exchange;
 use crate::service::net::ws::Session;
 
@@ -14,9 +14,14 @@ pub trait DepthVenue: Send + Sync {
     /// The smallest step the market's price moves in.
     fn tick_size(&self, symbol: &str) -> Result<Price, DepthError>;
 
-    /// The whole book, fetched when the exchange's socket does not send it. `None` for an
-    /// exchange whose socket opens with a snapshot of its own.
-    fn snapshot(&self, symbol: &str) -> Option<Result<Snapshot, DepthError>>;
+    /// The rules that judge this exchange's book updates. Which book protocol an exchange speaks
+    /// is stated here and nowhere else.
+    fn book_sync(&self) -> Box<dyn BookSync>;
+
+    /// The whole book, fetched over REST. Called only while the venue's [`BookSync`] says it
+    /// `needs_snapshot`; a venue whose socket sends its own snapshots answers
+    /// [`DepthError::Unsupported`] and is never asked.
+    fn snapshot(&self, symbol: &str) -> Result<Snapshot, DepthError>;
 
     /// What one message of the socket says; nothing for a message that is not news (an
     /// acknowledgement, a heartbeat, another topic).

@@ -7,7 +7,7 @@ use crate::clock::now_ms;
 use crate::host::lease_map::{LeaseMap, Memo, Running};
 use crate::lock::lock;
 use crate::model::depth::{DepthMarket, DepthRecord, Ladder, View};
-use crate::service::depth::DepthFeed;
+use crate::service::depth::{DepthFeed, new_record};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -50,7 +50,7 @@ impl DepthHost {
         let entry = feeds.entry_for(
             market,
             now,
-            || DepthRecord::new(market.venue.exchange),
+            || new_record(market),
             |record, lease| {
                 let repaint = {
                     let ctx = ctx.clone();
@@ -81,8 +81,7 @@ fn ladder(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::depth::{BookEvent, Event, Levels, Link, Price, Snapshot};
-    use crate::model::exchange::Exchange;
+    use crate::model::depth::{BookEvent, Event, Levels, Link, Price, Snapshot, SnapshotAndDeltas};
 
     const NOW: i64 = 5_000_000_000;
 
@@ -91,7 +90,7 @@ mod tests {
     }
 
     fn live_record() -> Mutex<DepthRecord> {
-        let mut record = DepthRecord::new(Exchange::Bybit);
+        let mut record = DepthRecord::new(Box::new(SnapshotAndDeltas::default()));
         record.set_tick(price("0.01"));
         record.link(true);
         record.apply(

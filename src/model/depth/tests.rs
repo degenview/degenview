@@ -45,9 +45,13 @@ fn trade(at: &str, size: f64, taker: Taker, time_ms: i64) -> Event {
     })
 }
 
+fn binance() -> DepthRecord {
+    DepthRecord::new(Box::new(DiffStream::default()))
+}
+
 /// A live record of a Bybit book with a cent tick, bids 99.98 and 99.97, asks 100.01 and 100.03.
 fn live() -> DepthRecord {
-    let mut record = DepthRecord::new(Exchange::Bybit);
+    let mut record = DepthRecord::new(Box::new(SnapshotAndDeltas::default()));
     record.set_tick(price("0.01"));
     record.link(true);
     record.apply(
@@ -287,7 +291,7 @@ fn what_was_stacked_more_than_ten_seconds_ago_is_forgotten() {
 
 #[test]
 fn a_ladder_says_why_it_is_empty() {
-    let mut record = DepthRecord::new(Exchange::Binance);
+    let mut record = binance();
     assert_eq!(record.ladder(View::default(), NOW).link, Link::Connecting);
     record.set_tick(price("0.01"));
     record.link(true);
@@ -314,7 +318,7 @@ fn a_ladder_says_why_it_is_empty() {
 
 #[test]
 fn a_gap_in_a_binance_stream_empties_the_ladder_until_a_snapshot() {
-    let mut record = DepthRecord::new(Exchange::Binance);
+    let mut record = binance();
     record.set_tick(price("0.01"));
     record.link(true);
     record.apply(Event::Book(book_of(&[("99", 1.0)], &[("101", 1.0)])), NOW);
@@ -326,6 +330,131 @@ fn a_gap_in_a_binance_stream_empties_the_ladder_until_a_snapshot() {
     }));
     assert_eq!(record.apply(skipped, NOW), SyncOutcome::NeedsSnapshot);
     assert_eq!(record.ladder(View::default(), NOW).link, Link::Connecting);
+}
+
+#[test]
+fn a_binance_book_waits_for_its_snapshot_then_places_the_diffs_that_follow_it() {
+    let mut record = binance();
+    record.set_tick(price("0.01"));
+    record.link(true);
+    assert!(record.needs_snapshot());
+    let early = change(5, &[("99.99", 9.0)], &[]);
+    assert_eq!(record.apply(early, NOW), SyncOutcome::NeedsSnapshot);
+
+    let snapshot = Event::Book(book_of(
+        &[("99.99", 1.0), ("99.98", 2.0)],
+        &[("100.01", 1.5), ("100.03", 1.0)],
+    ));
+    assert_eq!(record.apply(snapshot, NOW), SyncOutcome::Applied);
+    assert!(!record.needs_snapshot());
+    // The snapshot is at id 1: a diff that ended there is old, and one that begins at 2 follows.
+    let old = Event::Book(BookEvent::Delta(Delta {
+        first: 0,
+        last: 1,
+        levels: Levels {
+            bids: side(&[("99.99", 7.0)]),
+            asks: Vec::new(),
+        },
+    }));
+    assert_eq!(record.apply(old, NOW), SyncOutcome::Stale);
+    let next = change(2, &[("99.99", 3.0)], &[("100.01", 0.0)]);
+    assert_eq!(record.apply(next, NOW), SyncOutcome::Applied);
+    let ladder = record.ladder(view("0.01"), NOW);
+    assert_eq!(row_at(&ladder, "99.99").bid, 3.0);
+    assert_eq!(
+        ladder.best_ask,
+        Some(price("100.03")),
+        "the offer was withdrawn"
+    );
+}
+
+#[test]
+fn a_gap_or_a_dropped_link_lets_the_book_and_its_pulls_go() {
+    let mut record = binance();
+    record.set_tick(price("0.01"));
+    record.link(true);
+    record.apply(Event::Book(book_of(&[("99", 1.0)], &[("101", 1.0)])), NOW);
+    record.apply(change(2, &[("99", 4.0)], &[]), NOW);
+    let skipped = change(9, &[("99", 6.0)], &[]);
+    assert_eq!(record.apply(skipped, NOW), SyncOutcome::NeedsSnapshot);
+    assert!(record.needs_snapshot());
+    // The snapshot that follows is not stacked on what was there before.
+    record.apply(Event::Book(book_of(&[("99", 1.0)], &[("101", 1.0)])), NOW);
+    let ladder = record.ladder(view("0.01"), NOW);
+    assert_eq!(row_at(&ladder, "99").bid, 1.0);
+    assert_eq!(row_at(&ladder, "99").pull_stack, 0.0);
+
+    record.link(false);
+    assert!(record.needs_snapshot());
+    record.link(true);
+    record.apply(Event::Book(book_of(&[("98", 1.0)], &[("102", 1.0)])), NOW);
+    let ladder = record.ladder(view("0.01"), NOW);
+    assert_eq!(
+        ladder.best_bid,
+        Some(price("98")),
+        "nothing of the old book"
+    );
+}
+
+#[test]
+fn a_bybit_book_never_asks_for_a_snapshot() {
+    let mut record = live();
+    assert!(!record.needs_snapshot());
+    record.link(false);
+    assert!(!record.needs_snapshot());
+}
+
+#[test]
+fn a_snapshot_replaces_the_book_and_forgets_what_was_stacked() {
+    let mut record = live();
+    record.apply(change(2, &[("99.98", 7.0)], &[]), NOW + 1_000);
+    record.apply(
+        Event::Book(book_of(&[("99.98", 1.0)], &[("100.01", 1.0)])),
+        NOW + 2_000,
+    );
+    let ladder = record.ladder(view("0.01"), NOW + 2_000);
+    assert_eq!(row_at(&ladder, "99.98").pull_stack, 0.0);
+    assert_eq!(row_at(&ladder, "99.97").bid, 0.0, "the old levels are gone");
+}
+
+#[test]
+fn the_book_reports_the_levels_an_update_changed() {
+    let mut book = Book::default();
+    let first = Levels {
+        bids: side(&[("99", 2.0)]),
+        asks: side(&[("101", 1.0)]),
+    };
+    assert_eq!(book.apply(&first).len(), 2);
+    let update = Levels {
+        bids: side(&[("99", 5.0), ("98", 1.0), ("97", 0.0)]),
+        asks: side(&[("101", 1.0), ("102", 0.0)]),
+    };
+    let changes = book.apply(&update);
+    let at = |side, text| {
+        changes
+            .iter()
+            .find(|c| c.side == side && c.price == price(text))
+    };
+    assert_eq!(
+        at(Side::Bid, "99").map(|c| (c.before, c.after)),
+        Some((2.0, 5.0))
+    );
+    assert_eq!(
+        at(Side::Bid, "98").map(|c| (c.before, c.after)),
+        Some((0.0, 1.0))
+    );
+    assert!(
+        at(Side::Bid, "97").is_none(),
+        "nothing there, nothing removed"
+    );
+    assert!(at(Side::Ask, "101").is_none(), "the same size is no change");
+    assert_eq!(changes.len(), 2);
+    let gone = book.apply(&Levels {
+        bids: side(&[("99", 0.0)]),
+        asks: Vec::new(),
+    });
+    assert_eq!(gone.len(), 1);
+    assert_eq!((gone[0].before, gone[0].after), (5.0, 0.0));
 }
 
 #[test]

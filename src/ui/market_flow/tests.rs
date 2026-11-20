@@ -1,7 +1,7 @@
 use super::*;
 use crate::model::depth::{
-    BookEvent, Delta, DepthRecord, Event, Ladder, Levels, Price, Snapshot as BookSnapshot,
-    Trade as DepthTrade, View,
+    BookEvent, Delta, DepthRecord, DiffStream, Event, Ladder, Levels, Price,
+    Snapshot as BookSnapshot, Trade as DepthTrade, View,
 };
 use crate::model::exchange::{Exchange, Venue};
 use crate::model::liquidation::Tape;
@@ -129,7 +129,7 @@ fn levels(rows: &[(Price, f64)]) -> Vec<(Price, f64)> {
 /// A BTC book with a cent tick, 1,500 levels a side with sizes that vary, 60 trades (a few big ones)
 /// and some size stacked and pulled in the last seconds.
 pub(in crate::ui::market_flow) fn live_book() -> DepthRecord {
-    let mut record = DepthRecord::new(Exchange::Binance);
+    let mut record = DepthRecord::new(Box::new(DiffStream::default()));
     record.set_tick(price("0.01"));
     record.link(true);
     let sized = |index: i64, seed: i64| 0.05 + ((index * 37 + seed * 11) % 23) as f64 * 0.31;

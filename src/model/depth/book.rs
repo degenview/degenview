@@ -36,6 +36,15 @@ pub struct Delta {
     pub levels: Levels,
 }
 
+/// A level whose resting size changed, as the book placed an update.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Change {
+    pub side: Side,
+    pub price: Price,
+    pub before: f64,
+    pub after: f64,
+}
+
 /// Both sides of the book. Prices are exact keys, so the best bid is the last of one map and the
 /// best ask the first of the other.
 #[derive(Clone, Debug, Default)]
@@ -53,17 +62,34 @@ impl Book {
     /// Replaces everything with `levels`.
     pub fn replace(&mut self, levels: &Levels) {
         self.clear();
-        self.apply(levels);
+        self.place(levels, |_| {});
     }
 
     /// Sets each level to its new size, removing those that reach zero, then lets go of the levels
-    /// beyond [`MAX_LEVELS`].
-    pub fn apply(&mut self, levels: &Levels) {
-        for &(price, size) in &levels.bids {
-            set(&mut self.bids, price, size);
-        }
-        for &(price, size) in &levels.asks {
-            set(&mut self.asks, price, size);
+    /// beyond [`MAX_LEVELS`]. Returns the levels whose size changed, in the order placed.
+    pub fn apply(&mut self, levels: &Levels) -> Vec<Change> {
+        let mut changes = Vec::new();
+        self.place(levels, |change| changes.push(change));
+        changes
+    }
+
+    /// Places `levels` and hands each level whose size changed to `changed`.
+    fn place(&mut self, levels: &Levels, mut changed: impl FnMut(Change)) {
+        for (side, map, rows) in [
+            (Side::Bid, &mut self.bids, &levels.bids),
+            (Side::Ask, &mut self.asks, &levels.asks),
+        ] {
+            for &(price, after) in rows {
+                let before = set(map, price, after);
+                if before != after {
+                    changed(Change {
+                        side,
+                        price,
+                        before,
+                        after,
+                    });
+                }
+            }
         }
         while self.bids.len() > MAX_LEVELS {
             self.bids.pop_first();
@@ -71,15 +97,6 @@ impl Book {
         while self.asks.len() > MAX_LEVELS {
             self.asks.pop_last();
         }
-    }
-
-    /// The size resting at `price` on `side`, zero when there is none.
-    pub fn size_at(&self, side: Side, price: Price) -> f64 {
-        let map = match side {
-            Side::Bid => &self.bids,
-            Side::Ask => &self.asks,
-        };
-        map.get(&price).copied().unwrap_or(0.0)
     }
 
     pub fn best_bid(&self) -> Option<Price> {
@@ -112,10 +129,12 @@ impl Book {
     }
 }
 
-fn set(side: &mut BTreeMap<Price, f64>, price: Price, size: f64) {
-    if size > 0.0 {
-        side.insert(price, size);
+/// Sets the level at `price` to `size` (none when it is zero); the size it had, zero if none.
+fn set(side: &mut BTreeMap<Price, f64>, price: Price, size: f64) -> f64 {
+    let before = if size > 0.0 {
+        side.insert(price, size)
     } else {
-        side.remove(&price);
-    }
+        side.remove(&price)
+    };
+    before.unwrap_or(0.0)
 }

@@ -5,10 +5,22 @@
 use super::group;
 use super::ladder::{Ladder, Link, View};
 use super::pull_stack::PullStack;
-use super::sync::{self, BookSync, SyncOutcome};
-use super::{Book, BookEvent, Event, Price, Side, Tape};
-use crate::model::exchange::Exchange;
+use super::sync::{BookSync, Verdict};
+use super::{Book, BookEvent, Delta, Event, Price, Side, Snapshot, Tape};
 use crate::model::taker_flow::Taker;
+
+/// What an update did to the record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SyncOutcome {
+    /// The record changed.
+    Applied,
+    /// The update was older than the book, or came before it could be used: ignored.
+    Stale,
+    /// The stream skipped something, or never started from a snapshot: the book has been emptied
+    /// and cannot be trusted again until a snapshot arrives (see
+    /// [`DepthRecord::needs_snapshot`]).
+    NeedsSnapshot,
+}
 
 pub struct DepthRecord {
     book: Book,
@@ -24,12 +36,8 @@ pub struct DepthRecord {
 }
 
 impl DepthRecord {
-    /// An empty record of a market on `exchange`.
-    pub fn new(exchange: Exchange) -> Self {
-        Self::following(sync::for_exchange(exchange))
-    }
-
-    fn following(sync: Box<dyn BookSync>) -> Self {
+    /// An empty record whose book `sync` judges the updates of.
+    pub fn new(sync: Box<dyn BookSync>) -> Self {
         Self {
             book: Book::default(),
             sync,
@@ -68,7 +76,8 @@ impl DepthRecord {
         self.connected = up;
         self.was_connected |= up;
         if !up {
-            self.sync.reset(&mut self.book);
+            self.sync.reset();
+            self.book.clear();
             self.pull_stack.clear();
         }
         self.revision += 1;
@@ -99,36 +108,41 @@ impl DepthRecord {
         outcome
     }
 
+    /// Whether the book must be started from a fetched snapshot, given to [`Self::apply`], before
+    /// the updates of the socket can be placed.
+    pub fn needs_snapshot(&self) -> bool {
+        self.sync.needs_snapshot()
+    }
+
     fn apply_book(&mut self, event: BookEvent, now_ms: i64) -> SyncOutcome {
-        let changes: Vec<(Side, Price, f64, f64)> = match &event {
-            BookEvent::Delta(delta) => {
-                let sized = |side, levels: &[(Price, f64)]| -> Vec<_> {
-                    levels
-                        .iter()
-                        .map(|&(price, size)| (side, price, self.book.size_at(side, price), size))
-                        .collect()
-                };
-                [
-                    sized(Side::Bid, &delta.levels.bids),
-                    sized(Side::Ask, &delta.levels.asks),
-                ]
-                .concat()
+        let verdict = self.sync.judge(&event);
+        let (BookEvent::Snapshot(Snapshot { levels, .. }) | BookEvent::Delta(Delta { levels, .. })) =
+            &event;
+        match verdict {
+            Verdict::Replace => {
+                self.book.replace(levels);
+                self.pull_stack.clear();
+                SyncOutcome::Applied
             }
-            BookEvent::Snapshot(_) => Vec::new(),
-        };
-        let snapshot = matches!(event, BookEvent::Snapshot(_));
-        let outcome = self.sync.apply(&mut self.book, event);
-        match outcome {
-            SyncOutcome::Applied if snapshot => self.pull_stack.clear(),
-            SyncOutcome::Applied => {
-                for (side, price, before, after) in changes {
-                    self.pull_stack.changed(side, price, before, after, now_ms);
+            Verdict::Apply => {
+                for change in self.book.apply(levels) {
+                    self.pull_stack.changed(
+                        change.side,
+                        change.price,
+                        change.before,
+                        change.after,
+                        now_ms,
+                    );
                 }
+                SyncOutcome::Applied
             }
-            SyncOutcome::NeedsSnapshot => self.pull_stack.clear(),
-            SyncOutcome::Stale => {}
+            Verdict::Stale => SyncOutcome::Stale,
+            Verdict::Gap => {
+                self.book.clear();
+                self.pull_stack.clear();
+                SyncOutcome::NeedsSnapshot
+            }
         }
-        outcome
     }
 
     /// The ladder for `view` as of `now_ms`. While the book is not there to show, the ladder

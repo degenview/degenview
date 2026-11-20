@@ -10,4 +10,6 @@ pub enum DepthError {
     Parse(&'static str),
     #[error("the exchange does not list {0}")]
     UnknownSymbol(String),
+    #[error("the exchange has no book snapshot to fetch")]
+    Unsupported,
 }

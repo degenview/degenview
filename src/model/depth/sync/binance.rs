@@ -2,8 +2,8 @@
 //! update ids `U..=u`. The first diff used must straddle the snapshot (`U <= id + 1 <= u`), and
 //! every later one must start where the last ended (`U == previous u + 1`).
 
-use super::{BookSync, SyncOutcome};
-use crate::model::depth::{Book, BookEvent};
+use super::{BookSync, Verdict};
+use crate::model::depth::BookEvent;
 
 #[derive(Debug, Default)]
 enum State {
@@ -16,18 +16,18 @@ enum State {
     Following(u64),
 }
 
+/// A snapshot fetched over REST, then diffs that must follow it without a gap.
 #[derive(Debug, Default)]
-pub(super) struct DiffStream {
+pub struct DiffStream {
     state: State,
 }
 
 impl BookSync for DiffStream {
-    fn apply(&mut self, book: &mut Book, event: BookEvent) -> SyncOutcome {
+    fn judge(&mut self, event: &BookEvent) -> Verdict {
         let delta = match event {
             BookEvent::Snapshot(snapshot) => {
-                book.replace(&snapshot.levels);
                 self.state = State::Snapshot(snapshot.id);
-                return SyncOutcome::Applied;
+                return Verdict::Replace;
             }
             BookEvent::Delta(delta) => delta,
         };
@@ -35,33 +35,34 @@ impl BookSync for DiffStream {
             State::Waiting => false,
             State::Snapshot(id) => {
                 if delta.last <= id {
-                    return SyncOutcome::Stale;
+                    return Verdict::Stale;
                 }
                 delta.first <= id + 1
             }
             State::Following(previous) => {
                 if delta.last <= previous {
-                    return SyncOutcome::Stale;
+                    return Verdict::Stale;
                 }
                 delta.first == previous + 1
             }
         };
         if !fits {
-            book.clear();
             self.state = State::Waiting;
-            return SyncOutcome::NeedsSnapshot;
+            return Verdict::Gap;
         }
-        book.apply(&delta.levels);
         self.state = State::Following(delta.last);
-        SyncOutcome::Applied
+        Verdict::Apply
+    }
+
+    fn needs_snapshot(&self) -> bool {
+        matches!(self.state, State::Waiting)
     }
 
     fn is_synced(&self) -> bool {
-        !matches!(self.state, State::Waiting)
+        !self.needs_snapshot()
     }
 
-    fn reset(&mut self, book: &mut Book) {
-        book.clear();
+    fn reset(&mut self) {
         self.state = State::Waiting;
     }
 }

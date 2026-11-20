@@ -22,7 +22,7 @@ fn sleep_unless_stopped(shutdown: &AtomicBool, span: Duration) -> bool {
 /// Calls `attempt` until it answers, waiting `every` between tries; `None` when `shutdown` came
 /// first. For the lookups a feed needs before it can start (a market list, a tick size), which
 /// fail when the network does.
-pub fn retry_until_shutdown<T>(
+pub(super) fn retry_until_shutdown<T>(
     shutdown: &AtomicBool,
     every: Duration,
     mut attempt: impl FnMut() -> Option<T>,
