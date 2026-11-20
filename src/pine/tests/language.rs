@@ -442,6 +442,14 @@ fn a_parameter_may_reuse_a_builtin_function_name_with_a_warning() {
 }
 
 #[test]
+fn ta_supertrend_must_be_declared_as_a_tuple() {
+    let scalar = diagnostic_codes("st = ta.supertrend(3, 10)\nplot(st)");
+    assert!(scalar.contains(&"PINE3069".to_owned()), "{scalar:?}");
+    let tuple = diagnostic_codes("[line, direction] = ta.supertrend(3, 10)\nplot(line)");
+    assert!(tuple.is_empty(), "{tuple:?}");
+}
+
+#[test]
 fn int_truncates_toward_zero() {
     let session = run(
         "up = int(2.9)\n\

@@ -77,3 +77,80 @@ plot(ta.ema(ta.ema(close, 12) - ta.ema(close, 26), 9))
     assert_same("line", &plotted[0], &plotted[1]);
     assert_same("signal", &plotted[2], &plotted[3]);
 }
+
+/// TradingView's printed reference for `ta.supertrend`, as a function the script calls.
+const SUPERTREND_REFERENCE: &str = "
+f_supertrend(float factor, simple int atrPeriod) =>
+    src = hl2
+    atr = ta.atr(atrPeriod)
+    upperBand = src + factor * atr
+    lowerBand = src - factor * atr
+    prevLowerBand = nz(lowerBand[1])
+    prevUpperBand = nz(upperBand[1])
+    lowerBand := lowerBand > prevLowerBand or close[1] < prevLowerBand ? lowerBand : prevLowerBand
+    upperBand := upperBand < prevUpperBand or close[1] > prevUpperBand ? upperBand : prevUpperBand
+    int direction = na
+    float superTrend = na
+    prevSuperTrend = superTrend[1]
+    if na(atr[1])
+        direction := 1
+    else if prevSuperTrend == prevUpperBand
+        direction := close > upperBand ? -1 : 1
+    else
+        direction := close < lowerBand ? 1 : -1
+    superTrend := direction == -1 ? lowerBand : upperBand
+    [superTrend, direction]
+";
+
+#[test]
+fn supertrend_equals_the_reference_code_from_the_first_bar() {
+    let source = format!(
+        "//@version=6
+indicator(\"Supertrend\", overlay = true)
+{SUPERTREND_REFERENCE}
+[line, direction] = ta.supertrend(3, 10)
+[expected, expectedDirection] = f_supertrend(3, 10)
+plot(line)
+plot(expected)
+plot(direction)
+plot(expectedDirection)
+"
+    );
+    let plotted = plots(&source, 2_000);
+    assert_same("line", &plotted[0], &plotted[1]);
+    assert_same("direction", &plotted[2], &plotted[3]);
+    assert_eq!(
+        plotted[0][0],
+        Some(0.0),
+        "the first bar is 0 on TradingView"
+    );
+    assert!(plotted[0][1].is_none());
+    assert_eq!(first_value(&plotted[0][1..]), Some(8), "real from bar 9");
+}
+
+#[test]
+fn supertrend_works_inside_a_request() {
+    let source = format!(
+        "//@version=6
+indicator(\"Supertrend\", overlay = true)
+{SUPERTREND_REFERENCE}
+[line, direction] = request.security(syminfo.tickerid, \"5\", ta.supertrend(3, 10))
+[expected, expectedDirection] = request.security(syminfo.tickerid, \"5\", f_supertrend(3, 10))
+plot(line)
+plot(expected)
+plot(direction)
+plot(expectedDirection)
+"
+    );
+    let data = bars(1_500, 60_000);
+    let session = run_script(&source, &data, true, |_| {});
+    let plotted: Vec<Vec<Option<f64>>> = session
+        .output()
+        .plots
+        .into_iter()
+        .map(|plot| plot.values)
+        .collect();
+    assert_same("line", &plotted[0], &plotted[1]);
+    assert_same("direction", &plotted[2], &plotted[3]);
+    assert!(plotted[0].iter().flatten().count() > 100);
+}
