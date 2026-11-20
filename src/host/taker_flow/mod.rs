@@ -6,9 +6,9 @@
 //! looking at two assets do not disturb each other, and a socket of one asset that is slow to close
 //! can never write into the record of another.
 
+use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::taker_flow::{Flow, Snapshot};
-use crate::service::now_ms;
 use crate::service::taker_flow::{Lease, TakerFlowFeed};
 use eframe::egui;
 use std::collections::HashMap;

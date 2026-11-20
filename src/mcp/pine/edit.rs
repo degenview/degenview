@@ -138,7 +138,7 @@ pub fn update_draft(
         .save_draft(&ScriptDraft {
             script_id: script.id.clone(),
             source: source.to_owned(),
-            modified_at_ms: crate::model::pine::script::now_ms(),
+            modified_at_ms: crate::clock::now_ms(),
             based_on_revision_id: script.latest_revision_id.clone(),
         })
         .map_err(store_error)?;

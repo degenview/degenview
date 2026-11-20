@@ -5,8 +5,9 @@
 mod bar;
 mod import;
 
+use crate::clock::now_ms;
 use crate::host::portfolio::import_flow::{self, PortfolioImportFlow};
-use crate::host::portfolio::{PortfolioHost, PortfolioHostError, local_offset, now_ms};
+use crate::host::portfolio::{PortfolioHost, PortfolioHostError, local_offset};
 use crate::model::portfolio;
 use crate::model::portfolio::accounting::{holdings_and_closed, net_contributions};
 use crate::model::portfolio::format::{PORTFOLIO_CURRENCIES, PortfolioValueFormatter};

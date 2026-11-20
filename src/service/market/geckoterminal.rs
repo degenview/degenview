@@ -56,7 +56,7 @@ pub fn fetch_klines(
     if raw.is_empty() {
         return Err(ProviderError::other("No chart data for this pool"));
     }
-    let mut candles = shape(raw, &window, crate::service::now_ms());
+    let mut candles = shape(raw, &window, crate::clock::now_ms());
     let skip = candles.len().saturating_sub(limit as usize);
     candles.drain(..skip);
     Ok(candles)

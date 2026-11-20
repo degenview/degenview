@@ -497,7 +497,7 @@ impl Chart {
                         .set_series(SeriesLine::build(&self.pm_series, fetched.series));
                 }
                 self.error = None;
-                self.last_data_ms = Some(crate::model::watchlist::now_ms());
+                self.last_data_ms = Some(crate::clock::now_ms());
             }
             Err(error) => self.error = Some(error),
         }

@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod alloc_count;
 mod app;
+mod build_info;
+mod clock;
 mod crash_report;
 mod format;
 mod host;
@@ -10,6 +12,7 @@ mod lock;
 mod mcp;
 mod model;
 mod native_bridge;
+mod paths;
 mod pine;
 mod pine_studio;
 mod platform;

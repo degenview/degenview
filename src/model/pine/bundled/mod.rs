@@ -252,7 +252,7 @@ mod tests {
     use crate::pine::compiler;
     use crate::pine::compiler::program::SymbolInfo;
     use crate::pine::syntax::token::{DiagnosticSeverity, Limits};
-    use crate::pine_studio::library::registry::LibraryRegistry;
+    use crate::store::scripts::registry::LibraryRegistry;
     use std::collections::HashSet;
 
     fn bars(count: usize) -> Vec<Kline> {

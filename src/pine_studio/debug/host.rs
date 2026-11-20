@@ -14,7 +14,7 @@ use crate::pine::debug::{DebugCommand, SourceMap};
 use crate::pine::syntax::token::Limits;
 use crate::pine_studio::PineStudio;
 use crate::pine_studio::commands::Cmd;
-use crate::pine_studio::library::registry::LibraryRegistry;
+use crate::store::scripts::registry::LibraryRegistry;
 use crate::ui::shortcut;
 use crate::ui::theme;
 
@@ -135,7 +135,7 @@ impl PineStudio {
         let source = open.editor.source.clone();
         let Some(feed) = self
             .preview
-            .debug_feed(crate::model::pine::script::now_ms(), theme::is_light())
+            .debug_feed(crate::clock::now_ms(), theme::is_light())
         else {
             self.debug.notice = Some(Notice {
                 text: "The preview chart has no bars yet. Wait for it to load.".to_owned(),

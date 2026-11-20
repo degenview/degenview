@@ -2,7 +2,7 @@
 //! the entitlement raises an Objective-C exception that Swift cannot catch, so the answer comes
 //! from the signature first and CloudKit is never touched when it is "no".
 
-use crate::sync::engine::account::CONTAINER;
+use crate::build_info::ICLOUD_CONTAINER;
 
 /// What a signed entitlement holds. Only the macOS reader constructs `Text` and `List`.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -34,7 +34,7 @@ pub fn icloud_environment(
         Some(EntitlementValue::Text(text)) => text == wanted,
         None => false,
     };
-    if !has(SERVICES, "CloudKit") || !has(CONTAINERS, CONTAINER) {
+    if !has(SERVICES, "CloudKit") || !has(CONTAINERS, ICLOUD_CONTAINER) {
         return Err(not_signed());
     }
     let environment = match read(ENVIRONMENT) {
@@ -209,7 +209,10 @@ mod tests {
     fn signed(env: Option<&str>) -> HashMap<&'static str, EntitlementValue> {
         let mut map = HashMap::new();
         map.insert(SERVICES, EntitlementValue::List(vec!["CloudKit".into()]));
-        map.insert(CONTAINERS, EntitlementValue::List(vec![CONTAINER.into()]));
+        map.insert(
+            CONTAINERS,
+            EntitlementValue::List(vec![ICLOUD_CONTAINER.into()]),
+        );
         if let Some(env) = env {
             map.insert(ENVIRONMENT, EntitlementValue::Text(env.into()));
         }

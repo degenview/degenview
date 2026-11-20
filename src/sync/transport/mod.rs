@@ -31,6 +31,14 @@ pub enum ErrorKind {
     Unknown,
 }
 
+/// Whether a cloud error's message is CloudKit refusing a record type that has not been deployed
+/// from the Development environment to Production, which a release build meets before the schema
+/// is deployed. CloudKit reports it with no code of its own, so this boundary reads its words once
+/// and the rest of the app asks here.
+pub fn schema_not_deployed(message: &str) -> bool {
+    message.contains("in production schema")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccountStatus {
     Available { user_hash: String },
@@ -213,4 +221,17 @@ pub trait TransportFactory: Send + Sync {
     /// `Production` or `Development`, or why iCloud cannot work in this build as signed.
     fn environment(&self) -> Result<String, String>;
     fn create(&self, events: EventSink) -> Box<dyn SyncTransport + Send>;
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_production_schema_error_is_recognised() {
+        assert!(super::schema_not_deployed(
+            "Error saving record <CKRecordID: 0x1; recordName=watchlist.1> to server: Cannot create new type DegenViewSyncRecord in production schema"
+        ));
+        assert!(!super::schema_not_deployed(
+            "The network connection was lost"
+        ));
+    }
 }

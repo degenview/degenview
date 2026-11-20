@@ -8,6 +8,7 @@
 pub mod card;
 pub mod import_flow;
 
+use crate::clock::now_ms;
 use crate::model::portfolio::history::{rebuild_start, transactions_fingerprint};
 use crate::model::portfolio::ledger::PortfolioLedger;
 use crate::model::portfolio::{
@@ -451,13 +452,6 @@ fn native_currency(
 /// The viewer's UTC offset now, for showing and typing dates in local time.
 pub(crate) fn local_offset() -> i64 {
     crate::service::system::timezone::local_utc_offset_secs(now_ms())
-}
-
-pub(crate) fn now_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis() as i64)
 }
 
 #[cfg(test)]

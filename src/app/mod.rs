@@ -18,6 +18,7 @@ use crate::app::tabs::TabContent;
 use crate::app::tabs::TabSlot;
 use crate::app::tabs::TabState;
 use crate::app::window::settings_viewport_id;
+use crate::clock::now_ms;
 use crate::host::alert::AlertHost;
 use crate::host::editor_theme::EditorThemeHost;
 use crate::host::paper::PaperHost;
@@ -52,13 +53,6 @@ fn open_system_settings(pane: &str) {
     let _ = std::process::Command::new("/usr/bin/open")
         .arg(format!("x-apple.systempreferences:{pane}"))
         .spawn();
-}
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or(0)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -274,7 +268,7 @@ impl DegenViewApp {
         }));
         let sync = {
             let ctx = creation.egui_ctx.clone();
-            let backups = crate::store::data_dir()
+            let backups = crate::paths::data_dir()
                 .map(|dir| dir.join("SyncBackups"))
                 .unwrap_or_else(|| std::env::temp_dir().join("DegenViewSyncBackups"));
             crate::host::sync::SyncHost::new(

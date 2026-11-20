@@ -15,6 +15,7 @@
 
 use super::core::{RemoteBatch, RemoteRecord};
 use super::merge::{Outcome, Side, Stamp, conflict_copy_name, merge};
+use crate::model::encoding::sha256_hex;
 use crate::store::Store;
 use crate::store::sync::{
     ConflictRecord, EntityLink, EntityMeta, InboxRecord, OutboxOp, row_decodes,
@@ -25,7 +26,7 @@ use crate::sync::record::project::{
     canonical_json, project_row_in, project_setting, project_transaction,
 };
 use crate::sync::record::scripts::ScriptSink;
-use crate::sync::record::{FAVORITES_ID, RecordName, sha256_hex};
+use crate::sync::record::{FAVORITES_ID, RecordName};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 

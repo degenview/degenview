@@ -2,13 +2,13 @@
 //! (in-memory database) that the stub app serves.
 
 use super::{Harness, call, error_code, rpc, tool_names};
+use crate::clock::now_ms;
 use crate::model::DataSource;
 use crate::model::mcp::Permission;
 use crate::model::paper::{
     PaperAccountSettings, PaperCurrency, PaperInstrument, PaperOrderRequest, PaperOrderSide,
     PaperOrderType, PaperQuote, PaperTimeInForce,
 };
-use crate::model::watchlist::now_ms;
 use serde_json::{Value, json};
 
 const PAPER: &[Permission] = &[Permission::PaperRead];

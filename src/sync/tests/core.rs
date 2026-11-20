@@ -1,12 +1,13 @@
 //! Core behavior against the in-memory cloud: upload, acknowledgement, retry, conflicts, account
 //! gating and the status invariant. Each `Mac` is a real in-memory store plus a real `SyncCore`.
 
+use crate::model::encoding::sha256_hex;
 use crate::store::sync::{OutboxOp, OutboxState};
 use crate::store::{Document, SharedStore, Store};
 use crate::sync::engine::core::{Effect, PauseReason, Phase, RemoteBatch, SyncCore};
+use crate::sync::record::SCHEMA_VERSION;
 use crate::sync::record::policy::EntityKind;
 use crate::sync::record::project::project_row;
-use crate::sync::record::{SCHEMA_VERSION, sha256_hex};
 use crate::sync::transport::mock::{Fault, MockCloud, MockTransport};
 use crate::sync::transport::{
     ErrorKind, RawRecord, SentSaved, TransportCommand, TransportEvent, ZoneEvent,
@@ -302,7 +303,7 @@ impl Mac {
     /// Re-reads the script library and queues what changed, as the app does on a timer.
     pub(in crate::sync) fn scan_scripts(&mut self) {
         let store = self.store.lock().unwrap();
-        crate::sync::record::scripts::scan_scripts(&store, &mut self.library, &self.script_cache)
+        crate::sync::engine::scripts::scan_scripts(&store, &mut self.library, &self.script_cache)
             .unwrap();
     }
 

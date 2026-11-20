@@ -7,7 +7,7 @@
 //! followed (a 3xx is a failed delivery), so a validated URL cannot be redirected
 //! somewhere the policy never saw.
 
-use crate::model::watchlist::now_ms;
+use crate::clock::now_ms;
 use crate::model::webhook;
 use crate::model::webhook::policy::WebhookPayload;
 use crate::model::webhook::{

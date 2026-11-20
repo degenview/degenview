@@ -259,7 +259,7 @@ mod tests {
                 bid: Some(99.5),
                 ask: Some(100.5),
                 last: Some(100.0),
-                timestamp: crate::model::watchlist::now_ms(),
+                timestamp: crate::clock::now_ms(),
                 is_market_open: true,
             })
             .unwrap();

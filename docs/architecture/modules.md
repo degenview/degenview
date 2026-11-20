@@ -14,7 +14,7 @@ inventory.
 | `native_bridge.rs` | AppKit menus, window behavior, cursor, Keychain/accessibility boundaries |
 | `host/update/mod.rs` | Update checks, install progress, and restart state |
 | `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
-| `format.rs`, `platform.rs`, `lock.rs` | Leaf helpers every layer imports: number/price text, per-platform wording, and locks that survive a poisoning panic |
+| `format.rs`, `platform.rs`, `lock.rs`, `paths.rs`, `build_info.rs`, `clock.rs` | Leaf helpers every layer imports: number/price/date text and plurals, per-platform wording, locks that survive a poisoning panic, the data and cache folders, the build's version and commit, and the wall clock in milliseconds (`clock::now_ms`, the one copy). `layout_tests.rs` keeps them free of the app's other modules |
 
 Feature hosts in `host/` (one directory per domain, see `host/` layout below) bridge pure engines,
 persistence, workers, and UI. `host/alert/runtime.rs` is the alert loop shared by the GUI fallback and
@@ -66,10 +66,10 @@ part. The children are grouped by domain, like `model/` and `ui/`:
 | --- | --- |
 | `model/` | Alerts, charts/canvas/types, drawings, indicators, instruments, layouts, paper/portfolio engines, replay, tabs, watchlists, and webhooks |
 | `pine/` | Lexer → parser → compiler → session, builtins, strategies, alerts, drawings, libraries, `request.*`, and corpus tests |
-| `pine_studio/` | The script library (registry, names, script picker), editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
+| `pine_studio/` | The script library (script picker, demos), editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
 | `host/` | The stateful seams: one host per feature, bridging engines, stores, workers, and views (one directory per domain, see below) |
 | `service/` | Market providers, HTTP/WebSocket work, updater, caches, images/icons, FX, notifications, files, Keychain, quotes, webhooks, and login-item registration (see the layout below) |
-| `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, webhook persistence, and the file-backed script library (`scripts/`) |
+| `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, webhook persistence, and the file-backed script library (`scripts/`, with `registry`, the libraries the compiler resolves) |
 | `ui/` | egui screens, one directory per domain (see `ui/` layout below), plus the shared `kit/`, `theme/` and `icons` |
 | `mcp/` | Loopback HTTP transport, auth, shared permission state, app bridge, tools, and wire types |
 | `sync/` | iCloud Sync: policy (what syncs), records, merge, outbox, id tagging and the CloudKit transport (bridge in `native/swift`); no UI |
@@ -150,8 +150,8 @@ beside them, not SQLite) and `sync/`. `sync/` keeps one file per table or concer
 
 | Directory | Holds |
 | --- | --- |
-| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge/`, `outbox`, `account`, and `apply/` (the batch and dispatch in `mod.rs`, one file per record kind: `simple`, `asset`, `script`, `alert`, `layout`, `drawing`, `paper`, `portfolio`; inbox retries in `retry`) |
-| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project/`, `validate/`, `paper`, `scripts` |
+| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge/`, `outbox`, `account`, `scripts` (the library scan that queues script files), and `apply/` (the batch and dispatch in `mod.rs`, one file per record kind: `simple`, `asset`, `script`, `alert`, `layout`, `drawing`, `paper`, `portfolio`; inbox retries in `retry`) |
+| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project/`, `validate/`, `paper`, `scripts` (the script sink). The store builds on it, so it imports nothing from `store/` (`layout_tests.rs`) |
 | `transport/` | The CloudKit boundary: `mod.rs` the trait, its factory, the event sink and events, `native/` (the Swift bridge), `mock` (tests) |
 | `tests/` | End-to-end sync tests, one file per concern |
 
@@ -227,7 +227,7 @@ beside the code they exercise.
 | --- | --- |
 | `ai/`, `debug/`, `profiler/` | The assistant, the debugger and the profiler: their state, host, panel, gallery pictures and `studio_tests` |
 | `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites`; the view itself is `mod.rs` (`show`, the find bar, undoable edits) with `state`, `text_view`, `completion_view`, `signature_view`, `gutter/` (`breakpoints`, `changes`, `profile`), `indent_guides`, `assists`, `navigation` (go to definition, the right-click menu, rename), `edit_actions` (`EditAction`: what the Edit menus ask for, and running it), `menu_state` (what the Edit menu may do) and `status` |
-| `library/` | The script library around its file store (`store::scripts`): `registry`, `picker`, `script_actions` (the rows of a script's menu, shared by the picker and the File menu), `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
+| `library/` | The script library around its file store (`store::scripts`): `picker`, `script_actions` (the rows of a script's menu, shared by the picker and the File menu), `prefs`, `demo` and `demos/`, `unsaved`, `external/` |
 | `drawer/` | The drawer under the preview: `problems/`, `logs/`, the intro, `bottom_bar`, `tab_chrome` |
 | root | `mod.rs` (the manager) with `commands` (`Cmd` and running it), `bar` (the top bar), `rail` (the editor's right rail), `menu_bar/` (File, Edit and View over the editor: `entry`, `file`, `edit`, `view`), `open_script`, `migrate_swift`; `preview/` (`state`, `source`, `fetch`, `chart`, `market_picker`), `inputs`, `workspace`, `sheets`, `theme_preview/` |
 

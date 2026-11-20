@@ -2,6 +2,7 @@
 //! A pure view over a `CsvPreview`; the host runs the import and reports a failure back through
 //! `ImportPreviewState::failed`.
 
+use crate::format::plural;
 use crate::model::portfolio::accounting::unique_assets;
 use crate::model::portfolio::csv::CsvPreview;
 use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};
@@ -76,10 +77,6 @@ pub fn subtitle(preview: &CsvPreview) -> &'static str {
     } else {
         "Review what will be added to your portfolio."
     }
-}
-
-pub fn plural(count: usize, singular: &str, plural: &str) -> String {
-    format!("{count} {}", if count == 1 { singular } else { plural })
 }
 
 pub fn error_title(count: usize) -> String {

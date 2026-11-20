@@ -118,6 +118,8 @@ pub(crate) fn iso8601(epoch_ms: i64) -> String {
     )
 }
 
+/// The proleptic Gregorian `(year, month, day)` of a day count since 1970-01-01 (Howard Hinnant's
+/// `civil_from_days`).
 pub(crate) fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
     let days = days_since_epoch + 719_468;
     let era = days.div_euclid(146_097);
@@ -135,7 +137,6 @@ pub(crate) fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
     (year_of_era + era * 400 + i64::from(month <= 2), month, day)
 }
 
-/// Inverse of `civil_from_days`, exposed for calendar-bucket folding in services.
 /// ISO-8601 UTC instant (`2024-01-15T15:00:00Z`, optional fractional seconds) in epoch ms.
 pub(crate) fn parse_iso8601(text: &str) -> Option<i64> {
     let text = text.trim().strip_suffix('Z').unwrap_or(text.trim());
@@ -165,6 +166,7 @@ pub(crate) fn parse_iso8601(text: &str) -> Option<i64> {
     Some(((days * 86_400 + hour * 3_600 + minute * 60 + second) * 1_000) + millis)
 }
 
+/// Inverse of [`civil_from_days`]: the days since 1970-01-01 of a proleptic Gregorian date.
 pub(crate) fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
@@ -175,8 +177,24 @@ pub(crate) fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + day_of_era - 719_468
 }
 
+/// `count` and the noun that agrees with it: "1 alert", "3 alerts".
+pub(crate) fn plural<N>(count: N, one: &str, many: &str) -> String
+where
+    N: std::fmt::Display + PartialEq + From<u8>,
+{
+    let noun = if count == N::from(1) { one } else { many };
+    format!("{count} {noun}")
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn plural_agrees_with_one_and_with_every_other_count() {
+        assert_eq!(super::plural(1usize, "alert", "alerts"), "1 alert");
+        assert_eq!(super::plural(0usize, "alert", "alerts"), "0 alerts");
+        assert_eq!(super::plural(3u32, "call", "calls"), "3 calls");
+    }
+
     #[test]
     fn timestamps_parse_back_to_what_they_were_written_from() {
         for ms in [

@@ -12,68 +12,10 @@
 //! nothing until one is looked at.
 
 use super::Store;
-use crate::model::encoding::{base64_decode, base64_encode};
-use crate::service::annotation::ingest::{self, Ingested, MAX_STORED_BYTES};
+use crate::model::annotation::asset::StoredAsset;
 use rusqlite::OptionalExtension;
-use serde::{Deserialize, Serialize};
 
 pub const TABLE: &str = "drawing_asset";
-
-/// The most side a stored picture may have: what ingest makes is far below it, and a record from
-/// another Mac is held to it too.
-pub const MAX_STORED_SIDE: u32 = 4_096;
-
-/// A picture as it is stored and as it syncs.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct StoredAsset {
-    /// The hash of the picture's bytes, in lower-case hex.
-    pub id: String,
-    pub mime: String,
-    pub width: u32,
-    pub height: u32,
-    /// The bytes, base64.
-    pub data: String,
-}
-
-impl StoredAsset {
-    pub fn from_ingested(picture: &Ingested) -> Self {
-        Self {
-            id: picture.id.clone(),
-            mime: picture.mime.to_owned(),
-            width: picture.width,
-            height: picture.height,
-            data: base64_encode(&picture.bytes),
-        }
-    }
-
-    /// The picture's bytes, only when they are what this asset says: a PNG or a JPEG of the type
-    /// and size it declares, within the limits, and hashing to its own name. Anything else
-    /// (damage, a record from a stranger) gives `None`.
-    pub fn verified_bytes(&self) -> Option<Vec<u8>> {
-        if self.id.len() != 64
-            || !self
-                .id
-                .bytes()
-                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-        {
-            return None;
-        }
-        if self.data.len() > MAX_STORED_BYTES.div_ceil(3) * 4 + 8 {
-            return None;
-        }
-        let bytes = base64_decode(&self.data)?;
-        if bytes.is_empty() || bytes.len() > MAX_STORED_BYTES {
-            return None;
-        }
-        if ingest::hash(&bytes) != self.id {
-            return None;
-        }
-        let (mime, width, height) = ingest::describe(&bytes)?;
-        let sane =
-            (1..=MAX_STORED_SIDE).contains(&width) && (1..=MAX_STORED_SIDE).contains(&height);
-        (mime == self.mime && width == self.width && height == self.height && sane).then_some(bytes)
-    }
-}
 
 impl Store {
     /// Keeps a picture. A picture already kept is left as it is. With sync on, a new one is
@@ -153,6 +95,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::annotation::ingest::{self, Ingested};
 
     fn picture(seed: u8) -> Ingested {
         let image = image::RgbaImage::from_fn(30, 20, |x, y| {
@@ -173,7 +116,7 @@ mod tests {
     #[test]
     fn a_picture_is_kept_once_and_read_back_whole() {
         let store = Store::open_in_memory().unwrap();
-        let kept = StoredAsset::from_ingested(&picture(1));
+        let kept = picture(1).stored();
         assert!(store.put_asset(&kept).unwrap());
         assert!(
             !store.put_asset(&kept).unwrap(),
@@ -184,48 +127,15 @@ mod tests {
         assert_eq!(store.asset_ids().unwrap(), std::slice::from_ref(&kept.id));
         assert!(store.asset("0".repeat(64).as_str()).unwrap().is_none());
         assert!(!store.has_asset("nothing").unwrap());
-        assert!(kept.verified_bytes().is_some());
+        assert!(ingest::verified_bytes(&kept).is_some());
     }
 
     #[test]
     fn the_same_bytes_from_the_cloud_do_not_replace_what_is_kept() {
         let store = Store::open_in_memory().unwrap();
-        let kept = StoredAsset::from_ingested(&picture(2));
+        let kept = picture(2).stored();
         assert!(store.put_asset_from_cloud(&kept).unwrap());
         assert!(!store.put_asset_from_cloud(&kept).unwrap());
         assert_eq!(store.asset_ids().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn a_stored_asset_is_trusted_only_when_it_is_what_it_says() {
-        let good = StoredAsset::from_ingested(&picture(3));
-        assert!(good.verified_bytes().is_some());
-        let mut bad = good.clone();
-        bad.id = "a".repeat(64);
-        assert!(
-            bad.verified_bytes().is_none(),
-            "bytes that hash to another name"
-        );
-        let mut bad = good.clone();
-        bad.id = good.id.to_uppercase();
-        assert!(bad.verified_bytes().is_none(), "ids are lower case");
-        let mut bad = good.clone();
-        bad.mime = "image/png".into();
-        assert!(bad.verified_bytes().is_none(), "the wrong type");
-        let mut bad = good.clone();
-        bad.width += 1;
-        assert!(bad.verified_bytes().is_none(), "the wrong size");
-        let mut bad = good.clone();
-        bad.data = "AAAA".into();
-        assert!(bad.verified_bytes().is_none(), "not a picture");
-        let mut bad = good.clone();
-        bad.data = "!!!!".into();
-        assert!(bad.verified_bytes().is_none(), "not base64");
-        let mut bad = good.clone();
-        bad.id = "short".into();
-        assert!(bad.verified_bytes().is_none());
-        let mut bad = good.clone();
-        bad.data = "A".repeat(2_000_000);
-        assert!(bad.verified_bytes().is_none(), "past the size limit");
     }
 }

@@ -99,7 +99,7 @@ impl MarketSource for Polymarket {
             .collect();
         points.sort_by_key(|(t, _)| *t);
         // A window can reach back past the line (`max` is the whole history).
-        let since = crate::service::now_ms() - window.span_ms;
+        let since = crate::clock::now_ms() - window.span_ms;
         points.retain(|(t, _)| *t >= since);
 
         let candles: Vec<Kline> = points

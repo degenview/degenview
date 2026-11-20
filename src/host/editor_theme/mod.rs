@@ -13,13 +13,13 @@
 //! this Mac, the editor keeps the system's monospace font and the saved name is kept, so the font
 //! comes back when it does.
 
+use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::editor_theme::codec;
 use crate::model::editor_theme::{
     BUNDLED_FONT, BuiltInTheme, ColorKey, EditorPrefs, EditorTheme, Rgba, SYSTEM_FONT, ThemeBook,
     ThemeError, ThemeId, ThemeSelection, ThemeSource, Typography, TypographyOverride, new_user_id,
 };
-use crate::model::watchlist::now_ms;
 use crate::service::editor_theme::files;
 use crate::service::editor_theme::fonts::{FontCatalog, check_outlines, read_font};
 use crate::service::work_queue::{self, Pending};

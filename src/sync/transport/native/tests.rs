@@ -13,7 +13,7 @@ fn commands_serialize_with_the_fields_the_bridge_reads() {
     .unwrap();
     assert_eq!(start["cmd"], "start");
     assert_eq!(start["zone"], "DegenViewZone");
-    assert_eq!(start["container"], crate::sync::engine::account::CONTAINER);
+    assert_eq!(start["container"], crate::build_info::ICLOUD_CONTAINER);
     assert_eq!(start["engine_state"], "AQID");
     let fresh: Value = serde_json::from_str(&command_json(&TransportCommand::Start {
         zone: "z".into(),

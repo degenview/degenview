@@ -6,10 +6,10 @@
 mod binance;
 mod bybit;
 
+use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::liquidation::{Liquidation, Tape};
 use crate::service::net::ws::Session;
-use crate::service::now_ms;
 pub use crate::service::stream::{Lease, Repaint};
 use crate::service::stream::{Stream, Worker};
 use std::sync::{Arc, Mutex};

@@ -674,7 +674,7 @@ pub fn parse_kraken(
         };
         let mut quote = SourceQuote {
             price,
-            timestamp_ms: Some(crate::model::watchlist::now_ms()),
+            timestamp_ms: Some(crate::clock::now_ms()),
             ..SourceQuote::default()
         };
         if let (Some(base), Some(vwap)) = (pair("v", 1), pair("p", 1)) {
@@ -754,7 +754,7 @@ pub fn parse_coinbase_stats(body: &str, product_id: &str) -> Option<SourceQuote>
     let mut quote = SourceQuote {
         price,
         previous_day_price: number(value.get("open")),
-        timestamp_ms: Some(crate::model::watchlist::now_ms()),
+        timestamp_ms: Some(crate::clock::now_ms()),
         ..SourceQuote::default()
     };
     if let Some(base) = number(value.get("volume")) {
@@ -823,7 +823,7 @@ pub fn parse_dex_pairs(body: &str, requests: &[&QuoteRequest]) -> HashMap<String
                 .collect()
         })
         .unwrap_or_default();
-    let now = crate::model::watchlist::now_ms();
+    let now = crate::clock::now_ms();
     let mut quotes = HashMap::new();
     for request in requests {
         let Some(pair) = pairs.get(&request.symbol.to_lowercase()) else {

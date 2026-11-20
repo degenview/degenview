@@ -3,8 +3,8 @@
 
 use super::apply::{pair, settle};
 use super::core::Mac;
+use crate::model::annotation::asset::StoredAsset;
 use crate::service::annotation::ingest;
-use crate::store::asset_store::StoredAsset;
 use crate::store::sync::InboxRecord;
 use crate::sync::engine::apply::{NEWER_SCHEMA, UNKNOWN_TYPE};
 use crate::sync::record::SCHEMA_VERSION;
@@ -24,7 +24,7 @@ fn picture(seed: u8) -> StoredAsset {
         image::ExtendedColorType::Rgba8,
     )
     .unwrap();
-    StoredAsset::from_ingested(&ingest::ingest(&png).unwrap())
+    ingest::ingest(&png).unwrap().stored()
 }
 
 /// A record as an inbox keeps it.

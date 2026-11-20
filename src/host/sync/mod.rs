@@ -8,6 +8,7 @@
 
 pub mod scripts;
 
+use crate::clock::now_ms;
 use crate::host::sync::scripts::StoreScriptSink;
 use crate::lock::lock;
 use crate::store::SharedStore;
@@ -18,8 +19,9 @@ use crate::sync::engine::account::{self, AccountChoice};
 use crate::sync::engine::apply::{ApplyCtx, ApplyReport, apply_batch};
 use crate::sync::engine::core::{Effect, PauseReason, Phase, RemoteBatch, SyncCore};
 use crate::sync::engine::initial::{JoinMode, JoinSummary, finish_join, summarize};
+use crate::sync::engine::scripts::scan_scripts;
 use crate::sync::record::policy::Category;
-use crate::sync::record::scripts::{NoScripts, ScriptCache, ScriptSink, scan_scripts};
+use crate::sync::record::scripts::{NoScripts, ScriptCache, ScriptSink};
 use crate::sync::transport::{EventSink, SyncTransport, TransportEvent, TransportFactory};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -112,6 +114,14 @@ pub enum SyncNotice {
 }
 
 impl SyncView {
+    /// The last error is iCloud refusing a schema not deployed to Production yet: the page explains
+    /// that instead of showing CloudKit's words.
+    pub fn schema_not_deployed(&self) -> bool {
+        self.last_error
+            .as_deref()
+            .is_some_and(crate::sync::transport::schema_not_deployed)
+    }
+
     pub(crate) fn initial(unavailable: Option<String>) -> Self {
         Self {
             unavailable,
@@ -325,12 +335,6 @@ pub struct SyncHost {
     backups_dir: PathBuf,
     /// Which hardware this is; replaced in tests to stand in for another Mac.
     hardware: Arc<dyn Fn() -> Option<String> + Send + Sync>,
-}
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
 impl SyncHost {
@@ -1023,7 +1027,7 @@ pub fn hardware_id() -> Option<String> {
             .find(|line| line.contains("IOPlatformUUID"))
             .and_then(|line| line.split('"').nth(3))
         {
-            return Some(crate::sync::record::sha256_hex(uuid.as_bytes()));
+            return Some(crate::model::encoding::sha256_hex(uuid.as_bytes()));
         }
     }
     None
@@ -1035,7 +1039,7 @@ fn hardware_hash_to_store() -> String {
         format!(
             "{}{}",
             account::NAME_HASH_PREFIX,
-            crate::sync::record::sha256_hex(device_name().as_bytes())
+            crate::model::encoding::sha256_hex(device_name().as_bytes())
         )
     })
 }

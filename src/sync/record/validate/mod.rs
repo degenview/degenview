@@ -5,7 +5,8 @@
 
 use super::policy::EntityKind;
 use super::{FAVORITES_ID, MAX_RAW_PAYLOAD_BYTES, SCHEMA_VERSION, SyncRecord};
-use crate::store::asset_store::StoredAsset;
+use crate::model::annotation::asset::StoredAsset;
+use crate::service::annotation::ingest;
 use serde_json::Value;
 
 /// Same bound the Pine lexer enforces on a source (`Limits::source_characters`).
@@ -111,8 +112,7 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
             if asset.id != id {
                 return Err("a picture's id is not its record's".into());
             }
-            asset
-                .verified_bytes()
+            ingest::verified_bytes(&asset)
                 .map(|_| ())
                 .ok_or_else(|| "a picture is not what its name says".into())
         }

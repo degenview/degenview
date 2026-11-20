@@ -11,11 +11,12 @@
 
 use super::outbox::{Disposition, classify, is_transient};
 use crate::lock::lock;
+use crate::model::encoding::sha256_hex;
 use crate::store::SharedStore;
 use crate::store::sync::{InboxRecord, Load, OutboxOp, OutboxRow, OutboxState, SyncState};
 use crate::sync::record::policy::{EntityKind, Merge, merge_of};
 use crate::sync::record::validate::{Verdict, validate};
-use crate::sync::record::{RecordName, SCHEMA_VERSION, SyncRecord, sha256_hex, to_wire};
+use crate::sync::record::{RecordName, SCHEMA_VERSION, SyncRecord, to_wire};
 use crate::sync::transport::{
     AccountChange, AccountStatus, ErrorKind, RawRecord, SendFailure, StagedChange, StagedOp,
     SyncTransport, TransportCommand, TransportEvent, ZoneEvent,

@@ -546,7 +546,7 @@ pub fn alert_time(ms: i64) -> String {
     ];
     let local = ms + crate::service::system::timezone::local_utc_offset_secs(ms) * 1000;
     let secs = local.div_euclid(1000);
-    let (_, month, day) = super::inputs::civil_from_days(secs.div_euclid(86_400));
+    let (_, month, day) = crate::format::civil_from_days(secs.div_euclid(86_400));
     let rem = secs.rem_euclid(86_400);
     let hour = rem / 3600;
     let clock = match hour % 12 {

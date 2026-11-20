@@ -117,13 +117,67 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
             "workspace",
         ],
     ),
-    ("service", &["app", "host", "ui", "workspace"]),
-    ("store", &["app", "host", "ui", "workspace"]),
+    (
+        "service",
+        &["app", "host", "mcp", "sync", "ui", "workspace"],
+    ),
+    (
+        "store",
+        &["app", "host", "pine_studio", "service", "ui", "workspace"],
+    ),
     ("sync", &["app", "host", "ui", "workspace"]),
+    // What a record is and which tables sync: the store builds on it, so it may not need the store.
+    ("sync/record", &["store"]),
     ("mcp", &["app", "ui", "workspace"]),
     ("trading", &["app", "ui", "workspace"]),
     ("host", &["app"]),
     ("ui", &["app"]),
+    // Leaves every layer may use: they import nothing of the app's own.
+    ("build_info", EVERY_MODULE),
+    ("clock", EVERY_MODULE),
+    ("format", EVERY_MODULE),
+    ("lock", EVERY_MODULE),
+    ("paths", EVERY_MODULE),
+    // Runs from the panic hook, before and after the store opens: it may not need either.
+    (
+        "crash_report",
+        &[
+            "app",
+            "host",
+            "mcp",
+            "pine_studio",
+            "service",
+            "store",
+            "sync",
+            "trading",
+            "ui",
+            "workspace",
+        ],
+    ),
+];
+
+/// Every top-level module, for the leaves that may import none of them.
+const EVERY_MODULE: &[&str] = &[
+    "app",
+    "build_info",
+    "clock",
+    "crash_report",
+    "format",
+    "host",
+    "lock",
+    "mcp",
+    "model",
+    "native_bridge",
+    "paths",
+    "pine",
+    "pine_studio",
+    "platform",
+    "service",
+    "store",
+    "sync",
+    "trading",
+    "ui",
+    "workspace",
 ];
 
 /// Imports that break [`FORBIDDEN_IMPORTS`] today, as `(file under src/, module imported)`. Each is
@@ -196,9 +250,28 @@ fn production_code(source: &str) -> String {
         .join("\n")
 }
 
-/// Every non-test `.rs` file under `src/<module>/`, relative to `src/`.
+#[test]
+fn every_module_names_each_module_of_the_crate() {
+    let lib = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
+        .expect("lib.rs readable");
+    let declared: BTreeSet<&str> = lib
+        .lines()
+        .filter_map(|line| line.strip_prefix("mod ")?.strip_suffix(';'))
+        .filter(|module| !["alloc_count", "layout_tests"].contains(module))
+        .collect();
+    let listed: BTreeSet<&str> = EVERY_MODULE.iter().copied().collect();
+    assert_eq!(declared, listed, "keep EVERY_MODULE in step with lib.rs");
+}
+
+/// Every non-test `.rs` file of `module` (`src/<module>/` or the single file `src/<module>.rs`),
+/// relative to `src/`.
 fn module_sources(module: &str) -> Vec<(String, String)> {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let single = src.join(format!("{module}.rs"));
+    if single.is_file() {
+        let text = fs::read_to_string(&single).expect("source readable");
+        return vec![(format!("{module}.rs"), text)];
+    }
     let mut files = Vec::new();
     let mut pending = vec![src.join(module)];
     while let Some(dir) = pending.pop() {
@@ -234,7 +307,9 @@ fn no_layer_imports_a_layer_above_it() {
     for (module, forbidden) in FORBIDDEN_IMPORTS {
         for (file, text) in module_sources(module) {
             for import in crate_imports(&text) {
-                if !forbidden.contains(&import.as_str()) {
+                // A module's own paths (`crate::format::…` inside `format.rs`) are no dependency.
+                let own = module.split('/').next() == Some(import.as_str());
+                if own || !forbidden.contains(&import.as_str()) {
                     continue;
                 }
                 if KNOWN_LAYERING_DEBT.contains(&(file.as_str(), import.as_str())) {
@@ -318,6 +393,58 @@ fn nothing_outside_the_view_layers_draws() {
     assert!(
         settled.is_empty(),
         "these no longer draw; remove them from KNOWN_DRAWING_DEBT:\n{}",
+        settled.join("\n")
+    );
+}
+
+/// The view layers: they hold the `work_queue::Pending` a host or service handed them and never
+/// start background work of their own (`docs/agent-guides/core.md`, Background work).
+const VIEW_MODULES: &[&str] = &["pine_studio", "ui"];
+
+/// What starting background work by hand looks like.
+const OWN_THREADS: &[&str] = &[
+    "thread::spawn",
+    "thread::Builder",
+    "mpsc::channel",
+    "mpsc::sync_channel",
+];
+
+/// Views that run a thread of their own, each with the reason `Pending` does not fit.
+const KNOWN_OWN_THREADS: &[(&str, &str)] = &[(
+    "pine_studio/ai/mod.rs",
+    "the assistant's run streams many progress events and can be cancelled; Pending carries one answer",
+)];
+
+#[test]
+fn views_start_no_background_work_of_their_own() {
+    let mut offenders = Vec::new();
+    let mut found = BTreeSet::new();
+    for module in VIEW_MODULES {
+        for (file, text) in module_sources(module) {
+            let code = production_code(&text);
+            if !OWN_THREADS.iter().any(|pattern| code.contains(pattern)) {
+                continue;
+            }
+            if KNOWN_OWN_THREADS.iter().any(|(known, _)| *known == file) {
+                found.insert(file);
+            } else {
+                offenders.push(file);
+            }
+        }
+    }
+    let settled: Vec<&str> = KNOWN_OWN_THREADS
+        .iter()
+        .map(|(file, _)| *file)
+        .filter(|file| !found.contains(*file))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "run the job through service::work_queue (start, start_for, start_search) and poll the Pending:\n{}",
+        offenders.join("\n")
+    );
+    assert!(
+        settled.is_empty(),
+        "these no longer start threads; remove them from KNOWN_OWN_THREADS:\n{}",
         settled.join("\n")
     );
 }

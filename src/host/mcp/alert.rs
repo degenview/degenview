@@ -1,4 +1,5 @@
 use super::chart::source_slug;
+use crate::clock::now_ms;
 use crate::host::alert::AlertHost;
 use crate::host::mcp::confirmation;
 use crate::mcp::alert::{AlertCommand, AlertCommandOutcome, AlertUpdate, NewAlert};
@@ -14,7 +15,6 @@ use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertPrecondition, AlertRuntimeCommand,
     AlertRuntimeCommandPayload, AlertState, PriceAlert,
 };
-use crate::model::watchlist::now_ms;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::{SharedStore, Store};
 use crate::workspace::ChartWorkspace;

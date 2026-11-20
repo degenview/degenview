@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::clock::now_ms;
 use crate::model::portfolio::accounting::{holdings, validate};
 use crate::model::portfolio::{
     Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioError, PortfolioHoldingsSort,
@@ -373,13 +374,6 @@ impl PortfolioLedger {
             portfolio.updated_at = now_ms();
         }
     }
-}
-
-fn now_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis() as i64)
 }
 
 #[cfg(test)]

@@ -108,7 +108,7 @@ impl MarketSource for Alpaca {
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Alpaca, timeframe)?;
         let requested = plan.base_count(limit as usize).min(MAX_BARS);
-        let since = lookback_start_ms(plan.base(), requested as i64, crate::service::now_ms());
+        let since = lookback_start_ms(plan.base(), requested as i64, crate::clock::now_ms());
         let bars = fetch_bars(symbol, plan.base(), since, None, requested)?;
         Ok(plan.shape_since(bars, requested, since, limit as usize))
     }
@@ -242,7 +242,7 @@ fn fetch_bars(
 ) -> Result<Vec<Kline>, ProviderError> {
     let (key, secret) = credentials()?;
     let feed = AlpacaFeed::for_bars(bar);
-    let Some((start, end)) = bars_window(feed, start_ms, end_ms, crate::service::now_ms()) else {
+    let Some((start, end)) = bars_window(feed, start_ms, end_ms, crate::clock::now_ms()) else {
         return Ok(Vec::new());
     };
     let mut url = format!(

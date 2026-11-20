@@ -14,11 +14,11 @@ use super::{Notice, auto_apply_check};
 use crate::pine::compiler;
 use crate::pine::syntax::token::{Diagnostic, Limits};
 use crate::pine_studio::drawer;
-use crate::pine_studio::library::registry::LibraryRegistry;
 use crate::pine_studio::{PineStudio, PineStudioAction, editor};
 use crate::service::keychain::ai_keys::{self, AiKeyStore};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::{ChatRequest, HttpProvider, ProviderKind};
+use crate::store::scripts::registry::LibraryRegistry;
 use crate::ui::theme;
 use eframe::egui;
 use std::sync::Arc;
@@ -219,11 +219,9 @@ impl PineStudio {
         }
         let provider = HttpProvider::new(kind, self.ai.prefs.base_url(kind), ai_keys::key(kind));
         match provider {
-            Ok(provider) => {
-                let repaint = ctx.clone();
-                let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || repaint.request_repaint());
-                self.ai.begin_model_fetch(kind, Box::new(provider), wake);
-            }
+            Ok(provider) => self
+                .ai
+                .begin_model_fetch(kind, Box::new(provider), Some(ctx)),
             Err(error) => {
                 self.ai
                     .models
@@ -254,7 +252,7 @@ impl PineStudio {
             .iter()
             .map(|script| script.id.clone())
             .collect();
-        let now = crate::model::pine::script::now_ms();
+        let now = crate::clock::now_ms();
         if let Ok(store) = self.shared.lock() {
             let mut history = History::load(&store);
             if !known.is_empty() {
@@ -308,7 +306,7 @@ impl PineStudio {
         // touched until the user applies a proposal.
         let feed = self
             .preview
-            .debug_feed(crate::model::pine::script::now_ms(), theme::is_light());
+            .debug_feed(crate::clock::now_ms(), theme::is_light());
         let tools = ToolBox::new(mode, &source, diagnostics_of).with_bars(feed);
         let request = ChatRequest {
             model: self.ai.prefs.model(kind),

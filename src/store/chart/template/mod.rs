@@ -8,12 +8,12 @@
 
 pub mod default_look;
 
+use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::ChartAppearance;
 use crate::model::chart::template::{
     ChartAppearanceTemplate, TemplateBook, TemplateError, TemplateId, new_user_id,
 };
-use crate::model::watchlist::now_ms;
 use crate::store::{Document, SharedStore, Store};
 
 const TABLE: &str = "chart_template";

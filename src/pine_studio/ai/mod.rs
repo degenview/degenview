@@ -28,7 +28,9 @@ use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{ChatRequest, LlmError, LlmProvider, ProviderKind};
+use crate::service::work_queue::Pending;
 use agent::{AgentSetup, Ended, Progress};
+use eframe::egui;
 use models::ModelList;
 use plan::Plan;
 use prompt::{Mode, Turn};
@@ -129,7 +131,7 @@ enum Event {
 }
 
 /// The answer to a model-list request: the ids, or why they could not be had.
-type ModelsReceiver = Receiver<Result<Vec<String>, ErrorReport>>;
+type ModelsPending = Pending<Result<Vec<String>, ErrorReport>>;
 
 /// A request in flight. Dropping it asks the thread to stop.
 struct Run {
@@ -193,7 +195,7 @@ pub struct Assistant {
     pub models: HashMap<ProviderKind, ModelList>,
     /// What is typed in the model menu's filter.
     pub model_filter: String,
-    models_rx: Option<(ProviderKind, ModelsReceiver)>,
+    models_rx: Option<(ProviderKind, ModelsPending)>,
     run: Option<Run>,
 }
 
@@ -272,25 +274,24 @@ impl Assistant {
         &mut self,
         kind: ProviderKind,
         provider: Box<dyn LlmProvider>,
-        wake: Arc<dyn Fn() + Send + Sync>,
+        repaint: Option<&egui::Context>,
     ) {
         self.models.insert(kind, ModelList::Loading);
-        self.models_rx = Some((kind, models::fetch(provider, wake)));
+        self.models_rx = Some((kind, models::fetch(provider, repaint)));
     }
 
     /// Takes in a model list that has arrived.
     pub fn poll_models(&mut self) {
-        let Some((kind, receiver)) = &self.models_rx else {
+        let Some((kind, pending)) = &mut self.models_rx else {
             return;
         };
         let kind = *kind;
-        let list = match receiver.try_recv() {
-            Ok(Ok(ids)) => ModelList::Ready(models::usable_chat_models(kind, &ids)),
-            Ok(Err(report)) => ModelList::Failed(report),
-            Err(TryRecvError::Empty) => return,
-            Err(TryRecvError::Disconnected) => {
-                ModelList::Failed(ErrorReport::message("The model list stopped unexpectedly."))
-            }
+        let answer =
+            pending.poll_or(|| Err(ErrorReport::message("The model list stopped unexpectedly.")));
+        let list = match answer {
+            Some(Ok(ids)) => ModelList::Ready(models::usable_chat_models(kind, &ids)),
+            Some(Err(report)) => ModelList::Failed(report),
+            None => return,
         };
         self.models.insert(kind, list);
         self.models_rx = None;

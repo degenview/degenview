@@ -1113,7 +1113,7 @@ Scripts are managed through:
 
 ```text
 store::scripts::ScriptStore
-pine_studio::library::registry::LibraryRegistry
+store::scripts::registry::LibraryRegistry
 ```
 
 The Pine Studio supports:
