@@ -28,7 +28,7 @@ impl LiquidationFeed {
             follow(worker, &binance_tape, &binance::session(), binance::parse);
         });
         stream.spawn(move |worker| {
-            let Some(session) = bybit::session(worker.shutdown()) else {
+            let Some(session) = bybit::session(worker) else {
                 return;
             };
             follow(worker, &tape, &session, bybit::parse);

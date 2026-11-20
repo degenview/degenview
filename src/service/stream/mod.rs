@@ -7,6 +7,10 @@
 //! to reconnect or still looking something up, so nothing keeps retrying for a viewer that left.
 //! Dropping the stream closes them at once.
 
+mod retry;
+
+pub use retry::retry_until_shutdown;
+
 use crate::clock::now_ms;
 use crate::service::net::ws::{Frame, Session};
 use std::sync::Arc;
@@ -67,6 +71,12 @@ impl Worker {
             Frame::Text(text) => self.is_wanted() && on_text(text),
             Frame::Binary(_) => true,
         });
+    }
+
+    /// Calls `attempt` until it answers, every `every`; `None` when the stream was shut down
+    /// first. See [`retry_until_shutdown`].
+    pub fn retry<T>(&self, every: Duration, attempt: impl FnMut() -> Option<T>) -> Option<T> {
+        retry_until_shutdown(&self.shutdown, every, attempt)
     }
 
     /// Whether anybody still wants the feed.

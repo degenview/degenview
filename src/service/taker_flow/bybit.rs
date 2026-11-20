@@ -24,10 +24,7 @@ pub(super) fn session(market: Market, asset: &str) -> Session {
         ],
         // A thin market can be quiet for a long while: the pong says the socket is alive.
         max_data_silence: Duration::from_secs(600),
-        keepalive: Keepalive::Text {
-            ping: r#"{"op":"ping"}"#,
-            pong: r#"{"success":true,"ret_msg":"pong""#,
-        },
+        keepalive: Keepalive::BYBIT,
     }
 }
 

@@ -26,10 +26,7 @@ pub(super) fn session(products: &[String]) -> Session {
         // A thin market's ticker is quiet for minutes: the pong says the socket is alive, and REST
         // refreshes a product the socket stays quiet about.
         max_data_silence: Duration::from_secs(600),
-        keepalive: Keepalive::Text {
-            ping: r#"{"op":"ping"}"#,
-            pong: r#"{"success":true,"ret_msg":"pong""#,
-        },
+        keepalive: Keepalive::BYBIT,
     }
 }
 

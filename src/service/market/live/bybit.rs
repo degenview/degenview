@@ -28,10 +28,7 @@ pub(super) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
         subscribe,
         // A thin market's kline is quiet for minutes: the pong says the socket is alive.
         max_data_silence: Duration::from_secs(600),
-        keepalive: Keepalive::Text {
-            ping: r#"{"op":"ping"}"#,
-            pong: r#"{"success":true,"ret_msg":"pong""#,
-        },
+        keepalive: Keepalive::BYBIT,
     })
 }
 
