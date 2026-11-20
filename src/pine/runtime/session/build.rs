@@ -227,9 +227,7 @@ impl Session {
         );
         RuntimeState {
             broker,
-            // The first bar executes as bar 0.
-            bar_index: -1,
-            ..RuntimeState::default()
+            ..RuntimeState::before_first_bar()
         }
     }
 }
