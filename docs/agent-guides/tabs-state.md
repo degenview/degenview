@@ -75,8 +75,9 @@
 - Window callbacks look up content live via `TabWindowHost`/`TabRegistry`, under
   `ui.push_id(tab_id)`. Never capture content or key tab state by viewport.
 - Select/reorder/move/detach mutate `TabWindows` immediately. New and Close are `TabRequest`s for
-  `DegenViewApp::process_commands`. OS close becomes `CloseWindow`; Windows/Linux quit after the
-  last window.
+  `DegenViewApp::process_commands`. OS close becomes `CloseWindow`: it closes the window's tabs, except
+  the last window on Windows/Linux (`LAST_WINDOW_QUITS`), which quits like Quit and keeps its tabs
+  for the next launch. Closing the last *tab* still removes it, then quits.
 
 ## Dragging and restore
 
