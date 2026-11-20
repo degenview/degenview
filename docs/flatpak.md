@@ -63,7 +63,7 @@ remote to a sandboxed app. **Not built, not verified.**
 
 Releases build one Flatpak **branch per update channel**: `stable` for a final release and `beta`
 for a release candidate, a tag with `-rc.` (the form the Release Candidate channel offers). An
-`-alpha.N` or `-beta.N` tag is offered to no channel by the updater (`update::check::Version::kind`,
+`-alpha.N` or `-beta.N` tag is offered to no channel by the updater (`model::changelog::Version::stability`,
 `tools/release.sh` says the same), so its bundle is built on `dev`, which the repo never publishes.
 Note this is narrower than `--prerelease`, which is any hyphen. `release.yml` passes the branch to
 `flatpak.yml`'s `branch` input, which the pinned `flatpak-builder` action uses for both

@@ -124,20 +124,29 @@ the entries; any other `#`/`##` heading ends the section (so `## Downloads` and 
 `## Changes since ...` commit-log bodies yield nothing) and `<details>` blocks are skipped. The
 comment's two marker lines are neither headings nor bullets, so they are ignored and what is
 between them is read like any other text.
-`notes_between` builds the sheet's lists with `ReleaseNotes::from_sections(sections,
-include_rc_fixes)`, passing true only when the running version is a prerelease: then the candidate
-fixes follow each section's own fixes in the sheet's Fixed list; otherwise they are dropped and not
-counted as omitted (`Section::omitted_rc` holds what the caps left out of them, added to `omitted`
-only then), so a person updating from a stable version never sees them, whatever the release body
-holds. `notes_between` also sets `ReleaseNotes::unsummarized`: the published releases
-in the range (any author, drafts excluded) whose version no trusted body has a section for, such as
-releases from before the changelog. When the lists are not empty the sheet ends with "N releases
-since your version have no summary, so their changes are not listed."; with nothing to list it shows
-only "No summary of changes is available for this version." `check_pages` reads at most three pages
-of 30 releases; when it stops there without a short last page, a 404 or a release at or below the
-running version, `ReleaseNotes::history_incomplete` is set and the sheet ends with "Older releases
-are not listed here, so some changes may be missing." (releases it never read are not in
-`unsummarized`). Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks
+`model::changelog::notes_for_range` builds the sheet's lists. `service::update::check` only maps each
+`ReleaseDto` to a `ListedRelease` (tag, draft, whether the release workflow wrote it, body) and calls
+it; the policy is pure and tested in `model/changelog/tests.rs`. It reads the sections of every
+published release the workflow wrote, keeps those after the running version up to the offered one,
+newest first, one per version (the release of that version wins over a repeat in a later body), and
+hands them to `ReleaseNotes::from_sections(sections, include_rc_fixes)`, passing true only when the
+running version is a prerelease: then the candidate fixes follow each section's own fixes in the
+sheet's Fixed list; otherwise they are dropped and not counted as omitted (`Section::omitted_rc`
+holds what the caps left out of them, added to `omitted` only then), so a person updating from a
+stable version never sees them, whatever the release body holds. `Version` (SemVer order, `Stability`)
+lives beside it in `model::changelog` so the updater's channels and the range read a tag the same
+way. What the lists cannot say is `Coverage`, not part of `ReleaseNotes`, carried on
+`check::Release::coverage` and `Phase::Available::coverage`: `unsummarized` is the published
+releases in the range (any author, drafts excluded) whose version no trusted body has a section for,
+such as releases from before the changelog; `check_pages` reads at most three pages of 30 releases
+and, when it stops there without a short last page, a 404 or a release at or below the running
+version, sets `history_incomplete` (releases it never read are not in `unsummarized`). The sheet's
+closing lines come from `ReleaseNotes::footnotes(&Coverage)` and the sheet only draws them: when the
+lists are not empty it ends with what the caps left out ("And N more changes in the full release
+notes.", or without a count when a body was cut short), "N releases since your version have no
+summary, so their changes are not listed." and "Older releases are not listed here, so some changes
+may be missing."; with nothing to list it shows only "No summary of changes is available for this
+version." Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks
 the sheet. `cargo test` runs the script on the fragments and checks `CHANGELOG.md` against the same rules, so
 CI catches a malformed one; the archive is checked section by section, since the caps below are for one
 release body and the file grows with every release. Input is bounded (64 KiB body, 64 sections, 100 entries per list per
@@ -497,14 +506,15 @@ executables). Deploy Production's CloudKit schema before a release that changes 
   the new one. Cancel always counts. The list takes the height the window leaves after the
   rest of the sheet (measured on the previous frame), between 96 and 360 pt, so the footer stays
   inside the app's smallest windows. The
-  host holds which window shows it (`UpdateHost::review`, `review_open_in`, `close_review`, `close_review_in`; memory
-  only, one window; a window that is closing, Settings and tab windows, calls `close_review_in`
-  with its viewport so a reused viewport id does not bring the sheet back): it ends when the phase leaves `Available` (channel switch, install started
-  elsewhere) and does not return for a later update. A failed install retries from the mark without
-  the sheet. The notes are `Phase::Available::notes` (an `Arc`): `update::check` merges the sections
-  of every release body it read in that check, not drafts and only the release workflow's, that lie
-  after the running version up to the offered one, newest first, one per version (the release of
-  that version wins over a repeat in a later body), whatever the channel; no extra request. Not
+  host holds which window shows it (`UpdateHost::review`, `review_open_in`, `close_review`, `close_review_in`
+  over `host::update::review::ReviewState`; memory only, one window; a window that is closing, Settings
+  and tab windows, calls `close_review_in` with its viewport so a reused viewport id does not bring the
+  sheet back): asking (`review_open_in`) changes nothing; the sheet ends where the offer changes
+  (`State::settle`, run by a channel switch, a check's answer, an install starting or ending), when
+  the phase leaves `Available`, and does not return for a later update. A failed install retries from the mark without
+  the sheet. The notes are `Phase::Available::notes` (an `Arc`) with their `coverage`:
+  `model::changelog::notes_for_range` merges the sections of every release body `update::check`
+  read in that check (see Release notes above), whatever the channel; no extra request. Not
   verified in a real window or against a live GitHub reply.
 - Tab-bar indicator and About card render `UpdateView::Phase`; UI never reads host internals. The
   indicator reserves strip space. Progress: 0–5% signature, 5–90% download, 90–100% unpack. Workers

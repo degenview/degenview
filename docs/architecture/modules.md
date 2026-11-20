@@ -12,7 +12,7 @@ inventory.
 | `workspace/mod.rs` | One chart tab: grid, charts, drawings, fetches, and replay |
 | `host/tab/window.rs` | Window grouping, active tabs, drag/reorder/detach |
 | `native_bridge.rs` | AppKit menus, window behavior, cursor, Keychain/accessibility boundaries |
-| `host/update/mod.rs` | Update checks, install progress, and restart state |
+| `host/update/mod.rs` | Update checks, install progress, and restart state; `review` holds which window shows the update review sheet |
 | `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
 | `format.rs`, `platform.rs`, `lock.rs`, `paths.rs`, `build_info.rs`, `clock.rs` | Leaf helpers every layer imports: number/price/date text and plurals, per-platform wording, locks that survive a poisoning panic, the data and cache folders, the build's version and commit, and the wall clock in milliseconds (`clock::now_ms`, the one copy). `layout_tests.rs` keeps them free of the app's other modules |
 
@@ -94,7 +94,7 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart, script value types (`script`) and the Pine indicators bundled with the app (`bundled/`) |
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
 | `liquidation/`, `taker_flow/` | Forced liquidations (`Liquidation`, the rolling `Tape` and its `Snapshot` of totals and rows) and taker flow (`Trade`, `Venue`, the per-second `Flow` and its `Snapshot`, `asset_of`). Pure |
-| `changelog/` | The release notes the update sheet shows: `parse` reads `## <version>` / `### New` / `### Fixed` sections out of a release body (bounded), `ReleaseNotes` merges them; `tools/changelog.sh` writes the text |
+| `changelog/` | The release notes the update sheet shows: `parse` reads `## <version>` / `### New` / `### Fixed` sections out of a release body (bounded), `ReleaseNotes` merges them and writes the sheet's footnotes (`footnotes`), `notes_for_range` picks the sections between two versions from plain `ListedRelease` values and reports `Coverage`, `Version` is the SemVer tag type the updater shares; `tools/changelog.sh` writes the text |
 | `ids/` | The id space engines mint into (`LEGACY_LIMIT`, `GLOBAL_BASE`); sync tags it in `sync::record::ids` |
 | `encoding/` | Standard base64 (`base64_encode`, `base64_decode`) for MCP images, the CloudKit bridge, stored pictures and proxy sign-in |
 
