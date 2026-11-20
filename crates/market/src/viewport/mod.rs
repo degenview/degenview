@@ -107,13 +107,11 @@ impl Default for VerticalViewport {
 }
 
 impl VerticalViewport {
-    #[cfg(test)]
     pub fn is_auto(&self) -> bool {
         self.manual.is_none()
     }
 
     /// Whether anything differs from a freshly opened chart.
-    #[cfg(test)]
     pub fn is_default(&self) -> bool {
         self.is_auto() && self.zoom == 1.0
     }
@@ -371,7 +369,10 @@ pub struct SavedViewport {
     pub price_range: Option<PriceRange>,
 }
 
+mod window;
 pub mod zoom;
+
+pub use window::{Window, visible_window};
 
 #[cfg(test)]
 mod tests;

@@ -1,9 +1,9 @@
 use super::candles::plan;
 use super::catalog::Catalog;
-use crate::model::market::bucket;
 use crate::model::market::feed::AlpacaFeed;
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
+use degenview_market::bucket;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

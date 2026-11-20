@@ -53,7 +53,7 @@ opacity. Every row writes straight into the chart, which repaints at once.
   `chart.bg_color` still reads the theme's, not the custom backdrop.
 - **Vertical / horizontal grid lines.** On/off, colour (with opacity) and solid/dashed/dotted.
   The horizontal lines stand on the price axis' labels and the vertical lines on the time axis'
-  labels: one tick list each, from `model::chart::canvas::price_ticks` and `time_ticks`. Prices are
+  labels: one tick list each, from `degenview_market::price_ticks` and `model::chart::canvas::time_ticks`. Prices are
   1/2/2.5/5 × 10ⁿ on a linear scale and 1/2/3/5/7 × 10ⁿ decades on a log scale (thinned to fit).
   Time labels are on every n-th bar counted from the start of the series, so a label stays on its
   bar while the chart pans. The grid is drawn from the scale and never feeds back into it.
@@ -98,7 +98,7 @@ opacity. Every row writes straight into the chart, which repaints at once.
 
 ### The right margin
 
-The plot always has `visible + reserved` equal slots (`model::chart::canvas::visible_window`), where
+The plot always has `visible + reserved` equal slots (`degenview_market::viewport::visible_window`), where
 `reserved` is the larger of the right margin and what an overlay script reserves. At rest the
 newest bar is `reserved` slots from the right edge. Scrolling back by `n` bars fills those slots
 with the bars that follow, so the bar spacing never changes as you scroll or at the moment the

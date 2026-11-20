@@ -29,7 +29,6 @@ pub use chart::canvas::ChartCanvas;
 pub use chart::kind::{ChartKind, ChartStyle, ChartType};
 pub use chart::layout::{ChartColumn, ChartConfig, ChartLayout, LayoutSnapshot};
 pub use chart::persisted::PersistedChart;
-pub use chart::price_format::{PriceFormat, SmallPrices};
 pub use chart::replay::{
     ClockCommand, ReplayCommand, ReplayEngine, ReplayError, ReplayInterval, ReplaySpeed,
     ReplayStart, ReplayStatus, ReplayView,
@@ -37,6 +36,9 @@ pub use chart::replay::{
 pub use chart::saved_view::SavedView;
 pub use chart::sync::ChartSyncSettings;
 pub use cursor::{CursorMode, PointerShape};
+pub use degenview_market::Kline;
+pub use degenview_market::price_format::{PriceFormat, SmallPrices};
+pub use degenview_market::{Section, TimeUnit, Timeframe, TimeframeParseError};
 pub use drawings::style::{DrawingStyle, Visibility, VisibilityRow};
 pub use drawings::tool::{Caps, MagnetMode, Placement, Tool, ToolGroup};
 pub use drawings::{
@@ -50,7 +52,5 @@ pub use indicators::{
 };
 pub use indicators::{bollinger, ema, rsi, supertrend_flips};
 pub use market::instrument::InstrumentId;
-pub use market::kline::Kline;
 pub use market::pm_series::PmSeries;
 pub use market::source::DataSource;
-pub use market::timeframe::{Section, TimeUnit, Timeframe, TimeframeParseError};

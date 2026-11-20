@@ -244,7 +244,7 @@ pub(super) fn pane_labels(
     let (low, high) = crate::ui::pine::geometry::pane_value_range(pine, shown, 0.1);
     // A pane is short: its labels sit closer than the price chart's, and it keeps at least two.
     let budget = chart::canvas::tick_budget(plot_height, style.pane_tick_spacing()).max(2);
-    let ticks = chart::canvas::price_ticks(low, high, false, budget);
+    let ticks = degenview_market::price_ticks(low, high, false, budget);
     let step = tick_step(&ticks);
     ticks
         .into_iter()

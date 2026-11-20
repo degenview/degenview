@@ -7,11 +7,11 @@ use super::snapshot::SnapshotGeometry;
 use super::snapshot_tests::{dumped, everything_on, input, settled};
 use super::*;
 use crate::model::ChartCanvas;
-use crate::model::chart::canvas::visible_window;
 use crate::model::chart::snapshot::{SnapshotDimensions, SnapshotScale};
-use crate::model::chart::viewport::zoom::Selection;
-use crate::model::chart::viewport::{HorizontalViewport, VerticalViewport};
 use crate::ui::chart::canvas::Restyle;
+use degenview_market::viewport::visible_window;
+use degenview_market::viewport::zoom::Selection;
+use degenview_market::viewport::{HorizontalViewport, VerticalViewport};
 use eframe::egui::epaint::ClippedShape;
 
 const PANE_SCRIPT: &str = "//@version=6\nindicator(\"Pane\")\nplot(close)\n";

@@ -1127,7 +1127,7 @@ mod tests {
         for chart in &mut workspace.charts {
             chart
                 .chart
-                .restore_viewport(crate::model::chart::viewport::SavedViewport {
+                .restore_viewport(degenview_market::viewport::SavedViewport {
                     right_offset: 12.0,
                     price_range: None,
                 });

@@ -1,7 +1,6 @@
 use super::appearance::{PRICE_SAMPLES, decimals_hint, price_axis, scale_hint, small_prices_hint};
 use super::scripts::{RowEvent, apply_events};
 use super::*;
-use crate::model::chart::price_format::MAX_DECIMALS;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::pine::script::{LocalScript, ScriptType};
 use crate::model::{DataSource, IndicatorConfig, PriceFormat, SmallPrices};
@@ -9,6 +8,7 @@ use crate::store::SharedStore;
 use crate::store::Store;
 use crate::ui::chart::card::ChartCard;
 use crate::ui::pine::script_catalog;
+use degenview_market::price_format::MAX_DECIMALS;
 use eframe::egui;
 use std::collections::HashMap;
 use std::sync::Arc;

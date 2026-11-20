@@ -2,8 +2,9 @@
 //! single subscribe message names every market; the socket is kept alive with the text `"ping"`.
 
 use crate::model::{Kline, Timeframe};
-use crate::service::market::okx::{bar, instrument_id, parse_row};
+use crate::service::market::okx::{bar, instrument_id};
 use crate::service::net::ws::{Keepalive, Session};
+use degenview_market::okx::parse_row;
 use serde_json::{Value, json};
 use std::time::Duration;
 

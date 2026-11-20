@@ -3,8 +3,8 @@
 //! The rules are pure so the chart and every compared market fold alike: the workspace owns the
 //! feed and the clock.
 
-use super::bucket::{bucket_start_ms, next_bucket_start_ms};
-use crate::model::{Kline, Timeframe};
+use crate::bucket::{bucket_start_ms, next_bucket_start_ms};
+use crate::{Kline, Timeframe};
 use std::collections::BTreeMap;
 use std::time::Instant;
 
@@ -214,21 +214,24 @@ impl LiveFold {
 }
 
 /// The newest bar a socket delivered, and when: what a REST refresh must not overwrite.
+///
+/// `T` is the caller's monotonic clock reading. The app uses `Instant`; a build where `Instant`
+/// is unavailable (the browser) passes its own, such as `performance.now()` as an `f64`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct LiveMark {
+pub struct LiveMark<T = Instant> {
     open_time: i64,
-    arrived: Instant,
+    arrived: T,
 }
 
-impl LiveMark {
-    pub fn new(open_time: i64, arrived: Instant) -> Self {
+impl<T: Copy + PartialOrd> LiveMark<T> {
+    pub fn new(open_time: i64, arrived: T) -> Self {
         Self { open_time, arrived }
     }
 
     /// The open time a refresh must keep held bars from, for a request begun at
     /// `request_started`. A socket that went quiet before the request began is not fresher than
     /// the answer, so the snapshot may update the forming bar again.
-    pub fn guard_for(&self, request_started: Instant) -> Option<i64> {
+    pub fn guard_for(&self, request_started: T) -> Option<i64> {
         (self.arrived >= request_started).then_some(self.open_time)
     }
 }

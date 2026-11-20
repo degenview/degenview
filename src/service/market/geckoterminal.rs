@@ -1,8 +1,8 @@
 use super::candles::plan;
-use crate::model::market::bucket::{self, FoldPlan};
 use crate::model::market::natives::GECKOTERMINAL_PAGE;
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::ProviderError;
+use degenview_market::bucket::{self, FoldPlan};
 use serde_json::Value;
 
 const BASE_URL: &str = "https://api.geckoterminal.com/api/v2";
@@ -120,7 +120,8 @@ fn fetch_ohlcv(
         }
         Err(error) => return Err(Fetch::Failed(error.into())),
     };
-    parse_ohlcv(&body, window.bucket_ms()).map_err(Fetch::Failed)
+    degenview_market::geckoterminal::parse_candles(&body, window.bucket_ms())
+        .map_err(|error| Fetch::Failed(error.into()))
 }
 
 /// An older page: the candles of `timeframe` opening in `[start_ms, end_ms)`, at most `max` (the
@@ -146,46 +147,6 @@ pub fn fetch_klines_range(
     candles.retain(|candle| candle.open_time >= start_ms && candle.open_time < end_ms);
     let skip = candles.len().saturating_sub(max);
     Ok(candles.split_off(skip))
-}
-
-/// `[timestamp_seconds, open, high, low, close, volumeUSD]`, newest first. A bucket closes a
-/// millisecond before the next opens, as on an exchange.
-fn parse_ohlcv(body: &str, bucket_ms: i64) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
-    let rows = value
-        .pointer("/data/attributes/ohlcv_list")
-        .and_then(Value::as_array)
-        .ok_or_else(|| ProviderError::other("No chart data for this pool"))?;
-    let mut candles = Vec::with_capacity(rows.len());
-    for row in rows {
-        let Some(fields) = row.as_array() else {
-            continue;
-        };
-        if fields.len() < 6 {
-            continue;
-        }
-        let (Some(seconds), Some(open), Some(high), Some(low), Some(close)) = (
-            fields[0].as_f64(),
-            fields[1].as_f64(),
-            fields[2].as_f64(),
-            fields[3].as_f64(),
-            fields[4].as_f64(),
-        ) else {
-            continue;
-        };
-        let volume = fields[5].as_f64().unwrap_or(0.0);
-        let open_time = (seconds * 1_000.0) as i64;
-        candles.push(Kline {
-            open_time,
-            close_time: open_time + bucket_ms - 1,
-            open,
-            high,
-            low,
-            close,
-            volume,
-        });
-    }
-    Ok(candles)
 }
 
 /// Which token of a pool a chart follows. GeckoTerminal serves a pool's candles for its base

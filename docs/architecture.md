@@ -8,11 +8,12 @@ architecture index; use the topic documents for detail.
 | Layer | Responsibility |
 | --- | --- |
 | `app/`, `workspace/mod.rs`, `workspace/`, `host/` | Stateful coordination: the app, one chart tab (`workspace/` holds its concerns), and one host per feature |
-| `bars/` | Pure bar logic under both `model/` and `pine/`: candles, timeframes, buckets, sources, chart kinds, constructed bars |
+| `bars/` | Pure bar logic under both `model/` and `pine/` that the web build does not need: sources, chart kinds, constructed bars, volume profiles; re-exports `Kline`, `Timeframe` and `bucket` from `crates/market` |
 | `model/` | Pure domain values and engines, one directory per domain |
 | `service/` | Providers, network, caches, Keychain, and OS services |
 | `store/` | SQLite persistence and Swift import |
 | `sync/`, `native/swift/` | iCloud Sync: pure policy, merge and outbox logic, and the CloudKit bridge |
+| `crates/market/` | The `degenview-market` workspace crate: `Kline`, `Timeframe`, buckets and folds (`bucket`), the live-candle fold (`live`), UTC calendar helpers (`calendar`), the viewport (`viewport`: pan/zoom state and `visible_window`), price formatting (`price_format`), `normalize`, the exchanges' candle parsers (`coinbase`, `binance`, `okx`, `bybit`, `kraken`, `gateio`, `mexc`, `geckoterminal`; `ParseError`), Coinbase `ticker` messages and `price_ticks`. Pure and wasm-safe, shared with the WebAssembly build |
 | `trading/` | Order entry for every venue (paper and brokers) behind one trait; brokers come from the `degenview-brokers` crate |
 | `ui/` | Immediate-mode egui rendering |
 | `pine/` | Pure Pine compiler, interpreter, strategy broker, debugger, profiler, and outputs |

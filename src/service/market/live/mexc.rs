@@ -4,11 +4,11 @@
 //! subscribe request so that a market it does not list refuses only itself. The socket is kept
 //! alive with `{"method":"PING"}`.
 
-use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{Kline, Timeframe};
 use crate::service::market::mexc::{socket_interval, symbol_id};
 use crate::service::net::protobuf::field;
 use crate::service::net::ws::{Frame, Keepalive, Session};
+use degenview_market::bucket::next_bucket_start_ms;
 use serde_json::json;
 use std::time::Duration;
 

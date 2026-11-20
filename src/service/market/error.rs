@@ -33,6 +33,19 @@ pub enum ProviderError {
     },
 }
 
+impl From<degenview_market::ParseError> for ProviderError {
+    /// A shape the provider does not document is [`Self::Data`]; its own refusal or an empty answer
+    /// is [`Self::Other`] in its words, or a 429 when it says to slow down.
+    fn from(error: degenview_market::ParseError) -> Self {
+        use degenview_market::ParseError;
+        match error {
+            ParseError::Json(_) | ParseError::Invalid(_) => Self::data(error),
+            _ if error.is_rate_limit() => Self::Network(http::Error::Status(429)),
+            ParseError::NoData(_) | ParseError::Refused { .. } => Self::Other(error.to_string()),
+        }
+    }
+}
+
 impl ProviderError {
     /// A [`Self::Data`] from a parser's error.
     pub fn data(error: impl std::fmt::Display) -> Self {
@@ -70,6 +83,39 @@ impl ProviderError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use degenview_market::ParseError;
+
+    #[test]
+    fn a_parsers_error_becomes_the_provider_error_it_always_was() {
+        let json = serde_json::from_str::<()>("x").unwrap_err();
+        assert!(matches!(
+            ProviderError::from(ParseError::Json(json)),
+            ProviderError::Data(_)
+        ));
+        let shape =
+            ProviderError::from(degenview_market::binance::parse_candles("{}").unwrap_err());
+        assert_eq!(shape, ProviderError::data("expected a candle array"));
+        let refused = degenview_market::kraken::parse_candles(
+            r#"{"error":["EQuery:Unknown asset pair"]}"#,
+            Timeframe::HOUR_1,
+        )
+        .unwrap_err();
+        assert_eq!(
+            ProviderError::from(refused),
+            ProviderError::other("Kraken: Unknown asset pair")
+        );
+        let limited = degenview_market::kraken::parse_candles(
+            r#"{"error":["EAPI:Rate limit exceeded"]}"#,
+            Timeframe::HOUR_1,
+        )
+        .unwrap_err();
+        assert!(ProviderError::from(limited).is_rate_limited());
+        let empty = degenview_market::geckoterminal::parse_candles("{}", 60_000).unwrap_err();
+        assert_eq!(
+            ProviderError::from(empty),
+            ProviderError::other("No chart data for this pool")
+        );
+    }
 
     #[test]
     fn messages_name_who_failed() {

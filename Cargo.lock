@@ -1074,6 +1074,7 @@ dependencies = [
  "axum",
  "block2 0.6.2",
  "degenview-brokers",
+ "degenview-market",
  "eframe",
  "egui_extras",
  "flate2",
@@ -1130,6 +1131,15 @@ dependencies = [
  "serde_json",
  "tungstenite",
  "ureq",
+]
+
+[[package]]
+name = "degenview-market"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

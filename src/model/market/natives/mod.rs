@@ -5,10 +5,10 @@
 //! source folds the coarsest finer native candle for a timeframe it lacks and never substitutes a
 //! nearby length (`bucket::fold_base` says what nests).
 
-use super::bucket::FoldPlan;
 use super::samples;
 use super::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
+use degenview_market::bucket::FoldPlan;
 
 const fn minutes(count: u16) -> Timeframe {
     native(count, TimeUnit::Minute)

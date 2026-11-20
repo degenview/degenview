@@ -7,10 +7,10 @@ use crate::model::chart::canvas::{
     BackgroundMode, ButtonVisibility, ChartMargins, ScaleTextSize, WatermarkMode,
 };
 use crate::model::chart::kind::LineDash;
-use crate::model::chart::viewport::MIN_VISIBLE as MIN_VISIBLE_CANDLES;
 use crate::model::{ChartCanvas, IndicatorConfig, SmallPrices};
 use crate::ui::chart::buttons::NavAction;
 use crate::ui::replay::overlay::ReplayChartFrame;
+use degenview_market::viewport::MIN_VISIBLE as MIN_VISIBLE_CANDLES;
 use eframe::egui::epaint::ClippedShape;
 use eframe::egui::vec2;
 
@@ -978,7 +978,7 @@ fn crosshair_time_on(mut harness: Harness, time: Option<f64>) -> Option<f64> {
 
 fn zoomed(visible: usize, right_offset: f64) -> Harness {
     let mut harness = Harness::new(ChartCanvas::default());
-    harness.card.viewport.horizontal = crate::model::chart::viewport::HorizontalViewport {
+    harness.card.viewport.horizontal = degenview_market::viewport::HorizontalViewport {
         visible,
         right_offset,
     };
@@ -1376,7 +1376,7 @@ fn navigation_stays_inside_the_data_and_the_zoom_limits() {
             tiny.viewport.horizontal.visible,
             tiny.viewport.horizontal.right_offset
         ),
-        (crate::model::chart::viewport::DEFAULT_VISIBLE, 0.0)
+        (degenview_market::viewport::DEFAULT_VISIBLE, 0.0)
     );
 }
 

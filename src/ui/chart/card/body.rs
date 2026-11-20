@@ -114,7 +114,7 @@ impl ChartCard {
         if line {
             return OverlayExtent::default();
         }
-        let shown_count = chart::canvas::visible_window(
+        let shown_count = degenview_market::viewport::visible_window(
             bars,
             viewport.horizontal.visible,
             viewport.horizontal.right_offset,

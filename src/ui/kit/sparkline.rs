@@ -3,9 +3,9 @@
 //! fades in from the left and ends on a dot (watchlist rows). Painter code and one pure mapping, so
 //! the shape can be tested.
 
-use crate::model::chart::price_format::PriceFormat;
 use crate::model::market::trend::Trend;
 use crate::ui::theme;
+use degenview_market::price_format::PriceFormat;
 use eframe::egui::epaint::{ColorMode, PathStroke};
 use eframe::egui::{Color32, Mesh, Painter, Pos2, Rect, Shape, Stroke, pos2};
 use std::sync::Arc;

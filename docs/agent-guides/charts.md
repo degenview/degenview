@@ -39,7 +39,7 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
 
 ## Navigation
 
-- `model::chart::viewport::ChartViewport` is the only view state (bars, fractional offset from
+- `degenview_market::viewport::ChartViewport` is the only view state (bars, fractional offset from
   newest bar, manual price range), edited by gestures in `ui/chart/card/navigation.rs`. Never keep
   another offset or range in a painter, the drawing layer or Pine rendering.
 - Continuous window, edge bars may be cut: clip to the plot, place bars with `Window::lead`, never
@@ -49,7 +49,7 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
   chart/layout state, not template.
 - Gestures, history paging, unverified items: [chart navigation](../chart-navigation.md).
 - Zoom In is a workspace mode, not a `Tool`: transient `ChartCard` rectangle, maths in
-  `model::chart::viewport::zoom`, edits the same `ChartViewport` in-frame so linked charts follow.
+  `degenview_market::viewport::zoom`, edits the same `ChartViewport` in-frame so linked charts follow.
   No second viewport; never store the rectangle as a drawing
   ([chart navigation](../chart-navigation.md#zoom-in)).
 - The cursor (Cross, Dot, Arrow, …) is workspace state pushed to every card each frame
@@ -95,7 +95,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 - `ChartAppearance::canvas` is presentation-only: never alters candles, rebuilds constructed bars,
   or reruns indicators/Pine. New colors: `Option<Rgba>` (`None` follows theme).
 - Resolve canvas/theme once per frame with `CanvasStyle::resolve`; painters never read canvas colors
-  from `theme::*`. Grid and axis labels share `canvas::{price_ticks,time_ticks}`. Price range,
+  from `theme::*`. Grid and axis labels share `degenview_market::price_ticks` and `canvas::time_ticks`. Price range,
   visible-window, pane-split geometry stay pure in `model/chart/canvas/mod.rs`.
 - Pane order/collapse live on `PineInstance`; maximize is card view state. Buttons report clicks,
   `ChartCard` applies them.

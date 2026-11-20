@@ -1,0 +1,35 @@
+[package]
+name = "wasm-chart"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "Proof of concept: a Coinbase candlestick chart drawn by Rust compiled to WebAssembly"
+license = "GPL-3.0-only"
+publish = false
+
+# Its own workspace root: the app's workspace (the repository root) does not build for the browser.
+[workspace]
+
+[lib]
+# `cdylib` is the .wasm module; `rlib` lets `cargo test` run the pure parts natively.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+console_error_panic_hook = "0.1"
+degenview-market = { version = "0.1.0", path = "../../crates/market" }
+js-sys = "0.3"
+thiserror = "2"
+# Must match the `wasm-bindgen` CLI that build.sh runs.
+wasm-bindgen = "=0.2.130"
+wasm-bindgen-futures = "0.4"
+
+[dependencies.web-sys]
+version = "0.3"
+features = ["CanvasRenderingContext2d", "HtmlCanvasElement", "Response", "Window"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "debuginfo"

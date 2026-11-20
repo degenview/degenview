@@ -33,7 +33,7 @@
 //! chart hands over the bars it draws.
 
 use crate::format::days_from_civil;
-use crate::model::market::kline::Kline;
+use crate::model::Kline;
 use crate::pine::time::calendar;
 use crate::pine::time::trading_session::MarketSessions;
 

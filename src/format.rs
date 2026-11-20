@@ -1,3 +1,8 @@
+pub(crate) use degenview_market::calendar::{
+    civil_from_days, days_from_civil, iso8601, parse_iso8601,
+};
+pub(crate) use degenview_market::format::group_thousands;
+
 pub fn price(value: f64) -> String {
     let magnitude = value.abs();
     let decimals = if magnitude >= 1_000.0 {
@@ -29,25 +34,6 @@ pub fn headline(value: f64, probability: bool) -> String {
     let fraction = format!("{fraction:0<2}");
     let sign = if value < 0.0 { "-" } else { "" };
     format!("{sign}${}.{fraction}", group_thousands(integer))
-}
-
-pub(crate) fn group_thousands(text: &str) -> String {
-    let (integer, fraction) = text.split_once('.').unwrap_or((text, ""));
-    let (sign, digits) = integer
-        .strip_prefix('-')
-        .map_or(("", integer), |remaining| ("-", remaining));
-    let mut output = String::new();
-    for (index, character) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
-            output.push(',');
-        }
-        output.push(character);
-    }
-    if fraction.is_empty() {
-        format!("{sign}{output}")
-    } else {
-        format!("{sign}{output}.{fraction}")
-    }
 }
 
 pub fn timestamp(epoch_ms: i64) -> String {
@@ -102,79 +88,6 @@ pub(crate) fn parse_timestamp(text: &str) -> Option<i64> {
     }
     let days = days_from_civil(year, month, day);
     Some(((days * 24 + hours) * 60 + minutes) * 60_000 + seconds * 1_000)
-}
-
-/// ISO-8601 UTC instant, the form Coinbase's `start`/`end` candle query expects.
-pub(crate) fn iso8601(epoch_ms: i64) -> String {
-    let seconds = epoch_ms.div_euclid(1_000);
-    let days = seconds.div_euclid(86_400);
-    let remainder = seconds.rem_euclid(86_400);
-    let (year, month, day) = civil_from_days(days);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.000Z",
-        remainder / 3_600,
-        remainder % 3_600 / 60,
-        remainder % 60
-    )
-}
-
-/// The proleptic Gregorian `(year, month, day)` of a day count since 1970-01-01 (Howard Hinnant's
-/// `civil_from_days`).
-pub(crate) fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
-    let days = days_since_epoch + 719_468;
-    let era = days.div_euclid(146_097);
-    let day_of_era = days.rem_euclid(146_097);
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_prime = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
-    let month = if month_prime < 10 {
-        month_prime + 3
-    } else {
-        month_prime - 9
-    };
-    (year_of_era + era * 400 + i64::from(month <= 2), month, day)
-}
-
-/// ISO-8601 UTC instant (`2024-01-15T15:00:00Z`, optional fractional seconds) in epoch ms.
-pub(crate) fn parse_iso8601(text: &str) -> Option<i64> {
-    let text = text.trim().strip_suffix('Z').unwrap_or(text.trim());
-    let (date, time) = text.split_once('T')?;
-    let mut date_parts = date.split('-');
-    let (year, month, day) = (
-        date_parts.next()?.parse::<i64>().ok()?,
-        date_parts.next()?.parse::<i64>().ok()?,
-        date_parts.next()?.parse::<i64>().ok()?,
-    );
-    let time = time.split(['+', '-']).next()?;
-    let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
-    let mut clock_parts = clock.split(':');
-    let hour = clock_parts.next()?.parse::<i64>().ok()?;
-    let minute = clock_parts.next()?.parse::<i64>().ok()?;
-    let second = clock_parts
-        .next()
-        .map_or(Some(0), |s| s.parse::<i64>().ok())?;
-    let millis = fraction
-        .chars()
-        .chain("000".chars())
-        .take(3)
-        .collect::<String>()
-        .parse::<i64>()
-        .ok()?;
-    let days = crate::format::days_from_civil(year, month, day);
-    Some(((days * 86_400 + hour * 3_600 + minute * 60 + second) * 1_000) + millis)
-}
-
-/// Inverse of [`civil_from_days`]: the days since 1970-01-01 of a proleptic Gregorian date.
-pub(crate) fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = year.div_euclid(400);
-    let year_of_era = year - era * 400;
-    let month_prime = (month + 9) % 12;
-    let day_of_year = (153 * month_prime + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    era * 146_097 + day_of_era - 719_468
 }
 
 /// `count` and the noun that agrees with it: "1 alert", "3 alerts".
@@ -267,28 +180,5 @@ mod tests {
     fn timestamp_is_utc() {
         assert_eq!(timestamp(0), "1970-01-01 00:00");
         assert_eq!(timestamp(1_700_000_000_000), "2023-11-14 22:13");
-    }
-
-    #[test]
-    fn iso_timestamps_read_back_in_epoch_ms() {
-        assert_eq!(parse_iso8601("1970-01-01T00:00:00Z"), Some(0));
-        assert_eq!(
-            parse_iso8601("2024-01-15T15:00:00Z"),
-            Some(1_705_330_800_000)
-        );
-        assert_eq!(
-            parse_iso8601("2024-01-15T15:00:00.5Z"),
-            Some(1_705_330_800_500)
-        );
-        assert_eq!(
-            parse_iso8601("2024-01-15T15:00:00.123456Z"),
-            Some(1_705_330_800_123)
-        );
-        // Kraken's websocket writes nine fractional digits.
-        assert_eq!(
-            parse_iso8601("2026-11-17T10:04:00.000000000Z"),
-            Some(1_794_909_840_000)
-        );
-        assert_eq!(parse_iso8601("yesterday"), None);
     }
 }

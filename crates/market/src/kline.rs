@@ -1,3 +1,4 @@
+/// One OHLCV bar. Times are Unix milliseconds; `close_time` is the last millisecond of the bar.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Kline {
     pub open_time: i64,

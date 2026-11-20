@@ -9,13 +9,13 @@
 
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::chart::snapshot::framing::Base;
-use crate::model::chart::viewport::zoom::Selection;
 use crate::model::{DataSource, Drawing, IndicatorConfig, Kline, Timeframe};
 use crate::service::image::icon;
 use crate::ui::chart::card::{
     ChartCard, FrozenOutputs, SnapshotError, SnapshotFrame, SnapshotInput,
 };
 use crate::ui::chart::snapshot_scene::Images;
+use degenview_market::viewport::zoom::Selection;
 use eframe::egui::{self, ColorImage, Rect, Vec2, load::ImagePoll, load::SizeHint};
 use std::sync::Arc;
 

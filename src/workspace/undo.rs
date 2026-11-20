@@ -678,7 +678,7 @@ mod tests {
     fn undoing_past_the_history_cap_never_offers_a_forward_zoom_out() {
         let mut workspace = empty_workspace(9);
         let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
-        let cap = crate::model::chart::viewport::zoom::MAX_BACK;
+        let cap = degenview_market::viewport::zoom::MAX_BACK;
         let zooms = cap + 2;
         for i in 1..=zooms {
             zoomed(&mut workspace, chart, 120 - 10 * i, 10.0 * i as f64);

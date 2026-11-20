@@ -2,8 +2,8 @@ use super::framing::{
     Base, COARSE_STEP, Dial, FINE_STEP, Framing, KEY_BARS, KEY_PRICE, MAX, MIN, POSITION_LIMIT,
     RUBBER_REACH, SNAP, Step, multiplier_text, resist,
 };
-use crate::model::chart::canvas::visible_window;
-use crate::model::chart::viewport::{ChartViewport, HorizontalViewport, PriceRange};
+use degenview_market::viewport::visible_window;
+use degenview_market::viewport::{ChartViewport, HorizontalViewport, PriceRange};
 use eframe::egui::{Vec2, vec2};
 
 const PLOT: Vec2 = vec2(800.0, 400.0);

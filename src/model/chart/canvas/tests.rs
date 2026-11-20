@@ -1,6 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 use super::*;
 use crate::model::ChartAppearance;
+use degenview_market::price_ticks;
 
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0)
@@ -233,73 +234,6 @@ fn the_price_range_stays_finite_for_extreme_and_bad_input() {
     }
 }
 
-// MARK: Ticks
-
-#[test]
-fn linear_ticks_are_round_multiples_inside_the_range() {
-    let ticks = price_ticks(98.0, 207.0, false, 6);
-    assert!(!ticks.is_empty() && ticks.len() <= 6, "{ticks:?}");
-    assert!(ticks.iter().all(|tick| (98.0..=207.0).contains(tick)));
-    let step = ticks[1] - ticks[0];
-    assert!(
-        close(step, 20.0) || close(step, 25.0) || close(step, 50.0),
-        "{step}"
-    );
-    assert!(ticks.windows(2).all(|pair| close(pair[1] - pair[0], step)));
-    assert!(
-        ticks
-            .iter()
-            .all(|tick| close(tick / step, (tick / step).round()))
-    );
-}
-
-#[test]
-fn ticks_cope_with_tiny_and_huge_prices() {
-    let tiny = price_ticks(0.000_001_2, 0.000_001_9, false, 5);
-    assert!(!tiny.is_empty());
-    assert!(
-        tiny.iter()
-            .all(|tick| *tick >= 0.000_001_2 && *tick <= 0.000_001_9)
-    );
-    let huge = price_ticks(1.0e9, 3.5e9, false, 5);
-    assert!(!huge.is_empty());
-    assert!(huge.iter().all(|tick| tick.is_finite()));
-}
-
-#[test]
-fn ticks_cross_zero_for_negative_values() {
-    let ticks = price_ticks(-30.0, 40.0, false, 7);
-    assert!(ticks.contains(&0.0), "{ticks:?}");
-    assert!(ticks.iter().any(|tick| *tick < 0.0));
-}
-
-#[test]
-fn logarithmic_ticks_are_decades_and_thin_to_fit() {
-    let roomy = price_ticks(1.0, 1000.0, true, 12);
-    assert!(roomy.contains(&1.0) && roomy.contains(&10.0) && roomy.contains(&100.0));
-    assert!(roomy.contains(&1000.0));
-    assert!(roomy.len() > 4, "{roomy:?}");
-    let tight = price_ticks(1.0, 1000.0, true, 4);
-    assert_eq!(tight, vec![1.0, 10.0, 100.0, 1000.0]);
-    let tighter = price_ticks(1e-3, 1e9, true, 4);
-    assert!(!tighter.is_empty() && tighter.len() <= 4, "{tighter:?}");
-}
-
-#[test]
-fn a_narrow_logarithmic_range_falls_back_to_round_prices() {
-    let ticks = price_ticks(100.0, 140.0, true, 6);
-    assert!(ticks.len() >= 2);
-    assert!(ticks.iter().all(|tick| (100.0..=140.0).contains(tick)));
-}
-
-#[test]
-fn ticks_are_empty_for_a_degenerate_scale() {
-    assert!(price_ticks(5.0, 5.0, false, 6).is_empty());
-    assert!(price_ticks(f64::NAN, 5.0, false, 6).is_empty());
-    assert!(price_ticks(1.0, 5.0, false, 0).is_empty());
-    assert!(price_ticks(9.0, 1.0, false, 4).is_empty());
-}
-
 #[test]
 fn the_axis_holds_its_widest_label_and_a_margin() {
     // 40 points of text and 17 of margin, rounded up to a 4 point step.
@@ -367,106 +301,6 @@ fn wide_time_labels_are_spaced_so_they_never_touch() {
     // Narrow labels keep the usual spacing.
     assert_eq!(time_tick_step(slot, 60.0), 13);
     assert_eq!(time_tick_step(slot, f32::NAN), 13);
-}
-
-// MARK: Window
-
-#[test]
-fn the_window_without_a_margin_is_the_last_visible_bars() {
-    let window = visible_window(500, 120, 0.0, 0);
-    assert_eq!((window.start, window.end), (380, 500));
-    assert_eq!((window.lead, window.slots), (0.0, 120));
-    assert_eq!(window.count(), 120);
-}
-
-#[test]
-fn a_right_margin_reserves_empty_slots_past_the_newest_bar() {
-    let window = visible_window(500, 120, 0.0, 10);
-    assert_eq!((window.start, window.end), (380, 500));
-    assert_eq!(window.slots, 130, "the margin is part of the plot");
-    // The newest bar sits ten slots in from the right edge.
-    let newest_slot = window.lead as usize + window.count() - 1;
-    assert_eq!(window.slots - 1 - newest_slot, 10);
-}
-
-#[test]
-fn scrolling_back_fills_the_margin_with_later_bars_at_the_same_spacing() {
-    let at_rest = visible_window(500, 120, 0.0, 10);
-    let scrolled = visible_window(500, 120, 4.0, 10);
-    assert_eq!(scrolled.slots, at_rest.slots, "bar spacing does not change");
-    assert_eq!(scrolled.end, 500, "still inside the margin");
-    assert_eq!(scrolled.start, 376);
-    let far = visible_window(500, 120, 30.0, 10);
-    assert_eq!((far.start, far.end), (350, 480));
-    assert_eq!(far.slots, 130);
-    assert_eq!(far.lead, 0.0);
-    assert_eq!(far.count(), 130, "the margin's slots show real bars now");
-}
-
-#[test]
-fn a_short_series_sits_at_the_right_of_the_window() {
-    let window = visible_window(30, 120, 0.0, 0);
-    assert_eq!((window.start, window.end), (0, 30));
-    assert_eq!(window.lead, 90.0);
-    let with_margin = visible_window(30, 120, 0.0, 10);
-    assert_eq!(
-        with_margin.lead, 90.0,
-        "the margin is at the right, not the left"
-    );
-    assert_eq!(with_margin.slots, 130);
-}
-
-#[test]
-fn an_empty_or_overscrolled_series_has_an_empty_window() {
-    assert_eq!(visible_window(0, 120, 0.0, 10).count(), 0);
-    assert_eq!(visible_window(10, 120, 500.0, 10).count(), 0);
-    let window = visible_window(10, 0, 0.0, 0);
-    assert_eq!(window.slots, 1);
-}
-
-#[test]
-fn a_fractional_offset_cuts_the_bar_at_each_edge() {
-    let window = visible_window(500, 120, 0.25, 0);
-    // 119.75 bars are whole; the first bar's slot lies a quarter outside the plot.
-    assert_eq!((window.start, window.end), (379, 500));
-    assert!((window.lead + 0.75).abs() < 1e-6, "{}", window.lead);
-    let other = visible_window(500, 120, 3.5, 0);
-    assert_eq!((other.start, other.end), (376, 497));
-    assert!((other.lead + 0.5).abs() < 1e-6, "{}", other.lead);
-}
-
-#[test]
-fn a_whole_offset_cuts_no_bar() {
-    let window = visible_window(500, 120, 7.0000000001, 0);
-    assert_eq!((window.start, window.end), (373, 493));
-    assert_eq!(window.lead, 0.0);
-}
-
-#[test]
-fn a_negative_offset_leaves_empty_slots_after_the_newest_bar() {
-    let window = visible_window(500, 120, -10.0, 0);
-    assert_eq!((window.start, window.end), (390, 500));
-    assert_eq!(window.lead, 0.0);
-    assert_eq!(window.slots, 120, "the spacing does not change");
-    // The newest bar's slot is 11 from the right edge: ten empty slots follow it.
-    let newest_slot = window.lead + (window.count() - 1) as f32;
-    assert_eq!(window.slots as f32 - 1.0 - newest_slot, 10.0);
-}
-
-#[test]
-fn a_fractional_whitespace_offset_shows_the_newest_bar_between_slots() {
-    let window = visible_window(500, 120, -2.5, 0);
-    assert_eq!(window.end, 500);
-    let newest_slot = window.lead + (window.count() - 1) as f32;
-    assert!((window.slots as f32 - 1.0 - newest_slot - 2.5).abs() < 1e-5);
-}
-
-#[test]
-fn a_non_finite_offset_is_the_newest_bars() {
-    assert_eq!(
-        visible_window(500, 120, f64::NAN, 0),
-        visible_window(500, 120, 0.0, 0)
-    );
 }
 
 // MARK: Panes

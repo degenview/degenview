@@ -1,5 +1,5 @@
 use super::*;
-use crate::format::days_from_civil;
+use crate::calendar::days_from_civil;
 use std::time::Duration;
 
 fn candle(open_time: i64, close: f64) -> Kline {

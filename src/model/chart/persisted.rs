@@ -2,12 +2,12 @@
 //! `SavedView` model can reference it without depending on the workspace.
 
 use crate::model::chart::price_scale::PriceScaleMode;
-use crate::model::chart::viewport::SavedViewport;
 use crate::model::drawings::market::MarketDrawings;
 use crate::model::overlay::OverlayList;
 use crate::model::pine::instance::PineInstance;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::{ChartAppearance, DataSource, IndicatorConfig};
+use degenview_market::viewport::SavedViewport;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn a_scrolled_chart_keeps_its_place_and_an_old_row_follows_the_newest_bar() {
-        use crate::model::chart::viewport::PriceRange;
+        use degenview_market::viewport::PriceRange;
         let mut saved = chart();
         saved.viewport = SavedViewport {
             right_offset: -12.5,

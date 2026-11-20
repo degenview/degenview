@@ -2,10 +2,10 @@
 //! and one market, and one market it does not know refuses its request, so each market is its own
 //! request. The socket is kept alive with protocol pings, which the server answers.
 
-use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{Kline, Timeframe};
 use crate::service::market::gateio::{interval, pair_id};
 use crate::service::net::ws::{Keepalive, Session};
+use degenview_market::bucket::next_bucket_start_ms;
 use serde_json::{Value, json};
 use std::time::Duration;
 

@@ -4,7 +4,10 @@
 
 1. `bars::source::DataSource` metadata: display name, watchlist slug, prediction-market flag,
    volume support, line/candle mode.
-2. Implement `service::MarketSource`; `search_tickers` if supported; a parser for a new kline shape.
+2. Implement `service::MarketSource`; `search_tickers` if supported; a parser for a new kline shape, which goes in `crates/market` as one
+   module per exchange (`parse_candles` returning `degenview_market::ParseError`, which the provider
+   turns into a `ProviderError` with `?`; a refusal that means "slow down" sets `rate_limited` there,
+   so nothing matches on text) and is unit-tested there.
    Declare its candle lengths in `model::market::natives` and plan every request through
    `DataSource::plan` (see Timeframes), so `serves` and the fetch agree.
 3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active
@@ -50,7 +53,7 @@ watchlists.
   serialize as `"Hour"`, `"Day"`, `"Week"`, `"Month"`, `"Quarter"`, `"Year"` so older builds and
   synced layouts decode them; anything else is its label (`"22m"`). Decoding takes both.
   `nominal_ms()` is exact to weeks; months are 30 days, a quarter 91 and a year 365.
-- Buckets are `bars::bucket` and nothing else cuts them (providers, chart and Pine): UTC,
+- Buckets are `degenview_market::bucket` and nothing else cuts them (providers, chart and Pine): UTC,
   minutes and hours restart at midnight (a `22m` day ends in a shorter bucket), days count from
   1970-01-01, weeks start on Monday, months count from 1970-01 (so `3M` is the calendar quarter,
   `12M` the year). A bucket closes 1 ms before the next opens.
@@ -120,7 +123,7 @@ watchlists.
   the buckets the same way as everything else, a length that is no timeframe flooring onto the epoch.
   `request.security_lower_tf` intrabars are folded in the Pine host from the coarsest of its own
   base list that nests (`INTRABAR_BASES`), bounded by `MAX_INTRABAR_CANDLES` base candles.
-- `service::fetch_klines` runs every provider through `service::normalize` (ascending, one candle per
+- `service::fetch_klines` runs every provider through `degenview_market::normalize` (ascending, one candle per
   open time, finite prices, range holds open and close). GeckoTerminal lists only traded intervals;
   `bucket::fill_gaps` adds flat zero-volume candles for even spacing. Volume units differ (base asset,
   shares, USD); CoinGecko has none.
@@ -152,7 +155,7 @@ watchlists.
   each protocol is a module under `live/` that builds a `net::ws::Session` and parses its messages): updates the forming candle, reconnects with backoff. MEXC is the sixth: its spot socket speaks Protocol Buffers only (the JSON topics are refused), read by `service::net::protobuf` (a field iterator, no dependency; `ws::Frame::Binary` carries the frames), with `spot@public.kline.v3.api.pb@<SYMBOL>@Min1` topics, at most 30 per connection (so `LiveFeed` runs one connection per 30 markets), one topic per subscribe request and `{"method":"PING"}` as keepalive. Gate.io is the fifth (`spot.candlesticks` and `spot.tickers` on `wss://api.gateio.ws/ws/v4/`: one subscribe request per market, since a request that names a market it does not know is refused whole; protocol pings keep it alive). Bybit is the fourth (`kline.<interval>.<SYMBOL>` on `wss://stream.bybit.com/v5/public/spot`: one subscribe request per topic, because a request takes at most 10 and one unknown symbol refuses all of it; `{"op":"ping"}` keepalive, whose answer `ws::Keepalive::Text` recognises by its start). Kraken is the third (websocket v2 `ohlc` with `snapshot:false`, one subscribe naming every market, kept alive by the server's one-a-second `heartbeat` and protocol pings; its `ticker` channel carries the rolling 24h `change`, which gives the price a day ago). OKX is the second stream (`candle<bar>` channels on `wss://ws.okx.com/ws/v5/business`, one subscribe message naming every market, kept alive with the text `ping`/`pong` through `ws::Keepalive::Text`; its `public` endpoint refuses candles). Binance's streams
   the *base* candle the timeframe is served from (`DataSource::Binance.plan(timeframe).base()`:
   `@kline_1m` for a 22-minute chart, `@kline_1M` for `3M` and `1Y`; none for a timeframe Binance cannot
-  reach). Charts and compared markets fold a live kline with `model::market::live::LiveFold::apply`
+  reach). Charts and compared markets fold a live kline with `degenview_market::live::LiveFold::apply`
   only, and every chart of the symbol takes it. For the timeframe's own length that is
   `apply_live` (replace the newest bar or append; a kline older than the newest is dropped, so candles
   stay ascending). For a folded one the forming bucket is rebuilt from the latest state of each base

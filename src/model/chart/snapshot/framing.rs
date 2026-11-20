@@ -14,9 +14,7 @@
 //! The ranges, steps and snap are the ones Vela documents; the quarter, the rubber band and what
 //! counts as a bound are decisions, written next to the constants.
 
-use crate::model::chart::viewport::{
-    ChartViewport, HorizontalViewport, PriceRange, VerticalViewport,
-};
+use degenview_market::viewport::{ChartViewport, HorizontalViewport, PriceRange, VerticalViewport};
 use eframe::egui::Vec2;
 
 /// The least a dial may be set to: half the starting magnification.
@@ -132,7 +130,7 @@ fn rubber(value: f64, (low, high): (f64, f64), reach: f64) -> f64 {
 /// The view a capture started with, as the composer needs to rebuild it.
 ///
 /// Horizontal positions are slot coordinates: bar `i` fills `[i, i + 1)`, as in
-/// [`Slots`](crate::model::chart::viewport::zoom::Slots). A slot is a bar, or one of the free
+/// [`Slots`](degenview_market::viewport::zoom::Slots). A slot is a bar, or one of the free
 /// slots past the newest.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Base {

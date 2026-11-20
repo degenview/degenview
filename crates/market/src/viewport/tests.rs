@@ -487,7 +487,7 @@ fn a_new_drag_starts_from_the_manual_range_the_last_one_left() {
 mod zoom_to_a_rectangle {
     use super::super::zoom::{self, MIN_SELECTION, Selection, Slots};
     use super::*;
-    use crate::model::chart::canvas::visible_window;
+    use crate::viewport::visible_window;
 
     const PLOT: (f32, f32, f32, f32) = (100.0, 20.0, 700.0, 420.0);
 

@@ -8,8 +8,8 @@
 //!
 //! Pure: no egui types.
 
+use crate::model::Kline;
 use crate::model::drawings::Anchor;
-use crate::model::market::kline::Kline;
 use serde::{Deserialize, Serialize};
 
 /// The most bars one pattern keeps: a longer selection keeps its first `MAX_BARS`.

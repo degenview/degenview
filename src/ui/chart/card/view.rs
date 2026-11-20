@@ -3,8 +3,8 @@
 
 use super::*;
 use crate::model::chart::snapshot::framing::Base;
-use crate::model::chart::viewport::zoom::{self, Selection, Slots};
-use crate::model::chart::viewport::{HorizontalViewport, VerticalViewport};
+use degenview_market::viewport::zoom::{self, Selection, Slots};
+use degenview_market::viewport::{HorizontalViewport, VerticalViewport};
 
 /// The geometry of the last frame, as a test needs it to aim a pointer.
 #[cfg(test)]
@@ -283,7 +283,7 @@ impl ChartCard {
 
     /// The bars the plot shows out of `len`, and where they sit in its slots.
     fn window(&self, framing: Framing, len: usize) -> Window {
-        chart::canvas::visible_window(
+        degenview_market::viewport::visible_window(
             len,
             framing.viewport.horizontal.visible,
             framing.viewport.horizontal.right_offset,
@@ -365,7 +365,7 @@ impl ChartCard {
     /// Places the price range as a drag of the chart would.
     #[cfg(test)]
     pub(crate) fn place_prices_for_test(&mut self, minimum: f64, maximum: f64) {
-        self.viewport.vertical.manual = Some(crate::model::chart::viewport::PriceRange::new(
+        self.viewport.vertical.manual = Some(degenview_market::viewport::PriceRange::new(
             minimum, maximum,
         ));
     }

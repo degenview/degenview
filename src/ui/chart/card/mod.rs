@@ -7,12 +7,11 @@
 use crate::format;
 use crate::host::pine::chart::{ChartFrame, ChartRuns, InstanceStatus, PineLogs, RunRevision};
 use crate::model::chart;
-use crate::model::chart::canvas::{PaneSpec, Window};
+use crate::model::chart::canvas::PaneSpec;
 use crate::model::chart::kind::{ChartStyle, ChartType, DataClass};
 use crate::model::chart::look::Palette;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::chart::synthetic::{BarShape, Construction, SyntheticBar, SyntheticSeries};
-use crate::model::chart::viewport::{ChartViewport, PriceRange, SavedViewport};
 use crate::model::paper::PaperOrderSide;
 use crate::model::pine::instance::{PineInstance, VisualOrder};
 use crate::model::{
@@ -39,6 +38,8 @@ use crate::ui::pine::chart_render::{self, HoverTarget, PineLayer};
 use crate::ui::pine::geometry::{OverlayExtent, overlay_extent};
 use crate::ui::replay::overlay::{self, ReplayChartFrame};
 use crate::ui::theme;
+use degenview_market::viewport::Window;
+use degenview_market::viewport::{ChartViewport, PriceRange, SavedViewport};
 use eframe::egui::{
     self, Align2, Color32, FontId, Pos2, Rect, Response, Sense, Shape, Stroke, StrokeKind, Vec2,
 };
@@ -71,8 +72,12 @@ fn visible_price_move(
     right_offset: f64,
     reserved: usize,
 ) -> Option<(f64, f64)> {
-    let window =
-        chart::canvas::visible_window(candles.len(), visible_count, right_offset, reserved);
+    let window = degenview_market::viewport::visible_window(
+        candles.len(),
+        visible_count,
+        right_offset,
+        reserved,
+    );
     let visible = candles.get(window.start..window.end)?;
     let (Some(first), Some(last)) = (visible.first(), visible.last()) else {
         return None;
@@ -290,7 +295,7 @@ pub struct ChartCard {
     /// scrolled-back view has to move to stay on the same bars.
     newest_bar: Option<i64>,
     /// The horizontal viewport as this frame's input found it, to tell what the user changed.
-    sync_baseline: Option<crate::model::chart::viewport::HorizontalViewport>,
+    sync_baseline: Option<degenview_market::viewport::HorizontalViewport>,
     /// What the user's navigation changed this frame, for the workspace to hand to linked charts.
     sync_change: Option<crate::model::chart::sync::HorizontalChange>,
     /// What the last frame drew, for the tests that drive the chart by pointer.
@@ -335,7 +340,7 @@ pub struct ChartCard {
     bar_marker: Option<(i64, std::time::Instant)>,
     /// Where the view was before a scroll the workspace made outside a frame, until the next frame
     /// measures the change for linked charts.
-    scroll_from: Option<crate::model::chart::viewport::HorizontalViewport>,
+    scroll_from: Option<degenview_market::viewport::HorizontalViewport>,
     /// The Zoom In tool: armed state, the rectangle being dragged, the views to zoom out to.
     /// View state, never saved.
     zoom: zoom_rect::ZoomTool,
@@ -736,7 +741,7 @@ impl ChartCard {
     pub fn set_visible_candles(&mut self, count: usize) {
         if count > 0 {
             self.viewport.horizontal.visible =
-                count.clamp(5, crate::model::chart::viewport::MAX_RESTORED_VISIBLE);
+                count.clamp(5, degenview_market::viewport::MAX_RESTORED_VISIBLE);
         }
     }
 
