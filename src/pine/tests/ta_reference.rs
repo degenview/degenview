@@ -296,3 +296,25 @@ plot(late ? every : na)
     assert_same("first read on bar 40", &plotted[2], &plotted[3]);
     assert!(plotted[0].iter().flatten().count() > 50);
 }
+
+#[test]
+fn stdev_and_variance_take_named_and_positional_arguments_alike() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Named dispersion\")
+plot(ta.stdev(close, 20, false))
+plot(ta.stdev(source = close, length = 20, biased = false))
+plot(ta.stdev(length = 20, source = close, biased = false))
+plot(ta.variance(close, 20))
+plot(ta.variance(close, length = 20))
+plot(ta.variance(close, 20, true))
+plot(ta.variance(close, biased = true, length = 20))
+",
+        600,
+    );
+    assert_same("stdev named", &plotted[0], &plotted[1]);
+    assert_same("stdev reordered", &plotted[0], &plotted[2]);
+    assert_same("variance mixed", &plotted[3], &plotted[4]);
+    assert_same("variance explicit biased", &plotted[3], &plotted[5]);
+    assert_same("variance named biased", &plotted[3], &plotted[6]);
+}

@@ -267,20 +267,27 @@ impl Session {
             return Ok(ta::evaluate_macd(&source, fast, slow, signal, state));
         }
         if matches!(name, "ta.stdev" | "ta.variance") {
-            let bound = self.bind_named(arguments, &["source", "length", "biased"], context)?;
-            let source = bound.get("source").cloned().unwrap_or(RuntimeValue::Na);
-            let length = bound
-                .get("length")
-                .and_then(RuntimeValue::int_value)
-                .unwrap_or(0);
-            let biased = bound
-                .get("biased")
-                .and_then(RuntimeValue::bool)
-                .unwrap_or(true);
+            // Positional arguments, which nearly every call is, skip binding by name.
+            let (source, length, biased) = if let Some(slots) =
+                self.positional_operands(None, arguments, 3, context)?
+            {
+                (slots[0].clone(), slots[1].int_value(), slots[2].bool())
+            } else {
+                let bound = self.bind_named(arguments, &["source", "length", "biased"], context)?;
+                (
+                    bound.get("source").cloned().unwrap_or(RuntimeValue::Na),
+                    bound.get("length").and_then(RuntimeValue::int_value),
+                    bound.get("biased").and_then(RuntimeValue::bool),
+                )
+            };
             let key = self.site_key(site, context);
             let state = self.working.ta_states.entry(key).or_default();
             return Ok(ta::evaluate_dispersion(
-                name, &source, length, biased, state,
+                name,
+                &source,
+                length.unwrap_or(0),
+                biased.unwrap_or(true),
+                state,
             ));
         }
         if matches!(name, "ta.sar" | "ta.supertrend") {
