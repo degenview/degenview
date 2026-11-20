@@ -3,11 +3,11 @@
 //! right, or the trades behind it.
 
 use super::group;
-use super::ladder::{Ladder, Link, View};
+use super::ladder::{Ladder, View, Window};
 use super::pull_stack::PullStack;
+use super::snapshot::{DepthSnapshot, Link};
 use super::sync::{BookSync, Verdict};
-use super::{Book, BookEvent, Delta, Event, Price, Side, Snapshot, Tape};
-use crate::model::taker_flow::Taker;
+use super::{Book, BookEvent, Delta, Event, Price, Side, Snapshot, Tape, TapeView};
 
 /// What an update did to the record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,12 +90,12 @@ impl DepthRecord {
             Event::Book(event) => self.apply_book(event, now_ms),
             Event::Trade(trade) => {
                 self.tape.push(trade);
-                let side = match trade.taker {
-                    Taker::Buy => Side::Ask,
-                    Taker::Sell => Side::Bid,
-                };
-                self.pull_stack
-                    .traded(side, trade.price, trade.size, now_ms);
+                self.pull_stack.traded(
+                    Side::of_taker(trade.taker),
+                    trade.price,
+                    trade.size,
+                    now_ms,
+                );
                 if let Some(mid) = self.book.mid() {
                     self.tape.prune(mid);
                 }
@@ -145,11 +145,11 @@ impl DepthRecord {
         }
     }
 
-    /// The ladder for `view` as of `now_ms`. While the book is not there to show, the ladder
-    /// says why and has no rows.
-    pub fn ladder(&self, view: View, now_ms: i64) -> Ladder {
+    /// The depth for `view` as of `now_ms`. While the book is not there to show, the snapshot
+    /// says why and has no rows and no trades.
+    pub fn snapshot(&self, view: View, now_ms: i64) -> DepthSnapshot {
         if self.unlisted {
-            return Ladder::waiting(Link::Unlisted, self.tick);
+            return DepthSnapshot::waiting(Link::Unlisted, self.tick);
         }
         let shown = self
             .tick
@@ -161,21 +161,30 @@ impl DepthRecord {
             } else {
                 Link::Connecting
             };
-            return Ladder::waiting(link, self.tick);
+            return DepthSnapshot::waiting(link, self.tick);
         };
+        let choices = group::choices(tick);
         let group = view
             .group
-            .filter(|group| group::choices(tick).contains(group))
+            .filter(|group| choices.contains(group))
             .unwrap_or_else(|| group::automatic(tick, mid));
-        let centre = view.centre.unwrap_or(mid);
-        Ladder::build(
-            &self.book,
-            &self.tape,
-            &self.pull_stack,
-            tick,
+        let window = Window {
             group,
-            centre,
-            now_ms,
-        )
+            centre: view.centre.unwrap_or(mid),
+            rows: view.rows,
+        };
+        DepthSnapshot {
+            link: Link::Live,
+            tick,
+            ladder: Ladder::build(
+                &self.book,
+                &self.tape,
+                &self.pull_stack,
+                window,
+                choices,
+                now_ms,
+            ),
+            tape: TapeView::of(&self.tape),
+        }
     }
 }

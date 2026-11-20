@@ -1,6 +1,6 @@
 //! The order-book mode of the panel: the focused chart's market as a ladder of prices with the
 //! resting size on each side, what traded at each price and what was stacked or pulled, and a tape
-//! of the latest trades. Drawn from a [`Ladder`] value; nothing here knows a book, a socket or how
+//! of the latest trades. Drawn from a [`DepthSnapshot`] value; nothing here knows a book, a socket or how
 //! an exchange keeps its book right.
 
 mod ladder;
@@ -14,8 +14,8 @@ mod toolbar;
 use state::BigTrade;
 pub use state::BookViewState;
 
-use super::{footnote, footnote_height};
-use crate::model::depth::{Ladder, Link};
+use super::{MARGIN, footnote, footnote_height, usd};
+use crate::model::depth::{DepthSnapshot, Link};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use crate::ui::kit::time_text::clock_time_seconds;
@@ -31,7 +31,7 @@ const MIN_PART: f32 = 120.0;
 pub struct BookFeed<'a> {
     pub exchange: &'a str,
     pub symbol: &'a str,
-    pub ladder: &'a Ladder,
+    pub snapshot: &'a DepthSnapshot,
 }
 
 /// What the mode draws: the focused chart's feed, none while its market has no book to follow.
@@ -52,7 +52,7 @@ pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, body: &BookBody<'_>) 
         );
         return;
     };
-    let waiting = match feed.ladder.link {
+    let waiting = match feed.snapshot.link {
         Link::Live => None,
         Link::Connecting => Some((
             format!("Connecting to {}", feed.exchange),
@@ -77,18 +77,18 @@ pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, body: &BookBody<'_>) 
 fn live(ui: &mut Ui, state: &mut BookViewState, feed: BookFeed<'_>) {
     let note = footnote_text(feed);
     let reserved = footnote_height(ui, &note);
-    toolbar::show(ui, state, feed.ladder);
+    toolbar::show(ui, state, &feed.snapshot.ladder);
     kit::divider(ui);
     let free = (ui.available_height() - reserved).max(2.0 * MIN_PART);
     let ladder_height = (free * LADDER_SHARE).max(MIN_PART);
-    ladder::show(ui, state, feed.ladder, ladder_height);
+    ladder::show(ui, state, feed.snapshot, ladder_height);
     kit::divider(ui);
-    tape::show(ui, state, feed.ladder, free - ladder_height);
+    tape::show(ui, state, feed.snapshot, free - ladder_height);
     footnote(ui, &note);
 }
 
 fn footnote_text(feed: BookFeed<'_>) -> String {
-    let since = feed.ladder.since_ms.map_or_else(
+    let since = feed.snapshot.tape.since_ms.map_or_else(
         || "No trades yet.".to_owned(),
         |since| format!("Traded since {}.", clock_time_seconds(Some(since))),
     );

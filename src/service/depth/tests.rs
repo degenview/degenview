@@ -103,8 +103,17 @@ fn record(venue: &Scripted) -> Mutex<DepthRecord> {
     Mutex::new(record)
 }
 
+/// A view of the market with room for 40 rows.
+fn view() -> View {
+    View {
+        group: None,
+        centre: None,
+        rows: 40,
+    }
+}
+
 fn live(record: &Mutex<DepthRecord>) -> bool {
-    lock(record).ladder(View::default(), now_ms()).link == Link::Live
+    lock(record).snapshot(view(), now_ms()).link == Link::Live
 }
 
 /// Follows `venue` on a worker that is running, or `stopped` already.
@@ -196,7 +205,7 @@ fn a_tick_size_is_learned_and_an_unlisted_market_is_marked_so() {
     unlisted.tick = Err(DepthError::UnknownSymbol("NOPEUSDT".to_owned()));
     assert_eq!(follow(&worker, &unlisted, &record).learn_tick(), None);
     assert_eq!(
-        lock(&record).ladder(View::default(), now_ms()).link,
+        lock(&record).snapshot(view(), now_ms()).link,
         Link::Unlisted
     );
 
@@ -205,7 +214,7 @@ fn a_tick_size_is_learned_and_an_unlisted_market_is_marked_so() {
     let record = Mutex::new(DepthRecord::new(offline.book_sync()));
     assert_eq!(follow(&worker, &offline, &record).learn_tick(), None);
     assert_eq!(
-        lock(&record).ladder(View::default(), now_ms()).link,
+        lock(&record).snapshot(view(), now_ms()).link,
         Link::Connecting
     );
 }
@@ -242,40 +251,46 @@ fn live_books_fill() {
         lease.renew(Duration::from_secs(120));
         let feed = DepthFeed::start(market, Arc::clone(&record), lease, Arc::new(|| {}));
         let deadline = std::time::Instant::now() + Duration::from_secs(60);
-        let ladder = loop {
+        let shown = loop {
             std::thread::sleep(Duration::from_millis(500));
-            let ladder = lock(&record).ladder(View::default(), now_ms());
-            if ladder.link == Link::Live && !ladder.trades.is_empty() {
-                break ladder;
+            let shown = lock(&record).snapshot(view(), now_ms());
+            if shown.link == Link::Live && !shown.tape.trades.is_empty() {
+                break shown;
             }
             assert!(
                 std::time::Instant::now() < deadline,
                 "{exchange:?}: {:?}",
-                ladder.link
+                shown.link
             );
         };
         assert!(feed.is_running());
-        let (bid, ask) = (ladder.best_bid.unwrap(), ladder.best_ask.unwrap());
+        let (bid, ask) = (
+            shown.ladder.best_bid.unwrap(),
+            shown.ladder.best_ask.unwrap(),
+        );
         assert!(bid < ask, "a crossed book");
-        let trade = ladder.trades[0];
+        let trade = shown.tape.trades[0];
         println!(
             "{}: tick {}, best bid {} ask {}, last trade {} x {} ({:?}), {} rows around {}",
             exchange.name(),
-            ladder.tick.format(ladder.tick.decimals()),
-            bid.format(ladder.tick.decimals()),
-            ask.format(ladder.tick.decimals()),
-            trade.price.format(ladder.tick.decimals()),
+            shown.tick.format(shown.tick.decimals()),
+            bid.format(shown.tick.decimals()),
+            ask.format(shown.tick.decimals()),
+            trade.price.format(shown.tick.decimals()),
             trade.size,
             trade.taker,
-            ladder.rows.len(),
-            ladder.centre().unwrap().format(ladder.tick.decimals()),
+            shown.ladder.rows.len(),
+            shown.ladder.centre().unwrap().format(shown.tick.decimals()),
         );
         // Let the diffs flow for a while: the book must stay uncrossed.
         for _ in 0..20 {
             std::thread::sleep(Duration::from_millis(500));
-            let ladder = lock(&record).ladder(View::default(), now_ms());
-            assert_eq!(ladder.link, Link::Live);
-            assert!(ladder.best_bid < ladder.best_ask, "crossed after diffs");
+            let shown = lock(&record).snapshot(view(), now_ms());
+            assert_eq!(shown.link, Link::Live);
+            assert!(
+                shown.ladder.best_bid < shown.ladder.best_ask,
+                "crossed after diffs"
+            );
         }
     }
 }

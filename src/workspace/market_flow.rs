@@ -28,8 +28,6 @@ pub(super) struct MarketFlowPane {
     visible: bool,
     view: MarketFlowState,
     hosts: Option<Hosts>,
-    /// The market the order book was last drawn for: its group and scroll mean nothing on another.
-    book_market: Option<DepthMarket>,
 }
 
 impl MarketFlowPane {
@@ -39,15 +37,6 @@ impl MarketFlowPane {
 
     pub(super) fn toggle(&mut self) {
         self.visible = !self.visible;
-    }
-
-    /// Notes the market the order book is drawn for; on another, the book's row size and scroll
-    /// start over, because they are in the last market's prices.
-    fn follow_book_market(&mut self, market: &Option<DepthMarket>) {
-        if self.book_market != *market {
-            self.view.book.forget_market();
-            self.book_market = market.clone();
-        }
     }
 }
 
@@ -95,7 +84,7 @@ impl ChartWorkspace {
         let id = egui::Id::new(("market-flow", self.id));
         let pane = &mut self.market_flow;
         if mode == Mode::Book {
-            pane.follow_book_market(&market);
+            pane.view.book.follow(market.as_ref());
         }
         let Some(hosts) = pane.hosts.as_ref() else {
             return;
@@ -117,16 +106,16 @@ impl ChartWorkspace {
                 dock(ui, id, &mut pane.view, &body)
             }
             Mode::Book => {
-                let ladder = market
+                let depth = market
                     .as_ref()
                     .map(|market| hosts.depth.watch(ctx, market, pane.view.book.view()));
                 let feed = market
                     .as_ref()
-                    .zip(ladder.as_deref())
-                    .map(|(market, ladder)| BookFeed {
+                    .zip(depth.as_deref())
+                    .map(|(market, snapshot)| BookFeed {
                         exchange: market.venue.exchange.name(),
                         symbol: &market.symbol,
-                        ladder,
+                        snapshot,
                     });
                 dock(ui, id, &mut pane.view, &Body::Book(BookBody { feed }))
             }
@@ -173,24 +162,5 @@ mod tests {
     #[test]
     fn the_panel_opens_on_the_liquidations() {
         assert_eq!(MarketFlowPane::default().view.mode, Mode::Liquidations);
-    }
-
-    #[test]
-    fn the_order_book_starts_over_on_another_market_and_keeps_its_place_on_the_same_one() {
-        use crate::model::DataSource;
-        let mut pane = MarketFlowPane::default();
-        let btc = market_of(DataSource::Binance, "BTCUSDT");
-        let eth = market_of(DataSource::Binance, "ETHUSDT");
-        pane.follow_book_market(&btc);
-        pane.view.book.group = Some(crate::model::depth::Price::from_units(1_000_000_000));
-        pane.follow_book_market(&btc);
-        assert!(pane.view.book.group.is_some(), "the same market");
-        pane.follow_book_market(&eth);
-        assert_eq!(pane.view.book.group, None, "another market");
-        // A chart with no book in between is another market too.
-        pane.view.book.group = Some(crate::model::depth::Price::from_units(1_000_000_000));
-        pane.follow_book_market(&None);
-        pane.follow_book_market(&eth);
-        assert_eq!(pane.view.book.group, None);
     }
 }

@@ -64,10 +64,27 @@ fn live() -> DepthRecord {
     record
 }
 
+const ROWS: usize = 201;
+
+/// A view that follows the market, with a row size that fits it.
+fn following() -> View {
+    tall(ROWS)
+}
+
+/// A view that follows the market, `rows` rows tall.
+fn tall(rows: usize) -> View {
+    View {
+        group: None,
+        centre: None,
+        rows,
+    }
+}
+
+/// Rows of `group` around the market.
 fn view(group: &str) -> View {
     View {
         group: Some(price(group)),
-        centre: None,
+        ..following()
     }
 }
 
@@ -127,6 +144,26 @@ fn rounding_goes_to_the_multiples_of_a_step() {
 }
 
 #[test]
+fn a_taker_hits_the_opposite_side_and_a_side_rests_in_the_row_at_or_beyond_its_price() {
+    assert_eq!(
+        Side::of_taker(Taker::Buy),
+        Side::Ask,
+        "a buyer lifts the ask"
+    );
+    assert_eq!(
+        Side::of_taker(Taker::Sell),
+        Side::Bid,
+        "a seller hits the bid"
+    );
+    let group = price("10");
+    assert_eq!(Side::Bid.row_of(price("101"), group), price("100"));
+    assert_eq!(Side::Ask.row_of(price("101"), group), price("110"));
+    for side in [Side::Bid, Side::Ask] {
+        assert_eq!(side.row_of(price("100"), group), price("100"), "on a row");
+    }
+}
+
+#[test]
 fn the_row_sizes_start_at_the_tick_and_the_automatic_one_fits_the_market() {
     let choices = group::choices(price("0.01"));
     assert_eq!(choices[0], price("0.01"));
@@ -149,55 +186,111 @@ fn the_row_sizes_start_at_the_tick_and_the_automatic_one_fits_the_market() {
 #[test]
 fn bids_fold_down_and_asks_fold_up_so_a_row_is_never_both() {
     let record = live();
-    let ladder = record.ladder(view("0.05"), NOW);
-    assert_eq!(ladder.link, Link::Live);
+    let shown = record.snapshot(view("0.05"), NOW);
+    assert_eq!(shown.link, Link::Live);
+    let ladder = shown.ladder;
     // 99.98 and 99.97 round down to 99.95; 100.01 and 100.03 round up to 100.05.
     let bids = row_at(&ladder, "99.95");
     assert_eq!((bids.bid, bids.ask), (10.0, 0.0));
     let asks = row_at(&ladder, "100.05");
     assert_eq!((asks.bid, asks.ask), (0.0, 8.0));
-    let all = 0..ladder.rows.len();
-    assert_eq!(ladder.scale(all).size, 10.0);
-    // Only the rows on show count: one row away from the bids holds nothing.
-    let quiet = ladder
-        .rows
-        .iter()
-        .position(|row| row.bid == 0.0 && row.ask == 0.0)
-        .unwrap();
-    assert_eq!(ladder.scale(quiet..quiet + 1).size, 0.0);
+    assert_eq!(ladder.scale().size, 10.0);
     assert!(
         ladder
             .rows
             .windows(2)
             .all(|pair| pair[0].price > pair[1].price)
     );
-    assert_eq!(ladder.rows.len(), WINDOW_ROWS);
     // The middle of 99.98 and 100.01 is 99.995, in the row of 99.95.
     assert_eq!(ladder.centre(), Some(price("99.95")));
     assert_eq!(ladder.best_bid, Some(price("99.98")));
     assert_eq!(ladder.spread(), Some(price("0.03")));
+    let bid_row = ladder.best_bid_row().unwrap();
+    assert_eq!(ladder.rows[bid_row].price, price("99.95"));
 }
 
 #[test]
-fn a_viewer_can_centre_the_window_elsewhere() {
+fn a_ladder_has_exactly_the_rows_the_view_asks_for_centred_on_the_market() {
     let record = live();
-    let ladder = record.ladder(
-        View {
-            group: Some(price("0.01")),
-            centre: Some(price("100.50")),
-        },
-        NOW,
-    );
-    assert_eq!(ladder.centre(), Some(price("100.50")));
-    assert_eq!(ladder.rows.len(), WINDOW_ROWS);
+    for rows in [1, 2, 10, 11, ROWS] {
+        let view = View {
+            group: Some(price("0.05")),
+            ..tall(rows)
+        };
+        let ladder = record.snapshot(view, NOW).ladder;
+        assert_eq!(ladder.rows.len(), rows, "{rows} rows");
+        // The middle of the market, 99.995, rests in the row of 99.95: row `rows / 2`.
+        assert_eq!(ladder.rows[rows / 2].price, price("99.95"), "{rows} rows");
+        assert_eq!(ladder.centre(), Some(price("99.95")));
+        let step = ladder.group;
+        assert!(
+            ladder
+                .rows
+                .windows(2)
+                .all(|pair| pair[0].price - pair[1].price == step),
+            "a row for every step"
+        );
+    }
+    // A ladder is never without a row, whatever was asked.
+    assert_eq!(record.snapshot(tall(0), NOW).ladder.rows.len(), 1);
+}
+
+#[test]
+fn the_scale_covers_the_rows_built_and_nothing_beyond_them() {
+    let mut record = live();
+    // A big bid ten ticks of 0.05 below the market.
+    record.apply(change(2, &[("99.45", 50.0)], &[]), NOW);
+    let near = record
+        .snapshot(
+            View {
+                rows: 5,
+                ..view("0.05")
+            },
+            NOW,
+        )
+        .ladder;
+    assert_eq!(near.scale().size, 10.0, "99.45 is beyond five rows");
+    let far = record.snapshot(view("0.05"), NOW).ladder;
+    assert_eq!(far.scale().size, 50.0);
+}
+
+#[test]
+fn a_viewer_can_centre_the_ladder_elsewhere() {
+    let record = live();
+    let ladder = record
+        .snapshot(
+            View {
+                group: Some(price("0.01")),
+                centre: Some(price("100.10")),
+                rows: ROWS,
+            },
+            NOW,
+        )
+        .ladder;
+    assert_eq!(ladder.centre(), Some(price("100.10")));
+    assert_eq!(ladder.rows.len(), ROWS);
     assert_eq!(row_at(&ladder, "100.03").ask, 5.0);
 }
 
 #[test]
 fn a_group_the_market_does_not_offer_is_replaced_by_the_automatic_one() {
     let record = live();
-    let ladder = record.ladder(view("3"), NOW);
-    assert_eq!(ladder.group, group::automatic(price("0.01"), price("100")));
+    let shown = record.snapshot(view("3"), NOW);
+    assert_eq!(
+        shown.ladder.group,
+        group::automatic(price("0.01"), price("100"))
+    );
+    assert_eq!(shown.ladder.group_choices, group::choices(price("0.01")));
+}
+
+#[test]
+fn the_automatic_row_size_does_not_depend_on_how_many_rows_are_asked_for() {
+    let record = live();
+    let groups: Vec<Price> = [1, 13, 40, 500]
+        .into_iter()
+        .map(|rows| record.snapshot(tall(rows), NOW).ladder.group)
+        .collect();
+    assert!(groups.iter().all(|group| *group == groups[0]), "{groups:?}");
 }
 
 #[test]
@@ -206,16 +299,44 @@ fn trades_fold_to_where_the_taker_hit_and_show_since_the_first() {
     record.apply(trade("100.01", 2.0, Taker::Buy, NOW + 1_000), NOW + 1_000);
     record.apply(trade("99.98", 1.5, Taker::Sell, NOW + 2_000), NOW + 2_000);
     record.apply(trade("100.02", 0.5, Taker::Buy, NOW + 3_000), NOW + 3_000);
-    let ladder = record.ladder(view("0.05"), NOW + 3_000);
-    let up = row_at(&ladder, "100.05");
+    let shown = record.snapshot(view("0.05"), NOW + 3_000);
+    let ladder = &shown.ladder;
+    let up = row_at(ladder, "100.05");
     assert_eq!((up.bought, up.sold), (2.5, 0.0));
-    let down = row_at(&ladder, "99.95");
+    let down = row_at(ladder, "99.95");
     assert_eq!((down.bought, down.sold), (0.0, 1.5));
-    assert_eq!(ladder.scale(0..ladder.rows.len()).traded, 2.5);
-    assert_eq!(ladder.since_ms, Some(NOW + 1_000));
-    assert_eq!(ladder.trades.len(), 3);
-    assert_eq!(ladder.trades[0].price, price("100.02"), "newest first");
-    assert_eq!(ladder.last_trade.map(|t| t.taker), Some(Taker::Buy));
+    assert_eq!(ladder.scale().traded, 2.5);
+    assert_eq!(shown.tape.since_ms, Some(NOW + 1_000));
+    assert_eq!(shown.tape.trades.len(), 3);
+    assert_eq!(shown.tape.trades[0].price, price("100.02"), "newest first");
+    assert_eq!(shown.tape.last_trade().map(|t| t.taker), Some(Taker::Buy));
+}
+
+#[test]
+fn the_last_trade_is_in_the_row_where_its_taker_hit() {
+    let mut record = live();
+    assert_eq!(
+        record.snapshot(view("0.05"), NOW).ladder.last_trade_row(),
+        None,
+        "nothing has traded"
+    );
+    // A buyer lifts an ask: the row at or above the price.
+    record.apply(trade("100.02", 0.5, Taker::Buy, NOW + 1_000), NOW + 1_000);
+    let ladder = record.snapshot(view("0.05"), NOW + 1_000).ladder;
+    let row = ladder.last_trade_row().unwrap();
+    assert_eq!(ladder.rows[row].price, price("100.05"));
+    // Out of the rows built, it is in none.
+    let few = View {
+        rows: 1,
+        ..view("0.05")
+    };
+    let narrow = record.snapshot(few, NOW + 1_000).ladder;
+    assert_eq!(narrow.last_trade_row(), None);
+    // A seller hits a bid: the row at or below.
+    record.apply(trade("99.98", 1.0, Taker::Sell, NOW + 2_000), NOW + 2_000);
+    let ladder = record.snapshot(view("0.05"), NOW + 2_000).ladder;
+    let row = ladder.last_trade_row().unwrap();
+    assert_eq!(ladder.rows[row].price, price("99.95"));
 }
 
 #[test]
@@ -268,14 +389,14 @@ fn stacked_and_pulled_size_shows_but_size_that_traded_does_not() {
         change(2, &[("99.98", 7.0)], &[("100.03", 0.0)]),
         NOW + 1_000,
     );
-    let ladder = record.ladder(view("0.01"), NOW + 1_500);
+    let ladder = record.snapshot(view("0.01"), NOW + 1_500).ladder;
     assert_eq!(row_at(&ladder, "99.98").pull_stack, 3.0);
     assert_eq!(row_at(&ladder, "100.03").pull_stack, -5.0);
 
     // A seller hits 2 of the bid, and the book shows 2 less: not a pull.
     record.apply(trade("99.98", 2.0, Taker::Sell, NOW + 2_000), NOW + 2_000);
     record.apply(change(3, &[("99.98", 5.0)], &[]), NOW + 2_000);
-    let ladder = record.ladder(view("0.01"), NOW + 2_500);
+    let ladder = record.snapshot(view("0.01"), NOW + 2_500).ladder;
     assert_eq!(row_at(&ladder, "99.98").pull_stack, 3.0);
 }
 
@@ -283,37 +404,38 @@ fn stacked_and_pulled_size_shows_but_size_that_traded_does_not() {
 fn what_was_stacked_more_than_ten_seconds_ago_is_forgotten() {
     let mut record = live();
     record.apply(change(2, &[("99.98", 7.0)], &[]), NOW + 1_000);
-    let soon = record.ladder(view("0.01"), NOW + 9_000);
+    let soon = record.snapshot(view("0.01"), NOW + 9_000).ladder;
     assert_eq!(row_at(&soon, "99.98").pull_stack, 3.0);
-    let later = record.ladder(view("0.01"), NOW + 12_000);
+    let later = record.snapshot(view("0.01"), NOW + 12_000).ladder;
     assert_eq!(row_at(&later, "99.98").pull_stack, 0.0);
 }
 
 #[test]
 fn a_ladder_says_why_it_is_empty() {
     let mut record = binance();
-    assert_eq!(record.ladder(View::default(), NOW).link, Link::Connecting);
+    assert_eq!(record.snapshot(following(), NOW).link, Link::Connecting);
     record.set_tick(price("0.01"));
     record.link(true);
     // Up, but no snapshot yet.
-    let waiting = record.ladder(View::default(), NOW);
+    let waiting = record.snapshot(following(), NOW);
     assert_eq!(waiting.link, Link::Connecting);
-    assert!(waiting.rows.is_empty());
+    assert!(waiting.ladder.rows.is_empty());
+    assert!(waiting.tape.trades.is_empty());
     assert_eq!(waiting.tick, price("0.01"));
 
     let mut record = live();
     record.link(false);
-    let dropped = record.ladder(View::default(), NOW);
+    let dropped = record.snapshot(following(), NOW);
     assert_eq!(dropped.link, Link::Reconnecting);
-    assert!(dropped.rows.is_empty(), "the old book is not shown");
+    assert!(dropped.ladder.rows.is_empty(), "the old book is not shown");
     // Back up: the book returns with the next snapshot, not before.
     record.link(true);
-    assert_eq!(record.ladder(View::default(), NOW).link, Link::Connecting);
+    assert_eq!(record.snapshot(following(), NOW).link, Link::Connecting);
     record.apply(Event::Book(book_of(&[("99", 1.0)], &[("101", 1.0)])), NOW);
-    assert_eq!(record.ladder(View::default(), NOW).link, Link::Live);
+    assert_eq!(record.snapshot(following(), NOW).link, Link::Live);
 
     record.mark_unlisted();
-    assert_eq!(record.ladder(View::default(), NOW).link, Link::Unlisted);
+    assert_eq!(record.snapshot(following(), NOW).link, Link::Unlisted);
 }
 
 #[test]
@@ -322,14 +444,14 @@ fn a_gap_in_a_binance_stream_empties_the_ladder_until_a_snapshot() {
     record.set_tick(price("0.01"));
     record.link(true);
     record.apply(Event::Book(book_of(&[("99", 1.0)], &[("101", 1.0)])), NOW);
-    assert_eq!(record.ladder(View::default(), NOW).link, Link::Live);
+    assert_eq!(record.snapshot(following(), NOW).link, Link::Live);
     let skipped = Event::Book(BookEvent::Delta(Delta {
         first: 50,
         last: 51,
         levels: Levels::default(),
     }));
     assert_eq!(record.apply(skipped, NOW), SyncOutcome::NeedsSnapshot);
-    assert_eq!(record.ladder(View::default(), NOW).link, Link::Connecting);
+    assert_eq!(record.snapshot(following(), NOW).link, Link::Connecting);
 }
 
 #[test]
@@ -359,7 +481,7 @@ fn a_binance_book_waits_for_its_snapshot_then_places_the_diffs_that_follow_it() 
     assert_eq!(record.apply(old, NOW), SyncOutcome::Stale);
     let next = change(2, &[("99.99", 3.0)], &[("100.01", 0.0)]);
     assert_eq!(record.apply(next, NOW), SyncOutcome::Applied);
-    let ladder = record.ladder(view("0.01"), NOW);
+    let ladder = record.snapshot(view("0.01"), NOW).ladder;
     assert_eq!(row_at(&ladder, "99.99").bid, 3.0);
     assert_eq!(
         ladder.best_ask,
@@ -380,7 +502,7 @@ fn a_gap_or_a_dropped_link_lets_the_book_and_its_pulls_go() {
     assert!(record.needs_snapshot());
     // The snapshot that follows is not stacked on what was there before.
     record.apply(Event::Book(book_of(&[("99", 1.0)], &[("101", 1.0)])), NOW);
-    let ladder = record.ladder(view("0.01"), NOW);
+    let ladder = record.snapshot(view("0.01"), NOW).ladder;
     assert_eq!(row_at(&ladder, "99").bid, 1.0);
     assert_eq!(row_at(&ladder, "99").pull_stack, 0.0);
 
@@ -388,7 +510,7 @@ fn a_gap_or_a_dropped_link_lets_the_book_and_its_pulls_go() {
     assert!(record.needs_snapshot());
     record.link(true);
     record.apply(Event::Book(book_of(&[("98", 1.0)], &[("102", 1.0)])), NOW);
-    let ladder = record.ladder(view("0.01"), NOW);
+    let ladder = record.snapshot(view("0.01"), NOW).ladder;
     assert_eq!(
         ladder.best_bid,
         Some(price("98")),
@@ -412,7 +534,7 @@ fn a_snapshot_replaces_the_book_and_forgets_what_was_stacked() {
         Event::Book(book_of(&[("99.98", 1.0)], &[("100.01", 1.0)])),
         NOW + 2_000,
     );
-    let ladder = record.ladder(view("0.01"), NOW + 2_000);
+    let ladder = record.snapshot(view("0.01"), NOW + 2_000).ladder;
     assert_eq!(row_at(&ladder, "99.98").pull_stack, 0.0);
     assert_eq!(row_at(&ladder, "99.97").bid, 0.0, "the old levels are gone");
 }

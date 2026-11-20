@@ -4,10 +4,11 @@ use super::Price;
 
 /// How many ticks a row can span.
 const MULTIPLES: [i64; 7] = [1, 5, 10, 50, 100, 500, 1_000];
-/// The share of the mid price that [`automatic`] fits in the rows a ladder is built with.
-const VIEW_SHARE: f64 = 0.005;
-/// How many rows that share is spread over.
-const VIEW_ROWS: f64 = 40.0;
+/// The share of the mid price that [`automatic`] fits in [`AUTOMATIC_ROWS`] rows.
+const AUTOMATIC_SHARE: f64 = 0.005;
+/// The automatic group spreads half a percent of the mid over this many rows, whatever the
+/// panel's height: it is the coarseness of the default, not the number of rows on screen.
+const AUTOMATIC_ROWS: f64 = 40.0;
 
 /// Every row size on offer for a market that moves in steps of `tick`, smallest first.
 pub fn choices(tick: Price) -> Vec<Price> {
@@ -17,10 +18,10 @@ pub fn choices(tick: Price) -> Vec<Price> {
         .collect()
 }
 
-/// The smallest of [`choices`] whose rows, a screenful of them, cover about half a percent of
-/// `mid`; the largest when none does.
+/// The smallest of [`choices`] whose [`AUTOMATIC_ROWS`] rows cover about half a percent of `mid`;
+/// the largest when none does.
 pub fn automatic(tick: Price, mid: Price) -> Price {
-    let wanted = mid.as_f64() * VIEW_SHARE / VIEW_ROWS;
+    let wanted = mid.as_f64() * AUTOMATIC_SHARE / AUTOMATIC_ROWS;
     let all = choices(tick);
     all.iter()
         .copied()

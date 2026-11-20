@@ -1,13 +1,12 @@
 //! The ladder: a row for each price near the market, with the resting size on each side, what was
-//! stacked or pulled there, and what traded. Bars behind the figures are scaled to the largest in
-//! view. Scrolling moves the window; the toolbar brings it back.
+//! stacked or pulled there, and what traded. Bars behind the figures are scaled to the largest
+//! row. Scrolling moves the rows; the toolbar brings them back.
 
-use super::{BookViewState, size_text};
-use crate::model::depth::{CENTRE_ROW, Ladder, Price, Row, Scale, WINDOW_ROWS};
+use super::{BookViewState, size_text, usd};
+use crate::model::depth::{DepthSnapshot, Ladder, Price, Row, Scale};
 use crate::model::taker_flow::Taker;
 use crate::ui::accessibility;
 use crate::ui::kit::{self, size};
-use crate::ui::market_flow::usd;
 use crate::ui::theme;
 use eframe::egui::{
     self, Align2, Color32, FontId, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2,
@@ -59,7 +58,8 @@ pub(super) enum Line {
     Spread,
 }
 
-pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, ladder: &Ladder, height: f32) {
+pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, snapshot: &DepthSnapshot, height: f32) {
+    let ladder = &snapshot.ladder;
     let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
     let painter = ui.painter_at(area);
     let decimals = ladder.group.decimals();
@@ -75,50 +75,58 @@ pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, ladder: &Ladder, heig
         .size()
         .x
     });
-    let columns = Columns::new(area, widest + 16.0);
-    header(ui, &painter, area, &columns);
+    let drawing = Drawing {
+        painter: &painter,
+        columns: Columns::new(area, widest + 16.0),
+        scale: ladder.scale(),
+        decimals,
+    };
+    header(ui, &painter, area, &drawing.columns);
 
     let body = Rect::from_min_max(pos2(area.left(), area.top() + HEADER_HEIGHT), area.max);
-    let lines = lines(ladder, (body.height() / ROW_HEIGHT) as usize);
-    let scale = shown_scale(ladder, &lines);
-    for (index, line) in lines.into_iter().enumerate() {
+    let capacity = (body.height() / ROW_HEIGHT) as usize;
+    note_rows(ui, state, capacity);
+    let last_trade = ladder.last_trade_row().zip(snapshot.tape.last_trade());
+    for (index, line) in lines(ladder, capacity).into_iter().enumerate() {
         let rect = Rect::from_min_size(
             pos2(body.left(), body.top() + index as f32 * ROW_HEIGHT),
             vec2(body.width(), ROW_HEIGHT),
         );
         match line {
-            Line::Row(row) => draw_row(ui, &painter, rect, &columns, ladder, scale, row),
-            Line::Spread => draw_spread(&painter, rect, ladder),
+            Line::Row(row) => {
+                let marked = last_trade
+                    .filter(|(at, _)| *at == row)
+                    .map(|(_, trade)| taker_color(trade.taker));
+                draw_row(ui, &drawing, rect, &ladder.rows[row], row, marked);
+            }
+            Line::Spread => draw_spread(&painter, rect, ladder, snapshot.tick),
         }
     }
     scroll(ui, state, ladder, area);
 }
 
-/// What the bars of `lines` are scaled against: only the rows on screen.
-fn shown_scale(ladder: &Ladder, lines: &[Line]) -> Scale {
-    let mut rows = lines.iter().filter_map(|line| match line {
-        Line::Row(index) => Some(*index),
-        Line::Spread => None,
-    });
-    let Some(first) = rows.next() else {
-        return Scale::default();
-    };
-    let last = rows.next_back().unwrap_or(first);
-    ladder.scale(first..last + 1)
+/// Remembers how many price rows `capacity` lines hold, for the next frame to ask the host for.
+fn note_rows(ui: &Ui, state: &mut BookViewState, capacity: usize) {
+    let rows = rows_in(capacity);
+    if state.rows != rows {
+        state.rows = rows;
+        ui.ctx().request_repaint();
+    }
 }
 
-/// The lines that fit `capacity`, the rows around the middle of the window with the spread above
-/// the best bid.
+/// How many price rows to ask for to fill `capacity` lines: all of them, the spread line taking
+/// the place of the last row when it is in view; never none.
+pub(super) fn rows_in(capacity: usize) -> usize {
+    capacity.max(1)
+}
+
+/// The lines that fit `capacity`: the rows from the top, with the spread above the best bid's
+/// row unless that is the first line, the last row falling off for it.
 pub(super) fn lines(ladder: &Ladder, capacity: usize) -> Vec<Line> {
-    let start = CENTRE_ROW.saturating_sub(capacity / 2);
-    let end = (start + capacity).min(WINDOW_ROWS);
-    let bid_row = ladder
-        .best_bid
-        .map(|bid| bid.floor_to(ladder.group))
-        .and_then(|price| ladder.rows.iter().position(|row| row.price == price));
-    let mut lines = Vec::with_capacity(capacity);
-    for index in start..end {
-        if bid_row == Some(index) && index > start {
+    let spread_above = ladder.best_bid_row().filter(|row| *row > 0);
+    let mut lines = Vec::with_capacity(ladder.rows.len() + 1);
+    for index in 0..ladder.rows.len() {
+        if spread_above == Some(index) {
             lines.push(Line::Spread);
         }
         lines.push(Line::Row(index));
@@ -161,16 +169,32 @@ fn header(ui: &Ui, painter: &egui::Painter, area: Rect, columns: &Columns) {
     );
 }
 
+/// What every row of the ladder is drawn with.
+struct Drawing<'a> {
+    painter: &'a egui::Painter,
+    columns: Columns,
+    scale: Scale,
+    /// How many places a row's price is written with.
+    decimals: u8,
+}
+
+/// Draws row `index` into `rect`; `last_trade` is the colour of its frame when the last trade
+/// belongs to it.
 fn draw_row(
     ui: &Ui,
-    painter: &egui::Painter,
+    drawing: &Drawing<'_>,
     rect: Rect,
-    columns: &Columns,
-    ladder: &Ladder,
-    scale: Scale,
+    row: &Row,
     index: usize,
+    last_trade: Option<Color32>,
 ) {
-    let row = &ladder.rows[index];
+    let Drawing {
+        painter,
+        columns,
+        scale,
+        decimals,
+    } = drawing;
+    let decimals = *decimals;
     let response = ui.interact(rect, ui.id().with(("ladder-row", index)), Sense::hover());
     if response.hovered() {
         painter.rect_filled(rect, 0.0, kit::primary(0.06));
@@ -252,17 +276,13 @@ fn draw_row(
     } else {
         theme::text_tertiary()
     };
-    let decimals = ladder.group.decimals();
     text(
         row.price.format(decimals),
         (columns.price.0 + columns.price.1) / 2.0,
         Align2::CENTER_CENTER,
         price_color,
     );
-    if last_trade_row(ladder) == Some(row.price) {
-        let color = ladder
-            .last_trade
-            .map_or(theme::text_secondary(), |trade| taker_color(trade.taker));
+    if let Some(color) = last_trade {
         painter.rect_stroke(
             Rect::from_x_y_ranges(columns.price.0 + 2.0..=columns.price.1 - 2.0, top..=bottom),
             3.0,
@@ -289,15 +309,6 @@ pub(super) fn stack_figure(row: &Row) -> Option<(String, Color32)> {
         (true, false) => theme::DOWN,
     };
     Some((format!("{sign}{}", size_text(change.abs())), color))
-}
-
-/// The row the last trade belongs to: a buyer lifted an ask, a seller hit a bid.
-fn last_trade_row(ladder: &Ladder) -> Option<Price> {
-    let trade = ladder.last_trade?;
-    Some(match trade.taker {
-        Taker::Buy => trade.price.ceil_to(ladder.group),
-        Taker::Sell => trade.price.floor_to(ladder.group),
-    })
 }
 
 pub(super) fn taker_color(taker: Taker) -> Color32 {
@@ -331,12 +342,12 @@ fn describe(row: &Row, decimals: u8) -> String {
     parts.join(", ")
 }
 
-fn draw_spread(painter: &egui::Painter, rect: Rect, ladder: &Ladder) {
+fn draw_spread(painter: &egui::Painter, rect: Rect, ladder: &Ladder, tick: Price) {
     let Some(spread) = ladder.spread() else {
         return;
     };
     painter.rect_filled(rect, 0.0, theme::quaternary(0.28));
-    let text = format!("Spread {}", spread.format(ladder.tick.decimals()));
+    let text = format!("Spread {}", spread.format(tick.decimals()));
     painter.text(
         rect.center(),
         Align2::CENTER_CENTER,
@@ -346,7 +357,7 @@ fn draw_spread(painter: &egui::Painter, rect: Rect, ladder: &Ladder) {
     );
 }
 
-/// Scrolling over the ladder moves its window a row for each row's height; it stays where it was
+/// Scrolling over the ladder moves its rows a row for each row's height; it stays where it was
 /// put until the toolbar centres it again.
 fn scroll(ui: &Ui, state: &mut BookViewState, ladder: &Ladder, area: Rect) {
     if !ui.rect_contains_pointer(area) {

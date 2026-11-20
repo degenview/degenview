@@ -1,12 +1,12 @@
 //! The row above the ladder: the size of a row, which trades stand out, and the way back to the
 //! market after the ladder was scrolled away from it.
 
-use super::BookViewState;
 use super::state::BigTrade;
-use crate::model::depth::{Ladder, group};
+use super::{BookViewState, MARGIN};
+use crate::model::depth::Ladder;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, size};
-use crate::ui::{market_flow::MARGIN, theme};
+use crate::ui::theme;
 use eframe::egui::{Align, Layout, Ui, vec2};
 
 const HEIGHT: f32 = 36.0;
@@ -50,7 +50,7 @@ pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, ladder: &Ladder) {
 
 /// The rows' size, picked from those the market's tick allows.
 fn group_picker(ui: &mut Ui, state: &mut BookViewState, ladder: &Ladder) {
-    let choices = group::choices(ladder.tick);
+    let choices = &ladder.group_choices;
     let labels: Vec<String> = choices
         .iter()
         .map(|group| group.format(group.decimals()))

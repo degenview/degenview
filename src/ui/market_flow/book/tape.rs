@@ -1,13 +1,11 @@
 //! The trades tape: the latest trades, newest first, a big one set heavier and tinted by who took.
 
-use super::BookViewState;
 use super::ladder::taker_color;
-use super::size_text;
-use crate::model::depth::{Ladder, Trade};
+use super::{BookViewState, MARGIN, size_text, usd};
+use crate::model::depth::{DepthSnapshot, Price, Trade};
 use crate::model::taker_flow::Taker;
 use crate::ui::accessibility;
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
-use crate::ui::market_flow::{MARGIN, usd};
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, Sense, Ui, pos2, vec2};
 
@@ -17,7 +15,7 @@ const FONT: f32 = 12.0;
 const TIME_WIDTH: f32 = 62.0;
 const SIZE_WIDTH: f32 = 64.0;
 
-pub(super) fn show(ui: &mut Ui, state: &BookViewState, ladder: &Ladder, height: f32) {
+pub(super) fn show(ui: &mut Ui, state: &BookViewState, snapshot: &DepthSnapshot, height: f32) {
     let width = ui.available_width();
     let (area, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     let mut tape = ui.new_child(
@@ -25,7 +23,7 @@ pub(super) fn show(ui: &mut Ui, state: &BookViewState, ladder: &Ladder, height: 
             .max_rect(area)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    if ladder.trades.is_empty() {
+    if snapshot.tape.trades.is_empty() {
         kit::empty_state(
             &tape,
             area,
@@ -39,12 +37,17 @@ pub(super) fn show(ui: &mut Ui, state: &BookViewState, ladder: &Ladder, height: 
     egui::ScrollArea::vertical()
         .id_salt("book-tape")
         .auto_shrink([false, false])
-        .show_rows(&mut tape, ROW_HEIGHT, ladder.trades.len(), |ui, range| {
-            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-            for index in range {
-                row(ui, ladder, &ladder.trades[index], state);
-            }
-        });
+        .show_rows(
+            &mut tape,
+            ROW_HEIGHT,
+            snapshot.tape.trades.len(),
+            |ui, range| {
+                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                for index in range {
+                    row(ui, snapshot.tick, &snapshot.tape.trades[index], state);
+                }
+            },
+        );
 }
 
 fn header(ui: &mut Ui) {
@@ -81,7 +84,7 @@ fn header(ui: &mut Ui) {
     );
 }
 
-fn row(ui: &mut Ui, ladder: &Ladder, trade: &Trade, state: &BookViewState) {
+fn row(ui: &mut Ui, tick: Price, trade: &Trade, state: &BookViewState) {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), Sense::hover());
     if !ui.is_rect_visible(rect) {
@@ -115,7 +118,7 @@ fn row(ui: &mut Ui, ladder: &Ladder, trade: &Trade, state: &BookViewState) {
         Taker::Buy => "Buy",
         Taker::Sell => "Sell",
     };
-    let price = trade.price.format(ladder.tick.decimals());
+    let price = trade.price.format(tick.decimals());
     put(
         &time,
         rect.left() + MARGIN,

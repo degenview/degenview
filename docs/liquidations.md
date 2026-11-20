@@ -108,15 +108,21 @@ stated once. Nothing shared is edited.
 
 | Layer | What it holds |
 | --- | --- |
-| `model/depth/` (pure) | `Price` (an exact `i64` of 1e-8, parsed from the exchange's decimal text, so no float keys), `Book`, `Tape` (the latest 300 trades; traded volume by price, the 2,000 prices nearest the market), `PullStack`, `group` (row sizes), `Ladder` and `View`, `Event`. `DepthRecord` is the single door and the only owner of the `Book`: `apply(event, now)`, `link(up)`, `needs_snapshot()`, `ladder(view, now)`, `revision()`. A `BookSync` per exchange protocol (`sync/binance.rs`, `sync/bybit.rs`) only judges each update (`Verdict`: replace, apply, stale, gap); the record acts on it |
+| `model/depth/` (pure) | `Price` (an exact `i64` of 1e-8, parsed from the exchange's decimal text, so no float keys), `Book`, `Tape` (the latest 300 trades; traded volume by price, the 2,000 prices nearest the market), `PullStack`, `group` (row sizes, private), `View`, `Ladder` (the rows) and `TapeView` (the trades) inside a `DepthSnapshot`, `Event`. `Side::of_taker` and `Side::row_of` are the one statement of where a trade and a resting order fold. `DepthRecord` is the single door and the only owner of the `Book`: `apply(event, now)`, `link(up)`, `needs_snapshot()`, `snapshot(view, now) -> DepthSnapshot`, `revision()`. A `BookSync` per exchange protocol (`sync/binance.rs`, `sync/bybit.rs`) only judges each update (`Verdict`: replace, apply, stale, gap); the record acts on it |
 | `service/depth/` | `DepthFeed` (one `Stream` thread per market) only routes: tick size, then the socket, then events into the record. `new_record(market)` makes the record, with the venue's `BookSync`. What differs is behind the `DepthVenue` trait (`session`, `tick_size`, `book_sync`, `snapshot`, `parse`) in `binance.rs` and `bybit.rs`, picked by `venue::for_exchange`; `snapshot` is fetched only while the record `needs_snapshot()`, and a venue whose socket sends its own answers `DepthError::Unsupported` and is never asked; `DepthError` (`Http`, `Parse`, `UnknownSymbol`, `Unsupported`) is the look-ups' error; `levels.rs` is the book side shape both send |
-| `host/depth/` | `DepthHost::watch(ctx, market, view) -> Arc<Ladder>`: lifetimes and caching only, on `host::lease_map`; it knows no sync rules (the record comes from `new_record`) |
-| `ui/market_flow/book/` | Draws a `Ladder` (`ladder.rs`, `tape.rs`, `toolbar.rs`; the viewer's choices in `state.rs`). It never sees a `Book`, a socket or an exchange beyond its name |
+| `host/depth/` | `DepthHost::watch(ctx, market, view) -> Arc<DepthSnapshot>`: lifetimes and caching only, on `host::lease_map`; it knows no sync rules (the record comes from `new_record`) |
+| `ui/market_flow/book/` | Draws a `DepthSnapshot` (`ladder.rs`, `tape.rs`, `toolbar.rs`; the viewer's choices in `state.rs`). It never sees a `Book`, a socket or an exchange beyond its name |
 
 The viewer's choices (`BookViewState`: row size, scroll, big-trade threshold) are not data: the tab
-turns them into a `View` and hands it to the host, which caches the ladder by (record revision,
-second, view). A new market starts over (`forget_market`), because its prices have nothing to do with
-the last one's.
+turns them into a `View` (row size, centre, and how many rows the panel has room for) and hands it to
+the host, which caches the snapshot by (record revision, second, view). A new market starts over
+(`BookViewState::follow`), because its prices have nothing to do with the last one's.
+
+The model builds exactly `View::rows` rows, so it knows nothing of the screen. The ladder is drawn
+after the host is asked, so the panel measures how many lines fit (`body height / row height`, at
+least one; the spread line takes the place of the last row when it is in view) and keeps that in `BookViewState::rows` for the next frame: a resize
+shows with a frame's delay (the panel asks for a repaint when the count changed), and the first
+frame asks for a default.
 
 ### The exchanges (verified against the live sockets)
 
@@ -151,13 +157,15 @@ feeds pull/stack from the levels the book says changed.
 ### The ladder
 
 - **Rows.** A row spans a *group* of ticks, picked from the tick × 1, 5, 10, 50, 100, 500, 1,000 (the
-  toolbar's menu), or by default the smallest whose rows, 40 of them, cover about half a percent of
-  the mid. Bids fold **down** to the row at or below, asks **up**, so a row is bid or offered, never
-  both. A trade folds where its taker hit: a buyer lifts an ask (up), a seller hits a bid (down).
-  A `Ladder` holds 201 rows around the centre; the panel draws as many as fit.
+  toolbar's menu; `Ladder::group_choices`), or by default the smallest whose rows cover about half a
+  percent of the mid over 40 rows (`group::automatic`, whatever the panel's height). Bids fold
+  **down** to the row at or below, asks **up** (`Side::row_of`), so a row is bid or offered, never
+  both. A trade folds where its taker hit
+  (`Side::of_taker`): a buyer lifts an ask (up), a seller hits a bid (down). A `Ladder` holds the
+  rows the panel has room for, the middle one holding the centre price; the panel draws them all.
 - **Columns.** Stack, Bid, Price, Ask, Traded (a bar split buy and sell, scaled to the busiest
   row). The spread sits above the best bid; the last trade's row is outlined in its taker's colour.
-  Hover a row for what its sizes are worth. Scrolling over the ladder moves the window; the target
+  Hover a row for what its sizes are worth. Scrolling over the ladder moves its rows; the target
   button in the toolbar centres it on the market again.
 - **Pull/Stack.** The net change in resting size at a price over the last 10 seconds: positive is
   stacked, negative pulled. Size that left because a trade took it is not a pull (each trade is

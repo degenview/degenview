@@ -1,6 +1,6 @@
 use super::*;
 use crate::model::depth::{
-    BookEvent, Delta, DepthRecord, DiffStream, Event, Ladder, Levels, Price,
+    BookEvent, Delta, DepthRecord, DepthSnapshot, DiffStream, Event, Levels, Price,
     Snapshot as BookSnapshot, Trade as DepthTrade, View,
 };
 use crate::model::exchange::{Exchange, Venue};
@@ -203,21 +203,47 @@ pub(in crate::ui::market_flow) fn live_book() -> DepthRecord {
     record
 }
 
-pub(in crate::ui::market_flow) fn live_ladder(view: View) -> Ladder {
-    live_book().ladder(view, NOW)
+pub(in crate::ui::market_flow) fn live_depth(view: View) -> DepthSnapshot {
+    live_book().snapshot(view, NOW)
 }
 
-/// A ladder that has no book to show, for a link that is `connecting`, dropped or unlisted.
-pub(in crate::ui::market_flow) fn waiting_ladder(link: crate::model::depth::Link) -> Ladder {
-    Ladder::waiting(link, Some(price("0.01")))
+/// What the panel asks for before it has been drawn once.
+pub(in crate::ui::market_flow) fn first_view() -> View {
+    BookViewState::default().view()
 }
 
-pub(in crate::ui::market_flow) fn feed(ladder: &Ladder) -> BookFeed<'_> {
+/// Depth that has no book to show, for a link that is `connecting`, dropped or unlisted.
+pub(in crate::ui::market_flow) fn waiting_depth(link: crate::model::depth::Link) -> DepthSnapshot {
+    DepthSnapshot::waiting(link, Some(price("0.01")))
+}
+
+pub(in crate::ui::market_flow) fn feed(snapshot: &DepthSnapshot) -> BookFeed<'_> {
     BookFeed {
         exchange: "Binance",
         symbol: "BTCUSDT",
-        ladder,
+        snapshot,
     }
+}
+
+/// The depth for `make`, asked for the rows the panel has room for in a screen of `size`: the
+/// panel is drawn until what it measured is what it was given, as it is in the app.
+fn settled_depth(
+    size: egui::Vec2,
+    state: &mut MarketFlowState,
+    make: &dyn Fn(View) -> DepthSnapshot,
+) -> DepthSnapshot {
+    let mut screen = Screen::new(size);
+    let mut depth = make(state.book.view());
+    for _ in 0..3 {
+        screen.run(Vec::new(), |ui| {
+            let body = Body::Book(BookBody {
+                feed: Some(feed(&depth)),
+            });
+            show(ui, state, &body);
+        });
+        depth = make(state.book.view());
+    }
+    depth
 }
 
 #[test]
@@ -231,14 +257,15 @@ fn the_panel_draws_every_state_of_every_mode() {
     let flow = busy_flow();
     let partial = partial_flow();
     let quiet = taker_flow::Snapshot::default();
-    let live = live_ladder(View::default());
-    let grouped = live_ladder(View {
+    let live = live_depth(first_view());
+    let grouped = live_depth(View {
         group: Some(price("10")),
         centre: Some(price("58300")),
+        ..first_view()
     });
-    let connecting = waiting_ladder(crate::model::depth::Link::Connecting);
-    let reconnecting = waiting_ladder(crate::model::depth::Link::Reconnecting);
-    let unlisted = waiting_ladder(crate::model::depth::Link::Unlisted);
+    let connecting = waiting_depth(crate::model::depth::Link::Connecting);
+    let reconnecting = waiting_depth(crate::model::depth::Link::Reconnecting);
+    let unlisted = waiting_depth(crate::model::depth::Link::Unlisted);
     let bodies = [
         Body::Liquidations(&Snapshot::default()),
         Body::Liquidations(&filtered),
@@ -298,14 +325,19 @@ fn gallery_of_the_panel() {
     let flow = busy_flow();
     let partial = partial_flow();
     let quiet = taker_flow::Snapshot::default();
-    let live = live_ladder(View::default());
-    let fine = live_ladder(View {
-        group: Some(price("0.5")),
-        centre: None,
-    });
-    let connecting = waiting_ladder(crate::model::depth::Link::Connecting);
-    let reconnecting = waiting_ladder(crate::model::depth::Link::Reconnecting);
-    let unlisted = waiting_ladder(crate::model::depth::Link::Unlisted);
+    // Placeholders: the pictures of these two are of depth asked for the rows that fit.
+    let live = live_depth(first_view());
+    let fine = live_depth(first_view());
+    let make_live = |view: View| live_depth(view);
+    let make_fine = |view: View| {
+        live_depth(View {
+            group: Some(price("0.5")),
+            ..view
+        })
+    };
+    let connecting = waiting_depth(crate::model::depth::Link::Connecting);
+    let reconnecting = waiting_depth(crate::model::depth::Link::Reconnecting);
+    let unlisted = waiting_depth(crate::model::depth::Link::Unlisted);
     let cases: Vec<(&str, Mode, MinSize, Body<'_>)> = vec![
         (
             "busy",
@@ -428,6 +460,18 @@ fn gallery_of_the_panel() {
                 if *name == "book-fine" {
                     state.book.centre = Some(price("58173"));
                 }
+                let make: Option<&dyn Fn(View) -> DepthSnapshot> = match *name {
+                    "book-live" => Some(&make_live),
+                    "book-fine" => Some(&make_fine),
+                    _ => None,
+                };
+                let settled = make.map(|make| settled_depth(vec2(width, 640.0), &mut state, make));
+                let settled_body = settled.as_ref().map(|depth| {
+                    Body::Book(BookBody {
+                        feed: Some(feed(depth)),
+                    })
+                });
+                let body = settled_body.as_ref().unwrap_or(body);
                 let mut last = None;
                 for _ in 0..4 {
                     last = Some(screen.run(Vec::new(), |ui| {
@@ -452,7 +496,8 @@ fn gallery_of_the_book_menus() {
     use crate::ui::theme::{self, AppTheme, RestoreDefaultTheme};
     use eframe::egui::{Event, Modifiers, PointerButton};
     let _restore = RestoreDefaultTheme;
-    let live = live_ladder(View::default());
+    let mut asked = MarketFlowState::default();
+    let live = settled_depth(vec2(280.0, 640.0), &mut asked, &live_depth);
     let body = Body::Book(BookBody {
         feed: Some(feed(&live)),
     });

@@ -1,33 +1,19 @@
 //! What a ladder draws: rows of price, folded from the book, the trades and the pulling and
-//! stacking, for a window around the market. A plain value; nothing in it is live.
+//! stacking, around the market. A plain value; nothing in it is live.
 
 use super::pull_stack::PullStack;
-use super::{Book, Price, Side, Tape, Trade};
-use std::collections::HashMap;
-
-/// How many rows a ladder holds: enough for the tallest panel, [`CENTRE_ROW`] being the middle.
-pub const WINDOW_ROWS: usize = 201;
-pub const CENTRE_ROW: usize = WINDOW_ROWS / 2;
+use super::{Book, Price, Side, Tape};
+use crate::model::taker_flow::Taker;
 
 /// What to compute a ladder for. Part of the viewer's choices, not of the market.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct View {
     /// The price span of a row; `None` picks one that fits the market.
     pub group: Option<Price>,
-    /// The price the window is centred on; `None` follows the middle of the spread.
+    /// The price the rows are centred on; `None` follows the middle of the spread.
     pub centre: Option<Price>,
-}
-
-/// Whether a book is there to show.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Link {
-    /// Not connected yet, or waiting for the book to arrive.
-    Connecting,
-    Live,
-    /// The connection dropped; the book was let go rather than shown out of date.
-    Reconnecting,
-    /// The exchange does not list the market.
-    Unlisted,
+    /// How many price rows the panel shows; a ladder has at least one.
+    pub rows: usize,
 }
 
 /// One price of the ladder, with everything at it, in the base coin.
@@ -42,50 +28,50 @@ pub struct Row {
     pub pull_stack: f64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Ladder {
-    pub link: Link,
-    /// The market's smallest price step; zero until it is known.
-    pub tick: Price,
-    /// The price span of a row.
-    pub group: Price,
-    /// Highest price first; empty unless the link is live.
-    pub rows: Vec<Row>,
-    pub best_bid: Option<Price>,
-    pub best_ask: Option<Price>,
-    pub last_trade: Option<Trade>,
-    /// The latest trades, newest first.
-    pub trades: Vec<Trade>,
-    /// When the first trade counted in the rows happened.
-    pub since_ms: Option<i64>,
-}
-
-/// The largest figures among the rows on show, for scaling their bars.
+/// The largest figures among the rows, for scaling their bars.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Scale {
     pub size: f64,
     pub traded: f64,
 }
 
+/// Where a ladder sits: the price span of a row, the price in its middle and how many rows.
+pub(super) struct Window {
+    pub group: Price,
+    pub centre: Price,
+    pub rows: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ladder {
+    /// The price span of a row.
+    pub group: Price,
+    /// Every row size on offer for the market, smallest first.
+    pub group_choices: Vec<Price>,
+    /// Highest price first, as many as the [`View`] asked for; empty while there is no book.
+    pub rows: Vec<Row>,
+    pub best_bid: Option<Price>,
+    pub best_ask: Option<Price>,
+    /// The row the last trade belongs to, when it is among the rows.
+    last_trade_row: Option<usize>,
+}
+
 impl Ladder {
-    /// A ladder with nothing to show yet.
-    pub fn waiting(link: Link, tick: Option<Price>) -> Self {
+    /// A ladder with no rows, for a market whose book is not there to show.
+    pub fn empty(group: Price) -> Self {
         Self {
-            link,
-            tick: tick.unwrap_or_default(),
-            group: tick.unwrap_or_default(),
+            group,
+            group_choices: Vec::new(),
             rows: Vec::new(),
             best_bid: None,
             best_ask: None,
-            last_trade: None,
-            trades: Vec::new(),
-            since_ms: None,
+            last_trade_row: None,
         }
     }
 
-    /// The price in the middle of the window.
+    /// The price in the middle of the rows.
     pub fn centre(&self) -> Option<Price> {
-        self.rows.get(CENTRE_ROW).map(|row| row.price)
+        self.rows.get(self.rows.len() / 2).map(|row| row.price)
     }
 
     /// The gap between the best bid and the best ask.
@@ -93,86 +79,97 @@ impl Ladder {
         Some(self.best_ask? - self.best_bid?)
     }
 
-    /// What the bars of the rows in `shown` are scaled against: the largest bid or ask and the most
-    /// traded among those rows only, so the rows on screen fill their columns whatever lies
-    /// beyond them in the window.
-    pub fn scale(&self, shown: std::ops::Range<usize>) -> Scale {
-        let rows = self.rows.get(shown).unwrap_or_default();
-        let largest = |size: fn(&Row) -> f64| rows.iter().map(size).fold(0.0, f64::max);
+    /// The index of the row the best bid rests in.
+    pub fn best_bid_row(&self) -> Option<usize> {
+        self.row_index(Side::Bid.row_of(self.best_bid?, self.group))
+    }
+
+    /// The index of the row the last trade belongs to.
+    pub fn last_trade_row(&self) -> Option<usize> {
+        self.last_trade_row
+    }
+
+    /// What the bars of the rows are scaled against: the largest bid or ask and the most traded
+    /// among them.
+    pub fn scale(&self) -> Scale {
+        let largest = |size: fn(&Row) -> f64| self.rows.iter().map(size).fold(0.0, f64::max);
         Scale {
             size: largest(|row| row.bid.max(row.ask)),
             traded: largest(|row| row.bought + row.sold),
         }
     }
 
-    /// Folds the book into rows of `group` around `centre`: a bid rests in the row at or below
-    /// its price and an ask in the one at or above, so a row is either bid or offered and never
-    /// both. A trade goes where its taker hit: a buyer lifts an ask, a seller hits a bid.
+    /// Folds the book into the rows of `window`, each holding what [`Side::row_of`] places in it.
+    /// A trade goes where its taker hit ([`Side::of_taker`]), and so do the pulls and stacks.
     pub(super) fn build(
         book: &Book,
         tape: &Tape,
         pull_stack: &PullStack,
-        tick: Price,
-        group: Price,
-        centre: Price,
+        window: Window,
+        group_choices: Vec<Price>,
         now_ms: i64,
     ) -> Self {
-        let top = centre.floor_to(group) + group.times(CENTRE_ROW as i64);
-        let price_of = |index: usize| top - group.times(index as i64);
-        let mut rows: Vec<Row> = (0..WINDOW_ROWS)
-            .map(|index| {
-                let price = price_of(index);
-                Row {
-                    price,
-                    bid: book
-                        .bids_between(price, price + group)
-                        .map(|(_, size)| size)
-                        .sum(),
-                    ask: book
-                        .asks_between(price - group, price)
-                        .map(|(_, size)| size)
-                        .sum(),
-                    ..Row::default()
-                }
-            })
-            .collect();
-        let index_of = |price: Price| -> Option<usize> {
-            let offset = top - price;
-            (offset >= Price::ZERO)
-                .then(|| offset.steps_of(group) as usize)
-                .filter(|index| *index < WINDOW_ROWS)
-        };
-        for (price, traded) in tape.traded() {
-            if let Some(index) = index_of(price.ceil_to(group)) {
-                rows[index].bought += traded.bought;
-            }
-            if let Some(index) = index_of(price.floor_to(group)) {
-                rows[index].sold += traded.sold;
-            }
-        }
-        let mut net: HashMap<usize, f64> = HashMap::new();
-        for ((side, price), change) in pull_stack.net(now_ms) {
-            let row = match side {
-                Side::Bid => price.floor_to(group),
-                Side::Ask => price.ceil_to(group),
-            };
-            if let Some(index) = index_of(row) {
-                *net.entry(index).or_default() += change;
-            }
-        }
-        for (index, change) in net {
-            rows[index].pull_stack = change;
-        }
-        Self {
-            link: Link::Live,
-            tick,
+        let Window {
             group,
+            centre,
+            rows,
+        } = window;
+        let count = rows.max(1);
+        let top = centre.floor_to(group) + group.times((count / 2) as i64);
+        let bottom = top - group.times(count as i64 - 1);
+        let mut ladder = Self {
+            group,
+            group_choices,
+            rows: (0..count)
+                .map(|index| Row {
+                    price: top - group.times(index as i64),
+                    ..Row::default()
+                })
+                .collect(),
             best_bid: book.best_bid(),
             best_ask: book.best_ask(),
-            last_trade: tape.last().copied(),
-            trades: tape.recent().copied().collect(),
-            since_ms: tape.since_ms(),
-            rows,
+            last_trade_row: None,
+        };
+        for (price, size) in book.bids_between(bottom, top + group) {
+            if let Some(row) = ladder.row_mut(Side::Bid, price) {
+                row.bid += size;
+            }
         }
+        for (price, size) in book.asks_between(bottom - group, top) {
+            if let Some(row) = ladder.row_mut(Side::Ask, price) {
+                row.ask += size;
+            }
+        }
+        for (price, traded) in tape.traded() {
+            if let Some(row) = ladder.row_mut(Side::of_taker(Taker::Buy), price) {
+                row.bought += traded.bought;
+            }
+            if let Some(row) = ladder.row_mut(Side::of_taker(Taker::Sell), price) {
+                row.sold += traded.sold;
+            }
+        }
+        for ((side, price), change) in pull_stack.net(now_ms) {
+            if let Some(row) = ladder.row_mut(side, price) {
+                row.pull_stack += change;
+            }
+        }
+        ladder.last_trade_row = tape.last().and_then(|trade| {
+            ladder.row_index(Side::of_taker(trade.taker).row_of(trade.price, group))
+        });
+        ladder
+    }
+
+    /// The row a price on `side` belongs to, when it is among the rows.
+    fn row_mut(&mut self, side: Side, price: Price) -> Option<&mut Row> {
+        let index = self.row_index(side.row_of(price, self.group))?;
+        self.rows.get_mut(index)
+    }
+
+    /// The index of the row at `price`, a multiple of the group.
+    fn row_index(&self, price: Price) -> Option<usize> {
+        let offset = self.rows.first()?.price - price;
+        (offset >= Price::ZERO)
+            .then(|| offset.steps_of(self.group) as usize)
+            .filter(|index| *index < self.rows.len())
     }
 }

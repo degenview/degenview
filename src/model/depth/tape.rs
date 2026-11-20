@@ -35,6 +35,28 @@ pub struct Traded {
     pub sold: f64,
 }
 
+/// What the tape of trades shows.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TapeView {
+    /// The latest trades, newest first.
+    pub trades: Vec<Trade>,
+    /// When the first trade counted in the ladder's rows happened.
+    pub since_ms: Option<i64>,
+}
+
+impl TapeView {
+    pub(super) fn of(tape: &Tape) -> Self {
+        Self {
+            trades: tape.recent().copied().collect(),
+            since_ms: tape.since_ms(),
+        }
+    }
+
+    pub fn last_trade(&self) -> Option<&Trade> {
+        self.trades.first()
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Tape {
     recent: VecDeque<Trade>,

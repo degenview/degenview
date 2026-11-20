@@ -1,12 +1,12 @@
 //! The order-book feeds' owner, shared by every window: it opens the socket of each market a panel
 //! asks about while one is drawn, closes it when none is, and hands each frame the latest
-//! [`Ladder`] without blocking or recomputing it when nothing changed. The feeds' lifetimes are a
+//! [`DepthSnapshot`] without blocking or recomputing it when nothing changed. The feeds' lifetimes are a
 //! [`LeaseMap`], one entry per market.
 
 use crate::clock::now_ms;
 use crate::host::lease_map::{LeaseMap, Memo, Running};
 use crate::lock::lock;
-use crate::model::depth::{DepthMarket, DepthRecord, Ladder, View};
+use crate::model::depth::{DepthMarket, DepthRecord, DepthSnapshot, View};
 use crate::service::depth::{DepthFeed, new_record};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
@@ -16,10 +16,10 @@ use std::time::Duration;
 /// even when the book is quiet.
 const REFRESH: Duration = Duration::from_secs(1);
 
-/// What a ladder was made for: the record's revision, the second and the view.
+/// What a snapshot was made for: the record's revision, the second and the view.
 type Made = (u64, i64, View);
 
-type Feeds<F> = LeaseMap<DepthMarket, DepthRecord, F, Memo<Made, Ladder>>;
+type Feeds<F> = LeaseMap<DepthMarket, DepthRecord, F, Memo<Made, DepthSnapshot>>;
 
 /// A cheap handle: clones share the feeds.
 #[derive(Clone)]
@@ -43,8 +43,13 @@ impl Default for DepthHost {
 
 impl DepthHost {
     /// Called by a panel each frame it is drawn: keeps the socket of `market` open (opening it,
-    /// with an empty record, if it is not) and returns its ladder for `view`.
-    pub fn watch(&self, ctx: &egui::Context, market: &DepthMarket, view: View) -> Arc<Ladder> {
+    /// with an empty record, if it is not) and returns its depth for `view`.
+    pub fn watch(
+        &self,
+        ctx: &egui::Context,
+        market: &DepthMarket,
+        view: View,
+    ) -> Arc<DepthSnapshot> {
         let mut feeds = lock(&self.feeds);
         let now = now_ms();
         let entry = feeds.entry_for(
@@ -60,21 +65,21 @@ impl DepthHost {
             },
         );
         ctx.request_repaint_after(REFRESH);
-        ladder(&entry.record, &mut entry.cache, view, now)
+        snapshot(&entry.record, &mut entry.cache, view, now)
     }
 }
 
-/// The ladder for `view` as of `now_ms`, reused while the record's revision, the second and the
+/// The snapshot for `view` as of `now_ms`, reused while the record's revision, the second and the
 /// view hold.
-fn ladder(
+fn snapshot(
     record: &Mutex<DepthRecord>,
-    cache: &mut Memo<Made, Ladder>,
+    cache: &mut Memo<Made, DepthSnapshot>,
     view: View,
     now_ms: i64,
-) -> Arc<Ladder> {
+) -> Arc<DepthSnapshot> {
     let record = lock(record);
     cache.get_or((record.revision(), now_ms / 1_000, view), || {
-        record.ladder(view, now_ms)
+        record.snapshot(view, now_ms)
     })
 }
 
@@ -107,31 +112,43 @@ mod tests {
     }
 
     #[test]
-    fn a_ladder_is_reused_until_the_book_the_second_or_the_view_changes() {
+    fn a_snapshot_is_reused_until_the_book_the_second_or_the_view_changes() {
         let record = live_record();
         let mut cache = Memo::default();
-        let view = View::default();
-        let first = ladder(&record, &mut cache, view, NOW);
+        let view = View {
+            group: None,
+            centre: None,
+            rows: 30,
+        };
+        let first = snapshot(&record, &mut cache, view, NOW);
         assert_eq!(first.link, Link::Live);
         assert!(Arc::ptr_eq(
             &first,
-            &ladder(&record, &mut cache, view, NOW + 500)
+            &snapshot(&record, &mut cache, view, NOW + 500)
         ));
 
-        let later = ladder(&record, &mut cache, view, NOW + 1_000);
+        let later = snapshot(&record, &mut cache, view, NOW + 1_000);
         assert!(!Arc::ptr_eq(&first, &later));
 
         let grouped = View {
             group: Some(price("0.05")),
-            centre: None,
+            ..view
         };
-        let regrouped = ladder(&record, &mut cache, grouped, NOW + 1_000);
+        let regrouped = snapshot(&record, &mut cache, grouped, NOW + 1_000);
         assert!(!Arc::ptr_eq(&later, &regrouped));
-        assert_eq!(regrouped.group, price("0.05"));
+        assert_eq!(regrouped.ladder.group, price("0.05"));
+
+        let taller = View {
+            rows: 31,
+            ..grouped
+        };
+        let resized = snapshot(&record, &mut cache, taller, NOW + 1_000);
+        assert!(!Arc::ptr_eq(&regrouped, &resized));
+        assert_eq!(resized.ladder.rows.len(), 31);
 
         lock(&record).link(false);
-        let dropped = ladder(&record, &mut cache, grouped, NOW + 1_000);
-        assert!(!Arc::ptr_eq(&regrouped, &dropped));
+        let dropped = snapshot(&record, &mut cache, taller, NOW + 1_000);
+        assert!(!Arc::ptr_eq(&resized, &dropped));
         assert_eq!(dropped.link, Link::Reconnecting);
     }
 }

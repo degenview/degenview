@@ -1,6 +1,7 @@
 //! The resting orders of one market: how much is bid and offered at each price.
 
 use super::Price;
+use crate::model::taker_flow::Taker;
 use std::collections::BTreeMap;
 
 /// The most levels kept on each side, nearest the market first. Binance sends 5,000 a side, far
@@ -12,6 +13,25 @@ pub const MAX_LEVELS: usize = 2_000;
 pub enum Side {
     Bid,
     Ask,
+}
+
+impl Side {
+    /// The side a taker hits: a buyer lifts the ask, a seller hits the bid.
+    pub fn of_taker(taker: Taker) -> Self {
+        match taker {
+            Taker::Buy => Self::Ask,
+            Taker::Sell => Self::Bid,
+        }
+    }
+
+    /// The price of the row of `group` that a price on this side belongs to: a bid rests in the
+    /// row at or below its price and an ask in the one at or above, so a row is never both.
+    pub fn row_of(self, price: Price, group: Price) -> Price {
+        match self {
+            Self::Bid => price.floor_to(group),
+            Self::Ask => price.ceil_to(group),
+        }
+    }
 }
 
 /// Sizes at prices, in the base coin; a size of zero means the level is gone.
