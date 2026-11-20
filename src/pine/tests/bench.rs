@@ -511,6 +511,51 @@ plot(e)
 plot(f)
 ";
 
+/// Moving averages and oscillators the other workloads leave out: `ta.macd` with its own lengths,
+/// `ta.hma`, `ta.mfi`, `ta.obv` and `ta.vwap(...)`. A change to one of them shows up here.
+pub(crate) const SLOW_INDICATORS: &str = "//@version=6
+indicator(\"SlowIndicators\")
+[line, signal, hist] = ta.macd(close, 5, 35, 5)
+plot(line)
+plot(signal)
+plot(hist)
+plot(ta.hma(close, 21))
+plot(ta.mfi(hlc3, 14))
+plot(ta.obv)
+plot(ta.vwap(hlc3))
+plot(ta.cum(ta.change(close)))
+";
+
+/// `ta.supertrend` as the tuple TradingView returns.
+pub(crate) const SUPERTREND: &str = "//@version=6
+indicator(\"Supertrend\", overlay = true)
+[line, direction] = ta.supertrend(3, 10)
+plot(line)
+plot(direction)
+";
+
+/// `request.security` with `lookahead_on`, with and without the `[1]` idiom.
+pub(crate) const SECURITY_LOOKAHEAD: &str = "//@version=6
+indicator(\"SecurityLookahead\")
+ahead = request.security(syminfo.tickerid, \"5\", close, lookahead = barmerge.lookahead_on)
+safe = request.security(syminfo.tickerid, \"5\", close[1], lookahead = barmerge.lookahead_on)
+gapped = request.security(syminfo.tickerid, \"5\", close, barmerge.gaps_on, barmerge.lookahead_on)
+plot(ahead)
+plot(safe)
+plot(gapped)
+";
+
+/// Divisions by zero, which TradingView keeps as infinity inside a formula.
+pub(crate) const DIVISION_BY_ZERO: &str = "//@version=6
+indicator(\"DivisionByZero\")
+zero = close - close
+ratio = close / zero
+plot(100 - 100 / (1 + ratio))
+plot(math.max(ratio, 5))
+plot(na(ratio) ? 1 : 0)
+plot(close == close + 1e-10 ? 1 : 0)
+";
+
 /// A script that stops itself part-way through the history.
 pub(crate) const HALTING: &str = "//@version=6
 indicator(\"Halting\")
@@ -847,6 +892,34 @@ fn workloads() -> Vec<Workload> {
         add(
             "varip_sites",
             Box::new(move || evaluate(VARIP_SITES, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "slow_indicators",
+            Box::new(move || evaluate(SLOW_INDICATORS, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "supertrend",
+            Box::new(move || evaluate(SUPERTREND, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "security_lookahead",
+            Box::new(move || evaluate(SECURITY_LOOKAHEAD, &data, true)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "division_by_zero",
+            Box::new(move || evaluate(DIVISION_BY_ZERO, &data, false)),
         );
     }
     {
