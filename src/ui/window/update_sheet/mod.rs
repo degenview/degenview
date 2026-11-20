@@ -8,11 +8,11 @@
 use crate::build_info::VERSION;
 use crate::host::update::{Phase, UpdateHost, UpdateView};
 use crate::model::changelog::ReleaseNotes;
-use crate::ui::icons::Icon;
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, sheet, size};
 use crate::ui::theme;
 use eframe::egui::{self, Id, Key, Ui};
 
+mod art;
 #[cfg(test)]
 mod tests;
 
@@ -23,6 +23,8 @@ const MAX_LIST: f32 = 360.0;
 const MIN_LIST: f32 = 120.0;
 /// Between the list and the link and note under it, and between the two lists.
 const GROUP_GAP: f32 = 16.0;
+/// The picture's card starts this far left of its box so it lines up with the list under it.
+const PICTURE_LEAD: f32 = 16.0;
 const NO_NOTES: &str = "No summary of changes is available for this version.";
 
 /// How the person answered.
@@ -78,12 +80,13 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
     let ((), outside) = sheet::show_dismissable(ctx, Id::new("update-review"), WIDTH, |ui| {
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
-            sheet::header(
+            sheet::header_picture(
                 ui,
-                Icon::ArrowUp,
+                art::SIZE,
+                PICTURE_LEAD,
                 &format!("Update to DegenView {version}"),
                 &format!("You have {installed}."),
-                kit::ORANGE,
+                art::paint,
             );
         });
         ui.add_space(20.0);
