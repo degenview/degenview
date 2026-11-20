@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use super::bench::{bars, limits, symbol};
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::compiler::{LibraryResolver, NoLibraries};
 use crate::pine::runtime::execution::ExecutionController;
 

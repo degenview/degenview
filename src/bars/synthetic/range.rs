@@ -12,8 +12,8 @@
 //! claimed. The range is in price units (candles carry no tick size).
 
 use super::{BarShape, SyntheticBar, price_path, tolerance};
-use crate::model::Kline;
-use crate::model::chart::kind::ConstructionSource;
+use crate::bars::Kline;
+use crate::bars::kind::ConstructionSource;
 
 struct Current {
     open: f64,

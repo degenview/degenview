@@ -5,7 +5,7 @@ use super::fast_hash::FastMap;
 
 use super::containers::{Map, Matrix, Object};
 use super::value::RuntimeValue;
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::builtins::alert::frequency::AlertFrequency;
 use crate::pine::builtins::ta;
 use crate::pine::outputs::{

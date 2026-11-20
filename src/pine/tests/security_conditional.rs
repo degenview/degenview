@@ -3,7 +3,7 @@
 //! whether its value is used (audit item 22).
 
 use super::bench::run_script;
-use crate::model::Kline;
+use crate::bars::Kline;
 
 const MINUTE: i64 = 60_000;
 const HOUR: i64 = 3_600_000;

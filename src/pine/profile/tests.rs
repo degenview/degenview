@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::session::Session;
 use crate::pine::syntax::token::Limits;

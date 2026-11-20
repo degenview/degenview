@@ -7,7 +7,7 @@
 //! site's [`State`], so a realtime tick that is rolled back rolls these back with it.
 
 use super::State;
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::builtins::ta;
 use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::RuntimeValue;

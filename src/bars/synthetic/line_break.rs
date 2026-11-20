@@ -11,7 +11,7 @@
 //! where a reversal line opens or how the first line starts; these are the textbook rules.
 
 use super::{BarShape, Pending, SyntheticBar};
-use crate::model::Kline;
+use crate::bars::Kline;
 
 #[derive(Clone, Copy)]
 struct Line {

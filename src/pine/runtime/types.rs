@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::syntax::ast::{DeclarationMode, Expression, Parameter, Statement};
 use crate::pine::syntax::traversal::nested_blocks;
 

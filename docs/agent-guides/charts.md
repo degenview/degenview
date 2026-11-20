@@ -83,7 +83,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 
 ## Types, canvas, and templates
 
-- Never modify canonical candles. `model::chart::synthetic` builds price-based types; cached
+- Never modify canonical candles. `bars::synthetic` builds price-based types; cached
   `constructed_series` feeds scale, indicators, Pine, alerts, drawings, replay. Standard types keep
   real OHLC for scripts.
 - Type and settings persist only via `ChartAppearance::style`; new fields need `#[serde(default)]`.

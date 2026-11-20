@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, atomic::AtomicBool};
 
-use crate::model::Kline;
+use crate::bars::Kline;
 
 use super::session::{RunError, Session};
 use super::state::AlertEvent;

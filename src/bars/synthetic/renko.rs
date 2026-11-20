@@ -8,15 +8,15 @@
 //! The first brick is measured from the first price read (the first close, or the first open with
 //! the high/low source). TradingView does not document how it aligns the first brick, so no
 //! grid snapping is assumed. The size is resolved once from the whole series (see
-//! [`SizeRule::resolve`](crate::model::chart::kind::SizeRule::resolve)).
+//! [`SizeRule::resolve`](crate::bars::kind::SizeRule::resolve)).
 //!
 //! The partly formed brick is not shown: only bricks price has completed exist, and the ones a
 //! still-forming candle has completed so far are unconfirmed. With `wicks`, a brick's wick reaches
 //! the highest high and lowest low of the candles since the previous brick.
 
 use super::{BarShape, Pending, SyntheticBar, price_path, tolerance};
-use crate::model::Kline;
-use crate::model::chart::kind::ConstructionSource;
+use crate::bars::Kline;
+use crate::bars::kind::ConstructionSource;
 
 #[derive(Clone, Copy)]
 struct Brick {

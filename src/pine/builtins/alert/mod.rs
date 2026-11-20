@@ -9,9 +9,9 @@ pub mod frequency;
 use std::collections::HashSet;
 
 use super::number_format;
+use crate::bars::Kline;
+use crate::bars::alert_message::{AlertMessageContext, render};
 use crate::clock::now_ms;
-use crate::model::Kline;
-use crate::model::alert::message::{AlertMessageContext, render};
 use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::outputs::drawings::{Arg, bind};
 use crate::pine::runtime::state::{AlertEvent, RuntimeState};

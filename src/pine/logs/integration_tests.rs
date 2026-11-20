@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::compiler::NoLibraries;
 use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::logs::{HISTORICAL_LIMIT, LogEvent, LogHistory, LogLevel};

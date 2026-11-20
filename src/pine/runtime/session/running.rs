@@ -2,7 +2,7 @@
 //! the output the run leaves.
 
 use super::{Halted, Hooks, RunError, Session};
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::compiler::program::{BarEvent, BarPhase, ScriptType, VisualOutput};
 use crate::pine::runtime::fast_hash::FastMap;
 use crate::pine::runtime::state::{AlertEvent, RuntimeState};

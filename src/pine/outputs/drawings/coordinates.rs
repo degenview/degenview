@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use super::{Arg, CHART_POINT_TYPE, runtime_error};
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::outputs::{MISSING_INDEX, index_is_known, price_is_known};
 use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::{RefKind, RuntimeValue};

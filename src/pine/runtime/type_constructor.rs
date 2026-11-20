@@ -98,7 +98,7 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Kline;
+    use crate::bars::Kline;
     use crate::pine::compiler::program::SymbolInfo;
     use crate::pine::compiler::{self, NoLibraries};
     use crate::pine::runtime::types::BarFlags;
