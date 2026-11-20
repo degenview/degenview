@@ -64,7 +64,7 @@ part. The children are grouped by domain, like `model/` and `ui/`:
 
 | Directory | Contents |
 | --- | --- |
-| `bars/` | Price bars and what is built from them, under both `model/` and `pine/`: `Kline`, timeframes (`timeframe/`), candle buckets, folds and gap filling (`bucket/`), sources (`source/`, with CoinMarketCap's chart keys in `cmc`), chart types and their settings (`kind`), constructed bars (`synthetic/`), volume profiles and VWAP (`volume_profile`), and the `{{placeholder}}` text of alert messages (`alert_message`). `model` re-exports each at its old path |
+| `bars/` | Price bars and what is built from them, under both `model/` and `pine/`: sources (`source/`, with CoinMarketCap's chart keys in `cmc`), chart types and their settings (`kind`), constructed bars (`synthetic/`), volume profiles and VWAP (`volume_profile`), and the `{{placeholder}}` text of alert messages (`alert_message`). `Kline`, `Timeframe`, `TimeUnit` and `bucket` are `degenview_market`'s, re-exported here so `pine` names one module. `model` re-exports each at its old path |
 | `model/` | Alerts, charts/canvas/types, drawings, indicators, instruments, layouts, paper/portfolio engines, replay, tabs, watchlists, and webhooks |
 | `pine/` | Lexer → parser → compiler → session, builtins, strategies, alerts, drawings, libraries, `request.*`, and corpus tests |
 | `pine_studio/` | The script library (script picker, demos), editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
@@ -259,7 +259,8 @@ A new screen goes in its domain's directory; a new domain gets a directory and a
 ## Boundaries
 
 - `bars/`, `model/` and `pine/` stay pure and egui-free. `pine/` imports `bars/`, never `model/`;
-  `model/` builds on both. A type both need goes in `bars/`.
+  `model/` builds on both. A type both need goes in `bars/`, or in `crates/market` when the web build
+  needs it too.
 - UI renders supplied state; it does not own network or persistence.
 - `service/` performs external I/O; `store/` alone owns SQLite details.
 - Hosts in `host/` are the stateful seams. Do not bypass them from workers or views.

@@ -107,11 +107,13 @@ Pine registry is fine because it is immutable. The mutable ones (`store::scripts
 In order of how much each one blocks a crate split or invites bugs:
 
 1. **Make `bars` a crate.** `bars` is the `core` this review asked for: `pine` depends on it alone
-   and `model` on it and `pine`, so the three can be three crates. The unpushed
-   `refactor/market-crate` branch moves `Kline`, `Timeframe`, `bucket`, the calendar and the
-   viewport into `crates/market`; rebased on this stack, it moves `src/bars/` instead and keeps
-   `model`'s re-exports pointing there. The re-exports themselves can go once callers name `bars`
-   directly, file by file as feature branches merge (every open branch touches these imports).
+   and `model` on it and `pine`, so the three can be three crates. `Kline`, `Timeframe`, `bucket`,
+   the calendar and the viewport are already in `crates/market` (`degenview-market`), which `bars`
+   re-exports. What is left in `bars` (sources, chart kinds, constructed bars, volume profiles,
+   alert placeholders) needs only serde and the crate's calendar, so it can follow into
+   `crates/market` or a crate of its own (not yet checked against the wasm target). `model`'s
+   re-exports can go once callers name `bars` or `degenview_market` directly, file by file as
+   feature branches merge (every open branch touches these imports).
 2. **A storage seam.** Give each domain that persists a small trait in its own layer (`AlertStore`,
    `PaperStore`, `SettingsStore`, …) and have `Store` implement them. Hosts, sync and MCP take the
    trait, so they can move to crates that don't depend on SQLite. This is the plan's "Store as
