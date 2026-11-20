@@ -5,7 +5,7 @@
 use crate::model::changelog::{self, ReleaseNotes, Section};
 use crate::service::net::http::{self, Retry};
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// The recent releases, prereleases included (`/releases/latest` never returns one, and is "the
@@ -353,10 +353,22 @@ fn notes_between(releases: &[ReleaseDto], running: &Version, offered: &Version) 
             }
         }
     }
-    ReleaseNotes::from_sections(
-        found.into_values().rev().map(|(_, section)| section),
-        running.prerelease.is_some(),
-    )
+    // Every published release in the range counts, whoever published it: one whose version no
+    // trusted body has a section for is a gap the reader is told about.
+    let unsummarized = releases
+        .iter()
+        .filter(|release| !release.draft)
+        .filter_map(|release| Version::parse(&release.tag_name))
+        .filter(|version| version > running && version <= offered && !found.contains_key(version))
+        .collect::<BTreeSet<_>>()
+        .len();
+    ReleaseNotes {
+        unsummarized,
+        ..ReleaseNotes::from_sections(
+            found.into_values().rev().map(|(_, section)| section),
+            running.prerelease.is_some(),
+        )
+    }
 }
 
 /// `major.minor.patch` with an optional `v` prefix and an optional `-prerelease`/`+build` tail,
@@ -1214,7 +1226,43 @@ mod tests {
         ] {
             let release = available(eval(&releases, "0.5.1", Channel::Stable));
             assert!(release.notes.is_empty());
+            assert_eq!(release.notes.unsummarized, 1);
         }
+    }
+
+    #[test]
+    fn releases_in_the_range_with_no_trusted_section_are_counted_once() {
+        let hand_made = noted(
+            reply_by("v0.6.0-rc.2", true, "someone"),
+            &changes("0.6.0-rc.2", &["From a person."], &[]),
+        );
+        let draft = r#"{"tag_name":"v0.6.0-rc.5","draft":true,"prerelease":true}"#.to_owned();
+        let releases = [
+            draft,
+            release_noted("v0.6.0-rc.4", &changes("0.6.0-rc.4", &["Four."], &[])),
+            reply("v0.6.0-rc.3"),
+            hand_made,
+            release_noted("v0.6.0-rc.1", &changes("0.6.0-rc.1", &["One."], &[])),
+            reply("v0.6.0-rc.1"),
+            reply("v0.5.1"),
+            reply("v0.5.0"),
+        ];
+        // rc.3 has no notes and rc.2's are not the workflow's; a draft, the duplicate rc.1 and the
+        // releases up to the running one are not gaps.
+        let release = available(eval(&releases, "0.5.1", Channel::ReleaseCandidate));
+        assert_eq!(release.notes.new, ["Four.", "One."]);
+        assert_eq!(release.notes.unsummarized, 2);
+    }
+
+    #[test]
+    fn a_release_another_release_summarizes_is_not_a_gap() {
+        // The stable release's notes repeat the candidate's section; the candidate has none.
+        let mut body = changes("0.6.0", &["Final."], &[]);
+        body.push_str(&changes("0.6.0-rc.1", &["Candidate."], &[]));
+        let releases = [release_noted("v0.6.0", &body), reply("v0.6.0-rc.1")];
+        let release = available(eval(&releases, "0.5.1", Channel::Stable));
+        assert_eq!(release.notes.new, ["Final.", "Candidate."]);
+        assert_eq!(release.notes.unsummarized, 0);
     }
 
     /// The changelog the repository ships is read newest first by the app and by `tools/changelog.sh

@@ -58,6 +58,10 @@ pub struct ReleaseNotes {
     pub fixed: Vec<String>,
     /// How many more changes there were than the lists hold, whichever cap left them out.
     pub omitted: usize,
+    /// How many releases in the range had no section of their own anywhere, so the lists may not
+    /// hold everything they changed: releases from before the changelog, or with notes the app does
+    /// not trust. Set by whoever knows the range; `from_sections` leaves it at zero.
+    pub unsummarized: usize,
 }
 
 impl ReleaseNotes {

@@ -110,7 +110,11 @@ the entries; any other `#`/`##` heading ends the section (so `## Downloads` and 
 include_rc_fixes)`, passing true only when the running version is a prerelease: then the candidate
 fixes follow each section's own fixes in the sheet's Fixed list; otherwise they are dropped and not
 counted as omitted, so a person updating from a stable version never sees them, whatever the
-release body holds. Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks
+release body holds. `notes_between` also sets `ReleaseNotes::unsummarized`: the published releases
+in the range (any author, drafts excluded) whose version no trusted body has a section for, such as
+releases from before the changelog. When the lists are not empty the sheet ends with "N releases
+since your version have no summary, so their changes are not listed."; with nothing to list it shows
+only "No summary of changes is available for this version." Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks
 the sheet. `cargo test` checks the fragments and `CHANGELOG.md` against the same rules, so CI
 catches a malformed one; the archive is checked section by section, since the caps below are for one
 release body and the file grows with every release. Input is bounded (64 KiB body, 64 sections, 100 entries per list per

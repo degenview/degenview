@@ -273,6 +273,18 @@ fn the_line_that_ends_a_cut_list_counts_what_was_left_out() {
 }
 
 #[test]
+fn the_line_about_releases_with_no_summary_counts_them() {
+    assert_eq!(
+        unsummarized_line(1),
+        "1 release since your version has no summary, so its changes are not listed."
+    );
+    assert_eq!(
+        unsummarized_line(31),
+        "31 releases since your version have no summary, so their changes are not listed."
+    );
+}
+
+#[test]
 fn updating_from_the_sheet_starts_the_install_and_closes_it() {
     let host = UpdateHost::at_phase(&Phase::Available {
         version: "9.9.9".to_owned(),
@@ -376,7 +388,8 @@ fn cancelling_closes_the_sheet_and_leaves_the_update_on_offer() {
 }
 
 /// The sheet as pictures, in both themes: an installable update with both lists (one entry long
-/// enough to wrap twice), one that cannot install itself, and a release with no notes. Run by hand:
+/// enough to wrap twice), one that cannot install itself, a release with no notes, and lists that
+/// end with how many releases had no summary. Run by hand:
 /// `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib update_sheet_gallery -- --ignored`.
 #[test]
 #[ignore = "writes pictures; run by hand"]
@@ -390,6 +403,14 @@ fn update_sheet_gallery() {
     let truncated = ReleaseNotes {
         omitted: 49,
         ..flood()
+    };
+    let gaps = ReleaseNotes {
+        unsummarized: 31,
+        ..notes()
+    };
+    let gap_and_truncated = ReleaseNotes {
+        unsummarized: 1,
+        ..truncated.clone()
     };
     let long_note = "Not published by the release workflow, so it needs a manual download, and this build cannot say more than that without wrapping.";
     let mut manual = available(false, flood());
@@ -410,6 +431,14 @@ fn update_sheet_gallery() {
             0,
         ),
         ("one-list", available(true, only_new), roomy, 0.0, 0),
+        ("unsummarized", available(true, gaps), roomy, 0.0, 0),
+        (
+            "unsummarized-truncated-end",
+            available(true, gap_and_truncated),
+            roomy,
+            -5000.0,
+            0,
+        ),
         ("many", available(true, flood()), roomy, 0.0, 0),
         ("many-scrolled", available(true, flood()), roomy, -150.0, 0),
         (

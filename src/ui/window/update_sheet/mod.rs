@@ -193,8 +193,8 @@ fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, height: f32) -> f32 {
     output.inner_rect.height()
 }
 
-/// New, then Fixed, each only when it has entries, then how many more there were; a calm line
-/// when there are none.
+/// New, then Fixed, each only when it has entries, then how many more there were and how many
+/// releases had no summary; a calm line when there are none.
 fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
     ui.spacing_mut().item_spacing.y = 0.0;
     if notes.is_empty() {
@@ -232,14 +232,21 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
             bullet(ui, entry);
         }
     }
-    if notes.omitted > 0 {
+    let closing = [
+        (notes.omitted > 0).then(|| omitted_line(notes.omitted)),
+        (notes.unsummarized > 0).then(|| unsummarized_line(notes.unsummarized)),
+    ];
+    for line in closing.into_iter().flatten() {
         ui.add_space(GROUP_GAP);
-        ui.label(kit::text(
-            omitted_line(notes.omitted),
-            size::SUBHEADLINE + 1.0,
-            REGULAR,
-            theme::text_secondary(),
-        ));
+        ui.add(
+            egui::Label::new(kit::text(
+                line,
+                size::SUBHEADLINE + 1.0,
+                REGULAR,
+                theme::text_secondary(),
+            ))
+            .wrap(),
+        );
     }
 }
 
@@ -247,6 +254,17 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
 fn omitted_line(count: usize) -> String {
     let changes = if count == 1 { "change" } else { "changes" };
     format!("And {count} more {changes} in the full release notes.")
+}
+
+/// What ends a list that is missing the changes of `count` releases with no summary.
+fn unsummarized_line(count: usize) -> String {
+    if count == 1 {
+        "1 release since your version has no summary, so its changes are not listed.".to_owned()
+    } else {
+        format!(
+            "{count} releases since your version have no summary, so their changes are not listed."
+        )
+    }
 }
 
 /// One change: a bullet, and its text wrapped to the width left beside it so a long line hangs
