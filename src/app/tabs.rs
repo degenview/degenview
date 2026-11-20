@@ -7,7 +7,7 @@ use crate::host::tab::window::{Placement, TabWindowHost};
 use crate::model::InstrumentId;
 use crate::model::Timeframe;
 use crate::model::tab::link::LinkHub;
-use crate::model::tab::windows::WindowId;
+use crate::model::tab::windows::{LAST_WINDOW_QUITS, WindowId};
 use crate::model::watchlist::WatchlistInstrument;
 use crate::pine_studio::{ExitReason, PineStudio, PineStudioAction};
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
@@ -452,7 +452,7 @@ impl TabState {
     }
 
     /// Forgets the contents of tabs the window host closed. Without a window left there is
-    /// nothing to show, so Windows and Linux quit; macOS stays in the Dock as it always did.
+    /// nothing to show, so Windows and Linux quit (`LAST_WINDOW_QUITS`); macOS stays in the Dock.
     pub(super) fn drop_closed(&mut self, ctx: &egui::Context) {
         let closed = self.shared.windows.take_closed();
         if closed.is_empty() {
@@ -464,7 +464,7 @@ impl TabState {
                 registry.remove(id);
             }
         }
-        if self.shared.windows.is_empty() && !cfg!(target_os = "macos") {
+        if self.shared.windows.is_empty() && LAST_WINDOW_QUITS {
             ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close);
         }
     }
