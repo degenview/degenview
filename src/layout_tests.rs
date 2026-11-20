@@ -396,3 +396,55 @@ fn nothing_outside_the_view_layers_draws() {
         settled.join("\n")
     );
 }
+
+/// The view layers: they hold the `work_queue::Pending` a host or service handed them and never
+/// start background work of their own (`docs/agent-guides/core.md`, Background work).
+const VIEW_MODULES: &[&str] = &["pine_studio", "ui"];
+
+/// What starting background work by hand looks like.
+const OWN_THREADS: &[&str] = &[
+    "thread::spawn",
+    "thread::Builder",
+    "mpsc::channel",
+    "mpsc::sync_channel",
+];
+
+/// Views that run a thread of their own, each with the reason `Pending` does not fit.
+const KNOWN_OWN_THREADS: &[(&str, &str)] = &[(
+    "pine_studio/ai/mod.rs",
+    "the assistant's run streams many progress events and can be cancelled; Pending carries one answer",
+)];
+
+#[test]
+fn views_start_no_background_work_of_their_own() {
+    let mut offenders = Vec::new();
+    let mut found = BTreeSet::new();
+    for module in VIEW_MODULES {
+        for (file, text) in module_sources(module) {
+            let code = production_code(&text);
+            if !OWN_THREADS.iter().any(|pattern| code.contains(pattern)) {
+                continue;
+            }
+            if KNOWN_OWN_THREADS.iter().any(|(known, _)| *known == file) {
+                found.insert(file);
+            } else {
+                offenders.push(file);
+            }
+        }
+    }
+    let settled: Vec<&str> = KNOWN_OWN_THREADS
+        .iter()
+        .map(|(file, _)| *file)
+        .filter(|file| !found.contains(*file))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "run the job through service::work_queue (start, start_for, start_search) and poll the Pending:\n{}",
+        offenders.join("\n")
+    );
+    assert!(
+        settled.is_empty(),
+        "these no longer start threads; remove them from KNOWN_OWN_THREADS:\n{}",
+        settled.join("\n")
+    );
+}

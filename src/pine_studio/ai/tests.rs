@@ -425,7 +425,7 @@ fn a_model_list_arrives_filtered_or_as_an_error() {
         "text-embedding-3-small".to_owned(),
         "o3".to_owned(),
     ]);
-    assistant.begin_model_fetch(ProviderKind::OpenAi, Box::new(provider), wake());
+    assistant.begin_model_fetch(ProviderKind::OpenAi, Box::new(provider), None);
     assert_eq!(
         assistant.models.get(&ProviderKind::OpenAi),
         Some(&ModelList::Loading)
@@ -438,7 +438,7 @@ fn a_model_list_arrives_filtered_or_as_an_error() {
 
     let mut failing = MockProvider::replying(vec![]);
     failing.models = Err(LlmError::auth("bad key"));
-    assistant.begin_model_fetch(ProviderKind::Anthropic, Box::new(failing), wake());
+    assistant.begin_model_fetch(ProviderKind::Anthropic, Box::new(failing), None);
     wait(&mut assistant, ProviderKind::Anthropic);
     assert!(matches!(
         assistant.models.get(&ProviderKind::Anthropic),

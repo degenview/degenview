@@ -219,11 +219,9 @@ impl PineStudio {
         }
         let provider = HttpProvider::new(kind, self.ai.prefs.base_url(kind), ai_keys::key(kind));
         match provider {
-            Ok(provider) => {
-                let repaint = ctx.clone();
-                let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || repaint.request_repaint());
-                self.ai.begin_model_fetch(kind, Box::new(provider), wake);
-            }
+            Ok(provider) => self
+                .ai
+                .begin_model_fetch(kind, Box::new(provider), Some(ctx)),
             Err(error) => {
                 self.ai
                     .models

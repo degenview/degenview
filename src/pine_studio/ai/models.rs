@@ -4,8 +4,8 @@
 
 use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{LlmProvider, ProviderKind};
-use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver};
+use crate::service::work_queue::{self, Pending};
+use eframe::egui;
 
 /// Where a provider's list stands.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -62,17 +62,14 @@ pub fn matching<'a>(models: &'a [String], query: &str) -> Vec<&'a String> {
         .collect()
 }
 
-/// Asks `provider` for its models on a thread of its own; the answer arrives on the receiver.
+/// Asks `provider` for its models on a worker; `repaint` is woken when the answer is in.
 pub fn fetch(
     provider: Box<dyn LlmProvider>,
-    wake: Arc<dyn Fn() + Send + Sync>,
-) -> Receiver<Result<Vec<String>, ErrorReport>> {
-    let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = sender.send(provider.list_models().map_err(|error| error.report()));
-        wake();
-    });
-    receiver
+    repaint: Option<&egui::Context>,
+) -> Pending<Result<Vec<String>, ErrorReport>> {
+    work_queue::start(repaint, move || {
+        provider.list_models().map_err(|error| error.report())
+    })
 }
 
 #[cfg(test)]
@@ -80,7 +77,6 @@ mod tests {
     use super::*;
     use crate::service::llm::LlmError;
     use crate::service::llm::mock::MockProvider;
-    use std::time::{Duration, Instant};
 
     fn ids(list: &[&str]) -> Vec<String> {
         list.iter().map(|id| (*id).to_owned()).collect()
@@ -137,23 +133,12 @@ mod tests {
 
     #[test]
     fn fetching_delivers_the_list_or_the_error() {
-        let wait = |receiver: Receiver<Result<Vec<String>, ErrorReport>>| {
-            let deadline = Instant::now() + Duration::from_secs(5);
-            loop {
-                if let Ok(answer) = receiver.try_recv() {
-                    return answer;
-                }
-                assert!(Instant::now() < deadline, "no answer");
-                std::thread::sleep(Duration::from_millis(2));
-            }
-        };
-        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-        let ok = fetch(Box::new(MockProvider::replying(vec![])), wake.clone());
-        assert_eq!(wait(ok), Ok(vec!["mock-1".to_owned()]));
+        let ok = fetch(Box::new(MockProvider::replying(vec![])), None);
+        assert_eq!(ok.wait(), Some(Ok(vec!["mock-1".to_owned()])));
 
         let mut failing = MockProvider::replying(vec![]);
         failing.models = Err(LlmError::auth("bad key"));
-        let err = wait(fetch(Box::new(failing), wake));
+        let err = fetch(Box::new(failing), None).wait().unwrap();
         assert!(err.unwrap_err().detail.contains("bad key"));
     }
 }

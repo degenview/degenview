@@ -26,7 +26,7 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
   rate-limit lane), `start_search(source, …)` (a picker's search, off the candle workers) or `SNAPSHOTS.start` (anything that waits on the user: panels, Keychain prompts),
   polled each frame; the job repaints when it ends, and a panicked job ends without an answer
   (`poll_or`). Views hold the `Pending` a host or service returned; they never spawn threads or build
-  channels.
+  channels (`layout_tests.rs` checks `ui/` and `pine_studio/`).
 - **Errors.** Each layer has its own `thiserror` enums, and the message a user sees is the variant's
   `#[error(...)]`. Market providers return `service::ProviderError` (`is_rate_limited()`,
   `MissingKey`, …), the sync engine `sync::engine::SyncError`, the updater's download `DownloadError`.
