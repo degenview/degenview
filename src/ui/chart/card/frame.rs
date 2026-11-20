@@ -276,10 +276,9 @@ impl ChartCard {
                 for text in self.overlay_tag_texts(bars, &view, chart_type) {
                     widest = widest.max(measure(&text));
                 }
-                let shown = view.end - view.start;
                 for (pane_rect, (_, pine)) in pane_rects.iter().zip(&pane_outputs) {
                     let height = (pane_rect.height() - 16.0).max(0.0);
-                    for (_, label) in pane_labels(pine, shown, height, style) {
+                    for (_, label) in pane_labels(pine, view.visible, height, style) {
                         widest = widest.max(measure(&label));
                     }
                 }
@@ -552,7 +551,7 @@ impl ChartCard {
                     plot,
                     pine,
                     shown,
-                    tail,
+                    view.visible,
                     slot_width,
                     &x_for_index,
                     style,

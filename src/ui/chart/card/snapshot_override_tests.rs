@@ -21,6 +21,42 @@ if barstate.islast
     line.new(bar_index, close, bar_index + 12, close * 5)
 ";
 
+/// A plot that is the close until bar 200, then twenty times it: far above anything the
+/// candles of a chart scrolled back to bars 160-200 reach.
+const JUMPING_OVERLAY: &str = "//@version=6
+indicator(\"Jumping overlay\", overlay = true)
+plot(bar_index < 200 ? close : close * 20)
+";
+const JUMPING_PANE: &str = "//@version=6
+indicator(\"Jumping pane\")
+plot(bar_index < 200 ? close : close * 20)
+";
+const FAR_DRAWING: &str = "//@version=6
+indicator(\"Far drawing\", overlay = true)
+if barstate.islast
+    line.new(bar_index, close, bar_index + 500, close)
+";
+
+/// A line drawn on the last bar, anchored 50 bars ahead and extended left across every bar on
+/// screen, at twenty times the close; `rise` is how far its second end lies above its first.
+fn extended_line_script(extend: &str, rise: f64) -> String {
+    format!(
+        "//@version=6
+indicator(\"Extended\", overlay = true)
+if barstate.islast
+    line.new(bar_index + 50, close * 20, bar_index + 60, close * 20 + {rise:?}, extend = extend.{extend})
+"
+    )
+}
+
+/// A pane with the close and a label two slots past the last bar, at a price far below it.
+const MARGIN_LABEL_PANE: &str = "//@version=6
+indicator(\"Margin label\")
+plot(close)
+if barstate.islast
+    label.new(bar_index + 2, 99.0, \"x\")
+";
+
 fn painted(harness: &Harness, input: &SnapshotInput) -> Vec<ClippedShape> {
     let rect = Rect::from_min_size(Pos2::ZERO, harness.card.snapshot_size());
     let ctx = egui::Context::default();
@@ -102,6 +138,156 @@ fn an_override_viewport_draws_exactly_the_bars_and_prices_asked_for() {
         .collect();
     assert!(axis.len() >= 3, "{axis:?}");
     assert!(axis.iter().all(|price| (150.0..=300.0).contains(price)));
+}
+
+/// The chart scrolled back to bars 160-200 of 300, prices left to fit.
+fn scrolled_back() -> ChartViewport {
+    showing(
+        HorizontalViewport {
+            visible: 40,
+            right_offset: 120.0,
+        },
+        None,
+    )
+}
+
+#[test]
+fn scripts_scrolled_back_fit_the_prices_on_screen_not_the_newest_bars() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let overlay = harness
+        .card
+        .add_pine_instance(None, "Jumping overlay", JUMPING_OVERLAY);
+    wait_for_run(&mut harness, overlay);
+    let pane = harness
+        .card
+        .add_pine_instance(None, "Jumping pane", JUMPING_PANE);
+    wait_for_run(&mut harness, pane);
+    settled(&mut harness);
+    assert_eq!(harness.card.pane_count(), 1);
+
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(scrolled_back());
+    let view = geometry(&harness, &input).view;
+    assert!(view.end <= 200, "only bars before the jump are on screen");
+    assert!(
+        view.maximum < 400.0,
+        "the price axis ends at {}: the candles are not squeezed under today's overlay",
+        view.maximum
+    );
+    let axis: Vec<f64> = gather(&painted(&harness, &input))
+        .texts
+        .iter()
+        .filter(|(pos, ..)| pos.x > view.plot.right() && pos.y > view.plot.bottom())
+        .filter_map(|(_, text, _)| text.replace(',', "").parse().ok())
+        .collect();
+    assert!(axis.len() >= 2, "the pane writes its scale: {axis:?}");
+    assert!(
+        axis.iter().all(|value| *value < 400.0),
+        "the pane's scale fits the bars on screen: {axis:?}"
+    );
+    // At the right edge the same scripts do reach today's values.
+    input.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 40,
+            right_offset: 0.0,
+        },
+        None,
+    ));
+    assert!(geometry(&harness, &input).view.maximum > 1_000.0);
+}
+
+#[test]
+fn only_a_level_extended_across_the_screen_is_on_the_scrolled_back_axis() {
+    let maximum_scrolled_back = |extend: &str, rise: f64| {
+        let mut harness = Harness::new(ChartCanvas::default());
+        let id =
+            harness
+                .card
+                .add_pine_instance(None, "Extended", &extended_line_script(extend, rise));
+        wait_for_run(&mut harness, id);
+        settled(&mut harness);
+        let mut input = input(&harness, false);
+        input.frame.viewport = Some(scrolled_back());
+        geometry(&harness, &input).view.maximum
+    };
+    assert!(
+        maximum_scrolled_back("left", 0.0) > 4_000.0,
+        "a level's price fits the axis wherever it crosses the bars on screen"
+    );
+    assert!(
+        maximum_scrolled_back("none", 0.0) < 400.0,
+        "the same level without extend is far off screen"
+    );
+    for rise in [1.0, 10.0, 1_000.0] {
+        assert!(
+            maximum_scrolled_back("left", rise) < 400.0,
+            "a line rising {rise} does not stretch the axis, as on TradingView"
+        );
+    }
+}
+
+#[test]
+fn a_pane_label_in_the_right_margin_is_on_the_panes_axis() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Margin label", MARGIN_LABEL_PANE);
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 40,
+            right_offset: 0.0,
+        },
+        None,
+    ));
+    let view = geometry(&harness, &input).view;
+    let axis: Vec<f64> = gather(&painted(&harness, &input))
+        .texts
+        .iter()
+        .filter(|(pos, ..)| pos.x > view.plot.right() && pos.y > view.plot.bottom())
+        .filter_map(|(_, text, _)| text.replace(',', "").parse().ok())
+        .collect();
+    let lowest = axis.iter().copied().fold(f64::MAX, f64::min);
+    assert!(
+        lowest < 120.0,
+        "the pane reaches the label at 99 (the close is above 200): {axis:?}"
+    );
+}
+
+#[test]
+fn a_drawing_far_past_the_last_bar_leaves_the_candles_most_of_the_plot() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Far drawing", FAR_DRAWING);
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 40,
+            right_offset: 0.0,
+        },
+        None,
+    ));
+    let view = geometry(&harness, &input).view;
+    assert!(
+        view.reserved >= 10,
+        "the drawing still asks for room past the last bar"
+    );
+    assert!(
+        view.reserved <= 10,
+        "but at most a quarter of the 40 candles: {}",
+        view.reserved
+    );
+    assert!(
+        view.slot_width >= view.plot.width() / 50.0 - 1e-3,
+        "a candle keeps {} of the {} points a bar slot would have",
+        view.slot_width,
+        view.plot.width() / 40.0
+    );
 }
 
 #[test]

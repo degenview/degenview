@@ -1620,6 +1620,41 @@ pub(super) fn with_panes(canvas: ChartCanvas) -> Harness {
 }
 
 #[test]
+fn a_chart_scrolled_back_fits_its_axes_to_the_bars_on_screen() {
+    let jump = |overlay: bool| {
+        format!(
+            "//@version=6\nindicator(\"Jump\", overlay = {overlay})\nplot(bar_index < 200 ? close : close * 20)\n"
+        )
+    };
+    let mut harness = Harness::new(ChartCanvas::default());
+    for (name, overlay) in [("Overlay", true), ("Pane", false)] {
+        let id = harness.card.add_pine_instance(None, name, &jump(overlay));
+        wait_for_run(&mut harness, id);
+    }
+    assert_eq!(harness.card.pane_count(), 1);
+    let (at_rest, _) = harness.draw();
+    let largest = |drawn: &Drawn| {
+        axis_texts(drawn)
+            .iter()
+            .filter_map(|text| text.replace(',', "").parse::<f64>().ok())
+            .fold(f64::MIN, f64::max)
+    };
+    assert!(
+        largest(&at_rest) > 1_000.0,
+        "at the right edge the axes reach today's values: {:?}",
+        axis_texts(&at_rest)
+    );
+    harness.card.set_visible_candles(40);
+    harness.card.viewport.horizontal.right_offset = 120.0;
+    let (scrolled, _) = harness.draw();
+    assert!(
+        largest(&scrolled) < 400.0,
+        "scrolled back, neither axis keeps today's values: {:?}",
+        axis_texts(&scrolled)
+    );
+}
+
+#[test]
 fn panes_get_their_separators_and_the_canvas_grid() {
     let mut harness = with_panes(ChartCanvas::default());
     let (drawn, _) = harness.draw();

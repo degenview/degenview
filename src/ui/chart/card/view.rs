@@ -27,6 +27,8 @@ pub(super) struct View {
     pub(super) lead: f32,
     /// The free slots kept past the newest bar.
     pub(super) reserved: usize,
+    /// The script bars on screen: what every script value range is fitted to.
+    pub(super) visible: VisibleBars,
 }
 
 /// What frames a view besides the data: the bars and prices the viewer chose, and how far the
@@ -269,6 +271,7 @@ impl ChartCard {
             slot_width: self.slot_width(framing, plot),
             lead: window.lead,
             reserved: self.reserved_slots_with(framing.extent),
+            visible: VisibleBars::from_window(window, candles.len()),
         })
     }
 
