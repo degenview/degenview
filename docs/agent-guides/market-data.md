@@ -94,7 +94,9 @@ watchlists.
   bars from real-time IEX (a single venue: 2-4% of the volume). A SIP request whose `end` falls inside
   the delay is refused on Basic, so `end` is left out there (`bars_window`): Alpaca then applies the
   account's entitlement, and a caller's range is trimmed by the provider. Never cap `end` to the
-  delay, which holds a paid account behind. Charts name their feed (`DataSource::chart_feed_label`);
+  delay, which holds a paid account behind. A SIP `start` inside the delay is refused on Basic too
+  (403, with or without `end`, measured on `1Day`), so `bars_window` makes no request: no bar of a
+  day or longer opens that recently on any plan. Charts name their feed (`DataSource::chart_feed_label`);
   `display_name()` stays `Alpaca (IEX)` because portfolio and paper keys are built from it.
 - Alpaca bars close 1 ms before the next opens (days, weeks and months keep the New York midnight
   offset, so an hour off across a clock change). Intraday fetches look back at least 7 days, so a
