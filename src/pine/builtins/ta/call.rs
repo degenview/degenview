@@ -177,12 +177,20 @@ impl Session {
         Ok(Some(value))
     }
 
-    /// `ta.obv`, `ta.accdist`, … read as variables. None when `name` is not one of them.
+    /// `ta.obv`, `ta.accdist`, … and `ta.vwap` read as variables. None when `name` is not one of them.
     pub(crate) fn cumulative_variable(
         &mut self,
         name: &str,
         context: &RuntimeContext,
     ) -> Option<RuntimeValue> {
+        if name == "ta.vwap" {
+            // After the cumulative variables' slots, so the keys never meet.
+            let key = usize::MAX - extra::VARIABLES.len();
+            let mut state = self.working.ta_states.remove(&key).unwrap_or_default();
+            let value = super::evaluate_vwap_variable(&context.bar, &self.working, &mut state);
+            self.working.ta_states.insert(key, state);
+            return Some(value);
+        }
         let slot = extra::VARIABLES
             .iter()
             .position(|candidate| *candidate == name)?;

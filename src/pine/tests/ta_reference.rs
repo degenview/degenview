@@ -156,6 +156,25 @@ plot(expectedDirection)
 }
 
 #[test]
+fn the_vwap_variable_equals_vwap_of_hlc3_and_can_be_read_more_than_once() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Vwap\", overlay = true)
+plot(ta.vwap)
+plot(ta.vwap(hlc3))
+plot(ta.vwap + 0)
+plot(ta.vwap[1])
+plot(ta.vwap(hlc3)[1])
+",
+        3_000,
+    );
+    assert_same("variable", &plotted[0], &plotted[1]);
+    assert_same("second read", &plotted[0], &plotted[2]);
+    assert_same("history", &plotted[3], &plotted[4]);
+    assert!(plotted[0].iter().flatten().count() > 2_900);
+}
+
+#[test]
 fn named_arguments_of_supertrend_and_sar_bind_by_name() {
     let plotted = plots(
         "//@version=6
@@ -182,4 +201,24 @@ plot(ta.sar(0.02, 0.02, 0.2))
     assert_same("direction, named in order", &plotted[3], &plotted[5]);
     assert_same("sar, reordered", &plotted[6], &plotted[7]);
     assert_same("sar defaults", &plotted[8], &plotted[9]);
+}
+
+#[test]
+fn a_vwap_variable_read_only_now_and_then_still_covers_every_bar() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Vwap\", overlay = true)
+every = ta.vwap(hlc3)
+sometimes = bar_index % 7 == 6 or bar_index == 9
+plot(sometimes ? ta.vwap : na)
+plot(sometimes ? every : na)
+late = bar_index == 40
+plot(late ? ta.vwap : na)
+plot(late ? every : na)
+",
+        400,
+    );
+    assert_same("every seventh bar", &plotted[0], &plotted[1]);
+    assert_same("first read on bar 40", &plotted[2], &plotted[3]);
+    assert!(plotted[0].iter().flatten().count() > 50);
 }
