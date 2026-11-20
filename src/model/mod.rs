@@ -4,6 +4,7 @@ pub mod broker;
 pub mod changelog;
 pub mod chart;
 pub mod cursor;
+pub mod depth;
 pub mod drawings;
 pub mod editor_theme;
 pub mod encoding;
