@@ -38,7 +38,7 @@ use crate::ui::drawing::render::TimeIndex;
 use crate::ui::icons::{self, Icon};
 use crate::ui::paper::chart_trading::{self, PaperCardState};
 use crate::ui::pine::chart_render::{self, HoverTarget, PineLayer};
-use crate::ui::pine::geometry::{OverlayExtent, overlay_extent};
+use crate::ui::pine::geometry::{OverlayExtent, VisibleBars, overlay_extent, overlay_future_bars};
 use crate::ui::replay::overlay::{self, ReplayChartFrame};
 use crate::ui::theme;
 use eframe::egui::{

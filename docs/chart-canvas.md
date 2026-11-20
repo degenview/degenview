@@ -114,6 +114,20 @@ last bar leaves the margin. Changing it fetches nothing and does not touch Pine'
 (the run's visible range is margin-independent), and a price-based chart uses its own bars as
 slots.
 
+What an overlay script reserves is the farthest slot its bar-anchored drawings reach past the last
+bar, capped at a quarter of the candles shown and at 50 slots (`ui::pine::geometry::future_bars`),
+so one line drawn hundreds of bars ahead never squeezes the candles; pan right to see the rest.
+
+### Script ranges follow the bars on screen
+
+The price axis and every script pane fit their range to the script bars the plot shows, wherever
+the chart is scrolled (`ui::pine::geometry::VisibleBars`: count, `tail` newer bars off the right
+edge, and the empty slots on screen past the newest bar). Series values and drawings (boxes, lines,
+labels, polylines) outside those bars add nothing. Only an overlay script's drawings may use the
+empty slots; a pane has none. The live chart, the Screenshot Studio, Select portion and the MCP
+snapshot all read this through `ChartCard::extent_of`, which sizes the reserved slots first and
+then lays the bars out again in the plot they make.
+
 ### Panes
 
 Pane order is the order of the scripts on the chart (`PineInstance` list), so moving a pane
