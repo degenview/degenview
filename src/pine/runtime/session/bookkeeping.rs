@@ -122,7 +122,7 @@ impl Session {
 
     /// The value of each builtin variable the script reads a history of, as this bar left it. A name
     /// the script declares itself is a variable and is recorded with the others.
-    pub(super) fn read_history_builtins(
+    pub(crate) fn read_history_builtins(
         &mut self,
         context: &mut RuntimeContext,
     ) -> Vec<(String, RuntimeValue)> {

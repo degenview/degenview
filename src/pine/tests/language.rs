@@ -318,6 +318,25 @@ fn strategy_settings_the_broker_ignores_are_warned_about() {
 }
 
 #[test]
+fn a_history_of_a_builtin_variable_reads_the_value_it_had_inside_a_request() {
+    // The request asks for the chart's own series, so each history read there is the chart's.
+    let session = run(
+        "prev_tr = ta.tr[1]\n\
+         prev_hlcc4 = hlcc4[1]\n\
+         prev_day = dayofweek[1]\n\
+         request_tr = request.security(syminfo.tickerid, \"1\", ta.tr[1])\n\
+         request_hlcc4 = request.security(syminfo.tickerid, \"1\", hlcc4[1])\n\
+         request_day = request.security(syminfo.tickerid, \"1\", dayofweek[1])",
+        6,
+    );
+    for name in ["tr", "hlcc4", "day"] {
+        let chart = value(&session, &format!("prev_{name}"));
+        assert_ne!(chart, RuntimeValue::Na, "{name} on the chart");
+        assert_eq!(value(&session, &format!("request_{name}")), chart, "{name}");
+    }
+}
+
+#[test]
 fn a_history_of_a_builtin_variable_reads_the_value_it_had() {
     // `bars()` rises by one a bar. Each of these is a builtin the engine computes rather than stores.
     let session = run(
