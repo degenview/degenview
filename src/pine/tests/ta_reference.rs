@@ -175,6 +175,80 @@ plot(ta.vwap(hlc3)[1])
 }
 
 #[test]
+fn stdev_and_variance_honour_biased() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Dispersion\")
+n = 20
+sampleVariance = ta.variance(close, n) * n / (n - 1)
+plot(ta.variance(close, n, false))
+plot(sampleVariance)
+plot(ta.stdev(close, n, false))
+plot(math.sqrt(sampleVariance))
+plot(ta.stdev(close, n))
+plot(ta.stdev(close, n, true))
+plot(ta.variance(close, 1, false))
+",
+        600,
+    );
+    assert_same("variance", &plotted[0], &plotted[1]);
+    assert_same("stdev", &plotted[2], &plotted[3]);
+    assert_same("stdev is biased by default", &plotted[4], &plotted[5]);
+    assert!(
+        plotted[6].iter().all(Option::is_none),
+        "one value has no sample variance"
+    );
+}
+
+#[test]
+fn bbw_is_the_band_width_in_percent() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Bbw\")
+[basis, upper, lower] = ta.bb(close, 20, 2)
+plot(ta.bbw(close, 20, 2))
+plot((upper - lower) / basis * 100)
+",
+        600,
+    );
+    assert_same("bbw", &plotted[0], &plotted[1]);
+}
+
+#[test]
+fn iii_is_the_intensity_of_each_bar_not_a_running_total() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Iii\")
+plot(ta.iii)
+plot(high == low ? na : ((2 * close - high - low) / (high - low)) * volume)
+",
+        600,
+    );
+    assert_same("iii", &plotted[0], &plotted[1]);
+}
+
+#[test]
+fn obv_pvt_and_cum_start_on_the_second_bar_like_their_reference_code() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Cumulative\")
+plot(ta.obv)
+plot(ta.cum(math.sign(ta.change(close)) * volume))
+plot(ta.pvt)
+plot(ta.cum((ta.change(close) / close[1]) * volume))
+plot(ta.cum(bar_index < 3 ? na : 1))
+",
+        600,
+    );
+    assert_same("obv", &plotted[0], &plotted[1]);
+    assert_same("pvt", &plotted[2], &plotted[3]);
+    assert_eq!(first_value(&plotted[0]), Some(1));
+    assert_eq!(first_value(&plotted[2]), Some(1));
+    assert_eq!(plotted[4][2], None, "cum of a leading na is na");
+    assert_eq!(plotted[4][3], Some(1.0));
+}
+
+#[test]
 fn named_arguments_of_supertrend_and_sar_bind_by_name() {
     let plotted = plots(
         "//@version=6
@@ -221,4 +295,26 @@ plot(late ? every : na)
     assert_same("every seventh bar", &plotted[0], &plotted[1]);
     assert_same("first read on bar 40", &plotted[2], &plotted[3]);
     assert!(plotted[0].iter().flatten().count() > 50);
+}
+
+#[test]
+fn stdev_and_variance_take_named_and_positional_arguments_alike() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Named dispersion\")
+plot(ta.stdev(close, 20, false))
+plot(ta.stdev(source = close, length = 20, biased = false))
+plot(ta.stdev(length = 20, source = close, biased = false))
+plot(ta.variance(close, 20))
+plot(ta.variance(close, length = 20))
+plot(ta.variance(close, 20, true))
+plot(ta.variance(close, biased = true, length = 20))
+",
+        600,
+    );
+    assert_same("stdev named", &plotted[0], &plotted[1]);
+    assert_same("stdev reordered", &plotted[0], &plotted[2]);
+    assert_same("variance mixed", &plotted[3], &plotted[4]);
+    assert_same("variance explicit biased", &plotted[3], &plotted[5]);
+    assert_same("variance named biased", &plotted[3], &plotted[6]);
 }

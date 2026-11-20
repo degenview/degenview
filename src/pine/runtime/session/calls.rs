@@ -274,7 +274,7 @@ impl Session {
     /// source order into stack slots (an omitted one is `na`), with `receiver` as the first when the
     /// call is a method. `None`, with nothing evaluated, when any argument is named: that call goes
     /// through `bind_named`. Arguments past `count` are not evaluated, as `bind_named` skips them.
-    fn positional_operands(
+    pub(crate) fn positional_operands(
         &mut self,
         receiver: Option<&RuntimeValue>,
         arguments: &[crate::pine::syntax::ast::Argument],
