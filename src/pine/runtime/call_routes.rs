@@ -89,29 +89,6 @@ impl Session {
         site: usize,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
-        if name == "ta.macd" {
-            let bound = self.bind_named(
-                arguments,
-                &["source", "fastlen", "slowlen", "siglen"],
-                context,
-            )?;
-            let source = bound.get("source").cloned().unwrap_or(RuntimeValue::Na);
-            let [fast, slow, signal] = ta::MACD_DEFAULTS;
-            let length = |parameter: &str, default: i64| {
-                bound
-                    .get(parameter)
-                    .and_then(RuntimeValue::int_value)
-                    .unwrap_or(default)
-            };
-            let (fast, slow, signal) = (
-                length("fastlen", fast),
-                length("slowlen", slow),
-                length("siglen", signal),
-            );
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_macd(&source, fast, slow, signal, state));
-        }
         let default_source = match name {
             "ta.highest" | "ta.highestbars" => Some("high"),
             "ta.lowest" | "ta.lowestbars" => Some("low"),
@@ -266,6 +243,29 @@ impl Session {
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
+        if name == "ta.macd" {
+            let bound = self.bind_named(
+                arguments,
+                &["source", "fastlen", "slowlen", "siglen"],
+                context,
+            )?;
+            let source = bound.get("source").cloned().unwrap_or(RuntimeValue::Na);
+            let [fast, slow, signal] = ta::MACD_DEFAULTS;
+            let length = |parameter: &str, default: i64| {
+                bound
+                    .get(parameter)
+                    .and_then(RuntimeValue::int_value)
+                    .unwrap_or(default)
+            };
+            let (fast, slow, signal) = (
+                length("fastlen", fast),
+                length("slowlen", slow),
+                length("siglen", signal),
+            );
+            let key = self.site_key(site, context);
+            let state = self.working.ta_states.entry(key).or_default();
+            return Ok(ta::evaluate_macd(&source, fast, slow, signal, state));
+        }
         if matches!(name, "ta.sar" | "ta.supertrend") {
             let values = self.eval_all(arguments, context)?;
             let key = self.site_key(site, context);
