@@ -1180,6 +1180,48 @@ fn a_function_local_keeps_a_history_per_call_site() {
 }
 
 #[test]
+fn float_equality_rounds_to_nine_digits_and_ordering_does_not() {
+    // `zero` is a series, so the comparisons run on the interpreter; the `folded_*` ones are
+    // literals and are folded at compile time. Both must give what TradingView gives.
+    let session = run(
+        "zero = bar_index * 0.0\n\
+         eq = zero + 0.1 + 0.2 == 0.3\n\
+         ne = zero + 0.1 + 0.2 != 0.3\n\
+         tiny = zero + 0.0000000001 == 0.0\n\
+         gt = zero + 1.0 + 0.0000000004 > 1.0\n\
+         ge = 1.0 >= zero + 1.0 + 0.0000000004\n\
+         le = zero + 1.0 + 0.0000000004 <= 1.0\n\
+         far = zero + 1.0 + 0.0000000006 == 1.0\n\
+         infinite = zero + math.pow(10.0, 400.0) == math.pow(10.0, 400.0)\n\
+         folded_eq = 0.1 + 0.2 == 0.3\n\
+         folded_ne = 0.1 + 0.2 != 0.3\n\
+         folded_gt = 1.0 + 0.0000000004 > 1.0\n\
+         picked = switch zero + 0.1 + 0.2\n    0.3 => 1\n    => 0",
+        2,
+    );
+    for (name, expected) in [
+        ("eq", true),
+        ("ne", false),
+        ("tiny", true),
+        ("gt", true),
+        ("ge", false),
+        ("le", false),
+        ("far", false),
+        ("infinite", false),
+        ("folded_eq", true),
+        ("folded_ne", false),
+        ("folded_gt", true),
+    ] {
+        assert_eq!(
+            value(&session, name),
+            RuntimeValue::Bool(expected),
+            "{name}"
+        );
+    }
+    assert_eq!(value(&session, "picked"), RuntimeValue::Int(1));
+}
+
+#[test]
 fn trade_properties_read_the_closed_and_open_trades() {
     let source = "//@version=6\nstrategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 2)\n\
          if bar_index == 1\n    strategy.entry(\"L\", strategy.long)\n\

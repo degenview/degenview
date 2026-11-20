@@ -75,6 +75,12 @@
 - Builtin variables read with `[]` (`hlcc4[1]`, `ta.tr[1]`) are recorded by `read_history_builtins`
   at each confirmed bar's end; names found once by `history_builtin_names`. Not inside
   `request.security`.
+- Comparisons (`runtime/operators.rs`, one `apply` for the interpreter, switch arms and constant
+  folding): `==` and `!=` on floats compare both operands rounded to nine fractional digits
+  (`floats_equal`; rounded in `f64`, never through an integer cast) and `==` is false when either is
+  not finite; `<`, `<=`, `>`, `>=` stay exact, and two ints compare exactly. TradingView-measured
+  (probes P10 B/A4, P11 S2), which differs from the manual's "all comparisons round". Keep the
+  non-finite rule in `floats_equal`.
 - Breakpoints and watches: local `scriptDebug.state` setting (never synced; in `sync::record::policy`'s local
   keys).
 - `once` finished flag: `RuntimeState::once_finished` (by site key), deliberately in working state:
