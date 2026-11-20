@@ -445,6 +445,14 @@ htf = request.security(syminfo.tickerid, \"5\", ta.sma(close, 10))
 plot(htf)
 ";
 
+/// `SECURITY` reading the higher-timeframe bar before it closes, the way TradingView's
+/// `lookahead_on` does.
+pub(crate) const SECURITY_LOOKAHEAD: &str = "//@version=6
+indicator(\"Security lookahead\")
+htf = request.security(syminfo.tickerid, \"5\", ta.sma(close, 10), lookahead = barmerge.lookahead_on)
+plot(htf)
+";
+
 pub(crate) const STRATEGY: &str = "//@version=6
 strategy(\"Cross\", overlay = true)
 fast = ta.sma(close, 10)
@@ -816,6 +824,13 @@ fn workloads() -> Vec<Workload> {
         add(
             "security",
             Box::new(move || evaluate(SECURITY, &data, true)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "security_lookahead",
+            Box::new(move || evaluate(SECURITY_LOOKAHEAD, &data, true)),
         );
     }
     {
