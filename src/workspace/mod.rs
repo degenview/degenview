@@ -49,7 +49,7 @@ mod empty_page;
 mod grid;
 mod input;
 mod layout;
-mod liquidations;
+mod market_flow;
 mod overlay;
 mod pine;
 mod replay;
@@ -187,8 +187,8 @@ pub struct ChartWorkspace {
     quote_coordinator: WatchlistQuoteCoordinator,
     /// The watchlist sidebar and what it asks of the tab.
     watchlist_pane: WatchlistPane,
-    /// The liquidations panel: shown or not, and its filter. A tab starts without it.
-    liquidations: liquidations::LiquidationsPane,
+    /// The market-flow panel: shown or not, its mode and filters. A tab starts without it.
+    market_flow: market_flow::MarketFlowPane,
     /// The order sheet and the orders panel, and the venue they trade on.
     trade: TradeSide,
     /// The chart menu's state: the open menu, its messages, and the panels it toggles.
@@ -318,7 +318,7 @@ impl ChartWorkspace {
             quote_book,
             quote_coordinator,
             watchlist_pane: WatchlistPane::default(),
-            liquidations: liquidations::LiquidationsPane::default(),
+            market_flow: market_flow::MarketFlowPane::default(),
             trade: TradeSide::default(),
             context: ContextState::default(),
             snapshot: SnapshotState::default(),
@@ -622,7 +622,7 @@ impl ChartWorkspace {
         actions.extend(rail_actions);
 
         self.show_watchlist_panel(ui, &ctx);
-        self.show_liquidations_panel(ui, &ctx);
+        self.show_market_flow_panel(ui, &ctx);
 
         actions.extend(self.show_trade_panels(ui, paper));
 

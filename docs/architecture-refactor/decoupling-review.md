@@ -85,7 +85,7 @@ Pine registry is fine because it is immutable. The mutable ones (`store::scripts
 - **Long functions.** `ui::icons::paint` is 2,121 lines (one icon `match`). `workspace::grid::render_grid`
   is 757, `pine_studio::editor::text_view` 466. 19 functions are over 250 lines.
 - **Naming drift.** `model/drawings` against `drawing` everywhere else; `model/indicators` against
-  `mcp/indicator`; `workspace/alerts.rs` and `workspace/liquidations.rs` against the singular domain
+  `mcp/indicator`; `workspace/alerts.rs` against the singular domain
   names; `ui/editor_appearance` against `editor_theme`.
 
 ## What the stack does

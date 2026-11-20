@@ -19,8 +19,8 @@ numbers undercount a busy moment (below).
 | `Liquidation`, `Side`, `MinSize`, the rolling `Tape` and its `Snapshot` (totals, rows) | `model/liquidation/mod.rs` (pure; tests in `tests.rs`) |
 | The sockets and the lease | `service/liquidation/mod.rs`; one module per exchange (`binance.rs`, `bybit.rs`: session and parser) |
 | Owning the feed, the per-frame snapshot cache | `host/liquidation/mod.rs` (`LiquidationHost`, one for the app, in `WindowEnv`) |
-| The panel | `ui/liquidation/mod.rs` (`show`, `usd`) |
-| The tab's side of it, docking | `workspace/liquidations.rs`; the button is in `ui/workspace/toolbar.rs` |
+| The panel | `ui/market_flow/mod.rs` (`show`, `usd`) |
+| The tab's side of it, docking | `workspace/market_flow.rs`; the button is in `ui/workspace/toolbar.rs` |
 
 ## How it runs
 
@@ -60,7 +60,7 @@ numbers undercount a busy moment (below).
 ## Taker flow
 
 `model/taker_flow` (pure), `service/taker_flow` (`binance.rs`, `bybit.rs`), `host/taker_flow`
-(`TakerFlowHost`), the body in `ui/liquidation/flow.rs`. The asset is the focused chart's:
+(`TakerFlowHost`), the body in `ui/market_flow/flow.rs`. The asset is the focused chart's:
 `taker_flow::asset_of(source, symbol)` is its base (Kraken's `XBT` is `BTC`), for the crypto
 exchanges only (a one-letter asset such as `S` counts: Binance's and Bybit's `SUSDT` are split on
 their dollar quote); a stock or prediction market shows "No flow for this market". Its `{ASSET}USDT`
@@ -114,5 +114,5 @@ cargo test --lib liquidation::tests::live_exchanges -- --ignored --nocapture
 cargo test --lib taker_flow::tests::live_venues -- --ignored --nocapture
 ```
 
-Pictures of the panel (both themes, default and narrow width): `cargo test --lib ui::liquidation --
+Pictures of the panel (both themes, default and narrow width): `cargo test --lib ui::market_flow --
 --ignored` with `DEGENVIEW_GALLERY_DIR` set.

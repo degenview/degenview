@@ -115,7 +115,7 @@ fn partial_flow() -> taker_flow::Snapshot {
 
 #[test]
 fn the_panel_draws_every_state_of_both_modes() {
-    let mut state = LiquidationsState::default();
+    let mut state = MarketFlowState::default();
     let full = busy_snapshot(MinSize::Any);
     let filtered = Snapshot {
         latest: Vec::new(),
@@ -234,7 +234,7 @@ fn gallery_of_the_panel() {
             for (size_name, width) in [("default", 340.0), ("narrow", 280.0)] {
                 let mut screen = Screen::new(vec2(width, 640.0));
                 theme::apply(&screen.ctx, app_theme);
-                let mut state = LiquidationsState {
+                let mut state = MarketFlowState {
                     mode: *mode,
                     minimum: *minimum,
                 };

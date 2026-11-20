@@ -35,7 +35,7 @@ pub enum Mode {
 
 /// What the panel remembers between frames.
 #[derive(Default)]
-pub struct LiquidationsState {
+pub struct MarketFlowState {
     pub mode: Mode,
     pub minimum: MinSize,
 }
@@ -90,7 +90,7 @@ pub fn usd(value: f64) -> String {
     }
 }
 
-pub fn show(ui: &mut Ui, state: &mut LiquidationsState, body: &Body<'_>) -> Option<Action> {
+pub fn show(ui: &mut Ui, state: &mut MarketFlowState, body: &Body<'_>) -> Option<Action> {
     let mut action = None;
     header(ui, state, &mut action);
     kit::divider(ui);
@@ -102,7 +102,7 @@ pub fn show(ui: &mut Ui, state: &mut LiquidationsState, body: &Body<'_>) -> Opti
     action
 }
 
-fn liquidations(ui: &mut Ui, state: &mut LiquidationsState, snapshot: &Snapshot) {
+fn liquidations(ui: &mut Ui, state: &mut MarketFlowState, snapshot: &Snapshot) {
     totals(ui, snapshot);
     kit::divider(ui);
     let footnote_height = footnote_height(ui, LIQUIDATIONS_FOOTNOTE);
@@ -117,7 +117,7 @@ fn liquidations(ui: &mut Ui, state: &mut LiquidationsState, snapshot: &Snapshot)
     footnote(ui, LIQUIDATIONS_FOOTNOTE);
 }
 
-fn header(ui: &mut Ui, state: &mut LiquidationsState, action: &mut Option<Action>) {
+fn header(ui: &mut Ui, state: &mut MarketFlowState, action: &mut Option<Action>) {
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         vec2(width, HEADER_HEIGHT),
@@ -254,7 +254,7 @@ fn legend(ui: &mut Ui) {
 }
 
 /// The row above the tape: what it lists, and the smallest size it lists.
-fn filter_row(ui: &mut Ui, state: &mut LiquidationsState) {
+fn filter_row(ui: &mut Ui, state: &mut MarketFlowState) {
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         vec2(width, 36.0),
@@ -285,7 +285,7 @@ fn filter_row(ui: &mut Ui, state: &mut LiquidationsState) {
     );
 }
 
-fn tape(ui: &mut Ui, state: &mut LiquidationsState, snapshot: &Snapshot) {
+fn tape(ui: &mut Ui, state: &mut MarketFlowState, snapshot: &Snapshot) {
     filter_row(ui, state);
     if snapshot.latest.is_empty() {
         let (title, detail) = if snapshot.count == 0 {

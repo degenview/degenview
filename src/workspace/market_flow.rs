@@ -7,18 +7,18 @@ use super::ChartWorkspace;
 use crate::host::liquidation::LiquidationHost;
 use crate::host::taker_flow::TakerFlowHost;
 use crate::model::taker_flow::asset_of;
-use crate::ui::liquidation::{self, Action, Body, FlowBody, LiquidationsState, Mode};
+use crate::ui::market_flow::{self, Action, Body, FlowBody, MarketFlowState, Mode};
 use eframe::egui;
 
 /// What a tab holds of the panel. A tab always starts with it closed, like the Paper panel.
 #[derive(Default)]
-pub(super) struct LiquidationsPane {
+pub(super) struct MarketFlowPane {
     visible: bool,
-    view: LiquidationsState,
+    view: MarketFlowState,
     hosts: Option<(LiquidationHost, TakerFlowHost)>,
 }
 
-impl LiquidationsPane {
+impl MarketFlowPane {
     pub(super) fn is_visible(&self) -> bool {
         self.visible
     }
@@ -30,9 +30,9 @@ impl LiquidationsPane {
 
 impl ChartWorkspace {
     /// Gives the tab the feeds every window shares. Cheap to call every frame.
-    pub fn set_liquidations(&mut self, liquidations: &LiquidationHost, taker_flow: &TakerFlowHost) {
-        if self.liquidations.hosts.is_none() {
-            self.liquidations.hosts = Some((liquidations.clone(), taker_flow.clone()));
+    pub fn set_market_flow(&mut self, liquidations: &LiquidationHost, taker_flow: &TakerFlowHost) {
+        if self.market_flow.hosts.is_none() {
+            self.market_flow.hosts = Some((liquidations.clone(), taker_flow.clone()));
         }
     }
 
@@ -43,15 +43,15 @@ impl ChartWorkspace {
     }
 
     /// The panel at the right while it is shown.
-    pub(super) fn show_liquidations_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        if !self.liquidations.visible {
+    pub(super) fn show_market_flow_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        if !self.market_flow.visible {
             return;
         }
-        let asset = (self.liquidations.view.mode == Mode::TakerFlow)
+        let asset = (self.market_flow.view.mode == Mode::TakerFlow)
             .then(|| self.focused_flow_asset())
             .flatten();
-        let id = egui::Id::new(("liquidations", self.id));
-        let pane = &mut self.liquidations;
+        let id = egui::Id::new(("market-flow", self.id));
+        let pane = &mut self.market_flow;
         let Some((liquidations, taker_flow)) = pane.hosts.as_ref() else {
             return;
         };
@@ -82,7 +82,7 @@ impl ChartWorkspace {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ui, |ui| {
-                closed = liquidation::show(ui, &mut pane.view, &body) == Some(Action::Close);
+                closed = market_flow::show(ui, &mut pane.view, &body) == Some(Action::Close);
             });
         if closed {
             pane.visible = false;
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn the_panel_starts_closed_and_the_toolbar_toggles_it() {
-        let mut pane = LiquidationsPane::default();
+        let mut pane = MarketFlowPane::default();
         assert!(!pane.is_visible());
         pane.toggle();
         assert!(pane.is_visible());
@@ -106,6 +106,6 @@ mod tests {
 
     #[test]
     fn the_panel_opens_on_the_liquidations() {
-        assert_eq!(LiquidationsPane::default().view.mode, Mode::Liquidations);
+        assert_eq!(MarketFlowPane::default().view.mode, Mode::Liquidations);
     }
 }
