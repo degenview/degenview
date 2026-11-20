@@ -204,12 +204,19 @@ pub fn sheet_button_focusable(
     prominent: bool,
     enabled: bool,
 ) -> egui::Response {
-    sheet_button_in(ui, Some((id, ring)), label, prominent, enabled)
+    sheet_button_in(ui, Some(Focusable { id, ring }), label, prominent, enabled)
+}
+
+/// A sheet button the keyboard focus can be put on: its own id, and whether it draws the focus ring.
+#[derive(Clone, Copy)]
+struct Focusable {
+    id: Id,
+    ring: bool,
 }
 
 fn sheet_button_in(
     ui: &mut Ui,
-    keyed: Option<(Id, bool)>,
+    focusable: Option<Focusable>,
     label: &str,
     prominent: bool,
     enabled: bool,
@@ -228,8 +235,8 @@ fn sheet_button_in(
     } else {
         Sense::hover()
     };
-    let (rect, response) = match keyed {
-        Some((id, _)) => {
+    let (rect, response) = match focusable {
+        Some(Focusable { id, .. }) => {
             let (rect, _) = ui.allocate_exact_size(vec2(width, 28.0), Sense::hover());
             (rect, ui.interact(rect, id, sense))
         }
@@ -262,7 +269,7 @@ fn sheet_button_in(
         ),
     };
     ui.painter().rect_filled(rect, 7.0, fill);
-    if matches!(keyed, Some((_, true))) && response.has_focus() {
+    if focusable.is_some_and(|focusable| focusable.ring) && response.has_focus() {
         focus::paint_ring(ui.painter(), rect, 7.0);
     }
     ui.painter()

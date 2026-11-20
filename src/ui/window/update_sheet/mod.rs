@@ -28,6 +28,25 @@ const EDGE_MARGIN: f32 = 16.0;
 const GROUP_GAP: f32 = 16.0;
 /// The picture's card starts this far left of its box so it lines up with the list under it.
 const PICTURE_LEAD: f32 = 16.0;
+/// Above the header picture.
+const TOP_SPACE: f32 = 24.0;
+/// Between the header and the list.
+const HEADER_GAP: f32 = 20.0;
+/// Between the note about a manual download and the link under it.
+const NOTE_GAP: f32 = 10.0;
+/// Under the link, before the footer.
+const BOTTOM_SPACE: f32 = 22.0;
+/// Between a list's title and its first change.
+const TITLE_GAP: f32 = 8.0;
+/// Between two changes of a list.
+const ENTRY_GAP: f32 = 7.0;
+/// Between a bullet and its text.
+const BULLET_GAP: f32 = 9.0;
+/// How far the sheet's height without its list may drift between frames before the next one is laid
+/// out again.
+const CHROME_TOLERANCE: f32 = 0.5;
+/// The size of the notes' titles, the footnotes, the note and the link under the list.
+const DETAIL_TEXT: f32 = size::SUBHEADLINE + 1.0;
 const NO_NOTES: &str = "No summary of changes is available for this version.";
 
 /// How the person answered.
@@ -95,7 +114,7 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
     let mut outcome = None;
     let list_height = list_height(ctx.content_rect().height(), remembered_chrome(ctx, id));
     let ((), outside) = sheet::show_dismissable(ctx, id, WIDTH, |ui| {
-        ui.add_space(24.0);
+        ui.add_space(TOP_SPACE);
         sheet::inset(ui, |ui| {
             sheet::header_picture(
                 ui,
@@ -106,7 +125,7 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
                 art::paint,
             );
         });
-        ui.add_space(20.0);
+        ui.add_space(HEADER_GAP);
         let shown_list = notes_list(ui, notes, coverage, list_height);
         ui.add_space(GROUP_GAP);
         sheet::inset(ui, |ui| {
@@ -114,16 +133,16 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
                 ui.add(
                     egui::Label::new(kit::text(
                         note,
-                        size::SUBHEADLINE + 1.0,
+                        DETAIL_TEXT,
                         REGULAR,
                         theme::text_secondary(),
                     ))
                     .wrap(),
                 );
-                ui.add_space(10.0);
+                ui.add_space(NOTE_GAP);
             }
             release_notes_link(ui, url);
-            ui.add_space(22.0);
+            ui.add_space(BOTTOM_SPACE);
         });
         sheet::footer(ui, |ui| {
             let label = if *installable {
@@ -171,7 +190,7 @@ fn remember_chrome(ui: &Ui, id: Id, chrome: f32) {
     let ctx = ui.ctx();
     let before = remembered_chrome(ctx, id);
     ctx.data_mut(|data| data.insert_temp(id.with("chrome"), chrome));
-    if (chrome - before).abs() > 0.5 {
+    if (chrome - before).abs() > CHROME_TOLERANCE {
         ctx.request_repaint();
     }
 }
@@ -228,14 +247,14 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes, coverage: &Coverage) {
         }
         ui.label(kit::text(
             title,
-            size::SUBHEADLINE + 1.0,
+            DETAIL_TEXT,
             SEMIBOLD,
             theme::text_secondary(),
         ));
-        ui.add_space(8.0);
+        ui.add_space(TITLE_GAP);
         for (at, entry) in entries.iter().enumerate() {
             if at > 0 {
-                ui.add_space(7.0);
+                ui.add_space(ENTRY_GAP);
             }
             bullet(ui, entry);
         }
@@ -245,7 +264,7 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes, coverage: &Coverage) {
         ui.add(
             egui::Label::new(kit::text(
                 line,
-                size::SUBHEADLINE + 1.0,
+                DETAIL_TEXT,
                 REGULAR,
                 theme::text_secondary(),
             ))
@@ -258,7 +277,7 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes, coverage: &Coverage) {
 /// under its first word.
 fn bullet(ui: &mut Ui, text: &str) {
     ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing.x = 9.0;
+        ui.spacing_mut().item_spacing.x = BULLET_GAP;
         ui.label(kit::text(
             "\u{2022}",
             size::BODY,
@@ -278,7 +297,7 @@ fn release_notes_link(ui: &mut Ui, url: &str) {
             egui::Label::new(
                 kit::text(
                     "Full release notes",
-                    size::SUBHEADLINE + 1.0,
+                    DETAIL_TEXT,
                     REGULAR,
                     theme::text_secondary(),
                 )
