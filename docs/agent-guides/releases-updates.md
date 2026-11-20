@@ -36,15 +36,16 @@ final `0.6.0` is a new tag rebuilt from the last commit, never a promoted RC bin
 1. Land on `main`; require a clean tree plus test, clippy, and fmt checks.
 2. Preview with `tools/release.sh <version> --dry-run`.
 3. Run `tools/release.sh <version>` (`--yes` skips confirmation): creates `release/v<version>`,
-   bumps Cargo files, opens a PR, merge-commits it, then creates and pushes a signed tag on merged
-   `main`. Hyphenated versions publish as GitHub prereleases; only Release Candidate offers `-rc.N`.
+   bumps Cargo files, writes the changelog section and deletes the fragments, opens a PR,
+   merge-commits it, then creates and pushes a signed tag on merged `main`. Hyphenated versions
+   publish as GitHub prereleases; only Release Candidate offers `-rc.N`.
 4. The tag-triggered Release workflow verifies tag identity/version, builds macOS arm64/x64 (zip +
    disk image each), Windows x64/ARM64 (zip + per-user installer each), Linux x64/arm64 tarballs and a
    Flatpak per Linux CPU, then publishes. Watch with `gh run watch`; confirm all twelve assets.
 
-Release notes: generated from `git log --no-merges` (no changelog file). Stable lists everything
-since the previous stable tag (`0.6.0` repeats `0.6.0-rc.1`); an RC only what is new since the
-previous tag. The workflow runs from the tag's commit, so a notes-step change must be on `main` first.
+Release notes: curated, not generated from commits; see [Release notes and the
+changelog](#release-notes-and-the-changelog). The workflow runs from the tag's commit, so a
+notes-step change must be on `main` first.
 
 Release builds restore **no build cache**: whatever could write one would end up signed in the next
 release. (`release-cache.yml` and its weekly glibc check are gone; `release.yml` runs that check on
@@ -68,6 +69,37 @@ steps (steps share no shell state; a shared file prevents drift); `tools/test-re
 
 Never squash/rebase the release PR or reuse/move a published tag. Fix a bad release with a new
 version. Re-run a failed tagged build through the Release workflow dispatch.
+
+## Release notes and the changelog
+
+What a person using the app notices, per release, in plain words. Three stages, one format.
+
+1. **Fragments.** A pull request with a user-visible change adds `changes/<short-slug>.md`: one change
+   per line, `new: <text>` or `fixed: <text>`, nothing else (`changes/README.md` has the tone and
+   examples). Many parallel pull requests each add their own file, so none conflict. Internal-only
+   work (refactors, tests, CI, docs) adds none.
+2. **`CHANGELOG.md`**, newest first. `tools/release.sh` renders the fragments into a new section
+   (`tools/changelog.sh render|insert`), deletes them and commits both with the version bump in the
+   release pull request. `--dry-run` prints the section; a malformed fragment fails with
+   `file:line` before anything is touched. A release with no fragments still gets its heading.
+   Never edit old sections by hand beyond fixing wording before the release.
+3. **The release body** (`release.yml`, "Generate release notes"): `tools/changelog.sh notes <tag>
+   <prev>` copies the sections after the previous release (stable: after the previous stable, so
+   `0.6.0` carries every `0.6.0-rc.N` section; release candidate: after the previous tag) verbatim
+   with no wrapper heading, then the commit list folded in `<details><summary>All commits</summary>`,
+   the Full diff line and the Downloads table. A tag with no section writes only the rest. Releases
+   before the changelog existed keep their commit-list bodies.
+
+The shape is a contract with the app. `model::changelog::parse` reads release bodies for the update
+sheet: a `## <version> ...` heading (optional `v`) opens a section, `### New` / `### Fixed` set the
+list, `- ` bullets are the entries; any other `#`/`##` heading ends the section (so `## Downloads`
+and the old `## Changes since ...` commit-log bodies yield nothing) and `<details>` blocks are
+skipped. Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks the sheet.
+`cargo test` checks the fragments and `CHANGELOG.md` against the same rules, so CI catches a
+malformed one. Input is bounded (64 KiB body, 64 sections, 100 entries per list per section, 400
+characters per entry, 300 entries per merged list). Not verified: a real release body produced by
+the workflow, and the sheet against a live GitHub reply; both wait for the first release cut with
+fragments.
 
 ## Trust and packaging
 
@@ -404,6 +436,17 @@ executables). Deploy Production's CloudKit schema before a release that changes 
   check or a channel switch clears it directly.
 - `install_target` (runs `codesign` on macOS) is looked up on the update worker by the first tick, not
   at app start; until then an available update says so and is not installable.
+- **Review sheet.** Clicking the tab-bar mark or About's **Update…** on an available update opens
+  `ui::window::update_sheet` (New / Fixed lists, Update and Cancel); installing starts only from its
+  Update. A build that cannot install gets the same sheet with **View Release** as the primary. The
+  host holds which window shows it (`UpdateHost::review`, `review_open_in`, `close_review`; memory
+  only, one window): it ends when the phase leaves `Available` (channel switch, install started
+  elsewhere) and does not return for a later update. A failed install retries from the mark without
+  the sheet. The notes are `Phase::Available::notes` (an `Arc`): `update::check` merges the sections
+  of every release body it read in that check, not drafts and only the release workflow's, that lie
+  after the running version up to the offered one, newest first, one per version (the release of
+  that version wins over a repeat in a later body), whatever the channel; no extra request. Not
+  verified in a real window or against a live GitHub reply.
 - Tab-bar indicator and About card render `UpdateView::Phase`; UI never reads host internals. The
   indicator reserves strip space. Progress: 0–5% signature, 5–90% download, 90–100% unpack. Workers
   repaint only viewports that drew the state.

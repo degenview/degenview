@@ -6,6 +6,10 @@
 #   tools/release.sh 0.1.3 --dry-run  print what would happen, change nothing
 #   tools/release.sh 0.2.0-rc.1       a release candidate: only the Release Candidate channel gets it
 #
+# The release PR also moves the pending changelog fragments (changes/*.md) into CHANGELOG.md as the
+# new version's section, which the Release workflow and the app's update sheet then read; see
+# tools/changelog.sh and changes/README.md.
+#
 # Cargo.toml is the single source of the app's version (Settings > About, the update check, the
 # app bundle's Info.plist). Pushing the tag starts the Release workflow, which refuses a tag that
 # does not match Cargo.toml, so never tag by hand.
@@ -104,6 +108,11 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
     exit 1
 fi
 
+# The fragments are checked now, so a malformed one stops the release before anything is touched.
+today=$(date +%Y-%m-%d)
+section=$(tools/changelog.sh render "$version" "$today")
+fragments=$(tools/changelog.sh files)
+
 case "$version" in
     *-rc.*) channel="Release Candidate channel only" ;;
     *-*) channel="no channel (the app's updater ignores alpha/beta tags)" ;;
@@ -111,9 +120,17 @@ case "$version" in
 esac
 echo "Release $tag ($channel)"
 echo "  1. Cargo.toml / Cargo.lock: $current -> $version"
-echo "  2. commit 'Release $tag' on branch release/$tag, open a PR, merge it with a merge commit"
-echo "  3. signed tag $tag on the merged main (verified locally), then git push origin $tag"
+echo "  2. CHANGELOG.md: add the section below and delete the fragments in changes/"
+echo "  3. commit 'Release $tag' on branch release/$tag, open a PR, merge it with a merge commit"
+echo "  4. signed tag $tag on the merged main (verified locally), then git push origin $tag"
 echo "     (starts the Release workflow)"
+echo
+echo "$section"
+if [ -z "$fragments" ]; then
+    echo
+    echo "No user-facing changes: changes/ holds no fragments, so the section is only a heading."
+fi
+echo
 if [ "$dry_run" = 1 ]; then
     echo "(dry run: nothing changed)"
     exit 0
@@ -143,14 +160,21 @@ if [ "$(git diff --numstat -- Cargo.lock | cut -f1,2)" != "$(printf '1\t1')" ]; 
     exit 1
 fi
 
+# After the lock check, so a failure there leaves only the Cargo files to undo.
+tools/changelog.sh insert "$version" "$today"
+
 branch="release/$tag"
 git switch -c "$branch"
-git add Cargo.toml Cargo.lock
+if [ -n "$fragments" ]; then
+    # shellcheck disable=SC2086 # fragment names are checked slugs, no spaces.
+    git rm -q -- $fragments
+fi
+git add Cargo.toml Cargo.lock CHANGELOG.md
 git commit -m "Release $tag"
 git push origin "$branch"
 # A merge commit, never squash/rebase: the release commit's SHA is what the tag will cover.
 pr=$(gh pr create --base main --head "$branch" --title "Release $tag" \
-    --body "Version bump to $version. Merged with a merge commit; tools/release.sh tags main afterwards.")
+    --body "Version bump to $version and its changelog section. Merged with a merge commit; tools/release.sh tags main afterwards.")
 gh pr merge "$pr" --merge
 
 # Tag only once main has the bump: a refused merge must not leave a tag (and a running workflow).

@@ -29,6 +29,7 @@ use crate::ui::settings::window;
 use crate::ui::shortcut;
 use crate::ui::theme;
 use crate::ui::window::tab_bar::{self, TabBar, TabView, WindowChoice};
+use crate::ui::window::update_sheet;
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
@@ -200,6 +201,7 @@ fn show_window(
     if events.contains(&tab_bar::TabBarEvent::UpdateClicked) {
         env.updates.activate(&ctx);
     }
+    update_sheet::show_review(&ctx, &env.updates, &update);
     if focused {
         show_restart_prompt(&ctx, env, &update);
         show_session_save_error(&ctx, &env.session_save_error);

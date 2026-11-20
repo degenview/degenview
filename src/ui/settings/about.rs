@@ -7,7 +7,8 @@ use crate::host::update::{Phase, UpdateHost, UpdateView};
 use crate::service::update::check::Channel;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
-use crate::ui::{kit, theme, window::update_indicator};
+use crate::ui::window::{update_indicator, update_sheet};
+use crate::ui::{kit, theme};
 use eframe::egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -290,6 +291,9 @@ fn card(view: &UpdateView) -> Card {
 /// The one button the card offers, if the phase calls for one.
 #[derive(Debug, PartialEq)]
 enum Action {
+    /// Opens the sheet that lists what the update changes; installing starts there.
+    Review,
+    /// Starts a failed install again: the changes were reviewed the first time.
     Install,
     Restart,
     CheckAgain,
@@ -300,7 +304,7 @@ fn primary_action(view: &UpdateView) -> Option<(&'static str, Action)> {
     match &view.phase {
         Phase::Available {
             installable: true, ..
-        } => Some(("Update Now", Action::Install)),
+        } => Some(("Update…", Action::Review)),
         Phase::Available { url, .. } => Some(("View Release", Action::OpenRelease(url.clone()))),
         Phase::Ready { .. } => Some(("Restart to Update", Action::Restart)),
         Phase::InstallFailed { .. } => Some(("Try Again", Action::Install)),
@@ -390,6 +394,10 @@ fn update_status_card(ui: &mut Ui, host: &UpdateHost, channel: &mut Option<Chann
                             kit::tinted_button(ui, label, card.tint, true, false, 0.0).clicked();
                         if clicked {
                             match action {
+                                Action::Review => {
+                                    host.review(ui.ctx().viewport_id());
+                                    ui.ctx().request_repaint();
+                                }
                                 Action::Install => host.install(ui.ctx()),
                                 Action::CheckAgain => host.check_now(ui.ctx()),
                                 Action::OpenRelease(url) => {
@@ -434,6 +442,7 @@ fn update_status_card(ui: &mut Ui, host: &UpdateHost, channel: &mut Option<Chann
                 );
             }
         });
+    update_sheet::show_review(ui.ctx(), host, &view);
     quit
 }
 
@@ -904,6 +913,7 @@ fn link_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn a_file_dated_before_the_build_gives_way_to_the_stamp() {
@@ -966,6 +976,7 @@ mod tests {
             url: "https://example.test/r".to_owned(),
             installable,
             note: (!installable).then(|| "Download it manually.".to_owned()),
+            notes: Arc::default(),
         }
     }
 
@@ -974,7 +985,7 @@ mod tests {
         let installable = view(available(true));
         assert_eq!(
             primary_action(&installable),
-            Some(("Update Now", Action::Install))
+            Some(("Update…", Action::Review))
         );
         // Release Notes moves to the footer, so it isn't a second button.
         assert_eq!(release_link(&installable), Some("https://example.test/r"));

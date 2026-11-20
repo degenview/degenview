@@ -2,8 +2,11 @@
 //! picks the newest one the chosen `Channel` accepts and compares its tag with the running version.
 //! Read-only: it never downloads or installs anything, it only reports where the release page is.
 
+use crate::model::changelog::{self, ReleaseNotes, Section};
 use crate::service::net::http::{self, Retry};
 use serde::Deserialize;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 /// The recent releases, prereleases included (`/releases/latest` never returns one, and is "the
 /// most recently created stable release", not the highest version).
@@ -83,6 +86,8 @@ pub struct Release {
     pub asset: Option<ReleaseAsset>,
     /// Why the release is only offered for manual download, when it is not installable.
     pub manual_only: Option<&'static str>,
+    /// What changed between the running build (exclusive) and this release (inclusive).
+    pub notes: Arc<ReleaseNotes>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,6 +124,8 @@ struct ReleaseDto {
     author: Option<AuthorDto>,
     #[serde(default)]
     assets: Vec<AssetDto>,
+    /// The notes the release workflow wrote (`tools/changelog.sh notes`).
+    body: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -257,29 +264,39 @@ fn offered_version(release: &ReleaseDto, channel: Channel) -> Option<Version> {
     (consistent && channel.accepts(&version)).then_some(version)
 }
 
-fn pick(releases: Vec<ReleaseDto>, running: &Version, channel: Channel) -> UpdateOutcome {
+fn pick(mut releases: Vec<ReleaseDto>, running: &Version, channel: Channel) -> UpdateOutcome {
     // A tag this version cannot read, or that no channel offers, is skipped rather than failing
     // the whole check: one stray tag must not stop updates.
     let newest = releases
-        .into_iter()
-        .filter_map(|release| Some((offered_version(&release, channel)?, release)))
+        .iter()
+        .enumerate()
+        .filter_map(|(at, release)| Some((offered_version(release, channel)?, at)))
         .max_by(|(a, _), (b, _)| a.cmp(b));
     match newest {
-        Some((latest, release)) if latest > *running => UpdateOutcome::Available(offer(release)),
+        Some((latest, at)) if latest > *running => {
+            let notes = notes_between(&releases, running, &latest);
+            UpdateOutcome::Available(offer(releases.swap_remove(at), notes))
+        }
         _ => UpdateOutcome::UpToDate,
     }
 }
 
-fn offer(release: ReleaseDto) -> Release {
+/// Whether the release workflow published `release`: the only author whose assets or notes the
+/// app acts on.
+fn by_release_workflow(release: &ReleaseDto) -> bool {
+    release.author.as_ref().is_some_and(|author| {
+        RELEASE_AUTHORS
+            .iter()
+            .any(|login| login.eq_ignore_ascii_case(&author.login))
+    })
+}
+
+fn offer(release: ReleaseDto, notes: ReleaseNotes) -> Release {
     // Only install what cannot be swapped after publishing and that the release workflow published;
     // anything else is left to a manual download.
     let manual_only = if !release.immutable {
         Some("Not published as an immutable release, so it needs a manual download.")
-    } else if !release.author.as_ref().is_some_and(|author| {
-        RELEASE_AUTHORS
-            .iter()
-            .any(|login| login.eq_ignore_ascii_case(&author.login))
-    }) {
+    } else if !by_release_workflow(&release) {
         Some("Not published by the release workflow, so it needs a manual download.")
     } else {
         None
@@ -301,8 +318,41 @@ fn offer(release: ReleaseDto) -> Release {
             .unwrap_or_else(|| RELEASES_URL.to_owned()),
         asset: select_asset(assets, &release.tag_name, platform_suffix()),
         manual_only,
+        notes: Arc::new(notes),
         tag: release.tag_name,
     }
+}
+
+/// The changes after `running` up to and including `offered`, newest version first, read from the
+/// notes of the releases listed. A release candidate's section is repeated in the stable release
+/// that follows it; the copy from the release carrying that version is the one kept. A channel does
+/// not limit this: a stable user going from 0.5.1 to 0.6.0 sees the candidates' changes too.
+fn notes_between(releases: &[ReleaseDto], running: &Version, offered: &Version) -> ReleaseNotes {
+    // Version, then whether the section came from the release of that very version.
+    let mut found: BTreeMap<Version, (bool, Section)> = BTreeMap::new();
+    let readable = releases
+        .iter()
+        .filter(|release| !release.draft && by_release_workflow(release));
+    for release in readable {
+        let own = Version::parse(&release.tag_name);
+        let sections = changelog::parse(release.body.as_deref().unwrap_or_default());
+        for section in sections {
+            let Some(version) = Version::parse(&section.version) else {
+                continue;
+            };
+            if version <= *running || version > *offered {
+                continue;
+            }
+            let is_own = own.as_ref() == Some(&version);
+            if found
+                .get(&version)
+                .is_none_or(|(had_own, _)| is_own && !had_own)
+            {
+                found.insert(version, (is_own, section));
+            }
+        }
+    }
+    ReleaseNotes::from_sections(found.into_values().rev().map(|(_, section)| section))
 }
 
 /// `major.minor.patch` with an optional `v` prefix and an optional `-prerelease`/`+build` tail,
@@ -952,6 +1002,149 @@ mod tests {
         foreign.browser_download_url = "https://evil.example/a.zip".to_owned();
         assert!(pick(foreign).is_none());
         assert!(select_asset(vec![asset(name, "x", 5, Some(&digest))], "v1.0.0", None).is_none());
+    }
+
+    /// `reply` with the notes `body` set, as the workflow writes them.
+    fn noted(reply: String, body: &str) -> String {
+        let mut release: serde_json::Value = serde_json::from_str(&reply).unwrap();
+        release["body"] = body.into();
+        release.to_string()
+    }
+
+    fn changes(version: &str, new: &[&str], fixed: &[&str]) -> String {
+        let mut text = format!("## {version} (2026-11-20)\n");
+        for (title, lines) in [("New", new), ("Fixed", fixed)] {
+            if !lines.is_empty() {
+                text.push_str(&format!("\n### {title}\n\n"));
+                for line in lines {
+                    text.push_str(&format!("- {line}\n"));
+                }
+            }
+        }
+        text
+    }
+
+    fn release_noted(tag: &str, body: &str) -> String {
+        noted(reply(tag), body)
+    }
+
+    #[test]
+    fn an_update_carries_the_changes_after_the_running_version_up_to_the_offered_one() {
+        let releases = [
+            release_noted(
+                "v0.6.0-rc.3",
+                &changes("0.6.0-rc.3", &["Three."], &["Fix three."]),
+            ),
+            release_noted("v0.6.0-rc.2", &changes("0.6.0-rc.2", &["Two."], &[])),
+            release_noted("v0.6.0-rc.1", &changes("0.6.0-rc.1", &["One."], &[])),
+            release_noted("v0.5.1", &changes("0.5.1", &["Already installed."], &[])),
+        ];
+        let release = available(eval(&releases, "0.5.1", Channel::ReleaseCandidate));
+        assert_eq!(release.notes.new, ["Three.", "Two.", "One."]);
+        assert_eq!(release.notes.fixed, ["Fix three."]);
+        // Only what the running build lacks.
+        let release = available(eval(&releases, "0.6.0-rc.1", Channel::ReleaseCandidate));
+        assert_eq!(release.notes.new, ["Three.", "Two."]);
+    }
+
+    #[test]
+    fn a_stable_user_sees_the_candidates_changes_once_each() {
+        // The stable release repeats the candidates' sections, as the workflow writes it; the
+        // copy in the release of that version is the one kept.
+        let stable = [
+            changes("0.6.0", &["Final."], &[]),
+            changes("0.6.0-rc.2", &["Two, repeated."], &[]),
+            changes("0.6.0-rc.1", &["One, repeated."], &[]),
+        ]
+        .join("\n");
+        let releases = [
+            release_noted("v0.6.0", &stable),
+            release_noted("v0.6.0-rc.2", &changes("0.6.0-rc.2", &["Two."], &[])),
+            release_noted("v0.6.0-rc.1", &changes("0.6.0-rc.1", &["One."], &[])),
+            release_noted("v0.5.1", ""),
+        ];
+        let release = available(eval(&releases, "0.5.1", Channel::Stable));
+        assert_eq!(release.version, "0.6.0");
+        assert_eq!(release.notes.new, ["Final.", "Two.", "One."]);
+        // The same when the aggregate is read before the candidates' own releases.
+        let reversed = [
+            releases[3].clone(),
+            releases[2].clone(),
+            releases[1].clone(),
+            releases[0].clone(),
+        ];
+        let release = available(eval(&reversed, "0.5.1", Channel::Stable));
+        assert_eq!(release.notes.new, ["Final.", "Two.", "One."]);
+    }
+
+    #[test]
+    fn notes_come_only_from_published_releases_of_the_workflow() {
+        let draft = noted(
+            r#"{"tag_name":"v0.6.0-rc.2","draft":true,"prerelease":true}"#.to_owned(),
+            &changes("0.6.0-rc.2", &["From a draft."], &[]),
+        );
+        let hand_made = noted(
+            reply_by("v0.6.0-rc.3", true, "someone"),
+            &changes("0.6.0-rc.3", &["From a person."], &[]),
+        );
+        let mut forged = changes("0.6.0-rc.4", &["Forged by a stranger."], &[]);
+        forged.push_str(&changes("0.6.0-rc.1", &["Forged too."], &[]));
+        let forging = noted(reply_by("v0.6.0-rc.5", true, "someone"), &forged);
+        let releases = [
+            forging,
+            release_noted("v0.6.0-rc.4", &changes("0.6.0-rc.4", &["Four."], &[])),
+            hand_made,
+            draft,
+            release_noted("v0.6.0-rc.1", &changes("0.6.0-rc.1", &["One."], &[])),
+        ];
+        // The newest release is by a stranger, so it is a manual download; what the sheet lists
+        // is still only what the workflow wrote.
+        let release = available(eval(&releases, "0.5.1", Channel::ReleaseCandidate));
+        assert_eq!(release.version, "0.6.0-rc.5");
+        assert_eq!(release.notes.new, ["Four.", "One."]);
+    }
+
+    #[test]
+    fn sections_outside_the_range_or_without_a_readable_version_are_left_out() {
+        let body = [
+            changes("0.6.0-rc.9", &["Newer than the offer."], &[]),
+            changes("0.6.0-rc.2", &["In range."], &[]),
+            changes("0.6.0-rc.1", &["The running one."], &[]),
+            changes("0.5.0", &["Older."], &[]),
+            changes("0.6.0-rc1", &["Not a version."], &[]),
+        ]
+        .join("\n");
+        let releases = [release_noted("v0.6.0-rc.2", &body)];
+        let release = available(eval(&releases, "0.6.0-rc.1", Channel::ReleaseCandidate));
+        assert_eq!(release.notes.new, ["In range."]);
+    }
+
+    #[test]
+    fn releases_without_notes_or_with_a_commit_log_carry_none() {
+        let old = "## Changes since v0.5.0\n\n- Something (abc1234)\n\n## Downloads\n";
+        for releases in [
+            vec![reply("v0.6.0")],
+            vec![release_noted("v0.6.0", old)],
+            vec![noted(reply("v0.6.0"), "")],
+        ] {
+            let release = available(eval(&releases, "0.5.1", Channel::Stable));
+            assert!(release.notes.is_empty());
+        }
+    }
+
+    /// The changelog the repository ships is read newest first by the app and by `tools/changelog.sh
+    /// notes`, so its sections must descend.
+    #[test]
+    fn the_changelog_lists_versions_newest_first() {
+        let text = include_str!("../../../CHANGELOG.md");
+        let versions: Vec<Version> = changelog::parse(text)
+            .iter()
+            .map(|section| Version::parse(&section.version).expect("a readable version"))
+            .collect();
+        assert!(
+            versions.windows(2).all(|pair| pair[0] > pair[1]),
+            "CHANGELOG.md sections are not strictly newest first"
+        );
     }
 
     #[test]

@@ -7,6 +7,7 @@
 
 use crate::build_info::VERSION;
 use crate::lock::lock;
+use crate::model::changelog::ReleaseNotes;
 use crate::service::update::check::{self, Channel, Release, UpdateOutcome};
 use crate::service::update::install::{self, Prepared, Progress, Stage};
 use crate::service::work_queue;
@@ -69,6 +70,9 @@ struct State {
     target_pending: bool,
     /// Set when an installed update should ask for the restart (cleared by "Later").
     restart_prompt: bool,
+    /// The window showing the sheet that lists what an available update changes. Only one shows
+    /// it, and only while an update is on offer (`review_open_in`).
+    review: Option<egui::ViewportId>,
     /// The user chose "Restart Now" and the quit that follows has not been called off: when the app
     /// exits, the new version is started. Cleared when the quit is called off.
     relaunch_on_exit: bool,
@@ -91,6 +95,9 @@ pub enum Phase {
         installable: bool,
         /// Why it cannot, when it cannot.
         note: Option<String>,
+        /// What changed after this build, up to this release. Shared: every window clones the view
+        /// each frame.
+        notes: Arc<ReleaseNotes>,
     },
     Installing(Progress),
     Ready {
@@ -161,6 +168,7 @@ impl UpdateHost {
                 target,
                 target_pending: false,
                 restart_prompt: false,
+                review: None,
                 relaunch_on_exit: false,
                 born: Instant::now(),
                 viewers: HashSet::new(),
@@ -175,7 +183,7 @@ impl UpdateHost {
             Ok(PathBuf::from("/Applications/DegenView.app")),
             Channel::Stable,
         );
-        let release = |installable: bool| Release {
+        let release = |installable: bool, notes: Arc<ReleaseNotes>| Release {
             tag: "v9.9.9".to_owned(),
             version: "9.9.9".to_owned(),
             url: "https://example.test/release".to_owned(),
@@ -186,6 +194,7 @@ impl UpdateHost {
                 sha256: "00".repeat(32),
             }),
             manual_only: None,
+            notes,
         };
         {
             let mut state = host.lock();
@@ -196,14 +205,19 @@ impl UpdateHost {
                 Phase::CheckFailed(message) => {
                     state.last = Some((UpdateOutcome::Failed(message.clone()), Instant::now()));
                 }
-                Phase::Available { installable, .. } => {
+                Phase::Available {
+                    installable, notes, ..
+                } => {
                     state.last = Some((
-                        UpdateOutcome::Available(release(*installable)),
+                        UpdateOutcome::Available(release(*installable, Arc::clone(notes))),
                         Instant::now(),
                     ));
                 }
                 Phase::Installing(progress) => {
-                    state.last = Some((UpdateOutcome::Available(release(true)), Instant::now()));
+                    state.last = Some((
+                        UpdateOutcome::Available(release(true, Arc::default())),
+                        Instant::now(),
+                    ));
                     state.install = Install::Working(*progress);
                 }
                 Phase::Ready { version } => {
@@ -214,7 +228,10 @@ impl UpdateHost {
                     };
                 }
                 Phase::InstallFailed { message, .. } => {
-                    state.last = Some((UpdateOutcome::Available(release(true)), Instant::now()));
+                    state.last = Some((
+                        UpdateOutcome::Available(release(true, Arc::default())),
+                        Instant::now(),
+                    ));
                     state.install = Install::Failed {
                         version: "9.9.9".to_owned(),
                         message: message.clone(),
@@ -382,6 +399,7 @@ impl UpdateHost {
                 return;
             }
             let release = release.clone();
+            state.review = None;
             state.install = Install::Working(Progress::new(Stage::Verifying));
             (app, release)
         };
@@ -416,18 +434,41 @@ impl UpdateHost {
         }
     }
 
-    /// What clicking the tab bar's update mark does in the current phase: install, retry, open the
-    /// release page for a build that cannot install itself, or ask about the restart.
+    /// What clicking the tab bar's update mark does in the current phase: list what the update
+    /// changes (installing, or opening the release page for a build that cannot install itself, is
+    /// that sheet's answer), retry a failed install the person already reviewed, or ask about the
+    /// restart.
     pub fn activate(&self, ctx: &egui::Context) {
         match self.view().phase {
-            Phase::Available {
-                installable: true, ..
+            Phase::Available { .. } => {
+                self.review(ctx.viewport_id());
+                ctx.request_repaint();
             }
-            | Phase::InstallFailed { .. } => self.install(ctx),
-            Phase::Available { url, .. } => ctx.open_url(egui::OpenUrl::new_tab(url)),
+            Phase::InstallFailed { .. } => self.install(ctx),
             Phase::Ready { .. } => self.prompt_restart(),
             _ => {}
         }
+    }
+
+    /// Opens the sheet that lists what the available update changes in `viewport`, closing it in
+    /// any other window.
+    pub fn review(&self, viewport: egui::ViewportId) {
+        self.lock().review = Some(viewport);
+    }
+
+    /// Whether `viewport` shows the review sheet now. It ends by itself once no update is on offer
+    /// (a channel switch, an install started in another window): the choice is dropped, so a later
+    /// update does not open it unasked.
+    pub fn review_open_in(&self, viewport: egui::ViewportId) -> bool {
+        let mut state = self.lock();
+        if !matches!(phase(&state), Phase::Available { .. }) {
+            state.review = None;
+        }
+        state.review == Some(viewport)
+    }
+
+    pub fn close_review(&self) {
+        self.lock().review = None;
     }
 
     /// Swaps the prepared update in and schedules the reopen. On `Ok` the caller must quit now.
@@ -557,6 +598,7 @@ fn available_phase(release: &Release, target: &Result<PathBuf, String>) -> Phase
         url: release.url.clone(),
         installable,
         note,
+        notes: Arc::clone(&release.notes),
     }
 }
 
@@ -597,6 +639,14 @@ mod tests {
                 sha256: "00".repeat(32),
             }),
             manual_only,
+            notes: Arc::new(notes()),
+        }
+    }
+
+    fn notes() -> ReleaseNotes {
+        ReleaseNotes {
+            new: vec!["A new thing.".to_owned()],
+            fixed: vec!["A fixed thing.".to_owned()],
         }
     }
 
@@ -644,6 +694,7 @@ mod tests {
                 url: "https://example.test/release".to_owned(),
                 installable: true,
                 note: None,
+                notes: Arc::new(notes()),
             }
         );
     }
@@ -944,6 +995,105 @@ mod tests {
         // A person asking again starts clean.
         host.check_now(&ctx());
         assert!(matches!(host.view().phase, Phase::Available { .. }));
+    }
+
+    fn on_offer() -> UpdateHost {
+        let host = host();
+        host.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
+        host
+    }
+
+    const MAIN: egui::ViewportId = egui::ViewportId::ROOT;
+
+    fn settings() -> egui::ViewportId {
+        egui::ViewportId::from_hash_of("settings")
+    }
+
+    #[test]
+    fn clicking_an_available_update_opens_the_review_in_that_window_and_installs_nothing() {
+        let host = on_offer();
+        assert!(!host.review_open_in(MAIN));
+        host.activate(&ctx());
+        assert!(host.review_open_in(MAIN));
+        assert!(matches!(host.view().phase, Phase::Available { .. }));
+
+        // The same for a build that cannot install: the sheet explains and links to the release.
+        let manual = host_with_manual_release();
+        manual.activate(&ctx());
+        assert!(manual.review_open_in(MAIN));
+    }
+
+    fn host_with_manual_release() -> UpdateHost {
+        let host = host();
+        host.finish_check(
+            UpdateOutcome::Available(release(Some("Download it by hand."), false)),
+            Channel::Stable,
+        );
+        host
+    }
+
+    #[test]
+    fn one_window_at_a_time_shows_the_review() {
+        let host = on_offer();
+        host.review(MAIN);
+        host.review(settings());
+        assert!(!host.review_open_in(MAIN));
+        assert!(host.review_open_in(settings()));
+        host.close_review();
+        assert!(!host.review_open_in(settings()));
+    }
+
+    #[test]
+    fn the_review_ends_when_no_update_is_on_offer_and_does_not_come_back_unasked() {
+        let host = on_offer();
+        host.review(MAIN);
+        host.finish_check(UpdateOutcome::UpToDate, Channel::Stable);
+        assert!(!host.review_open_in(MAIN));
+        // A later update is a new question.
+        host.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
+        assert!(!host.review_open_in(MAIN));
+
+        // A channel switch drops the update the sheet was about.
+        let shared = store();
+        host.review(MAIN);
+        host.set_channel(&shared.lock().unwrap(), &ctx(), Channel::ReleaseCandidate);
+        assert!(!host.review_open_in(MAIN));
+    }
+
+    #[test]
+    fn installing_from_the_review_closes_it_and_a_retry_installs_without_asking_again() {
+        let host = on_offer();
+        host.review(MAIN);
+        host.install(&ctx());
+        assert!(!host.review_open_in(MAIN));
+        assert!(matches!(host.view().phase, Phase::Installing(_)));
+
+        // Installing from another window while the sheet is open elsewhere ends it there.
+        let other = on_offer();
+        other.review(MAIN);
+        other.install(&ctx());
+        assert!(!other.review_open_in(MAIN));
+
+        // After a failure the person has already seen the changes: the mark retries directly.
+        host.finish_install("9.9.9".to_owned(), Err("checksum".to_owned()));
+        host.activate(&ctx());
+        assert!(!host.review_open_in(MAIN));
+        assert!(matches!(host.view().phase, Phase::Installing(_)));
+    }
+
+    #[test]
+    fn a_ready_update_asks_to_restart_instead_of_reviewing() {
+        let host = ready_host();
+        host.dismiss_restart_prompt();
+        host.activate(&ctx());
+        assert!(host.restart_prompt_pending());
+        assert!(!host.review_open_in(MAIN));
     }
 
     #[test]

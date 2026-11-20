@@ -39,6 +39,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
+| The changelog, `changes/` fragments, release notes, or the sheet an update opens | [Releases and updates](docs/agent-guides/releases-updates.md#release-notes-and-the-changelog) |
 | The Flatpak, Linux packaging, or the sandbox | [Flatpak](docs/flatpak.md) |
 | Persisting user data: SQLite tables, `setting` keys, saved state, per-Mac IDs | [Storage and sync](docs/agent-guides/storage.md) |
 | iCloud Sync, the sync outbox, or CloudKit | [iCloud Sync](docs/icloud-sync.md) |
@@ -65,6 +66,15 @@ window controls. Reference: the Settings window; rules and helpers in
 A pull-down is exactly as wide as its longest row. Never guess a width (`set_min_width(180.0)`): use
 `kit::fitted_menu` (or `kit::menu_fit`), and look at the opened menu in a picture before shipping.
 Details: [UI style](docs/agent-guides/ui-style.md).
+
+## Changelog
+
+A pull request with a change a person using the app would notice adds `changes/<short-slug>.md`:
+one line per change, `new: ...` or `fixed: ...`, in plain words, what the user sees. Refactors,
+tests, CI and docs get none. `tools/release.sh` assembles `CHANGELOG.md` from the fragments; never
+edit its sections by hand except to fix wording before a release. The update sheet and the release
+notes read that shape. Details: [Releases and updates](docs/agent-guides/releases-updates.md#release-notes-and-the-changelog)
+and `changes/README.md`.
 
 ## Supply chain
 

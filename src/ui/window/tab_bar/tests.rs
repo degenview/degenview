@@ -562,6 +562,7 @@ fn the_strip_gives_way_to_an_update_mark_only_while_there_is_one() {
         url: String::new(),
         installable: true,
         note: None,
+        notes: Default::default(),
     })));
     assert_eq!(quiet, none);
     assert!(available.right() < none.right() - 40.0, "{available:?}");
