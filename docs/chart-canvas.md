@@ -117,8 +117,10 @@ the chart is scrolled (`ui::pine::geometry::VisibleBars`: count, `tail` newer ba
 edge, and the empty slots on screen past the newest bar). Series values and drawings (boxes, lines,
 labels, polylines) outside those bars add nothing. A pane is drawn across the whole plot, margin
 included, so a drawing in the empty slots on screen counts for the pane as for the main chart. A
-line or box that extends runs the plot's width: it counts when it crosses the bars shown, a line
-by its prices where it enters and leaves them (a vertical line never extends). The live chart, the
+box that extends, or a horizontal line that does, runs the plot's width: it counts when it crosses
+the bars shown (measured on TradingView, which widens its axis for both). A sloped line counts by
+its anchors alone, extended or not: TradingView does not widen the axis for the price it reaches
+far from them, at any slope, and a vertical line never extends. The live chart, the
 Screenshot Studio, Select portion and the MCP snapshot all read this through
 `ChartCard::extent_of`, which sizes the reserved slots first and then lays the bars out again in
 the plot they make. Not counted: the quad of a linefill, which is drawn but adds no price of its
