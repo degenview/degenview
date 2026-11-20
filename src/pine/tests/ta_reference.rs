@@ -287,7 +287,7 @@ fn the_cumulative_variables_keep_a_state_each() {
         )
         .remove(0)
     };
-    let names = crate::pine::builtins::ta::extra::VARIABLES;
+    let names = crate::pine::builtins::ta::extra::VARIABLES.map(|variable| variable.name);
     let together = plots(
         &format!(
             "//@version=6\nindicator(\"All\")\n{}",
