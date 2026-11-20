@@ -279,6 +279,32 @@ fn for_each_call_in_expression<'a>(
     }
 }
 
+/// Visits the name of everything called in `statements`, at any depth: what `for_each_call` visits
+/// and the methods called on anything else (`f().b(x)` visits `b`).
+pub fn for_each_callee(statements: &[Statement], visit: &mut impl FnMut(&str)) {
+    for statement in statements {
+        for expression in expressions(statement) {
+            for_each_callee_in_expression(expression, visit);
+        }
+        for block in nested_blocks(statement) {
+            for_each_callee(block, visit);
+        }
+    }
+}
+
+pub fn for_each_callee_in_expression(expression: &Expression, visit: &mut impl FnMut(&str)) {
+    match expression {
+        Expression::Call { name, .. } | Expression::MethodCall { name, .. } => visit(name),
+        Expression::Statement(statement, _) => {
+            for_each_callee(std::slice::from_ref(statement.as_ref()), visit);
+        }
+        _ => {}
+    }
+    for child in children(expression) {
+        for_each_callee_in_expression(child, visit);
+    }
+}
+
 /// Visits every plain or dotted name read in `statements`, at any depth.
 pub fn for_each_identifier(statements: &[Statement], visit: &mut impl FnMut(&str, SourceRange)) {
     for statement in statements {

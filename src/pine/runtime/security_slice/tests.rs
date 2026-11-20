@@ -552,3 +552,54 @@ fn a_copy_reaches_only_the_mutations_after_it() {
     let expression = "//@version=6\nindicator(\"T\")\na = array.new_float()\nb = array.new_float()\na.push(close)\nflag = if close > 0\n    a := b\n    1.0\nelse\n    0.0\nplot(request.security(syminfo.tickerid, \"D\", array.size(b)))";
     assert_eq!(slice_sizes(expression), [1]);
 }
+
+/// The names of `script_wide` each request indexes, in source order of the requests.
+fn history_name_lists(source: &str, script_wide: &[&str]) -> Vec<Vec<String>> {
+    let mut program = compiler::compile(source, Limits::default(), &NoLibraries);
+    crate::pine::runtime::call_binding::bind(&mut program);
+    let slices = build(&program.statements);
+    let script_wide: Vec<String> = script_wide.iter().map(|name| (*name).to_owned()).collect();
+    let names = history_names(&program.statements, &slices, &script_wide);
+    let mut lists: Vec<(ExpressionKey, Vec<String>)> = names
+        .iter()
+        .map(|(key, names)| (*key, names.to_vec()))
+        .collect();
+    lists.sort();
+    lists.into_iter().map(|(_, names)| names).collect()
+}
+
+#[test]
+fn a_request_indexes_what_its_expression_slice_and_functions_index() {
+    let lists = history_name_lists(
+        "//@version=6\nindicator(\"T\")\nlevel = ta.obv[1]\nspread() =>\n    ta.tr[1]\nmid(x) =>\n    x + hlcc4[1]\nviaslice = request.security(syminfo.tickerid, \"D\", level)\nviafunction = request.security(syminfo.tickerid, \"D\", spread())\nnested = request.security(syminfo.tickerid, \"D\", mid(close))\ndirect = request.security(syminfo.tickerid, \"D\", dayofweek[1])\nnone = request.security(syminfo.tickerid, \"D\", close)",
+        &["ta.obv", "ta.tr", "hlcc4", "dayofweek"],
+    );
+    assert_eq!(
+        lists,
+        [
+            vec!["ta.obv"],
+            vec!["ta.tr"],
+            vec!["hlcc4"],
+            vec!["dayofweek"],
+            vec![]
+        ]
+    );
+}
+
+#[test]
+fn a_function_reached_through_another_or_as_a_method_is_followed() {
+    let lists = history_name_lists(
+        "//@version=6\nindicator(\"T\")\ninner() =>\n    ta.tr[1]\nouter() =>\n    inner() + 1\nmethod last(float this) =>\n    this + hlcc4[1]\nchained = request.security(syminfo.tickerid, \"D\", outer())\nmethodical = request.security(syminfo.tickerid, \"D\", close.last())",
+        &["ta.tr", "hlcc4", "ta.obv"],
+    );
+    assert_eq!(lists, [vec!["ta.tr"], vec!["hlcc4"]]);
+}
+
+#[test]
+fn a_name_that_is_not_in_the_script_wide_list_is_never_added() {
+    let lists = history_name_lists(
+        "//@version=6\nindicator(\"T\")\nplot(request.security(syminfo.tickerid, \"D\", ta.tr[1]))",
+        &["ta.obv"],
+    );
+    assert_eq!(lists, [Vec::<String>::new()]);
+}

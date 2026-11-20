@@ -76,6 +76,9 @@
   at each confirmed bar's end; names found once by `history_builtin_names`. Inside
   `request.security` the same call runs in the request's frame, before its candle is committed
   (`evaluate_higher_timeframe`), so `ta.tr[1]` reads the requested series' previous bar.
+  A request records only the names its own expression, slice and reachable functions index
+  (`security_slice::history_names`, by function name, so it can only over-include); a request inside
+  a function, or any request in a script that imports a library, records the script-wide list.
 - Breakpoints and watches: local `scriptDebug.state` setting (never synced; in `sync::record::policy`'s local
   keys).
 - `once` finished flag: `RuntimeState::once_finished` (by site key), deliberately in working state:

@@ -120,7 +120,10 @@ pub struct Session {
     /// Builtin variables the program reads a history of (`hlcc4[1]`, `ta.tr[1]`,
     /// `strategy.closedtrades[1]`) that `commit_histories` does not record on its own. Each is read at
     /// the end of every confirmed bar and kept like a variable. Empty for most scripts.
-    history_builtins: Vec<String>,
+    history_builtins: Arc<[String]>,
+    /// The part of `history_builtins` each `request.security` expression indexes, which is all its
+    /// series records (`security_slice::history_names`). A request not in it records them all.
+    request_history_builtins: super::security_slice::HistoryNames,
     /// Tests only: ignore every call's `route` and `target`, so a run can be compared with the
     /// chain's, which finds functions and methods by name.
     #[cfg(any(test, feature = "corpus"))]

@@ -44,6 +44,7 @@
 //! expression reads the chart's value as it did before slices.
 
 mod effects;
+mod history;
 mod locate;
 mod members;
 mod reads;
@@ -57,6 +58,7 @@ use std::sync::Arc;
 use self::effects::{
     Aliases, Effect, Functions, Origin, Walker, persistent_names, reference_names,
 };
+pub(crate) use self::history::{HistoryNames, history_names};
 use self::locate::{Location, locate};
 use self::members::{expression_argument, is_sliced_request, makes_request};
 use self::reads::Reads;

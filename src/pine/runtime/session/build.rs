@@ -2,6 +2,7 @@
 //! builtin names the script declares itself, and the state before the first bar.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use super::{DEFAULT_MINTICK, STRATEGY_SERIES, Session};
 use crate::pine::Limits;
@@ -108,9 +109,15 @@ impl Session {
                 (!kept.is_empty()).then(|| (name.clone(), kept))
             })
             .collect();
-        let history_builtins =
-            history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
+        let history_builtins: Arc<[String]> =
+            history_builtin_names(&program.statements, &linkage, &shadowing_builtins).into();
         let security_slices = security_slice::build(&program.statements);
+        // A library's functions and constants read builtin trails the script's text does not show.
+        let request_history_builtins = if linkage.is_empty() {
+            security_slice::history_names(&program.statements, &security_slices, &history_builtins)
+        } else {
+            security_slice::HistoryNames::new()
+        };
         let keeps_series_bars = replays_chart_bars(&program);
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
@@ -183,6 +190,7 @@ impl Session {
             shadow_names: shadow_names.into_names(),
             shadow_stack: Vec::new(),
             history_builtins,
+            request_history_builtins,
             #[cfg(any(test, feature = "corpus"))]
             ignore_routes: false,
             last_bar_index: -1,
