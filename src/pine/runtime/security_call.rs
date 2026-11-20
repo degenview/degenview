@@ -33,8 +33,77 @@ struct Step<'a> {
     bar: &'a Kline,
     seconds: f64,
     confirmed: bool,
-    realtime: bool,
+    chart: ChartBar,
     skipped_after: Option<usize>,
+}
+
+/// The chart bar a request is evaluated for, which decides the request's `barstate.*`: the series
+/// the expression runs on is the same run, so it is realtime when the chart bar is, and its bar is
+/// the last when it holds the chart bar's final instant.
+#[derive(Clone, Copy)]
+struct ChartBar {
+    /// When the chart bar closes (exclusive); `i64::MIN` for history before the chart's first bar.
+    end: i64,
+    last: LastBar,
+    realtime: bool,
+}
+
+/// Whether a bar is the last one (`barstate.islast`), and the last confirmed history one
+/// (`barstate.islastconfirmedhistory`).
+#[derive(Clone, Copy, Default)]
+struct LastBar {
+    last: bool,
+    last_confirmed_history: bool,
+}
+
+impl ChartBar {
+    /// History the chart does not show: the candles before its first bar.
+    const BEFORE_CHART: Self = Self {
+        end: i64::MIN,
+        last: LastBar {
+            last: false,
+            last_confirmed_history: false,
+        },
+        realtime: false,
+    };
+
+    fn of(bar: &Kline, seconds: f64, flags: &BarFlags) -> Self {
+        Self {
+            end: Self::end_of(bar, seconds),
+            last: LastBar {
+                last: flags.is_last,
+                last_confirmed_history: flags.is_last_confirmed_history,
+            },
+            realtime: flags.is_realtime,
+        }
+    }
+
+    /// A confirmed chart bar before the one now running, replayed for a site the call skipped.
+    fn replayed(bar: &Kline, seconds: f64) -> Self {
+        Self {
+            end: Self::end_of(bar, seconds),
+            ..Self::BEFORE_CHART
+        }
+    }
+
+    fn end_of(bar: &Kline, seconds: f64) -> i64 {
+        bar.open_time + (seconds * 1000.0).round() as i64
+    }
+
+    /// The bar states of `candle`, a candle of `interval` seconds, evaluated for this chart bar.
+    fn flags_of(&self, candle: &Kline, interval: f64, commit: bool, is_first: bool) -> BarFlags {
+        let holds_last_instant = candle.open_time < self.end
+            && self.end <= time::bucket::end(candle.open_time, interval);
+        BarFlags {
+            is_first,
+            is_last: self.last.last && holds_last_instant,
+            is_history: !self.realtime,
+            is_realtime: self.realtime,
+            is_new: true,
+            is_confirmed: commit,
+            is_last_confirmed_history: self.last.last_confirmed_history && holds_last_instant,
+        }
+    }
 }
 
 /// The session state that belongs to the series now running, which a request's expression swaps for
@@ -500,7 +569,13 @@ impl Session {
             if time::bucket::end(candle.open_time, request.interval) > before {
                 break;
             }
-            site.last_result = self.evaluate_higher_timeframe(site, candle, request, true)?;
+            site.last_result = self.evaluate_higher_timeframe(
+                site,
+                candle,
+                request,
+                ChartBar::BEFORE_CHART,
+                true,
+            )?;
         }
         Ok(())
     }
@@ -539,7 +614,7 @@ impl Session {
                 bar: &bar,
                 seconds,
                 confirmed: context.flags.is_confirmed,
-                realtime: context.flags.is_realtime,
+                chart: ChartBar::of(&bar, seconds, &context.flags),
                 skipped_after: None,
             },
         )?;
@@ -582,7 +657,7 @@ impl Session {
                     bar: &bar,
                     seconds,
                     confirmed: true,
-                    realtime: false,
+                    chart: ChartBar::replayed(&bar, seconds),
                     skipped_after: Some(skipped_after),
                 },
             )?;
@@ -631,7 +706,7 @@ impl Session {
             bar,
             seconds,
             confirmed,
-            realtime,
+            chart,
             skipped_after,
         } = *step;
         let replay = skipped_after.is_some();
@@ -644,7 +719,7 @@ impl Session {
             {
                 self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
                 state.last_result =
-                    self.evaluate_higher_timeframe(state, &pending, request, true)?;
+                    self.evaluate_higher_timeframe(state, &pending, request, chart, true)?;
                 fresh = true;
             }
             state.bucket = Some(start);
@@ -663,7 +738,7 @@ impl Session {
         let result;
         if closes_bucket && confirmed {
             self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
-            result = self.evaluate_higher_timeframe(state, &developing, request, true)?;
+            result = self.evaluate_higher_timeframe(state, &developing, request, chart, true)?;
             state.last_result = result.clone();
             state.accumulated = None;
             state.has_pending_bars = false;
@@ -673,8 +748,9 @@ impl Session {
                 state.accumulated = Some(developing.clone());
                 state.has_pending_bars = true;
             }
-            if !replay && (request.lookahead_on || realtime) {
-                result = self.evaluate_higher_timeframe(state, &developing, request, false)?;
+            if !replay && (request.lookahead_on || chart.realtime) {
+                result =
+                    self.evaluate_higher_timeframe(state, &developing, request, chart, false)?;
             } else {
                 result = state.last_result.clone();
             }
@@ -698,6 +774,7 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
+        let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags);
         let mut fresh = false;
         if context.flags.is_confirmed {
             let chart_close = bar.open_time + (self.bar_seconds * 1000.0).round() as i64;
@@ -707,7 +784,7 @@ impl Session {
                     break;
                 }
                 state.last_result =
-                    self.evaluate_higher_timeframe(&mut state, candle, request, true)?;
+                    self.evaluate_higher_timeframe(&mut state, candle, request, chart, true)?;
                 state.completed_candles += 1;
                 fresh = true;
             }
@@ -717,7 +794,8 @@ impl Session {
             && let Some(index) = last_index(bar.open_time, candles)
             && index >= state.completed_candles
         {
-            result = self.evaluate_higher_timeframe(&mut state, &candles[index], request, false)?;
+            result =
+                self.evaluate_higher_timeframe(&mut state, &candles[index], request, chart, false)?;
         }
         if request.gaps_on && !fresh {
             result = RuntimeValue::Na;
@@ -784,6 +862,7 @@ impl Session {
             gaps_on: false,
             foreign: None,
         };
+        let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags);
         let mut results = Vec::new();
         let mut index = low;
         while index < candles.len() && candles[index].open_time < end {
@@ -791,6 +870,7 @@ impl Session {
                 &mut state,
                 &candles[index],
                 &request,
+                chart,
                 true,
             )?);
             index += 1;
@@ -830,13 +910,15 @@ impl Session {
         Ok(value)
     }
 
-    /// Runs the expression on `candle` in the site's own state. A commit keeps that state and
-    /// appends the candle to its histories; otherwise the state is thrown away, like a realtime tick.
+    /// Runs the expression on `candle` in the site's own state, for `chart_bar`. A commit keeps
+    /// that state and appends the candle to its histories; otherwise the state is thrown away, like
+    /// a realtime tick.
     fn evaluate_higher_timeframe(
         &mut self,
         site: &mut SecuritySite,
         candle: &Kline,
         request: &SecurityRequest,
+        chart_bar: ChartBar,
         commit: bool,
     ) -> Result<RuntimeValue, Diagnostic> {
         let chart_bar_seconds = self.bar_seconds;
@@ -872,15 +954,12 @@ impl Session {
         self.working.instructions = 0;
         self.working.bar_index += 1;
 
-        let flags = BarFlags {
-            is_first: self.working.bar_index == 0,
-            is_last: false,
-            is_history: commit,
-            is_realtime: !commit,
-            is_new: true,
-            is_confirmed: commit,
-            is_last_confirmed_history: false,
-        };
+        let flags = chart_bar.flags_of(
+            candle,
+            request.interval,
+            commit,
+            self.working.bar_index == 0,
+        );
         let mut security_context = RuntimeContext::new(candle.clone(), flags);
         let requested = LogRequest {
             symbol: if request.symbol.is_empty() {
@@ -1342,6 +1421,118 @@ mod tests {
             .last()
             .copied()
             .flatten()
+    }
+
+    /// `count` hourly chart bars from `first_hour` (hours since the epoch, so hour 12 opens a 4h
+    /// candle and hour 24 a day).
+    fn hourly_chart(first_hour: i64, count: i64) -> Vec<Kline> {
+        (first_hour..first_hour + count)
+            .map(|hour| bar(hour * 3_600_000, 1.0 + hour as f64))
+            .collect()
+    }
+
+    /// The first plot of `source` over `chart`, bar by bar, with no provider candles.
+    fn plotted(source: &str, chart: &[Kline]) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        run(&body, TestProvider::default(), chart).plots[0]
+            .values
+            .clone()
+    }
+
+    #[test]
+    fn bar_index_in_a_request_counts_from_zero() {
+        // 4h candles complete on chart bars 3, 7 and 11.
+        let values = plotted(
+            "plot(request.security(syminfo.tickerid, \"240\", bar_index))",
+            &hourly_chart(0, 12),
+        );
+        assert_eq!(values[3], Some(0.0));
+        assert_eq!(values[7], Some(1.0));
+        assert_eq!(values[11], Some(2.0));
+    }
+
+    #[test]
+    fn barstate_isfirst_in_a_request_is_true_on_its_first_bar_only() {
+        let values = plotted(
+            "plot(request.security(syminfo.tickerid, \"240\", barstate.isfirst ? 1.0 : 0.0))",
+            &hourly_chart(0, 12),
+        );
+        assert_eq!(values[3], Some(1.0));
+        assert_eq!(values[7], Some(0.0));
+    }
+
+    #[test]
+    fn timeframe_change_is_false_on_the_charts_first_bar() {
+        let chart = hourly_chart(13, 16);
+        let values = plotted("plot(timeframe.change(\"1D\") ? 1.0 : 0.0)", &chart);
+        assert_eq!(values[0], Some(0.0), "hour 13 opens mid-day");
+        assert_eq!(values[10], Some(0.0));
+        assert_eq!(values[11], Some(1.0), "hour 24 opens a day");
+    }
+
+    #[test]
+    fn timeframe_change_in_a_request_is_false_on_the_series_first_bar() {
+        // 4h candles open at hours 12, 16, 20 and 24 and complete on chart bars 2, 6, 10 and 14.
+        let values = plotted(
+            "plot(request.security(syminfo.tickerid, \"240\", timeframe.change(\"1D\") ? 1.0 : 0.0))",
+            &hourly_chart(13, 16),
+        );
+        assert_eq!(values[2], Some(0.0), "the requested series' first candle");
+        assert_eq!(values[10], Some(0.0), "20:00 is the same day as 16:00");
+        assert_eq!(values[14], Some(1.0), "24:00 opens a day");
+    }
+
+    #[test]
+    fn barstate_islast_in_a_request_holds_for_the_candle_with_the_charts_last_bar() {
+        let request = |bars: i64| {
+            plotted(
+                "plot(request.security(syminfo.tickerid, \"240\", barstate.islast ? 1.0 : 0.0))",
+                &hourly_chart(0, bars),
+            )
+        };
+        let values = request(12);
+        assert_eq!(
+            values[7],
+            Some(0.0),
+            "the candle at hours 4-7 is not the last"
+        );
+        assert_eq!(
+            values[11],
+            Some(1.0),
+            "the candle at hours 8-11 holds the last bar"
+        );
+        // A last bar in the middle of a candle: the developing candle (lookahead on) is the last.
+        let developing = plotted(
+            "plot(request.security(syminfo.tickerid, \"240\", barstate.islast ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))",
+            &hourly_chart(0, 10),
+        );
+        assert_eq!(developing[5], Some(0.0));
+        assert_eq!(developing[9], Some(1.0));
+    }
+
+    #[test]
+    fn a_request_on_history_is_history_even_for_a_developing_candle() {
+        let states = |state: &str| {
+            plotted(
+                &format!(
+                    "plot(request.security(syminfo.tickerid, \"240\", {state} ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))"
+                ),
+                &hourly_chart(0, 8),
+            )
+        };
+        assert_eq!(states("barstate.ishistory")[5], Some(1.0));
+        assert_eq!(states("barstate.isrealtime")[5], Some(0.0));
+    }
+
+    #[test]
+    fn a_request_on_a_live_tick_is_realtime() {
+        let request = |state: &str| {
+            plotted_after_each_tick(&format!(
+                "plot(request.security(\"ETHUSDT\", \"1\", {state} ? 1.0 : 0.0))"
+            ))
+        };
+        assert_eq!(request("barstate.isrealtime"), [Some(1.0), Some(1.0)]);
+        assert_eq!(request("barstate.ishistory"), [Some(0.0), Some(0.0)]);
     }
 
     #[test]
