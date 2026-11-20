@@ -1,5 +1,4 @@
 use super::*;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 fn section(version: &str, new: &[&str], fixed: &[&str]) -> Section {
@@ -458,149 +457,255 @@ fn repo(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
 }
 
-/// The text of a change line, `new: <text>`, `fixed: <text>` or `fixed-rc: <text>`, as
-/// `tools/changelog.sh` reads them; none for any other line.
-fn change_text(line: &str) -> Option<&str> {
-    let line = line.trim_end();
-    ["new: ", "fixed: ", "fixed-rc: "]
-        .iter()
-        .find_map(|prefix| line.strip_prefix(prefix))
-        .filter(|text| !text.starts_with(char::is_whitespace))
+/// One run of `tools/changelog.sh`.
+#[cfg(unix)]
+#[derive(Debug)]
+struct Run {
+    success: bool,
+    stdout: String,
+    stderr: String,
 }
 
-/// What is wrong with `fragments` (file name, text), as `file:line: problem`: a line that is not a
-/// change, and a change whose text an earlier line already gave, whichever prefix it has.
-fn fragment_problems<'a>(fragments: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
-    let mut problems = Vec::new();
-    let mut first_seen: HashMap<&str, String> = HashMap::new();
-    for (name, text) in fragments {
-        for (index, line) in text.lines().enumerate() {
-            let at = format!("changes/{name}:{}", index + 1);
-            if line.trim().is_empty() {
-                continue;
-            }
-            if line.contains("<!--") || line.contains("-->") {
-                problems.push(format!("{at}: a change cannot contain `<!--` or `-->`"));
-                continue;
-            }
-            let Some(change) = change_text(line) else {
-                problems.push(format!(
-                    "{at}: expected `new: <text>`, `fixed: <text>` or `fixed-rc: <text>`"
-                ));
-                continue;
-            };
-            if let Some(earlier) = first_seen.get(change) {
-                problems.push(format!("{at}: the same change as {earlier}"));
-            } else {
-                first_seen.insert(change, at);
-            }
+#[cfg(unix)]
+fn run_script(script: &std::path::Path, args: &[&str]) -> Run {
+    let output = std::process::Command::new("sh")
+        .arg(script)
+        .args(args)
+        .output()
+        .expect("sh runs");
+    Run {
+        success: output.status.success(),
+        stdout: String::from_utf8(output.stdout).expect("text"),
+        stderr: String::from_utf8(output.stderr).expect("text"),
+    }
+}
+
+/// A scratch tree holding a copy of `tools/changelog.sh` and the given files, so the script, which
+/// works on the tree around it, never touches the repository's own `CHANGELOG.md` or `changes/`.
+/// The script is the only validator of the fragment format: these tests run it rather than
+/// restating its rules.
+#[cfg(unix)]
+struct Tree {
+    root: PathBuf,
+}
+
+#[cfg(unix)]
+impl Tree {
+    fn new(files: &[(&str, &str)]) -> Self {
+        // Tests run in parallel, so each tree is its own.
+        static TREES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "degenview-changelog-{}-{}",
+            std::process::id(),
+            TREES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("tools")).expect("scratch tree");
+        std::fs::copy(repo("tools/changelog.sh"), root.join("tools/changelog.sh"))
+            .expect("script copied");
+        let tree = Self { root };
+        for (path, text) in files {
+            let path = tree.root.join(path);
+            std::fs::create_dir_all(path.parent().expect("a file in the tree")).expect("dir");
+            std::fs::write(path, text).expect("file written");
         }
+        tree
     }
-    problems
-}
 
-#[test]
-fn every_pending_fragment_follows_the_format() {
-    let dir = repo("changes");
-    let mut problems = Vec::new();
-    let mut fragments = Vec::new();
-    for entry in std::fs::read_dir(&dir).expect("changes/ exists") {
-        let path = entry.expect("readable entry").path();
-        let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        if name == "README.md" {
-            continue;
-        }
-        let slug = name.strip_suffix(".md");
-        if !slug.is_some_and(|slug| {
-            !slug.is_empty()
-                && !slug.starts_with('-')
-                && slug
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        }) {
-            problems.push(format!(
-                "changes/{name}: not a lowercase slug ending in .md"
-            ));
-            continue;
-        }
-        let text = std::fs::read_to_string(&path).expect("readable fragment");
-        fragments.push((name, text));
+    fn run(&self, args: &[&str]) -> Run {
+        run_script(&self.root.join("tools/changelog.sh"), args)
     }
-    // Name order, as the script reads them, so a duplicate names the same two lines.
-    fragments.sort();
-    problems.extend(fragment_problems(
-        fragments
-            .iter()
-            .map(|(name, text)| (name.as_str(), text.as_str())),
-    ));
-    assert!(problems.is_empty(), "{}", problems.join("\n"));
-}
 
-#[test]
-fn a_fragment_line_is_a_new_fixed_or_fixed_in_candidates_change() {
-    for line in ["new: A.", "fixed: B.", "fixed-rc: C.", "fixed-rc: C.  \r"] {
-        assert!(change_text(line).is_some(), "{line}");
+    /// Runs the script and panics, with everything it said, unless it succeeded.
+    fn output_of(&self, args: &[&str]) -> String {
+        let run = self.run(args);
+        assert!(run.success, "{run:?}");
+        run.stdout
     }
-    for line in [
-        "new:A.",
-        "new:  A.",
-        "fixed-rc:C.",
-        "fixed-rc A.",
-        "rc: A.",
-        "- new: A.",
-        "fixed-rc:  A.",
-        "New: A.",
-    ] {
-        assert!(change_text(line).is_none(), "{line}");
+
+    fn read(&self, path: &str) -> String {
+        std::fs::read_to_string(self.root.join(path)).expect("file exists")
     }
 }
 
+#[cfg(unix)]
+impl Drop for Tree {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+/// What the script says to a fragment tree, as (success, stderr).
+#[cfg(unix)]
+fn checked(files: &[(&str, &str)]) -> (bool, String) {
+    let run = Tree::new(files).run(&["check"]);
+    assert!(run.stdout.is_empty(), "`check` prints nothing: {run:?}");
+    (run.success, run.stderr)
+}
+
+#[cfg(unix)]
 #[test]
-fn a_change_cannot_carry_the_marker_that_hides_candidate_fixes() {
-    let problems = fragment_problems([
-        ("one", "fixed-rc: Arrows --> no longer break.\n"),
-        ("two", "new: An <!-- opener.\n"),
+fn every_pending_fragment_passes_the_script() {
+    // `check` only reads, so this runs on the repository itself.
+    let run = run_script(&repo("tools/changelog.sh"), &["check"]);
+    assert!(run.success, "{}", run.stderr);
+    assert!(run.stdout.is_empty(), "{run:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_clean_fragment_passes_whatever_its_spacing() {
+    let (success, stderr) = checked(&[
+        ("changes/one.md", "new: A.\n\n  \t\nfixed: B.  \r\n"),
+        ("changes/two.md", "fixed-rc: C.\nfixed: D.\n"),
+        ("changes/README.md", "Not a fragment.\n"),
     ]);
-    assert_eq!(
-        problems,
-        [
-            "changes/one:1: a change cannot contain `<!--` or `-->`",
-            "changes/two:1: a change cannot contain `<!--` or `-->`",
-        ]
-    );
+    assert!(success, "{stderr}");
 }
 
+#[cfg(unix)]
 #[test]
 fn the_same_change_twice_is_refused_naming_both_lines() {
-    let clean = fragment_problems([
-        ("one", "new: A.\n\nfixed: B.\n"),
-        ("two", "fixed-rc: C.\nfixed: D.\n"),
+    let (success, stderr) = checked(&[
+        ("changes/one.md", "new: Same words.\nfixed: B.\n"),
+        ("changes/two.md", "fixed: Other.\nfixed-rc: Same words.\n"),
+        ("changes/three.md", "new: B.\n"),
     ]);
-    assert!(clean.is_empty(), "{clean:?}");
-
-    let repeated = fragment_problems([
-        ("one", "new: Same words.\nfixed: B.\n"),
-        ("two", "fixed: Other.\nfixed-rc: Same words.\n"),
-        ("three", "new: B.\n"),
-    ]);
+    assert!(!success);
+    // Name order, whatever the prefix.
     assert_eq!(
-        repeated,
-        [
-            "changes/two:2: the same change as changes/one:1",
-            "changes/three:1: the same change as changes/one:2",
-        ]
+        stderr,
+        "error: changes/three.md:1: the same change as changes/one.md:2\n\
+         error: changes/two.md:2: the same change as changes/one.md:1\n"
     );
 
-    let within = fragment_problems([("one", "fixed: A.\nfixed: A.\n")]);
-    assert_eq!(within, ["changes/one:2: the same change as changes/one:1"]);
+    let (success, stderr) = checked(&[("changes/one.md", "fixed: A.\nfixed: A.\n")]);
+    assert!(!success);
+    assert_eq!(
+        stderr,
+        "error: changes/one.md:2: the same change as changes/one.md:1\n"
+    );
 }
 
+#[cfg(unix)]
+#[test]
+fn a_change_cannot_carry_the_marker_that_hides_candidate_fixes() {
+    let (success, stderr) = checked(&[
+        ("changes/one.md", "fixed-rc: Arrows --> no longer break.\n"),
+        ("changes/two.md", "new: An <!-- opener.\n"),
+    ]);
+    assert!(!success);
+    assert_eq!(
+        stderr,
+        "error: changes/one.md:1: a change cannot contain `<!--` or `-->`\n\
+         error: changes/two.md:1: a change cannot contain `<!--` or `-->`\n"
+    );
+}
+
+#[cfg(unix)]
 #[test]
 fn a_line_that_is_not_a_change_is_refused_with_its_place() {
-    let problems = fragment_problems([("one", "new: A.\n- bullet\n\nfixed:B.\n")]);
-    assert_eq!(problems.len(), 2);
-    assert!(problems[0].starts_with("changes/one:2: expected"));
-    assert!(problems[1].starts_with("changes/one:4: expected"));
+    let (success, stderr) = checked(&[(
+        "changes/one.md",
+        "new: A.\n- bullet\n\nfixed:B.\nNew: C.\nfixed:  D.\n",
+    )]);
+    assert!(!success);
+    let expected = "expected `new: <text>`, `fixed: <text>` or `fixed-rc: <text>`";
+    let lines: Vec<_> = stderr.lines().collect();
+    assert_eq!(
+        lines,
+        [2, 4, 5, 6].map(|line| format!("error: changes/one.md:{line}: {expected}"))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_line_of_only_a_non_breaking_space_is_not_blank() {
+    // Unicode treats U+00A0 as white space, the script (byte-wise, in the C locale) does not, and
+    // the script decides what a release accepts.
+    let (success, stderr) = checked(&[("changes/one.md", "new: A.\n\u{a0}\n")]);
+    assert!(!success);
+    assert!(
+        stderr.starts_with("error: changes/one.md:2: expected"),
+        "{stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fragment_not_named_like_a_slug_is_refused() {
+    for name in ["Bad_Name.md", "-leading.md", "two words.md"] {
+        let path = format!("changes/{name}");
+        let (success, stderr) = checked(&[(path.as_str(), "new: A.\n")]);
+        assert!(!success, "{name}");
+        assert!(
+            stderr.starts_with(&format!("error: {path}: a fragment is named like its slug")),
+            "{name}: {stderr}"
+        );
+    }
+}
+
+/// What a release does with fragments, end to end through the script and the parser: the section
+/// `render` writes is the text of the fragments, and what `insert` and `notes` hand the app is read
+/// back as the same changes.
+#[cfg(unix)]
+#[test]
+fn fragments_survive_render_insert_and_notes_into_what_the_app_reads() {
+    let tree = Tree::new(&[
+        (
+            "changes/one.md",
+            "new: Charts can be compared.  \r\nfixed: Loops show the right values.\t\r\n",
+        ),
+        (
+            "changes/two.md",
+            "fixed-rc: The Update button opens its sheet.   \nnew: Sheets list what changed.\n",
+        ),
+        (
+            "CHANGELOG.md",
+            "# Changelog\n\n## 0.6.0 (2026-11-01)\n\n### New\n\n- Old.\n",
+        ),
+    ]);
+    let new = ["Charts can be compared.", "Sheets list what changed."];
+    let fixed = ["Loops show the right values."];
+    let fixed_rc = ["The Update button opens its sheet."];
+
+    let rendered = tree.output_of(&["render", "0.7.0", "2026-11-21"]);
+    let sections = parse(&rendered);
+    assert_eq!(sections.len(), 1, "{rendered}");
+    assert_eq!(sections[0].version, "0.7.0");
+    assert_eq!(sections[0].new, new);
+    assert_eq!(sections[0].fixed, fixed);
+    assert_eq!(sections[0].fixed_rc, fixed_rc);
+
+    tree.output_of(&["insert", "0.7.0-rc.1", "2026-11-20"]);
+    tree.output_of(&["insert", "0.7.0", "2026-11-21"]);
+    assert_changelog_readable(&tree.read("CHANGELOG.md"));
+
+    // The candidate's notes show the fixes only candidates had; the app reads them as such.
+    let candidate_body = tree.output_of(&["notes", "v0.7.0-rc.1", "v0.6.0"]);
+    let candidate = parse(&candidate_body);
+    assert_eq!(candidate.len(), 1, "{candidate_body}");
+    assert_eq!(candidate[0].version, "0.7.0-rc.1");
+    assert_eq!(candidate[0].fixed_rc, fixed_rc);
+
+    // The stable release carries both sections, the candidate fixes hidden in comments that the
+    // app still reads, so a stable reader is not told about them and a candidate's reader is.
+    let stable_body = tree.output_of(&["notes", "v0.7.0", "v0.6.0"]);
+    let stable = parse(&stable_body);
+    let versions: Vec<_> = stable
+        .iter()
+        .map(|section| section.version.as_str())
+        .collect();
+    assert_eq!(versions, ["0.7.0", "0.7.0-rc.1"]);
+    assert!(stable_body.contains("<!-- release-candidate fixes"));
+    let for_stable = ReleaseNotes::from_sections(stable.clone(), false);
+    assert_eq!(for_stable.new, [new, new].concat());
+    assert_eq!(for_stable.fixed, [fixed, fixed].concat());
+    let for_candidate = ReleaseNotes::from_sections(stable, true);
+    assert_eq!(
+        for_candidate.fixed,
+        [fixed[0], fixed_rc[0], fixed[0], fixed_rc[0]]
+    );
 }
 
 /// Panics, naming the line, unless `text` is a changelog the app can read: the heading, then
@@ -685,31 +790,10 @@ fn an_archive_longer_than_a_release_body_may_be_is_still_valid() {
     assert_changelog_readable(&archive);
 }
 
-/// What `tools/changelog.sh notes <tag> <previous>` prints for `changelog`, run on a copy of the
-/// script in a scratch tree so the repository's own files are never touched.
+/// What `tools/changelog.sh notes <tag> <previous>` prints for `changelog`.
 #[cfg(unix)]
 fn notes_of(changelog: &str, tag: &str, previous: &str) -> String {
-    // Tests run in parallel and may ask for the same tag, so each call gets its own tree.
-    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let root = std::env::temp_dir().join(format!(
-        "degenview-changelog-notes-{}-{}-{}",
-        std::process::id(),
-        CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        tag
-    ));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(root.join("tools")).expect("scratch tree");
-    std::fs::copy(repo("tools/changelog.sh"), root.join("tools/changelog.sh"))
-        .expect("script copied");
-    std::fs::write(root.join("CHANGELOG.md"), changelog).expect("changelog written");
-    let output = std::process::Command::new("sh")
-        .arg(root.join("tools/changelog.sh"))
-        .args(["notes", tag, previous])
-        .output()
-        .expect("sh runs");
-    let _ = std::fs::remove_dir_all(&root);
-    assert!(output.status.success(), "{output:?}");
-    String::from_utf8(output.stdout).expect("text")
+    Tree::new(&[("CHANGELOG.md", changelog)]).output_of(&["notes", tag, previous])
 }
 
 /// A changelog with a stable release made only of candidate fixes, candidates that fixed only

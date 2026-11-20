@@ -213,12 +213,18 @@ fn check_pages(
         return UpdateOutcome::Failed(format!("Could not compare version {current}."));
     };
     let mut releases = Vec::new();
+    // Whether the list was read to where this build's own history starts or to its end. Running out
+    // of pages first leaves releases unread that the offered version's notes may depend on.
+    let mut reached_end = false;
     for page in 1..=MAX_PAGES {
         let body = match fetch(page) {
             Ok(body) => body,
             // No published release yet (or repository not public): nothing newer exists. Past the
             // first page it only means the list ended.
-            Err(http::Error::Status(404)) => break,
+            Err(http::Error::Status(404)) => {
+                reached_end = true;
+                break;
+            }
             Err(http::Error::Status(403 | 429)) => {
                 return UpdateOutcome::Failed(
                     "GitHub is rate limiting requests. Try again later.".to_owned(),
@@ -237,10 +243,11 @@ fn check_pages(
             .any(|release| offered_version(release, channel).is_some_and(|v| v <= running));
         releases.extend(listed);
         if last || reached_history {
+            reached_end = true;
             break;
         }
     }
-    pick(releases, &running, channel)
+    pick(releases, &running, channel, !reached_end)
 }
 
 fn parse_page(body: &str) -> Option<Vec<ReleaseDto>> {
@@ -264,7 +271,12 @@ fn offered_version(release: &ReleaseDto, channel: Channel) -> Option<Version> {
     (consistent && channel.accepts(&version)).then_some(version)
 }
 
-fn pick(mut releases: Vec<ReleaseDto>, running: &Version, channel: Channel) -> UpdateOutcome {
+fn pick(
+    mut releases: Vec<ReleaseDto>,
+    running: &Version,
+    channel: Channel,
+    history_incomplete: bool,
+) -> UpdateOutcome {
     // A tag this version cannot read, or that no channel offers, is skipped rather than failing
     // the whole check: one stray tag must not stop updates.
     let newest = releases
@@ -274,7 +286,7 @@ fn pick(mut releases: Vec<ReleaseDto>, running: &Version, channel: Channel) -> U
         .max_by(|(a, _), (b, _)| a.cmp(b));
     match newest {
         Some((latest, at)) if latest > *running => {
-            let notes = notes_between(&releases, running, &latest);
+            let notes = notes_between(&releases, running, &latest, history_incomplete);
             UpdateOutcome::Available(offer(releases.swap_remove(at), notes))
         }
         _ => UpdateOutcome::UpToDate,
@@ -328,7 +340,14 @@ fn offer(release: ReleaseDto, notes: ReleaseNotes) -> Release {
 /// that follows it; the copy from the release carrying that version is the one kept. A channel does
 /// not limit this: a stable user going from 0.5.1 to 0.6.0 sees the candidates' changes too, except
 /// the fixes for bugs only candidates had, which are listed only to someone running a candidate.
-fn notes_between(releases: &[ReleaseDto], running: &Version, offered: &Version) -> ReleaseNotes {
+/// `history_incomplete` says the paging stopped before the running version's place in the list, so
+/// releases in the range may not be among `releases` at all (and are not counted as unsummarized).
+fn notes_between(
+    releases: &[ReleaseDto],
+    running: &Version,
+    offered: &Version,
+    history_incomplete: bool,
+) -> ReleaseNotes {
     // Version, then whether the section came from the release of that very version.
     let mut found: BTreeMap<Version, (bool, Section)> = BTreeMap::new();
     let readable = releases
@@ -364,6 +383,7 @@ fn notes_between(releases: &[ReleaseDto], running: &Version, offered: &Version) 
         .len();
     ReleaseNotes {
         unsummarized,
+        history_incomplete,
         ..ReleaseNotes::from_sections(
             found.into_values().rev().map(|(_, section)| section),
             running.prerelease.is_some(),
@@ -800,6 +820,45 @@ mod tests {
         let outcome = check_pages("0.5.1", Channel::Stable, paged(candidates(200), &reads));
         assert_eq!(outcome, UpdateOutcome::UpToDate);
         assert_eq!(reads.get(), MAX_PAGES);
+    }
+
+    /// Whether the offered update's notes say the list of releases they came from was cut short.
+    fn history_incomplete(all: Vec<String>) -> bool {
+        let reads = std::cell::Cell::new(0);
+        let outcome = check_pages("0.5.1", Channel::Stable, paged(all, &reads));
+        available(outcome).notes.history_incomplete
+    }
+
+    #[test]
+    fn running_out_of_pages_before_the_running_version_marks_the_history_incomplete() {
+        let mut all = vec![reply("v0.5.2")];
+        all.extend(candidates(MAX_PAGES * PAGE_SIZE - 1));
+        assert_eq!(all.len(), MAX_PAGES * PAGE_SIZE);
+        assert!(history_incomplete(all));
+    }
+
+    #[test]
+    fn a_list_that_ends_or_reaches_the_running_version_is_complete() {
+        // A short last page: the list is all there is.
+        let mut short = vec![reply("v0.5.2")];
+        short.extend(candidates(PAGE_SIZE + 9));
+        assert!(!history_incomplete(short));
+        // The running version on the last page read: what is left is older than it.
+        let mut reached = vec![reply("v0.5.2")];
+        reached.extend(candidates(MAX_PAGES * PAGE_SIZE - 3));
+        reached.push(reply("v0.5.1"));
+        reached.push(reply("v0.5.0"));
+        assert_eq!(reached.len(), MAX_PAGES * PAGE_SIZE);
+        assert!(!history_incomplete(reached));
+        // A page past the first that does not exist: the list ended on a page boundary.
+        let mut first = vec![reply("v0.5.2")];
+        first.extend(candidates(PAGE_SIZE - 1));
+        let first = list(&first);
+        let ended = check_pages("0.5.1", Channel::Stable, |page| match page {
+            1 => Ok(first.clone()),
+            _ => Err(http::Error::Status(404)),
+        });
+        assert!(!available(ended).notes.history_incomplete);
     }
 
     #[test]

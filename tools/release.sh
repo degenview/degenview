@@ -86,6 +86,19 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     echo "error: the working tree has uncommitted changes" >&2
     exit 1
 fi
+# The release commit is cut from the local main, and the tag goes on that commit, so a main that
+# lags origin would publish a tag that silently misses what was already merged; one that is ahead
+# holds commits that never went through a pull request. Both are refused before anything is read,
+# so --dry-run shows the section for the code that would ship.
+git fetch --quiet origin main || { echo "error: could not fetch origin/main" >&2; exit 1; }
+if [ "$(git rev-parse HEAD)" != "$(git rev-parse FETCH_HEAD)" ]; then
+    if git merge-base --is-ancestor HEAD FETCH_HEAD; then
+        echo "error: main is behind origin/main; run: git pull --ff-only" >&2
+    else
+        echo "error: main is not origin/main (it has commits origin lacks); main only takes changes through a pull request" >&2
+    fi
+    exit 1
+fi
 if [ -z "$(git config user.signingkey)" ]; then
     echo "error: git user.signingkey is not set; release tags must be signed (git tag -s)" >&2
     exit 1

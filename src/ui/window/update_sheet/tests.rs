@@ -306,6 +306,23 @@ fn the_line_about_releases_with_no_summary_counts_them() {
 }
 
 #[test]
+fn the_sheet_ends_with_a_line_when_older_releases_were_not_listed() {
+    let partial = ReleaseNotes {
+        unsummarized: 2,
+        history_incomplete: true,
+        ..notes()
+    };
+    assert_eq!(
+        closing_lines(&partial).collect::<Vec<_>>(),
+        [
+            "2 releases since your version have no summary, so their changes are not listed.",
+            "Older releases are not listed here, so some changes may be missing.",
+        ]
+    );
+    assert_eq!(closing_lines(&notes()).count(), 0);
+}
+
+#[test]
 fn updating_from_the_sheet_starts_the_install_and_closes_it() {
     let host = UpdateHost::at_phase(&Phase::Available {
         version: "9.9.9".to_owned(),
@@ -520,6 +537,10 @@ fn update_sheet_gallery() {
         unsummarized: 1,
         ..truncated.clone()
     };
+    let older_unlisted = ReleaseNotes {
+        history_incomplete: true,
+        ..notes()
+    };
     let long_note = "Not published by the release workflow, so it needs a manual download, and this build cannot say more than that without wrapping.";
     let mut manual = available(false, flood());
     if let Phase::Available { note, .. } = &mut manual.phase {
@@ -540,6 +561,13 @@ fn update_sheet_gallery() {
         ),
         ("one-list", available(true, only_new), roomy, 0.0, 0),
         ("unsummarized", available(true, gaps), roomy, 0.0, 0),
+        (
+            "older-unlisted",
+            available(true, older_unlisted),
+            roomy,
+            0.0,
+            0,
+        ),
         (
             "unsummarized-truncated-end",
             available(true, gap_and_truncated),

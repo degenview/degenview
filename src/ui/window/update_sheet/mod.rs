@@ -30,6 +30,9 @@ const GROUP_GAP: f32 = 16.0;
 const PICTURE_LEAD: f32 = 16.0;
 const NO_NOTES: &str = "No summary of changes is available for this version.";
 const TRUNCATED_LINE: &str = "And more changes in the full release notes.";
+/// The update check read only the newest releases, so older ones in the range may be missing.
+const HISTORY_INCOMPLETE_LINE: &str =
+    "Older releases are not listed here, so some changes may be missing.";
 
 /// How the person answered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -202,7 +205,7 @@ fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, height: f32) -> f32 {
 
 /// New, then Fixed, each only when it has entries, then how many more there were (or that there are
 /// more, when a body was cut short and the count would be wrong) and how many releases had no
-/// summary; a calm line when there are none.
+/// summary or were never listed; a calm line when there is nothing to list.
 fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
     ui.spacing_mut().item_spacing.y = 0.0;
     if notes.is_empty() {
@@ -240,11 +243,7 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
             bullet(ui, entry);
         }
     }
-    let closing = [
-        closing_line(notes),
-        (notes.unsummarized > 0).then(|| unsummarized_line(notes.unsummarized)),
-    ];
-    for line in closing.into_iter().flatten() {
+    for line in closing_lines(notes) {
         ui.add_space(GROUP_GAP);
         ui.add(
             egui::Label::new(kit::text(
@@ -256,6 +255,21 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
             .wrap(),
         );
     }
+}
+
+/// The lines that end the lists, in order: what the caps left out, then the releases with no
+/// summary, then the releases that were never listed. Only shown after a list; with nothing to list
+/// the sheet says so and nothing more.
+fn closing_lines(notes: &ReleaseNotes) -> impl Iterator<Item = String> {
+    [
+        closing_line(notes),
+        (notes.unsummarized > 0).then(|| unsummarized_line(notes.unsummarized)),
+        notes
+            .history_incomplete
+            .then(|| HISTORY_INCOMPLETE_LINE.to_owned()),
+    ]
+    .into_iter()
+    .flatten()
 }
 
 /// What ends a list that left changes out: how many, unless a body was cut short, which makes any

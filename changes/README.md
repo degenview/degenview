@@ -57,4 +57,5 @@ No fragment for:
 updating would: merge or reword entries that describe one change, and drop the ones that are not
 worth a line. Do that in a normal pull request before cutting the release.
 
-`tools/changelog.sh check` validates the fragments; `cargo test` does too.
+`tools/changelog.sh check` is the only validator of the fragments; CI's lint job and `cargo test`
+both run it.

@@ -516,6 +516,20 @@ impl UpdateHost {
         self.lock().review = None;
     }
 
+    /// Ends the review when `viewport` is the window showing it, for a window that is closing: a
+    /// viewport id outlives its window (Settings reuses one), so a sheet left behind would come back
+    /// the next time that id opens. A review shown elsewhere is left alone.
+    pub fn close_review_in(&self, viewport: egui::ViewportId) {
+        let mut state = self.lock();
+        if state
+            .review
+            .as_ref()
+            .is_some_and(|review| review.viewport == viewport)
+        {
+            state.review = None;
+        }
+    }
+
     /// Swaps the prepared update in and schedules the reopen. On `Ok` the caller must quit now.
     pub fn restart(&self) -> Result<(), String> {
         self.restart_with(install::apply)
@@ -1089,6 +1103,20 @@ mod tests {
         assert!(!host.review_open_in(MAIN));
         assert!(host.review_open_in(settings()));
         host.close_review();
+        assert!(!host.review_open_in(settings()));
+    }
+
+    #[test]
+    fn closing_a_window_ends_only_the_review_it_shows() {
+        let host = on_offer();
+        host.review(MAIN);
+        host.close_review_in(settings());
+        assert!(host.review_open_in(MAIN), "another window's close keeps it");
+        host.close_review_in(MAIN);
+        assert!(!host.review_open_in(MAIN));
+        // Reopening the same window later does not bring the sheet back unasked.
+        host.review(settings());
+        host.close_review_in(settings());
         assert!(!host.review_open_in(settings()));
     }
 

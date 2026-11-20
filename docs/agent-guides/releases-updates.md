@@ -34,7 +34,12 @@ final `0.6.0` is a new tag rebuilt from the last commit, never a promoted RC bin
   Informational: nothing reads it back, never sent anywhere. Each release has its tag commit's id.
 
 1. Land on `main`; require a clean tree plus test, clippy, and fmt checks.
-2. Preview with `tools/release.sh <version> --dry-run`.
+2. Preview with `tools/release.sh <version> --dry-run`. The script starts by fetching `origin/main`
+   and refuses unless the local `main` is exactly that commit (also with `--dry-run`, so the
+   preview shows the section for what would ship): behind, it says to `git pull --ff-only`; ahead
+   or diverged, `main` holds commits that never went through a pull request. The release commit is
+   cut from the local `main` and the tag goes on it, so a stale `main` would publish a tag that
+   misses what was already merged.
 3. Run `tools/release.sh <version>` (`--yes` skips confirmation): creates `release/v<version>`,
    bumps Cargo files, writes the changelog section and deletes the fragments, opens a PR,
    merge-commits it, then creates and pushes a signed tag on the release commit (not `main`'s tip:
@@ -83,8 +88,11 @@ What a person using the app notices, per release, in plain words. Three stages, 
    (refactors, tests, CI, docs) add none. One change is one line: a stack of pull requests building
    a feature adds it once, a follow-up to something unreleased edits that line instead of adding
    one. `fixed:` is for a bug that reached a stable release; `fixed-rc:` for one that only ever
-   shipped in release candidates. `tools/changelog.sh check` (and `cargo test`) also refuse the same
-   change text on two lines, naming both `file:line`s.
+   shipped in release candidates. `tools/changelog.sh` is the only validator of the format: it also
+   refuses the same change text on two lines, naming both `file:line`s. CI's lint job runs `check`,
+   and `cargo test` runs the script (the repository's fragments, and scratch trees for what it
+   rejects and for the render, insert and notes round trip); no Rust code restates the grammar, so
+   the two cannot disagree.
 2. **`CHANGELOG.md`**, newest first. `tools/release.sh` renders the fragments into a new section
    (`tools/changelog.sh render|insert`), deletes them and commits both with the version bump in the
    release pull request. `--dry-run` prints the section; a malformed fragment fails with
@@ -125,9 +133,13 @@ holds. `notes_between` also sets `ReleaseNotes::unsummarized`: the published rel
 in the range (any author, drafts excluded) whose version no trusted body has a section for, such as
 releases from before the changelog. When the lists are not empty the sheet ends with "N releases
 since your version have no summary, so their changes are not listed."; with nothing to list it shows
-only "No summary of changes is available for this version." Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks
-the sheet. `cargo test` checks the fragments and `CHANGELOG.md` against the same rules, so CI
-catches a malformed one; the archive is checked section by section, since the caps below are for one
+only "No summary of changes is available for this version." `check_pages` reads at most three pages
+of 30 releases; when it stops there without a short last page, a 404 or a release at or below the
+running version, `ReleaseNotes::history_incomplete` is set and the sheet ends with "Older releases
+are not listed here, so some changes may be missing." (releases it never read are not in
+`unsummarized`). Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks
+the sheet. `cargo test` runs the script on the fragments and checks `CHANGELOG.md` against the same rules, so
+CI catches a malformed one; the archive is checked section by section, since the caps below are for one
 release body and the file grows with every release. Input is bounded (64 KiB body, 64 sections, 100 entries per list per
 section, 400 characters per entry, 300 entries per merged list). A body over 64 KiB is cut back to
 its last whole line and the section being read there is `truncated`; the sheet then ends with "And
@@ -485,8 +497,9 @@ executables). Deploy Production's CloudKit schema before a release that changes 
   the new one. Cancel always counts. The list takes the height the window leaves after the
   rest of the sheet (measured on the previous frame), between 96 and 360 pt, so the footer stays
   inside the app's smallest windows. The
-  host holds which window shows it (`UpdateHost::review`, `review_open_in`, `close_review`; memory
-  only, one window): it ends when the phase leaves `Available` (channel switch, install started
+  host holds which window shows it (`UpdateHost::review`, `review_open_in`, `close_review`, `close_review_in`; memory
+  only, one window; a window that is closing, Settings and tab windows, calls `close_review_in`
+  with its viewport so a reused viewport id does not bring the sheet back): it ends when the phase leaves `Available` (channel switch, install started
   elsewhere) and does not return for a later update. A failed install retries from the mark without
   the sheet. The notes are `Phase::Available::notes` (an `Arc`): `update::check` merges the sections
   of every release body it read in that check, not drafts and only the release workflow's, that lie

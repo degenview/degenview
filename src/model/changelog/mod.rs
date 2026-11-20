@@ -79,6 +79,10 @@ pub struct ReleaseNotes {
     /// hold everything they changed: releases from before the changelog, or with notes the app does
     /// not trust. Set by whoever knows the range; `from_sections` leaves it at zero.
     pub unsummarized: usize,
+    /// The list of releases the notes were read from ended before reaching the reader's own
+    /// version, so releases in the range may be missing from it altogether (and are not in
+    /// `unsummarized`). Set by whoever read the list; `from_sections` leaves it false.
+    pub history_incomplete: bool,
 }
 
 impl ReleaseNotes {

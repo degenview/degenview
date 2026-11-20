@@ -92,6 +92,7 @@ fn show_window(
         // The app closes the window's tabs (a script with edits asks first) and drops the
         // window itself; until then it stays up.
         ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        env.updates.close_review_in(ctx.viewport_id());
         env.tabs.windows().request_close_window(window_id);
         ctx.request_repaint_of(egui::ViewportId::ROOT);
         return;
@@ -425,6 +426,8 @@ impl DegenViewApp {
                 if let Ok(mut host) = host.lock() {
                     host.set_open(false);
                 }
+                // The viewport id is reused when Settings opens again.
+                updates.close_review_in(settings_viewport_id());
                 return;
             }
             if let Ok(mut host) = host.lock() {
