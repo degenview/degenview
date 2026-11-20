@@ -437,12 +437,12 @@ pub fn evaluate_fixnan(source: &RuntimeValue, state: &mut State) -> RuntimeValue
 /// like the Swift runtime.
 pub fn evaluate_cum(source: &RuntimeValue, state: &mut State) -> RuntimeValue {
     state.inputs.push(source.clone());
-    let previous = state
-        .results
-        .last()
-        .and_then(RuntimeValue::number)
-        .unwrap_or(0.0);
-    let result = float(previous + source.number().unwrap_or(0.0));
+    let previous = state.results.last().and_then(RuntimeValue::number);
+    // Na until the first value; after that a missing value adds nothing.
+    let result = match (previous, source.number()) {
+        (None, None) => RuntimeValue::Na,
+        (previous, source) => float(previous.unwrap_or(0.0) + source.unwrap_or(0.0)),
+    };
     state.results.push(result.clone());
     result
 }
@@ -684,6 +684,36 @@ pub fn evaluate_atr(state: &mut State, bar: &Kline, length: i64) -> RuntimeValue
         previous.map(|p| (p * (length as f64 - 1.0) + range) / length as f64)
     };
     let result = optional(value);
+    state.results.push(result.clone());
+    result
+}
+
+/// `ta.stdev(source, length, biased)` and `ta.variance(source, length, biased)`: the population
+/// figure when `biased` (the default), the sample one (divided by `length - 1`) when not. A window
+/// of one value has no sample figure.
+pub fn evaluate_dispersion(
+    name: &str,
+    source: &RuntimeValue,
+    length: i64,
+    biased: bool,
+    state: &mut State,
+) -> RuntimeValue {
+    state.inputs.push(source.clone());
+    let count = usize::try_from(length).unwrap_or(0);
+    let result = optional(last_window(&state.inputs, count).and_then(|window| {
+        let figure = if biased {
+            variance(&window)
+        } else if window.len() < 2 {
+            return None;
+        } else {
+            variance(&window) * window.len() as f64 / (window.len() - 1) as f64
+        };
+        Some(if name == "ta.stdev" {
+            figure.sqrt()
+        } else {
+            figure
+        })
+    }));
     state.results.push(result.clone());
     result
 }
