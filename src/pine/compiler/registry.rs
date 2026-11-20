@@ -119,7 +119,7 @@ const OTHER_FUNCTIONS: [&str; 32] = [
 ];
 
 /// `ta.*` functions the session evaluates inline, outside `ta::SUPPORTED` and `extra::FUNCTIONS`.
-const TA_INLINE: [&str; 12] = [
+const TA_INLINE: [&str; 15] = [
     "ta.barssince",
     "ta.vwap",
     "ta.dmi",
@@ -132,6 +132,9 @@ const TA_INLINE: [&str; 12] = [
     "ta.pivotlow",
     "ta.sar",
     "ta.supertrend",
+    "ta.macd",
+    "ta.stdev",
+    "ta.variance",
 ];
 
 /// `str.*` functions the session evaluates inline rather than from `strings::SUPPORTED`.

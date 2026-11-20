@@ -58,7 +58,7 @@ pub const SCALAR_NAMES: [&str; 19] = [
 const MORE_SCALAR_NAMES: [&str; 3] = ["time_close", "timestamp", "str.tostring"];
 
 /// What `Session::call` evaluates inline, between the families, rather than in one of them.
-pub(crate) const INLINE: [&str; 15] = [
+pub(crate) const INLINE: [&str; 18] = [
     "ta.sar",
     "ta.supertrend",
     "fixnan",
@@ -74,6 +74,9 @@ pub(crate) const INLINE: [&str; 15] = [
     "ta.pivothigh",
     "ta.pivotlow",
     "ta.linreg",
+    "ta.macd",
+    "ta.stdev",
+    "ta.variance",
 ];
 
 /// The family that evaluates a call to `name`, as `Session::call`'s chain would reach it. `None` for
