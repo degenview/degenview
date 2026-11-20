@@ -91,14 +91,6 @@ impl Validator<'_> {
                 } => {
                     self.declare(name, &mut declared, &mut local, *range);
                     self.check_name(name, *range);
-                    if matches!(value, Expression::Call { name, .. } if name == "ta.supertrend") {
-                        self.report(
-                            "PINE3069",
-                            DiagnosticCategory::Semantic,
-                            "ta.supertrend returns [supertrend, direction]: declare both, as in `[line, direction] = ta.supertrend(3, 10)`.".to_owned(),
-                            *range,
-                        );
-                    }
                     if annotation.kind == Some(ValueType::Bool)
                         && matches!(value, Expression::Literal(Literal::Na, _))
                     {

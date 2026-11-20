@@ -284,7 +284,16 @@ impl Session {
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
         if matches!(name, "ta.sar" | "ta.supertrend") {
-            let values = self.eval_all(arguments, context)?;
+            let parameters: &[&'static str] = if name == "ta.sar" {
+                &["start", "inc", "max"]
+            } else {
+                &["factor", "atrPeriod"]
+            };
+            let bound = self.bind_named(arguments, parameters, context)?;
+            let values: Vec<RuntimeValue> = parameters
+                .iter()
+                .map(|parameter| bound.get(parameter).cloned().unwrap_or(RuntimeValue::Na))
+                .collect();
             let key = self.site_key(site, context);
             let state = self.working.ta_states.entry(key).or_default();
             return Ok(ta::evaluate_price(name, &values, &context.bar, state));

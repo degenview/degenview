@@ -247,3 +247,52 @@ plot(ta.cum(bar_index < 3 ? na : 1))
     assert_eq!(plotted[4][2], None, "cum of a leading na is na");
     assert_eq!(plotted[4][3], Some(1.0));
 }
+
+#[test]
+fn named_arguments_of_supertrend_and_sar_bind_by_name() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Named\", overlay = true)
+[line, direction] = ta.supertrend(3, 10)
+[swapped, swappedDirection] = ta.supertrend(atrPeriod = 10, factor = 3)
+[named, namedDirection] = ta.supertrend(factor = 3, atrPeriod = 10)
+plot(line)
+plot(swapped)
+plot(named)
+plot(direction)
+plot(swappedDirection)
+plot(namedDirection)
+plot(ta.sar(0.02, 0.03, 0.3))
+plot(ta.sar(max = 0.3, inc = 0.03, start = 0.02))
+plot(ta.sar())
+plot(ta.sar(0.02, 0.02, 0.2))
+",
+        2_000,
+    );
+    assert_same("supertrend, reordered", &plotted[0], &plotted[1]);
+    assert_same("supertrend, named in order", &plotted[0], &plotted[2]);
+    assert_same("direction, reordered", &plotted[3], &plotted[4]);
+    assert_same("direction, named in order", &plotted[3], &plotted[5]);
+    assert_same("sar, reordered", &plotted[6], &plotted[7]);
+    assert_same("sar defaults", &plotted[8], &plotted[9]);
+}
+
+#[test]
+fn a_vwap_variable_read_only_now_and_then_still_covers_every_bar() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Vwap\", overlay = true)
+every = ta.vwap(hlc3)
+sometimes = bar_index % 7 == 6 or bar_index == 9
+plot(sometimes ? ta.vwap : na)
+plot(sometimes ? every : na)
+late = bar_index == 40
+plot(late ? ta.vwap : na)
+plot(late ? every : na)
+",
+        400,
+    );
+    assert_same("every seventh bar", &plotted[0], &plotted[1]);
+    assert_same("first read on bar 40", &plotted[2], &plotted[3]);
+    assert!(plotted[0].iter().flatten().count() > 50);
+}

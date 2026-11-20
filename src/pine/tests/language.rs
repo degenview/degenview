@@ -447,6 +447,15 @@ fn ta_supertrend_must_be_declared_as_a_tuple() {
     assert!(scalar.contains(&"PINE3069".to_owned()), "{scalar:?}");
     let tuple = diagnostic_codes("[line, direction] = ta.supertrend(3, 10)\nplot(line)");
     assert!(tuple.is_empty(), "{tuple:?}");
+    // A script's own method of that name, called on an object called `ta`, is not the builtin.
+    let method = diagnostic_codes(
+        "type Probe\n    float value = 1.0\n\
+         method supertrend(Probe this, float factor, int length) => this.value * factor + length\n\
+         ta = Probe.new()\n\
+         st = ta.supertrend(3.0, 10)\n\
+         plot(st)",
+    );
+    assert!(!method.contains(&"PINE3069".to_owned()), "{method:?}");
 }
 
 #[test]
