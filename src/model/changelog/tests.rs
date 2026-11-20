@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 fn section(version: &str, new: &[&str], fixed: &[&str]) -> Section {
@@ -6,7 +7,15 @@ fn section(version: &str, new: &[&str], fixed: &[&str]) -> Section {
         version: version.to_owned(),
         new: new.iter().map(|&text| text.to_owned()).collect(),
         fixed: fixed.iter().map(|&text| text.to_owned()).collect(),
+        fixed_rc: Vec::new(),
         omitted: 0,
+    }
+}
+
+fn section_with_rc_fixes(version: &str, fixed: &[&str], fixed_rc: &[&str]) -> Section {
+    Section {
+        fixed_rc: fixed_rc.iter().map(|&text| text.to_owned()).collect(),
+        ..section(version, &[], fixed)
     }
 }
 
@@ -242,18 +251,27 @@ fn merged_notes_count_what_the_sections_and_their_own_cap_leave_out() {
     first.omitted = 4;
     let mut second = section("1.0.0", &["A."], &["F."]);
     second.omitted = 2;
-    assert_eq!(ReleaseNotes::from_sections([first, second]).omitted, 6);
+    assert_eq!(
+        ReleaseNotes::from_sections([first, second], true).omitted,
+        6
+    );
 
-    let flood = ReleaseNotes::from_sections((0..3).map(|n| {
-        let text = n.to_string();
-        section(&text, &["x"; MAX_ENTRIES], &["y"; MAX_ENTRIES])
-    }));
+    let flood = ReleaseNotes::from_sections(
+        (0..3).map(|n| {
+            let text = n.to_string();
+            section(&text, &["x"; MAX_ENTRIES], &["y"; MAX_ENTRIES])
+        }),
+        true,
+    );
     assert_eq!(flood.omitted, 0, "300 entries a list, at the cap");
-    let flood = ReleaseNotes::from_sections((0..4).map(|n| {
-        let mut flooded = section(&n.to_string(), &["x"; MAX_ENTRIES], &["y"; 1]);
-        flooded.omitted = 1;
-        flooded
-    }));
+    let flood = ReleaseNotes::from_sections(
+        (0..4).map(|n| {
+            let mut flooded = section(&n.to_string(), &["x"; MAX_ENTRIES], &["y"; 1]);
+            flooded.omitted = 1;
+            flooded
+        }),
+        true,
+    );
     assert_eq!(
         flood.omitted,
         4 + (4 * MAX_ENTRIES - MAX_NOTES),
@@ -265,28 +283,114 @@ fn merged_notes_count_what_the_sections_and_their_own_cap_leave_out() {
     let mut more = section("0.9.0", &[], &[]);
     more.omitted = 5;
     assert_eq!(
-        ReleaseNotes::from_sections([huge, more]).omitted,
+        ReleaseNotes::from_sections([huge, more], true).omitted,
         usize::MAX
     );
 }
 
 #[test]
 fn merged_notes_keep_the_order_given_and_are_bounded() {
-    let notes = ReleaseNotes::from_sections([
-        section("2.0.0", &["B1.", "B2."], &["F1."]),
-        section("1.0.0", &["A1."], &["F0."]),
-    ]);
+    let notes = ReleaseNotes::from_sections(
+        [
+            section("2.0.0", &["B1.", "B2."], &["F1."]),
+            section("1.0.0", &["A1."], &["F0."]),
+        ],
+        true,
+    );
     assert_eq!(notes.new, ["B1.", "B2.", "A1."]);
     assert_eq!(notes.fixed, ["F1.", "F0."]);
     assert!(!notes.is_empty());
     assert!(ReleaseNotes::default().is_empty());
-    assert!(ReleaseNotes::from_sections([section("1.0.0", &[], &[])]).is_empty());
+    assert!(ReleaseNotes::from_sections([section("1.0.0", &[], &[])], true).is_empty());
 
-    let flood = ReleaseNotes::from_sections((0..50).map(|n| {
-        let text = n.to_string();
-        section(&text, &["x"; MAX_ENTRIES], &["y"; MAX_ENTRIES])
-    }));
+    let flood = ReleaseNotes::from_sections(
+        (0..50).map(|n| {
+            let text = n.to_string();
+            section(&text, &["x"; MAX_ENTRIES], &["y"; MAX_ENTRIES])
+        }),
+        true,
+    );
     assert_eq!((flood.new.len(), flood.fixed.len()), (MAX_NOTES, MAX_NOTES));
+}
+
+#[test]
+fn the_release_candidate_fixes_subheading_is_read_into_its_own_list() {
+    let body = "\
+## 0.6.0-rc.2 (2026-11-20)
+
+### New
+
+- Alpha.
+
+### Fixed
+
+- Bravo.
+
+### Fixed in release candidates
+
+- Charlie.
+
+### FIXED IN RELEASE CANDIDATES
+
+- Delta.
+
+### Fixed in release
+
+- Not that subheading.
+";
+    let mut expected = section("0.6.0-rc.2", &["Alpha."], &["Bravo."]);
+    expected.fixed_rc = vec!["Charlie.".to_owned(), "Delta.".to_owned()];
+    assert_eq!(parse(body), [expected]);
+}
+
+#[test]
+fn release_candidate_fixes_follow_each_sections_own_fixes_when_included() {
+    let sections = || {
+        [
+            section_with_rc_fixes("0.6.0-rc.2", &["F2."], &["R2."]),
+            section_with_rc_fixes("0.6.0-rc.1", &["F1."], &["R1a.", "R1b."]),
+        ]
+    };
+    let included = ReleaseNotes::from_sections(sections(), true);
+    assert_eq!(included.fixed, ["F2.", "R2.", "F1.", "R1a.", "R1b."]);
+    assert!(included.new.is_empty());
+
+    let excluded = ReleaseNotes::from_sections(sections(), false);
+    assert_eq!(excluded.fixed, ["F2.", "F1."]);
+    assert_eq!(excluded.omitted, 0, "dropped on purpose, not left out");
+    assert!(
+        ReleaseNotes::from_sections([section_with_rc_fixes("0.6.0-rc.1", &[], &["R."])], false)
+            .is_empty()
+    );
+}
+
+#[test]
+fn release_candidate_fixes_share_the_caps_and_omitted_counting() {
+    let body = format!(
+        "## 2.0.0\n\n### Fixed in release candidates\n\n{}",
+        "- Fix.\n".repeat(MAX_ENTRIES + 3),
+    );
+    let parsed = parse(&body);
+    assert_eq!(parsed[0].fixed_rc.len(), MAX_ENTRIES);
+    assert_eq!(parsed[0].omitted, 3);
+
+    // What the reader's cap left out stays counted whether or not the fixes are shown...
+    assert_eq!(
+        ReleaseNotes::from_sections(parsed.clone(), false).omitted,
+        3
+    );
+    // ...and fixes merged into `fixed` count against the merged cap with the rest.
+    let flood = ReleaseNotes::from_sections(
+        (0..4).map(|n| section_with_rc_fixes(&n.to_string(), &[], &["y"; MAX_ENTRIES])),
+        true,
+    );
+    assert_eq!(flood.fixed.len(), MAX_NOTES);
+    assert_eq!(flood.omitted, 4 * MAX_ENTRIES - MAX_NOTES);
+    let hidden = ReleaseNotes::from_sections(
+        (0..4).map(|n| section_with_rc_fixes(&n.to_string(), &[], &["y"; MAX_ENTRIES])),
+        false,
+    );
+    assert_eq!((hidden.fixed.len(), hidden.omitted), (0, 0));
 }
 
 // MARK: The repository's own files
@@ -295,19 +399,48 @@ fn repo(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
 }
 
-/// One change per line, `new: <text>` or `fixed: <text>`, as `tools/changelog.sh` reads them.
-fn is_change_line(line: &str) -> bool {
+/// The text of a change line, `new: <text>`, `fixed: <text>` or `fixed-rc: <text>`, as
+/// `tools/changelog.sh` reads them; none for any other line.
+fn change_text(line: &str) -> Option<&str> {
     let line = line.trim_end();
-    ["new: ", "fixed: "].iter().any(|prefix| {
-        line.strip_prefix(prefix)
-            .is_some_and(|text| !text.starts_with(char::is_whitespace))
-    })
+    ["new: ", "fixed: ", "fixed-rc: "]
+        .iter()
+        .find_map(|prefix| line.strip_prefix(prefix))
+        .filter(|text| !text.starts_with(char::is_whitespace))
+}
+
+/// What is wrong with `fragments` (file name, text), as `file:line: problem`: a line that is not a
+/// change, and a change whose text an earlier line already gave, whichever prefix it has.
+fn fragment_problems<'a>(fragments: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
+    let mut problems = Vec::new();
+    let mut first_seen: HashMap<&str, String> = HashMap::new();
+    for (name, text) in fragments {
+        for (index, line) in text.lines().enumerate() {
+            let at = format!("changes/{name}:{}", index + 1);
+            if line.trim().is_empty() {
+                continue;
+            }
+            let Some(change) = change_text(line) else {
+                problems.push(format!(
+                    "{at}: expected `new: <text>`, `fixed: <text>` or `fixed-rc: <text>`"
+                ));
+                continue;
+            };
+            if let Some(earlier) = first_seen.get(change) {
+                problems.push(format!("{at}: the same change as {earlier}"));
+            } else {
+                first_seen.insert(change, at);
+            }
+        }
+    }
+    problems
 }
 
 #[test]
 fn every_pending_fragment_follows_the_format() {
     let dir = repo("changes");
     let mut problems = Vec::new();
+    let mut fragments = Vec::new();
     for entry in std::fs::read_dir(&dir).expect("changes/ exists") {
         let path = entry.expect("readable entry").path();
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
@@ -328,16 +461,68 @@ fn every_pending_fragment_follows_the_format() {
             continue;
         }
         let text = std::fs::read_to_string(&path).expect("readable fragment");
-        for (index, line) in text.lines().enumerate() {
-            if !line.trim().is_empty() && !is_change_line(line) {
-                problems.push(format!(
-                    "changes/{name}:{}: expected `new: <text>` or `fixed: <text>`",
-                    index + 1
-                ));
-            }
-        }
+        fragments.push((name, text));
     }
+    // Name order, as the script reads them, so a duplicate names the same two lines.
+    fragments.sort();
+    problems.extend(fragment_problems(
+        fragments
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str())),
+    ));
     assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+#[test]
+fn a_fragment_line_is_a_new_fixed_or_fixed_in_candidates_change() {
+    for line in ["new: A.", "fixed: B.", "fixed-rc: C.", "fixed-rc: C.  \r"] {
+        assert!(change_text(line).is_some(), "{line}");
+    }
+    for line in [
+        "new:A.",
+        "new:  A.",
+        "fixed-rc:C.",
+        "fixed-rc A.",
+        "rc: A.",
+        "- new: A.",
+        "fixed-rc:  A.",
+        "New: A.",
+    ] {
+        assert!(change_text(line).is_none(), "{line}");
+    }
+}
+
+#[test]
+fn the_same_change_twice_is_refused_naming_both_lines() {
+    let clean = fragment_problems([
+        ("one", "new: A.\n\nfixed: B.\n"),
+        ("two", "fixed-rc: C.\nfixed: D.\n"),
+    ]);
+    assert!(clean.is_empty(), "{clean:?}");
+
+    let repeated = fragment_problems([
+        ("one", "new: Same words.\nfixed: B.\n"),
+        ("two", "fixed: Other.\nfixed-rc: Same words.\n"),
+        ("three", "new: B.\n"),
+    ]);
+    assert_eq!(
+        repeated,
+        [
+            "changes/two:2: the same change as changes/one:1",
+            "changes/three:1: the same change as changes/one:2",
+        ]
+    );
+
+    let within = fragment_problems([("one", "fixed: A.\nfixed: A.\n")]);
+    assert_eq!(within, ["changes/one:2: the same change as changes/one:1"]);
+}
+
+#[test]
+fn a_line_that_is_not_a_change_is_refused_with_its_place() {
+    let problems = fragment_problems([("one", "new: A.\n- bullet\n\nfixed:B.\n")]);
+    assert_eq!(problems.len(), 2);
+    assert!(problems[0].starts_with("changes/one:2: expected"));
+    assert!(problems[1].starts_with("changes/one:4: expected"));
 }
 
 #[test]
@@ -370,7 +555,10 @@ fn the_changelog_is_made_of_sections_the_app_can_read() {
             );
             sections += 1;
             subheading = None;
-        } else if line == "### New" || line == "### Fixed" {
+        } else if matches!(
+            line,
+            "### New" | "### Fixed" | "### Fixed in release candidates"
+        ) {
             assert!(sections > 0 && subheading != Some(line), "{}", at());
             subheading = Some(line);
         } else if let Some(entry) = line.strip_prefix("- ") {

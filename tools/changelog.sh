@@ -7,11 +7,15 @@
 #   tools/changelog.sh render <version> <date>   print the section the fragments make
 #   tools/changelog.sh insert <version> <date>   write that section at the top of CHANGELOG.md
 #   tools/changelog.sh notes <tag> [<prev-tag>]  print the sections of CHANGELOG.md for versions
-#                                                after <prev-tag> up to and including <tag>
+#                                                after <prev-tag> up to and including <tag>; a
+#                                                stable <tag> leaves out the `### Fixed in release
+#                                                candidates` subsections
 #
-# A fragment is changes/<slug>.md holding one change per line, `new: <text>` or `fixed: <text>`;
-# changes/README.md says how to write one. The app reads the `## <version>` / `### New` /
-# `### Fixed` shape of the release notes (model::changelog), so keep it when changing `render`.
+# A fragment is changes/<slug>.md holding one change per line, `new: <text>`, `fixed: <text>` or
+# `fixed-rc: <text>` (a bug that only release candidates had); changes/README.md says how to write
+# one. The same change text twice, in one fragment or two, is refused. The app reads the
+# `## <version>` / `### New` / `### Fixed` / `### Fixed in release candidates` shape of the release
+# notes (model::changelog), so keep it when changing `render`.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -57,12 +61,22 @@ render() {
     fi
     # shellcheck disable=SC2086 # `files` holds checked slug names, no spaces.
     awk -v heading="$heading" '
+        # Remember where a change text first appeared; a second appearance is a duplicate entry.
+        function seen(text) {
+            if (text in where) {
+                printf "error: %s:%d: the same change as %s\n", FILENAME, FNR, where[text] > "/dev/stderr"
+                failed = 1
+            } else {
+                where[text] = FILENAME ":" FNR
+            }
+        }
         { sub(/\r$/, ""); sub(/[ \t]+$/, "") }
         /^$/ { next }
-        /^new: [^ \t]/ { new[++news] = substr($0, 6); next }
-        /^fixed: [^ \t]/ { fixed[++fixes] = substr($0, 8); next }
+        /^new: [^ \t]/ { seen(substr($0, 6)); new[++news] = substr($0, 6); next }
+        /^fixed: [^ \t]/ { seen(substr($0, 8)); fixed[++fixes] = substr($0, 8); next }
+        /^fixed-rc: [^ \t]/ { seen(substr($0, 11)); fixedrc[++rcfixes] = substr($0, 11); next }
         {
-            printf "error: %s:%d: expected `new: <text>` or `fixed: <text>`\n", FILENAME, FNR > "/dev/stderr"
+            printf "error: %s:%d: expected `new: <text>`, `fixed: <text>` or `fixed-rc: <text>`\n", FILENAME, FNR > "/dev/stderr"
             failed = 1
         }
         END {
@@ -79,6 +93,12 @@ render() {
                 print "### Fixed"
                 print ""
                 for (i = 1; i <= fixes; i++) print "- " fixed[i]
+            }
+            if (rcfixes) {
+                print ""
+                print "### Fixed in release candidates"
+                print ""
+                for (i = 1; i <= rcfixes; i++) print "- " fixedrc[i]
             }
         }
     ' $files
@@ -156,9 +176,15 @@ case "$command" in
             previous=$version
         fi
         [ -f "$changelog" ] || exit 0
+        # Bugs that only release candidates had mean nothing to someone coming from a stable
+        # release, so a stable tag's notes leave their subsections out; a candidate's keep them.
+        stable=1
+        case "${tag_version%%+*}" in
+            *-*) stable=0 ;;
+        esac
         # From the tag's heading down to, not including, the previous release's heading (or the end
         # when the previous release has none); nothing when the tag has no section.
-        awk -v tag="$tag_version" -v previous="$previous" '
+        awk -v tag="$tag_version" -v previous="$previous" -v stable="$stable" '
             { sub(/\r$/, "") }
             /^## / {
                 token = $2
@@ -166,6 +192,11 @@ case "$command" in
                 if (token == tag) active = 1
                 else if (active && previous != "" && token == previous) active = 0
                 else if (!active) next
+            }
+            active && stable {
+                if (tolower($0) ~ /^### +fixed in release candidates[ \t]*$/) { skipping = 1; next }
+                if (skipping && /^#/) skipping = 0
+                if (skipping) next
             }
             active {
                 if ($0 == "") { blanks++; next }

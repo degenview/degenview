@@ -11,11 +11,16 @@
 //! ### Fixed
 //!
 //! - Another one.
+//!
+//! ### Fixed in release candidates
+//!
+//! - A bug only the candidates had.
 //! ```
 //!
 //! The text comes from a GitHub release body, so it is bounded and never trusted to be well formed:
-//! anything that is not a version heading, a `New`/`Fixed` subheading or a bullet under one is
-//! ignored, which is why the commit-list bodies of older releases yield nothing.
+//! anything that is not a version heading, a `New`/`Fixed`/`Fixed in release candidates` subheading
+//! or a bullet under one is ignored, which is why the commit-list bodies of older releases yield
+//! nothing.
 
 #[cfg(test)]
 mod tests;
@@ -24,7 +29,7 @@ mod tests;
 const MAX_BODY_BYTES: usize = 64 * 1024;
 /// The most sections one body yields.
 const MAX_SECTIONS: usize = 64;
-/// The most entries one section keeps in each of its two lists.
+/// The most entries one section keeps in each of its three lists.
 pub const MAX_ENTRIES: usize = 100;
 /// The longest entry kept, in characters; a longer one is cut with an ellipsis.
 const MAX_ENTRY_CHARS: usize = 400;
@@ -38,6 +43,9 @@ pub struct Section {
     pub version: String,
     pub new: Vec<String>,
     pub fixed: Vec<String>,
+    /// Fixes for bugs that only release candidates had, kept apart so a person updating from a
+    /// stable release (who never had them) is not shown them.
+    pub fixed_rc: Vec<String>,
     /// Entries the reader's caps left out. A section past `MAX_SECTIONS` has no place of its own, so
     /// its entries are counted here, in the last section kept.
     pub omitted: usize,
@@ -55,11 +63,21 @@ pub struct ReleaseNotes {
 impl ReleaseNotes {
     /// `sections` in the order they are to read: the lists are concatenated, `MAX_NOTES` entries at
     /// most each, and what the sections and this cap leave out is counted.
-    pub fn from_sections(sections: impl IntoIterator<Item = Section>) -> Self {
+    ///
+    /// With `include_rc_fixes` a section's release-candidate fixes follow its own fixes in `fixed`
+    /// (a person running a candidate may have had those bugs). Without it they are dropped and not
+    /// counted as omitted: they are not part of what this reader is told about.
+    pub fn from_sections(
+        sections: impl IntoIterator<Item = Section>,
+        include_rc_fixes: bool,
+    ) -> Self {
         let mut notes = Self::default();
         for section in sections {
             notes.new.extend(section.new);
             notes.fixed.extend(section.fixed);
+            if include_rc_fixes {
+                notes.fixed.extend(section.fixed_rc);
+            }
             notes.omitted = notes.omitted.saturating_add(section.omitted);
         }
         for list in [&mut notes.new, &mut notes.fixed] {
@@ -80,6 +98,7 @@ impl ReleaseNotes {
 enum Category {
     New,
     Fixed,
+    FixedInCandidates,
 }
 
 /// The sections of `text`, in the order they appear. A `## ` heading whose first word is a version
@@ -140,6 +159,7 @@ pub fn parse(text: &str) -> Vec<Section> {
         let list = match category {
             Category::New => &mut section.new,
             Category::Fixed => &mut section.fixed,
+            Category::FixedInCandidates => &mut section.fixed_rc,
         };
         if open && list.len() < MAX_ENTRIES {
             list.push(entry);
@@ -194,6 +214,8 @@ fn category_of(title: &str) -> Option<Category> {
         Some(Category::New)
     } else if title.eq_ignore_ascii_case("fixed") {
         Some(Category::Fixed)
+    } else if title.eq_ignore_ascii_case("fixed in release candidates") {
+        Some(Category::FixedInCandidates)
     } else {
         None
     }

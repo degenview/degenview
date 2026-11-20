@@ -75,31 +75,46 @@ version. Re-run a failed tagged build through the Release workflow dispatch.
 What a person using the app notices, per release, in plain words. Three stages, one format.
 
 1. **Fragments.** A pull request with a user-visible change adds `changes/<short-slug>.md`: one change
-   per line, `new: <text>` or `fixed: <text>`, nothing else (`changes/README.md` has the tone and
-   examples). Many parallel pull requests each add their own file, so none conflict. Internal-only
-   work (refactors, tests, CI, docs) adds none.
+   per line, `new: <text>`, `fixed: <text>` or `fixed-rc: <text>`, nothing else (`changes/README.md`
+   has the rules, tone and examples). Many parallel pull requests each add their own file, so none
+   conflict. Small tweaks (polish, moved or renamed buttons, copy) and internal-only work
+   (refactors, tests, CI, docs) add none. One change is one line: a stack of pull requests building
+   a feature adds it once, a follow-up to something unreleased edits that line instead of adding
+   one. `fixed:` is for a bug that reached a stable release; `fixed-rc:` for one that only ever
+   shipped in release candidates. `tools/changelog.sh check` (and `cargo test`) also refuse the same
+   change text on two lines, naming both `file:line`s.
 2. **`CHANGELOG.md`**, newest first. `tools/release.sh` renders the fragments into a new section
    (`tools/changelog.sh render|insert`), deletes them and commits both with the version bump in the
    release pull request. `--dry-run` prints the section; a malformed fragment fails with
    `file:line` before anything is touched. A release with no fragments still gets its heading.
-   Never edit old sections by hand beyond fixing wording before the release.
+   `fixed-rc:` lines render under `### Fixed in release candidates`, after `### Fixed`, and the
+   subsection is left out when empty. Run `tools/release.sh <v> --dry-run` before cutting a release
+   and merge or reword the fragments in a normal pull request first. Never edit old sections by
+   hand beyond fixing wording before the release.
 3. **The release body** (`release.yml`, "Generate release notes"): `tools/changelog.sh notes <tag>
    <prev>` copies the sections after the previous release (stable: after the previous stable, so
    `0.6.0` carries every `0.6.0-rc.N` section; release candidate: after the previous tag) verbatim
    with no wrapper heading, then the commit list folded in `<details><summary>All commits</summary>`,
-   the Full diff line and the Downloads table. A tag with no section writes only the rest. Releases
-   before the changelog existed keep their commit-list bodies.
+   the Full diff line and the Downloads table. A tag with no section writes only the rest. For a
+   stable tag the `### Fixed in release candidates` subsections (the aggregate's and the candidates'
+   own) are dropped, since a reader coming from a stable release never had those bugs; a candidate's
+   notes keep them. Releases before the changelog existed keep their commit-list bodies.
 
 The shape is a contract with the app. `model::changelog::parse` reads release bodies for the update
-sheet: a `## <version> ...` heading (optional `v`) opens a section, `### New` / `### Fixed` set the
-list, `- ` bullets are the entries; any other `#`/`##` heading ends the section (so `## Downloads`
-and the old `## Changes since ...` commit-log bodies yield nothing) and `<details>` blocks are
-skipped. Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks the sheet.
-`cargo test` checks the fragments and `CHANGELOG.md` against the same rules, so CI catches a
-malformed one. Input is bounded (64 KiB body, 64 sections, 100 entries per list per section, 400
-characters per entry, 300 entries per merged list). Not verified: a real release body produced by
-the workflow, and the sheet against a live GitHub reply; both wait for the first release cut with
-fragments.
+sheet: a `## <version> ...` heading (optional `v`) opens a section, `### New` / `### Fixed` /
+`### Fixed in release candidates` set the list (the last is `Section::fixed_rc`), `- ` bullets are
+the entries; any other `#`/`##` heading ends the section (so `## Downloads` and the old
+`## Changes since ...` commit-log bodies yield nothing) and `<details>` blocks are skipped.
+`notes_between` builds the sheet's lists with `ReleaseNotes::from_sections(sections,
+include_rc_fixes)`, passing true only when the running version is a prerelease: then the candidate
+fixes follow each section's own fixes in the sheet's Fixed list; otherwise they are dropped and not
+counted as omitted, so a person updating from a stable version never sees them, whatever the
+release body holds. Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks
+the sheet. `cargo test` checks the fragments and `CHANGELOG.md` against the same rules, so CI
+catches a malformed one. Input is bounded (64 KiB body, 64 sections, 100 entries per list per
+section, 400 characters per entry, 300 entries per merged list). Not verified: a real release body
+produced by the workflow, and the sheet against a live GitHub reply; both wait for the first
+release cut with fragments.
 
 ## Trust and packaging
 

@@ -326,7 +326,8 @@ fn offer(release: ReleaseDto, notes: ReleaseNotes) -> Release {
 /// The changes after `running` up to and including `offered`, newest version first, read from the
 /// notes of the releases listed. A release candidate's section is repeated in the stable release
 /// that follows it; the copy from the release carrying that version is the one kept. A channel does
-/// not limit this: a stable user going from 0.5.1 to 0.6.0 sees the candidates' changes too.
+/// not limit this: a stable user going from 0.5.1 to 0.6.0 sees the candidates' changes too, except
+/// the fixes for bugs only candidates had, which are listed only to someone running a candidate.
 fn notes_between(releases: &[ReleaseDto], running: &Version, offered: &Version) -> ReleaseNotes {
     // Version, then whether the section came from the release of that very version.
     let mut found: BTreeMap<Version, (bool, Section)> = BTreeMap::new();
@@ -352,7 +353,10 @@ fn notes_between(releases: &[ReleaseDto], running: &Version, offered: &Version) 
             }
         }
     }
-    ReleaseNotes::from_sections(found.into_values().rev().map(|(_, section)| section))
+    ReleaseNotes::from_sections(
+        found.into_values().rev().map(|(_, section)| section),
+        running.prerelease.is_some(),
+    )
 }
 
 /// `major.minor.patch` with an optional `v` prefix and an optional `-prerelease`/`+build` tail,
@@ -1075,6 +1079,64 @@ mod tests {
         ];
         let release = available(eval(&reversed, "0.5.1", Channel::Stable));
         assert_eq!(release.notes.new, ["Final.", "Two.", "One."]);
+    }
+
+    /// `body` followed by a "Fixed in release candidates" list.
+    fn with_rc_fixes(body: String, lines: &[&str]) -> String {
+        let mut text = format!("{body}\n### Fixed in release candidates\n\n");
+        for line in lines {
+            text.push_str(&format!("- {line}\n"));
+        }
+        text
+    }
+
+    #[test]
+    fn fixes_for_bugs_only_candidates_had_are_hidden_from_a_stable_version() {
+        let candidate_two = with_rc_fixes(
+            changes("0.6.0-rc.2", &["Two."], &["Fix two."]),
+            &["Candidate fix two."],
+        );
+        let candidate_one = with_rc_fixes(
+            changes("0.6.0-rc.1", &["One."], &[]),
+            &["Candidate fix one."],
+        );
+        // The stable aggregate may repeat the candidates' sections with their lists; the app drops
+        // them either way.
+        let stable = [
+            with_rc_fixes(changes("0.6.0", &["Final."], &["Fix final."]), &["Late."]),
+            candidate_two.clone(),
+            candidate_one.clone(),
+        ]
+        .join("\n");
+        let releases = [
+            release_noted("v0.6.0", &stable),
+            release_noted("v0.6.0-rc.2", &candidate_two),
+            release_noted("v0.6.0-rc.1", &candidate_one),
+            release_noted("v0.5.1", ""),
+        ];
+        let release = available(eval(&releases, "0.5.1", Channel::Stable));
+        assert_eq!(release.notes.new, ["Final.", "Two.", "One."]);
+        assert_eq!(release.notes.fixed, ["Fix final.", "Fix two."]);
+        assert_eq!(release.notes.omitted, 0, "hidden fixes are not 'more'");
+        // Someone on a candidate, in either channel, is shown them: they may have hit them.
+        for channel in [Channel::ReleaseCandidate, Channel::Stable] {
+            let release = available(eval(&releases, "0.6.0-rc.1", channel));
+            assert_eq!(release.version, "0.6.0");
+            assert_eq!(
+                release.notes.fixed,
+                ["Fix final.", "Late.", "Fix two.", "Candidate fix two."]
+            );
+        }
+        // Offered a candidate only, a stable version still does not see them.
+        let release = available(eval(&releases[1..], "0.5.1", Channel::ReleaseCandidate));
+        assert_eq!(release.version, "0.6.0-rc.2");
+        assert_eq!(release.notes.fixed, ["Fix two."]);
+        let release = available(eval(
+            &releases[1..],
+            "0.6.0-rc.1",
+            Channel::ReleaseCandidate,
+        ));
+        assert_eq!(release.notes.fixed, ["Fix two.", "Candidate fix two."]);
     }
 
     #[test]

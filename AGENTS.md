@@ -69,9 +69,13 @@ Details: [UI style](docs/agent-guides/ui-style.md).
 
 ## Changelog
 
-A pull request with a change a person using the app would notice adds `changes/<short-slug>.md`:
-one line per change, `new: ...` or `fixed: ...`, in plain words, what the user sees. Refactors,
-tests, CI and docs get none. `tools/release.sh` assembles `CHANGELOG.md` from the fragments; never
+A pull request with a change a person using the app would notice and care about adds
+`changes/<short-slug>.md`: one line per change, `new: ...`, `fixed: ...` or `fixed-rc: ...` (a bug
+only release candidates had; hidden from stable updates), in plain words, what the user sees. Small
+tweaks (spacing, colours, moved or renamed buttons, copy), refactors, tests, CI and docs get none.
+One change, one fragment: look in `changes/` first and edit an existing line for the same change;
+follow-ups to an unreleased change add nothing. `tools/release.sh <v> --dry-run` shows the section
+to review before a release. `tools/release.sh` assembles `CHANGELOG.md` from the fragments; never
 edit its sections by hand except to fix wording before a release. The update sheet and the release
 notes read that shape. Details: [Releases and updates](docs/agent-guides/releases-updates.md#release-notes-and-the-changelog)
 and `changes/README.md`.
