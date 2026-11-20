@@ -3,6 +3,7 @@
 
 use super::{PreviewMarket, PreviewState};
 use crate::model::DataSource;
+use crate::model::market::profile::Class;
 use crate::service::keychain::api_keys::alpaca_configured;
 use crate::service::work_queue::{self, PendingAll};
 use crate::service::{self, SearchResult};
@@ -20,19 +21,6 @@ use eframe::egui::{
 use std::time::{Duration, Instant};
 
 const SEARCH_DELAY: Duration = Duration::from_millis(300);
-
-/// The crypto sources the picker searches, in order.
-const CRYPTO_SOURCES: [DataSource; 9] = [
-    DataSource::Binance,
-    DataSource::Coinbase,
-    DataSource::Okx,
-    DataSource::Kraken,
-    DataSource::Bybit,
-    DataSource::Gate,
-    DataSource::Mexc,
-    DataSource::CoinGecko,
-    DataSource::DexScreener,
-];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AssetType {
@@ -56,7 +44,7 @@ pub(super) struct Picker {
 impl Picker {
     fn new(current: &PreviewMarket) -> Self {
         Self {
-            asset: if current.source == DataSource::Alpaca {
+            asset: if current.source.profile().class == Class::Stock {
                 AssetType::Stock
             } else {
                 AssetType::Crypto
@@ -177,7 +165,9 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
     let recents: Vec<PreviewMarket> = preview
         .recents
         .iter()
-        .filter(|m| (m.source == DataSource::Alpaca) == (picker.asset == AssetType::Stock))
+        .filter(|m| {
+            (m.source.profile().class == Class::Stock) == (picker.asset == AssetType::Stock)
+        })
         .cloned()
         .collect();
     let query_empty = picker.text().trim().is_empty();
@@ -508,8 +498,8 @@ fn drive_search(picker: &mut Picker, ctx: &egui::Context) {
         return;
     }
     let sources: Vec<DataSource> = match picker.asset {
-        AssetType::Crypto => CRYPTO_SOURCES.to_vec(),
-        AssetType::Stock => vec![DataSource::Alpaca],
+        AssetType::Crypto => DataSource::crypto_markets().collect(),
+        AssetType::Stock => DataSource::stock_markets().collect(),
     };
     let searches = sources.into_iter().map(|source| {
         let query = query.clone();

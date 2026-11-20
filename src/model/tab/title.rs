@@ -246,7 +246,8 @@ pub fn tooltip(chart: &TabChart, quote: Option<&WatchlistQuote>, timeframe: &str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::watchlist::quote::{ChangeBasis, SourceQuote};
+    use crate::model::market::profile::ChangeBasis;
+    use crate::model::watchlist::quote::SourceQuote;
 
     fn chart() -> TabChart {
         TabChart {

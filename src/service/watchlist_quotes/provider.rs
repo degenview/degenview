@@ -55,25 +55,6 @@ pub trait QuoteProvider: Send + Sync {
     fn resolve_chain(&self, address: &str) -> Option<String>;
 }
 
-/// The most symbols one request carries, per source.
-pub fn chunk_size(source: DataSource) -> usize {
-    match source {
-        DataSource::Binance => 100,
-        DataSource::Alpaca => 200,
-        DataSource::CoinGecko => 250,
-        DataSource::Coinbase => 20,
-        // One call answers every spot market, so a round is one request however many rows.
-        DataSource::Okx => 2_000,
-        DataSource::Kraken => 100,
-        // One call answers every spot market, so a round is one request however many rows.
-        DataSource::Bybit => 2_000,
-        DataSource::Gate => 2_500,
-        DataSource::Mexc => 2_500,
-        DataSource::DexScreener => 30,
-        _ => 100,
-    }
-}
-
 // MARK: Live provider
 
 pub struct LiveProvider;
@@ -314,7 +295,7 @@ fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
     let mut outcome = Outcome::default();
     let mut limited = false;
     for (chain, pairs) in by_chain {
-        for page in pairs.chunks(chunk_size(DataSource::DexScreener)) {
+        for page in pairs.chunks(DataSource::DexScreener.profile().quotes.batch) {
             let names: Vec<String> = page.iter().map(|request| request.symbol.clone()).collect();
             if limited {
                 outcome.failed.push((names, QuoteFailure::RateLimited));
@@ -1434,12 +1415,5 @@ mod tests {
                 .contains("Alpaca")
         );
         assert_eq!(QuoteFailure::Failed("x".into()).message(), "x");
-    }
-
-    #[test]
-    fn chunk_sizes_respect_each_providers_limit() {
-        assert_eq!(chunk_size(DataSource::Coinbase), 20);
-        assert_eq!(chunk_size(DataSource::DexScreener), 30);
-        assert_eq!(chunk_size(DataSource::CoinGecko), 250);
     }
 }

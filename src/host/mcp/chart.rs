@@ -12,8 +12,7 @@ use crate::mcp::types::{
     IndicatorsInfo, PineInstanceInfo, WorkspaceInfo,
 };
 use crate::model::{
-    BuiltIn, ChartType, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId,
-    Timeframe,
+    BuiltIn, ChartType, Drawing, DrawingCommand, IndicatorConfig, InstrumentId, Timeframe,
 };
 use crate::workspace::{
     ChartSummary, ChartTypeError, ChartWorkspace, IndicatorError, IndicatorOutcome, RemoveOutcome,
@@ -160,24 +159,6 @@ pub fn describe(command: &ChartCommand, tabs: &impl McpTabs) -> Result<Summary, 
     }
 }
 
-pub fn source_slug(source: DataSource) -> &'static str {
-    match source {
-        DataSource::Binance => "binance",
-        DataSource::Coinbase => "coinbase",
-        DataSource::Okx => "okx",
-        DataSource::Kraken => "kraken",
-        DataSource::Bybit => "bybit",
-        DataSource::Gate => "gateio",
-        DataSource::Mexc => "mexc",
-        DataSource::CoinGecko => "coingecko",
-        DataSource::DexScreener => "dexscreener",
-        DataSource::Alpaca => "alpaca",
-        DataSource::Polymarket => "polymarket",
-        DataSource::Kalshi => "kalshi",
-        DataSource::CoinMarketCap => "coinmarketcap",
-    }
-}
-
 pub fn workspace_info(workspace: &ChartWorkspace, active: bool) -> WorkspaceInfo {
     WorkspaceInfo {
         workspace_id: workspace.id().to_string(),
@@ -200,7 +181,7 @@ fn chart_info(workspace: &ChartWorkspace, chart: ChartSummary) -> ChartInfo {
     ChartInfo {
         chart_id: chart.id.to_string(),
         instrument: chart.instrument.key(),
-        source: source_slug(chart.instrument.source).to_owned(),
+        source: crate::mcp::market::source_id(chart.instrument.source).to_owned(),
         symbol: chart.instrument.symbol.clone(),
         display_symbol: chart.display_symbol,
         timeframe: workspace.timeframe().label(),
@@ -302,7 +283,7 @@ pub fn add_chart(
         workspace_id: workspace.id().to_string(),
         chart_id: outcome.chart_id.to_string(),
         instrument: instrument.key(),
-        source: source_slug(instrument.source).to_owned(),
+        source: crate::mcp::market::source_id(instrument.source).to_owned(),
         symbol: chart.as_ref().map_or_else(
             || instrument.symbol.clone(),
             |chart| chart.instrument.symbol.clone(),

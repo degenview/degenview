@@ -14,9 +14,6 @@ use eframe::egui::{
     self, Color32, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
 
-pub(crate) const PREDICTION_PROVIDERS: [DataSource; 2] =
-    [DataSource::Polymarket, DataSource::Kalshi];
-
 /// Size of a prediction market's artwork beside its title or choice.
 /// The recent markets sit in this many columns, this far apart.
 const RECENT_COLUMNS: f32 = 4.0;
@@ -193,7 +190,7 @@ pub(crate) fn provider_menu(ui: &mut Ui, provider: DataSource) -> Option<DataSou
     let mut picked = None;
     egui::Popup::menu(&response).gap(4.0).show(|ui| {
         ui.set_min_width(150.0);
-        for source in PREDICTION_PROVIDERS {
+        for source in DataSource::prediction_markets() {
             let row = ui
                 .horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;

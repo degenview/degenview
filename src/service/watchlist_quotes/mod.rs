@@ -124,7 +124,9 @@ fn run(
             let mut guard = lock(engine);
             guard.expire_leases(now);
             (
-                DataSource::QUOTE_STREAMS.map(|source| (source, guard.stream_products(source))),
+                DataSource::quote_streams()
+                    .map(|source| (source, guard.stream_products(source)))
+                    .collect::<Vec<_>>(),
                 guard.poll_interval_ms(),
                 guard.has_subscriptions(),
                 guard.lease_aging(now),

@@ -239,7 +239,7 @@ impl From<Vec<Kline>> for LiveCandles {
     }
 }
 
-/// [`fetch_klines`], and for a source in [`DataSource::CANDLE_STREAMS`] that folds `timeframe`
+/// [`fetch_klines`], and for a source whose profile streams candles that folds `timeframe`
 /// from finer candles, one more small request for those candles of the newest bucket (one bucket's
 /// worth, after the folded answer). A failed second request leaves `bars` empty: the candles are
 /// still good.
@@ -252,7 +252,7 @@ pub fn fetch_klines_live(
     let candles = fetch_klines(source, symbol, timeframe, limit)?;
     let bars = source
         .plan(timeframe)
-        .filter(|plan| !plan.is_native() && DataSource::CANDLE_STREAMS.contains(&source))
+        .filter(|plan| !plan.is_native() && source.profile().streams.candles)
         .and_then(|plan| {
             let base = fetch_klines(source, symbol, plan.base(), plan.per_target() as u32).ok()?;
             Some(plan.newest_bucket(&base))

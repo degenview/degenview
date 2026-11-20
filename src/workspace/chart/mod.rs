@@ -15,6 +15,7 @@ use crate::model::drawings::market::MarketDrawings;
 use crate::model::market;
 use crate::model::market::history::OlderHistory;
 use crate::model::market::live::{LiveFold, LiveMark};
+use crate::model::market::profile::Class;
 use crate::model::overlay::OverlayList;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
@@ -193,20 +194,12 @@ impl Chart {
     /// or for a DEX pair (whose id is an address) its base token. Nothing for a market the picker
     /// does not list.
     pub(super) fn picker_query(&self) -> String {
-        match self.source {
-            DataSource::Binance
-            | DataSource::Coinbase
-            | DataSource::Okx
-            | DataSource::Kraken
-            | DataSource::Bybit
-            | DataSource::Gate
-            | DataSource::Mexc
-            | DataSource::CoinGecko
-            | DataSource::Alpaca => self.source.display_symbol(&self.symbol),
-            DataSource::DexScreener => self.source.base_asset(&self.display_title()),
-            DataSource::Polymarket | DataSource::Kalshi | DataSource::CoinMarketCap => {
-                String::new()
+        match self.source.profile().class {
+            Class::Exchange | Class::Aggregator | Class::Stock => {
+                self.source.display_symbol(&self.symbol)
             }
+            Class::Dex => self.source.base_asset(&self.display_title()),
+            Class::Prediction | Class::Index => String::new(),
         }
     }
 

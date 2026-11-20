@@ -14,6 +14,7 @@
 //! TradingView compatibility is best effort: exchange prefixes DegenView has no
 //! provider for are reported as skipped, never guessed at.
 
+use crate::model::market::profile::{Class, PairStyle};
 use crate::model::market::venue::{self, VenueQuery};
 use crate::model::watchlist::{
     MAX_NAME_CHARS, Watchlist, WatchlistEntry, WatchlistError, WatchlistInstrument,
@@ -249,8 +250,9 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
         return Err(format!("Unsupported exchange {prefix}"));
     };
 
-    match source {
-        DataSource::Binance | DataSource::Bybit | DataSource::Mexc => {
+    let profile = source.profile();
+    match (&profile.pair, profile.class) {
+        (PairStyle::Concat(_), _) => {
             let symbol = rest.to_uppercase();
             if !(3..=20).contains(&symbol.len()) || !symbol.chars().all(is_upper_alphanumeric) {
                 return Err(format!(
@@ -260,48 +262,32 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
             }
             Ok(item(source, &symbol, &symbol, &symbol))
         }
-        DataSource::Coinbase | DataSource::Okx => {
+        (PairStyle::Separated(style), _) => {
+            let separator = style.separator;
             let symbol = rest.to_uppercase();
-            let valid = symbol.split_once('-').is_some_and(|(base, quote)| {
+            let valid = symbol.split_once(separator).is_some_and(|(base, quote)| {
                 [base, quote]
                     .iter()
                     .all(|part| !part.is_empty() && part.chars().all(is_upper_alphanumeric))
             });
             if !valid {
-                return Err(match source {
-                    DataSource::Okx => "OKX spot markets are written BASE-QUOTE, like BTC-USDT",
-                    _ => "Coinbase products are written BASE-QUOTE, like BTC-USD",
-                }
-                .to_owned());
+                return Err(format!(
+                    "{} {} are written BASE{separator}QUOTE, like BTC{separator}{}",
+                    source.display_name(),
+                    style.noun,
+                    profile.home_quote.unwrap_or("USD")
+                ));
             }
-            Ok(item(source, &symbol, &symbol.replace('-', "/"), &symbol))
+            let symbol = InstrumentId::new(source, symbol).api_symbol();
+            Ok(item(
+                source,
+                &symbol,
+                &symbol.replace(separator, "/"),
+                &symbol,
+            ))
         }
-        DataSource::Gate => {
-            let symbol = rest.to_uppercase();
-            let valid = symbol.split_once('_').is_some_and(|(base, quote)| {
-                [base, quote]
-                    .iter()
-                    .all(|part| !part.is_empty() && part.chars().all(is_upper_alphanumeric))
-            });
-            if !valid {
-                return Err("Gate.io markets are written BASE_QUOTE, like BTC_USDT".to_owned());
-            }
-            Ok(item(source, &symbol, &symbol.replace('_', "/"), &symbol))
-        }
-        DataSource::Kraken => {
-            let valid = rest.split_once('/').is_some_and(|(base, quote)| {
-                [base, quote]
-                    .iter()
-                    .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric()))
-            });
-            if !valid {
-                return Err("Kraken markets are written BASE/QUOTE, like BTC/USD".to_owned());
-            }
-            let symbol = InstrumentId::new(source, rest.as_str()).api_symbol();
-            Ok(item(source, &symbol, &symbol, &symbol))
-        }
-        DataSource::Alpaca => stock(&rest),
-        DataSource::CoinGecko => {
+        (PairStyle::None, Class::Stock) => stock(&rest),
+        (PairStyle::None, Class::Aggregator) => {
             let id = rest.to_lowercase();
             let name = id
                 .split('-')
@@ -311,7 +297,7 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
                 .join(" ");
             Ok(item(source, &id, &name, &id.to_uppercase()))
         }
-        DataSource::DexScreener => {
+        (PairStyle::None, Class::Dex) => {
             // `chain/address`: the address alone is the identity; the chain is looked up.
             let address = match rest.split_once('/') {
                 Some((chain, address))
@@ -327,7 +313,7 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
             };
             Ok(item(source, &address, &address, &address))
         }
-        DataSource::Polymarket | DataSource::Kalshi => {
+        (PairStyle::None, Class::Prediction) => {
             let Some(title) = title else {
                 return Err(
                     "Prediction markets need a title after |; add them from search instead"
@@ -342,7 +328,14 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
             found.display_name = Some(title);
             Ok(found)
         }
-        DataSource::CoinMarketCap => Err("CoinMarketCap index charts aren't markets".to_owned()),
+        (PairStyle::None, Class::Index) => Err(format!(
+            "{} index charts aren't markets",
+            source.display_name()
+        )),
+        (PairStyle::None, Class::Exchange) => Err(format!(
+            "{} markets can't be imported",
+            source.display_name()
+        )),
     }
 }
 

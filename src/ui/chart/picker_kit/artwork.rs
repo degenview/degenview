@@ -22,19 +22,7 @@ pub(in crate::ui) fn ticker_icon(
 }
 
 fn supports_ticker_icon_lookup(source: DataSource) -> bool {
-    matches!(
-        source,
-        DataSource::Binance
-            | DataSource::Coinbase
-            | DataSource::Okx
-            | DataSource::Kraken
-            | DataSource::Bybit
-            | DataSource::Gate
-            | DataSource::Mexc
-            | DataSource::CoinGecko
-            | DataSource::DexScreener
-            | DataSource::Alpaca
-    )
+    source.profile().class.is_symbol_market()
 }
 
 /// A hue-seeded circle with the symbol's first two letters, a touch larger than the kit's.
@@ -72,18 +60,10 @@ pub(crate) fn result_icon(ui: &Ui, rect: Rect, result: &SearchResult) {
         return;
     }
     let base = base_symbol(result);
-    match result.source {
-        DataSource::Binance
-        | DataSource::Coinbase
-        | DataSource::Okx
-        | DataSource::Kraken
-        | DataSource::Bybit
-        | DataSource::Gate
-        | DataSource::Mexc
-        | DataSource::CoinGecko => {
-            ticker_icon(ui, rect, &base, DataSource::Binance, &format!("{base}USDT"));
-        }
-        source => ticker_icon(ui, rect, &base, source, &result.full_symbol),
+    if result.source.profile().class.has_coin_artwork() {
+        ticker_icon(ui, rect, &base, DataSource::Binance, &format!("{base}USDT"));
+    } else {
+        ticker_icon(ui, rect, &base, result.source, &result.full_symbol);
     }
 }
 
