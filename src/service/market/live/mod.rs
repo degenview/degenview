@@ -6,13 +6,6 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-mod binance;
-mod bybit;
-mod gateio;
-mod kraken;
-mod mexc;
-mod okx;
-
 /// The most bars the inbox keeps. A feed nobody reads for days (a background tab, a hidden
 /// window) still sees one new bar per symbol per interval, so this is only a backstop.
 const INBOX_CAPACITY: usize = 4096;
@@ -76,28 +69,40 @@ impl LiveFeed {
     ) -> Option<Self> {
         let (sessions, parse): (Vec<Session>, Parser) = match source {
             DataSource::Binance => (
-                vec![binance::session(&symbols, base)],
-                text_parser(binance::parse_kline),
+                vec![crate::service::market::binance::live::session(
+                    &symbols, base,
+                )],
+                text_parser(crate::service::market::binance::live::parse_kline),
             ),
             DataSource::Okx => (
-                vec![okx::session(&symbols, base)?],
-                text_parser(move |text| okx::parse_kline(text, base)),
+                vec![crate::service::market::okx::live::session(&symbols, base)?],
+                text_parser(move |text| crate::service::market::okx::live::parse_kline(text, base)),
             ),
             DataSource::Kraken => (
-                vec![kraken::session(&symbols, base)?],
-                text_parser(move |text| kraken::parse_kline(text, base)),
+                vec![crate::service::market::kraken::live::session(
+                    &symbols, base,
+                )?],
+                text_parser(move |text| {
+                    crate::service::market::kraken::live::parse_kline(text, base)
+                }),
             ),
             DataSource::Bybit => (
-                vec![bybit::session(&symbols, base)?],
-                text_parser(bybit::parse_kline),
+                vec![crate::service::market::bybit::live::session(
+                    &symbols, base,
+                )?],
+                text_parser(crate::service::market::bybit::live::parse_kline),
             ),
             DataSource::Gate => (
-                vec![gateio::session(&symbols, base)?],
-                text_parser(move |text| gateio::parse_kline(text, base)),
+                vec![crate::service::market::gateio::live::session(
+                    &symbols, base,
+                )?],
+                text_parser(move |text| {
+                    crate::service::market::gateio::live::parse_kline(text, base)
+                }),
             ),
             DataSource::Mexc => (
-                mexc::sessions(&symbols, base)?,
-                Arc::new(move |frame| mexc::parse_kline(frame, base)),
+                crate::service::market::mexc::live::sessions(&symbols, base)?,
+                Arc::new(move |frame| crate::service::market::mexc::live::parse_kline(frame, base)),
             ),
             _ => return None,
         };

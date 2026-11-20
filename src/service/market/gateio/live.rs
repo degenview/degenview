@@ -2,9 +2,9 @@
 //! and one market, and one market it does not know refuses its request, so each market is its own
 //! request. The socket is kept alive with protocol pings, which the server answers.
 
+use super::{interval, pair_id};
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{Kline, Timeframe};
-use crate::service::market::gateio::{interval, pair_id};
 use crate::service::net::ws::{Keepalive, Session};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -12,7 +12,7 @@ use std::time::Duration;
 const HOST: &str = "api.gateio.ws";
 
 /// `None` when Gate.io has no interval of `base`.
-pub(super) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
+pub(in crate::service) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
     let interval = interval(base)?;
     let subscribe = symbols
         .iter()
@@ -41,7 +41,7 @@ pub(super) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
 /// "c":"64955.5","h":"64961.7","l":"64955.5","o":"64958.3","n":"1m_BTC_USDT","a":"0.102065",
 /// "w":false}}`: `t` is the open in seconds, `v` the quote volume and `a` the base volume, a
 /// running total. Subscription answers, errors and other channels carry no candle.
-pub(super) fn parse_kline(text: &str, base: Timeframe) -> Option<(String, Kline)> {
+pub(in crate::service) fn parse_kline(text: &str, base: Timeframe) -> Option<(String, Kline)> {
     let value: Value = serde_json::from_str(text).ok()?;
     if value.get("channel")?.as_str()? != "spot.candlesticks"
         || value.get("event")?.as_str()? != "update"

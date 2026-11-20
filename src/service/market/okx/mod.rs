@@ -5,6 +5,9 @@
 //! paged back with `/market/history-candles` and an `after` cursor. Failures arrive as HTTP 200
 //! with a `code` other than `"0"`.
 
+pub(in crate::service) mod live;
+pub(in crate::service) mod quotes;
+
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::paging::Paging;

@@ -4,6 +4,9 @@
 //! the end this side of them. Rows are `[open time s, open, high, low, close, vwap, volume,
 //! trades]`, the last one still forming. Failures arrive as HTTP 200 with an `error` list.
 
+pub(in crate::service) mod live;
+pub(in crate::service) mod quotes;
+
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::search_rank::normalize;

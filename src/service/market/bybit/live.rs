@@ -3,8 +3,8 @@
 //! of it, so a market that was delisted would silence its neighbours. The socket is kept alive
 //! with `{"op":"ping"}`.
 
+use super::{KEEPALIVE, interval, symbol_id};
 use crate::model::{Kline, Timeframe};
-use crate::service::market::bybit::{KEEPALIVE, interval, symbol_id};
 use crate::service::net::ws::Session;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -12,7 +12,7 @@ use std::time::Duration;
 const HOST: &str = "stream.bybit.com";
 
 /// `None` when Bybit has no interval of `base`.
-pub(super) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
+pub(in crate::service) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
     let interval = interval(base)?;
     let subscribe = symbols
         .iter()
@@ -36,7 +36,7 @@ pub(super) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
 /// "end":1794913919999,"interval":"1","open":"…","close":"…","high":"…","low":"…","volume":"…",
 /// "turnover":"…","confirm":false}]}`. The volume is the running total of the forming candle.
 /// Subscription replies, pongs and errors carry no candle.
-pub(super) fn parse_kline(text: &str) -> Option<(String, Kline)> {
+pub(in crate::service) fn parse_kline(text: &str) -> Option<(String, Kline)> {
     let value: Value = serde_json::from_str(text).ok()?;
     let symbol = value
         .get("topic")?

@@ -1,12 +1,6 @@
 //! One shared ticker socket per streamed source, for every market a visible watchlist shows of
 //! it. The ticker carries the last trade plus the 24h open and volume, which is all a row needs.
 
-mod bybit;
-mod coinbase;
-mod gateio;
-mod kraken;
-mod okx;
-
 use crate::model::DataSource;
 use crate::model::watchlist::quote::SourceQuote;
 use crate::service::net::ws::Session;
@@ -39,11 +33,26 @@ impl QuoteSocket {
         sender: Sender<StreamTick>,
     ) -> Option<Self> {
         let (session, parse): (Session, Parser) = match source {
-            DataSource::Coinbase => (coinbase::session(&products), coinbase::parse_tick),
-            DataSource::Okx => (okx::session(&products), okx::parse_tick),
-            DataSource::Kraken => (kraken::session(&products), kraken::parse_tick),
-            DataSource::Bybit => (bybit::session(&products), bybit::parse_tick),
-            DataSource::Gate => (gateio::session(&products), gateio::parse_tick),
+            DataSource::Coinbase => (
+                crate::service::market::coinbase::quotes::session(&products),
+                crate::service::market::coinbase::quotes::parse_tick,
+            ),
+            DataSource::Okx => (
+                crate::service::market::okx::quotes::session(&products),
+                crate::service::market::okx::quotes::parse_tick,
+            ),
+            DataSource::Kraken => (
+                crate::service::market::kraken::quotes::session(&products),
+                crate::service::market::kraken::quotes::parse_tick,
+            ),
+            DataSource::Bybit => (
+                crate::service::market::bybit::quotes::session(&products),
+                crate::service::market::bybit::quotes::parse_tick,
+            ),
+            DataSource::Gate => (
+                crate::service::market::gateio::quotes::session(&products),
+                crate::service::market::gateio::quotes::parse_tick,
+            ),
             _ => return None,
         };
         let shutdown = Arc::new(AtomicBool::new(false));

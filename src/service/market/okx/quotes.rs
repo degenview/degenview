@@ -2,16 +2,16 @@
 //! of every market asked for. A single subscribe message names them all; the socket is kept alive
 //! with the text `"ping"`.
 
-use super::StreamTick;
 use crate::model::DataSource;
 use crate::service::net::ws::{Keepalive, Session};
 use crate::service::watchlist_quotes::provider::okx_ticker;
+use crate::service::watchlist_quotes::quote_stream::StreamTick;
 use serde_json::{Value, json};
 use std::time::Duration;
 
 const HOST: &str = "ws.okx.com";
 
-pub(super) fn session(products: &[String]) -> Session {
+pub(in crate::service) fn session(products: &[String]) -> Session {
     let args: Vec<Value> = products
         .iter()
         .map(|product| json!({"channel": "tickers", "instId": product}))
@@ -33,7 +33,7 @@ pub(super) fn session(products: &[String]) -> Session {
 
 /// `{"arg":{"channel":"tickers","instId":"BTC-USDT"},"data":[{"instId":"BTC-USDT","last":"…",
 /// "open24h":"…","vol24h":"…","volCcy24h":"…","ts":"…"}]}`.
-pub(super) fn parse_tick(text: &str) -> Option<StreamTick> {
+pub(in crate::service) fn parse_tick(text: &str) -> Option<StreamTick> {
     let value: Value = serde_json::from_str(text).ok()?;
     let (product_id, quote) = okx_ticker(value.get("data")?.as_array()?.first()?)?;
     Some(StreamTick {

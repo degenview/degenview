@@ -4,6 +4,9 @@
 //! volume, turnover]`, and pages back with an `end` cursor. Failures arrive as HTTP 200 with a
 //! `retCode` other than 0; some regions are refused with HTTP 403.
 
+pub(in crate::service) mod live;
+pub(in crate::service) mod quotes;
+
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::paging::Paging;
@@ -180,7 +183,7 @@ fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderErro
     Ok(candles)
 }
 
-/// One kline of a push (`start`, `open`, …) is the same row as an object: see `live/bybit.rs`.
+/// One kline of a push (`start`, `open`, …) is the same row as an object: see `live.rs`.
 fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
     let text = |index: usize| -> Result<&str, ProviderError> {
         row.get(index)

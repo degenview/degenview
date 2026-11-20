@@ -7,7 +7,7 @@ use std::time::Duration;
 
 const HOST: &str = "stream.binance.com";
 
-pub(super) fn session(symbols: &[String], base: Timeframe) -> Session {
+pub(in crate::service) fn session(symbols: &[String], base: Timeframe) -> Session {
     let interval = base.interval();
     let streams = symbols
         .iter()
@@ -25,7 +25,7 @@ pub(super) fn session(symbols: &[String], base: Timeframe) -> Session {
 }
 
 /// `{"stream":"btcusdt@kline_1h","data":{"k":{"t","o","h","l","c","v",…}}}`.
-pub(super) fn parse_kline(text: &str) -> Option<(String, Kline)> {
+pub(in crate::service) fn parse_kline(text: &str) -> Option<(String, Kline)> {
     let value: Value = serde_json::from_str(text).ok()?;
     let stream = value.get("stream")?.as_str()?;
     let symbol = stream.split('@').next()?.to_uppercase();

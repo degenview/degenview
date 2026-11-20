@@ -8,8 +8,8 @@
 
 mod book;
 mod engine;
-mod provider;
-mod quote_stream;
+pub(in crate::service) mod provider;
+pub(in crate::service) mod quote_stream;
 
 use crate::lock::lock;
 pub use book::WatchlistQuoteBook;

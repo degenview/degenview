@@ -5,6 +5,8 @@
 //! `endTime` window; an `endTime` alone is ignored. Failures are HTTP 400 with a JSON code, and
 //! some regions get 403.
 
+pub(in crate::service) mod live;
+
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::paging::Paging;

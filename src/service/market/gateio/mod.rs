@@ -4,6 +4,9 @@
 //! high, low, open, base volume, window closed]`, all strings, and pages back with a `to` cursor
 //! (inclusive, in seconds). Failures are HTTP 4xx with a JSON label; some regions get 403.
 
+pub(in crate::service) mod live;
+pub(in crate::service) mod quotes;
+
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::paging::Paging;

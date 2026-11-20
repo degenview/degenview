@@ -1,8 +1,8 @@
-use super::candles::plan;
 use crate::model::market::bucket::{self, FoldPlan};
 use crate::model::market::natives::GECKOTERMINAL_PAGE;
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::ProviderError;
+use crate::service::market::candles::plan;
 use serde_json::Value;
 
 const BASE_URL: &str = "https://api.geckoterminal.com/api/v2";

@@ -2,10 +2,10 @@
 //! interval; the server sends a `heartbeat` every second, which keeps the socket alive along with
 //! the protocol pings.
 
+use super::{interval, pair};
 use crate::format::parse_iso8601;
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{Kline, Timeframe};
-use crate::service::market::kraken::{interval, pair};
 use crate::service::net::ws::{Keepalive, Session};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -13,7 +13,7 @@ use std::time::Duration;
 const HOST: &str = "ws.kraken.com";
 
 /// `None` when Kraken has no interval of `base`.
-pub(super) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
+pub(in crate::service) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
     let symbols: Vec<String> = symbols.iter().map(|symbol| pair(symbol)).collect();
     let subscribe = json!({
         "method": "subscribe",
@@ -39,7 +39,7 @@ pub(super) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
 /// "low":…,"close":…,"volume":1383.85,"interval_begin":"2026-11-17T00:00:00.000000000Z",
 /// "interval":1440,…}]}`. The volume is the running total of the forming candle. Status,
 /// heartbeat and subscription replies carry no candle.
-pub(super) fn parse_kline(text: &str, base: Timeframe) -> Option<(String, Kline)> {
+pub(in crate::service) fn parse_kline(text: &str, base: Timeframe) -> Option<(String, Kline)> {
     let value: Value = serde_json::from_str(text).ok()?;
     if value.get("channel")?.as_str()? != "ohlc" || value.get("type")?.as_str()? != "update" {
         return None;

@@ -1,3 +1,5 @@
+pub(in crate::service) mod quotes;
+
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::search_rank::normalize;

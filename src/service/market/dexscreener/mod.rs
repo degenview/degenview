@@ -1,3 +1,5 @@
+pub(in crate::service) mod geckoterminal;
+
 use crate::model::{Kline, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde_json::Value;
@@ -18,7 +20,7 @@ impl MarketSource for DexScreener {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        super::geckoterminal::fetch_klines(symbol, timeframe, limit)
+        geckoterminal::fetch_klines(symbol, timeframe, limit)
     }
 
     fn fetch_klines_range(
@@ -29,7 +31,7 @@ impl MarketSource for DexScreener {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        super::geckoterminal::fetch_klines_range(symbol, timeframe, start_ms, end_ms, max)
+        geckoterminal::fetch_klines_range(symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
