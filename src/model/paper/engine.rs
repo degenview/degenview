@@ -4,6 +4,7 @@
 
 use std::collections::HashSet;
 
+use crate::clock::now_ms;
 use crate::model::paper::{
     PaperAccount, PaperAccountMetrics, PaperAccountSettings, PaperClosedTrade,
     PaperCommissionConfiguration, PaperCurrency, PaperFill, PaperFillPriceSource, PaperInstrument,
@@ -1310,13 +1311,6 @@ fn better_price(order: &PaperOrder, executable: f64) -> f64 {
         Some(limit) => executable.max(limit),
         None => executable,
     }
-}
-
-fn now_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis() as i64)
 }
 
 #[cfg(test)]

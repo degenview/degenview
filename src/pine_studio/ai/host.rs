@@ -254,7 +254,7 @@ impl PineStudio {
             .iter()
             .map(|script| script.id.clone())
             .collect();
-        let now = crate::model::pine::script::now_ms();
+        let now = crate::clock::now_ms();
         if let Ok(store) = self.shared.lock() {
             let mut history = History::load(&store);
             if !known.is_empty() {
@@ -308,7 +308,7 @@ impl PineStudio {
         // touched until the user applies a proposal.
         let feed = self
             .preview
-            .debug_feed(crate::model::pine::script::now_ms(), theme::is_light());
+            .debug_feed(crate::clock::now_ms(), theme::is_light());
         let tools = ToolBox::new(mode, &source, diagnostics_of).with_bars(feed);
         let request = ChatRequest {
             model: self.ai.prefs.model(kind),

@@ -2,10 +2,10 @@
 
 use super::chart::Chart;
 use super::{ChartWorkspace, WorkspaceAction};
+use crate::clock::now_ms;
 use crate::model::DataSource;
 use crate::model::alert::draft::Direction;
 use crate::model::alert::{AlertAsset, AlertCurrency, PriceAlert};
-use crate::model::watchlist::now_ms;
 use crate::ui::alert::editor::{self, PriceAlertEditorOutcome, PriceAlertEditorState};
 use eframe::egui;
 use std::collections::HashMap;

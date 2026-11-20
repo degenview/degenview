@@ -294,7 +294,7 @@ impl PortfolioImportFlow {
                     Some(Ok(Some(text))) => {
                         let mut next = new_id;
                         let mut mint = Mint {
-                            now_ms: crate::model::watchlist::now_ms(),
+                            now_ms: crate::clock::now_ms(),
                             next_id: &mut next,
                         };
                         let preview =
@@ -363,7 +363,7 @@ impl PortfolioImportFlow {
         };
         let mut next = new_id;
         let mut mint = Mint {
-            now_ms: crate::model::watchlist::now_ms(),
+            now_ms: crate::clock::now_ms(),
             next_id: &mut next,
         };
         let converted = flow

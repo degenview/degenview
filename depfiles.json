@@ -287,6 +287,7 @@
    "ui/drawing/properties/templates.rs",
    "ui/paper/panel/mod.rs",
    "ui/pine/script_catalog.rs",
+   "ui/pine/settings_popover.rs",
    "ui/portfolio/asset_picker.rs",
    "ui/settings/sync.rs",
    "ui/trade/sheet_gallery.rs"
@@ -342,6 +343,13 @@
    "ui/watchlist/sidebar/detail.rs",
    "ui/watchlist/sidebar/mod.rs",
    "ui/window/tab_bar/mod.rs"
+  ],
+  "clock": [
+   "ui/kit/date_picker.rs",
+   "ui/paper/panel/mod.rs",
+   "ui/portfolio/tab/mod.rs",
+   "ui/portfolio/transaction_editor.rs",
+   "ui/replay/date_sheet.rs"
   ],
   "platform": [
    "ui/settings/ai.rs",
@@ -445,6 +453,7 @@
    "host/portfolio/mod.rs",
    "host/settings/mod.rs",
    "host/snapshot/mod.rs",
+   "host/sync/mod.rs",
    "host/sync/scripts.rs",
    "host/tab/link.rs",
    "host/tab/title.rs",
@@ -480,6 +489,8 @@
    "host/mcp/pine.rs",
    "host/mcp/watchlist.rs",
    "host/paper/mod.rs",
+   "host/pine/chart/worker.rs",
+   "host/pine/mod.rs",
    "host/pine/subscription.rs",
    "host/portfolio/mod.rs",
    "host/settings/mod.rs",
@@ -498,9 +509,6 @@
   ],
   "pine_studio": [
    "host/mcp/mod.rs",
-   "host/pine/chart/worker.rs",
-   "host/pine/mod.rs",
-   "host/pine/subscription.rs",
    "host/settings/mod.rs",
    "host/sync/scripts.rs"
   ],
@@ -519,6 +527,22 @@
    "host/tab/window.rs",
    "host/taker_flow/mod.rs",
    "host/update/mod.rs"
+  ],
+  "clock": [
+   "host/alert/runtime.rs",
+   "host/editor_theme/mod.rs",
+   "host/liquidation/mod.rs",
+   "host/mcp/alert.rs",
+   "host/mcp/chart.rs",
+   "host/mcp/confirmation.rs",
+   "host/mcp/mod.rs",
+   "host/mcp/portfolio.rs",
+   "host/pine/mod.rs",
+   "host/portfolio/card.rs",
+   "host/portfolio/import_flow.rs",
+   "host/portfolio/mod.rs",
+   "host/sync/mod.rs",
+   "host/taker_flow/mod.rs"
   ],
   "build_info": [
    "host/update/mod.rs"
@@ -648,6 +672,10 @@
   "crash_report": [
    "app/window.rs"
   ],
+  "clock": [
+   "app/alert/window.rs",
+   "app/mod.rs"
+  ],
   "sync": [
    "app/mod.rs"
   ],
@@ -661,6 +689,15 @@
   ]
  },
  "workspace": {
+  "clock": [
+   "workspace/alerts.rs",
+   "workspace/chart/live.rs",
+   "workspace/chart/mod.rs",
+   "workspace/drawing/links.rs",
+   "workspace/layout/mod.rs",
+   "workspace/mod.rs",
+   "workspace/trade/paper.rs"
+  ],
   "model": [
    "workspace/alerts.rs",
    "workspace/chart/collection.rs",
@@ -764,7 +801,6 @@
    "workspace/chart/mod.rs",
    "workspace/chart/snapshot/mod.rs",
    "workspace/chart/symbol_picker.rs",
-   "workspace/drawing/links.rs",
    "workspace/grid.rs",
    "workspace/liquidations.rs",
    "workspace/mod.rs",
@@ -799,9 +835,15 @@
   ]
  },
  "pine_studio": {
-  "model": [
+  "clock": [
    "pine_studio/ai/gallery.rs",
    "pine_studio/ai/host.rs",
+   "pine_studio/debug/host.rs",
+   "pine_studio/mod.rs",
+   "pine_studio/open_script.rs",
+   "pine_studio/profiler/host.rs"
+  ],
+  "model": [
    "pine_studio/ai/mod.rs",
    "pine_studio/bar.rs",
    "pine_studio/commands.rs",
@@ -821,7 +863,6 @@
    "pine_studio/editor/text_view.rs",
    "pine_studio/inputs.rs",
    "pine_studio/library/picker.rs",
-   "pine_studio/library/registry.rs",
    "pine_studio/library/script_actions.rs",
    "pine_studio/library/unsaved.rs",
    "pine_studio/menu_bar/file.rs",
@@ -872,7 +913,6 @@
    "pine_studio/editor/syntax/mod.rs",
    "pine_studio/editor/text_view.rs",
    "pine_studio/inputs.rs",
-   "pine_studio/library/registry.rs",
    "pine_studio/mod.rs",
    "pine_studio/open_script.rs",
    "pine_studio/preview/mod.rs",
@@ -887,8 +927,11 @@
   ],
   "store": [
    "pine_studio/ai/history.rs",
+   "pine_studio/ai/host.rs",
+   "pine_studio/ai/profile.rs",
    "pine_studio/bar.rs",
    "pine_studio/commands.rs",
+   "pine_studio/debug/host.rs",
    "pine_studio/debug/mod.rs",
    "pine_studio/drawer/logs/mod.rs",
    "pine_studio/library/demo.rs",
@@ -897,7 +940,9 @@
    "pine_studio/mod.rs",
    "pine_studio/open_script.rs",
    "pine_studio/preview/mod.rs",
-   "pine_studio/preview/state.rs"
+   "pine_studio/preview/source.rs",
+   "pine_studio/preview/state.rs",
+   "pine_studio/profiler/host.rs"
   ],
   "ui": [
    "pine_studio/ai/gallery.rs",
@@ -1047,7 +1092,15 @@
    "mcp/market/tools.rs",
    "mcp/state.rs",
    "mcp/tools.rs",
+   "mcp/transport/seal.rs",
    "mcp/transport/tls_protect.rs"
+  ],
+  "clock": [
+   "mcp/audit.rs",
+   "mcp/market/tools.rs",
+   "mcp/pine/edit.rs",
+   "mcp/state.rs",
+   "mcp/transport/auth.rs"
   ],
   "lock": [
    "mcp/audit.rs",
@@ -1108,6 +1161,10 @@
    "pine/strategy/mod.rs",
    "pine/time/bucket.rs"
   ],
+  "clock": [
+   "pine/builtins/alert/mod.rs",
+   "pine/builtins/market_values.rs"
+  ],
   "format": [
    "pine/time/calendar.rs"
   ]
@@ -1128,6 +1185,11 @@
    "model/session_stats/mod.rs",
    "model/watchlist/quote.rs"
   ],
+  "clock": [
+   "model/paper/engine.rs",
+   "model/portfolio/ledger.rs",
+   "model/watchlist/mod.rs"
+  ],
   "pine": [
    "model/alert/pine.rs",
    "model/pine/instance.rs",
@@ -1138,14 +1200,19 @@
  },
  "sync": {
   "model": [
+   "sync/engine/account.rs",
    "sync/engine/apply/alert.rs",
    "sync/engine/apply/asset.rs",
    "sync/engine/apply/layout.rs",
+   "sync/engine/apply/mod.rs",
    "sync/engine/apply/paper.rs",
    "sync/engine/apply/portfolio.rs",
    "sync/engine/apply/simple.rs",
+   "sync/engine/core.rs",
    "sync/engine/merge/mod.rs",
    "sync/record/ids.rs",
+   "sync/record/mod.rs",
+   "sync/record/project/mod.rs",
    "sync/record/validate/mod.rs",
    "sync/transport/native/mod.rs"
   ],
@@ -1201,8 +1268,10 @@
    "service/alert/macos_notifications.rs",
    "service/annotation/ingest.rs",
    "service/annotation/link_fetch.rs",
+   "service/cache/disk.rs",
    "service/cache/mod.rs",
    "service/image/icon.rs",
+   "service/keychain/mcp_seal.rs",
    "service/keychain/webhook_secrets.rs",
    "service/liquidation/binance.rs",
    "service/liquidation/bybit.rs",
@@ -1235,6 +1304,7 @@
    "service/market/search_rank.rs",
    "service/market/trend.rs",
    "service/mod.rs",
+   "service/net/multipart.rs",
    "service/net/proxy/tunnel/mod.rs",
    "service/portfolio/asset_auto_mapper.rs",
    "service/portfolio/history.rs",
@@ -1250,6 +1320,7 @@
    "service/taker_flow/binance.rs",
    "service/taker_flow/bybit.rs",
    "service/taker_flow/mod.rs",
+   "service/update/install/mod.rs",
    "service/watchlist_quotes/book.rs",
    "service/watchlist_quotes/engine.rs",
    "service/watchlist_quotes/mod.rs",
@@ -1262,6 +1333,24 @@
    "service/watchlist_quotes/quote_stream/okx.rs",
    "service/webhook/delivery.rs",
    "service/work_queue.rs"
+  ],
+  "clock": [
+   "service/liquidation/mod.rs",
+   "service/market/alpaca.rs",
+   "service/market/binance.rs",
+   "service/market/bybit.rs",
+   "service/market/cmc.rs",
+   "service/market/gateio.rs",
+   "service/market/geckoterminal.rs",
+   "service/market/kraken.rs",
+   "service/market/mexc.rs",
+   "service/market/okx.rs",
+   "service/market/polymarket.rs",
+   "service/stream/mod.rs",
+   "service/taker_flow/mod.rs",
+   "service/watchlist_quotes/mod.rs",
+   "service/watchlist_quotes/provider.rs",
+   "service/webhook/delivery.rs"
   ],
   "platform": [
    "service/editor_theme/files.rs",
@@ -1291,9 +1380,6 @@
   ],
   "build_info": [
    "service/system/entitlements.rs"
-  ],
-  "mcp": [
-   "service/keychain/mcp_seal.rs"
   ]
  },
  "trading": {
@@ -1312,6 +1398,9 @@
   ],
   "lock": [
    "trading/paper/backend.rs"
+  ],
+  "clock": [
+   "trading/broker/backend.rs"
   ]
  },
  "store": {
@@ -1332,11 +1421,18 @@
    "store/pinned_timeframes.rs",
    "store/portfolio/mod.rs",
    "store/scripts/mod.rs",
+   "store/scripts/registry.rs",
    "store/sync/paper.rs",
    "store/sync/raw.rs",
    "store/sync/schema.rs",
    "store/watchlist/mod.rs",
    "store/webhook.rs"
+  ],
+  "clock": [
+   "store/chart/template/mod.rs",
+   "store/drawing_template.rs",
+   "store/scripts/mod.rs",
+   "store/sync/mod.rs"
   ],
   "lock": [
    "store/chart/template/mod.rs",
@@ -1358,10 +1454,8 @@
    "store/scripts/mod.rs"
   ],
   "pine": [
-   "store/scripts/mod.rs"
-  ],
-  "pine_studio": [
-   "store/scripts/mod.rs"
+   "store/scripts/mod.rs",
+   "store/scripts/registry.rs"
   ]
  }
 }

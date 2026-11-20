@@ -3,7 +3,8 @@
 
 use super::editor::EditorState;
 use super::{OpenDiskState, OpenScript, PineStudio, compile_into, editor, library};
-use crate::model::pine::script::{ScriptDraft, ScriptType, now_ms};
+use crate::clock::now_ms;
+use crate::model::pine::script::{ScriptDraft, ScriptType};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
 use crate::store::scripts::registry::LibraryRegistry;

@@ -303,7 +303,7 @@ impl ChartRuns {
             self.handed = None;
             return Vec::new();
         }
-        let now_ms = super::now_millis();
+        let now_ms = crate::clock::now_ms();
         let bars = self.handed_bars(chart.bars);
         let revision = RunRevision {
             candles: bars.fingerprint,

@@ -8,6 +8,7 @@ pub mod batch;
 pub mod chart;
 pub mod subscription;
 
+use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::chart::synthetic::ticker;
 use crate::model::market::bucket;
@@ -23,7 +24,6 @@ use crate::pine::time::bucket::timeframe_of;
 use crate::store::scripts::registry::LibraryRegistry;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Fetches `request.security` series through the REST kline service, so a script can read a symbol
 /// the chart does not carry. `candles` is blocking: one synchronous request per distinct key, which
@@ -52,11 +52,11 @@ impl KlineSecurityDataProvider {
     fn cached(key: &(SecurityKey, Option<ChartSpan>)) -> Option<Vec<Kline>> {
         let cache = lock(&SECURITY_CACHE);
         let (candles, fetched_at) = cache.get(key)?;
-        (now_millis() - fetched_at < SECURITY_CACHE_TTL_MS).then(|| candles.clone())
+        (now_ms() - fetched_at < SECURITY_CACHE_TTL_MS).then(|| candles.clone())
     }
 
     fn remember(key: (SecurityKey, Option<ChartSpan>), candles: &[Kline]) {
-        lock(&SECURITY_CACHE).insert(key, (candles.to_vec(), now_millis()));
+        lock(&SECURITY_CACHE).insert(key, (candles.to_vec(), now_ms()));
     }
 
     /// The series of finer bars over the chart's whole span (or its `calc_bars_count` newest bars).
@@ -137,15 +137,9 @@ impl SecurityDataProvider for KlineSecurityDataProvider {
 /// The bars `modifier` builds from the real `candles`, or the candles themselves for a plain ticker.
 fn construct(modifier: Option<ticker::TickerModifier>, candles: Vec<Kline>) -> Vec<Kline> {
     match modifier {
-        Some(modifier) => ticker::apply(&modifier, &candles, now_millis()),
+        Some(modifier) => ticker::apply(&modifier, &candles, now_ms()),
         None => candles,
     }
-}
-
-fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis() as i64)
 }
 
 /// `SOURCE:SYMBOL` resolves to that source; a bare symbol defaults to Binance, the chart's default

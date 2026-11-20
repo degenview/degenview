@@ -1,12 +1,13 @@
 //! Core behavior against the in-memory cloud: upload, acknowledgement, retry, conflicts, account
 //! gating and the status invariant. Each `Mac` is a real in-memory store plus a real `SyncCore`.
 
+use crate::model::encoding::sha256_hex;
 use crate::store::sync::{OutboxOp, OutboxState};
 use crate::store::{Document, SharedStore, Store};
 use crate::sync::engine::core::{Effect, PauseReason, Phase, RemoteBatch, SyncCore};
+use crate::sync::record::SCHEMA_VERSION;
 use crate::sync::record::policy::EntityKind;
 use crate::sync::record::project::project_row;
-use crate::sync::record::{SCHEMA_VERSION, sha256_hex};
 use crate::sync::transport::mock::{Fault, MockCloud, MockTransport};
 use crate::sync::transport::{
     ErrorKind, RawRecord, SentSaved, TransportCommand, TransportEvent, ZoneEvent,

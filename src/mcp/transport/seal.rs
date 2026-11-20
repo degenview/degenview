@@ -11,16 +11,15 @@
 //! and a replay of an older database copy together with its own seal. Pure values only.
 
 use crate::mcp::transport::auth::verifiers_match;
+use crate::model::encoding::hex;
 use crate::model::mcp::{
     BindMode, Cidr, McpClient, McpSettings, PermissionSet, default_global_permissions,
     default_remote_ceiling,
 };
+use crate::service::keychain::mcp_seal::KEY_BYTES;
 use hmac::{Hmac, Mac};
 use serde::Serialize;
 use sha2::Sha256;
-
-/// Bytes of the Keychain key.
-pub const KEY_BYTES: usize = 32;
 
 /// Separates this MAC from any other use of the same key, and versions the encoding below.
 const DOMAIN: &[u8] = b"degenview.mcp.seal.v1\n";
@@ -112,29 +111,6 @@ pub fn is_pristine(settings: &McpSettings, global: &PermissionSet, clients: &[Mc
     clients.is_empty()
         && *settings == McpSettings::default()
         && *global == default_global_permissions()
-}
-
-pub fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    bytes
-        .iter()
-        .fold(String::with_capacity(bytes.len() * 2), |mut out, byte| {
-            let _ = write!(out, "{byte:02x}");
-            out
-        })
-}
-
-/// The inverse of [`hex`] for a key; `None` unless it is exactly [`KEY_BYTES`] bytes.
-pub fn key_from_hex(text: &str) -> Option<[u8; KEY_BYTES]> {
-    let text = text.trim();
-    if text.len() != KEY_BYTES * 2 || !text.is_ascii() {
-        return None;
-    }
-    let mut key = [0u8; KEY_BYTES];
-    for (byte, pair) in key.iter_mut().zip(text.as_bytes().chunks(2)) {
-        *byte = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
-    }
-    Some(key)
 }
 
 #[cfg(test)]
@@ -344,16 +320,5 @@ mod tests {
             &[]
         ));
         assert!(!is_pristine(&McpSettings::default(), &global, &clients));
-    }
-
-    #[test]
-    fn keys_round_trip_through_hex() {
-        let key = [0xAB; KEY_BYTES];
-        assert_eq!(key_from_hex(&hex(&key)), Some(key));
-        assert_eq!(key_from_hex(&format!("  {}\n", hex(&key))), Some(key));
-        assert_eq!(key_from_hex(""), None);
-        assert_eq!(key_from_hex(&"zz".repeat(KEY_BYTES)), None);
-        assert_eq!(key_from_hex(&"ab".repeat(KEY_BYTES - 1)), None);
-        assert_eq!(key_from_hex(&"é".repeat(KEY_BYTES)), None);
     }
 }

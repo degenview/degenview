@@ -33,7 +33,7 @@ impl PineStudio {
         let open = self.open.as_ref()?;
         let run = self.preview.run_identity(
             &open.editor.source,
-            crate::model::pine::script::now_ms(),
+            crate::clock::now_ms(),
             theme::is_light(),
         );
         Some(ProfileKey::new(&open.id, &open.editor.source, run))
@@ -113,7 +113,7 @@ impl PineStudio {
         let source = open.editor.source.clone();
         let Some(feed) = self
             .preview
-            .debug_feed(crate::model::pine::script::now_ms(), theme::is_light())
+            .debug_feed(crate::clock::now_ms(), theme::is_light())
         else {
             self.profiler
                 .wait("The preview chart has no bars yet. Wait for it to load.");

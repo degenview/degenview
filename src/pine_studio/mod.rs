@@ -23,11 +23,10 @@ mod sheets;
 pub mod theme_preview;
 mod workspace;
 
+use crate::clock::now_ms;
 use crate::host::editor_theme::EditorThemeHost;
 use crate::model::pine::instance::{PineInstance, StoredInput};
-use crate::model::pine::script::{
-    CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType, now_ms,
-};
+use crate::model::pine::script::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
 use crate::service::work_queue::Pending;

@@ -4,13 +4,14 @@
 //! fetching historical FX rates, the "Match…" asset picker) and feeds results back through the
 //! state's methods.
 
+use crate::format::plural;
 use crate::model::portfolio::csv::{CmcPreview, CmcRow, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::sheet;
 use crate::ui::portfolio::grid;
-use crate::ui::portfolio::import_preview::{plural, warning_title};
+use crate::ui::portfolio::import_preview::warning_title;
 use crate::ui::portfolio::sheet_parts::{card_background, pill, problem_card, status_dot};
 use crate::ui::portfolio::table::paint_asset_icon;
 use crate::ui::theme;

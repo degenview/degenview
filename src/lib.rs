@@ -2,6 +2,7 @@
 mod alloc_count;
 mod app;
 mod build_info;
+mod clock;
 mod crash_report;
 mod format;
 mod host;

@@ -9,9 +9,10 @@
 
 pub mod registry;
 
+use crate::clock::now_ms;
 use crate::model::pine::script::{
     CompileStatus, LocalScript, ScriptCompileRecord, ScriptDraft, ScriptId, ScriptType,
-    ScriptVersion, now_ms,
+    ScriptVersion,
 };
 use crate::model::pine::script_name::{self, FILE_EXTENSION, ScriptNameError};
 use crate::pine::compiler;

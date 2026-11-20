@@ -94,7 +94,7 @@ impl ChartWorkspace {
                     .apply(timeframe, base, &mut chart.candles, kline.clone())
             {
                 chart.live = Some(LiveMark::new(open_time, now));
-                chart.last_data_ms = Some(crate::model::watchlist::now_ms());
+                chart.last_data_ms = Some(crate::clock::now_ms());
             }
         }
     }

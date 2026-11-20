@@ -20,8 +20,8 @@ pub use provider::QuoteProvider;
 #[cfg(test)]
 pub use provider::{QuoteFailure, QuoteRequest};
 
+use crate::clock::now_ms;
 use crate::model::alert::AlertProviderHealth;
-use crate::model::watchlist::now_ms;
 use crate::model::{DataSource, InstrumentId};
 use engine::Engine;
 use provider::LiveProvider;

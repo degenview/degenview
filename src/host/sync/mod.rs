@@ -8,6 +8,7 @@
 
 pub mod scripts;
 
+use crate::clock::now_ms;
 use crate::host::sync::scripts::StoreScriptSink;
 use crate::lock::lock;
 use crate::store::SharedStore;
@@ -326,12 +327,6 @@ pub struct SyncHost {
     backups_dir: PathBuf,
     /// Which hardware this is; replaced in tests to stand in for another Mac.
     hardware: Arc<dyn Fn() -> Option<String> + Send + Sync>,
-}
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
 impl SyncHost {
@@ -1024,7 +1019,7 @@ pub fn hardware_id() -> Option<String> {
             .find(|line| line.contains("IOPlatformUUID"))
             .and_then(|line| line.split('"').nth(3))
         {
-            return Some(crate::sync::record::sha256_hex(uuid.as_bytes()));
+            return Some(crate::model::encoding::sha256_hex(uuid.as_bytes()));
         }
     }
     None
@@ -1036,7 +1031,7 @@ fn hardware_hash_to_store() -> String {
         format!(
             "{}{}",
             account::NAME_HASH_PREFIX,
-            crate::sync::record::sha256_hex(device_name().as_bytes())
+            crate::model::encoding::sha256_hex(device_name().as_bytes())
         )
     })
 }

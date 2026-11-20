@@ -7,8 +7,8 @@
 //! to reconnect or still looking something up, so nothing keeps retrying for a viewer that left.
 //! Dropping the stream closes them at once.
 
+use crate::clock::now_ms;
 use crate::service::net::ws::{Frame, Session};
-use crate::service::now_ms;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::time::Duration;

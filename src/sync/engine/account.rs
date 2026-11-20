@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 /// bridge computes it (`Codec.hashUser`); this copy pins the format in a test.
 #[cfg(test)]
 pub fn hash_user(container: &str, user_record_name: &str) -> String {
-    crate::sync::record::sha256_hex(format!("v1|{container}|{user_record_name}").as_bytes())
+    crate::model::encoding::sha256_hex(format!("v1|{container}|{user_record_name}").as_bytes())
 }
 
 /// How the user wants to resolve a different account being signed in.

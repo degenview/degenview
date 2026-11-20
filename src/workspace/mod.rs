@@ -1,3 +1,4 @@
+use crate::clock::now_ms;
 use crate::host::paper::PaperHost;
 use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::lock::lock;
@@ -5,7 +6,7 @@ use crate::model::alert::PriceAlert;
 use crate::model::chart::sync::SyncHub;
 use crate::model::tab::link::LinkColor;
 use crate::model::tab::title::{MAX_CUSTOM_TITLE_CHARS, TabChart};
-use crate::model::watchlist::{WatchlistInstrument, now_ms};
+use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{
     BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, InstrumentId,
     Timeframe,

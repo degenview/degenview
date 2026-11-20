@@ -16,7 +16,6 @@
 //! Clearing removes only the three directories above, so pointing `DEGENVIEW_CACHE_DIR` at a
 //! shared folder can never delete anything else.
 
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -137,10 +136,7 @@ pub fn global() -> &'static DiskCache {
 
 /// A stable, filesystem-safe name for any string: the SHA-256 hex digest.
 pub fn digest_name(key: &str) -> String {
-    Sha256::digest(key.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    crate::model::encoding::sha256_hex(key.as_bytes())
 }
 
 impl DiskCache {

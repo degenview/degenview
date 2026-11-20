@@ -2,10 +2,10 @@
 //! panel is drawn and closes them when none is, and hands each frame the latest [`Snapshot`]
 //! without blocking or recomputing it when nothing changed.
 
+use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::liquidation::{MinSize, Snapshot, Tape};
 use crate::service::liquidation::{Lease, LiquidationFeed};
-use crate::service::now_ms;
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

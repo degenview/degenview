@@ -1,3 +1,4 @@
+use crate::clock::now_ms;
 use crate::host::mcp::confirmation;
 use crate::host::portfolio::PortfolioHost;
 use crate::mcp::bridge::{McpError, McpReply};
@@ -6,7 +7,6 @@ use crate::mcp::portfolio::{
     self, HoldingBase, HoldingsBase, PortfolioCommand, PortfolioInfo, PortfoliosResult,
     TransactionsResult,
 };
-use crate::model::watchlist::now_ms;
 use std::sync::Mutex;
 
 /// Runs a portfolio read on the app thread.

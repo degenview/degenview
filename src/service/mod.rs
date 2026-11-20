@@ -322,13 +322,6 @@ pub fn trending(source: DataSource, limit: usize) -> Result<Vec<SearchResult>, P
     }
 }
 
-/// Milliseconds since the Unix epoch, now.
-pub(crate) fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as i64)
-}
-
 /// Thin to at most `count` points by uniform stride, always keeping the newest one.
 pub(crate) fn downsample(candles: &[Kline], count: usize) -> Vec<Kline> {
     if count == 0 || candles.len() <= count {

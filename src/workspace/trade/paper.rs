@@ -18,7 +18,7 @@ impl ChartWorkspace {
     /// on are sent. Nothing runs while the app is quit, asleep or showing no such chart.
     pub(in crate::workspace) fn sync_paper_quotes(&mut self, host: &mut PaperHost) {
         let now = Instant::now();
-        let wall_clock = crate::model::watchlist::now_ms();
+        let wall_clock = crate::clock::now_ms();
         let timeframe = self.timeframe;
         let mut snapshot_demand = Vec::new();
         for chart in &mut self.charts {
@@ -360,7 +360,7 @@ mod tests {
         workspace.add_chart_for(&InstrumentId::new(DataSource::Alpaca, "AAPL"), &ctx);
         let chart = workspace.charts.last_mut().expect("chart");
         chart.candles = vec![candle(1_000, close)];
-        chart.last_data_ms = Some(crate::model::watchlist::now_ms());
+        chart.last_data_ms = Some(crate::clock::now_ms());
         workspace
     }
 

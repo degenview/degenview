@@ -7,6 +7,7 @@
 //! `alert` and `paper` each read and write their own tables, and `raw` serves remote applies.
 
 use super::Store;
+use crate::clock::now_ms;
 
 mod alert;
 mod conflicts;
@@ -58,7 +59,7 @@ pub fn new_device_id() -> String {
         let address = &nanos as *const u64 as usize as u64;
         bytes[8..].copy_from_slice(&address.to_le_bytes());
     }
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    crate::model::encoding::hex(&bytes)
 }
 
 /// 31 random bits, never zero (zero marks an unassigned tag).
@@ -84,12 +85,6 @@ struct EntityMark {
 }
 
 type EntityKey = (EntityKind, String);
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as i64)
-}
 
 impl Store {
     fn entity_mark(&self, kind: EntityKind, sync_id: &str) -> rusqlite::Result<Option<EntityMark>> {

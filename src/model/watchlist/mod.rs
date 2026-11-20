@@ -6,6 +6,7 @@ pub mod layout;
 pub mod quote;
 pub mod text;
 
+use crate::clock::now_ms;
 use crate::model::{DataSource, InstrumentId};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,12 +30,6 @@ pub fn new_id() -> EntryId {
             Err(actual) => last = actual,
         }
     }
-}
-
-pub fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
 /// The most markets and sections one list holds. iCloud Sync refuses a larger record, so a

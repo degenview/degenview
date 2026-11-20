@@ -117,7 +117,10 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
             "workspace",
         ],
     ),
-    ("service", &["app", "host", "sync", "ui", "workspace"]),
+    (
+        "service",
+        &["app", "host", "mcp", "sync", "ui", "workspace"],
+    ),
     (
         "store",
         &["app", "host", "pine_studio", "service", "ui", "workspace"],
@@ -131,6 +134,7 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
     ("ui", &["app"]),
     // Leaves every layer may use: they import nothing of the app's own.
     ("build_info", EVERY_MODULE),
+    ("clock", EVERY_MODULE),
     ("format", EVERY_MODULE),
     ("lock", EVERY_MODULE),
     ("paths", EVERY_MODULE),
@@ -156,6 +160,7 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
 const EVERY_MODULE: &[&str] = &[
     "app",
     "build_info",
+    "clock",
     "crash_report",
     "format",
     "host",

@@ -12,9 +12,9 @@
 //! * Layouts and scripts never lose a version: the loser is kept as a conflict copy.
 //! * Everything else is last-writer-wins by `(revision, modified time, device id)`.
 
+use crate::model::encoding::sha256_hex;
 use crate::sync::record::policy::EntityKind;
 use crate::sync::record::project::canonical_json;
-use crate::sync::record::sha256_hex;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 

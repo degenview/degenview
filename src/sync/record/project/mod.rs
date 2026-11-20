@@ -6,9 +6,10 @@
 //! Projections work on JSON values, not typed models: the store hook sees raw payload strings
 //! and must not depend on every model's Rust type.
 
+use super::FAVORITES_ID;
 use super::ids::{Direction, IdSpace, map_card, map_fields};
 use super::policy::{EntityKind, TablePolicy, setting_is_portable, table_policy};
-use super::{FAVORITES_ID, sha256_hex};
+use crate::model::encoding::sha256_hex;
 use serde_json::{Map, Value};
 
 /// One synced entity derived from a stored row.

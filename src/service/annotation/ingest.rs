@@ -10,11 +10,10 @@
 //! the same picture is one asset however many drawings show it.
 
 use crate::model::annotation::asset::StoredAsset;
-use crate::model::encoding::{base64_decode, base64_encode};
+use crate::model::encoding::{base64_decode, base64_encode, sha256_hex};
 use image::{
     DynamicImage, ImageEncoder, ImageFormat, ImageReader, Limits, RgbaImage, imageops::FilterType,
 };
-use sha2::{Digest, Sha256};
 use std::io::Cursor;
 
 /// The most a picture may be as a file, in bytes: far above what a chart annotation needs.
@@ -90,8 +89,7 @@ impl IngestError {
 
 /// The hash a kept picture is named by.
 pub fn hash(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+    sha256_hex(bytes)
 }
 
 /// The format a picture's first bytes say it is, if it is one this accepts.

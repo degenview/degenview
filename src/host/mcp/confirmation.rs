@@ -10,6 +10,8 @@
 //! so an agent cannot word its own question. A target that does not exist (or could never be
 //! changed) is refused with the error the command itself would give, without asking anyone.
 
+use crate::clock::now_ms;
+use crate::format::plural;
 use crate::host::alert::AlertHost;
 use crate::host::mcp::alert::{find_alert, require_loaded};
 use crate::host::paper::PaperHost;
@@ -25,7 +27,7 @@ use crate::model::alert::AlertId;
 use crate::model::alert::pine::PineAlertSubscription;
 use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome};
 use crate::model::paper::{PaperOrderChanges, PaperOrderRequest, PaperOrderSide, PaperOrderType};
-use crate::model::watchlist::{new_id, now_ms};
+use crate::model::watchlist::new_id;
 use crate::store::watchlist::WatchlistStore;
 use crate::workspace::ChartWorkspace;
 use std::sync::{Arc, Mutex};
@@ -255,10 +257,6 @@ fn kind_text(kind: PaperOrderType, limit: Option<f64>, stop: Option<f64>) -> Str
             limit.map_or("?".to_owned(), number)
         ),
     }
-}
-
-fn plural(count: usize, one: &str, many: &str) -> String {
-    format!("{count} {}", if count == 1 { one } else { many })
 }
 
 pub fn delete_alert(host: &AlertHost, id: AlertId) -> Result<Summary, McpError> {

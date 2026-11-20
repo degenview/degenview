@@ -666,7 +666,7 @@ impl DegenViewMcp {
             chart_type: crate::model::ChartType::Candles,
             older_supported: false,
             replay_ms: None,
-            now_ms: crate::model::watchlist::now_ms(),
+            now_ms: crate::clock::now_ms(),
         };
         let result = candles_result(&meta, &candles, limit, None);
         let mut notes = result.notes;

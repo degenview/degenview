@@ -4,8 +4,8 @@
 use super::fx::SharedFxRates;
 use super::registration::AlertRegistration;
 use crate::app::AppAction;
-use crate::app::now_ms;
 use crate::app::window::{raise_viewport, settings_viewport_id};
+use crate::clock::now_ms;
 use crate::host::alert::AlertHost;
 use crate::host::pine::subscription::PineSubscriptionHost;
 use crate::host::settings::SettingsHost;

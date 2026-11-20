@@ -135,7 +135,7 @@ impl PineStudio {
         let source = open.editor.source.clone();
         let Some(feed) = self
             .preview
-            .debug_feed(crate::model::pine::script::now_ms(), theme::is_light())
+            .debug_feed(crate::clock::now_ms(), theme::is_light())
         else {
             self.debug.notice = Some(Notice {
                 text: "The preview chart has no bars yet. Wait for it to load.".to_owned(),

@@ -6,7 +6,7 @@
 //! lived in memory would be new on every launch and lock the user out of their own credentials.
 //! On Linux without a Secret Service the key cannot be created, and the host runs unsealed.
 
-use crate::mcp::transport::seal::{KEY_BYTES, hex, key_from_hex};
+use crate::model::encoding::{hex, hex_decode_array};
 use crate::service::keychain::api_keys::{KeyBackend, KeychainBackend};
 use crate::service::keychain::webhook_secrets::Scope;
 use crate::service::webhook::delivery::SecretStoreError;
@@ -16,6 +16,9 @@ const SCOPE: Scope = Scope {
     shared_group: false,
 };
 const ACCOUNT: &str = "seal-key-v1";
+
+/// Bytes of the Keychain key.
+pub const KEY_BYTES: usize = 32;
 
 /// The seal key. Not `Debug`/`Clone`-printable: it must not reach a log.
 #[derive(Clone, PartialEq, Eq)]
@@ -59,7 +62,7 @@ impl SealKeyStore {
     /// Reads the key. The first read after a launch may raise a Keychain prompt.
     pub fn load(&self) -> KeyState {
         match self.backend.read(SCOPE, ACCOUNT) {
-            Some(text) => key_from_hex(&text)
+            Some(text) => hex_decode_array::<KEY_BYTES>(&text)
                 .map_or(KeyState::Unreadable, |key| KeyState::Ready(SealKey(key))),
             None if self.backend.exists(SCOPE, ACCOUNT) => KeyState::Unreadable,
             None => KeyState::Missing,
