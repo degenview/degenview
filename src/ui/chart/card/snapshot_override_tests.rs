@@ -37,14 +37,14 @@ if barstate.islast
     line.new(bar_index, close, bar_index + 500, close)
 ";
 
-/// A line drawn on the last bar, anchored 50 bars ahead, that `extend.left` carries back across
-/// every bar on screen. Its price on bar `x` is `close * 20 + (x - bar_index - 50) / 10`.
-fn extended_line_script(extend: &str) -> String {
+/// A line drawn on the last bar, anchored 50 bars ahead and extended left across every bar on
+/// screen, at twenty times the close; `rise` is how far its second end lies above its first.
+fn extended_line_script(extend: &str, rise: f64) -> String {
     format!(
         "//@version=6
 indicator(\"Extended\", overlay = true)
 if barstate.islast
-    line.new(bar_index + 50, close * 20, bar_index + 60, close * 20 + 1, extend = extend.{extend})
+    line.new(bar_index + 50, close * 20, bar_index + 60, close * 20 + {rise:?}, extend = extend.{extend})
 "
     )
 }
@@ -197,12 +197,13 @@ fn scripts_scrolled_back_fit_the_prices_on_screen_not_the_newest_bars() {
 }
 
 #[test]
-fn an_extended_line_crossing_the_screen_is_on_the_scrolled_back_axis() {
-    let maximum_scrolled_back = |extend: &str| {
+fn only_a_level_extended_across_the_screen_is_on_the_scrolled_back_axis() {
+    let maximum_scrolled_back = |extend: &str, rise: f64| {
         let mut harness = Harness::new(ChartCanvas::default());
-        let id = harness
-            .card
-            .add_pine_instance(None, "Extended", &extended_line_script(extend));
+        let id =
+            harness
+                .card
+                .add_pine_instance(None, "Extended", &extended_line_script(extend, rise));
         wait_for_run(&mut harness, id);
         settled(&mut harness);
         let mut input = input(&harness, false);
@@ -210,13 +211,19 @@ fn an_extended_line_crossing_the_screen_is_on_the_scrolled_back_axis() {
         geometry(&harness, &input).view.maximum
     };
     assert!(
-        maximum_scrolled_back("left") > 4_000.0,
-        "the line's price where it crosses the bars on screen fits the axis"
+        maximum_scrolled_back("left", 0.0) > 4_000.0,
+        "a level's price fits the axis wherever it crosses the bars on screen"
     );
     assert!(
-        maximum_scrolled_back("none") < 400.0,
-        "the same line without extend is far off screen"
+        maximum_scrolled_back("none", 0.0) < 400.0,
+        "the same level without extend is far off screen"
     );
+    for rise in [1.0, 10.0, 1_000.0] {
+        assert!(
+            maximum_scrolled_back("left", rise) < 400.0,
+            "a line rising {rise} does not stretch the axis, as on TradingView"
+        );
+    }
 }
 
 #[test]

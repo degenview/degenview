@@ -7,9 +7,9 @@
 use crate::model::chart::canvas::Window;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineOutput, LineStyle,
-    MarkerShape, PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical,
-    YLocation, index_is_known,
+    DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineStyle, MarkerShape,
+    PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical, YLocation,
+    index_is_known,
 };
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
 
@@ -838,15 +838,9 @@ fn covered_bars(a: i64, b: i64, extend: LineExtend) -> (i64, i64) {
     )
 }
 
-/// The price of a line at `bar`, along its slope.
-fn line_price_at(line: &LineOutput, bar: i64) -> f64 {
-    let slope = (line.y2 - line.y1) / (line.x2 - line.x1) as f64;
-    line.y1 + slope * (bar - line.x1) as f64
-}
-
 /// Boxes, lines, labels and polylines that overlap the visible bars (and the empty slots on
-/// screen past the newest). A box or a line that extends is as long as the plot: it counts when
-/// it crosses the bars shown, and a line by its prices where it enters and leaves them.
+/// screen past the newest). A box, or a horizontal line, that extends is as long as the plot: it
+/// counts when it crosses the bars shown. A sloped line counts by its anchors alone.
 pub fn drawing_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     let Some((first, last)) = visible.bar_span(pine.bar_count) else {
         return Vec::new();
@@ -861,20 +855,13 @@ pub fn drawing_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
         values.extend([item.top, item.bottom]);
     }
     for item in pine.lines.iter().filter(|l| l.is_complete()) {
-        // A vertical line never extends.
-        let extend = if item.x1 == item.x2 {
-            LineExtend::None
-        } else {
-            item.extend
-        };
-        let (low, high) = covered_bars(item.x1, item.x2, extend);
-        if !in_view((low, high)) {
-            continue;
-        }
-        if extend == LineExtend::None {
+        // TradingView fits the axis to a line's extension only when the line is a level: the
+        // price a sloped line reaches far from its anchors does not move the axis. A vertical
+        // line never extends.
+        let level = item.y1 == item.y2 && item.x1 != item.x2;
+        let extend = if level { item.extend } else { LineExtend::None };
+        if in_view(covered_bars(item.x1, item.x2, extend)) {
             values.extend([item.y1, item.y2]);
-        } else {
-            values.extend([low.max(first), high.min(last)].map(|bar| line_price_at(item, bar)));
         }
     }
     for item in pine
@@ -1043,8 +1030,8 @@ fn series_values_in_pane(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> 
 mod tests {
     use super::*;
     use crate::pine::outputs::{
-        BoxOutput, CandleBar, CandleOutput, HorizontalLine, LabelOutput, MISSING_INDEX, PlotOutput,
-        PolylineOutput, PolylinePoint,
+        BoxOutput, CandleBar, CandleOutput, HorizontalLine, LabelOutput, LineOutput, MISSING_INDEX,
+        PlotOutput, PolylineOutput, PolylinePoint,
     };
 
     fn plot(values: Vec<Option<f64>>, style: PlotStyle) -> PlotOutput {
@@ -1882,35 +1869,64 @@ mod tests {
     }
 
     #[test]
-    fn a_line_extended_into_the_window_counts_where_it_crosses_it() {
-        let ahead = |extend| output_with_line(250, 10.0, 260, 20.0, extend);
+    fn a_horizontal_line_extended_into_the_window_counts_its_price() {
+        let level = |x1, x2, extend| output_with_line(x1, 10.0, x2, 10.0, extend);
         assert_eq!(
-            in_window_60_to_99(&ahead(LineExtend::Left)),
-            [-180.0, -141.0],
-            "the prices at the window's edges, not the endpoints off screen"
+            in_window_60_to_99(&level(250, 260, LineExtend::Left)),
+            [10.0, 10.0]
         );
         assert_eq!(
-            in_window_60_to_99(&ahead(LineExtend::Both)),
-            [-180.0, -141.0]
+            in_window_60_to_99(&level(250, 260, LineExtend::Both)),
+            [10.0, 10.0]
         );
+        assert!(in_window_60_to_99(&level(250, 260, LineExtend::None)).is_empty());
         assert!(
-            in_window_60_to_99(&ahead(LineExtend::None)).is_empty(),
-            "an unextended line anchored off screen is not on it"
-        );
-        assert!(
-            in_window_60_to_99(&ahead(LineExtend::Right)).is_empty(),
+            in_window_60_to_99(&level(250, 260, LineExtend::Right)).is_empty(),
             "extending away from the window does not reach it"
         );
-        let behind = |extend| output_with_line(10, 5.0, 20, 15.0, extend);
-        assert_eq!(in_window_60_to_99(&behind(LineExtend::Right)), [55.0, 94.0]);
-        assert_eq!(in_window_60_to_99(&behind(LineExtend::Both)), [55.0, 94.0]);
-        assert!(in_window_60_to_99(&behind(LineExtend::Left)).is_empty());
+        assert_eq!(
+            in_window_60_to_99(&level(10, 20, LineExtend::Right)),
+            [10.0, 10.0]
+        );
+        assert_eq!(
+            in_window_60_to_99(&level(10, 20, LineExtend::Both)),
+            [10.0, 10.0]
+        );
+        assert!(in_window_60_to_99(&level(10, 20, LineExtend::Left)).is_empty());
     }
 
     #[test]
-    fn an_extended_line_that_ends_in_the_window_is_cut_at_its_end() {
-        let ends_inside = output_with_line(80, 10.0, 90, 20.0, LineExtend::Left);
-        assert_eq!(in_window_60_to_99(&ends_inside), [-10.0, 20.0]);
+    fn a_sloped_line_adds_nothing_to_the_range_by_extending() {
+        // TradingView leaves them out: 1% per 100 bars, 1% per 10 bars, 20% per bar.
+        for rise in [0.001, 0.01, 2.0] {
+            for extend in [LineExtend::Left, LineExtend::Both] {
+                let ahead = output_with_line(250, 10.0, 260, 10.0 + rise, extend);
+                assert!(
+                    in_window_60_to_99(&ahead).is_empty(),
+                    "a rise of {rise} extended {extend:?} from the right"
+                );
+            }
+            for extend in [LineExtend::Right, LineExtend::Both] {
+                let behind = output_with_line(10, 10.0, 20, 10.0 + rise, extend);
+                assert!(
+                    in_window_60_to_99(&behind).is_empty(),
+                    "a rise of {rise} extended {extend:?} from the left"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_sloped_line_over_the_window_counts_its_anchors_prices_extended_or_not() {
+        for extend in [
+            LineExtend::None,
+            LineExtend::Left,
+            LineExtend::Right,
+            LineExtend::Both,
+        ] {
+            let over = output_with_line(80, 10.0, 90, 20.0, extend);
+            assert_eq!(in_window_60_to_99(&over), [10.0, 20.0], "{extend:?}");
+        }
     }
 
     #[test]
