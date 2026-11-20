@@ -7,7 +7,7 @@ use super::ladder::{Ladder, Link, View};
 use super::pull_stack::PullStack;
 use super::sync::{self, BookSync, SyncOutcome};
 use super::{Book, BookEvent, Event, Price, Side, Tape};
-use crate::model::liquidation::Exchange;
+use crate::model::exchange::Exchange;
 use crate::model::taker_flow::Taker;
 
 pub struct DepthRecord {

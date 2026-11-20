@@ -3,8 +3,9 @@ use crate::model::depth::{
     BookEvent, Delta, DepthRecord, Event, Ladder, Levels, Price, Snapshot as BookSnapshot,
     Trade as DepthTrade, View,
 };
-use crate::model::liquidation::{Exchange, Tape};
-use crate::model::taker_flow::{Flow, Taker, Trade, Venue};
+use crate::model::exchange::{Exchange, Venue};
+use crate::model::liquidation::Tape;
+use crate::model::taker_flow::{Flow, Taker, Trade};
 use crate::ui::render_tests::Screen;
 
 const NOW: i64 = 1_795_000_000_000;

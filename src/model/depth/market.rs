@@ -1,12 +1,12 @@
 //! Which markets have an order book to show.
 
-use crate::model::liquidation::Exchange;
+use crate::model::exchange::{Exchange, Market, Venue};
 use crate::model::{DataSource, InstrumentId};
 
 /// A market on an exchange whose book can be followed: the key of one feed.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DepthMarket {
-    pub exchange: Exchange,
+    pub venue: Venue,
     /// The exchange's own name for it: `BTCUSDT`.
     pub symbol: String,
 }
@@ -20,7 +20,10 @@ pub fn market_of(source: DataSource, symbol: &str) -> Option<DepthMarket> {
         _ => return None,
     };
     Some(DepthMarket {
-        exchange,
+        venue: Venue {
+            exchange,
+            market: Market::Spot,
+        },
         symbol: InstrumentId::new(source, symbol).api_symbol(),
     })
 }

@@ -67,8 +67,8 @@ fn snapshot(record: &Mutex<Flow>, cache: &mut Memo<Made, Snapshot>, now_ms: i64)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::liquidation::Exchange;
-    use crate::model::taker_flow::{Market, Taker, Trade, Venue};
+    use crate::model::exchange::{Exchange, Market, Venue};
+    use crate::model::taker_flow::{Taker, Trade};
 
     const NOW: i64 = 5_000_000_000;
 

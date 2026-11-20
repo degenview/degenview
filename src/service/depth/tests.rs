@@ -1,6 +1,6 @@
 use super::*;
 use crate::model::depth::{Delta, Levels, Link, Price, Snapshot, View};
-use crate::model::liquidation::Exchange;
+use crate::model::exchange::{Exchange, Market, Venue};
 use crate::service::net::ws::{Keepalive, Session};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -175,7 +175,10 @@ fn a_tick_size_is_learned_and_an_unlisted_market_is_marked_so() {
 fn live_books_fill() {
     for exchange in [Exchange::Binance, Exchange::Bybit] {
         let market = DepthMarket {
-            exchange,
+            venue: Venue {
+                exchange,
+                market: Market::Spot,
+            },
             symbol: "BTCUSDT".to_owned(),
         };
         let record = Arc::new(Mutex::new(DepthRecord::new(exchange)));

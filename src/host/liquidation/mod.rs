@@ -96,7 +96,8 @@ fn snapshot(inner: &mut Inner, now_ms: i64, minimum: MinSize) -> Arc<Snapshot> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::liquidation::{Exchange, Liquidation, Side};
+    use crate::model::exchange::Exchange;
+    use crate::model::liquidation::{Liquidation, Side};
 
     const NOW: i64 = 5_000_000_000;
 

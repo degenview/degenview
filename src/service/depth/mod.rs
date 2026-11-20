@@ -43,7 +43,7 @@ impl DepthFeed {
         lease: Lease,
         repaint: Repaint,
     ) -> Self {
-        let venue = venue::for_exchange(market.exchange);
+        let venue = venue::for_exchange(market.venue.exchange);
         let stream = Stream::new(lease, repaint);
         stream.spawn(move |worker| follow(worker, venue.as_ref(), &market.symbol, &record));
         Self { stream }

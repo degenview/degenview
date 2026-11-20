@@ -2,7 +2,8 @@
 //! Bybit has no topic for every market, so the most traded ones are asked for: each topic is its
 //! own subscribe request, because one unknown symbol refuses the whole of a request.
 
-use crate::model::liquidation::{Exchange, Liquidation, Side};
+use crate::model::exchange::Exchange;
+use crate::model::liquidation::{Liquidation, Side};
 use crate::service::market::bybit::get;
 use crate::service::net::ws::{Keepalive, Session};
 use crate::service::stream::Worker;

@@ -3,7 +3,7 @@
 
 use super::{DepthError, binance, bybit};
 use crate::model::depth::{Event, Price, Snapshot};
-use crate::model::liquidation::Exchange;
+use crate::model::exchange::Exchange;
 use crate::service::net::ws::Session;
 
 pub trait DepthVenue: Send + Sync {

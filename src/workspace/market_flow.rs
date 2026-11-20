@@ -124,7 +124,7 @@ impl ChartWorkspace {
                     .as_ref()
                     .zip(ladder.as_deref())
                     .map(|(market, ladder)| BookFeed {
-                        exchange: market.exchange.name(),
+                        exchange: market.venue.exchange.name(),
                         symbol: &market.symbol,
                         ladder,
                     });

@@ -2,7 +2,8 @@
 //! request names the one market; an unknown symbol is refused with an ordinary reply the parser
 //! skips.
 
-use crate::model::taker_flow::{Market, Taker, Trade, Venue};
+use crate::model::exchange::{Market, Venue};
+use crate::model::taker_flow::{Taker, Trade};
 use crate::service::net::ws::{Keepalive, Session};
 use serde_json::{Value, json};
 use std::time::Duration;

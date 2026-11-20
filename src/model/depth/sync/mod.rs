@@ -8,7 +8,7 @@ mod bybit;
 mod tests;
 
 use super::{Book, BookEvent};
-use crate::model::liquidation::Exchange;
+use crate::model::exchange::Exchange;
 
 /// What an update did to the book.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

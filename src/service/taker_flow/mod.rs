@@ -7,7 +7,8 @@ mod bybit;
 
 use crate::clock::now_ms;
 use crate::lock::lock;
-use crate::model::taker_flow::{Flow, Trade, Venue};
+use crate::model::exchange::Venue;
+use crate::model::taker_flow::{Flow, Trade};
 use crate::service::net::ws::Session;
 pub use crate::service::stream::{Lease, Repaint};
 use crate::service::stream::{Stream, Worker};
@@ -30,7 +31,7 @@ impl TakerFlowFeed {
             let flow = Arc::clone(&flow);
             let asset = asset.to_owned();
             stream.spawn(move |worker| {
-                use crate::model::liquidation::Exchange;
+                use crate::model::exchange::Exchange;
                 let (session, parse): (Session, Parser) = match venue.exchange {
                     Exchange::Binance => (binance::session(venue.market, &asset), binance::parse),
                     Exchange::Bybit => (bybit::session(venue.market, &asset), bybit::parse),

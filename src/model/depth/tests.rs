@@ -2,7 +2,7 @@ use super::book::MAX_LEVELS;
 use super::tape::{PRICES_KEPT, TAPE_ROWS};
 use super::*;
 use crate::model::DataSource;
-use crate::model::liquidation::Exchange;
+use crate::model::exchange::{Exchange, Market, Venue};
 use crate::model::taker_flow::Taker;
 
 const NOW: i64 = 1_795_000_000_000;
@@ -379,12 +379,12 @@ fn the_book_keeps_the_nearest_levels_and_drops_zero_sizes() {
 #[test]
 fn only_spot_markets_of_binance_and_bybit_have_a_book() {
     let btc = market_of(DataSource::Binance, "BTCUSDT").unwrap();
-    assert_eq!(btc.exchange, Exchange::Binance);
+    assert_eq!(btc.venue, Venue::new(Exchange::Binance, Market::Spot));
     assert_eq!(btc.symbol, "BTCUSDT");
     let eth = market_of(DataSource::Bybit, "eth").unwrap();
     assert_eq!(
-        (eth.exchange, eth.symbol.as_str()),
-        (Exchange::Bybit, "ETHUSDT")
+        (eth.venue, eth.symbol.as_str()),
+        (Venue::new(Exchange::Bybit, Market::Spot), "ETHUSDT")
     );
     for source in [
         DataSource::Coinbase,

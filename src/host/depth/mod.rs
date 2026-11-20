@@ -50,7 +50,7 @@ impl DepthHost {
         let entry = feeds.entry_for(
             market,
             now,
-            || DepthRecord::new(market.exchange),
+            || DepthRecord::new(market.venue.exchange),
             |record, lease| {
                 let repaint = {
                     let ctx = ctx.clone();
@@ -82,7 +82,7 @@ fn ladder(
 mod tests {
     use super::*;
     use crate::model::depth::{BookEvent, Event, Levels, Link, Price, Snapshot};
-    use crate::model::liquidation::Exchange;
+    use crate::model::exchange::Exchange;
 
     const NOW: i64 = 5_000_000_000;
 

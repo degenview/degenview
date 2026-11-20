@@ -8,6 +8,7 @@ pub mod depth;
 pub mod drawings;
 pub mod editor_theme;
 pub mod encoding;
+pub mod exchange;
 pub mod fib;
 pub mod forecast;
 pub mod ids;
