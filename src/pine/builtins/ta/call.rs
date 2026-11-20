@@ -186,8 +186,10 @@ impl Session {
         if name == "ta.vwap" {
             // After the cumulative variables' slots, so the keys never meet.
             let key = usize::MAX - extra::VARIABLES.len();
-            let state = self.working.ta_states.entry(key).or_default();
-            return Some(super::evaluate_vwap_variable(&context.bar, state));
+            let mut state = self.working.ta_states.remove(&key).unwrap_or_default();
+            let value = super::evaluate_vwap_variable(&context.bar, &self.working, &mut state);
+            self.working.ta_states.insert(key, state);
+            return Some(value);
         }
         let slot = extra::VARIABLES
             .iter()
