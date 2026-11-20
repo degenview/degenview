@@ -239,10 +239,11 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   stays its own.
 - **Request context.** The site's state starts at `bar_index` −1 (`RuntimeState::before_first_bar`),
   so a request's first candle is bar 0 and `barstate.isfirst` is true on it. `barstate.*` in a request
-  follow the chart bar the call runs for (`ChartBar`): realtime when the chart bar is, history
-  otherwise (a developing candle on a historical bar is history), and `islast` /
-  `islastconfirmedhistory` on the candle that holds the chart bar's final instant when the chart
-  bar has them. `timeframe.change` is false on the first bar of the series it runs on (the chart's,
+  follow the chart bar the call runs for (`ChartBar`): realtime when the chart bar is and the
+  candle does not end before it opens (an older candle caught up on a live bar is history; a
+  developing candle on a historical bar is history), and `islast` / `islastconfirmedhistory` on the
+  candle that holds the chart bar's final instant, the end of its bucket (a 5h bar opened at 20:00
+  ends at midnight), when the chart bar has them. `timeframe.change` is false on the first bar of the series it runs on (the chart's,
   or the request's own candles, `series_bars`), TradingView-measured.
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
