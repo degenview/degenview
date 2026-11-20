@@ -17,5 +17,8 @@ Windows installer's `licenses` folder).
 - **Noto Sans Symbols 2** (a subset of version 2.008), the fallback for symbols such as ▲ ● ★ ✔ that other
   fonts lack. Copyright 2022 The Noto Project Authors, <https://github.com/notofonts/symbols>.
   [Licence](../assets/fonts/OFL-NotoSansSymbols2.txt).
+- **Inter** (version 4.1, static Regular), the font of the app's text on every platform.
+  Copyright 2016 The Inter Project Authors, <https://github.com/rsms/inter>.
+  [Licence](../assets/fonts/OFL-Inter.txt).
 
 Where each file comes from, how to fetch it again and how it is checked: [`assets/fonts/README.md`](../assets/fonts/README.md).

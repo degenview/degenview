@@ -383,7 +383,7 @@ jobs:
           mkdir -p dist
           # The built-in fonts are under the SIL OFL, which wants its text to come with them.
           7z a "dist/DegenView-${RELEASE_TAG}-${{ matrix.name }}.zip" ./target/release/degenview.exe \
-            ./assets/fonts/OFL-JetBrainsMono.txt ./assets/fonts/OFL-NotoSansSymbols2.txt ./assets/fonts/README.md
+            ./assets/fonts/OFL-JetBrainsMono.txt ./assets/fonts/OFL-NotoSansSymbols2.txt ./assets/fonts/OFL-Inter.txt ./assets/fonts/README.md
 
       # A per-user installer around the same exe (packaging/windows/degenview.iss). Its name ends
       # `-windows-x64-setup.exe`, so the updater, which picks `-windows-x64.zip`, never sees it.
@@ -412,7 +412,7 @@ jobs:
           cp packaging/degenview.desktop pkg/
           # The built-in fonts are under the SIL OFL, which wants its text to come with them.
           mkdir -p pkg/licenses
-          cp assets/fonts/OFL-JetBrainsMono.txt assets/fonts/OFL-NotoSansSymbols2.txt pkg/licenses/
+          cp assets/fonts/OFL-JetBrainsMono.txt assets/fonts/OFL-NotoSansSymbols2.txt assets/fonts/OFL-Inter.txt pkg/licenses/
           cp assets/fonts/README.md pkg/licenses/FONTS.md
           tar -czf "dist/DegenView-${RELEASE_TAG}-${{ matrix.name }}.tar.gz" -C pkg .
 

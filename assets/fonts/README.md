@@ -1,8 +1,8 @@
 # Bundled fonts
 
-Two fonts are compiled into DegenView (`include_bytes!` in `src/ui/theme.rs`), both under the
-**SIL Open Font License 1.1** and neither with a Reserved Font Name. The licence texts are
-`OFL-JetBrainsMono.txt` and `OFL-NotoSansSymbols2.txt`. They are copied into the macOS app
+Three fonts are compiled into DegenView (`include_bytes!` in `src/ui/theme/mod.rs`), both under the
+**SIL Open Font License 1.1** and none with a Reserved Font Name. The licence texts are
+`OFL-JetBrainsMono.txt`, `OFL-NotoSansSymbols2.txt` and `OFL-Inter.txt`. They are copied into the macOS app
 (`Contents/Resources/Licenses/`), the Flatpak (`/app/share/licenses/es.nico.degenview/`) and the Linux
 and Windows downloads, because the licence requires its text and the copyright notice to accompany
 every copy of the font, a program that embeds it included. DegenView itself is GPL-3.0-only; the fonts keep
@@ -11,6 +11,7 @@ their own licence.
 | File | Font | Used for | Licence file |
 | --- | --- | --- | --- |
 | `JetBrainsMonoNL-Regular.ttf` | JetBrains Mono NL Regular 2.304 | the Pine editor's code (the default font), and the first stop of the code families | `OFL-JetBrainsMono.txt` |
+| `Inter-Regular.ttf` | Inter 4.1 Regular (static) | the text of the whole app, first in the proportional family on every platform | `OFL-Inter.txt` |
 | `NotoSansSymbols2-subset.ttf` | Noto Sans Symbols 2 2.008, subset | the last glyph fallback of every font family | `OFL-NotoSansSymbols2.txt` |
 
 ## JetBrains Mono
@@ -43,6 +44,30 @@ cmp OFL.txt OFL-JetBrainsMono.txt                 # no output: the same text
 
 A font installed on the computer that is also called "JetBrains Mono" is not used instead: the built-in one
 is, so the editor looks the same on every machine.
+
+## Inter
+
+**Inter** 4.1 (2024-11-15), © 2016 The Inter Project Authors (<https://github.com/rsms/inter>), licensed under
+the SIL Open Font License 1.1 (`OFL-Inter.txt`, byte for byte the release's `LICENSE.txt`). It has no Reserved
+Font Name.
+
+It is the first font of egui's proportional family (`ui::theme::base_fonts`), so buttons, menus, labels and
+tables look the same on macOS, Linux and Windows; before, macOS read SF Pro from the system and the others got
+egui's Ubuntu-Light. The file is the **static** Regular from the release's `extras/ttf/`, **unmodified**
+(411,640 bytes): egui draws a variable font at its default instance only. Bold and Italic are not bundled
+(`RichText::strong` only changes the colour). egui cannot turn on OpenType features, so Inter's tabular
+digits (`tnum`) are not available.
+
+```
+sha256  40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82  Inter-Regular.ttf
+```
+
+```sh
+curl -fsSLO https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
+unzip -j Inter-4.1.zip extras/ttf/Inter-Regular.ttf LICENSE.txt
+shasum -a 256 Inter-Regular.ttf        # the hash above
+cmp LICENSE.txt OFL-Inter.txt          # no output: the same text
+```
 
 ## Noto Sans Symbols 2
 
