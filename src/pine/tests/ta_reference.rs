@@ -154,3 +154,32 @@ plot(expectedDirection)
     assert_same("direction", &plotted[2], &plotted[3]);
     assert!(plotted[0].iter().flatten().count() > 100);
 }
+
+#[test]
+fn named_arguments_of_supertrend_and_sar_bind_by_name() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Named\", overlay = true)
+[line, direction] = ta.supertrend(3, 10)
+[swapped, swappedDirection] = ta.supertrend(atrPeriod = 10, factor = 3)
+[named, namedDirection] = ta.supertrend(factor = 3, atrPeriod = 10)
+plot(line)
+plot(swapped)
+plot(named)
+plot(direction)
+plot(swappedDirection)
+plot(namedDirection)
+plot(ta.sar(0.02, 0.03, 0.3))
+plot(ta.sar(max = 0.3, inc = 0.03, start = 0.02))
+plot(ta.sar())
+plot(ta.sar(0.02, 0.02, 0.2))
+",
+        2_000,
+    );
+    assert_same("supertrend, reordered", &plotted[0], &plotted[1]);
+    assert_same("supertrend, named in order", &plotted[0], &plotted[2]);
+    assert_same("direction, reordered", &plotted[3], &plotted[4]);
+    assert_same("direction, named in order", &plotted[3], &plotted[5]);
+    assert_same("sar, reordered", &plotted[6], &plotted[7]);
+    assert_same("sar defaults", &plotted[8], &plotted[9]);
+}
