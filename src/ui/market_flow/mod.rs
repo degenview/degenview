@@ -1,8 +1,10 @@
-//! The market-flow panel, in two modes: the Liquidations (what the last minute, five minutes and
-//! hour of forced liquidations added up to, and a tape of the latest ones) and the Taker flow of
-//! the focused chart's asset (who crossed the spread, by venue). Drawn from snapshots; nothing here
+//! The market-flow panel, in three modes: the Liquidations (what the last minute, five minutes and
+//! hour of forced liquidations added up to, and a tape of the latest ones), the Taker flow of the
+//! focused chart's asset (who crossed the spread, by venue), and the Order book of the focused
+//! chart's market (a ladder of resting size and a trades tape). Drawn from snapshots; nothing here
 //! opens a socket.
 
+mod book;
 mod flow;
 #[cfg(test)]
 mod tests;
@@ -12,6 +14,7 @@ use crate::model::taker_flow;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::theme;
+pub use book::{BookBody, BookFeed, BookViewState};
 use eframe::egui::{self, Align, Color32, Layout, Rect, Sense, Ui, pos2, vec2};
 
 const HEADER_HEIGHT: f32 = 44.0;
@@ -31,6 +34,7 @@ pub enum Mode {
     #[default]
     Liquidations,
     TakerFlow,
+    Book,
 }
 
 /// What the panel remembers between frames.
@@ -38,6 +42,7 @@ pub enum Mode {
 pub struct MarketFlowState {
     pub mode: Mode,
     pub minimum: MinSize,
+    pub book: BookViewState,
 }
 
 /// What the taker-flow mode draws: the asset it follows (none while the focused chart has no crypto
@@ -52,6 +57,7 @@ pub struct FlowBody<'a> {
 pub enum Body<'a> {
     Liquidations(&'a Snapshot),
     TakerFlow(FlowBody<'a>),
+    Book(BookBody<'a>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -98,6 +104,7 @@ pub fn show(ui: &mut Ui, state: &mut MarketFlowState, body: &Body<'_>) -> Option
     match body {
         Body::Liquidations(snapshot) => liquidations(ui, state, snapshot),
         Body::TakerFlow(body) => flow::show(ui, body),
+        Body::Book(body) => book::show(ui, &mut state.book, body),
     }
     action
 }
@@ -131,6 +138,7 @@ fn header(ui: &mut Ui, state: &mut MarketFlowState, action: &mut Option<Action>)
                 &[
                     (Mode::Liquidations, "Liquidations"),
                     (Mode::TakerFlow, "Taker flow"),
+                    (Mode::Book, "Book"),
                 ],
                 &mut state.mode,
             );

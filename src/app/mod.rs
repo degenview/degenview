@@ -141,6 +141,8 @@ pub struct DegenViewApp {
     liquidations: crate::host::liquidation::LiquidationHost,
     /// The taker-flow feed every window's panel reads.
     taker_flow: crate::host::taker_flow::TakerFlowHost,
+    /// The order-book feeds, one per market a panel is looking at.
+    depth: crate::host::depth::DepthHost,
     /// The editor's themes and typography, shared by every window and Settings.
     editor_themes: EditorThemeHost,
     /// The MCP server, the questions its clients raise, and what the app remembers between
@@ -385,6 +387,7 @@ impl DegenViewApp {
             snapshots,
             liquidations: crate::host::liquidation::LiquidationHost::default(),
             taker_flow: crate::host::taker_flow::TakerFlowHost::default(),
+            depth: crate::host::depth::DepthHost::default(),
             editor_themes,
             mcp,
             alerts,
