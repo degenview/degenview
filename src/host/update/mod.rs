@@ -13,10 +13,13 @@ use crate::service::update::install::{self, Prepared, Progress, Stage};
 use crate::service::work_queue;
 use crate::store::{SharedStore, Store};
 use eframe::egui;
+use review::ReviewState;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+
+mod review;
 
 /// The `setting` key holding the chosen update channel. Local to this Mac: not in `sync::record::policy`.
 pub const CHANNEL_KEY: &str = "update.channel";
@@ -71,8 +74,8 @@ struct State {
     /// Set when an installed update should ask for the restart (cleared by "Later").
     restart_prompt: bool,
     /// The window showing the sheet that lists what an available update changes. Only one shows
-    /// it, and only while an update is on offer (`review_open_in`).
-    review: Option<Review>,
+    /// it, and only while an update is on offer (`State::settle` ends it when none is).
+    review: ReviewState,
     /// The user chose "Restart Now" and the quit that follows has not been called off: when the app
     /// exits, the new version is started. Cleared when the quit is called off.
     relaunch_on_exit: bool,
@@ -81,11 +84,41 @@ struct State {
     viewers: HashSet<egui::ViewportId>,
 }
 
-/// The open review sheet.
-struct Review {
-    viewport: egui::ViewportId,
-    /// The version the sheet drew on its previous frame (`note_shown`); none on the first frame.
-    shown: Option<String>,
+impl State {
+    /// Called by whatever changed the offer or the install: the review sheet goes with the update
+    /// it was about.
+    fn settle(&mut self) {
+        let phase = phase(self);
+        self.review.observe(&phase);
+    }
+
+    /// Takes a check's answer, as `finish_check` explains.
+    fn take_outcome(&mut self, outcome: UpdateOutcome, channel: Channel) {
+        self.checking = false;
+        if channel != self.channel {
+            self.last_started = None;
+            return;
+        }
+        self.last_failed = matches!(outcome, UpdateOutcome::Failed(_));
+        // A check that could not reach GitHub must not take a known update away.
+        let keeps_known_update =
+            self.last_failed && matches!(&self.last, Some((UpdateOutcome::Available(_), _)));
+        if keeps_known_update {
+            return;
+        }
+        // The error of a failed install belongs to the release that failed: once a different one
+        // is on offer (or none), it no longer applies and a retry starts clean.
+        if let Install::Failed { version, .. } = &self.install {
+            let still_offered = matches!(
+                &outcome,
+                UpdateOutcome::Available(release) if release.version == *version
+            );
+            if !still_offered {
+                self.install = Install::Idle;
+            }
+        }
+        self.last = Some((outcome, Instant::now()));
+    }
 }
 
 /// What the UIs draw: the state of the update flow, nothing about how it is run.
@@ -177,7 +210,7 @@ impl UpdateHost {
                 target,
                 target_pending: false,
                 restart_prompt: false,
-                review: None,
+                review: ReviewState::default(),
                 relaunch_on_exit: false,
                 born: Instant::now(),
                 viewers: HashSet::new(),
@@ -267,6 +300,7 @@ impl UpdateHost {
                     };
                 }
             }
+            state.settle();
         }
     }
 
@@ -318,6 +352,7 @@ impl UpdateHost {
                 state.last = None;
                 state.install = Install::Idle;
             }
+            state.settle();
         }
         let _ = store.set_setting(CHANNEL_KEY, &channel.key());
         self.check_now(ctx);
@@ -386,30 +421,8 @@ impl UpdateHost {
     /// next tick asks again, so a switch never shows the old channel's update.
     fn finish_check(&self, outcome: UpdateOutcome, channel: Channel) {
         let mut state = self.lock();
-        state.checking = false;
-        if channel != state.channel {
-            state.last_started = None;
-            return;
-        }
-        state.last_failed = matches!(outcome, UpdateOutcome::Failed(_));
-        // A check that could not reach GitHub must not take a known update away.
-        let keeps_known_update =
-            state.last_failed && matches!(&state.last, Some((UpdateOutcome::Available(_), _)));
-        if keeps_known_update {
-            return;
-        }
-        // The error of a failed install belongs to the release that failed: once a different one
-        // is on offer (or none), it no longer applies and a retry starts clean.
-        if let Install::Failed { version, .. } = &state.install {
-            let still_offered = matches!(
-                &outcome,
-                UpdateOutcome::Available(release) if release.version == *version
-            );
-            if !still_offered {
-                state.install = Install::Idle;
-            }
-        }
-        state.last = Some((outcome, Instant::now()));
+        state.take_outcome(outcome, channel);
+        state.settle();
     }
 
     /// Downloads and verifies release `version` on a worker thread; nothing is replaced until
@@ -431,8 +444,8 @@ impl UpdateHost {
                 return false;
             }
             let release = release.clone();
-            state.review = None;
             state.install = Install::Working(Progress::new(Stage::Verifying));
+            state.settle();
             (app, release)
         };
         if cfg!(test) {
@@ -465,6 +478,7 @@ impl UpdateHost {
             }
             Err(message) => state.install = Install::Failed { version, message },
         }
+        state.settle();
     }
 
     /// What clicking the tab bar's update mark does in the current phase: list what the update
@@ -486,12 +500,11 @@ impl UpdateHost {
     }
 
     /// Opens the sheet that lists what the available update changes in `viewport`, closing it in
-    /// any other window.
+    /// any other window. With no update on offer there is nothing to list and it does not open.
     pub fn review(&self, viewport: egui::ViewportId) {
-        self.lock().review = Some(Review {
-            viewport,
-            shown: None,
-        });
+        let mut state = self.lock();
+        state.review.open(viewport);
+        state.settle();
     }
 
     /// Records that the sheet draws `version` this frame and tells whether it drew that same
@@ -499,47 +512,25 @@ impl UpdateHost {
     /// replaced the one on screen, or a sheet that was only just opened, has not been seen by the
     /// person yet, so a key held over from before must not confirm it.
     pub fn note_shown(&self, version: &str) -> bool {
-        let mut state = self.lock();
-        let Some(review) = state.review.as_mut() else {
-            return false;
-        };
-        let seen = review.shown.as_deref() == Some(version);
-        if !seen {
-            review.shown = Some(version.to_owned());
-        }
-        seen
+        self.lock().review.note_shown(version)
     }
 
     /// Whether `viewport` shows the review sheet now. It ends by itself once no update is on offer
-    /// (a channel switch, an install started in another window): the choice is dropped, so a later
-    /// update does not open it unasked.
+    /// (a channel switch, an install started in another window): the host drops it where the offer
+    /// changes, so a later update does not open it unasked.
     pub fn review_open_in(&self, viewport: egui::ViewportId) -> bool {
-        let mut state = self.lock();
-        if !matches!(phase(&state), Phase::Available { .. }) {
-            state.review = None;
-        }
-        state
-            .review
-            .as_ref()
-            .is_some_and(|review| review.viewport == viewport)
+        self.lock().review.is_open_in(viewport)
     }
 
     pub fn close_review(&self) {
-        self.lock().review = None;
+        self.lock().review.close();
     }
 
     /// Ends the review when `viewport` is the window showing it, for a window that is closing: a
     /// viewport id outlives its window (Settings reuses one), so a sheet left behind would come back
     /// the next time that id opens. A review shown elsewhere is left alone.
     pub fn close_review_in(&self, viewport: egui::ViewportId) {
-        let mut state = self.lock();
-        if state
-            .review
-            .as_ref()
-            .is_some_and(|review| review.viewport == viewport)
-        {
-            state.review = None;
-        }
+        self.lock().review.close_in(viewport);
     }
 
     /// Swaps the prepared update in and schedules the reopen. On `Ok` the caller must quit now.
@@ -578,6 +569,7 @@ impl UpdateHost {
                     version,
                     message: message.clone(),
                 };
+                state.settle();
             }
         }
         result
