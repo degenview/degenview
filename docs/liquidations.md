@@ -1,6 +1,6 @@
-# Liquidations and taker flow
+# Liquidations, taker flow and order book
 
-A docked panel on the right of a tab (toolbar flame button, next to the watchlist toggle) with two
+A docked panel on the right of a tab (toolbar flame button, next to the watchlist toggle) with three
 modes, chosen at its top. It listens to the exchanges' public sockets only while a panel is drawn,
 and only for the mode on show. Nothing is stored: each record is the last hour, in memory.
 
@@ -19,7 +19,7 @@ numbers undercount a busy moment (below).
 | `Liquidation`, `Side`, `MinSize`, the rolling `Tape` and its `Snapshot` (totals, rows) | `model/liquidation/mod.rs` (pure; tests in `tests.rs`) |
 | The sockets and the lease | `service/liquidation/mod.rs`; one module per exchange (`binance.rs`, `bybit.rs`: session and parser) |
 | Owning the feed, the per-frame snapshot cache | `host/liquidation/mod.rs` (`LiquidationHost`, one for the app, in `WindowEnv`) |
-| The panel | `ui/market_flow/mod.rs` (`show`, `usd`) |
+| The panel | `ui/market_flow/mod.rs` (`show`, `usd`); one file per mode body (`flow.rs`, `book/`) |
 | The tab's side of it, docking | `workspace/market_flow.rs`; the button is in `ui/workspace/toolbar.rs` |
 
 ## How it runs
@@ -92,6 +92,83 @@ markets on four venues are followed: Binance spot and USDⓈ-M perpetual, Bybit 
   the panel says "Waiting for ... trades" only until any venue has traded.
 - Flow is not advice: it says who was aggressive, not who was right.
 
+## Order book
+
+The DOM: the focused chart's market on **its own exchange**, as the exchange's book and trades.
+Read-only: nothing here places an order. Charts are spot, so these are spot books of **Binance** and
+**Bybit**; any other chart shows "No order book". `market_of(source, symbol)` decides, through
+`InstrumentId::api_symbol()`.
+
+### Layers
+
+One concern to a layer, and an exchange is a plug-in at each: adding OKX, or a perpetual market,
+means one new file in `model/depth/sync/`, one in `service/depth/`, and a line in each registry
+(`sync::for_exchange`, `venue::for_exchange`, `market_of`). Nothing shared is edited.
+
+| Layer | What it holds |
+| --- | --- |
+| `model/depth/` (pure) | `Price` (an exact `i64` of 1e-8, parsed from the exchange's decimal text, so no float keys), `Book`, `Tape` (the latest 300 trades; traded volume by price, the 2,000 prices nearest the market), `PullStack`, `group` (row sizes), `Ladder` and `View`, `Event`. `DepthRecord` is the single door: `apply(event, now)`, `link(up)`, `ladder(view, now)`, `revision()`. A `BookSync` per exchange protocol (`sync/binance.rs`, `sync/bybit.rs`) keeps the book right |
+| `service/depth/` | `DepthFeed` (one `Stream` thread per market) only routes: tick size, then the socket, then events into the record. What differs is behind the `DepthVenue` trait (`session`, `tick_size`, `snapshot`, `parse`) in `binance.rs` and `bybit.rs`; `DepthError` (`Http`, `Parse`, `UnknownSymbol`) is the look-ups' error; `levels.rs` is the book side shape both send |
+| `host/depth/` | `DepthHost::watch(ctx, market, view) -> Arc<Ladder>`: lifetimes and caching only, on `host::lease_map` |
+| `ui/market_flow/book/` | Draws a `Ladder` (`ladder.rs`, `tape.rs`, `toolbar.rs`; the viewer's choices in `state.rs`). It never sees a `Book`, a socket or an exchange beyond its name |
+
+The viewer's choices (`BookViewState`: row size, scroll, big-trade threshold) are not data: the tab
+turns them into a `View` and hands it to the host, which caches the ladder by (record revision,
+second, view). A new market starts over (`forget_market`), because its prices have nothing to do with
+the last one's.
+
+### The exchanges (verified against the live sockets)
+
+| Exchange | Socket | Book | Trades |
+| --- | --- | --- | --- |
+| Binance spot | `wss://stream.binance.com/stream?streams=<s>@depth@100ms/<s>@aggTrade` (combined: each message is `{"stream","data"}`; nothing sent) | REST `/api/v3/depth?symbol=&limit=5000` (`lastUpdateId`, 5,000 levels a side, 8-decimal strings) for the start; `depthUpdate` diffs with `U`, `u`, `b`, `a` | `aggTrade`: `p`, `q`, `T`, `m` (buyer is the maker: the taker sold) |
+| Bybit spot | `wss://stream.bybit.com/v5/public/spot`, one subscribe for `orderbook.200.<SYMBOL>` and `publicTrade.<SYMBOL>` | `snapshot` then `delta`, `data.u` the update id, `data.b` and `data.a` | `publicTrade` rows: `T`, `S` (the taker's side), `v`, `p` |
+
+Tick size: Binance `/api/v3/exchangeInfo?symbol=` (`PRICE_FILTER.tickSize`; HTTP 400 for an unknown
+symbol), Bybit `/v5/market/instruments-info?category=spot&symbol=` (`priceFilter.tickSize`; an empty
+list for an unknown one).
+
+### Keeping the book right (`BookSync`)
+
+- **Binance.** The socket is opened, then the snapshot fetched (the socket's frames wait in its
+  buffer meanwhile), then frames are read. A diff with `u <=` the snapshot's id is dropped; the first
+  one used must straddle it (`U <= id + 1 <= u`); each later one must start where the last ended
+  (`U == previous u + 1`). Anything else empties the book and asks for a snapshot again, inside the
+  frame handler: the feed never ends its session over a gap, because ending it ends the feed for
+  good. A diff before any snapshot is a gap too.
+- **Bybit.** A `snapshot` replaces the book, and so does any message with `u == 1` (Bybit restarting
+  its book; the parser turns it into a snapshot whatever `type` says). A `delta` applies only on top
+  of a snapshot and only if its `u` is newer. Bybit sends a snapshot after every (re)connect, so
+  none is fetched.
+- **A dropped socket** empties the book (`DepthRecord::link(false)`): the ladder says "Reconnecting"
+  rather than show a book that is out of date, and shows again once the next snapshot is in.
+- Levels are kept to the nearest 2,000 a side (`MAX_LEVELS`), so memory stays bounded.
+
+### The ladder
+
+- **Rows.** A row spans a *group* of ticks, picked from the tick × 1, 5, 10, 50, 100, 500, 1,000 (the
+  toolbar's menu), or by default the smallest whose rows, 40 of them, cover about half a percent of
+  the mid. Bids fold **down** to the row at or below, asks **up**, so a row is bid or offered, never
+  both. A trade folds where its taker hit: a buyer lifts an ask (up), a seller hits a bid (down).
+  A `Ladder` holds 201 rows around the centre; the panel draws as many as fit.
+- **Columns.** Stack, Bid, Price, Ask, Traded (a bar split buy and sell, scaled to the busiest
+  row). The spread sits above the best bid; the last trade's row is outlined in its taker's colour.
+  Hover a row for what its sizes are worth. Scrolling over the ladder moves the window; the target
+  button in the toolbar centres it on the market again.
+- **Pull/Stack.** The net change in resting size at a price over the last 10 seconds: positive is
+  stacked, negative pulled. Size that left because a trade took it is not a pull (each trade is
+  counted back in), so a level that is eaten reads as zero. A figure is coloured once it is a
+  quarter of what rests there (all of a pulled level). It is approximate: a trade and the book
+  change that follows come on different sockets and can fall in different seconds.
+- **Traded** is since the first trade the record saw, which is when the panel was opened on the
+  market (the footnote says since when). It is not history.
+- **Tape.** The latest 300 trades, newest first; one of at least $10K, $100K (default) or $1M
+  notional is set heavier and tinted by its taker.
+- A market the exchange does not list (the tick size answers "unknown symbol") says so; the feed
+  keeps asking every 10 s.
+
+The footnote says what a size is: the base coin, price × size taken as dollars for the tape.
+
 ## Not done
 
 - **OKX.** Its `liquidation-orders` channel reports contracts, so a dollar value needs each
@@ -101,18 +178,26 @@ markets on four venues are followed: Binance spot and USDⓈ-M perpetual, Bybit 
 - Liquidations on the chart, a per-asset filter, Bybit inverse, and an MCP tool.
 - Taker flow for the quote currencies other than USDT, for OKX, and for the whole market (the
   exchanges have no all-markets trade stream, so it is one asset at a time).
+- The order book for perpetual markets (charts are spot only), for the other exchanges (OKX, Kraken,
+  Coinbase, Gate.io, MEXC), and any click-to-trade.
+  Binance's book depth beyond 2,000 levels is dropped, and the pull/stack figures are not checked
+  against a second source.
 - The panel is not remembered across restarts: a tab starts with it closed, like the Paper panel.
 - Not checked against a second source (Coinglass and the like); the figures are the exchanges'.
 
 ## Tests
 
-`cargo test --lib liquidation` and `cargo test --lib taker_flow` run the models, parsers (inline
-samples), lease and view tests. The live checks, which wait for each exchange or venue to speak:
+`cargo test --lib liquidation`, `cargo test --lib taker_flow` and `cargo test --lib depth` run the
+models, parsers (inline samples), lease and view tests. The live checks, which wait for each exchange or venue to speak:
 
 ```bash
 cargo test --lib liquidation::tests::live_exchanges -- --ignored --nocapture
 cargo test --lib taker_flow::tests::live_venues -- --ignored --nocapture
+cargo test --lib service::depth::tests::live_books -- --ignored --nocapture
 ```
 
-Pictures of the panel (both themes, default and narrow width): `cargo test --lib ui::market_flow --
---ignored` with `DEGENVIEW_GALLERY_DIR` set.
+The last one starts a feed for BTCUSDT on each exchange, waits for a live book and a trade, prints
+the best bid and ask, and then checks for 10 s of diffs that the book never crosses.
+
+Pictures of the panel (both themes, default and narrow width, and the opened menus of the order
+book): `cargo test --lib ui::market_flow -- --ignored` with `DEGENVIEW_GALLERY_DIR` set.

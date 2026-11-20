@@ -95,6 +95,7 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
 | `liquidation/`, `taker_flow/` | Forced liquidations (`Liquidation`, the rolling `Tape` and its `Snapshot` of totals and rows) and taker flow (`Trade`, `Venue`, the per-second `Flow` and its `Snapshot`, `asset_of`). Pure |
 | `changelog/` | The release notes the update sheet shows: `parse` reads `## <version>` / `### New` / `### Fixed` sections out of a release body (bounded), `ReleaseNotes` merges them and writes the sheet's footnotes (`footnotes`), `notes_for_range` picks the sections between two versions from plain `ListedRelease` values and reports `Coverage`, `Version` is the SemVer tag type the updater shares; `tools/changelog.sh` writes the text |
+| `depth/` | One market's order book and trades as a `Ladder` for a panel: `DepthRecord` (the one door: `apply`, `link`, `ladder`) over the `Book`, the `Tape` of trades, the `PullStack`, the exact `Price` key and the row `group` sizes; `sync/` holds one `BookSync` per exchange protocol (`binance`, `bybit`); `market_of`. Pure |
 | `ids/` | The id space engines mint into (`LEGACY_LIMIT`, `GLOBAL_BASE`); sync tags it in `sync::record::ids` |
 | `encoding/` | Standard base64 (`base64_encode`, `base64_decode`) for MCP images, the CloudKit bridge, stored pictures and proxy sign-in |
 
@@ -126,10 +127,10 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 | `system/` | `entitlements`, `file_dialog`, `sandbox`, `timezone` |
 | `sound/` | Short system sounds through the platform's own player (`NSSound`, `PlaySoundW`, `canberra-gtk-play`), no audio crate; `Sounder` is the seam tests replace. The paper-fill sound: `PaperHost` counts fills this Mac made (`drain_fills`, never a reload or a mirrored account), `app/background.rs` plays one sound per frame, and the Notifications page's "Fill sound" switch is the local setting `paper.prefs` |
 | `llm/`, `watchlist_quotes/` | The AI providers; the shared quote stream |
-| `liquidation/`, `taker_flow/`, `stream/` | The exchanges' public liquidation sockets and trade sockets (`binance`, `bybit` each) filling one `Tape` or `Flow`; `stream` is the lease, watchdog and thread runner both share |
+| `liquidation/`, `taker_flow/`, `depth/`, `stream/` | The exchanges' public liquidation, trade and order-book sockets (`binance`, `bybit` each) filling one `Tape`, `Flow` or `DepthRecord`; `depth/` puts an exchange behind the `DepthVenue` trait (`venue`), so its feed never names one; `stream` is the lease, watchdog, thread runner and retry-until-shutdown the three share |
 
 `host/` has only `mod.rs` at its root. One directory per domain, the host in `mod.rs` and its helpers
-beside it: `alert/` (with `runtime`), `broker/`, `editor_theme/`, `mcp/` (with `confirmation`), `paper/`,
+beside it: `alert/` (with `runtime`), `broker/`, `depth/` (the order-book feeds), `editor_theme/`, `lease_map/` (the lease and entry bookkeeping that `taker_flow` and `depth` share: one feed, record and lease per key), `mcp/` (with `confirmation`), `paper/`,
 `pine/` (with `chart/`, the runs of a chart's scripts and their workers; `batch`, scripts run once
 each; `subscription`), `portfolio/` (with `card` and `import_flow`), `settings/` (the Settings
 window's controller: it builds the page's input and applies its actions), `snapshot/`, `sync/` (with
@@ -243,6 +244,7 @@ picture test sits beside it (`broker/panel_gallery.rs`). A helper used by severa
 | --- | --- |
 | `chart/` | The chart card (`card/`, one child per concern: `header`, `body` and `frame`, `paint`, `crosshair`, `price_scale`, `view`, `scripts`, ...), canvas and series rendering, chart menus, scale menu, indicator strip, table view, object tree, session stats, the snapshot scene builder (`snapshot_scene`), chart settings with templates and overlays (`settings/`, one child per page: `appearance`, `indicators`, `scripts/`, `canvas`, `compare`, ...), the symbol and indicator pickers, and the pieces the symbol picker shares with the portfolio pickers (`picker_kit/`: recents, suggestions, artwork, result rows, search box, header art) |
 | `drawing/` | Drawings: pure geometry (`geometry/`, with `fib`, `line`, `annotation`, `pattern`), the interaction layer (`layer/`), the properties panel (`properties/`, one child per page plus the shared `rows` and the saved `templates`), `render`, and the text/note/table content tools (`content/`) |
+| `market_flow/` | The market-flow panel: Liquidations and Taker flow bodies, and `book/` (the Order book mode: `toolbar`, `ladder`, `tape`, `state`) |
 | `alert/`, `webhook/`, `mcp/` | Alert center, editors, banner and chart lines; webhook editor, picker and settings; MCP activity and confirmation |
 | `paper/`, `broker/`, `trade/` | Paper trading screens (the panel under a chart in `panel/`), live trading screens, and what both share (the order sheet and its fields) |
 | `portfolio/`, `watchlist/`, `replay/` | The Portfolio tab (`tab/`: its bar, pages and import sheets), its Overview (`overview/`) and Statistics (`statistics/`) pages and the blocks both draw with (`blocks`), and its cards; the watchlist sidebar (`sidebar/`: `header`, `content`, `detail`, `menus`, `modals`); the replay bar, date sheet and overlay |
