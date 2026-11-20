@@ -11,26 +11,6 @@ use crate::pine::syntax::ast::{
 };
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
 
-/// The values a loop's counters held outside it, to put back when it ends: an index and a value at
-/// most. The names borrow from the statement, so saving one builds no `String`.
-#[derive(Default)]
-struct Counters<'s>([Option<(&'s str, Option<RuntimeValue>)>; 2]);
-
-impl<'s> Counters<'s> {
-    /// `value` is what `name` holds now; None for a builtin's name, which has no variable.
-    fn push(&mut self, name: &'s str, value: Option<RuntimeValue>) {
-        if let Some(slot) = self.0.iter_mut().find(|slot| slot.is_none()) {
-            *slot = Some((name, value));
-        }
-    }
-
-    fn restore(self, variables: &mut FastMap<String, RuntimeValue>) {
-        for (name, value) in self.0.into_iter().flatten() {
-            put_back(variables, name, value);
-        }
-    }
-}
-
 /// Gives `name` the value it held outside a block, or removes it (a builtin's name has no variable).
 fn put_back(
     variables: &mut FastMap<String, RuntimeValue>,
@@ -46,6 +26,16 @@ fn put_back(
             variables.remove(name);
         }
     }
+}
+
+/// What a `for` loop counts through, its bounds already evaluated.
+#[derive(Clone, Copy)]
+struct Counting<'s> {
+    variable: &'s str,
+    start: f64,
+    stop: f64,
+    stride: f64,
+    integral: bool,
 }
 
 impl Session {
@@ -126,40 +116,6 @@ impl Session {
         statement: &Statement,
         context: &mut RuntimeContext,
     ) -> Result<Step, Diagnostic> {
-        // A loop's counters are the loop's own: set before its body runs, put back after it.
-        let mut counters = Counters::default();
-        match statement {
-            Statement::ForRange { variable, .. } => self.save_counter(variable, &mut counters),
-            Statement::ForIn { index, value, .. } => {
-                if let Some(index) = index.as_deref() {
-                    self.save_counter(index, &mut counters);
-                }
-                self.save_counter(value, &mut counters);
-            }
-            _ => return self.run_statement_unscoped(statement, context),
-        }
-        let result = self.run_statement_unscoped(statement, context);
-        counters.restore(&mut self.working.variables);
-        result
-    }
-
-    /// Saves what a loop counter holds outside the loop, if it holds anything; a builtin's name has
-    /// no variable, so it is removed after.
-    fn save_counter<'s>(&self, name: &'s str, counters: &mut Counters<'s>) {
-        match self.working.variables.get(name) {
-            Some(value) => counters.push(name, Some(value.clone())),
-            None if self.shadowing_builtins.iter().any(|shadow| shadow == name) => {
-                counters.push(name, None);
-            }
-            None => {}
-        }
-    }
-
-    fn run_statement_unscoped(
-        &mut self,
-        statement: &Statement,
-        context: &mut RuntimeContext,
-    ) -> Result<Step, Diagnostic> {
         match statement {
             Statement::Declaration {
                 name,
@@ -185,14 +141,33 @@ impl Session {
                 step,
                 body,
                 range,
-            } => self.run_for_range(variable, from, to, step.as_ref(), body, *range, context),
+                shadows,
+            } => self.run_for_range(
+                variable,
+                from,
+                to,
+                step.as_ref(),
+                body,
+                *range,
+                context,
+                *shadows,
+            ),
             Statement::ForIn {
                 index,
                 value,
                 collection,
                 body,
                 range,
-            } => self.run_for_in(index.as_deref(), value, collection, body, *range, context),
+                shadows,
+            } => self.run_for_in(
+                index.as_deref(),
+                value,
+                collection,
+                body,
+                *range,
+                context,
+                *shadows,
+            ),
             Statement::WhileLoop {
                 condition, body, ..
             } => self.run_while(condition, body, context),
@@ -425,6 +400,7 @@ impl Session {
         body: &[Statement],
         range: SourceRange,
         context: &mut RuntimeContext,
+        shadows: Option<ShadowId>,
     ) -> Result<Step, Diagnostic> {
         let start_value = self.eval(from, context)?;
         let Some(start) = start_value.number() else {
@@ -464,6 +440,41 @@ impl Session {
                 integral = false;
             }
         }
+        // The bounds are done: what the counter's name holds now is the outer variable, as they left
+        // it.
+        let mark = self.shadow_stack.len();
+        if let Some(id) = shadows {
+            self.shadow(id);
+        }
+        let counting = Counting {
+            variable,
+            start,
+            stop,
+            stride,
+            integral,
+        };
+        let result = self.count(&counting, body, context);
+        self.unshadow(mark);
+        Ok(Step {
+            flow: Flow::Normal,
+            value: result?,
+        })
+    }
+
+    /// The iterations of a `for` loop, up to its last value.
+    fn count(
+        &mut self,
+        counting: &Counting<'_>,
+        body: &[Statement],
+        context: &mut RuntimeContext,
+    ) -> Result<RuntimeValue, Diagnostic> {
+        let Counting {
+            variable,
+            start,
+            stop,
+            stride,
+            integral,
+        } = *counting;
         let direction = if stop >= start { 1.0 } else { -1.0 };
         let mut last = RuntimeValue::Void;
         let mut i = start;
@@ -488,10 +499,7 @@ impl Session {
             }
             i += direction * stride;
         }
-        Ok(Step {
-            flow: Flow::Normal,
-            value: last,
-        })
+        Ok(last)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -503,6 +511,7 @@ impl Session {
         body: &[Statement],
         range: SourceRange,
         context: &mut RuntimeContext,
+        shadows: [Option<ShadowId>; 2],
     ) -> Result<Step, Diagnostic> {
         let target = self.eval(collection, context)?;
         if target == RuntimeValue::Na {
@@ -520,6 +529,29 @@ impl Session {
             ));
         };
         let items = self.working.arrays.get(&id).cloned().unwrap_or_default();
+        // The collection is done: what the counters' names hold now are the outer variables, as it
+        // left them.
+        let mark = self.shadow_stack.len();
+        for id in shadows.into_iter().flatten() {
+            self.shadow(id);
+        }
+        let result = self.iterate(index_name, value_name, items, body, context);
+        self.unshadow(mark);
+        Ok(Step {
+            flow: Flow::Normal,
+            value: result?,
+        })
+    }
+
+    /// The iterations of a `for ... in` loop, up to its last value.
+    fn iterate(
+        &mut self,
+        index_name: Option<&str>,
+        value_name: &str,
+        items: Vec<RuntimeValue>,
+        body: &[Statement],
+        context: &mut RuntimeContext,
+    ) -> Result<RuntimeValue, Diagnostic> {
         let mut last = RuntimeValue::Void;
         for (offset, item) in items.into_iter().enumerate() {
             self.budget()?;
@@ -533,10 +565,7 @@ impl Session {
                 break;
             }
         }
-        Ok(Step {
-            flow: Flow::Normal,
-            value: last,
-        })
+        Ok(last)
     }
 
     fn run_while(

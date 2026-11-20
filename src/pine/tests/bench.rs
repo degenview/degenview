@@ -260,6 +260,27 @@ for i = 0 to 15
 plot(total + level)
 ";
 
+/// Hot `for` loops: counters that hide a global (`i`, `k`, `v`), ones that hide nothing (`j`) and a
+/// `for ... in`: what entering and leaving a loop costs per counter.
+pub(crate) const COUNTERS: &str = "//@version=6
+indicator(\"Counters\")
+i = 3
+k = 1
+v = 0.5
+var values = array.new_float(0)
+if array.size(values) < 40
+    array.push(values, close)
+float total = 0.0
+for i = 0 to 40
+    for j = 0 to 3
+        total += j * 0.1
+for [k, v] in values
+    total += k * v
+for n = 0 to 40
+    total += n
+plot(total + i + k + v)
+";
+
 /// Six `str.*` calls per bar.
 pub(crate) const MANY_STR: &str = "//@version=6
 indicator(\"Many str\")
@@ -732,6 +753,13 @@ fn workloads() -> Vec<Workload> {
     {
         let data = minute.clone();
         add("blocks", Box::new(move || evaluate(BLOCKS, &data, false)));
+    }
+    {
+        let data = minute.clone();
+        add(
+            "counters",
+            Box::new(move || evaluate(COUNTERS, &data, false)),
+        );
     }
     {
         let data = bars(800, MINUTE_MS);

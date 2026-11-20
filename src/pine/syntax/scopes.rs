@@ -102,9 +102,10 @@ pub struct Bindings<'a> {
     names: HashMap<Slot, Binding<'a>>,
     locals: Vec<LocalInfo<'a>>,
     globals: HashSet<&'a str>,
-    /// The declaration slots of a block that hide a name visible just before them: a global, a
-    /// local, a parameter, or a builtin variable (see [`resolve_with`]). The first declaration of a
-    /// name, a function body's own declarations and a `var` hide nothing.
+    /// The declaration slots of a block and the counters of a loop that hide a name visible just
+    /// before them: a global, a local, a parameter, or a builtin variable (see [`resolve_with`]).
+    /// The first declaration of a name, a function body's own declarations and a `var` hide
+    /// nothing.
     shadowing: HashSet<Slot>,
 }
 
@@ -302,6 +303,33 @@ pub fn mark_shadowing(
                     .collect();
             }
         }
+        Statement::ForRange {
+            variable,
+            range,
+            shadows,
+            ..
+        } => {
+            if sites.contains(&(range.start.offset, 0)) {
+                *shadows = Some(names.id(variable));
+            }
+        }
+        Statement::ForIn {
+            index,
+            value,
+            range,
+            shadows,
+            ..
+        } => {
+            let site = range.start.offset;
+            if sites.contains(&(site, 0))
+                && let Some(index) = index
+            {
+                shadows[0] = Some(names.id(index));
+            }
+            if sites.contains(&(site, 1)) {
+                shadows[1] = Some(names.id(value));
+            }
+        }
         _ => {}
     });
 }
@@ -345,8 +373,9 @@ impl<'a> Resolver<'a, '_> {
         self.trail.push((name, previous));
     }
 
-    /// Declares a block's `slot`th name of the statement at `site`, noting whether it hides a name
-    /// that is visible now.
+    /// Declares a block's `slot`th name of the statement at `site` (a loop's counters are declared
+    /// the same way, once the bounds or the collection are resolved), noting whether it hides a
+    /// name that is visible now.
     fn declare_in_block(&mut self, name: &'a str, site: usize, slot: usize) -> Binding<'a> {
         let hides = match self.lookup(name) {
             Binding::Free(free) => (self.is_builtin)(free),
@@ -450,6 +479,7 @@ impl<'a> Resolver<'a, '_> {
                 step,
                 body,
                 range,
+                ..
             } => {
                 self.expression(from);
                 self.expression(to);
@@ -457,8 +487,9 @@ impl<'a> Resolver<'a, '_> {
                     self.expression(step);
                 }
                 let mark = self.enter();
-                let binding = self.declare(variable, range.start.offset);
-                self.name(range.start.offset, 0, binding);
+                let site = range.start.offset;
+                let binding = self.declare_in_block(variable, site, 0);
+                self.name(site, 0, binding);
                 for statement in body {
                     self.statement(statement, Level::Block);
                 }
@@ -470,15 +501,16 @@ impl<'a> Resolver<'a, '_> {
                 collection,
                 body,
                 range,
+                ..
             } => {
                 self.expression(collection);
                 let mark = self.enter();
                 let site = range.start.offset;
                 if let Some(index) = index {
-                    let binding = self.declare(index, site);
+                    let binding = self.declare_in_block(index, site, 0);
                     self.name(site, 0, binding);
                 }
-                let binding = self.declare(value, site);
+                let binding = self.declare_in_block(value, site, 1);
                 self.name(site, 1, binding);
                 for statement in body {
                     self.statement(statement, Level::Block);
@@ -928,6 +960,109 @@ mod tests {
     #[test]
     fn a_builtin_variable_is_hidden_by_a_block_declaration_of_its_name() {
         assert_eq!(shadowing("if true\n    low = 1\n    foo = 2\n"), ["low"]);
+    }
+
+    /// The loops of `source` whose counters hide a name, as `for i` or `for [i, v]` with only the
+    /// flagged counters named.
+    fn hidden_counters(source: &str) -> Vec<String> {
+        let mut statements = parse(source);
+        let mut names = ShadowNames::default();
+        mark_shadowing(&mut statements, &|name| name == "low", &mut names);
+        let mut found = Vec::new();
+        traversal::for_each_statement_mut(&mut statements, &mut |statement| match statement {
+            Statement::ForRange {
+                variable,
+                shadows: Some(_),
+                ..
+            } => found.push(format!("for {variable}")),
+            Statement::ForIn {
+                index,
+                value,
+                shadows,
+                ..
+            } if shadows.iter().any(Option::is_some) => {
+                let hidden: Vec<&str> = [index.as_deref(), Some(value.as_str())]
+                    .into_iter()
+                    .zip(shadows)
+                    .filter_map(|(name, shadow)| shadow.and(name))
+                    .collect();
+                found.push(format!("for [{}]", hidden.join(", ")));
+            }
+            _ => {}
+        });
+        found
+    }
+
+    #[test]
+    fn a_loop_counter_hides_what_is_visible_at_the_loop() {
+        // A global, also one declared below the loop.
+        assert_eq!(
+            hidden_counters("i = 5\nfor i = 0 to 2\n    a = i\n"),
+            ["for i"]
+        );
+        assert_eq!(
+            hidden_counters("for i = 0 to 2\n    a = i\ni = 5\n"),
+            ["for i"]
+        );
+        // A local of an enclosing block, and the counter of an enclosing loop.
+        assert_eq!(
+            hidden_counters("if true\n    n = 1\n    for n = 0 to 2\n        a = n\n"),
+            ["for n"]
+        );
+        assert_eq!(
+            hidden_counters("for j = 0 to 2\n    for j = 0 to 1\n        a = j\n"),
+            ["for j"]
+        );
+        // A parameter, and a global seen from a function body.
+        assert_eq!(
+            hidden_counters("f(p) =>\n    for p = 0 to 1\n        a = p\n    1\n"),
+            ["for p"]
+        );
+        assert_eq!(
+            hidden_counters("g = 1\nf() =>\n    for g = 0 to 1\n        a = g\n    1\n"),
+            ["for g"]
+        );
+        // A builtin variable.
+        assert_eq!(
+            hidden_counters("for low = 0 to 2\n    a = low\n"),
+            ["for low"]
+        );
+    }
+
+    #[test]
+    fn a_loop_counter_that_hides_nothing_is_not_flagged() {
+        assert_eq!(
+            hidden_counters("for i = 0 to 2\n    a = i\nfor i = 0 to 2\n    b = i\n"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            hidden_counters("f() =>\n    for i = 0 to 2\n        a = i\n    1\n"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            hidden_counters("for [i, v] in arr\n    a = i + v\n"),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_for_in_flags_its_index_and_value_apart() {
+        assert_eq!(
+            hidden_counters("i = 1\nv = 2\nfor [i, v] in arr\n    a = i + v\n"),
+            ["for [i, v]"]
+        );
+        assert_eq!(
+            hidden_counters("v = 2\nfor [i, v] in arr\n    a = i + v\n"),
+            ["for [v]"]
+        );
+        assert_eq!(
+            hidden_counters("i = 1\nfor [i, v] in arr\n    a = i + v\n"),
+            ["for [i]"]
+        );
+        assert_eq!(
+            hidden_counters("v = 2\nfor v in arr\n    a = v\n"),
+            ["for [v]"]
+        );
     }
 
     #[test]
