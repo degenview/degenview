@@ -149,7 +149,8 @@ Measured on 14 November 2026, on the tree before PR 1 (`fef5a750`) and after PR 
 ### Later (not in this series)
 
 - A workspace split: a small core crate, then the Pine engine on its own (needs PR 6). Before it,
-  `store::scripts` must stop importing `pine_studio::library::{name, registry}`.
+  `store::scripts` no longer imports `pine_studio` (the name rules are `model::pine::script_name`,
+  the library registry `store::scripts::registry`).
 - `Store` as per-domain repositories with a separate read connection.
 - One Pine builtin signature table for the registry, the type checker and the studio.
 - Pine runtime allocations: overload lookups and `ta` windows that allocate on every bar.

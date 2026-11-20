@@ -7,14 +7,16 @@
 //! renames and moves) and falls back to `index.json` (id → file name) for editors whose atomic
 //! saves drop extended attributes.
 
+pub mod registry;
+
 use crate::model::pine::script::{
     CompileStatus, LocalScript, ScriptCompileRecord, ScriptDraft, ScriptId, ScriptType,
     ScriptVersion, now_ms,
 };
+use crate::model::pine::script_name::{self, FILE_EXTENSION, ScriptNameError};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
-use crate::pine_studio::library::name::{self, FILE_EXTENSION, ScriptNameError};
-use crate::pine_studio::library::registry::LibraryRegistry;
+use registry::LibraryRegistry;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -162,7 +164,7 @@ impl ScriptStore {
         disambiguating: bool,
     ) -> Result<LocalScript> {
         self.load_if_needed()?;
-        let base = name::validate(requested)?;
+        let base = script_name::validate(requested)?;
         if !disambiguating && self.is_name_taken(&base, None) {
             return Err(ScriptStoreError::NameConflict);
         }
@@ -208,7 +210,7 @@ impl ScriptStore {
         if self.metadata.contains_key(id) {
             return Err(ScriptStoreError::NameConflict);
         }
-        let base = name::validate(requested)?;
+        let base = script_name::validate(requested)?;
         let name = disambiguated(&base, &self.taken_names(None));
         let now = now_ms();
         let script = LocalScript {
@@ -244,7 +246,7 @@ impl ScriptStore {
             .get(id)
             .cloned()
             .ok_or(ScriptStoreError::MissingScript)?;
-        let clean = name::validate(requested)?;
+        let clean = script_name::validate(requested)?;
         let target = if self.is_name_taken(&clean, Some(id)) {
             disambiguated(&clean, &self.taken_names(Some(id)))
         } else {
@@ -408,7 +410,7 @@ impl ScriptStore {
             .get(id)
             .cloned()
             .ok_or(ScriptStoreError::MissingScript)?;
-        let clean = name::validate(new_name)?;
+        let clean = script_name::validate(new_name)?;
         if clean == script.name {
             return Ok(script);
         }

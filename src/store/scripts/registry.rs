@@ -1,5 +1,5 @@
-//! Answers `import user/Library/version` from the library scripts in the Pine Studio, so the
-//! compiler can run anywhere (editor, preview, chart) without touching the store. Port of
+//! Answers `import user/Library/version` from the library scripts the script store last listed,
+//! so the compiler can run anywhere (editor, preview, chart, MCP) without reading the files again. Port of
 //! `PineLibraryRegistry.swift`.
 //!
 //! A path is matched on its library name alone: the user and version parts address a published

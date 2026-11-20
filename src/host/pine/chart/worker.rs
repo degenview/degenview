@@ -7,7 +7,7 @@ use crate::pine::compiler::program::{ChartTheme, InputValue, SymbolInfo, VisualO
 use crate::pine::logs::LogBatch;
 use crate::pine::runtime::execution::ExecutionController;
 use crate::pine::syntax::token::{Diagnostic, Limits};
-use crate::pine_studio::library::registry::LibraryRegistry;
+use crate::store::scripts::registry::LibraryRegistry;
 use eframe::egui;
 use std::collections::HashMap;
 use std::sync::{

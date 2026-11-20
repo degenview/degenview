@@ -12,8 +12,8 @@ use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::runtime::execution::ExecutionController;
 use crate::pine::runtime::state::AlertEvent;
 use crate::pine::syntax::token::Limits;
-use crate::pine_studio::library::registry::LibraryRegistry;
 use crate::store::Store;
+use crate::store::scripts::registry::LibraryRegistry;
 use std::collections::HashMap;
 
 /// What a running controller was built from. Any difference means the controller is stale and

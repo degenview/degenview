@@ -245,7 +245,9 @@ enum NameEvent {
 
 /// Whether `name` can be given to a script: something is typed and nothing is wrong with it.
 fn name_is_usable(name: &str, problem: Option<&str>) -> bool {
-    !name.trim().is_empty() && problem.is_none() && super::library::name::validate(name).is_ok()
+    !name.trim().is_empty()
+        && problem.is_none()
+        && crate::model::pine::script_name::validate(name).is_ok()
 }
 
 /// The name field sheet New Script and Rename share: the field, a line for what is wrong with the

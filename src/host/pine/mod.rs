@@ -20,7 +20,7 @@ use crate::pine::runtime::support::{
 };
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity, Limits};
 use crate::pine::time::bucket::timeframe_of;
-use crate::pine_studio::library::registry::LibraryRegistry;
+use crate::store::scripts::registry::LibraryRegistry;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};

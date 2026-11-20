@@ -12,7 +12,7 @@ use crate::model::pine::script::{CompileStatus, ScriptType};
 use crate::pine::profile::ProfileConfig;
 use crate::pine_studio::PineStudio;
 use crate::pine_studio::commands::Cmd;
-use crate::pine_studio::library::registry::LibraryRegistry;
+use crate::store::scripts::registry::LibraryRegistry;
 use crate::ui::shortcut;
 use crate::ui::theme;
 
