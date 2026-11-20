@@ -501,6 +501,20 @@ pub fn evaluate_vwap(
     ])
 }
 
+/// The `ta.vwap` variable: `ta.vwap(hlc3)` with the default anchor. A script may read it several
+/// times on a bar (and `ta.vwap[1]` reads it again at the bar's end), so a second read of the same
+/// bar is folded in place of the first instead of adding the bar twice. `state.inputs` holds the
+/// open time of each bar folded in, alongside `state.results`.
+pub fn evaluate_vwap_variable(bar: &Kline, state: &mut State) -> RuntimeValue {
+    if state.inputs.last() == Some(&RuntimeValue::Int(bar.open_time)) {
+        state.inputs.pop();
+        state.results.pop();
+    }
+    state.inputs.push(RuntimeValue::Int(bar.open_time));
+    let price = (bar.high + bar.low + bar.close) / 3.0;
+    evaluate_vwap(price, bar, None, None, state)
+}
+
 /// `ta.dmi(diLength, adxSmoothing)`: `[+DI, −DI, ADX]` from the RMA-smoothed directional movement
 /// and true range. The call site's own state remembers the previous bar; each smoothed series
 /// keeps its history under `key * 16 + n`.
@@ -1786,6 +1800,36 @@ mod tests {
         assert_eq!(run(false), RuntimeValue::Int(1));
         assert_eq!(run(false), RuntimeValue::Int(2));
         assert_eq!(run(true), RuntimeValue::Int(0));
+    }
+
+    #[test]
+    fn the_vwap_variable_is_the_function_of_hlc3_and_ignores_a_second_read_of_a_bar() {
+        let bar = |open_time: i64, price: f64, volume: f64| Kline {
+            open_time,
+            close_time: open_time + 60_000,
+            open: price,
+            high: price + 3.0,
+            low: price - 3.0,
+            close: price,
+            volume,
+        };
+        let bars = [
+            bar(0, 10.0, 1.0),
+            bar(60_000, 20.0, 3.0),
+            bar(120_000, 30.0, 2.0),
+        ];
+        let mut variable = State::default();
+        let mut function = State::default();
+        for bar in &bars {
+            let hlc3 = (bar.high + bar.low + bar.close) / 3.0;
+            let expected = evaluate_vwap(hlc3, bar, None, None, &mut function);
+            let first = evaluate_vwap_variable(bar, &mut variable);
+            // The same bar read again (a second use, or `ta.vwap[1]`) changes nothing.
+            let again = evaluate_vwap_variable(bar, &mut variable);
+            assert_eq!(first, expected);
+            assert_eq!(again, expected);
+        }
+        assert_eq!(variable.results.len(), bars.len());
     }
 
     #[test]
