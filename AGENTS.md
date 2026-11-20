@@ -87,7 +87,10 @@ When touching `.github/`, `tools/`, `packaging/`, `build.rs`, `Cargo.toml`/`Carg
 updater (`src/service/update/`): pin every `uses:` to a commit,
 keep job permissions minimal, never run third-party code on a macOS release job after the signing
 certificate is imported, use `--locked`, add no git or non-crates.io dependency, keep
-`cargo deny check` clean. Never ask for, store or use a GitHub token with `admin:ssh_signing_key`,
+`cargo deny check` clean. No `[patch]` and no vendored copy: `eframe` is our own crate
+`degenview-eframe` on crates.io (eframe 0.36.2 plus a Wayland fix, repository `degenview/eframe`),
+pinned like `degenview-brokers`; go back to upstream `eframe` once egui ships the fix. Never ask for,
+store or use a GitHub token with `admin:ssh_signing_key`,
 `admin:*` or `delete_repo` scope; never push a tag. Details:
 [Releases and updates](docs/agent-guides/releases-updates.md#build-hardening).
 

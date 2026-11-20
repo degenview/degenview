@@ -1074,7 +1074,7 @@ dependencies = [
  "axum",
  "block2 0.6.2",
  "degenview-brokers",
- "eframe",
+ "degenview-eframe",
  "egui_extras",
  "flate2",
  "getrandom 0.4.3",
@@ -1130,6 +1130,43 @@ dependencies = [
  "serde_json",
  "tungstenite",
  "ureq",
+]
+
+[[package]]
+name = "degenview-eframe"
+version = "0.36.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59c75f4655fbe53bbf18160e4a1ecf774ff0f39ebc955d2f5557aa6e0267d201"
+dependencies = [
+ "ahash",
+ "bytemuck",
+ "document-features",
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "egui_glow",
+ "glutin",
+ "glutin-winit",
+ "image",
+ "js-sys",
+ "log",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "parking_lot",
+ "percent-encoding",
+ "pollster",
+ "profiling",
+ "raw-window-handle",
+ "ron",
+ "serde",
+ "static_assertions",
+ "wasm-bindgen",
+ "web-sys",
+ "web-time",
+ "wgpu",
+ "windows-sys 0.61.2",
+ "winit",
 ]
 
 [[package]]
@@ -1248,43 +1285,6 @@ dependencies = [
  "bytemuck",
  "emath",
  "serde",
-]
-
-[[package]]
-name = "eframe"
-version = "0.36.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55ad41fac6e3149abb4866e93df37dbd33baa95db525c3368c944584e95a5dc2"
-dependencies = [
- "ahash",
- "bytemuck",
- "document-features",
- "egui",
- "egui-wgpu",
- "egui-winit",
- "egui_glow",
- "glutin",
- "glutin-winit",
- "image",
- "js-sys",
- "log",
- "objc2 0.6.5",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
- "parking_lot",
- "percent-encoding",
- "pollster",
- "profiling",
- "raw-window-handle",
- "ron",
- "serde",
- "static_assertions",
- "wasm-bindgen",
- "web-sys",
- "web-time",
- "wgpu",
- "windows-sys 0.61.2",
- "winit",
 ]
 
 [[package]]

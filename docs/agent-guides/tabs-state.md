@@ -55,7 +55,10 @@
 
 - Every tab kind's top bar is the shared `ui::kit::bar` (44 pt, `theme::chrome()`); see [Workspace toolbar](../workspace-toolbar.md). macOS's View menu (between Edit and Window) opens the Pine Studio and Portfolio tabs.
 - Tabs are app-owned on every OS; native automatic tabbing off. Each deferred viewport renders one
-  `TabWindow` with `ui::window::tab_bar` as title bar. The coordinator window stays hidden.
+  `TabWindow` with `ui::window::tab_bar` as title bar. The coordinator window stays hidden. On
+  Wayland a window cannot be hidden, so the root is built hidden and the `degenview-eframe` crate
+  (eframe plus a Wayland fix, see its README) never presents it: it never maps, so its passes (which create and remove every other window) never
+  wait on a frame callback the compositor may withhold while it is minimized or on another desktop.
 - macOS: transparent full-size content, traffic-light `leading_inset` (zero fullscreen).
   Windows/Linux: undecorated, `trailing_inset` for controls; Linux draws resize edges.
   `TabBarOutput::strip` excludes both. Empty strip drags; double-click maximizes. Strip height
