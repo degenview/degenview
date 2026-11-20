@@ -937,3 +937,376 @@ fn the_app_reads_the_hidden_candidate_fixes_of_a_stable_body_for_candidates_only
         ]
     );
 }
+
+fn version(text: &str) -> Version {
+    Version::parse(text).unwrap()
+}
+
+#[test]
+fn versions_order_numerically_not_textually() {
+    let v = version;
+    assert!(v("0.10.0") > v("0.9.9"));
+    assert!(v("v1.0.0") > v("0.99.99"));
+    assert!(v("0.2.0-rc.1") < v("0.2.0"));
+    assert!(v("0.2.0-rc1") < v("0.2.0"));
+    assert_eq!(v("v0.1.0"), v("0.1.0+build5"));
+    assert!(Version::parse("0.1").is_none());
+    assert!(Version::parse("nightly").is_none());
+    assert!(Version::parse("1.2.3.4").is_none());
+}
+
+/// The client reads remote repository state, so it shares the contract of `tools/release.sh`.
+#[test]
+fn versions_must_be_strict_semver() {
+    for tag in [
+        "vv1.0.0",
+        "01.0.0",
+        "1.00.0",
+        "1.0.0-01",
+        "+1.0.0",
+        "1.0.0-",
+        "1.0.0-rc..1",
+        "1.0.0-rc.1+",
+        "1.0.0+a..b",
+        "1.0.0-rc_1",
+        "1.-1.0",
+        "99999999999999999999.0.0",
+    ] {
+        assert!(Version::parse(tag).is_none(), "{tag}");
+    }
+    for tag in [
+        "v1.0.0",
+        "V1.0.0",
+        "0.0.0",
+        "1.0.0-rc.1",
+        "1.0.0-0.3.7",
+        "1.0.0+20130313",
+    ] {
+        assert!(Version::parse(tag).is_some(), "{tag}");
+    }
+}
+
+#[test]
+fn prereleases_follow_semver_precedence() {
+    let v = version;
+    // Numeric parts compare as numbers: rc.10 is after rc.2.
+    assert!(v("0.6.0-rc.2") < v("0.6.0-rc.10"));
+    assert!(v("0.6.0-rc.10") < v("0.6.0"));
+    assert!(v("0.6.0-alpha.1") < v("0.6.0-beta.1"));
+    assert!(v("0.6.0-beta.9") < v("0.6.0-rc.1"));
+    // A longer list wins when the shorter is its prefix, and a candidate for the next
+    // version is after the current release.
+    assert!(v("0.6.0-rc") < v("0.6.0-rc.1"));
+    assert!(v("0.5.1") < v("0.6.0-rc.1"));
+}
+
+/// The changelog the repository ships is read newest first by the app and by `tools/changelog.sh
+/// notes`, so its sections must descend.
+#[test]
+fn the_changelog_lists_versions_newest_first() {
+    let text = include_str!("../../../CHANGELOG.md");
+    // Section by section: `parse` caps one release body, and the archive outgrows that.
+    let versions: Vec<Version> = text
+        .split("\n## ")
+        .skip(1)
+        .flat_map(|section| parse(&format!("## {section}")))
+        .map(|section| Version::parse(&section.version).expect("a readable version"))
+        .collect();
+    assert_eq!(versions.len(), text.matches("\n## ").count());
+    assert!(
+        versions.windows(2).all(|pair| pair[0] > pair[1]),
+        "CHANGELOG.md sections are not strictly newest first"
+    );
+}
+
+/// A release body as the workflow writes it: one version's section.
+fn changes(version: &str, new: &[&str], fixed: &[&str]) -> String {
+    let mut text = format!("## {version} (2026-11-20)\n");
+    for (title, lines) in [("New", new), ("Fixed", fixed)] {
+        if !lines.is_empty() {
+            text.push_str(&format!("\n### {title}\n\n"));
+            for line in lines {
+                text.push_str(&format!("- {line}\n"));
+            }
+        }
+    }
+    text
+}
+
+/// `body` followed by a "Fixed in release candidates" list.
+fn with_rc_fixes(body: String, lines: &[&str]) -> String {
+    let mut text = format!("{body}\n### Fixed in release candidates\n\n");
+    for line in lines {
+        text.push_str(&format!("- {line}\n"));
+    }
+    text
+}
+
+/// A published release of the workflow.
+fn listed<'a>(tag: &'a str, body: &'a str) -> ListedRelease<'a> {
+    ListedRelease {
+        tag,
+        draft: false,
+        trusted: true,
+        body,
+    }
+}
+
+/// The notes and coverage of a range, with the list of releases read to its end.
+fn range(releases: &[ListedRelease<'_>], running: &str, offered: &str) -> (ReleaseNotes, Coverage) {
+    notes_for_range(
+        releases.iter().copied(),
+        &version(running),
+        &version(offered),
+        false,
+    )
+}
+
+#[test]
+fn a_range_carries_the_changes_after_the_running_version_up_to_the_offered_one() {
+    let three = changes("0.6.0-rc.3", &["Three."], &["Fix three."]);
+    let two = changes("0.6.0-rc.2", &["Two."], &[]);
+    let one = changes("0.6.0-rc.1", &["One."], &[]);
+    let installed = changes("0.5.1", &["Already installed."], &[]);
+    let releases = [
+        listed("v0.6.0-rc.3", &three),
+        listed("v0.6.0-rc.2", &two),
+        listed("v0.6.0-rc.1", &one),
+        listed("v0.5.1", &installed),
+    ];
+    let (notes, _) = range(&releases, "0.5.1", "0.6.0-rc.3");
+    assert_eq!(notes.new, ["Three.", "Two.", "One."]);
+    assert_eq!(notes.fixed, ["Fix three."]);
+    // Only what the running build lacks.
+    let (notes, _) = range(&releases, "0.6.0-rc.1", "0.6.0-rc.3");
+    assert_eq!(notes.new, ["Three.", "Two."]);
+}
+
+#[test]
+fn a_stable_range_shows_the_candidates_changes_once_each() {
+    // The stable release repeats the candidates' sections, as the workflow writes it; the copy in
+    // the release of that version is the one kept.
+    let stable = [
+        changes("0.6.0", &["Final."], &[]),
+        changes("0.6.0-rc.2", &["Two, repeated."], &[]),
+        changes("0.6.0-rc.1", &["One, repeated."], &[]),
+    ]
+    .join("\n");
+    let two = changes("0.6.0-rc.2", &["Two."], &[]);
+    let one = changes("0.6.0-rc.1", &["One."], &[]);
+    let releases = [
+        listed("v0.6.0", &stable),
+        listed("v0.6.0-rc.2", &two),
+        listed("v0.6.0-rc.1", &one),
+        listed("v0.5.1", ""),
+    ];
+    let (notes, _) = range(&releases, "0.5.1", "0.6.0");
+    assert_eq!(notes.new, ["Final.", "Two.", "One."]);
+    // The same when the aggregate is read before the candidates' own releases.
+    let reversed = [releases[3], releases[2], releases[1], releases[0]];
+    let (notes, _) = range(&reversed, "0.5.1", "0.6.0");
+    assert_eq!(notes.new, ["Final.", "Two.", "One."]);
+}
+
+#[test]
+fn fixes_for_bugs_only_candidates_had_are_hidden_from_a_stable_version() {
+    let candidate_two = with_rc_fixes(
+        changes("0.6.0-rc.2", &["Two."], &["Fix two."]),
+        &["Candidate fix two."],
+    );
+    let candidate_one = with_rc_fixes(
+        changes("0.6.0-rc.1", &["One."], &[]),
+        &["Candidate fix one."],
+    );
+    // The stable aggregate may repeat the candidates' sections with their lists; the notes drop
+    // them either way.
+    let stable = [
+        with_rc_fixes(changes("0.6.0", &["Final."], &["Fix final."]), &["Late."]),
+        candidate_two.clone(),
+        candidate_one.clone(),
+    ]
+    .join("\n");
+    let releases = [
+        listed("v0.6.0", &stable),
+        listed("v0.6.0-rc.2", &candidate_two),
+        listed("v0.6.0-rc.1", &candidate_one),
+        listed("v0.5.1", ""),
+    ];
+    let (notes, _) = range(&releases, "0.5.1", "0.6.0");
+    assert_eq!(notes.new, ["Final.", "Two.", "One."]);
+    assert_eq!(notes.fixed, ["Fix final.", "Fix two."]);
+    assert_eq!(notes.omitted, 0, "hidden fixes are not 'more'");
+    // Someone on a candidate is shown them: they may have hit them.
+    let (notes, _) = range(&releases, "0.6.0-rc.1", "0.6.0");
+    assert_eq!(
+        notes.fixed,
+        ["Fix final.", "Late.", "Fix two.", "Candidate fix two."]
+    );
+    // Offered a candidate only, a stable version still does not see them.
+    let (notes, _) = range(&releases[1..], "0.5.1", "0.6.0-rc.2");
+    assert_eq!(notes.fixed, ["Fix two."]);
+    let (notes, _) = range(&releases[1..], "0.6.0-rc.1", "0.6.0-rc.2");
+    assert_eq!(notes.fixed, ["Fix two.", "Candidate fix two."]);
+}
+
+#[test]
+fn a_candidate_fix_first_shipped_in_the_stable_release_is_hidden_in_its_body_and_still_read() {
+    // As `tools/changelog.sh notes` writes a stable body: the fix is in an HTML comment, which
+    // GitHub does not draw, and no candidate's own release lists it.
+    let stable = "\
+## 0.6.0 (2026-11-20)
+
+### Fixed
+
+- Public fix.
+
+<!-- release-candidate fixes
+### Fixed in release candidates
+
+- A bug the last candidate had.
+-->
+";
+    let one = changes("0.6.0-rc.1", &["One."], &[]);
+    let releases = [
+        listed("v0.6.0", stable),
+        listed("v0.6.0-rc.1", &one),
+        listed("v0.5.1", ""),
+    ];
+    // Someone on the first candidate may have hit that bug, so they are told.
+    let (notes, _) = range(&releases, "0.6.0-rc.1", "0.6.0");
+    assert_eq!(
+        notes.fixed,
+        ["Public fix.", "A bug the last candidate had."]
+    );
+    // Someone on a stable version never had it.
+    let (notes, _) = range(&releases, "0.5.1", "0.6.0");
+    assert_eq!(notes.fixed, ["Public fix."]);
+    assert_eq!(notes.omitted, 0);
+}
+
+#[test]
+fn notes_come_only_from_published_releases_of_the_workflow() {
+    let draft_body = changes("0.6.0-rc.2", &["From a draft."], &[]);
+    let hand_made_body = changes("0.6.0-rc.3", &["From a person."], &[]);
+    let mut forged_body = changes("0.6.0-rc.4", &["Forged by a stranger."], &[]);
+    forged_body.push_str(&changes("0.6.0-rc.1", &["Forged too."], &[]));
+    let four = changes("0.6.0-rc.4", &["Four."], &[]);
+    let one = changes("0.6.0-rc.1", &["One."], &[]);
+    let stranger = |tag, body| ListedRelease {
+        trusted: false,
+        ..listed(tag, body)
+    };
+    let releases = [
+        stranger("v0.6.0-rc.5", &forged_body),
+        listed("v0.6.0-rc.4", &four),
+        stranger("v0.6.0-rc.3", &hand_made_body),
+        ListedRelease {
+            draft: true,
+            ..listed("v0.6.0-rc.2", &draft_body)
+        },
+        listed("v0.6.0-rc.1", &one),
+    ];
+    let (notes, _) = range(&releases, "0.5.1", "0.6.0-rc.5");
+    assert_eq!(notes.new, ["Four.", "One."]);
+}
+
+#[test]
+fn changes_the_notes_cannot_hold_are_counted_once_not_per_copy() {
+    let lines: Vec<String> = (0..MAX_ENTRIES + 5)
+        .map(|n| format!("Change {n}."))
+        .collect();
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+    // The stable release repeats the candidate's section with more entries than the candidate's
+    // own release lists; only the own copy is read, so only its 5 are left out.
+    let repeated: Vec<&str> = lines.iter().copied().chain(["Extra.", "More."]).collect();
+    let stable = [
+        changes("0.6.0", &["Final."], &[]),
+        changes("0.6.0-rc.1", &repeated, &[]),
+    ]
+    .join("\n");
+    let candidate = changes("0.6.0-rc.1", &lines, &[]);
+    let releases = [listed("v0.6.0", &stable), listed("v0.6.0-rc.1", &candidate)];
+    let (notes, _) = range(&releases, "0.5.1", "0.6.0");
+    assert_eq!(notes.new.len(), 1 + MAX_ENTRIES);
+    assert_eq!(notes.omitted, 5);
+}
+
+#[test]
+fn sections_outside_the_range_or_without_a_readable_version_are_left_out() {
+    let body = [
+        changes("0.6.0-rc.9", &["Newer than the offer."], &[]),
+        changes("0.6.0-rc.2", &["In range."], &[]),
+        changes("0.6.0-rc.1", &["The running one."], &[]),
+        changes("0.5.0", &["Older."], &[]),
+        changes("0.6.0-rc1", &["Not a version."], &[]),
+    ]
+    .join("\n");
+    let releases = [listed("v0.6.0-rc.2", &body)];
+    let (notes, _) = range(&releases, "0.6.0-rc.1", "0.6.0-rc.2");
+    assert_eq!(notes.new, ["In range."]);
+}
+
+#[test]
+fn releases_without_notes_or_with_a_commit_log_carry_none() {
+    let old = "## Changes since v0.5.0\n\n- Something (abc1234)\n\n## Downloads\n";
+    for body in [old, ""] {
+        let (notes, coverage) = range(&[listed("v0.6.0", body)], "0.5.1", "0.6.0");
+        assert!(notes.is_empty());
+        assert_eq!(coverage.unsummarized, 1);
+    }
+}
+
+#[test]
+fn releases_in_the_range_with_no_trusted_section_are_counted_once() {
+    let hand_made = changes("0.6.0-rc.2", &["From a person."], &[]);
+    let four = changes("0.6.0-rc.4", &["Four."], &[]);
+    let one = changes("0.6.0-rc.1", &["One."], &[]);
+    let releases = [
+        ListedRelease {
+            draft: true,
+            ..listed("v0.6.0-rc.5", "")
+        },
+        listed("v0.6.0-rc.4", &four),
+        listed("v0.6.0-rc.3", ""),
+        ListedRelease {
+            trusted: false,
+            ..listed("v0.6.0-rc.2", &hand_made)
+        },
+        listed("v0.6.0-rc.1", &one),
+        listed("v0.6.0-rc.1", ""),
+        listed("v0.5.1", ""),
+        listed("v0.5.0", ""),
+        listed("nightly", ""),
+    ];
+    // rc.3 has no notes and rc.2's are not the workflow's; a draft, the duplicate rc.1, a tag that
+    // is no version and the releases up to the running one are not gaps.
+    let (notes, coverage) = range(&releases, "0.5.1", "0.6.0-rc.5");
+    assert_eq!(notes.new, ["Four.", "One."]);
+    assert_eq!(coverage.unsummarized, 2);
+}
+
+#[test]
+fn a_release_another_release_summarizes_is_not_a_gap() {
+    // The stable release's notes repeat the candidate's section; the candidate has none.
+    let mut body = changes("0.6.0", &["Final."], &[]);
+    body.push_str(&changes("0.6.0-rc.1", &["Candidate."], &[]));
+    let releases = [listed("v0.6.0", &body), listed("v0.6.0-rc.1", "")];
+    let (notes, coverage) = range(&releases, "0.5.1", "0.6.0");
+    assert_eq!(notes.new, ["Final.", "Candidate."]);
+    assert_eq!(coverage.unsummarized, 0);
+}
+
+#[test]
+fn an_incomplete_listing_is_passed_through_not_counted() {
+    let releases = [listed("v0.6.0", "")];
+    for history_incomplete in [false, true] {
+        let (_, coverage) = notes_for_range(
+            releases.iter().copied(),
+            &version("0.5.1"),
+            &version("0.6.0"),
+            history_incomplete,
+        );
+        assert_eq!(coverage.history_incomplete, history_incomplete);
+        assert_eq!(coverage.unsummarized, 1);
+    }
+}

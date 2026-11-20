@@ -972,6 +972,7 @@ mod tests {
             installable,
             note: (!installable).then(|| "Download it manually.".to_owned()),
             notes: Arc::default(),
+            coverage: Default::default(),
         }
     }
 

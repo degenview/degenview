@@ -25,6 +25,10 @@ fn long_entry() -> String {
 }
 
 fn available(installable: bool, notes: ReleaseNotes) -> UpdateView {
+    available_with(installable, notes, Coverage::default())
+}
+
+fn available_with(installable: bool, notes: ReleaseNotes, coverage: Coverage) -> UpdateView {
     UpdateView {
         phase: Phase::Available {
             version: "0.6.0-rc.33".to_owned(),
@@ -34,6 +38,7 @@ fn available(installable: bool, notes: ReleaseNotes) -> UpdateView {
                 "Not published by the release workflow, so it needs a manual download.".to_owned()
             }),
             notes: Arc::new(notes),
+            coverage,
         },
         checking: false,
         checked_ago: Some(Duration::ZERO),
@@ -307,19 +312,18 @@ fn the_line_about_releases_with_no_summary_counts_them() {
 
 #[test]
 fn the_sheet_ends_with_a_line_when_older_releases_were_not_listed() {
-    let partial = ReleaseNotes {
+    let partial = Coverage {
         unsummarized: 2,
         history_incomplete: true,
-        ..notes()
     };
     assert_eq!(
-        closing_lines(&partial).collect::<Vec<_>>(),
+        closing_lines(&notes(), &partial).collect::<Vec<_>>(),
         [
             "2 releases since your version have no summary, so their changes are not listed.",
             "Older releases are not listed here, so some changes may be missing.",
         ]
     );
-    assert_eq!(closing_lines(&notes()).count(), 0);
+    assert_eq!(closing_lines(&notes(), &Coverage::default()).count(), 0);
 }
 
 #[test]
@@ -330,6 +334,7 @@ fn updating_from_the_sheet_starts_the_install_and_closes_it() {
         installable: true,
         note: None,
         notes: Arc::new(notes()),
+        coverage: Default::default(),
     });
     let mut screen = Screen::new(Vec2::new(700.0, 760.0));
     let root = egui::ViewportId::ROOT;
@@ -351,6 +356,7 @@ fn a_return_from_before_the_sheet_opened_does_not_confirm_it() {
         installable: true,
         note: None,
         notes: Arc::new(notes()),
+        coverage: Default::default(),
     });
     let mut screen = Screen::new(Vec2::new(700.0, 760.0));
     let root = egui::ViewportId::ROOT;
@@ -380,6 +386,7 @@ fn a_return_that_reopens_a_dismissed_sheet_does_not_confirm_it() {
         installable: true,
         note: None,
         notes: Arc::new(notes()),
+        coverage: Default::default(),
     });
     let mut screen = Screen::new(Vec2::new(700.0, 760.0));
     let root = egui::ViewportId::ROOT;
@@ -423,6 +430,7 @@ fn an_offer_replaced_since_the_sheet_drew_keeps_the_sheet_open_and_installs_noth
         installable: true,
         note: None,
         notes: Arc::new(notes()),
+        coverage: Default::default(),
     });
     // What the sheet drew was an older offer than the host holds now.
     let stale = UpdateView {
@@ -432,6 +440,7 @@ fn an_offer_replaced_since_the_sheet_drew_keeps_the_sheet_open_and_installs_noth
             installable: true,
             note: None,
             notes: Arc::new(notes()),
+            coverage: Default::default(),
         },
         ..host.view()
     };
@@ -454,6 +463,7 @@ fn offer(version: &str) -> Phase {
         installable: true,
         note: None,
         notes: Arc::new(notes()),
+        coverage: Default::default(),
     }
 }
 
@@ -494,6 +504,7 @@ fn cancelling_closes_the_sheet_and_leaves_the_update_on_offer() {
         installable: true,
         note: None,
         notes: Arc::new(notes()),
+        coverage: Default::default(),
     });
     let mut screen = Screen::new(Vec2::new(700.0, 760.0));
     let root = egui::ViewportId::ROOT;
@@ -529,17 +540,17 @@ fn update_sheet_gallery() {
         omitted: 12,
         ..flood()
     };
-    let gaps = ReleaseNotes {
+    let gaps = Coverage {
         unsummarized: 31,
-        ..notes()
+        ..Coverage::default()
     };
-    let gap_and_truncated = ReleaseNotes {
+    let one_gap = Coverage {
         unsummarized: 1,
-        ..truncated.clone()
+        ..Coverage::default()
     };
-    let older_unlisted = ReleaseNotes {
+    let older_unlisted = Coverage {
         history_incomplete: true,
-        ..notes()
+        ..Coverage::default()
     };
     let long_note = "Not published by the release workflow, so it needs a manual download, and this build cannot say more than that without wrapping.";
     let mut manual = available(false, flood());
@@ -560,17 +571,23 @@ fn update_sheet_gallery() {
             0,
         ),
         ("one-list", available(true, only_new), roomy, 0.0, 0),
-        ("unsummarized", available(true, gaps), roomy, 0.0, 0),
+        (
+            "unsummarized",
+            available_with(true, notes(), gaps),
+            roomy,
+            0.0,
+            0,
+        ),
         (
             "older-unlisted",
-            available(true, older_unlisted),
+            available_with(true, notes(), older_unlisted),
             roomy,
             0.0,
             0,
         ),
         (
             "unsummarized-truncated-end",
-            available(true, gap_and_truncated),
+            available_with(true, truncated.clone(), one_gap),
             roomy,
             -5000.0,
             0,

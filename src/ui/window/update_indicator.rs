@@ -382,6 +382,7 @@ mod tests {
             installable,
             note: (!installable).then(|| "Download it manually.".to_owned()),
             notes: Default::default(),
+            coverage: Default::default(),
         }
     }
 

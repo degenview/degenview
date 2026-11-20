@@ -29,8 +29,14 @@
 //! nothing. A body longer than the bound is cut at the end of a whole line, and the section being
 //! read there is marked `truncated`.
 
+mod version;
+
 #[cfg(test)]
 mod tests;
+
+pub use version::{Stability, Version};
+
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The longest release body read, in bytes.
 const MAX_BODY_BYTES: usize = 64 * 1024;
@@ -75,14 +81,36 @@ pub struct ReleaseNotes {
     pub omitted: usize,
     /// A body was cut short: there are more changes than `omitted` counts.
     pub truncated: bool,
+}
+
+/// How far the notes of a range reach: what the lists cannot say about the releases they were read
+/// from. Kept beside `ReleaseNotes` rather than in it, because it describes the range and the list
+/// of releases, not the text of any section.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Coverage {
     /// How many releases in the range had no section of their own anywhere, so the lists may not
     /// hold everything they changed: releases from before the changelog, or with notes the app does
-    /// not trust. Set by whoever knows the range; `from_sections` leaves it at zero.
+    /// not trust.
     pub unsummarized: usize,
     /// The list of releases the notes were read from ended before reaching the reader's own
     /// version, so releases in the range may be missing from it altogether (and are not in
-    /// `unsummarized`). Set by whoever read the list; `from_sections` leaves it false.
+    /// `unsummarized`).
     pub history_incomplete: bool,
+}
+
+/// One entry of a list of published releases, as far as the notes of a range need it.
+#[derive(Clone, Copy, Debug)]
+pub struct ListedRelease<'a> {
+    /// The release's tag, "v0.6.0-rc.33"; a tag that is not a version still counts as a release
+    /// but has no place in any range.
+    pub tag: &'a str,
+    /// A draft is not published: it supplies nothing and is not a gap.
+    pub draft: bool,
+    /// Its body was written by the release workflow, the only author whose notes are read. Any
+    /// published release counts toward the range, trusted or not.
+    pub trusted: bool,
+    /// The notes, as the release body holds them.
+    pub body: &'a str,
 }
 
 impl ReleaseNotes {
@@ -120,6 +148,67 @@ impl ReleaseNotes {
     pub fn is_empty(&self) -> bool {
         self.new.is_empty() && self.fixed.is_empty()
     }
+}
+
+/// The changes after `running` up to and including `offered`, newest version first, read from the
+/// bodies of `releases`, and how far that reach. A release candidate's section is repeated in the
+/// stable release that follows it; the copy from the release carrying that version is the one kept,
+/// else the first one listed. A channel does not limit this: a stable user going from 0.5.1 to
+/// 0.6.0 sees the candidates' changes too, except the fixes for bugs only candidates had, which are
+/// listed only to someone running a candidate.
+///
+/// Only published (not draft) releases the workflow wrote supply sections, and only the ones in the
+/// range with a readable version. `history_incomplete` says whoever listed the releases stopped
+/// before the running version's place in the list, so releases in the range may not be among
+/// `releases` at all (and are not counted as unsummarized).
+pub fn notes_for_range<'a>(
+    releases: impl IntoIterator<Item = ListedRelease<'a>>,
+    running: &Version,
+    offered: &Version,
+    history_incomplete: bool,
+) -> (ReleaseNotes, Coverage) {
+    let in_range = |version: &Version| version > running && version <= offered;
+    // Version, then whether the section came from the release of that very version.
+    let mut found: BTreeMap<Version, (bool, Section)> = BTreeMap::new();
+    // Every published release in the range counts, whoever published it: one whose version no
+    // trusted body has a section for is a gap the reader is told about.
+    let mut published = BTreeSet::new();
+    for release in releases.into_iter().filter(|release| !release.draft) {
+        let own = Version::parse(release.tag);
+        if let Some(version) = own.clone().filter(in_range) {
+            published.insert(version);
+        }
+        if !release.trusted {
+            continue;
+        }
+        for section in parse(release.body) {
+            let Some(version) = Version::parse(&section.version).filter(in_range) else {
+                continue;
+            };
+            let is_own = own.as_ref() == Some(&version);
+            if found
+                .get(&version)
+                .is_none_or(|(had_own, _)| is_own && !had_own)
+            {
+                found.insert(version, (is_own, section));
+            }
+        }
+    }
+    let unsummarized = published
+        .iter()
+        .filter(|version| !found.contains_key(version))
+        .count();
+    let notes = ReleaseNotes::from_sections(
+        found.into_values().rev().map(|(_, section)| section),
+        running.is_prerelease(),
+    );
+    (
+        notes,
+        Coverage {
+            unsummarized,
+            history_incomplete,
+        },
+    )
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]

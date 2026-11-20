@@ -7,7 +7,7 @@
 
 use crate::build_info::VERSION;
 use crate::lock::lock;
-use crate::model::changelog::ReleaseNotes;
+use crate::model::changelog::{Coverage, ReleaseNotes};
 use crate::service::update::check::{self, Channel, Release, UpdateOutcome};
 use crate::service::update::install::{self, Prepared, Progress, Stage};
 use crate::service::work_queue;
@@ -105,6 +105,8 @@ pub enum Phase {
         /// What changed after this build, up to this release. Shared: every window clones the view
         /// each frame.
         notes: Arc<ReleaseNotes>,
+        /// What those notes could not read: releases they say nothing about.
+        coverage: Coverage,
     },
     Installing(Progress),
     Ready {
@@ -198,7 +200,7 @@ impl UpdateHost {
     /// on offer.
     #[cfg(test)]
     pub(crate) fn stand_at(&self, phase: &Phase) {
-        let release = |installable: bool, notes: Arc<ReleaseNotes>| Release {
+        let release = |installable: bool, notes: Arc<ReleaseNotes>, coverage: Coverage| Release {
             tag: "v9.9.9".to_owned(),
             version: "9.9.9".to_owned(),
             url: "https://example.test/release".to_owned(),
@@ -210,6 +212,7 @@ impl UpdateHost {
             }),
             manual_only: None,
             notes,
+            coverage,
         };
         {
             let mut state = self.lock();
@@ -224,15 +227,20 @@ impl UpdateHost {
                     version,
                     installable,
                     notes,
+                    coverage,
                     ..
                 } => {
-                    let mut offer = release(*installable, Arc::clone(notes));
+                    let mut offer = release(*installable, Arc::clone(notes), *coverage);
                     offer.version.clone_from(version);
                     state.last = Some((UpdateOutcome::Available(offer), Instant::now()));
                 }
                 Phase::Installing(progress) => {
                     state.last = Some((
-                        UpdateOutcome::Available(release(true, Arc::default())),
+                        UpdateOutcome::Available(release(
+                            true,
+                            Arc::default(),
+                            Coverage::default(),
+                        )),
                         Instant::now(),
                     ));
                     state.install = Install::Working(*progress);
@@ -246,7 +254,11 @@ impl UpdateHost {
                 }
                 Phase::InstallFailed { message, .. } => {
                     state.last = Some((
-                        UpdateOutcome::Available(release(true, Arc::default())),
+                        UpdateOutcome::Available(release(
+                            true,
+                            Arc::default(),
+                            Coverage::default(),
+                        )),
                         Instant::now(),
                     ));
                     state.install = Install::Failed {
@@ -658,6 +670,7 @@ fn available_phase(release: &Release, target: &Result<PathBuf, String>) -> Phase
         installable,
         note,
         notes: Arc::clone(&release.notes),
+        coverage: release.coverage,
     }
 }
 
@@ -699,6 +712,7 @@ mod tests {
             }),
             manual_only,
             notes: Arc::new(notes()),
+            coverage: Coverage::default(),
         }
     }
 
@@ -755,6 +769,7 @@ mod tests {
                 installable: true,
                 note: None,
                 notes: Arc::new(notes()),
+                coverage: Coverage::default(),
             }
         );
     }

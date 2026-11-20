@@ -7,7 +7,7 @@
 
 use crate::build_info::VERSION;
 use crate::host::update::{Phase, UpdateHost, UpdateView};
-use crate::model::changelog::ReleaseNotes;
+use crate::model::changelog::{Coverage, ReleaseNotes};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, sheet, size};
 use crate::ui::theme;
 use eframe::egui::{self, Id, Key, Ui};
@@ -88,6 +88,7 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
         installable,
         note,
         notes,
+        coverage,
     } = &view.phase
     else {
         return None;
@@ -110,7 +111,7 @@ pub fn show(ctx: &egui::Context, view: &UpdateView, installed: &str) -> Option<O
             );
         });
         ui.add_space(20.0);
-        let shown_list = notes_list(ui, notes, list_height);
+        let shown_list = notes_list(ui, notes, coverage, list_height);
         ui.add_space(GROUP_GAP);
         sheet::inset(ui, |ui| {
             if !installable && let Some(note) = note {
@@ -182,7 +183,7 @@ fn remember_chrome(ui: &Ui, id: Id, chrome: f32) {
 /// The changes in a list that scrolls past `height`. While there is more above or below the
 /// visible part its edge fades into the sheet and the bar stays in view, so a list never looks
 /// finished where it is only cut. Returns the height the list took.
-fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, height: f32) -> f32 {
+fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, coverage: &Coverage, height: f32) -> f32 {
     let output = ui
         .scope(|ui| {
             kit::scroll::keep_bars_visible(ui);
@@ -191,7 +192,7 @@ fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, height: f32) -> f32 {
                 .max_height(height)
                 .auto_shrink([false, true])
                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-                .show(ui, |ui| sheet::inset(ui, |ui| changes(ui, notes)))
+                .show(ui, |ui| sheet::inset(ui, |ui| changes(ui, notes, coverage)))
         })
         .inner;
     let beyond = kit::scroll::Beyond::of(
@@ -206,7 +207,7 @@ fn notes_list(ui: &mut Ui, notes: &ReleaseNotes, height: f32) -> f32 {
 /// New, then Fixed, each only when it has entries, then how many more there were (or that there are
 /// more, when a body was cut short and the count would be wrong) and how many releases had no
 /// summary or were never listed; a calm line when there is nothing to list.
-fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
+fn changes(ui: &mut Ui, notes: &ReleaseNotes, coverage: &Coverage) {
     ui.spacing_mut().item_spacing.y = 0.0;
     if notes.is_empty() {
         ui.add(
@@ -243,7 +244,7 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
             bullet(ui, entry);
         }
     }
-    for line in closing_lines(notes) {
+    for line in closing_lines(notes, coverage) {
         ui.add_space(GROUP_GAP);
         ui.add(
             egui::Label::new(kit::text(
@@ -260,11 +261,11 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes) {
 /// The lines that end the lists, in order: what the caps left out, then the releases with no
 /// summary, then the releases that were never listed. Only shown after a list; with nothing to list
 /// the sheet says so and nothing more.
-fn closing_lines(notes: &ReleaseNotes) -> impl Iterator<Item = String> {
+fn closing_lines(notes: &ReleaseNotes, coverage: &Coverage) -> impl Iterator<Item = String> {
     [
         closing_line(notes),
-        (notes.unsummarized > 0).then(|| unsummarized_line(notes.unsummarized)),
-        notes
+        (coverage.unsummarized > 0).then(|| unsummarized_line(coverage.unsummarized)),
+        coverage
             .history_incomplete
             .then(|| HISTORY_INCOMPLETE_LINE.to_owned()),
     ]

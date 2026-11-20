@@ -563,6 +563,7 @@ fn the_strip_gives_way_to_an_update_mark_only_while_there_is_one() {
         installable: true,
         note: None,
         notes: Default::default(),
+        coverage: Default::default(),
     })));
     assert_eq!(quiet, none);
     assert!(available.right() < none.right() - 40.0, "{available:?}");
