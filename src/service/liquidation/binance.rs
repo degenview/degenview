@@ -4,7 +4,8 @@
 //! sizes are contracts worth a fixed dollar amount, not coins: they are left out, so every figure is
 //! a USDⓈ-M one.
 
-use crate::model::liquidation::{Exchange, Liquidation, Side};
+use crate::model::exchange::Exchange;
+use crate::model::liquidation::{Liquidation, Side};
 use crate::service::net::ws::{Keepalive, Session};
 use serde_json::Value;
 use std::time::Duration;

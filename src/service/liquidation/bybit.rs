@@ -2,11 +2,12 @@
 //! Bybit has no topic for every market, so the most traded ones are asked for: each topic is its
 //! own subscribe request, because one unknown symbol refuses the whole of a request.
 
-use crate::model::liquidation::{Exchange, Liquidation, Side};
-use crate::service::market::bybit::get;
-use crate::service::net::ws::{Keepalive, Session};
+use crate::model::exchange::Exchange;
+use crate::model::liquidation::{Liquidation, Side};
+use crate::service::market::bybit::{KEEPALIVE, get};
+use crate::service::net::ws::Session;
+use crate::service::stream::Worker;
 use serde_json::{Value, json};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 const HOST: &str = "stream.bybit.com";
@@ -15,20 +16,14 @@ const TICKERS: &str = "https://api.bybit.com/v5/market/tickers?category=linear";
 const MARKETS: usize = 60;
 const RETRY_AFTER: Duration = Duration::from_secs(10);
 
-/// The session over the busiest markets, once their list is known; `None` when `shutdown` came
-/// first.
-pub(super) fn session(shutdown: &AtomicBool) -> Option<Session> {
-    let symbols = loop {
-        if let Some(symbols) = get(TICKERS)
+/// The session over the busiest markets, once their list is known; `None` when the feed was shut
+/// down first.
+pub(super) fn session(worker: &Worker) -> Option<Session> {
+    let symbols = worker.retry(RETRY_AFTER, || {
+        get(TICKERS)
             .ok()
             .and_then(|body| busiest_markets(&body, MARKETS))
-        {
-            break symbols;
-        }
-        if !sleep_unless_stopped(shutdown, RETRY_AFTER) {
-            return None;
-        }
-    };
+    })?;
     Some(session_for(&symbols))
 }
 
@@ -45,25 +40,8 @@ fn session_for(symbols: &[String]) -> Session {
             .collect(),
         // A calm hour can pass without one: the pong says the socket is alive.
         max_data_silence: Duration::from_secs(600),
-        keepalive: Keepalive::Text {
-            ping: r#"{"op":"ping"}"#,
-            pong: r#"{"success":true,"ret_msg":"pong""#,
-        },
+        keepalive: KEEPALIVE,
     }
-}
-
-/// Waits `span` in slices; `false` when `shutdown` was set meanwhile.
-fn sleep_unless_stopped(shutdown: &AtomicBool, span: Duration) -> bool {
-    let slice = Duration::from_millis(250);
-    let mut waited = Duration::ZERO;
-    while waited < span {
-        if shutdown.load(Ordering::Acquire) {
-            return false;
-        }
-        std::thread::sleep(slice);
-        waited += slice;
-    }
-    !shutdown.load(Ordering::Acquire)
 }
 
 /// `{"retCode":0,"result":{"list":[{"symbol":"BTCUSDT","turnover24h":"…"},…]}}`: the `count`
@@ -150,7 +128,7 @@ mod tests {
                 json!({"op": "subscribe", "args": ["allLiquidation.ETHUSDT"]}),
             ]
         );
-        assert!(matches!(session.keepalive, Keepalive::Text { .. }));
+        assert_eq!(session.keepalive, KEEPALIVE);
     }
 
     #[test]
@@ -196,15 +174,5 @@ mod tests {
         assert!(busiest_markets(r#"{"retCode":10006,"result":{"list":[]}}"#, 5).is_none());
         assert!(busiest_markets(r#"{"retCode":0,"result":{"list":[]}}"#, 5).is_none());
         assert!(busiest_markets("nope", 5).is_none());
-    }
-
-    #[test]
-    fn waiting_stops_at_once_when_the_feed_is_shut_down() {
-        let stopped = AtomicBool::new(true);
-        assert!(!sleep_unless_stopped(&stopped, Duration::from_secs(60)));
-        assert!(sleep_unless_stopped(
-            &AtomicBool::new(false),
-            Duration::ZERO
-        ));
     }
 }

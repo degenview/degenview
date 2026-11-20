@@ -1,6 +1,7 @@
 pub mod alert;
 pub mod annotation;
 pub mod cache;
+pub mod depth;
 pub mod editor_theme;
 pub mod image;
 pub mod keychain;

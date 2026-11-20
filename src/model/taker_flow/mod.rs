@@ -3,7 +3,7 @@
 //! Pure: the trade sockets that fill it are in `service::taker_flow`.
 
 use crate::model::DataSource;
-use crate::model::liquidation::Exchange;
+use crate::model::exchange::Venue;
 use std::collections::VecDeque;
 
 #[cfg(test)]
@@ -13,42 +13,6 @@ mod tests;
 pub const HOUR_MS: i64 = 3_600_000;
 /// How many one-minute bars of net flow a snapshot holds.
 pub const MINUTES: usize = 30;
-
-/// Spot or the perpetual contract of the same asset.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Market {
-    Spot,
-    Perpetual,
-}
-
-/// One market of an asset on one exchange.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Venue {
-    pub exchange: Exchange,
-    pub market: Market,
-}
-
-impl Venue {
-    /// Every venue, in the order a panel lists them.
-    pub const ALL: [Self; 4] = [
-        Self::new(Exchange::Binance, Market::Spot),
-        Self::new(Exchange::Binance, Market::Perpetual),
-        Self::new(Exchange::Bybit, Market::Spot),
-        Self::new(Exchange::Bybit, Market::Perpetual),
-    ];
-
-    const fn new(exchange: Exchange, market: Market) -> Self {
-        Self { exchange, market }
-    }
-
-    pub fn label(self) -> String {
-        let market = match self.market {
-            Market::Spot => "spot",
-            Market::Perpetual => "perp",
-        };
-        format!("{} {market}", self.exchange.name())
-    }
-}
 
 /// The side that took liquidity: the buyer who lifted an offer or the seller who hit a bid.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

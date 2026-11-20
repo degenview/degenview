@@ -1,6 +1,7 @@
 //! Forced liquidations the exchanges announce: what one is, the rolling record of them, and the
 //! totals and rows a panel shows. Pure: the sockets that fill it are in `service::liquidation`.
 
+use crate::model::exchange::Exchange;
 use std::collections::VecDeque;
 
 #[cfg(test)]
@@ -12,22 +13,6 @@ pub const HOUR_MS: i64 = 3_600_000;
 const MAX_EVENTS: usize = 20_000;
 /// The most rows a snapshot lists.
 pub const TAPE_ROWS: usize = 300;
-
-/// An exchange that announces its liquidations.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Exchange {
-    Binance,
-    Bybit,
-}
-
-impl Exchange {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Binance => "Binance",
-            Self::Bybit => "Bybit",
-        }
-    }
-}
 
 /// Which side of the market the exchange closed by force.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
