@@ -174,6 +174,7 @@ impl TypeChecker {
                     ..
                 } => {
                     self.declare(name, *annotation, type_ref.as_ref(), *mode, value, scope);
+                    self.require_tuple_destructuring(value);
                     let declared = scope.get(name).copied().unwrap_or(Inferred::Unknown);
                     self.last = declared;
                 }
@@ -507,6 +508,29 @@ impl TypeChecker {
                 expression.range(),
             );
         }
+    }
+
+    /// A builtin that returns a tuple cannot be bound to one variable. Only the builtin counts: a
+    /// script's own method of the same name, called on an object, is an ordinary call.
+    fn require_tuple_destructuring(&mut self, value: &Expression) {
+        let Expression::Call { name, range, .. } = value else {
+            return;
+        };
+        if name != "ta.supertrend" || !self.resolves_to_builtin(name) {
+            return;
+        }
+        self.error(
+            "PINE3069",
+            "ta.supertrend returns [supertrend, direction]: declare both, as in `[line, direction] = ta.supertrend(3, 10)`.".to_owned(),
+            *range,
+        );
+    }
+
+    /// Whether a call of `name` is the builtin of that name: `call` takes the builtin path unless
+    /// the script declares a callable by the member's name.
+    fn resolves_to_builtin(&self, name: &str) -> bool {
+        let member = name.rsplit_once('.').map_or(name, |(_, member)| member);
+        registry::is_function(name) && self.callables.declared(member).is_empty()
     }
 
     fn error(&mut self, code: &str, message: String, range: SourceRange) {
