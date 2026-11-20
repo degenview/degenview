@@ -17,7 +17,7 @@ mod tests;
 
 pub use book::{Book, Delta, Levels, Side, Snapshot};
 pub use event::{BookEvent, Event};
-pub use ladder::{CENTRE_ROW, Ladder, Link, Row, View, WINDOW_ROWS};
+pub use ladder::{CENTRE_ROW, Ladder, Link, Row, Scale, View, WINDOW_ROWS};
 pub use market::{DepthMarket, market_of};
 pub use price::Price;
 pub use record::DepthRecord;

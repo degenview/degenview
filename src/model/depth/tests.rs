@@ -152,7 +152,15 @@ fn bids_fold_down_and_asks_fold_up_so_a_row_is_never_both() {
     assert_eq!((bids.bid, bids.ask), (10.0, 0.0));
     let asks = row_at(&ladder, "100.05");
     assert_eq!((asks.bid, asks.ask), (0.0, 8.0));
-    assert_eq!(ladder.largest_size, 10.0);
+    let all = 0..ladder.rows.len();
+    assert_eq!(ladder.scale(all).size, 10.0);
+    // Only the rows on show count: one row away from the bids holds nothing.
+    let quiet = ladder
+        .rows
+        .iter()
+        .position(|row| row.bid == 0.0 && row.ask == 0.0)
+        .unwrap();
+    assert_eq!(ladder.scale(quiet..quiet + 1).size, 0.0);
     assert!(
         ladder
             .rows
@@ -199,7 +207,7 @@ fn trades_fold_to_where_the_taker_hit_and_show_since_the_first() {
     assert_eq!((up.bought, up.sold), (2.5, 0.0));
     let down = row_at(&ladder, "99.95");
     assert_eq!((down.bought, down.sold), (0.0, 1.5));
-    assert_eq!(ladder.largest_traded, 2.5);
+    assert_eq!(ladder.scale(0..ladder.rows.len()).traded, 2.5);
     assert_eq!(ladder.since_ms, Some(NOW + 1_000));
     assert_eq!(ladder.trades.len(), 3);
     assert_eq!(ladder.trades[0].price, price("100.02"), "newest first");

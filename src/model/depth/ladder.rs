@@ -54,14 +54,17 @@ pub struct Ladder {
     pub best_bid: Option<Price>,
     pub best_ask: Option<Price>,
     pub last_trade: Option<Trade>,
-    /// The largest bid or ask of any row, to scale the bars against.
-    pub largest_size: f64,
-    /// The most traded at any row, to scale the bars against.
-    pub largest_traded: f64,
     /// The latest trades, newest first.
     pub trades: Vec<Trade>,
     /// When the first trade counted in the rows happened.
     pub since_ms: Option<i64>,
+}
+
+/// The largest figures among the rows on show, for scaling their bars.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Scale {
+    pub size: f64,
+    pub traded: f64,
 }
 
 impl Ladder {
@@ -75,8 +78,6 @@ impl Ladder {
             best_bid: None,
             best_ask: None,
             last_trade: None,
-            largest_size: 0.0,
-            largest_traded: 0.0,
             trades: Vec::new(),
             since_ms: None,
         }
@@ -90,6 +91,18 @@ impl Ladder {
     /// The gap between the best bid and the best ask.
     pub fn spread(&self) -> Option<Price> {
         Some(self.best_ask? - self.best_bid?)
+    }
+
+    /// What the bars of the rows in `shown` are scaled against: the largest bid or ask and the most
+    /// traded among those rows only, so the rows on screen fill their columns whatever lies
+    /// beyond them in the window.
+    pub fn scale(&self, shown: std::ops::Range<usize>) -> Scale {
+        let rows = self.rows.get(shown).unwrap_or_default();
+        let largest = |size: fn(&Row) -> f64| rows.iter().map(size).fold(0.0, f64::max);
+        Scale {
+            size: largest(|row| row.bid.max(row.ask)),
+            traded: largest(|row| row.bought + row.sold),
+        }
     }
 
     /// Folds the book into rows of `group` around `centre`: a bid rests in the row at or below
@@ -150,7 +163,6 @@ impl Ladder {
         for (index, change) in net {
             rows[index].pull_stack = change;
         }
-        let largest = |size: fn(&Row) -> f64| rows.iter().map(size).fold(0.0, f64::max);
         Self {
             link: Link::Live,
             tick,
@@ -158,8 +170,6 @@ impl Ladder {
             best_bid: book.best_bid(),
             best_ask: book.best_ask(),
             last_trade: tape.last().copied(),
-            largest_size: largest(|row| row.bid.max(row.ask)),
-            largest_traded: largest(|row| row.bought + row.sold),
             trades: tape.recent().copied().collect(),
             since_ms: tape.since_ms(),
             rows,

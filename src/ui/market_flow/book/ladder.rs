@@ -3,7 +3,7 @@
 //! view. Scrolling moves the window; the toolbar brings it back.
 
 use super::{BookViewState, size_text};
-use crate::model::depth::{CENTRE_ROW, Ladder, Price, Row, WINDOW_ROWS};
+use crate::model::depth::{CENTRE_ROW, Ladder, Price, Row, Scale, WINDOW_ROWS};
 use crate::model::taker_flow::Taker;
 use crate::ui::accessibility;
 use crate::ui::kit::{self, size};
@@ -80,17 +80,31 @@ pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, ladder: &Ladder, heig
 
     let body = Rect::from_min_max(pos2(area.left(), area.top() + HEADER_HEIGHT), area.max);
     let lines = lines(ladder, (body.height() / ROW_HEIGHT) as usize);
+    let scale = shown_scale(ladder, &lines);
     for (index, line) in lines.into_iter().enumerate() {
         let rect = Rect::from_min_size(
             pos2(body.left(), body.top() + index as f32 * ROW_HEIGHT),
             vec2(body.width(), ROW_HEIGHT),
         );
         match line {
-            Line::Row(row) => draw_row(ui, &painter, rect, &columns, ladder, row),
+            Line::Row(row) => draw_row(ui, &painter, rect, &columns, ladder, scale, row),
             Line::Spread => draw_spread(&painter, rect, ladder),
         }
     }
     scroll(ui, state, ladder, area);
+}
+
+/// What the bars of `lines` are scaled against: only the rows on screen.
+fn shown_scale(ladder: &Ladder, lines: &[Line]) -> Scale {
+    let mut rows = lines.iter().filter_map(|line| match line {
+        Line::Row(index) => Some(*index),
+        Line::Spread => None,
+    });
+    let Some(first) = rows.next() else {
+        return Scale::default();
+    };
+    let last = rows.next_back().unwrap_or(first);
+    ladder.scale(first..last + 1)
 }
 
 /// The lines that fit `capacity`, the rows around the middle of the window with the spread above
@@ -153,6 +167,7 @@ fn draw_row(
     rect: Rect,
     columns: &Columns,
     ladder: &Ladder,
+    scale: Scale,
     index: usize,
 ) {
     let row = &ladder.rows[index];
@@ -175,21 +190,11 @@ fn draw_row(
         );
     };
     let share = |value: f64, of: f64| if of > 0.0 { value / of } else { 0.0 };
-    bar(
-        columns.bid,
-        true,
-        share(row.bid, ladder.largest_size),
-        theme::UP,
-    );
-    bar(
-        columns.ask,
-        false,
-        share(row.ask, ladder.largest_size),
-        theme::DOWN,
-    );
+    bar(columns.bid, true, share(row.bid, scale.size), theme::UP);
+    bar(columns.ask, false, share(row.ask, scale.size), theme::DOWN);
     let traded = row.bought + row.sold;
     if traded > 0.0 {
-        let total = share(traded, ladder.largest_traded);
+        let total = share(traded, scale.traded);
         let width = (columns.traded.1 - columns.traded.0) * total as f32;
         let split = columns.traded.0 + width * share(row.bought, traded) as f32;
         for (from, to, color) in [
