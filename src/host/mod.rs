@@ -1,6 +1,8 @@
 pub mod alert;
 pub mod broker;
+pub mod depth;
 pub mod editor_theme;
+pub mod lease_map;
 pub mod liquidation;
 pub mod mcp;
 pub mod paper;
