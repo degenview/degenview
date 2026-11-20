@@ -114,6 +114,14 @@ pub enum SyncNotice {
 }
 
 impl SyncView {
+    /// The last error is iCloud refusing a schema not deployed to Production yet: the page explains
+    /// that instead of showing CloudKit's words.
+    pub fn schema_not_deployed(&self) -> bool {
+        self.last_error
+            .as_deref()
+            .is_some_and(crate::sync::transport::schema_not_deployed)
+    }
+
     pub(crate) fn initial(unavailable: Option<String>) -> Self {
         Self {
             unavailable,
