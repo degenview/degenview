@@ -50,13 +50,20 @@ impl Session {
         let Some(mut hooks) = self.hooks.take() else {
             return Ok(());
         };
+        // A statement the session added is not in the script: nothing stops at it, and its time
+        // is part of the statement it was taken from.
+        let synthetic = statement.is_synthetic();
         let outcome = match &mut *hooks {
+            Hooks::Debug(_) if synthetic => Ok(()),
             Hooks::Debug(debug) => debug.before_statement(self, statement, context),
             Hooks::Profile(profile) => {
                 // Library code is not timed: its offsets belong to another text, and its time is
                 // part of the statement that called it. Walking past a function's declaration runs
                 // nothing; its calls are timed in `invoke`.
-                if context.scope.is_some() || matches!(statement, Statement::Function { .. }) {
+                if synthetic
+                    || context.scope.is_some()
+                    || matches!(statement, Statement::Function { .. })
+                {
                     profile.enter_untimed();
                 } else {
                     profile.enter_statement(statement.range().start.offset);
@@ -73,6 +80,7 @@ impl Session {
     #[inline(never)]
     pub(super) fn hook_after(&mut self, statement: &Statement, context: &RuntimeContext) {
         match self.hooks.as_deref_mut() {
+            Some(Hooks::Debug(_)) if statement.is_synthetic() => {}
             Some(Hooks::Debug(debug)) => debug.after_statement(statement, context),
             Some(Hooks::Profile(profile)) => profile.exit(),
             None => {}
