@@ -12,6 +12,7 @@ pub mod extra;
 
 use crate::model::Kline;
 use crate::pine::runtime::value::RuntimeValue;
+use extra::derived;
 
 /// What one call site remembers between bars.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -36,9 +37,6 @@ pub struct State {
     pub derived: Vec<extra::Derived>,
     /// `ta.pivot_point_levels` state: the period since the last anchor and the levels it last set.
     pub pivot: Option<extra::PivotPeriod>,
-    /// `ta.macd`'s fast, slow and signal averages. Boxed: `State` is cloned on every realtime tick
-    /// and only a `ta.macd` site has legs.
-    pub macd: Option<Box<[MacdLeg; 3]>>,
     /// `ta.dmi`'s four smoothed series, each the state of its own `ta.rma`. Boxed like `macd`.
     pub dmi: Option<Box<[State; 4]>>,
 }
@@ -55,40 +53,6 @@ pub struct Supertrend {
 /// `ta.macd`'s lengths when a call leaves them out (TradingView requires all three; the session
 /// binds them in `inline_call`).
 pub const MACD_DEFAULTS: [i64; 3] = [12, 26, 9];
-
-/// One exponential average of `ta.macd`. A missing value gives no result and leaves the average
-/// as it was, so a gap neither restarts the seed nor moves the line (TradingView ignores `na`).
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct MacdLeg {
-    /// The first `length` values, until the average exists; empty afterwards.
-    seed: Vec<f64>,
-    last: Option<f64>,
-}
-
-impl MacdLeg {
-    /// Folds `value` in: the average of the first `length` values seeds it, `alpha * x + (1 - alpha)
-    /// * prior` continues it.
-    fn step(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
-        let x = value?;
-        if length == 0 {
-            return None;
-        }
-        if let Some(prior) = self.last {
-            let alpha = 2.0 / (length as f64 + 1.0);
-            let next = alpha * x + (1.0 - alpha) * prior;
-            self.last = Some(next);
-            return Some(next);
-        }
-        self.seed.push(x);
-        if self.seed.len() < length {
-            return None;
-        }
-        let average = self.seed.iter().sum::<f64>() / length as f64;
-        self.seed = Vec::new();
-        self.last = Some(average);
-        Some(average)
-    }
-}
 
 /// The `ta.*` names `evaluate` computes from one source series and a length. The bar-relative ones
 /// (`ta.sar`, `ta.supertrend`) go through `evaluate_price` instead.
@@ -148,7 +112,8 @@ pub fn evaluate(
     let inputs = &state.inputs;
     let result = match name {
         "ta.sma" => sma(inputs, count),
-        "ta.ema" | "ta.rma" => exponential(name, source, state, count),
+        "ta.ema" => optional(derived(state, 0).ema(source.number(), count)),
+        "ta.rma" => optional(derived(state, 0).rma(source.number(), count)),
         "ta.highest" => extremum(inputs, count, f64::max),
         "ta.lowest" => extremum(inputs, count, f64::min),
         "ta.change" => change(inputs, if count > 0 { count } else { 1 }),
@@ -157,8 +122,8 @@ pub fn evaluate(
         "ta.falling" => trend(inputs, count, false),
         "ta.mom" | "ta.roc" => momentum(inputs, count, name == "ta.roc"),
         "ta.rsi" => extra::rsi(&mut *state, length),
-        "ta.median" => statistic(inputs, count, median),
-        "ta.range" => statistic(inputs, count, |values| {
+        "ta.median" => skipping_statistic(inputs, count, median),
+        "ta.range" => skipping_statistic(inputs, count, |values| {
             let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             let low = values.iter().copied().fold(f64::INFINITY, f64::min);
             if values.is_empty() { 0.0 } else { high - low }
@@ -172,7 +137,7 @@ pub fn evaluate(
         "ta.lowestbars" => extremum_bars(inputs, count, false),
         "ta.percentrank" => percent_rank(inputs, count),
         "ta.linreg" => linreg(inputs, count, second.int_value().unwrap_or(0)),
-        "math.sum" => statistic(inputs, count, |values| values.iter().sum()),
+        "math.sum" => skipping_statistic(inputs, count, |values| values.iter().sum()),
         "ta.max" => running_extreme(source, state.results.last(), f64::max),
         "ta.min" => running_extreme(source, state.results.last(), f64::min),
         "ta.cross" | "ta.crossover" | "ta.crossunder" => {
@@ -690,7 +655,7 @@ pub fn evaluate_dispersion(
 ) -> RuntimeValue {
     state.inputs.push(source.clone());
     let count = usize::try_from(length).unwrap_or(0);
-    let result = optional(last_window(&state.inputs, count).and_then(|window| {
+    let result = optional(last_valid(&state.inputs, count).and_then(|window| {
         let figure = if biased {
             variance(&window)
         } else if window.len() < 2 {
@@ -818,26 +783,6 @@ fn sma(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
     optional(last_valid(inputs, length).map(|values| values.iter().sum::<f64>() / length as f64))
 }
 
-/// EMA and RMA differ only in alpha. Both seed from the simple average of the first `length`
-/// values.
-fn exponential(name: &str, source: &RuntimeValue, state: &State, length: usize) -> RuntimeValue {
-    if length == 0 {
-        return RuntimeValue::Na;
-    }
-    let Some(prior) = state.results.last().and_then(RuntimeValue::number) else {
-        return sma(&state.inputs, length);
-    };
-    let Some(x) = source.number() else {
-        return RuntimeValue::Na;
-    };
-    let alpha = if name == "ta.ema" {
-        2.0 / (length as f64 + 1.0)
-    } else {
-        1.0 / length as f64
-    };
-    float(alpha * x + (1.0 - alpha) * prior)
-}
-
 fn extremum(inputs: &[RuntimeValue], length: usize, pick: fn(f64, f64) -> f64) -> RuntimeValue {
     optional(last_valid(inputs, length).and_then(|values| values.into_iter().reduce(pick)))
 }
@@ -854,20 +799,33 @@ fn change(inputs: &[RuntimeValue], offset: usize) -> RuntimeValue {
     float(current - previous)
 }
 
+/// `ta.wma`: weights 1 to `length`, newest heaviest. A missing bar gives `na`; in the windows
+/// after it the missing bar's slot holds the last value that existed before it (TradingView's
+/// rule, measured), so the average is `na` only on the bar itself.
 fn wma(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
-    let Some(window) = last_window(inputs, length) else {
+    if length == 0 || length > inputs.len() || latest(inputs).is_none() {
         return RuntimeValue::Na;
-    };
-    let weighted: f64 = window
-        .iter()
-        .enumerate()
-        .map(|(index, value)| (index + 1) as f64 * value)
-        .sum();
+    }
+    let start = inputs.len() - length;
+    let mut held: Option<f64> = None;
+    let mut weighted = 0.0;
+    for (offset, input) in inputs[start..].iter().enumerate() {
+        let value = match input.number() {
+            Some(value) => Some(value),
+            None if offset == 0 => inputs[..start].iter().rev().find_map(RuntimeValue::number),
+            None => held,
+        };
+        let Some(value) = value else {
+            return RuntimeValue::Na;
+        };
+        held = Some(value);
+        weighted += (offset + 1) as f64 * value;
+    }
     float(weighted / (length * (length + 1) / 2) as f64)
 }
 
 fn stdev(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
-    let Some(window) = last_window(inputs, length) else {
+    let Some(window) = last_valid(inputs, length) else {
         return RuntimeValue::Na;
     };
     float(variance(&window).sqrt())
@@ -952,11 +910,10 @@ pub fn evaluate_macd(
 ) -> RuntimeValue {
     let value = source.number();
     let length = |length: i64| usize::try_from(length).unwrap_or(0);
-    let legs = state.macd.get_or_insert_with(Box::default);
-    let fast = legs[0].step(value, length(fast));
-    let slow = legs[1].step(value, length(slow));
+    let fast = derived(state, 0).ema(value, length(fast));
+    let slow = derived(state, 1).ema(value, length(slow));
     let line = fast.zip(slow).map(|(fast, slow)| fast - slow);
-    let signal = legs[2].step(line, length(signal));
+    let signal = derived(state, 2).ema(line, length(signal));
     RuntimeValue::Tuple(vec![
         optional(line),
         optional(signal),
@@ -1011,6 +968,17 @@ fn statistic(
     compute: impl FnOnce(&[f64]) -> f64,
 ) -> RuntimeValue {
     optional(last_window(inputs, length).map(|window| compute(&window)))
+}
+
+/// `compute` over the last `length` inputs that exist: a missing bar is skipped, and on it the
+/// statistic keeps the value of the bar before (TradingView's rule for `ta.stdev`, `ta.median`,
+/// `ta.range` and `math.sum`; `ta.dev` is strict there).
+fn skipping_statistic(
+    inputs: &[RuntimeValue],
+    length: usize,
+    compute: impl FnOnce(&[f64]) -> f64,
+) -> RuntimeValue {
+    optional(last_valid(inputs, length).map(|window| compute(&window)))
 }
 
 fn median(values: &[f64]) -> f64 {
@@ -1186,12 +1154,14 @@ mod tests {
         assert_eq!(feed(RuntimeValue::Na), RuntimeValue::Na);
         // sma looks at the last two non-na values (2 and 4), skipping the gap.
         assert_eq!(feed(float(4.0)), float(3.0));
-        // wma needs the last two inputs themselves to be numbers.
+        // wma is na on the missing bar, and after it the bar's slot holds the value before it.
         let mut wma = State::default();
-        for value in [float(1.0), RuntimeValue::Na, float(3.0)] {
-            evaluate("ta.wma", &value, &RuntimeValue::Na, 2, &mut wma);
-        }
-        assert_eq!(wma.results.last(), Some(&RuntimeValue::Na));
+        let results: Vec<RuntimeValue> = [float(1.0), RuntimeValue::Na, float(3.0)]
+            .iter()
+            .map(|value| evaluate("ta.wma", value, &RuntimeValue::Na, 2, &mut wma))
+            .collect();
+        assert_eq!(results[1], RuntimeValue::Na);
+        assert_eq!(results[2], float((1.0 + 2.0 * 3.0) / 3.0));
     }
 
     #[test]
@@ -1398,35 +1368,31 @@ mod tests {
     }
 
     #[test]
-    fn rsi_skips_missing_values_instead_of_restarting() {
+    fn rsi_has_no_value_while_its_change_is_missing_and_keeps_its_averages() {
         let gaps = [
             Some(1.0),
-            None,
             Some(2.0),
-            None,
             Some(3.0),
-            None,
             Some(4.0),
             None,
-            Some(5.0),
+            Some(6.0),
+            Some(7.0),
+            Some(6.0),
         ];
-        // Changes are between the valid values; a missing bar repeats the last result.
+        // The missing bar and the one after it have no change, so no value; the averages are as
+        // they were when the changes come back.
         let values = run_rsi_with_gaps(&gaps, 3);
+        assert_eq!(&values[..5], [None, None, None, Some(100.0), None]);
+        assert_eq!(values[5], None, "the change across the gap is missing too");
+        assert_eq!(values[6], Some(100.0));
+        let loss = values[7].expect("a loss now");
+        assert!((loss - (100.0 - 100.0 / (1.0 + 2.0 / 3.0 / (1.0 / 3.0)))).abs() < 1e-9);
+        let gaps = [Some(1.0), None, Some(2.0), None, Some(3.0)];
         assert_eq!(
-            values,
-            [
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(100.0),
-                Some(100.0),
-                Some(100.0)
-            ]
+            run_rsi_with_gaps(&gaps, 3),
+            [None; 5],
+            "no change ever exists"
         );
-        assert_eq!(run_rsi_with_gaps(&gaps, 1)[2], Some(100.0));
         // Leading `na` (a warm-up) changes nothing: same values as without it.
         let plain = numbers(&run("ta.rsi", &[10.0, 11.0, 10.5, 11.5, 11.0], 3));
         let mut padded = vec![None, None];
