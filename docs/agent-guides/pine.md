@@ -243,7 +243,11 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   candle does not end before it opens (an older candle caught up on a live bar is history; a
   developing candle on a historical bar is history), and `islast` / `islastconfirmedhistory` on the
   candle that holds the chart bar's final instant, the end of its bucket (a 5h bar opened at 20:00
-  ends at midnight), when the chart bar has them. `timeframe.change` is false on the first bar of the series it runs on (the chart's,
+  ends at midnight), when the chart bar has them. `islastconfirmedhistory` belongs to the requested
+  series: the last candle that closed by the history's end (`Session::history_end`) whose successor
+  ends after it, so a `"1D"` request on a 4h chart has it on yesterday's day (TradingView probe P12,
+  2026-11-21). A `"60"` request reads 1 there where TradingView read 0, which splits history from
+  realtime by wall-clock time. `timeframe.change` is false on the first bar of the series it runs on (the chart's,
   or the request's own candles, `series_bars`), TradingView-measured.
 - **Lookahead.** `lookahead_on` without an offset on a historical chart bar returns the requested
   bar as it ended, from the period's first chart bar on (TradingView probe P04: 0 mismatches over

@@ -48,16 +48,12 @@ struct ChartBar {
     /// When the chart bar closes (exclusive), where its bucket ends: a bar that does not divide the
     /// day is cut at midnight. `i64::MIN` for history before the chart's first bar.
     end: i64,
-    last: LastBar,
-    realtime: bool,
-}
-
-/// Whether a bar is the last one (`barstate.islast`), and the last confirmed history one
-/// (`barstate.islastconfirmedhistory`).
-#[derive(Clone, Copy, Default)]
-struct LastBar {
+    /// Whether the chart bar is the last one (`barstate.islast`).
     last: bool,
-    last_confirmed_history: bool,
+    /// Where the chart's history ends, when it is known: the candle that closed last with it is the
+    /// request's last confirmed history bar (`barstate.islastconfirmedhistory`).
+    history_end: Option<i64>,
+    realtime: bool,
 }
 
 impl ChartBar {
@@ -65,30 +61,30 @@ impl ChartBar {
     const BEFORE_CHART: Self = Self {
         start: i64::MAX,
         end: i64::MIN,
-        last: LastBar {
-            last: false,
-            last_confirmed_history: false,
-        },
+        last: false,
+        history_end: None,
         realtime: false,
     };
 
-    fn of(bar: &Kline, seconds: f64, flags: &BarFlags) -> Self {
+    /// The bar `bar` runs as. `history_end` is `Session::history_end`; without it the chart bar
+    /// that is the last confirmed history one ends the history.
+    fn of(bar: &Kline, seconds: f64, flags: &BarFlags, history_end: Option<i64>) -> Self {
+        let end = Self::end_of(bar, seconds);
         Self {
             start: bar.open_time,
-            end: Self::end_of(bar, seconds),
-            last: LastBar {
-                last: flags.is_last,
-                last_confirmed_history: flags.is_last_confirmed_history,
-            },
+            end,
+            last: flags.is_last,
+            history_end: history_end.or(flags.is_last_confirmed_history.then_some(end)),
             realtime: flags.is_realtime,
         }
     }
 
     /// A confirmed chart bar before the one now running, replayed for a site the call skipped.
-    fn replayed(bar: &Kline, seconds: f64) -> Self {
+    fn replayed(bar: &Kline, seconds: f64, history_end: Option<i64>) -> Self {
         Self {
             start: bar.open_time,
             end: Self::end_of(bar, seconds),
+            history_end,
             ..Self::BEFORE_CHART
         }
     }
@@ -100,19 +96,25 @@ impl ChartBar {
     }
 
     /// The bar states of `candle`, a candle of `interval` seconds, evaluated for this chart bar.
+    ///
+    /// The last confirmed history bar belongs to the requested series, not to the chart bar: it is
+    /// the last candle that closed with the history, so the one whose successor is not history,
+    /// TradingView-measured (a `"1D"` request on a 4h chart, probe P12).
     fn flags_of(&self, candle: &Kline, interval: f64, commit: bool, is_first: bool) -> BarFlags {
-        let holds_last_instant = candle.open_time < self.end
-            && self.end <= time::bucket::end(candle.open_time, interval);
-        let is_realtime =
-            self.realtime && time::bucket::end(candle.open_time, interval) > self.start;
+        let candle_end = time::bucket::end(candle.open_time, interval);
+        let holds_last_instant = candle.open_time < self.end && self.end <= candle_end;
+        let is_realtime = self.realtime && candle_end > self.start;
+        let is_last_confirmed_history = self
+            .history_end
+            .is_some_and(|end| candle_end <= end && time::bucket::end(candle_end, interval) > end);
         BarFlags {
             is_first,
-            is_last: self.last.last && holds_last_instant,
+            is_last: self.last && holds_last_instant,
             is_history: !is_realtime,
             is_realtime,
             is_new: true,
             is_confirmed: commit,
-            is_last_confirmed_history: self.last.last_confirmed_history && holds_last_instant,
+            is_last_confirmed_history,
         }
     }
 }
@@ -629,7 +631,7 @@ impl Session {
                 bar: &bar,
                 seconds,
                 confirmed: context.flags.is_confirmed,
-                chart: ChartBar::of(&bar, seconds, &context.flags),
+                chart: ChartBar::of(&bar, seconds, &context.flags, self.history_end),
                 skipped_after: None,
             },
         )?;
@@ -672,7 +674,7 @@ impl Session {
                     bar: &bar,
                     seconds,
                     confirmed: true,
-                    chart: ChartBar::replayed(&bar, seconds),
+                    chart: ChartBar::replayed(&bar, seconds, self.history_end),
                     skipped_after: Some(skipped_after),
                 },
             )?;
@@ -803,7 +805,7 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
-        let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags);
+        let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
         let mut fresh = false;
         if context.flags.is_confirmed {
             let chart_close = chart.end;
@@ -898,7 +900,7 @@ impl Session {
             gaps_on: false,
             foreign: None,
         };
-        let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags);
+        let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
         let mut results = Vec::new();
         let mut index = low;
         while index < candles.len() && candles[index].open_time < end {
@@ -1731,6 +1733,52 @@ mod tests {
             assert_eq!(values[3], Some(0.0), "{state} on the 15:00 candle");
             assert_eq!(values[4], Some(1.0), "{state} on the 20:00 candle");
         }
+    }
+
+    /// The first plot of `source` over `chart` run as one history (`Session::evaluate`), which
+    /// tells the session where the history ends.
+    fn plotted_as_history(source: &str, chart: &[Kline]) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            None,
+            None,
+        );
+        session.evaluate(chart).expect("runs");
+        session.output().plots[0].values.clone()
+    }
+
+    #[test]
+    fn the_last_confirmed_history_candle_of_a_request_is_the_last_one_that_closed_with_the_history()
+    {
+        // TradingView (probe P12, 2026-11-21): on the chart's last history bar, `"1D"` returns the
+        // last completed day, and that day is the request's last confirmed history bar.
+        let lch = |expression: &str, bars: i64| {
+            plotted_as_history(
+                &format!(
+                    "plot(request.security(syminfo.tickerid, \"{expression}\", barstate.islastconfirmedhistory ? 1.0 : 0.0))"
+                ),
+                &hourly_chart(0, bars),
+            )
+        };
+        // Hours 0-29: day 0 closed at hour 24, day 1 is still running when the history ends.
+        let days = lch("1D", 30);
+        assert_eq!(days[22], None, "no day has closed yet");
+        assert_eq!(days[23], Some(1.0), "day 0 closes with the chart's hour 23");
+        assert_eq!(
+            days[29],
+            Some(1.0),
+            "and is still what the last history bar reads"
+        );
+        // Hours 0-11: the 4h candle 8-12 ends with the history, the one before it does not.
+        let hours = lch("240", 12);
+        assert_eq!(hours[7], Some(0.0));
+        assert_eq!(hours[11], Some(1.0));
     }
 
     #[test]

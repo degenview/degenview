@@ -130,6 +130,9 @@ pub struct Session {
     pub last_bar_index: i64,
     pub last_bar_time: Option<i64>,
     pub first_bar_time: Option<i64>,
+    /// Where the history the chart was loaded with ends (`load_history`): the close of its last bar,
+    /// the open of the live bar that may follow. None until a history is loaded.
+    pub history_end: Option<i64>,
     pub visible_range: Option<(i64, i64)>,
     pub last_committed_open_time: Option<i64>,
     pub once_per_bar_ledger: HashSet<usize>,
@@ -231,6 +234,7 @@ impl Session {
         self.last_bar_time = None;
         self.first_bar_time = None;
         self.known_bars = None;
+        self.history_end = None;
         self.mintick = self.supplied_mintick.unwrap_or(DEFAULT_MINTICK);
         self.deadline_at = None;
     }
