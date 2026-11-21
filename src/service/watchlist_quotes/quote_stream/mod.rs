@@ -3,6 +3,7 @@
 
 use crate::model::DataSource;
 use crate::model::watchlist::quote::SourceQuote;
+use crate::service::market::venue;
 use crate::service::net::ws::Session;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,8 +17,16 @@ pub struct StreamTick {
     pub quote: SourceQuote,
 }
 
-/// Turns one text message of a source's stream into a tick.
-type Parser = fn(&str) -> Option<StreamTick>;
+/// How a venue's ticker socket is opened and read. The socket loop is [`QuoteSocket`]'s alone.
+pub trait QuoteProtocol: Sync {
+    /// The socket for `products`, as the venue names them: its url, what to send once connected
+    /// and how to keep it alive.
+    fn session(&self, products: &[String]) -> Session;
+
+    /// What one text message of the socket says; nothing for a message that is not a price
+    /// (an acknowledgement, a heartbeat, another topic).
+    fn parse(&self, text: &str) -> Option<StreamTick>;
+}
 
 /// A live connection; dropping it closes the socket.
 pub struct QuoteSocket {
@@ -32,34 +41,15 @@ impl QuoteSocket {
         products: Vec<String>,
         sender: Sender<StreamTick>,
     ) -> Option<Self> {
-        let (session, parse): (Session, Parser) = match source {
-            DataSource::Coinbase => (
-                crate::service::market::coinbase::quotes::session(&products),
-                crate::service::market::coinbase::quotes::parse_tick,
-            ),
-            DataSource::Okx => (
-                crate::service::market::okx::quotes::session(&products),
-                crate::service::market::okx::quotes::parse_tick,
-            ),
-            DataSource::Kraken => (
-                crate::service::market::kraken::quotes::session(&products),
-                crate::service::market::kraken::quotes::parse_tick,
-            ),
-            DataSource::Bybit => (
-                crate::service::market::bybit::quotes::session(&products),
-                crate::service::market::bybit::quotes::parse_tick,
-            ),
-            DataSource::Gate => (
-                crate::service::market::gateio::quotes::session(&products),
-                crate::service::market::gateio::quotes::parse_tick,
-            ),
-            _ => return None,
-        };
+        let protocol = venue::of(source).quotes()?;
+        let session = protocol.session(&products);
         let shutdown = Arc::new(AtomicBool::new(false));
         let thread_shutdown = Arc::clone(&shutdown);
         std::thread::spawn(move || {
             session.run(&thread_shutdown, |text| {
-                parse(text).is_none_or(|tick| sender.send(tick).is_ok())
+                protocol
+                    .parse(text)
+                    .is_none_or(|tick| sender.send(tick).is_ok())
             });
         });
         Some(Self { shutdown, products })

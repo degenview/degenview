@@ -14,10 +14,8 @@ pub(in crate::service) mod quote_stream;
 use crate::lock::lock;
 pub use book::WatchlistQuoteBook;
 pub use engine::Config;
-#[cfg(test)]
 pub use engine::Outcome;
 pub use provider::QuoteProvider;
-#[cfg(test)]
 pub use provider::{QuoteFailure, QuoteRequest};
 
 use crate::clock::now_ms;

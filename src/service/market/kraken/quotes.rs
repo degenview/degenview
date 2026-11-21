@@ -2,18 +2,19 @@
 //! vwap of every market asked for. One subscribe message names them all; the server sends a
 //! `heartbeat` every second.
 
+use super::Kraken;
+use super::ticker::kraken_volume;
 use crate::format::parse_iso8601;
 use crate::model::DataSource;
 use crate::model::watchlist::quote::SourceQuote;
 use crate::service::net::ws::{Keepalive, Session};
-use crate::service::watchlist_quotes::provider::kraken_volume;
-use crate::service::watchlist_quotes::quote_stream::StreamTick;
+use crate::service::watchlist_quotes::quote_stream::{QuoteProtocol, StreamTick};
 use serde_json::{Value, json};
 use std::time::Duration;
 
 const HOST: &str = "ws.kraken.com";
 
-pub(in crate::service) fn session(products: &[String]) -> Session {
+fn session(products: &[String]) -> Session {
     let subscribe = json!({
         "method": "subscribe",
         "params": {"channel": "ticker", "symbol": products},
@@ -31,7 +32,7 @@ pub(in crate::service) fn session(products: &[String]) -> Session {
 /// `{"channel":"ticker","type":"update","data":[{"symbol":"BTC/USD","last":64268.8,
 /// "change":-114.0,"volume":4527.03,"vwap":64719.4,"timestamp":"2026-11-17T10:17:54.974820Z",…}]}`.
 /// The price a day ago is the last trade less the 24h change.
-pub(in crate::service) fn parse_tick(text: &str) -> Option<StreamTick> {
+fn parse_tick(text: &str) -> Option<StreamTick> {
     let value: Value = serde_json::from_str(text).ok()?;
     if value.get("channel")?.as_str()? != "ticker" {
         return None;
@@ -61,6 +62,16 @@ pub(in crate::service) fn parse_tick(text: &str) -> Option<StreamTick> {
         product_id,
         quote,
     })
+}
+
+impl QuoteProtocol for Kraken {
+    fn session(&self, products: &[String]) -> Session {
+        session(products)
+    }
+
+    fn parse(&self, text: &str) -> Option<StreamTick> {
+        parse_tick(text)
+    }
 }
 
 #[cfg(test)]

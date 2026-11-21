@@ -3,16 +3,17 @@
 //! is refused whole, so each market is its own request. The socket is kept alive with protocol
 //! pings, which the server answers.
 
+use super::Gate;
+use super::ticker::gateio_ticker;
 use crate::model::DataSource;
 use crate::service::net::ws::{Keepalive, Session};
-use crate::service::watchlist_quotes::provider::gateio_ticker;
-use crate::service::watchlist_quotes::quote_stream::StreamTick;
+use crate::service::watchlist_quotes::quote_stream::{QuoteProtocol, StreamTick};
 use serde_json::{Value, json};
 use std::time::Duration;
 
 const HOST: &str = "api.gateio.ws";
 
-pub(in crate::service) fn session(products: &[String]) -> Session {
+fn session(products: &[String]) -> Session {
     Session {
         url: format!("wss://{HOST}/ws/v4/"),
         host: HOST.to_owned(),
@@ -34,7 +35,7 @@ pub(in crate::service) fn session(products: &[String]) -> Session {
 /// `{"time_ms":1794918485791,"channel":"spot.tickers","event":"update","result":{
 /// "currency_pair":"BTC_USDT","last":"65057.9","change_percentage":"1.5527","base_volume":"…",
 /// "quote_volume":"…",…}}`.
-pub(in crate::service) fn parse_tick(text: &str) -> Option<StreamTick> {
+fn parse_tick(text: &str) -> Option<StreamTick> {
     let value: Value = serde_json::from_str(text).ok()?;
     if value.get("channel")?.as_str()? != "spot.tickers"
         || value.get("event")?.as_str()? != "update"
@@ -48,6 +49,16 @@ pub(in crate::service) fn parse_tick(text: &str) -> Option<StreamTick> {
         product_id,
         quote,
     })
+}
+
+impl QuoteProtocol for Gate {
+    fn session(&self, products: &[String]) -> Session {
+        session(products)
+    }
+
+    fn parse(&self, text: &str) -> Option<StreamTick> {
+        parse_tick(text)
+    }
 }
 
 #[cfg(test)]

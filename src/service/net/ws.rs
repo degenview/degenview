@@ -226,6 +226,16 @@ pub enum Frame<'a> {
     Binary(&'a [u8]),
 }
 
+impl<'a> Frame<'a> {
+    /// The message as text; nothing for a binary one.
+    pub fn text(self) -> Option<&'a str> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Binary(_) => None,
+        }
+    }
+}
+
 impl Session {
     /// Connects, subscribes and reads until `shutdown`, reconnecting with backoff whenever the
     /// socket fails. Every text message goes to `on_text`; it answers whether to keep reading

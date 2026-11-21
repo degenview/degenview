@@ -7,13 +7,20 @@
 pub(in crate::service) mod live;
 pub(in crate::service) mod quotes;
 
+mod ticker;
+
 use super::candles::plan;
 use super::catalog::Catalog;
+use super::live::CandleProtocol;
 use super::paging::Paging;
 use super::search_rank::normalize;
+use super::venue::Venue;
 use crate::model::market::bucket::{FoldPlan, next_bucket_start_ms};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
+use crate::service::watchlist_quotes::provider::refused_by_region;
+use crate::service::watchlist_quotes::quote_stream::QuoteProtocol;
+use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -24,6 +31,31 @@ pub(crate) const BASE_URL: &str = "https://api.gateio.ws/api/v4/spot";
 pub struct Gate;
 
 pub const GATE: Gate = Gate;
+
+impl Venue for Gate {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+
+    fn live(&self) -> Option<&dyn CandleProtocol> {
+        Some(self)
+    }
+
+    fn quotes(&self) -> Option<&dyn QuoteProtocol> {
+        Some(self)
+    }
+
+    fn rest_quotes(&self, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        ticker::fetch_quotes(requests).map(Outcome::from_quotes)
+    }
+
+    fn classify_status(&self, code: u16) -> Option<QuoteFailure> {
+        match code {
+            403 => Some(refused_by_region(DataSource::Gate)),
+            _ => None,
+        }
+    }
+}
 
 /// 1,000 rows a request. Gate.io refuses (HTTP 400, "Candlestick too long ago") a request that
 /// reaches 10,000 points back from now in the interval asked for, and counts the rows the

@@ -3,17 +3,18 @@
 //! request (a request takes at most ten, and one unknown symbol refuses the whole of it); the
 //! socket is kept alive with `{"op":"ping"}`.
 
+use super::Bybit;
 use super::KEEPALIVE;
+use super::ticker::bybit_ticker;
 use crate::model::DataSource;
 use crate::service::net::ws::Session;
-use crate::service::watchlist_quotes::provider::bybit_ticker;
-use crate::service::watchlist_quotes::quote_stream::StreamTick;
+use crate::service::watchlist_quotes::quote_stream::{QuoteProtocol, StreamTick};
 use serde_json::{Value, json};
 use std::time::Duration;
 
 const HOST: &str = "stream.bybit.com";
 
-pub(in crate::service) fn session(products: &[String]) -> Session {
+fn session(products: &[String]) -> Session {
     Session {
         url: format!("wss://{HOST}/v5/public/spot"),
         host: HOST.to_owned(),
@@ -33,7 +34,7 @@ pub(in crate::service) fn session(products: &[String]) -> Session {
 
 /// `{"topic":"tickers.BTCUSDT","ts":1794913918523,"type":"snapshot","data":{"symbol":"BTCUSDT",
 /// "lastPrice":"64303.3","prevPrice24h":"64675.6","volume24h":"…","turnover24h":"…",…}}`.
-pub(in crate::service) fn parse_tick(text: &str) -> Option<StreamTick> {
+fn parse_tick(text: &str) -> Option<StreamTick> {
     let value: Value = serde_json::from_str(text).ok()?;
     value.get("topic")?.as_str()?.strip_prefix("tickers.")?;
     let (product_id, mut quote) = bybit_ticker(value.get("data")?)?;
@@ -43,6 +44,16 @@ pub(in crate::service) fn parse_tick(text: &str) -> Option<StreamTick> {
         product_id,
         quote,
     })
+}
+
+impl QuoteProtocol for Bybit {
+    fn session(&self, products: &[String]) -> Session {
+        session(products)
+    }
+
+    fn parse(&self, text: &str) -> Option<StreamTick> {
+        parse_tick(text)
+    }
 }
 
 #[cfg(test)]

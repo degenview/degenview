@@ -1,13 +1,15 @@
 //! Binance's combined kline stream: the symbols and interval are in the URL, nothing is sent.
 
+use super::Binance;
 use crate::model::{Kline, Timeframe};
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::market::live::CandleProtocol;
+use crate::service::net::ws::{Frame, Keepalive, Session};
 use serde_json::Value;
 use std::time::Duration;
 
 const HOST: &str = "stream.binance.com";
 
-pub(in crate::service) fn session(symbols: &[String], base: Timeframe) -> Session {
+fn session(symbols: &[String], base: Timeframe) -> Session {
     let interval = base.interval();
     let streams = symbols
         .iter()
@@ -25,7 +27,7 @@ pub(in crate::service) fn session(symbols: &[String], base: Timeframe) -> Sessio
 }
 
 /// `{"stream":"btcusdt@kline_1h","data":{"k":{"t","o","h","l","c","v",…}}}`.
-pub(in crate::service) fn parse_kline(text: &str) -> Option<(String, Kline)> {
+fn parse_kline(text: &str) -> Option<(String, Kline)> {
     let value: Value = serde_json::from_str(text).ok()?;
     let stream = value.get("stream")?.as_str()?;
     let symbol = stream.split('@').next()?.to_uppercase();
@@ -51,6 +53,16 @@ pub(in crate::service) fn parse_kline(text: &str) -> Option<(String, Kline)> {
             volume,
         },
     ))
+}
+
+impl CandleProtocol for Binance {
+    fn sessions(&self, symbols: &[String], base: Timeframe) -> Option<Vec<Session>> {
+        Some(vec![session(symbols, base)])
+    }
+
+    fn parse(&self, frame: Frame<'_>, _base: Timeframe) -> Option<(String, Kline)> {
+        parse_kline(frame.text()?)
+    }
 }
 
 #[cfg(test)]

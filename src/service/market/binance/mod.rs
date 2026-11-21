@@ -1,9 +1,15 @@
 pub(in crate::service) mod live;
 
+mod ticker;
+
 use super::candles::plan;
 use super::catalog::Catalog;
+use super::live::CandleProtocol;
 use super::search_rank::normalize;
+use super::venue::Venue;
 use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::watchlist_quotes::provider::rejected;
+use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -13,6 +19,27 @@ const BASE_URL: &str = "https://api.binance.com/api/v3/klines";
 pub struct Binance;
 
 pub const BINANCE: Binance = Binance;
+
+impl Venue for Binance {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+
+    fn live(&self) -> Option<&dyn CandleProtocol> {
+        Some(self)
+    }
+
+    fn rest_quotes(&self, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        ticker::fetch_quotes(requests).map(Outcome::from_quotes)
+    }
+
+    fn classify_status(&self, code: u16) -> Option<QuoteFailure> {
+        match code {
+            400 => Some(rejected(400)),
+            _ => None,
+        }
+    }
+}
 
 /// The most klines one Binance request returns.
 const MAX_PER_REQUEST: usize = 1_000;

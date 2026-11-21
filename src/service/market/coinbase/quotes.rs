@@ -1,17 +1,18 @@
 //! Coinbase's `ticker` channel. It has no candle channel, but the ticker carries the last trade
 //! plus the 24h open and volume.
 
+use super::Coinbase;
+use super::ticker::coinbase_volume;
 use crate::model::DataSource;
 use crate::model::watchlist::quote::SourceQuote;
 use crate::service::net::ws::{Keepalive, Session};
-use crate::service::watchlist_quotes::provider::coinbase_volume;
-use crate::service::watchlist_quotes::quote_stream::StreamTick;
+use crate::service::watchlist_quotes::quote_stream::{QuoteProtocol, StreamTick};
 use serde_json::{Value, json};
 use std::time::Duration;
 
 const HOST: &str = "ws-feed.exchange.coinbase.com";
 
-pub(in crate::service) fn session(products: &[String]) -> Session {
+fn session(products: &[String]) -> Session {
     Session {
         url: format!("wss://{HOST}"),
         host: HOST.to_owned(),
@@ -33,7 +34,7 @@ fn subscription(products: &[String]) -> String {
 
 /// `{"type":"ticker","product_id":"BTC-USD","price":"67000.1","open_24h":"66000","volume_24h":"123.4","time":"…Z"}`
 /// as a quote with the change measured against the rolling 24h open.
-pub(in crate::service) fn parse_tick(text: &str) -> Option<StreamTick> {
+fn parse_tick(text: &str) -> Option<StreamTick> {
     let value: Value = serde_json::from_str(text).ok()?;
     if value.get("type")?.as_str()? != "ticker" {
         return None;
@@ -60,6 +61,16 @@ pub(in crate::service) fn parse_tick(text: &str) -> Option<StreamTick> {
         product_id,
         quote,
     })
+}
+
+impl QuoteProtocol for Coinbase {
+    fn session(&self, products: &[String]) -> Session {
+        session(products)
+    }
+
+    fn parse(&self, text: &str) -> Option<StreamTick> {
+        parse_tick(text)
+    }
 }
 
 #[cfg(test)]

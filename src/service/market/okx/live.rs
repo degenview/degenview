@@ -1,16 +1,18 @@
 //! OKX's `candle<bar>` channels, on the `business` endpoint (the `public` one refuses them). A
 //! single subscribe message names every market; the socket is kept alive with the text `"ping"`.
 
+use super::Okx;
 use super::{bar, instrument_id, parse_row};
 use crate::model::{Kline, Timeframe};
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::market::live::CandleProtocol;
+use crate::service::net::ws::{Frame, Keepalive, Session};
 use serde_json::{Value, json};
 use std::time::Duration;
 
 const HOST: &str = "ws.okx.com";
 
 /// `None` when OKX has no bar of `base`.
-pub(in crate::service) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
+fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
     let channel = format!("candle{}", bar(base)?);
     let args: Vec<Value> = symbols
         .iter()
@@ -32,11 +34,21 @@ pub(in crate::service) fn session(symbols: &[String], base: Timeframe) -> Option
 
 /// `{"arg":{"channel":"candle1m","instId":"BTC-USDT"},"data":[["1794904500000","o","h","l","c",
 /// "vol",…,"0"]]}`; the subscription answers and errors carry an `event` and no data.
-pub(in crate::service) fn parse_kline(text: &str, base: Timeframe) -> Option<(String, Kline)> {
+fn parse_kline(text: &str, base: Timeframe) -> Option<(String, Kline)> {
     let value: Value = serde_json::from_str(text).ok()?;
     let symbol = value.pointer("/arg/instId")?.as_str()?.to_uppercase();
     let row = value.get("data")?.as_array()?.first()?;
     Some((symbol, parse_row(row, base).ok()?))
+}
+
+impl CandleProtocol for Okx {
+    fn sessions(&self, symbols: &[String], base: Timeframe) -> Option<Vec<Session>> {
+        session(symbols, base).map(|session| vec![session])
+    }
+
+    fn parse(&self, frame: Frame<'_>, base: Timeframe) -> Option<(String, Kline)> {
+        parse_kline(frame.text()?, base)
+    }
 }
 
 #[cfg(test)]

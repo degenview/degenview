@@ -4,9 +4,11 @@
 //! subscribe request so that a market it does not list refuses only itself. The socket is kept
 //! alive with `{"method":"PING"}`.
 
+use super::Mexc;
 use super::{socket_interval, symbol_id};
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{Kline, Timeframe};
+use crate::service::market::live::CandleProtocol;
 use crate::service::net::protobuf::field;
 use crate::service::net::ws::{Frame, Keepalive, Session};
 use serde_json::json;
@@ -31,7 +33,7 @@ const KLINE_LOW: u32 = 6;
 const KLINE_VOLUME: u32 = 7;
 
 /// The connections for `symbols`; `None` when MEXC has no interval of `base`.
-pub(in crate::service) fn sessions(symbols: &[String], base: Timeframe) -> Option<Vec<Session>> {
+fn sessions(symbols: &[String], base: Timeframe) -> Option<Vec<Session>> {
     let interval = socket_interval(base)?;
     let topics: Vec<String> = symbols
         .iter()
@@ -62,10 +64,7 @@ pub(in crate::service) fn sessions(symbols: &[String], base: Timeframe) -> Optio
 /// A binary push: the wrapper holds the channel (field 1), the symbol (3) and, for a kline, the
 /// body (308) with the window start in seconds (2), the prices as strings (open 3, close 4, high 5,
 /// low 6) and the volume in the base asset (7). Subscription answers are text and carry no candle.
-pub(in crate::service) fn parse_kline(
-    frame: Frame<'_>,
-    base: Timeframe,
-) -> Option<(String, Kline)> {
+fn parse_kline(frame: Frame<'_>, base: Timeframe) -> Option<(String, Kline)> {
     let Frame::Binary(message) = frame else {
         return None;
     };
@@ -89,6 +88,16 @@ pub(in crate::service) fn parse_kline(
             volume: price(KLINE_VOLUME)?,
         },
     ))
+}
+
+impl CandleProtocol for Mexc {
+    fn sessions(&self, symbols: &[String], base: Timeframe) -> Option<Vec<Session>> {
+        sessions(symbols, base)
+    }
+
+    fn parse(&self, frame: Frame<'_>, base: Timeframe) -> Option<(String, Kline)> {
+        parse_kline(frame, base)
+    }
 }
 
 #[cfg(test)]

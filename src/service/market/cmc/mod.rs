@@ -1,3 +1,4 @@
+use super::venue::Venue;
 use crate::clock::now_ms;
 use crate::model::market::cmc::{
     ALTCOIN_HISTORICAL, ALTCOIN_LATEST, CHART_TYPES, FEAR_GREED_HISTORICAL, FEAR_GREED_LATEST,
@@ -107,6 +108,12 @@ fn parse_latest(symbol: &str, value: &Value) -> Option<(i64, LatestReading)> {
 pub struct CoinMarketCap;
 
 pub const COIN_MARKET_CAP: CoinMarketCap = CoinMarketCap;
+
+impl Venue for CoinMarketCap {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+}
 
 /// The saved (or environment) API key. Without one the public endpoints still answer, at lower
 /// rate limits.

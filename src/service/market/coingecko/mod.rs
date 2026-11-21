@@ -1,6 +1,10 @@
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
+mod ticker;
+
+use super::venue::Venue;
 use crate::model::market::samples;
 use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
 
@@ -9,6 +13,16 @@ const BASE_URL: &str = "https://api.coingecko.com/api/v3";
 pub struct CoinGecko;
 
 pub const COINGECKO: CoinGecko = CoinGecko;
+
+impl Venue for CoinGecko {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+
+    fn rest_quotes(&self, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        ticker::fetch_quotes(requests).map(Outcome::from_quotes)
+    }
+}
 
 impl MarketSource for CoinGecko {
     fn fetch_klines(

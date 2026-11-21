@@ -1,8 +1,13 @@
 use super::candles::plan;
+mod ticker;
+
 use super::catalog::Catalog;
+use super::venue::Venue;
 use crate::model::market::bucket;
 use crate::model::market::feed::AlpacaFeed;
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
+use crate::service::watchlist_quotes::provider::rejected;
+use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -17,6 +22,26 @@ const SIP_DELAY_MS: i64 = 16 * 60_000;
 pub struct Alpaca;
 
 pub const ALPACA: Alpaca = Alpaca;
+
+impl Venue for Alpaca {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+
+    fn rest_quotes(&self, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        ticker::fetch_quotes(requests).map(Outcome::from_quotes)
+    }
+
+    fn classify_status(&self, code: u16) -> Option<QuoteFailure> {
+        match code {
+            401 | 403 => Some(QuoteFailure::Failed(
+                "Alpaca refused your API key. Check it in Settings".to_owned(),
+            )),
+            400 => Some(rejected(400)),
+            _ => None,
+        }
+    }
+}
 
 /// What a search or a fetch says when no Alpaca keys are saved.
 pub const MISSING_KEY: &str = "Set up your Alpaca API key before using stock charts.";

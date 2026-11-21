@@ -8,13 +8,19 @@
 pub(in crate::service) mod live;
 pub(in crate::service) mod quotes;
 
+mod ticker;
+
 use super::candles::plan;
 use super::catalog::Catalog;
+use super::live::CandleProtocol;
 use super::paging::Paging;
 use super::search_rank::normalize;
+use super::venue::Venue;
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
+use crate::service::watchlist_quotes::quote_stream::QuoteProtocol;
+use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -25,6 +31,24 @@ const BASE_URL: &str = "https://www.okx.com/api/v5";
 pub struct Okx;
 
 pub const OKX: Okx = Okx;
+
+impl Venue for Okx {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+
+    fn live(&self) -> Option<&dyn CandleProtocol> {
+        Some(self)
+    }
+
+    fn quotes(&self) -> Option<&dyn QuoteProtocol> {
+        Some(self)
+    }
+
+    fn rest_quotes(&self, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        ticker::fetch_quotes(requests).map(Outcome::from_quotes)
+    }
+}
 
 /// 300 rows a request, 120 pages (a 22-minute chart of 500 candles is 37), and a pause between
 /// them for its 20 requests per 2 seconds per IP.

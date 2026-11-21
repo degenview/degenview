@@ -2,18 +2,20 @@
 //! interval; the server sends a `heartbeat` every second, which keeps the socket alive along with
 //! the protocol pings.
 
+use super::Kraken;
 use super::{interval, pair};
 use crate::format::parse_iso8601;
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{Kline, Timeframe};
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::market::live::CandleProtocol;
+use crate::service::net::ws::{Frame, Keepalive, Session};
 use serde_json::{Value, json};
 use std::time::Duration;
 
 const HOST: &str = "ws.kraken.com";
 
 /// `None` when Kraken has no interval of `base`.
-pub(in crate::service) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
+fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
     let symbols: Vec<String> = symbols.iter().map(|symbol| pair(symbol)).collect();
     let subscribe = json!({
         "method": "subscribe",
@@ -39,7 +41,7 @@ pub(in crate::service) fn session(symbols: &[String], base: Timeframe) -> Option
 /// "low":…,"close":…,"volume":1383.85,"interval_begin":"2026-11-17T00:00:00.000000000Z",
 /// "interval":1440,…}]}`. The volume is the running total of the forming candle. Status,
 /// heartbeat and subscription replies carry no candle.
-pub(in crate::service) fn parse_kline(text: &str, base: Timeframe) -> Option<(String, Kline)> {
+fn parse_kline(text: &str, base: Timeframe) -> Option<(String, Kline)> {
     let value: Value = serde_json::from_str(text).ok()?;
     if value.get("channel")?.as_str()? != "ohlc" || value.get("type")?.as_str()? != "update" {
         return None;
@@ -59,6 +61,16 @@ pub(in crate::service) fn parse_kline(text: &str, base: Timeframe) -> Option<(St
             volume: number("volume")?,
         },
     ))
+}
+
+impl CandleProtocol for Kraken {
+    fn sessions(&self, symbols: &[String], base: Timeframe) -> Option<Vec<Session>> {
+        session(symbols, base).map(|session| vec![session])
+    }
+
+    fn parse(&self, frame: Frame<'_>, base: Timeframe) -> Option<(String, Kline)> {
+        parse_kline(frame.text()?, base)
+    }
 }
 
 #[cfg(test)]

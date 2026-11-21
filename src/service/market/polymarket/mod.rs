@@ -1,5 +1,9 @@
+use super::venue::Venue;
+use crate::model::DataSource;
 use crate::model::market::line;
 use crate::model::{Kline, Timeframe};
+use crate::service::watchlist_quotes::provider::prediction;
+use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{
     EventInfo, EventStats, MarketSource, ProviderError, SearchResult, downsample,
     replace_last_price, whole_dollars,
@@ -12,6 +16,24 @@ const CLOB_BASE: &str = "https://clob.polymarket.com";
 pub struct Polymarket;
 
 pub const POLYMARKET: Polymarket = Polymarket;
+
+impl Venue for Polymarket {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+
+    fn rest_quotes(&self, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        Ok(prediction(DataSource::Polymarket, requests))
+    }
+
+    fn supports_trending(&self) -> bool {
+        true
+    }
+
+    fn trending(&self, limit: usize) -> Result<Vec<SearchResult>, ProviderError> {
+        trending(limit)
+    }
+}
 
 /// Gamma serializes `outcomes`/`outcomePrices`/`clobTokenIds` as JSON strings that
 /// themselves contain arrays; they need a second decode pass.

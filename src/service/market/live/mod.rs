@@ -1,5 +1,6 @@
 use crate::lock::lock;
 use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::market::venue;
 use crate::service::net::ws::{Frame, Session};
 use eframe::egui;
 use std::collections::BTreeMap;
@@ -39,15 +40,16 @@ impl LiveInbox {
     }
 }
 
-/// Turns one message of an exchange's stream into `(symbol, kline)`.
-type Parser = Arc<dyn Fn(Frame<'_>) -> Option<(String, Kline)> + Send + Sync>;
+/// How a venue's candle socket is opened and read. The loop, the reconnecting and the inbox are
+/// [`LiveFeed`]'s alone.
+pub trait CandleProtocol: Sync {
+    /// The connections that stream the candles of length `base` for `symbols` (an exchange that
+    /// caps the topics of a connection gets several); `None` when the venue has no such candle.
+    fn sessions(&self, symbols: &[String], base: Timeframe) -> Option<Vec<Session>>;
 
-/// A parser of text messages.
-fn text_parser(parse: impl Fn(&str) -> Option<(String, Kline)> + Send + Sync + 'static) -> Parser {
-    Arc::new(move |frame| match frame {
-        Frame::Text(text) => parse(text),
-        Frame::Binary(_) => None,
-    })
+    /// What one message says: the market as the venue names it, and its candle. Nothing for a
+    /// message that is not one (an acknowledgement, a heartbeat, another topic).
+    fn parse(&self, frame: Frame<'_>, base: Timeframe) -> Option<(String, Kline)>;
 }
 
 /// A kline feed for one workspace's charts of one source: background threads (one per connection:
@@ -67,55 +69,17 @@ impl LiveFeed {
         base: Timeframe,
         ctx: egui::Context,
     ) -> Option<Self> {
-        let (sessions, parse): (Vec<Session>, Parser) = match source {
-            DataSource::Binance => (
-                vec![crate::service::market::binance::live::session(
-                    &symbols, base,
-                )],
-                text_parser(crate::service::market::binance::live::parse_kline),
-            ),
-            DataSource::Okx => (
-                vec![crate::service::market::okx::live::session(&symbols, base)?],
-                text_parser(move |text| crate::service::market::okx::live::parse_kline(text, base)),
-            ),
-            DataSource::Kraken => (
-                vec![crate::service::market::kraken::live::session(
-                    &symbols, base,
-                )?],
-                text_parser(move |text| {
-                    crate::service::market::kraken::live::parse_kline(text, base)
-                }),
-            ),
-            DataSource::Bybit => (
-                vec![crate::service::market::bybit::live::session(
-                    &symbols, base,
-                )?],
-                text_parser(crate::service::market::bybit::live::parse_kline),
-            ),
-            DataSource::Gate => (
-                vec![crate::service::market::gateio::live::session(
-                    &symbols, base,
-                )?],
-                text_parser(move |text| {
-                    crate::service::market::gateio::live::parse_kline(text, base)
-                }),
-            ),
-            DataSource::Mexc => (
-                crate::service::market::mexc::live::sessions(&symbols, base)?,
-                Arc::new(move |frame| crate::service::market::mexc::live::parse_kline(frame, base)),
-            ),
-            _ => return None,
-        };
+        let protocol = venue::of(source).live()?;
+        let sessions = protocol.sessions(&symbols, base)?;
         let inbox = Arc::new(LiveInbox::default());
         let shutdown = Arc::new(AtomicBool::new(false));
         for session in sessions {
             let thread_shutdown = Arc::clone(&shutdown);
             let thread_inbox = Arc::clone(&inbox);
-            let parse = Arc::clone(&parse);
             let ctx = ctx.clone();
             std::thread::spawn(move || {
                 session.run_frames(&thread_shutdown, |frame| {
-                    if let Some((symbol, kline)) = parse(frame) {
+                    if let Some((symbol, kline)) = protocol.parse(frame, base) {
                         thread_inbox.push(symbol, kline);
                         ctx.request_repaint();
                     }

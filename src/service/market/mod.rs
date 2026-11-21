@@ -19,3 +19,4 @@ pub(in crate::service) mod paging;
 pub(in crate::service) mod polymarket;
 pub mod search_rank;
 pub mod trend;
+pub mod venue;

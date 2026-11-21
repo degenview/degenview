@@ -1,10 +1,16 @@
 pub(in crate::service) mod quotes;
 
+mod ticker;
+
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::search_rank::normalize;
+use super::venue::Venue;
 use crate::model::market::bucket::FoldPlan;
 use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::watchlist_quotes::provider::rejected;
+use crate::service::watchlist_quotes::quote_stream::QuoteProtocol;
+use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -19,6 +25,27 @@ const MAX_PAGES: usize = 60;
 pub struct Coinbase;
 
 pub const COINBASE: Coinbase = Coinbase;
+
+impl Venue for Coinbase {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+
+    fn quotes(&self) -> Option<&dyn QuoteProtocol> {
+        Some(self)
+    }
+
+    fn rest_quotes(&self, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        Ok(ticker::fetch_quotes(requests))
+    }
+
+    fn classify_status(&self, code: u16) -> Option<QuoteFailure> {
+        match code {
+            404 => Some(rejected(404)),
+            _ => None,
+        }
+    }
+}
 
 /// Coinbase ids are `BASE-QUOTE`. Accept `BASE/QUOTE` and a bare `BASE` (USD).
 pub(crate) fn product_id(symbol: &str) -> String {

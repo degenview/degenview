@@ -1,6 +1,10 @@
 pub(in crate::service) mod geckoterminal;
 
+mod ticker;
+
+use super::venue::Venue;
 use crate::model::{Kline, Timeframe};
+use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -10,6 +14,20 @@ const BASE_URL: &str = "https://api.dexscreener.com/latest/dex";
 pub struct DexScreener;
 
 pub const DEXSCREENER: DexScreener = DexScreener;
+
+impl Venue for DexScreener {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+
+    fn rest_quotes(&self, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        Ok(ticker::fetch_quotes(requests))
+    }
+
+    fn resolve_chain(&self, address: &str) -> Option<String> {
+        ticker::resolve_chain(address)
+    }
+}
 
 impl MarketSource for DexScreener {
     /// DEXScreener publishes no candles on its free tier, so charts come from

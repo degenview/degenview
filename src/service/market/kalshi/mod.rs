@@ -1,5 +1,9 @@
+use super::venue::Venue;
+use crate::model::DataSource;
 use crate::model::market::line;
 use crate::model::{Kline, Timeframe};
+use crate::service::watchlist_quotes::provider::prediction;
+use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{
     EventInfo, EventStats, MarketSource, ProviderError, SearchResult, downsample,
     replace_last_price, whole_dollars,
@@ -13,6 +17,16 @@ const BASE_URL: &str = "https://external-api.kalshi.com/trade-api/v2";
 pub struct Kalshi;
 
 pub const KALSHI: Kalshi = Kalshi;
+
+impl Venue for Kalshi {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+
+    fn rest_quotes(&self, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        Ok(prediction(DataSource::Kalshi, requests))
+    }
+}
 
 #[derive(Clone)]
 struct Series {

@@ -7,13 +7,19 @@
 
 pub(in crate::service) mod live;
 
+mod ticker;
+
 use super::candles::plan;
 use super::catalog::Catalog;
+use super::live::CandleProtocol;
 use super::paging::Paging;
 use super::search_rank::normalize;
+use super::venue::Venue;
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
+use crate::service::watchlist_quotes::provider::refused_by_region;
+use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -24,6 +30,27 @@ pub(crate) const BASE_URL: &str = "https://api.mexc.com/api/v3";
 pub struct Mexc;
 
 pub const MEXC: Mexc = Mexc;
+
+impl Venue for Mexc {
+    fn candles(&self) -> &dyn MarketSource {
+        self
+    }
+
+    fn live(&self) -> Option<&dyn CandleProtocol> {
+        Some(self)
+    }
+
+    fn rest_quotes(&self, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        ticker::fetch_quotes(requests).map(Outcome::from_quotes)
+    }
+
+    fn classify_status(&self, code: u16) -> Option<QuoteFailure> {
+        match code {
+            403 => Some(refused_by_region(DataSource::Mexc)),
+            _ => None,
+        }
+    }
+}
 
 /// 500 rows a request and 20,000 base candles (a 22-minute chart of 500 candles is 22 pages, and
 /// that is two years of hours). Its one-minute candles reach back about a month. Nothing limits
