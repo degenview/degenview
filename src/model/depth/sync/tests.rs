@@ -88,6 +88,50 @@ fn binance_diffs_must_follow_each_other_and_a_gap_asks_for_a_snapshot() {
 }
 
 #[test]
+fn binance_applies_a_diff_that_overlaps_the_updates_the_book_already_has() {
+    // Binance: only a diff that starts after the book's id + 1 has missed an update.
+    let mut sync = DiffStream::default();
+    sync.judge(&snapshot(100));
+    assert_eq!(
+        sync.judge(&delta(100, 101, &[("99", 2.0)], &[])),
+        Verdict::Apply
+    );
+    // The book holds up to 101; 99..=103 contains 102 and 103, the ones that were missing.
+    assert_eq!(
+        sync.judge(&delta(99, 103, &[("98", 4.0)], &[])),
+        Verdict::Apply
+    );
+    assert!(sync.is_synced());
+    assert_eq!(
+        sync.judge(&delta(104, 104, &[("98", 5.0)], &[])),
+        Verdict::Apply,
+        "the book now holds up to 103"
+    );
+    // 106 starts after 104 + 1: update 105 is missing.
+    assert_eq!(
+        sync.judge(&delta(106, 107, &[("98", 6.0)], &[])),
+        Verdict::Gap
+    );
+    assert!(sync.needs_snapshot());
+}
+
+#[test]
+fn binance_drops_a_diff_that_ends_at_or_before_the_books_id_and_keeps_the_stream_going() {
+    let mut sync = DiffStream::default();
+    sync.judge(&snapshot(100));
+    sync.judge(&delta(100, 101, &[("99", 2.0)], &[]));
+    assert_eq!(
+        sync.judge(&delta(95, 101, &[("99", 9.0)], &[])),
+        Verdict::Stale
+    );
+    assert!(sync.is_synced(), "a stale diff is no reason to start over");
+    assert_eq!(
+        sync.judge(&delta(102, 102, &[("98", 5.0)], &[])),
+        Verdict::Apply
+    );
+}
+
+#[test]
 fn bybit_never_asks_for_a_snapshot_and_ignores_deltas_until_the_socket_sends_one() {
     let mut sync = SnapshotAndDeltas::default();
     assert!(!sync.needs_snapshot());

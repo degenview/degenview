@@ -1,19 +1,20 @@
 //! Binance's depth stream: a REST snapshot with a `lastUpdateId`, then diffs that each cover the
-//! update ids `U..=u`. The first diff used must straddle the snapshot (`U <= id + 1 <= u`), and
-//! every later one must start where the last ended (`U == previous u + 1`).
+//! update ids `U..=u`. Binance's rule is one for every diff, the first included: a diff that ends
+//! at or before the book's update id is old news and is dropped; one that starts after the id
+//! plus one has missed updates and the book is rebuilt from a new snapshot; anything between holds
+//! the update that comes next and is applied, even when it also repeats updates the book already
+//! has (levels carry absolute sizes, so applying them again changes nothing).
 
 use super::{BookSync, Verdict};
 use crate::model::depth::BookEvent;
 
 #[derive(Debug, Default)]
 enum State {
-    /// No snapshot yet: a diff cannot be placed.
+    /// No snapshot yet, or the stream has a gap: a diff cannot be placed.
     #[default]
     Waiting,
-    /// The snapshot with this id is in; the first diff to use has not arrived.
-    Snapshot(u64),
-    /// Diffs apply up to this update id.
-    Following(u64),
+    /// The book holds every update up to this id (the snapshot's, then the last diff applied).
+    Synced(u64),
 }
 
 /// A snapshot fetched over REST, then diffs that must follow it without a gap.
@@ -26,31 +27,22 @@ impl BookSync for DiffStream {
     fn judge(&mut self, event: &BookEvent) -> Verdict {
         let delta = match event {
             BookEvent::Snapshot(snapshot) => {
-                self.state = State::Snapshot(snapshot.id);
+                self.state = State::Synced(snapshot.id);
                 return Verdict::Replace;
             }
             BookEvent::Delta(delta) => delta,
         };
-        let fits = match self.state {
-            State::Waiting => false,
-            State::Snapshot(id) => {
-                if delta.last <= id {
-                    return Verdict::Stale;
-                }
-                delta.first <= id + 1
-            }
-            State::Following(previous) => {
-                if delta.last <= previous {
-                    return Verdict::Stale;
-                }
-                delta.first == previous + 1
-            }
+        let State::Synced(id) = self.state else {
+            return Verdict::Gap;
         };
-        if !fits {
+        if delta.last <= id {
+            return Verdict::Stale;
+        }
+        if delta.first > id + 1 {
             self.state = State::Waiting;
             return Verdict::Gap;
         }
-        self.state = State::Following(delta.last);
+        self.state = State::Synced(delta.last);
         Verdict::Apply
     }
 
