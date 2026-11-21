@@ -170,6 +170,13 @@
   local shadow outside its block (`aVFtPnUh`) and unread shadows of `low`, `hl2`, `second`
   (`mwTRA4dO`, `aVFtPnUh`, `5YEHyvSL`). Parameters may reuse the name with a warning. TradingView's
   message text is undocumented.
+- `CW10004` warning (`check/execution_model.rs`, TradingView's text): a stateful `ta.*` call
+  (`call_binding::route_of` is `TaTable`, `TaExtra` or `TaInline`, except `ta.tr`) in a ternary arm,
+  the right side of `and`/`or`, an `if`/`switch` branch (statement or expression), a loop body or a
+  `while` condition. A user function's own body is not a conditional scope (a branch inside it is);
+  a call's arguments inherit the call's place. Bundled indicators, demos and the committed corpus
+  scripts compile with zero diagnostics, so a new hit there is fixed in the script (extract the call
+  above the ternary), never silenced in the pass.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, share function bodies
   with `Arc`. Benchmark: `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.
