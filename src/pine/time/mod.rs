@@ -150,11 +150,12 @@ pub fn timeframe(name: &str, bar_seconds: f64) -> Option<RuntimeValue> {
 }
 
 /// `timeframe.change(timeframe)`: whether `now_ms` opens a new bar of a `tf_seconds`-long
-/// timeframe compared with the previous chart bar (`None` for the very first bar, which is always
-/// a change). Months follow the calendar, weeks start on Monday, the rest are fixed lengths.
+/// timeframe compared with the previous chart bar (`None` for the very first bar, which has
+/// nothing to change from: TradingView answers false there, even when the bar opens mid-period).
+/// Months follow the calendar, weeks start on Monday, the rest are fixed lengths.
 pub fn timeframe_changed(previous_ms: Option<i64>, now_ms: i64, tf_seconds: f64) -> bool {
     let Some(previous_ms) = previous_ms else {
-        return true;
+        return false;
     };
     let bucket = |ms: i64| -> i64 {
         if tf_seconds >= 28.0 * DAY && (tf_seconds / (30.0 * DAY)).fract().abs() < 1e-9 {
@@ -537,8 +538,12 @@ mod tests {
         let hour = 3_600_000;
         let day = 24 * hour;
         assert!(
-            timeframe_changed(None, 0, 3600.0),
-            "the first bar always changes"
+            !timeframe_changed(None, 0, 3600.0),
+            "the first bar has nothing to change from"
+        );
+        assert!(
+            !timeframe_changed(None, 90 * 60_000, 3600.0),
+            "not even one that opens mid-period"
         );
         assert!(!timeframe_changed(Some(hour), hour + 60_000, 3600.0));
         assert!(timeframe_changed(Some(hour), 2 * hour, 3600.0));

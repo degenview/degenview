@@ -71,7 +71,7 @@ impl Default for SecuritySite {
             has_pending_bars: false,
             is_warmed_up: false,
             completed_candles: 0,
-            state: Box::default(),
+            state: Box::new(RuntimeState::before_first_bar()),
             bars: Vec::new(),
             last_result: RuntimeValue::Na,
             processed_bar: None,
@@ -126,4 +126,15 @@ pub struct RuntimeState {
     pub next_reference: usize,
     pub bar_index: i64,
     pub instructions: usize,
+}
+
+impl RuntimeState {
+    /// A state about to run its series' first bar. Every bar advances `bar_index` before it runs,
+    /// so the first executes as bar 0, on the chart and in a request alike.
+    pub fn before_first_bar() -> Self {
+        Self {
+            bar_index: -1,
+            ..Self::default()
+        }
+    }
 }
