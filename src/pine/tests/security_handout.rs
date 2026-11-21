@@ -41,10 +41,11 @@ fn an_array_the_script_pushes_to_is_a_fresh_copy_on_every_bar() {
 
 #[test]
 fn a_second_call_in_a_bar_does_not_see_what_the_script_did_to_the_first() {
+    // One call site run twice in a bar (a loop): the second answer is the bar's cached one.
     let chart = hourly(12);
     for options in ["", ", lookahead = barmerge.lookahead_on"] {
         let source = format!(
-            "get() =>\n    request.security(syminfo.tickerid, \"240\", array.from(close){options})\nfirst = get()\nif not na(first)\n    array.push(first, 1.0)\nsecond = get()\nplot(na(second) ? na : array.size(second), \"size\")"
+            "float second = na\nfor i = 0 to 1\n    a = request.security(syminfo.tickerid, \"240\", array.from(close){options})\n    if not na(a)\n        if i == 0\n            array.push(a, 1.0)\n        else\n            second := array.size(a)\nplot(second, \"size\")"
         );
         assert_eq!(
             sizes(&source, &chart)[3..],
@@ -85,8 +86,8 @@ fn another_symbols_array_is_a_fresh_copy_on_every_bar() {
 
 #[test]
 fn the_intrabars_of_a_bar_are_a_fresh_array_for_each_call_in_it() {
-    // Two 1 minute chart bars, 15 second intrabars from a provider: the same call twice in a bar.
-    let source = "//@version=6\nindicator(\"T\")\nget() =>\n    request.security_lower_tf(syminfo.tickerid, \"15S\", close)\nfirst = get()\nif not na(first)\n    array.push(first, 1.0)\nsecond = get()\nplot(na(second) ? na : array.size(second), \"size\")";
+    // Two one minute chart bars with 15 second intrabars from a provider; one call site, run twice.
+    let source = "//@version=6\nindicator(\"T\")\nfloat second = na\nfor i = 0 to 1\n    a = request.security_lower_tf(syminfo.tickerid, \"15S\", close)\n    if i == 0\n        array.push(a, 1.0)\n    else\n        second := array.size(a)\nplot(second, \"size\")";
     let mut session = session_with(
         source,
         Some(Box::new(
