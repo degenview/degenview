@@ -65,15 +65,15 @@ fn only_the_invalid_symbol_code_is_an_unknown_market() {
         body: body.to_owned(),
     };
     let unknown = refusal(
-        DataSource::Binance,
+        DataSource::Aster,
         "btcuusdt",
         refused(400, r#"{"code":-1121,"msg":"Invalid symbol."}"#),
     );
     assert_eq!(
         unknown,
-        ProviderError::unknown_market(DataSource::Binance, "BTCUUSDT", "")
+        ProviderError::unknown_market(DataSource::Aster, "BTCUUSDT", "")
     );
-    assert_eq!(unknown.to_string(), "Binance does not list BTCUUSDT");
+    assert_eq!(unknown.to_string(), "Aster does not list BTCUUSDT");
     // Any other refusal keeps what it was: a bad parameter, a limit, a ban.
     for error in [
         refused(
@@ -84,7 +84,7 @@ fn only_the_invalid_symbol_code_is_an_unknown_market() {
         refused(429, r#"{"code":-1121}"#),
         http::Error::Status(400),
     ] {
-        let kept = refusal(DataSource::Binance, "BTCUSDT", error.clone());
+        let kept = refusal(DataSource::Aster, "BTCUSDT", error.clone());
         assert_eq!(kept, ProviderError::Network(error));
     }
 }
@@ -143,6 +143,19 @@ fn the_catalog_keeps_only_trading_markets_with_all_their_fields() {
     );
     assert!(parse_pairs("not json", trading).is_err());
     assert!(parse_pairs("{}", trading).expect("no symbols").is_empty());
+}
+
+#[test]
+fn a_futures_list_keeps_only_trading_perpetuals() {
+    let body = r#"{"symbols":[
+        {"symbol":"BTCUSDT","status":"TRADING","contractType":"PERPETUAL","baseAsset":"BTC","quoteAsset":"USDT"},
+        {"symbol":"OLDUSDT","status":"SETTLING","contractType":"PERPETUAL","baseAsset":"OLD","quoteAsset":"USDT"},
+        {"symbol":"NEWUSDT","status":"PENDING_TRADING","contractType":"","baseAsset":"NEW","quoteAsset":"USDT"},
+        {"symbol":"BTCUSDT_261225","status":"TRADING","contractType":"CURRENT_QUARTER","baseAsset":"BTC","quoteAsset":"USDT"}
+    ]}"#;
+    let pairs = parse_pairs(body, trading_perpetual).expect("pairs");
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].symbol, "BTCUSDT");
 }
 
 #[test]
@@ -214,6 +227,23 @@ fn the_symbols_and_interval_are_in_the_url_and_a_connection_takes_max_streams_of
 }
 
 #[test]
+fn the_ticker_is_one_subscribe_message_for_the_first_max_streams_products() {
+    let products: Vec<String> = ["BTCUSDT", "ethusdt", "SOLUSDT"].map(String::from).into();
+    let session = CONFIG.ticker_session(&products);
+    assert_eq!(session.url, "wss://stream.test/stream");
+    assert_eq!(session.subscribe.len(), 1);
+    let message: serde_json::Value = serde_json::from_str(&session.subscribe[0]).unwrap();
+    assert_eq!(
+        message,
+        serde_json::json!({
+            "method": "SUBSCRIBE",
+            "params": ["btcusdt@ticker", "ethusdt@ticker"],
+            "id": 1
+        })
+    );
+}
+
+#[test]
 fn parses_kline_stream_message() {
     let text = r#"{"stream":"btcusdt@kline_1h","data":{"k":{"t":1700000000000,"T":1700003599999,"o":"10","h":"12","l":"9","c":"11","v":"42.5","q":"0","x":false}}}"#;
     let (symbol, kline) = parse_kline(text).expect("parse");
@@ -234,15 +264,34 @@ fn a_message_without_a_close_time_falls_back_to_the_open_time() {
 }
 
 #[test]
-fn acknowledgements_other_topics_and_broken_messages_are_not_klines() {
+fn parses_a_ticker_stream_message() {
+    let text = r#"{"stream":"btcusdt@ticker","data":{"e":"24hrTicker","E":1795232871035,"s":"BTCUSDT","p":"-5202.1","P":"-8.376","w":"59457.6","c":"56904.4","Q":"0.001","o":"62106.5","h":"62309.5","l":"56526.9","v":"15850.680","q":"942444142.15","O":1795146420000,"C":1795232871000,"F":1,"L":2,"n":94695}}"#;
+    let (symbol, quote) = parse_ticker(text).expect("ticker");
+    assert_eq!(symbol, "BTCUSDT");
+    assert_eq!(quote.price, 56_904.4);
+    assert_eq!(quote.previous_day_price, Some(62_106.5));
+    assert_eq!(quote.timestamp_ms, Some(1_795_232_871_000));
+    assert_eq!(
+        (quote.volume_24h, quote.volume_kind),
+        (Some(942_444_142.15), Some(VolumeKind::QuoteCurrency))
+    );
+}
+
+#[test]
+fn acknowledgements_other_topics_and_priceless_tickers_are_not_data() {
+    let kline = r#"{"stream":"btcusdt@kline_1m","data":{"k":{"t":1,"T":2,"o":"1","h":"1","l":"1","c":"1","v":"1"}}}"#;
+    let ticker = r#"{"stream":"btcusdt@ticker","data":{"s":"BTCUSDT","c":"1","o":"1","v":"1","q":"1","C":1}}"#;
+    assert!(parse_ticker(kline).is_none(), "a kline is no ticker");
+    assert!(parse_kline(ticker).is_none(), "a ticker is no kline");
     for ignored in [
         r#"{"id":1,"result":null}"#,
-        r#"{"stream":"btcusdt@ticker","data":{"s":"BTCUSDT","c":"1","o":"1"}}"#,
         r#"{"stream":"btcusdt@depth","data":{}}"#,
-        r#"{"stream":"btcusdt@kline_1m"}"#,
+        r#"{"stream":"btcusdt@ticker","data":{"s":"BTCUSDT","c":"0","o":"1"}}"#,
+        r#"{"stream":"btcusdt@ticker"}"#,
         r#"{"stream":"btcusdt@kline_1m","data":{"k":{"t":1,"o":"x"}}}"#,
         "not json",
     ] {
         assert!(parse_kline(ignored).is_none(), "{ignored}");
+        assert!(parse_ticker(ignored).is_none(), "{ignored}");
     }
 }

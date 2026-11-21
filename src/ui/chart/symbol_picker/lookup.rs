@@ -244,6 +244,7 @@ mod tests {
                 "Gate.io",
                 "MEXC",
                 "Hyperliquid",
+                "Aster",
                 "DEXScreener",
                 "CoinGecko",
                 "Alpaca"

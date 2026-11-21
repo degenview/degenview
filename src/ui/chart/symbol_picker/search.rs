@@ -471,6 +471,7 @@ mod tests {
             DataSource::Gate,
             DataSource::Mexc,
             DataSource::Hyperliquid,
+            DataSource::Aster,
             DataSource::DexScreener,
             DataSource::CoinGecko,
         ] {

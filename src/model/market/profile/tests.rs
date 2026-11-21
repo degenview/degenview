@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 /// How many variants `DataSource` has. Bumped with [`position`], which cannot compile without an
 /// arm for a new variant.
-const VARIANTS: usize = 14;
+const VARIANTS: usize = 15;
 
 /// Where `source` stands in [`DataSource::ALL`]. Exhaustive, so a new variant does not compile
 /// until it is placed here, and then the tests below make it appear in the list.
@@ -18,12 +18,13 @@ fn position(source: DataSource) -> usize {
         DataSource::Gate => 5,
         DataSource::Mexc => 6,
         DataSource::Hyperliquid => 7,
-        DataSource::CoinGecko => 8,
-        DataSource::DexScreener => 9,
-        DataSource::Alpaca => 10,
-        DataSource::Polymarket => 11,
-        DataSource::Kalshi => 12,
-        DataSource::CoinMarketCap => 13,
+        DataSource::Aster => 8,
+        DataSource::CoinGecko => 9,
+        DataSource::DexScreener => 10,
+        DataSource::Alpaca => 11,
+        DataSource::Polymarket => 12,
+        DataSource::Kalshi => 13,
+        DataSource::CoinMarketCap => 14,
     }
 }
 
@@ -110,6 +111,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Gate,
             DataSource::Mexc,
             DataSource::Hyperliquid,
+            DataSource::Aster,
         ]
     );
     assert_eq!(
@@ -121,6 +123,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Bybit,
             DataSource::Gate,
             DataSource::Hyperliquid,
+            DataSource::Aster,
         ]
     );
 }
@@ -128,7 +131,7 @@ fn the_streams_follow_the_lists_they_replaced() {
 #[test]
 fn the_picker_lists_markets_by_symbol_and_predictions_apart() {
     let markets: Vec<_> = DataSource::symbol_markets().collect();
-    assert_eq!(markets.len(), 11);
+    assert_eq!(markets.len(), 12);
     assert!(markets.iter().all(|source| !source.is_prediction_market()));
     assert!(!markets.contains(&DataSource::CoinMarketCap));
     assert_eq!(
@@ -151,6 +154,7 @@ fn quotes_are_polled_as_each_source_allows() {
     assert_eq!(timing(DataSource::Gate), (5, 45, 2_500));
     assert_eq!(timing(DataSource::Mexc), (5, 45, 2_500));
     assert_eq!(timing(DataSource::Hyperliquid), (10, 60, 2_000));
+    assert_eq!(timing(DataSource::Aster), (10, 60, 1_000));
     assert_eq!(timing(DataSource::DexScreener), (10, 60, 30));
     assert_eq!(timing(DataSource::CoinGecko), (30, 120, 250));
     assert_eq!(timing(DataSource::Alpaca), (5, 45, 200));
@@ -196,4 +200,53 @@ fn hyperliquid_lists_perpetuals_and_spot_by_its_own_case_sensitive_names() {
     assert!(DataSource::Hyperliquid.serves(Timeframe::YEAR_1));
     // `2m` is not an interval of Hyperliquid either: it folds from 1m.
     assert!(DataSource::Hyperliquid.serves(Timeframe::parse("2m").unwrap()));
+}
+
+#[test]
+fn aster_lists_perpetuals_only_and_splits_its_ids_by_its_own_quotes() {
+    let profile = DataSource::Aster.profile();
+    assert_eq!(profile.kinds, [MarketKind::Perp]);
+    assert_eq!((profile.slug, profile.display_name), ("ASTER", "Aster"));
+    assert!(profile.streams.candles && profile.streams.quotes);
+    assert_eq!(
+        DataSource::from_watchlist_slug("aster"),
+        Some(DataSource::Aster)
+    );
+    for (id, asset) in [
+        ("BTCUSDT", "BTC"),
+        ("BTCUSD1", "BTC"),
+        ("ETHUSDC", "ETH"),
+        ("QQQUSDT", "QQQ"),
+        ("SPXUSDT", "SPX"),
+    ] {
+        assert_eq!(DataSource::Aster.base_asset(id), asset, "{id}");
+    }
+    // `BTCU` and `ETHU` are quoted in `U`: listed ids, never a bare asset that gets `USDT`, while an
+    // asset that merely ends in `U` still does.
+    for (id, asset) in [("BTCU", "BTC"), ("ETHU", "ETH")] {
+        assert_eq!(DataSource::Aster.base_asset(id), asset, "{id}");
+        assert_eq!(
+            DataSource::Aster.quote_asset(id).as_deref(),
+            Some("U"),
+            "{id}"
+        );
+        let instrument = crate::model::InstrumentId::new(DataSource::Aster, id);
+        assert_eq!(instrument.api_symbol(), id);
+        assert_eq!(instrument.key(), format!("ASTER:{id}"));
+    }
+    for (typed, id) in [("BTC", "BTCUSDT"), ("MENU", "MENUUSDT"), ("btcu", "BTCU")] {
+        assert_eq!(
+            crate::model::InstrumentId::new(DataSource::Aster, typed).api_symbol(),
+            id,
+            "{typed}"
+        );
+    }
+    // The grid is Binance's: the same natives, no `3d`.
+    assert_eq!(DataSource::Aster.natives(), DataSource::Binance.natives());
+    assert!(
+        !DataSource::Aster
+            .natives()
+            .contains(&Timeframe::parse("3d").unwrap())
+    );
+    assert!(DataSource::Aster.serves(Timeframe::parse("3d").unwrap()));
 }

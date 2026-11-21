@@ -18,8 +18,14 @@ pub(in crate::service) fn trading(market: &Value) -> bool {
     market.get("status").and_then(Value::as_str) == Some("TRADING")
 }
 
+/// Whether a listed market is a trading perpetual contract, the only kind a futures venue lists
+/// here (not a delivery contract, a settling one or one awaiting its listing).
+pub(in crate::service) fn trading_perpetual(market: &Value) -> bool {
+    trading(market) && market.get("contractType").and_then(Value::as_str) == Some("PERPETUAL")
+}
+
 /// The listed markets `serves` accepts, each with all its fields.
-pub(super) fn parse_pairs(
+pub(in crate::service) fn parse_pairs(
     body: &str,
     serves: fn(&Value) -> bool,
 ) -> Result<Vec<Pair>, ProviderError> {
@@ -42,7 +48,7 @@ pub(super) fn parse_pairs(
 }
 
 /// The listed markets whose name contains `needle` (letters and digits, upper case).
-pub(super) fn matching_pairs(
+pub(in crate::service) fn matching_pairs(
     source: DataSource,
     pairs: &[Pair],
     needle: &str,

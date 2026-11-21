@@ -1,10 +1,13 @@
-//! The combined stream socket: a topic is `<symbol>@kline_<interval>`, a message is
-//! `{"stream": topic, "data": …}`. The topics go in the URL; another topic is no data.
+//! The combined stream socket: a topic is `<symbol>@kline_<interval>` or `<symbol>@ticker`, a
+//! message is `{"stream": topic, "data": …}`. Topics go in the URL (a chart's few markets) or in a
+//! `SUBSCRIBE` message (a watchlist's many); an acknowledgement or an unknown topic is no data.
 
 use super::Config;
+use crate::model::watchlist::quote::SourceQuote;
 use crate::model::{Kline, Timeframe};
 use crate::service::net::ws::{Decode, Keepalive, Session};
-use serde_json::Value;
+use crate::service::watchlist_quotes::provider::number;
+use serde_json::{Value, json};
 
 impl Config {
     /// The connections that stream the forming candle of length `base` for `symbols`, one per
@@ -29,6 +32,21 @@ impl Config {
                 )
             })
             .collect()
+    }
+
+    /// The connection that streams the 24 h ticker of `products`: one `SUBSCRIBE` message, for the
+    /// first `max_streams` of them (the others are priced over REST).
+    pub(in crate::service) fn ticker_session(&self, products: &[String]) -> Session {
+        let topics: Vec<String> = products
+            .iter()
+            .take(self.max_streams)
+            .map(|product| format!("{}@ticker", product.to_lowercase()))
+            .collect();
+        let subscribe = json!({"method": "SUBSCRIBE", "params": topics, "id": 1});
+        self.session(
+            format!("wss://{}/stream", self.stream_host),
+            vec![subscribe.to_string()],
+        )
     }
 
     fn session(&self, url: String, subscribe: Vec<String>) -> Session {
@@ -80,4 +98,23 @@ pub(in crate::service) fn parse_kline(text: &str) -> Option<(String, Kline)> {
             volume,
         },
     ))
+}
+
+/// `{"stream":"btcusdt@ticker","data":{"s":"BTCUSDT","c":"last","o":"open 24h ago","v":"base
+/// volume","q":"quote volume","C":closeTime,…}}`.
+pub(in crate::service) fn parse_ticker(text: &str) -> Option<(String, SourceQuote)> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    let (kind, symbol, data) = topic(&value)?;
+    if kind != "ticker" {
+        return None;
+    }
+    let quote = super::ticker::quote_of(
+        &symbol,
+        number(data.get("c")).filter(|price| *price > 0.0)?,
+        number(data.get("o")),
+        data.get("C").and_then(Value::as_i64),
+        number(data.get("q")),
+        number(data.get("v")),
+    );
+    Some((symbol, quote))
 }
