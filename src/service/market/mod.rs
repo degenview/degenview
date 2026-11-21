@@ -14,6 +14,7 @@ pub(in crate::service) mod gateio;
 pub(in crate::service) mod hyperliquid;
 pub(in crate::service) mod kalshi;
 pub(in crate::service) mod kraken;
+pub(in crate::service) mod lighter;
 pub mod live;
 pub(in crate::service) mod mexc;
 pub(in crate::service) mod okx;

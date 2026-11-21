@@ -107,6 +107,8 @@ impl MarketSource for Hyperliquid {
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Hyperliquid, timeframe)?;
         let requested = PAGING.requested(plan, max);
+        // So the live feed of this chart can share a connection with the other listed markets.
+        catalog::warm();
         let id = coin_id(symbol);
         let candles = PAGING.back(start_ms, end_ms, requested, |after, wanted| {
             rest::page_before(&id, plan.base(), start_ms, after, wanted)
