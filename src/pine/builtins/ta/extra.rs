@@ -177,8 +177,8 @@ impl PivotPeriod {
 /// has none of. A period starts at each bar where `anchor` is true (and at the first bar); the
 /// levels set when one ends hold until the next ends, and are `na` before the first. With
 /// `developing` they are instead worked out from the bars of the running period so far, this bar
-/// included. Woodie's pivot weighs the open of the period that follows (the bar that sets the levels)
-/// in the same way, so a developing Woodie uses the running period's own open.
+/// included. Woodie's pivot weighs the open of the period that follows, which a running period does
+/// not have, so the call refuses `developing` for it (`call.rs`, as TradingView does).
 ///
 /// `None` when `kind` is not one of [`PIVOT_TYPES`].
 pub fn pivot_point_levels(

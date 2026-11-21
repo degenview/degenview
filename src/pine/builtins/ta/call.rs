@@ -147,6 +147,16 @@ impl Session {
                     .and_then(RuntimeValue::text_value)
                     .unwrap_or("");
                 let flag = |key: &str| bound.get(key).and_then(RuntimeValue::bool).unwrap_or(false);
+                if kind == "Woodie" && flag("developing") {
+                    // Woodie's pivot weighs the open of the period that follows, which a running
+                    // period does not have yet. TradingView stops the script (RE10128).
+                    return Err(Diagnostic::error(
+                        "PINE4035",
+                        DiagnosticCategory::Runtime,
+                        "ta.pivot_point_levels: the Woodie type cannot be used with developing = true (TradingView runtime error RE10128).",
+                        range,
+                    ));
+                }
                 let levels = extra::pivot_point_levels(
                     kind,
                     flag("anchor"),
