@@ -472,6 +472,7 @@ impl Session {
             // script's visuals to the back or the front from the chart's Scripts settings.
             behind_chart: self.program.declaration.overlay
                 && self.program.declaration.behind_chart.unwrap_or(false),
+            scale_none: self.program.declaration.scale_none,
         }
     }
 }

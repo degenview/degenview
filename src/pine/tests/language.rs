@@ -3632,6 +3632,78 @@ fn an_active_the_settings_cannot_know_is_warned_about_and_stays_editable() {
     );
 }
 
+/// `indicator(scale = ...)` compiled and run over a few bars.
+fn with_scale(declaration: &str) -> (compiler::program::CompiledProgram, Session) {
+    let source = format!("//@version=6\nindicator(\"T\"{declaration})\nplot(close)\n");
+    let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program.clone(),
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session.evaluate(&bars(5)).expect("the script runs");
+    (program, session)
+}
+
+#[test]
+fn scale_none_is_honoured_and_the_other_scales_are_still_warned_about() {
+    let (program, session) = with_scale(", overlay = true, scale = scale.none");
+    assert!(
+        program.diagnostics.iter().all(|d| d.code != "PINE7001"),
+        "{:?}",
+        program.diagnostics
+    );
+    assert!(program.declaration.scale_none);
+    assert!(session.output().scale_none, "the output carries it");
+    for scale in ["scale.left", "scale.right"] {
+        let (program, session) = with_scale(&format!(", overlay = true, scale = {scale}"));
+        let warnings: Vec<_> = program
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "PINE7001")
+            .collect();
+        assert_eq!(warnings.len(), 1, "{scale}: {:?}", program.diagnostics);
+        assert!(
+            warnings[0].message.contains("scale"),
+            "{}",
+            warnings[0].message
+        );
+        assert!(!program.declaration.scale_none);
+        assert!(!session.output().scale_none);
+    }
+}
+
+#[test]
+fn scale_none_only_means_something_for_an_overlay() {
+    // A script with its own pane has its own axis already: the argument is warned about.
+    let (program, session) = with_scale(", scale = scale.none");
+    let warnings: Vec<_> = program
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "PINE7001")
+        .collect();
+    assert_eq!(warnings.len(), 1, "{:?}", program.diagnostics);
+    assert!(
+        warnings[0].message.contains("overlay"),
+        "{}",
+        warnings[0].message
+    );
+    assert!(!program.declaration.scale_none);
+    assert!(!session.output().scale_none);
+    let (program, session) = with_scale(", overlay = true");
+    assert!(!program.declaration.scale_none);
+    assert!(!session.output().scale_none);
+    // The order of the arguments does not matter.
+    let (program, _) = with_scale(", scale = scale.none, overlay = true");
+    assert!(program.declaration.scale_none);
+    assert!(program.diagnostics.iter().all(|d| d.code != "PINE7001"));
+}
+
 #[test]
 fn constants_fold_comparisons_logic_and_ternaries() {
     let session = run(

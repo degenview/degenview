@@ -982,7 +982,8 @@ pub fn overlay_future_bars<'a>(outputs: impl IntoIterator<Item = &'a VisualOutpu
 /// The extent of every overlay script in `outputs`: the `future_bars` slots the chart keeps free
 /// past the last candle (from [`overlay_future_bars`]), and the prices the vertical scale has to
 /// reach for the bars `visible` shows. Scripts in their own pane add nothing — they have a value
-/// axis of their own.
+/// axis of their own — and neither does an overlay with `scale = scale.none`, whose values are
+/// fitted to a hidden scale of their own.
 pub fn overlay_extent<'a>(
     outputs: impl IntoIterator<Item = &'a VisualOutput>,
     visible: VisibleBars,
@@ -995,7 +996,7 @@ pub fn overlay_extent<'a>(
     if visible.count == 0 {
         return extent;
     }
-    for output in outputs.into_iter().filter(|o| o.overlay) {
+    for output in outputs.into_iter().filter(|o| o.overlay && !o.scale_none) {
         let mut values = series_values_in_pane(output, visible);
         values.extend(output.hlines.iter().map(|line| line.value));
         values.extend(drawing_values(output, visible));
@@ -2068,6 +2069,44 @@ mod tests {
         );
         assert_eq!(overlay_future_bars([]), 0);
         assert_eq!(overlay_extent([], newest(20), 0), OverlayExtent::default());
+    }
+
+    #[test]
+    fn a_scale_none_overlay_adds_no_price_but_keeps_its_future_slots() {
+        let mut free = visual(10);
+        free.plots.push(plot(vec![Some(50.0)], PlotStyle::Line));
+        free.lines.push(line(8, 40.0, 12, 70.0));
+        free.hlines.push(HorizontalLine {
+            id: 0,
+            value: 90.0,
+            color: 0,
+            title: None,
+            style: LineStyle::Dashed,
+        });
+        let mut hidden = visual(10);
+        hidden.scale_none = true;
+        hidden
+            .plots
+            .push(plot(vec![Some(9_000.0)], PlotStyle::Line));
+        hidden.lines.push(line(8, 8_000.0, 14, 9_500.0));
+        hidden.hlines.push(HorizontalLine {
+            id: 0,
+            value: 7_000.0,
+            color: 0,
+            title: None,
+            style: LineStyle::Dashed,
+        });
+        let outputs = [free, hidden];
+        let future = overlay_future_bars(&outputs);
+        assert_eq!(future, 5, "its line still asks for room past the last bar");
+        let extent = overlay_extent(&outputs, newest(20), future);
+        assert_eq!(extent.future_bars, 5);
+        assert!(extent.values.contains(&50.0) && extent.values.contains(&90.0));
+        assert!(
+            extent.values.iter().all(|value| *value < 1_000.0),
+            "none of the hidden scale's values reach the price axis: {:?}",
+            extent.values
+        );
     }
 
     #[test]
