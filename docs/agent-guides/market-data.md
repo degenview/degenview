@@ -2,14 +2,28 @@
 
 ## Adding a provider
 
-1. `model::market::source::DataSource` metadata: display name, watchlist slug, prediction-market flag,
-   volume support, line/candle mode.
-2. Implement `service::MarketSource`; `search_tickers` if supported; a parser for a new kline shape.
-   Declare its candle lengths in `model::market::natives` and plan every request through
-   `DataSource::plan` (see Timeframes), so `serves` and the fetch agree.
-3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active
-   markets (Kalshi cannot).
-4. Add to the symbol picker (`ui::chart::symbol_picker`, Predictions tab) via `is_prediction_market()`, not provider matching.
+A venue is one profile entry plus one directory plus a logo; no other file names it.
+
+1. `model::market::source::DataSource` gets the variant, and `model::market::profile::table` its
+   `Profile`: display name, watchlist slug (also read for `VENUE:SYMBOL` text and the Pine host, so
+   there is no second table), MCP id, `Class` (which picker lists it), `Series`, volume support, how
+   its ids join two assets (`PairStyle`) and the quote a bare asset gets, its native candle lengths
+   (see Timeframes), history paging, which streams it has, change basis, quote polling and batch
+   size, and its candle cache. Add it to `DataSource::ALL`; the profile tests fail until it is there.
+2. `service/market/<venue>/`, one concern per file: `mod.rs` (the `MarketSource` and `Venue`
+   implementations and wiring only), `rest.rs` (HTTP and paging), `parse.rs` (pure JSON, tested with
+   inline samples), `markets.rs` (the market list and search), `ticker.rs` (the REST call behind a
+   watchlist price and its parser), `live.rs` (`CandleProtocol`), `quotes.rs` (`QuoteProtocol`), and
+   tests. Plan every request through `DataSource::plan` (see Timeframes), so `serves` and the fetch
+   agree.
+3. Register it in `service::market::venue::of`, the one place that pairs a source with its code. The
+   `Venue` trait answers the candles, the optional candle and ticker sockets, REST quotes, how an HTTP
+   status reads for a quote request, and `trending` where the venue can rank active markets (Kalshi
+   cannot). `LiveFeed` and the quote engine stay the only socket loops: a protocol only builds a
+   `net::ws::Session` and parses messages. A test fails when a profile's streams disagree with what
+   its venue opens.
+4. The symbol picker lists it from its `Class` (`DataSource::symbol_markets()`,
+   `prediction_markets()`), not by matching on providers.
 5. `SourceLogo` under `assets/source_logos/`, the `ui::kit::source_logo::source` arm, attribution in
    `docs/source-logos.md`.
 
@@ -29,7 +43,7 @@ watchlists.
 - Hits are ordered by `service::market::search_rank`; see [Symbol picker](../symbol-picker.md).
 - `VENUE:SYMBOL` text (`BINANCE:BTCUSDT`, `NASDAQ:AAPL`) is read only by `model::market::venue`
   (watchlist slugs plus `US_EXCHANGES`, which are Alpaca); the watchlist import and the picker both use
-  it. A new provider's slug is `DataSource::watchlist_slug`; do not add a second prefix table.
+  it. A new provider's slug is its `Profile::slug`; do not add a second prefix table.
 
 ## Timeframes
 
@@ -66,8 +80,8 @@ watchlists.
   (`is_unsupported_interval()`; decide on the variant, never the text). The timeframe picker offers the
   presets and any timeframe typed or pinned (`1m`, `22m`, `3h`, `2D`, `2W`, `6M`), and warns before a
   chart whose source `serves` says no.
-- **Natives live in `model::market::natives`**, one list per candle source
-  (`DataSource::natives()`), so the planner a provider fetches by (`DataSource::plan`, a
+- **Natives live in the source's `Profile`** (`model::market::profile::table`), one list per candle
+  source (`DataSource::natives()`; `model::market::natives` plans from them), so the planner a provider fetches by (`DataSource::plan`, a
   `bucket::FoldPlan`: target, base, `base_count(limit)`, `shape`) and the capability check the UI asks
   (`DataSource::serves`) read one source of truth; `model` cannot import `service`. A plan asks for
   `(limit + 1) × per_target` base candles (the extra bucket is the fragment the request's start cuts),
@@ -148,8 +162,8 @@ watchlists.
   disabled in tests.
 - `service::image::icon` keys by `"<source>:<ticker>"`, never chart id: static CDN (unthrottled HEAD), then
   rate-limited CoinGecko search, then a letter monogram.
-- One `service::market::live::LiveFeed` per workspace and streamed source (`DataSource::CANDLE_STREAMS`;
-  each protocol is a module under `live/` that builds a `net::ws::Session` and parses its messages): updates the forming candle, reconnects with backoff. MEXC is the sixth: its spot socket speaks Protocol Buffers only (the JSON topics are refused), read by `service::net::protobuf` (a field iterator, no dependency; `ws::Frame::Binary` carries the frames), with `spot@public.kline.v3.api.pb@<SYMBOL>@Min1` topics, at most 30 per connection (so `LiveFeed` runs one connection per 30 markets), one topic per subscribe request and `{"method":"PING"}` as keepalive. Gate.io is the fifth (`spot.candlesticks` and `spot.tickers` on `wss://api.gateio.ws/ws/v4/`: one subscribe request per market, since a request that names a market it does not know is refused whole; protocol pings keep it alive). Bybit is the fourth (`kline.<interval>.<SYMBOL>` on `wss://stream.bybit.com/v5/public/spot`: one subscribe request per topic, because a request takes at most 10 and one unknown symbol refuses all of it; `{"op":"ping"}` keepalive, whose answer `ws::Keepalive::Text` recognises by its start). Kraken is the third (websocket v2 `ohlc` with `snapshot:false`, one subscribe naming every market, kept alive by the server's one-a-second `heartbeat` and protocol pings; its `ticker` channel carries the rolling 24h `change`, which gives the price a day ago). OKX is the second stream (`candle<bar>` channels on `wss://ws.okx.com/ws/v5/business`, one subscribe message naming every market, kept alive with the text `ping`/`pong` through `ws::Keepalive::Text`; its `public` endpoint refuses candles). Binance's streams
+- One `service::market::live::LiveFeed` per workspace and streamed source (`Profile::streams.candles`;
+  each protocol is a `CandleProtocol` in `<venue>/live.rs` that builds a `net::ws::Session` and parses its messages): updates the forming candle, reconnects with backoff. MEXC is the sixth: its spot socket speaks Protocol Buffers only (the JSON topics are refused), read by `service::net::protobuf` (a field iterator, no dependency; `ws::Frame::Binary` carries the frames), with `spot@public.kline.v3.api.pb@<SYMBOL>@Min1` topics, at most 30 per connection (so `LiveFeed` runs one connection per 30 markets), one topic per subscribe request and `{"method":"PING"}` as keepalive. Gate.io is the fifth (`spot.candlesticks` and `spot.tickers` on `wss://api.gateio.ws/ws/v4/`: one subscribe request per market, since a request that names a market it does not know is refused whole; protocol pings keep it alive). Bybit is the fourth (`kline.<interval>.<SYMBOL>` on `wss://stream.bybit.com/v5/public/spot`: one subscribe request per topic, because a request takes at most 10 and one unknown symbol refuses all of it; `{"op":"ping"}` keepalive, whose answer `ws::Keepalive::Text` recognises by its start). Kraken is the third (websocket v2 `ohlc` with `snapshot:false`, one subscribe naming every market, kept alive by the server's one-a-second `heartbeat` and protocol pings; its `ticker` channel carries the rolling 24h `change`, which gives the price a day ago). OKX is the second stream (`candle<bar>` channels on `wss://ws.okx.com/ws/v5/business`, one subscribe message naming every market, kept alive with the text `ping`/`pong` through `ws::Keepalive::Text`; its `public` endpoint refuses candles). Binance's streams
   the *base* candle the timeframe is served from (`DataSource::Binance.plan(timeframe).base()`:
   `@kline_1m` for a 22-minute chart, `@kline_1M` for `3M` and `1Y`; none for a timeframe Binance cannot
   reach). Charts and compared markets fold a live kline with `model::market::live::LiveFold::apply`
@@ -185,8 +199,8 @@ watchlists.
   fetched whole.
 - `service::cache::fetch`: a failed tail refresh falls back to the whole fetch, except a rate limit,
   which is returned.
-- Visible watchlists share one ticker socket per source in `DataSource::QUOTE_STREAMS` (Coinbase: last
-  trade, 24-hour open, volume, it has no candle channel; OKX: its `tickers` channel on `/ws/v5/public`; Kraken: its v2 `ticker`; Bybit: `tickers.<SYMBOL>`; Gate.io: `spot.tickers`, with the price a day ago taken from its 24h change in percent). Kraken's REST ticker has only the UTC day's open (`o`), which is not a price a day ago, so its REST quote reports no change; the socket's rolling `change` gives it, and the engine keeps that reference (`stream_references`, `Config::stream_reference_ms`, 10 minutes) for a REST refresh of a streamed market whose socket went quiet. A market the socket never answered shows no change. `watchlist_quotes::quote_stream` holds one
+- Visible watchlists share one ticker socket per source in `DataSource::quote_streams()` (Coinbase: last
+  trade, 24-hour open, volume, it has no candle channel; OKX: its `tickers` channel on `/ws/v5/public`; Kraken: its v2 `ticker`; Bybit: `tickers.<SYMBOL>`; Gate.io: `spot.tickers`, with the price a day ago taken from its 24h change in percent). Kraken's REST ticker has only the UTC day's open (`o`), which is not a price a day ago, so its REST quote reports no change; the socket's rolling `change` gives it, and the engine keeps that reference (`stream_references`, `Config::stream_reference_ms`, 10 minutes) for a REST refresh of a streamed market whose socket went quiet. A market the socket never answered shows no change. `watchlist_quotes::quote_stream` holds the `QuoteProtocol` trait and the socket loop; each venue's protocol is `<venue>/quotes.rs`. It holds one
   module per protocol; the engine keeps per-source products, and REST fills a product the socket has
   not answered. A new socket is a `Session` plus a parser, never another copy of the connect/read/backoff loop.
 
