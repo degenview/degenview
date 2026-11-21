@@ -157,10 +157,10 @@ pub fn show(
         kit::size::BODY,
         kit::REGULAR,
         theme::text_primary(),
-        rect.width() - 34.0,
+        rect.width() - 30.0,
     );
     ui.painter().galley(
-        egui::pos2(rect.left() + 9.0, rect.center().y - text.size().y / 2.0),
+        egui::pos2(rect.left() + 12.0, rect.center().y - text.size().y / 2.0),
         text,
         egui::Color32::PLACEHOLDER,
     );
@@ -168,7 +168,7 @@ pub fn show(
         ui.painter(),
         egui::Rect::from_center_size(
             egui::pos2(rect.right() - 12.0, rect.center().y),
-            vec2(9.0, 12.0),
+            vec2(10.0, 10.0),
         ),
         Icon::ChevronUpDown,
         theme::text_secondary(),
