@@ -896,10 +896,8 @@ impl Session {
         }
         self.logs.enter_request(requested, candle.open_time, commit);
         // The script variables the expression reads are computed on this series, not read off the chart.
-        let slice = self
-            .security_slices
-            .get(&security_slice::key(&request.expression))
-            .cloned();
+        let expression_key = security_slice::key(&request.expression);
+        let slice = self.security_slices.get(&expression_key).cloned();
         let evaluated = match slice {
             Some(slice) => self.run(&slice, &mut security_context).map(|_| ()),
             None => Ok(()),
@@ -914,7 +912,10 @@ impl Session {
             ReferenceExport::new(&self.working).export(evaluated, &mut chart.working)
         });
         if commit && value.is_ok() {
-            self.commit_histories(candle.clone(), false, Vec::new());
+            // Inside the request's frame: the builtins are read for the requested series' bar.
+            let names = self.history_builtins_of(Some(&expression_key));
+            let builtins = self.read_history_builtins(&names, &mut security_context);
+            self.commit_histories(candle.clone(), false, builtins);
         }
         let request_frame = self.leave_series(chart);
         if commit {

@@ -2,12 +2,14 @@
 //! histories a confirmed bar commits, and the instruction budget and deadline.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use super::{INTERNAL_PREFIX, IntrabarObject, RunError, STRATEGY_SERIES, Session};
 use crate::model::Kline;
 use crate::pine::runtime::fast_hash::FastMap;
+use crate::pine::runtime::security_slice::ExpressionKey;
 use crate::pine::runtime::types::RuntimeContext;
 use crate::pine::runtime::value::{RefKind, RuntimeValue};
 use crate::pine::strategy::builtins;
@@ -120,18 +122,25 @@ impl Session {
         }
     }
 
-    /// The value of each builtin variable the script reads a history of, as this bar left it. A name
+    /// The builtin variables the running series records histories of: those of the request whose
+    /// expression is at `request`, or the script's for the chart (and for a request that has no list).
+    pub(crate) fn history_builtins_of(&self, request: Option<&ExpressionKey>) -> Arc<[String]> {
+        request
+            .and_then(|key| self.request_history_builtins.get(key))
+            .unwrap_or(&self.history_builtins)
+            .clone()
+    }
+
+    /// The value of each of `names`, the builtin variables the running series reads a history of
+    /// (the script's, or the request's own: `request_history_builtins`), as this bar left it. A name
     /// the script declares itself is a variable and is recorded with the others.
-    pub(super) fn read_history_builtins(
+    pub(crate) fn read_history_builtins(
         &mut self,
+        names: &[String],
         context: &mut RuntimeContext,
     ) -> Vec<(String, RuntimeValue)> {
-        if self.history_builtins.is_empty() {
-            return Vec::new();
-        }
-        let names = std::mem::take(&mut self.history_builtins);
         let mut values = Vec::with_capacity(names.len());
-        for name in &names {
+        for name in names {
             if self.working.variables.contains_key(name) {
                 continue;
             }
@@ -140,7 +149,6 @@ impl Session {
                 .unwrap_or(RuntimeValue::Na);
             values.push((name.clone(), value));
         }
-        self.history_builtins = names;
         values
     }
 

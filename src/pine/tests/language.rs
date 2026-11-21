@@ -318,6 +318,72 @@ fn strategy_settings_the_broker_ignores_are_warned_about() {
 }
 
 #[test]
+fn a_history_of_a_builtin_variable_reads_the_value_it_had_inside_a_request() {
+    // The request asks for the chart's own series, so each history read there is the chart's.
+    let session = run(
+        "prev_tr = ta.tr[1]\n\
+         prev_hlcc4 = hlcc4[1]\n\
+         prev_day = dayofweek[1]\n\
+         request_tr = request.security(syminfo.tickerid, \"1\", ta.tr[1])\n\
+         request_hlcc4 = request.security(syminfo.tickerid, \"1\", hlcc4[1])\n\
+         request_day = request.security(syminfo.tickerid, \"1\", dayofweek[1])",
+        6,
+    );
+    for name in ["tr", "hlcc4", "day"] {
+        let chart = value(&session, &format!("prev_{name}"));
+        assert_ne!(chart, RuntimeValue::Na, "{name} on the chart");
+        assert_eq!(value(&session, &format!("request_{name}")), chart, "{name}");
+    }
+}
+
+/// Whether the chart's histories, and each request site's, hold a trail for the builtin `name`:
+/// `(chart, one per site in source order)`.
+fn builtin_trails(session: &Session, name: &str) -> (bool, Vec<bool>) {
+    let mut sites: Vec<_> = session.working.securities.iter().collect();
+    sites.sort_by_key(|(site, _)| **site);
+    (
+        session.working.histories.contains_key(name),
+        sites
+            .into_iter()
+            .map(|(_, site)| site.state.histories.contains_key(name))
+            .collect(),
+    )
+}
+
+#[test]
+fn a_request_records_only_the_builtins_it_indexes() {
+    // The chart indexes `ta.obv`; the request asks for `close` and never reads it.
+    let session = run(
+        "prev = ta.obv[1]\n\
+         plain = request.security(syminfo.tickerid, \"1\", close)",
+        6,
+    );
+    assert_eq!(builtin_trails(&session, "ta.obv"), (true, vec![false]));
+
+    // The same builtin indexed in the request's expression is recorded there.
+    let session = run(
+        "requested = request.security(syminfo.tickerid, \"1\", ta.obv[1])",
+        6,
+    );
+    assert_eq!(builtin_trails(&session, "ta.obv").1, [true]);
+}
+
+#[test]
+fn a_request_records_the_builtins_its_slice_and_functions_index() {
+    let session = run(
+        "level = ta.obv[1]\n\
+         sliced = request.security(syminfo.tickerid, \"1\", level)\n\
+         spread() => ta.tr[1]\n\
+         called = request.security(syminfo.tickerid, \"1\", spread())\n\
+         plain = request.security(syminfo.tickerid, \"1\", open)",
+        6,
+    );
+    let sites = |name| builtin_trails(&session, name).1;
+    assert_eq!(sites("ta.obv"), [true, false, false]);
+    assert_eq!(sites("ta.tr"), [false, true, false]);
+}
+
+#[test]
 fn a_history_of_a_builtin_variable_reads_the_value_it_had() {
     // `bars()` rises by one a bar. Each of these is a builtin the engine computes rather than stores.
     let session = run(

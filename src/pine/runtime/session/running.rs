@@ -303,7 +303,8 @@ impl Session {
                         seconds: self.bar_seconds,
                     });
             }
-            let builtins = self.read_history_builtins(&mut context);
+            let names = self.history_builtins_of(None);
+            let builtins = self.read_history_builtins(&names, &mut context);
             self.commit_histories(candle, true, builtins);
             if replaying {
                 self.working_is_committed = true;

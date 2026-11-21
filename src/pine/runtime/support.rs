@@ -91,7 +91,7 @@ pub struct LibraryLinkage {
 
 impl LibraryLinkage {
     /// Whether any import is in play; without one no name has an alias to resolve.
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.aliases.values().all(|aliases| aliases.is_empty())
     }
 
