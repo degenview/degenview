@@ -253,9 +253,11 @@ watchlists.
   dropped, a newer bucket starts fresh. It holds the trades seen since the socket connected, so the
   bar open at connect is partial (open, range, volume): REST's copy replaces it when the bar closes,
   and in a coarser chart whose REST answer brings the bucket's base bars, `LiveFold`'s rule (the
-  state with more volume wins) keeps REST's fuller bar until the trades pass it. `LiveFeed` does
-  not host a fold yet: `CandleProtocol::parse` is stateless, so the first trade-fed venue adds that
-  hook (one `TradeFold` per market per connection, `reset` on reconnect).
+  state with more volume wins) keeps REST's fuller bar until the trades pass it. A venue whose
+  messages need memory (a channel number that names no market; a `TradeFold` per market) implements
+  `CandleProtocol::reader` / `QuoteProtocol::reader` instead of `parse`: one `FrameReader` /
+  `TickReader` per connection, made by the feed's thread, told `reset` each time the link comes up
+  (so nothing a dead connection said is believed), read through by the one loop.
 - A chart whose last answer was `UnsupportedInterval` shows it in the usual error slot and is not
   refreshed again (`Chart::refresh_due`) until its market or the timeframe changes, which fetch at
   once. An overlay market becomes `OverlayStatus::Blocked(text)` and is not retried either.
