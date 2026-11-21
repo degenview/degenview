@@ -15,7 +15,7 @@ use crate::pine::runtime::support::{LibraryLinkage, SecurityDataProvider};
 use crate::pine::runtime::types::RuntimeFunction;
 use crate::pine::strategy::broker::Broker;
 use crate::pine::syntax::ast::{Expression, Statement};
-use crate::pine::syntax::scopes::ShadowNames;
+use crate::pine::syntax::rename;
 
 impl Session {
     #[allow(clippy::too_many_arguments)]
@@ -31,8 +31,7 @@ impl Session {
         let mut program = program;
         crate::pine::runtime::call_binding::hoist::lazy_history(&mut program);
         crate::pine::runtime::call_binding::bind(&mut program);
-        let mut shadow_names = ShadowNames::default();
-        mark_shadowing(&mut program, &mut shadow_names);
+        rename_locals(&mut program, rename::Program::Script, &mut 0);
         let supplied_mintick = mintick.filter(|m| *m > 0.0 && m.is_finite());
         let drawing_limits = drawings::DrawingLimits {
             max_lines: program.declaration.max_lines_count,
@@ -48,8 +47,6 @@ impl Session {
         let mut types = FastMap::default();
         let mut enums = FastMap::default();
         let linkage = LibraryLinkage::new(&program);
-        // A block's names are its own, and no function sees them.
-        let globals = crate::pine::syntax::scopes::top_level_declarations(&program.statements);
         for statement in &program.statements {
             match statement {
                 Statement::TypeDeclaration { name, fields, .. } => {
@@ -64,7 +61,7 @@ impl Session {
                     body,
                     ..
                 } => {
-                    let mut function = RuntimeFunction::new(
+                    let function = RuntimeFunction::new(
                         parameters
                             .iter()
                             .map(|p| linkage.canonical(p, "", &HashSet::new()))
@@ -72,7 +69,6 @@ impl Session {
                         body.clone(),
                         statement.range().start.offset,
                     );
-                    function.mark_globals(&globals);
                     callables.push(function.clone());
                     if let Some(previous) = functions.insert(name.clone(), function.clone()) {
                         let known: &mut Vec<RuntimeFunction> =
@@ -183,13 +179,10 @@ impl Session {
             varip_fields,
             last_open_time: None,
             security_globals: None,
-            call_frames: Vec::new(),
             security_slices,
             theme: crate::pine::compiler::program::ChartTheme::DARK,
             security_depth: 0,
             shadowing_builtins,
-            shadow_names: shadow_names.into_names(),
-            shadow_stack: Vec::new(),
             history_builtins,
             #[cfg(any(test, feature = "corpus"))]
             ignore_routes: false,
@@ -244,17 +237,20 @@ impl Session {
     }
 }
 
-/// Flags the declarations of the program and of the libraries it imports that hide an outer name
-/// (`Declaration::shadows`), so that running a block saves only those.
-fn mark_shadowing(program: &mut CompiledProgram, names: &mut ShadowNames) {
-    crate::pine::syntax::scopes::mark_shadowing(
-        &mut program.statements,
+/// Gives the locals and parameters of the program and of each library it imports that share a name
+/// with anything else a name of their own (`syntax::rename`), so the variable table, keyed by name,
+/// never holds two variables of one name at once. `libraries` numbers the libraries depth first.
+fn rename_locals(program: &mut CompiledProgram, kind: rename::Program, libraries: &mut usize) {
+    rename::plan(
+        &program.statements,
         &crate::pine::compiler::symbol_catalog::is_variable,
-        names,
-    );
+        kind,
+    )
+    .apply(&mut program.statements);
     for import in &mut program.imports {
         if let Some(library) = &mut import.library {
-            mark_shadowing(library, names);
+            *libraries += 1;
+            rename_locals(library, rename::Program::Library(*libraries), libraries);
         }
     }
 }

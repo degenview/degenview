@@ -545,7 +545,7 @@ impl DebugRuntime {
         let is_logpoint = breakpoint.template.is_some();
         let mut note = None;
         if let Some(condition) = &breakpoint.condition {
-            match evaluate::evaluate(session, &self.frames, top, context, condition) {
+            match evaluate::evaluate(session, &self.map, &self.frames, top, context, condition) {
                 Ok(value) => {
                     let holds = match &value {
                         RuntimeValue::Bool(flag) => *flag,
@@ -585,8 +585,15 @@ impl DebugRuntime {
                 generation: self.generation,
             };
             let text = template.render(|expression| {
-                evaluate::evaluate(env.session, env.frames, top, env.context, expression)
-                    .map(|value| inspect::plain_text(&env, &value))
+                evaluate::evaluate(
+                    env.session,
+                    env.map,
+                    env.frames,
+                    top,
+                    env.context,
+                    expression,
+                )
+                .map(|value| inspect::plain_text(&env, &value))
             });
             session
                 .logs

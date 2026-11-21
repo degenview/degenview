@@ -10,7 +10,9 @@
 
 use std::collections::HashSet;
 
+use super::source_map::ScopeEntry;
 use crate::pine::syntax::ast::{Argument, Expression, Statement};
+use crate::pine::syntax::{scopes, traversal};
 use crate::pine::{Lexer, Limits, Parser};
 
 /// Call sites of debugger expressions are numbered from here, far above any script's.
@@ -29,8 +31,29 @@ impl DebugExpression {
         &self.source
     }
 
+    #[cfg(test)]
     pub(crate) fn expression(&self) -> &Expression {
         &self.expression
+    }
+
+    /// The expression as the interpreter runs it where `visible` are the names in scope: the names
+    /// of variables that share their name with something else are the renamed ones.
+    pub(crate) fn in_scope(&self, visible: &[&ScopeEntry]) -> Expression {
+        let mut expression = self.expression.clone();
+        traversal::walk_expression_mut(&mut expression, &mut |node| {
+            let name = match node {
+                Expression::Identifier(name, _) => name,
+                Expression::Call { name, .. } if name.contains('.') => name,
+                _ => return,
+            };
+            let head = scopes::head(name);
+            if let Some(entry) = visible.iter().find(|entry| entry.display() == head)
+                && entry.name != head
+            {
+                *name = format!("{}{}", entry.name, &name[head.len()..]);
+            }
+        });
+        expression
     }
 }
 

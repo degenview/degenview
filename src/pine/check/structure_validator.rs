@@ -370,7 +370,6 @@ mod tests {
             mode: DeclarationMode::Ordinary,
             value,
             range: SourceRange::ZERO,
-            shadows: None,
         }
     }
 

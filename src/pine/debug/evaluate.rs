@@ -12,12 +12,14 @@ use crate::pine::runtime::value::RuntimeValue;
 
 use super::expression::DebugExpression;
 use super::frames::Frame;
+use super::source_map::SourceMap;
 
 /// The most instructions one evaluation may use.
 const BUDGET: usize = 100_000;
 
 pub(crate) fn evaluate(
     session: &mut Session,
+    map: &SourceMap,
     frames: &[Frame],
     frame: usize,
     context: &RuntimeContext,
@@ -63,7 +65,12 @@ pub(crate) fn evaluate(
     scratch.scope = None;
     scratch.locals = None;
     scratch.history_locals = None;
-    let outcome = session.eval(expression.expression(), &mut scratch);
+    let offset = frames
+        .get(frame)
+        .and_then(|f| f.location)
+        .map_or(0, |l| l.offset);
+    let resolved = expression.in_scope(&map.visible(offset));
+    let outcome = session.eval(&resolved, &mut scratch);
 
     session.working.instructions = instructions;
     let allocated = session.working.next_reference != next_reference;

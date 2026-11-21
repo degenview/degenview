@@ -11,6 +11,7 @@
 //! stopped script may show is decided here, from the syntax, never from what the table holds.
 
 use crate::pine::syntax::ast::{DeclarationMode, Expression, Statement};
+use crate::pine::syntax::rename;
 use crate::pine::syntax::traversal;
 
 /// A statement the interpreter runs, in source order.
@@ -54,6 +55,7 @@ impl DeclarationKind {
 /// names are not reachable from after it, because the chain after the block is the one from before.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScopeEntry {
+    /// The name of the variable in the interpreter's table (`syntax::rename`).
     pub name: String,
     pub kind: DeclarationKind,
     /// The statement that gives the name a value: its declaration, the `for` it counts, or the
@@ -105,10 +107,27 @@ pub struct SourceMap {
     declarations: Vec<(usize, NotExecutable)>,
 }
 
+impl ScopeEntry {
+    /// The name the script gives the variable.
+    pub fn display(&self) -> &str {
+        rename::display_name(&self.name)
+    }
+}
+
 impl SourceMap {
+    /// The names in the map are the ones the interpreter's variables carry: a declaration that
+    /// shares a name with something else is renamed (`syntax::rename`), and `ScopeEntry::display`
+    /// is what the script calls it.
     pub fn build(statements: &[Statement]) -> Self {
+        let mut renamed = statements.to_vec();
+        rename::plan(
+            &renamed,
+            &crate::pine::compiler::symbol_catalog::is_variable,
+            rename::Program::Script,
+        )
+        .apply(&mut renamed);
         let mut map = Self::default();
-        map.block(statements, None, None, true);
+        map.block(&renamed, None, None, true);
         map.executables.sort_by_key(|executable| executable.offset);
         map.executables.dedup_by_key(|executable| executable.offset);
         map
@@ -169,7 +188,7 @@ impl SourceMap {
                 for parameter in parameters {
                     self.declare(
                         &mut inner,
-                        &parameter.name,
+                        &parameter.slot,
                         DeclarationKind::Parameter,
                         offset,
                         false,
@@ -264,7 +283,7 @@ impl SourceMap {
         let mut next = self.at(offset).and_then(|executable| executable.scope);
         while let Some(index) = next {
             let entry = &self.scope[index as usize];
-            if seen.insert(entry.name.as_str()) {
+            if seen.insert(entry.display()) {
                 visible.push(entry);
             }
             next = entry.parent;

@@ -42,7 +42,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::ast::{DeclarationMode, Expression, ShadowId, Statement};
+use super::ast::{Expression, Statement};
 use super::traversal;
 use crate::pine::SourceRange;
 
@@ -84,14 +84,15 @@ pub struct LocalInfo<'a> {
     pub site: usize,
 }
 
-type Span = (usize, usize);
+/// The start and end offset of an expression's range.
+pub type Span = (usize, usize);
 
-fn span(range: SourceRange) -> Span {
+pub fn span(range: SourceRange) -> Span {
     (range.start.offset, range.end.offset)
 }
 
-/// Where a statement declares or assigns its `slot`th name.
-type Slot = (usize, usize);
+/// Where a statement declares or assigns its `slot`th name: the statement's start offset and the slot.
+pub type Slot = (usize, usize);
 
 /// What every variable occurrence of a program refers to. See the module documentation.
 #[derive(Debug, Default)]
@@ -102,17 +103,22 @@ pub struct Bindings<'a> {
     names: HashMap<Slot, Binding<'a>>,
     locals: Vec<LocalInfo<'a>>,
     globals: HashSet<&'a str>,
-    /// The declaration slots of a block and the counters of a loop that hide a name visible just
-    /// before them: a global, a local, a parameter, or a builtin variable (see [`resolve_with`]).
-    /// The first declaration of a name, a function body's own declarations and a `var` hide
-    /// nothing.
-    shadowing: HashSet<Slot>,
 }
 
 impl<'a> Bindings<'a> {
     /// The names declared at the top level.
     pub fn globals(&self) -> &HashSet<&'a str> {
         &self.globals
+    }
+
+    /// Every `Identifier` and `Call` with the binding of the name its head is, by span.
+    pub fn uses(&self) -> impl Iterator<Item = (Span, Binding<'a>)> + '_ {
+        self.uses.iter().map(|(span, binding)| (*span, *binding))
+    }
+
+    /// Every name a statement declares or assigns, by slot.
+    pub fn names(&self) -> impl Iterator<Item = (Slot, Binding<'a>)> + '_ {
+        self.names.iter().map(|(slot, binding)| (*slot, *binding))
     }
 
     /// How many locals the program declares: [`LocalId`]s are `0..local_count()`.
@@ -185,15 +191,6 @@ impl<'a> Bindings<'a> {
     }
 }
 
-/// The names `statements` declare at their own level: a variable and the elements of a tuple
-/// declaration. A block's declarations are its own and are not included.
-pub fn top_level_declarations(statements: &[Statement]) -> HashSet<String> {
-    declared_names(statements)
-        .into_iter()
-        .map(str::to_owned)
-        .collect()
-}
-
 fn declared_names(statements: &[Statement]) -> HashSet<&str> {
     let mut names = HashSet::new();
     for statement in statements {
@@ -217,15 +214,6 @@ pub fn head(name: &str) -> &str {
 
 /// Resolves every variable occurrence in the program `statements`.
 pub fn resolve(statements: &[Statement]) -> Bindings<'_> {
-    resolve_with(statements, &|_| false)
-}
-
-/// [`resolve`], where `is_builtin` says which free names are builtin variables (`low`, `time`): a
-/// block's declaration of one hides it ([`Bindings::shadows`]).
-pub fn resolve_with<'a>(
-    statements: &'a [Statement],
-    is_builtin: &dyn Fn(&str) -> bool,
-) -> Bindings<'a> {
     let mut resolver = Resolver {
         bindings: Bindings {
             globals: declared_names(statements),
@@ -234,7 +222,6 @@ pub fn resolve_with<'a>(
         visible: HashMap::new(),
         trail: Vec::new(),
         functions: 0,
-        is_builtin,
     };
     for statement in statements {
         resolver.statement(statement, Level::Top);
@@ -242,112 +229,17 @@ pub fn resolve_with<'a>(
     resolver.bindings
 }
 
-/// The names a block's declaration may hide, numbered in the order they were first met: what the
-/// `shadows` of a declaration index.
-#[derive(Default)]
-pub struct ShadowNames {
-    names: Vec<String>,
-    ids: HashMap<String, ShadowId>,
-}
-
-impl ShadowNames {
-    fn id(&mut self, name: &str) -> ShadowId {
-        if let Some(id) = self.ids.get(name) {
-            return *id;
-        }
-        let id = ShadowId::try_from(self.names.len()).unwrap_or(ShadowId::MAX);
-        self.names.push(name.to_owned());
-        self.ids.insert(name.to_owned(), id);
-        id
-    }
-
-    pub fn into_names(self) -> Vec<String> {
-        self.names
-    }
-}
-
-/// Sets `shadows` on every declaration of `statements` that [`Bindings::shadows`] says hides a
-/// name, numbering the names in `names`. `statements` is one program: the script or a library.
-pub fn mark_shadowing(
-    statements: &mut [Statement],
-    is_builtin: &dyn Fn(&str) -> bool,
-    names: &mut ShadowNames,
-) {
-    let sites = resolve_with(statements, is_builtin).shadowing;
-    if sites.is_empty() {
-        return;
-    }
-    traversal::for_each_statement_mut(statements, &mut |statement| match statement {
-        Statement::Declaration {
-            name,
-            range,
-            shadows,
-            ..
-        } => {
-            if sites.contains(&(range.start.offset, 0)) {
-                *shadows = Some(names.id(name));
-            }
-        }
-        Statement::TupleDeclaration {
-            names: tuple,
-            range,
-            shadows,
-            ..
-        } => {
-            let site = range.start.offset;
-            if (0..tuple.len()).any(|slot| sites.contains(&(site, slot))) {
-                *shadows = tuple
-                    .iter()
-                    .enumerate()
-                    .map(|(slot, name)| sites.contains(&(site, slot)).then(|| names.id(name)))
-                    .collect();
-            }
-        }
-        Statement::ForRange {
-            variable,
-            range,
-            shadows,
-            ..
-        } => {
-            if sites.contains(&(range.start.offset, 0)) {
-                *shadows = Some(names.id(variable));
-            }
-        }
-        Statement::ForIn {
-            index,
-            value,
-            range,
-            shadows,
-            ..
-        } => {
-            let site = range.start.offset;
-            if sites.contains(&(site, 0))
-                && let Some(index) = index
-            {
-                shadows[0] = Some(names.id(index));
-            }
-            if sites.contains(&(site, 1)) {
-                shadows[1] = Some(names.id(value));
-            }
-        }
-        _ => {}
-    });
-}
-
 /// Where a statement sits.
 #[derive(Clone, Copy, PartialEq)]
 enum Level {
     /// One of the program's own: its declarations are the globals.
     Top,
-    /// Directly in a function's body: its declarations belong to the call.
-    Function,
-    /// In a branch, an arm or a loop body.
-    Block,
+    /// In a function's body, a branch, an arm or a loop body: its declarations are locals.
+    Nested,
 }
 
-struct Resolver<'a, 'f> {
+struct Resolver<'a> {
     bindings: Bindings<'a>,
-    is_builtin: &'f dyn Fn(&str) -> bool,
     /// The names the blocks around the point being resolved have declared so far (and the
     /// function's parameters): they hide the globals.
     visible: HashMap<&'a str, Binding<'a>>,
@@ -357,7 +249,7 @@ struct Resolver<'a, 'f> {
     functions: usize,
 }
 
-impl<'a> Resolver<'a, '_> {
+impl<'a> Resolver<'a> {
     fn lookup(&self, name: &'a str) -> Binding<'a> {
         if let Some(binding) = self.visible.get(name) {
             return *binding;
@@ -371,20 +263,6 @@ impl<'a> Resolver<'a, '_> {
     fn show(&mut self, name: &'a str, binding: Binding<'a>) {
         let previous = self.visible.insert(name, binding);
         self.trail.push((name, previous));
-    }
-
-    /// Declares a block's `slot`th name of the statement at `site` (a loop's counters are declared
-    /// the same way, once the bounds or the collection are resolved), noting whether it hides a
-    /// name that is visible now.
-    fn declare_in_block(&mut self, name: &'a str, site: usize, slot: usize) -> Binding<'a> {
-        let hides = match self.lookup(name) {
-            Binding::Free(free) => (self.is_builtin)(free),
-            _ => true,
-        };
-        if hides {
-            self.bindings.shadowing.insert((site, slot));
-        }
-        self.declare(name, site)
     }
 
     fn declare(&mut self, name: &'a str, site: usize) -> Binding<'a> {
@@ -418,38 +296,27 @@ impl<'a> Resolver<'a, '_> {
     fn block(&mut self, statements: &'a [Statement]) {
         let mark = self.enter();
         for statement in statements {
-            self.statement(statement, Level::Block);
+            self.statement(statement, Level::Nested);
         }
         self.leave(mark);
     }
 
-    /// Declares the `slot`th name of a declaration at `site`, by where the statement sits.
-    fn declare_at(&mut self, name: &'a str, site: usize, slot: usize, level: Level) -> Binding<'a> {
+    /// Declares a name at `site`: a top-level one is a global, any other a local.
+    fn declare_at(&mut self, name: &'a str, site: usize, level: Level) -> Binding<'a> {
         match level {
             Level::Top => self.lookup(name),
-            Level::Function => self.declare(name, site),
-            Level::Block => self.declare_in_block(name, site, slot),
+            Level::Nested => self.declare(name, site),
         }
     }
 
     fn statement(&mut self, statement: &'a Statement, level: Level) {
         match statement {
             Statement::Declaration {
-                name,
-                value,
-                range,
-                mode,
-                ..
+                name, value, range, ..
             } => {
                 self.expression(value);
                 let site = range.start.offset;
-                // `var` and `varip` keep their value: they are not saved around a block.
-                let level = if *mode == DeclarationMode::Ordinary || level != Level::Block {
-                    level
-                } else {
-                    Level::Function
-                };
-                let binding = self.declare_at(name, site, 0, level);
+                let binding = self.declare_at(name, site, level);
                 self.name(site, 0, binding);
             }
             Statement::TupleDeclaration {
@@ -461,7 +328,7 @@ impl<'a> Resolver<'a, '_> {
                 self.expression(value);
                 let site = range.start.offset;
                 for (slot, name) in names.iter().enumerate() {
-                    let binding = self.declare_at(name, site, slot, level);
+                    let binding = self.declare_at(name, site, level);
                     self.name(site, slot, binding);
                 }
             }
@@ -488,10 +355,10 @@ impl<'a> Resolver<'a, '_> {
                 }
                 let mark = self.enter();
                 let site = range.start.offset;
-                let binding = self.declare_in_block(variable, site, 0);
+                let binding = self.declare(variable, site);
                 self.name(site, 0, binding);
                 for statement in body {
-                    self.statement(statement, Level::Block);
+                    self.statement(statement, Level::Nested);
                 }
                 self.leave(mark);
             }
@@ -507,13 +374,13 @@ impl<'a> Resolver<'a, '_> {
                 let mark = self.enter();
                 let site = range.start.offset;
                 if let Some(index) = index {
-                    let binding = self.declare_in_block(index, site, 0);
+                    let binding = self.declare(index, site);
                     self.name(site, 0, binding);
                 }
-                let binding = self.declare_in_block(value, site, 1);
+                let binding = self.declare(value, site);
                 self.name(site, 1, binding);
                 for statement in body {
-                    self.statement(statement, Level::Block);
+                    self.statement(statement, Level::Nested);
                 }
                 self.leave(mark);
             }
@@ -532,7 +399,7 @@ impl<'a> Resolver<'a, '_> {
                 }
                 let mark = self.enter();
                 for (position, parameter) in parameters.iter().enumerate() {
-                    let name = parameter.name.as_str();
+                    let name = parameter.slot.as_str();
                     match index {
                         Some(function) => {
                             self.show(name, Binding::Parameter { function, position });
@@ -543,7 +410,7 @@ impl<'a> Resolver<'a, '_> {
                     }
                 }
                 for statement in body {
-                    self.statement(statement, Level::Function);
+                    self.statement(statement, Level::Nested);
                 }
                 self.leave(mark);
             }
@@ -564,7 +431,7 @@ impl<'a> Resolver<'a, '_> {
                 let binding = self.lookup(head(name));
                 self.bindings.uses.insert(span(*range), binding);
             }
-            Expression::Statement(statement, _) => self.statement(statement, Level::Block),
+            Expression::Statement(statement, _) => self.statement(statement, Level::Nested),
             _ => {}
         }
         for child in traversal::children(expression) {
@@ -888,189 +755,5 @@ mod tests {
         assert_eq!(bindings.local(2).name, "q");
         assert_eq!(bindings.local(1).site, bindings.local(2).site, "one tuple");
         assert!(n.site < bindings.local(1).site);
-    }
-
-    #[test]
-    fn top_level_declarations_are_the_variables_and_tuple_elements() {
-        let statements = parse("a = 1\n[b, c] = f()\nif true\n    d = 1\nf() =>\n    e = 1\n");
-        let names = top_level_declarations(&statements);
-        let expected: HashSet<String> = ["a", "b", "c"].map(str::to_owned).into();
-        assert_eq!(names, expected);
-    }
-
-    /// The declarations of `source` that hide a name, as `name` (or `[a, b]` for a tuple's flags).
-    fn shadowing(source: &str) -> Vec<String> {
-        let mut statements = parse(source);
-        let mut names = ShadowNames::default();
-        mark_shadowing(&mut statements, &|name| name == "low", &mut names);
-        let mut found = Vec::new();
-        traversal::for_each_statement_mut(&mut statements, &mut |statement| match statement {
-            Statement::Declaration {
-                name,
-                shadows: Some(_),
-                ..
-            } => found.push(name.clone()),
-            Statement::TupleDeclaration { names, shadows, .. } if !shadows.is_empty() => {
-                let hidden: Vec<&str> = names
-                    .iter()
-                    .zip(shadows.iter())
-                    .filter_map(|(name, shadow)| shadow.map(|_| name.as_str()))
-                    .collect();
-                found.push(format!("[{}]", hidden.join(", ")));
-            }
-            _ => {}
-        });
-        found
-    }
-
-    #[test]
-    fn a_block_declaration_hides_what_is_visible_before_it() {
-        // Not the first declaration of a name, nor a top-level one.
-        assert_eq!(shadowing("x = 1\nif true\n    x = 2\n    y = 3\n"), ["x"]);
-        // A local, a loop variable's name and a parameter are visible too.
-        assert_eq!(
-            shadowing("if true\n    x = 1\n    if true\n        x = 2\n"),
-            ["x"]
-        );
-        assert_eq!(
-            shadowing("f(p) =>\n    for i = 0 to 1\n        p = i\n    p\n"),
-            ["p"]
-        );
-        // The name is a global of the script even above its declaration.
-        assert_eq!(shadowing("if true\n    x = 2\nx = 1\n"), ["x"]);
-    }
-
-    #[test]
-    fn what_hides_nothing_is_not_flagged() {
-        // A name no block around has, a function body's own declarations, and a `var`.
-        assert_eq!(
-            shadowing("if true\n    x = 2\nif true\n    x = 3\n"),
-            Vec::<String>::new()
-        );
-        assert_eq!(
-            shadowing("x = 1\nf() =>\n    x = 2\n    x\n"),
-            Vec::<String>::new()
-        );
-        assert_eq!(
-            shadowing("x = 1\nif true\n    var x = 2\n"),
-            Vec::<String>::new()
-        );
-    }
-
-    #[test]
-    fn a_builtin_variable_is_hidden_by_a_block_declaration_of_its_name() {
-        assert_eq!(shadowing("if true\n    low = 1\n    foo = 2\n"), ["low"]);
-    }
-
-    /// The loops of `source` whose counters hide a name, as `for i` or `for [i, v]` with only the
-    /// flagged counters named.
-    fn hidden_counters(source: &str) -> Vec<String> {
-        let mut statements = parse(source);
-        let mut names = ShadowNames::default();
-        mark_shadowing(&mut statements, &|name| name == "low", &mut names);
-        let mut found = Vec::new();
-        traversal::for_each_statement_mut(&mut statements, &mut |statement| match statement {
-            Statement::ForRange {
-                variable,
-                shadows: Some(_),
-                ..
-            } => found.push(format!("for {variable}")),
-            Statement::ForIn {
-                index,
-                value,
-                shadows,
-                ..
-            } if shadows.iter().any(Option::is_some) => {
-                let hidden: Vec<&str> = [index.as_deref(), Some(value.as_str())]
-                    .into_iter()
-                    .zip(shadows)
-                    .filter_map(|(name, shadow)| shadow.and(name))
-                    .collect();
-                found.push(format!("for [{}]", hidden.join(", ")));
-            }
-            _ => {}
-        });
-        found
-    }
-
-    #[test]
-    fn a_loop_counter_hides_what_is_visible_at_the_loop() {
-        // A global, also one declared below the loop.
-        assert_eq!(
-            hidden_counters("i = 5\nfor i = 0 to 2\n    a = i\n"),
-            ["for i"]
-        );
-        assert_eq!(
-            hidden_counters("for i = 0 to 2\n    a = i\ni = 5\n"),
-            ["for i"]
-        );
-        // A local of an enclosing block, and the counter of an enclosing loop.
-        assert_eq!(
-            hidden_counters("if true\n    n = 1\n    for n = 0 to 2\n        a = n\n"),
-            ["for n"]
-        );
-        assert_eq!(
-            hidden_counters("for j = 0 to 2\n    for j = 0 to 1\n        a = j\n"),
-            ["for j"]
-        );
-        // A parameter, and a global seen from a function body.
-        assert_eq!(
-            hidden_counters("f(p) =>\n    for p = 0 to 1\n        a = p\n    1\n"),
-            ["for p"]
-        );
-        assert_eq!(
-            hidden_counters("g = 1\nf() =>\n    for g = 0 to 1\n        a = g\n    1\n"),
-            ["for g"]
-        );
-        // A builtin variable.
-        assert_eq!(
-            hidden_counters("for low = 0 to 2\n    a = low\n"),
-            ["for low"]
-        );
-    }
-
-    #[test]
-    fn a_loop_counter_that_hides_nothing_is_not_flagged() {
-        assert_eq!(
-            hidden_counters("for i = 0 to 2\n    a = i\nfor i = 0 to 2\n    b = i\n"),
-            Vec::<String>::new()
-        );
-        assert_eq!(
-            hidden_counters("f() =>\n    for i = 0 to 2\n        a = i\n    1\n"),
-            Vec::<String>::new()
-        );
-        assert_eq!(
-            hidden_counters("for [i, v] in arr\n    a = i + v\n"),
-            Vec::<String>::new()
-        );
-    }
-
-    #[test]
-    fn a_for_in_flags_its_index_and_value_apart() {
-        assert_eq!(
-            hidden_counters("i = 1\nv = 2\nfor [i, v] in arr\n    a = i + v\n"),
-            ["for [i, v]"]
-        );
-        assert_eq!(
-            hidden_counters("v = 2\nfor [i, v] in arr\n    a = i + v\n"),
-            ["for [v]"]
-        );
-        assert_eq!(
-            hidden_counters("i = 1\nfor [i, v] in arr\n    a = i + v\n"),
-            ["for [i]"]
-        );
-        assert_eq!(
-            hidden_counters("v = 2\nfor v in arr\n    a = v\n"),
-            ["for [v]"]
-        );
-    }
-
-    #[test]
-    fn tuples_and_expression_blocks_are_flagged_per_name() {
-        assert_eq!(shadowing("a = 1\nif true\n    [a, b] = f()\n"), ["[a]"]);
-        assert_eq!(
-            shadowing("x = 1\ny = if true\n    x = 2\n    x\nelse\n    0\n"),
-            ["x"]
-        );
     }
 }

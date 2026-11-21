@@ -1,7 +1,7 @@
 //! Calls: dispatch by route and name, argument binding, collection and method calls, field
 //! access, and invoking the script's own functions.
 
-use super::{CallFrame, INTERNAL_PREFIX, SavedNames, Session, Step};
+use super::{INTERNAL_PREFIX, SavedNames, Session, Step};
 use crate::pine::builtins::array::Bound;
 use crate::pine::compiler::program::InputValue;
 use crate::pine::runtime::fast_hash::FastMap;
@@ -632,19 +632,12 @@ impl Session {
         let prefix = self.site_key(site, context);
         let stash_key = |local: &str| format!("{INTERNAL_PREFIX}fn:{prefix}:{local}");
 
-        // A function sees its own names and the script's, never its caller's (Pine's scopes are
-        // lexical): the globals the calling function's locals hide come back for the call.
-        let uncovered = self.uncover_caller_globals();
         // What the variables of these names hold, put back when the call ends.
         let saved: SavedNames = function
             .saved_order
             .iter()
             .map(|local| (local.clone(), self.working.variables.get(local).cloned()))
             .collect();
-        // An ordinary local hides an outer variable of its name only from its declaration on: to
-        // the end of the call at the body's top level, to the end of its block in a branch or loop
-        // (`run_block` puts the outer value back). So above the declaration, and outside a
-        // block that declares it, the name still reads the global.
         // A `var` local that has run before resumes with its value; on the first call it is left
         // unset so its declaration initialises it rather than taking a global's value.
         for local in function.persistent_locals.iter() {
@@ -682,19 +675,9 @@ impl Session {
                 function.scope.as_deref(),
                 function.declared_at,
                 &saved,
-                &uncovered,
             );
         }
-        self.call_frames.push(CallFrame {
-            saved,
-            global_locals: function.global_locals,
-        });
         let result = self.run(&function.body, context);
-        let saved = self
-            .call_frames
-            .pop()
-            .map(|frame| frame.saved)
-            .unwrap_or_default();
         if self.hooks.is_some() {
             self.hook_leave_function();
         }
@@ -733,7 +716,6 @@ impl Session {
             Ok((_, value)) => value,
             Err(error) => {
                 self.restore_saved(saved);
-                self.cover_caller_globals(uncovered);
                 return Err(error);
             }
         };
@@ -754,7 +736,6 @@ impl Session {
             self.working.variables.insert(key, value);
         }
         self.restore_saved(saved);
-        self.cover_caller_globals(uncovered);
         Ok(value)
     }
 
@@ -765,51 +746,6 @@ impl Session {
                 self.working.variables.insert(local, previous);
             } else {
                 self.working.variables.remove(&local);
-            }
-        }
-    }
-
-    /// Sets each name the calling function's locals give a value of their own, over a global, back
-    /// to the global's value (what it held when the caller began: every call begins on the globals).
-    /// Returns the caller's own values, by their place in its `saved`, for `cover_caller_globals`.
-    /// Empty for a call from the script's top level, and for a caller whose locals hide no global.
-    fn uncover_caller_globals(&mut self) -> Vec<(usize, Option<RuntimeValue>)> {
-        let Some(caller) = self.call_frames.last() else {
-            return Vec::new();
-        };
-        let mut uncovered = Vec::new();
-        let globals = &caller.saved[..caller.global_locals];
-        for (index, (name, global)) in globals.iter().enumerate() {
-            let Some(global) = global else {
-                continue;
-            };
-            let own = match self.working.variables.get_mut(name) {
-                Some(slot) => Some(std::mem::replace(slot, global.clone())),
-                None => {
-                    self.working.variables.insert(name.clone(), global.clone());
-                    None
-                }
-            };
-            uncovered.push((index, own));
-        }
-        uncovered
-    }
-
-    /// Gives the caller its own values back once the call is over.
-    fn cover_caller_globals(&mut self, uncovered: Vec<(usize, Option<RuntimeValue>)>) {
-        let Some(caller) = self.call_frames.last() else {
-            return;
-        };
-        for (index, own) in uncovered {
-            let name = &caller.saved[index].0;
-            match (own, self.working.variables.get_mut(name)) {
-                (Some(own), Some(slot)) => *slot = own,
-                (Some(own), None) => {
-                    self.working.variables.insert(name.clone(), own);
-                }
-                (None, _) => {
-                    self.working.variables.remove(name);
-                }
             }
         }
     }
@@ -834,20 +770,20 @@ impl Session {
                     if i == 0
                         && let Some(value) = receiver.take()
                     {
-                        bound.insert(parameter.name.clone(), value);
+                        bound.insert(parameter.slot.clone(), value);
                     } else if let Some(named) = arguments
                         .iter()
                         .find(|a| a.name.as_deref() == Some(&parameter.name))
                     {
-                        bound.insert(parameter.name.clone(), self.eval(&named.value, context)?);
+                        bound.insert(parameter.slot.clone(), self.eval(&named.value, context)?);
                     } else if let Some(argument) =
                         i.checked_sub(offset).and_then(|n| positional.get(n))
                     {
-                        bound.insert(parameter.name.clone(), self.eval(&argument.value, context)?);
+                        bound.insert(parameter.slot.clone(), self.eval(&argument.value, context)?);
                     } else if let Some(fallback) = &parameter.default_value {
-                        bound.insert(parameter.name.clone(), self.eval(fallback, context)?);
+                        bound.insert(parameter.slot.clone(), self.eval(fallback, context)?);
                     } else {
-                        bound.insert(parameter.name.clone(), RuntimeValue::Na);
+                        bound.insert(parameter.slot.clone(), RuntimeValue::Na);
                     }
                 }
             }
@@ -869,11 +805,11 @@ impl Session {
                         None => positional.get_mut(i).and_then(Option::take),
                     };
                     if let Some(value) = given {
-                        bound.insert(parameter.name.clone(), value);
+                        bound.insert(parameter.slot.clone(), value);
                     } else if let Some(fallback) = &parameter.default_value {
-                        bound.insert(parameter.name.clone(), self.eval(fallback, context)?);
+                        bound.insert(parameter.slot.clone(), self.eval(fallback, context)?);
                     } else {
-                        bound.insert(parameter.name.clone(), RuntimeValue::Na);
+                        bound.insert(parameter.slot.clone(), RuntimeValue::Na);
                     }
                 }
             }

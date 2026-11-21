@@ -693,6 +693,33 @@ plot(y)
 }
 
 #[test]
+fn a_watch_and_the_variables_name_a_local_that_hides_a_global_by_its_own_name() {
+    // The block's `u` is a variable of its own in the interpreter (`u#…`); the script and the
+    // debugger call it `u`, and inside the block `u` is that one.
+    let body = "u = -99.0
+if bar_index > 0
+    u = bar_index * 10.0
+    plot(u)
+";
+    let results = watches(body, 3, 6, 0, &["u", "u * 2", "u[1]"]);
+    assert_eq!(results[0], "u => 20 (float)");
+    assert_eq!(results[1], "u * 2 => 40 (float)");
+    assert_eq!(results[2], "u[1] => 10 (float)");
+
+    let (probe, captured) = capture_all();
+    at_lines(body, 3, &[6], probe);
+    let captured = captured.lock().unwrap();
+    let rows = &captured.last().expect("a stop").frames[0].1;
+    let named_u: Vec<_> = rows.iter().filter(|(_, name, _)| name == "u").collect();
+    assert_eq!(named_u.len(), 1, "{rows:?}");
+    assert_eq!(named_u[0].2, "20");
+    assert!(
+        rows.iter().all(|(_, name, _)| !name.contains('#')),
+        "{rows:?}"
+    );
+}
+
+#[test]
 fn a_watch_that_returns_a_collection_can_be_expanded() {
     let body = "var arr = array.new_float(0)
 array.push(arr, close)
@@ -856,7 +883,14 @@ fn evaluating_a_watch_leaves_the_interpreters_state_exactly_as_it_was() {
         "undefined + 1",
     ] {
         let expression = parse_expression(text).unwrap();
-        let _ = super::evaluate::evaluate(&mut session, &[], 0, &context, &expression);
+        let _ = super::evaluate::evaluate(
+            &mut session,
+            &super::SourceMap::default(),
+            &[],
+            0,
+            &context,
+            &expression,
+        );
     }
     assert_eq!(format!("{:?}", session.working), before);
 }

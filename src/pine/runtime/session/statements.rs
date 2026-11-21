@@ -2,31 +2,13 @@
 //! control flow (`if`, `once`, `for`, `for ... in`, `while`, `switch`).
 
 use super::{INTERNAL_PREFIX, Session, Step};
-use crate::pine::runtime::fast_hash::FastMap;
 use crate::pine::runtime::operators;
 use crate::pine::runtime::types::{Flow, RuntimeContext};
 use crate::pine::runtime::value::{RefKind, RuntimeValue};
 use crate::pine::syntax::ast::{
-    AssignmentOperator, BinaryOperator, DeclarationMode, Expression, ShadowId, Statement, SwitchArm,
+    AssignmentOperator, BinaryOperator, DeclarationMode, Expression, Statement, SwitchArm,
 };
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
-
-/// Gives `name` the value it held outside a block, or removes it (a builtin's name has no variable).
-fn put_back(
-    variables: &mut FastMap<String, RuntimeValue>,
-    name: &str,
-    value: Option<RuntimeValue>,
-) {
-    match (value, variables.get_mut(name)) {
-        (Some(value), Some(slot)) => *slot = value,
-        (Some(value), None) => {
-            variables.insert(name.to_owned(), value);
-        }
-        (None, _) => {
-            variables.remove(name);
-        }
-    }
-}
 
 /// What a `for` loop counts through, its bounds already evaluated.
 #[derive(Clone, Copy)]
@@ -69,48 +51,6 @@ impl Session {
         Ok((Flow::Normal, last))
     }
 
-    /// Runs one execution of a block (a branch, an arm, a loop body, a `once` body). A declaration
-    /// in it that hides an outer name (`Declaration::shadows`) saves the outer value as it stands
-    /// when the declaration is about to give the name a value of its own, and the block puts the
-    /// saved values back, innermost first, when it ends, however it ends. The variable table is
-    /// flat, so this is what makes the name the outer one again outside the block; a `:=` above the
-    /// declaration, in the declaration's own value or in another branch is the outer variable's
-    /// and stays. Declarations that hide nothing save nothing.
-    fn run_block(
-        &mut self,
-        statements: &[Statement],
-        context: &mut RuntimeContext,
-    ) -> Result<(Flow, RuntimeValue), Diagnostic> {
-        let mark = self.shadow_stack.len();
-        let result = self.run(statements, context);
-        if self.shadow_stack.len() > mark {
-            self.unshadow(mark);
-        }
-        result
-    }
-
-    /// Saves what the name `id` holds now, for the declaration about to hide it. A name with no
-    /// variable yet saves nothing, except a builtin's (`low`), which is removed after.
-    fn shadow(&mut self, id: ShadowId) {
-        let name = &self.shadow_names[id as usize];
-        let value = match self.working.variables.get(name.as_str()) {
-            Some(value) => Some(value.clone()),
-            None if self.shadowing_builtins.contains(name) => None,
-            None => return,
-        };
-        self.shadow_stack.push((id, value));
-    }
-
-    /// Puts back what the blocks since `mark` saved.
-    fn unshadow(&mut self, mark: usize) {
-        while self.shadow_stack.len() > mark {
-            if let Some((id, value)) = self.shadow_stack.pop() {
-                let name = &self.shadow_names[id as usize];
-                put_back(&mut self.working.variables, name, value);
-            }
-        }
-    }
-
     fn run_statement(
         &mut self,
         statement: &Statement,
@@ -118,12 +58,8 @@ impl Session {
     ) -> Result<Step, Diagnostic> {
         match statement {
             Statement::Declaration {
-                name,
-                mode,
-                value,
-                shadows,
-                ..
-            } => self.run_declaration(name, *mode, value, *shadows, context),
+                name, mode, value, ..
+            } => self.run_declaration(name, *mode, value, context),
             Statement::Assignment {
                 name, op, value, ..
             } => self.run_assignment(name, *op, value, context),
@@ -141,33 +77,14 @@ impl Session {
                 step,
                 body,
                 range,
-                shadows,
-            } => self.run_for_range(
-                variable,
-                from,
-                to,
-                step.as_ref(),
-                body,
-                *range,
-                context,
-                *shadows,
-            ),
+            } => self.run_for_range(variable, from, to, step.as_ref(), body, *range, context),
             Statement::ForIn {
                 index,
                 value,
                 collection,
                 body,
                 range,
-                shadows,
-            } => self.run_for_in(
-                index.as_deref(),
-                value,
-                collection,
-                body,
-                *range,
-                context,
-                *shadows,
-            ),
+            } => self.run_for_in(index.as_deref(), value, collection, body, *range, context),
             Statement::WhileLoop {
                 condition, body, ..
             } => self.run_while(condition, body, context),
@@ -181,12 +98,9 @@ impl Session {
                 arms,
                 range,
             } => self.run_switch(subject.as_ref(), arms, *range, context),
-            Statement::TupleDeclaration {
-                names,
-                value,
-                shadows,
-                ..
-            } => self.run_tuple_declaration(names, shadows, value, context),
+            Statement::TupleDeclaration { names, value, .. } => {
+                self.run_tuple_declaration(names, value, context)
+            }
             Statement::LoopControl(control, _) => Ok(Step {
                 flow: if *control == crate::pine::syntax::ast::LoopControl::Break {
                     Flow::Break
@@ -215,7 +129,6 @@ impl Session {
         name: &str,
         mode: DeclarationMode,
         expression: &Expression,
-        shadows: Option<ShadowId>,
         context: &mut RuntimeContext,
     ) -> Result<Step, Diagnostic> {
         if mode == DeclarationMode::Variable
@@ -242,11 +155,6 @@ impl Session {
             return Ok(Step::normal(value));
         }
         let value = self.eval(expression, context)?;
-        // The value is done: what the name holds now is the outer variable, as the initializer left
-        // it.
-        if let Some(id) = shadows {
-            self.shadow(id);
-        }
         self.set_variable(name, value.clone());
         context.record(mode, name);
         Ok(Step::normal(value))
@@ -319,7 +227,6 @@ impl Session {
     fn run_tuple_declaration(
         &mut self,
         names: &[String],
-        shadows: &[Option<ShadowId>],
         expression: &Expression,
         context: &mut RuntimeContext,
     ) -> Result<Step, Diagnostic> {
@@ -330,9 +237,6 @@ impl Session {
         };
         for (i, name) in names.iter().enumerate() {
             if name != "_" {
-                if let Some(Some(id)) = shadows.get(i) {
-                    self.shadow(*id);
-                }
                 self.set_variable(name, items.get(i).cloned().unwrap_or(RuntimeValue::Na));
             }
         }
@@ -352,7 +256,7 @@ impl Session {
             "if condition must be bool; numeric-to-bool coercion is not allowed in v6.",
             condition.range(),
         )?;
-        let (flow, value) = self.run_block(if test { when_true } else { when_false }, context)?;
+        let (flow, value) = self.run(if test { when_true } else { when_false }, context)?;
         Ok(Step { flow, value })
     }
 
@@ -382,7 +286,7 @@ impl Session {
         if self.working.once_finished.contains(&key) {
             return Ok(Step::normal(RuntimeValue::Void));
         }
-        let (flow, _) = self.run_block(body, context)?;
+        let (flow, _) = self.run(body, context)?;
         self.working.once_finished.push(key);
         Ok(Step {
             flow,
@@ -400,7 +304,6 @@ impl Session {
         body: &[Statement],
         range: SourceRange,
         context: &mut RuntimeContext,
-        shadows: Option<ShadowId>,
     ) -> Result<Step, Diagnostic> {
         let start_value = self.eval(from, context)?;
         let Some(start) = start_value.number() else {
@@ -440,12 +343,6 @@ impl Session {
                 integral = false;
             }
         }
-        // The bounds are done: what the counter's name holds now is the outer variable, as they left
-        // it.
-        let mark = self.shadow_stack.len();
-        if let Some(id) = shadows {
-            self.shadow(id);
-        }
         let counting = Counting {
             variable,
             start,
@@ -454,7 +351,6 @@ impl Session {
             integral,
         };
         let result = self.count(&counting, body, context);
-        self.unshadow(mark);
         Ok(Step {
             flow: Flow::Normal,
             value: result?,
@@ -492,7 +388,7 @@ impl Session {
                     RuntimeValue::Float(i)
                 },
             );
-            let (flow, value) = self.run_block(body, context)?;
+            let (flow, value) = self.run(body, context)?;
             last = value;
             if flow == Flow::Break {
                 break;
@@ -511,7 +407,6 @@ impl Session {
         body: &[Statement],
         range: SourceRange,
         context: &mut RuntimeContext,
-        shadows: [Option<ShadowId>; 2],
     ) -> Result<Step, Diagnostic> {
         let target = self.eval(collection, context)?;
         if target == RuntimeValue::Na {
@@ -529,7 +424,6 @@ impl Session {
                     value_name,
                     body,
                     context,
-                    shadows,
                     |_, stopped| {
                         Ok(if stopped {
                             None
@@ -569,7 +463,6 @@ impl Session {
                     value_name,
                     body,
                     context,
-                    shadows,
                     |session, stopped| {
                         let map = session
                             .working
@@ -612,33 +505,24 @@ impl Session {
         value_name: &str,
         body: &[Statement],
         context: &mut RuntimeContext,
-        shadows: [Option<ShadowId>; 2],
         mut next_pair: impl FnMut(
             &Self,
             bool,
         ) -> Result<Option<(RuntimeValue, RuntimeValue)>, Diagnostic>,
     ) -> Result<RuntimeValue, Diagnostic> {
-        let mark = self.shadow_stack.len();
-        for id in shadows.into_iter().flatten() {
-            self.shadow(id);
-        }
-        let result = (|| {
-            let mut last = RuntimeValue::Void;
-            let mut stopped = false;
-            while let Some((first, item)) = next_pair(self, stopped)? {
-                self.budget()?;
-                if let Some(first_name) = first_name {
-                    self.set_variable(first_name, first);
-                }
-                self.set_variable(value_name, item);
-                let (flow, value) = self.run_block(body, context)?;
-                last = value;
-                stopped = flow == Flow::Break;
+        let mut last = RuntimeValue::Void;
+        let mut stopped = false;
+        while let Some((first, item)) = next_pair(self, stopped)? {
+            self.budget()?;
+            if let Some(first_name) = first_name {
+                self.set_variable(first_name, first);
             }
-            Ok(last)
-        })();
-        self.unshadow(mark);
-        result
+            self.set_variable(value_name, item);
+            let (flow, value) = self.run(body, context)?;
+            last = value;
+            stopped = flow == Flow::Break;
+        }
+        Ok(last)
     }
 
     fn run_while(
@@ -656,7 +540,7 @@ impl Session {
             if !test {
                 break;
             }
-            let (flow, value) = self.run_block(body, context)?;
+            let (flow, value) = self.run(body, context)?;
             last = value;
             if flow == Flow::Break {
                 break;
@@ -685,7 +569,7 @@ impl Session {
                 value: RuntimeValue::Na,
             });
         };
-        let (flow, value) = self.run_block(&arms[chosen].body, context)?;
+        let (flow, value) = self.run(&arms[chosen].body, context)?;
         Ok(Step { flow, value })
     }
 

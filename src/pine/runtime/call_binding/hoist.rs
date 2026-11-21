@@ -15,8 +15,8 @@
 //! ```
 //!
 //! The ordinary history of a variable then does the rest; the interpreter has nothing new to run.
-//! It runs before `bind`, so a moved call is routed like any other, and before the scope analysis
-//! (`mark_shadowing`, the `request.security` slices) so those see the synthetic statements.
+//! It runs before `bind`, so a moved call is routed like any other, and before the rename and the scope analysis
+//! (`syntax::rename`, the `request.security` slices) so those see the synthetic statements.
 //!
 //! A *lazy* operand is the right side of `and`/`or`, either arm of `?:`, the arms of an `if` or
 //! `switch` used for its value, and a `switch` arm's condition after the first. Only a *total*
@@ -194,7 +194,7 @@ impl<'c> Calls<'c> {
     /// A body that only computes: it assigns nothing but its own names and calls only what is safe,
     /// and so do the defaults of its parameters, which every call that leaves one out evaluates.
     fn body_is_pure(&self, parameters: &[Parameter], body: &[Statement]) -> bool {
-        let mut locals: HashSet<String> = parameters.iter().map(|p| p.name.clone()).collect();
+        let mut locals: HashSet<String> = parameters.iter().map(|p| p.slot.clone()).collect();
         for statement in body {
             visit_statements(statement, &mut |inner| declared(inner, &mut locals));
         }
@@ -605,7 +605,6 @@ impl Hoister<'_, '_> {
             mode: DeclarationMode::Ordinary,
             value: std::mem::replace(call, read),
             range: SourceRange::new(start, start),
-            shadows: None,
         };
         // The call's own arguments may hold operands that run ahead too; they come first.
         let mut inner = Vec::new();

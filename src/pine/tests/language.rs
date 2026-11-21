@@ -1319,6 +1319,119 @@ fn the_history_of_a_local_in_a_block_carries_over_the_bars_the_block_did_not_run
     );
 }
 
+// MARK: Locals that share a name with something else (`syntax::rename`)
+
+#[test]
+fn a_function_locals_history_is_its_own_when_a_global_has_the_name() {
+    // The `u[1]` of the local is the local's last value (bar 2's 20.0), never the global's -99.0.
+    let session = run(
+        "u = -99.0\nf() =>\n    out = -1.0\n    if bar_index % 2 == 0\n        u = bar_index * 10.0\n        out := nz(u[1], -5.0)\n    out\n\
+         r = f()",
+        5,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(20.0));
+    assert_eq!(value(&session, "u"), RuntimeValue::Float(-99.0));
+}
+
+#[test]
+fn sibling_blocks_with_a_name_in_common_keep_a_history_each() {
+    // Block 1 runs on even bars, block 2 on odd ones (`a` and `b` start every bar at 0). Block 1's
+    // `x[1]` on bar 2 is what it left on bar 0 (101.0); block 2's on bar 3, what it left on bar 1
+    // (1010.0).
+    let body = "a = 0.0\nb = 0.0\n\
+                if bar_index % 2 == 0\n    x = close\n    a := nz(x[1], -1.0)\n\
+                if bar_index % 2 == 1\n    x = open * 10\n    b := nz(x[1], -1.0)";
+    assert_eq!(value(&run(body, 3), "a"), RuntimeValue::Float(101.0));
+    assert_eq!(value(&run(body, 4), "b"), RuntimeValue::Float(1010.0));
+}
+
+#[test]
+fn a_block_locals_history_is_not_the_globals_of_the_same_name() {
+    // On bar 4 the block local is 11.0 and was 10.0 on bar 3; the global is the close.
+    let session = run(
+        "x = close\nr = 0.0\nif bar_index > 1\n    x = 7.0 + bar_index\n    r := nz(x[1], -1.0)",
+        5,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(10.0));
+    assert_eq!(value(&session, "x"), RuntimeValue::Float(105.0));
+}
+
+#[test]
+fn a_function_called_from_a_block_that_hides_a_global_reads_the_global() {
+    let session = run(
+        "x = 5.0\nf() =>\n    x * 2\nr = 0.0\nif close > 0\n    x = 1.0\n    r := f() + x",
+        3,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(11.0));
+}
+
+#[test]
+fn a_parameter_named_like_a_global_is_its_own_in_a_nested_call() {
+    let session = run(
+        "x = 3.0\nf(x) =>\n    x + 1\ng(y) =>\n    f(y * 2) + x\nr = g(1.0)",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(6.0));
+}
+
+#[test]
+fn a_named_argument_finds_a_parameter_that_was_renamed() {
+    let session = run(
+        "len = 10\nf(len, shift) =>\n    len * 10 + shift\nr = f(shift = 2, len = 5)",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(52));
+    assert_eq!(value(&session, "len"), RuntimeValue::Int(10));
+}
+
+#[test]
+fn a_var_in_a_block_named_like_a_global_is_not_the_global() {
+    let session = run(
+        "var g = 0.0\nif close > 0\n    var g = 10.0\n    g += 1\nafter = g",
+        4,
+    );
+    assert_eq!(value(&session, "after"), RuntimeValue::Float(0.0));
+}
+
+#[test]
+fn a_loop_counter_named_like_a_global_leaves_the_global_alone() {
+    let session = run(
+        "i = 100\ntotal = 0\nfor i = 0 to 3\n    total += i\nafter = i",
+        2,
+    );
+    assert_eq!(value(&session, "total"), RuntimeValue::Int(6));
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(100));
+}
+
+#[test]
+fn a_library_local_is_not_the_scripts_global_of_the_same_name() {
+    struct Lib;
+    impl compiler::LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Twice/1").then(|| {
+                "//@version=6\nlibrary(\"Twice\")\nexport twice(float y) =>\n    x = y * 2\n    x\n"
+                    .to_owned()
+            })
+        }
+    }
+    let source = "//@version=6\nindicator(\"T\")\nimport user/Twice/1 as t\nx = 100.0\ny = 7.0\nr = t.twice(3.0)\n";
+    let program = compiler::compile(source, Limits::default(), &Lib);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session.evaluate(&bars(3)).expect("runs");
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(6.0));
+    assert_eq!(value(&session, "x"), RuntimeValue::Float(100.0));
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(7.0));
+}
+
 /// The values of the plot titled `title` after `body` ran over `count` bars.
 fn plot_values(body: &str, count: usize, title: &str) -> Vec<Option<f64>> {
     let session = run(body, count);

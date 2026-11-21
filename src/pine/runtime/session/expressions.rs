@@ -204,7 +204,10 @@ impl Session {
         Err(Diagnostic::error(
             "PINE4008",
             DiagnosticCategory::Runtime,
-            format!("Undefined variable '{name}'."),
+            format!(
+                "Undefined variable '{}'.",
+                crate::pine::syntax::rename::display_text(name)
+            ),
             range,
         ))
     }

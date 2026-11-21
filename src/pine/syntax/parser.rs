@@ -513,7 +513,6 @@ impl Parser {
             collection,
             body,
             range: start,
-            shadows: [None; 2],
         })
     }
 
@@ -565,7 +564,6 @@ impl Parser {
             step,
             body,
             range: start,
-            shadows: None,
         })
     }
 
@@ -609,7 +607,6 @@ impl Parser {
             names,
             value,
             range,
-            shadows: Vec::new(),
         })
     }
 
@@ -701,6 +698,7 @@ impl Parser {
             default_value = self.expression(0);
         }
         Some(Parameter {
+            slot: name.clone(),
             name,
             type_ref,
             qualifier,
@@ -1118,7 +1116,6 @@ impl Parser {
             mode,
             value,
             range,
-            shadows: None,
         })
     }
 

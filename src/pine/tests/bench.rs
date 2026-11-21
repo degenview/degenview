@@ -1109,13 +1109,13 @@ fn bench_workloads() {
     }
 }
 
-/// What building a session costs on a large script, and the part of it that flags the declarations
-/// that hide a name (`scopes::mark_shadowing`, one `resolve` over the tree).
+/// What building a session costs on a large script, and the part of it that renames the declarations
+/// that share a name (`syntax::rename`, one `resolve` over the tree).
 #[test]
 #[ignore = "benchmark: cargo test --release --lib session_build_cost -- --ignored --nocapture"]
 fn session_build_cost() {
     use crate::pine::compiler::symbol_catalog::is_variable;
-    use crate::pine::syntax::scopes::{ShadowNames, mark_shadowing};
+    use crate::pine::syntax::rename;
 
     fn median(mut times: Vec<u128>) -> u128 {
         times.sort_unstable();
@@ -1147,16 +1147,17 @@ fn session_build_cost() {
                 })
                 .collect(),
         );
-        let marking = median(
+        let renaming = median(
             (0..9)
                 .map(|_| {
                     let mut statements = program.statements.clone();
                     let started = Instant::now();
-                    mark_shadowing(&mut statements, &is_variable, &mut ShadowNames::default());
+                    rename::plan(&statements, &is_variable, rename::Program::Script)
+                        .apply(&mut statements);
                     started.elapsed().as_nanos()
                 })
                 .collect(),
         );
-        println!("BUILD {name} session_new_ns={build} marking_ns={marking}");
+        println!("BUILD {name} session_new_ns={build} renaming_ns={renaming}");
     }
 }
