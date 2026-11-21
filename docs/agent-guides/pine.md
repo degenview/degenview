@@ -440,6 +440,24 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     workloads both ways; user methods/types/aliases that must stay on the chain) and
     `PINE_CORPUS_DUAL=1` (every community script both ways). Bench with `tools/pine-bench.sh`:
     `many_ta`, `many_math`, `many_str`, `plots_and_drawings`, `containers`, `map_counting`.
+- **A `[]` on a call in a lazy operand runs the call on every bar** (`call_binding::hoist`, before
+  `bind` and `mark_shadowing`, libraries included). `cond ? ta.sma(close, 3)[1] : na`, the right side of
+  `and`/`or`, the arms of an `if`/`switch` used for a value and a `switch` condition after the first read
+  the value the call has when it runs on every bar (TradingView: P09 S3, P10 C1-C3), while the call
+  without `[]` keeps its own state. The call moves, unchanged and with its `site`, into a synthetic
+  declaration `\u{1}h<n> = <call>` before its statement, and the operand reads `\u{1}h<n>[k]`: the
+  ordinary history of a variable, no new runtime code.
+  - Only calls safe to run unconditionally move: `ta.*`, math and scalar builtins (not `math.random`,
+    `ta.pivot_point_levels`) and user functions built only from those (`Calls::pure`: no loop with a
+    data-dependent end, no field assignment, no method or field read, no assignment to a global). Never
+    `array.get`, `request.*`, a method, a draw. A call that reads a name its statement declares stays.
+  - Nothing moves out of a loop inside an arm, a `while` condition or a `request.*` argument.
+  - `SYNTHETIC` (`syntax::ast`) starts the name; `Statement::is_synthetic` makes `hook_before`/`hook_after`
+    skip it, and `SourceMap`/`RegionTable` leave it out, so the debugger shows no such variable or stop and
+    the profile keeps the statement it came from as the unit. Its range starts at the call, unique among
+    declarations in `syntax::scopes`.
+  - A hoist inside a block runs when the block does, so the history carries over the bars it did not run
+    (not measured on TradingView).
 - A run-time failure has no profile (`Profiler::finish`), only the failure, also in Problems.
 - Never close a Pine Studio tab or quit over unsaved editor text or retained drafts without the
   `unsaved` flow. Tab close starts `begin_exit(CloseTab)` and cancels close; quit/update restart use
