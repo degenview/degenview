@@ -141,7 +141,7 @@ impl SourceMap {
         function: Option<&str>,
         global: bool,
     ) {
-        for statement in statements {
+        for statement in statements.iter().filter(|s| !s.is_synthetic()) {
             self.statement(statement, &mut head, function, global);
         }
     }

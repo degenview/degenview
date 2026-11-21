@@ -345,3 +345,297 @@ fn a_call_in_a_debugger_expression_is_not_bound_and_still_runs() {
             .any(|(_, route)| route.is_some())
     );
 }
+
+// MARK: Calls whose history a lazy operand reads
+
+/// The program as the session sees it: lazy histories hoisted, then calls bound.
+fn hoisted(
+    source: &str,
+    resolver: &dyn LibraryResolver,
+) -> crate::pine::compiler::program::CompiledProgram {
+    let mut program = compiler::compile(source, limits(), resolver);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    super::hoist::lazy_history(&mut program);
+    bind(&mut program);
+    program
+}
+
+/// The synthetic declarations in `statements`, at any depth, as (name, the called function, its
+/// call site, its route).
+fn synthetic(statements: &[Statement]) -> Vec<(String, String, usize, Option<Route>)> {
+    let mut found = Vec::new();
+    for statement in statements {
+        if let Statement::Declaration { name, value, .. } = statement
+            && statement.is_synthetic()
+        {
+            let Expression::Call {
+                name: callee,
+                site,
+                route,
+                ..
+            } = value
+            else {
+                panic!("a synthetic declaration holds a call: {value:?}");
+            };
+            found.push((name.clone(), callee.clone(), *site, *route));
+        }
+        for block in nested_blocks(statement) {
+            found.extend(synthetic(block));
+        }
+    }
+    found
+}
+
+/// The callee names of the synthetic declarations of `source`, in order.
+fn hoisted_calls(source: &str) -> Vec<String> {
+    let program = hoisted(
+        &format!("//@version=6\nindicator(\"T\")\n{source}\n"),
+        &NoLibraries,
+    );
+    synthetic(&program.statements)
+        .into_iter()
+        .map(|(_, callee, _, _)| callee)
+        .collect()
+}
+
+#[test]
+fn a_call_with_a_history_in_a_ternary_arm_moves_ahead_of_its_statement_unchanged() {
+    let source = "//@version=6\nindicator(\"T\")\nx = bar_index % 2 == 0 ? ta.sma(close, 3)[1] : na\nplot(x)\n";
+    let program = hoisted(source, &NoLibraries);
+    let moved = synthetic(&program.statements);
+    assert_eq!(moved.len(), 1);
+    let (name, callee, _, route) = &moved[0];
+    assert_eq!(callee, "ta.sma");
+    assert_eq!(
+        *route,
+        Some(Route::TaTable),
+        "the moved call is routed like any other"
+    );
+    // Before the statement it came from, which now reads the variable's history.
+    let [_, first, second, _] = &program.statements[..] else {
+        panic!("{:?}", program.statements);
+    };
+    assert!(first.is_synthetic());
+    let Statement::Declaration { value, .. } = second else {
+        panic!("{second:?}");
+    };
+    let Expression::Ternary { when_true, .. } = value else {
+        panic!("{value:?}");
+    };
+    let Expression::History { base, .. } = when_true.as_ref() else {
+        panic!("{when_true:?}");
+    };
+    assert_eq!(**base, Expression::Identifier(name.clone(), base.range()));
+}
+
+#[test]
+fn the_moved_call_keeps_its_call_site() {
+    let source = "//@version=6\nindicator(\"T\")\nx = bar_index % 2 == 0 ? ta.sma(close, 3)[1] : na\nplot(ta.ema(close, 3))\n";
+    let sites = |program: &crate::pine::compiler::program::CompiledProgram| {
+        let mut sites = Vec::new();
+        crate::pine::syntax::traversal::for_each_call_with_args(
+            &program.statements,
+            &mut |name, _, range| {
+                sites.push((name.to_owned(), range.start.offset));
+            },
+        );
+        sites.sort();
+        sites
+    };
+    let before = sites(&compiler::compile(source, limits(), &NoLibraries));
+    let after = sites(&hoisted(source, &NoLibraries));
+    assert_eq!(
+        before, after,
+        "no call is added, dropped or moved in the source"
+    );
+}
+
+#[test]
+fn only_a_history_in_a_lazy_operand_moves_a_call() {
+    // Eager positions run on every bar the statement does: nothing to move.
+    assert!(hoisted_calls("x = ta.sma(close, 3)[1]").is_empty());
+    assert!(hoisted_calls("x = ta.sma(close, 3)[1] > 0 ? 1.0 : 2.0").is_empty());
+    assert!(hoisted_calls("x = ta.sma(close, 3)[1] > 0 and close > 0").is_empty());
+    assert!(hoisted_calls("x = close > 0 ? ta.sma(close, 3) : na").is_empty());
+    assert!(hoisted_calls("x = close > 0 ? close[1] : na").is_empty());
+    // The lazy ones.
+    assert_eq!(
+        hoisted_calls("x = close > 0 ? ta.sma(close, 3)[1] : na"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls("x = close > 0 ? na : ta.ema(close, 3)[2]"),
+        ["ta.ema"]
+    );
+    assert_eq!(
+        hoisted_calls("x = close > 0 and ta.sma(close, 3)[1] > 0"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls("x = close < 0 or ta.sma(close, 3)[1] > 0"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls("x = if close > 0\n    ta.sma(close, 3)[1]\nelse\n    na"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls("x = switch\n    close > 0 => ta.sma(close, 3)[1]\n    => na"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls(
+            "x = switch\n    close > 0 => 1.0\n    ta.sma(close, 3)[1] > 0 => 2.0\n    => na"
+        ),
+        ["ta.sma"]
+    );
+}
+
+#[test]
+fn two_histories_make_two_variables() {
+    let program = hoisted(
+        "//@version=6\nindicator(\"T\")\nx = close > 0 ? ta.sma(close, 3)[1] + ta.sma(close, 3)[2] : na\n",
+        &NoLibraries,
+    );
+    let moved = synthetic(&program.statements);
+    assert_eq!(moved.len(), 2);
+    assert_ne!(moved[0].0, moved[1].0);
+    assert_ne!(
+        moved[0].2, moved[1].2,
+        "each keeps the state of its own call site"
+    );
+}
+
+#[test]
+fn a_call_inside_the_moved_calls_arguments_that_is_lazy_moves_first() {
+    assert_eq!(
+        hoisted_calls("x = close > 0 ? ta.sma(close > 1 ? ta.ema(close, 2)[1] : close, 3)[1] : na"),
+        ["ta.ema", "ta.sma"]
+    );
+}
+
+#[test]
+fn a_call_that_could_fail_or_change_something_stays_where_it_is() {
+    for body in [
+        "a = array.new_float(1)\nx = array.size(a) > 0 ? array.get(a, 0)[1] : na",
+        "a = array.new_float(1)\nx = array.size(a) > 0 and array.get(a, 0)[1] > 0",
+        "x = close > 0 ? str.length(\"ab\")[1] : na",
+        "x = close > 0 ? ta.pivot_point_levels(\"Traditional\")[1] : na",
+        "x = close > 0 ? math.random(0, 1)[1] : na",
+        "x = close > 0 ? request.security(syminfo.tickerid, \"D\", close)[1] : na",
+        "x = close > 0 ? request.security(syminfo.tickerid, \"D\", close > 0 ? ta.sma(close, 3)[1] : na) : na",
+        "x = close > 0 ? ta.sma(array.get(array.new_float(1), 0), 3)[1] : na",
+        "type P\n    float v\np = P.new(1.0)\nx = close > 0 ? p.v[1] : na",
+        "x = close > 0 ? nz(plot(close))[1] : na",
+    ] {
+        assert!(hoisted_calls(body).is_empty(), "{body}");
+    }
+}
+
+#[test]
+fn a_user_function_moves_only_when_it_only_computes() {
+    let pure = "f() =>\n    ta.sma(close, 3) + math.abs(close)\n\
+                x = close > 0 ? f()[1] : na";
+    assert_eq!(hoisted_calls(pure), ["f"]);
+    let chain = "g() =>\n    ta.sma(close, 3)\nf() =>\n    g() * 2\n\
+                 x = close > 0 ? f()[1] : na";
+    assert_eq!(hoisted_calls(chain), ["f"]);
+    for impure in [
+        "var a = array.new_float()\nf() =>\n    array.push(a, close)\n    1.0\n",
+        "f() =>\n    plot(close)\n    1.0\n",
+        "f() =>\n    array.get(array.new_float(0), 0)\n",
+        "f() =>\n    request.security(syminfo.tickerid, \"D\", close)\n",
+        "f() =>\n    na(close) ? 1.0 : label.new(bar_index, close).get_x()\n",
+        "g() =>\n    plot(close)\n    1.0\nf() =>\n    g()\n",
+        "f() =>\n    i = 0\n    while i < 3\n        i += 1\n    i\n",
+    ] {
+        let source = format!("{impure}x = close > 0 ? f()[1] : na");
+        assert!(hoisted_calls(&source).is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn a_call_reading_what_its_own_statement_declares_stays_in_the_branch() {
+    // `inner` exists only inside the arm: the call cannot run ahead of it.
+    assert!(
+        hoisted_calls(
+            "x = if close > 0\n    inner = close * 2\n    ta.sma(inner, 3)[1]\nelse\n    na"
+        )
+        .is_empty()
+    );
+    // A call that reads nothing the arm makes can.
+    assert_eq!(
+        hoisted_calls(
+            "x = if close > 0\n    inner = close * 2\n    ta.sma(close, 3)[1] + inner\nelse\n    na"
+        ),
+        ["ta.sma"]
+    );
+}
+
+#[test]
+fn a_move_stays_inside_the_block_or_function_it_was_written_in() {
+    let program = hoisted(
+        "//@version=6\nindicator(\"T\")\n\
+         f(c) =>\n    c ? ta.sma(close, 3)[1] : na\n\
+         total = 0.0\n\
+         for i = 0 to 2\n    total += close > 0 ? ta.ema(close, 2)[1] : 0.0\n\
+         if close > 0\n    total += close > 0 ? ta.rsi(close, 2)[1] : 0.0\n\
+         plot(f(true) + total)\n",
+        &NoLibraries,
+    );
+    // None at the top level: each sits before its statement in its own function, loop body or branch.
+    assert!(
+        program
+            .statements
+            .iter()
+            .all(|statement| !statement.is_synthetic())
+    );
+    let in_function = nested_blocks(
+        program
+            .statements
+            .iter()
+            .find(|s| matches!(s, Statement::Function { .. }))
+            .unwrap(),
+    )[0];
+    assert!(in_function[0].is_synthetic() && !in_function[1].is_synthetic());
+    let names: Vec<String> = synthetic(&program.statements)
+        .into_iter()
+        .map(|(_, callee, _, _)| callee)
+        .collect();
+    assert_eq!(names, ["ta.sma", "ta.ema", "ta.rsi"]);
+}
+
+#[test]
+fn a_library_function_is_hoisted_in_its_own_program() {
+    struct Lib;
+    impl LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Lazy/1").then(|| {
+                "//@version=6\nlibrary(\"Lazy\")\nexport ahead(bool on) =>\n    on ? ta.sma(close, 3)[1] : na\n"
+                    .to_owned()
+            })
+        }
+    }
+    let source =
+        "//@version=6\nindicator(\"T\")\nimport user/Lazy/1 as lazy\nplot(lazy.ahead(close > 0))\n";
+    let program = hoisted(source, &Lib);
+    assert!(synthetic(&program.statements).is_empty());
+    let library = program.imports[0]
+        .library
+        .as_deref()
+        .expect("the library compiled");
+    assert_eq!(synthetic(&library.statements).len(), 1);
+    assert_eq!(outcome(source, &Lib, false), outcome(source, &Lib, true));
+}
+
+#[test]
+fn hoisted_scripts_run_the_same_both_ways() {
+    for source in [
+        "x = bar_index % 2 == 0 ? ta.sma(close, 3)[1] : na\nplot(x)",
+        "f() =>\n    ta.ema(close, 3)\nx = bar_index % 3 == 0 ? f()[2] : na\nplot(x)",
+        "hit = bar_index % 2 == 0 and ta.rsi(close, 3)[1] > 50\nplot(hit ? 1 : 0)",
+        "x = switch\n    bar_index % 2 == 0 => ta.wma(close, 3)[1]\n    => 0.0\nplot(x)",
+    ] {
+        same_both_ways(&format!("//@version=6\nindicator(\"T\")\n{source}\n"));
+    }
+}

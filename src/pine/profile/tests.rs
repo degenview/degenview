@@ -202,6 +202,25 @@ fn a_branch_counts_only_when_it_runs() {
 }
 
 #[test]
+fn a_call_the_session_runs_ahead_of_its_statement_is_not_a_region_of_its_own() {
+    // `ta.sma(close, 3)[1]` is the first thing its arm runs, and the session runs the call ahead
+    // of the whole statement: the line still counts what the script's text says.
+    let data = bars(40, 60_000);
+    let body = "up = close > open\nx = if up\n    ta.sma(close, 3)[1]\nelse\n    na\nplot(x)\n";
+    let report = profile(&script(body), &data);
+    let plain = profile(&script(&body.replace("[1]", "")), &data);
+    let counts = |report: &ProfileReport| {
+        report
+            .lines()
+            .into_iter()
+            .map(|line| (line.line, line.executions))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(counts(&report), counts(&plain));
+    assert_consistent(&report);
+}
+
+#[test]
 fn a_switch_counts_each_arm() {
     let data = bars(30, 60_000);
     let report = profile(

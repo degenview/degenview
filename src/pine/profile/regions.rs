@@ -193,7 +193,7 @@ impl Builder<'_> {
     /// statement, which runs each time the block does.
     fn block(&mut self, statements: &[Statement], parent: Option<u32>) -> Option<u32> {
         let first = self.regions.len();
-        for statement in statements {
+        for statement in statements.iter().filter(|s| !s.is_synthetic()) {
             self.statement(statement, parent);
         }
         (self.regions.len() > first).then_some(first as u32)
