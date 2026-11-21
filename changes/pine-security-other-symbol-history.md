@@ -1,0 +1,1 @@
+fixed: Pine scripts that read another symbol (or another timeframe of the chart's own) now get its candles for the whole chart on exchanges that can serve a time range, not just the newest 1,000, so older chart bars are no longer empty.

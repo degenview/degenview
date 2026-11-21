@@ -120,6 +120,13 @@ watchlists.
   the buckets the same way as everything else, a length that is no timeframe flooring onto the epoch.
   `request.security_lower_tf` intrabars are folded in the Pine host from the coarsest of its own
   base list that nests (`INTRABAR_BASES`), bounded by `MAX_INTRABAR_CANDLES` base candles.
+- A `request.security` series (another symbol, or the chart's own symbol at a timeframe the chart's
+  bars do not fold into) covers the chart's span: `host::pine::series` asks
+  `service::fetch_klines_range` for the window `series_window` computes (300 candles before the
+  chart's first bar to the end of its last, the newest `calc_bars_count` of them when set) and falls
+  back to the newest 500-1,000 `fetch_klines` candles when the source has no range endpoint (only
+  some implement it) or the range comes back empty. The fallback is required: older chart bars read
+  `na` without it. The cache key already includes the chart's span.
 - `service::fetch_klines` runs every provider through `service::normalize` (ascending, one candle per
   open time, finite prices, range holds open and close). GeckoTerminal lists only traded intervals;
   `bucket::fill_gaps` adds flat zero-volume candles for even spacing. Volume units differ (base asset,
