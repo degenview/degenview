@@ -6,7 +6,7 @@
 
 use crate::model::exchange::Exchange;
 use crate::model::liquidation::{Liquidation, Side};
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::net::ws::{Decode, Keepalive, Session};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -20,6 +20,7 @@ pub(super) fn session() -> Session {
         subscribe: Vec::new(),
         // A calm hour can pass without a liquidation of any market: the ping says it is alive.
         max_data_silence: Duration::from_secs(600),
+        decode: Decode::None,
         keepalive: Keepalive::Frame,
     }
 }

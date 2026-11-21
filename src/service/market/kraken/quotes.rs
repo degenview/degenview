@@ -7,7 +7,7 @@ use super::ticker::kraken_volume;
 use crate::format::parse_iso8601;
 use crate::model::DataSource;
 use crate::model::watchlist::quote::SourceQuote;
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::net::ws::{Decode, Keepalive, Session};
 use crate::service::watchlist_quotes::quote_stream::{QuoteProtocol, StreamTick};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -25,6 +25,7 @@ fn session(products: &[String]) -> Session {
         port: 443,
         subscribe: vec![subscribe.to_string()],
         max_data_silence: Duration::from_secs(30),
+        decode: Decode::None,
         keepalive: Keepalive::Frame,
     }
 }

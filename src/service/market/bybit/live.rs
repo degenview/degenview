@@ -7,7 +7,7 @@ use super::Bybit;
 use super::{KEEPALIVE, interval, symbol_id};
 use crate::model::{Kline, Timeframe};
 use crate::service::market::live::CandleProtocol;
-use crate::service::net::ws::{Frame, Session};
+use crate::service::net::ws::{Decode, Frame, Session};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -30,6 +30,7 @@ fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
         subscribe,
         // A thin market's kline is quiet for minutes: the pong says the socket is alive.
         max_data_silence: Duration::from_secs(600),
+        decode: Decode::None,
         keepalive: KEEPALIVE,
     })
 }
