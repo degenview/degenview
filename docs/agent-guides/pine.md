@@ -280,11 +280,10 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   measured on TradingView: the unit for a finer request, and whether the forming candle is one of the
   n. A chart that opens inside a candle reads that first candle whole from the provider
   (`SecuritySite::first_candle`, set by `warm_up`) when it completes, and in `ahead_value` only
-  when the run has the candle's last bar. The own-symbol warm-up (`WARM_UP_CANDLES` = 300 candles
-  before the chart, `host::pine::series_window`) stays, a deliberate and known divergence from
+  when the run has the candle's last bar. The own-symbol warm-up (`WARM_UP_CANDLES` = 300 candles before the chart) stays, a deliberate and known divergence from
   TradingView, whose request has no candle before the chart's first bar (probe P04: `bar_index`
-  requested from 4h is `na` on the chart's first bar). Another symbol's series is fetched over the
-  chart's whole span where the source has a range endpoint (`market-data.md`).
+  requested from 4h is `na` on the chart's first bar). `WARM_UP_CANDLES` is in `host::pine`; how
+  many candles a series is asked for, and how, is in `market-data.md`.
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
 

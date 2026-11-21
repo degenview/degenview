@@ -59,29 +59,37 @@ impl KlineSecurityDataProvider {
         lock(&SECURITY_CACHE).insert(key, (candles.to_vec(), now_ms()));
     }
 
-    /// The series of finer bars over the chart's whole span (or its `calc_bars_count` newest bars).
+    /// The series of finer bars over the chart's whole span, or its newest `calc_bars_count`
+    /// candles.
     fn intrabars(key: &SecurityKey, chart: ChartSpan) -> Option<Vec<Kline>> {
         let target = timeframe_of(key.interval)?;
         let base = bucket::fold_base(target, &INTRABAR_BASES)?;
         let (plain, modifier) = ticker::split(&key.symbol);
         let (source, symbol) = resolve_symbol(plain)?;
-        let base_ms = base.nominal_ms();
-        let mut start = chart
-            .start_ms
-            .max(chart.end_ms - base_ms * MAX_SERIES_CANDLES as i64);
-        if let SeriesDepth::Newest(count) = key.depth {
-            start = start.max(chart.end_ms - (key.interval * 1_000.0) as i64 * count as i64);
-        }
-        let candles = crate::service::fetch_klines_range(
-            source,
-            &symbol,
-            base,
-            start,
-            chart.end_ms,
-            MAX_SERIES_CANDLES,
-        )
-        .ok()
-        .filter(|candles| !candles.is_empty())?;
+        let candles = match key.depth {
+            SeriesDepth::Chart => {
+                let start = chart
+                    .start_ms
+                    .max(chart.end_ms - base.nominal_ms() * MAX_SERIES_CANDLES as i64);
+                crate::service::fetch_klines_range(
+                    source,
+                    &symbol,
+                    base,
+                    start,
+                    chart.end_ms,
+                    MAX_SERIES_CANDLES,
+                )
+                .ok()
+                .filter(|candles| !candles.is_empty())?
+            }
+            SeriesDepth::Newest(count) => {
+                let per_target = usize::try_from(target.nominal_ms() / base.nominal_ms().max(1))
+                    .unwrap_or(1)
+                    .max(1);
+                let count = count.saturating_mul(per_target).min(MAX_SERIES_CANDLES);
+                newest_before(source, &symbol, base, chart.end_ms, count)?
+            }
+        };
         let candles = if base == target {
             candles
         } else {
@@ -96,58 +104,63 @@ impl KlineSecurityDataProvider {
         let (plain, modifier) = ticker::split(&key.symbol);
         let (source, symbol) = resolve_symbol(plain)?;
         let timeframe = timeframe_of(key.interval)?;
-        // Enough candles for the chart's span plus the expression's own lookback, up to the
-        // service's page.
-        let limit = chart.map_or(500, |chart| {
-            let covering = (chart.end_ms - chart.start_ms) / (key.interval as i64 * 1_000).max(1);
-            (covering + 300).clamp(500, 1_000) as u32
-        });
-        // `calc_bars_count` asks for the newest candles only.
-        let limit = match key.depth {
-            SeriesDepth::Chart => limit,
-            SeriesDepth::Newest(count) => limit.min(u32::try_from(count).unwrap_or(u32::MAX)),
-        };
-        // A source with a time-range endpoint serves the chart's whole span; the others, and a range
-        // that comes back empty, give their newest candles.
-        let candles = fetch_series(
-            chart.map(|chart| series_window(key, chart)),
-            |start, end, count| {
-                crate::service::fetch_klines_range(source, &symbol, timeframe, start, end, count)
-                    .ok()
-            },
-            || crate::service::fetch_klines(source, &symbol, timeframe, limit).ok(),
-        )?;
-        Some(construct(modifier, candles))
+        let end_ms = chart.map_or_else(|| now_ms() + 1, |chart| chart.end_ms);
+        let count = series_count(key.depth, timeframe, chart);
+        Some(construct(
+            modifier,
+            newest_before(source, &symbol, timeframe, end_ms, count)?,
+        ))
     }
 }
 
-/// How many candles before the chart's first bar a series is asked for, so an expression has history
-/// to warm up on.
-const WARM_UP_CANDLES: i64 = 300;
-/// The most candles one series is asked for over a time range.
-const MAX_SERIES_CANDLES: usize = 60_000;
+/// How many candles before the chart's first bar a series is asked for, so an expression has
+/// history to warm up on.
+const WARM_UP_CANDLES: usize = 300;
+/// The candles asked for when the chart's span is not known.
+const DEFAULT_SERIES_CANDLES: usize = 500;
 
-/// The time range and the most candles a series is asked for to cover `chart`: from
-/// [`WARM_UP_CANDLES`] before its first bar to the end of its last, or the newest `calc_bars_count`
-/// candles of that.
-fn series_window(key: &SecurityKey, chart: ChartSpan) -> (i64, i64, usize) {
-    let step = ((key.interval * 1_000.0).round() as i64).max(1);
-    let mut start = (chart.start_ms - step * WARM_UP_CANDLES).max(0);
-    if key.recent_bars > 0 {
-        start = start.max(chart.end_ms - step * key.recent_bars as i64);
-    }
-    let count = ((chart.end_ms - start) / step + 2).clamp(1, MAX_SERIES_CANDLES as i64);
-    (start, chart.end_ms, count as usize)
+/// How many of the newest candles of `timeframe` to ask for: the `calc_bars_count` the script gave,
+/// or enough to reach back past the chart's first bar. Counted on the shortest candle the timeframe
+/// has, so a month, a weekend or a holiday never leaves the chart's older bars short.
+fn series_count(depth: SeriesDepth, timeframe: Timeframe, chart: Option<ChartSpan>) -> usize {
+    let count = match (depth, chart) {
+        (SeriesDepth::Newest(count), _) => count,
+        (SeriesDepth::Chart, Some(chart)) => {
+            let span = (chart.end_ms - chart.start_ms).max(0);
+            usize::try_from(span / timeframe.shortest_ms().max(1) + 1)
+                .unwrap_or(usize::MAX)
+                .saturating_add(WARM_UP_CANDLES)
+        }
+        (SeriesDepth::Chart, None) => DEFAULT_SERIES_CANDLES,
+    };
+    count.clamp(1, MAX_SERIES_CANDLES)
 }
 
-/// The candles of a series: the range `window` names when `ranged` can serve it, else `newest`.
-fn fetch_series(
-    window: Option<(i64, i64, usize)>,
-    ranged: impl FnOnce(i64, i64, usize) -> Option<Vec<Kline>>,
+/// The newest `count` candles of `timeframe` that open before `end_ms`: by count through the
+/// source's time-range endpoint where it has one (only some sources do), else its newest candles.
+/// Fewer than `count` is the start of the market's history or a cap of the source, not a failure.
+fn newest_before(
+    source: DataSource,
+    symbol: &str,
+    timeframe: Timeframe,
+    end_ms: i64,
+    count: usize,
+) -> Option<Vec<Kline>> {
+    newest_or_else(
+        || crate::service::fetch_klines_range(source, symbol, timeframe, 0, end_ms, count).ok(),
+        || {
+            let limit = u32::try_from(count).unwrap_or(u32::MAX);
+            crate::service::fetch_klines(source, symbol, timeframe, limit).ok()
+        },
+    )
+}
+
+/// The candles `ranged` gives, or what `newest` does when it has none.
+fn newest_or_else(
+    ranged: impl FnOnce() -> Option<Vec<Kline>>,
     newest: impl FnOnce() -> Option<Vec<Kline>>,
 ) -> Option<Vec<Kline>> {
-    window
-        .and_then(|(start, end, count)| ranged(start, end, count))
+    ranged()
         .filter(|candles| !candles.is_empty())
         .or_else(newest)
 }
@@ -308,51 +321,71 @@ mod tests {
         }
     }
 
-    fn hourly_key(recent_bars: usize) -> SecurityKey {
-        SecurityKey {
-            symbol: "ETHUSDT".to_owned(),
-            interval: 3_600.0,
-            recent_bars,
-        }
+    const HOUR: i64 = 3_600_000;
+    const DAY: i64 = 24 * HOUR;
+
+    fn span(first: i64, last: i64) -> Option<ChartSpan> {
+        Some(ChartSpan {
+            start_ms: first,
+            end_ms: last,
+            spacing_ms: HOUR,
+        })
     }
 
-    const HOUR: i64 = 3_600_000;
+    #[test]
+    fn a_series_reaches_back_past_the_charts_first_bar() {
+        let chart = span(1_000 * HOUR, 3_000 * HOUR);
+        // 2,000 hourly candles open in the span, one more for the one that holds its end, and the
+        // warm-up before the first bar.
+        assert_eq!(
+            series_count(SeriesDepth::Chart, Timeframe::HOUR_1, chart),
+            2_000 + 1 + WARM_UP_CANDLES
+        );
+        assert_eq!(
+            series_count(SeriesDepth::Chart, Timeframe::HOUR_1, None),
+            500
+        );
+    }
 
     #[test]
-    fn a_series_covers_the_chart_from_a_warm_up_before_it() {
-        let chart = ChartSpan {
-            start_ms: 1_000 * HOUR,
-            end_ms: 3_000 * HOUR,
-            spacing_ms: HOUR,
-        };
-        // 300 candles before the first bar, 2,300 to the end, and two spare.
+    fn a_count_never_comes_from_the_length_of_a_month() {
+        // A year of chart: months are 28 days at the shortest, so 14 of them are never too few
+        // (12 or 13 open in it), however the calendar falls.
+        let chart = span(0, 365 * DAY);
+        let months = series_count(SeriesDepth::Chart, Timeframe::MONTH_1, chart);
+        assert_eq!(months, 365 / 28 + 1 + WARM_UP_CANDLES);
+        assert!(months - WARM_UP_CANDLES >= 13);
+        // Weekday-only days still number at most one per day.
+        let days = series_count(SeriesDepth::Chart, Timeframe::DAY_1, chart);
+        assert_eq!(days, 365 + 1 + WARM_UP_CANDLES);
+    }
+
+    #[test]
+    fn calc_bars_count_is_the_count_and_a_series_has_a_ceiling() {
+        let chart = span(1_000 * HOUR, 3_000 * HOUR);
         assert_eq!(
-            series_window(&hourly_key(0), chart),
-            (700 * HOUR, 3_000 * HOUR, 2_302)
+            series_count(SeriesDepth::Newest(50), Timeframe::HOUR_1, chart),
+            50
         );
-        // Only the newest 50 with `calc_bars_count`.
         assert_eq!(
-            series_window(&hourly_key(50), chart),
-            (2_950 * HOUR, 3_000 * HOUR, 52)
+            series_count(
+                SeriesDepth::Newest(MAX_SERIES_CANDLES),
+                Timeframe::MONTH_1,
+                chart
+            ),
+            MAX_SERIES_CANDLES
         );
-        // Not before the epoch, and not beyond what one request may ask for.
-        let long = ChartSpan {
-            start_ms: HOUR,
-            end_ms: 100_000 * HOUR,
-            spacing_ms: HOUR,
-        };
+        let long = span(0, 100_000 * HOUR);
         assert_eq!(
-            series_window(&hourly_key(0), long),
-            (0, 100_000 * HOUR, 60_000)
+            series_count(SeriesDepth::Chart, Timeframe::MINUTE_1, long),
+            MAX_SERIES_CANDLES
         );
     }
 
     #[test]
     fn a_source_that_serves_the_range_is_asked_for_nothing_else() {
-        let window = Some((0, 10 * HOUR, 12));
-        let served = fetch_series(
-            window,
-            |_, _, _| Some(vec![candle(0)]),
+        let served = newest_or_else(
+            || Some(vec![candle(0)]),
             || panic!("the newest candles are not needed"),
         );
         assert_eq!(served, Some(vec![candle(0)]));
@@ -360,22 +393,17 @@ mod tests {
 
     #[test]
     fn a_source_without_a_range_endpoint_gives_its_newest_candles() {
-        let window = Some((0, 10 * HOUR, 12));
         let newest = || Some(vec![candle(5 * HOUR)]);
         assert_eq!(
-            fetch_series(window, |_, _, _| None, newest),
+            newest_or_else(|| None, newest),
             Some(vec![candle(5 * HOUR)])
         );
         assert_eq!(
-            fetch_series(window, |_, _, _| Some(Vec::new()), newest),
+            newest_or_else(|| Some(Vec::new()), newest),
             Some(vec![candle(5 * HOUR)]),
             "an empty range is no answer"
         );
-        assert_eq!(
-            fetch_series(None, |_, _, _| panic!("no chart, no range"), newest),
-            Some(vec![candle(5 * HOUR)])
-        );
-        assert_eq!(fetch_series(window, |_, _, _| None, || None), None);
+        assert_eq!(newest_or_else(|| None, || None), None);
     }
 
     #[test]
