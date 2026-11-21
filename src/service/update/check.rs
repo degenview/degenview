@@ -237,11 +237,13 @@ fn check_pages(
             return UpdateOutcome::Failed("GitHub sent an unreadable reply.".to_owned());
         };
         let last = listed.len() < PAGE_SIZE;
-        // The list is newest-created first: once a page holds a release this build already has (or
-        // an older one) that the channel accepts, later pages only hold older releases.
+        // The list is newest-created first, not by version: a stable hotfix published during a run
+        // of release candidates sorts ahead of candidates that are newer than it in version terms.
+        // So nothing but this build's own release says the list now holds everything newer than
+        // it; any other lower version only says a lower version exists.
         let reached_history = listed
             .iter()
-            .any(|release| offered_version(release, channel).is_some_and(|v| v <= running));
+            .any(|release| is_release_of(release, &running));
         releases.extend(listed);
         if last || reached_history {
             reached_end = true;
@@ -258,6 +260,12 @@ fn parse_page(body: &str) -> Option<Vec<ReleaseDto>> {
 #[cfg(test)]
 fn evaluate(body: &str, current: &str, channel: Channel) -> UpdateOutcome {
     check_pages(current, channel, |_| Ok(body.to_owned()))
+}
+
+/// Whether `release` is the published release of exactly this version, whatever the channel: the
+/// running build may be one the channel would not offer.
+fn is_release_of(release: &ReleaseDto, version: &Version) -> bool {
+    !release.draft && Version::parse(&release.tag_name).is_some_and(|found| found == *version)
 }
 
 /// The release's version, when it is a published release `channel` offers.
@@ -575,6 +583,38 @@ mod tests {
         let outcome = check_pages("0.5.2", Channel::Stable, paged(all, &reads));
         assert_eq!(outcome, UpdateOutcome::UpToDate);
         assert_eq!(reads.get(), 1);
+    }
+
+    #[test]
+    fn a_hotfix_listed_before_the_running_release_does_not_end_the_paging() {
+        // Created order: candidates 40..36, the 0.5.2 hotfix, candidates 35..12 fill page one;
+        // the running candidate and the ones between it and the offered one are on page two.
+        let mut all: Vec<String> = (36..=40)
+            .rev()
+            .map(|n| reply(&format!("v0.6.0-rc.{n}")))
+            .collect();
+        all.push(reply("v0.5.2"));
+        all.extend((12..=35).rev().map(|n| reply(&format!("v0.6.0-rc.{n}"))));
+        assert_eq!(all.len(), PAGE_SIZE);
+        all.extend((1..=11).rev().map(|n| reply(&format!("v0.6.0-rc.{n}"))));
+        let reads = std::cell::Cell::new(0);
+        let outcome = check_pages("0.6.0-rc.10", Channel::ReleaseCandidate, paged(all, &reads));
+        let found = available(outcome);
+        assert_eq!(found.version, "0.6.0-rc.40");
+        assert_eq!(reads.get(), 2, "the hotfix is not this build's release");
+        assert!(!found.coverage.history_incomplete);
+    }
+
+    #[test]
+    fn a_running_build_that_is_not_listed_reads_every_page_and_says_the_history_is_cut_short() {
+        // A local or unpublished build: no release carries its version, so nothing says where
+        // its history starts and the older releases on the list prove nothing.
+        let mut all = vec![reply("v0.5.2")];
+        all.extend(candidates(MAX_PAGES * PAGE_SIZE - 1));
+        let reads = std::cell::Cell::new(0);
+        let outcome = check_pages("0.5.1-dev", Channel::Stable, paged(all, &reads));
+        assert_eq!(reads.get(), MAX_PAGES);
+        assert!(available(outcome).coverage.history_incomplete);
     }
 
     #[test]
