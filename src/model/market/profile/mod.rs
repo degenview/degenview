@@ -45,6 +45,9 @@ pub struct Profile {
     /// candles to ask for.
     pub natives: &'static [Timeframe],
     pub older_history: OlderHistory,
+    /// Whether a chart of the source asks for its newest candles every 15 seconds instead of every
+    /// 5: its REST allowance is small, or a socket keeps the chart current between the refreshes.
+    pub slow_refresh: bool,
     pub streams: Streams,
     pub change: ChangeBasis,
     pub quotes: QuoteTiming,
@@ -392,7 +395,7 @@ pub enum CachedSeries {
 impl DataSource {
     /// Every source, in the order the picker asks them. The one list: a new variant fails to compile
     /// in [`table::profile_of`] until it has a profile, and the tests until it is listed here.
-    pub const ALL: [DataSource; 15] = ALL;
+    pub const ALL: [DataSource; 16] = ALL;
 
     pub fn profile(self) -> &'static Profile {
         profile_of(self)

@@ -37,6 +37,7 @@ impl RateLimiter {
 static COINGECKO: OnceLock<RateLimiter> = OnceLock::new();
 static GECKOTERMINAL: OnceLock<RateLimiter> = OnceLock::new();
 static KRAKEN: OnceLock<RateLimiter> = OnceLock::new();
+static LIGHTER: OnceLock<RateLimiter> = OnceLock::new();
 
 pub fn coingecko() -> &'static RateLimiter {
     COINGECKO.get_or_init(|| RateLimiter::new(Duration::from_secs(4)))
@@ -48,6 +49,14 @@ pub fn coingecko() -> &'static RateLimiter {
 /// refused after the burst). Six seconds keeps a client inside it.
 pub fn kraken() -> &'static RateLimiter {
     KRAKEN.get_or_init(|| RateLimiter::new(Duration::from_secs(6)))
+}
+
+/// Lighter lets an IP make about one request a second: a burst of 60 or so, then HTTP 429
+/// (`{"code":23000,"message":"Too Many Requests!"}`) until the allowance, which comes back at about
+/// one a second, has refilled (measured on 2026-11-21: 80 requests at exactly one a second all got
+/// through, a faster pace was refused after the burst). A second a request keeps a client inside it.
+pub fn lighter() -> &'static RateLimiter {
+    LIGHTER.get_or_init(|| RateLimiter::new(Duration::from_secs(1)))
 }
 
 pub fn geckoterminal() -> &'static RateLimiter {
