@@ -169,7 +169,8 @@
   `ignored_features::ignored_values` (PINE7004) is empty but kept for the next unsupported constant.
 - `ta.pivot_point_levels`: running period OHLC in `ta::State::pivot` (`ta_extra::PivotPeriod`),
   starting at each anchor bar; levels set at a period's end hold until the next ends; `developing`
-  uses the running period. Classic published formulas (reference lists none); Woodie's uses the
+  uses the running period; Woodie with `developing = true` is a runtime error (`PINE4035`, naming
+  TradingView's RE10128). Classic published formulas (reference lists none); Woodie's uses the
   setting bar's open. Unchecked against TradingView output. `ta.rci` = Spearman
   (Pearson on mid-ranks) x 100.
 - `timeframe.change(tf)` is per call site, like `ta.change`: `ta::State::bar_times` (in
