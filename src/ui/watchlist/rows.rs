@@ -670,6 +670,7 @@ mod tests {
                 item(DataSource::Bitfinex, "AVAX:USD", "AVAX:USD", "AVAX"),
                 "AVAX",
             ),
+            (item(DataSource::Bitstamp, "SUSD", "SUSD", "S"), "S"),
             (item(DataSource::Binance, "ETHBTC", "ETHBTC", "ETH"), "ETH"),
         ];
         for (item, expected) in cases {

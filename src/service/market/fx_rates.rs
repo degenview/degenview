@@ -7,6 +7,7 @@
 //! clock, sleep, BTC spot source and storage directory are all injectable, so the rules (the
 //! seven-day lookback, retries, cache lifetimes) are tested without a network.
 
+use super::bitstamp;
 use crate::format::civil_from_days;
 use crate::lock::lock;
 use crate::model::Timeframe;
@@ -248,32 +249,15 @@ pub fn merge_closes(old: &[DailyClose], new: &[DailyClose]) -> Vec<DailyClose> {
 
 /// Bitstamp's OHLC answer → daily closes; rows with a bad timestamp or close are dropped.
 pub fn parse_bitstamp(body: &str) -> Result<Vec<DailyClose>, FxError> {
-    #[derive(Deserialize)]
-    struct Ohlc {
-        timestamp: String,
-        close: String,
-    }
-    #[derive(Deserialize)]
-    struct Data {
-        ohlc: Vec<Ohlc>,
-    }
-    #[derive(Deserialize)]
-    struct Response {
-        data: Data,
-    }
-    let response: Response =
-        serde_json::from_str(body).map_err(|_| FxError::InvalidResponse("Bitstamp".to_owned()))?;
-    let closes: Vec<DailyClose> = response
-        .data
-        .ohlc
-        .iter()
-        .filter_map(|item| {
-            let seconds: f64 = item.timestamp.parse().ok()?;
-            let close: f64 = item.close.parse().ok()?;
-            (seconds.is_finite() && close.is_finite() && close > 0.0).then_some(DailyClose {
-                date_ms: (seconds * 1_000.0) as i64,
-                close,
-            })
+    let rows = bitstamp::candle_rows(body, Timeframe::DAY_1)
+        .map_err(|_| FxError::InvalidResponse("Bitstamp".to_owned()))?;
+    let closes: Vec<DailyClose> = rows
+        .into_iter()
+        .flatten()
+        .filter(|candle| candle.close.is_finite() && candle.close > 0.0)
+        .map(|candle| DailyClose {
+            date_ms: candle.open_time,
+            close: candle.close,
         })
         .collect();
     Ok(merge_closes(&[], &closes))
@@ -1191,7 +1175,11 @@ mod tests {
     fn bitstamp(rows: &[(i64, f64)]) -> String {
         let items: Vec<String> = rows
             .iter()
-            .map(|(seconds, close)| format!(r#"{{"timestamp":"{seconds}","close":"{close}"}}"#))
+            .map(|(seconds, close)| {
+                format!(
+                    r#"{{"timestamp":"{seconds}","open":"{close}","high":"{close}","low":"{close}","close":"{close}","volume":"1"}}"#
+                )
+            })
             .collect();
         format!(
             r#"{{"data":{{"pair":"BTC/USD","ohlc":[{}]}}}}"#,
@@ -1342,7 +1330,19 @@ mod tests {
 
     #[test]
     fn bitstamp_rows_with_bad_numbers_are_dropped() {
-        let body = r#"{"data":{"ohlc":[{"timestamp":"86400","close":"10.5"},{"timestamp":"x","close":"1"},{"timestamp":"172800","close":"-3"},{"timestamp":"259200","close":"0"}]}}"#;
+        let row = |timestamp: &str, close: &str| {
+            format!(
+                r#"{{"timestamp":"{timestamp}","open":"1","high":"1","low":"1","close":"{close}","volume":"1"}}"#
+            )
+        };
+        let body = format!(
+            r#"{{"data":{{"ohlc":[{},{},{},{}]}}}}"#,
+            row("86400", "10.5"),
+            row("x", "1"),
+            row("172800", "-3"),
+            row("259200", "0")
+        );
+        let body = body.as_str();
         assert_eq!(
             parse_bitstamp(body).unwrap(),
             vec![DailyClose {

@@ -2,7 +2,7 @@
 
 The marks in `assets/source_logos/` identify the provider a market's data comes from, in the symbol
 picker, on chart cards and in watchlists. Each belongs to its owner and stands for that owner only:
-Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, HTX, Bitfinex, CoinGecko, CoinMarketCap, DEXScreener, Alpaca, Polymarket and Kalshi. They are
+Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, HTX, Bitfinex, Bitstamp, CoinGecko, CoinMarketCap, DEXScreener, Alpaca, Polymarket and Kalshi. They are
 not licensed under the application's GPL-3.0-only terms.
 
 A new provider adds its mark here (one file named after the provider, `.svg` where the owner publishes one),
@@ -17,4 +17,7 @@ measured from the pixels, the two arcs sharing one centre). HTX's is the `icon-p
 serves (the navy flame with the blue one inside it, on white): the two outlines are traced from the
 pixels, each edge placed where the anti-aliasing puts it and the curves cut into straight segments
 less than a third of a pixel off. Bitfinex's is the 48 by 48 pixel favicon its site serves (`/assets/favicons/bitfinex.ico`: the green leaf on
-a dark square), used as it is in `bitfinex.png`, since the owner publishes no vector mark.
+a dark square), used as it is in `bitfinex.png`, since the owner publishes no vector mark. Bitstamp's is the vector its site publishes as the pinned-tab icon
+(`safari-pinned-tab.svg`: the rounded square with the B cut out of it, two more paths for the
+counters of the B), kept as published and coloured `#003a2f` (the green of its `apple-touch-icon.png`,
+measured from the pixels), with a white square behind the B so that it shows white.

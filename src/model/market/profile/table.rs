@@ -12,7 +12,7 @@ use crate::model::market::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
 
 /// Every source, in the order lists of sources are searched and shown.
-pub const ALL: [DataSource; 19] = [
+pub const ALL: [DataSource; 20] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -26,6 +26,7 @@ pub const ALL: [DataSource; 19] = [
     DataSource::Deribit,
     DataSource::Htx,
     DataSource::Bitfinex,
+    DataSource::Bitstamp,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -49,6 +50,7 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
         DataSource::Deribit => &DERIBIT,
         DataSource::Htx => &HTX,
         DataSource::Bitfinex => &BITFINEX,
+        DataSource::Bitstamp => &BITSTAMP,
         DataSource::CoinGecko => &COINGECKO,
         DataSource::DexScreener => &DEXSCREENER,
         DataSource::Alpaca => &ALPACA,
@@ -109,6 +111,14 @@ const HTX_QUOTES: [&str; 6] = ["USDT", "USDC", "USDD", "KGST", "ETH", "BTC"];
 /// Quote assets Bitfinex's spot markets end in (checked against the 178 it lists on 2026-11-21, its
 /// paper-trading `TEST…` markets aside), longest first. `UST` is Tether, which Bitfinex calls that.
 const BITFINEX_QUOTES: [&str; 7] = ["XAUT", "USD", "UST", "EUR", "GBP", "BTC", "ETH"];
+
+/// Quote assets Bitstamp's spot markets end in (checked against the 252 it lists on 2026-11-21), the
+/// longer ones first so `XRPRLUSD` is XRP/RLUSD and not XRPRL/USD. A one-letter base is a real asset
+/// before the first eight (`SUSD` is Sonic, `WEUR` Wormhole), where before `BTC` or `ETH` it is a
+/// wrapped one (`WBTC` is not W/BTC).
+const BITSTAMP_QUOTES: [&str; 10] = [
+    "EURCV", "RLUSD", "USDT", "USDC", "EURC", "USD", "EUR", "GBP", "BTC", "ETH",
+];
 
 /// Binance-shaped pairs, as Binance and Bybit write them. A one-letter "base" is a bare wrapped asset
 /// (WBTC, WETH), not a pair.
@@ -1077,4 +1087,70 @@ pub static BITFINEX: Profile = Profile {
         of: CachedSeries::Every,
     }),
     own_lane: true,
+};
+
+/// Bitstamp's candle steps: `1m`, `3m`, `5m`, `15m`, `30m`, `1h`, `2h`, `4h`, `6h`, `12h`, `1D` and
+/// `3D`, all cut where this app cuts (checked against the API on 2026-11-21: every bar of each opens
+/// on a multiple of its length counted from the epoch, which for the intraday steps, all of which
+/// divide a day, is from UTC midnight, and for `259200` is a day number that is a multiple of three,
+/// as this app counts a length of days). Its API has no week, month or year (`604800` is refused), so
+/// those fold from days.
+const BITSTAMP_NATIVES: [Timeframe; 12] = [
+    minutes(1),
+    minutes(3),
+    minutes(5),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(2),
+    hours(4),
+    hours(6),
+    hours(12),
+    Timeframe::DAY_1,
+    days(3),
+];
+
+pub static BITSTAMP: Profile = Profile {
+    display_name: "Bitstamp",
+    slug: "BITSTAMP",
+    mcp_id: "bitstamp",
+    class: Class::Exchange,
+    opaque_ids: false,
+    kinds: SPOT,
+    series: Series::Candles,
+    // Candle volume is the base asset.
+    volume: true,
+    display: Casing::Upper,
+    id: Casing::AsGiven,
+    pair: PairStyle::Concat(Concat {
+        exceptions: &[],
+        quotes: &BITSTAMP_QUOTES,
+        one_letter_base_quotes: 8,
+        wrapped_asset_guard: false,
+        dropped: &['/', '-', '_', ' '],
+        long_pairs: None,
+    }),
+    home_quote: Some("USD"),
+    natives: &BITSTAMP_NATIVES,
+    older_history: OlderHistory::Always,
+    slow_refresh: false,
+    // The socket streams trades, from which a candle and a price are built.
+    streams: Streams {
+        candles: true,
+        quotes: true,
+    },
+    change: ChangeBasis::Rolling24h,
+    // One call answers every market (80 KB), so prices are asked every ten seconds beside the
+    // socket.
+    quotes: QuoteTiming {
+        refresh_secs: 10,
+        max_age_secs: 60,
+        batch: 2_000,
+    },
+    // Weeks, months and years fold from days and take several requests of their own.
+    cache: Some(CachePolicy {
+        fresh_secs: 0,
+        of: CachedSeries::Folded,
+    }),
+    own_lane: false,
 };
