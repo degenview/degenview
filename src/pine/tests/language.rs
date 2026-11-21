@@ -1180,7 +1180,7 @@ fn a_function_local_keeps_a_history_per_call_site() {
 }
 
 #[test]
-fn float_equality_rounds_to_nine_digits_and_ordering_does_not() {
+fn floats_within_a_ten_billionth_are_equal_and_ordering_agrees() {
     // `zero` is a series, so the comparisons run on the interpreter; the `folded_*` ones are
     // literals and are folded at compile time. Both must give what TradingView gives.
     let session = run(
@@ -1192,6 +1192,11 @@ fn float_equality_rounds_to_nine_digits_and_ordering_does_not() {
          ge = 1.0 >= zero + 1.0 + 0.0000000004\n\
          le = zero + 1.0 + 0.0000000004 <= 1.0\n\
          far = zero + 1.0 + 0.0000000006 == 1.0\n\
+         edge = zero == zero + 0.0000000001\n\
+         beyond = zero == zero + 0.000000000101\n\
+         not_less = zero + 0.0000000001 < zero + 0.0000000002\n\
+         not_greater = zero + 0.1 + 0.2 > 0.3\n\
+         infinite_ne = zero + math.pow(10.0, 400.0) != 1.0\n\
          infinite = zero + math.pow(10.0, 400.0) == math.pow(10.0, 400.0)\n\
          folded_eq = 0.1 + 0.2 == 0.3\n\
          folded_ne = 0.1 + 0.2 != 0.3\n\
@@ -1207,6 +1212,11 @@ fn float_equality_rounds_to_nine_digits_and_ordering_does_not() {
         ("ge", false),
         ("le", false),
         ("far", false),
+        ("edge", true),
+        ("beyond", false),
+        ("not_less", false),
+        ("not_greater", false),
+        ("infinite_ne", false),
         ("infinite", false),
         ("folded_eq", true),
         ("folded_ne", false),
