@@ -148,6 +148,9 @@ struct SecurityRequest {
     expression: Expression,
     lookahead_on: bool,
     gaps_on: bool,
+    /// `calc_bars_count`: the newest candles of the requested timeframe the request evaluates. 0 is
+    /// every one.
+    recent_bars: usize,
     foreign: Option<Arc<Vec<Kline>>>,
 }
 
@@ -338,6 +341,7 @@ impl Session {
                     expression: expression.clone(),
                     lookahead_on: false,
                     gaps_on: false,
+                    recent_bars,
                     foreign: None,
                 },
                 site,
@@ -432,14 +436,28 @@ impl Session {
                 return Err(error);
             }
         };
-        let foreign = if !is_chart_symbol {
+        // Chart bars that straddle the requested candle's boundaries cannot be folded into it: the
+        // candle comes from the data source, as another symbol's does.
+        let straddles = is_chart_symbol
+            && interval > self.bar_seconds
+            && self.bar_seconds > 0.0
+            && !time::bucket::nests(interval, self.bar_seconds);
+        let recent_bars = values
+            .get("calc_bars_count")
+            .and_then(RuntimeValue::int_value)
+            .unwrap_or(0)
+            .max(0) as usize;
+        let foreign = if !is_chart_symbol || straddles {
             let key = SecurityKey {
                 symbol: symbol_name.clone(),
                 interval,
-                recent_bars: 0,
+                recent_bars,
             };
             match self.series(key) {
                 Some(candles) => Some(candles),
+                None if straddles => {
+                    return Err(self.unfoldable_timeframe(interval, range));
+                }
                 None => {
                     if ignore_symbol {
                         return Ok(None);
@@ -462,6 +480,7 @@ impl Session {
                 == Some("barmerge.lookahead_on"),
             gaps_on: values.get("gaps").and_then(RuntimeValue::text_value)
                 == Some("barmerge.gaps_on"),
+            recent_bars,
             foreign,
         }))
     }
@@ -494,6 +513,40 @@ impl Session {
         }
         self.security_series.insert(key, answer.clone());
         answer
+    }
+
+    /// Where the newest `request.recent_bars` buckets of the requested timeframe begin, counting
+    /// back from the chart's last bar (from `open_time` inside another request, whose last candle
+    /// is not known).
+    fn window_start(&self, request: &SecurityRequest, open_time: i64) -> i64 {
+        if self.security_depth > 0 {
+            return i64::MIN;
+        }
+        let last = self.last_bar_time.unwrap_or(open_time);
+        let mut start = time::bucket::start(last, request.interval);
+        for _ in 1..request.recent_bars {
+            start = time::bucket::start(start - 1, request.interval);
+        }
+        start
+    }
+
+    /// A candle that the chart's bars cannot be folded into, and the data source has none of.
+    fn unfoldable_timeframe(&self, interval: f64, range: SourceRange) -> Diagnostic {
+        let label = |seconds: f64| {
+            time::timeframe_from_seconds(seconds.round() as i64)
+                .unwrap_or_else(|| format!("{seconds}s"))
+        };
+        Diagnostic::error(
+            "PINE4021",
+            DiagnosticCategory::Runtime,
+            format!(
+                "request.security cannot build a {} candle from the chart's {} bars, which straddle its boundaries, and the data source has no {} candles for this symbol.",
+                label(interval),
+                label(self.bar_seconds),
+                label(interval)
+            ),
+            range,
+        )
     }
 
     fn unserved_symbol(&self, name: &str, range: SourceRange) -> Diagnostic {
@@ -586,6 +639,12 @@ impl Session {
             if time::bucket::end(candle.open_time, request.interval) > before {
                 break;
             }
+            if site
+                .window_start
+                .is_some_and(|window| candle.open_time < window)
+            {
+                continue;
+            }
             site.last_result = self.evaluate_higher_timeframe(
                 site,
                 candle,
@@ -594,7 +653,24 @@ impl Session {
                 true,
             )?;
         }
+        // A chart that opens inside a candle holds only the rest of it.
+        let chart_candle = time::bucket::start(before, request.interval);
+        if chart_candle < before {
+            site.first_candle = candles
+                .iter()
+                .find(|candle| candle.open_time == chart_candle)
+                .cloned();
+        }
         Ok(())
+    }
+
+    /// `folded`, a candle built from the chart's bars, or the data source's whole candle of the same
+    /// bucket when the chart opened inside it and the source has it.
+    fn whole_candle(site: &SecuritySite, folded: Kline) -> Kline {
+        match &site.first_candle {
+            Some(whole) if whole.open_time == folded.open_time => whole.clone(),
+            _ => folded,
+        }
     }
 
     /// The expression on the higher-timeframe bar the chart bar belongs to, through the call site's
@@ -612,6 +688,9 @@ impl Session {
             let result = state.bar_result.clone();
             self.working.securities.insert(key, state);
             return Ok(result);
+        }
+        if request.recent_bars > 0 && state.window_start.is_none() {
+            state.window_start = Some(self.window_start(request, bar.open_time));
         }
         if !state.is_warmed_up {
             // History from before the chart's first bar; the chart's own bars, the ones this site
@@ -728,6 +807,10 @@ impl Session {
         } = *step;
         let replay = skipped_after.is_some();
         let start = time::bucket::start(bar.open_time, request.interval);
+        if state.window_start.is_some_and(|window| start < window) {
+            // Older than the newest `calc_bars_count` candles: nothing is evaluated.
+            return Ok((RuntimeValue::Na, false));
+        }
         let mut fresh = false;
         let switched = state.bucket != Some(start);
         if switched {
@@ -736,6 +819,7 @@ impl Session {
                 && let Some(pending) = state.accumulated.clone()
             {
                 self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
+                let pending = Self::whole_candle(state, pending);
                 state.last_result =
                     self.evaluate_higher_timeframe(state, &pending, request, chart, true)?;
                 fresh = true;
@@ -765,7 +849,8 @@ impl Session {
         let mut result;
         if closes_bucket && confirmed {
             self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
-            result = self.evaluate_higher_timeframe(state, &developing, request, chart, true)?;
+            let completed = Self::whole_candle(state, developing.clone());
+            result = self.evaluate_higher_timeframe(state, &completed, request, chart, true)?;
             state.last_result = result.clone();
             state.accumulated = None;
             state.has_pending_bars = false;
@@ -806,6 +891,14 @@ impl Session {
             return Ok(result);
         }
         let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
+        // `calc_bars_count`: the newest candles up to the chart's last bar are the ones evaluated.
+        let first_candle = (request.recent_bars > 0).then(|| {
+            let last = last_index(self.last_bar_time.unwrap_or(bar.open_time), candles);
+            last.map_or(0, |last| (last + 1).saturating_sub(request.recent_bars))
+        });
+        if let Some(first) = first_candle {
+            state.completed_candles = state.completed_candles.max(first);
+        }
         let mut fresh = false;
         if context.flags.is_confirmed {
             let chart_close = chart.end;
@@ -828,6 +921,9 @@ impl Session {
         {
             result =
                 self.evaluate_higher_timeframe(&mut state, &candles[index], request, chart, false)?;
+        }
+        if first_candle.is_some_and(|first| current.is_none_or(|index| index < first)) {
+            result = RuntimeValue::Na;
         }
         if request.lookahead_on && !context.flags.is_realtime {
             // The candle is there from its first chart bar on, so that is the bar that is new.
@@ -898,6 +994,7 @@ impl Session {
             expression: expression.clone(),
             lookahead_on: false,
             gaps_on: false,
+            recent_bars: 0,
             foreign: None,
         };
         let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
@@ -999,7 +1096,16 @@ impl Session {
         if first == last {
             return Ok(None);
         }
-        let candle = fold_one(&known[first..last], request.interval);
+        let mut candle = fold_one(&known[first..last], request.interval);
+        // Only a run that has the bucket's last bar may take the source's whole candle for it:
+        // nothing past the bars it was given leaks in.
+        let seconds = (self.bar_seconds * 1000.0).round() as i64;
+        if known
+            .last()
+            .is_some_and(|bar| bar.open_time + seconds >= end)
+        {
+            candle = Self::whole_candle(state, candle);
+        }
         let value = self.evaluate_higher_timeframe(state, &candle, request, chart, false)?;
         state.ahead = Some((start, value.clone()));
         Ok(Some(value))

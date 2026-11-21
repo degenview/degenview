@@ -2,8 +2,8 @@
 //! always runs: TradingView evaluates the expression on every bar, and the condition only picks
 //! whether its value is used (audit item 22).
 
-use super::bench::run_script;
 use crate::model::Kline;
+use crate::pine::tests::bench::run_script;
 
 const MINUTE: i64 = 60_000;
 const HOUR: i64 = 3_600_000;

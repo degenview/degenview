@@ -102,6 +102,11 @@ impl KlineSecurityDataProvider {
             let covering = (chart.end_ms - chart.start_ms) / (key.interval as i64 * 1_000).max(1);
             (covering + 300).clamp(500, 1_000) as u32
         });
+        // `calc_bars_count` asks for the newest candles only.
+        let limit = match key.recent_bars {
+            0 => limit,
+            recent => limit.min(u32::try_from(recent).unwrap_or(u32::MAX)),
+        };
         let candles = crate::service::fetch_klines(source, &symbol, timeframe, limit).ok()?;
         Some(construct(modifier, candles))
     }
