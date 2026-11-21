@@ -14,7 +14,7 @@ use eframe::egui::{
 /// The height of a group: its label, the gap and the control.
 const GROUP_HEIGHT: f32 = 13.0 + LABEL_GAP + CONTROL_HEIGHT;
 const LABEL_GAP: f32 = 7.0;
-const CONTROL_HEIGHT: f32 = 22.0;
+const CONTROL_HEIGHT: f32 = kit::outline::HEIGHT;
 /// The room around a hairline between two groups, each side.
 const GROUP_GAP: f32 = 14.0;
 const LINE_GAP: f32 = 14.0;
@@ -108,13 +108,9 @@ fn size_shown(input: &Input<'_>) -> AspectRatio {
 
 fn control_width(ui: &Ui, group: Group, input: &Input<'_>) -> f32 {
     match group {
-        Group::Area => kit::segments_width(ui, &area_options(input), input.config.area),
-        Group::Style => kit::segments_width(ui, &style_options(), input.config.style),
-        Group::Size => kit::segments_width(
-            ui,
-            &size_options(input.config.size_enabled()),
-            size_shown(input),
-        ),
+        Group::Area => kit::segments_width(ui, &area_options(input)),
+        Group::Style => kit::segments_width(ui, &style_options()),
+        Group::Size => kit::segments_width(ui, &size_options(input.config.size_enabled())),
         Group::Background => swatches::WIDTH,
         Group::Include => 3.0 * TOGGLE.x + 2.0 * 2.0 + 4.0,
     }

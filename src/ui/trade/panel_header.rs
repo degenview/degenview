@@ -18,10 +18,11 @@ use crate::ui::trade::venue_pill::{self, PillAction, PillSize};
 /// Width below which the tabs drop to a second row instead of being cut off.
 pub const COMPACT_WIDTH: f32 = 900.0;
 
-/// Every control in the header is this tall, so a row of them shares one top and bottom edge.
-pub const CONTROL_HEIGHT: f32 = 28.0;
-/// The corner radius they share. The tab bar's track is this too (`kit::tab_bar_slim`).
-pub const CONTROL_RADIUS: f32 = 6.0;
+/// Every control in the header is this tall, so a row of them shares one top and bottom edge: the
+/// outlined controls' header height, which the tab bar (`kit::tab_bar_slim`) draws too.
+pub const CONTROL_HEIGHT: f32 = kit::outline::TALL_HEIGHT;
+/// The corner radius they share, the tab bar track's too.
+pub const CONTROL_RADIUS: f32 = kit::outline::RADIUS;
 
 /// What the panel says about the venue it is showing.
 #[derive(Clone, Debug)]
@@ -103,21 +104,17 @@ pub struct Header<'a, T> {
     pub settings_tip: &'a str,
 }
 
-/// The quiet plate behind the account chip: the tab bar track's fill and hairline, lifted a step
-/// on hover and while the menu is open.
+/// The plate behind the account chip: the outlined well the tab bar track is, lifted a step on
+/// hover and while the menu is open.
 pub fn plate(painter: &egui::Painter, rect: egui::Rect, hovered: bool, down: bool) {
-    painter.rect_filled(rect, CONTROL_RADIUS, theme::quaternary(0.6));
-    if down {
-        painter.rect_filled(rect, CONTROL_RADIUS, kit::primary(0.1));
+    let wash = if down {
+        kit::outline::Wash::Open
     } else if hovered {
-        painter.rect_filled(rect, CONTROL_RADIUS, kit::primary(0.05));
-    }
-    painter.rect_stroke(
-        rect,
-        CONTROL_RADIUS,
-        egui::Stroke::new(1.0, kit::hairline()),
-        egui::StrokeKind::Inside,
-    );
+        kit::outline::Wash::Hover
+    } else {
+        kit::outline::Wash::Rest
+    };
+    kit::outline::paint_track(painter, rect, CONTROL_RADIUS, wash);
 }
 
 /// An icon button the height of the header's other controls: it lights up on hover and, when

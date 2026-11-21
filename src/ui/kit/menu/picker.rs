@@ -1,14 +1,15 @@
-//! `Picker` in the `.menu` style: a bordered pull-down over a list of choices.
+//! `Picker` in the `.menu` style: an outlined pull-down over a list of choices.
 
 use super::{
     MENU_FRAME_MARGIN, MENU_MAX_HEIGHT, menu_frame, menu_item_marked_response, menu_width_for,
 };
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::{REGULAR, galley, primary, size};
+use crate::ui::kit::outline::{self, Wash};
+use crate::ui::kit::{REGULAR, galley, size};
 use crate::ui::theme;
-use eframe::egui::{self, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, Rect, Sense, Ui, Vec2, pos2, vec2};
 
-/// `Picker` in the `.menu` style: a bordered pull-down showing the current choice with up/down
+/// `Picker` in the `.menu` style: an outlined pull-down showing the current choice with up/down
 /// chevrons. Returns the index chosen from `labels` this frame.
 ///
 /// `width` is the trigger's width; a choice too long for it ends in an ellipsis there (with the
@@ -49,7 +50,7 @@ pub fn menu_picker_hinted(
     } else {
         Sense::hover()
     };
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 24.0), sense);
+    let (rect, response) = ui.allocate_exact_size(vec2(width, outline::HEIGHT), sense);
     let response = crate::ui::accessibility::label(response, current);
     let response = if truncated && !current.is_empty() {
         response.on_hover_text(current)
@@ -58,24 +59,18 @@ pub fn menu_picker_hinted(
     };
     let popup_id = egui::Popup::default_response_id(&response);
     let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
-    let fill = if !enabled {
-        primary(0.05)
+    let wash = if !enabled {
+        Wash::Disabled
     } else if open || response.is_pointer_button_down_on() {
-        primary(0.2)
+        Wash::Open
     } else if response.hovered() {
-        primary(0.14)
+        Wash::Hover
     } else {
-        primary(0.1)
+        Wash::Rest
     };
-    ui.painter().rect_filled(rect, 6.0, fill);
-    ui.painter().rect_stroke(
-        rect,
-        6.0,
-        Stroke::new(1.0, primary(0.06)),
-        StrokeKind::Inside,
-    );
+    outline::paint_track(ui.painter(), rect, outline::RADIUS, wash);
     ui.painter().galley(
-        pos2(rect.left() + 10.0, rect.center().y - text.size().y / 2.0),
+        pos2(rect.left() + 12.0, rect.center().y - text.size().y / 2.0),
         text,
         color,
     );
