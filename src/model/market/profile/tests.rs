@@ -159,7 +159,8 @@ fn only_the_sources_with_a_small_rest_allowance_refresh_their_charts_slowly() {
             DataSource::Lighter,
             DataSource::Bitfinex,
             DataSource::CoinGecko,
-            DataSource::DexScreener
+            DataSource::DexScreener,
+            DataSource::CoinMarketCap
         ]
     );
 }

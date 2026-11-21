@@ -162,7 +162,7 @@ pub fn paint_header(
             "{} · {}",
             chart
                 .source()
-                .chart_feed_label(chart.timeframe())
+                .chart_feed_label(chart.symbol(), chart.timeframe())
                 .to_uppercase(),
             chart.timeframe().label()
         ),

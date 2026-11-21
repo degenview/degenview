@@ -1,4 +1,10 @@
-//! CoinMarketCap's charts: the dashboard keys a chart's symbol holds and their titles.
+//! CoinMarketCap's charts: the dashboard keys a chart's symbol holds and their titles, and the
+//! crypto market-cap indices ([`global`]).
+
+pub mod global;
+pub mod interval;
+
+use global::GlobalIndex;
 
 pub const ALTCOIN_HISTORICAL: &str = "cmc.altcoin_season_historical";
 pub const ALTCOIN_LATEST: &str = "cmc.altcoin_season_latest";
@@ -18,7 +24,9 @@ pub fn title(symbol: &str) -> &str {
     CHART_TYPES
         .iter()
         .find(|(key, _)| *key == symbol)
-        .map_or(symbol, |(_, title)| title)
+        .map(|(_, title)| *title)
+        .or_else(|| GlobalIndex::from_symbol(symbol).map(GlobalIndex::title))
+        .unwrap_or(symbol)
 }
 
 /// Whether `symbol` is one of the "Latest" gauge charts, which draw a reading instead of a series.

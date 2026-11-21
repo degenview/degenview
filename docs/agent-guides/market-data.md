@@ -132,7 +132,36 @@ watchlists.
   | DEXScreener (GeckoTerminal) | 1m 5m 15m 1h 4h 12h 1D | 1,000 per request; empty buckets are filled flat (`bucket::fill_gaps`) before a fold |
   | CoinGecko | none: prices, `model::market::samples` | `/market_chart` samples are 5 minutes for 1 day, hourly to 90 days, daily to 365; a candle is built from samples so the spacing must divide the candle: `chart_days(timeframe, limit)` is the days to ask for, or `None` (1m, and any length that is not a whole number of five minutes: 7m, 22m) |
   | Polymarket, Kalshi | lines: `model::market::line` | any timeframe: a point per timeframe (a week at most) over 60 candles, between a month and a year, at most 1,000 points (a 1m line reaches back 16 hours). Polymarket: the shortest `prices-history` window that holds the span and allows `fidelity` = the point spacing (`1w` allows 5 minutes, `1m` 10, `max` is the whole history only from 12 hours; where none holds the span and allows the fidelity the line is shorter). Kalshi: the longest of 1, 60 and 1,440 minutes that is no longer than a point, over at most 1,000 of it |
-  | CoinMarketCap | none | ignores the timeframe |
+  | CoinMarketCap | none | the four gauges ignore the timeframe. `TOTAL`, `TOTAL2`, `TOTAL3` and `BTC.D` are price samples folded like CoinGecko's (`samples::fold_samples`), see **CoinMarketCap market-cap indices** below: 5-minute readings for any length that is a whole number of five minutes (5m, 15m, 90m), hourly for whole hours (1h, 4h), daily for whole days (1D, 1W, 1M, 1Y); 1m and 7m, 22m, ... answer `UnsupportedInterval` |
+
+- **CoinMarketCap market-cap indices** (`service/market/cmc/market_caps/`, `model::market::cmc::{global,
+  interval}`): `TOTAL`, `TOTAL2` (`altcoinMarketCap`, checked equal to total x (1 - BTC.D/100) within
+  1e-5), `TOTAL3` (total x (1 - (BTC.D + ETH.D)/100)) and `BTC.D`, on the existing
+  `DataSource::CoinMarketCap` and routed by symbol inside the CMC venue (`GlobalIndex::from_symbol`);
+  they never read the Pro API key. Source: `https://api.coinmarketcap.com/data-api/v3/global-metrics/quotes/historical?format=chart_altcoin&interval={5m|1h|1d}&timeStart&timeEnd`
+  (seconds, both ends inclusive), the website's own API: **unofficial and undocumented, it can break
+  or go away**, so the chart says "CoinMarketCap website data (unofficial)" (`chart_feed_label`).
+  No key; 403 without any `User-Agent` and 200 with any, so the shared agent's is enough. A reading
+  has `timestamp`, `btcDominance`, `ethDominance` (0 before Ether) and `quote[0].totalMarketCap` /
+  `altcoinMarketCap`; 5-minute readings sit on the 5-minute grid, hourly ones at :10, daily ones at
+  10:10 UTC (08:10 when first measured, 10:10 on 2026-11-18 to 20: the time of day moves; 00:00 before
+  about 2020; a day bucket either way). **A coarser reading trails the clock by up to its spacing**
+  (today has no daily reading until 10:10 UTC, and its candle then sits still until the next day's),
+  so a 1h or 1d chart appends the newest 5m readings after the last (`market_caps::with_newest`: the
+  last half hour, one request kept 60 s under `cmc_global_newest`, a failed one adds nothing). History: 1d from 2013-04-29, 5m and
+  1h are as deep as the windows ask. **At most 2,200 readings per request** (`status.error_code`
+  `"500"`, "Too many items requested"), so requests sit on a fixed window grid of 2,000 readings
+  (`Interval::windows`, at most four per chart). **Errors arrive as HTTP 200** with
+  `status.error_code != "0"`: `"500"` ("The system is busy", also a refused range) is
+  `ProviderError::CoinMarketCap(Status(500))`, `"429"` a rate limit, any other code its own message.
+  Units: market caps in billions of dollars and the dominance in percent, plain numbers (no chart
+  carries a unit; `PriceFormat` prints `2,411` and `58.49`), the symbol's title says "USD bn" / "%".
+  A window that is over and settled is kept for good in `cache::lookup` (namespaces `cmc_global_*`,
+  cleared with the rest by Settings ▸ Storage), the one still filling is used for 1 minute (5m), 5
+  (1h) or 30 (1d) and a failed request falls back on what was kept. Its own rate lane
+  (`rate_limit::cmc_global`, one request a second; twelve in a row were all answered on 2026-11-21).
+  No older-history paging (`OlderHistory::Never`): a chart asks for as many candles as it shows. The
+  profile's `slow_refresh` is on for the whole source.
 
 - **Alpaca feeds** (`model::market::feed`): bars of a day and longer come from SIP (consolidated
   volume, 15 minutes late on the Basic plan, which the app cannot tell from a paid one), intraday
