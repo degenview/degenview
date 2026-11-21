@@ -249,7 +249,9 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   2026-11-21). A `"60"` request reads 1 there where TradingView read 0, which splits history from
   realtime by wall-clock time. `barstate.isnew` in a request is true on history and, in real time,
   on the first tick of the chart bar that opens the candle; a chart bar that starts inside a candle,
-  or a later tick, reads false (`ChartBar::new`; check against TradingView before relying on it).
+  or a later tick, reads false (`ChartBar::new`; TradingView probe C, 2026-11-21: one true tick per
+  requested candle open, none on a mid-candle chart bar). TradingView fires it one tick after the
+  chart bar that opened the candle (feed latency, not modelled here).
   `timeframe.change` is false on the first bar of the series it runs on (the chart's,
   or the request's own candles, `series_bars`), TradingView-measured.
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
