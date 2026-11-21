@@ -152,6 +152,15 @@ pub struct Session {
     pub(crate) replay_globals: Option<FastMap<String, RuntimeValue>>,
     /// Whether `series_bars` is kept.
     keeps_series_bars: bool,
+    /// Every candle of the series now running, known before the run reached them: the chart's bars
+    /// as `load_history` was given them, or, while a request's expression runs, the candles of that
+    /// request. A request with `lookahead_on` on a historical bar reads its higher-timeframe bar as
+    /// it ended from these. None when the program asks for no lookahead (nothing is copied) or the
+    /// bars did not come through `load_history`.
+    pub(crate) known_bars: Option<Arc<Vec<crate::model::Kline>>>,
+    /// Whether the program has a `request.security` whose `lookahead` is not literally off, which is
+    /// when `known_bars` is kept.
+    pub(crate) keeps_known_bars: bool,
     pub bar_seconds: f64,
     /// The chart's own bar length while a `request.*()` call evaluates on another timeframe, which is
     /// when `bar_seconds` is that timeframe's.
@@ -221,6 +230,7 @@ impl Session {
         self.last_bar_index = -1;
         self.last_bar_time = None;
         self.first_bar_time = None;
+        self.known_bars = None;
         self.mintick = self.supplied_mintick.unwrap_or(DEFAULT_MINTICK);
         self.deadline_at = None;
     }

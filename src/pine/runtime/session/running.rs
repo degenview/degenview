@@ -51,6 +51,9 @@ impl Session {
                 })
         });
         self.first_bar_time = bars.first().map(|bar| bar.open_time);
+        self.known_bars = self
+            .keeps_known_bars
+            .then(|| std::sync::Arc::new(bars.to_vec()));
         self.bulk_replay = true;
         let mut failed_bar = 0;
         let result = self.replay_history(bars, bars.len(), precedes_live_bar, &mut failed_bar);

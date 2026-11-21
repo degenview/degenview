@@ -133,6 +133,8 @@ struct SeriesFrame {
     bar_seconds: f64,
     /// The chart's own bar length, known only while a request runs.
     chart_bar_seconds: Option<f64>,
+    /// The series' candles known ahead of the run (`Session::known_bars`).
+    known: Option<Arc<Vec<Kline>>>,
 }
 
 /// One `request.security` call's resolved arguments. `foreign` holds another symbol's series; it is
@@ -187,7 +189,8 @@ impl Session {
     }
 
     /// `request.security` to a timeframe finer than the chart's: the expression runs on the chart
-    /// bar's intrabars and the value of the last one stands for the bar, as in Pine.
+    /// bar's intrabars and the value of the last one stands for the bar, as in Pine; with
+    /// `lookahead_on` the first one does.
     fn serve_finer_security(
         &mut self,
         request: &SecurityRequest,
@@ -210,7 +213,7 @@ impl Session {
             site,
             context,
         )?;
-        Ok(self.last_intrabar(intrabars))
+        Ok(self.pick_intrabar(intrabars, request.lookahead_on))
     }
 
     /// How many values `expression` yields when it is a tuple: a literal `[a, b]`, or a call of a
@@ -229,20 +232,21 @@ impl Session {
         }
     }
 
-    /// The last element of the array (or of each array of a tuple) `serve_intrabars` returned.
-    fn last_intrabar(&self, intrabars: RuntimeValue) -> RuntimeValue {
+    /// The first (with `lookahead_on`) or last element of the array (or of each array of a tuple)
+    /// `serve_intrabars` returned.
+    fn pick_intrabar(&self, intrabars: RuntimeValue, first: bool) -> RuntimeValue {
         match intrabars {
             RuntimeValue::Tuple(items) => RuntimeValue::Tuple(
                 items
                     .into_iter()
-                    .map(|item| self.last_intrabar(item))
+                    .map(|item| self.pick_intrabar(item, first))
                     .collect(),
             ),
             RuntimeValue::Ref(RefKind::Array, id) => self
                 .working
                 .arrays
                 .get(&id)
-                .and_then(|values| values.last())
+                .and_then(|values| if first { values.first() } else { values.last() })
                 .cloned()
                 .unwrap_or(RuntimeValue::Na),
             other => other,
@@ -723,7 +727,8 @@ impl Session {
         let replay = skipped_after.is_some();
         let start = time::bucket::start(bar.open_time, request.interval);
         let mut fresh = false;
-        if state.bucket != Some(start) {
+        let switched = state.bucket != Some(start);
+        if switched {
             // The chart skipped the bucket's last bar, so complete it now.
             if state.has_pending_bars
                 && let Some(pending) = state.accumulated.clone()
@@ -746,7 +751,16 @@ impl Session {
         let end = time::bucket::end(start, request.interval);
         let closes_bucket = bar.open_time + (seconds * 1000.0).round() as i64 >= end;
 
-        let result;
+        // A historical bar whose period the run has all the bars of reads the period as it ended,
+        // from its first bar on (`lookahead_on`); a live bar, or one past the known bars, reads the
+        // developing candle.
+        let ahead =
+            if !replay && request.lookahead_on && !chart.realtime && self.is_known(bar.open_time) {
+                self.ahead_value(state, request, chart, start)?
+            } else {
+                None
+            };
+        let mut result;
         if closes_bucket && confirmed {
             self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
             result = self.evaluate_higher_timeframe(state, &developing, request, chart, true)?;
@@ -759,12 +773,16 @@ impl Session {
                 state.accumulated = Some(developing.clone());
                 state.has_pending_bars = true;
             }
-            if !replay && (request.lookahead_on || chart.realtime) {
+            if !replay && ahead.is_none() && (request.lookahead_on || chart.realtime) {
                 result =
                     self.evaluate_higher_timeframe(state, &developing, request, chart, false)?;
             } else {
                 result = state.last_result.clone();
             }
+        }
+        if let Some(value) = ahead {
+            result = value;
+            fresh = switched;
         }
         Ok((result, fresh))
     }
@@ -801,12 +819,19 @@ impl Session {
             }
         }
         let mut result = state.last_result.clone();
+        let current = last_index(bar.open_time, candles);
         if (request.lookahead_on || context.flags.is_realtime)
-            && let Some(index) = last_index(bar.open_time, candles)
+            && let Some(index) = current
             && index >= state.completed_candles
         {
             result =
                 self.evaluate_higher_timeframe(&mut state, &candles[index], request, chart, false)?;
+        }
+        if request.lookahead_on && !context.flags.is_realtime {
+            // The candle is there from its first chart bar on, so that is the bar that is new.
+            let opened = current.map(|index| candles[index].open_time);
+            fresh = opened.is_some() && state.bucket != opened;
+            state.bucket = opened;
         }
         if request.gaps_on && !fresh {
             result = RuntimeValue::Na;
@@ -921,6 +946,63 @@ impl Session {
         Ok(value)
     }
 
+    /// Every candle of the series `request` runs its expression on, for a request nested in the
+    /// expression to read ahead in: another symbol's candles as the provider gave them, or the
+    /// running series' known candles folded into the requested timeframe. None when the running
+    /// series is not known ahead, or the request is for a finer timeframe, whose intrabars are not
+    /// the candles of a series.
+    fn known_series(&self, request: &SecurityRequest) -> Option<Arc<Vec<Kline>>> {
+        if let Some(candles) = &request.foreign {
+            return Some(candles.clone());
+        }
+        if request.interval < self.bar_seconds {
+            return None;
+        }
+        Some(Arc::new(fold_all(
+            self.known_bars.as_ref()?,
+            request.interval,
+        )))
+    }
+
+    /// Whether the bar opening at `open_time` is one the run knows the bars after: a historical bar
+    /// of a series whose candles were all given ahead.
+    fn is_known(&self, open_time: i64) -> bool {
+        self.known_bars
+            .as_ref()
+            .and_then(|known| known.last())
+            .is_some_and(|last| open_time <= last.open_time)
+    }
+
+    /// The expression on the bucket opening at `start` as it ended, for a historical bar of it: the
+    /// known bars of the bucket folded into one candle. Evaluated on the first bar of the bucket
+    /// that asks and kept for the others. None when the known bars hold nothing of the bucket.
+    fn ahead_value(
+        &mut self,
+        state: &mut SecuritySite,
+        request: &SecurityRequest,
+        chart: ChartBar,
+        start: i64,
+    ) -> Result<Option<RuntimeValue>, Diagnostic> {
+        if let Some((bucket, value)) = &state.ahead
+            && *bucket == start
+        {
+            return Ok(Some(value.clone()));
+        }
+        let Some(known) = self.known_bars.clone() else {
+            return Ok(None);
+        };
+        let end = time::bucket::end(start, request.interval);
+        let first = known.partition_point(|bar| bar.open_time < start);
+        let last = known.partition_point(|bar| bar.open_time < end);
+        if first == last {
+            return Ok(None);
+        }
+        let candle = fold_one(&known[first..last], request.interval);
+        let value = self.evaluate_higher_timeframe(state, &candle, request, chart, false)?;
+        state.ahead = Some((start, value.clone()));
+        Ok(Some(value))
+    }
+
     /// Runs the expression on `candle` in the site's own state, for `chart_bar`. A commit keeps
     /// that state and appends the candle to its histories; otherwise the state is thrown away, like
     /// a realtime tick.
@@ -933,6 +1015,10 @@ impl Session {
         commit: bool,
     ) -> Result<RuntimeValue, Diagnostic> {
         let chart_bar_seconds = self.bar_seconds;
+        if self.keeps_known_bars && site.known.is_none() {
+            site.known = self.known_series(request);
+        }
+        let known = site.known.clone();
         self.security_depth += 1;
         // The chart's state steps aside and the site's takes its place. A commit moves the site's
         // state in and back out; copying it for every call would make a run quadratic in its length.
@@ -961,6 +1047,7 @@ impl Session {
             // The outermost request remembers the chart's own bar length for
             // `timeframe.main_period`.
             chart_bar_seconds: Some(self.chart_bar_seconds.unwrap_or(chart_bar_seconds)),
+            known,
         });
         self.working.instructions = 0;
         self.working.bar_index += 1;
@@ -1049,6 +1136,7 @@ impl Session {
                 &mut self.chart_bar_seconds,
                 frame.chart_bar_seconds,
             ),
+            known: std::mem::replace(&mut self.known_bars, frame.known),
         }
     }
 
@@ -1100,6 +1188,19 @@ fn fold_one(candles: &[Kline], interval_seconds: f64) -> Kline {
     };
     for candle in &candles[1..] {
         folded.absorb(candle);
+    }
+    folded
+}
+
+/// `candles` folded into candles of `interval_seconds`, one per bucket they open in.
+fn fold_all(candles: &[Kline], interval_seconds: f64) -> Vec<Kline> {
+    let mut folded: Vec<Kline> = Vec::new();
+    for candle in candles {
+        let start = time::bucket::start(candle.open_time, interval_seconds);
+        match folded.last_mut() {
+            Some(last) if last.open_time == start => last.absorb(candle),
+            _ => folded.push(fold_one(std::slice::from_ref(candle), interval_seconds)),
+        }
     }
     folded
 }

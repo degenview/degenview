@@ -1,0 +1,1 @@
+fixed: Pine scripts that read another timeframe with lookahead on now show the finished higher-timeframe bar from its first chart bar, as TradingView does, so saved scripts and backtests that use it plot and trade differently.

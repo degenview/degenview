@@ -112,6 +112,7 @@ impl Session {
             history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
         let security_slices = security_slice::build(&program.statements);
         let keeps_series_bars = replays_chart_bars(&program);
+        let keeps_known_bars = looks_ahead(&program);
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
@@ -198,6 +199,8 @@ impl Session {
             series_bars: Vec::new(),
             replay_globals: None,
             keeps_series_bars,
+            known_bars: None,
+            keeps_known_bars,
             bar_seconds: 0.0,
             chart_bar_seconds: None,
             alert_mode: false,
@@ -351,6 +354,41 @@ fn replays_chart_bars(program: &CompiledProgram) -> bool {
             .any(|import| import.library.as_deref().is_some_and(replays_chart_bars))
 }
 
+/// Whether a `request.security` call, in the script or an imported library, may read its
+/// higher-timeframe bar ahead: its `lookahead` is given and is not literally `barmerge.lookahead_off`.
+fn looks_ahead(program: &CompiledProgram) -> bool {
+    const LOOKAHEAD_POSITION: usize = 4;
+    let mut found = false;
+    crate::pine::syntax::traversal::for_each_call_with_args(
+        &program.statements,
+        &mut |name, arguments, _| {
+            if name != "request.security" {
+                return;
+            }
+            let mut position = 0;
+            let lookahead = arguments.iter().find_map(|argument| {
+                let at = position;
+                if argument.name.is_none() {
+                    position += 1;
+                }
+                match argument.name.as_deref() {
+                    Some("lookahead") => Some(&argument.value),
+                    None if at == LOOKAHEAD_POSITION => Some(&argument.value),
+                    _ => None,
+                }
+            });
+            found |= lookahead.is_some_and(|value| {
+                !matches!(value, Expression::Identifier(name, _) if name == "barmerge.lookahead_off")
+            });
+        },
+    );
+    found
+        || program
+            .imports
+            .iter()
+            .any(|import| import.library.as_deref().is_some_and(looks_ahead))
+}
+
 #[cfg(test)]
 mod request_detection_tests {
     use super::*;
@@ -362,6 +400,27 @@ mod request_detection_tests {
         let program = compiler::compile(&source, Limits::default(), &NoLibraries);
         assert!(program.is_valid(), "{:?}", program.diagnostics);
         replays_chart_bars(&program)
+    }
+
+    fn looks(arguments: &str) -> bool {
+        let source = format!(
+            "//@version=6\nindicator(\"T\")\nplot(request.security(syminfo.tickerid, \"D\", close{arguments}))\n"
+        );
+        let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+        assert!(program.is_valid(), "{:?}", program.diagnostics);
+        looks_ahead(&program)
+    }
+
+    #[test]
+    fn a_request_looks_ahead_unless_its_lookahead_is_literally_off() {
+        assert!(!looks(""));
+        assert!(!looks(", lookahead = barmerge.lookahead_off"));
+        assert!(!looks(", barmerge.gaps_off, barmerge.lookahead_off"));
+        assert!(looks(", lookahead = barmerge.lookahead_on"));
+        assert!(looks(", barmerge.gaps_off, barmerge.lookahead_on"));
+        assert!(looks(
+            ", lookahead = true ? barmerge.lookahead_off : barmerge.lookahead_on"
+        ));
     }
 
     #[test]
