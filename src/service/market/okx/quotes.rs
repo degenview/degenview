@@ -5,7 +5,7 @@
 use super::Okx;
 use super::ticker::okx_ticker;
 use crate::model::DataSource;
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::net::ws::{Decode, Keepalive, Session};
 use crate::service::watchlist_quotes::quote_stream::{QuoteProtocol, StreamTick};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -25,6 +25,7 @@ fn session(products: &[String]) -> Session {
         // A thin market's ticker is quiet for minutes: the heartbeat answers say the socket is
         // alive, and REST refreshes a product the socket stays quiet about.
         max_data_silence: Duration::from_secs(600),
+        decode: Decode::None,
         keepalive: Keepalive::Text {
             ping: "ping",
             pong: "pong",

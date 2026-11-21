@@ -5,7 +5,7 @@ use super::Okx;
 use super::{bar, instrument_id, parse_row};
 use crate::model::{Kline, Timeframe};
 use crate::service::market::live::CandleProtocol;
-use crate::service::net::ws::{Frame, Keepalive, Session};
+use crate::service::net::ws::{Decode, Frame, Keepalive, Session};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -25,6 +25,7 @@ fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
         subscribe: vec![json!({"op": "subscribe", "args": args}).to_string()],
         // A candle channel pushes every few seconds; the heartbeat answers say the socket is alive.
         max_data_silence: Duration::from_secs(120),
+        decode: Decode::None,
         keepalive: Keepalive::Text {
             ping: "ping",
             pong: "pong",

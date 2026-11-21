@@ -11,7 +11,7 @@ use crate::model::depth::{
 use crate::model::taker_flow::Taker;
 use crate::service::market::bybit::KEEPALIVE;
 use crate::service::net::http::{self, Retry};
-use crate::service::net::ws::Session;
+use crate::service::net::ws::{Decode, Session};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -34,6 +34,7 @@ impl DepthVenue for Bybit {
             subscribe: vec![json!({"op": "subscribe", "args": topics}).to_string()],
             // A thin market can be quiet for a long while: the pong says the socket is alive.
             max_data_silence: Duration::from_secs(600),
+            decode: Decode::None,
             keepalive: KEEPALIVE,
         }
     }
