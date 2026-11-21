@@ -154,6 +154,7 @@ pub static BINANCE: Profile = Profile {
     home_quote: Some("USDT"),
     natives: &BINANCE_SHAPED_NATIVES,
     older_history: OlderHistory::Always,
+    slow_refresh: false,
     streams: Streams {
         candles: true,
         quotes: false,
@@ -198,6 +199,7 @@ pub static COINBASE: Profile = Profile {
     home_quote: Some("USD"),
     natives: &COINBASE_NATIVES,
     older_history: OlderHistory::Always,
+    slow_refresh: false,
     streams: Streams {
         candles: false,
         quotes: true,
@@ -252,6 +254,7 @@ pub static OKX: Profile = Profile {
     home_quote: Some("USDT"),
     natives: &OKX_NATIVES,
     older_history: OlderHistory::Always,
+    slow_refresh: false,
     streams: Streams {
         candles: true,
         quotes: true,
@@ -303,6 +306,7 @@ pub static KRAKEN: Profile = Profile {
     // Kraken's OHLC answers the newest 720 candles whatever is asked: the chart's first 500 leave the
     // rest for the first older page, and a second page is empty.
     older_history: OlderHistory::Always,
+    slow_refresh: true,
     streams: Streams {
         candles: true,
         quotes: true,
@@ -346,6 +350,7 @@ pub static BYBIT: Profile = Profile {
     home_quote: Some("USDT"),
     natives: &BYBIT_NATIVES,
     older_history: OlderHistory::Always,
+    slow_refresh: false,
     streams: Streams {
         candles: true,
         quotes: true,
@@ -396,6 +401,7 @@ pub static GATE: Profile = Profile {
     home_quote: Some("USDT"),
     natives: &GATE_NATIVES,
     older_history: OlderHistory::Always,
+    slow_refresh: false,
     streams: Streams {
         candles: true,
         quotes: true,
@@ -445,6 +451,7 @@ pub static MEXC: Profile = Profile {
     home_quote: Some("USDT"),
     natives: &MEXC_NATIVES,
     older_history: OlderHistory::Always,
+    slow_refresh: false,
     streams: Streams {
         candles: true,
         quotes: false,
@@ -502,6 +509,7 @@ pub static HYPERLIQUID: Profile = Profile {
     // Only the newest ~5000 candles of an interval exist, whatever its length: a chart's first
     // fetch leaves the rest for its first older page, and the next page is empty.
     older_history: OlderHistory::Always,
+    slow_refresh: false,
     streams: Streams {
         candles: true,
         quotes: true,
@@ -550,6 +558,7 @@ pub static ASTER: Profile = Profile {
     home_quote: Some("USDT"),
     natives: &BINANCE_SHAPED_NATIVES,
     older_history: OlderHistory::Always,
+    slow_refresh: false,
     streams: Streams {
         candles: true,
         quotes: true,
@@ -585,6 +594,7 @@ pub static COINGECKO: Profile = Profile {
     home_quote: None,
     natives: &[],
     older_history: OlderHistory::Never,
+    slow_refresh: true,
     streams: Streams {
         candles: false,
         quotes: false,
@@ -633,6 +643,7 @@ pub static DEXSCREENER: Profile = Profile {
         page: GECKOTERMINAL_PAGE as i64,
         days: GECKOTERMINAL_HISTORY_DAYS,
     },
+    slow_refresh: true,
     streams: Streams {
         candles: false,
         quotes: false,
@@ -679,6 +690,7 @@ pub static ALPACA: Profile = Profile {
     home_quote: None,
     natives: &ALPACA_NATIVES,
     older_history: OlderHistory::Always,
+    slow_refresh: false,
     streams: Streams {
         candles: false,
         quotes: false,
@@ -713,6 +725,7 @@ pub static POLYMARKET: Profile = Profile {
     home_quote: None,
     natives: &[],
     older_history: OlderHistory::Never,
+    slow_refresh: false,
     streams: Streams {
         candles: false,
         quotes: false,
@@ -737,6 +750,7 @@ pub static KALSHI: Profile = Profile {
     home_quote: None,
     natives: &[],
     older_history: OlderHistory::Never,
+    slow_refresh: false,
     streams: Streams {
         candles: false,
         quotes: false,
@@ -762,6 +776,7 @@ pub static COINMARKETCAP: Profile = Profile {
     home_quote: None,
     natives: &[],
     older_history: OlderHistory::Never,
+    slow_refresh: false,
     streams: Streams {
         candles: false,
         quotes: false,
