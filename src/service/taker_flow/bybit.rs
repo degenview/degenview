@@ -5,7 +5,7 @@
 use crate::model::exchange::{Market, Venue};
 use crate::model::taker_flow::{Taker, Trade};
 use crate::service::market::bybit::KEEPALIVE;
-use crate::service::net::ws::Session;
+use crate::service::net::ws::{Decode, Session};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -26,6 +26,7 @@ pub(super) fn session(market: Market, asset: &str) -> Session {
         ],
         // A thin market can be quiet for a long while: the pong says the socket is alive.
         max_data_silence: Duration::from_secs(600),
+        decode: Decode::None,
         keepalive: KEEPALIVE,
     }
 }

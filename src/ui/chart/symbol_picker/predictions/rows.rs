@@ -85,7 +85,7 @@ pub fn event_header(
         Vec2::splat(HEADER_ART),
     );
     prediction_icon(ui, art, &head.title, head.image_url.as_deref());
-    let venue_left = venue_block(ui, rect, content_right(rect), head.source());
+    let venue_left = venue_block(ui, rect, content_right(rect), head.source(), head.lead.kind);
     let text_left = rect.left() + TEXT_LEFT;
     let text_width = (venue_left - 16.0 - text_left).max(40.0);
     let title = kit::galley(

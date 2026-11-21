@@ -3,7 +3,7 @@
 use super::Binance;
 use crate::model::{Kline, Timeframe};
 use crate::service::market::live::CandleProtocol;
-use crate::service::net::ws::{Frame, Keepalive, Session};
+use crate::service::net::ws::{Decode, Frame, Keepalive, Session};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -22,6 +22,7 @@ fn session(symbols: &[String], base: Timeframe) -> Session {
         port: 443,
         subscribe: Vec::new(),
         max_data_silence: Duration::from_secs(60),
+        decode: Decode::None,
         keepalive: Keepalive::Frame,
     }
 }

@@ -23,6 +23,7 @@ pub mod work_queue;
 pub use market::alpaca::test_connection as alpaca_test_connection;
 pub use market::error::ProviderError;
 
+use crate::model::market::MarketKind;
 use crate::model::{DataSource, Kline, PmSeries, Timeframe};
 pub(crate) use market::candles::normalize;
 pub(crate) use market::search_rank::rank_results;
@@ -44,6 +45,8 @@ pub struct SearchResult {
     pub base: Option<String>,
     /// What the pair is priced in (`USDT`, `USD`).
     pub quote: Option<String>,
+    /// Spot unless the venue lists a perpetual under this name; the picker tags the others.
+    pub kind: MarketKind,
 }
 
 /// What separates an equity's ticker from its company name in [`SearchResult::symbol`].
@@ -64,6 +67,7 @@ impl SearchResult {
             event: None,
             base: None,
             quote: None,
+            kind: MarketKind::Spot,
         }
     }
 

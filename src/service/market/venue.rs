@@ -7,7 +7,8 @@
 //! protocol only says how to open a socket and read what it sends.
 
 use super::live::CandleProtocol;
-use crate::model::DataSource;
+use crate::model::market::MarketKind;
+use crate::model::{DataSource, InstrumentId};
 use crate::service::watchlist_quotes::quote_stream::QuoteProtocol;
 use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{MarketSource, ProviderError, SearchResult};
@@ -40,6 +41,13 @@ pub trait Venue: Sync {
     fn classify_status(&self, code: u16) -> Option<QuoteFailure> {
         let _ = code;
         None
+    }
+
+    /// How the market `id` names is traded. A venue with perpetuals tells them from its spot markets
+    /// by the id; the others are what their profile says. The kind is not stored with a chart or a
+    /// watchlist row: it is asked here whenever it is shown.
+    fn kind_of(&self, id: &InstrumentId) -> MarketKind {
+        id.source.profile().default_kind()
     }
 
     /// The network of a DEX pair saved without one, from its address.
@@ -82,6 +90,17 @@ pub fn of(source: DataSource) -> &'static dyn Venue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_market_is_of_a_kind_its_venue_lists() {
+        for source in DataSource::ALL {
+            let kind = of(source).kind_of(&InstrumentId::new(source, "BTC"));
+            assert!(
+                source.profile().kinds.contains(&kind),
+                "{source:?} answers {kind:?}, which its profile does not list"
+            );
+        }
+    }
 
     #[test]
     fn the_sockets_a_venue_opens_are_the_ones_its_profile_declares() {

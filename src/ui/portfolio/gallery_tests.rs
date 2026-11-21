@@ -557,6 +557,7 @@ fn portfolio_gallery_asset_picker() {
                         event: None,
                         base: None,
                         quote: None,
+                        kind: crate::model::market::MarketKind::Spot,
                     },
                 );
             }

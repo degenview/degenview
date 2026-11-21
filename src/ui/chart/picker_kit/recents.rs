@@ -1,6 +1,6 @@
 //! The markets picked before, kept in the store so they can be picked again without searching.
 
-use crate::model::DataSource;
+use crate::model::{DataSource, InstrumentId};
 use crate::service::SearchResult;
 use serde::{Deserialize, Serialize};
 
@@ -65,6 +65,8 @@ impl RecentMarket {
             event: None,
             base: None,
             quote: None,
+            kind: crate::service::market::venue::of(self.source)
+                .kind_of(&InstrumentId::new(self.source, &self.full_symbol)),
         }
     }
 }

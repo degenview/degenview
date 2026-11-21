@@ -3,7 +3,7 @@ use crate::model::depth::{
     BookSync, Delta, DiffStream, Levels, Link, Price, Snapshot, SnapshotAndDeltas, View,
 };
 use crate::model::exchange::{Exchange, Market, Venue};
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::net::ws::{Decode, Keepalive, Session};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn price(text: &str) -> Price {
@@ -50,6 +50,7 @@ impl DepthVenue for Scripted {
             port: 0,
             subscribe: Vec::new(),
             max_data_silence: Duration::from_secs(1),
+            decode: Decode::None,
             keepalive: Keepalive::Frame,
         }
     }

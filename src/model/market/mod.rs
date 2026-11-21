@@ -5,6 +5,7 @@ pub mod cmc;
 pub mod feed;
 pub mod history;
 pub(in crate::model) mod instrument;
+pub(in crate::model) mod kind;
 pub(in crate::model) mod kline;
 pub mod line;
 pub mod live;
@@ -16,3 +17,5 @@ pub(in crate::model) mod source;
 pub(in crate::model) mod timeframe;
 pub mod trend;
 pub mod venue;
+
+pub use kind::MarketKind;

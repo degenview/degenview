@@ -7,7 +7,7 @@ use super::{interval, pair_id};
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{Kline, Timeframe};
 use crate::service::market::live::CandleProtocol;
-use crate::service::net::ws::{Frame, Keepalive, Session};
+use crate::service::net::ws::{Decode, Frame, Keepalive, Session};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -35,6 +35,7 @@ fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
         // A thin market's candle is quiet for minutes: the answers to the pings say the socket is
         // alive.
         max_data_silence: Duration::from_secs(600),
+        decode: Decode::None,
         keepalive: Keepalive::Frame,
     })
 }
