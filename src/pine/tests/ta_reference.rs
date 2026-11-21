@@ -318,3 +318,191 @@ plot(ta.variance(close, biased = true, length = 20))
     assert_same("variance explicit biased", &plotted[3], &plotted[5]);
     assert_same("variance named biased", &plotted[3], &plotted[6]);
 }
+
+/// TradingView's definition of `ta.tr(handle_na)`, as a function the script calls.
+const TRUE_RANGE_REFERENCE: &str = "
+f_tr(bool handleNa) =>
+    na(close[1]) ? (handleNa ? high - low : na) : math.max(high - low, math.abs(high - close[1]), math.abs(low - close[1]))
+";
+
+#[test]
+fn true_range_is_na_on_the_first_bar_unless_na_is_handled() {
+    let source = format!(
+        "//@version=6
+indicator(\"True range\")
+{TRUE_RANGE_REFERENCE}
+plot(ta.tr)
+plot(ta.tr(false))
+plot(ta.tr(true))
+plot(ta.tr(handle_na = true))
+plot(ta.tr(bar_index == 0))
+plot(f_tr(false))
+plot(f_tr(true))
+plot(f_tr(bar_index == 0))
+"
+    );
+    let plotted = plots(&source, 600);
+    assert_same("variable", &plotted[0], &plotted[5]);
+    assert_same("handle_na = false", &plotted[1], &plotted[5]);
+    assert_same("handle_na = true", &plotted[2], &plotted[6]);
+    assert_same("handle_na named", &plotted[3], &plotted[6]);
+    assert_same("handle_na computed", &plotted[4], &plotted[7]);
+    assert_eq!(first_value(&plotted[0]), Some(1));
+    assert_eq!(first_value(&plotted[2]), Some(0));
+}
+
+#[test]
+fn atr_and_supertrend_keep_the_first_bars_range() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Atr\")
+plot(ta.atr(14))
+plot(ta.rma(ta.tr(true), 14))
+",
+        600,
+    );
+    assert_same("atr", &plotted[0], &plotted[1]);
+    assert_eq!(first_value(&plotted[0]), Some(13));
+}
+
+#[test]
+fn keltner_channels_start_on_the_bar_after_their_length_like_the_reference_code() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Keltner\", overlay = true)
+[basis, upper, lower] = ta.kc(close, 20, 1.5, true)
+[highLowBasis, highLowUpper, highLowLower] = ta.kc(close, 20, 1.5, false)
+average = ta.ema(close, 20)
+range = ta.ema(ta.tr, 20)
+plot(basis)
+plot(upper)
+plot(lower)
+plot(ta.kcw(close, 20, 1.5, true))
+plot(na(range) ? na : average)
+plot(average + 1.5 * range)
+plot(average - 1.5 * range)
+plot(3 * range / average)
+plot(highLowUpper)
+",
+        800,
+    );
+    assert_same("basis", &plotted[0], &plotted[4]);
+    assert_same("upper", &plotted[1], &plotted[5]);
+    assert_same("lower", &plotted[2], &plotted[6]);
+    assert_same("width", &plotted[3], &plotted[7]);
+    assert_eq!(first_value(&plotted[1]), Some(20), "TradingView: bar 20");
+    assert_eq!(
+        first_value(&plotted[8]),
+        Some(19),
+        "the high-low form has no first-bar gap"
+    );
+}
+
+#[test]
+fn a_conditional_call_measures_true_range_against_the_charts_previous_close() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Conditional\")
+sometimes = bar_index % 3 == 1
+plot(sometimes ? ta.atr(1) : na)
+plot(sometimes ? ta.tr(true) : na)
+plot(sometimes ? ta.kcw(close, 1, 1, true) : na)
+plot(sometimes ? 2 * ta.tr / close : na)
+",
+        600,
+    );
+    assert_same("atr", &plotted[0], &plotted[1]);
+    assert_same("kcw", &plotted[2], &plotted[3]);
+    assert!(plotted[0].iter().flatten().count() > 150);
+}
+
+#[test]
+fn a_conditional_supertrend_follows_the_reference_code() {
+    let source = format!(
+        "//@version=6
+indicator(\"Conditional supertrend\", overlay = true)
+{SUPERTREND_REFERENCE}
+sometimes = bar_index % 3 == 1
+float line = na
+float expected = na
+if sometimes
+    [built, direction] = ta.supertrend(3, 4)
+    line := built
+    [wanted, wantedDirection] = f_supertrend(3, 4)
+    expected := wanted
+plot(line)
+plot(expected)
+"
+    );
+    let plotted = plots(&source, 900);
+    assert_same("line", &plotted[0], &plotted[1]);
+    assert!(plotted[0].iter().flatten().count() > 100);
+}
+
+/// The reference code for `ta.dmi`, written out from its definition: the directional movement
+/// and the true range smoothed with `ta.rma`, ADX as the smoothed directional index.
+const DMI_REFERENCE: &str = "
+f_dmi(int len, int smoothing) =>
+    up = ta.change(high)
+    down = -ta.change(low)
+    plusMove = na(up) ? na : (up > down and up > 0 ? up : 0)
+    minusMove = na(down) ? na : (down > up and down > 0 ? down : 0)
+    trueRange = ta.rma(ta.tr, len)
+    plus = 100 * ta.rma(plusMove, len) / trueRange
+    minus = 100 * ta.rma(minusMove, len) / trueRange
+    total = plus + minus
+    adx = 100 * ta.rma(math.abs(plus - minus) / (total == 0 ? 1 : total), smoothing)
+    [plus, minus, adx]
+";
+
+#[test]
+fn dmi_equals_the_reference_code_from_its_first_bar() {
+    let source = format!(
+        "//@version=6
+indicator(\"Dmi\")
+{DMI_REFERENCE}
+[plus, minus, adx] = ta.dmi(14, 9)
+[wantedPlus, wantedMinus, wantedAdx] = f_dmi(14, 9)
+plot(plus)
+plot(wantedPlus)
+plot(minus)
+plot(wantedMinus)
+plot(adx)
+plot(wantedAdx)
+"
+    );
+    let plotted = plots(&source, 1_000);
+    assert_same("plus", &plotted[0], &plotted[1]);
+    assert_same("minus", &plotted[2], &plotted[3]);
+    assert_same("adx", &plotted[4], &plotted[5]);
+    assert_eq!(first_value(&plotted[0]), Some(14), "TR starts on bar 1");
+    assert_eq!(first_value(&plotted[4]), Some(22));
+}
+
+#[test]
+fn dmi_shares_no_state_with_the_calls_around_it() {
+    // The smoothing states used to sit under `site * 16 + n`, which a later call site could hit.
+    let lengths: Vec<usize> = (3..43).collect();
+    let mut source = String::from(
+        "//@version=6
+indicator(\"Neighbours\")
+[plus, minus, adx] = ta.dmi(14, 14)
+plot(plus)
+",
+    );
+    for length in &lengths {
+        source.push_str(&format!("plot(ta.sma(close, {length}))\n"));
+    }
+    let count = 500;
+    let plotted = plots(&source, count);
+    let closes: Vec<f64> = bars(count, 60_000).iter().map(|bar| bar.close).collect();
+    for (offset, length) in lengths.iter().enumerate() {
+        let expected: Vec<Option<f64>> = (0..count)
+            .map(|bar| {
+                (bar + 1 >= *length)
+                    .then(|| closes[bar + 1 - length..=bar].iter().sum::<f64>() / *length as f64)
+            })
+            .collect();
+        assert_same(&format!("sma({length})"), &plotted[offset + 1], &expected);
+    }
+}

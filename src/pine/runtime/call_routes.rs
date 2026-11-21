@@ -9,8 +9,8 @@ use super::value::RuntimeValue;
 use crate::pine::syntax::ast::{Argument, Route};
 use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, SourceRange};
 use crate::pine::{
-    builtins::alert, builtins::math, builtins::strings, builtins::ta, outputs::drawings,
-    outputs::visuals, strategy::builtins,
+    builtins::alert, builtins::market_values, builtins::math, builtins::strings, builtins::ta,
+    outputs::drawings, outputs::visuals, strategy::builtins,
 };
 
 impl Session {
@@ -301,9 +301,16 @@ impl Session {
                 .iter()
                 .map(|parameter| bound.get(parameter).cloned().unwrap_or(RuntimeValue::Na))
                 .collect();
+            let previous_close = market_values::previous_close(&self.working);
             let key = self.site_key(site, context);
             let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_price(name, &values, &context.bar, state));
+            return Ok(ta::evaluate_price(
+                name,
+                &values,
+                &context.bar,
+                previous_close,
+                state,
+            ));
         }
         if name == "fixnan" {
             let source = self.arg_value(arguments, 0, Some("source"), context)?;
@@ -312,8 +319,16 @@ impl Session {
             return Ok(ta::evaluate_fixnan(&source, state));
         }
         if name == "ta.tr" {
-            // `ta.tr(handle_na)` reads like the `ta.tr` variable.
-            return Ok(self.market("ta.tr", context).unwrap_or(RuntimeValue::Na));
+            let handle_na = self
+                .arg_value(arguments, 0, Some("handle_na"), context)?
+                .bool()
+                .unwrap_or(false);
+            let range = ta::true_range_checked(
+                &context.bar,
+                market_values::previous_close(&self.working),
+                handle_na,
+            );
+            return Ok(range.map_or(RuntimeValue::Na, RuntimeValue::Float));
         }
         if name == "runtime.error" {
             let message = self.arg_value(arguments, 0, Some("message"), context)?;
@@ -355,11 +370,13 @@ impl Session {
         if name == "ta.dmi" {
             let di = self.arg_value(arguments, 0, Some("diLength"), context)?;
             let smoothing = self.arg_value(arguments, 1, Some("adxSmoothing"), context)?;
+            let previous_close = market_values::previous_close(&self.working);
             let key = self.site_key(site, context);
+            let state = self.working.ta_states.entry(key).or_default();
             return Ok(ta::evaluate_dmi(
-                &mut self.working.ta_states,
-                key,
+                state,
                 &context.bar,
+                previous_close,
                 di.int_value().unwrap_or(0),
                 smoothing.int_value().unwrap_or(0),
             ));
@@ -385,11 +402,13 @@ impl Session {
         }
         if name == "ta.atr" {
             let length = self.arg_value(arguments, 0, Some("length"), context)?;
+            let previous_close = market_values::previous_close(&self.working);
             let key = self.site_key(site, context);
             let state = self.working.ta_states.entry(key).or_default();
             return Ok(ta::evaluate_atr(
                 state,
                 &context.bar,
+                previous_close,
                 length.int_value().unwrap_or(14),
             ));
         }
