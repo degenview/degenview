@@ -15,7 +15,7 @@ pub fn ticker_icon(ui: &Ui, rect: Rect, symbol: &str, source: DataSource) {
         source_logo::paint(ui, source, rect);
         return;
     }
-    let base = source.base_asset(symbol);
+    let base = source.coin_asset(symbol);
     let class = source.profile().class;
     let lookup = if class.has_coin_artwork() {
         Some((DataSource::Binance, format!("{base}USDT")))

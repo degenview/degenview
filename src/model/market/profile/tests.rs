@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 /// How many variants `DataSource` has. Bumped with [`position`], which cannot compile without an
 /// arm for a new variant.
-const VARIANTS: usize = 18;
+const VARIANTS: usize = 19;
 
 /// Where `source` stands in [`DataSource::ALL`]. Exhaustive, so a new variant does not compile
 /// until it is placed here, and then the tests below make it appear in the list.
@@ -22,12 +22,13 @@ fn position(source: DataSource) -> usize {
         DataSource::Lighter => 9,
         DataSource::Deribit => 10,
         DataSource::Htx => 11,
-        DataSource::CoinGecko => 12,
-        DataSource::DexScreener => 13,
-        DataSource::Alpaca => 14,
-        DataSource::Polymarket => 15,
-        DataSource::Kalshi => 16,
-        DataSource::CoinMarketCap => 17,
+        DataSource::Bitfinex => 12,
+        DataSource::CoinGecko => 13,
+        DataSource::DexScreener => 14,
+        DataSource::Alpaca => 15,
+        DataSource::Polymarket => 16,
+        DataSource::Kalshi => 17,
+        DataSource::CoinMarketCap => 18,
     }
 }
 
@@ -118,6 +119,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Lighter,
             DataSource::Deribit,
             DataSource::Htx,
+            DataSource::Bitfinex,
         ]
     );
     assert_eq!(
@@ -133,6 +135,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Lighter,
             DataSource::Deribit,
             DataSource::Htx,
+            DataSource::Bitfinex,
         ]
     );
 }
@@ -148,6 +151,7 @@ fn only_the_sources_with_a_small_rest_allowance_refresh_their_charts_slowly() {
         [
             DataSource::Kraken,
             DataSource::Lighter,
+            DataSource::Bitfinex,
             DataSource::CoinGecko,
             DataSource::DexScreener
         ]
@@ -157,7 +161,7 @@ fn only_the_sources_with_a_small_rest_allowance_refresh_their_charts_slowly() {
 #[test]
 fn the_picker_lists_markets_by_symbol_and_predictions_apart() {
     let markets: Vec<_> = DataSource::symbol_markets().collect();
-    assert_eq!(markets.len(), 15);
+    assert_eq!(markets.len(), 16);
     assert!(markets.iter().all(|source| !source.is_prediction_market()));
     assert!(!markets.contains(&DataSource::CoinMarketCap));
     assert_eq!(
@@ -184,6 +188,7 @@ fn quotes_are_polled_as_each_source_allows() {
     assert_eq!(timing(DataSource::Lighter), (10, 60, 2_000));
     assert_eq!(timing(DataSource::Deribit), (10, 60, 2_000));
     assert_eq!(timing(DataSource::Htx), (10, 60, 2_000));
+    assert_eq!(timing(DataSource::Bitfinex), (10, 60, 100));
     assert_eq!(timing(DataSource::DexScreener), (10, 60, 30));
     assert_eq!(timing(DataSource::CoinGecko), (30, 120, 250));
     assert_eq!(timing(DataSource::Alpaca), (5, 45, 200));
@@ -416,5 +421,79 @@ fn htx_lists_spot_pairs_and_folds_days_weeks_and_months_from_four_hours() {
         let timeframe = Timeframe::parse(folded).unwrap();
         assert!(!DataSource::Htx.natives().contains(&timeframe), "{folded}");
         assert!(DataSource::Htx.serves(timeframe), "{folded}");
+    }
+}
+
+#[test]
+fn bitfinex_runs_short_pairs_together_and_separates_long_ones_with_a_colon() {
+    use super::PairStyle;
+    let profile = DataSource::Bitfinex.profile();
+    assert_eq!(profile.kinds, [MarketKind::Spot]);
+    assert_eq!(
+        (profile.slug, profile.display_name),
+        ("BITFINEX", "Bitfinex")
+    );
+    assert!(profile.streams.candles && profile.streams.quotes);
+    assert_eq!(
+        DataSource::from_watchlist_slug("bitfinex"),
+        Some(DataSource::Bitfinex)
+    );
+    assert!(profile.pair.allows_colon());
+    assert!(!DataSource::Binance.profile().pair.allows_colon());
+    assert!(matches!(&profile.pair, PairStyle::Concat(concat) if concat.separator() == Some(':')));
+    for (id, base, quote) in [
+        ("BTCUSD", "BTC", "USD"),
+        ("ADAUST", "ADA", "UST"),
+        ("AVAX:USD", "AVAX", "USD"),
+        ("btc:xaut", "BTC", "XAUT"),
+        ("ETH2X:USD", "ETH2X", "USD"),
+    ] {
+        assert_eq!(DataSource::Bitfinex.base_asset(id), base, "{id}");
+        assert_eq!(
+            DataSource::Bitfinex.quote_asset(id).as_deref(),
+            Some(quote),
+            "{id}"
+        );
+    }
+    // However a market is typed, it is named as Bitfinex names it: a colon once an asset is long.
+    for (typed, id) in [
+        ("BTC", "BTCUSD"),
+        ("btc/usd", "BTCUSD"),
+        ("AVAXUSD", "AVAX:USD"),
+        ("avax-usd", "AVAX:USD"),
+        ("AVAX:USD", "AVAX:USD"),
+        ("avax", "AVAX:USD"),
+        ("BTCXAUT", "BTC:XAUT"),
+        ("ETHBTC", "ETHBTC"),
+    ] {
+        assert_eq!(
+            crate::model::InstrumentId::new(DataSource::Bitfinex, typed).api_symbol(),
+            id,
+            "{typed}"
+        );
+    }
+    // Other venues run theirs together always, and a colon is nothing to them.
+    assert_eq!(
+        crate::model::InstrumentId::new(DataSource::Binance, "AVAXUSDT").api_symbol(),
+        "AVAXUSDT"
+    );
+    let natives: Vec<_> = DataSource::Bitfinex
+        .natives()
+        .iter()
+        .map(|native| native.interval())
+        .collect();
+    assert_eq!(
+        natives,
+        [
+            "1m", "5m", "15m", "30m", "1h", "3h", "6h", "12h", "1d", "1w", "14d", "1M"
+        ]
+    );
+    for folded in ["3m", "2h", "4h", "8h", "2D", "3D", "2W", "3M", "1Y", "22m"] {
+        let timeframe = Timeframe::parse(folded).unwrap();
+        assert!(
+            !DataSource::Bitfinex.natives().contains(&timeframe),
+            "{folded}"
+        );
+        assert!(DataSource::Bitfinex.serves(timeframe), "{folded}");
     }
 }

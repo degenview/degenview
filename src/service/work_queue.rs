@@ -232,16 +232,17 @@ pub static UPDATES: WorkQueue = WorkQueue::new(1);
 /// borrow a general worker.
 pub static SNAPSHOTS: WorkQueue = WorkQueue::new(2);
 
-/// Rate-limited providers get a worker each: a request sleeping until its slot comes (seconds, for
-/// CoinGecko, GeckoTerminal and Kraken) must not hold one of the general workers that fetch other charts'
-/// candles. One worker matches the limiter, which lets one request through at a time anyway.
-static COINGECKO_LANE: WorkQueue = WorkQueue::new(1);
-
 /// Searches the user is typing into run apart from candle fetches, so a picker never waits behind
 /// a busy chart; a rate-limited provider's search still takes that provider's lane.
 static SEARCHES: WorkQueue = WorkQueue::new(4);
-static GECKOTERMINAL_LANE: WorkQueue = WorkQueue::new(1);
-static KRAKEN_LANE: WorkQueue = WorkQueue::new(1);
+
+/// A worker for each source whose profile says it has a lane of its own ([`Profile::own_lane`]): a
+/// request sleeping until its slot comes (seconds) must not hold one of the general workers that
+/// fetch other charts' candles. One worker matches the limiter, which lets one request through at a
+/// time anyway. Made on first use, from the profiles, so a venue gets its lane by saying so there.
+///
+/// [`Profile::own_lane`]: crate::model::market::profile::Profile::own_lane
+static LANES: OnceLock<Vec<(crate::model::DataSource, WorkQueue)>> = OnceLock::new();
 
 pub fn submit(job: impl FnOnce() + Send + 'static) {
     QUEUE.submit(job);
@@ -257,13 +258,17 @@ pub fn start<T: Send + 'static>(
 
 /// The workers that suit requests to `source`'s provider.
 fn lane(source: crate::model::DataSource) -> &'static WorkQueue {
-    use crate::model::DataSource;
-    match source {
-        DataSource::CoinGecko => &COINGECKO_LANE,
-        DataSource::DexScreener => &GECKOTERMINAL_LANE,
-        DataSource::Kraken => &KRAKEN_LANE,
-        _ => &QUEUE,
-    }
+    LANES
+        .get_or_init(|| {
+            crate::model::DataSource::ALL
+                .into_iter()
+                .filter(|source| source.profile().own_lane)
+                .map(|source| (source, WorkQueue::new(1)))
+                .collect()
+        })
+        .iter()
+        .find(|(owner, _)| *owner == source)
+        .map_or(&QUEUE, |(_, queue)| queue)
 }
 
 /// Runs a request to `source`'s provider on the workers that suit it.
@@ -421,15 +426,28 @@ mod tests {
     }
 
     #[test]
-    fn every_rate_limited_provider_has_a_lane_of_its_own() {
+    fn every_provider_whose_profile_says_so_has_a_lane_of_its_own() {
         use crate::model::DataSource;
-        let lanes: Vec<*const WorkQueue> = [
+        let owners: Vec<DataSource> = DataSource::ALL
+            .into_iter()
+            .filter(|source| source.profile().own_lane)
+            .collect();
+        for rate_limited in [
             DataSource::CoinGecko,
             DataSource::DexScreener,
             DataSource::Kraken,
-        ]
-        .map(|source| lane(source) as *const WorkQueue)
-        .to_vec();
+            DataSource::Lighter,
+            DataSource::Bitfinex,
+        ] {
+            assert!(
+                owners.contains(&rate_limited),
+                "{rate_limited:?} has no lane"
+            );
+        }
+        let lanes: Vec<*const WorkQueue> = owners
+            .iter()
+            .map(|source| lane(*source) as *const WorkQueue)
+            .collect();
         for (index, queue) in lanes.iter().enumerate() {
             assert!(
                 !std::ptr::eq(*queue, &QUEUE),
@@ -450,6 +468,12 @@ mod tests {
         }
         // An unlimited provider keeps the general workers, and its searches the search ones.
         assert!(std::ptr::eq(lane(DataSource::Binance), &QUEUE));
+        assert!(
+            !DataSource::ALL
+                .into_iter()
+                .filter(|source| !source.profile().own_lane)
+                .any(|source| !std::ptr::eq(lane(source), &QUEUE))
+        );
     }
 
     #[test]

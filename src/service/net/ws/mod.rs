@@ -303,6 +303,17 @@ impl<'a> Frame<'a> {
     }
 }
 
+/// What a feed asks of the loop after a message.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Flow {
+    /// Keep reading this connection.
+    Read,
+    /// Drop this connection and connect again: the server asked for it (a restart, maintenance).
+    Reconnect,
+    /// Nobody is listening any more: end the session.
+    Stop,
+}
+
 /// A connected socket and the check on its health.
 type Connection = (WebSocket<MaybeTlsStream<TcpStream>>, Health);
 
@@ -342,30 +353,47 @@ impl Session {
     pub fn run_linked(
         &self,
         shutdown: &AtomicBool,
-        mut on_link: impl FnMut(bool),
+        on_link: impl FnMut(bool),
         mut on_frame: impl FnMut(Frame<'_>) -> bool,
+    ) {
+        self.run_flow(shutdown, on_link, |frame| {
+            if on_frame(frame) {
+                Flow::Read
+            } else {
+                Flow::Stop
+            }
+        });
+    }
+
+    /// Like [`Self::run_linked`], and `on_frame` says what the loop does next: a feed whose server
+    /// can ask for a new connection answers [`Flow::Reconnect`].
+    pub fn run_flow(
+        &self,
+        shutdown: &AtomicBool,
+        mut on_link: impl FnMut(bool),
+        mut on_frame: impl FnMut(Frame<'_>) -> Flow,
     ) {
         let mut backoff = Backoff::new();
         while !shutdown.load(Ordering::Acquire) {
             if let Ok((mut socket, mut health)) = self.open() {
                 on_link(true);
-                let mut listening = true;
-                while listening && !shutdown.load(Ordering::Acquire) {
+                let mut flow = Flow::Read;
+                while flow == Flow::Read && !shutdown.load(Ordering::Acquire) {
                     match health.read(&mut socket) {
                         Ok(Some(Message::Text(text))) => {
                             backoff.reset();
-                            listening = on_frame(Frame::Text(text.as_str()));
+                            flow = on_frame(Frame::Text(text.as_str()));
                         }
                         Ok(Some(Message::Binary(bytes))) => {
                             backoff.reset();
-                            listening = on_frame(Frame::Binary(&bytes));
+                            flow = on_frame(Frame::Binary(&bytes));
                         }
                         Ok(Some(Message::Close(_))) | Err(_) => break,
                         Ok(_) => {}
                     }
                 }
                 on_link(false);
-                if !listening {
+                if flow == Flow::Stop {
                     return;
                 }
             }
@@ -456,6 +484,47 @@ mod tests {
         });
         assert_eq!(seen, ["tick"]);
         assert_eq!(server.join().unwrap(), "subscribe");
+    }
+
+    #[test]
+    fn a_feed_that_is_asked_to_reconnect_is_connected_again() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            for greeting in ["restart", "tick"] {
+                let (stream, _) = listener.accept().unwrap();
+                let mut socket = tungstenite::accept(stream).unwrap();
+                let _ = socket.read().unwrap();
+                socket.send(Message::Text(greeting.into())).unwrap();
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        });
+        let session = Session {
+            url: format!("ws://127.0.0.1:{port}"),
+            host: "127.0.0.1".to_owned(),
+            port,
+            subscribe: vec!["subscribe".to_owned()],
+            max_data_silence: Duration::from_secs(60),
+            keepalive: Keepalive::Frame,
+            decode: Decode::None,
+        };
+        let (mut seen, mut links) = (Vec::new(), Vec::new());
+        session.run_flow(
+            &AtomicBool::new(false),
+            |up| links.push(up),
+            |frame| {
+                let text = frame.text().unwrap();
+                seen.push(text.to_owned());
+                if text == "restart" {
+                    Flow::Reconnect
+                } else {
+                    Flow::Stop
+                }
+            },
+        );
+        assert_eq!(seen, ["restart", "tick"]);
+        assert_eq!(links, [true, false, true, false]);
+        server.join().unwrap();
     }
 
     /// A server that sends a binary message, then lingers.
