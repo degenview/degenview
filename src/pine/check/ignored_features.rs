@@ -72,9 +72,7 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
     table.insert("plotcandle", plotcandle());
     table.insert("box.new", box_new());
     table.insert("table.cell", table_cell());
-    let mut request_security = request();
-    request_security.insert("calc_bars_count", "The whole history is always requested.");
-    table.insert("request.security", request_security);
+    table.insert("request.security", request());
     table.insert("request.security_lower_tf", request());
     table.insert("plotshape", marker());
     table.insert("plotchar", marker());

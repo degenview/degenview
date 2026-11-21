@@ -258,6 +258,18 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   outer series' known bars folded). `gaps_on` + `lookahead_on` keeps the value on the period's first
   bar only; a finer timeframe with `lookahead_on` returns the period's first intrabar (the last
   without).
+- **Spans the chart's bars do not fold.** `time::bucket::nests(requested, chart)` says whether a
+  requested bucket's boundaries are all chart bar boundaries. When they are not (45 minutes on 30
+  minute bars, a month on weekly bars), `security_request` serves the chart's own symbol from the
+  provider like another symbol (`straddles`), and fails with `PINE4021` when the provider has no
+  such candles. `calc_bars_count` limits a request to the newest candles of its timeframe up to the
+  chart's last bar (`SecuritySite::window_start` for the chart's own symbol, the first allowed
+  candle for another; the key carries it so the provider fetches that many); older chart bars read
+  `na`. A chart that opens inside a candle reads that first candle whole from the provider
+  (`SecuritySite::first_candle`, set by `warm_up`) when it completes, and in `ahead_value` only
+  when the run has the candle's last bar. The own-symbol warm-up (about 300 candles before the
+  chart, `host::pine::series`) stays, a known divergence from TradingView, whose request has no
+  candle before the chart's first bar.
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
 

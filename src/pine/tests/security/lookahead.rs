@@ -6,19 +6,19 @@
 
 use std::collections::HashMap;
 
-use super::bench::{limits, run_script, symbol};
 use crate::model::Kline;
 use crate::pine::compiler::program::{BarEvent, BarPhase};
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::session::Session;
 use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey};
+use crate::pine::tests::bench::{limits, run_script, symbol};
 
-const HOUR: i64 = 3_600_000;
+pub(super) const HOUR: i64 = 3_600_000;
 const FOUR_HOURS: usize = 4;
 
 /// An hourly bar whose five values all differ from its neighbours', so a bucket folded from the
 /// wrong bars changes at least one of them.
-fn hourly_bar(hour: i64) -> Kline {
+pub(super) fn hourly_bar(hour: i64) -> Kline {
     let open = 100.0 + hour as f64;
     Kline {
         open_time: hour * HOUR,
@@ -31,7 +31,7 @@ fn hourly_bar(hour: i64) -> Kline {
     }
 }
 
-fn hourly(count: i64) -> Vec<Kline> {
+pub(super) fn hourly(count: i64) -> Vec<Kline> {
     (0..count).map(hourly_bar).collect()
 }
 
@@ -45,7 +45,7 @@ fn folded(chart: &[Kline], bucket: usize) -> Kline {
     candle
 }
 
-fn plot_values(session: &Session, title: &str) -> Vec<Option<f64>> {
+pub(super) fn plot_values(session: &Session, title: &str) -> Vec<Option<f64>> {
     session
         .output()
         .plots
@@ -366,7 +366,10 @@ impl SecurityDataProvider for EthFourHour {
     }
 }
 
-fn session_with(source: &str, provider: Option<Box<dyn SecurityDataProvider>>) -> Session {
+pub(super) fn session_with(
+    source: &str,
+    provider: Option<Box<dyn SecurityDataProvider>>,
+) -> Session {
     let program = compiler::compile(source, limits(), &NoLibraries);
     assert!(program.is_valid(), "{:?}", program.diagnostics);
     Session::new(
