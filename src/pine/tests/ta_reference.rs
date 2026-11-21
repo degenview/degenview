@@ -604,3 +604,786 @@ fn every_bundled_indicator_still_runs_and_draws() {
         );
     }
 }
+
+/// TradingView's definition of `ta.tr(handle_na)`, as a function the script calls.
+const TRUE_RANGE_REFERENCE: &str = "
+f_tr(bool handleNa) =>
+    na(close[1]) ? (handleNa ? high - low : na) : math.max(high - low, math.abs(high - close[1]), math.abs(low - close[1]))
+";
+
+#[test]
+fn true_range_is_na_on_the_first_bar_unless_na_is_handled() {
+    let source = format!(
+        "//@version=6
+indicator(\"True range\")
+{TRUE_RANGE_REFERENCE}
+plot(ta.tr)
+plot(ta.tr(false))
+plot(ta.tr(true))
+plot(ta.tr(handle_na = true))
+plot(ta.tr(bar_index == 0))
+plot(f_tr(false))
+plot(f_tr(true))
+plot(f_tr(bar_index == 0))
+"
+    );
+    let plotted = plots(&source, 600);
+    assert_same("variable", &plotted[0], &plotted[5]);
+    assert_same("handle_na = false", &plotted[1], &plotted[5]);
+    assert_same("handle_na = true", &plotted[2], &plotted[6]);
+    assert_same("handle_na named", &plotted[3], &plotted[6]);
+    assert_same("handle_na computed", &plotted[4], &plotted[7]);
+    assert_eq!(first_value(&plotted[0]), Some(1));
+    assert_eq!(first_value(&plotted[2]), Some(0));
+}
+
+#[test]
+fn atr_and_supertrend_keep_the_first_bars_range() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Atr\")
+plot(ta.atr(14))
+plot(ta.rma(ta.tr(true), 14))
+",
+        600,
+    );
+    assert_same("atr", &plotted[0], &plotted[1]);
+    assert_eq!(first_value(&plotted[0]), Some(13));
+}
+
+#[test]
+fn keltner_channels_start_on_the_bar_after_their_length_like_the_reference_code() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Keltner\", overlay = true)
+[basis, upper, lower] = ta.kc(close, 20, 1.5, true)
+[highLowBasis, highLowUpper, highLowLower] = ta.kc(close, 20, 1.5, false)
+average = ta.ema(close, 20)
+range = ta.ema(ta.tr, 20)
+plot(basis)
+plot(upper)
+plot(lower)
+plot(ta.kcw(close, 20, 1.5, true))
+plot(average)
+plot(average + 1.5 * range)
+plot(average - 1.5 * range)
+plot(3 * range / average)
+plot(highLowUpper)
+",
+        800,
+    );
+    assert_same("basis", &plotted[0], &plotted[4]);
+    assert_same("upper", &plotted[1], &plotted[5]);
+    assert_same("lower", &plotted[2], &plotted[6]);
+    assert_same("width", &plotted[3], &plotted[7]);
+    assert_eq!(first_value(&plotted[1]), Some(20), "TradingView: bar 20");
+    assert_eq!(
+        first_value(&plotted[0]),
+        Some(19),
+        "the basis is the average itself, a bar before the bands"
+    );
+    assert_eq!(
+        first_value(&plotted[8]),
+        Some(19),
+        "the high-low form has no first-bar gap"
+    );
+}
+
+#[test]
+fn a_conditional_call_measures_true_range_against_the_charts_previous_close() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Conditional\")
+sometimes = bar_index % 3 == 1
+plot(sometimes ? ta.atr(1) : na)
+plot(sometimes ? ta.tr(true) : na)
+plot(sometimes ? ta.kcw(close, 1, 1, true) : na)
+plot(sometimes ? 2 * ta.tr / close : na)
+",
+        600,
+    );
+    assert_same("atr", &plotted[0], &plotted[1]);
+    assert_same("kcw", &plotted[2], &plotted[3]);
+    assert!(plotted[0].iter().flatten().count() > 150);
+}
+
+#[test]
+fn a_conditional_supertrend_follows_the_reference_code() {
+    let source = format!(
+        "//@version=6
+indicator(\"Conditional supertrend\", overlay = true)
+{SUPERTREND_REFERENCE}
+sometimes = bar_index % 3 == 1
+float line = na
+float expected = na
+if sometimes
+    [built, direction] = ta.supertrend(3, 4)
+    line := built
+    [wanted, wantedDirection] = f_supertrend(3, 4)
+    expected := wanted
+plot(line)
+plot(expected)
+"
+    );
+    let plotted = plots(&source, 900);
+    assert_same("line", &plotted[0], &plotted[1]);
+    assert!(plotted[0].iter().flatten().count() > 100);
+}
+
+/// The reference code for `ta.dmi`, written out from its definition: the directional movement
+/// and the true range smoothed with `ta.rma`, ADX as the smoothed directional index.
+const DMI_REFERENCE: &str = "
+f_dmi(int len, int smoothing) =>
+    up = ta.change(high)
+    down = -ta.change(low)
+    plusMove = na(up) ? na : (up > down and up > 0 ? up : 0)
+    minusMove = na(down) ? na : (down > up and down > 0 ? down : 0)
+    trueRange = ta.rma(ta.tr, len)
+    plus = 100 * ta.rma(plusMove, len) / trueRange
+    minus = 100 * ta.rma(minusMove, len) / trueRange
+    total = plus + minus
+    adx = 100 * ta.rma(math.abs(plus - minus) / (total == 0 ? 1 : total), smoothing)
+    [plus, minus, adx]
+";
+
+#[test]
+fn dmi_equals_the_reference_code_from_its_first_bar() {
+    let source = format!(
+        "//@version=6
+indicator(\"Dmi\")
+{DMI_REFERENCE}
+[plus, minus, adx] = ta.dmi(14, 9)
+[wantedPlus, wantedMinus, wantedAdx] = f_dmi(14, 9)
+plot(plus)
+plot(wantedPlus)
+plot(minus)
+plot(wantedMinus)
+plot(adx)
+plot(wantedAdx)
+"
+    );
+    let plotted = plots(&source, 1_000);
+    assert_same("plus", &plotted[0], &plotted[1]);
+    assert_same("minus", &plotted[2], &plotted[3]);
+    assert_same("adx", &plotted[4], &plotted[5]);
+    assert_eq!(first_value(&plotted[0]), Some(14), "TR starts on bar 1");
+    assert_eq!(first_value(&plotted[4]), Some(22));
+}
+
+#[test]
+fn dmi_shares_no_state_with_the_calls_around_it() {
+    // The smoothing states used to sit under `site * 16 + n`, which a later call site could hit.
+    let lengths: Vec<usize> = (3..43).collect();
+    let mut source = String::from(
+        "//@version=6
+indicator(\"Neighbours\")
+[plus, minus, adx] = ta.dmi(14, 14)
+plot(plus)
+",
+    );
+    for length in &lengths {
+        source.push_str(&format!("plot(ta.sma(close, {length}))\n"));
+    }
+    let count = 500;
+    let plotted = plots(&source, count);
+    let closes: Vec<f64> = bars(count, 60_000).iter().map(|bar| bar.close).collect();
+    for (offset, length) in lengths.iter().enumerate() {
+        let expected: Vec<Option<f64>> = (0..count)
+            .map(|bar| {
+                (bar + 1 >= *length)
+                    .then(|| closes[bar + 1 - length..=bar].iter().sum::<f64>() / *length as f64)
+            })
+            .collect();
+        assert_same(&format!("sma({length})"), &plotted[offset + 1], &expected);
+    }
+}
+
+/// The first nine bars of BINANCE:BTCUSDT 5m as TradingView draws them (2026-11-02), and what its
+/// `ta.tr`, `ta.atr`, `ta.supertrend`, `ta.kc`, `ta.kcw` and `ta.dmi` logged on them (to three
+/// decimals; `None` is `na`).
+#[test]
+fn the_true_range_family_matches_tradingview_on_its_first_bars() {
+    use crate::model::Kline;
+    let ohlc: [(f64, f64, f64, f64); 9] = [
+        (78354.01, 78523.0, 78354.01, 78454.97),
+        (78454.98, 78472.58, 78266.0, 78279.93),
+        (78279.94, 78284.01, 78161.49, 78161.49),
+        (78161.5, 78223.96, 78044.11, 78055.42),
+        (78055.42, 78095.72, 78051.16, 78080.76),
+        (78080.77, 78198.01, 78080.76, 78198.01),
+        (78198.01, 78214.37, 78054.0, 78059.61),
+        (78059.61, 78100.98, 78044.24, 78098.02),
+        (78098.02, 78129.33, 78080.0, 78120.01),
+    ];
+    let data: Vec<Kline> = ohlc
+        .iter()
+        .enumerate()
+        .map(|(i, &(open, high, low, close))| Kline {
+            open_time: 1_000_000 + i as i64 * 300_000,
+            close_time: 1_000_000 + (i as i64 + 1) * 300_000,
+            open,
+            high,
+            low,
+            close,
+            volume: 100.0,
+        })
+        .collect();
+    let source = "//@version=6
+indicator(\"p670\", overlay = true)
+trN = ta.tr
+trT = ta.tr(true)
+trF = ta.tr(false)
+atr3 = ta.atr(3)
+[st, dir] = ta.supertrend(2, 3)
+[kcm, kcu, kcl] = ta.kc(close, 3, 1.5)
+kcw3 = ta.kcw(close, 3, 1.5)
+[pdi, mdi, adx] = ta.dmi(3, 3)
+plot(trN)
+plot(trT)
+plot(trF)
+plot(atr3)
+plot(st)
+plot(dir)
+plot(kcm)
+plot(kcu)
+plot(kcl)
+plot(kcw3)
+plot(pdi)
+plot(mdi)
+plot(adx)
+";
+    let session = super::bench::run_script(source, &data, false, |_| {});
+    let n = f64::NAN;
+    let tradingview: [(&str, [f64; 9]); 13] = [
+        (
+            "tr",
+            [
+                n, 206.58, 122.52, 179.85, 44.56, 117.25, 160.37, 56.74, 49.33,
+            ],
+        ),
+        (
+            "tr(true)",
+            [
+                168.99, 206.58, 122.52, 179.85, 44.56, 117.25, 160.37, 56.74, 49.33,
+            ],
+        ),
+        (
+            "tr(false)",
+            [
+                n, 206.58, 122.52, 179.85, 44.56, 117.25, 160.37, 56.74, 49.33,
+            ],
+        ),
+        (
+            "atr",
+            [
+                n, n, 166.03, 170.637, 128.611, 124.824, 136.673, 110.028, 89.796,
+            ],
+        ),
+        (
+            "supertrend",
+            [
+                0.0, n, 78554.81, 78475.308, 78330.662, 78330.662, 78330.662, 78292.667, 78284.256,
+            ],
+        ),
+        ("direction", [1.0; 9]),
+        (
+            "kc basis",
+            [
+                n, n, 78298.797, 78177.108, 78128.934, 78163.472, 78111.541, 78104.781, 78112.395,
+            ],
+        ),
+        (
+            "kc upper",
+            [
+                n, n, n, 78431.583, 78289.592, 78331.738, 78315.952, 78249.541, 78221.773,
+            ],
+        ),
+        (
+            "kc lower",
+            [
+                n, n, n, 77922.633, 77968.277, 77995.206, 77907.13, 77960.02, 78003.018,
+            ],
+        ),
+        ("kcw", [n, n, n, 0.007, 0.004, 0.004, 0.005, 0.004, 0.003]),
+        ("plus", [n, n, n, 0.0, 0.0, 27.412, 16.667, 13.797, 21.806]),
+        (
+            "minus",
+            [n, n, n, 60.89, 53.822, 36.91, 28.983, 26.954, 22.011],
+        ),
+        ("adx", [n, n, n, n, n, 71.589, 56.719, 48.574, 32.539]),
+    ];
+    let output = session.output();
+    for ((name, wanted), plot) in tradingview.iter().zip(&output.plots) {
+        for (bar, (&wanted, got)) in wanted.iter().zip(&plot.values).enumerate() {
+            match got {
+                None => assert!(wanted.is_nan(), "{name}, bar {bar}: na against {wanted}"),
+                Some(got) => assert!(
+                    (got - wanted).abs() <= 6e-4,
+                    "{name}, bar {bar}: {got} against TradingView's {wanted}"
+                ),
+            }
+        }
+    }
+}
+
+#[test]
+fn the_true_range_family_follows_a_live_bar_like_its_reference_code() {
+    // The live bar is recomputed on every tick against the chart's close[1], and folded into the
+    // averages only when it closes: each built-in must give what the formula written out in Pine
+    // gives at the history, the first tick, a changed tick and the close.
+    let source = format!(
+        "{TRUE_RANGE_REFERENCE}{SUPERTREND_REFERENCE}{DMI_REFERENCE}
+plot(ta.tr)
+plot(f_tr(false))
+plot(ta.tr(true))
+plot(f_tr(true))
+plot(ta.atr(2))
+plot(ta.rma(f_tr(true), 2))
+[basis, upper, lower] = ta.kc(close, 2, 1.5)
+plot(basis)
+plot(ta.ema(close, 2))
+plot(upper)
+plot(ta.ema(close, 2) + 1.5 * ta.ema(f_tr(false), 2))
+plot(lower)
+plot(ta.ema(close, 2) - 1.5 * ta.ema(f_tr(false), 2))
+[line, direction] = ta.supertrend(2, 2)
+[wantedLine, wantedDirection] = f_supertrend(2, 2)
+plot(line)
+plot(wantedLine)
+plot(direction)
+plot(wantedDirection)
+[plus, minus, adx] = ta.dmi(2, 2)
+[wantedPlus, wantedMinus, wantedAdx] = f_dmi(2, 2)
+plot(plus)
+plot(wantedPlus)
+plot(minus)
+plot(wantedMinus)"
+    );
+    let seen = live_bar(&source);
+    assert_eq!(seen.len(), 4);
+    let names = [
+        "tr",
+        "tr(true)",
+        "atr",
+        "kc basis",
+        "kc upper",
+        "kc lower",
+        "supertrend",
+        "direction",
+        "plus",
+        "minus",
+    ];
+    for (stage, plotted) in seen.iter().enumerate() {
+        for (name, pair) in names.iter().zip(plotted.chunks(2)) {
+            assert!(
+                (pair[0] - pair[1]).abs() <= 1e-9 * pair[0].abs().max(pair[1].abs()).max(1.0),
+                "stage {stage}: {name} {} against its formula {}",
+                pair[0],
+                pair[1]
+            );
+        }
+    }
+    // The changed tick moved the close, so an average of it moved too, and the close kept what the
+    // last tick showed.
+    assert_ne!(
+        seen[1][6], seen[2][6],
+        "the kc basis follows the changed tick"
+    );
+    assert_eq!(
+        seen[2], seen[3],
+        "the close folds what the last tick showed"
+    );
+}
+
+#[test]
+fn the_true_range_family_gives_the_same_values_on_a_shorter_chart() {
+    // Replay runs the script on the bars so far: what it shows on a bar cannot depend on the
+    // bars after it.
+    let source = "//@version=6
+indicator(\"Prefix\", overlay = true)
+[line, direction] = ta.supertrend(3, 10)
+[basis, upper, lower] = ta.kc(close, 10, 1.5)
+[plus, minus, adx] = ta.dmi(14, 9)
+plot(ta.tr)
+plot(ta.atr(14))
+plot(line)
+plot(direction)
+plot(basis)
+plot(upper)
+plot(lower)
+plot(ta.kcw(close, 10, 1.5))
+plot(plus)
+plot(minus)
+plot(adx)
+";
+    let whole = plots(source, 400);
+    for count in [1, 2, 3, 15, 16, 120] {
+        let part = plots(source, count);
+        for (index, (whole, part)) in whole.iter().zip(&part).enumerate() {
+            assert_same(
+                &format!("plot {index} over {count} bars"),
+                &whole[..count],
+                part,
+            );
+        }
+    }
+}
+
+/// The first eighty bars of BINANCE:BTCUSDT 5m (2026-11-02) with the default lengths, as TradingView's
+/// Pine logs print them (`tests/data/tradingview-true-range-family.log`): `A` lines carry the bar and
+/// what `ta.tr`, `ta.atr(14)`, `ta.supertrend(3, 10)`, `ta.kc(close, 20, 1.5)` and `ta.dmi(14, 9)`
+/// gave on it; `B` lines what the same calls gave inside `if bar_index % 3 == 1`.
+///
+/// One column is not compared: a conditional `ta.supertrend`. TradingView's built-in prints `0` on
+/// some of its first calls and then a band that is neither the reference code's nor the chart's
+/// (the reference code run conditionally is what `a_conditional_supertrend_follows_the_reference_code`
+/// pins); nothing in the documentation says what it is, so it is left as it was.
+#[test]
+fn the_true_range_family_matches_tradingview_over_eighty_bars() {
+    use crate::model::Kline;
+    let text = include_str!("data/tradingview-true-range-family.log");
+    let parse = |t: &str| -> f64 {
+        if t == "NaN" {
+            f64::NAN
+        } else {
+            t.parse().unwrap()
+        }
+    };
+    let mut data = Vec::new();
+    let mut a_rows: Vec<Vec<f64>> = Vec::new();
+    let mut b_rows: Vec<Vec<f64>> = Vec::new();
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts[0].starts_with('A') {
+            let i = data.len() as i64;
+            data.push(Kline {
+                open_time: 1_000_000 + i * 300_000,
+                close_time: 1_000_000 + (i + 1) * 300_000,
+                open: parse(parts[1]),
+                high: parse(parts[2]),
+                low: parse(parts[3]),
+                close: parse(parts[4]),
+                volume: 100.0,
+            });
+            a_rows.push(parts[6..].iter().map(|t| parse(t)).collect());
+        } else {
+            b_rows.push(parts[1..].iter().map(|t| parse(t)).collect());
+        }
+    }
+    let source = "//@version=6
+indicator(\"p670b\", overlay = true)
+[st, dir] = ta.supertrend(3, 10)
+[kcm, kcu, kcl] = ta.kc(close, 20, 1.5)
+[pdi, mdi, adx] = ta.dmi(14, 9)
+atr14 = ta.atr(14)
+trN = ta.tr
+sometimes = bar_index % 3 == 1
+float gAtr = na
+float gSt = na
+float gKcu = na
+float gKcm = na
+float gPdi = na
+float gMdi = na
+float gAdx = na
+if sometimes
+    gAtr := ta.atr(14)
+    [s2, d2] = ta.supertrend(3, 10)
+    gSt := s2
+    [k1, k2, k3] = ta.kc(close, 20, 1.5)
+    gKcm := k1
+    gKcu := k2
+    [p2, m2, a2] = ta.dmi(14, 9)
+    gPdi := p2
+    gMdi := m2
+    gAdx := a2
+plot(trN)
+plot(atr14)
+plot(st)
+plot(dir)
+plot(kcm)
+plot(kcu)
+plot(kcl)
+plot(pdi)
+plot(mdi)
+plot(adx)
+plot(gAtr)
+plot(gSt)
+plot(gKcm)
+plot(gKcu)
+plot(gPdi)
+plot(gMdi)
+plot(gAdx)
+";
+    let session = super::bench::run_script(source, &data, false, |_| {});
+    let output = session.output();
+    let a_names = [
+        "tr", "atr", "st", "dir", "kcm", "kcu", "kcl", "pdi", "mdi", "adx",
+    ];
+    let b_names = ["gAtr", "gSt", "gKcm", "gKcu", "gPdi", "gMdi", "gAdx"];
+    let mut mismatches = Vec::new();
+    for (bar, (a, b)) in a_rows.iter().zip(&b_rows).enumerate() {
+        let wanted: Vec<f64> = a.iter().chain(b).copied().collect();
+        let names: Vec<&str> = a_names.iter().chain(&b_names).copied().collect();
+        for (k, name) in names.iter().enumerate() {
+            if *name == "gSt" {
+                continue;
+            }
+            let got = output.plots[k].values[bar];
+            let w = wanted[k];
+            let ok = match got {
+                None => w.is_nan(),
+                Some(g) => (g - w).abs() <= 1e-6 * w.abs().max(1.0),
+            };
+            if !ok {
+                mismatches.push(format!(
+                    "bar {bar} {name}: {got:?} against TradingView's {w}"
+                ));
+            }
+        }
+    }
+    assert_eq!(data.len(), 80);
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+}
+
+#[test]
+fn the_true_range_family_inside_a_request_measures_the_requested_bars() {
+    // The previous close is the requested series' own, not the chart's: each built-in must give
+    // what the reference code written out inside the same request gives.
+    use super::bench::{bars, run_script};
+    let source = format!(
+        "//@version=6
+indicator(\"Requested\", overlay = true)
+{TRUE_RANGE_REFERENCE}{SUPERTREND_REFERENCE}{DMI_REFERENCE}
+[kcBasis, kcUpper, kcLower] = request.security(syminfo.tickerid, \"5\", ta.kc(close, 20, 1.5))
+[wantedPlus, wantedMinus, wantedAdx] = request.security(syminfo.tickerid, \"5\", f_dmi(14, 9))
+[builtPlus, builtMinus, builtAdx] = request.security(syminfo.tickerid, \"5\", ta.dmi(14, 9))
+[wantedLine, wantedDirection] = request.security(syminfo.tickerid, \"5\", f_supertrend(3, 10))
+[builtLine, builtDirection] = request.security(syminfo.tickerid, \"5\", ta.supertrend(3, 10))
+plot(request.security(syminfo.tickerid, \"5\", ta.tr))
+plot(request.security(syminfo.tickerid, \"5\", f_tr(false)))
+plot(request.security(syminfo.tickerid, \"5\", ta.atr(14)))
+plot(request.security(syminfo.tickerid, \"5\", ta.rma(f_tr(true), 14)))
+plot(kcBasis)
+plot(request.security(syminfo.tickerid, \"5\", ta.ema(close, 20)))
+plot(kcUpper)
+plot(request.security(syminfo.tickerid, \"5\", ta.ema(close, 20) + 1.5 * ta.ema(f_tr(false), 20)))
+plot(kcLower)
+plot(request.security(syminfo.tickerid, \"5\", ta.ema(close, 20) - 1.5 * ta.ema(f_tr(false), 20)))
+plot(builtPlus)
+plot(wantedPlus)
+plot(builtMinus)
+plot(wantedMinus)
+plot(builtAdx)
+plot(wantedAdx)
+plot(builtLine)
+plot(wantedLine)
+plot(builtDirection)
+plot(wantedDirection)
+"
+    );
+    let minutes = bars(900, 60_000);
+    let plotted: Vec<Vec<Option<f64>>> = run_script(&source, &minutes, true, |_| {})
+        .output()
+        .plots
+        .into_iter()
+        .map(|plot| plot.values)
+        .collect();
+    let names = [
+        "tr",
+        "atr",
+        "kc basis",
+        "kc upper",
+        "kc lower",
+        "plus",
+        "minus",
+        "adx",
+        "supertrend",
+        "direction",
+    ];
+    for (name, pair) in names.iter().zip(plotted.chunks(2)) {
+        assert_same(name, &pair[0], &pair[1]);
+    }
+    assert!(plotted[0].iter().any(Option::is_some), "the request ran");
+}
+
+/// The first two hundred bars of BINANCE:BTCUSDT 5m (2026-11-02) and what TradingView's Pine logs
+/// print for the inputs the default-length probe did not use (`tests/data/tradingview-true-range-
+/// inputs.log`): `A` lines are the bars, `C` lines the values on a bar (every one of the first forty,
+/// then every tenth): `ta.tr`, `ta.atr(14)`, `ta.kc(close, 10, 2, false)` and `ta.kcw` of it,
+/// `ta.kc(close, 20, 1.5, true)`, `ta.dmi(7, 20)`, `ta.dmi(14, 9)` and `ta.supertrend(3, 10)`.
+#[test]
+fn the_true_range_family_matches_tradingview_with_other_inputs_and_deeper_history() {
+    use crate::model::Kline;
+    let text = include_str!("data/tradingview-true-range-inputs.log");
+    let parse = |t: &str| -> f64 {
+        if t == "NaN" {
+            f64::NAN
+        } else {
+            t.parse().expect("a number")
+        }
+    };
+    let mut data = Vec::new();
+    let mut rows: Vec<(usize, Vec<f64>)> = Vec::new();
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        let bar: usize = parts[0][1..].parse().expect("a bar");
+        if parts[0].starts_with('A') {
+            let index = data.len() as i64;
+            data.push(Kline {
+                open_time: 1_000_000 + index * 300_000,
+                close_time: 1_000_000 + (index + 1) * 300_000,
+                open: parse(parts[1]),
+                high: parse(parts[2]),
+                low: parse(parts[3]),
+                close: parse(parts[4]),
+                volume: 100.0,
+            });
+        } else {
+            rows.push((bar, parts[1..].iter().map(|t| parse(t)).collect()));
+        }
+    }
+    let source = "//@version=6
+indicator(\"Inputs\", overlay = true)
+[kb, ku, kl] = ta.kc(close, 10, 2.0, false)
+kw = ta.kcw(close, 10, 2.0, false)
+[k2b, k2u, k2l] = ta.kc(close, 20, 1.5, true)
+[p7, m7, a7] = ta.dmi(7, 20)
+[p14, m14, a14] = ta.dmi(14, 9)
+[st, dir] = ta.supertrend(3, 10)
+plot(ta.tr)
+plot(ta.atr(14))
+plot(kb)
+plot(ku)
+plot(kl)
+plot(kw)
+plot(k2b)
+plot(k2u)
+plot(k2l)
+plot(p7)
+plot(m7)
+plot(a7)
+plot(p14)
+plot(m14)
+plot(a14)
+plot(st)
+plot(dir)
+";
+    let names = [
+        "tr",
+        "atr",
+        "kc basis, high-low",
+        "kc upper, high-low",
+        "kc lower, high-low",
+        "kcw, high-low",
+        "kc basis",
+        "kc upper",
+        "kc lower",
+        "plus(7, 20)",
+        "minus(7, 20)",
+        "adx(7, 20)",
+        "plus",
+        "minus",
+        "adx",
+        "supertrend",
+        "direction",
+    ];
+    let session = super::bench::run_script(source, &data, false, |_| {});
+    let output = session.output();
+    assert_eq!(data.len(), 200);
+    assert_eq!(rows.len(), 56);
+    let mut mismatches = Vec::new();
+    for (bar, wanted) in &rows {
+        for ((name, wanted), plot) in names.iter().zip(wanted).zip(&output.plots) {
+            let ok = match plot.values[*bar] {
+                None => wanted.is_nan(),
+                // TradingView prints eight decimals.
+                Some(got) => (got - wanted).abs() <= 1e-9 * wanted.abs().max(1.0) + 6e-9,
+            };
+            if !ok {
+                mismatches.push(format!(
+                    "bar {bar} {name}: {:?} against TradingView's {wanted}",
+                    plot.values[*bar]
+                ));
+            }
+        }
+    }
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+}
+
+#[test]
+fn the_true_range_family_follows_its_reference_code_over_flat_bars_and_gaps() {
+    // Bars with no range at all (a halted market) and bars that open far from the last close: the
+    // range is zero or all gap, so the averages and the directional index divide by little.
+    use super::bench::{bars, run_script};
+    let mut data = bars(400, 60_000);
+    for index in 1..data.len() {
+        let before = data[index - 1].close;
+        if index % 7 == 0 {
+            let bar = &mut data[index];
+            (bar.open, bar.high, bar.low, bar.close) = (before, before, before, before);
+        } else if index % 11 == 0 {
+            let bar = &mut data[index];
+            let shift = before * 1.04 - bar.open;
+            bar.open += shift;
+            bar.high += shift;
+            bar.low += shift;
+            bar.close += shift;
+        }
+    }
+    let source = format!(
+        "//@version=6
+indicator(\"Flat and gapped\", overlay = true)
+{TRUE_RANGE_REFERENCE}{SUPERTREND_REFERENCE}{DMI_REFERENCE}
+[plus, minus, adx] = ta.dmi(10, 5)
+[wantedPlus, wantedMinus, wantedAdx] = f_dmi(10, 5)
+[line, direction] = ta.supertrend(2, 7)
+[wantedLine, wantedDirection] = f_supertrend(2, 7)
+[basis, upper, lower] = ta.kc(close, 8, 1.5)
+plot(ta.tr)
+plot(f_tr(false))
+plot(ta.atr(7))
+plot(ta.rma(f_tr(true), 7))
+plot(plus)
+plot(wantedPlus)
+plot(minus)
+plot(wantedMinus)
+plot(adx)
+plot(wantedAdx)
+plot(line)
+plot(wantedLine)
+plot(direction)
+plot(wantedDirection)
+plot(upper)
+plot(ta.ema(close, 8) + 1.5 * ta.ema(f_tr(false), 8))
+plot(lower)
+plot(ta.ema(close, 8) - 1.5 * ta.ema(f_tr(false), 8))
+plot(ta.kcw(close, 8, 1.5))
+plot(3 * ta.ema(f_tr(false), 8) / ta.ema(close, 8))
+"
+    );
+    let plotted: Vec<Vec<Option<f64>>> = run_script(&source, &data, false, |_| {})
+        .output()
+        .plots
+        .into_iter()
+        .map(|plot| plot.values)
+        .collect();
+    let names = [
+        "tr",
+        "atr",
+        "plus",
+        "minus",
+        "adx",
+        "supertrend",
+        "direction",
+        "kc upper",
+        "kc lower",
+        "kcw",
+    ];
+    for (name, pair) in names.iter().zip(plotted.chunks(2)) {
+        assert_same(name, &pair[0], &pair[1]);
+    }
+    assert!(
+        plotted[8].iter().flatten().count() > 300,
+        "the directional index ran through the flat bars"
+    );
+}
