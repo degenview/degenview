@@ -39,6 +39,7 @@ static GECKOTERMINAL: OnceLock<RateLimiter> = OnceLock::new();
 static KRAKEN: OnceLock<RateLimiter> = OnceLock::new();
 static LIGHTER: OnceLock<RateLimiter> = OnceLock::new();
 static BITFINEX: OnceLock<RateLimiter> = OnceLock::new();
+static CMC_GLOBAL: OnceLock<RateLimiter> = OnceLock::new();
 
 pub fn coingecko() -> &'static RateLimiter {
     COINGECKO.get_or_init(|| RateLimiter::new(Duration::from_secs(4)))
@@ -66,6 +67,14 @@ pub fn lighter() -> &'static RateLimiter {
 /// room for the market list and a second window of the app.
 pub fn bitfinex() -> &'static RateLimiter {
     BITFINEX.get_or_init(|| RateLimiter::new(Duration::from_millis(2_500)))
+}
+
+/// CoinMarketCap's website data API (the global-metrics history behind `TOTAL` and `BTC.D`) has no
+/// published limit. Twelve requests in a row were all answered (2026-11-21); it does answer "the
+/// system is busy" under load. A second a request keeps a chart's few windows from arriving as a
+/// burst.
+pub fn cmc_global() -> &'static RateLimiter {
+    CMC_GLOBAL.get_or_init(|| RateLimiter::new(Duration::from_secs(1)))
 }
 
 pub fn geckoterminal() -> &'static RateLimiter {
