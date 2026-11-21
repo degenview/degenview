@@ -30,7 +30,7 @@ No account. No subscription.
 
 ### Markets
 
-- **Crypto** from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid (perpetuals, trade.xyz index markets and spot), Aster and Lighter perpetuals, CoinGecko and on-chain DEX pairs, searchable side by side.
+- **Crypto** from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid (perpetuals, trade.xyz index markets and spot), Aster, Lighter and Deribit perpetuals, CoinGecko and on-chain DEX pairs, searchable side by side.
 - **US stocks and ETFs** through Alpaca. A free key is all you need.
 - **Prediction markets** from Polymarket and Kalshi, charted as probabilities.
 - **Market-wide gauges** such as Crypto Fear and Greed and Altcoin Season.
