@@ -1,8 +1,9 @@
 use crate::lock::lock;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::market::venue;
-use crate::service::net::ws::{Frame, Session};
+use crate::service::net::ws::{Flow, Frame, Session};
 use eframe::egui;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -47,9 +48,72 @@ pub trait CandleProtocol: Sync {
     /// caps the topics of a connection gets several); `None` when the venue has no such candle.
     fn sessions(&self, symbols: &[String], base: Timeframe) -> Option<Vec<Session>>;
 
-    /// What one message says: the market as the venue names it, and its candle. Nothing for a
-    /// message that is not one (an acknowledgement, a heartbeat, another topic).
-    fn parse(&self, frame: Frame<'_>, base: Timeframe) -> Option<(String, Kline)>;
+    /// What one message says on its own: the market as the venue names it, and its candle. Nothing
+    /// for a message that is not one (an acknowledgement, a heartbeat, another topic). A venue
+    /// whose messages cannot be read alone (they name a subscription, not a market) implements
+    /// [`Self::reader`] instead, and this is never called.
+    fn parse(&self, _frame: Frame<'_>, _base: Timeframe) -> Option<(String, Kline)> {
+        None
+    }
+
+    /// For a venue that has to remember across messages of one connection (which market a channel
+    /// number is): the reader [`LiveFeed`] makes of each connection's messages. `None` for a venue
+    /// that reads each message by [`Self::parse`].
+    fn reader(&self, _base: Timeframe) -> Option<Box<dyn FrameReader>> {
+        None
+    }
+}
+
+/// What a connection's messages have told so far, and the reading of the next one by it.
+pub trait FrameReader {
+    /// A new connection is up: what the last one told is void.
+    fn reset(&mut self);
+
+    /// What one message says; see [`CandleProtocol::parse`].
+    fn read(&mut self, frame: Frame<'_>) -> Option<(String, Kline)>;
+
+    /// Whether the message just read asked for a new connection (the server is restarting, or
+    /// going into maintenance and dropping every subscription): asked after each message, and
+    /// `true` once for each such message.
+    fn reconnect(&mut self) -> bool {
+        false
+    }
+}
+
+/// How one connection's messages are read: by the protocol alone, or through the memory it asks for.
+struct Reading {
+    protocol: &'static dyn CandleProtocol,
+    base: Timeframe,
+    memory: Option<Box<dyn FrameReader>>,
+}
+
+impl Reading {
+    fn new(protocol: &'static dyn CandleProtocol, base: Timeframe) -> Self {
+        Self {
+            protocol,
+            base,
+            memory: protocol.reader(base),
+        }
+    }
+
+    fn link_up(&mut self) {
+        if let Some(memory) = &mut self.memory {
+            memory.reset();
+        }
+    }
+
+    fn read(&mut self, frame: Frame<'_>) -> Option<(String, Kline)> {
+        match &mut self.memory {
+            Some(memory) => memory.read(frame),
+            None => self.protocol.parse(frame, self.base),
+        }
+    }
+
+    fn reconnect(&mut self) -> bool {
+        self.memory
+            .as_mut()
+            .is_some_and(|memory| memory.reconnect())
+    }
 }
 
 /// A kline feed for one workspace's charts of one source: background threads (one per connection:
@@ -78,13 +142,28 @@ impl LiveFeed {
             let thread_inbox = Arc::clone(&inbox);
             let ctx = ctx.clone();
             std::thread::spawn(move || {
-                session.run_frames(&thread_shutdown, |frame| {
-                    if let Some((symbol, kline)) = protocol.parse(frame, base) {
-                        thread_inbox.push(symbol, kline);
-                        ctx.request_repaint();
-                    }
-                    true
-                });
+                // Told when the link comes up and read at each message, by the one loop.
+                let reading = RefCell::new(Reading::new(protocol, base));
+                session.run_flow(
+                    &thread_shutdown,
+                    |up| {
+                        if up {
+                            reading.borrow_mut().link_up();
+                        }
+                    },
+                    |frame| {
+                        let mut reading = reading.borrow_mut();
+                        if let Some((symbol, kline)) = reading.read(frame) {
+                            thread_inbox.push(symbol, kline);
+                            ctx.request_repaint();
+                        }
+                        if reading.reconnect() {
+                            Flow::Reconnect
+                        } else {
+                            Flow::Read
+                        }
+                    },
+                );
             });
         }
         Some(Self {
@@ -121,6 +200,134 @@ mod tests {
             close,
             volume: 1.0,
         }
+    }
+
+    /// Reads `name` frames only on a connection that was first told `hello`: a stand-in for a
+    /// venue whose messages name a subscription, not a market.
+    #[derive(Default)]
+    struct Introduced {
+        market: Option<String>,
+    }
+
+    impl FrameReader for Introduced {
+        fn reset(&mut self) {
+            self.market = None;
+        }
+
+        fn read(&mut self, frame: Frame<'_>) -> Option<(String, Kline)> {
+            let text = frame.text()?;
+            match text.strip_prefix("hello ") {
+                Some(market) => {
+                    self.market = Some(market.to_owned());
+                    None
+                }
+                None => Some((self.market.clone()?, kline(1_000, text.parse().ok()?))),
+            }
+        }
+    }
+
+    struct Remembering;
+    struct Alone;
+
+    impl CandleProtocol for Remembering {
+        fn sessions(&self, _: &[String], _: Timeframe) -> Option<Vec<Session>> {
+            None
+        }
+
+        fn reader(&self, _: Timeframe) -> Option<Box<dyn FrameReader>> {
+            Some(Box::new(Introduced::default()))
+        }
+    }
+
+    impl CandleProtocol for Alone {
+        fn sessions(&self, _: &[String], _: Timeframe) -> Option<Vec<Session>> {
+            None
+        }
+
+        fn parse(&self, frame: Frame<'_>, _: Timeframe) -> Option<(String, Kline)> {
+            Some((
+                "BTCUSDT".to_owned(),
+                kline(1_000, frame.text()?.parse().ok()?),
+            ))
+        }
+    }
+
+    #[test]
+    fn a_connection_is_read_through_the_memory_its_venue_asks_for_and_forgets_it_when_it_reconnects()
+     {
+        let mut reading = Reading::new(&Remembering, Timeframe::HOUR_1);
+        reading.link_up();
+        assert!(
+            reading.read(Frame::Text("7")).is_none(),
+            "no market told yet"
+        );
+        assert!(reading.read(Frame::Text("hello BTCUSD")).is_none());
+        let (symbol, bar) = reading.read(Frame::Text("7")).expect("a candle");
+        assert_eq!((symbol.as_str(), bar.close), ("BTCUSD", 7.0));
+
+        // A new connection starts from nothing: what the last told is void.
+        reading.link_up();
+        assert!(reading.read(Frame::Text("8")).is_none());
+        assert!(reading.read(Frame::Text("hello ETHUSD")).is_none());
+        assert_eq!(reading.read(Frame::Text("8")).unwrap().0, "ETHUSD");
+    }
+
+    #[test]
+    fn a_connection_the_server_asked_to_end_is_told_once() {
+        /// Asks for a new connection at the message `restart`.
+        #[derive(Default)]
+        struct Restarting {
+            asked: bool,
+        }
+
+        impl FrameReader for Restarting {
+            fn reset(&mut self) {}
+
+            fn read(&mut self, frame: Frame<'_>) -> Option<(String, Kline)> {
+                self.asked = frame.text() == Some("restart");
+                None
+            }
+
+            fn reconnect(&mut self) -> bool {
+                std::mem::take(&mut self.asked)
+            }
+        }
+
+        struct Venue;
+
+        impl CandleProtocol for Venue {
+            fn sessions(&self, _: &[String], _: Timeframe) -> Option<Vec<Session>> {
+                None
+            }
+
+            fn parse(&self, _: Frame<'_>, _: Timeframe) -> Option<(String, Kline)> {
+                None
+            }
+
+            fn reader(&self, _: Timeframe) -> Option<Box<dyn FrameReader>> {
+                Some(Box::new(Restarting::default()))
+            }
+        }
+
+        let mut reading = Reading::new(&Venue, Timeframe::HOUR_1);
+        reading.read(Frame::Text("tick"));
+        assert!(!reading.reconnect());
+        reading.read(Frame::Text("restart"));
+        assert!(reading.reconnect());
+        assert!(!reading.reconnect(), "asked for once");
+        // A venue that reads message by message has nothing to ask.
+        let mut alone = Reading::new(&Alone, Timeframe::HOUR_1);
+        alone.read(Frame::Text("restart"));
+        assert!(!alone.reconnect());
+    }
+
+    #[test]
+    fn a_venue_that_asks_for_no_memory_is_parsed_message_by_message() {
+        let mut reading = Reading::new(&Alone, Timeframe::HOUR_1);
+        reading.link_up();
+        assert_eq!(reading.read(Frame::Text("3")).unwrap().1.close, 3.0);
+        assert!(reading.read(Frame::Text("not a number")).is_none());
+        assert!(reading.read(Frame::Binary(&[1])).is_none());
     }
 
     #[test]
