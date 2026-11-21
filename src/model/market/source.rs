@@ -18,6 +18,7 @@ pub enum DataSource {
     Aster,
     Lighter,
     Deribit,
+    Htx,
     CoinGecko,
     DexScreener,
     Alpaca,

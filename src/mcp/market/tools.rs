@@ -53,7 +53,7 @@ const QUOTE_POLL: Duration = Duration::from_millis(100);
 const DEFAULT_ENTRY_PAGE: usize = 100;
 
 /// Providers searched when the caller names none: every one a market can be charted from.
-const ALL_SOURCES: [McpSource; 14] = [
+const ALL_SOURCES: [McpSource; 15] = [
     McpSource::Binance,
     McpSource::Coinbase,
     McpSource::Okx,
@@ -65,6 +65,7 @@ const ALL_SOURCES: [McpSource; 14] = [
     McpSource::Aster,
     McpSource::Lighter,
     McpSource::Deribit,
+    McpSource::Htx,
     McpSource::Coingecko,
     McpSource::Dexscreener,
     McpSource::Alpaca,
@@ -76,7 +77,7 @@ pub struct MarketRef {
     /// The market data provider.
     pub source: McpSource,
     /// The provider's own symbol, as `degenview_search_symbols` returns it: `BTCUSDT` (binance),
-    /// `BTC-USD` (coinbase), `BTC-USDT` (okx), `BTC/USD` (kraken), `BTCUSDT` (bybit), `BTC_USDT` (gateio), `BTCUSDT` (mexc), `BTC` or `xyz:SP500` (hyperliquid), `BTCUSDT` (aster perpetual), `BTC` or `US500` (lighter perpetual), `BTC-PERPETUAL` or `SOL_USDC-PERPETUAL` (deribit perpetual), `bitcoin` (coingecko), `chain/address` (dexscreener), `AAPL`
+    /// `BTC-USD` (coinbase), `BTC-USDT` (okx), `BTC/USD` (kraken), `BTCUSDT` (bybit), `BTC_USDT` (gateio), `BTCUSDT` (mexc), `BTC` or `xyz:SP500` (hyperliquid), `BTCUSDT` (aster perpetual), `BTC` or `US500` (lighter perpetual), `BTC-PERPETUAL` or `SOL_USDC-PERPETUAL` (deribit perpetual), `BTCUSDT` (htx), `bitcoin` (coingecko), `chain/address` (dexscreener), `AAPL`
     /// (alpaca).
     #[schemars(length(min = 1, max = 128))]
     pub symbol: String,
@@ -480,7 +481,7 @@ fn search_all(
 impl DegenViewMcp {
     #[tool(
         name = "degenview_search_symbols",
-        description = "Search the market data providers for symbols by ticker or name. Returns, per hit, the `source` and `symbol` to pass to degenview_add_chart, degenview_get_quotes, degenview_create_price_alert and the watchlist tools, plus how the app labels it. Searches Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, CoinGecko, DEXScreener and (with API keys) Alpaca stocks side by side; a provider that fails is reported in `source_errors` while the others still answer. Hits only prove the provider lists the market; ask degenview_get_quotes for a price.",
+        description = "Search the market data providers for symbols by ticker or name. Returns, per hit, the `source` and `symbol` to pass to degenview_add_chart, degenview_get_quotes, degenview_create_price_alert and the watchlist tools, plus how the app labels it. Searches Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, HTX, CoinGecko, DEXScreener and (with API keys) Alpaca stocks side by side; a provider that fails is reported in `source_errors` while the others still answer. Hits only prove the provider lists the market; ask degenview_get_quotes for a price.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

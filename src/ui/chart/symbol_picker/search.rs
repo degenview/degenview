@@ -474,6 +474,7 @@ mod tests {
             DataSource::Aster,
             DataSource::Lighter,
             DataSource::Deribit,
+            DataSource::Htx,
             DataSource::DexScreener,
             DataSource::CoinGecko,
         ] {

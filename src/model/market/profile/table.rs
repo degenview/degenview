@@ -12,7 +12,7 @@ use crate::model::market::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
 
 /// Every source, in the order lists of sources are searched and shown.
-pub const ALL: [DataSource; 17] = [
+pub const ALL: [DataSource; 18] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -24,6 +24,7 @@ pub const ALL: [DataSource; 17] = [
     DataSource::Aster,
     DataSource::Lighter,
     DataSource::Deribit,
+    DataSource::Htx,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -45,6 +46,7 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
         DataSource::Aster => &ASTER,
         DataSource::Lighter => &LIGHTER,
         DataSource::Deribit => &DERIBIT,
+        DataSource::Htx => &HTX,
         DataSource::CoinGecko => &COINGECKO,
         DataSource::DexScreener => &DEXSCREENER,
         DataSource::Alpaca => &ALPACA,
@@ -96,6 +98,11 @@ const BINANCE_QUOTES: [&str; 16] = [
 const MEXC_QUOTES: [&str; 9] = [
     "USDT", "USDC", "USD1", "USDE", "USDF", "EUR", "BRL", "ETH", "BTC",
 ];
+
+/// Quote assets HTX's spot markets end in, the dollar stablecoins first (checked against the 616
+/// markets it lists as online on 2026-11-21). A one-letter base is a real asset before those
+/// (`SUSDT`, `4USDT`), where before `ETH` or `BTC` it is a wrapped one (`WBTC` is not W/BTC).
+const HTX_QUOTES: [&str; 6] = ["USDT", "USDC", "USDD", "KGST", "ETH", "BTC"];
 
 /// Binance-shaped pairs, as Binance and Bybit write them. A one-letter "base" is a bare wrapped asset
 /// (WBTC, WETH), not a pair.
@@ -700,6 +707,63 @@ pub static DERIBIT: Profile = Profile {
         batch: 2_000,
     },
     // Days, weeks and months fold from two-hour bars and take several requests of their own.
+    cache: Some(CachePolicy {
+        fresh_secs: 0,
+        of: CachedSeries::Folded,
+    }),
+};
+
+/// HTX's candle periods: `1min`, `5min`, `15min`, `30min`, `60min` and `4hour`, all cut where this
+/// app cuts (checked against the API on 2026-11-21: every bar of 2,000 of each opens on its length
+/// counted from UTC midnight). Left out: its `1day` opens at 16:00 UTC, its `1week` on a Sunday at
+/// 16:00 UTC and its `1mon` and `1year` at 16:00 UTC on the last day before the month or year (UTC+8
+/// midnight), so days, weeks, months and years fold from the four-hour bars.
+const HTX_NATIVES: [Timeframe; 6] = [
+    minutes(1),
+    minutes(5),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(4),
+];
+
+pub static HTX: Profile = Profile {
+    display_name: "HTX",
+    slug: "HTX",
+    mcp_id: "htx",
+    class: Class::Exchange,
+    opaque_ids: false,
+    kinds: SPOT,
+    series: Series::Candles,
+    // Candle volume is the base asset (`amount`).
+    volume: true,
+    display: Casing::Upper,
+    id: Casing::AsGiven,
+    pair: PairStyle::Concat(Concat {
+        exceptions: &[],
+        quotes: &HTX_QUOTES,
+        one_letter_base_quotes: 4,
+        wrapped_asset_guard: false,
+        dropped: &['/', '-', '_', ' '],
+    }),
+    home_quote: Some("USDT"),
+    natives: &HTX_NATIVES,
+    // The socket pages back to a market's first bar; REST holds only the newest 2,000.
+    older_history: OlderHistory::Always,
+    slow_refresh: false,
+    streams: Streams {
+        candles: true,
+        quotes: true,
+    },
+    change: ChangeBasis::Rolling24h,
+    // One call answers every market (124 KB), so prices are asked every ten seconds beside the
+    // socket.
+    quotes: QuoteTiming {
+        refresh_secs: 10,
+        max_age_secs: 60,
+        batch: 2_000,
+    },
+    // Days, weeks and months fold from four-hour bars and take several requests of their own.
     cache: Some(CachePolicy {
         fresh_secs: 0,
         of: CachedSeries::Folded,

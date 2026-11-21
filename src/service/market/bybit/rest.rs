@@ -26,10 +26,7 @@ pub(super) fn fetch_page(
 pub(in crate::service) fn get(url: &str) -> Result<String, ProviderError> {
     match http::get_text(url, &[], http::Retry::Transient) {
         Ok(body) => Ok(body),
-        Err(http::Error::Status(403)) => Err(ProviderError::other(
-            "Bybit refused the request (HTTP 403): it is not available in every country, and \
-             refuses a client that asks too often",
-        )),
+        Err(http::Error::Status(403)) => Err(ProviderError::refused_by_region(DataSource::Bybit)),
         Err(error) => Err(error.into()),
     }
 }
