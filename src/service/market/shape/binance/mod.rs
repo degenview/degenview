@@ -16,8 +16,12 @@ mod stream;
 mod tests;
 mod ticker;
 
-pub(in crate::service) use exchange_info::{Pair, trading};
-pub(in crate::service) use stream::parse_kline;
+pub(in crate::service) use exchange_info::{Pair, trading, trading_perpetual};
+#[cfg(test)]
+pub(in crate::service) use exchange_info::{matching_pairs, parse_pairs};
+#[cfg(test)]
+pub(in crate::service) use klines::parse_klines;
+pub(in crate::service) use stream::{parse_kline, parse_ticker};
 pub(in crate::service) use ticker::parse_quotes;
 
 use crate::model::DataSource;
@@ -34,7 +38,7 @@ pub(in crate::service) struct Config {
     pub max_per_request: usize,
     pub exchange_info_url: &'static str,
     /// Whether a listed market (one entry of `exchangeInfo`'s `symbols`) is served: [`trading`], or
-    /// [`perpetual`] too for a futures venue.
+    /// [`trading_perpetual`] for a futures venue.
     pub serves: fn(&Value) -> bool,
     /// The venue's market list, held for a day.
     pub catalog: &'static Catalog<Pair>,
