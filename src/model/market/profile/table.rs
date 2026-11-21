@@ -6,6 +6,7 @@ use super::{
     CachePolicy, CachedSeries, Casing, ChangeBasis, Class, Concat, OlderHistory, PairStyle,
     Profile, QuoteTiming, Separated, Series, Streams,
 };
+use crate::model::market::MarketKind;
 use crate::model::market::natives::{GECKOTERMINAL_HISTORY_DAYS, GECKOTERMINAL_PAGE};
 use crate::model::market::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
@@ -44,6 +45,9 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
         DataSource::CoinMarketCap => &COINMARKETCAP,
     }
 }
+
+/// The kinds of market a source lists: spot, which is everything that is not a perpetual.
+const SPOT: &[MarketKind] = &[MarketKind::Spot];
 
 const fn minutes(count: u16) -> Timeframe {
     native(count, TimeUnit::Minute)
@@ -125,6 +129,7 @@ pub static BINANCE: Profile = Profile {
     slug: "BINANCE",
     mcp_id: "binance",
     class: Class::Exchange,
+    kinds: SPOT,
     series: Series::Candles,
     volume: true,
     display: Casing::Upper,
@@ -162,6 +167,7 @@ pub static COINBASE: Profile = Profile {
     slug: "COINBASE",
     mcp_id: "coinbase",
     class: Class::Exchange,
+    kinds: SPOT,
     series: Series::Candles,
     volume: true,
     display: Casing::Upper,
@@ -214,6 +220,7 @@ pub static OKX: Profile = Profile {
     slug: "OKX",
     mcp_id: "okx",
     class: Class::Exchange,
+    kinds: SPOT,
     series: Series::Candles,
     volume: true,
     display: Casing::Upper,
@@ -259,6 +266,7 @@ pub static KRAKEN: Profile = Profile {
     slug: "KRAKEN",
     mcp_id: "kraken",
     class: Class::Exchange,
+    kinds: SPOT,
     series: Series::Candles,
     volume: true,
     display: Casing::Upper,
@@ -309,6 +317,7 @@ pub static BYBIT: Profile = Profile {
     slug: "BYBIT",
     mcp_id: "bybit",
     class: Class::Exchange,
+    kinds: SPOT,
     series: Series::Candles,
     volume: true,
     display: Casing::Upper,
@@ -352,6 +361,7 @@ pub static GATE: Profile = Profile {
     slug: "GATEIO",
     mcp_id: "gateio",
     class: Class::Exchange,
+    kinds: SPOT,
     series: Series::Candles,
     volume: true,
     display: Casing::Upper,
@@ -398,6 +408,7 @@ pub static MEXC: Profile = Profile {
     slug: "MEXC",
     mcp_id: "mexc",
     class: Class::Exchange,
+    kinds: SPOT,
     series: Series::Candles,
     volume: true,
     display: Casing::Upper,
@@ -429,6 +440,7 @@ pub static COINGECKO: Profile = Profile {
     slug: "COINGECKO",
     mcp_id: "coingecko",
     class: Class::Aggregator,
+    kinds: SPOT,
     series: Series::Samples,
     // Its OHLC endpoint has no volume column.
     volume: false,
@@ -471,6 +483,7 @@ pub static DEXSCREENER: Profile = Profile {
     slug: "DEXSCREENER",
     mcp_id: "dexscreener",
     class: Class::Dex,
+    kinds: SPOT,
     series: Series::Candles,
     volume: true,
     // A DEX pair address is an id, not a name: it is left alone.
@@ -520,6 +533,7 @@ pub static ALPACA: Profile = Profile {
     slug: "ALPACA",
     mcp_id: "alpaca",
     class: Class::Stock,
+    kinds: SPOT,
     series: Series::Candles,
     volume: true,
     display: Casing::Upper,
@@ -552,6 +566,7 @@ pub static POLYMARKET: Profile = Profile {
     slug: "POLYMARKET",
     mcp_id: "polymarket",
     class: Class::Prediction,
+    kinds: SPOT,
     series: Series::Line,
     volume: false,
     display: Casing::AsGiven,
@@ -574,6 +589,7 @@ pub static KALSHI: Profile = Profile {
     slug: "KALSHI",
     mcp_id: "kalshi",
     class: Class::Prediction,
+    kinds: SPOT,
     series: Series::Line,
     volume: false,
     display: Casing::AsGiven,
@@ -597,6 +613,7 @@ pub static COINMARKETCAP: Profile = Profile {
     slug: "CMC",
     mcp_id: "coinmarketcap",
     class: Class::Index,
+    kinds: SPOT,
     series: Series::Line,
     volume: false,
     display: Casing::AsGiven,

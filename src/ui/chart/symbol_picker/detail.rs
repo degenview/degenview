@@ -458,9 +458,10 @@ fn status_line(ui: &Ui, at: Pos2, result: &SearchResult, quote: Option<&Watchlis
 
 /// The exchange the market is listed on, with its logo and what it trades there.
 fn venue_line(ui: &Ui, at: Pos2, result: &SearchResult) -> f32 {
-    let kind = match trading_kind(result.source) {
-        "" => market_kind(result.source),
-        kind => kind,
+    let kind = match (result.kind.tag(), trading_kind(result.source)) {
+        (Some(tag), _) => tag,
+        (None, "") => market_kind(result.source),
+        (None, kind) => kind,
     };
     let text = format!("{} · {kind}", result.source.display_name());
     let galley = kit::galley(

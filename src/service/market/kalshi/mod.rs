@@ -317,6 +317,7 @@ impl MarketSource for Kalshi {
                         }),
                         base: None,
                         quote: None,
+                        kind: crate::model::market::MarketKind::Spot,
                     });
                 }
             }

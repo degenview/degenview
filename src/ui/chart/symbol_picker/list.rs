@@ -4,6 +4,7 @@
 
 use super::search::{market_kind, trading_kind};
 use crate::model::DataSource;
+use crate::model::market::MarketKind;
 use crate::service::SearchResult;
 use crate::ui::chart::picker_kit::artwork::result_icon;
 use crate::ui::icons::{self, Icon};
@@ -177,7 +178,7 @@ pub fn row(
     result_icon(ui, icon, result);
 
     // The exchange sits at the right edge; a prediction market's chance is left of it.
-    let logo_left = venue_block(ui, rect, content_right, result.source);
+    let logo_left = venue_block(ui, rect, content_right, result.source, result.kind);
     let mut text_right = logo_left;
     if result.source.is_prediction_market()
         && let Some(chance) = result.price
@@ -308,8 +309,10 @@ pub fn marks(
 }
 
 /// The exchange at the right of a row: its logo and name over what it lists, right-aligned to
-/// `right`. Returns the block's left edge.
-pub fn venue_block(ui: &Ui, rect: Rect, right: f32, source: DataSource) -> f32 {
+/// `right`. A perpetual's kind line ends in a `Perp` tag. Returns the block's left edge, the logo's:
+/// the block is as wide as the wider of its two lines, so a short name over a long kind line leaves
+/// nothing under the row's subtitle.
+pub fn venue_block(ui: &Ui, rect: Rect, right: f32, source: DataSource, kind: MarketKind) -> f32 {
     let venue = kit::galley(
         ui,
         source.display_name(),
@@ -318,7 +321,7 @@ pub fn venue_block(ui: &Ui, rect: Rect, right: f32, source: DataSource) -> f32 {
         theme::text_primary(),
         150.0,
     );
-    let kind = kit::galley(
+    let kind_line = kit::galley(
         ui,
         market_kind(source),
         SUBTITLE_SIZE,
@@ -326,16 +329,36 @@ pub fn venue_block(ui: &Ui, rect: Rect, right: f32, source: DataSource) -> f32 {
         theme::text_secondary(),
         150.0,
     );
+    let tag = kind.tag().map(|tag| {
+        kit::galley(
+            ui,
+            &format!(" · {tag}"),
+            SUBTITLE_SIZE,
+            REGULAR,
+            theme::text_tertiary(),
+            60.0,
+        )
+    });
+    let tag_width = tag.as_ref().map_or(0.0, |tag| tag.size().x);
     let name_left = right - venue.size().x;
-    let top = rect.center().y - (venue.size().y + kind.size().y + 2.0) / 2.0;
+    let block_left = right - venue.size().x.max(kind_line.size().x + tag_width);
+    let top = rect.center().y - (venue.size().y + kind_line.size().y + 2.0) / 2.0;
     let painter = ui.painter();
     painter.galley(pos2(name_left, top), venue, theme::text_primary());
+    let kind_top = top + 2.0 + 17.0;
     painter.galley(
-        pos2(right - kind.size().x, top + 2.0 + 17.0),
-        kind,
+        pos2(right - tag_width - kind_line.size().x, kind_top),
+        kind_line,
         theme::text_secondary(),
     );
-    let logo = Rect::from_min_size(pos2(name_left - 6.0 - LOGO, top - 0.5), Vec2::splat(LOGO));
+    if let Some(tag) = tag {
+        painter.galley(
+            pos2(right - tag_width, kind_top),
+            tag,
+            theme::text_tertiary(),
+        );
+    }
+    let logo = Rect::from_min_size(pos2(block_left - 6.0 - LOGO, top - 0.5), Vec2::splat(LOGO));
     source_logo::paint(ui, source, logo);
     logo.left()
 }
@@ -484,7 +507,10 @@ pub fn related_row(ui: &mut Ui, result: &SearchResult, width: f32) -> bool {
     source_logo::paint(ui, result.source, logo);
     let kind = kit::galley(
         ui,
-        trading_kind(result.source),
+        result
+            .kind
+            .tag()
+            .unwrap_or_else(|| trading_kind(result.source)),
         SUBTITLE_SIZE + 1.0,
         REGULAR,
         theme::text_secondary(),
@@ -515,5 +541,55 @@ mod tests {
         assert_eq!(subtitle(&coin), "Wrapped Bitcoin");
         let bare = SearchResult::new(DataSource::Binance, "BTC", "BTC");
         assert_eq!(subtitle(&bare), "");
+    }
+
+    /// The width the kind line of `source` takes, tag included, as `venue_block` lays it out.
+    fn kind_width(ui: &Ui, source: DataSource, kind: MarketKind) -> f32 {
+        let line = kit::galley(
+            ui,
+            market_kind(source),
+            SUBTITLE_SIZE,
+            REGULAR,
+            theme::text_secondary(),
+            150.0,
+        );
+        let tag = kind.tag().map_or(0.0, |tag| {
+            kit::galley(
+                ui,
+                &format!(" · {tag}"),
+                SUBTITLE_SIZE,
+                REGULAR,
+                theme::text_tertiary(),
+                60.0,
+            )
+            .size()
+            .x
+        });
+        line.size().x + tag
+    }
+
+    #[test]
+    fn the_venue_block_starts_left_of_both_its_lines_so_nothing_runs_under_the_subtitle() {
+        let mut screen = crate::ui::render_tests::Screen::new(vec2(600.0, 80.0));
+        for (source, kind) in [
+            (DataSource::Okx, MarketKind::Perp),
+            (DataSource::Okx, MarketKind::Spot),
+            (DataSource::Binance, MarketKind::Perp),
+        ] {
+            let mut measured = None;
+            screen.run(Vec::new(), |ui| {
+                let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(600.0, 56.0));
+                let left = venue_block(ui, rect, 560.0, source, kind);
+                measured = Some((left, kind_width(ui, source, kind)));
+            });
+            let (left, kind_width) = measured.expect("a frame was run");
+            // The logo and its gap sit left of the kind line, which is as far left as any line goes
+            // when it is the wider one.
+            assert!(
+                left + LOGO + 6.0 <= 560.0 - kind_width + 0.01,
+                "{source:?} {kind:?}: block at {left}, kind line at {}",
+                560.0 - kind_width
+            );
+        }
     }
 }

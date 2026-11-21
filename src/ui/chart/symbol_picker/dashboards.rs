@@ -126,7 +126,9 @@ pub fn row(ui: &mut Ui, tile: &Tile, state: RowState, width: f32) -> (Response, 
     );
     icons::paint(ui.painter(), icon, tile.icon, theme::text_secondary());
     let right = match (&tile.pick, &tile.scope) {
-        (TilePick::Gauge(result), _) => venue_block(ui, rect, content_right, result.source),
+        (TilePick::Gauge(result), _) => {
+            venue_block(ui, rect, content_right, result.source, result.kind)
+        }
         (TilePick::Card(_), scope) => scope_block(
             ui,
             rect,

@@ -105,6 +105,7 @@ fn parse_search(body: &str, query: &str) -> Result<Vec<SearchResult>, ProviderEr
             event: None,
             base: Some(base.to_uppercase()),
             quote: Some(quote.to_uppercase()),
+            kind: crate::model::market::MarketKind::Spot,
         };
         match by_pair.get(&key) {
             Some((existing, _)) if *existing >= liquidity => {}
