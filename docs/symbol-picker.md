@@ -103,7 +103,9 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     …" with the venues asked (the pull-down's one, or the tab's). Return on no result does nothing.
     Two sources are never merged into one row.
 - **Rows** show the market as its exchange names it (`BTCUSDT`, `BTC-USD`, `AAPL`), what it trades
-  under it (`BTC / USDT`, the company, a prediction's event), the exchange and its kind, a check when
+  under it (`BTC / USDT`, the company, a prediction's event), the exchange and its kind (a perpetual's
+  kind line ends in a tertiary ` · Perp`, from `SearchResult::kind`; spot is unmarked, and the detail panel
+  says `Perp` for the venue line and the related rows), a check when
   the market is already on a chart of the tab, and a plus on the highlighted row.
 - **Detail panel** (hidden below 760 px of window width): artwork, price and change from the quote feed (the percent at two decimals, with the amount
   beside it, trimmed of trailing zeros, only while both fit),

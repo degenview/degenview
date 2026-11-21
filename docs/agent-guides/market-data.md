@@ -6,7 +6,7 @@ A venue is one profile entry plus one directory plus a logo; no other file names
 
 1. `model::market::source::DataSource` gets the variant, and `model::market::profile::table` its
    `Profile`: display name, watchlist slug (also read for `VENUE:SYMBOL` text and the Pine host, so
-   there is no second table), MCP id, `Class` (which picker lists it), `Series`, volume support, how
+   there is no second table), MCP id, `Class` (which picker lists it), `kinds` (spot, perpetual or both), `Series`, volume support, how
    its ids join two assets (`PairStyle`) and the quote a bare asset gets, its native candle lengths
    (see Timeframes), history paging, which streams it has, change basis, quote polling and batch
    size, and its candle cache. Add it to `DataSource::ALL`; the profile tests fail until it is there.
@@ -44,6 +44,12 @@ watchlists.
 - `VENUE:SYMBOL` text (`BINANCE:BTCUSDT`, `NASDAQ:AAPL`) is read only by `model::market::venue`
   (watchlist slugs plus `US_EXCHANGES`, which are Alpaca); the watchlist import and the picker both use
   it. A new provider's slug is its `Profile::slug`; do not add a second prefix table.
+- **Market kind** (`model::market::MarketKind`, `Spot` or `Perp`): `SearchResult::kind` (a venue that
+  lists perpetuals sets it on the hits) and `Profile::kinds` (what the venue lists, first = default).
+  Never stored with a chart, watchlist row or recent: `Venue::kind_of(&InstrumentId)` answers it
+  from the venue and the id (default: the profile's first kind), so no saved or synced format
+  changes. A venue that lists both overrides `kind_of`; a test checks its answer is in `kinds`.
+  Spot covers everything that is not a perpetual (stocks, predictions, indices).
 
 ## Timeframes
 
@@ -191,6 +197,27 @@ watchlists.
   (`live::merge_fetched`) only if the socket delivered after that request began
   (`LiveMark::guard_for`, carrying the bucket's open time): when it goes quiet, REST refreshes update
   the forming bar again.
+- **Session variants** (`net::ws`: `mod.rs` loop and health, `keepalive.rs`, `decode.rs`). Per-session
+  data, never a venue loop: `Session::decode` is `Decode::None` (binary frames handed over, MEXC) or
+  `Decode::Gzip` (HTX, BingX: unpacked to a text message, capped at 8 MB, an unreadable frame dropped
+  without ending the socket), applied before the heartbeat is looked at because BingX gzips its
+  `Ping`. `Keepalive` is `Frame`, `Text` (client ping, answer recognised by its start: OKX, Bybit and
+  Hyperliquid's `{"method":"ping"}` / `{"channel":"pong"`), `EchoJson` (server `{"ping":n}`, client
+  `{"pong":n}`: HTX), `AnswerText` (server `Ping`, client `Pong`: BingX) and `JsonRpcHeartbeat`
+  (Deribit: `public/set_heartbeat` is sent after every connect before the subscriptions, a
+  `test_request` heartbeat is answered `public/test`; request ids 1000000001 and 1000000002 are
+  reserved). Pure `Keepalive::inspect` / `probe` / `greeting` decide; heartbeat traffic and its
+  answers are absorbed, never handed to `CandleProtocol::parse`. A server-driven variant sends
+  nothing of its own, so a quiet socket ends at `max_data_silence` like the others.
+- **Candles from trades** (`model::market::live::TradeFold`): for a venue with no candle channel
+  (Bitstamp), trades `(time_ms, price, size)` fold into the forming base candle, cut by `bucket`; the
+  kline it returns is what `LiveFold::apply` takes. A trade older than the bucket in progress is
+  dropped, a newer bucket starts fresh. It holds the trades seen since the socket connected, so the
+  bar open at connect is partial (open, range, volume): REST's copy replaces it when the bar closes,
+  and in a coarser chart whose REST answer brings the bucket's base bars, `LiveFold`'s rule (the
+  state with more volume wins) keeps REST's fuller bar until the trades pass it. `LiveFeed` does
+  not host a fold yet: `CandleProtocol::parse` is stateless, so the first trade-fed venue adds that
+  hook (one `TradeFold` per market per connection, `reset` on reconnect).
 - A chart whose last answer was `UnsupportedInterval` shows it in the usual error slot and is not
   refreshed again (`Chart::refresh_due`) until its market or the timeframe changes, which fetch at
   once. An overlay market becomes `OverlayStatus::Blocked(text)` and is not retried either.
