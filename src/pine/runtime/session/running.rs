@@ -51,6 +51,9 @@ impl Session {
                 })
         });
         self.first_bar_time = bars.first().map(|bar| bar.open_time);
+        if self.keeps_series_bars {
+            self.bar_opens = bars.iter().map(|bar| bar.open_time).collect();
+        }
         self.known_bars = self
             .keeps_known_bars
             .then(|| std::sync::Arc::new(bars.to_vec()));
@@ -246,6 +249,9 @@ impl Session {
         }
         for name in &self.shadowing_builtins {
             self.working.variables.remove(name);
+        }
+        if self.keeps_series_bars && self.bar_opens.last().is_none_or(|last| open_time > *last) {
+            self.bar_opens.push(open_time);
         }
         if self.working.bar_index >= self.last_bar_index {
             self.last_bar_index = self.working.bar_index;

@@ -200,6 +200,7 @@ impl Session {
             series_bars: Vec::new(),
             replay_globals: None,
             keeps_series_bars,
+            bar_opens: Vec::new(),
             known_bars: None,
             keeps_known_bars,
             bar_seconds: 0.0,

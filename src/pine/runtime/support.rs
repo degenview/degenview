@@ -21,15 +21,36 @@ pub struct RuntimeResult {
 pub struct SecurityKey {
     pub symbol: String,
     pub interval: f64,
-    /// `calc_bars_count` of a `request.security_lower_tf` call. 0 is every bar.
-    pub recent_bars: usize,
+    /// How many candles of `interval` the request reads.
+    pub depth: SeriesDepth,
+}
+
+/// How much of a series a request reads: counted in candles of the series' own timeframe, never in
+/// elapsed time (a month, a weekend or a holiday makes time a poor measure of candles).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SeriesDepth {
+    /// Every candle the chart spans, and a warm-up before it.
+    Chart,
+    /// The newest `n` candles, ending where the chart ends (`calc_bars_count`).
+    Newest(usize),
+}
+
+impl SeriesDepth {
+    /// `Newest(count)`, or the whole chart for a count of 0, which is no limit. The count is clamped
+    /// to [`MAX_SERIES_CANDLES`].
+    pub fn of(count: usize) -> Self {
+        match count {
+            0 => Self::Chart,
+            count => Self::Newest(count.min(MAX_SERIES_CANDLES)),
+        }
+    }
 }
 
 impl PartialEq for SecurityKey {
     fn eq(&self, other: &Self) -> bool {
         self.symbol == other.symbol
             && self.interval.to_bits() == other.interval.to_bits()
-            && self.recent_bars == other.recent_bars
+            && self.depth == other.depth
     }
 }
 
@@ -39,7 +60,7 @@ impl std::hash::Hash for SecurityKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.symbol.hash(state);
         self.interval.to_bits().hash(state);
-        self.recent_bars.hash(state);
+        self.depth.hash(state);
     }
 }
 
@@ -58,10 +79,10 @@ pub trait SecurityDataProvider: Send {
     }
 }
 
-/// The most base candles a provider fetches for one intrabar series; the newest are kept, so a long
-/// chart gets intrabars for its recent part. Whoever asks for a series (`request.footprint`) picks a
-/// candle size that keeps the chart's span within it.
-pub const MAX_INTRABAR_CANDLES: usize = 60_000;
+/// The most candles a provider fetches for one series; the newest are kept, so a long chart gets the
+/// recent part of an intrabar series. Whoever asks for a series (`request.footprint`) picks a candle
+/// size that keeps the chart's span within it, and `calc_bars_count` is clamped to it where it is read.
+pub const MAX_SERIES_CANDLES: usize = 60_000;
 
 /// The time the chart's bars cover, in milliseconds: from the first bar's open to the end of the last.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

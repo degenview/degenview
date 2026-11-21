@@ -7,7 +7,7 @@ use super::lookahead::{HOUR, hourly, hourly_bar, plot_values, session_with};
 use crate::model::Kline;
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::session::RunError;
-use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey};
+use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey, SeriesDepth};
 use crate::pine::tests::bench::symbol;
 
 /// Canned candles by key, for a provider that serves exactly what a test asks for.
@@ -19,13 +19,13 @@ impl CannedData {
         mut self,
         symbol: &str,
         interval: f64,
-        recent_bars: usize,
+        depth: SeriesDepth,
         candles: Vec<Kline>,
     ) -> Self {
         let key = SecurityKey {
             symbol: symbol.to_owned(),
             interval,
-            recent_bars,
+            depth,
         };
         self.0.insert(key, candles);
         self
@@ -70,7 +70,8 @@ fn a_candle_the_chart_bars_straddle_comes_from_the_data_source() {
         .enumerate()
         .map(|(index, close)| candle(index as i64 * 45 * MINUTE, 45 * MINUTE, *close, *close, 1.0))
         .collect();
-    let data = CannedData::default().with(&symbol().ticker_id, 2_700.0, 0, candles);
+    let data =
+        CannedData::default().with(&symbol().ticker_id, 2_700.0, SeriesDepth::Chart, candles);
     let values = plotted(
         "request.security(syminfo.tickerid, \"45\", close)",
         &chart,
@@ -167,7 +168,7 @@ fn calc_bars_count_asks_the_source_for_that_many_candles_of_another_symbol() {
         .map(|(index, close)| candle(index as i64 * 4 * HOUR, 4 * HOUR, *close, *close, 1.0))
         .collect();
     // Only a request carrying the count is answered.
-    let data = CannedData::default().with("ETHUSDT", 14_400.0, 2, candles);
+    let data = CannedData::default().with("ETHUSDT", 14_400.0, SeriesDepth::Newest(2), candles);
     let values = plotted(
         "request.security(\"ETHUSDT\", \"240\", close, calc_bars_count = 2)",
         &chart,
@@ -201,7 +202,12 @@ fn calc_bars_count_in_a_request_is_not_reported_as_ignored() {
 fn source_candles() -> CannedData {
     let first = candle(0, 4 * HOUR, 100.0, 105.0, 999.0);
     let second = candle(4 * HOUR, 4 * HOUR, 777.0, 778.0, 888.0);
-    CannedData::default().with(&symbol().ticker_id, 14_400.0, 0, vec![first, second])
+    CannedData::default().with(
+        &symbol().ticker_id,
+        14_400.0,
+        SeriesDepth::Chart,
+        vec![first, second],
+    )
 }
 
 #[test]
@@ -238,4 +244,111 @@ fn the_sources_whole_candle_is_not_taken_before_the_chart_has_all_of_it() {
         source_candles(),
     );
     assert_eq!(values, [Some(hourly_bar(1).open); 2]);
+}
+
+const DAY: i64 = 24 * HOUR;
+/// 2024-06-01 00:00 UTC.
+const JUNE_FIRST: i64 = 1_717_200_000_000;
+
+#[test]
+fn calc_bars_count_counts_calendar_months_by_the_bars_not_by_elapsed_time() {
+    // June, July and August as daily bars; a month is 30 days in Pine's seconds but 31 on the
+    // calendar, so a window counted in elapsed time would end a day off.
+    let chart: Vec<Kline> = (0..92)
+        .map(|day| candle(JUNE_FIRST + day * DAY, DAY, 1.0, 1.0, 1.0))
+        .collect();
+    let read = |options: &str| {
+        plotted(
+            &format!(
+                "request.security(syminfo.tickerid, \"1M\", ta.cum(1), lookahead = barmerge.lookahead_on{options})"
+            ),
+            &chart,
+            CannedData::default(),
+        )
+    };
+    let limited = read(", calc_bars_count = 2");
+    assert_eq!(
+        limited[29], None,
+        "June is older than the newest two months"
+    );
+    assert_eq!(
+        limited[30],
+        Some(1.0),
+        "July is the first month in the window"
+    );
+    assert_eq!(limited[91], Some(2.0), "July and August");
+    assert_eq!(read("")[91], Some(3.0), "without the limit June counts too");
+}
+
+#[test]
+fn a_calc_bars_count_no_series_can_hold_does_not_stall_the_run() {
+    let chart = hourly(3);
+    let source = "//@version=6\nindicator(\"T\")\nplot(request.security(syminfo.tickerid, \"240\", close, calc_bars_count = 1000000000000), \"x\")\nplot(request.security(syminfo.tickerid, \"240\", close), \"y\")";
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut session = session_with(source, None);
+        session.evaluate(&chart).expect("script runs");
+        let _ = sender.send((plot_values(&session, "x"), plot_values(&session, "y")));
+    });
+    let (limited, plain) = receiver
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .expect("the run finishes");
+    assert_eq!(limited, plain, "a count past the history is no limit");
+}
+
+/// Intrabars of the chart's own symbol whatever their depth, recording the depths asked for.
+struct AnyDepth {
+    candles: Vec<Kline>,
+    asked: std::sync::Arc<std::sync::Mutex<Vec<SeriesDepth>>>,
+}
+
+impl SecurityDataProvider for AnyDepth {
+    fn candles(&self, key: &SecurityKey) -> Option<Vec<Kline>> {
+        self.asked.lock().unwrap().push(key.depth);
+        Some(self.candles.clone())
+    }
+}
+
+#[test]
+fn a_finer_timeframe_honours_calc_bars_count_in_chart_bars() {
+    // Two one minute chart bars with four 15 second intrabars each.
+    let chart: Vec<Kline> = (0..2)
+        .map(|index| candle(index * MINUTE, MINUTE, 10.0, 10.0, 1.0))
+        .collect();
+    let intrabars: Vec<Kline> = (0..8)
+        .map(|index| candle(index * 15_000, 15_000, 1.0, 1.0 + index as f64, 1.0))
+        .collect();
+    let read = |options: &str| {
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let provider = AnyDepth {
+            candles: intrabars.clone(),
+            asked: asked.clone(),
+        };
+        let source = format!(
+            "//@version=6\nindicator(\"T\")\nplot(request.security(syminfo.tickerid, \"15S\", close{options}), \"x\")"
+        );
+        let mut session = session_with(&source, Some(Box::new(provider)));
+        session.evaluate(&chart).expect("script runs");
+        let depths = asked.lock().unwrap().clone();
+        (plot_values(&session, "x"), depths)
+    };
+    let (all, depth) = read("");
+    assert_eq!(
+        all,
+        [Some(4.0), Some(8.0)],
+        "the last intrabar of each chart bar"
+    );
+    assert_eq!(depth, [SeriesDepth::Chart]);
+    let (newest, depth) = read(", calc_bars_count = 1");
+    assert_eq!(
+        newest,
+        [None, Some(8.0)],
+        "only the newest chart bar has intrabars"
+    );
+    assert_eq!(
+        depth,
+        [SeriesDepth::Newest(4)],
+        "four 15 second candles per chart bar"
+    );
+    assert_eq!(read(", calc_bars_count = 2").0, all);
 }

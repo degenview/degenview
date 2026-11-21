@@ -266,10 +266,19 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   requested bucket's boundaries are all chart bar boundaries. When they are not (45 minutes on 30
   minute bars, a month on weekly bars), `security_request` serves the chart's own symbol from the
   provider like another symbol (`straddles`), and fails with `PINE4021` when the provider has no
-  such candles. `calc_bars_count` limits a request to the newest candles of its timeframe up to the
-  chart's last bar (`SecuritySite::window_start` for the chart's own symbol, the first allowed
-  candle for another; the key carries it so the provider fetches that many); older chart bars read
-  `na`. A chart that opens inside a candle reads that first candle whole from the provider
+  such candles. `calc_bars_count` limits a request to the newest candles of its timeframe up to the chart's
+  last bar, and it is a count everywhere, never elapsed time (a month, a weekend or a holiday makes
+  time a poor measure of candles): it is clamped to `MAX_SERIES_CANDLES` once, where it is read
+  (`calc_bars_count`), travels as `SeriesDepth::Newest(n)` in the `SecurityKey` (the provider fetches
+  that many candles ending at the chart's end), and the evaluation start is an index into the
+  candles the source gave (`newest_first_index`, another symbol) or the start of the n-th newest
+  bucket counted over the chart's bar times (`Session::bar_opens`, `window_start`; a bounded scan, not
+  a calendar walk); older chart bars read `na`, and no pre-chart warm-up is fed in. A request nested
+  in another has no window. For a finer timeframe (`request.security` and `security_lower_tf` alike)
+  the count is in chart bars, as `security_lower_tf` always read it, and becomes that many
+  chart bars' worth of intrabars in the key; older chart bars get no intrabars. Open question, not
+  measured on TradingView: the unit for a finer request, and whether the forming candle is one of the
+  n. A chart that opens inside a candle reads that first candle whole from the provider
   (`SecuritySite::first_candle`, set by `warm_up`) when it completes, and in `ahead_value` only
   when the run has the candle's last bar. The own-symbol warm-up (about 300 candles before the
   chart, `host::pine::series`) stays, a known divergence from TradingView, whose request has no

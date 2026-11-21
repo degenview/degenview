@@ -10,7 +10,7 @@ use crate::model::Kline;
 use crate::pine::compiler::program::{BarEvent, BarPhase};
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::session::Session;
-use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey};
+use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey, SeriesDepth};
 use crate::pine::tests::bench::{limits, run_script, symbol};
 
 pub(super) const HOUR: i64 = 3_600_000;
@@ -289,7 +289,7 @@ fn a_finer_timeframe_with_lookahead_on_reads_the_first_intrabar() {
         key: SecurityKey {
             symbol: symbol().ticker_id,
             interval: 15.0,
-            recent_bars: 0,
+            depth: SeriesDepth::Chart,
         },
         candles: vec![
             intrabar(60_000, 1.0),
