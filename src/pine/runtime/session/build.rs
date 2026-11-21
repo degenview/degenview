@@ -189,6 +189,7 @@ impl Session {
             last_bar_index: -1,
             last_bar_time: None,
             first_bar_time: None,
+            history_end: None,
             visible_range,
             last_committed_open_time: None,
             once_per_bar_ledger: HashSet::new(),
