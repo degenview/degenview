@@ -95,22 +95,58 @@ fn compare(op: BinaryOperator, a: &RuntimeValue, b: &RuntimeValue) -> RuntimeVal
     if *a == RuntimeValue::Na || *b == RuntimeValue::Na {
         return RuntimeValue::Bool(false);
     }
+    if let (RuntimeValue::Int(x), RuntimeValue::Int(y)) = (a, b) {
+        return RuntimeValue::Bool(relation(op, x, y));
+    }
     if let (Some(x), Some(y)) = (a.number(), b.number()) {
-        return match op {
-            BinaryOperator::Equal => RuntimeValue::Bool(x == y),
-            BinaryOperator::NotEqual => RuntimeValue::Bool(x != y),
-            BinaryOperator::Less => RuntimeValue::Bool(x < y),
-            BinaryOperator::LessEqual => RuntimeValue::Bool(x <= y),
-            BinaryOperator::Greater => RuntimeValue::Bool(x > y),
-            BinaryOperator::GreaterEqual => RuntimeValue::Bool(x >= y),
-            _ => RuntimeValue::Bool(false),
-        };
+        return RuntimeValue::Bool(float_relation(op, x, y));
     }
     RuntimeValue::Bool(if op == BinaryOperator::Equal {
         a == b
     } else {
         a != b
     })
+}
+
+/// `op` as the exact relation between `x` and `y`; false for an operator that is no comparison.
+fn relation<T: PartialOrd>(op: BinaryOperator, x: &T, y: &T) -> bool {
+    match op {
+        BinaryOperator::Equal => x == y,
+        BinaryOperator::NotEqual => x != y,
+        BinaryOperator::Less => x < y,
+        BinaryOperator::LessEqual => x <= y,
+        BinaryOperator::Greater => x > y,
+        BinaryOperator::GreaterEqual => x >= y,
+        _ => false,
+    }
+}
+
+/// How close two floats must be for the comparisons to call them equal. TradingView-measured
+/// (probes P13-P15, BTCUSDT 4h, 2026-11-21): equal when the distance is at most 1e-10, whatever the
+/// magnitude (`1e10` and its next float are not equal, `1` and `1 + 1.01e-10` are not), which
+/// is not the manual's rounding to nine fractional digits (`1 + 4e-10` and `1 + 1e-10` differ).
+const EQUAL_WITHIN: f64 = 1e-10;
+
+/// Whether two floats are equal for `==`. False when either is not finite: the distance of two
+/// infinities is not a number, and an infinity is far from everything else.
+fn floats_equal(x: f64, y: f64) -> bool {
+    (x - y).abs() <= EQUAL_WITHIN
+}
+
+/// `op` between two floats, every one of them through `floats_equal`: `<` and `>` are false for
+/// numbers that are equal (`1e-10 < 2e-10` and `0.1 + 0.2 > 0.3` are false), `<=` and `>=` are true
+/// for them. `!=` is false for a number that is not finite, an infinity included (`inf != 1`), as
+/// TradingView gives; the ordering operators keep the infinities ordered (`-inf < inf`).
+fn float_relation(op: BinaryOperator, x: f64, y: f64) -> bool {
+    match op {
+        BinaryOperator::Equal => floats_equal(x, y),
+        BinaryOperator::NotEqual => x.is_finite() && y.is_finite() && !floats_equal(x, y),
+        BinaryOperator::Less => x < y && !floats_equal(x, y),
+        BinaryOperator::Greater => x > y && !floats_equal(x, y),
+        BinaryOperator::LessEqual => x <= y || floats_equal(x, y),
+        BinaryOperator::GreaterEqual => x >= y || floats_equal(x, y),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -185,6 +221,119 @@ mod tests {
                 &RuntimeValue::Int(1),
                 &RuntimeValue::Int(2)
             ),
+            RuntimeValue::Bool(true)
+        );
+    }
+
+    fn compare_floats(op: BinaryOperator, x: f64, y: f64) -> bool {
+        apply(op, &RuntimeValue::Float(x), &RuntimeValue::Float(y)) == RuntimeValue::Bool(true)
+    }
+
+    #[test]
+    fn floats_within_a_ten_billionth_are_equal() {
+        use BinaryOperator::{Equal, NotEqual};
+        // TradingView, probes P13-P15: equal up to and including 1e-10, not beyond.
+        for (x, y, equal) in [
+            (0.1 + 0.2, 0.3, true),
+            (0.0, 0.5e-10, true),
+            (0.0, 0.99e-10, true),
+            (0.0, 1e-10, true),
+            (-1e-10, 0.0, true),
+            (1e-10, 2e-10, true),
+            (1.0, 1.0 + 0.9e-10, true),
+            (1e4, 1e4 + 0.9e-10, true),
+            (-0.0, 0.0, true),
+            (0.0, 1.01e-10, false),
+            (0.0, 2e-10, false),
+            (-0.9e-10, 0.9e-10, false),
+            (1.0, 1.0 + 1.1e-10, false),
+            (1.0000000004, 1.0000000001, false),
+            (1.0000000006, 1.0000000001, false),
+            (4e-10, 6e-10, false),
+            (1e4, 1e4 + 1.1e-10, false),
+            (1e10, 1e10 + 1e-6, false),
+            (1e300, 1e300 * (1.0 + 1e-15), false),
+        ] {
+            assert_eq!(compare_floats(Equal, x, y), equal, "{x} == {y}");
+            assert_eq!(compare_floats(NotEqual, x, y), !equal, "{x} != {y}");
+        }
+        // An integer against a float is compared the same way.
+        assert_eq!(
+            apply(
+                Equal,
+                &RuntimeValue::Int(5),
+                &RuntimeValue::Float(5.0 + 0.9e-10)
+            ),
+            RuntimeValue::Bool(true)
+        );
+    }
+
+    #[test]
+    fn ordering_does_not_separate_equal_floats() {
+        use BinaryOperator::{Greater, GreaterEqual, Less, LessEqual};
+        for (x, y) in [
+            (0.1 + 0.2, 0.3),
+            (1e-10, 2e-10),
+            (0.0, 1e-10),
+            (1.0, 1.0 + 0.9e-10),
+        ] {
+            for (op, expected) in [
+                (Less, false),
+                (Greater, false),
+                (LessEqual, true),
+                (GreaterEqual, true),
+            ] {
+                assert_eq!(compare_floats(op, x, y), expected, "{op:?} {x} {y}");
+                assert_eq!(compare_floats(op, y, x), expected, "{op:?} {y} {x}");
+            }
+        }
+        // Beyond the distance they are ordered as numbers are.
+        assert!(compare_floats(Greater, 1.0 + 4e-10, 1.0));
+        assert!(compare_floats(Greater, 1.0000000001, 1.0));
+        assert!(compare_floats(Less, 4e-10, 6e-10));
+        assert!(!compare_floats(GreaterEqual, 1.0, 1.0 + 4e-10));
+        assert!(!compare_floats(LessEqual, 1.0 + 4e-10, 1.0));
+        assert!(compare_floats(LessEqual, 1e-10, 2e-10));
+    }
+
+    #[test]
+    fn a_float_that_is_not_finite_is_equal_to_and_different_from_nothing() {
+        use BinaryOperator::{Equal, Greater, Less, NotEqual};
+        // TradingView, probes P13 and P14: neither `==` nor `!=` holds, the ordering still does.
+        for (x, y) in [
+            (f64::INFINITY, f64::INFINITY),
+            (f64::INFINITY, 1.0),
+            (f64::NEG_INFINITY, f64::NEG_INFINITY),
+            (f64::NAN, f64::NAN),
+            (f64::NAN, 0.0),
+        ] {
+            assert!(!compare_floats(Equal, x, y), "{x} == {y}");
+            assert!(!compare_floats(NotEqual, x, y), "{x} != {y}");
+        }
+        assert!(compare_floats(Greater, f64::INFINITY, 1.0));
+        assert!(compare_floats(Less, f64::NEG_INFINITY, f64::INFINITY));
+        assert!(!compare_floats(Less, f64::NAN, 1.0));
+        assert!(!compare_floats(Greater, f64::NAN, f64::NAN));
+    }
+
+    #[test]
+    fn integers_compare_exactly() {
+        let big = (1_i64 << 53) + 1;
+        let int = |op, x, y| apply(op, &RuntimeValue::Int(x), &RuntimeValue::Int(y));
+        assert_eq!(
+            int(BinaryOperator::Equal, big, big - 1),
+            RuntimeValue::Bool(false)
+        );
+        assert_eq!(
+            int(BinaryOperator::NotEqual, big, big - 1),
+            RuntimeValue::Bool(true)
+        );
+        assert_eq!(
+            int(BinaryOperator::Greater, big, big - 1),
+            RuntimeValue::Bool(true)
+        );
+        assert_eq!(
+            int(BinaryOperator::LessEqual, 3, 3),
             RuntimeValue::Bool(true)
         );
     }
