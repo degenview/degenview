@@ -527,6 +527,11 @@ fn a_call_that_could_fail_or_change_something_stays_where_it_is() {
         "x = close > 0 ? ta.sma(array.get(array.new_float(1), 0), 3)[1] : na",
         "type P\n    float v\np = P.new(1.0)\nx = close > 0 ? p.v[1] : na",
         "x = close > 0 ? nz(plot(close))[1] : na",
+        // An offset only the guard keeps non-negative: `close[lag]` raises for a negative `lag`.
+        "lag = bar_index - 1\nx = lag >= 0 ? math.abs(close[lag])[1] : na",
+        "lag = bar_index - 1\nx = lag >= 0 ? ta.sma(close[lag], 3)[1] : na",
+        "lag = bar_index - 1\nx = lag >= 0 ? ta.sma(close[-1], 3)[1] : na",
+        "f(l) =>\n    math.abs(close[l])\nlag = bar_index - 1\nx = lag >= 0 ? f(lag)[1] : na",
     ] {
         assert!(hoisted_calls(body).is_empty(), "{body}");
     }
@@ -540,6 +545,15 @@ fn a_user_function_moves_only_when_it_only_computes() {
     let chain = "g() =>\n    ta.sma(close, 3)\nf() =>\n    g() * 2\n\
                  x = close > 0 ? f()[1] : na";
     assert_eq!(hoisted_calls(chain), ["f"]);
+    // A history at a literal offset cannot fail, in the call's argument or in a function's body.
+    assert_eq!(
+        hoisted_calls("x = close > 0 ? ta.sma(close[1], 3)[1] : na"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls("f() =>\n    close[2]\nx = close > 0 ? f()[1] : na"),
+        ["f"]
+    );
     for impure in [
         "var a = array.new_float()\nf() =>\n    array.push(a, close)\n    1.0\n",
         "f() =>\n    plot(close)\n    1.0\n",

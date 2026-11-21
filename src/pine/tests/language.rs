@@ -1364,6 +1364,20 @@ fn a_call_that_could_fail_is_not_run_ahead_of_its_guard() {
 }
 
 #[test]
+fn a_history_whose_offset_the_guard_protects_is_not_run_ahead_of_it() {
+    // `close[lag]` raises PINE4006 for a negative `lag`: on bar 0 `lag` is -1 and the guard is false,
+    // so neither the call nor its argument may run. On bar 1 the branch runs (`close[0]` is that bar's 102) and bar 2 reads it.
+    for body in [
+        "lag = bar_index - 1\nr = lag >= 0 ? math.abs(close[lag])[1] : na\nplot(r, \"r\")",
+        "f(l) =>\n    math.abs(close[l])\nlag = bar_index - 1\nr = lag >= 0 ? f(lag)[1] : na\nplot(r, \"r\")",
+    ] {
+        let r = plot_values(body, 6, "r");
+        assert_eq!(r[..2], [None, None], "{body}");
+        assert_eq!(r[2], Some(102.0), "{body}");
+    }
+}
+
+#[test]
 fn a_function_that_changes_state_is_not_run_ahead_of_its_condition() {
     let session = run(
         "var seen = array.new_float(0)\nf() =>\n    array.push(seen, close)\n    array.size(seen)\n\

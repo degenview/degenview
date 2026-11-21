@@ -447,9 +447,11 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   without `[]` keeps its own state. The call moves, unchanged and with its `site`, into a synthetic
   declaration `\u{1}h<n> = <call>` before its statement, and the operand reads `\u{1}h<n>[k]`: the
   ordinary history of a variable, no new runtime code.
-  - Only calls safe to run unconditionally move: `ta.*`, math and scalar builtins (not `math.random`,
-    `ta.pivot_point_levels`) and user functions built only from those (`Calls::pure`: no loop with a
-    data-dependent end, no field assignment, no method or field read, no assignment to a global). Never
+  - Only a *total* call moves (`Calls::expression`, an exhaustive match over `Expression`: a new variant
+    must be decided): `ta.*`, math and scalar builtins (not `math.random`, `ta.pivot_point_levels`) and
+    user functions built only from those, with total arguments; a history only at a literal non-negative
+    offset (`close[lag]` raises PINE4006 for a negative `lag` a guard may keep out). No loop with a
+    data-dependent end, field assignment, method or field read, or assignment to a global. Never
     `array.get`, `request.*`, a method, a draw. A call that reads a name its statement declares stays.
   - Nothing moves out of a loop inside an arm, a `while` condition or a `request.*` argument.
   - `SYNTHETIC` (`syntax::ast`) starts the name; `Statement::is_synthetic` makes `hook_before`/`hook_after`

@@ -19,11 +19,14 @@
 //! (`mark_shadowing`, the `request.security` slices) so those see the synthetic statements.
 //!
 //! A *lazy* operand is the right side of `and`/`or`, either arm of `?:`, the arms of an `if` or
-//! `switch` used for its value, and a `switch` arm's condition after the first. Only a call that is
-//! safe to run unconditionally moves: a `ta.*` function, a math or scalar builtin, a user function
-//! built from those. Anything that could fail, change state or draw (`array.get`, `array.push`,
-//! `plot`, a method, a field read, `request.*`) stays where it is, as does a call whose arguments
-//! read a name the statement itself declares or assigns.
+//! `switch` used for its value, and a `switch` arm's condition after the first. Only a *total*
+//! call moves: running it early cannot fail or change anything, so it cannot change what the script
+//! does on the bars its branch skips. That is a `ta.*` function, a math or scalar builtin or a user
+//! function built from those, with arguments that are total too, and a history only at a literal
+//! non-negative offset (`close[lag]` fails for a negative `lag`, which a guard may be keeping out).
+//! Anything that could fail, change state or draw (`array.get`, `array.push`, `plot`, a method, a
+//! field read, `request.*`) stays where it is, as does a call whose arguments read a name the
+//! statement itself declares or assigns.
 //!
 //! The synthetic declaration starts where the call does, so its offset is unique among
 //! declarations, and `SYNTHETIC` marks its name: the debugger and the profiler skip it, so the
@@ -35,8 +38,8 @@ use super::{Targets, collect_captured, route_for};
 use crate::pine::SourceRange;
 use crate::pine::compiler::program::CompiledProgram;
 use crate::pine::syntax::ast::{
-    BinaryOperator, DeclarationMode, Expression, FunctionKind, Parameter, Route, SYNTHETIC,
-    Statement, TypeAnnotation,
+    BinaryOperator, DeclarationMode, Expression, FunctionKind, Literal, Parameter, Route,
+    SYNTHETIC, Statement, TypeAnnotation,
 };
 use crate::pine::syntax::traversal::{children, expressions, nested_blocks};
 
@@ -210,25 +213,36 @@ impl<'c> Calls<'c> {
         }
     }
 
+    /// Whether `expression` is *total*: it changes nothing and cannot fail, so running it on a bar
+    /// its branch skips cannot change what the script does. Every variant is decided here, and a
+    /// new one has to be.
     fn expression(&self, expression: &Expression, locals: &HashSet<String>) -> bool {
+        let total = |operand: &Expression| self.expression(operand, locals);
         match expression {
+            Expression::Literal(..) | Expression::Identifier(..) => true,
+            Expression::Unary { operand, .. } => total(operand),
+            Expression::Binary { lhs, rhs, .. } => total(lhs) && total(rhs),
+            Expression::Ternary {
+                condition,
+                when_true,
+                when_false,
+                ..
+            } => total(condition) && total(when_true) && total(when_false),
+            Expression::Tuple(values, _) => values.iter().all(total),
             Expression::Call {
                 name,
                 arguments,
                 site,
                 ..
-            } => {
-                self.call(name, *site)
-                    && arguments
-                        .iter()
-                        .all(|argument| self.expression(&argument.value, locals))
+            } => self.call(name, *site) && arguments.iter().all(|argument| total(&argument.value)),
+            // A history fails for a negative offset (PINE4006): only one written as a
+            // non-negative number is known not to, whatever a guard around it says.
+            Expression::History { base, offset, .. } => {
+                matches!(**offset, Expression::Literal(Literal::Int(n), _) if n >= 0) && total(base)
             }
             // A field read of an object that is not there, a method that changes its receiver.
             Expression::Member { .. } | Expression::MethodCall { .. } => false,
             Expression::Statement(statement, _) => self.statement(statement, locals),
-            other => children(other)
-                .into_iter()
-                .all(|child| self.expression(child, locals)),
         }
     }
 
