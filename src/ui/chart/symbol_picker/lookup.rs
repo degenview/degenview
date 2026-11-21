@@ -250,6 +250,7 @@ mod tests {
                 "HTX",
                 "Bitfinex",
                 "Bitstamp",
+                "BingX",
                 "DEXScreener",
                 "CoinGecko",
                 "Alpaca"

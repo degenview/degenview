@@ -1,6 +1,7 @@
 pub(in crate::service) mod alpaca;
 pub(in crate::service) mod aster;
 pub(in crate::service) mod binance;
+pub(in crate::service) mod bingx;
 pub(in crate::service) mod bitfinex;
 pub(in crate::service) mod bitstamp;
 pub(in crate::service) mod bybit;

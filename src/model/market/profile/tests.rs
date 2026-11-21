@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 /// How many variants `DataSource` has. Bumped with [`position`], which cannot compile without an
 /// arm for a new variant.
-const VARIANTS: usize = 20;
+const VARIANTS: usize = 21;
 
 /// Where `source` stands in [`DataSource::ALL`]. Exhaustive, so a new variant does not compile
 /// until it is placed here, and then the tests below make it appear in the list.
@@ -24,12 +24,13 @@ fn position(source: DataSource) -> usize {
         DataSource::Htx => 11,
         DataSource::Bitfinex => 12,
         DataSource::Bitstamp => 13,
-        DataSource::CoinGecko => 14,
-        DataSource::DexScreener => 15,
-        DataSource::Alpaca => 16,
-        DataSource::Polymarket => 17,
-        DataSource::Kalshi => 18,
-        DataSource::CoinMarketCap => 19,
+        DataSource::Bingx => 14,
+        DataSource::CoinGecko => 15,
+        DataSource::DexScreener => 16,
+        DataSource::Alpaca => 17,
+        DataSource::Polymarket => 18,
+        DataSource::Kalshi => 19,
+        DataSource::CoinMarketCap => 20,
     }
 }
 
@@ -122,6 +123,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Htx,
             DataSource::Bitfinex,
             DataSource::Bitstamp,
+            DataSource::Bingx,
         ]
     );
     assert_eq!(
@@ -139,6 +141,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Htx,
             DataSource::Bitfinex,
             DataSource::Bitstamp,
+            DataSource::Bingx,
         ]
     );
 }
@@ -164,7 +167,7 @@ fn only_the_sources_with_a_small_rest_allowance_refresh_their_charts_slowly() {
 #[test]
 fn the_picker_lists_markets_by_symbol_and_predictions_apart() {
     let markets: Vec<_> = DataSource::symbol_markets().collect();
-    assert_eq!(markets.len(), 17);
+    assert_eq!(markets.len(), 18);
     assert!(markets.iter().all(|source| !source.is_prediction_market()));
     assert!(!markets.contains(&DataSource::CoinMarketCap));
     assert_eq!(
@@ -193,6 +196,7 @@ fn quotes_are_polled_as_each_source_allows() {
     assert_eq!(timing(DataSource::Htx), (10, 60, 2_000));
     assert_eq!(timing(DataSource::Bitfinex), (10, 60, 100));
     assert_eq!(timing(DataSource::Bitstamp), (10, 60, 2_000));
+    assert_eq!(timing(DataSource::Bingx), (10, 60, 2_000));
     assert_eq!(timing(DataSource::DexScreener), (10, 60, 30));
     assert_eq!(timing(DataSource::CoinGecko), (30, 120, 250));
     assert_eq!(timing(DataSource::Alpaca), (5, 45, 200));
@@ -554,5 +558,47 @@ fn bitstamp_lists_spot_pairs_and_folds_weeks_months_and_years_from_days() {
             "{folded}"
         );
         assert!(DataSource::Bitstamp.serves(timeframe), "{folded}");
+    }
+}
+
+#[test]
+fn bingx_lists_dashed_pairs_and_folds_what_it_cuts_at_utc_plus_eight() {
+    let profile = DataSource::Bingx.profile();
+    assert_eq!(profile.kinds, [MarketKind::Spot]);
+    assert_eq!((profile.slug, profile.display_name), ("BINGX", "BingX"));
+    assert!(profile.streams.candles && profile.streams.quotes);
+    assert_eq!(
+        DataSource::from_watchlist_slug("bingx"),
+        Some(DataSource::Bingx)
+    );
+    for (id, base, quote) in [
+        ("BTC-USDT", "BTC", "USDT"),
+        ("btc-usdc", "BTC", "USDC"),
+        ("1000PEPE-USDT", "1000PEPE", "USDT"),
+    ] {
+        assert_eq!(DataSource::Bingx.base_asset(id), base, "{id}");
+        assert_eq!(
+            DataSource::Bingx.quote_asset(id).as_deref(),
+            Some(quote),
+            "{id}"
+        );
+    }
+    let natives: Vec<_> = DataSource::Bingx
+        .natives()
+        .iter()
+        .map(|native| native.interval())
+        .collect();
+    assert_eq!(
+        natives,
+        ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h"]
+    );
+    // Its own 6h and 12h open at 04:00 UTC and its 1d, 3d and 1w at 16:00 UTC: they fold.
+    for folded in ["6h", "12h", "1D", "3D", "1W", "1M", "3M", "1Y", "22m"] {
+        let timeframe = Timeframe::parse(folded).unwrap();
+        assert!(
+            !DataSource::Bingx.natives().contains(&timeframe),
+            "{folded}"
+        );
+        assert!(DataSource::Bingx.serves(timeframe), "{folded}");
     }
 }

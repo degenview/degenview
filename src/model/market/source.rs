@@ -21,6 +21,7 @@ pub enum DataSource {
     Htx,
     Bitfinex,
     Bitstamp,
+    Bingx,
     CoinGecko,
     DexScreener,
     Alpaca,

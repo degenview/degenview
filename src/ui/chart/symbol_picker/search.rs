@@ -463,23 +463,10 @@ mod tests {
         for (source, results) in [(DataSource::Binance, binance), (DataSource::Alpaca, share)] {
             search.answers.insert(("btc".into(), source), Ok(results));
         }
-        for source in [
-            DataSource::Coinbase,
-            DataSource::Okx,
-            DataSource::Kraken,
-            DataSource::Bybit,
-            DataSource::Gate,
-            DataSource::Mexc,
-            DataSource::Hyperliquid,
-            DataSource::Aster,
-            DataSource::Lighter,
-            DataSource::Deribit,
-            DataSource::Htx,
-            DataSource::Bitfinex,
-            DataSource::Bitstamp,
-            DataSource::DexScreener,
-            DataSource::CoinGecko,
-        ] {
+        // Every other provider listed by symbol has nothing for it, whichever are added.
+        for source in DataSource::symbol_markets()
+            .filter(|source| ![DataSource::Binance, DataSource::Alpaca].contains(source))
+        {
             search
                 .answers
                 .insert(("btc".into(), source), Ok(Vec::new()));

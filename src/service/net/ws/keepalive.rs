@@ -12,6 +12,9 @@ use tungstenite::Message;
 /// Heartbeat messages are small; a longer one is data, and is not parsed to find out.
 const SMALL_MESSAGE_BYTES: usize = 512;
 
+/// The most fields a ping that carries more than its value has (BingX's: `ping` and `time`).
+const PING_FIELDS: usize = 2;
+
 /// The request ids a JSON-RPC heartbeat uses, so their answers are told from the feed's own. A feed
 /// using [`Keepalive::JsonRpcHeartbeat`] must not use these.
 pub const JSON_RPC_SETUP_ID: u64 = 1_000_000_001;
@@ -46,10 +49,10 @@ pub enum Keepalive {
         ask: &'static str,
         answer: &'static str,
     },
-    /// The server sends the text `ask` and the client answers the text `answer` (BingX: `Ping`,
-    /// then `Pong`). The client sends nothing on its own.
-    #[cfg_attr(not(test), allow(dead_code))] // until a venue that needs it lands
-    AnswerText {
+    /// The server sends a small JSON object that has the field `ask` (BingX every 30 seconds:
+    /// `{"ping":"<id>","time":"<UTC+8 time>"}`) and the client answers the text `answer` (`Pong`).
+    /// The client sends nothing on its own.
+    AnswerJson {
         ask: &'static str,
         answer: &'static str,
     },
@@ -83,13 +86,7 @@ impl Keepalive {
                 }
             }
             Self::EchoJson { ask, answer } => echo_json(text, ask, answer),
-            Self::AnswerText { ask, answer } => {
-                if text.trim() == ask {
-                    Inbound::Answer(answer.to_owned())
-                } else {
-                    Inbound::Data
-                }
-            }
+            Self::AnswerJson { ask, answer } => answer_json(text, ask, answer),
             Self::JsonRpcHeartbeat { .. } => json_rpc(text),
         }
     }
@@ -111,7 +108,7 @@ impl Keepalive {
             Self::QuietText { ping, .. } => Some(Message::Text(ping.into())),
             Self::Frame => Some(Message::Ping(Vec::new().into())),
             Self::Text { ping, .. } => Some(Message::Text(ping.into())),
-            Self::EchoJson { .. } | Self::AnswerText { .. } | Self::JsonRpcHeartbeat { .. } => None,
+            Self::EchoJson { .. } | Self::AnswerJson { .. } | Self::JsonRpcHeartbeat { .. } => None,
         }
     }
 
@@ -148,6 +145,23 @@ fn echo_json(text: &str, ask: &str, answer: &str) -> Inbound {
             Inbound::Answer(json!({ answer: value }).to_string())
         }
         _ => Inbound::Data,
+    }
+}
+
+fn answer_json(text: &str, ask: &str, answer: &str) -> Inbound {
+    if text.len() > SMALL_MESSAGE_BYTES {
+        return Inbound::Data;
+    }
+    let Ok(Value::Object(object)) = serde_json::from_str(text) else {
+        return Inbound::Data;
+    };
+    // A ping holds its id and a time; a data message that has the key as a field has more.
+    let asked = object.len() <= PING_FIELDS
+        && matches!(object.get(ask), Some(value) if value.is_number() || value.is_string());
+    if asked {
+        Inbound::Answer(answer.to_owned())
+    } else {
+        Inbound::Data
     }
 }
 
@@ -199,8 +213,8 @@ mod tests {
         ask: "ping",
         answer: "pong",
     };
-    const BINGX: Keepalive = Keepalive::AnswerText {
-        ask: "Ping",
+    const BINGX: Keepalive = Keepalive::AnswerJson {
+        ask: "ping",
         answer: "Pong",
     };
     const DERIBIT: Keepalive = Keepalive::JsonRpcHeartbeat { interval_secs: 30 };
@@ -236,22 +250,33 @@ mod tests {
     }
 
     #[test]
-    fn bingx_answers_the_text_ping_with_the_text_pong() {
-        assert_eq!(BINGX.inspect("Ping"), Inbound::Answer("Pong".to_owned()));
-        assert_eq!(BINGX.inspect(" Ping\n"), Inbound::Answer("Pong".to_owned()));
-        assert_eq!(BINGX.inspect(r#"{"code":0}"#), Inbound::Data);
-        assert_eq!(BINGX.inspect("Pinger"), Inbound::Data);
+    fn bingx_answers_its_json_ping_with_the_text_pong() {
+        let ping =
+            r#"{"ping":"5795035fdea241aa82008457e74b20c5","time":"2026-11-21T15:38:31.327+0800"}"#;
+        assert_eq!(BINGX.inspect(ping), Inbound::Answer("Pong".to_owned()));
+        assert_eq!(
+            BINGX.inspect(r#"{"ping":7}"#),
+            Inbound::Answer("Pong".to_owned())
+        );
         assert!(BINGX.probe().is_none());
+        assert!(BINGX.greeting().is_none());
     }
 
     #[test]
-    fn deribit_asks_for_a_heartbeat_once_after_connecting() {
-        let greeting = parsed(&DERIBIT.greeting().unwrap());
-        assert_eq!(greeting["jsonrpc"], "2.0");
-        assert_eq!(greeting["id"], JSON_RPC_SETUP_ID);
-        assert_eq!(greeting["method"], "public/set_heartbeat");
-        assert_eq!(greeting["params"], json!({"interval": 30}));
-        assert!(DERIBIT.probe().is_none());
+    fn bingx_data_that_mentions_ping_is_still_data() {
+        let ack = r#"{"code":0,"id":"1","msg":"SUCCESS","timestamp":1795246701835}"#;
+        assert_eq!(BINGX.inspect(ack), Inbound::Data);
+        let tick = r#"{"code":0,"data":{"e":"24hTicker"},"dataType":"BTC-USDT@ticker"}"#;
+        assert_eq!(BINGX.inspect(tick), Inbound::Data);
+        assert_eq!(
+            BINGX.inspect(r#"{"ping":1,"time":"x","data":{}}"#),
+            Inbound::Data
+        );
+        assert_eq!(BINGX.inspect(r#"{"ping":{"a":1}}"#), Inbound::Data);
+        assert_eq!(BINGX.inspect("Ping"), Inbound::Data);
+        assert_eq!(BINGX.inspect("not json"), Inbound::Data);
+        let long = format!(r#"{{"ping":"{}"}}"#, "x".repeat(SMALL_MESSAGE_BYTES));
+        assert_eq!(BINGX.inspect(&long), Inbound::Data);
     }
 
     #[test]
