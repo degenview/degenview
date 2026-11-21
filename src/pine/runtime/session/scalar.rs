@@ -19,15 +19,15 @@ impl Session {
     ) -> Result<Option<RuntimeValue>, Diagnostic> {
         match name {
             "na" => Ok(Some(RuntimeValue::Bool(
-                self.arg_value(arguments, 0, None, context)? == RuntimeValue::Na,
+                self.arg_value(arguments, 0, None, context)?.is_na(),
             ))),
             "nz" => {
                 let v = self.arg_value(arguments, 0, None, context)?;
-                if v != RuntimeValue::Na {
+                if !v.is_na() {
                     return Ok(Some(v));
                 }
                 let replacement = self.arg_value(arguments, 1, None, context)?;
-                Ok(Some(if replacement == RuntimeValue::Na {
+                Ok(Some(if replacement.is_na() {
                     RuntimeValue::Float(0.0)
                 } else {
                     replacement
@@ -40,11 +40,11 @@ impl Session {
                     _ => RuntimeValue::Na,
                 },
             )),
+            // `float(x)` is a cast, not arithmetic: it hands an infinity on as it is.
             "float" => Ok(Some(
                 self.arg_value(arguments, 0, None, context)?
-                    .number()
-                    .map(RuntimeValue::Float)
-                    .unwrap_or(RuntimeValue::Na),
+                    .raw_number()
+                    .map_or(RuntimeValue::Na, RuntimeValue::ieee),
             )),
             "bool" => {
                 let v = self.arg_value(arguments, 0, None, context)?;

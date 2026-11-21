@@ -602,6 +602,49 @@ mod tests {
     }
 
     #[test]
+    fn an_infinite_value_is_never_stored_for_the_renderer() {
+        let mut state = RuntimeState::default();
+        for value in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            run(&mut state, "plot", 0, &[arg(Float(value))]).unwrap();
+        }
+        run(&mut state, "plot", 0, &[arg(Float(2.0))]).unwrap();
+        assert_eq!(state.plots[&0].values, vec![None, None, None, Some(2.0)]);
+        run(
+            &mut state,
+            "plot",
+            1,
+            &[arg(Float(1.0)), named("histbase", Float(f64::INFINITY))],
+        )
+        .unwrap();
+        assert_eq!(state.plots[&1].hist_base, 0.0);
+        run(&mut state, "hline", 2, &[arg(Float(f64::INFINITY))]).unwrap();
+        assert!(!state.hlines.contains_key(&2));
+
+        run(&mut state, "plotshape", 3, &[arg(Float(f64::INFINITY))]).unwrap();
+        let marker = &state.markers[&3];
+        assert_eq!(marker.values, vec![false]);
+        assert_eq!(marker.prices, vec![None]);
+
+        run(&mut state, "plotarrow", 4, &[arg(Float(f64::INFINITY))]).unwrap();
+        run(&mut state, "plotarrow", 4, &[arg(Float(-3.0))]).unwrap();
+        assert_eq!(state.arrows[&4].values, vec![None, Some(-3.0)]);
+
+        run(
+            &mut state,
+            "plotcandle",
+            5,
+            &[
+                arg(Float(1.0)),
+                arg(Float(f64::INFINITY)),
+                arg(Float(0.5)),
+                arg(Float(1.5)),
+            ],
+        )
+        .unwrap();
+        assert!(state.candles[&5].bars.iter().all(Option::is_none));
+    }
+
+    #[test]
     fn plot_style_names_map_to_styles() {
         assert_eq!(plot_style(Some("plot.style_stepline")), PlotStyle::Stepline);
         assert_eq!(

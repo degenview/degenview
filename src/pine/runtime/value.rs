@@ -35,11 +35,39 @@ pub enum RuntimeValue {
 }
 
 impl RuntimeValue {
+    /// The value as a finite number, or None: `na`, a non-numeric value, and any float that is
+    /// infinite or NaN, which are na to every builtin, plot, drawing, order and `ta.*` input.
+    /// The one place that rule lives; `raw_number` is for the few readers that need the IEEE value.
     pub fn number(&self) -> Option<f64> {
+        self.raw_number().filter(|number| number.is_finite())
+    }
+
+    /// The value as an `f64` whatever it is, an infinity included. Only arithmetic, the ordering
+    /// operators and `math.max`/`math.min` read this: TradingView carries a zero-divisor quotient as
+    /// an IEEE infinity through them while `na()`, `nz()`, `bool()` and `==` see na.
+    pub fn raw_number(&self) -> Option<f64> {
         match self {
             Self::Int(value) => Some(*value as f64),
             Self::Float(value) => Some(*value),
             _ => None,
+        }
+    }
+
+    /// Whether `na()` is true: `na`, or a float that is not finite.
+    pub fn is_na(&self) -> bool {
+        match self {
+            Self::Na => true,
+            Self::Float(value) => !value.is_finite(),
+            _ => false,
+        }
+    }
+
+    /// A float result of arithmetic: an infinity stays one, NaN is `na`.
+    pub fn ieee(value: f64) -> Self {
+        if value.is_nan() {
+            Self::Na
+        } else {
+            Self::Float(value)
         }
     }
 
@@ -101,6 +129,36 @@ mod tests {
         assert_eq!(RuntimeValue::String("x".into()).number(), None);
         assert_eq!(RuntimeValue::Float(2.5).int_value(), None);
         assert_eq!(RuntimeValue::Float(3.0).int_value(), Some(3));
+    }
+
+    #[test]
+    fn number_is_finite_and_raw_number_is_ieee() {
+        for non_finite in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            assert_eq!(RuntimeValue::Float(non_finite).number(), None);
+            assert_eq!(RuntimeValue::Float(non_finite).int_value(), None);
+            assert!(RuntimeValue::Float(non_finite).is_na());
+        }
+        assert_eq!(
+            RuntimeValue::Float(f64::INFINITY).raw_number(),
+            Some(f64::INFINITY)
+        );
+        assert_eq!(RuntimeValue::Float(2.5).raw_number(), Some(2.5));
+        assert_eq!(RuntimeValue::Int(3).raw_number(), Some(3.0));
+        assert_eq!(RuntimeValue::Na.raw_number(), None);
+        assert_eq!(RuntimeValue::String("x".into()).raw_number(), None);
+        assert!(RuntimeValue::Na.is_na());
+        assert!(!RuntimeValue::Float(0.0).is_na());
+        assert!(!RuntimeValue::Bool(false).is_na());
+    }
+
+    #[test]
+    fn ieee_turns_nan_into_na_and_keeps_infinities() {
+        assert_eq!(RuntimeValue::ieee(f64::NAN), RuntimeValue::Na);
+        assert_eq!(
+            RuntimeValue::ieee(f64::INFINITY),
+            RuntimeValue::Float(f64::INFINITY)
+        );
+        assert_eq!(RuntimeValue::ieee(1.5), RuntimeValue::Float(1.5));
     }
 
     #[test]
