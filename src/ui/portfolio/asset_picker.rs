@@ -565,6 +565,7 @@ impl AssetPickerState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::market::profile::Class;
     use eframe::egui::Rect;
     use std::sync::Mutex;
 
@@ -592,19 +593,8 @@ mod tests {
                     hit(source, "BTC/USDT", "BTCUSDT"),
                     hit(source, "WBTC/USDT", "WBTCUSDT"),
                 ]),
-                DataSource::Coinbase
-                | DataSource::Okx
-                | DataSource::Kraken
-                | DataSource::Bybit
-                | DataSource::Gate
-                | DataSource::Mexc
-                | DataSource::Hyperliquid
-                | DataSource::Aster
-                | DataSource::Lighter
-                | DataSource::Deribit
-                | DataSource::Htx
-                | DataSource::Bitfinex
-                | DataSource::Bitstamp => Ok(vec![]),
+                // The other exchanges list nothing for it, whichever are added.
+                source if source.profile().class == Class::Exchange => Ok(vec![]),
                 DataSource::CoinGecko => Err(ProviderError::other("rate limited")),
                 _ => Ok(vec![hit(source, "BTC/WETH", "0xabc")]),
             }
@@ -639,7 +629,7 @@ mod tests {
         wait(&mut state);
         assert_eq!(
             calls.lock().unwrap().len(),
-            16,
+            17,
             "one request per crypto source"
         );
         assert!(
@@ -684,8 +674,9 @@ mod tests {
         assert!(state.results()[11].1.as_ref().is_ok_and(Vec::is_empty));
         assert!(state.results()[12].1.as_ref().is_ok_and(Vec::is_empty));
         assert!(state.results()[13].1.as_ref().is_ok_and(Vec::is_empty));
+        assert!(state.results()[14].1.as_ref().is_ok_and(Vec::is_empty));
         assert_eq!(
-            state.results()[14].1.as_ref().err(),
+            state.results()[15].1.as_ref().err(),
             Some(&ProviderError::other("rate limited"))
         );
     }
