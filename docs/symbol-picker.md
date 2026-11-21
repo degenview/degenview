@@ -19,7 +19,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
 ## What it does
 
 - **Opens searching for the market on the focused chart** (`Chart::picker_query`): the exchange's own
-  name for Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Alpaca and CoinGecko, the base token for a DEX pair, nothing for a
+  name for Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, Alpaca and CoinGecko, the base token for a DEX pair, nothing for a
   prediction market or a CoinMarketCap gauge. The text is selected, so typing replaces it. Add,
   Compare and Watchlist modes open empty.
 - **Return replaces** the focused chart's market (`replace_focused_market`, which is
@@ -98,7 +98,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     symbol is searched on every venue of the tab (a venue picked in the pull-down does not narrow it,
     as the prefix overrides it) and listed under "KUCOIN isn't supported · matches from
     other venues", and with no match the card reads "KUCOIN isn't supported. Searched: Binance,
-    Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, DEXScreener, CoinGecko, Alpaca." A plain miss reads
+    Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, DEXScreener, CoinGecko, Alpaca." A plain miss reads
     "Nothing matches “zzz”. Searched:
     …" with the venues asked (the pull-down's one, or the tab's). Return on no result does nothing.
     Two sources are never merged into one row.
@@ -135,7 +135,7 @@ stays.
 
 `service/market/search_rank.rs` is the one rule, used inside each provider and across all of them
 (`merge_ranked`). A query is normalised to letters and digits, so `btc/usd`, `BTC-USD` and `BTC USD`
-are one query, and Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster and Lighter match it against their own lists the same way
+are one query, and Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter and Deribit match it against their own lists the same way
 (`BTC-USDT` finds Binance's `BTCUSDT`, Coinbase's `BTC-USDT` and OKX's `BTC-USDT`; Kraken's legacy `XBT`
 is read as `BTC`, so `xbtusd` finds its `BTC/USD`). Tiers:
 
@@ -148,7 +148,7 @@ is read as `BTC`, so `xbtusd` finds its `BTC/USD`). Tiers:
 5. the rest.
 
 A prediction market has no pair to rank: the Predictions tab keeps each provider's own order,
-Polymarket first. Inside a tier: provider order (Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, DEXScreener, CoinGecko, Alpaca), then quote (the
+Polymarket first. Inside a tier: provider order (Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, DEXScreener, CoinGecko, Alpaca), then quote (the
 exchange's main dollar quote first: USDT on Binance, OKX, Bybit, Gate.io and MEXC, USD on Coinbase and Kraken; then USD, USDT, USDC...), then
 the provider's own order. A coin or a share has no quote and counts as dollars. Each provider still
 keeps its first 20 (30 for Alpaca) after ranking, so the dollar markets are never cut off by the
@@ -157,7 +157,7 @@ odd quotes. Hyperliquid's perpetuals have no quote either, so they rank as the a
 (`xyz:SP500 — S&P 500 (SPX)`, see [Market data](agent-guides/market-data.md#names-and-search)), which
 the company tiers rank, so "S&P", "SPX" and "Nasdaq" find them. All of Lighter's carry the Perp tag too:
 its ids are the bare names it lists (`BTC`, `1000PEPE`, `US500`, `EURUSD`), which rank as the asset in
-dollars, and it has no name table (its `SPX` is the SPX6900 coin; the S&P 500 index perpetual is `US500`). A spot pair is shown by its tokens
+dollars, and it has no name table (its `SPX` is the SPX6900 coin; the S&P 500 index perpetual is `US500`). Deribit's carry it too: `BTC-PERPETUAL` and `ETH-PERPETUAL` (inverse, quoted in dollars) and the linear `<ASSET>_USDC-PERPETUAL` (`SOL_USDC-PERPETUAL`, `SPY_USDC-PERPETUAL`) are ids read for their asset before the first `_` or `-`, so "btc" finds both of BTC's, the inverse first, and "spy" the share perpetual. A spot pair is shown by its tokens
 (`HYPE/USDC`) and opens by the id Hyperliquid numbers it with (`@107`).
 
 ## Search

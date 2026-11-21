@@ -12,7 +12,7 @@ use crate::model::market::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
 
 /// Every source, in the order lists of sources are searched and shown.
-pub const ALL: [DataSource; 16] = [
+pub const ALL: [DataSource; 17] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -23,6 +23,7 @@ pub const ALL: [DataSource; 16] = [
     DataSource::Hyperliquid,
     DataSource::Aster,
     DataSource::Lighter,
+    DataSource::Deribit,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -43,6 +44,7 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
         DataSource::Hyperliquid => &HYPERLIQUID,
         DataSource::Aster => &ASTER,
         DataSource::Lighter => &LIGHTER,
+        DataSource::Deribit => &DERIBIT,
         DataSource::CoinGecko => &COINGECKO,
         DataSource::DexScreener => &DEXSCREENER,
         DataSource::Alpaca => &ALPACA,
@@ -638,6 +640,69 @@ pub static LIGHTER: Profile = Profile {
     cache: Some(CachePolicy {
         fresh_secs: 0,
         of: CachedSeries::Every,
+    }),
+};
+
+/// Deribit's candle resolutions: 1, 3, 5, 10, 15, 30, 60 and 120 minutes, each cut where this app
+/// cuts (checked against the API on 2026-11-21: every bar of 5,000 opens on its length counted from
+/// UTC midnight). Its 180 and 360 open at 02:00 UTC and its 720 and `1D` at 08:00 UTC, so they are not
+/// natives; it answers none of `240`, `1W` and `1M`. Those, days, weeks, months and years fold from
+/// the two-hour bars, which nest in all of them.
+const DERIBIT_NATIVES: [Timeframe; 8] = [
+    minutes(1),
+    minutes(3),
+    minutes(5),
+    minutes(10),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(2),
+];
+
+pub static DERIBIT: Profile = Profile {
+    display_name: "Deribit",
+    slug: "DERIBIT",
+    mcp_id: "deribit",
+    class: Class::Exchange,
+    opaque_ids: false,
+    kinds: PERP,
+    series: Series::Candles,
+    // Candle volume is in the base asset for the inverse contracts (`BTC-PERPETUAL`) and the linear
+    // ones alike: coins, or the share of an equity perpetual.
+    volume: true,
+    // Names are upper case already (`BTC-PERPETUAL`, `SOL_USDC-PERPETUAL`), and the API refuses any
+    // other spelling.
+    display: Casing::Upper,
+    id: Casing::Upper,
+    // Names as Deribit lists them, no quote added: `SOL_USDC-PERPETUAL` is one market whose asset is
+    // the part before the first `_` or `-`.
+    pair: PairStyle::Listed(Listed {
+        // No Deribit name has a namespace; the colon is the character a name never holds.
+        namespace: ':',
+        also_in_names: &['-', '_'],
+        noun: "perpetuals",
+        examples: "BTC-PERPETUAL or SOL_USDC-PERPETUAL",
+    }),
+    home_quote: None,
+    natives: &DERIBIT_NATIVES,
+    older_history: OlderHistory::Always,
+    slow_refresh: false,
+    streams: Streams {
+        candles: true,
+        quotes: true,
+    },
+    change: ChangeBasis::Rolling24h,
+    // One call answers every market of a settlement currency (up to 120 KB), so prices are asked
+    // every ten seconds beside the sockets.
+    quotes: QuoteTiming {
+        refresh_secs: 10,
+        max_age_secs: 60,
+        batch: 2_000,
+    },
+    // Days, weeks and months fold from two-hour bars and take several requests of their own.
+    cache: Some(CachePolicy {
+        fresh_secs: 0,
+        of: CachedSeries::Folded,
     }),
 };
 

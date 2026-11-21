@@ -7,6 +7,7 @@ pub mod catalog;
 pub mod cmc;
 pub(in crate::service) mod coinbase;
 pub(in crate::service) mod coingecko;
+pub(in crate::service) mod deribit;
 pub(in crate::service) mod dexscreener;
 pub mod error;
 pub mod fx_rates;

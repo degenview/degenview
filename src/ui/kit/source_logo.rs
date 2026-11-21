@@ -18,6 +18,7 @@ fn source(source: DataSource) -> ImageSource<'static> {
         }
         DataSource::Aster => egui::include_image!("../../../assets/source_logos/aster.svg"),
         DataSource::Lighter => egui::include_image!("../../../assets/source_logos/lighter.svg"),
+        DataSource::Deribit => egui::include_image!("../../../assets/source_logos/deribit.svg"),
         DataSource::CoinGecko => egui::include_image!("../../../assets/source_logos/coingecko.png"),
         DataSource::DexScreener => {
             egui::include_image!("../../../assets/source_logos/dexscreener.png")
