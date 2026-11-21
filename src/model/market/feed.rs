@@ -5,6 +5,7 @@
 //! free (Basic) plan. The delay is invisible on a daily bar, so bars of a day and longer come from
 //! SIP and intraday bars stay on IEX. The app does not know the account's plan.
 
+use crate::model::market::cmc::global::GlobalIndex;
 use crate::model::{DataSource, Timeframe};
 
 /// An Alpaca stock data feed.
@@ -34,12 +35,16 @@ impl AlpacaFeed {
 }
 
 impl DataSource {
-    /// How a chart of `timeframe` names where its bars come from: the exchange, and for Alpaca
-    /// the feed that carries the timeframe. [`DataSource::display_name`] stays the venue's stable
-    /// name; portfolio and paper keys are built from it.
-    pub fn chart_feed_label(self, timeframe: Timeframe) -> &'static str {
+    /// How a chart of `symbol` at `timeframe` names where its bars come from: the exchange, for
+    /// Alpaca the feed that carries the timeframe, and for CoinMarketCap's market-cap indices that
+    /// they are its website's data, which it does not document. [`DataSource::display_name`] stays
+    /// the venue's stable name; portfolio and paper keys are built from it.
+    pub fn chart_feed_label(self, symbol: &str, timeframe: Timeframe) -> &'static str {
         match (self, AlpacaFeed::for_bars(timeframe)) {
             (Self::Alpaca, AlpacaFeed::Sip) => "Alpaca (SIP · 15 min delay on Basic)",
+            (Self::CoinMarketCap, _) if GlobalIndex::from_symbol(symbol).is_some() => {
+                "CoinMarketCap website data (unofficial)"
+            }
             (source, _) => source.display_name(),
         }
     }
@@ -85,16 +90,32 @@ mod tests {
     #[test]
     fn a_chart_names_the_feed_that_carries_its_timeframe() {
         assert_eq!(
-            DataSource::Alpaca.chart_feed_label(Timeframe::HOUR_1),
+            DataSource::Alpaca.chart_feed_label("AAPL", Timeframe::HOUR_1),
             "Alpaca (IEX)"
         );
         assert_eq!(
-            DataSource::Alpaca.chart_feed_label(Timeframe::DAY_1),
+            DataSource::Alpaca.chart_feed_label("AAPL", Timeframe::DAY_1),
             "Alpaca (SIP · 15 min delay on Basic)"
         );
         assert_eq!(
-            DataSource::Binance.chart_feed_label(Timeframe::DAY_1),
+            DataSource::Binance.chart_feed_label("BTCUSDT", Timeframe::DAY_1),
             "Binance"
+        );
+    }
+
+    #[test]
+    fn the_market_cap_indices_say_their_data_is_unofficial_and_the_gauges_do_not() {
+        for symbol in ["TOTAL", "TOTAL2", "TOTAL3", "BTC.D"] {
+            assert_eq!(
+                DataSource::CoinMarketCap.chart_feed_label(symbol, Timeframe::HOUR_1),
+                "CoinMarketCap website data (unofficial)",
+                "{symbol}"
+            );
+        }
+        assert_eq!(
+            DataSource::CoinMarketCap
+                .chart_feed_label("cmc.fear_and_greed_latest", Timeframe::HOUR_1),
+            "CoinMarketCap"
         );
     }
 

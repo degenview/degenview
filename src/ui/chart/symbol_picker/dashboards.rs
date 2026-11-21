@@ -6,6 +6,7 @@ use super::list::{
 };
 use crate::model::DataSource;
 use crate::model::market::cmc::CHART_TYPES;
+use crate::model::market::cmc::global::GlobalIndex;
 use crate::model::portfolio::Portfolio;
 use crate::model::portfolio::card::{CardKind, PortfolioCard};
 use crate::service::SearchResult;
@@ -25,6 +26,16 @@ const GAUGE_DETAILS: [(Icon, &str); 4] = [
     (Icon::Waveform, "Historical market-sentiment chart"),
     (Icon::Gauge, "Current sentiment gauge"),
 ];
+
+/// The icon of a market-cap index.
+const fn index_icon(index: GlobalIndex) -> Icon {
+    match index {
+        GlobalIndex::Total => Icon::ChartUptrend,
+        GlobalIndex::Total2 => Icon::Layers,
+        GlobalIndex::Total3 => Icon::BarChart,
+        GlobalIndex::BtcDominance => Icon::BitcoinCircle,
+    }
+}
 
 /// What a tile adds to the tab.
 #[derive(Clone, Debug, PartialEq)]
@@ -64,15 +75,16 @@ pub fn groups(portfolios: &[Portfolio], scope: Option<u64>, query: &str) -> Vec<
     let gauges = CHART_TYPES
         .iter()
         .zip(GAUGE_DETAILS)
-        .map(|((key, title), (icon, summary))| Tile {
-            icon,
-            title: (*title).to_owned(),
-            summary: summary.to_owned(),
-            scope: None,
-            pick: TilePick::Gauge(SearchResult::new(DataSource::CoinMarketCap, *title, *key)),
-        })
-        .filter(matches)
-        .collect();
+        .map(|((key, title), (icon, summary))| index_tile(key, title, summary, icon));
+    let market_caps = GlobalIndex::ALL.into_iter().map(|index| {
+        index_tile(
+            index.symbol(),
+            index.title(),
+            index.summary(),
+            index_icon(index),
+        )
+    });
+    let gauges = gauges.chain(market_caps).filter(matches).collect();
     let scope = scope.filter(|id| portfolios.iter().any(|portfolio| portfolio.id == *id));
     let card_scope = PortfolioCard::new(CardKind::Value, scope).scope_name(portfolios);
     let cards = if portfolios.is_empty() {
@@ -95,6 +107,17 @@ pub fn groups(portfolios: &[Portfolio], scope: Option<u64>, query: &str) -> Vec<
         .filter(|(_, tiles): &(&str, Vec<Tile>)| !tiles.is_empty())
         .map(|(heading, tiles)| Group { heading, tiles })
         .collect()
+}
+
+/// A CoinMarketCap index as a tile: charting `key` replaces or adds a chart like any market.
+fn index_tile(key: &str, title: &str, summary: &str, icon: Icon) -> Tile {
+    Tile {
+        icon,
+        title: title.to_owned(),
+        summary: summary.to_owned(),
+        scope: None,
+        pick: TilePick::Gauge(SearchResult::new(DataSource::CoinMarketCap, title, key)),
+    }
 }
 
 /// What a tile adds to the tab: a bare icon, its title over what it shows, and where it comes
@@ -213,7 +236,10 @@ mod tests {
             groups.iter().map(|group| group.heading).collect::<Vec<_>>(),
             ["Market indices", "Portfolio"]
         );
-        assert_eq!(groups[0].tiles.len(), CHART_TYPES.len());
+        assert_eq!(
+            groups[0].tiles.len(),
+            CHART_TYPES.len() + GlobalIndex::ALL.len()
+        );
         assert_eq!(groups[1].tiles.len(), CardKind::ALL.len());
         assert_eq!(groups[1].tiles[0].scope.as_deref(), Some("All Portfolios"));
     }
@@ -253,6 +279,51 @@ mod tests {
         let split = groups(&list, None, "splits");
         assert_eq!(titles(&split), [vec!["Allocation"]]);
         assert!(groups(&list, None, "zzz").is_empty());
+    }
+
+    #[test]
+    fn the_market_caps_are_listed_beside_the_gauges() {
+        let groups = groups(&[], None, "");
+        let tiles = &groups[0].tiles;
+        assert_eq!(
+            tiles[CHART_TYPES.len()..]
+                .iter()
+                .map(|tile| tile.title.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "TOTAL Cap (USD bn)",
+                "TOTAL2 Cap (USD bn)",
+                "TOTAL3 Cap (USD bn)",
+                "BTC.D Dominance (%)",
+            ]
+        );
+        assert!(tiles.iter().all(|tile| !tile.summary.is_empty()));
+        let TilePick::Gauge(result) = &tiles[CHART_TYPES.len() + 3].pick else {
+            panic!("an index");
+        };
+        assert_eq!(result.source, DataSource::CoinMarketCap);
+        assert_eq!(result.full_symbol, "BTC.D");
+    }
+
+    #[test]
+    fn a_market_cap_is_found_by_its_symbol() {
+        for (query, expected) in [
+            ("total", vec!["TOTAL", "TOTAL2", "TOTAL3"]),
+            ("total2", vec!["TOTAL2"]),
+            ("btc.d", vec!["BTC.D"]),
+            ("dominance", vec!["BTC.D"]),
+        ] {
+            let found = groups(&[], None, query);
+            let symbols: Vec<_> = found[0]
+                .tiles
+                .iter()
+                .map(|tile| match &tile.pick {
+                    TilePick::Gauge(result) => result.full_symbol.as_str(),
+                    TilePick::Card(_) => "card",
+                })
+                .collect();
+            assert_eq!(symbols, expected, "{query}");
+        }
     }
 
     #[test]

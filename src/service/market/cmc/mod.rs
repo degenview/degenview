@@ -1,5 +1,8 @@
+mod market_caps;
+
 use super::venue::Venue;
 use crate::clock::now_ms;
+use crate::model::market::cmc::global::GlobalIndex;
 use crate::model::market::cmc::{
     ALTCOIN_HISTORICAL, ALTCOIN_LATEST, CHART_TYPES, FEAR_GREED_HISTORICAL, FEAR_GREED_LATEST,
 };
@@ -247,9 +250,13 @@ impl MarketSource for CoinMarketCap {
     fn fetch_klines(
         &self,
         symbol: &str,
-        _timeframe: Timeframe,
+        timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
+        // The market-cap indices come from CoinMarketCap's website data, which needs no key.
+        if let Some(index) = GlobalIndex::from_symbol(symbol) {
+            return market_caps::fetch(index, timeframe, limit);
+        }
         let key = api_key();
         match symbol {
             ALTCOIN_HISTORICAL => {
