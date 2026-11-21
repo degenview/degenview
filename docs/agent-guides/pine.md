@@ -91,14 +91,19 @@
   `math.max(close / 0, 5)` stays +inf, `100 - 100 / (1 + up / down)` with `down` = 0 is 100. `==` and `!=`
   keep their non-finite rule in `float_relation`. Never read a plot, drawing or order quantity with
   `raw_number`: the renderer does not check for infinities.
-  - Unmeasured, chosen conservatively (probe `V7_infinity_corners.pine`, to be run on TradingView):
-    a constant `1 / 0` folds to the same infinity as a series; `math.abs/sign/floor/ceil/round/sqrt/
-    exp/pow/avg` and every other `math.*` of an infinity are na (`math.log(0)` is -inf, `math.pow(0, -1)`
-    and an overflow are infinities); `math.min` with an infinity picks the other end like any
-    number; `%` follows IEEE except a zero divisor (na); `!=` with an infinity is false
-    (#660's rule); `ta.*` inputs, `int()`,
-    `fixnan` see an infinity as na and `float()` keeps it; a `for` bound that is not finite runs no
-    iteration; an `input.*` default that folds to an infinity is `PINE3010`.
+  - Probe `V7_infinity_corners.pine` (TradingView BTCUSDT 4h, 2026-11-21): every `math.*` function
+    reads the IEEE value and keeps an infinity (`abs`, `sqrt`, `exp`, `floor`, `ceil`, `log`,
+    `pow(inf, 2)`, `pow(2, inf)`, `avg(inf, 1)` are +inf, `sign` is 1 / -1, `exp(-inf)` is 0,
+    `pow(inf, 0)` is 1); NaN results (`sin(inf)`, `avg(inf, -inf)`, `sqrt(-1)`) are na; `math.round` of an
+    infinity is na (`math.round_to_mintick` too). `math.min(inf, 5)` is 5. `>=` and `<=` between two
+    infinities of one sign are false (`x > y || floats_equal`), `-inf < inf` is true. `x % 3` and
+    `5 % 0` are NaN, `5 % inf` is 5. A literal zero divisor (`1 / 0`, `close / 0`, `close / -0.0`) is the
+    compile error CE10224 "Division by zero" (`check/constant_division.rs`); `%`, a divisor that is only
+    zero at run time and a reassigned variable are fine. TradingView also refuses a never-reassigned
+    variable holding zero (`float z = 0.0` then `close / z`); that case is not checked here.
+  - Still unmeasured, chosen conservatively: `ta.*` inputs, `int()`, `fixnan` see an infinity as na and
+    `float()` keeps it; a `for` bound that is not finite runs no iteration; an `input.*` default that
+    folds to an infinity is `PINE3010`.
 - Breakpoints and watches: local `scriptDebug.state` setting (never synced; in `sync::record::policy`'s local
   keys).
 - `once` finished flag: `RuntimeState::once_finished` (by site key), deliberately in working state:

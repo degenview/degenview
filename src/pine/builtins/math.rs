@@ -54,7 +54,7 @@ pub fn call(name: &str, values: &[RuntimeValue], mintick: f64) -> RuntimeValue {
     let first = values.first().unwrap_or(&na);
     if let Some(function) = unary(name) {
         return first
-            .number()
+            .raw_number()
             .map_or(RuntimeValue::Na, |x| RuntimeValue::ieee(function(x)));
     }
     match name {
@@ -64,19 +64,21 @@ pub fn call(name: &str, values: &[RuntimeValue], mintick: f64) -> RuntimeValue {
                 return RuntimeValue::Int(if *x == i64::MIN { i64::MAX } else { x.abs() });
             }
             first
-                .number()
+                .raw_number()
                 .map_or(RuntimeValue::Na, |x| RuntimeValue::Float(x.abs()))
         }
         "math.round" => round(values),
-        "math.floor" | "math.ceil" => match first.number() {
+        // An infinity stays one (TradingView, probe V7 U5a/U5b); `math.round` of one is na.
+        "math.floor" | "math.ceil" => match first.raw_number() {
             Some(x) if x.is_finite() => RuntimeValue::integral(if name == "math.floor" {
                 x.floor()
             } else {
                 x.ceil()
             }),
-            _ => RuntimeValue::Na,
+            Some(x) => RuntimeValue::Float(x),
+            None => RuntimeValue::Na,
         },
-        "math.sign" => first.number().map_or(RuntimeValue::Na, |x| {
+        "math.sign" => first.raw_number().map_or(RuntimeValue::Na, |x| {
             RuntimeValue::Float(if x > 0.0 {
                 1.0
             } else if x < 0.0 {
@@ -86,7 +88,7 @@ pub fn call(name: &str, values: &[RuntimeValue], mintick: f64) -> RuntimeValue {
             })
         }),
         "math.avg" => all_numbers(values).map_or(RuntimeValue::Na, |numbers| {
-            RuntimeValue::Float(numbers.iter().sum::<f64>() / numbers.len() as f64)
+            RuntimeValue::ieee(numbers.iter().sum::<f64>() / numbers.len() as f64)
         }),
         "math.round_to_mintick" => match first.number() {
             Some(x) if x.is_finite() && mintick > 0.0 => {
@@ -94,7 +96,10 @@ pub fn call(name: &str, values: &[RuntimeValue], mintick: f64) -> RuntimeValue {
             }
             _ => RuntimeValue::Na,
         },
-        "math.pow" => match (first.number(), values.get(1).and_then(RuntimeValue::number)) {
+        "math.pow" => match (
+            first.raw_number(),
+            values.get(1).and_then(RuntimeValue::raw_number),
+        ) {
             (Some(x), Some(y)) => RuntimeValue::ieee(x.powf(y)),
             _ => RuntimeValue::Na,
         },
@@ -107,15 +112,16 @@ fn round_half_away(x: f64) -> f64 {
     x.round()
 }
 
-/// Every value as a number, or None when there are none or any is not numeric.
+/// Every value as a number (an infinity included), or None when there are none or any is not
+/// numeric.
 fn all_numbers(values: &[RuntimeValue]) -> Option<Vec<f64>> {
-    let numbers: Vec<f64> = values.iter().filter_map(RuntimeValue::number).collect();
+    let numbers: Vec<f64> = values.iter().filter_map(RuntimeValue::raw_number).collect();
     (!numbers.is_empty() && numbers.len() == values.len()).then_some(numbers)
 }
 
 /// `math.max` / `math.min`. They read the IEEE value: `1 / math.max(close / 0, 5)` is 0 on
-/// TradingView, so the maximum stays +infinity (probe P11 S3). The other functions here see an
-/// infinity as na.
+/// TradingView, so the maximum stays +infinity (probe P11 S3). So do the other `math.*` functions
+/// but `math.round` and `math.round_to_mintick`, which give na for an infinity.
 fn extremum(is_max: bool, values: &[RuntimeValue]) -> RuntimeValue {
     let numbers: Vec<f64> = values.iter().filter_map(RuntimeValue::raw_number).collect();
     if numbers.is_empty() || numbers.len() != values.len() || numbers.iter().any(|n| n.is_nan()) {
@@ -201,22 +207,51 @@ mod tests {
     }
 
     #[test]
-    fn an_infinity_is_na_to_every_function_but_max_and_min() {
+    fn an_infinity_stays_one_through_the_math_functions_but_round() {
+        // TradingView, probe V7 U5a-U5c and U8 (BTCUSDT 4h, 2026-11-21): each of these is an infinity
+        // (> 1e300), `math.sign` is 1 and -1, and `math.exp(-inf)` is 0.
         let infinity = Float(f64::INFINITY);
+        let negative = Float(f64::NEG_INFINITY);
         for name in [
             "math.sqrt",
             "math.exp",
             "math.abs",
-            "math.sign",
             "math.floor",
             "math.ceil",
-            "math.round",
-            "math.sin",
+            "math.log",
+            "math.log10",
         ] {
-            assert_eq!(call(name, std::slice::from_ref(&infinity)), Na, "{name}");
+            assert_eq!(
+                call(name, std::slice::from_ref(&infinity)),
+                infinity,
+                "{name}"
+            );
         }
-        assert_eq!(call("math.avg", &[infinity.clone(), Float(1.0)]), Na);
-        assert_eq!(call("math.pow", &[infinity.clone(), Float(2.0)]), Na);
+        assert_eq!(
+            call("math.sign", std::slice::from_ref(&infinity)),
+            Float(1.0)
+        );
+        assert_eq!(
+            call("math.sign", std::slice::from_ref(&negative)),
+            Float(-1.0)
+        );
+        assert_eq!(call("math.abs", std::slice::from_ref(&negative)), infinity);
+        assert_eq!(
+            call("math.exp", std::slice::from_ref(&negative)),
+            Float(0.0)
+        );
+        assert_eq!(call("math.avg", &[infinity.clone(), Float(1.0)]), infinity);
+        assert_eq!(call("math.pow", &[infinity.clone(), Float(2.0)]), infinity);
+        assert_eq!(call("math.pow", &[Float(2.0), infinity.clone()]), infinity);
+        assert_eq!(
+            call("math.pow", &[infinity.clone(), Float(0.0)]),
+            Float(1.0)
+        );
+        // No value: NaN is na.
+        assert_eq!(call("math.sin", std::slice::from_ref(&infinity)), Na);
+        assert_eq!(call("math.avg", &[infinity.clone(), negative]), Na);
+        // `math.round` of an infinity is not one (`math.round(x) > 1e300` is false on TradingView).
+        assert_eq!(call("math.round", std::slice::from_ref(&infinity)), Na);
         assert_eq!(call("math.round_to_mintick", &[infinity]), Na);
     }
 
@@ -263,7 +298,10 @@ mod tests {
         assert_eq!(call("math.floor", &[Float(2.7)]), Int(2));
         assert_eq!(call("math.floor", &[Float(-2.1)]), Int(-3));
         assert_eq!(call("math.ceil", &[Float(2.1)]), Int(3));
-        assert_eq!(call("math.ceil", &[Float(f64::INFINITY)]), Na);
+        assert_eq!(
+            call("math.ceil", &[Float(f64::INFINITY)]),
+            Float(f64::INFINITY)
+        );
         assert_eq!(call("math.floor", &[Na]), Na);
     }
 

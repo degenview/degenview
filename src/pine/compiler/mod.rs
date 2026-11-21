@@ -121,6 +121,7 @@ fn compile_internal(
         diagnostics.extend(checked.diagnostics);
         resolutions = checked.resolutions;
         diagnostics.extend(super::check::ignored_features::validate(&statements));
+        diagnostics.extend(super::check::constant_division::validate(&statements));
         diagnostics.extend(super::check::name_check::validate(
             &statements,
             &import_aliases,

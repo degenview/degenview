@@ -126,16 +126,19 @@ fn floats_equal(x: f64, y: f64) -> bool {
 
 /// `op` between two floats, every one of them through `floats_equal`: `<` and `>` are false for
 /// numbers that are equal (`1e-10 < 2e-10` and `0.1 + 0.2 > 0.3` are false), `<=` and `>=` are true
-/// for them. `!=` is false for a number that is not finite, an infinity included (`inf != 1`), as
-/// TradingView gives; the ordering operators keep the infinities ordered (`-inf < inf`).
+/// for them (false for two infinities of one sign, which are not equal). `!=` is false for a number
+/// that is not finite, an infinity included (`inf != 1`), as TradingView gives; the ordering
+/// operators keep the infinities ordered (`-inf < inf`).
 fn float_relation(op: BinaryOperator, x: f64, y: f64) -> bool {
     match op {
         BinaryOperator::Equal => floats_equal(x, y),
         BinaryOperator::NotEqual => x.is_finite() && y.is_finite() && !floats_equal(x, y),
         BinaryOperator::Less => x < y && !floats_equal(x, y),
         BinaryOperator::Greater => x > y && !floats_equal(x, y),
-        BinaryOperator::LessEqual => x <= y || floats_equal(x, y),
-        BinaryOperator::GreaterEqual => x >= y || floats_equal(x, y),
+        // Strictly ordered, or equal by `floats_equal`: two infinities of one sign are neither
+        // (`inf >= inf` is false on TradingView, probe V7 U4), which `x >= y` alone would not say.
+        BinaryOperator::LessEqual => x < y || floats_equal(x, y),
+        BinaryOperator::GreaterEqual => x > y || floats_equal(x, y),
         _ => false,
     }
 }
@@ -427,6 +430,21 @@ mod tests {
         assert!(compare_floats(Greater, infinity, f64::MAX));
         assert!(!compare_floats(Greater, f64::NAN, 1.0));
         assert!(!compare_floats(Less, f64::NAN, 1.0));
+    }
+
+    #[test]
+    fn two_equal_infinities_are_neither_ordered_nor_equal() {
+        use BinaryOperator::{Equal, Greater, GreaterEqual, Less, LessEqual, NotEqual};
+        // TradingView, probe V7 U4 / U4b: every cell false except `-inf < inf` and `-inf <= inf`.
+        let (high, low) = (f64::INFINITY, f64::NEG_INFINITY);
+        for op in [Greater, GreaterEqual, Less, LessEqual, Equal, NotEqual] {
+            assert!(!compare_floats(op, high, high), "{op:?} +inf, +inf");
+            assert!(!compare_floats(op, low, low), "{op:?} -inf, -inf");
+        }
+        assert!(compare_floats(Less, low, high));
+        assert!(compare_floats(LessEqual, low, high));
+        assert!(!compare_floats(Equal, high, low));
+        assert!(!compare_floats(GreaterEqual, low, high));
     }
 
     #[test]

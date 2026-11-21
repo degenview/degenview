@@ -1297,19 +1297,40 @@ fn a_zero_divisor_quotient_is_an_infinity_to_arithmetic_and_na_to_the_na_functio
     }
 }
 
+/// TradingView (probe V7 U1 and a follow-up, BTCUSDT 4h): a divisor that is a literal zero does not
+/// compile ("Division by zero", CE10224), whatever the dividend; `%` and a divisor that is zero only
+/// at run time do.
 #[test]
-fn a_constant_quotient_with_a_zero_divisor_folds_to_the_same_infinity() {
-    let session = run(
-        "folded = 100 - 100 / (1 + 3.0 / 0)\n\
-         big = 1 / 0 > 1e300\n\
-         nothing = na(0 / 0)\n\
-         shown = str.tostring(1 / 0)",
-        2,
-    );
-    assert_eq!(value(&session, "folded"), RuntimeValue::Float(100.0));
-    assert_eq!(value(&session, "big"), RuntimeValue::Bool(true));
-    assert_eq!(value(&session, "nothing"), RuntimeValue::Bool(true));
-    assert_eq!(value(&session, "shown"), RuntimeValue::String("NaN".into()));
+fn a_literal_zero_divisor_is_a_compile_error() {
+    let errors = |body: &str| -> Vec<String> {
+        let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+        compiler::compile(&source, Limits::default(), &NoLibraries)
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "CE10224")
+            .map(|d| d.message.clone())
+            .collect()
+    };
+    for body in [
+        "plot(1 / 0)",
+        "float k = 1.0 / 0.0\nplot(k)",
+        "plot(close / 0)",
+        "plot(close / 0.0)",
+        "plot(close / -0.0)",
+        "f(x) => x / 0\nplot(f(close))",
+        "if close > 0\n    plot(close / 0)",
+    ] {
+        assert_eq!(errors(body), vec!["Division by zero".to_string()], "{body}");
+    }
+    for body in [
+        "plot(close % 0)",
+        "plot(close / (close - close))",
+        "var float z = 0.0\nif bar_index > 5\n    z := 1.0\nplot(close / z)",
+        "plot(close / 2)",
+        "plot(0 / close)",
+    ] {
+        assert!(errors(body).is_empty(), "{body}");
+    }
 }
 
 #[test]
@@ -1340,7 +1361,7 @@ fn a_not_a_number_result_is_na_everywhere() {
 }
 
 #[test]
-fn builtins_that_take_numbers_see_an_infinity_as_na() {
+fn builtins_that_take_numbers_see_an_infinity_as_na_but_the_math_functions() {
     let session = run(
         "zero = close - close\n\
          x = close / zero\n\
@@ -1352,7 +1373,11 @@ fn builtins_that_take_numbers_see_an_infinity_as_na() {
         4,
     );
     assert_eq!(value(&session, "mean"), RuntimeValue::Na);
-    assert_eq!(value(&session, "floor"), RuntimeValue::Na);
+    assert_eq!(
+        value(&session, "floor"),
+        RuntimeValue::Float(f64::INFINITY),
+        "math.floor keeps an infinity (probe V7 U5a)"
+    );
     assert_eq!(value(&session, "whole"), RuntimeValue::Na);
     assert_eq!(value(&session, "kept"), RuntimeValue::Float(f64::INFINITY));
     assert_eq!(
@@ -3276,4 +3301,32 @@ fn array_functions_take_the_reference_parameter_names() {
     assert_eq!(value(&session, "third_smallest"), RuntimeValue::Float(5.0));
     assert_eq!(value(&session, "size"), RuntimeValue::Int(5));
     assert!(value(&session, "cov").number().unwrap() < 0.0);
+}
+
+/// TradingView, probe V7 (BTCUSDT 4h, 2026-11-21), the rows that differ from a plain "infinity is na".
+#[test]
+fn an_infinity_through_orderings_and_math_functions_matches_probe_v7() {
+    let session = run(
+        "zero = close - close\n\
+         x = close / zero\n\
+         nx = -close / zero\n\
+         u4 = str.tostring(x > x) + str.tostring(x >= x) + str.tostring(x <= x) + str.tostring(nx < x) + str.tostring(nx > -1e300)\n\
+         u4b = str.tostring(x == x) + str.tostring(x >= x) + str.tostring(nx <= x) + str.tostring(x != x) + str.tostring(nx < x) + str.tostring(x == nx)\n\
+         u5a = str.tostring(math.abs(x) > 1e300) + str.tostring(math.sqrt(x) > 1e300) + str.tostring(math.exp(x) > 1e300) + str.tostring(math.floor(x) > 1e300)\n\
+         u5b = str.tostring(math.round(x) > 1e300) + str.tostring(math.ceil(x) > 1e300) + str.tostring(math.pow(x, 2.0) > 1e300) + str.tostring(math.avg(x, 1.0) > 1e300)\n\
+         u5c = str.tostring(math.sign(x) == 1) + str.tostring(math.sign(nx) == -1) + str.tostring(math.log(x) > 1e300) + str.tostring(math.exp(nx) == 0.0)\n\
+         u8 = str.tostring(math.pow(2.0, x) > 1e300) + str.tostring(math.pow(x, 0.0) == 1.0)",
+        3,
+    );
+    let text = |name: &str| match value(&session, name) {
+        RuntimeValue::String(text) => text,
+        other => panic!("{name}: {other:?}"),
+    };
+    let flags = |name: &str| text(name).replace("true", "T").replace("false", "F");
+    assert_eq!(flags("u4"), "FFFTF");
+    assert_eq!(flags("u4b"), "FFTFTF");
+    assert_eq!(flags("u5a"), "TTTT");
+    assert_eq!(flags("u5b"), "FTTT");
+    assert_eq!(flags("u5c"), "TTTT");
+    assert_eq!(flags("u8"), "TT");
 }

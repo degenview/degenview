@@ -2,6 +2,7 @@
 
 pub mod builtin_types;
 pub mod callables;
+pub mod constant_division;
 pub mod declaration_rules;
 pub mod identifier_rules;
 pub mod ignored_features;
