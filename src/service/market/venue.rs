@@ -50,6 +50,10 @@ pub trait Venue: Sync {
         id.source.profile().default_kind()
     }
 
+    /// Forgets the market list held in memory, after the disk cache was cleared; the next search
+    /// downloads it again. A venue with no such list has nothing to forget.
+    fn clear_catalog(&self) {}
+
     /// The network of a DEX pair saved without one, from its address.
     fn resolve_chain(&self, address: &str) -> Option<String> {
         let _ = address;
@@ -78,6 +82,7 @@ pub fn of(source: DataSource) -> &'static dyn Venue {
         DataSource::Bybit => &super::bybit::BYBIT,
         DataSource::Gate => &super::gateio::GATE,
         DataSource::Mexc => &super::mexc::MEXC,
+        DataSource::Hyperliquid => &super::hyperliquid::HYPERLIQUID,
         DataSource::CoinGecko => &super::coingecko::COINGECKO,
         DataSource::DexScreener => &super::dexscreener::DEXSCREENER,
         DataSource::Alpaca => &super::alpaca::ALPACA,

@@ -65,6 +65,7 @@ pub fn icon_base_symbol(item: &WatchlistInstrument) -> String {
             .next()
             .unwrap_or(symbol)
             .to_uppercase(),
+        (PairStyle::Listed(_), _) => item.instrument.source.base_asset(symbol),
         (PairStyle::None, Class::Aggregator | Class::Dex) => item
             .label
             .split('/')

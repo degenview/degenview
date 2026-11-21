@@ -27,6 +27,10 @@ pub struct Coinbase;
 pub const COINBASE: Coinbase = Coinbase;
 
 impl Venue for Coinbase {
+    fn clear_catalog(&self) {
+        clear_catalog();
+    }
+
     fn candles(&self) -> &dyn MarketSource {
         self
     }
@@ -139,7 +143,7 @@ struct Product {
 static CATALOG: Catalog<Product> = Catalog::new("catalog_coinbase");
 
 /// Forgets the list held in memory (after the disk cache was cleared).
-pub(in crate::service) fn clear_catalog() {
+fn clear_catalog() {
     CATALOG.clear_memory();
 }
 
