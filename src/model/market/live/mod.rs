@@ -8,6 +8,11 @@ use crate::model::{Kline, Timeframe};
 use std::collections::BTreeMap;
 use std::time::Instant;
 
+mod trades;
+
+#[allow(unused_imports)] // until the first venue that streams trades lands
+pub use trades::{Trade, TradeFold};
+
 /// Folds a live kline into `candles`: it replaces the newest candle of its open time or follows
 /// it. A kline older than the newest candle (a late final tick of the bar before one REST already
 /// brought) is ignored, so the series stays ascending. Returns whether the candles changed.
