@@ -54,6 +54,8 @@ struct ChartBar {
     /// request's last confirmed history bar (`barstate.islastconfirmedhistory`).
     history_end: Option<i64>,
     realtime: bool,
+    /// Whether this is the chart bar's first tick (`barstate.isnew`); true on history.
+    new: bool,
 }
 
 impl ChartBar {
@@ -64,6 +66,7 @@ impl ChartBar {
         last: false,
         history_end: None,
         realtime: false,
+        new: true,
     };
 
     /// The bar `bar` runs as. `history_end` is `Session::history_end`; without it the chart bar
@@ -76,6 +79,7 @@ impl ChartBar {
             last: flags.is_last,
             history_end: history_end.or(flags.is_last_confirmed_history.then_some(end)),
             realtime: flags.is_realtime,
+            new: flags.is_new,
         }
     }
 
@@ -100,6 +104,9 @@ impl ChartBar {
     /// The last confirmed history bar belongs to the requested series, not to the chart bar: it is
     /// the last candle that closed with the history, so the one whose successor is not history,
     /// TradingView-measured (a `"1D"` request on a 4h chart, probe P12).
+    ///
+    /// A candle is new on history and on the first tick of the chart bar that opens it: a chart bar
+    /// that starts inside a candle sees that candle as already running.
     fn flags_of(&self, candle: &Kline, interval: f64, commit: bool, is_first: bool) -> BarFlags {
         let candle_end = time::bucket::end(candle.open_time, interval);
         let holds_last_instant = candle.open_time < self.end && self.end <= candle_end;
@@ -112,7 +119,7 @@ impl ChartBar {
             is_last: self.last && holds_last_instant,
             is_history: !is_realtime,
             is_realtime,
-            is_new: true,
+            is_new: !is_realtime || (self.new && candle.open_time >= self.start),
             is_confirmed: commit,
             is_last_confirmed_history,
         }
@@ -1575,6 +1582,80 @@ mod tests {
             let _ = session.execute(BarEvent { candle, phase }, index + 1 == count, None);
         }
         session.output().plots[0].values.clone()
+    }
+
+    /// The first plot of `source` after each tick of the live bar `live`, which follows `history`.
+    fn plotted_per_live_tick(
+        source: &str,
+        history: &[Kline],
+        live: Kline,
+        ticks: &[bool],
+    ) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(TestProvider::default())),
+            None,
+        );
+        for candle in history {
+            let _ = session.execute(
+                BarEvent {
+                    candle: candle.clone(),
+                    phase: BarPhase::Historical,
+                },
+                false,
+                None,
+            );
+        }
+        ticks
+            .iter()
+            .map(|&is_new| {
+                let _ = session.execute(
+                    BarEvent {
+                        candle: live.clone(),
+                        phase: BarPhase::RealtimeTick { is_new },
+                    },
+                    true,
+                    None,
+                );
+                session.output().plots[0].values.last().copied().flatten()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn barstate_isnew_in_a_request_is_true_on_history_and_on_the_first_tick_of_a_candle_it_opens() {
+        let source =
+            "plot(request.security(syminfo.tickerid, \"240\", barstate.isnew ? 1.0 : 0.0))";
+        let history = plotted(source, &hourly_chart(0, 12));
+        assert_eq!(&history[3], &Some(1.0));
+        assert_eq!(&history[7], &Some(1.0));
+        assert_eq!(&history[11], &Some(1.0));
+        // The live bar at hour 4 opens the 4h candle at hour 4: new on its first tick only.
+        let opening = plotted_per_live_tick(
+            source,
+            &hourly_chart(0, 4),
+            bar(4 * 3_600_000, 5.0),
+            &[true, false, false],
+        );
+        assert_eq!(opening, [Some(1.0), Some(0.0), Some(0.0)]);
+    }
+
+    #[test]
+    fn barstate_isnew_in_a_request_is_false_on_a_chart_bar_inside_a_candle_that_opened_earlier() {
+        // The live bar at hour 5 sits inside the 4h candle that opened at hour 4.
+        let values = plotted_per_live_tick(
+            "plot(request.security(syminfo.tickerid, \"240\", barstate.isnew ? 1.0 : 0.0))",
+            &hourly_chart(0, 5),
+            bar(5 * 3_600_000, 6.0),
+            &[true, false],
+        );
+        assert_eq!(values, [Some(0.0), Some(0.0)]);
     }
 
     #[test]

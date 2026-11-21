@@ -247,7 +247,10 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   series: the last candle that closed by the history's end (`Session::history_end`) whose successor
   ends after it, so a `"1D"` request on a 4h chart has it on yesterday's day (TradingView probe P12,
   2026-11-21). A `"60"` request reads 1 there where TradingView read 0, which splits history from
-  realtime by wall-clock time. `timeframe.change` is false on the first bar of the series it runs on (the chart's,
+  realtime by wall-clock time. `barstate.isnew` in a request is true on history and, in real time,
+  on the first tick of the chart bar that opens the candle; a chart bar that starts inside a candle,
+  or a later tick, reads false (`ChartBar::new`; check against TradingView before relying on it).
+  `timeframe.change` is false on the first bar of the series it runs on (the chart's,
   or the request's own candles, `series_bars`), TradingView-measured.
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
