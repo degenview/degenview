@@ -349,16 +349,10 @@ impl Chart {
 
     /// How long after a fetch began the next one is due.
     pub(super) fn refresh_after(&self) -> Duration {
-        match self.source {
-            DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken
-                if self.error.is_some() =>
-            {
-                SLOW_RETRY_INTERVAL
-            }
-            DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken => {
-                SLOW_REFRESH_INTERVAL
-            }
-            _ => REFRESH_INTERVAL,
+        match (self.source.profile().slow_refresh, self.error.is_some()) {
+            (true, true) => SLOW_RETRY_INTERVAL,
+            (true, false) => SLOW_REFRESH_INTERVAL,
+            (false, _) => REFRESH_INTERVAL,
         }
     }
 

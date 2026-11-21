@@ -129,6 +129,22 @@ fn the_streams_follow_the_lists_they_replaced() {
 }
 
 #[test]
+fn only_the_sources_with_a_small_rest_allowance_refresh_their_charts_slowly() {
+    let slow: Vec<_> = DataSource::ALL
+        .into_iter()
+        .filter(|source| source.profile().slow_refresh)
+        .collect();
+    assert_eq!(
+        slow,
+        [
+            DataSource::Kraken,
+            DataSource::CoinGecko,
+            DataSource::DexScreener
+        ]
+    );
+}
+
+#[test]
 fn the_picker_lists_markets_by_symbol_and_predictions_apart() {
     let markets: Vec<_> = DataSource::symbol_markets().collect();
     assert_eq!(markets.len(), 12);

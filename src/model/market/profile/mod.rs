@@ -45,6 +45,9 @@ pub struct Profile {
     /// candles to ask for.
     pub natives: &'static [Timeframe],
     pub older_history: OlderHistory,
+    /// Whether a chart of the source asks for its newest candles every 15 seconds instead of every
+    /// 5: its REST allowance is small, or a socket keeps the chart current between the refreshes.
+    pub slow_refresh: bool,
     pub streams: Streams,
     pub change: ChangeBasis,
     pub quotes: QuoteTiming,
