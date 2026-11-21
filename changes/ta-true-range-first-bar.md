@@ -1,0 +1,1 @@
+fixed: ta.tr, ta.tr(false), Keltner channels and DMI start one bar later, like on TradingView, and ta.tr(true) and a conditional ta.atr, ta.supertrend, ta.kc or ta.dmi measure the range against the chart's previous close. Saved scripts that use them plot and trade differently.

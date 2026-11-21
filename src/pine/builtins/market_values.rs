@@ -39,10 +39,10 @@ pub fn read(name: &str, context: &MarketContext) -> Option<RuntimeValue> {
             context.bar.open_time.div_euclid(MILLIS_PER_DAY) * MILLIS_PER_DAY,
         )),
         "timenow" => Some(RuntimeValue::Int(now_ms())),
-        "ta.tr" => Some(RuntimeValue::Float(ta::true_range(
-            context.bar,
-            previous_close(context.state),
-        ))),
+        "ta.tr" => Some(
+            ta::true_range_checked(context.bar, previous_close(context.state), false)
+                .map_or(RuntimeValue::Na, RuntimeValue::Float),
+        ),
         "syminfo.prefix" => Some(
             exchange_prefix(context.symbol)
                 .map(RuntimeValue::String)
@@ -138,7 +138,8 @@ fn chart_is(context: &MarketContext, kind: ChartKind) -> RuntimeValue {
     RuntimeValue::Bool(context.symbol.chart == kind)
 }
 
-fn previous_close(state: &RuntimeState) -> Option<f64> {
+/// The chart's `close[1]`: the close of the bar before the one running, whichever calls ran on it.
+pub(crate) fn previous_close(state: &RuntimeState) -> Option<f64> {
     state
         .histories
         .get("close")?
@@ -235,6 +236,12 @@ mod tests {
             .insert("close".to_owned(), vec![RuntimeValue::Float(9.0)]);
         // max(high, prev_close) - min(low, prev_close) = 15 - 8 = 7.
         assert_eq!(fixture.read("ta.tr"), Some(RuntimeValue::Float(7.0)));
+    }
+
+    #[test]
+    fn true_range_is_na_without_a_previous_close() {
+        let fixture = Fixture::new(1_000, 60.0);
+        assert_eq!(fixture.read("ta.tr"), Some(RuntimeValue::Na));
     }
 
     #[test]
