@@ -1,16 +1,19 @@
 //! What every Hyperliquid socket has in common: where it connects, how it is kept alive, how a
 //! subscription is written and how a message is split into its channel and data.
 //!
-//! One connection allows 1,000 subscriptions and an IP 100 connections. A candle subscription for
-//! a name Hyperliquid does not list closes the connection without a word (the `activeAssetCtx` one
-//! is answered with an `error` message), so the callers keep such a subscription to a connection
-//! of its own.
+//! One connection allows [`MAX_SUBSCRIPTIONS`] subscriptions and an IP 100 connections. A candle
+//! subscription for a name Hyperliquid does not list closes the connection without a word (the
+//! `activeAssetCtx` one is answered with an `error` message), so the candle feed keeps such a
+//! subscription to a connection of its own and shares one among the names the market list holds.
 
 use crate::service::net::ws::{Decode, Keepalive, Session};
 use serde_json::{Value, json};
 use std::time::Duration;
 
 const HOST: &str = "api.hyperliquid.xyz";
+
+/// The most subscriptions one connection takes.
+pub(super) const MAX_SUBSCRIPTIONS: usize = 1_000;
 
 /// `{"method":"ping"}` is answered `{"channel":"pong"}`; the server closes a connection that was
 /// silent for a minute.

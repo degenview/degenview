@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 /// How many variants `DataSource` has. Bumped with [`position`], which cannot compile without an
 /// arm for a new variant.
-const VARIANTS: usize = 15;
+const VARIANTS: usize = 16;
 
 /// Where `source` stands in [`DataSource::ALL`]. Exhaustive, so a new variant does not compile
 /// until it is placed here, and then the tests below make it appear in the list.
@@ -19,12 +19,13 @@ fn position(source: DataSource) -> usize {
         DataSource::Mexc => 6,
         DataSource::Hyperliquid => 7,
         DataSource::Aster => 8,
-        DataSource::CoinGecko => 9,
-        DataSource::DexScreener => 10,
-        DataSource::Alpaca => 11,
-        DataSource::Polymarket => 12,
-        DataSource::Kalshi => 13,
-        DataSource::CoinMarketCap => 14,
+        DataSource::Lighter => 9,
+        DataSource::CoinGecko => 10,
+        DataSource::DexScreener => 11,
+        DataSource::Alpaca => 12,
+        DataSource::Polymarket => 13,
+        DataSource::Kalshi => 14,
+        DataSource::CoinMarketCap => 15,
     }
 }
 
@@ -112,6 +113,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Mexc,
             DataSource::Hyperliquid,
             DataSource::Aster,
+            DataSource::Lighter,
         ]
     );
     assert_eq!(
@@ -124,6 +126,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Gate,
             DataSource::Hyperliquid,
             DataSource::Aster,
+            DataSource::Lighter,
         ]
     );
 }
@@ -138,6 +141,7 @@ fn only_the_sources_with_a_small_rest_allowance_refresh_their_charts_slowly() {
         slow,
         [
             DataSource::Kraken,
+            DataSource::Lighter,
             DataSource::CoinGecko,
             DataSource::DexScreener
         ]
@@ -147,7 +151,7 @@ fn only_the_sources_with_a_small_rest_allowance_refresh_their_charts_slowly() {
 #[test]
 fn the_picker_lists_markets_by_symbol_and_predictions_apart() {
     let markets: Vec<_> = DataSource::symbol_markets().collect();
-    assert_eq!(markets.len(), 12);
+    assert_eq!(markets.len(), 13);
     assert!(markets.iter().all(|source| !source.is_prediction_market()));
     assert!(!markets.contains(&DataSource::CoinMarketCap));
     assert_eq!(
@@ -171,6 +175,7 @@ fn quotes_are_polled_as_each_source_allows() {
     assert_eq!(timing(DataSource::Mexc), (5, 45, 2_500));
     assert_eq!(timing(DataSource::Hyperliquid), (10, 60, 2_000));
     assert_eq!(timing(DataSource::Aster), (10, 60, 1_000));
+    assert_eq!(timing(DataSource::Lighter), (10, 60, 2_000));
     assert_eq!(timing(DataSource::DexScreener), (10, 60, 30));
     assert_eq!(timing(DataSource::CoinGecko), (30, 120, 250));
     assert_eq!(timing(DataSource::Alpaca), (5, 45, 200));
@@ -265,4 +270,41 @@ fn aster_lists_perpetuals_only_and_splits_its_ids_by_its_own_quotes() {
             .contains(&Timeframe::parse("3d").unwrap())
     );
     assert!(DataSource::Aster.serves(Timeframe::parse("3d").unwrap()));
+}
+
+#[test]
+fn lighter_lists_perpetuals_by_the_names_it_lists_and_serves_what_it_cannot_cut_by_folding() {
+    let profile = DataSource::Lighter.profile();
+    assert_eq!(profile.kinds, [MarketKind::Perp]);
+    assert_eq!((profile.slug, profile.display_name), ("LIGHTER", "Lighter"));
+    assert!(profile.streams.candles && profile.streams.quotes);
+    assert_eq!(
+        DataSource::from_watchlist_slug("lighter"),
+        Some(DataSource::Lighter)
+    );
+    // Names are kept as listed: `EURUSD` and `1000PEPE` are markets, not pairs to split.
+    for (id, asset) in [
+        ("BTC", "BTC"),
+        ("1000PEPE", "1000PEPE"),
+        ("EURUSD", "EURUSD"),
+        ("US500", "US500"),
+    ] {
+        assert_eq!(DataSource::Lighter.base_asset(id), asset, "{id}");
+        assert_eq!(DataSource::Lighter.quote_asset(id), None, "{id}");
+    }
+    // Eight lengths are its own; the others, weeks and months among them, fold.
+    let natives: Vec<_> = DataSource::Lighter
+        .natives()
+        .iter()
+        .map(|native| native.interval())
+        .collect();
+    assert_eq!(natives, ["1m", "5m", "15m", "30m", "1h", "4h", "12h", "1d"]);
+    for folded in ["3m", "2h", "6h", "8h", "3d", "1w", "1M", "3M", "1Y", "22m"] {
+        let timeframe = Timeframe::parse(folded).unwrap();
+        assert!(
+            !DataSource::Lighter.natives().contains(&timeframe),
+            "{folded}"
+        );
+        assert!(DataSource::Lighter.serves(timeframe), "{folded}");
+    }
 }

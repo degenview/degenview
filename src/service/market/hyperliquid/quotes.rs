@@ -1,10 +1,12 @@
 //! Hyperliquid's `activeAssetCtx` channel: the mark price, the price a day ago and the day's
 //! volume of every market asked for, pushed when they change. One connection, one subscription
 //! per market (a name Hyperliquid does not list is answered with an `error` message and the
-//! connection stays). A spot pair is subscribed the same way and answered on `activeSpotAssetCtx`.
+//! connection stays), for the first thousand, the connection's limit; REST prices the others, as it
+//! does any market the socket has not answered. A spot pair is subscribed the same way and answered
+//! on `activeSpotAssetCtx`.
 
 use super::Hyperliquid;
-use super::socket::{channel_message, session};
+use super::socket::{MAX_SUBSCRIPTIONS, channel_message, session};
 use super::ticker::context_quote;
 use crate::model::DataSource;
 use crate::service::net::ws::Session;
@@ -14,6 +16,7 @@ use serde_json::json;
 fn quote_session(products: &[String]) -> Session {
     let subscriptions: Vec<_> = products
         .iter()
+        .take(MAX_SUBSCRIPTIONS)
         .map(|product| json!({"type": "activeAssetCtx", "coin": product}))
         .collect();
     session(&subscriptions)
@@ -65,6 +68,21 @@ mod tests {
                 json!({"method": "subscribe", "subscription": {"type": "activeAssetCtx", "coin": "xyz:SP500"}}),
                 json!({"method": "subscribe", "subscription": {"type": "activeAssetCtx", "coin": "@107"}}),
             ]
+        );
+    }
+
+    #[test]
+    fn a_watchlist_past_the_connections_limit_subscribes_the_first_thousand_and_leaves_the_rest_to_rest()
+     {
+        let products: Vec<String> = (0..1_300).map(|n| format!("M{n}")).collect();
+        let session = quote_session(&products);
+        assert_eq!(session.subscribe.len(), MAX_SUBSCRIPTIONS);
+        assert!(session.subscribe[999].contains("\"M999\""));
+        assert!(
+            !session
+                .subscribe
+                .iter()
+                .any(|message| message.contains("\"M1000\""))
         );
     }
 

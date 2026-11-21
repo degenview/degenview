@@ -12,7 +12,7 @@ use crate::model::market::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
 
 /// Every source, in the order lists of sources are searched and shown.
-pub const ALL: [DataSource; 15] = [
+pub const ALL: [DataSource; 16] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -22,6 +22,7 @@ pub const ALL: [DataSource; 15] = [
     DataSource::Mexc,
     DataSource::Hyperliquid,
     DataSource::Aster,
+    DataSource::Lighter,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -41,6 +42,7 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
         DataSource::Mexc => &MEXC,
         DataSource::Hyperliquid => &HYPERLIQUID,
         DataSource::Aster => &ASTER,
+        DataSource::Lighter => &LIGHTER,
         DataSource::CoinGecko => &COINGECKO,
         DataSource::DexScreener => &DEXSCREENER,
         DataSource::Alpaca => &ALPACA,
@@ -574,6 +576,68 @@ pub static ASTER: Profile = Profile {
     cache: Some(CachePolicy {
         fresh_secs: 0,
         of: CachedSeries::Folded,
+    }),
+};
+
+/// Lighter's candle resolutions: 1, 5, 15 and 30 minutes, 1, 4 and 12 hours and `1d`, each cut where
+/// this app cuts (minutes and hours from UTC midnight, days at midnight; checked against the API on
+/// 2026-11-21: no bar of 500 in any of them is off the grid, none is missing). It answers none
+/// of `3m`, `2h`, `6h`, `8h`, `3d`, `1w` and `1M` (`invalid param`), so those, weeks, months and
+/// years fold from the bars below them.
+const LIGHTER_NATIVES: [Timeframe; 8] = [
+    minutes(1),
+    minutes(5),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(4),
+    hours(12),
+    Timeframe::DAY_1,
+];
+
+pub static LIGHTER: Profile = Profile {
+    display_name: "Lighter",
+    slug: "LIGHTER",
+    mcp_id: "lighter",
+    class: Class::Exchange,
+    opaque_ids: false,
+    kinds: PERP,
+    series: Series::Candles,
+    // Candle volume is in the base asset: contracts of a perpetual, in coins.
+    volume: true,
+    // Its names are upper case already (`BTC`, `1000PEPE`, `US500`, `EURUSD`).
+    display: Casing::Upper,
+    id: Casing::Upper,
+    // Names as Lighter lists them, no quote added: a pair-shaped name (`EURUSD`) is one market.
+    pair: PairStyle::Listed(Listed {
+        // No Lighter name has a namespace; the colon is the character a name never holds.
+        namespace: ':',
+        also_in_names: &['-', '_', '.'],
+        noun: "markets",
+        examples: "BTC, 1000PEPE or US500",
+    }),
+    home_quote: None,
+    natives: &LIGHTER_NATIVES,
+    older_history: OlderHistory::Always,
+    // A REST allowance of about one request a second per IP, and the candle socket keeps a chart
+    // current: charts ask every 15 seconds, not every 5.
+    slow_refresh: true,
+    streams: Streams {
+        candles: true,
+        quotes: true,
+    },
+    change: ChangeBasis::Rolling24h,
+    // One call answers every market (85 KB), so prices are asked every ten seconds beside the
+    // sockets.
+    quotes: QuoteTiming {
+        refresh_secs: 10,
+        max_age_secs: 60,
+        batch: 2_000,
+    },
+    // A request always answers the newest 500 bars, so a held series is patched by one request.
+    cache: Some(CachePolicy {
+        fresh_secs: 0,
+        of: CachedSeries::Every,
     }),
 };
 

@@ -16,6 +16,7 @@ pub enum DataSource {
     Mexc,
     Hyperliquid,
     Aster,
+    Lighter,
     CoinGecko,
     DexScreener,
     Alpaca,
