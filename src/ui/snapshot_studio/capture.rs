@@ -295,7 +295,7 @@ pub fn cached_logo_image(
         return None;
     }
     let Some(url) = icon::get_url(source, symbol) else {
-        icon::request_with_base(source, symbol, &source.base_asset(symbol));
+        icon::request_with_base(source, symbol, &source.coin_asset(symbol));
         return None;
     };
     match ctx.try_load_image(&url, SizeHint::Width(LOGO_PIXELS)) {

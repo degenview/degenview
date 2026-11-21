@@ -140,7 +140,7 @@ pub fn paint_header(
         None => kit::monogram_on(
             painter,
             logo,
-            &chart.source().base_asset(chart.symbol()),
+            &chart.source().coin_asset(chart.symbol()),
             0.4,
             Some(BOLD),
         ),

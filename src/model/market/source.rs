@@ -1,4 +1,4 @@
-use super::profile::{Casing, Class, Series};
+use super::profile::{Casing, Class, PairStyle, Series};
 use serde::{Deserialize, Serialize};
 
 /// A market data provider. The symbol alone never identifies a market: `BTCUSDT`
@@ -19,6 +19,7 @@ pub enum DataSource {
     Lighter,
     Deribit,
     Htx,
+    Bitfinex,
     CoinGecko,
     DexScreener,
     Alpaca,
@@ -86,9 +87,22 @@ impl DataSource {
     /// `BTC/USDT` and `BTC — Grayscale Bitcoin Mini Trust`. A symbol that names no pair is returned
     /// as it is. Never shown as a market's name: use [`Self::display_symbol`] for that.
     pub fn base_asset(self, symbol: &str) -> String {
+        self.asset_by(symbol, PairStyle::base_of)
+    }
+
+    /// [`Self::base_asset`] as the coin to look artwork or flow up by. Binance and Bybit keep a
+    /// one-letter base with its quote (`SUSDT` stays whole, as `WBTC` is not W over BTC), but a
+    /// dollar quote after a letter is no wrapped asset: `SUSDT` is `S`. Every lookup of a coin by a
+    /// market's name asks this, never the base asset.
+    pub fn coin_asset(self, symbol: &str) -> String {
+        self.asset_by(symbol, PairStyle::coin_of)
+    }
+
+    /// The asset `read` takes from the first part of `symbol`, upper-cased.
+    fn asset_by(self, symbol: &str, read: for<'a> fn(&PairStyle, &'a str) -> &'a str) -> String {
         let upper = symbol.trim().to_uppercase();
         let head = upper.split(['/', '-', ' ', '_']).next().unwrap_or(&upper);
-        self.profile().pair.base_of(head).to_owned()
+        read(&self.profile().pair, head).to_owned()
     }
 
     /// The quote asset of a pair the exchange itself spells out: `EUR` of Coinbase's `ADA-EUR`, of
@@ -164,6 +178,32 @@ mod tests {
         assert_eq!(base(DataSource::Gate, "BTC3L_USDT"), "BTC3L");
         assert_eq!(base(DataSource::Alpaca, "AAPL — Apple Inc."), "AAPL");
         assert_eq!(base(DataSource::DexScreener, "PEPE/WETH"), "PEPE");
+    }
+
+    #[test]
+    fn a_coin_is_its_base_asset_but_a_dollar_quote_after_one_letter_is_a_real_asset() {
+        let coin = |source: DataSource, symbol| source.coin_asset(symbol);
+        // Binance and Bybit keep a one-letter base with its quote, which is right for a wrapped asset
+        // and wrong for the coin `S`: the artwork, the taker flow and the watchlist ask for the coin.
+        for source in [DataSource::Binance, DataSource::Bybit] {
+            for (symbol, asset) in [
+                ("SUSDT", "S"),
+                ("susdc", "S"),
+                ("SFDUSD", "S"),
+                ("WBTC", "WBTC"),
+                ("WETH", "WETH"),
+                ("BTCUSDT", "BTC"),
+                ("ETHBTC", "ETH"),
+                ("BTC", "BTC"),
+            ] {
+                assert_eq!(coin(source, symbol), asset, "{source:?} {symbol}");
+            }
+        }
+        // Everything else reads as its base asset.
+        assert_eq!(coin(DataSource::Mexc, "susdt"), "S");
+        assert_eq!(coin(DataSource::Coinbase, "btc-usd"), "BTC");
+        assert_eq!(coin(DataSource::Kraken, "sol/usd"), "SOL");
+        assert_eq!(coin(DataSource::Alpaca, "AAPL"), "AAPL");
     }
 
     #[test]

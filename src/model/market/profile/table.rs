@@ -3,8 +3,8 @@
 //! in [`ALL`].
 
 use super::{
-    CachePolicy, CachedSeries, Casing, ChangeBasis, Class, Concat, Listed, OlderHistory, PairStyle,
-    Profile, QuoteTiming, Separated, Series, Streams,
+    CachePolicy, CachedSeries, Casing, ChangeBasis, Class, Concat, Listed, LongPairs, OlderHistory,
+    PairStyle, Profile, QuoteTiming, Separated, Series, Streams,
 };
 use crate::model::market::MarketKind;
 use crate::model::market::natives::{GECKOTERMINAL_HISTORY_DAYS, GECKOTERMINAL_PAGE};
@@ -12,7 +12,7 @@ use crate::model::market::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
 
 /// Every source, in the order lists of sources are searched and shown.
-pub const ALL: [DataSource; 18] = [
+pub const ALL: [DataSource; 19] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -25,6 +25,7 @@ pub const ALL: [DataSource; 18] = [
     DataSource::Lighter,
     DataSource::Deribit,
     DataSource::Htx,
+    DataSource::Bitfinex,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -47,6 +48,7 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
         DataSource::Lighter => &LIGHTER,
         DataSource::Deribit => &DERIBIT,
         DataSource::Htx => &HTX,
+        DataSource::Bitfinex => &BITFINEX,
         DataSource::CoinGecko => &COINGECKO,
         DataSource::DexScreener => &DEXSCREENER,
         DataSource::Alpaca => &ALPACA,
@@ -104,6 +106,10 @@ const MEXC_QUOTES: [&str; 9] = [
 /// (`SUSDT`, `4USDT`), where before `ETH` or `BTC` it is a wrapped one (`WBTC` is not W/BTC).
 const HTX_QUOTES: [&str; 6] = ["USDT", "USDC", "USDD", "KGST", "ETH", "BTC"];
 
+/// Quote assets Bitfinex's spot markets end in (checked against the 178 it lists on 2026-11-21, its
+/// paper-trading `TEST…` markets aside), longest first. `UST` is Tether, which Bitfinex calls that.
+const BITFINEX_QUOTES: [&str; 7] = ["XAUT", "USD", "UST", "EUR", "GBP", "BTC", "ETH"];
+
 /// Binance-shaped pairs, as Binance and Bybit write them. A one-letter "base" is a bare wrapped asset
 /// (WBTC, WETH), not a pair.
 const BINANCE_PAIRS: Concat = Concat {
@@ -112,6 +118,7 @@ const BINANCE_PAIRS: Concat = Concat {
     one_letter_base_quotes: BINANCE_QUOTES.len(),
     wrapped_asset_guard: true,
     dropped: &['/', '-'],
+    long_pairs: None,
 };
 
 const COINBASE_QUOTE_TIMING: QuoteTiming = QuoteTiming {
@@ -178,6 +185,7 @@ pub static BINANCE: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Folded,
     }),
+    own_lane: false,
 };
 
 /// Coinbase's granularities: 60, 300, 900, 3600, 21600 and 86400 seconds.
@@ -221,6 +229,7 @@ pub static COINBASE: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Every,
     }),
+    own_lane: false,
 };
 
 /// OKX's candle bars. Its plain `6H`, `12H`, `1D`, `1W`, `1M` and `3M` are cut at UTC+8
@@ -278,6 +287,7 @@ pub static OKX: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Every,
     }),
+    own_lane: false,
 };
 
 /// Kraken's OHLC intervals in minutes: 1, 5, 15, 30, 60, 240 and 1440. Left out: its week
@@ -325,6 +335,7 @@ pub static KRAKEN: Profile = Profile {
     change: ChangeBasis::Rolling24h,
     quotes: exchange_quotes(100),
     cache: None,
+    own_lane: true,
 };
 
 /// Bybit's kline intervals: 1, 3, 5, 15, 30, 60, 120, 240, 360 and 720 minutes, `D`, `W` and `M`.
@@ -373,6 +384,7 @@ pub static BYBIT: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Folded,
     }),
+    own_lane: false,
 };
 
 /// Gate.io's documented candlestick intervals (it also answers `3m`, `2h`, `6h` and `12h`, which
@@ -423,6 +435,7 @@ pub static GATE: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Folded,
     }),
+    own_lane: false,
 };
 
 /// MEXC's kline intervals: 1, 5, 15, 30 and 60 minutes, 4 and 8 hours, `1d`, `1W` and `1M`. They
@@ -458,6 +471,7 @@ pub static MEXC: Profile = Profile {
         one_letter_base_quotes: 5,
         wrapped_asset_guard: false,
         dropped: &['/', '-', '_', ' '],
+        long_pairs: None,
     }),
     home_quote: Some("USDT"),
     natives: &MEXC_NATIVES,
@@ -473,6 +487,7 @@ pub static MEXC: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Folded,
     }),
+    own_lane: false,
 };
 
 /// Hyperliquid's candle intervals: 1, 3, 5, 15 and 30 minutes, 1, 2, 4, 8 and 12 hours, `1d` and
@@ -538,6 +553,7 @@ pub static HYPERLIQUID: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Every,
     }),
+    own_lane: false,
 };
 
 /// Quote assets Aster's perpetuals end in.
@@ -565,6 +581,7 @@ pub static ASTER: Profile = Profile {
         one_letter_base_quotes: ASTER_QUOTES.len(),
         wrapped_asset_guard: false,
         dropped: &['/', '-', '_', ' '],
+        long_pairs: None,
     }),
     home_quote: Some("USDT"),
     natives: &BINANCE_SHAPED_NATIVES,
@@ -586,6 +603,7 @@ pub static ASTER: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Folded,
     }),
+    own_lane: false,
 };
 
 /// Lighter's candle resolutions: 1, 5, 15 and 30 minutes, 1, 4 and 12 hours and `1d`, each cut where
@@ -648,6 +666,7 @@ pub static LIGHTER: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Every,
     }),
+    own_lane: true,
 };
 
 /// Deribit's candle resolutions: 1, 3, 5, 10, 15, 30, 60 and 120 minutes, each cut where this app
@@ -711,6 +730,7 @@ pub static DERIBIT: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Folded,
     }),
+    own_lane: false,
 };
 
 /// HTX's candle periods: `1min`, `5min`, `15min`, `30min`, `60min` and `4hour`, all cut where this
@@ -745,6 +765,7 @@ pub static HTX: Profile = Profile {
         one_letter_base_quotes: 4,
         wrapped_asset_guard: false,
         dropped: &['/', '-', '_', ' '],
+        long_pairs: None,
     }),
     home_quote: Some("USDT"),
     natives: &HTX_NATIVES,
@@ -768,6 +789,7 @@ pub static HTX: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Folded,
     }),
+    own_lane: false,
 };
 
 // CoinGecko builds its candles from prices, so it has no native lengths.
@@ -802,6 +824,7 @@ pub static COINGECKO: Profile = Profile {
         fresh_secs: 120,
         of: CachedSeries::Every,
     }),
+    own_lane: true,
 };
 
 /// GeckoTerminal's OHLCV aggregates (it indexes DEXScreener's pools): minute 1, 5 and 15, hour 1,
@@ -851,6 +874,7 @@ pub static DEXSCREENER: Profile = Profile {
         fresh_secs: 30,
         of: CachedSeries::Every,
     }),
+    own_lane: true,
 };
 
 /// Alpaca serves any minute count to 59 and hour count to 23, but only the lengths that divide
@@ -894,6 +918,7 @@ pub static ALPACA: Profile = Profile {
         fresh_secs: 0,
         of: CachedSeries::Every,
     }),
+    own_lane: false,
 };
 
 /// What a prediction market's quotes look like to the engine: probabilities, refreshed slowly.
@@ -926,6 +951,7 @@ pub static POLYMARKET: Profile = Profile {
     change: ChangeBasis::Window,
     quotes: PREDICTION_QUOTES,
     cache: None,
+    own_lane: false,
 };
 
 pub static KALSHI: Profile = Profile {
@@ -951,6 +977,7 @@ pub static KALSHI: Profile = Profile {
     change: ChangeBasis::Window,
     quotes: PREDICTION_QUOTES,
     cache: None,
+    own_lane: false,
 };
 
 // CoinMarketCap's gauges are index lines, not markets: no candles, no quotes to poll.
@@ -981,4 +1008,73 @@ pub static COINMARKETCAP: Profile = Profile {
         batch: 100,
     },
     cache: None,
+    own_lane: false,
+};
+
+/// Bitfinex's candle periods: `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1D`, `1W`, `14D` and
+/// `1M`, all cut where this app cuts (checked against the API on 2026-11-21: the 3h, 6h and 12h bars
+/// open on multiples of their length from UTC midnight, 1D at 00:00 UTC, 1W on Monday, 14D on the
+/// days that are a multiple of 14 since 1970-01-01, which is how this app counts a length of days,
+/// and 1M on the first).
+const BITFINEX_NATIVES: [Timeframe; 12] = [
+    minutes(1),
+    minutes(5),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(3),
+    hours(6),
+    hours(12),
+    Timeframe::DAY_1,
+    Timeframe::WEEK_1,
+    days(14),
+    Timeframe::MONTH_1,
+];
+
+pub static BITFINEX: Profile = Profile {
+    display_name: "Bitfinex",
+    slug: "BITFINEX",
+    mcp_id: "bitfinex",
+    class: Class::Exchange,
+    opaque_ids: false,
+    kinds: SPOT,
+    series: Series::Candles,
+    // Candle volume is the base asset.
+    volume: true,
+    display: Casing::Upper,
+    id: Casing::AsGiven,
+    // `BTCUSD`, and `AVAX:USD` once an asset has more than three letters.
+    pair: PairStyle::Concat(Concat {
+        exceptions: &[],
+        quotes: &BITFINEX_QUOTES,
+        one_letter_base_quotes: 0,
+        wrapped_asset_guard: false,
+        dropped: &['/', '-', '_', ' ', ':'],
+        long_pairs: Some(LongPairs {
+            character: ':',
+            letters: 3,
+        }),
+    }),
+    home_quote: Some("USD"),
+    natives: &BITFINEX_NATIVES,
+    older_history: OlderHistory::Always,
+    // The candle allowance is small and the socket keeps a chart current between refreshes.
+    slow_refresh: true,
+    streams: Streams {
+        candles: true,
+        quotes: true,
+    },
+    change: ChangeBasis::Rolling24h,
+    quotes: QuoteTiming {
+        refresh_secs: 10,
+        max_age_secs: 60,
+        batch: 100,
+    },
+    // A held series is patched by one small request instead of fetched again, which is what the
+    // candle allowance asks for.
+    cache: Some(CachePolicy {
+        fresh_secs: 10,
+        of: CachedSeries::Every,
+    }),
+    own_lane: true,
 };
