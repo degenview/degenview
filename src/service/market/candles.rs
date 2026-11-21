@@ -134,14 +134,14 @@ mod tests {
         }
     }
 
-    /// Fetches ETH from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, HTX and a Uniswap pool and compares their buckets. Run with
+    /// Fetches ETH from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, HTX, BingX and a Uniswap pool and compares their buckets. Run with
     /// `cargo test --release --lib live_sources_cut -- --ignored --nocapture`.
     #[test]
     #[ignore = "needs the network"]
     fn live_sources_cut_the_same_buckets() {
         use crate::model::DataSource::{
-            Aster, Binance, Bybit, Coinbase, Deribit, DexScreener, Gate, Htx, Hyperliquid, Kraken,
-            Lighter, Mexc, Okx,
+            Aster, Binance, Bingx, Bybit, Coinbase, Deribit, DexScreener, Gate, Htx, Hyperliquid,
+            Kraken, Lighter, Mexc, Okx,
         };
         let pool = "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640";
         let odd = ["5m", "22m", "3h", "4h", "6h", "12h", "2D", "3D", "2W", "6M"]
@@ -163,6 +163,7 @@ mod tests {
             let lighter = fetch(Lighter, "ETH").unwrap();
             let deribit = fetch(Deribit, "ETH-PERPETUAL").unwrap();
             let htx = fetch(Htx, "ETHUSDT").unwrap();
+            let bingx = fetch(Bingx, "ETH-USDT").unwrap();
             // GeckoTerminal's free quota is small; a refusal skips it rather than failing the rest.
             let dex = fetch(DexScreener, pool)
                 .map_err(|error| println!("skipped: {error}"))
@@ -170,75 +171,62 @@ mod tests {
             let opens = |bars: &[Kline]| -> std::collections::BTreeSet<i64> {
                 bars.iter().map(|bar| bar.open_time).collect()
             };
-            let (b, c, o, k, y, g, m, h, a, l, r, x) = (
-                opens(&binance),
-                opens(&coinbase),
-                opens(&okx),
-                opens(&kraken),
-                opens(&bybit),
-                opens(&gate),
-                opens(&mexc),
-                opens(&hyperliquid),
-                opens(&aster),
-                opens(&lighter),
-                opens(&deribit),
-                opens(&htx),
-            );
-            let d = dex.as_deref().map(opens);
-            // Compare inside the range every source covers.
-            let from = [
-                b.first(),
-                c.first(),
-                o.first(),
-                k.first(),
-                y.first(),
-                g.first(),
-                m.first(),
-                h.first(),
-                a.first(),
-                l.first(),
-                r.first(),
-                x.first(),
-                d.as_ref().and_then(|d| d.first()),
-            ]
-            .into_iter()
-            .flatten()
-            .max()
-            .copied()
-            .unwrap();
-            let within = |set: &std::collections::BTreeSet<i64>| -> Vec<i64> {
-                set.iter().copied().filter(|time| *time >= from).collect()
+            let mut series = vec![
+                ("binance", opens(&binance)),
+                ("coinbase", opens(&coinbase)),
+                ("okx", opens(&okx)),
+                ("kraken", opens(&kraken)),
+                ("bybit", opens(&bybit)),
+                ("gate", opens(&gate)),
+                ("mexc", opens(&mexc)),
+                ("hyperliquid", opens(&hyperliquid)),
+                ("aster", opens(&aster)),
+                ("lighter", opens(&lighter)),
+                ("deribit", opens(&deribit)),
+                ("htx", opens(&htx)),
+                ("bingx", opens(&bingx)),
+            ];
+            if let Some(dex) = dex.as_deref() {
+                series.push(("dexscreener", opens(dex)));
+            }
+            // A venue's newest bucket is the one still forming, and a venue can lag the others by
+            // a bar, so what is compared is the closed buckets (the newest dropped) from where
+            // every source starts to where the one that ends first stops, aligned by open time.
+            let closed = |set: &std::collections::BTreeSet<i64>| -> Vec<i64> {
+                set.iter()
+                    .copied()
+                    .take(set.len().saturating_sub(1))
+                    .collect()
             };
+            let from = series
+                .iter()
+                .filter_map(|(_, set)| set.first())
+                .max()
+                .copied()
+                .unwrap();
+            let until = series
+                .iter()
+                .filter_map(|(_, set)| closed(set).last().copied())
+                .min()
+                .unwrap();
+            let within = |set: &std::collections::BTreeSet<i64>| -> Vec<i64> {
+                closed(set)
+                    .into_iter()
+                    .filter(|time| (from..=until).contains(time))
+                    .collect()
+            };
+            let counts: Vec<String> = series
+                .iter()
+                .map(|(name, set)| format!("{name} {:>4}", set.len()))
+                .collect();
             println!(
-                "{interval:>3}: binance {:>4} coinbase {:>4} okx {:>4} kraken {:>4} bybit {:>4} gate {:>4} mexc {:>4} hyperliquid {:>4} aster {:>4} lighter {:>4} deribit {:>4} htx {:>4} dex {:>4} | shared range {:>4} bars",
-                b.len(),
-                c.len(),
-                o.len(),
-                k.len(),
-                y.len(),
-                g.len(),
-                m.len(),
-                h.len(),
-                a.len(),
-                l.len(),
-                r.len(),
-                x.len(),
-                d.as_ref().map_or(0, |d| d.len()),
-                within(&b).len(),
+                "{interval:>3}: {} | shared range {:>4} closed bars",
+                counts.join(" "),
+                within(&series[0].1).len(),
             );
-            assert_eq!(within(&b), within(&c), "{interval} binance vs coinbase");
-            assert_eq!(within(&b), within(&o), "{interval} binance vs okx");
-            assert_eq!(within(&b), within(&k), "{interval} binance vs kraken");
-            assert_eq!(within(&b), within(&y), "{interval} binance vs bybit");
-            assert_eq!(within(&b), within(&g), "{interval} binance vs gate");
-            assert_eq!(within(&b), within(&m), "{interval} binance vs mexc");
-            assert_eq!(within(&b), within(&h), "{interval} binance vs hyperliquid");
-            assert_eq!(within(&b), within(&a), "{interval} binance vs aster");
-            assert_eq!(within(&b), within(&l), "{interval} binance vs lighter");
-            assert_eq!(within(&b), within(&r), "{interval} binance vs deribit");
-            assert_eq!(within(&b), within(&x), "{interval} binance vs htx");
-            if let Some(d) = &d {
-                assert_eq!(within(&b), within(d), "{interval} binance vs dexscreener");
+            let (_, binance) = &series[0];
+            for (name, set) in &series[1..] {
+                assert_eq!(within(binance), within(set), "{interval} binance vs {name}");
             }
         }
     }

@@ -738,16 +738,19 @@ mod tests {
     }
 
     #[test]
-    fn bingx_text_pings_are_answered_with_pong_and_never_reach_the_feed() {
-        let bingx = Keepalive::AnswerText {
-            ask: "Ping",
+    fn bingx_json_pings_are_answered_with_pong_and_never_reach_the_feed() {
+        let bingx = Keepalive::AnswerJson {
+            ask: "ping",
             answer: "Pong",
         };
         let (seen, received) = run_against(
             bingx,
             Decode::Gzip,
             1,
-            vec![gzip("Ping"), gzip(r#"{"tick":1}"#)],
+            vec![
+                gzip(r#"{"ping":"abc","time":"2026-11-21T15:38:31.327+0800"}"#),
+                gzip(r#"{"tick":1}"#),
+            ],
         );
         assert_eq!(seen, [r#"{"tick":1}"#]);
         assert_eq!(received, ["subscribe", "Pong"]);

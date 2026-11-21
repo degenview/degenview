@@ -24,6 +24,7 @@ fn source(source: DataSource) -> ImageSource<'static> {
             egui::include_image!("../../../assets/source_logos/bitfinex.png")
         }
         DataSource::Bitstamp => egui::include_image!("../../../assets/source_logos/bitstamp.svg"),
+        DataSource::Bingx => egui::include_image!("../../../assets/source_logos/bingx.png"),
         DataSource::CoinGecko => egui::include_image!("../../../assets/source_logos/coingecko.png"),
         DataSource::DexScreener => {
             egui::include_image!("../../../assets/source_logos/dexscreener.png")

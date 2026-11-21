@@ -52,26 +52,13 @@ const QUOTE_POLL: Duration = Duration::from_millis(100);
 /// Entries a watchlist page holds when the caller does not say.
 const DEFAULT_ENTRY_PAGE: usize = 100;
 
-/// Providers searched when the caller names none: every one a market can be charted from.
-const ALL_SOURCES: [McpSource; 17] = [
-    McpSource::Binance,
-    McpSource::Coinbase,
-    McpSource::Okx,
-    McpSource::Kraken,
-    McpSource::Bybit,
-    McpSource::Gateio,
-    McpSource::Mexc,
-    McpSource::Hyperliquid,
-    McpSource::Aster,
-    McpSource::Lighter,
-    McpSource::Deribit,
-    McpSource::Htx,
-    McpSource::Bitfinex,
-    McpSource::Bitstamp,
-    McpSource::Coingecko,
-    McpSource::Dexscreener,
-    McpSource::Alpaca,
-];
+/// Providers searched when the caller names none: every one a market can be charted from, as the
+/// profiles list them, so a source added there is searched without a line here.
+fn all_sources() -> Vec<McpSource> {
+    DataSource::symbol_markets()
+        .filter_map(McpSource::of)
+        .collect()
+}
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -79,7 +66,7 @@ pub struct MarketRef {
     /// The market data provider.
     pub source: McpSource,
     /// The provider's own symbol, as `degenview_search_symbols` returns it: `BTCUSDT` (binance),
-    /// `BTC-USD` (coinbase), `BTC-USDT` (okx), `BTC/USD` (kraken), `BTCUSDT` (bybit), `BTC_USDT` (gateio), `BTCUSDT` (mexc), `BTC` or `xyz:SP500` (hyperliquid), `BTCUSDT` (aster perpetual), `BTC` or `US500` (lighter perpetual), `BTC-PERPETUAL` or `SOL_USDC-PERPETUAL` (deribit perpetual), `BTCUSDT` (htx), `BTCUSD` or `AVAX:USD` (bitfinex), `BTCUSD` (bitstamp), `bitcoin` (coingecko), `chain/address` (dexscreener), `AAPL`
+    /// `BTC-USD` (coinbase), `BTC-USDT` (okx), `BTC/USD` (kraken), `BTCUSDT` (bybit), `BTC_USDT` (gateio), `BTCUSDT` (mexc), `BTC` or `xyz:SP500` (hyperliquid), `BTCUSDT` (aster perpetual), `BTC` or `US500` (lighter perpetual), `BTC-PERPETUAL` or `SOL_USDC-PERPETUAL` (deribit perpetual), `BTCUSDT` (htx), `BTCUSD` or `AVAX:USD` (bitfinex), `BTCUSD` (bitstamp), `BTC-USDT` (bingx), `bitcoin` (coingecko), `chain/address` (dexscreener), `AAPL`
     /// (alpaca).
     #[schemars(length(min = 1, max = 128))]
     pub symbol: String,
@@ -483,7 +470,7 @@ fn search_all(
 impl DegenViewMcp {
     #[tool(
         name = "degenview_search_symbols",
-        description = "Search the market data providers for symbols by ticker or name. Returns, per hit, the `source` and `symbol` to pass to degenview_add_chart, degenview_get_quotes, degenview_create_price_alert and the watchlist tools, plus how the app labels it. Searches Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, HTX, Bitfinex, Bitstamp, CoinGecko, DEXScreener and (with API keys) Alpaca stocks side by side; a provider that fails is reported in `source_errors` while the others still answer. Hits only prove the provider lists the market; ask degenview_get_quotes for a price.",
+        description = "Search the market data providers for symbols by ticker or name. Returns, per hit, the `source` and `symbol` to pass to degenview_add_chart, degenview_get_quotes, degenview_create_price_alert and the watchlist tools, plus how the app labels it. Searches Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, HTX, Bitfinex, Bitstamp, BingX, CoinGecko, DEXScreener and (with API keys) Alpaca stocks side by side; a provider that fails is reported in `source_errors` while the others still answer. Hits only prove the provider lists the market; ask degenview_get_quotes for a price.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -506,7 +493,7 @@ impl DegenViewMcp {
             )));
         }
         let mut sources: Vec<McpSource> = Vec::new();
-        let asked = params.sources.unwrap_or_else(|| ALL_SOURCES.to_vec());
+        let asked = params.sources.unwrap_or_else(all_sources);
         if asked.is_empty() {
             return Err(invalid(
                 "sources is empty: name at least one provider or omit it",
@@ -964,6 +951,29 @@ mod tests {
         MarketRef {
             source,
             symbol: symbol.into(),
+        }
+    }
+
+    #[test]
+    fn every_provider_a_market_is_charted_from_is_one_mcp_names_and_searches_by_default() {
+        let sources: Vec<DataSource> = DataSource::symbol_markets().collect();
+        for source in &sources {
+            let mcp = McpSource::of(*source)
+                .unwrap_or_else(|| panic!("MCP has no `{}`", source.profile().mcp_id));
+            assert_eq!(mcp.data_source(), *source);
+        }
+        let searched: Vec<DataSource> = all_sources()
+            .into_iter()
+            .map(McpSource::data_source)
+            .collect();
+        assert_eq!(searched, sources, "every one, in the picker's order");
+        // The providers MCP leaves out are the ones with no symbol to chart by.
+        for source in DataSource::ALL {
+            assert_eq!(
+                McpSource::of(source).is_some(),
+                source.profile().class.is_symbol_market(),
+                "{source:?}"
+            );
         }
     }
 
