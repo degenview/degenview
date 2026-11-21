@@ -13,7 +13,7 @@ use super::fast_hash::FastMap;
 use super::security_slice;
 use super::session::Session;
 use super::state::{LoggedBar, RuntimeState, SecuritySite};
-use super::support::{ChartSpan, SecurityKey};
+use super::support::{ChartSpan, MAX_SERIES_CANDLES, SecurityKey, SeriesDepth};
 use super::types::{BarFlags, RuntimeContext};
 use super::value::{RefKind, RuntimeValue};
 use crate::model::Kline;
@@ -203,7 +203,17 @@ impl Session {
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
-        let Some(candles) = self.lower_timeframe_candles(None, request.interval, 0) else {
+        // `calc_bars_count` counts chart bars here, as for `request.security_lower_tf`: older bars
+        // are given no intrabars.
+        if self.outside_calc_window(request.recent_bars) {
+            return Ok(match self.tuple_arity(&request.expression, context) {
+                Some(columns) => RuntimeValue::Tuple(vec![RuntimeValue::Na; columns]),
+                None => RuntimeValue::Na,
+            });
+        }
+        let Some(candles) =
+            self.lower_timeframe_candles(None, request.interval, request.recent_bars)
+        else {
             return Err(Diagnostic::error(
                 "PINE4021",
                 DiagnosticCategory::Runtime,
@@ -298,11 +308,7 @@ impl Session {
             .get("timeframe")
             .and_then(RuntimeValue::text_value)
             .and_then(time::seconds_of_timeframe);
-        let recent_bars = values
-            .get("calc_bars_count")
-            .and_then(RuntimeValue::int_value)
-            .unwrap_or(0)
-            .max(0) as usize;
+        let recent_bars = calc_bars_count(&values);
         let usable = seconds.is_some_and(|seconds| seconds <= self.bar_seconds);
         if !usable
             && self.bar_seconds > 0.0
@@ -315,10 +321,7 @@ impl Session {
                 range,
             ));
         }
-        // `calc_bars_count` limits the request to the newest chart bars: older ones get no intrabars.
-        let outside_window = recent_bars > 0
-            && self.working.bar_index < self.last_bar_index - recent_bars as i64 + 1;
-        if outside_window {
+        if self.outside_calc_window(recent_bars) {
             let columns = self.tuple_arity(&expression, context);
             return Ok(empty_shaped(columns, self));
         }
@@ -442,16 +445,12 @@ impl Session {
             && interval > self.bar_seconds
             && self.bar_seconds > 0.0
             && !time::bucket::nests(interval, self.bar_seconds);
-        let recent_bars = values
-            .get("calc_bars_count")
-            .and_then(RuntimeValue::int_value)
-            .unwrap_or(0)
-            .max(0) as usize;
+        let recent_bars = calc_bars_count(&values);
         let foreign = if !is_chart_symbol || straddles {
             let key = SecurityKey {
                 symbol: symbol_name.clone(),
                 interval,
-                recent_bars,
+                depth: SeriesDepth::of(recent_bars),
             };
             match self.series(key) {
                 Some(candles) => Some(candles),
@@ -515,19 +514,38 @@ impl Session {
         answer
     }
 
-    /// Where the newest `request.recent_bars` buckets of the requested timeframe begin, counting
-    /// back from the chart's last bar (from `open_time` inside another request, whose last candle
-    /// is not known).
-    fn window_start(&self, request: &SecurityRequest, open_time: i64) -> i64 {
+    /// Where the newest `count` buckets of `interval` seconds begin among the chart's bars, found by
+    /// counting the buckets the bars fall in, newest first: the loop is bounded by the chart, not by
+    /// the script's `calc_bars_count`. No window (`i64::MIN`) inside another request, whose
+    /// candles' bar times are not kept.
+    fn window_start(&self, interval: f64, count: usize) -> i64 {
         if self.security_depth > 0 {
             return i64::MIN;
         }
-        let last = self.last_bar_time.unwrap_or(open_time);
-        let mut start = time::bucket::start(last, request.interval);
-        for _ in 1..request.recent_bars {
-            start = time::bucket::start(start - 1, request.interval);
+        let mut window = i64::MIN;
+        let mut buckets = 0;
+        let mut newest = None;
+        for open_time in self.bar_opens.iter().rev() {
+            let bucket = time::bucket::start(*open_time, interval);
+            if newest == Some(bucket) {
+                continue;
+            }
+            if buckets == count {
+                break;
+            }
+            buckets += 1;
+            newest = Some(bucket);
+            window = bucket;
         }
-        start
+        window
+    }
+
+    /// Whether the chart bar now running is older than the newest `recent_bars` chart bars, which
+    /// the chart-bar form of `calc_bars_count` limits a request to (0 is no limit).
+    fn outside_calc_window(&self, recent_bars: usize) -> bool {
+        recent_bars > 0
+            && self.working.bar_index
+                < self.last_bar_index - i64::try_from(recent_bars).unwrap_or(i64::MAX) + 1
     }
 
     /// A candle that the chart's bars cannot be folded into, and the data source has none of.
@@ -630,7 +648,7 @@ impl Session {
         let key = SecurityKey {
             symbol: self.symbol.ticker_id.clone(),
             interval: request.interval,
-            recent_bars: 0,
+            depth: SeriesDepth::Chart,
         };
         let Some(candles) = self.series(key) else {
             return Ok(());
@@ -690,7 +708,7 @@ impl Session {
             return Ok(result);
         }
         if request.recent_bars > 0 && state.window_start.is_none() {
-            state.window_start = Some(self.window_start(request, bar.open_time));
+            state.window_start = Some(self.window_start(request.interval, request.recent_bars));
         }
         if !state.is_warmed_up {
             // History from before the chart's first bar; the chart's own bars, the ones this site
@@ -893,8 +911,11 @@ impl Session {
         let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
         // `calc_bars_count`: the newest candles up to the chart's last bar are the ones evaluated.
         let first_candle = (request.recent_bars > 0).then(|| {
-            let last = last_index(self.last_bar_time.unwrap_or(bar.open_time), candles);
-            last.map_or(0, |last| (last + 1).saturating_sub(request.recent_bars))
+            newest_first_index(
+                candles,
+                self.last_bar_time.unwrap_or(bar.open_time),
+                request.recent_bars,
+            )
         });
         if let Some(first) = first_candle {
             state.completed_candles = state.completed_candles.max(first);
@@ -951,10 +972,12 @@ impl Session {
             Some(RuntimeValue::String(text)) if !text.is_empty() => text.clone(),
             _ => self.symbol.ticker_id.clone(),
         };
+        // The newest `recent_bars` chart bars hold at most this many intrabars each.
+        let per_bar = (self.bar_seconds / seconds).ceil().max(1.0) as usize;
         let key = SecurityKey {
             symbol,
             interval: seconds,
-            recent_bars,
+            depth: SeriesDepth::of(recent_bars.saturating_mul(per_bar)),
         };
         // Asked of the provider once per run, not once per chart bar.
         self.series(key).filter(|candles| !candles.is_empty())
@@ -1300,6 +1323,24 @@ fn fold_one(candles: &[Kline], interval_seconds: f64) -> Kline {
     folded
 }
 
+/// What `calc_bars_count` asks for, 0 when it is absent or not positive, and never more than a
+/// series may hold.
+fn calc_bars_count(values: &HashMap<String, RuntimeValue>) -> usize {
+    values
+        .get("calc_bars_count")
+        .and_then(RuntimeValue::int_value)
+        .map_or(0, |count| {
+            usize::try_from(count).map_or(0, |count| count.min(MAX_SERIES_CANDLES))
+        })
+}
+
+/// The index of the oldest of the newest `count` candles that open at or before `last_open`: an
+/// index into the candles the source gave, so a month, a weekend or a holiday between them does
+/// not matter.
+fn newest_first_index(candles: &[Kline], last_open: i64, count: usize) -> usize {
+    last_index(last_open, candles).map_or(0, |last| (last + 1).saturating_sub(count))
+}
+
 /// `candles` folded into candles of `interval_seconds`, one per bucket they open in.
 fn fold_all(candles: &[Kline], interval_seconds: f64) -> Vec<Kline> {
     let mut folded: Vec<Kline> = Vec::new();
@@ -1435,6 +1476,66 @@ mod tests {
             close,
             volume: 1.0,
         }
+    }
+
+    fn candle_opening(open_time: i64) -> Kline {
+        bar(open_time, 1.0)
+    }
+
+    #[test]
+    fn the_newest_candles_are_found_by_index_not_by_elapsed_time() {
+        const DAY: i64 = 86_400_000;
+        // 2024-06-01, 07-01 and 08-01: months of 30, 31 and 31 days.
+        let months: Vec<Kline> = [1_717_200_000_000, 1_719_792_000_000, 1_722_470_400_000]
+            .into_iter()
+            .map(candle_opening)
+            .collect();
+        let august_31 = 1_722_470_400_000 + 30 * DAY;
+        assert_eq!(
+            newest_first_index(&months, august_31, 2),
+            1,
+            "July and August"
+        );
+        assert_eq!(newest_first_index(&months, august_31, 1), 2);
+        assert_eq!(
+            newest_first_index(&months, august_31, 9),
+            0,
+            "fewer than asked for"
+        );
+        // A weekday source: Friday, then Monday and Tuesday after the weekend.
+        let friday = 1_717_718_400_000;
+        let days: Vec<Kline> = [friday, friday + 3 * DAY, friday + 4 * DAY]
+            .into_iter()
+            .map(candle_opening)
+            .collect();
+        assert_eq!(
+            newest_first_index(&days, friday + 4 * DAY, 2),
+            1,
+            "Monday and Tuesday"
+        );
+        assert_eq!(
+            newest_first_index(&days, friday + 2 * DAY, 2),
+            0,
+            "Saturday sees Friday"
+        );
+        assert_eq!(
+            newest_first_index(&days, friday - DAY, 2),
+            0,
+            "before every candle"
+        );
+        assert_eq!(newest_first_index(&[], 0, 2), 0);
+    }
+
+    #[test]
+    fn calc_bars_count_is_read_once_and_bounded() {
+        let count = |value: RuntimeValue| {
+            calc_bars_count(&HashMap::from([("calc_bars_count".to_owned(), value)]))
+        };
+        assert_eq!(count(RuntimeValue::Int(5)), 5);
+        assert_eq!(count(RuntimeValue::Int(-3)), 0);
+        assert_eq!(count(RuntimeValue::Int(i64::MAX)), MAX_SERIES_CANDLES);
+        assert_eq!(count(RuntimeValue::Na), 0);
+        assert_eq!(calc_bars_count(&HashMap::new()), 0);
     }
 
     #[test]
@@ -1605,7 +1706,7 @@ mod tests {
             SecurityKey {
                 symbol: "ETHUSDT".to_owned(),
                 interval: 60.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![bar(0, 100.0), bar(60_000, 110.0), bar(120_000, 120.0)],
         );
@@ -1626,7 +1727,7 @@ mod tests {
             SecurityKey {
                 symbol: "ETHUSDT".to_owned(),
                 interval: 60.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![bar(0, 100.0), bar(60_000, 110.0), bar(120_000, 120.0)],
         );
@@ -1794,7 +1895,7 @@ mod tests {
             SecurityKey {
                 symbol: "ETHUSDT".to_owned(),
                 interval: 3600.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             candles.clone(),
         );
@@ -2486,7 +2587,7 @@ mod tests {
             SecurityKey {
                 symbol: String::new(),
                 interval: 15.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![
                 bar(60_000, 1.0),
@@ -2566,7 +2667,7 @@ mod tests {
             SecurityKey {
                 symbol: "ETHUSDT".to_owned(),
                 interval: 15.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![bar(60_000, 5.0), bar(75_000, 6.0), bar(90_000, 7.0)],
         );
@@ -2586,7 +2687,7 @@ mod tests {
             SecurityKey {
                 symbol: String::new(),
                 interval: 15.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![
                 bar(60_000, 1.0),
@@ -2615,7 +2716,7 @@ mod tests {
             SecurityKey {
                 symbol: String::new(),
                 interval: 15.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![
                 bar(60_000, 1.0),
