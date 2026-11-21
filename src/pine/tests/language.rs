@@ -177,7 +177,7 @@ fn windowed_statistics_follow_the_reference_formulas() {
     );
     close_to(&session, "alma", 104.685_673_600_238_26);
     close_to(&session, "nearest", 105.0);
-    close_to(&session, "linear", 104.6);
+    close_to(&session, "linear", 105.0);
     close_to(&session, "median", 103.0);
     // close 101…105: odd values 101, 103, 105 map to 2.0 (three of them), even ones to 1.0.
     close_to(&session, "common", 2.0);
@@ -636,7 +636,7 @@ fn a_zone_the_table_lacks_is_warned_about() {
 }
 
 #[test]
-fn ratios_with_nothing_to_divide_are_na_not_nan() {
+fn ratios_with_nothing_to_divide_are_na_or_what_tradingview_gives() {
     // A flat market: no money flow in either direction, and a zero-width range.
     let session = run(
         "flat = 100.0\n\
@@ -645,7 +645,9 @@ fn ratios_with_nothing_to_divide_are_na_not_nan() {
          plain = ta.wpr(3)",
         5,
     );
-    assert_eq!(value(&session, "flow"), RuntimeValue::Na);
+    // No down flow is 100 whether or not there is an up flow (TradingView, probe P10).
+    assert_eq!(value(&session, "flow"), RuntimeValue::Float(100.0));
+    // A source sitting on a flat window repeats the previous %K, and there is none yet.
     assert_eq!(value(&session, "pos"), RuntimeValue::Na);
     // The bars themselves still span 4 points, so %R is defined.
     assert!(matches!(value(&session, "plain"), RuntimeValue::Float(_)));
@@ -1194,6 +1196,58 @@ fn a_function_local_keeps_a_history_per_call_site() {
     assert_eq!(value(&session, "c"), RuntimeValue::Float(50.0));
     // A series that is not the function's own is still the chart's: close[1] = 104, high[2] = 104.
     assert_eq!(value(&session, "d"), RuntimeValue::Float(104.0 + 104.0));
+}
+
+#[test]
+fn floats_within_a_ten_billionth_are_equal_and_ordering_agrees() {
+    // `zero` is a series, so the comparisons run on the interpreter; the `folded_*` ones are
+    // literals and are folded at compile time. Both must give what TradingView gives.
+    let session = run(
+        "zero = bar_index * 0.0\n\
+         eq = zero + 0.1 + 0.2 == 0.3\n\
+         ne = zero + 0.1 + 0.2 != 0.3\n\
+         tiny = zero + 0.0000000001 == 0.0\n\
+         gt = zero + 1.0 + 0.0000000004 > 1.0\n\
+         ge = 1.0 >= zero + 1.0 + 0.0000000004\n\
+         le = zero + 1.0 + 0.0000000004 <= 1.0\n\
+         far = zero + 1.0 + 0.0000000006 == 1.0\n\
+         edge = zero == zero + 0.0000000001\n\
+         beyond = zero == zero + 0.000000000101\n\
+         not_less = zero + 0.0000000001 < zero + 0.0000000002\n\
+         not_greater = zero + 0.1 + 0.2 > 0.3\n\
+         infinite_ne = zero + math.pow(10.0, 400.0) != 1.0\n\
+         infinite = zero + math.pow(10.0, 400.0) == math.pow(10.0, 400.0)\n\
+         folded_eq = 0.1 + 0.2 == 0.3\n\
+         folded_ne = 0.1 + 0.2 != 0.3\n\
+         folded_gt = 1.0 + 0.0000000004 > 1.0\n\
+         picked = switch zero + 0.1 + 0.2\n    0.3 => 1\n    => 0",
+        2,
+    );
+    for (name, expected) in [
+        ("eq", true),
+        ("ne", false),
+        ("tiny", true),
+        ("gt", true),
+        ("ge", false),
+        ("le", false),
+        ("far", false),
+        ("edge", true),
+        ("beyond", false),
+        ("not_less", false),
+        ("not_greater", false),
+        ("infinite_ne", false),
+        ("infinite", false),
+        ("folded_eq", true),
+        ("folded_ne", false),
+        ("folded_gt", true),
+    ] {
+        assert_eq!(
+            value(&session, name),
+            RuntimeValue::Bool(expected),
+            "{name}"
+        );
+    }
+    assert_eq!(value(&session, "picked"), RuntimeValue::Int(1));
 }
 
 #[test]
@@ -2052,10 +2106,10 @@ fn pivot_point_levels_come_back_as_an_array_in_the_documented_order() {
     close_to(&session, "running", (104.0 + 100.0 + 103.0) / 3.0);
 }
 
-#[test]
-fn an_unknown_pivot_type_stops_the_script() {
+/// The error a one-statement script stops with over two bars; panics when it runs.
+fn failure_of(statement: &str) -> String {
     let program = compiler::compile(
-        "//@version=6\nindicator(\"T\")\nlevels = ta.pivot_point_levels(\"Nope\", true)",
+        &format!("//@version=6\nindicator(\"T\")\n{statement}"),
         Limits::default(),
         &NoLibraries,
     );
@@ -2070,9 +2124,40 @@ fn an_unknown_pivot_type_stops_the_script() {
         None,
     );
     let Err(error) = session.evaluate(&bars(2)) else {
-        panic!("an unknown type must fail");
+        panic!("{statement} must fail");
     };
-    assert!(format!("{error:?}").contains("Traditional"), "{error:?}");
+    format!("{error:?}")
+}
+
+#[test]
+fn an_unknown_pivot_type_stops_the_script() {
+    let error = failure_of("levels = ta.pivot_point_levels(\"Nope\", true)");
+    assert!(error.contains("Traditional"), "{error}");
+}
+
+#[test]
+fn a_developing_woodie_pivot_stops_the_script() {
+    // TradingView: "If used together, the indicator will return a runtime error" (RE10128).
+    let error = failure_of("levels = ta.pivot_point_levels(\"Woodie\", bar_index == 1, true)");
+    assert!(
+        error.contains("RE10128") && error.contains("developing"),
+        "{error}"
+    );
+    let other = failure_of("levels = ta.pivot_point_levels(\"Woodie\", true, developing = true)");
+    assert!(other.contains("RE10128"), "{other}");
+}
+
+#[test]
+fn a_woodie_pivot_that_is_not_developing_runs() {
+    let session = run(
+        "levels = ta.pivot_point_levels(\"Woodie\", bar_index == 2)\n\
+         p = array.get(levels, 0)\n\
+         flagged = ta.pivot_point_levels(\"Woodie\", bar_index == 2, false)\n\
+         q = array.get(flagged, 0)",
+        3,
+    );
+    assert_eq!(value(&session, "p"), value(&session, "q"));
+    assert!(matches!(value(&session, "p"), RuntimeValue::Float(_)));
 }
 
 #[test]

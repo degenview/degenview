@@ -696,3 +696,152 @@ plot(ta.barssince(na(src)))
         );
     }
 }
+
+/// A source that stands still on bars 100 to 139 and is the close elsewhere.
+const FLAT: &str = "flat = bar_index >= 100 and bar_index < 140 ? 1000.0 : close";
+
+#[test]
+fn cmo_is_na_when_nothing_moved_in_the_window() {
+    let source = format!(
+        "//@version=6
+indicator(\"Cmo\")
+{FLAT}
+change = ta.change(flat)
+up = math.max(change, 0)
+down = -math.min(change, 0)
+sumUp = math.sum(up, 14)
+sumDown = math.sum(down, 14)
+plot(ta.cmo(flat, 14))
+plot(100 * (sumUp - sumDown) / (sumUp + sumDown))
+"
+    );
+    let plotted = plots(&source, 300);
+    assert_same("cmo", &plotted[0], &plotted[1]);
+    // The change on bar 100 is the jump to the flat level; from bar 114 on, none of the last 14
+    // changes moves until the jump back on bar 140.
+    assert!(plotted[0][113].is_some());
+    assert!(plotted[0][114..140].iter().all(Option::is_none));
+    assert!(plotted[0][140].is_some());
+}
+
+#[test]
+fn cci_keeps_its_previous_value_when_the_window_is_flat() {
+    let source = format!(
+        "//@version=6
+indicator(\"Cci\")
+{FLAT}
+plot(ta.cci(flat, 20))
+"
+    );
+    let plotted = plots(&source, 300);
+    let held = plotted[0][118].expect("a value before the flat window");
+    // Bars 120 to 139 hold 20 flat values: TradingView repeats the last real CCI.
+    for (offset, value) in plotted[0][119..140].iter().enumerate() {
+        assert_eq!(*value, Some(held), "bar {}", 119 + offset);
+    }
+    assert_ne!(plotted[0][140], Some(held));
+}
+
+#[test]
+fn mfi_follows_the_reference_code_including_its_first_bar_and_one_sided_windows() {
+    let source = format!(
+        "//@version=6
+indicator(\"Mfi\")
+{FLAT}
+pine_mfi(float src, int length) =>
+    float upper = math.sum(volume * (ta.change(src) <= 0.0 ? 0.0 : src), length)
+    float lower = math.sum(volume * (ta.change(src) >= 0.0 ? 0.0 : src), length)
+    lower == 0 ? 100.0 : 100.0 - (100.0 / (1.0 + upper / lower))
+plot(ta.mfi(hlc3, 14))
+plot(pine_mfi(hlc3, 14))
+plot(ta.mfi(flat, 14))
+plot(pine_mfi(flat, 14))
+plot(ta.mfi(hlc3 > 0 ? 50.0 : na, 5))
+"
+    );
+    let plotted = plots(&source, 400);
+    assert_same("hlc3", &plotted[0], &plotted[1]);
+    assert_same("flat", &plotted[2], &plotted[3]);
+    assert_eq!(
+        first_value(&plotted[0]),
+        Some(13),
+        "a na change counts the source"
+    );
+    // A source that never moves has neither up nor down flow: 100.
+    // (While the first bar is in the window it counts on both sides.)
+    assert_eq!(plotted[4][4], Some(50.0));
+    assert_eq!(plotted[4][5..], vec![Some(100.0); 395][..]);
+    // Inside the flat stretch, once the window holds no move at all.
+    assert_eq!(plotted[2][130], Some(100.0));
+}
+
+#[test]
+fn stoch_repeats_the_previous_value_when_the_source_sits_on_a_flat_window() {
+    let source = format!(
+        "//@version=6
+indicator(\"Stoch\")
+{FLAT}
+plot(ta.stoch(flat, flat, flat, 14))
+plot(ta.stoch(close, flat, flat, 14))
+plot(ta.stoch(close, high, low, 14))
+plot(100 * (close - ta.lowest(low, 14)) / (ta.highest(high, 14) - ta.lowest(low, 14)))
+"
+    );
+    let plotted = plots(&source, 300);
+    // The source is the window's value: the previous raw %K, which was 100 (the flat level is
+    // above every close), on every bar whose window holds nothing else.
+    assert!(
+        plotted[0][113..140]
+            .iter()
+            .all(|value| *value == Some(100.0))
+    );
+    // The source is elsewhere and the range is 0: na.
+    assert!(plotted[1][113..140].iter().all(Option::is_none));
+    assert_same("stoch", &plotted[2], &plotted[3]);
+}
+
+/// TradingView's linear interpolation: the 0-based position `p * n - 0.5` clamped to the window.
+const PERCENTILE_REFERENCE: &str = "
+f_percentile(float[] window, float percentage) =>
+    sorted = window.copy()
+    sorted.sort()
+    n = sorted.size()
+    position = math.max(0.0, math.min(n - 1.0, percentage / 100 * n - 0.5))
+    below = int(math.floor(position))
+    above = int(math.ceil(position))
+    sorted.get(below) + (sorted.get(above) - sorted.get(below)) * (position - below)
+";
+
+#[test]
+fn linear_percentiles_interpolate_at_p_times_n_minus_a_half_and_clamp() {
+    let source = format!(
+        "//@version=6
+indicator(\"Percentile\")
+{PERCENTILE_REFERENCE}
+var float[] window = array.new_float()
+window.push(close)
+if window.size() > 20
+    window.shift()
+full = window.size() == 20
+plot(ta.percentile_linear_interpolation(close, 20, 30))
+plot(full ? f_percentile(window, 30) : na)
+plot(full ? window.percentile_linear_interpolation(30) : na)
+plot(ta.percentile_linear_interpolation(close, 20, 1))
+plot(ta.lowest(close, 20))
+plot(ta.percentile_linear_interpolation(close, 20, 99))
+plot(ta.highest(close, 20))
+plot(full ? window.percentile_linear_interpolation(1) : na)
+plot(full ? window.percentile_linear_interpolation(99) : na)
+plot(ta.percentile_linear_interpolation(close, 21, 30))
+plot(ta.percentile_nearest_rank(close, 20, 30))
+"
+    );
+    let plotted = plots(&source, 500);
+    assert_same("ta", &plotted[0], &plotted[1]);
+    assert_same("array", &plotted[2], &plotted[1]);
+    assert_same("p = 1 is the lowest", &plotted[3], &plotted[4]);
+    assert_same("p = 99 is the highest", &plotted[5], &plotted[6]);
+    assert_same("array p = 1", &plotted[7], &plotted[4]);
+    assert_same("array p = 99", &plotted[8], &plotted[6]);
+    assert!(plotted[0].iter().flatten().count() > 400);
+}

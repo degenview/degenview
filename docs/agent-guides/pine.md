@@ -48,6 +48,15 @@
   `ta.wpr`, `ta.rci`, `ta.highestbars`, `ta.lowestbars`, `ta.rising`, `ta.falling`; their TradingView
   rule is a known divergence until a probe settles it. Never add a per-bar growing field to
   `ta::State` for this (cloned on every realtime tick).
+- `ta.*` edge rules measured on TradingView (probes P09-P11): `ta.cmo` is `na` on a window where
+  nothing moved (0/0); `ta.cci` repeats its previous value when the window is flat; `ta.mfi` is 100
+  whenever the down flow is 0 (up flow or not) and, because a missing change counts the source on both
+  sides as the reference code reads it, has its first value on bar `length - 1`; `ta.stoch` repeats the
+  previous raw %K when the source sits on a window with no range (`operators::floats_equal`) and is
+  `na` when the range is 0 and the source is elsewhere; `ta.percentile_linear_interpolation` and
+  `array.percentile_linear_interpolation` interpolate at the 0-based position `p * n - 0.5` held
+  in `[0, n - 1]` (nearest rank is `ceil(p * n)` and already matched). `ta.wvad` on a bar without a range
+  is `na`: **not measured** on TradingView.
 - Execution-model gaps: [the audit](../reviews/pine-execution-model-audit.md); read it before relying
   on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
   do not halt the script.
@@ -87,6 +96,12 @@
 - Builtin variables read with `[]` (`hlcc4[1]`, `ta.tr[1]`) are recorded by `read_history_builtins`
   at each confirmed bar's end; names found once by `history_builtin_names`. Not inside
   `request.security`.
+- Comparisons (`runtime/operators.rs`, one `apply` for the interpreter, switch arms and constant
+  folding): floats are equal when they are at most 1e-10 apart (`floats_equal`, absolute, whatever
+  the magnitude) and every operator goes through it: `<` and `>` are false for equal floats, `<=` and
+  `>=` true, `==` and `!=` are false when either is not finite while `inf > 1` and `-inf < inf`
+  hold. Two ints compare exactly. TradingView-measured (probes P10, P11, P13-P15), which is not the
+  manual's "round to nine fractional digits" (`1 + 4e-10` and `1` differ, `1e-10 == 2e-10` holds).
 - Breakpoints and watches: local `scriptDebug.state` setting (never synced; in `sync::record::policy`'s local
   keys).
 - `once` finished flag: `RuntimeState::once_finished` (by site key), deliberately in working state:
@@ -129,7 +144,8 @@
   `ignored_features::ignored_values` (PINE7004) is empty but kept for the next unsupported constant.
 - `ta.pivot_point_levels`: running period OHLC in `ta::State::pivot` (`ta_extra::PivotPeriod`),
   starting at each anchor bar; levels set at a period's end hold until the next ends; `developing`
-  uses the running period. Classic published formulas (reference lists none); Woodie's uses the
+  uses the running period; Woodie with `developing = true` is a runtime error (`PINE4035`, naming
+  TradingView's RE10128). Classic published formulas (reference lists none); Woodie's uses the
   setting bar's open. Unchecked against TradingView output. `ta.rci` = Spearman
   (Pearson on mid-ranks) x 100.
 - `session.*` reads `trading_session::MarketSessions` by `syminfo.type`: crypto 24x7 UTC (session =
