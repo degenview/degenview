@@ -602,7 +602,8 @@ mod tests {
                 | DataSource::Aster
                 | DataSource::Lighter
                 | DataSource::Deribit
-                | DataSource::Htx => Ok(vec![]),
+                | DataSource::Htx
+                | DataSource::Bitfinex => Ok(vec![]),
                 DataSource::CoinGecko => Err(ProviderError::other("rate limited")),
                 _ => Ok(vec![hit(source, "BTC/WETH", "0xabc")]),
             }
@@ -637,7 +638,7 @@ mod tests {
         wait(&mut state);
         assert_eq!(
             calls.lock().unwrap().len(),
-            14,
+            15,
             "one request per crypto source"
         );
         assert!(
@@ -680,8 +681,9 @@ mod tests {
         assert!(state.results()[9].1.as_ref().is_ok_and(Vec::is_empty));
         assert!(state.results()[10].1.as_ref().is_ok_and(Vec::is_empty));
         assert!(state.results()[11].1.as_ref().is_ok_and(Vec::is_empty));
+        assert!(state.results()[12].1.as_ref().is_ok_and(Vec::is_empty));
         assert_eq!(
-            state.results()[12].1.as_ref().err(),
+            state.results()[13].1.as_ref().err(),
             Some(&ProviderError::other("rate limited"))
         );
     }

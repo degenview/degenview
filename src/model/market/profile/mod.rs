@@ -53,6 +53,10 @@ pub struct Profile {
     pub quotes: QuoteTiming,
     /// How candles are cached; `None` where they are not held.
     pub cache: Option<CachePolicy>,
+    /// Whether the source's requests wait on a rate limiter (`service::net::rate_limit`) for seconds
+    /// at a time, so they run on a worker of their own (`service::work_queue`) and never hold one
+    /// that fetches other charts' candles.
+    pub own_lane: bool,
 }
 
 impl Profile {
@@ -169,6 +173,16 @@ pub struct Concat {
     pub wrapped_asset_guard: bool,
     /// Characters dropped from a typed id before it is read (`BTC/USDT`).
     pub dropped: &'static [char],
+    /// What the venue puts between the assets of a longer pair; `None` for one that never does.
+    pub long_pairs: Option<LongPairs>,
+}
+
+/// A venue that runs the assets of a pair together (`BTCUSD`) until one has more than `letters`
+/// letters, then puts `character` between them (`AVAX:USD`, `BTC:XAUT`).
+#[derive(Debug)]
+pub struct LongPairs {
+    pub character: char,
+    pub letters: usize,
 }
 
 impl Concat {
@@ -178,8 +192,49 @@ impl Concat {
         self.quotes.iter().enumerate().find_map(|(index, quote)| {
             upper
                 .strip_suffix(quote)
+                .map(|base| self.without_separator(base))
                 .filter(|base| base.len() > usize::from(index >= self.one_letter_base_quotes))
                 .map(|base| (base, *quote))
+        })
+    }
+
+    /// `base` without the separator that ends it when the id has one (`AVAX:` of `AVAX:USD`).
+    fn without_separator<'a>(&self, base: &'a str) -> &'a str {
+        self.long_pairs
+            .as_ref()
+            .and_then(|long| base.strip_suffix(long.character))
+            .unwrap_or(base)
+    }
+
+    /// `upper` as the venue spells the pair: the separator where an asset is long, none where
+    /// both are short, whichever way it was typed (`AVAXUSD`, `AVAX/USD`, `avax:usd` are
+    /// `AVAX:USD`). An id that is not a pair is returned as it is.
+    pub fn spelled(&self, upper: &str) -> String {
+        let Some(long) = &self.long_pairs else {
+            return upper.to_owned();
+        };
+        let joined: String = upper.chars().filter(|ch| *ch != long.character).collect();
+        match self.split(&joined) {
+            Some((base, quote))
+                if base.chars().count() > long.letters || quote.chars().count() > long.letters =>
+            {
+                format!("{base}{}{quote}", long.character)
+            }
+            _ => joined,
+        }
+    }
+
+    /// Whether a typed id may hold the separator.
+    pub fn separator(&self) -> Option<char> {
+        self.long_pairs.as_ref().map(|long| long.character)
+    }
+
+    /// [`Self::split_known`] as the coin a pair's artwork is of: a one-letter asset before a dollar
+    /// quote is a real asset (`SUSDT` is `S`, the coin), where before another quote it is a wrapped
+    /// one (`WBTC` is not `W` over `BTC`).
+    fn split_coin<'a>(&self, upper: &'a str) -> Option<(&'a str, &'static str)> {
+        self.split_known(upper).filter(|(base, quote)| {
+            !self.wrapped_asset_guard || base.len() > 1 || quote.contains("USD")
         })
     }
 
@@ -258,12 +313,30 @@ impl Listed {
 const MAX_LISTED_NAME: usize = 40;
 
 impl PairStyle {
+    /// Whether an id may hold a colon: a market of another dex (`xyz:SP500`), or the separator of
+    /// a long pair (`AVAX:USD`). Anywhere else a colon would end the venue prefix of a line.
+    pub fn allows_colon(&self) -> bool {
+        match self {
+            Self::Listed(listed) => listed.also_in_names.contains(&':'),
+            Self::Concat(concat) => concat.separator() == Some(':'),
+            Self::Separated(_) | Self::None => false,
+        }
+    }
+
     /// The asset of a market, from the first part of its upper-case id.
     pub(super) fn base_of<'a>(&self, head: &'a str) -> &'a str {
         match self {
             Self::Concat(concat) => concat.split_asset(head).map_or(head, |(base, _)| base),
             Self::Listed(listed) => listed.asset(head),
             Self::Separated(_) | Self::None => head,
+        }
+    }
+
+    /// [`Self::base_of`] as the coin the market's artwork is of; see [`Concat::split_coin`].
+    pub(super) fn coin_of<'a>(&self, head: &'a str) -> &'a str {
+        match self {
+            Self::Concat(concat) => concat.split_coin(head).map_or(head, |(base, _)| base),
+            _ => self.base_of(head),
         }
     }
 
@@ -292,9 +365,9 @@ impl PairStyle {
                 let mut upper = symbol.to_uppercase();
                 upper.retain(|ch| !concat.dropped.contains(&ch));
                 if concat.split_asset(&upper).is_some() {
-                    upper
+                    concat.spelled(&upper)
                 } else {
-                    format!("{upper}{home}")
+                    concat.spelled(&format!("{upper}{home}"))
                 }
             }
             Self::Separated(style) => {
@@ -395,7 +468,7 @@ pub enum CachedSeries {
 impl DataSource {
     /// Every source, in the order the picker asks them. The one list: a new variant fails to compile
     /// in [`table::profile_of`] until it has a profile, and the tests until it is listed here.
-    pub const ALL: [DataSource; 18] = ALL;
+    pub const ALL: [DataSource; 19] = ALL;
 
     pub fn profile(self) -> &'static Profile {
         profile_of(self)

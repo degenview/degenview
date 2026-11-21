@@ -215,11 +215,8 @@ pub fn market_item(source: DataSource, symbol: &str) -> Result<WatchlistInstrume
         return Err("Missing symbol".to_owned());
     }
     // A colon would end the venue prefix of the line made below, except where it is part of the
-    // venue's names (a market of another dex: `xyz:SP500`).
-    let colon_in_names = matches!(
-        &source.profile().pair,
-        PairStyle::Listed(style) if style.also_in_names.contains(&':')
-    );
+    // venue's names (a market of another dex: `xyz:SP500`; a long pair: `AVAX:USD`).
+    let colon_in_names = source.profile().pair.allows_colon();
     if symbol.chars().count() > MAX_SYMBOL_LEN
         || symbol
             .chars()
@@ -258,9 +255,13 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
 
     let profile = source.profile();
     match (&profile.pair, profile.class) {
-        (PairStyle::Concat(_), _) => {
-            let symbol = rest.to_uppercase();
-            if !(3..=20).contains(&symbol.len()) || !symbol.chars().all(is_upper_alphanumeric) {
+        (PairStyle::Concat(concat), _) => {
+            let symbol = concat.spelled(&rest.to_uppercase());
+            if !(3..=20).contains(&symbol.len())
+                || !symbol
+                    .chars()
+                    .all(|c| is_upper_alphanumeric(c) || concat.separator() == Some(c))
+            {
                 return Err(format!(
                     "Not a {} spot symbol (perpetuals and futures aren't supported)",
                     source.display_name()
@@ -485,6 +486,33 @@ mod tests {
                 Row::Section(_) => None,
             })
             .collect()
+    }
+
+    /// Bitfinex writes `AVAX:USD` with a colon once an asset has more than three letters: it does
+    /// not end the venue prefix, and however a pair is typed it is read as Bitfinex names it.
+    #[test]
+    fn a_bitfinex_pair_keeps_its_colon_and_a_typed_one_is_named_as_bitfinex_does() {
+        let parsed = parse(
+            "BITFINEX:BTCUSD\nBITFINEX:avax:usd\nBITFINEX:AVAXUSD\nBITFINEX:btc/xaut\nBITFINEX:AVAX:USD:X?",
+        );
+        assert_eq!(
+            instruments(&parsed),
+            [
+                ("BITFINEX".to_owned(), "BTCUSD".to_owned()),
+                ("BITFINEX".to_owned(), "AVAX:USD".to_owned()),
+                ("BITFINEX".to_owned(), "AVAX:USD".to_owned()),
+            ]
+        );
+        assert_eq!(parsed.skipped.len(), 2, "{:?}", parsed.skipped);
+        // A colon is still no part of a name anywhere else.
+        assert!(market_item(DataSource::Binance, "AVAX:USDT").is_err());
+        // The line it exports as is the line it imports from.
+        let item = market_item(DataSource::Bitfinex, "avaxusd").unwrap();
+        assert_eq!(item.instrument.key(), "BITFINEX:AVAX:USD");
+        assert_eq!(
+            instruments(&parse(&item.instrument.key())),
+            [("BITFINEX".to_owned(), "AVAX:USD".to_owned())]
+        );
     }
 
     #[test]
