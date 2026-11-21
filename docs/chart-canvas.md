@@ -147,7 +147,11 @@ alone: `overlay_extent` takes none of its values, hlines or drawings (it still a
 the chart's own top and bottom margins and laid across the band the price scale uses (below the
 header). It is linear whatever the price axis is (Percent, Log), ignores a manual price range, and
 nothing on screen reads it: no axis labels, no last-value tag. Each overlay's `PineLayer` gets its
-own `y_for`, so labels, boxes, lines and their hover targets agree. The values tooltip and the Table
+own `y_for` for the values the script wrote (plots, drawings, `yloc.price`, `location.absolute`),
+and keeps `price_y`, the chart's price transform, for what hangs off a candle (`yloc.abovebar` /
+`belowbar`, `location.abovebar` / `belowbar`, `plotarrow`) and for strategy trades, so a 0-100
+oscillator's markers still sit at a 60,000 candle's high. The two are the same closure everywhere
+but on `scale.none`. Labels, boxes, lines and their hover targets agree. The values tooltip and the Table
 view list the values as they are (`ValueKind::Plain` in the table). `scale.left` and `scale.right`
 are still warned about (`PINE7001`: one value axis), and so is `scale.none` on a script with its
 own pane, which TradingView only allows with `overlay = true`. Not verified against TradingView:

@@ -346,6 +346,8 @@ pub(super) fn draw_script_pane(
         slot_width,
         x_for_index,
         y_for: &y_for,
+        // A pane has no candles and no trades: nothing in it is a price of the chart.
+        price_y: &y_for,
     };
     let clipped = painter.with_clip_rect(plot.expand2(Vec2::new(0.0, 0.0)));
     layer.draw_background(&clipped);

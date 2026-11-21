@@ -386,6 +386,7 @@ impl ChartCard {
                 move |price: f64| scale.y(price)
             })
             .collect();
+        let price_y = |price: f64| scale.y(price);
         let pine_layers: Vec<(PineLayer, bool)> = layout
             .overlay_outputs
             .iter()
@@ -401,6 +402,7 @@ impl ChartCard {
                         slot_width,
                         x_for_index: &x_for_index,
                         y_for,
+                        price_y: &price_y,
                     },
                     order.behind(pine.behind_chart),
                 )

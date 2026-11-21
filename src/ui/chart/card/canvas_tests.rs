@@ -42,6 +42,8 @@ pub(super) struct Drawn {
     pub(super) rects: Vec<(Rect, Color32)>,
     /// The points of every stroked path (a script's plot is one).
     pub(super) paths: Vec<Vec<Pos2>>,
+    /// The centre and fill of every filled circle.
+    pub(super) circles: Vec<(Pos2, Color32)>,
 }
 
 fn collect(shape: &Shape, out: &mut Drawn) {
@@ -64,6 +66,7 @@ fn collect(shape: &Shape, out: &mut Drawn) {
         Shape::Mesh(mesh) => out.meshes.push(Arc::clone(mesh)),
         Shape::Rect(rect) => out.rects.push((rect.rect, rect.fill)),
         Shape::Path(path) => out.paths.push(path.points.clone()),
+        Shape::Circle(circle) => out.circles.push((circle.center, circle.fill)),
         Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, out)),
         _ => {}
     }

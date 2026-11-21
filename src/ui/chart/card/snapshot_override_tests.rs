@@ -314,6 +314,52 @@ fn a_scale_none_overlay_is_fitted_to_its_own_hidden_scale_inside_the_plot() {
     assert!(shared_view.maximum - shared_view.minimum > 10.0 * (view.maximum - view.minimum));
 }
 
+/// A 0-100 oscillator on the hidden scale, with a marker under every bar.
+const OSCILLATOR_WITH_MARKERS: &str = "//@version=6
+indicator(\"Oscillator\", overlay = true, scale = scale.none)
+plot(50 + 40 * math.sin(bar_index / 5.0))
+plotshape(true, location = location.belowbar, style = shape.circle, color = color.fuchsia)
+";
+
+#[test]
+fn what_hangs_off_a_candle_stays_on_the_candles_when_the_script_has_its_own_scale() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Oscillator", OSCILLATOR_WITH_MARKERS);
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 60,
+            right_offset: 0.0,
+        },
+        None,
+    ));
+    let view = geometry(&harness, &input).view;
+    let drawn = gather(&painted(&harness, &input));
+    let fuchsia = Color32::from_rgb(0xe0, 0x40, 0xfb);
+    let markers: Vec<Pos2> = drawn
+        .circles
+        .iter()
+        .filter(|(_, fill)| *fill == fuchsia)
+        .map(|(centre, _)| *centre)
+        .collect();
+    assert!(
+        markers.len() >= 50,
+        "a marker under each bar: {}",
+        markers.len()
+    );
+    assert!(
+        markers
+            .iter()
+            .all(|at| at.y > view.plot.top() && at.y < view.plot.bottom()),
+        "under the candles, on the plot, not on the oscillator's scale: {markers:?} in {:?}",
+        view.plot
+    );
+}
+
 #[test]
 fn a_scale_none_overlay_follows_the_bars_on_screen() {
     let mut harness = Harness::new(ChartCanvas::default());
