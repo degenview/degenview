@@ -24,6 +24,7 @@ pub mod keycap;
 pub mod loading;
 pub mod markdown_view;
 mod menu;
+pub(in crate::ui) mod outline;
 mod page;
 mod palette;
 mod pill;
@@ -62,7 +63,7 @@ pub use menu::{
 };
 pub(crate) use menu::{MENU_FRAME_MARGIN, MENU_MAX_HEIGHT, menu_width_for, menu_width_for_rows};
 pub use page::{empty_state, footer_bar, footer_bar_with, notice_card};
-pub use palette::{ACCENT, GREEN, ORANGE, RED, Tone, control, hairline, primary, window};
+pub use palette::{ACCENT, GREEN, ORANGE, RED, Tone, hairline, primary, window};
 pub use pill::{
     chip_size, paint_chip, paint_count, paint_status_badge, status_badge, status_badge_size,
     tile_chip, tile_chip_text_width, value_chip,

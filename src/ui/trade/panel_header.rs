@@ -18,10 +18,11 @@ use crate::ui::trade::venue_pill::{self, PillAction, PillSize};
 /// Width below which the tabs drop to a second row instead of being cut off.
 pub const COMPACT_WIDTH: f32 = 900.0;
 
-/// Every control in the header is this tall, so a row of them shares one top and bottom edge.
-pub const CONTROL_HEIGHT: f32 = 28.0;
-/// The corner radius they share. The tab bar's track is this too (`kit::tab_bar_slim`).
-pub const CONTROL_RADIUS: f32 = 6.0;
+/// Every control in the header is this tall, so a row of them shares one top and bottom edge: the
+/// outlined controls' header height, which the tab bar (`kit::tab_bar_slim`) draws too.
+pub const CONTROL_HEIGHT: f32 = kit::outline::TALL_HEIGHT;
+/// The corner radius they share, the tab bar track's too.
+pub const CONTROL_RADIUS: f32 = kit::outline::RADIUS;
 
 /// What the panel says about the venue it is showing.
 #[derive(Clone, Debug)]
@@ -103,21 +104,17 @@ pub struct Header<'a, T> {
     pub settings_tip: &'a str,
 }
 
-/// The quiet plate behind the account chip: the tab bar track's fill and hairline, lifted a step
-/// on hover and while the menu is open.
+/// The plate behind the account chip: the outlined well the tab bar track is, lifted a step on
+/// hover and while the menu is open.
 pub fn plate(painter: &egui::Painter, rect: egui::Rect, hovered: bool, down: bool) {
-    painter.rect_filled(rect, CONTROL_RADIUS, theme::quaternary(0.6));
-    if down {
-        painter.rect_filled(rect, CONTROL_RADIUS, kit::primary(0.1));
+    let wash = if down {
+        kit::outline::Wash::Open
     } else if hovered {
-        painter.rect_filled(rect, CONTROL_RADIUS, kit::primary(0.05));
-    }
-    painter.rect_stroke(
-        rect,
-        CONTROL_RADIUS,
-        egui::Stroke::new(1.0, kit::hairline()),
-        egui::StrokeKind::Inside,
-    );
+        kit::outline::Wash::Hover
+    } else {
+        kit::outline::Wash::Rest
+    };
+    kit::outline::paint_track(painter, rect, CONTROL_RADIUS, wash);
 }
 
 /// An icon button the height of the header's other controls: it lights up on hover and, when
@@ -155,6 +152,88 @@ pub fn glyph_response(
         },
     );
     response.on_hover_text(label)
+}
+
+/// A toggle in the header's outlined look: a square well that, while `on`, holds a lighter plate
+/// like a chosen segment. `label` is its tooltip.
+fn toggle_button(ui: &mut egui::Ui, icon: Icon, label: &str, on: bool) -> egui::Response {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(CONTROL_HEIGHT), Sense::hover());
+    let response = ui
+        .interact(rect, Id::new(("trade-toggle", label)), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let response = accessibility::label(response, label);
+    let wash = if response.is_pointer_button_down_on() {
+        kit::outline::Wash::Open
+    } else if response.hovered() {
+        kit::outline::Wash::Hover
+    } else {
+        kit::outline::Wash::Rest
+    };
+    kit::outline::paint_track(ui.painter(), rect, CONTROL_RADIUS, wash);
+    if on {
+        kit::outline::paint_plate(
+            ui.painter(),
+            rect.shrink(kit::outline::INSET),
+            kit::outline::PLATE_RADIUS,
+            false,
+        );
+    }
+    icons::paint(
+        ui.painter(),
+        egui::Rect::from_center_size(rect.center(), Vec2::splat(14.0)),
+        icon,
+        if on {
+            theme::text_primary()
+        } else {
+            theme::text_secondary()
+        },
+    );
+    response.on_hover_text(label)
+}
+
+/// The header's main action: the outlined well filled with the lighter plate colour, so it reads
+/// as the one thing to press. Dimmed while it cannot be used.
+fn primary_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
+    let text = kit::galley(
+        ui,
+        label,
+        kit::size::BODY,
+        kit::MEDIUM,
+        theme::text_primary(),
+        f32::INFINITY,
+    );
+    let (rect, response) = ui.allocate_exact_size(
+        vec2((text.size().x + 32.0).max(76.0), CONTROL_HEIGHT),
+        if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
+    let response = accessibility::label(response, label);
+    let response = if enabled {
+        response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        response
+    };
+    kit::outline::paint_track(ui.painter(), rect, CONTROL_RADIUS, kit::outline::Wash::Rest);
+    kit::outline::paint_plate(ui.painter(), rect, CONTROL_RADIUS, !enabled);
+    if enabled && response.hovered() {
+        ui.painter()
+            .rect_filled(rect, CONTROL_RADIUS, kit::primary(0.06));
+    }
+    ui.painter().rect_stroke(
+        rect,
+        CONTROL_RADIUS,
+        egui::Stroke::new(1.0, theme::card_border(enabled && response.hovered())),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().galley(
+        rect.center() - text.size() / 2.0,
+        text,
+        theme::text_primary().gamma_multiply(if enabled { 1.0 } else { 0.45 }),
+    );
+    response
 }
 
 /// An icon-only button; `label` is its tooltip.
@@ -368,12 +447,12 @@ fn buttons<T>(ui: &mut egui::Ui, header: &Header<T>, events: &mut Vec<HeaderEven
         } else {
             "Show trading on charts"
         };
-        if icon_button(ui, icon, label, showing).clicked() {
+        if toggle_button(ui, icon, label, showing).clicked() {
             events.push(HeaderEvent::ToggleOverlay);
         }
     }
     ui.add_space(6.0);
-    if kit::sheet_button(ui, "New order", true, header.can_order).clicked() {
+    if primary_button(ui, "New order", header.can_order).clicked() {
         events.push(HeaderEvent::Panel(PanelEvent::NewOrder));
     }
 }
@@ -454,6 +533,77 @@ mod tests {
         });
         output.textures_delta.clear();
         height
+    }
+
+    /// The whole header drawn in both themes:
+    /// `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_panel_header -- --ignored`.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_panel_header() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        use crate::ui::theme::AppTheme;
+        if gallery_dir().is_none() {
+            return;
+        }
+        let _restore = theme::RestoreDefaultTheme;
+        for (suffix, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            for (name, kind) in [("paper", VenueKind::Simulated), ("live", VenueKind::Live)] {
+                let mut screen = Screen::new(vec2(1000.0, 70.0));
+                theme::apply(&screen.ctx, app_theme);
+                let bar = sample_bar(TradingVenue::Paper, kind, "Paper trading");
+                let chip = Chip {
+                    label: "Paper Trading".to_owned(),
+                    sub: Some("USD".to_owned()),
+                    rows: vec![ChipRow {
+                        label: "Paper Trading".to_owned(),
+                        selected: true,
+                    }],
+                    ..Chip::default()
+                };
+                let item = |value, title, icon| kit::TabItem {
+                    value,
+                    title,
+                    icon,
+                    count: 0,
+                };
+                let tabs = [
+                    item(0, "Positions", Icon::ChartUptrend),
+                    item(1, "Orders", Icon::List),
+                    item(2, "History", Icon::Clock),
+                ];
+                let more = [MoreItem {
+                    icon: Icon::Undo,
+                    label: "Reset Account\u{2026}".to_owned(),
+                    danger: true,
+                    rule_above: false,
+                }];
+                let mut tab = 0;
+                let mut last = None;
+                for _ in 0..2 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        ui.painter()
+                            .rect_filled(ui.max_rect(), 0.0, theme::background());
+                        show(
+                            ui,
+                            &Header {
+                                bar: &bar,
+                                chip: &chip,
+                                tabs: &tabs,
+                                overlay: Some(true),
+                                can_order: true,
+                                more: &more,
+                                settings_tip: "Settings",
+                            },
+                            &mut tab,
+                        );
+                    }));
+                }
+                screen.save(
+                    &format!("panel-header-{name}-{suffix}"),
+                    last.expect("a frame"),
+                );
+            }
+        }
     }
 
     /// The venue, the account and the tabs share one row: a venue is not given a row of its own.

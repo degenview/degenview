@@ -1,6 +1,6 @@
 //! Form controls: the switch, segmented controls, the stepper and the colour well.
 
-use super::{MEDIUM, REGULAR, galley, hairline, menu_frame, primary, size};
+use super::{MEDIUM, galley, hairline, menu_frame, outline, size};
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
 use eframe::egui::{
@@ -97,16 +97,9 @@ pub fn segments<T: Copy + PartialEq>(
     segments_with(ui, id, options, selected, enabled, None)
 }
 
-/// The room [`segments`] takes for `options` with `selected` chosen.
-pub fn segments_width<T: Copy + PartialEq>(
-    ui: &Ui,
-    options: &[Segment<'_, T>],
-    selected: T,
-) -> f32 {
-    segment_widths(&segment_labels(ui, options, selected), None)
-        .iter()
-        .sum::<f32>()
-        + 4.0
+/// The room [`segments`] takes for `options`, whichever one is chosen.
+pub fn segments_width<T>(ui: &Ui, options: &[Segment<'_, T>]) -> f32 {
+    segment_widths(ui, options, None).iter().sum::<f32>() + 2.0 * outline::INSET
 }
 
 fn segment_labels<T: Copy + PartialEq>(
@@ -117,26 +110,44 @@ fn segment_labels<T: Copy + PartialEq>(
     options
         .iter()
         .map(|option| {
-            galley(
-                ui,
-                option.label,
-                size::SUBHEADLINE + 0.5,
-                if option.value == selected {
-                    MEDIUM
-                } else {
-                    REGULAR
-                },
-                theme::text_primary(),
-                f32::INFINITY,
-            )
+            let weight = if option.value == selected {
+                outline::SELECTED_WEIGHT
+            } else {
+                MEDIUM
+            };
+            segment_label(ui, option.label, weight)
         })
         .collect()
 }
 
-fn segment_widths(labels: &[Arc<Galley>], fill: Option<f32>) -> Vec<f32> {
+fn segment_label(ui: &Ui, label: &str, weight: f32) -> Arc<Galley> {
+    galley(
+        ui,
+        label,
+        size::SUBHEADLINE + 1.0,
+        weight,
+        theme::text_primary(),
+        f32::INFINITY,
+    )
+}
+
+/// The width of each segment: every label measured as the chosen (bold) one, so the control does
+/// not change width as the choice moves; or an equal share of `fill`.
+fn segment_widths<T>(ui: &Ui, options: &[Segment<'_, T>], fill: Option<f32>) -> Vec<f32> {
     match fill {
-        Some(total) => vec![(total - 4.0) / labels.len().max(1) as f32; labels.len()],
-        None => labels.iter().map(|label| label.size().x + 20.0).collect(),
+        Some(total) => {
+            let share = (total - 2.0 * outline::INSET) / options.len().max(1) as f32;
+            vec![share; options.len()]
+        }
+        None => options
+            .iter()
+            .map(|option| {
+                segment_label(ui, option.label, outline::SELECTED_WEIGHT)
+                    .size()
+                    .x
+                    + 24.0
+            })
+            .collect(),
     }
 }
 
@@ -149,15 +160,16 @@ fn segments_with<T: Copy + PartialEq>(
     fill: Option<f32>,
 ) -> Option<T> {
     let labels = segment_labels(ui, options, selected);
-    let widths = segment_widths(&labels, fill);
-    let total = widths.iter().sum::<f32>() + 4.0;
-    let (track, _) = ui.allocate_exact_size(vec2(total, 22.0), Sense::hover());
-    ui.painter().rect_filled(track, 6.0, primary(0.1));
+    let widths = segment_widths(ui, options, fill);
+    let total = widths.iter().sum::<f32>() + 2.0 * outline::INSET;
+    let (track, _) = ui.allocate_exact_size(vec2(total, outline::HEIGHT), Sense::hover());
+    outline::paint_track(ui.painter(), track, outline::RADIUS, outline::Wash::Rest);
+    let plate_height = outline::HEIGHT - 2.0 * outline::INSET;
     let mut picked = None;
-    let mut x = track.left() + 2.0;
+    let mut x = track.left() + outline::INSET;
     for (index, (option, galley)) in options.iter().zip(labels).enumerate() {
         let usable = enabled && option.enabled;
-        let segment = Rect::from_min_size(pos2(x, track.top() + 2.0), vec2(widths[index], 18.0));
+        let segment = outline::plate_rect(x, track.top(), widths[index], plate_height);
         let response = ui.interact(
             segment,
             id.with(index),
@@ -176,35 +188,14 @@ fn segments_with<T: Copy + PartialEq>(
         }
         let fade = if usable { 1.0 } else { 0.45 };
         if option.value == selected {
-            ui.painter().add(
-                egui::Shadow {
-                    offset: [0, 1],
-                    blur: 2,
-                    spread: 0,
-                    color: Color32::from_black_alpha(50),
-                }
-                .as_shape(segment, 5.0),
-            );
-            ui.painter().rect_filled(
-                segment,
-                5.0,
-                theme::pick(primary(0.24), Color32::WHITE).gamma_multiply(if enabled {
-                    1.0
-                } else {
-                    0.6
-                }),
-            );
+            outline::paint_plate(ui.painter(), segment, outline::PLATE_RADIUS, !enabled);
         } else if index > 0 && options[index - 1].value != selected {
-            ui.painter().vline(
-                segment.left() - 0.5,
-                (segment.top() + 4.0)..=(segment.bottom() - 4.0),
-                Stroke::new(1.0, primary(0.12)),
-            );
+            outline::paint_divider(ui.painter(), segment.left() - 0.5, segment);
         }
         if usable && response.has_focus() {
             ui.painter().rect_stroke(
                 segment,
-                5.0,
+                outline::PLATE_RADIUS,
                 Stroke::new(1.5, theme::text_secondary()),
                 StrokeKind::Inside,
             );

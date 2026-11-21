@@ -133,18 +133,41 @@ pub fn show(
         alpha
     };
     // The sheet's pill is a small label; the panel's sits in a row of controls and shares theirs.
-    let radius = match pill {
-        PillSize::Sheet => 6.0,
-        PillSize::Panel => crate::ui::trade::panel_header::CONTROL_RADIUS,
-    };
-    ui.painter()
-        .rect_filled(rect, radius, theme::with_alpha(tint, alpha));
-    ui.painter().rect_stroke(
-        rect,
-        radius,
-        egui::Stroke::new(1.0, theme::with_alpha(tint, 0.45)),
-        egui::StrokeKind::Inside,
-    );
+    match pill {
+        PillSize::Sheet => {
+            ui.painter()
+                .rect_filled(rect, 6.0, theme::with_alpha(tint, alpha));
+            ui.painter().rect_stroke(
+                rect,
+                6.0,
+                egui::Stroke::new(1.0, theme::with_alpha(tint, 0.45)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        PillSize::Panel => {
+            // The outlined well the header's other controls are; only a venue that moves real
+            // money keeps its colour, so it is never mistaken for the paper one.
+            let wash = if open {
+                kit::outline::Wash::Open
+            } else if response.hovered() {
+                kit::outline::Wash::Hover
+            } else {
+                kit::outline::Wash::Rest
+            };
+            let radius = crate::ui::trade::panel_header::CONTROL_RADIUS;
+            kit::outline::paint_track(ui.painter(), rect, radius, wash);
+            if current.kind == VenueKind::Live {
+                ui.painter()
+                    .rect_filled(rect, radius, theme::with_alpha(tint, 0.12));
+                ui.painter().rect_stroke(
+                    rect,
+                    radius,
+                    egui::Stroke::new(1.0, theme::with_alpha(tint, 0.45)),
+                    egui::StrokeKind::Inside,
+                );
+            }
+        }
+    }
     ui.painter().circle_filled(
         rect.left_center() + vec2(11.0, 0.0),
         3.5,

@@ -2,10 +2,11 @@
 //! title, the selected one raised on a darker plate. Used by the asset picker and the new-tab
 //! page.
 
-use super::{MEDIUM, SEMIBOLD, galley};
+use super::outline::{self, SELECTED_WEIGHT};
+use super::{MEDIUM, galley};
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
-use eframe::egui::{self, Color32, Galley, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, Galley, Rect, Sense, Ui, Vec2, pos2, vec2};
 use std::sync::Arc;
 
 /// The pill-track section switcher over any set of `(value, title, icon)` segments.
@@ -17,7 +18,11 @@ pub fn icon_tabs<T: Copy + PartialEq>(
     let segments: Vec<(T, &str, Icon, Arc<Galley>, f32)> = items
         .iter()
         .map(|&(tab, title, icon)| {
-            let weight = if tab == selected { SEMIBOLD } else { MEDIUM };
+            let weight = if tab == selected {
+                SELECTED_WEIGHT
+            } else {
+                MEDIUM
+            };
             let color = if tab == selected {
                 theme::text_primary()
             } else {
@@ -38,13 +43,7 @@ pub fn icon_tabs<T: Copy + PartialEq>(
     );
     let track = Rect::from_center_size(row.center(), vec2(track_width, segment_height + 6.0));
     let painter = ui.painter();
-    painter.rect_filled(track, 11.0, theme::quaternary(0.6));
-    painter.rect_stroke(
-        track,
-        11.0,
-        Stroke::new(1.0, theme::ink(14)),
-        StrokeKind::Inside,
-    );
+    outline::paint_track(painter, track, outline::RADIUS, outline::Wash::Rest);
 
     let mut clicked = None;
     let mut x = track.left() + 3.0;
@@ -60,24 +59,9 @@ pub fn icon_tabs<T: Copy + PartialEq>(
         let response = crate::ui::accessibility::label(response, title);
         let active = tab == selected;
         if active {
-            painter.add(
-                egui::Shadow {
-                    offset: [0, 1],
-                    blur: 3,
-                    spread: 0,
-                    color: Color32::from_black_alpha(40),
-                }
-                .as_shape(segment, 8.0),
-            );
-            painter.rect_filled(segment, 8.0, theme::editor_background());
-            painter.rect_stroke(
-                segment,
-                8.0,
-                Stroke::new(1.0, theme::ink(20)),
-                StrokeKind::Inside,
-            );
+            outline::paint_plate(painter, segment, outline::PLATE_RADIUS, false);
         } else if response.hovered() {
-            painter.rect_filled(segment, 8.0, theme::ink(8));
+            painter.rect_filled(segment, outline::PLATE_RADIUS, theme::ink(13));
         }
         let icon_rect = Rect::from_min_size(
             pos2(segment.left() + 11.0, segment.center().y - 6.5),

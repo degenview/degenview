@@ -43,6 +43,12 @@ do not restyle screens you were not asked to touch, and do not copy their older 
 
 - **One top bar per tab.** Every tab kind (chart, Portfolio, Pine Studio) opens with `ui::kit::bar`: 44 pt (`kit::bar::HEIGHT`) on `theme::chrome()`, flat buttons, hairline separators, labels falling back to icons. Build a new tab's controls as items of that bar ([Workspace toolbar](../workspace-toolbar.md)); never a second header style.
 - **Docked panels.** Only egui's separator (`theme::border()`). Never `Frame::stroke` or painted edge lines. `show_separator_line(false)` only when deliberately replacing the separator.
+- **Outlined controls.** Segmented controls, tab bars and pull-down pickers share one look from
+  `kit::outline`: a dark well with a hairline border (`RADIUS` 8), the chosen segment on a flat lighter
+  plate in bold type, a thin divider between unselected neighbours, `HEIGHT` 24 in a form row (level with fields and
+  buttons), `TALL_HEIGHT` 28 in a header row. Never paint your own
+  track or plate; a header control that sits beside them (an account chip, a venue pill) uses
+  `outline::paint_track` and `outline::TALL_HEIGHT`/`RADIUS`, so a row of them shares one edge.
 - **Menus.** `kit::menu_row`, `menu_item`, `menu_heading`, `menu_separator`, `menu_submenu` inside `kit::menu_popup` or `kit::context_popup`, after `kit::menu_scope`. Never bare egui buttons, radios, checkboxes or menu buttons. `ui.close()` for actions that dismiss; toggles keep it open.
 - **Menu sizing.** Fit to the longest row, never wider: `kit::fitted_menu` / `fitted_menu_rows` for button menus, `fitted_context_menu` for right-clicks, `menu_fit` / `menu_fit_rows` inside popups. Helpers measure dynamic menus only while open. Test fixed-width menus against `kit::menu_width_for_rows` (see `menu_widths_fit_their_rows` in `watchlist/sidebar/tests.rs`). Never guess widths with `set_min_width` or `set_width`. Check visually that the longest label ends one row inset from the edge.
 - **Buttons are neutral, never blue.** No blue accent in fills, borders, labels or outlines. Use `kit::sheet_button` (`prominent`), `kit::push_button`, footer Primary, or `theme::card_fill` / `card_border` with `text_primary`. Large sheet actions: `kit::large_prominent_button`; destructive: `kit::destructive_sheet_button`. Accent colours are for data and state, not controls. Compare new buttons with neighbouring sheets; existing accent buttons are not all audited.
@@ -77,8 +83,9 @@ content they act on.
 | Palette (`palette`) | `Tone`, `primary`, `hairline`, `window`, `control`, `GREEN`/`ORANGE`/`RED`; byte alphas with `theme::with_alpha_byte`, opacities with `theme::with_alpha` |
 | Pills (`pill`) | `status_badge`, `paint_status_badge`, `paint_chip`, `paint_count`, `value_chip` |
 | Market logos (`ticker_icon`) | `ticker_icon`, `chart_icon`, `cached_logo` (the icon cache's logo in a circle, asking for it when missing), `round_image`, `monogram_with`, `source_badge` |
+| Outlined look (`outline`) | the one look of segmented controls, tab bars and pickers: `paint_track`, `paint_plate`, `paint_divider`, `HEIGHT`, `RADIUS` |
 | Tabs (`tab_bar`) | `tab_bar`, `tab_bar_slim`, `tab_bar_regular` |
-| Menus (`menu/`) | see Menus above, plus `menu_picker` |
+| Menus (`menu/`) | see Menus above, plus `menu_picker` (outlined pull-down) |
 | Buttons (`button`) | `push_button`, `sheet_button`, `footer_button`, `large_button`, `large_prominent_button`, `neutral_button` (32 pt: a near-white / near-black plate for a window's main action, or a quiet fill; `busy`), `tinted_button`, `cta_button`, `destructive_sheet_button`, `destructive_button` (red text), `open_button` (opens a URL), `hover_button` |
 | Fields (`field`) | `field` (labelled, with a reveal eye for secrets), `search_field`, `plain_field`, `input_frame`, `field_frame`, `FIELD_HEIGHT`; saving as typed: `Autosave` (`autosave`) |
 | Form controls (`form`) | `switch`, `paint_switch`, `segmented`, `segments` (per-choice tooltip and disabled, focus ring), `stepper`, `color_well`; by path `ruler` (a dial of sliding ticks) |
