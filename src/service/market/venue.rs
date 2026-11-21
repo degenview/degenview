@@ -50,6 +50,10 @@ pub trait Venue: Sync {
         id.source.profile().default_kind()
     }
 
+    /// Forgets the market list held in memory, after the disk cache was cleared; the next search
+    /// downloads it again. A venue with no such list has nothing to forget.
+    fn clear_catalog(&self) {}
+
     /// The network of a DEX pair saved without one, from its address.
     fn resolve_chain(&self, address: &str) -> Option<String> {
         let _ = address;
