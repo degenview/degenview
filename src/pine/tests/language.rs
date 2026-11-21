@@ -177,7 +177,7 @@ fn windowed_statistics_follow_the_reference_formulas() {
     );
     close_to(&session, "alma", 104.685_673_600_238_26);
     close_to(&session, "nearest", 105.0);
-    close_to(&session, "linear", 104.6);
+    close_to(&session, "linear", 105.0);
     close_to(&session, "median", 103.0);
     // close 101…105: odd values 101, 103, 105 map to 2.0 (three of them), even ones to 1.0.
     close_to(&session, "common", 2.0);
@@ -636,7 +636,7 @@ fn a_zone_the_table_lacks_is_warned_about() {
 }
 
 #[test]
-fn ratios_with_nothing_to_divide_are_na_not_nan() {
+fn ratios_with_nothing_to_divide_are_na_or_what_tradingview_gives() {
     // A flat market: no money flow in either direction, and a zero-width range.
     let session = run(
         "flat = 100.0\n\
@@ -645,7 +645,9 @@ fn ratios_with_nothing_to_divide_are_na_not_nan() {
          plain = ta.wpr(3)",
         5,
     );
-    assert_eq!(value(&session, "flow"), RuntimeValue::Na);
+    // No down flow is 100 whether or not there is an up flow (TradingView, probe P10).
+    assert_eq!(value(&session, "flow"), RuntimeValue::Float(100.0));
+    // A source sitting on a flat window repeats the previous %K, and there is none yet.
     assert_eq!(value(&session, "pos"), RuntimeValue::Na);
     // The bars themselves still span 4 points, so %R is defined.
     assert!(matches!(value(&session, "plain"), RuntimeValue::Float(_)));

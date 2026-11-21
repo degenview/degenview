@@ -129,7 +129,7 @@ const EQUAL_WITHIN: f64 = 1e-10;
 
 /// Whether two floats are equal for `==`. False when either is not finite: the distance of two
 /// infinities is not a number, and an infinity is far from everything else.
-fn floats_equal(x: f64, y: f64) -> bool {
+pub(crate) fn floats_equal(x: f64, y: f64) -> bool {
     (x - y).abs() <= EQUAL_WITHIN
 }
 
