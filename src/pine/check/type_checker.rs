@@ -578,7 +578,15 @@ impl TypeChecker {
             } => self.call(name, arguments, *site, scope, *range),
             Expression::History { base, offset, .. } => {
                 let value = self.infer(base, scope);
-                self.infer(offset, scope);
+                // Only an offset the checker knows is a float: where it merely guesses wrong (a
+                // float it infers that TradingView types as int) a script must not stop compiling.
+                if let Inferred::Known(ValueType::Float, _) = self.infer(offset, scope) {
+                    self.error(
+                        "PINE3069",
+                        "The history offset must be an int, got float.".to_owned(),
+                        offset.range(),
+                    );
+                }
                 if let Inferred::Known(kind, _) = value {
                     return Inferred::Known(kind, Some(Qualifier::Series));
                 }

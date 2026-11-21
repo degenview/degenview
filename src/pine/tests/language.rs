@@ -481,13 +481,13 @@ fn a_string_may_run_over_several_lines() {
 fn a_function_declared_twice_is_picked_by_its_argument_types() {
     let session = run(
         "label_of(float value) =>\n    \"number\"\n\
-         label_of(string text, bool loud = false) =>\n    loud ? \"SHOUT\" : \"text\"\n\
+         label_of(string words, bool loud = false) =>\n    loud ? \"SHOUT\" : \"text\"\n\
          label_of(float lower, float upper) =>\n    \"range\"\n\
          a = label_of(1.5)\n\
          b = label_of(\"hi\")\n\
          c = label_of(\"hi\", true)\n\
          d = label_of(1.0, 2.0)\n\
-         e = label_of(text = \"named\")",
+         e = label_of(words = \"named\")",
         1,
     );
     let text = |name: &str| value(&session, name);
@@ -1072,6 +1072,108 @@ fn shadowing_a_builtin_variable_follows_the_manual_and_the_published_scripts() {
     ));
     // A namespace's name is free.
     assert!(diagnostic_codes("barstate = 1\nplot(barstate)").is_empty());
+}
+
+fn error_messages(body: &str, code: &str) -> Vec<String> {
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    compiler::compile(&source, Limits::default(), &NoLibraries)
+        .diagnostics
+        .into_iter()
+        .filter(|d| d.code == code)
+        .map(|d| d.message)
+        .collect()
+}
+
+#[test]
+fn a_collection_in_a_collection_type_template_is_ce10025() {
+    // TradingView: collections cannot hold collections; the way round is a type with a field.
+    let message = "Cannot use a collection in a type template of another collection. Wrap it in a user-defined type field instead.";
+    for body in [
+        "array<array<float>> rows = array.new<array<float>>()",
+        "rows = array.new<array<float>>()",
+        "map<string, array<int>> m = map.new<string, array<int>>()",
+        "matrix<array<float>> g = matrix.new<array<float>>(1, 1)",
+        "m = map.new<string, map<string, int>>()",
+        "f(array<array<int>> a) => 1",
+        "type Row\n    array<array<float>> cells\n",
+    ] {
+        assert_eq!(error_messages(body, "CE10025")[0], message, "{body}");
+    }
+}
+
+#[test]
+fn a_history_offset_the_checker_knows_is_a_float_is_an_error() {
+    // TradingView refuses `close[1.5]`; DegenView read it as na.
+    for body in [
+        "plot(close[1.5])",
+        "float lag = 2.0\nplot(close[lag])",
+        "plot(ta.sma(close, 3)[0.5])",
+    ] {
+        assert_eq!(error_messages(body, "PINE3069").len(), 1, "{body}");
+    }
+    // An int offset, or one the checker cannot type, stays accepted.
+    for body in [
+        "plot(close[1])",
+        "int lag = 2\nplot(close[lag])",
+        "plot(close[bar_index > 3 ? 1 : 0])",
+        "plot(close[math.round(1.4)])",
+        "plot(close[int(1.5)])",
+        "plot(close[nz(bar_index, 0) % 3])",
+    ] {
+        assert!(error_messages(body, "PINE3069").is_empty(), "{body}");
+    }
+}
+
+#[test]
+fn a_collection_of_a_type_with_a_collection_field_compiles() {
+    let body = "type Row\n    array<float> cells\nrows = array.new<Row>()\nm = map.new<string, Row>()\nfloat[] plain = array.new_float()\nplot(close)";
+    assert!(
+        diagnostic_codes(body).is_empty(),
+        "{:?}",
+        diagnostic_codes(body)
+    );
+}
+
+#[test]
+fn the_reserved_words_cannot_name_a_variable_function_parameter_or_counter() {
+    let message = |word: &str| format!("\"{word}\" cannot be used as a variable or function name.");
+    for word in [
+        "catch", "class", "do", "ellipse", "is", "polygon", "range", "return", "struct", "text",
+        "throw", "try",
+    ] {
+        for body in [
+            format!("{word} = 1\nplot({word})"),
+            format!("float {word} = 1.0\nplot({word})"),
+            format!("{word}(float x) => x\nplot({word}(1))"),
+            format!("f(int {word}) => {word}\nplot(f(1))"),
+            format!("for {word} = 0 to 2\n    plot({word})"),
+            format!("[{word}, other] = ta.macd(close, 12, 26, 9)\nplot({word})"),
+        ] {
+            assert_eq!(error_messages(&body, "CE10150"), [message(word)], "{body}");
+        }
+    }
+}
+
+#[test]
+fn a_reserved_word_in_a_for_in_loop_names_both_counters() {
+    let body = "values = array.from(1.0, 2.0)\nfor [range, text] in values\n    plot(text)";
+    assert_eq!(error_messages(body, "CE10150").len(), 2);
+}
+
+#[test]
+fn reserved_words_stay_usable_where_they_are_not_declared_names() {
+    // A named argument, the `text.*` namespace, `ta.range`, a UDT field, a method.
+    let body = "t = label.new(bar_index, close, text = \"x\", textcolor = color.white)\n\
+                type Span\n    float range\n    float text\n\
+                s = Span.new(1.0, 2.0)\n\
+                method text(Span this) => this.text\n\
+                plot(ta.range(close, 3) + s.range + s.text())\n\
+                label.new(bar_index, close, \"x\", text_halign = text.align_left)";
+    assert!(
+        error_messages(body, "CE10150").is_empty(),
+        "{:?}",
+        error_messages(body, "CE10150")
+    );
 }
 
 #[test]
@@ -2550,7 +2652,7 @@ fn an_exit_picks_its_comment_by_the_level_that_filled_it() {
         strategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 1)\n\
         if bar_index == 0\n    strategy.entry(\"L\", strategy.long)\n\
         if bar_index == 1\n    strategy.exit(\"X\", \"L\", limit = 105, stop = 95, comment = \"plain\", comment_profit = \"target\", comment_loss = \"stopped\")\n\
-        text = strategy.closedtrades.exit_comment(0)";
+        comment_text = strategy.closedtrades.exit_comment(0)";
     let session = {
         let program = compiler::compile(source, Limits::default(), &NoLibraries);
         assert!(program.is_valid(), "{:?}", program.diagnostics);
@@ -2571,7 +2673,7 @@ fn an_exit_picks_its_comment_by_the_level_that_filled_it() {
         session
     };
     assert_eq!(
-        value(&session, "text"),
+        value(&session, "comment_text"),
         RuntimeValue::String("target".into())
     );
 }

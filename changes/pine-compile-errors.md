@@ -1,0 +1,1 @@
+fixed: Pine scripts now report the compile errors TradingView reports for a collection inside another collection (`array<array<float>>`), for reserved words used as names (`range`, `text`, `struct`, ...) and for a decimal history offset (`close[1.5]`), instead of running.
