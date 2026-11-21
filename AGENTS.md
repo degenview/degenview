@@ -135,7 +135,12 @@ old output). Finished worktrees are where the disk goes.
 - Remove a worktree when its pull request merges. `tools/clean-worktrees.sh` lists every worktree and
   whether it can go; `--remove-merged` removes finished ones, never one with uncommitted changes,
   newer commits, no pull request, or a process running from it. `--clean-idle DAYS` deletes only the
-  `target/debug` of worktrees not built for that long.
+  `target/debug` of worktrees not built for that long. `--trim-incremental` deletes only the
+  `incremental/` caches, which were about 60% of 219 GB across 19 worktrees; run it when you finish
+  a task, and any time the disk is under ~50 GB free.
+- Incremental compilation is the main disk cost when several worktrees are live. Keep it off by
+  default (`[build] incremental = false` in `~/.cargo/config.toml`) and turn it on with
+  `CARGO_INCREMENTAL=1` only in the one worktree you are iterating in.
 - `[profile.dev]` keeps line tables but drops variable-level debug info (about a third of a fresh
   `target/`; the incremental cache is the rest of the growth). To inspect your code's variables in
   lldb, build with `CARGO_PROFILE_DEV_DEBUG=true` into a separate `CARGO_TARGET_DIR`.
