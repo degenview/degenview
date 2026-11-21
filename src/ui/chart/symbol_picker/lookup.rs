@@ -3,7 +3,8 @@
 //! `BINANCE:BTCUSDT` and `NASDAQ:AAPL` (the watchlist import's own format,
 //! [`crate::model::market::venue`]) search the symbol on that venue alone, whatever the pull-down
 //! says. A prefix no provider serves (`KUCOIN:BTCUSDT`) is never dropped silently: the symbol is
-//! searched on every venue of the tab, and the list says the prefix was not understood.
+//! searched on every venue of the tab, and the list says the prefix was not understood. The
+//! Dashboards tab reads the prefix of an index venue too (`CMC:BTC.D`) and filters by its symbol.
 
 use super::search::Scope;
 use crate::model::DataSource;
@@ -25,17 +26,14 @@ pub struct Lookup {
 }
 
 impl Lookup {
-    /// Reads `text` as typed in `scope` with `chosen` in the pull-down. Only the tabs that match
-    /// markets read a prefix; Dashboards filters titles as typed.
+    /// Reads `text` as typed in `scope` with `chosen` in the pull-down. The tabs that match markets
+    /// read any prefix; Dashboards reads only an index venue's and otherwise filters titles as typed.
     pub fn of(text: &str, scope: Scope, chosen: Option<DataSource>) -> Self {
         let plain = Self {
             query: text.to_owned(),
             venue: chosen,
             unsupported: None,
         };
-        if scope == Scope::Dashboards {
-            return plain;
-        }
         let Some(VenueQuery {
             prefix,
             source,
@@ -44,8 +42,11 @@ impl Lookup {
         else {
             return plain;
         };
+        if scope == Scope::Dashboards && !source.is_some_and(is_index) {
+            return plain;
+        }
         match source {
-            Some(source) if is_listed(source) => Self {
+            Some(source) => Self {
                 query: symbol,
                 venue: Some(source),
                 unsupported: None,
@@ -83,9 +84,9 @@ impl Lookup {
     }
 }
 
-/// Whether the picker lists markets of `source` (CoinMarketCap's indices are a dashboard).
-fn is_listed(source: DataSource) -> bool {
-    source.profile().class != Class::Index
+/// Whether `source` offers indices, which are a dashboard and not markets to search.
+pub fn is_index(source: DataSource) -> bool {
+    source.profile().class == Class::Index
 }
 
 /// A symbol is one word; a phrase after a colon ("Fed: rate cut") is a search for text.
@@ -165,11 +166,41 @@ mod tests {
         assert_eq!(chosen.unsupported, Some("KUCOIN".to_owned()));
         assert_eq!(chosen.venue, None);
         assert_eq!(chosen.searched(Scope::All).len(), Scope::All.venues().len());
-        // CoinMarketCap has indices, not markets to search.
+    }
+
+    #[test]
+    fn an_index_venue_is_understood_but_has_no_markets_to_search() {
+        let all = of("CMC:BTC.D", Scope::All);
         assert_eq!(
-            of("CMC:BTC.D", Scope::All).unsupported,
-            Some("CMC".to_owned())
+            (all.query.as_str(), all.venue, all.unsupported.as_deref()),
+            ("BTC.D", Some(DataSource::CoinMarketCap), None)
         );
+        assert_eq!(all.outside(Scope::All), Some(DataSource::CoinMarketCap));
+        assert!(all.searched(Scope::All).is_empty());
+    }
+
+    #[test]
+    fn dashboards_filter_by_the_symbol_after_an_index_venue() {
+        for text in ["CMC:BTC.D", "cmc : TOTAL2"] {
+            let lookup = of(text, Scope::Dashboards);
+            assert_eq!(lookup.venue, Some(DataSource::CoinMarketCap), "{text}");
+            assert_eq!(
+                lookup.query,
+                text.split(':').nth(1).unwrap().trim(),
+                "{text}"
+            );
+            assert_eq!(lookup.unsupported, None, "{text}");
+            assert_eq!(lookup.outside(Scope::Dashboards), None, "{text}");
+        }
+        // The other venues' prefixes and plain text filter as typed.
+        for text in ["BINANCE:BTCUSDT", "KUCOIN:BTC", "Fear: greed", "total"] {
+            let lookup = of(text, Scope::Dashboards);
+            assert_eq!(
+                (lookup.query.as_str(), lookup.venue),
+                (text, None),
+                "{text}"
+            );
+        }
     }
 
     #[test]

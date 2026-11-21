@@ -535,7 +535,7 @@ impl SymbolPicker {
             Scope::Dashboards => {
                 let mut rows = Rows::default();
                 let card_scope = self.card_scope_in_use();
-                for group in dashboards::groups(&self.portfolios, card_scope, &self.query) {
+                for group in dashboards::groups(&self.portfolios, card_scope, &lookup.query) {
                     rows.heads
                         .push((rows.items.len(), group.heading.to_owned()));
                     rows.items.extend(group.tiles.into_iter().map(Item::Tile));
@@ -1345,15 +1345,16 @@ impl SymbolPicker {
             Scope::All | Scope::Stocks | Scope::Crypto | Scope::Predictions => {}
         }
         if let Some(venue) = lookup.outside(self.scope) {
-            widgets::no_results(
-                ui,
-                "No results",
-                &format!(
-                    "{} has no markets under {}. Try another tab.",
-                    lookup::short_name(venue),
+            let name = lookup::short_name(venue);
+            let detail = if lookup::is_index(venue) {
+                format!("{name}'s indices are on the Dashboards tab.")
+            } else {
+                format!(
+                    "{name} has no markets under {}. Try another tab.",
                     self.scope.title()
-                ),
-            );
+                )
+            };
+            widgets::no_results(ui, "No results", &detail);
         } else if empty_query {
             widgets::no_results(
                 ui,

@@ -206,7 +206,7 @@ page was cut by the request, so a bar is never split across two pages.
 | OKX | Yes, every timeframe (`history-candles` pages of 300 with an `after` cursor, folded; spaced 100 ms for its 20 requests per 2 seconds). Bucket opens match Binance and Coinbase (`live_sources_cut_the_same_buckets`). |
 | Alpaca | Yes, every timeframe (needs the API keys; `start`/`end` bars). Not verified live. |
 | DexScreener | Hourly only. GeckoTerminal's free API serves the last 180 days (`before_timestamp` older than that is HTTP 401, taken as the start of history), so daily bars arrive whole (about 180) and 1W / 1M / 3M / 1Y are shallow by nature. |
-| CoinGecko, prediction markets, CoinMarketCap | No: no time-range fetch is implemented. The chart stops at what a refresh brings. |
+| CoinGecko, prediction markets, CoinMarketCap (gauges and market-cap indices) | No: no time-range fetch is implemented. The chart stops at what a refresh brings. |
 
 There is no loading indicator; the view does not move while a page loads.
 

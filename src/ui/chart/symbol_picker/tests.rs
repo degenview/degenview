@@ -1,5 +1,7 @@
 use super::*;
 use crate::model::market::MarketKind;
+use crate::model::market::cmc::CHART_TYPES;
+use crate::model::market::cmc::global::GlobalIndex;
 use crate::model::portfolio::card::CardKind;
 use crate::model::watchlist::quote::Freshness;
 use crate::service::EventInfo;
@@ -942,6 +944,9 @@ fn portfolios() -> Vec<Portfolio> {
     vec![Portfolio::new(1, "Main", 0), Portfolio::new(2, "Alts", 0)]
 }
 
+/// The tiles of the Market indices group: the four gauges and the four market caps.
+const INDICES: usize = CHART_TYPES.len() + GlobalIndex::ALL.len();
+
 fn dashboards_rig(with_portfolios: bool) -> Rig {
     let mut rig = Rig::new(1100.0, "");
     rig.picker.set_scope(Scope::Dashboards);
@@ -957,14 +962,30 @@ fn dashboards_rig(with_portfolios: bool) -> Rig {
 fn the_dashboards_tab_lists_the_indices_then_the_portfolio_views() {
     let mut rig = dashboards_rig(true);
     let names = rig.names();
-    assert_eq!(names.len(), 8, "{names:?}");
+    assert_eq!(names.len(), INDICES + 4, "{names:?}");
     assert_eq!(names[0], "Altcoin Season History");
-    assert_eq!(names[4], "Portfolio Value Chart");
+    assert_eq!(names[4], "TOTAL Cap (USD bn)");
+    assert_eq!(names[INDICES], "Portfolio Value Chart");
     assert_eq!(rig.heads(), ["Market indices", "Portfolio"]);
     // Nothing on this tab has a price to fetch.
     assert!(rig.picker.highlighted().is_none());
     rig.type_text("allocation");
     assert_eq!(rig.names(), ["Allocation"]);
+}
+
+#[test]
+fn a_typed_index_venue_and_symbol_finds_the_index() {
+    let mut rig = dashboards_rig(true);
+    rig.type_text("CMC:BTC.D");
+    assert_eq!(rig.names(), ["BTC.D Dominance (%)"]);
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    let Some(Output::Replace(result)) = output else {
+        panic!("an index replaces, got {output:?}");
+    };
+    assert_eq!(
+        (result.source, result.full_symbol.as_str()),
+        (DataSource::CoinMarketCap, "BTC.D")
+    );
 }
 
 #[test]
@@ -982,7 +1003,7 @@ fn an_index_replaces_the_chart_like_a_market_and_a_view_adds_a_card() {
     assert!(recents::load_recents(&rig.store.lock().unwrap()).is_empty());
 
     let mut rig = dashboards_rig(true);
-    for _ in 0..4 {
+    for _ in 0..INDICES {
         rig.key(Key::ArrowDown, Modifiers::NONE);
     }
     assert!(texts(&mut rig).iter().any(|text| text == "Add card"));
@@ -997,7 +1018,7 @@ fn an_index_replaces_the_chart_like_a_market_and_a_view_adds_a_card() {
 fn the_portfolio_filter_scopes_the_cards() {
     let mut rig = dashboards_rig(true);
     rig.picker.set_filter(Filter::Portfolio(Some(2)));
-    for _ in 0..5 {
+    for _ in 0..=INDICES {
         rig.key(Key::ArrowDown, Modifiers::NONE);
     }
     let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
@@ -1014,7 +1035,7 @@ fn the_portfolio_filter_scopes_the_cards() {
 #[test]
 fn without_a_portfolio_the_tab_offers_the_indices_and_says_where_views_come_from() {
     let mut rig = dashboards_rig(false);
-    assert_eq!(rig.names().len(), 4);
+    assert_eq!(rig.names().len(), INDICES);
     assert_eq!(rig.heads(), ["Market indices"]);
     let ctx = rig.screen.ctx.clone();
     let listing = rig.picker.listing(&ctx);
@@ -1348,7 +1369,7 @@ fn the_watchlist_mode_adds_views_and_predictions_and_skips_its_own_tab() {
     rig.picker.set_scope(Scope::Dashboards);
     rig.picker.set_portfolios(portfolios());
     rig.settle();
-    for _ in 0..4 {
+    for _ in 0..INDICES {
         rig.key(Key::ArrowDown, Modifiers::NONE);
     }
     let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
