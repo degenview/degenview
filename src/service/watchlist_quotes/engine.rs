@@ -16,6 +16,7 @@ use crate::model::alert::AlertProviderHealth;
 use crate::model::market::profile::Class;
 use crate::model::watchlist::quote::{Freshness, SourceQuote, WatchlistQuote, evaluate_freshness};
 use crate::model::{DataSource, InstrumentId};
+use crate::service::market::venue;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Mutex;
 
@@ -35,8 +36,10 @@ pub struct Config {
     pub stream_fallback_delay_ms: i64,
     /// ...and any product the socket has been quiet about is refreshed from REST this often.
     pub stream_refresh_ms: i64,
-    /// A REST refresh of a streamed market that gives no price a day ago borrows the one its last
-    /// tick gave, for this long: a quiet market keeps its change instead of losing it every refresh.
+    /// The price a day ago of a streamed market, as its last tick or REST answer gave it, is lent to
+    /// the next answer that gives none for this long: a quiet market keeps its change instead of
+    /// losing it every refresh, and a venue whose ticks are only trades keeps it between REST calls.
+    /// A venue whose ticks give none has it asked of REST again at half this age.
     pub stream_reference_ms: i64,
     pub chain_lookups_per_round: usize,
 }
@@ -64,6 +67,17 @@ pub const SIDEBAR_LEASE_MS: i64 = 3_000;
 
 /// The least time between two passes that forget idle markets.
 const PRUNE_EVERY_MS: i64 = 5_000;
+
+/// What a streamed market's last answer said of the price a day ago, and when REST is to be asked.
+struct StreamReference {
+    /// `None` is an answer that gave none, noted so that a market with nothing to find is not asked
+    /// about every round.
+    price: Option<f64>,
+    taken: i64,
+    /// A refused or empty REST answer waits `Config::stream_refresh_ms`, an answer half of
+    /// `Config::stream_reference_ms`.
+    next_ask: i64,
+}
 
 struct Consumer {
     instruments: BTreeMap<String, InstrumentId>,
@@ -165,9 +179,10 @@ pub struct Engine {
     stream_products: HashMap<DataSource, HashMap<String, String>>,
     /// When each streamed market was first asked for, by instrument key.
     stream_subscribed_at: HashMap<String, i64>,
-    /// The price a day ago the last tick of each streamed market gave, and when: instrument key ->
-    /// (price, time).
-    stream_references: HashMap<String, (f64, i64)>,
+    /// What the last answer said of the price a day ago of each streamed market, by instrument key.
+    stream_references: HashMap<String, StreamReference>,
+    /// When a streamed market's 24h volume was last given, by instrument key.
+    stream_volumes: HashMap<String, i64>,
     /// When each remembered market stopped being asked for (see `Config::idle_grace_ms`).
     idle_since: HashMap<String, i64>,
     last_prune_ms: i64,
@@ -188,6 +203,7 @@ impl Engine {
             stream_products: HashMap::new(),
             stream_subscribed_at: HashMap::new(),
             stream_references: HashMap::new(),
+            stream_volumes: HashMap::new(),
             idle_since: HashMap::new(),
             last_prune_ms: i64::MIN / 2,
         }
@@ -399,6 +415,7 @@ impl Engine {
             .chain(self.rejected.keys())
             .chain(self.stream_subscribed_at.keys())
             .chain(self.stream_references.keys())
+            .chain(self.stream_volumes.keys())
             .chain(self.unresolved_chains.iter())
             .cloned()
             .collect();
@@ -425,6 +442,7 @@ impl Engine {
             self.rejected.remove(key);
             self.stream_subscribed_at.remove(key);
             self.stream_references.remove(key);
+            self.stream_volumes.remove(key);
             self.unresolved_chains.remove(key);
         }
         self.book.remove(&expired);
@@ -437,6 +455,7 @@ impl Engine {
             + self.rejected.len()
             + self.stream_subscribed_at.len()
             + self.stream_references.len()
+            + self.stream_volumes.len()
             + self.unresolved_chains.len()
             + self.idle_since.len()
     }
@@ -504,7 +523,9 @@ impl Engine {
                 // The socket supplies prices; REST fills a product it has not answered, and
                 // refreshes one it has gone quiet on, so a thin market's price never ages.
                 if let Some(last) = self.received.get(key) {
-                    return (now - last >= self.config.stream_refresh_ms).then_some(source);
+                    return (now - last >= self.config.stream_refresh_ms
+                        || self.reference_wanted(source, key, now))
+                    .then_some(source);
                 }
                 let since = self.stream_subscribed_at.get(key)?;
                 (now - since >= self.config.stream_fallback_delay_ms).then_some(source)
@@ -603,40 +624,60 @@ impl Engine {
         }
 
         for (key, request) in &planned.requests {
-            if let Some(quote) = outcome.quotes.get(&request.symbol) {
-                let quote = self.with_stream_reference(source, key, *quote, now);
-                updates.insert(
-                    key.clone(),
-                    WatchlistQuote::from_source(source, &quote, now),
-                );
-                self.received.insert(key.clone(), now);
+            // A market whose socket is ticking is asked of REST only for what its ticks lack: REST
+            // never replaces its newer price, and a call that fails or omits it never marks it stale.
+            let ticking = self.is_ticking(source, key, now);
+            if let Some(answer) = outcome.quotes.get(&request.symbol) {
+                let mut quote = *answer;
+                if source.streams_quotes() {
+                    self.remember_reference(key, quote.previous_day_price, now);
+                    self.remember_volume(key, quote.volume_24h, now);
+                }
+                quote = self.with_stream_reference(source, key, quote, now);
+                let held = ticking
+                    .then(|| self.known.get(key))
+                    .flatten()
+                    .and_then(|held| held.last.map(|price| (price, held.timestamp_ms)));
+                match held {
+                    Some((price, timestamp_ms)) => {
+                        quote.price = price;
+                        quote.timestamp_ms = timestamp_ms;
+                    }
+                    None => {
+                        self.received.insert(key.clone(), now);
+                    }
+                }
+                let mut row = WatchlistQuote::from_source(source, &quote, now);
+                if ticking {
+                    self.keep_volume(key, quote.volume_24h, &mut row, now);
+                }
+                updates.insert(key.clone(), row);
                 self.rejected.remove(key);
-            } else if let Some(failure) = failed.get(request.symbol.as_str()) {
-                updates.insert(
-                    key.clone(),
-                    match failure {
-                        QuoteFailure::CredentialsMissing => {
-                            WatchlistQuote::unsupported(Some(failure.message()))
-                        }
-                        _ => self.fallback(key, Some(failure.message())),
-                    },
-                );
+                continue;
+            }
+            if source.streams_quotes() {
+                self.note_unanswered(key, now);
+            }
+            let row = if let Some(failure) = failed.get(request.symbol.as_str()) {
+                match failure {
+                    QuoteFailure::CredentialsMissing => {
+                        WatchlistQuote::unsupported(Some(failure.message()))
+                    }
+                    _ => self.fallback(key, Some(failure.message())),
+                }
             } else if source_answered && outcome.rejected.contains(&request.symbol) {
                 self.rejected
                     .insert(key.clone(), now + self.config.rejected_retry_ms);
-                updates.insert(
-                    key.clone(),
-                    WatchlistQuote {
-                        freshness: Freshness::Unavailable,
-                        note: Some("The provider doesn't know this market".to_owned()),
-                        ..WatchlistQuote::default()
-                    },
-                );
+                WatchlistQuote {
+                    freshness: Freshness::Unavailable,
+                    note: Some("The provider doesn't know this market".to_owned()),
+                    ..WatchlistQuote::default()
+                }
             } else {
-                updates.insert(
-                    key.clone(),
-                    self.fallback(key, Some("The provider returned no quote".to_owned())),
-                );
+                self.fallback(key, Some("The provider returned no quote".to_owned()))
+            };
+            if !ticking {
+                updates.insert(key.clone(), row);
             }
         }
         self.sources.insert(source, state);
@@ -646,8 +687,8 @@ impl Engine {
         self.book.apply(updates);
     }
 
-    /// `quote` of a streamed market with the price a day ago its last tick gave, when REST gives
-    /// none and that tick is recent enough to still say what a day ago was.
+    /// `quote` of a streamed market with the price a day ago its last tick or REST answer gave,
+    /// when it gives none itself and that answer is recent enough to still say what a day ago was.
     fn with_stream_reference(
         &self,
         source: DataSource,
@@ -658,15 +699,100 @@ impl Engine {
         if quote.previous_day_price.is_some() || !source.streams_quotes() {
             return quote;
         }
-        let reference = self
-            .stream_references
-            .get(key)
-            .filter(|(_, taken)| now - taken <= self.config.stream_reference_ms)
-            .map(|(price, _)| *price);
         SourceQuote {
-            previous_day_price: reference,
+            previous_day_price: self.stream_reference(key, now),
             ..quote
         }
+    }
+
+    /// The price a day ago an answer gave for a streamed market, while it is recent enough to still
+    /// say what a day ago was.
+    fn stream_reference(&self, key: &str, now: i64) -> Option<f64> {
+        self.stream_references
+            .get(key)
+            .filter(|held| now - held.taken <= self.config.stream_reference_ms)
+            .and_then(|held| held.price)
+    }
+
+    /// Notes what an answer said of the price a day ago of a streamed market. An answer that gives
+    /// none only notes that it was asked, and never replaces a price that is still good.
+    fn remember_reference(&mut self, key: &str, reference: Option<f64>, now: i64) {
+        let next_ask = now + self.config.stream_reference_ms / 2;
+        let held = self.stream_reference(key, now).is_some();
+        match self.stream_references.get_mut(key) {
+            Some(entry) if reference.is_none() && held => entry.next_ask = next_ask,
+            _ => {
+                self.stream_references.insert(
+                    key.to_owned(),
+                    StreamReference {
+                        price: reference,
+                        taken: now,
+                        next_ask,
+                    },
+                );
+            }
+        }
+    }
+
+    /// Notes that REST was asked for a streamed market and gave nothing (the call failed or left it
+    /// out), so it is asked again after `Config::stream_refresh_ms` and not in every round.
+    fn note_unanswered(&mut self, key: &str, now: i64) {
+        let next_ask = now + self.config.stream_refresh_ms;
+        self.stream_references
+            .entry(key.to_owned())
+            .and_modify(|entry| entry.next_ask = next_ask)
+            .or_insert(StreamReference {
+                price: None,
+                taken: now,
+                next_ask,
+            });
+    }
+
+    /// Whether REST is to be asked for the price a day ago of a streamed market whose venue's ticks
+    /// do not say it: none was asked for yet, or the next ask is due.
+    fn reference_wanted(&self, source: DataSource, key: &str, now: i64) -> bool {
+        let ticks_say_it = venue::of(source)
+            .quotes()
+            .is_none_or(|protocol| protocol.ticks_carry_reference());
+        !ticks_say_it
+            && self
+                .stream_references
+                .get(key)
+                .is_none_or(|held| now >= held.next_ask)
+    }
+
+    /// Notes when a streamed market's answer gave a 24h volume.
+    fn remember_volume(&mut self, key: &str, volume: Option<f64>, now: i64) {
+        if volume.is_some() {
+            self.stream_volumes.insert(key.to_owned(), now);
+        }
+    }
+
+    /// Gives `row`, built from an answer that gave no volume (`given`), the volume of the last
+    /// answer that did, while it is recent enough to still say what the volume was.
+    fn keep_volume(&self, key: &str, given: Option<f64>, row: &mut WatchlistQuote, now: i64) {
+        let recent = self
+            .stream_volumes
+            .get(key)
+            .is_some_and(|taken| now - taken <= self.config.stream_reference_ms);
+        if let (None, true, Some(known)) = (given, recent, self.known.get(key)) {
+            row.volume = known.volume;
+            row.volume_kind = known.volume_kind;
+        }
+    }
+
+    /// Whether a streamed market has been confirmed within `Config::stream_refresh_ms`, by a tick
+    /// or an answer, and has a price to show.
+    fn is_ticking(&self, source: DataSource, key: &str, now: i64) -> bool {
+        source.streams_quotes()
+            && self
+                .received
+                .get(key)
+                .is_some_and(|last| now - last < self.config.stream_refresh_ms)
+            && self
+                .known
+                .get(key)
+                .is_some_and(|quote| quote.last.is_some())
     }
 
     /// The last known price, marked stale; or an unavailable quote if there never was one.
@@ -729,20 +855,28 @@ impl Engine {
             // A product is named as the venue takes it: upper case for most, but Hyperliquid's
             // names are case-sensitive (`xyz:SP500`, `kPEPE`), so a tick is looked up as it came
             // first and by its upper-case spelling after.
-            let Some(key) = self.stream_products.get(&tick.source).and_then(|products| {
-                products
-                    .get(&tick.product_id)
-                    .or_else(|| products.get(&tick.product_id.to_uppercase()))
-            }) else {
+            let Some(key) = self
+                .stream_products
+                .get(&tick.source)
+                .and_then(|products| {
+                    products
+                        .get(&tick.product_id)
+                        .or_else(|| products.get(&tick.product_id.to_uppercase()))
+                })
+                .cloned()
+            else {
                 continue;
             };
             if let Some(reference) = tick.quote.previous_day_price {
-                self.stream_references.insert(key.clone(), (reference, now));
+                self.remember_reference(&key, Some(reference), now);
             }
-            latest.insert(
-                key.clone(),
-                WatchlistQuote::from_source(tick.source, &tick.quote, now),
-            );
+            // A tick that does not say the price a day ago or the volume (a venue whose socket sends
+            // trades) keeps what the last answer said.
+            let quote = self.with_stream_reference(tick.source, &key, tick.quote, now);
+            self.remember_volume(&key, quote.volume_24h, now);
+            let mut row = WatchlistQuote::from_source(tick.source, &quote, now);
+            self.keep_volume(&key, quote.volume_24h, &mut row, now);
+            latest.insert(key, row);
             heard.insert(tick.source);
         }
         if latest.is_empty() {
@@ -945,6 +1079,7 @@ pub fn poll(engine: &Mutex<Engine>, provider: &dyn QuoteProvider, now: &dyn Fn()
 mod tests {
     use super::*;
     use crate::model::watchlist::quote::Freshness;
+    use crate::model::watchlist::quote::VolumeKind;
     use std::sync::Arc;
 
     /// Answers from a table and records every call.
@@ -1678,6 +1813,142 @@ mod tests {
         let quote = book.get(&eth).unwrap();
         assert_eq!(quote.last, Some(50.0));
         assert_eq!(quote.change, None);
+    }
+
+    /// A tick of a venue whose socket sends trades: a price and nothing else.
+    fn trade_tick(product_id: &str, price: f64) -> StreamTick {
+        StreamTick {
+            source: DataSource::Bitstamp,
+            ..tick(product_id, price, None)
+        }
+    }
+
+    #[test]
+    fn a_venue_whose_ticks_are_trades_has_its_reference_from_rest_and_keeps_it_between_calls() {
+        let (engine, book, provider) = setup();
+        provider.price("BTCUSD", 110.0);
+        let btc = id(DataSource::Bitstamp, "BTCUSD");
+        lock(&engine).update(1, vec![btc.clone()], true, T0);
+
+        // The first trade arrives before REST was asked anything: a price and no change yet.
+        lock(&engine).receive_ticks(vec![trade_tick("BTCUSD", 105.0)], T0 + 1_000);
+        let quote = book.get(&btc).unwrap();
+        assert_eq!((quote.last, quote.change), (Some(105.0), None));
+
+        // The socket is alive, and REST is still asked once for the price a day ago (the fake gives
+        // half the price): the change is measured against it from then on, and REST's newer or
+        // older price does not replace the trade's.
+        round(&engine, &provider, T0 + 6_000);
+        assert_eq!(provider.calls().len(), 1);
+        let quote = book.get(&btc).unwrap();
+        assert_eq!(quote.last, Some(105.0));
+        assert!((quote.change_percent.unwrap() - (105.0 / 55.0 - 1.0) * 100.0).abs() < 1e-9);
+        lock(&engine).receive_ticks(vec![trade_tick("BTCUSD", 66.0)], T0 + 7_000);
+        let quote = book.get(&btc).unwrap();
+        assert_eq!(quote.last, Some(66.0));
+        assert!((quote.change_percent.unwrap() - 20.0).abs() < 1e-9);
+
+        // No more calls while the reference is young and the socket is heard...
+        for now in [T0 + 17_000, T0 + 40_000, T0 + 200_000] {
+            lock(&engine).receive_ticks(vec![trade_tick("BTCUSD", 66.0)], now);
+            round(&engine, &provider, now);
+        }
+        assert_eq!(provider.calls().len(), 1);
+
+        // ...and one again once it is half as old as it may get, before it is too old to use.
+        let half = Config::default().stream_reference_ms / 2;
+        lock(&engine).receive_ticks(vec![trade_tick("BTCUSD", 70.0)], T0 + 6_000 + half);
+        round(&engine, &provider, T0 + 6_000 + half);
+        assert_eq!(provider.calls().len(), 2);
+        assert!(book.get(&btc).unwrap().change_percent.is_some());
+    }
+
+    #[test]
+    fn a_trade_venue_market_rest_has_no_reference_for_is_asked_again_only_after_a_while() {
+        let (engine, book, provider) = setup();
+        *provider.without_reference.lock().unwrap() = true;
+        provider.price("STRKEUR", 3.0);
+        let strk = id(DataSource::Bitstamp, "STRKEUR");
+        lock(&engine).update(1, vec![strk.clone()], true, T0);
+        lock(&engine).receive_ticks(vec![trade_tick("STRKEUR", 3.1)], T0 + 1_000);
+        round(&engine, &provider, T0 + 6_000);
+        assert_eq!(provider.calls().len(), 1);
+        assert_eq!(book.get(&strk).unwrap().change, None);
+
+        // Nothing was found, and that is noted: the next rounds do not ask again.
+        for now in [T0 + 17_000, T0 + 40_000, T0 + 200_000] {
+            lock(&engine).receive_ticks(vec![trade_tick("STRKEUR", 3.1)], now);
+            round(&engine, &provider, now);
+        }
+        assert_eq!(provider.calls().len(), 1);
+    }
+
+    #[test]
+    fn a_rest_call_that_leaves_out_a_ticking_market_neither_marks_it_stale_nor_repeats_every_round()
+    {
+        let (engine, book, provider) = setup();
+        provider.price("ETHUSD", 1.0);
+        let btc = id(DataSource::Bitstamp, "BTCUSD");
+        let eth = id(DataSource::Bitstamp, "ETHUSD");
+        lock(&engine).update(1, vec![btc.clone(), eth.clone()], true, T0);
+        lock(&engine).receive_ticks(
+            vec![trade_tick("BTCUSD", 105.0), trade_tick("ETHUSD", 2.0)],
+            T0 + 1_000,
+        );
+        round(&engine, &provider, T0 + 6_000);
+        assert_eq!(provider.calls().len(), 1);
+        let quote = book.get(&btc).unwrap();
+        assert_eq!(quote.last, Some(105.0));
+        assert!(quote.freshness.is_current());
+        assert_eq!(last(&book, &eth), Some(2.0));
+
+        // The omission is noted: the next rounds do not ask again until the refresh has passed.
+        let refresh = Config::default().stream_refresh_ms;
+        for now in [T0 + 11_000, T0 + 21_000] {
+            lock(&engine).receive_ticks(vec![trade_tick("BTCUSD", 106.0)], now);
+            round(&engine, &provider, now);
+        }
+        assert_eq!(provider.calls().len(), 1);
+        let now = T0 + 6_000 + refresh;
+        lock(&engine).receive_ticks(vec![trade_tick("BTCUSD", 107.0)], now);
+        round(&engine, &provider, now);
+        assert_eq!(provider.calls().len(), 2);
+        let quote = book.get(&btc).unwrap();
+        assert_eq!(quote.last, Some(107.0));
+        assert!(quote.freshness.is_current());
+    }
+
+    #[test]
+    fn a_tick_keeps_the_last_volume_only_while_it_is_recent() {
+        let (engine, book, _provider) = setup();
+        let btc = id(DataSource::Coinbase, "BTC-USD");
+        lock(&engine).update(1, vec![btc.clone()], true, T0);
+        let mut with_volume = tick("BTC-USD", 105.0, Some(100.0));
+        with_volume.quote.volume_24h = Some(5.0);
+        lock(&engine).receive_ticks(vec![with_volume], T0 + 1_000);
+        let age = Config::default().stream_reference_ms;
+        lock(&engine).receive_ticks(vec![tick("BTC-USD", 106.0, Some(100.0))], T0 + age);
+        assert_eq!(book.get(&btc).unwrap().volume, Some(5.0));
+        lock(&engine).receive_ticks(vec![tick("BTC-USD", 107.0, Some(100.0))], T0 + age + 2_000);
+        assert_eq!(book.get(&btc).unwrap().volume, None);
+    }
+
+    #[test]
+    fn a_tick_that_gives_no_volume_keeps_the_volume_of_the_last_answer() {
+        let (engine, book, _provider) = setup();
+        let btc = id(DataSource::Coinbase, "BTC-USD");
+        lock(&engine).update(1, vec![btc.clone()], true, T0);
+        let mut with_volume = tick("BTC-USD", 105.0, Some(100.0));
+        with_volume.quote.volume_24h = Some(5.0);
+        with_volume.quote.volume_kind = Some(VolumeKind::Base);
+        lock(&engine).receive_ticks(vec![with_volume], T0 + 1_000);
+        lock(&engine).receive_ticks(vec![tick("BTC-USD", 106.0, Some(100.0))], T0 + 2_000);
+        let quote = book.get(&btc).unwrap();
+        assert_eq!(quote.last, Some(106.0));
+        assert_eq!(
+            (quote.volume, quote.volume_kind),
+            (Some(5.0), Some(VolumeKind::Base))
+        );
     }
 
     #[test]

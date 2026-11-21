@@ -25,11 +25,17 @@ pub trait QuoteProtocol: Sync {
     fn session(&self, products: &[String]) -> Session;
 
     /// What one text message of the socket says on its own; nothing for a message that is not a
-    /// price (an acknowledgement, a heartbeat, another topic). A venue whose messages cannot be
-    /// read alone (they name a subscription, not a market) implements [`Self::reader`] instead,
-    /// and this is never called.
-    fn parse(&self, _text: &str) -> Option<StreamTick> {
-        None
+    /// price (an acknowledgement, a heartbeat, another topic). Every venue answers it, so none is
+    /// left that reads nothing by forgetting both this and [`Self::reader`]: a venue whose messages
+    /// cannot be read alone (they name a subscription, not a market) answers `None` here, as it is
+    /// never called, and reads through [`Self::reader`].
+    fn parse(&self, text: &str) -> Option<StreamTick>;
+
+    /// Whether a tick says the price 24 hours ago (`StreamTick::quote`'s `previous_day_price`). A
+    /// venue whose socket sends only trades says `false`, and the quote engine then takes that
+    /// price, and the volume, from the REST answer and keeps asking for it as it ages.
+    fn ticks_carry_reference(&self) -> bool {
+        true
     }
 
     /// For a venue that has to remember across messages of one connection (which market a channel
@@ -264,6 +270,10 @@ mod tests {
     impl QuoteProtocol for Remembering {
         fn session(&self, _: &[String]) -> Session {
             unreachable!("not opened by this test")
+        }
+
+        fn parse(&self, _: &str) -> Option<StreamTick> {
+            None
         }
 
         fn reader(&self) -> Option<Box<dyn TickReader>> {

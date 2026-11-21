@@ -88,6 +88,7 @@ pub fn of(source: DataSource) -> &'static dyn Venue {
         DataSource::Deribit => &super::deribit::DERIBIT,
         DataSource::Htx => &super::htx::HTX,
         DataSource::Bitfinex => &super::bitfinex::BITFINEX,
+        DataSource::Bitstamp => &super::bitstamp::BITSTAMP,
         DataSource::CoinGecko => &super::coingecko::COINGECKO,
         DataSource::DexScreener => &super::dexscreener::DEXSCREENER,
         DataSource::Alpaca => &super::alpaca::ALPACA,

@@ -20,7 +20,7 @@ pub(in crate::workspace) mod actions;
 use super::chart::CANDLE_LIMIT;
 use crate::model::market;
 use crate::model::market::history::OlderHistory;
-use crate::model::market::live::{LiveFold, LiveMark};
+use crate::model::market::live::{LiveFold, LiveMark, Stream};
 use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
 use crate::model::overlay::{OverlayId, OverlayList};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
@@ -422,13 +422,13 @@ impl OverlayHub {
         }
     }
 
-    /// A live kline of `base` candles for `symbol` on `source`: every overlay market on that
-    /// symbol folds it into its candles of `timeframe`.
+    /// A live kline of `stream` for `symbol` on `source`: every overlay market on that symbol folds
+    /// it into its candles of `timeframe`.
     pub(super) fn apply_live(
         &mut self,
         source: DataSource,
         timeframe: Timeframe,
-        base: Timeframe,
+        stream: Stream,
         symbol: &str,
         kline: &Kline,
         now: Instant,
@@ -443,7 +443,7 @@ impl OverlayHub {
             let Some(open_time) =
                 series
                     .live_fold
-                    .apply(timeframe, base, &mut candles, kline.clone())
+                    .apply(timeframe, stream, &mut candles, kline.clone())
             else {
                 continue;
             };
