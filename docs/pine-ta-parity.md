@@ -1,5 +1,8 @@
 # `ta.*` against TradingView: what is checked and what still differs
 
+Two groups are covered: the true-range family and the functions that meet a missing (`na`) source
+bar ([below](#a-missing-source-bar)).
+
 The true-range family (`ta.tr`, `ta.atr`, `ta.kc`, `ta.kcw`, `ta.dmi`, `ta.supertrend`) was brought to
 TradingView's output in the PR that added this file. This page records what was compared, how, the
 differences that are left, and how to measure more. Read it before changing one of these built-ins or
@@ -83,3 +86,56 @@ The built-in browser is signed in to TradingView (free plan: no custom intervals
    tool result (check it with a rolling checksum on both sides).
 4. Save the bars and results as a fixture under `src/pine/tests/data/`, load it with `include_str!`, run
    the script over the bars with `run_script`, and compare with the print precision (eight decimals).
+
+## A missing source bar
+
+`ta.ema`, `ta.rma`, `ta.macd`, the averages inside `ta.kc`, `ta.tsi` and `ta.rsi`, and the window
+statistics follow TradingView's rules for a `na` source bar (rules in
+[Pine and scripts](agent-guides/pine.md)). Compared with TradingView on BINANCE:BTCUSDT 5m, the first
+120 bars from 2026-11-02 00:00, with `src = bar_index % 37 == 0 ? na : close` (holes at bars 0, 37, 74
+and 111): `src/pine/tests/data/tradingview-missing-bars.log`, test
+`a_missing_source_bar_gives_what_tradingview_gives`. 28 of the 42 logged columns match on every bar:
+`ta.ema(10)`, `ta.rma(10)`, `ta.rsi(14)`, `ta.stdev`, `ta.variance`, `ta.median`, `ta.range`,
+`math.sum`, `ta.wma`, `ta.dev` (strict), `ta.bb` upper, `ta.bbw`, `ta.macd` (line, signal,
+histogram), `ta.kc` basis and upper, `ta.tsi`, `ta.cci`, `ta.cog`, `ta.wpr`, `ta.linreg`,
+`ta.mom`, `ta.roc`, `ta.change`, `ta.sma`, `ta.swma`, `ta.alma`.
+
+Also checked against Pine reference code rather than TradingView: a run of four holes, a live bar,
+prefix stability (a bar shows the same value on a shorter chart), `request.security` over a source
+with holes, odd lengths (1, longer than the chart) and a source that never has a value, and a real
+window on live BTC weekly bars (`ta.ema`, `ta.rma`, `ta.stdev` equal their definitions over 264 bars with
+8 holes).
+
+### Differences that are left
+
+The other 14 columns differ; the test skips them (`NOT_YET_LIKE_TRADINGVIEW`). What TradingView
+printed, with the engine strict (`na` until `length` bars without a hole) for all of them:
+
+| Function | TradingView over a hole | Engine |
+| --- | --- | --- |
+| `ta.cmo`, `ta.correlation`, `ta.hma`, `ta.mode`, `ta.vwma`, `ta.mfi` | a value from the first bar after the hole (`ta.mfi` also from bar 14, one bar earlier) | `na` for `length` bars after it |
+| `ta.percentrank` | a value on and after the hole, and from bar 10 | `na` there |
+| `ta.highest`, `ta.lowest` | skip the hole; a value from bar `length - 1`, though the bar 0 value is `na` | needs `length` values that exist |
+| `ta.highestbars`, `ta.lowestbars` | same, with the offset counted in chart bars | same as above |
+| `ta.rising`, `ta.falling` | skip the hole: the bar is greater than (less than) the greatest (least) value that exists in the window | `false` while a hole is in the window |
+| `ta.cum` | `na` on the hole bar, the running total carries on after it | repeats the total on the hole |
+
+To fix one: change its rule where its window is built (`last_window` against `last_valid` in
+`src/pine/builtins/ta/mod.rs`), move its column out of `NOT_YET_LIKE_TRADINGVIEW`, and update this
+table.
+
+### Calls made on some bars only
+
+Test `conditional_calls_over_a_missing_bar_match_tradingview`, log
+`src/pine/tests/data/tradingview-missing-bars-conditional.log`: the functions called inside
+`if bar_index % 3 == 1` over `src = bar_index % 10 == 4 ? na : close` (holes on bars 4, 14, ..., so some
+fall on a call bar and some between two). `ta.ema`, `ta.rma`, `ta.rsi`, `ta.stdev`, `ta.variance`,
+`ta.median`, `ta.range`, `math.sum`, `ta.bb`, `ta.macd` and `ta.tsi` match TradingView on every bar
+they ran on: they read the series of their own calls, as the engine does.
+
+**`ta.wma` does not.** On the same calls TradingView prints `na` on the first five and then values that
+no simple rule gave: not the last five valid calls (weights 1 to 5), not the last five chart bars with
+the hole filled or skipped, not the unconditional fill rule, and no combination of five valid closes
+fits the numbers (for example bar 19: TradingView `78567.34`, last five valid calls `78444.917`,
+chart bars `78537.52`). The test skips that column. To fix it, probe `ta.wma` conditionally without a
+hole first, to see how its window reads a conditional series, then with the hole.

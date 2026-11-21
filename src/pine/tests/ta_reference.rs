@@ -1387,3 +1387,767 @@ plot(3 * ta.ema(f_tr(false), 8) / ta.ema(close, 8))
         "the directional index ran through the flat bars"
     );
 }
+
+/// A close with a hole every 37th bar, the first included.
+const HOLEY: &str = "src = bar_index % 37 == 0 ? na : close";
+
+/// An exponential average written out from its definition for a source with holes: a hole gives
+/// no value and leaves the state alone, the average starts as the mean of the first `length`
+/// values that exist. `alpha` is `2 / (length + 1)` for an EMA and `1 / length` for an RMA.
+fn skipping_average(name: &str, length: u32, alpha: &str) -> String {
+    format!(
+        "var float {name}Total = 0.0
+var int {name}Seen = 0
+var float {name}Last = na
+float {name} = na
+if not na(src)
+    if na({name}Last)
+        {name}Total += src
+        {name}Seen += 1
+        if {name}Seen == {length}
+            {name}Last := {name}Total / {length}
+            {name} := {name}Last
+    else
+        {name}Last := {alpha} * src + (1 - {alpha}) * {name}Last
+        {name} := {name}Last
+"
+    )
+}
+
+#[test]
+fn ema_and_rma_skip_a_missing_bar_and_keep_their_state() {
+    let source = format!(
+        "//@version=6
+indicator(\"Skipping averages\")
+{HOLEY}
+{}{}plot(ta.ema(src, 20))
+plot(ema)
+plot(ta.rma(src, 14))
+plot(rma)
+",
+        skipping_average("ema", 20, "(2.0 / 21)"),
+        skipping_average("rma", 14, "(1.0 / 14)"),
+    );
+    let plotted = plots(&source, 900);
+    assert_same("ema", &plotted[0], &plotted[1]);
+    assert_same("rma", &plotted[2], &plotted[3]);
+    assert_eq!(
+        first_value(&plotted[0]),
+        Some(20),
+        "the 20th value that exists"
+    );
+    assert_eq!(plotted[0][37], None, "na on the na bar");
+    assert!(plotted[0][38].is_some(), "and back on the next one");
+    assert!(plotted[0].iter().flatten().count() > 800);
+}
+
+#[test]
+fn the_averages_of_keltner_and_tsi_skip_a_missing_bar_too() {
+    let source = format!(
+        "//@version=6
+indicator(\"Skipping legs\")
+{HOLEY}
+{}[basis, upper, lower] = ta.kc(src, 20, 1.5, false)
+plot(basis)
+plot(na(ema) or na(upper) ? na : ema)
+plot(ta.tsi(src, 5, 13))
+",
+        skipping_average("ema", 20, "(2.0 / 21)"),
+    );
+    let plotted = plots(&source, 900);
+    assert_same("kc basis", &plotted[0], &plotted[1]);
+    assert_eq!(plotted[2][37], None, "tsi has no value on the na bar");
+    assert!(plotted[2][60].is_some(), "and recovers after it");
+}
+
+#[test]
+fn rsi_is_na_while_the_change_is_na_and_keeps_its_averages() {
+    let source = format!(
+        "//@version=6
+indicator(\"Rsi\")
+{HOLEY}
+up = math.max(src - src[1], 0)
+down = math.max(src[1] - src, 0)
+{}{}
+rs = upAverage / downAverage
+plot(ta.rsi(src, 14))
+plot(downAverage == 0 ? 100.0 : 100 - 100 / (1 + rs))
+",
+        // The same two skipping averages, named for the gain and the loss.
+        skipping_average("upAverage", 14, "(1.0 / 14)").replace("src", "up"),
+        skipping_average("downAverage", 14, "(1.0 / 14)").replace("src", "down"),
+    );
+    let plotted = plots(&source, 900);
+    assert_same("rsi", &plotted[0], &plotted[1]);
+    assert_eq!(plotted[0][37], None, "the na bar");
+    assert_eq!(plotted[0][38], None, "the bar after it, whose change is na");
+    assert!(plotted[0][39].is_some());
+}
+
+/// The last `length` values of a source with holes that exist, kept in an array.
+const KEPT: &str = "var float[] kept = array.new_float()
+if not na(src)
+    kept.push(src)
+    if kept.size() > 20
+        kept.shift()
+bool full = kept.size() == 20
+";
+
+#[test]
+fn window_statistics_skip_a_missing_bar_and_hold_their_value() {
+    let source = format!(
+        "//@version=6
+indicator(\"Windows\")
+{HOLEY}
+{KEPT}[basis, upper, lower] = ta.bb(src, 20, 2)
+plot(ta.stdev(src, 20))
+plot(full ? array.stdev(kept, true) : na)
+plot(ta.variance(src, 20, false))
+plot(full ? array.variance(kept, false) : na)
+plot(ta.median(src, 20))
+plot(full ? array.median(kept) : na)
+plot(ta.range(src, 20))
+plot(full ? array.max(kept) - array.min(kept) : na)
+plot(math.sum(src, 20))
+plot(full ? array.sum(kept) : na)
+plot(upper)
+plot(full ? array.avg(kept) + 2 * array.stdev(kept, true) : na)
+plot(ta.bbw(src, 20, 2))
+plot(full ? 4 * array.stdev(kept, true) / array.avg(kept) * 100 : na)
+",
+    );
+    let plotted = plots(&source, 900);
+    for (label, index) in [
+        ("stdev", 0),
+        ("variance", 2),
+        ("median", 4),
+        ("range", 6),
+        ("sum", 8),
+        ("bb upper", 10),
+        ("bbw", 12),
+    ] {
+        assert_same(label, &plotted[index], &plotted[index + 1]);
+        assert!(plotted[index][37].is_some(), "{label}: held on the na bar");
+        assert_eq!(plotted[index][37], plotted[index][36], "{label}: held");
+    }
+}
+
+#[test]
+fn wma_is_na_on_the_missing_bar_and_fills_its_slot_afterwards() {
+    let source = format!(
+        "//@version=6
+indicator(\"Wma\")
+{HOLEY}
+var float lastGood = na
+var float[] slots = array.new_float()
+slots.push(na(src) ? lastGood : src)
+if slots.size() > 20
+    slots.shift()
+lastGood := na(src) ? lastGood : src
+float weighted = 0.0
+for index = 0 to slots.size() - 1
+    weighted += (index + 1) * slots.get(index)
+plot(ta.wma(src, 20))
+plot(na(src) or slots.size() < 20 ? na : weighted / 210)
+",
+    );
+    let plotted = plots(&source, 900);
+    assert_same("wma", &plotted[0], &plotted[1]);
+    assert_eq!(plotted[0][37], None);
+    assert!(plotted[0][38].is_some(), "the slot is filled, not a gap");
+}
+
+#[test]
+fn dev_stays_strict_like_on_tradingview() {
+    let source = format!(
+        "//@version=6
+indicator(\"Dev\")
+{HOLEY}
+plot(ta.dev(src, 20))
+plot(ta.barssince(na(src)))
+"
+    );
+    let plotted = plots(&source, 400);
+    for (bar, (dev, since)) in plotted[0].iter().zip(&plotted[1]).enumerate().skip(20) {
+        let since = since.expect("a hole exists from bar 0");
+        assert_eq!(
+            dev.is_none(),
+            since < 20.0,
+            "bar {bar}: a hole {since} bars back"
+        );
+    }
+}
+
+/// A number as TradingView's logs print it: `NaN` is `na`.
+fn logged_number(text: &str) -> f64 {
+    if text == "NaN" {
+        f64::NAN
+    } else {
+        text.parse().expect("a number")
+    }
+}
+
+/// The `A` lines of a TradingView log as bars (open, high, low, close, volume), five minutes apart.
+fn logged_bars(text: &str) -> Vec<crate::model::Kline> {
+    text.lines()
+        .filter(|line| line.starts_with('A'))
+        .enumerate()
+        .map(|(index, line)| {
+            let parts: Vec<f64> = line.split_whitespace().skip(1).map(logged_number).collect();
+            crate::model::Kline {
+                open_time: 1_000_000 + index as i64 * 300_000,
+                close_time: 1_000_000 + (index as i64 + 1) * 300_000,
+                open: parts[0],
+                high: parts[1],
+                low: parts[2],
+                close: parts[3],
+                volume: parts[4],
+            }
+        })
+        .collect()
+}
+
+/// The lines of a TradingView log that start with `tag`: the bar and its values.
+fn logged_rows(text: &str, tag: char) -> Vec<(usize, Vec<f64>)> {
+    text.lines()
+        .filter(|line| line.starts_with(tag))
+        .map(|line| {
+            let mut parts = line.split_whitespace();
+            let bar = parts.next().expect("a bar")[1..].parse().expect("a bar");
+            (bar, parts.map(logged_number).collect())
+        })
+        .collect()
+}
+
+/// TradingView's own output (BINANCE:BTCUSDT 5m, the first 120 bars from 2026-11-02 00:00) for a
+/// source with a missing value every 37th bar, the first included: `src = bar_index % 37 == 0 ? na :
+/// close`. `A` lines are the bars (open, high, low, close, volume), `C` lines the 42 results the
+/// probe logged on each, in the order of `MISSING_BAR_COLUMNS`; `NaN` is `na`. The values this change
+/// rewrote (`ta.ema`, `ta.rma`, `ta.rsi`, the window statistics, `ta.wma`, `ta.macd`, `ta.kc`,
+/// `ta.tsi`) match on all 120 bars.
+#[test]
+fn a_missing_source_bar_gives_what_tradingview_gives() {
+    let text = include_str!("data/tradingview-missing-bars.log");
+    let data = logged_bars(text);
+    let rows = logged_rows(text, 'C');
+    let columns: Vec<(&str, &str)> = MISSING_BAR_COLUMNS.to_vec();
+    let mut source = String::from("//@version=6\nindicator(\"Missing\", overlay = true)\n");
+    source.push_str("src = bar_index % 37 == 0 ? na : close\n");
+    source.push_str("[bbm, bbu, bbl] = ta.bb(src, 20, 2)\n");
+    source.push_str("[ml, ms, mh] = ta.macd(src, 12, 26, 9)\n");
+    source.push_str("[kcb, kcu, kcl] = ta.kc(src, 20, 1.5, true)\n");
+    for (_, code) in &columns {
+        source.push_str(&format!("plot({code})\n"));
+    }
+    let session = super::bench::run_script(&source, &data, false, |_| {});
+    let output = session.output();
+    assert_eq!(output.plots.len(), columns.len());
+    let mut mismatches = Vec::new();
+    for (bar, wanted) in &rows {
+        for (((name, _), wanted), plot) in columns.iter().zip(wanted).zip(&output.plots) {
+            if NOT_YET_LIKE_TRADINGVIEW.contains(name) {
+                continue;
+            }
+            let ok = match plot.values[*bar] {
+                None => wanted.is_nan(),
+                // TradingView prints eight decimals.
+                Some(got) => (got - wanted).abs() <= 1e-8 * wanted.abs().max(1.0) + 6e-9,
+            };
+            if !ok {
+                mismatches.push(format!(
+                    "bar {bar} {name}: {:?} against TradingView's {wanted}",
+                    plot.values[*bar]
+                ));
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "{} values differ, first: {:#?}",
+        mismatches.len(),
+        &mismatches[..mismatches.len().min(8)]
+    );
+}
+
+/// The columns of `MISSING_BAR_COLUMNS` that still differ from TradingView over a missing bar, left
+/// out of the comparison above. Each is a function the change that added this test did not touch;
+/// what TradingView does is in `docs/pine-ta-parity.md`.
+const NOT_YET_LIKE_TRADINGVIEW: [&str; 14] = [
+    "ta.cmo(10)",
+    "ta.correlation(10)",
+    "ta.hma(9)",
+    "ta.mfi(14)",
+    "ta.mode(10)",
+    "ta.vwma(10)",
+    "ta.percentrank(10)",
+    "ta.highest(10)",
+    "ta.lowest(10)",
+    "ta.highestbars(10)",
+    "ta.lowestbars(10)",
+    "ta.rising(3)",
+    "ta.falling(3)",
+    "ta.cum",
+];
+
+/// What the probe logged on each bar, in order: the column's name and the Pine that draws it.
+const MISSING_BAR_COLUMNS: [(&str, &str); 42] = [
+    ("ta.ema(10)", "ta.ema(src, 10)"),
+    ("ta.rma(10)", "ta.rma(src, 10)"),
+    ("ta.rsi(14)", "ta.rsi(src, 14)"),
+    ("ta.stdev(20)", "ta.stdev(src, 20)"),
+    ("ta.variance(20)", "ta.variance(src, 20)"),
+    ("ta.median(20)", "ta.median(src, 20)"),
+    ("ta.range(20)", "ta.range(src, 20)"),
+    ("math.sum(20)", "math.sum(src, 20)"),
+    ("ta.wma(10)", "ta.wma(src, 10)"),
+    ("ta.dev(20)", "ta.dev(src, 20)"),
+    ("ta.bb upper", "bbu"),
+    ("ta.bbw(20, 2)", "ta.bbw(src, 20, 2)"),
+    ("ta.macd line", "ml"),
+    ("ta.macd signal", "ms"),
+    ("ta.macd histogram", "mh"),
+    ("ta.kc basis", "kcb"),
+    ("ta.kc upper", "kcu"),
+    ("ta.tsi(5, 13)", "ta.tsi(src, 5, 13)"),
+    ("ta.cmo(10)", "ta.cmo(src, 10)"),
+    ("ta.cci(20)", "ta.cci(src, 20)"),
+    ("ta.hma(9)", "ta.hma(src, 9)"),
+    ("ta.cog(10)", "ta.cog(src, 10)"),
+    ("ta.correlation(10)", "ta.correlation(src, open, 10)"),
+    ("ta.mfi(14)", "ta.mfi(src, 14)"),
+    ("ta.vwma(10)", "ta.vwma(src, 10)"),
+    ("ta.wpr(14)", "ta.wpr(14)"),
+    ("ta.highestbars(10)", "ta.highestbars(src, 10)"),
+    ("ta.lowestbars(10)", "ta.lowestbars(src, 10)"),
+    ("ta.rising(3)", "ta.rising(src, 3) ? 1 : 0"),
+    ("ta.falling(3)", "ta.falling(src, 3) ? 1 : 0"),
+    ("ta.mode(10)", "ta.mode(src, 10)"),
+    ("ta.percentrank(10)", "ta.percentrank(src, 10)"),
+    ("ta.linreg(10, 0)", "ta.linreg(src, 10, 0)"),
+    ("ta.mom(5)", "ta.mom(src, 5)"),
+    ("ta.roc(5)", "ta.roc(src, 5)"),
+    ("ta.change", "ta.change(src)"),
+    ("ta.sma(10)", "ta.sma(src, 10)"),
+    ("ta.highest(10)", "ta.highest(src, 10)"),
+    ("ta.lowest(10)", "ta.lowest(src, 10)"),
+    ("ta.swma", "ta.swma(src)"),
+    ("ta.alma(9, 0.85, 6)", "ta.alma(src, 9, 0.85, 6)"),
+    ("ta.cum", "ta.cum(src)"),
+];
+
+#[test]
+fn an_average_over_a_missing_bar_follows_a_live_bar_like_its_reference_code() {
+    // Bar 1 has no source value. The live bar is recomputed on every tick from the averages as the
+    // history left them and folded in only when it closes: `ta.ema` and `ta.rma` must give what the
+    // formula written out in Pine gives at the history, the first tick, a changed tick and the close.
+    let source = "src = bar_index == 1 ? na : close
+f_average(x, length, alpha) =>
+    var float seedSum = 0.0
+    var int seen = 0
+    var float prior = na
+    float result = na
+    if not na(x)
+        if not na(prior)
+            result := alpha * x + (1.0 - alpha) * prior
+            prior := result
+        else
+            seedSum += x
+            seen += 1
+            if seen == length
+                result := seedSum / length
+                prior := result
+    result
+plot(ta.ema(src, 2))
+plot(f_average(src, 2, 2.0 / 3.0))
+plot(ta.rma(src, 2))
+plot(f_average(src, 2, 0.5))";
+    let seen = live_bar(source);
+    assert_eq!(seen.len(), 4);
+    for (stage, plotted) in seen.iter().enumerate() {
+        for (name, pair) in ["ta.ema", "ta.rma"].iter().zip(plotted.chunks(2)) {
+            assert!(
+                (pair[0] - pair[1]).abs() <= 1e-9 * pair[0].abs().max(1.0),
+                "stage {stage}: {name} {} against its formula {}",
+                pair[0],
+                pair[1]
+            );
+        }
+    }
+    assert_ne!(seen[1][0], seen[2][0], "the changed tick moved the average");
+    assert_eq!(
+        seen[2], seen[3],
+        "the close folds what the last tick showed"
+    );
+}
+
+/// A close with four holes in a row (bars 10 to 13 of every 40).
+const HOLE_RUNS: &str = "src = bar_index % 40 >= 10 and bar_index % 40 < 14 ? na : close";
+
+#[test]
+fn a_run_of_missing_bars_is_skipped_like_a_single_one() {
+    // The averages keep their state through the run, and each window statistic is taken over the
+    // last values that exist and holds its value on every missing bar. Checked against the
+    // definitions written out in Pine; TradingView was measured on single holes only.
+    let source = format!(
+        "//@version=6
+indicator(\"Hole runs\")
+{HOLE_RUNS}
+{}{}var float[] valid = array.new_float()
+if not na(src)
+    valid.push(src)
+    if valid.size() > 20
+        valid.shift()
+var float lastGood = na
+var float[] slots = array.new_float()
+slots.push(na(src) ? lastGood : src)
+if slots.size() > 10
+    slots.shift()
+lastGood := na(src) ? lastGood : src
+float weighted = 0.0
+for index = 0 to slots.size() - 1
+    weighted += (index + 1) * slots.get(index)
+bool full = valid.size() == 20
+plot(ta.ema(src, 20))
+plot(ema)
+plot(ta.rma(src, 14))
+plot(rma)
+plot(ta.stdev(src, 20))
+plot(full ? valid.stdev() : na)
+plot(ta.variance(src, 20))
+plot(full ? valid.variance() : na)
+plot(ta.median(src, 20))
+plot(full ? valid.median() : na)
+plot(ta.range(src, 20))
+plot(full ? valid.range() : na)
+plot(math.sum(src, 20))
+plot(full ? valid.sum() : na)
+plot(ta.wma(src, 10))
+plot(na(src) or slots.size() < 10 ? na : weighted / 55)
+",
+        skipping_average("ema", 20, "(2.0 / 21)"),
+        skipping_average("rma", 14, "(1.0 / 14)"),
+    );
+    let plotted = plots(&source, 400);
+    for (index, name) in [
+        "ema", "rma", "stdev", "variance", "median", "range", "sum", "wma",
+    ]
+    .iter()
+    .enumerate()
+    {
+        assert_same(name, &plotted[index * 2], &plotted[index * 2 + 1]);
+    }
+    // The statistics hold their value through the whole run; the average and the wma are na on it.
+    assert_eq!(
+        plotted[4][49], plotted[4][50],
+        "stdev holds on a missing bar"
+    );
+    assert_eq!(plotted[4][52], plotted[4][49], "and through the run");
+    assert!(plotted[4][53].is_some());
+    assert_eq!(plotted[0][51], None, "the average is na on a missing bar");
+    assert!(plotted[0][54].is_some(), "and back after the run");
+    assert_eq!(plotted[14][51], None);
+    assert!(
+        plotted[14][54].is_some(),
+        "the wma recovers on the bar after"
+    );
+}
+
+/// TradingView's output for four missing bars in a row (bars 10 to 13 of every 40) on the same 100
+/// bars as above: `src = bar_index % 40 >= 10 and bar_index % 40 < 14 ? na : close`. `D` lines hold
+/// the 18 results of the functions this change rewrote.
+#[test]
+fn a_run_of_missing_bars_gives_what_tradingview_gives() {
+    let data = logged_bars(include_str!("data/tradingview-missing-bars.log"));
+    let rows = logged_rows(include_str!("data/tradingview-missing-bar-runs.log"), 'D');
+    assert_eq!(rows.len(), 100);
+    let columns = [
+        ("ta.ema(10)", "ta.ema(src, 10)"),
+        ("ta.rma(10)", "ta.rma(src, 10)"),
+        ("ta.rsi(14)", "ta.rsi(src, 14)"),
+        ("ta.stdev(20)", "ta.stdev(src, 20)"),
+        ("ta.variance(20)", "ta.variance(src, 20)"),
+        ("ta.median(20)", "ta.median(src, 20)"),
+        ("ta.range(20)", "ta.range(src, 20)"),
+        ("math.sum(20)", "math.sum(src, 20)"),
+        ("ta.wma(10)", "ta.wma(src, 10)"),
+        ("ta.dev(20)", "ta.dev(src, 20)"),
+        ("ta.bb upper", "bbu"),
+        ("ta.bbw(20, 2)", "ta.bbw(src, 20, 2)"),
+        ("ta.macd line", "ml"),
+        ("ta.macd signal", "ms"),
+        ("ta.macd histogram", "mh"),
+        ("ta.kc basis", "kcb"),
+        ("ta.kc upper", "kcu"),
+        ("ta.tsi(5, 13)", "ta.tsi(src, 5, 13)"),
+    ];
+    let mut source = String::from("//@version=6\nindicator(\"Runs\", overlay = true)\n");
+    source.push_str("src = bar_index % 40 >= 10 and bar_index % 40 < 14 ? na : close\n");
+    source.push_str("[bbm, bbu, bbl] = ta.bb(src, 20, 2)\n");
+    source.push_str("[ml, ms, mh] = ta.macd(src, 12, 26, 9)\n");
+    source.push_str("[kcb, kcu, kcl] = ta.kc(src, 20, 1.5, true)\n");
+    for (_, code) in &columns {
+        source.push_str(&format!("plot({code})\n"));
+    }
+    let session = super::bench::run_script(&source, &data[..100], false, |_| {});
+    let output = session.output();
+    assert_eq!(output.plots.len(), columns.len());
+    let mut mismatches = Vec::new();
+    for (bar, wanted) in &rows {
+        for (((name, _), wanted), plot) in columns.iter().zip(wanted).zip(&output.plots) {
+            let ok = match plot.values[*bar] {
+                None => wanted.is_nan(),
+                Some(got) => (got - wanted).abs() <= 1e-8 * wanted.abs().max(1.0) + 6e-9,
+            };
+            if !ok {
+                mismatches.push(format!(
+                    "bar {bar} {name}: {:?} against TradingView's {wanted}",
+                    plot.values[*bar]
+                ));
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "{} values differ, first: {:#?}",
+        mismatches.len(),
+        &mismatches[..mismatches.len().min(8)]
+    );
+}
+
+#[test]
+fn what_a_missing_bar_gives_does_not_depend_on_the_bars_after_it() {
+    // Replay runs the script on the bars so far: a bar must show the same value whether or not later
+    // bars exist, holes included.
+    let source = format!(
+        "//@version=6
+indicator(\"Prefix\", overlay = true)
+{HOLEY}
+[bbm, bbu, bbl] = ta.bb(src, 20, 2)
+[ml, ms, mh] = ta.macd(src, 12, 26, 9)
+[kcb, kcu, kcl] = ta.kc(src, 20, 1.5, true)
+plot(ta.ema(src, 10))
+plot(ta.rma(src, 10))
+plot(ta.rsi(src, 14))
+plot(ta.stdev(src, 20))
+plot(ta.variance(src, 20))
+plot(ta.median(src, 20))
+plot(ta.range(src, 20))
+plot(math.sum(src, 20))
+plot(ta.wma(src, 10))
+plot(ta.dev(src, 20))
+plot(bbu)
+plot(ta.bbw(src, 20, 2))
+plot(ml)
+plot(ms)
+plot(mh)
+plot(kcb)
+plot(kcu)
+plot(ta.tsi(src, 5, 13))
+"
+    );
+    let whole = plots(&source, 300);
+    // Counts that end on a hole (37, 74), just after one, and inside the first windows.
+    for count in [1, 2, 10, 20, 37, 38, 74, 75, 150] {
+        let part = plots(&source, count);
+        for (index, (whole, part)) in whole.iter().zip(&part).enumerate() {
+            assert_same(
+                &format!("plot {index} over {count} bars"),
+                &whole[..count],
+                part,
+            );
+        }
+    }
+}
+
+#[test]
+fn odd_lengths_and_sources_give_na_or_the_obvious_value_and_never_stop_the_script() {
+    let source = format!(
+        "//@version=6
+indicator(\"Odd\", overlay = true)
+{HOLEY}
+float none = na
+float lastHole = barstate.islast ? na : close
+plot(src)
+plot(ta.ema(src, 1))
+plot(ta.rma(src, 1))
+plot(ta.stdev(src, 1))
+plot(ta.wma(src, 1))
+plot(ta.ema(src, 500))
+plot(ta.stdev(src, 500))
+plot(ta.rsi(src, 500))
+plot(ta.ema(none, 5))
+plot(ta.rsi(none, 14))
+plot(ta.stdev(none, 5))
+plot(ta.wma(none, 5))
+plot(ta.median(none, 5))
+plot(ta.ema(lastHole, 5))
+plot(ta.stdev(lastHole, 5))
+plot(ta.rsi(lastHole, 5))
+plot(ta.ema(close, 5))
+"
+    );
+    let plotted = plots(&source, 100);
+    assert_eq!(plotted.len(), 17, "the script ran to the end");
+    // Length 1: alpha is 1, so the average is the source; a window of one value has no spread.
+    assert_same("ema(1)", &plotted[1], &plotted[0]);
+    assert_same("rma(1)", &plotted[2], &plotted[0]);
+    assert_same("wma(1)", &plotted[4], &plotted[0]);
+    assert_eq!(plotted[3][0], None, "bar 0 is a hole");
+    assert!(
+        plotted[3][1..].iter().all(|value| *value == Some(0.0)),
+        "stdev of one value"
+    );
+    // A length longer than the chart, or a source that never has a value: no value, no error.
+    for index in [5, 6, 7, 8, 9, 10, 11, 12] {
+        assert!(
+            plotted[index].iter().all(Option::is_none),
+            "plot {index} has no value"
+        );
+    }
+    // A hole on the last bar only: the average is na there and was the ordinary one before it, the
+    // statistic holds its value, rsi has no change.
+    assert_same(
+        "ema before the last bar",
+        &plotted[13][..99],
+        &plotted[16][..99],
+    );
+    assert_eq!(plotted[13][99], None);
+    assert_eq!(plotted[14][99], plotted[14][98]);
+    assert!(plotted[14][99].is_some());
+    assert_eq!(plotted[15][99], None);
+    assert!(plotted[15][98].is_some());
+}
+
+#[test]
+fn averages_and_statistics_inside_a_request_skip_a_missing_bar_like_their_reference_code() {
+    // The requested series has its own history and its own holes: each built-in must give what the
+    // definition written out inside the same request gives.
+    let source = "//@version=6
+indicator(\"Requested\", overlay = true)
+f_average(x, length, alpha) =>
+    var float seedSum = 0.0
+    var int seen = 0
+    var float prior = na
+    float result = na
+    if not na(x)
+        if not na(prior)
+            result := alpha * x + (1.0 - alpha) * prior
+            prior := result
+        else
+            seedSum += x
+            seen += 1
+            if seen == length
+                result := seedSum / length
+                prior := result
+    result
+f_stdev(x, length) =>
+    var float[] valid = array.new_float()
+    if not na(x)
+        valid.push(x)
+        if valid.size() > length
+            valid.shift()
+    valid.size() == length ? valid.stdev() : na
+plot(request.security(syminfo.tickerid, \"5\", ta.ema(bar_index % 7 == 3 ? na : close, 20)))
+plot(request.security(syminfo.tickerid, \"5\", f_average(bar_index % 7 == 3 ? na : close, 20, 2.0 / 21)))
+plot(request.security(syminfo.tickerid, \"5\", ta.rma(bar_index % 7 == 3 ? na : close, 14)))
+plot(request.security(syminfo.tickerid, \"5\", f_average(bar_index % 7 == 3 ? na : close, 14, 1.0 / 14)))
+plot(request.security(syminfo.tickerid, \"5\", ta.stdev(bar_index % 7 == 3 ? na : close, 20)))
+plot(request.security(syminfo.tickerid, \"5\", f_stdev(bar_index % 7 == 3 ? na : close, 20)))
+";
+    let minutes = bars(900, 60_000);
+    let plotted: Vec<Vec<Option<f64>>> = run_script(source, &minutes, true, |_| {})
+        .output()
+        .plots
+        .into_iter()
+        .map(|plot| plot.values)
+        .collect();
+    for (name, pair) in ["ema", "rma", "stdev"].iter().zip(plotted.chunks(2)) {
+        assert_same(name, &pair[0], &pair[1]);
+    }
+    assert!(plotted[0].iter().flatten().count() > 100, "the request ran");
+}
+
+/// TradingView's output when the functions are called only on every third bar (`if bar_index % 3 ==
+/// 1`) over a source with a hole every tenth bar (`bar_index % 10 == 4`), on the same bars as above:
+/// `E` lines hold what each gave on the bars it ran on (`tests/data/tradingview-missing-bars-
+/// conditional.log`). Every column matches but `ta.wma`, which is not compared: TradingView's
+/// conditional `ta.wma` is `na` on the first 5 calls and then a value that is neither the last five
+/// valid calls', nor the chart bars' (hole filled or skipped), nor the unconditional rule's (see
+/// `docs/pine-ta-parity.md`).
+#[test]
+fn conditional_calls_over_a_missing_bar_match_tradingview() {
+    let data = logged_bars(include_str!("data/tradingview-missing-bars.log"));
+    let rows = logged_rows(
+        include_str!("data/tradingview-missing-bars-conditional.log"),
+        'E',
+    );
+    assert_eq!(rows.len(), 33);
+    let columns = [
+        ("ta.ema(5)", "a1"),
+        ("ta.rma(5)", "a2"),
+        ("ta.rsi(5)", "a3"),
+        ("ta.stdev(5)", "a4"),
+        ("ta.variance(5)", "a5"),
+        ("ta.median(5)", "a6"),
+        ("ta.range(5)", "a7"),
+        ("math.sum(5)", "a8"),
+        ("ta.wma(5)", "a9"),
+        ("ta.bb upper", "bu"),
+        ("ta.macd line", "ml"),
+        ("ta.macd signal", "ms"),
+        ("ta.tsi(2, 3)", "t1"),
+    ];
+    let mut source = String::from("//@version=6\nindicator(\"Conditional\", overlay = true)\n");
+    source.push_str("src = bar_index % 10 == 4 ? na : close\n");
+    for (_, name) in &columns {
+        source.push_str(&format!("float {name} = na\n"));
+    }
+    source.push_str(
+        "if bar_index % 3 == 1
+    a1 := ta.ema(src, 5)
+    a2 := ta.rma(src, 5)
+    a3 := ta.rsi(src, 5)
+    a4 := ta.stdev(src, 5)
+    a5 := ta.variance(src, 5)
+    a6 := ta.median(src, 5)
+    a7 := ta.range(src, 5)
+    a8 := math.sum(src, 5)
+    a9 := ta.wma(src, 5)
+    [bm, bbu, bl] = ta.bb(src, 5, 2)
+    bu := bbu
+    [line, signal, hist] = ta.macd(src, 3, 5, 2)
+    ml := line
+    ms := signal
+    t1 := ta.tsi(src, 2, 3)
+",
+    );
+    for (_, code) in &columns {
+        source.push_str(&format!("plot({code})\n"));
+    }
+    let session = super::bench::run_script(&source, &data[..100], false, |_| {});
+    let output = session.output();
+    let mut mismatches = Vec::new();
+    for (bar, wanted) in &rows {
+        for (((name, _), wanted), plot) in columns.iter().zip(wanted).zip(&output.plots) {
+            if *name == "ta.wma(5)" {
+                continue;
+            }
+            let ok = match plot.values[*bar] {
+                None => wanted.is_nan(),
+                Some(got) => (got - wanted).abs() <= 1e-8 * wanted.abs().max(1.0) + 6e-9,
+            };
+            if !ok {
+                mismatches.push(format!(
+                    "bar {bar} {name}: {:?} against TradingView's {wanted}",
+                    plot.values[*bar]
+                ));
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "{} values differ, first: {:#?}",
+        mismatches.len(),
+        &mismatches[..mismatches.len().min(8)]
+    );
+}
