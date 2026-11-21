@@ -40,6 +40,8 @@ pub(super) struct Drawn {
     pub(super) texts: Vec<(Pos2, String, f32)>,
     pub(super) meshes: Vec<Arc<egui::epaint::Mesh>>,
     pub(super) rects: Vec<(Rect, Color32)>,
+    /// The points of every stroked path (a script's plot is one).
+    pub(super) paths: Vec<Vec<Pos2>>,
 }
 
 fn collect(shape: &Shape, out: &mut Drawn) {
@@ -61,6 +63,7 @@ fn collect(shape: &Shape, out: &mut Drawn) {
         }
         Shape::Mesh(mesh) => out.meshes.push(Arc::clone(mesh)),
         Shape::Rect(rect) => out.rects.push((rect.rect, rect.fill)),
+        Shape::Path(path) => out.paths.push(path.points.clone()),
         Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, out)),
         _ => {}
     }

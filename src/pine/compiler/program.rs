@@ -100,6 +100,9 @@ pub struct DeclarationMetadata {
     pub max_polylines_count: Option<i64>,
     /// `behind_chart`: an overlay script's plots and drawings sit behind the candles.
     pub behind_chart: Option<bool>,
+    /// `scale = scale.none`: the script's values are fitted to a hidden scale of their own and
+    /// leave the price axis alone. Only an overlay has a price axis to leave alone.
+    pub scale_none: bool,
     /// Present for `strategy()` scripts.
     pub strategy: Option<StrategySettings>,
 }
@@ -120,6 +123,7 @@ impl Default for DeclarationMetadata {
             max_boxes_count: None,
             max_polylines_count: None,
             behind_chart: None,
+            scale_none: false,
             strategy: None,
         }
     }
@@ -224,6 +228,9 @@ pub struct VisualOutput {
     pub strategy: Option<StrategyReport>,
     /// `behind_chart` of an overlay script.
     pub behind_chart: bool,
+    /// `scale = scale.none` of an overlay script: its values have a hidden scale of their own and
+    /// are no part of the price axis.
+    pub scale_none: bool,
 }
 
 impl VisualOutput {
