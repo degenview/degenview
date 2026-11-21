@@ -18,7 +18,7 @@
       TradingView-style indicators and strategies and keep every line of source on your device.
     </p>
     <ul>
-      <li>Crypto from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, CoinGecko and DEX pairs, US stocks through Alpaca</li>
+      <li>Crypto from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, CoinGecko and DEX pairs, US stocks through Alpaca</li>
       <li>Polymarket and Kalshi events charted as probabilities</li>
       <li>Drawing tools, price alerts with webhooks, and portfolio tracking</li>
       <li>An optional local MCP server so AI assistants can inspect and drive the app</li>

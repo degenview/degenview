@@ -1,5 +1,5 @@
 use crate::model::DataSource;
-use crate::model::market::profile::{Casing, PairStyle};
+use crate::model::market::profile::PairStyle;
 use serde::{Deserialize, Serialize};
 
 /// A market on one provider. Equality and identity are source-qualified: a
@@ -36,7 +36,9 @@ impl InstrumentId {
     /// USDT); Kraken's are `BASE/QUOTE` (USD) in the common tickers, never the legacy `XBT`.
     pub fn api_symbol(&self) -> String {
         let profile = self.source.profile();
-        profile.pair.api_symbol(&self.symbol, profile.home_quote)
+        profile
+            .pair
+            .api_symbol(&self.symbol, profile.home_quote, profile.id)
     }
 
     /// Whether both name one market on one provider, comparing by the id the
@@ -59,11 +61,7 @@ impl InstrumentId {
         if !matches!(profile.pair, PairStyle::None) {
             return Self::new(source, symbol).api_symbol();
         }
-        match profile.id {
-            Casing::Upper => symbol.to_uppercase(),
-            Casing::Lower => symbol.to_lowercase(),
-            Casing::AsGiven => symbol.to_owned(),
-        }
+        profile.id.apply(symbol)
     }
 }
 
