@@ -50,23 +50,7 @@ pub fn status_of(
 
 /// The data source a `"<SLUG>:<ticker>"` key's prefix names.
 fn source_of(prefix: &str) -> Option<DataSource> {
-    [
-        DataSource::Binance,
-        DataSource::Coinbase,
-        DataSource::Okx,
-        DataSource::Kraken,
-        DataSource::Bybit,
-        DataSource::Gate,
-        DataSource::Mexc,
-        DataSource::CoinGecko,
-        DataSource::DexScreener,
-        DataSource::Alpaca,
-        DataSource::Polymarket,
-        DataSource::Kalshi,
-        DataSource::CoinMarketCap,
-    ]
-    .into_iter()
-    .find(|source| source.watchlist_slug().eq_ignore_ascii_case(prefix))
+    DataSource::from_watchlist_slug(prefix)
 }
 
 impl ScriptAlertRow {

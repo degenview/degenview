@@ -10,6 +10,7 @@
 
 use super::PickMode;
 use crate::model::DataSource;
+use crate::model::market::profile::Class;
 use crate::service::market::search_rank::{self, is_dollar_quote};
 use crate::service::work_queue::{self, Pending};
 use crate::service::{self, ProviderError, SearchResult};
@@ -22,24 +23,6 @@ use std::time::{Duration, Instant};
 const DEBOUNCE: Duration = Duration::from_millis(220);
 /// Related markets listed under a market.
 const RELATED_LIMIT: usize = 6;
-
-/// The markets the picker lists, in the order the providers are asked (and so the order exchanges
-/// that list the same market appear in).
-pub const PROVIDERS: [DataSource; 10] = [
-    DataSource::Binance,
-    DataSource::Coinbase,
-    DataSource::Okx,
-    DataSource::Kraken,
-    DataSource::Bybit,
-    DataSource::Gate,
-    DataSource::Mexc,
-    DataSource::DexScreener,
-    DataSource::CoinGecko,
-    DataSource::Alpaca,
-];
-
-/// The prediction markets the Predictions tab asks, in the order their answers are listed.
-pub const PREDICTION_PROVIDERS: [DataSource; 2] = [DataSource::Polymarket, DataSource::Kalshi];
 
 /// What the market tabs narrow the list to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,12 +61,13 @@ impl Scope {
     }
 
     pub fn includes(self, source: DataSource) -> bool {
+        let class = source.profile().class;
         match self {
-            Self::All | Self::Watchlists => PROVIDERS.contains(&source),
-            Self::Stocks => source == DataSource::Alpaca,
-            Self::Crypto => PROVIDERS.contains(&source) && source != DataSource::Alpaca,
-            Self::Predictions => PREDICTION_PROVIDERS.contains(&source),
-            Self::Dashboards => source == DataSource::CoinMarketCap,
+            Self::All | Self::Watchlists => class.is_symbol_market(),
+            Self::Stocks => class == Class::Stock,
+            Self::Crypto => class.is_crypto(),
+            Self::Predictions => class == Class::Prediction,
+            Self::Dashboards => class == Class::Index,
         }
     }
 
@@ -115,9 +99,8 @@ impl Scope {
 
     /// The venues the filter offers inside this scope.
     pub fn venues(self) -> Vec<DataSource> {
-        PROVIDERS
-            .into_iter()
-            .chain(PREDICTION_PROVIDERS)
+        DataSource::symbol_markets()
+            .chain(DataSource::prediction_markets())
             .filter(|source| self.includes(*source))
             .collect()
     }
@@ -148,28 +131,22 @@ pub fn popular() -> Vec<SearchResult> {
 
 /// What kind of market a provider lists, as the list's right-hand column says it.
 pub fn market_kind(source: DataSource) -> &'static str {
-    match source {
-        DataSource::Alpaca => "Stock",
-        DataSource::Polymarket | DataSource::Kalshi => "Prediction",
-        DataSource::CoinMarketCap => "Index",
-        _ => "Crypto",
+    match source.profile().class {
+        Class::Stock => "Stock",
+        Class::Prediction => "Prediction",
+        Class::Index => "Index",
+        Class::Exchange | Class::Aggregator | Class::Dex => "Crypto",
     }
 }
 
 /// How a market trades, for the "also trades as" column.
 pub fn trading_kind(source: DataSource) -> &'static str {
-    match source {
-        DataSource::Binance
-        | DataSource::Coinbase
-        | DataSource::Okx
-        | DataSource::Kraken
-        | DataSource::Bybit
-        | DataSource::Gate
-        | DataSource::Mexc => "Spot",
-        DataSource::DexScreener => "DEX",
-        DataSource::CoinGecko => "Aggregate",
-        DataSource::Alpaca => "Stock",
-        _ => "",
+    match source.profile().class {
+        Class::Exchange => "Spot",
+        Class::Dex => "DEX",
+        Class::Aggregator => "Aggregate",
+        Class::Stock => "Stock",
+        Class::Prediction | Class::Index => "",
     }
 }
 
@@ -260,9 +237,8 @@ impl SymbolSearch {
             false
         });
         let key = query.trim().to_lowercase();
-        let sources: Vec<DataSource> = PROVIDERS
-            .into_iter()
-            .chain(PREDICTION_PROVIDERS)
+        let sources: Vec<DataSource> = DataSource::symbol_markets()
+            .chain(DataSource::prediction_markets())
             .filter(|source| scope.includes(*source) && venue.is_none_or(|only| only == *source))
             .collect();
         if key.is_empty() {
@@ -357,7 +333,7 @@ impl Related {
             found.insert(asset.clone(), answer);
             false
         });
-        if !PROVIDERS.contains(&of.source) || of.source == DataSource::Alpaca {
+        if !of.source.profile().class.is_crypto() {
             return Some(Vec::new());
         }
         let asset = of.base_asset();
@@ -380,27 +356,18 @@ fn same(a: &SearchResult, b: &SearchResult) -> bool {
 
 /// Every dollar market of `asset` on the exchanges whose lists are held locally.
 fn related_markets(asset: &str) -> Vec<SearchResult> {
-    let groups: Vec<Vec<SearchResult>> = [
-        DataSource::Binance,
-        DataSource::Coinbase,
-        DataSource::Okx,
-        DataSource::Kraken,
-        DataSource::Bybit,
-        DataSource::Gate,
-        DataSource::Mexc,
-    ]
-    .into_iter()
-    .map(|source| {
-        service::search(source, asset)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|hit| {
-                hit.base_asset().eq_ignore_ascii_case(asset)
-                    && hit.quote.as_deref().is_some_and(is_dollar_quote)
-            })
-            .collect()
-    })
-    .collect();
+    let groups: Vec<Vec<SearchResult>> = DataSource::exchanges()
+        .map(|source| {
+            service::search(source, asset)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|hit| {
+                    hit.base_asset().eq_ignore_ascii_case(asset)
+                        && hit.quote.as_deref().is_some_and(is_dollar_quote)
+                })
+                .collect()
+        })
+        .collect();
     search_rank::merge_ranked(groups, asset)
         .into_iter()
         .take(RELATED_LIMIT + 1)
@@ -466,9 +433,18 @@ mod tests {
     fn a_scope_offers_only_its_own_venues() {
         assert_eq!(Scope::Stocks.venues(), [DataSource::Alpaca]);
         assert!(!Scope::Crypto.venues().contains(&DataSource::Alpaca));
-        assert_eq!(Scope::All.venues().len(), PROVIDERS.len());
-        assert_eq!(Scope::Watchlists.venues().len(), PROVIDERS.len());
-        assert_eq!(Scope::Predictions.venues(), PREDICTION_PROVIDERS);
+        assert_eq!(
+            Scope::All.venues(),
+            DataSource::symbol_markets().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            Scope::Watchlists.venues(),
+            DataSource::symbol_markets().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            Scope::Predictions.venues(),
+            DataSource::prediction_markets().collect::<Vec<_>>()
+        );
     }
 
     #[test]

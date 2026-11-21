@@ -5,8 +5,9 @@
 //! says. A prefix no provider serves (`KUCOIN:BTCUSDT`) is never dropped silently: the symbol is
 //! searched on every venue of the tab, and the list says the prefix was not understood.
 
-use super::search::{PREDICTION_PROVIDERS, PROVIDERS, Scope};
+use super::search::Scope;
 use crate::model::DataSource;
+use crate::model::market::profile::Class;
 use crate::model::market::venue::{self, VenueQuery};
 
 /// A prefix this long or longer is a phrase with a colon in it, not a venue.
@@ -84,7 +85,7 @@ impl Lookup {
 
 /// Whether the picker lists markets of `source` (CoinMarketCap's indices are a dashboard).
 fn is_listed(source: DataSource) -> bool {
-    PROVIDERS.contains(&source) || PREDICTION_PROVIDERS.contains(&source)
+    source.profile().class != Class::Index
 }
 
 /// A symbol is one word; a phrase after a colon ("Fed: rate cut") is a search for text.

@@ -1,14 +1,9 @@
 //! One shared ticker socket per streamed source, for every market a visible watchlist shows of
 //! it. The ticker carries the last trade plus the 24h open and volume, which is all a row needs.
 
-mod bybit;
-mod coinbase;
-mod gateio;
-mod kraken;
-mod okx;
-
 use crate::model::DataSource;
 use crate::model::watchlist::quote::SourceQuote;
+use crate::service::market::venue;
 use crate::service::net::ws::Session;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,8 +17,16 @@ pub struct StreamTick {
     pub quote: SourceQuote,
 }
 
-/// Turns one text message of a source's stream into a tick.
-type Parser = fn(&str) -> Option<StreamTick>;
+/// How a venue's ticker socket is opened and read. The socket loop is [`QuoteSocket`]'s alone.
+pub trait QuoteProtocol: Sync {
+    /// The socket for `products`, as the venue names them: its url, what to send once connected
+    /// and how to keep it alive.
+    fn session(&self, products: &[String]) -> Session;
+
+    /// What one text message of the socket says; nothing for a message that is not a price
+    /// (an acknowledgement, a heartbeat, another topic).
+    fn parse(&self, text: &str) -> Option<StreamTick>;
+}
 
 /// A live connection; dropping it closes the socket.
 pub struct QuoteSocket {
@@ -38,19 +41,15 @@ impl QuoteSocket {
         products: Vec<String>,
         sender: Sender<StreamTick>,
     ) -> Option<Self> {
-        let (session, parse): (Session, Parser) = match source {
-            DataSource::Coinbase => (coinbase::session(&products), coinbase::parse_tick),
-            DataSource::Okx => (okx::session(&products), okx::parse_tick),
-            DataSource::Kraken => (kraken::session(&products), kraken::parse_tick),
-            DataSource::Bybit => (bybit::session(&products), bybit::parse_tick),
-            DataSource::Gate => (gateio::session(&products), gateio::parse_tick),
-            _ => return None,
-        };
+        let protocol = venue::of(source).quotes()?;
+        let session = protocol.session(&products);
         let shutdown = Arc::new(AtomicBool::new(false));
         let thread_shutdown = Arc::clone(&shutdown);
         std::thread::spawn(move || {
             session.run(&thread_shutdown, |text| {
-                parse(text).is_none_or(|tick| sender.send(tick).is_ok())
+                protocol
+                    .parse(text)
+                    .is_none_or(|tick| sender.send(tick).is_ok())
             });
         });
         Some(Self { shutdown, products })

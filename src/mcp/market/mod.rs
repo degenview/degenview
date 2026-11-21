@@ -8,7 +8,8 @@ pub mod tools;
 use crate::mcp::chart::data::iso;
 use crate::mcp::confirm::{Confirm, Gate};
 use crate::mcp::market::tools::{CREATE_WATCHLIST, DELETE_WATCHLIST, UPDATE_WATCHLIST};
-use crate::model::watchlist::quote::{ChangeBasis, Freshness, VolumeKind, WatchlistQuote};
+use crate::model::market::profile::ChangeBasis;
+use crate::model::watchlist::quote::{Freshness, VolumeKind, WatchlistQuote};
 use crate::model::watchlist::{Watchlist, WatchlistEntry, WatchlistInstrument};
 use crate::model::{DataSource, InstrumentId};
 use crate::service::SearchResult;
@@ -78,21 +79,7 @@ pub const MAX_EDIT_MARKETS: usize = 100;
 
 /// The provider's name as every MCP tool spells it.
 pub fn source_id(source: DataSource) -> &'static str {
-    match source {
-        DataSource::Binance => "binance",
-        DataSource::Coinbase => "coinbase",
-        DataSource::Okx => "okx",
-        DataSource::Kraken => "kraken",
-        DataSource::Bybit => "bybit",
-        DataSource::Gate => "gateio",
-        DataSource::Mexc => "mexc",
-        DataSource::CoinGecko => "coingecko",
-        DataSource::DexScreener => "dexscreener",
-        DataSource::Alpaca => "alpaca",
-        DataSource::Polymarket => "polymarket",
-        DataSource::Kalshi => "kalshi",
-        DataSource::CoinMarketCap => "coinmarketcap",
-    }
+    source.profile().mcp_id
 }
 
 // MARK: Search

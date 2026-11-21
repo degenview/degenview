@@ -89,7 +89,7 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | `alert/`, `webhook/` | Price and Pine alerts (engine, feed, line, messages, notifications, the `draft` the sheet and MCP build) and webhook endpoints and policy |
 | `paper/`, `portfolio/`, `watchlist/`, `broker/` | Paper trading, the portfolio ledger and its statistics, watchlists, and the shared live-trading values |
 | `chart/` | One chart: appearance, canvas, viewport, price scale, kind, layout, templates, context menu, linked-chart sync, snapshots (`snapshot/`: limits, file names, hosting and prefs, plus the Screenshot Studio's `studio`, `framing`, `composition` and `selection`), replay (the clock and what an agent asks of it), constructed bars (`synthetic/`) |
-| `market/` | Instruments, sources, timeframes (`timeframe/`), candle buckets, folds and gap filling (`bucket/`), candles, live-kline folding (`live`), history paging, prediction-market series, CoinMarketCap chart keys and titles (`cmc`) |
+| `market/` | Instruments, sources, timeframes (`timeframe/`), candle buckets, folds and gap filling (`bucket/`), candles, live-kline folding (`live`), history paging, prediction-market series, CoinMarketCap chart keys and titles (`cmc`), and the `profile` of every source (names, slug, id spelling, candle lengths, streams, polling: one `Profile` per `DataSource`, all in `profile/table.rs`) |
 | `drawings/`, `annotation/`, `pattern/`, `fib/`, `forecast/` | Drawings and their tools: the shared model and styles, text/image/post/table content, patterns and Elliott waves, Fibonacci and Gann, positions and measurers |
 | `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart, script value types (`script`) and the Pine indicators bundled with the app (`bundled/`) |
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
@@ -116,7 +116,7 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 
 | Directory | Holds |
 | --- | --- |
-| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), their `error` (`ProviderError`), `live` feed, `candles` clean-up (`normalize`), symbol `catalog`, `search_rank`, `fx_rates`, `trend` (recent daily closes for sparklines) |
+| `market/` | One directory per venue (`alpaca binance bybit cmc coinbase coingecko dexscreener gateio kalshi kraken mexc okx polymarket`, each with its `mod.rs`, `live.rs`, `quotes.rs`, `ticker.rs` and parsers as it has them; `dexscreener/geckoterminal.rs` is its candle backend), the `venue` registry (`venue::of(source)` and the `Venue` trait), their `error` (`ProviderError`), the `live` feed (`LiveFeed`, `CandleProtocol`), `candles` clean-up (`normalize`), symbol `catalog`, `search_rank`, `fx_rates`, `trend` (recent daily closes for sparklines) |
 | `net/` | Shared transport: `http`, `rate_limit`, `ws`, `multipart`, `agent` (`FollowingAgent`) and `proxy/` (the proxy setting, its resolution, OS readers and the live-feed tunnel) |
 | `cache/` | `mod.rs` the candle cache; `disk`, `lookup` and `control` (what Settings ▸ Storage does) |
 | `annotation/` | What drawings' pictures and Post cards need: `asset_host`, `ingest`, `link_fetch` |

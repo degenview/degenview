@@ -1,10 +1,10 @@
-use super::chart::source_slug;
 use crate::clock::now_ms;
 use crate::host::alert::AlertHost;
 use crate::host::mcp::confirmation;
 use crate::mcp::alert::{AlertCommand, AlertCommandOutcome, AlertUpdate, NewAlert};
 use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::confirm::Summary;
+use crate::mcp::market::source_id;
 use crate::mcp::types::{
     AlertChangeResult, AlertChangeStatus, AlertConditionKind, AlertFrequencyKind, AlertInfo,
     AlertStatus, AlertsResult, CreateAlertResult, CreateAlertStatus, UpdateAlertResult,
@@ -262,7 +262,7 @@ pub fn alert_info(alert: &PriceAlert, last_triggered_ms: Option<i64>) -> AlertIn
     AlertInfo {
         alert_id: alert.id.to_string(),
         instrument: alert.asset.key(),
-        source: source_slug(alert.asset.source()).to_owned(),
+        source: source_id(alert.asset.source()).to_owned(),
         symbol: alert.asset.instrument.symbol.clone(),
         condition,
         target_price: alert.condition.target().map(price),

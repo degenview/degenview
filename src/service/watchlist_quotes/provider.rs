@@ -1,13 +1,13 @@
-//! Where watchlist prices come from: one batched call per source. The live provider
-//! wraps each exchange's endpoint; tests substitute a recorder. Parsers are pure so the
-//! response shapes are covered without a network.
+//! Where watchlist prices come from: one batched call per source. The live provider asks the
+//! venue behind the source (`service::market::venue`), whose `ticker.rs` holds its endpoint and
+//! its pure parser; tests substitute a recorder. What is shared lives here: the request and failure
+//! types, the GET that maps statuses onto failures, and the helpers the parsers use.
 
 use super::engine::Outcome;
-use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
+use crate::model::watchlist::quote::SourceQuote;
 use crate::model::{DataSource, Timeframe};
+use crate::service::market::venue;
 use serde_json::Value;
-use std::collections::HashMap;
-use std::time::Duration;
 
 /// One market to price. `symbol` is the id the provider's quote call takes.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -55,36 +55,9 @@ pub trait QuoteProvider: Send + Sync {
     fn resolve_chain(&self, address: &str) -> Option<String>;
 }
 
-/// The most symbols one request carries, per source.
-pub fn chunk_size(source: DataSource) -> usize {
-    match source {
-        DataSource::Binance => 100,
-        DataSource::Alpaca => 200,
-        DataSource::CoinGecko => 250,
-        DataSource::Coinbase => 20,
-        // One call answers every spot market, so a round is one request however many rows.
-        DataSource::Okx => 2_000,
-        DataSource::Kraken => 100,
-        // One call answers every spot market, so a round is one request however many rows.
-        DataSource::Bybit => 2_000,
-        DataSource::Gate => 2_500,
-        DataSource::Mexc => 2_500,
-        DataSource::DexScreener => 30,
-        _ => 100,
-    }
-}
-
 // MARK: Live provider
 
 pub struct LiveProvider;
-
-const COINBASE_URL: &str = "https://api.exchange.coinbase.com";
-const OKX_URL: &str = "https://www.okx.com/api/v5";
-const KRAKEN_URL: &str = crate::service::market::kraken::BASE_URL;
-const BYBIT_URL: &str = crate::service::market::bybit::BASE_URL;
-const GATE_URL: &str = crate::service::market::gateio::BASE_URL;
-const MEXC_URL: &str = crate::service::market::mexc::BASE_URL;
-const DEX_URL: &str = "https://api.dexscreener.com/latest/dex";
 
 impl QuoteProvider for LiveProvider {
     fn quotes(
@@ -95,35 +68,22 @@ impl QuoteProvider for LiveProvider {
         if requests.is_empty() {
             return Ok(Outcome::default());
         }
-        match source {
-            DataSource::Binance => binance(requests).map(Outcome::from_quotes),
-            DataSource::Coinbase => Ok(coinbase(requests)),
-            DataSource::Okx => okx(requests).map(Outcome::from_quotes),
-            DataSource::Kraken => kraken(requests).map(Outcome::from_quotes),
-            DataSource::Bybit => bybit(requests).map(Outcome::from_quotes),
-            DataSource::Gate => gateio(requests).map(Outcome::from_quotes),
-            DataSource::Mexc => mexc(requests).map(Outcome::from_quotes),
-            DataSource::CoinGecko => coingecko(requests).map(Outcome::from_quotes),
-            DataSource::DexScreener => Ok(dexscreener(requests)),
-            DataSource::Alpaca => alpaca(requests).map(Outcome::from_quotes),
-            DataSource::Polymarket | DataSource::Kalshi => Ok(prediction(source, requests)),
-            DataSource::CoinMarketCap => Ok(Outcome::default()),
-        }
+        venue::of(source).rest_quotes(requests)
     }
 
     fn resolve_chain(&self, address: &str) -> Option<String> {
-        let body = get(
-            DataSource::DexScreener,
-            &format!("{DEX_URL}/search?q={address}"),
-            &[],
-        )
-        .ok()?;
-        parse_chain(&body, address)
+        DataSource::ALL
+            .into_iter()
+            .find_map(|source| venue::of(source).resolve_chain(address))
     }
 }
 
 /// A GET that maps HTTP failures onto `QuoteFailure`.
-fn get(source: DataSource, url: &str, headers: &[(&str, &str)]) -> Result<String, QuoteFailure> {
+pub(in crate::service) fn get(
+    source: DataSource,
+    url: &str,
+    headers: &[(&str, &str)],
+) -> Result<String, QuoteFailure> {
     match crate::service::net::http::get_text(url, headers, crate::service::net::http::Retry::Never)
     {
         Ok(body) => Ok(body),
@@ -135,224 +95,39 @@ fn get(source: DataSource, url: &str, headers: &[(&str, &str)]) -> Result<String
 /// What an HTTP status means for a quote request. Only a status the provider documents
 /// as "a symbol in this request is unknown" is `Rejected`, which makes the engine search
 /// for the bad symbol; every other refusal (credentials, region, a changed endpoint, a
-/// ban) belongs to the whole source and backs it off instead.
+/// ban) belongs to the whole source and backs it off instead. What a status means for one
+/// venue is that venue's [`Venue::classify_status`].
 pub fn classify_status(source: DataSource, code: u16) -> QuoteFailure {
-    match (source, code) {
-        (_, 429) => QuoteFailure::RateLimited,
-        (DataSource::Alpaca, 401 | 403) => {
-            QuoteFailure::Failed("Alpaca refused your API key. Check it in Settings".to_owned())
-        }
-        // Binance answers an unknown symbol in a batch with 400; so does Alpaca.
-        (DataSource::Binance | DataSource::Alpaca, 400) => {
-            QuoteFailure::Rejected("The provider answered HTTP 400".to_owned())
-        }
-        // Bybit refuses some countries, and a client that asks too often, with a 403.
-        (DataSource::Bybit, 403) => QuoteFailure::Failed(
-            "Bybit refused the request (HTTP 403): it is not available in every country".to_owned(),
-        ),
-        // Gate.io refuses some countries, and a client that asks too often, with a 403.
-        (DataSource::Gate, 403) => QuoteFailure::Failed(
-            "Gate.io refused the request (HTTP 403): it is not available in every country"
-                .to_owned(),
-        ),
-        // MEXC refuses some countries with a 403.
-        (DataSource::Mexc, 403) => QuoteFailure::Failed(
-            "MEXC refused the request (HTTP 403): it is not available in every country".to_owned(),
-        ),
-        // Coinbase is asked one product at a time: a 404 names that product.
-        (DataSource::Coinbase, 404) => {
-            QuoteFailure::Rejected("The provider answered HTTP 404".to_owned())
-        }
-        _ => QuoteFailure::Failed(format!("The provider answered HTTP {code}")),
+    if code == 429 {
+        return QuoteFailure::RateLimited;
     }
+    venue::of(source)
+        .classify_status(code)
+        .unwrap_or_else(|| QuoteFailure::Failed(format!("The provider answered HTTP {code}")))
 }
 
-/// The batch ticker URL. `symbols` is a JSON array, so its brackets and quotes are
-/// percent-encoded: sent raw they are not valid in a URL, the HTTP client refuses the request,
-/// and every Binance quote in every watchlist stays empty.
-pub fn binance_url(requests: &[QuoteRequest]) -> String {
-    let list = requests
-        .iter()
-        .map(|request| format!("%22{}%22", request.symbol.to_uppercase()))
-        .collect::<Vec<_>>()
-        .join("%2C");
-    format!("https://api.binance.com/api/v3/ticker/24hr?symbols=%5B{list}%5D&type=MINI")
+/// The answer for a status the provider documents as "a symbol in this request is unknown".
+pub(in crate::service) fn rejected(code: u16) -> QuoteFailure {
+    QuoteFailure::Rejected(format!("The provider answered HTTP {code}"))
 }
 
-fn binance(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let body = get(DataSource::Binance, &binance_url(requests), &[])?;
-    parse_binance(&body, requests)
+/// The answer for a venue that refuses some countries, and a client that asks too often, with a 403.
+pub(in crate::service) fn refused_by_region(source: DataSource) -> QuoteFailure {
+    QuoteFailure::Failed(format!(
+        "{} refused the request (HTTP 403): it is not available in every country",
+        source.display_name()
+    ))
 }
 
 /// How many answers in a row may fail before an adapter stops asking: the endpoint is
 /// down, and the rest of the batch would only add requests.
-const CONSECUTIVE_FAILURES: usize = 3;
+pub(in crate::service) const CONSECUTIVE_FAILURES: usize = 3;
 
-fn mexc(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let body = get(DataSource::Mexc, &format!("{MEXC_URL}/ticker/24hr"), &[])?;
-    parse_mexc(&body, requests)
-}
-
-fn gateio(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let body = get(DataSource::Gate, &format!("{GATE_URL}/tickers"), &[])?;
-    parse_gateio(&body, requests)
-}
-
-fn bybit(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let body = get(
-        DataSource::Bybit,
-        &format!("{BYBIT_URL}/tickers?category=spot"),
-        &[],
-    )?;
-    parse_bybit(&body, requests)
-}
-
-fn kraken(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    // One unknown pair refuses the whole call: the engine bisects for it.
-    let pairs: Vec<&str> = requests
-        .iter()
-        .map(|request| request.symbol.as_str())
-        .collect();
-    // No wait for Kraken's one-a-second slot here: a round joins every source's request before
-    // anything is applied, so a sleeping Kraken call (up to `ISOLATION_BUDGET` of them while a
-    // refused pair is isolated) would hold back every other source's prices. A round is one call
-    // and Kraken's own refusal backs the source off.
-    let body = get(
-        DataSource::Kraken,
-        &format!("{KRAKEN_URL}/Ticker?pair={}", pairs.join(",")),
-        &[],
-    )?;
-    parse_kraken(&body, requests)
-}
-
-fn okx(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let body = get(
-        DataSource::Okx,
-        &format!("{OKX_URL}/market/tickers?instType=SPOT"),
-        &[],
-    )?;
-    parse_okx(&body, requests)
-}
-
-fn coinbase(requests: &[QuoteRequest]) -> Outcome {
-    // No multi-product price call; `/stats` is one small request per product, paced under
-    // the exchange's public limit. A product that fails is reported, and the rest still answer.
-    let mut outcome = Outcome::default();
-    let mut streak = 0;
-    for (index, request) in requests.iter().enumerate() {
-        if index > 0 {
-            std::thread::sleep(Duration::from_millis(125));
-        }
-        let id = crate::service::market::coinbase::product_id(&request.symbol);
-        match get(
-            DataSource::Coinbase,
-            &format!("{COINBASE_URL}/products/{id}/stats"),
-            &[],
-        ) {
-            Ok(body) => {
-                streak = 0;
-                if let Some(quote) = parse_coinbase_stats(&body, &id) {
-                    outcome.quotes.insert(request.symbol.clone(), quote);
-                }
-            }
-            Err(QuoteFailure::Rejected(_)) => {
-                streak = 0;
-                outcome.rejected.insert(request.symbol.clone());
-            }
-            Err(failure) => {
-                let stop = matches!(failure, QuoteFailure::RateLimited) || {
-                    streak += 1;
-                    streak >= CONSECUTIVE_FAILURES
-                };
-                let upto = if stop { requests.len() } else { index + 1 };
-                outcome
-                    .failed
-                    .push((symbols_of(&requests[index..upto]), failure));
-                if stop {
-                    break;
-                }
-            }
-        }
-    }
-    outcome
-}
-
-fn symbols_of(requests: &[QuoteRequest]) -> Vec<String> {
+pub(in crate::service) fn symbols_of(requests: &[QuoteRequest]) -> Vec<String> {
     requests
         .iter()
         .map(|request| request.symbol.clone())
         .collect()
-}
-
-fn coingecko(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let ids = requests
-        .iter()
-        .map(|request| request.symbol.to_lowercase())
-        .collect::<Vec<_>>()
-        .join(",");
-    // One `/coins/markets` call prices every coin id, costing the limiter a single slot.
-    super::super::net::rate_limit::coingecko().wait_for_slot();
-    let url = format!(
-        "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids={ids}\
-         &sparkline=false&price_change_percentage=24h&per_page={}",
-        requests.len().min(250)
-    );
-    parse_coingecko_markets(&get(DataSource::CoinGecko, &url, &[])?, requests)
-}
-
-fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
-    // One request per chain for up to 30 pools each. Pairs without a known chain are left out.
-    let mut by_chain: Vec<(&str, Vec<&QuoteRequest>)> = Vec::new();
-    for request in requests {
-        if let Some(chain) = request.chain.as_deref().filter(|chain| *chain != "unknown") {
-            match by_chain.iter_mut().find(|(name, _)| *name == chain) {
-                Some((_, pairs)) => pairs.push(request),
-                None => by_chain.push((chain, vec![request])),
-            }
-        }
-    }
-    let mut outcome = Outcome::default();
-    let mut limited = false;
-    for (chain, pairs) in by_chain {
-        for page in pairs.chunks(chunk_size(DataSource::DexScreener)) {
-            let names: Vec<String> = page.iter().map(|request| request.symbol.clone()).collect();
-            if limited {
-                outcome.failed.push((names, QuoteFailure::RateLimited));
-                continue;
-            }
-            let addresses = names.join(",");
-            match get(
-                DataSource::DexScreener,
-                &format!("{DEX_URL}/pairs/{chain}/{addresses}"),
-                &[],
-            ) {
-                Ok(body) => outcome.quotes.extend(parse_dex_pairs(&body, page)),
-                Err(failure) => {
-                    limited = matches!(failure, QuoteFailure::RateLimited);
-                    outcome.failed.push((names, failure));
-                }
-            }
-        }
-    }
-    outcome
-}
-
-fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let Some((key, secret)) = crate::service::keychain::api_keys::alpaca_credentials() else {
-        return Err(QuoteFailure::CredentialsMissing);
-    };
-    let symbols = requests
-        .iter()
-        .map(|request| request.symbol.to_uppercase())
-        .collect::<Vec<_>>()
-        .join(",");
-    let url = format!("https://data.alpaca.markets/v2/stocks/snapshots?symbols={symbols}&feed=iex");
-    let body = get(
-        DataSource::Alpaca,
-        &url,
-        &[("APCA-API-KEY-ID", &key), ("APCA-API-SECRET-KEY", &secret)],
-    )?;
-    parse_alpaca_snapshots(&body, requests)
 }
 
 /// The hourly points a prediction market's quote reads: a month of them, from which the price a
@@ -372,7 +147,7 @@ fn day_before(series: &[crate::model::Kline]) -> Option<f64> {
 
 /// Last price of a prediction market's hourly series, and its price a day earlier as the
 /// comparison.
-fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
+pub(in crate::service) fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
     let mut outcome = Outcome::default();
     let mut streak = 0;
     for (index, request) in requests.iter().enumerate() {
@@ -416,11 +191,11 @@ fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
 
 // MARK: Parsers
 
-fn json(body: &str) -> Result<Value, QuoteFailure> {
+pub(in crate::service) fn json(body: &str) -> Result<Value, QuoteFailure> {
     serde_json::from_str(body).map_err(|error| QuoteFailure::Failed(format!("Data error: {error}")))
 }
 
-fn number(value: Option<&Value>) -> Option<f64> {
+pub(in crate::service) fn number(value: Option<&Value>) -> Option<f64> {
     match value? {
         Value::Number(number) => number.as_f64(),
         Value::String(text) => text.trim().parse().ok(),
@@ -428,346 +203,16 @@ fn number(value: Option<&Value>) -> Option<f64> {
     }
 }
 
-const DOLLAR_QUOTES: [&str; 8] = [
+pub(in crate::service) const DOLLAR_QUOTES: [&str; 8] = [
     "USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "USD",
 ];
 
-/// `/ticker/24hr?type=MINI`: `openPrice` is the rolling 24h open, a truer day-change
-/// reference than a candle picked from the last 25 hours.
-pub fn parse_binance(
-    body: &str,
-    requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    let tickers: HashMap<String, &Value> = value
-        .as_array()
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Binance response".to_owned()))?
-        .iter()
-        .filter_map(|ticker| Some((ticker.get("symbol")?.as_str()?.to_uppercase(), ticker)))
-        .collect();
-    let mut quotes = HashMap::new();
-    for request in requests {
-        let symbol = request.symbol.to_uppercase();
-        let Some(ticker) = tickers.get(&symbol) else {
-            continue;
-        };
-        let Some(price) = number(ticker.get("lastPrice")).filter(|price| *price > 0.0) else {
-            continue;
-        };
-        let mut quote = SourceQuote {
-            price,
-            previous_day_price: number(ticker.get("openPrice")),
-            timestamp_ms: ticker.get("closeTime").and_then(Value::as_i64),
-            ..SourceQuote::default()
-        };
-        // Turnover is only a dollar figure on a dollar-quoted pair; otherwise report units traded.
-        let dollar_quoted = DOLLAR_QUOTES.iter().any(|quote| symbol.ends_with(quote));
-        if let (true, Some(turnover)) = (dollar_quoted, number(ticker.get("quoteVolume"))) {
-            quote.volume_24h = Some(turnover);
-            quote.volume_kind = Some(VolumeKind::QuoteCurrency);
-        } else if let Some(units) = number(ticker.get("volume")) {
-            quote.volume_24h = Some(units);
-            quote.volume_kind = Some(VolumeKind::Base);
-        }
-        quotes.insert(request.symbol.clone(), quote);
-    }
-    Ok(quotes)
-}
-
-/// `/ticker/24hr`: every spot market in one answer (its `symbols` parameter is ignored); the
-/// requested ones are kept. `openPrice` is the price 24 hours ago, so the change is a real rolling
-/// one, and the quote-currency volume of a dollar-quoted pair is `quoteVolume`.
-pub fn parse_mexc(
-    body: &str,
-    requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    let tickers: HashMap<String, SourceQuote> = value
-        .as_array()
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected MEXC response".to_owned()))?
-        .iter()
-        .filter_map(|ticker| {
-            let id = ticker.get("symbol")?.as_str()?.to_uppercase();
-            let price = number(ticker.get("lastPrice")).filter(|price| *price > 0.0)?;
-            let mut quote = SourceQuote {
-                price,
-                previous_day_price: number(ticker.get("openPrice")).filter(|open| *open > 0.0),
-                ..SourceQuote::default()
-            };
-            let dollar_quoted = DOLLAR_QUOTES.iter().any(|quote| id.ends_with(quote));
-            if let (true, Some(turnover)) = (dollar_quoted, number(ticker.get("quoteVolume"))) {
-                quote.volume_24h = Some(turnover);
-                quote.volume_kind = Some(VolumeKind::QuoteCurrency);
-            } else if let Some(units) = number(ticker.get("volume")) {
-                quote.volume_24h = Some(units);
-                quote.volume_kind = Some(VolumeKind::Base);
-            }
-            Some((id, quote))
-        })
-        .collect();
-    Ok(requests
-        .iter()
-        .filter_map(|request| {
-            let quote = tickers.get(&request.symbol.to_uppercase())?;
-            Some((request.symbol.clone(), *quote))
-        })
-        .collect())
-}
-
-/// One Gate.io spot ticker (`/spot/tickers` and the `spot.tickers` channel carry the same fields):
-/// the market and its price, with the price a day ago taken from the 24h change in percent
-/// (`change_percentage`), and the quote-currency volume of a dollar-quoted pair, the units traded
-/// otherwise.
-pub fn gateio_ticker(ticker: &Value) -> Option<(String, SourceQuote)> {
-    let id = ticker.get("currency_pair")?.as_str()?.to_uppercase();
-    let price = number(ticker.get("last")).filter(|price| *price > 0.0)?;
-    let mut quote = SourceQuote {
-        price,
-        previous_day_price: number(ticker.get("change_percentage"))
-            .filter(|percent| percent.is_finite() && *percent > -100.0)
-            .map(|percent| price / (1.0 + percent / 100.0)),
-        ..SourceQuote::default()
-    };
-    let dollar_quoted = DOLLAR_QUOTES.iter().any(|quote| id.ends_with(quote));
-    if let (true, Some(turnover)) = (dollar_quoted, number(ticker.get("quote_volume"))) {
-        quote.volume_24h = Some(turnover);
-        quote.volume_kind = Some(VolumeKind::QuoteCurrency);
-    } else if let Some(units) = number(ticker.get("base_volume")) {
-        quote.volume_24h = Some(units);
-        quote.volume_kind = Some(VolumeKind::Base);
-    }
-    Some((id, quote))
-}
-
-/// `/spot/tickers`: every spot market in one answer; the requested ones are kept.
-pub fn parse_gateio(
-    body: &str,
-    requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    let tickers: HashMap<String, SourceQuote> = value
-        .as_array()
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Gate.io response".to_owned()))?
-        .iter()
-        .filter_map(gateio_ticker)
-        .collect();
-    Ok(requests
-        .iter()
-        .filter_map(|request| {
-            let quote = tickers.get(&request.symbol.to_uppercase())?;
-            Some((request.symbol.clone(), *quote))
-        })
-        .collect())
-}
-
-/// One Bybit spot ticker (`/market/tickers` and the `tickers` topic carry the same fields): the
-/// market and its price, with the change measured against the price 24 hours ago
-/// (`prevPrice24h`) and the turnover (`turnover24h`, in the quote currency) as the volume of a
-/// dollar-quoted pair, the units traded (`volume24h`) otherwise.
-pub fn bybit_ticker(ticker: &Value) -> Option<(String, SourceQuote)> {
-    let id = ticker.get("symbol")?.as_str()?.to_uppercase();
-    let price = number(ticker.get("lastPrice")).filter(|price| *price > 0.0)?;
-    let mut quote = SourceQuote {
-        price,
-        previous_day_price: number(ticker.get("prevPrice24h")).filter(|open| *open > 0.0),
-        ..SourceQuote::default()
-    };
-    let dollar_quoted = DOLLAR_QUOTES.iter().any(|quote| id.ends_with(quote));
-    if let (true, Some(turnover)) = (dollar_quoted, number(ticker.get("turnover24h"))) {
-        quote.volume_24h = Some(turnover);
-        quote.volume_kind = Some(VolumeKind::QuoteCurrency);
-    } else if let Some(units) = number(ticker.get("volume24h")) {
-        quote.volume_24h = Some(units);
-        quote.volume_kind = Some(VolumeKind::Base);
-    }
-    Some((id, quote))
-}
-
-/// `/market/tickers?category=spot`: every spot market in one answer; the requested ones are kept.
-pub fn parse_bybit(
-    body: &str,
-    requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    let code = value
-        .get("retCode")
-        .and_then(Value::as_i64)
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Bybit response".to_owned()))?;
-    if code != 0 {
-        return Err(if crate::service::market::bybit::is_rate_limit(code) {
-            QuoteFailure::RateLimited
-        } else {
-            let message = value
-                .get("retMsg")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            QuoteFailure::Failed(format!("Bybit error: {message}"))
-        });
-    }
-    let tickers: HashMap<String, SourceQuote> = value
-        .pointer("/result/list")
-        .and_then(Value::as_array)
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Bybit response".to_owned()))?
-        .iter()
-        .filter_map(bybit_ticker)
-        .collect();
-    Ok(requests
-        .iter()
-        .filter_map(|request| {
-            let quote = tickers.get(&request.symbol.to_uppercase())?;
-            Some((request.symbol.clone(), *quote))
-        })
-        .collect())
-}
-
-/// 24h volume as a dollar turnover where the pair is dollar-quoted, otherwise in base units.
-/// Kraken reports the base volume and the 24h vwap, so turnover is their product.
-pub fn kraken_volume(pair: &str, base_volume: f64, vwap: f64) -> (f64, VolumeKind) {
-    let pair = pair.to_uppercase();
-    if vwap > 0.0 && DOLLAR_QUOTES.iter().any(|quote| pair.ends_with(quote)) {
-        (base_volume * vwap, VolumeKind::QuoteCurrency)
-    } else {
-        (base_volume, VolumeKind::Base)
-    }
-}
-
-/// `/Ticker?pair=BTC/USD,…`: the last trade `c[0]`, the 24h volume `v[1]` and vwap `p[1]`. Its
-/// `o` is the UTC day's open, not what the price was a day ago, and Kraken's REST has no rolling
-/// 24h open, so no change is reported: the ticker socket's `change` gives it, and the engine keeps
-/// that reference for a REST refresh of a market the socket has gone quiet about. A refusal of the
-/// call is the provider's own code.
-pub fn parse_kraken(
-    body: &str,
-    requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    if let Some(code) = value
-        .get("error")
-        .and_then(Value::as_array)
-        .and_then(|errors| errors.first())
-        .and_then(Value::as_str)
-    {
-        let text = code
-            .split_once(':')
-            .map_or(code, |(_, text)| text)
-            .to_owned();
-        return Err(if crate::service::market::kraken::is_rate_limit(code) {
-            QuoteFailure::RateLimited
-        } else if code.starts_with("EQuery:") {
-            QuoteFailure::Rejected(text)
-        } else {
-            QuoteFailure::Failed(format!("Kraken error: {text}"))
-        });
-    }
-    let tickers = value
-        .get("result")
-        .and_then(Value::as_object)
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Kraken response".to_owned()))?;
-    let mut quotes = HashMap::new();
-    for request in requests {
-        let Some(ticker) = tickers.get(&request.symbol) else {
-            continue;
-        };
-        let pair = |key: &str, index: usize| number(ticker.get(key)?.get(index));
-        let Some(price) = pair("c", 0).filter(|price| *price > 0.0) else {
-            continue;
-        };
-        let mut quote = SourceQuote {
-            price,
-            timestamp_ms: Some(crate::clock::now_ms()),
-            ..SourceQuote::default()
-        };
-        if let (Some(base), Some(vwap)) = (pair("v", 1), pair("p", 1)) {
-            let (volume, kind) = kraken_volume(&request.symbol, base, vwap);
-            quote.volume_24h = Some(volume);
-            quote.volume_kind = Some(kind);
-        }
-        quotes.insert(request.symbol.clone(), quote);
-    }
-    Ok(quotes)
-}
-
-/// One OKX spot ticker (`/market/tickers` and the `tickers` channel carry the same fields): the
-/// market's id and its price, with the change measured against the rolling 24h open.
-pub fn okx_ticker(ticker: &Value) -> Option<(String, SourceQuote)> {
-    let id = ticker.get("instId")?.as_str()?.to_uppercase();
-    let price = number(ticker.get("last")).filter(|price| *price > 0.0)?;
-    let mut quote = SourceQuote {
-        price,
-        previous_day_price: number(ticker.get("open24h")).filter(|open| *open > 0.0),
-        timestamp_ms: number(ticker.get("ts")).map(|ms| ms as i64),
-        ..SourceQuote::default()
-    };
-    // Turnover is only a dollar figure on a dollar-quoted pair; otherwise report units traded.
-    let dollar_quoted = DOLLAR_QUOTES.iter().any(|quote| id.ends_with(quote));
-    if let (true, Some(turnover)) = (dollar_quoted, number(ticker.get("volCcy24h"))) {
-        quote.volume_24h = Some(turnover);
-        quote.volume_kind = Some(VolumeKind::QuoteCurrency);
-    } else if let Some(units) = number(ticker.get("vol24h")) {
-        quote.volume_24h = Some(units);
-        quote.volume_kind = Some(VolumeKind::Base);
-    }
-    Some((id, quote))
-}
-
-/// `/market/tickers?instType=SPOT`: every spot market in one answer; the requested ones are kept.
-pub fn parse_okx(
-    body: &str,
-    requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    if value.get("code").and_then(Value::as_str) != Some("0") {
-        let message = value.get("msg").and_then(Value::as_str).unwrap_or_default();
-        return Err(QuoteFailure::Failed(format!("OKX error: {message}")));
-    }
-    let tickers: HashMap<String, SourceQuote> = value
-        .get("data")
-        .and_then(Value::as_array)
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected OKX response".to_owned()))?
-        .iter()
-        .filter_map(okx_ticker)
-        .collect();
-    Ok(requests
-        .iter()
-        .filter_map(|request| {
-            let quote = tickers.get(&request.symbol.to_uppercase())?;
-            Some((request.symbol.clone(), *quote))
-        })
-        .collect())
-}
-
-/// 24h volume as a dollar turnover where the product is dollar-quoted, otherwise in base
-/// units. Coinbase reports base volume only, so turnover is that volume priced at the last trade.
-pub fn coinbase_volume(product_id: &str, base_volume: f64, price: f64) -> (f64, VolumeKind) {
-    let quote = product_id.rsplit('-').next().unwrap_or("").to_uppercase();
-    if ["USD", "USDC", "USDT"].contains(&quote.as_str()) {
-        (base_volume * price, VolumeKind::QuoteCurrency)
-    } else {
-        (base_volume, VolumeKind::Base)
-    }
-}
-
-/// `/products/{id}/stats`: `{"open","high","low","last","volume"}` as strings.
-pub fn parse_coinbase_stats(body: &str, product_id: &str) -> Option<SourceQuote> {
-    let value: Value = serde_json::from_str(body).ok()?;
-    let price = number(value.get("last")).filter(|price| *price > 0.0)?;
-    let mut quote = SourceQuote {
-        price,
-        previous_day_price: number(value.get("open")),
-        timestamp_ms: Some(crate::clock::now_ms()),
-        ..SourceQuote::default()
-    };
-    if let Some(base) = number(value.get("volume")) {
-        let (volume, kind) = coinbase_volume(product_id, base, price);
-        quote.volume_24h = Some(volume);
-        quote.volume_kind = Some(kind);
-    }
-    Some(quote)
-}
-
 /// Sources that report a 24h percent change rather than a price:
 /// `previous = price / (1 + pct / 100)`.
-pub fn from_change_percent(price: f64, change_percent_24h: Option<f64>) -> SourceQuote {
+pub(in crate::service) fn from_change_percent(
+    price: f64,
+    change_percent_24h: Option<f64>,
+) -> SourceQuote {
     SourceQuote {
         price,
         previous_day_price: change_percent_24h
@@ -777,124 +222,13 @@ pub fn from_change_percent(price: f64, change_percent_24h: Option<f64>) -> Sourc
     }
 }
 
-pub fn parse_coingecko_markets(
-    body: &str,
-    requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    let coins: HashMap<String, &Value> = value
-        .as_array()
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected CoinGecko response".to_owned()))?
-        .iter()
-        .filter_map(|coin| Some((coin.get("id")?.as_str()?.to_lowercase(), coin)))
-        .collect();
-    let mut quotes = HashMap::new();
-    for request in requests {
-        let Some(coin) = coins.get(&request.symbol.to_lowercase()) else {
-            continue;
-        };
-        let Some(price) = number(coin.get("current_price")).filter(|price| *price > 0.0) else {
-            continue;
-        };
-        let mut quote = from_change_percent(price, number(coin.get("price_change_percentage_24h")));
-        quote.volume_24h = number(coin.get("total_volume"));
-        quote.volume_kind = quote.volume_24h.map(|_| VolumeKind::QuoteCurrency);
-        quote.timestamp_ms = coin
-            .get("last_updated")
-            .and_then(Value::as_str)
-            .and_then(crate::format::parse_iso8601);
-        quotes.insert(request.symbol.clone(), quote);
+/// A request for `symbol` on a source with no chain, for the venues' parser tests.
+#[cfg(test)]
+pub(in crate::service) fn request(symbol: &str) -> QuoteRequest {
+    QuoteRequest {
+        symbol: symbol.to_owned(),
+        chain: None,
     }
-    Ok(quotes)
-}
-
-/// `{"pairs":[{"pairAddress","priceUsd","priceChange":{"h24"},"volume":{"h24"}}]}`.
-pub fn parse_dex_pairs(body: &str, requests: &[&QuoteRequest]) -> HashMap<String, SourceQuote> {
-    let Ok(value) = serde_json::from_str::<Value>(body) else {
-        return HashMap::new();
-    };
-    let pairs: HashMap<String, &Value> = value
-        .get("pairs")
-        .and_then(Value::as_array)
-        .map(|pairs| {
-            pairs
-                .iter()
-                .filter_map(|pair| Some((pair.get("pairAddress")?.as_str()?.to_lowercase(), pair)))
-                .collect()
-        })
-        .unwrap_or_default();
-    let now = crate::clock::now_ms();
-    let mut quotes = HashMap::new();
-    for request in requests {
-        let Some(pair) = pairs.get(&request.symbol.to_lowercase()) else {
-            continue;
-        };
-        let Some(price) = number(pair.get("priceUsd")).filter(|price| *price > 0.0) else {
-            continue;
-        };
-        let mut quote = from_change_percent(price, number(pair.pointer("/priceChange/h24")));
-        quote.volume_24h = number(pair.pointer("/volume/h24"));
-        quote.volume_kind = quote.volume_24h.map(|_| VolumeKind::QuoteCurrency);
-        quote.timestamp_ms = Some(now);
-        quotes.insert(request.symbol.clone(), quote);
-    }
-    quotes
-}
-
-/// The network of the pair whose address is `address`, from a DEXScreener search.
-pub fn parse_chain(body: &str, address: &str) -> Option<String> {
-    let value: Value = serde_json::from_str(body).ok()?;
-    value
-        .get("pairs")?
-        .as_array()?
-        .iter()
-        .find(|pair| {
-            pair.get("pairAddress")
-                .and_then(Value::as_str)
-                .is_some_and(|candidate| candidate.eq_ignore_ascii_case(address))
-        })?
-        .get("chainId")?
-        .as_str()
-        .map(str::to_owned)
-}
-
-/// `/v2/stocks/snapshots`: the latest trade, and the previous session's close as the
-/// day-change reference. The daily bar stands in while a symbol has no trade yet.
-pub fn parse_alpaca_snapshots(
-    body: &str,
-    requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    let snapshots = value
-        .as_object()
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Alpaca response".to_owned()))?;
-    let mut quotes = HashMap::new();
-    for request in requests {
-        let Some(snapshot) = snapshots.get(&request.symbol.to_uppercase()) else {
-            continue;
-        };
-        let Some(price) = number(snapshot.pointer("/latestTrade/p"))
-            .or_else(|| number(snapshot.pointer("/dailyBar/c")))
-            .filter(|price| *price > 0.0)
-        else {
-            continue;
-        };
-        let volume = number(snapshot.pointer("/dailyBar/v"));
-        quotes.insert(
-            request.symbol.clone(),
-            SourceQuote {
-                price,
-                previous_day_price: number(snapshot.pointer("/prevDailyBar/c")),
-                volume_24h: volume,
-                volume_kind: volume.map(|_| VolumeKind::Shares),
-                timestamp_ms: snapshot
-                    .pointer("/latestTrade/t")
-                    .and_then(Value::as_str)
-                    .and_then(crate::format::parse_iso8601),
-            },
-        );
-    }
-    Ok(quotes)
 }
 
 #[cfg(test)]
@@ -967,387 +301,6 @@ mod tests {
 
     use super::*;
 
-    fn request(symbol: &str) -> QuoteRequest {
-        QuoteRequest {
-            symbol: symbol.to_owned(),
-            chain: None,
-        }
-    }
-
-    #[test]
-    fn okx_answers_every_spot_market_and_the_requested_ones_are_kept() {
-        let body = r#"{"code":"0","data":[
-            {"instId":"BTC-USDT","last":"64370.7","open24h":"64561.6","vol24h":"10021.2","volCcy24h":"648492231.3","ts":"1794904542764"},
-            {"instId":"ETH-BTC","last":"0.05","open24h":"0.049","vol24h":"2000","volCcy24h":"100","ts":"1794904542765"},
-            {"instId":"DEAD-USDT","last":"0","open24h":"1","vol24h":"1","volCcy24h":"1","ts":"1"},
-            {"instId":"SOL-USDT","last":"150","open24h":"","vol24h":"5","volCcy24h":"750","ts":"1794904542766"}
-        ]}"#;
-        let quotes = parse_okx(
-            body,
-            &[
-                request("BTC-USDT"),
-                request("ETH-BTC"),
-                request("DEAD-USDT"),
-                request("MISSING-USDT"),
-            ],
-        )
-        .unwrap();
-        assert_eq!(
-            quotes.len(),
-            2,
-            "unrequested, unlisted and priceless are left out"
-        );
-        let btc = &quotes["BTC-USDT"];
-        assert_eq!(btc.price, 64_370.7);
-        assert_eq!(btc.previous_day_price, Some(64_561.6));
-        assert_eq!(btc.timestamp_ms, Some(1_794_904_542_764));
-        assert_eq!(
-            (btc.volume_24h, btc.volume_kind),
-            (Some(648_492_231.3), Some(VolumeKind::QuoteCurrency))
-        );
-        // A pair quoted in BTC reports the units traded, not a dollar figure.
-        let eth = &quotes["ETH-BTC"];
-        assert_eq!(
-            (eth.volume_24h, eth.volume_kind),
-            (Some(2_000.0), Some(VolumeKind::Base))
-        );
-        // An empty open is no reference.
-        let (_, sol) = okx_ticker(
-            &serde_json::json!({"instId":"SOL-USDT","last":"150","open24h":"","vol24h":"5","volCcy24h":"750"}),
-        )
-        .unwrap();
-        assert_eq!(sol.previous_day_price, None);
-    }
-
-    #[test]
-    fn mexc_answers_every_spot_market_with_the_price_24_hours_ago() {
-        let body = r#"[
-            {"symbol":"BTCUSDT","lastPrice":"64990.71","openPrice":"64185.22","volume":"5486.66","quoteVolume":"354947733.48"},
-            {"symbol":"ETHBTC","lastPrice":"0.05","openPrice":"0.049","volume":"2000","quoteVolume":"100"},
-            {"symbol":"DEADUSDT","lastPrice":"0","openPrice":"1","volume":"1","quoteVolume":"1"},
-            {"symbol":"NEWUSDT","lastPrice":"2","openPrice":"0","volume":"1","quoteVolume":"2"}
-        ]"#;
-        let quotes = parse_mexc(
-            body,
-            &[
-                request("BTCUSDT"),
-                request("ETHBTC"),
-                request("DEADUSDT"),
-                request("NEWUSDT"),
-                request("MISSINGUSDT"),
-            ],
-        )
-        .unwrap();
-        assert_eq!(
-            quotes.len(),
-            3,
-            "unrequested, unlisted and priceless are left out"
-        );
-        let btc = &quotes["BTCUSDT"];
-        assert_eq!(btc.price, 64_990.71);
-        assert_eq!(btc.previous_day_price, Some(64_185.22));
-        assert_eq!(
-            (btc.volume_24h, btc.volume_kind),
-            (Some(354_947_733.48), Some(VolumeKind::QuoteCurrency))
-        );
-        // A pair quoted in a coin reports the units traded.
-        let eth = &quotes["ETHBTC"];
-        assert_eq!(
-            (eth.volume_24h, eth.volume_kind),
-            (Some(2_000.0), Some(VolumeKind::Base))
-        );
-        // A market with no open price has no reference rather than a division by zero.
-        assert_eq!(quotes["NEWUSDT"].previous_day_price, None);
-    }
-
-    #[test]
-    fn mexc_odd_answers_and_refusals() {
-        assert!(parse_mexc("not json", &[]).is_err());
-        assert!(parse_mexc(r#"{"code":-1121,"msg":"Invalid symbol."}"#, &[]).is_err());
-        assert!(matches!(
-            classify_status(DataSource::Mexc, 403),
-            QuoteFailure::Failed(message) if message.contains("not available in every country")
-        ));
-        assert_eq!(
-            classify_status(DataSource::Mexc, 429),
-            QuoteFailure::RateLimited
-        );
-    }
-
-    #[test]
-    fn gate_answers_every_spot_market_with_the_price_a_day_ago_from_the_change() {
-        let body = r#"[
-            {"currency_pair":"BTC_USDT","last":"65100","change_percentage":"2","base_volume":"14040.69","quote_volume":"908513512.9"},
-            {"currency_pair":"ETH_BTC","last":"0.05","change_percentage":"-1.5","base_volume":"2000","quote_volume":"100"},
-            {"currency_pair":"DEAD_USDT","last":"0","change_percentage":"0","base_volume":"1","quote_volume":"1"},
-            {"currency_pair":"WILD_USDT","last":"1","change_percentage":"-100","base_volume":"1","quote_volume":"1"}
-        ]"#;
-        let quotes = parse_gateio(
-            body,
-            &[
-                request("BTC_USDT"),
-                request("ETH_BTC"),
-                request("DEAD_USDT"),
-                request("WILD_USDT"),
-                request("MISSING_USDT"),
-            ],
-        )
-        .unwrap();
-        assert_eq!(
-            quotes.len(),
-            3,
-            "unrequested, unlisted and priceless are left out"
-        );
-        let btc = &quotes["BTC_USDT"];
-        assert_eq!(btc.price, 65_100.0);
-        assert!((btc.previous_day_price.unwrap() - 63_823.529).abs() < 0.001);
-        assert_eq!(
-            (btc.volume_24h, btc.volume_kind),
-            (Some(908_513_512.9), Some(VolumeKind::QuoteCurrency))
-        );
-        // A pair quoted in a coin reports the units traded; a fall of 1.5 % has a higher past.
-        let eth = &quotes["ETH_BTC"];
-        assert!(eth.previous_day_price.unwrap() > 0.05);
-        assert_eq!(
-            (eth.volume_24h, eth.volume_kind),
-            (Some(2_000.0), Some(VolumeKind::Base))
-        );
-        // A change of -100 % leaves no price a day ago to divide by.
-        assert_eq!(quotes["WILD_USDT"].previous_day_price, None);
-    }
-
-    #[test]
-    fn gate_odd_answers_and_refusals() {
-        assert!(parse_gateio("not json", &[]).is_err());
-        assert!(parse_gateio(r#"{"label":"INVALID_CURRENCY"}"#, &[]).is_err());
-        assert!(matches!(
-            classify_status(DataSource::Gate, 403),
-            QuoteFailure::Failed(message) if message.contains("not available in every country")
-        ));
-        assert_eq!(
-            classify_status(DataSource::Gate, 429),
-            QuoteFailure::RateLimited
-        );
-    }
-
-    #[test]
-    fn bybit_answers_every_spot_market_with_the_real_24h_reference() {
-        let body = r#"{"retCode":0,"retMsg":"OK","result":{"category":"spot","list":[
-            {"symbol":"BTCUSDT","lastPrice":"64298.1","prevPrice24h":"64675.6","volume24h":"12398.7","turnover24h":"801728667.2"},
-            {"symbol":"ETHBTC","lastPrice":"0.05","prevPrice24h":"0.049","volume24h":"2000","turnover24h":"100"},
-            {"symbol":"DEADUSDT","lastPrice":"0","prevPrice24h":"1","volume24h":"1","turnover24h":"1"}
-        ]},"time":1}"#;
-        let quotes = parse_bybit(
-            body,
-            &[
-                request("BTCUSDT"),
-                request("ETHBTC"),
-                request("DEADUSDT"),
-                request("MISSINGUSDT"),
-            ],
-        )
-        .unwrap();
-        assert_eq!(
-            quotes.len(),
-            2,
-            "unrequested, unlisted and priceless are left out"
-        );
-        let btc = &quotes["BTCUSDT"];
-        assert_eq!(btc.price, 64_298.1);
-        assert_eq!(btc.previous_day_price, Some(64_675.6));
-        assert_eq!(
-            (btc.volume_24h, btc.volume_kind),
-            (Some(801_728_667.2), Some(VolumeKind::QuoteCurrency))
-        );
-        // A pair quoted in a coin reports the units traded.
-        let eth = &quotes["ETHBTC"];
-        assert_eq!(
-            (eth.volume_24h, eth.volume_kind),
-            (Some(2_000.0), Some(VolumeKind::Base))
-        );
-    }
-
-    #[test]
-    fn bybit_reports_its_own_refusals() {
-        let refused = |code: i64| {
-            parse_bybit(&format!(r#"{{"retCode":{code},"retMsg":"No"}}"#), &[]).unwrap_err()
-        };
-        assert_eq!(refused(10_006), QuoteFailure::RateLimited);
-        assert_eq!(refused(10_018), QuoteFailure::RateLimited);
-        assert_eq!(
-            refused(10_001),
-            QuoteFailure::Failed("Bybit error: No".to_owned())
-        );
-        assert!(parse_bybit("not json", &[]).is_err());
-        assert!(parse_bybit(r#"{"retCode":0}"#, &[]).is_err());
-        assert!(matches!(
-            classify_status(DataSource::Bybit, 403),
-            QuoteFailure::Failed(message) if message.contains("not available in every country")
-        ));
-        assert_eq!(
-            classify_status(DataSource::Bybit, 429),
-            QuoteFailure::RateLimited
-        );
-    }
-
-    #[test]
-    fn kraken_answers_by_the_pairs_asked_for_with_the_open_and_the_24h_volume() {
-        let body = r#"{"error":[],"result":{
-            "BTC/USD":{"c":["64297.1","0.0003"],"o":"64813.7","v":["1383.5","4526.9"],"p":["64571.4","64719.4"]},
-            "ETH/BTC":{"c":["0.05","1"],"o":"0.049","v":["10","2000"],"p":["0.05","0.05"]},
-            "DEAD/USD":{"c":["0","0"],"o":"1","v":["1","1"],"p":["1","1"]}
-        }}"#;
-        let quotes = parse_kraken(
-            body,
-            &[
-                request("BTC/USD"),
-                request("ETH/BTC"),
-                request("DEAD/USD"),
-                request("MISSING/USD"),
-            ],
-        )
-        .unwrap();
-        assert_eq!(quotes.len(), 2, "priceless and unlisted pairs are left out");
-        let btc = &quotes["BTC/USD"];
-        assert_eq!(btc.price, 64_297.1);
-        // `o` is the UTC day's open, not what the price was a day ago: no change is reported.
-        assert_eq!(btc.previous_day_price, None);
-        assert_eq!(
-            (btc.volume_24h, btc.volume_kind),
-            (Some(4526.9 * 64_719.4), Some(VolumeKind::QuoteCurrency))
-        );
-        // A pair quoted in a coin reports the units traded.
-        let eth = &quotes["ETH/BTC"];
-        assert_eq!(
-            (eth.volume_24h, eth.volume_kind),
-            (Some(2_000.0), Some(VolumeKind::Base))
-        );
-    }
-
-    #[test]
-    fn kraken_refusals_are_told_apart_by_their_code() {
-        let refused =
-            |code: &str| parse_kraken(&format!(r#"{{"error":["{code}"]}}"#), &[]).unwrap_err();
-        assert_eq!(
-            refused("EQuery:Unknown asset pair"),
-            QuoteFailure::Rejected("Unknown asset pair".to_owned())
-        );
-        assert_eq!(
-            refused("EAPI:Rate limit exceeded"),
-            QuoteFailure::RateLimited
-        );
-        assert_eq!(
-            refused("EGeneral:Too many requests"),
-            QuoteFailure::RateLimited
-        );
-        assert_eq!(
-            refused("EService:Unavailable"),
-            QuoteFailure::Failed("Kraken error: Unavailable".to_owned())
-        );
-        assert!(parse_kraken("not json", &[]).is_err());
-        assert!(parse_kraken(r#"{"error":[]}"#, &[]).is_err());
-    }
-
-    #[test]
-    fn okx_reports_its_own_error_and_odd_answers() {
-        let failure = parse_okx(
-            r#"{"code":"50011","msg":"Too many requests","data":[]}"#,
-            &[],
-        );
-        assert_eq!(
-            failure.unwrap_err(),
-            QuoteFailure::Failed("OKX error: Too many requests".to_owned())
-        );
-        assert!(parse_okx("not json", &[]).is_err());
-        assert!(parse_okx(r#"{"code":"0"}"#, &[]).is_err());
-    }
-
-    #[test]
-    fn binance_mini_ticker_with_dollar_and_base_volume() {
-        let body = r#"[
-            {"symbol":"BTCUSDT","lastPrice":"67000.5","openPrice":"66000","volume":"100","quoteVolume":"6700000","closeTime":1700000000000},
-            {"symbol":"ETHBTC","lastPrice":"0.05","openPrice":"0.049","volume":"2000","quoteVolume":"100","closeTime":1700000000001}
-        ]"#;
-        let quotes = parse_binance(
-            body,
-            &[request("BTCUSDT"), request("ETHBTC"), request("GONEUSDT")],
-        )
-        .unwrap();
-        assert_eq!(quotes.len(), 2, "an unanswered symbol is omitted");
-        let btc = &quotes["BTCUSDT"];
-        assert_eq!(
-            (btc.price, btc.previous_day_price),
-            (67_000.5, Some(66_000.0))
-        );
-        assert_eq!(
-            (btc.volume_24h, btc.volume_kind),
-            (Some(6_700_000.0), Some(VolumeKind::QuoteCurrency))
-        );
-        assert_eq!(btc.timestamp_ms, Some(1_700_000_000_000));
-        let eth = &quotes["ETHBTC"];
-        assert_eq!(
-            (eth.volume_24h, eth.volume_kind),
-            (Some(2_000.0), Some(VolumeKind::Base)),
-            "no dollar figure on a non-dollar pair"
-        );
-    }
-
-    #[test]
-    fn the_binance_url_encodes_its_symbol_list() {
-        let url = binance_url(&[request("btcusdt"), request("ETHUSDT")]);
-        assert_eq!(
-            url,
-            "https://api.binance.com/api/v3/ticker/24hr?symbols=%5B%22BTCUSDT%22%2C%22ETHUSDT%22%5D&type=MINI"
-        );
-        assert!(!url.contains(['[', ']', '"']), "only URL-safe characters");
-    }
-
-    #[test]
-    fn binance_rejects_non_arrays_and_zero_prices() {
-        assert!(matches!(
-            parse_binance(r#"{"code":-1121}"#, &[request("X")]),
-            Err(QuoteFailure::Failed(_))
-        ));
-        let zero = r#"[{"symbol":"AUSDT","lastPrice":"0","openPrice":"1"}]"#;
-        assert!(parse_binance(zero, &[request("AUSDT")]).unwrap().is_empty());
-    }
-
-    #[test]
-    fn coinbase_stats_price_volume_in_dollars_only_for_dollar_pairs() {
-        let body = r#"{"open":"100","high":"120","low":"90","last":"110","volume":"50"}"#;
-        let usd = parse_coinbase_stats(body, "BTC-USD").unwrap();
-        assert_eq!((usd.price, usd.previous_day_price), (110.0, Some(100.0)));
-        assert_eq!(
-            (usd.volume_24h, usd.volume_kind),
-            (Some(5_500.0), Some(VolumeKind::QuoteCurrency))
-        );
-        let btc = parse_coinbase_stats(body, "ETH-BTC").unwrap();
-        assert_eq!(
-            (btc.volume_24h, btc.volume_kind),
-            (Some(50.0), Some(VolumeKind::Base))
-        );
-        assert!(parse_coinbase_stats(r#"{"last":"0"}"#, "BTC-USD").is_none());
-        assert!(parse_coinbase_stats("nope", "BTC-USD").is_none());
-    }
-
-    #[test]
-    fn coingecko_derives_the_previous_price_from_the_percent_change() {
-        let body = r#"[
-            {"id":"bitcoin","current_price":110,"price_change_percentage_24h":10,"total_volume":5000,"last_updated":"2024-01-15T15:00:00.123Z"},
-            {"id":"dead","current_price":null}
-        ]"#;
-        let quotes = parse_coingecko_markets(
-            body,
-            &[request("Bitcoin"), request("dead"), request("absent")],
-        )
-        .unwrap();
-        assert_eq!(quotes.len(), 1);
-        let btc = &quotes["Bitcoin"];
-        assert!((btc.previous_day_price.unwrap() - 100.0).abs() < 1e-9);
-        assert_eq!(btc.volume_kind, Some(VolumeKind::QuoteCurrency));
-        assert_eq!(btc.timestamp_ms, Some(1_705_330_800_123));
-    }
-
     #[test]
     fn percent_change_of_minus_100_or_worse_has_no_reference() {
         assert_eq!(
@@ -1366,63 +319,6 @@ mod tests {
     }
 
     #[test]
-    fn dex_pairs_match_by_address_ignoring_case() {
-        let body = r#"{"pairs":[{"pairAddress":"0xAbC","priceUsd":"0.5","priceChange":{"h24":-50},"volume":{"h24":1234.5}}]}"#;
-        let wanted = QuoteRequest {
-            symbol: "0xabc".to_owned(),
-            chain: Some("solana".to_owned()),
-        };
-        let other = QuoteRequest {
-            symbol: "0xdef".to_owned(),
-            chain: Some("solana".to_owned()),
-        };
-        let quotes = parse_dex_pairs(body, &[&wanted, &other]);
-        assert_eq!(quotes.len(), 1);
-        let quote = &quotes["0xabc"];
-        assert_eq!(quote.price, 0.5);
-        assert!((quote.previous_day_price.unwrap() - 1.0).abs() < 1e-9);
-        assert_eq!(quote.volume_24h, Some(1234.5));
-        assert!(parse_dex_pairs("garbage", &[&wanted]).is_empty());
-        assert!(parse_dex_pairs(r#"{"pairs":null}"#, &[&wanted]).is_empty());
-    }
-
-    #[test]
-    fn chain_comes_from_the_matching_pair() {
-        let body = r#"{"pairs":[
-            {"pairAddress":"0x111","chainId":"ethereum"},
-            {"pairAddress":"0xAAA","chainId":"base"}]}"#;
-        assert_eq!(parse_chain(body, "0xaaa").as_deref(), Some("base"));
-        assert_eq!(parse_chain(body, "0x999"), None);
-        assert_eq!(parse_chain("{}", "0x1"), None);
-    }
-
-    #[test]
-    fn alpaca_prefers_the_latest_trade_and_falls_back_to_the_daily_bar() {
-        let body = r#"{
-            "AAPL":{"latestTrade":{"p":190.5,"t":"2024-01-15T15:00:00Z"},"dailyBar":{"c":190,"v":1000},"prevDailyBar":{"c":188}},
-            "TSLA":{"dailyBar":{"c":200,"v":5}},
-            "ZERO":{"latestTrade":{"p":0}}
-        }"#;
-        let quotes = parse_alpaca_snapshots(
-            body,
-            &[
-                request("aapl"),
-                request("TSLA"),
-                request("ZERO"),
-                request("MISSING"),
-            ],
-        )
-        .unwrap();
-        assert_eq!(quotes.len(), 2);
-        let aapl = &quotes["aapl"];
-        assert_eq!((aapl.price, aapl.previous_day_price), (190.5, Some(188.0)));
-        assert_eq!(aapl.volume_kind, Some(VolumeKind::Shares));
-        assert_eq!(aapl.timestamp_ms, Some(1_705_330_800_000));
-        assert_eq!(quotes["TSLA"].price, 200.0);
-        assert_eq!(quotes["TSLA"].previous_day_price, None);
-    }
-
-    #[test]
     fn failures_describe_themselves() {
         assert_eq!(
             QuoteFailure::RateLimited.message(),
@@ -1434,12 +330,5 @@ mod tests {
                 .contains("Alpaca")
         );
         assert_eq!(QuoteFailure::Failed("x".into()).message(), "x");
-    }
-
-    #[test]
-    fn chunk_sizes_respect_each_providers_limit() {
-        assert_eq!(chunk_size(DataSource::Coinbase), 20);
-        assert_eq!(chunk_size(DataSource::DexScreener), 30);
-        assert_eq!(chunk_size(DataSource::CoinGecko), 250);
     }
 }

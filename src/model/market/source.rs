@@ -1,3 +1,4 @@
+use super::profile::{Casing, Class, Series};
 use serde::{Deserialize, Serialize};
 
 /// A market data provider. The symbol alone never identifies a market: `BTCUSDT`
@@ -23,113 +24,35 @@ pub enum DataSource {
 
 impl DataSource {
     pub fn display_name(self) -> &'static str {
-        match self {
-            Self::Binance => "Binance",
-            Self::Coinbase => "Coinbase",
-            Self::Okx => "OKX",
-            Self::Kraken => "Kraken",
-            Self::Bybit => "Bybit",
-            Self::Gate => "Gate.io",
-            Self::Mexc => "MEXC",
-            Self::CoinGecko => "CoinGecko",
-            Self::DexScreener => "DEXScreener",
-            Self::Alpaca => "Alpaca (IEX)",
-            Self::Polymarket => "Polymarket",
-            Self::Kalshi => "Kalshi",
-            Self::CoinMarketCap => "CoinMarketCap",
-        }
+        self.profile().display_name
     }
 
     /// Upper-case provider prefix in the import/export text format.
     pub fn watchlist_slug(self) -> &'static str {
-        match self {
-            Self::Binance => "BINANCE",
-            Self::Coinbase => "COINBASE",
-            Self::Okx => "OKX",
-            Self::Kraken => "KRAKEN",
-            Self::Bybit => "BYBIT",
-            Self::Gate => "GATEIO",
-            Self::Mexc => "MEXC",
-            Self::CoinGecko => "COINGECKO",
-            Self::DexScreener => "DEXSCREENER",
-            Self::Alpaca => "ALPACA",
-            Self::Polymarket => "POLYMARKET",
-            Self::Kalshi => "KALSHI",
-            Self::CoinMarketCap => "CMC",
-        }
+        self.profile().slug
     }
 
     /// The source a `watchlist_slug` names, in any case.
     pub fn from_watchlist_slug(slug: &str) -> Option<Self> {
-        const ALL: [DataSource; 13] = [
-            DataSource::Binance,
-            DataSource::Coinbase,
-            DataSource::Okx,
-            DataSource::Kraken,
-            DataSource::Bybit,
-            DataSource::Gate,
-            DataSource::Mexc,
-            DataSource::CoinGecko,
-            DataSource::DexScreener,
-            DataSource::Alpaca,
-            DataSource::Polymarket,
-            DataSource::Kalshi,
-            DataSource::CoinMarketCap,
-        ];
-        ALL.into_iter()
+        Self::ALL
+            .into_iter()
             .find(|source| source.watchlist_slug().eq_ignore_ascii_case(slug))
-    }
-
-    /// The sources whose forming candle a chart takes from a socket instead of waiting for the
-    /// next refresh.
-    pub const CANDLE_STREAMS: [DataSource; 6] = [
-        DataSource::Binance,
-        DataSource::Okx,
-        DataSource::Kraken,
-        DataSource::Bybit,
-        DataSource::Gate,
-        DataSource::Mexc,
-    ];
-
-    /// The sources whose watchlist prices come from a shared ticker socket, REST filling in.
-    pub const QUOTE_STREAMS: [DataSource; 5] = [
-        DataSource::Coinbase,
-        DataSource::Okx,
-        DataSource::Kraken,
-        DataSource::Bybit,
-        DataSource::Gate,
-    ];
-
-    /// Whether watchlist prices of this source come from a ticker socket.
-    pub fn streams_quotes(self) -> bool {
-        Self::QUOTE_STREAMS.contains(&self)
     }
 
     /// Whether this source quotes probabilities in 0…1, charted as lines.
     pub fn is_prediction_market(self) -> bool {
-        matches!(self, Self::Polymarket | Self::Kalshi)
+        self.profile().class == Class::Prediction
     }
 
     /// Whether this source reports per-candle turnover for the volume bars to draw. CoinGecko's
     /// OHLC endpoint has no volume column, and the line charts report none at all.
     pub fn provides_volume(self) -> bool {
-        matches!(
-            self,
-            Self::Binance
-                | Self::Coinbase
-                | Self::Okx
-                | Self::Kraken
-                | Self::Bybit
-                | Self::Gate
-                | Self::Mexc
-                | Self::DexScreener
-                | Self::Alpaca
-        )
+        self.profile().volume
     }
 
     /// Whether this source's data is drawn as a line rather than candles.
     pub fn is_line_chart(self) -> bool {
-        self.is_prediction_market() || matches!(self, Self::CoinMarketCap)
+        self.profile().series == Series::Line
     }
 
     /// Whether a chart of this source can carry indicators and scripts. A prediction market or a
@@ -143,18 +66,14 @@ impl DataSource {
     /// (CoinGecko ids and Alpaca tickers). A chart, a search hit and a watchlist row all use it.
     pub fn display_symbol(self, symbol: &str) -> String {
         let raw = symbol.trim();
-        match self {
-            Self::Binance
-            | Self::Coinbase
-            | Self::Okx
-            | Self::Kraken
-            | Self::Bybit
-            | Self::Gate
-            | Self::Mexc
-            | Self::CoinGecko
-            | Self::Alpaca => raw.to_uppercase(),
-            Self::CoinMarketCap => super::cmc::title(raw).to_owned(),
-            _ => raw.to_owned(),
+        let profile = self.profile();
+        if profile.class == Class::Index {
+            return super::cmc::title(raw).to_owned();
+        }
+        match profile.display {
+            Casing::Upper => raw.to_uppercase(),
+            Casing::Lower => raw.to_lowercase(),
+            Casing::AsGiven => raw.to_owned(),
         }
     }
 
@@ -164,96 +83,15 @@ impl DataSource {
     pub fn base_asset(self, symbol: &str) -> String {
         let upper = symbol.trim().to_uppercase();
         let head = upper.split(['/', '-', ' ', '_']).next().unwrap_or(&upper);
-        match self {
-            // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
-            Self::Binance | Self::Bybit => split_binance_pair(head)
-                .map(|(base, _)| base)
-                .filter(|base| base.len() > 1)
-                .unwrap_or(head),
-            Self::Mexc => split_mexc_pair(head).map(|(base, _)| base).unwrap_or(head),
-            _ => head,
-        }
-        .to_owned()
+        self.profile().pair.base_of(head).to_owned()
     }
-}
 
-impl DataSource {
     /// The quote asset of a pair the exchange itself spells out: `EUR` of Coinbase's `ADA-EUR`, of
     /// Binance's `ADAEUR`. None for anything that does not name one (a stock, a prediction market,
     /// an aggregator's coin id): a pair's parts are never guessed.
     pub fn quote_asset(self, symbol: &str) -> Option<String> {
-        let upper = symbol.trim().to_uppercase();
-        match self {
-            Self::Binance | Self::Bybit => {
-                split_binance_pair(&upper).map(|(_, quote)| quote.to_owned())
-            }
-            Self::Mexc => split_mexc_pair(&upper).map(|(_, quote)| quote.to_owned()),
-            Self::Kraken => {
-                let (base, quote) = upper.split_once('/')?;
-                (!base.is_empty() && !quote.is_empty() && !quote.contains(['-', '/', ' ']))
-                    .then(|| quote.to_owned())
-            }
-            Self::Gate => {
-                let (base, quote) = upper.split_once('_')?;
-                (!base.is_empty() && !quote.is_empty() && !quote.contains(['-', '/', ' ', '_']))
-                    .then(|| quote.to_owned())
-            }
-            Self::Coinbase | Self::Okx => {
-                let (base, quote) = upper.split_once('-')?;
-                (!base.is_empty() && !quote.is_empty() && !quote.contains(['-', '/', ' ']))
-                    .then(|| quote.to_owned())
-            }
-            _ => None,
-        }
+        self.profile().pair.quote_of(&symbol.trim().to_uppercase())
     }
-}
-
-/// Kraken's own spelling of an asset is the legacy one (`XBT`, `XDG`) in some places; its APIs take
-/// the common ticker (`BTC`, `DOGE`) and refuse the legacy one.
-pub fn kraken_asset(asset: &str) -> String {
-    match asset.to_uppercase().as_str() {
-        "XBT" => "BTC".to_owned(),
-        "XDG" => "DOGE".to_owned(),
-        other => other.to_owned(),
-    }
-}
-
-/// Quote assets Binance pairs end in, longest first so BTCFDUSD is BTC/FDUSD instead of
-/// BTCFD/USD. Matches Swift's MarketSymbol quote list.
-const BINANCE_QUOTES: [&str; 16] = [
-    "FDUSD", "USDT", "USDC", "BUSD", "TUSD", "USDP", "DAI", "EUR", "GBP", "TRY", "BRL", "JPY",
-    "USD", "BTC", "ETH", "BNB",
-];
-
-/// Splits an upper-case Binance pair like `SOLBNB` into `("SOL", "BNB")`, or `None` when no
-/// known quote ends it (a bare asset such as `SOL`).
-pub fn split_binance_pair(symbol: &str) -> Option<(&str, &'static str)> {
-    BINANCE_QUOTES.iter().find_map(|quote| {
-        symbol
-            .strip_suffix(quote)
-            .filter(|base| !base.is_empty())
-            .map(|base| (base, *quote))
-    })
-}
-
-/// Quote assets MEXC's spot catalog ends its ids in, the dollar stablecoins first.
-const MEXC_QUOTES: [&str; 9] = [
-    "USDT", "USDC", "USD1", "USDE", "USDF", "EUR", "BRL", "ETH", "BTC",
-];
-
-/// How many of [`MEXC_QUOTES`] are dollar stablecoins: a one-letter base is a real asset there
-/// (`SUSDT`), where before another quote it is a wrapped one (`WBTC` is not W/BTC).
-const MEXC_STABLE_QUOTES: usize = 5;
-
-/// Splits an upper-case MEXC id like `BTCUSD1` into `("BTC", "USD1")`, or `None` when no quote of
-/// its catalog ends it (a bare asset such as `SOL` or `WBTC`).
-pub fn split_mexc_pair(symbol: &str) -> Option<(&str, &'static str)> {
-    MEXC_QUOTES.iter().enumerate().find_map(|(index, quote)| {
-        symbol
-            .strip_suffix(quote)
-            .filter(|base| base.len() > usize::from(index >= MEXC_STABLE_QUOTES))
-            .map(|base| (base, *quote))
-    })
 }
 
 #[cfg(test)]

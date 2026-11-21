@@ -3,29 +3,26 @@
 
 use super::{BOLD, galley_on, source_logo, window};
 use crate::model::DataSource;
+use crate::model::market::profile::Class;
 use crate::service::image::icon;
 use eframe::egui::{self, Color32, CornerRadius, FontId, Painter, Rect, Ui, Vec2};
 
 /// A coin, company or market logo in a circle; a hue-seeded monogram until (or unless) the
 /// shared icon cache resolves one. Crypto shares one lookup per base asset.
 pub fn ticker_icon(ui: &Ui, rect: Rect, symbol: &str, source: DataSource) {
-    if source == DataSource::CoinMarketCap {
+    if source.profile().class == Class::Index {
         // Its charts are indices, not assets: the CoinMarketCap mark stands in for a coin logo.
         source_logo::paint(ui, source, rect);
         return;
     }
     let base = source.base_asset(symbol);
-    let lookup = match source {
-        DataSource::Binance
-        | DataSource::Coinbase
-        | DataSource::Okx
-        | DataSource::Kraken
-        | DataSource::Bybit
-        | DataSource::Gate
-        | DataSource::Mexc
-        | DataSource::CoinGecko => Some((DataSource::Binance, format!("{base}USDT"))),
-        DataSource::Alpaca => Some((DataSource::Alpaca, base.clone())),
-        _ => None,
+    let class = source.profile().class;
+    let lookup = if class.has_coin_artwork() {
+        Some((DataSource::Binance, format!("{base}USDT")))
+    } else if class == Class::Stock {
+        Some((source, base.clone()))
+    } else {
+        None
     };
     if let Some((source, market)) = &lookup
         && cached_logo(ui, rect, *source, market, None, Color32::WHITE)
