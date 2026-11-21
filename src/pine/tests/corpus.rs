@@ -263,8 +263,18 @@ fn run(source: &str, bars: &[Kline], libraries: &dyn LibraryResolver) -> Outcome
                 .sum();
             let mut outcome = Outcome::ok(warnings);
             outcome.drawn = format!(
-                "plots={}/{plotted} markers={} bg={} fills={} lines={} labels={} boxes={} tables={} alerts={} trades={}",
+                "plots={}/{plotted} values={:016x} markers={} bg={} fills={} lines={} labels={} boxes={} tables={} alerts={} trades={}",
                 output.plots.len(),
+                super::bench::checksum(output)
+                    ^ fnv(format!(
+                        "{:?}{:?}{:?}{:?}{:?}",
+                        output.markers,
+                        output.lines,
+                        output.labels,
+                        output.boxes,
+                        output.strategy.as_ref().map(|report| &report.trades)
+                    )
+                    .as_bytes()),
                 output.markers.len(),
                 output.backgrounds.len(),
                 output.fills.len(),

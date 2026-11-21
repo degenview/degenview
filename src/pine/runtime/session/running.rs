@@ -51,6 +51,9 @@ impl Session {
                 })
         });
         self.first_bar_time = bars.first().map(|bar| bar.open_time);
+        self.known_bars = self
+            .keeps_known_bars
+            .then(|| std::sync::Arc::new(bars.to_vec()));
         let seconds = self.bar_seconds;
         self.history_end = bars.last().map(|bar| {
             crate::pine::time::bucket::end(

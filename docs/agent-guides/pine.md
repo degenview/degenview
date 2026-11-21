@@ -249,6 +249,19 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   2026-11-21). A `"60"` request reads 1 there where TradingView read 0, which splits history from
   realtime by wall-clock time. `timeframe.change` is false on the first bar of the series it runs on (the chart's,
   or the request's own candles, `series_bars`), TradingView-measured.
+- **Lookahead.** `lookahead_on` without an offset on a historical chart bar returns the requested
+  bar as it ended, from the period's first chart bar on (TradingView probe P04: 0 mismatches over
+  16,497 bars), because the chart's later bars exist. `load_history` keeps the bars it was given as
+  `Session::known_bars` (an `Arc`, copied only when `looks_ahead` finds a `request.security` whose
+  `lookahead` is not literally off; the chart bar replay passes truncated bars, so nothing past the
+  replay point is read). `advance_site` evaluates the known bucket once, `commit = false`, on the
+  first call in the bucket (`SecuritySite::ahead`) and reuses it. A bar past the known bars or a
+  realtime bar reads the developing candle as before, and `expr[1]` + `lookahead_on` is the previous
+  completed bar, unchanged. A request's expression runs on the series of its candles, so a nested
+  request reads ahead in those: `SecuritySite::known` holds the candles (the provider's, or the
+  outer series' known bars folded). `gaps_on` + `lookahead_on` keeps the value on the period's first
+  bar only; a finer timeframe with `lookahead_on` returns the period's first intrabar (the last
+  without).
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
 
