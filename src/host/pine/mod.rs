@@ -107,9 +107,49 @@ impl KlineSecurityDataProvider {
             0 => limit,
             recent => limit.min(u32::try_from(recent).unwrap_or(u32::MAX)),
         };
-        let candles = crate::service::fetch_klines(source, &symbol, timeframe, limit).ok()?;
+        // A source with a time-range endpoint serves the chart's whole span; the others, and a range
+        // that comes back empty, give their newest candles.
+        let candles = fetch_series(
+            chart.map(|chart| series_window(key, chart)),
+            |start, end, count| {
+                crate::service::fetch_klines_range(source, &symbol, timeframe, start, end, count)
+                    .ok()
+            },
+            || crate::service::fetch_klines(source, &symbol, timeframe, limit).ok(),
+        )?;
         Some(construct(modifier, candles))
     }
+}
+
+/// How many candles before the chart's first bar a series is asked for, so an expression has history
+/// to warm up on.
+const WARM_UP_CANDLES: i64 = 300;
+/// The most candles one series is asked for over a time range.
+const MAX_SERIES_CANDLES: usize = 60_000;
+
+/// The time range and the most candles a series is asked for to cover `chart`: from
+/// [`WARM_UP_CANDLES`] before its first bar to the end of its last, or the newest `calc_bars_count`
+/// candles of that.
+fn series_window(key: &SecurityKey, chart: ChartSpan) -> (i64, i64, usize) {
+    let step = ((key.interval * 1_000.0).round() as i64).max(1);
+    let mut start = (chart.start_ms - step * WARM_UP_CANDLES).max(0);
+    if key.recent_bars > 0 {
+        start = start.max(chart.end_ms - step * key.recent_bars as i64);
+    }
+    let count = ((chart.end_ms - start) / step + 2).clamp(1, MAX_SERIES_CANDLES as i64);
+    (start, chart.end_ms, count as usize)
+}
+
+/// The candles of a series: the range `window` names when `ranged` can serve it, else `newest`.
+fn fetch_series(
+    window: Option<(i64, i64, usize)>,
+    ranged: impl FnOnce(i64, i64, usize) -> Option<Vec<Kline>>,
+    newest: impl FnOnce() -> Option<Vec<Kline>>,
+) -> Option<Vec<Kline>> {
+    window
+        .and_then(|(start, end, count)| ranged(start, end, count))
+        .filter(|candles| !candles.is_empty())
+        .or_else(newest)
 }
 
 impl SecurityDataProvider for KlineSecurityDataProvider {
@@ -254,6 +294,88 @@ mod tests {
                 volume: 1_000.0,
             })
             .collect()
+    }
+
+    fn candle(open_time: i64) -> Kline {
+        Kline {
+            open_time,
+            close_time: open_time + 3_599_999,
+            open: 1.0,
+            high: 1.0,
+            low: 1.0,
+            close: 1.0,
+            volume: 1.0,
+        }
+    }
+
+    fn hourly_key(recent_bars: usize) -> SecurityKey {
+        SecurityKey {
+            symbol: "ETHUSDT".to_owned(),
+            interval: 3_600.0,
+            recent_bars,
+        }
+    }
+
+    const HOUR: i64 = 3_600_000;
+
+    #[test]
+    fn a_series_covers_the_chart_from_a_warm_up_before_it() {
+        let chart = ChartSpan {
+            start_ms: 1_000 * HOUR,
+            end_ms: 3_000 * HOUR,
+            spacing_ms: HOUR,
+        };
+        // 300 candles before the first bar, 2,300 to the end, and two spare.
+        assert_eq!(
+            series_window(&hourly_key(0), chart),
+            (700 * HOUR, 3_000 * HOUR, 2_302)
+        );
+        // Only the newest 50 with `calc_bars_count`.
+        assert_eq!(
+            series_window(&hourly_key(50), chart),
+            (2_950 * HOUR, 3_000 * HOUR, 52)
+        );
+        // Not before the epoch, and not beyond what one request may ask for.
+        let long = ChartSpan {
+            start_ms: HOUR,
+            end_ms: 100_000 * HOUR,
+            spacing_ms: HOUR,
+        };
+        assert_eq!(
+            series_window(&hourly_key(0), long),
+            (0, 100_000 * HOUR, 60_000)
+        );
+    }
+
+    #[test]
+    fn a_source_that_serves_the_range_is_asked_for_nothing_else() {
+        let window = Some((0, 10 * HOUR, 12));
+        let served = fetch_series(
+            window,
+            |_, _, _| Some(vec![candle(0)]),
+            || panic!("the newest candles are not needed"),
+        );
+        assert_eq!(served, Some(vec![candle(0)]));
+    }
+
+    #[test]
+    fn a_source_without_a_range_endpoint_gives_its_newest_candles() {
+        let window = Some((0, 10 * HOUR, 12));
+        let newest = || Some(vec![candle(5 * HOUR)]);
+        assert_eq!(
+            fetch_series(window, |_, _, _| None, newest),
+            Some(vec![candle(5 * HOUR)])
+        );
+        assert_eq!(
+            fetch_series(window, |_, _, _| Some(Vec::new()), newest),
+            Some(vec![candle(5 * HOUR)]),
+            "an empty range is no answer"
+        );
+        assert_eq!(
+            fetch_series(None, |_, _, _| panic!("no chart, no range"), newest),
+            Some(vec![candle(5 * HOUR)])
+        );
+        assert_eq!(fetch_series(window, |_, _, _| None, || None), None);
     }
 
     #[test]
