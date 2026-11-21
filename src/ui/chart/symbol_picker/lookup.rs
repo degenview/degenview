@@ -136,6 +136,16 @@ mod tests {
     }
 
     #[test]
+    fn a_dex_market_keeps_its_own_colon_after_the_venue_prefix() {
+        for text in ["HYPERLIQUID:xyz:SP500", "hyperliquid : xyz:SP500"] {
+            let lookup = of(text, Scope::All);
+            assert_eq!(lookup.query, "xyz:SP500", "{text}");
+            assert_eq!(lookup.venue, Some(DataSource::Hyperliquid), "{text}");
+            assert_eq!(lookup.unsupported, None, "{text}");
+        }
+    }
+
+    #[test]
     fn a_prefix_alone_narrows_the_venue_and_waits_for_a_symbol() {
         let lookup = of("COINBASE:", Scope::All);
         assert!(lookup.is_empty());
@@ -233,6 +243,7 @@ mod tests {
                 "Bybit",
                 "Gate.io",
                 "MEXC",
+                "Hyperliquid",
                 "DEXScreener",
                 "CoinGecko",
                 "Alpaca"

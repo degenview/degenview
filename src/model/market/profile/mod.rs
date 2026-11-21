@@ -24,6 +24,9 @@ pub struct Profile {
     /// The provider's name as every MCP tool spells it.
     pub mcp_id: &'static str,
     pub class: Class,
+    /// Whether an id can say nothing to a reader (a DEX pair's address, a spot pair Hyperliquid
+    /// numbers `@107`), so a chart added from search is titled by the hit's own label.
+    pub opaque_ids: bool,
     /// How its markets are traded, the first being what an id means unless the venue says
     /// otherwise (`service::market::venue::Venue::kind_of`). A venue with perpetuals and spot lists both.
     pub kinds: &'static [MarketKind],
@@ -121,6 +124,17 @@ pub enum Casing {
     AsGiven,
 }
 
+impl Casing {
+    /// `text` in this casing.
+    pub fn apply(self, text: &str) -> String {
+        match self {
+            Self::Upper => text.to_uppercase(),
+            Self::Lower => text.to_lowercase(),
+            Self::AsGiven => text.to_owned(),
+        }
+    }
+}
+
 /// How the source's market ids join two assets.
 #[derive(Debug)]
 pub enum PairStyle {
@@ -130,6 +144,9 @@ pub enum PairStyle {
     Concat(Concat),
     /// A separator between the assets (`BTC-USD`, `BTC_USDT`, `BTC/USD`).
     Separated(Separated),
+    /// The venue's own names, kept exactly as it lists them, case and all (`BTC`, `kPEPE`,
+    /// `xyz:SP500`, `PURR/USDC`, `@107`): no quote is guessed or added to a bare asset.
+    Listed(Listed),
 }
 
 /// A pair written without a separator.
@@ -187,11 +204,46 @@ impl Separated {
     }
 }
 
+/// Names a venue lists as they are.
+#[derive(Debug)]
+pub struct Listed {
+    /// Joins the namespace of a market to its name (`xyz:SP500` is `SP500` on the dex `xyz`).
+    pub namespace: char,
+    /// Characters besides letters and digits that a name may hold, for the shape check of an
+    /// imported line.
+    pub also_in_names: &'static [char],
+    /// What the venue calls its markets, for the message that says how to write one.
+    pub noun: &'static str,
+    /// A few names as the venue writes them, for the same message.
+    pub examples: &'static str,
+}
+
+impl Listed {
+    /// The asset of an upper-case id: the name without its namespace.
+    fn asset<'a>(&self, head: &'a str) -> &'a str {
+        head.rsplit_once(self.namespace)
+            .map_or(head, |(_, asset)| asset)
+    }
+
+    /// Whether `name` is shaped like one of the venue's names: letters, digits and the characters
+    /// it allows, under a length no listed name comes near.
+    pub fn is_name(&self, name: &str) -> bool {
+        (1..=MAX_LISTED_NAME).contains(&name.chars().count())
+            && name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || self.also_in_names.contains(&ch))
+    }
+}
+
+/// The longest name [`Listed::is_name`] accepts.
+const MAX_LISTED_NAME: usize = 40;
+
 impl PairStyle {
     /// The asset of a market, from the first part of its upper-case id.
     pub(super) fn base_of<'a>(&self, head: &'a str) -> &'a str {
         match self {
             Self::Concat(concat) => concat.split_asset(head).map_or(head, |(base, _)| base),
+            Self::Listed(listed) => listed.asset(head),
             Self::Separated(_) | Self::None => head,
         }
     }
@@ -207,13 +259,14 @@ impl PairStyle {
                     && !quote.contains(['-', '/', ' ', *separator]))
                 .then(|| quote.to_owned())
             }
-            Self::None => None,
+            Self::Listed(_) | Self::None => None,
         }
     }
 
-    /// The id the source's API takes for `symbol`, a bare asset getting `home_quote`. Everything
-    /// else is returned as given.
-    pub(super) fn api_symbol(&self, symbol: &str, home_quote: Option<&str>) -> String {
+    /// The id the source's API takes for `symbol`, a bare asset getting `home_quote`. A name the
+    /// venue lists takes the casing of `id` (the profile's, which compares ids); everything else is
+    /// returned as given.
+    pub(super) fn api_symbol(&self, symbol: &str, home_quote: Option<&str>, id: Casing) -> String {
         let home = home_quote.unwrap_or_default();
         match self {
             Self::Concat(concat) => {
@@ -245,6 +298,7 @@ impl PairStyle {
                     None => format!("{}{separator}{home}", style.alias(&id)),
                 }
             }
+            Self::Listed(_) => id.apply(symbol),
             Self::None => symbol.to_owned(),
         }
     }
@@ -322,7 +376,7 @@ pub enum CachedSeries {
 impl DataSource {
     /// Every source, in the order the picker asks them. The one list: a new variant fails to compile
     /// in [`table::profile_of`] until it has a profile, and the tests until it is listed here.
-    pub const ALL: [DataSource; 13] = ALL;
+    pub const ALL: [DataSource; 14] = ALL;
 
     pub fn profile(self) -> &'static Profile {
         profile_of(self)

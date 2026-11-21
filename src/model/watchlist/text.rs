@@ -214,10 +214,16 @@ pub fn market_item(source: DataSource, symbol: &str) -> Result<WatchlistInstrume
     if symbol.is_empty() {
         return Err("Missing symbol".to_owned());
     }
+    // A colon would end the venue prefix of the line made below, except where it is part of the
+    // venue's names (a market of another dex: `xyz:SP500`).
+    let colon_in_names = matches!(
+        &source.profile().pair,
+        PairStyle::Listed(style) if style.also_in_names.contains(&':')
+    );
     if symbol.chars().count() > MAX_SYMBOL_LEN
         || symbol
             .chars()
-            .any(|c| c.is_control() || c == '|' || c == ':')
+            .any(|c| c.is_control() || c == '|' || (c == ':' && !colon_in_names))
     {
         return Err("Symbol contains unsupported characters".to_owned());
     }
@@ -285,6 +291,18 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
                 &symbol.replace(separator, "/"),
                 &symbol,
             ))
+        }
+        (PairStyle::Listed(style), _) => {
+            if !style.is_name(&rest) {
+                return Err(format!(
+                    "{} {} are written as the exchange lists them, like {}",
+                    source.display_name(),
+                    style.noun,
+                    style.examples
+                ));
+            }
+            // Names are case-sensitive: kept as written.
+            Ok(item(source, &rest, &rest, &rest))
         }
         (PairStyle::None, Class::Stock) => stock(&rest),
         (PairStyle::None, Class::Aggregator) => {
