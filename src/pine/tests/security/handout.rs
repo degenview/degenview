@@ -2,10 +2,10 @@
 //! remembers it for the next bar and for a second call in the same bar, and the script changing
 //! what it got (`array.push`) must never show in what it gets next.
 
-use super::bench::run_script;
-use super::security_lookahead::{hourly, plot_values, session_with};
+use super::lookahead::{hourly, plot_values, session_with};
 use crate::model::Kline;
 use crate::pine::compiler::program::{BarEvent, BarPhase};
+use crate::pine::tests::bench::run_script;
 
 /// The plot `size` of `source` (a script that ends in `plot(.., "size")`) over `chart`.
 fn sizes(source: &str, chart: &[Kline]) -> Vec<Option<f64>> {
@@ -71,10 +71,7 @@ fn another_symbols_array_is_a_fresh_copy_on_every_bar() {
         let source = format!(
             "//@version=6\nindicator(\"T\")\na = request.security(\"ETHUSDT\", \"240\", array.from(close){options})\nif not na(a)\n    array.push(a, 1.0)\nplot(na(a) ? na : array.size(a), \"size\")"
         );
-        let mut session = session_with(
-            &source,
-            Some(Box::new(super::security_lookahead::EthFourHour)),
-        );
+        let mut session = session_with(&source, Some(Box::new(super::lookahead::EthFourHour)));
         session.evaluate(&chart).expect("script runs");
         assert_eq!(
             plot_values(&session, "size")[3..],
@@ -90,11 +87,9 @@ fn the_intrabars_of_a_bar_are_a_fresh_array_for_each_call_in_it() {
     let source = "//@version=6\nindicator(\"T\")\nfloat second = na\nfor i = 0 to 1\n    a = request.security_lower_tf(syminfo.tickerid, \"15S\", close)\n    if i == 0\n        array.push(a, 1.0)\n    else\n        second := array.size(a)\nplot(second, \"size\")";
     let mut session = session_with(
         source,
-        Some(Box::new(
-            super::security_lookahead::Intrabars::fifteen_seconds(),
-        )),
+        Some(Box::new(super::lookahead::Intrabars::fifteen_seconds())),
     );
-    let chart = super::security_lookahead::minute_chart(2);
+    let chart = super::lookahead::minute_chart(2);
     session.evaluate(&chart).expect("script runs");
     assert_eq!(plot_values(&session, "size"), [Some(4.0), Some(4.0)]);
 }

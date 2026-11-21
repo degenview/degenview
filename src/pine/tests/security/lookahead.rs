@@ -6,12 +6,12 @@
 
 use std::collections::HashMap;
 
-use super::bench::{limits, run_script, symbol};
 use crate::model::Kline;
 use crate::pine::compiler::program::{BarEvent, BarPhase};
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::session::Session;
 use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey};
+use crate::pine::tests::bench::{limits, run_script, symbol};
 
 const HOUR: i64 = 3_600_000;
 const FOUR_HOURS: usize = 4;
@@ -573,8 +573,13 @@ fn a_complete_bucket_reads_ahead_what_the_plain_request_reads_at_its_last_bar() 
     let plain = flag_rows(&chart, |expression| request(expression, ""));
     for bucket in 0..2 {
         let last = bucket * FOUR_HOURS + FOUR_HOURS - 1;
-        for bar in bucket * FOUR_HOURS..=last {
-            assert_eq!(ahead[bar], plain[last], "bar {bar} of bucket {bucket}");
+        for (bar, row) in ahead
+            .iter()
+            .enumerate()
+            .take(last + 1)
+            .skip(bucket * FOUR_HOURS)
+        {
+            assert_eq!(*row, plain[last], "bar {bar} of bucket {bucket}");
         }
     }
 }
