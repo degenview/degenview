@@ -112,7 +112,7 @@ impl Session {
             history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
         let security_slices = security_slice::build(&program.statements);
         let keeps_series_bars = replays_chart_bars(&program);
-        let keeps_known_bars = looks_ahead(&program);
+        let keeps_known_bars = keeps_series_bars && looks_ahead(&program);
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
