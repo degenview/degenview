@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 /// How many variants `DataSource` has. Bumped with [`position`], which cannot compile without an
 /// arm for a new variant.
-const VARIANTS: usize = 16;
+const VARIANTS: usize = 17;
 
 /// Where `source` stands in [`DataSource::ALL`]. Exhaustive, so a new variant does not compile
 /// until it is placed here, and then the tests below make it appear in the list.
@@ -20,12 +20,13 @@ fn position(source: DataSource) -> usize {
         DataSource::Hyperliquid => 7,
         DataSource::Aster => 8,
         DataSource::Lighter => 9,
-        DataSource::CoinGecko => 10,
-        DataSource::DexScreener => 11,
-        DataSource::Alpaca => 12,
-        DataSource::Polymarket => 13,
-        DataSource::Kalshi => 14,
-        DataSource::CoinMarketCap => 15,
+        DataSource::Deribit => 10,
+        DataSource::CoinGecko => 11,
+        DataSource::DexScreener => 12,
+        DataSource::Alpaca => 13,
+        DataSource::Polymarket => 14,
+        DataSource::Kalshi => 15,
+        DataSource::CoinMarketCap => 16,
     }
 }
 
@@ -114,6 +115,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Hyperliquid,
             DataSource::Aster,
             DataSource::Lighter,
+            DataSource::Deribit,
         ]
     );
     assert_eq!(
@@ -127,6 +129,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Hyperliquid,
             DataSource::Aster,
             DataSource::Lighter,
+            DataSource::Deribit,
         ]
     );
 }
@@ -151,7 +154,7 @@ fn only_the_sources_with_a_small_rest_allowance_refresh_their_charts_slowly() {
 #[test]
 fn the_picker_lists_markets_by_symbol_and_predictions_apart() {
     let markets: Vec<_> = DataSource::symbol_markets().collect();
-    assert_eq!(markets.len(), 13);
+    assert_eq!(markets.len(), 14);
     assert!(markets.iter().all(|source| !source.is_prediction_market()));
     assert!(!markets.contains(&DataSource::CoinMarketCap));
     assert_eq!(
@@ -176,6 +179,7 @@ fn quotes_are_polled_as_each_source_allows() {
     assert_eq!(timing(DataSource::Hyperliquid), (10, 60, 2_000));
     assert_eq!(timing(DataSource::Aster), (10, 60, 1_000));
     assert_eq!(timing(DataSource::Lighter), (10, 60, 2_000));
+    assert_eq!(timing(DataSource::Deribit), (10, 60, 2_000));
     assert_eq!(timing(DataSource::DexScreener), (10, 60, 30));
     assert_eq!(timing(DataSource::CoinGecko), (30, 120, 250));
     assert_eq!(timing(DataSource::Alpaca), (5, 45, 200));
@@ -306,5 +310,64 @@ fn lighter_lists_perpetuals_by_the_names_it_lists_and_serves_what_it_cannot_cut_
             "{folded}"
         );
         assert!(DataSource::Lighter.serves(timeframe), "{folded}");
+    }
+}
+
+#[test]
+fn deribit_lists_perpetuals_by_the_names_it_lists_and_folds_what_it_cannot_cut() {
+    let profile = DataSource::Deribit.profile();
+    assert_eq!(profile.kinds, [MarketKind::Perp]);
+    assert_eq!((profile.slug, profile.display_name), ("DERIBIT", "Deribit"));
+    assert!(profile.streams.candles && profile.streams.quotes);
+    assert_eq!(
+        DataSource::from_watchlist_slug("deribit"),
+        Some(DataSource::Deribit)
+    );
+    // The asset of a name is its first part; no quote is ever read from it.
+    for (id, asset) in [
+        ("BTC-PERPETUAL", "BTC"),
+        ("ETH-PERPETUAL", "ETH"),
+        ("SOL_USDC-PERPETUAL", "SOL"),
+        ("1000PEPE_USDC-PERPETUAL", "1000PEPE"),
+        ("sol_usdc-perpetual", "SOL"),
+    ] {
+        assert_eq!(DataSource::Deribit.base_asset(id), asset, "{id}");
+        assert_eq!(DataSource::Deribit.quote_asset(id), None, "{id}");
+    }
+    // Names are compared in the casing the profile declares, so a typed spelling keys and asks as the
+    // venue writes it.
+    for (source, typed, id) in [
+        (DataSource::Deribit, "btc-perpetual", "BTC-PERPETUAL"),
+        (
+            DataSource::Deribit,
+            "sol_usdc-perpetual",
+            "SOL_USDC-PERPETUAL",
+        ),
+        (DataSource::Lighter, "btc", "BTC"),
+    ] {
+        let instrument = crate::model::InstrumentId::new(source, typed);
+        assert_eq!(instrument.api_symbol(), id, "{typed}");
+        assert_eq!(
+            instrument.key(),
+            format!("{}:{id}", source.watchlist_slug()),
+            "{typed}"
+        );
+    }
+    // Eight lengths are its own; the ones that open at 02:00 or 08:00 UTC fold, days among them.
+    let natives: Vec<_> = DataSource::Deribit
+        .natives()
+        .iter()
+        .map(|native| native.interval())
+        .collect();
+    assert_eq!(natives, ["1m", "3m", "5m", "10m", "15m", "30m", "1h", "2h"]);
+    for folded in [
+        "4m", "3h", "4h", "6h", "12h", "1d", "1w", "1M", "3M", "1Y", "22m",
+    ] {
+        let timeframe = Timeframe::parse(folded).unwrap();
+        assert!(
+            !DataSource::Deribit.natives().contains(&timeframe),
+            "{folded}"
+        );
+        assert!(DataSource::Deribit.serves(timeframe), "{folded}");
     }
 }

@@ -246,6 +246,7 @@ mod tests {
                 "Hyperliquid",
                 "Aster",
                 "Lighter",
+                "Deribit",
                 "DEXScreener",
                 "CoinGecko",
                 "Alpaca"
