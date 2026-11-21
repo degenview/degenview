@@ -44,85 +44,82 @@ pub const VARIABLES: [&str; 8] = [
     "ta.wvad",
 ];
 
-/// A series a function derives from its inputs (`ta.kc`'s two averages, `ta.tsi`'s four) with the
-/// last result of its own moving average.
+/// How a [`Derived`] average folds a value into the one before it.
+#[derive(Clone, Copy)]
+pub(super) enum Smoothing {
+    /// `ta.ema`: alpha `2 / (length + 1)`.
+    Exponential,
+    /// `ta.rma` (Wilder's): alpha `1 / length`.
+    Wilder,
+}
+
+/// One smoothed series of a function: the moving average of everything fed to it (`ta.ema`,
+/// `ta.rma`, `ta.macd`'s three, `ta.kc`'s two, `ta.tsi`'s four, `ta.rsi`'s two). A missing value gives
+/// no result and leaves the average as it was, so a gap neither restarts the seed nor moves the
+/// line (TradingView ignores `na`); the average starts as the mean of the first `length` values
+/// that exist. Only that seed is kept, and it is dropped once the average exists.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Derived {
-    values: Vec<Option<f64>>,
+    seed: Vec<f64>,
     last: Option<f64>,
 }
 
 impl Derived {
-    /// The EMA of everything pushed so far, seeded with the simple average of the first `length`
-    /// values like `ta.ema`.
-    fn ema(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
-        self.values.push(value);
-        let result = match (self.last, value) {
-            _ if length == 0 => None,
-            (Some(prior), Some(x)) => {
-                let alpha = 2.0 / (length as f64 + 1.0);
-                Some(alpha * x + (1.0 - alpha) * prior)
-            }
-            (Some(_), None) => None,
-            (None, _) => self
-                .window(length)
-                .map(|w| w.iter().sum::<f64>() / length as f64),
-        };
-        if result.is_some() {
-            self.last = result;
-        } else if value.is_none() {
-            // A gap breaks the average; it reseeds once `length` values are present again.
-            self.last = None;
+    /// Folds `value` in: the average of the first `length` values seeds it, `alpha * x + (1 - alpha)
+    /// * prior` continues it.
+    pub(super) fn step(
+        &mut self,
+        value: Option<f64>,
+        length: usize,
+        smoothing: Smoothing,
+    ) -> Option<f64> {
+        let x = value?;
+        if length == 0 {
+            return None;
         }
-        result
+        if let Some(prior) = self.last {
+            let alpha = match smoothing {
+                Smoothing::Exponential => 2.0 / (length as f64 + 1.0),
+                Smoothing::Wilder => 1.0 / length as f64,
+            };
+            let next = alpha * x + (1.0 - alpha) * prior;
+            self.last = Some(next);
+            return Some(next);
+        }
+        self.seed.push(x);
+        if self.seed.len() < length {
+            return None;
+        }
+        let average = self.seed.iter().sum::<f64>() / length as f64;
+        self.seed = Vec::new();
+        self.last = Some(average);
+        Some(average)
     }
 
-    /// The RMA (Wilder's smoothing, alpha 1/`length`) of everything pushed so far, seeded with the
-    /// simple average of the first `length` values like `ta.rma`. Only that seed window is kept: once
-    /// the average exists, a value is folded into it and not stored.
-    fn rma(&mut self, value: f64, length: usize) -> Option<f64> {
-        if self.last.is_none() {
-            self.values.push(Some(value));
-        }
-        let result = match self.last {
-            _ if length == 0 => None,
-            Some(prior) => {
-                let alpha = 1.0 / length as f64;
-                Some(alpha * value + (1.0 - alpha) * prior)
-            }
-            None => self
-                .window(length)
-                .map(|w| w.iter().sum::<f64>() / length as f64),
-        };
-        if result.is_some() {
-            self.last = result;
-        }
-        result
+    pub(super) fn ema(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
+        self.step(value, length, Smoothing::Exponential)
     }
 
-    fn window(&self, length: usize) -> Option<Vec<f64>> {
-        let start = self.values.len().checked_sub(length)?;
-        self.values[start..].iter().copied().collect()
+    pub(super) fn rma(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
+        self.step(value, length, Smoothing::Wilder)
     }
 }
 
 /// `ta.rsi(source, length)` for the bar `state.inputs` just ended on: `100 - 100 / (1 + rs)` with
 /// `rs` the RMA of the gains over the RMA of the losses, as TradingView defines it. The first value
-/// comes once `length` changes exist. No losses is 100. A missing source value is skipped, as
-/// `ta.sma` and `ta.rma` skip it: the bar repeats the last result and a change is measured between
-/// the two latest values that exist.
+/// comes once `length` changes exist. No losses is 100. A bar whose change is missing, the `na`
+/// bar and the one after it, has no value and leaves both averages as they were.
 pub fn rsi(state: &mut State, length: i64) -> RuntimeValue {
     let length = count(length);
-    let Some(now) = state.inputs.last().and_then(RuntimeValue::number) else {
-        return state.results.last().cloned().unwrap_or(RuntimeValue::Na);
+    let change = match state.inputs.as_slice() {
+        [.., before, now] => now
+            .number()
+            .zip(before.number())
+            .map(|(now, before)| now - before),
+        _ => None,
     };
-    let earlier = &state.inputs[..state.inputs.len() - 1];
-    let Some(before) = earlier.iter().rev().find_map(RuntimeValue::number) else {
-        return RuntimeValue::Na;
-    };
-    let change = now - before;
-    let gain = derived(state, 0).rma(change.max(0.0), length);
-    let loss = derived(state, 1).rma((-change).max(0.0), length);
+    let gain = derived(state, 0).rma(change.map(|change| change.max(0.0)), length);
+    let loss = derived(state, 1).rma(change.map(|change| (-change).max(0.0)), length);
     match (gain, loss) {
         (Some(_), Some(0.0)) => RuntimeValue::Float(100.0),
         (Some(gain), Some(loss)) => RuntimeValue::Float(100.0 - 100.0 / (1.0 + gain / loss)),
@@ -349,7 +346,7 @@ fn mean_ranks(values: &[f64]) -> Vec<f64> {
     ranks
 }
 
-fn derived(state: &mut State, slot: usize) -> &mut Derived {
+pub(super) fn derived(state: &mut State, slot: usize) -> &mut Derived {
     if state.derived.len() <= slot {
         state.derived.resize_with(slot + 1, Derived::default);
     }

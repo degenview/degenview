@@ -36,6 +36,18 @@
 - `request.footprint()` handles are stateless (footprint = bar index; `volume_row` = bar index +
   row); data in `Session::footprints`, outside `RuntimeState` so rollback does not copy it. Read
   [Pine volume footprints](../pine-footprint.md) before changing the algorithm: mostly inferred.
+- `ta.*` and a missing (`na`) source bar, as measured on TradingView (Binance bars, probes P03/P09):
+  `ta.ema`, `ta.rma`, `ta.macd` and the legs of `ta.kc`, `ta.tsi` and `ta.rsi` are `extra::Derived`
+  averages: a `na` bar gives `na`, leaves the state alone and the average starts as the mean of the
+  first `length` values that exist. `ta.rsi` is `na` while `ta.change(src)` is (the `na` bar and the one
+  after). `ta.stdev`, `ta.variance`, `ta.median`, `ta.range`, `math.sum` and the stdev of `ta.bb` /
+  `ta.bbw` skip the `na` bar and keep their value there (`last_valid`). `ta.wma` is `na` on the bar and
+  later windows hold the last value before it in its slot. `ta.dev` stays strict (TradingView is,
+  against its own manual). **Not measured, still strict** (`na` for `length` bars after a gap):
+  `ta.cog`, `ta.cmo`, `ta.cci`, `ta.hma`, `ta.correlation`, `ta.mode`, `ta.mfi`, `ta.vwma`,
+  `ta.wpr`, `ta.rci`, `ta.highestbars`, `ta.lowestbars`, `ta.rising`, `ta.falling`; their TradingView
+  rule is a known divergence until a probe settles it. Never add a per-bar growing field to
+  `ta::State` for this (cloned on every realtime tick).
 - Execution-model gaps: [the audit](../reviews/pine-execution-model-audit.md); read it before relying
   on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
   do not halt the script.

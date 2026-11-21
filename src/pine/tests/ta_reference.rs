@@ -506,3 +506,193 @@ plot(plus)
         assert_same(&format!("sma({length})"), &plotted[offset + 1], &expected);
     }
 }
+
+/// A close with a hole every 37th bar, the first included.
+const HOLEY: &str = "src = bar_index % 37 == 0 ? na : close";
+
+/// An exponential average written out from its definition for a source with holes: a hole gives
+/// no value and leaves the state alone, the average starts as the mean of the first `length`
+/// values that exist. `alpha` is `2 / (length + 1)` for an EMA and `1 / length` for an RMA.
+fn skipping_average(name: &str, length: u32, alpha: &str) -> String {
+    format!(
+        "var float {name}Total = 0.0
+var int {name}Seen = 0
+var float {name}Last = na
+float {name} = na
+if not na(src)
+    if na({name}Last)
+        {name}Total += src
+        {name}Seen += 1
+        if {name}Seen == {length}
+            {name}Last := {name}Total / {length}
+            {name} := {name}Last
+    else
+        {name}Last := {alpha} * src + (1 - {alpha}) * {name}Last
+        {name} := {name}Last
+"
+    )
+}
+
+#[test]
+fn ema_and_rma_skip_a_missing_bar_and_keep_their_state() {
+    let source = format!(
+        "//@version=6
+indicator(\"Skipping averages\")
+{HOLEY}
+{}{}plot(ta.ema(src, 20))
+plot(ema)
+plot(ta.rma(src, 14))
+plot(rma)
+",
+        skipping_average("ema", 20, "(2.0 / 21)"),
+        skipping_average("rma", 14, "(1.0 / 14)"),
+    );
+    let plotted = plots(&source, 900);
+    assert_same("ema", &plotted[0], &plotted[1]);
+    assert_same("rma", &plotted[2], &plotted[3]);
+    assert_eq!(
+        first_value(&plotted[0]),
+        Some(20),
+        "the 20th value that exists"
+    );
+    assert_eq!(plotted[0][37], None, "na on the na bar");
+    assert!(plotted[0][38].is_some(), "and back on the next one");
+    assert!(plotted[0].iter().flatten().count() > 800);
+}
+
+#[test]
+fn the_averages_of_keltner_and_tsi_skip_a_missing_bar_too() {
+    let source = format!(
+        "//@version=6
+indicator(\"Skipping legs\")
+{HOLEY}
+{}[basis, upper, lower] = ta.kc(src, 20, 1.5, false)
+plot(basis)
+plot(na(ema) or na(upper) ? na : ema)
+plot(ta.tsi(src, 5, 13))
+",
+        skipping_average("ema", 20, "(2.0 / 21)"),
+    );
+    let plotted = plots(&source, 900);
+    assert_same("kc basis", &plotted[0], &plotted[1]);
+    assert_eq!(plotted[2][37], None, "tsi has no value on the na bar");
+    assert!(plotted[2][60].is_some(), "and recovers after it");
+}
+
+#[test]
+fn rsi_is_na_while_the_change_is_na_and_keeps_its_averages() {
+    let source = format!(
+        "//@version=6
+indicator(\"Rsi\")
+{HOLEY}
+up = math.max(src - src[1], 0)
+down = math.max(src[1] - src, 0)
+{}{}
+rs = upAverage / downAverage
+plot(ta.rsi(src, 14))
+plot(downAverage == 0 ? 100.0 : 100 - 100 / (1 + rs))
+",
+        // The same two skipping averages, named for the gain and the loss.
+        skipping_average("upAverage", 14, "(1.0 / 14)").replace("src", "up"),
+        skipping_average("downAverage", 14, "(1.0 / 14)").replace("src", "down"),
+    );
+    let plotted = plots(&source, 900);
+    assert_same("rsi", &plotted[0], &plotted[1]);
+    assert_eq!(plotted[0][37], None, "the na bar");
+    assert_eq!(plotted[0][38], None, "the bar after it, whose change is na");
+    assert!(plotted[0][39].is_some());
+}
+
+/// The last `length` values of a source with holes that exist, kept in an array.
+const KEPT: &str = "var float[] kept = array.new_float()
+if not na(src)
+    kept.push(src)
+    if kept.size() > 20
+        kept.shift()
+bool full = kept.size() == 20
+";
+
+#[test]
+fn window_statistics_skip_a_missing_bar_and_hold_their_value() {
+    let source = format!(
+        "//@version=6
+indicator(\"Windows\")
+{HOLEY}
+{KEPT}[basis, upper, lower] = ta.bb(src, 20, 2)
+plot(ta.stdev(src, 20))
+plot(full ? array.stdev(kept, true) : na)
+plot(ta.variance(src, 20, false))
+plot(full ? array.variance(kept, false) : na)
+plot(ta.median(src, 20))
+plot(full ? array.median(kept) : na)
+plot(ta.range(src, 20))
+plot(full ? array.max(kept) - array.min(kept) : na)
+plot(math.sum(src, 20))
+plot(full ? array.sum(kept) : na)
+plot(upper)
+plot(full ? array.avg(kept) + 2 * array.stdev(kept, true) : na)
+plot(ta.bbw(src, 20, 2))
+plot(full ? 4 * array.stdev(kept, true) / array.avg(kept) * 100 : na)
+",
+    );
+    let plotted = plots(&source, 900);
+    for (label, index) in [
+        ("stdev", 0),
+        ("variance", 2),
+        ("median", 4),
+        ("range", 6),
+        ("sum", 8),
+        ("bb upper", 10),
+        ("bbw", 12),
+    ] {
+        assert_same(label, &plotted[index], &plotted[index + 1]);
+        assert!(plotted[index][37].is_some(), "{label}: held on the na bar");
+        assert_eq!(plotted[index][37], plotted[index][36], "{label}: held");
+    }
+}
+
+#[test]
+fn wma_is_na_on_the_missing_bar_and_fills_its_slot_afterwards() {
+    let source = format!(
+        "//@version=6
+indicator(\"Wma\")
+{HOLEY}
+var float lastGood = na
+var float[] slots = array.new_float()
+slots.push(na(src) ? lastGood : src)
+if slots.size() > 20
+    slots.shift()
+lastGood := na(src) ? lastGood : src
+float weighted = 0.0
+for index = 0 to slots.size() - 1
+    weighted += (index + 1) * slots.get(index)
+plot(ta.wma(src, 20))
+plot(na(src) or slots.size() < 20 ? na : weighted / 210)
+",
+    );
+    let plotted = plots(&source, 900);
+    assert_same("wma", &plotted[0], &plotted[1]);
+    assert_eq!(plotted[0][37], None);
+    assert!(plotted[0][38].is_some(), "the slot is filled, not a gap");
+}
+
+#[test]
+fn dev_stays_strict_like_on_tradingview() {
+    let source = format!(
+        "//@version=6
+indicator(\"Dev\")
+{HOLEY}
+plot(ta.dev(src, 20))
+plot(ta.barssince(na(src)))
+"
+    );
+    let plotted = plots(&source, 400);
+    for (bar, (dev, since)) in plotted[0].iter().zip(&plotted[1]).enumerate().skip(20) {
+        let since = since.expect("a hole exists from bar 0");
+        assert_eq!(
+            dev.is_none(),
+            since < 20.0,
+            "bar {bar}: a hole {since} bars back"
+        );
+    }
+}
