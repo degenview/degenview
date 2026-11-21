@@ -16,6 +16,11 @@ A venue is one profile entry plus one directory plus a logo; no other file names
    watchlist price and its parser), `live.rs` (`CandleProtocol`), `quotes.rs` (`QuoteProtocol`), and
    tests. Plan every request through `DataSource::plan` (see Timeframes), so `serves` and the fetch
    agree.
+   A venue whose API is another's clone does not copy that venue's parsers: `service::market::shape::<api>`
+   holds the shared klines, market list, ticker and socket code, and the venue's directory is a
+   `Config` (hosts, row limit, which listed markets it serves) plus what differs. Only
+   `shape::binance` exists so far (Binance spot, Aster perpetuals); extract a shape when a second
+   venue speaks the same API, never before.
 3. Register it in `service::market::venue::of`, the one place that pairs a source with its code. The
    `Venue` trait answers the candles, the optional candle and ticker sockets, REST quotes, how an HTTP
    status reads for a quote request, and `trending` where the venue can rank active markets (Kalshi
