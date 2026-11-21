@@ -14,7 +14,7 @@ fn pair(source: DataSource, symbol: &str, base: &str, quote: &str) -> SearchResu
 
 /// Canned provider answers: what each exchange lists for a handful of queries.
 fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-    use DataSource::{Alpaca, Binance, CoinGecko, Coinbase, DexScreener};
+    use DataSource::{Alpaca, Aster, Binance, CoinGecko, Coinbase, DexScreener};
     match (source, query) {
         (Binance, "btc") => Ok(vec![
             pair(Binance, "BTCTRY", "BTC", "TRY"),
@@ -45,6 +45,11 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Pro
             },
             pair(Binance, "ETHUSDT", "ETH", "USDT"),
         ]),
+        // A perpetual under a short venue name: its kind line is the wider of the two.
+        (Aster, "aster") => Ok(vec![SearchResult {
+            kind: MarketKind::Perp,
+            ..pair(Aster, "BTCUSDT", "BTC", "USDT")
+        }]),
         (Binance, "btcusdt") => Ok(vec![pair(Binance, "BTCUSDT", "BTC", "USDT")]),
         (Alpaca, "aapl") => Ok(vec![SearchResult::new(Alpaca, "AAPL — Apple Inc.", "AAPL")]),
         (Binance, "eth") => Ok(vec![
@@ -1276,7 +1281,7 @@ fn a_venue_nothing_serves_is_named_and_the_symbol_searched_everywhere() {
     let shown = texts(&mut rig);
     assert!(
         shown.iter().any(|text| text
-            == "KUCOIN isn't supported. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, DEXScreener, CoinGecko, Alpaca."),
+            == "KUCOIN isn't supported. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, DEXScreener, CoinGecko, Alpaca."),
         "{shown:?}"
     );
     assert!(
@@ -1293,7 +1298,7 @@ fn a_plain_miss_lists_the_venues_that_were_searched() {
     let shown = texts(&mut rig);
     assert!(
         shown.iter().any(|text| text
-            == "Nothing matches “zzz”. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, DEXScreener, CoinGecko, Alpaca."),
+            == "Nothing matches “zzz”. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, DEXScreener, CoinGecko, Alpaca."),
         "{shown:?}"
     );
     rig.picker.set_venue(Some(DataSource::Coinbase));
@@ -1450,6 +1455,13 @@ fn gallery_of_the_symbol_picker() {
         ),
         ("symbol-picker-narrow", 640.0, "btc", Scope::All, &bitcoin),
         ("symbol-picker-perp", 1100.0, "perp", Scope::All, &bitcoin),
+        (
+            "symbol-picker-perp-aster",
+            1100.0,
+            "aster",
+            Scope::All,
+            &bitcoin,
+        ),
         ("symbol-picker-notice", 1100.0, "eth", Scope::All, &bitcoin),
         (
             "symbol-picker-watchlists",

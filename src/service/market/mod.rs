@@ -1,4 +1,5 @@
 pub(in crate::service) mod alpaca;
+pub(in crate::service) mod aster;
 pub(in crate::service) mod binance;
 pub(in crate::service) mod bybit;
 pub(in crate::service) mod candles;
@@ -19,5 +20,6 @@ pub(in crate::service) mod okx;
 pub(in crate::service) mod paging;
 pub(in crate::service) mod polymarket;
 pub mod search_rank;
+pub(in crate::service) mod shape;
 pub mod trend;
 pub mod venue;

@@ -152,6 +152,11 @@ pub enum PairStyle {
 /// A pair written without a separator.
 #[derive(Debug)]
 pub struct Concat {
+    /// Pairs quoted in an asset `quotes` does not hold, as `(base, quote)` (Aster's `BTCU` is BTC
+    /// quoted in `U`). Such an id is read whole, so it is never taken for a bare asset that gets
+    /// the home quote (`BTCUUSDT`), and `quotes` stays free of a quote that any asset ending in
+    /// its letters would match.
+    pub exceptions: &'static [(&'static str, &'static str)],
     /// Quote assets a pair ends in, longest first so `BTCFDUSD` is BTC/FDUSD, not BTCFD/USD.
     pub quotes: &'static [&'static str],
     /// How many of the leading quotes take a one-letter base (`SUSDT`); a one-letter base before
@@ -177,8 +182,19 @@ impl Concat {
 
     /// [`Self::split`] as the asset of a pair reads it: a wrapped asset is not split.
     fn split_asset<'a>(&self, upper: &'a str) -> Option<(&'a str, &'static str)> {
-        self.split(upper)
+        self.split_known(upper)
             .filter(|(base, _)| !self.wrapped_asset_guard || base.len() > 1)
+    }
+
+    /// [`Self::split`], knowing `exceptions` first: `BTCU` is BTC over `U`.
+    fn split_known<'a>(&self, upper: &'a str) -> Option<(&'a str, &'static str)> {
+        self.exceptions
+            .iter()
+            .find_map(|(base, quote)| {
+                let held = upper.strip_suffix(quote)?;
+                (held == *base).then_some((held, *quote))
+            })
+            .or_else(|| self.split(upper))
     }
 }
 
@@ -251,7 +267,7 @@ impl PairStyle {
     /// The quote of an upper-case id the exchange itself spells out; never guessed.
     pub(super) fn quote_of(&self, upper: &str) -> Option<String> {
         match self {
-            Self::Concat(concat) => concat.split(upper).map(|(_, quote)| quote.to_owned()),
+            Self::Concat(concat) => concat.split_known(upper).map(|(_, quote)| quote.to_owned()),
             Self::Separated(Separated { separator, .. }) => {
                 let (base, quote) = upper.split_once(*separator)?;
                 (!base.is_empty()
@@ -376,7 +392,7 @@ pub enum CachedSeries {
 impl DataSource {
     /// Every source, in the order the picker asks them. The one list: a new variant fails to compile
     /// in [`table::profile_of`] until it has a profile, and the tests until it is listed here.
-    pub const ALL: [DataSource; 14] = ALL;
+    pub const ALL: [DataSource; 15] = ALL;
 
     pub fn profile(self) -> &'static Profile {
         profile_of(self)
