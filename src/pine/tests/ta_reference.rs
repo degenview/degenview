@@ -2151,3 +2151,340 @@ fn conditional_calls_over_a_missing_bar_match_tradingview() {
         &mismatches[..mismatches.len().min(8)]
     );
 }
+
+/// A source that stands still on bars 100 to 139 and is the close elsewhere.
+const FLAT: &str = "flat = bar_index >= 100 and bar_index < 140 ? 1000.0 : close";
+
+#[test]
+fn cmo_is_na_when_nothing_moved_in_the_window() {
+    let source = format!(
+        "//@version=6
+indicator(\"Cmo\")
+{FLAT}
+change = ta.change(flat)
+up = math.max(change, 0)
+down = -math.min(change, 0)
+sumUp = math.sum(up, 14)
+sumDown = math.sum(down, 14)
+plot(ta.cmo(flat, 14))
+plot(100 * (sumUp - sumDown) / (sumUp + sumDown))
+"
+    );
+    let plotted = plots(&source, 300);
+    assert_same("cmo", &plotted[0], &plotted[1]);
+    // The change on bar 100 is the jump to the flat level; from bar 114 on, none of the last 14
+    // changes moves until the jump back on bar 140.
+    assert!(plotted[0][113].is_some());
+    assert!(plotted[0][114..140].iter().all(Option::is_none));
+    assert!(plotted[0][140].is_some());
+}
+
+#[test]
+fn cci_keeps_its_previous_value_when_the_window_is_flat() {
+    let source = format!(
+        "//@version=6
+indicator(\"Cci\")
+{FLAT}
+plot(ta.cci(flat, 20))
+"
+    );
+    let plotted = plots(&source, 300);
+    let held = plotted[0][118].expect("a value before the flat window");
+    // Bars 120 to 139 hold 20 flat values: TradingView repeats the last real CCI.
+    for (offset, value) in plotted[0][119..140].iter().enumerate() {
+        assert_eq!(*value, Some(held), "bar {}", 119 + offset);
+    }
+    assert_ne!(plotted[0][140], Some(held));
+}
+
+#[test]
+fn mfi_follows_the_reference_code_including_its_first_bar_and_one_sided_windows() {
+    let source = format!(
+        "//@version=6
+indicator(\"Mfi\")
+{FLAT}
+pine_mfi(float src, int length) =>
+    float upper = math.sum(volume * (ta.change(src) <= 0.0 ? 0.0 : src), length)
+    float lower = math.sum(volume * (ta.change(src) >= 0.0 ? 0.0 : src), length)
+    lower == 0 ? 100.0 : 100.0 - (100.0 / (1.0 + upper / lower))
+plot(ta.mfi(hlc3, 14))
+plot(pine_mfi(hlc3, 14))
+plot(ta.mfi(flat, 14))
+plot(pine_mfi(flat, 14))
+plot(ta.mfi(hlc3 > 0 ? 50.0 : na, 5))
+"
+    );
+    let plotted = plots(&source, 400);
+    assert_same("hlc3", &plotted[0], &plotted[1]);
+    assert_same("flat", &plotted[2], &plotted[3]);
+    assert_eq!(
+        first_value(&plotted[0]),
+        Some(13),
+        "a na change counts the source"
+    );
+    // A source that never moves has neither up nor down flow: 100.
+    // (While the first bar is in the window it counts on both sides.)
+    assert_eq!(plotted[4][4], Some(50.0));
+    assert_eq!(plotted[4][5..], vec![Some(100.0); 395][..]);
+    // Inside the flat stretch, once the window holds no move at all.
+    assert_eq!(plotted[2][130], Some(100.0));
+}
+
+#[test]
+fn stoch_repeats_the_previous_value_when_the_source_sits_on_a_flat_window() {
+    let source = format!(
+        "//@version=6
+indicator(\"Stoch\")
+{FLAT}
+plot(ta.stoch(flat, flat, flat, 14))
+plot(ta.stoch(close, flat, flat, 14))
+plot(ta.stoch(close, high, low, 14))
+plot(100 * (close - ta.lowest(low, 14)) / (ta.highest(high, 14) - ta.lowest(low, 14)))
+"
+    );
+    let plotted = plots(&source, 300);
+    // The source is the window's value: the previous raw %K, which was 100 (the flat level is
+    // above every close), on every bar whose window holds nothing else.
+    assert!(
+        plotted[0][113..140]
+            .iter()
+            .all(|value| *value == Some(100.0))
+    );
+    // The source is elsewhere and the range is 0: na.
+    assert!(plotted[1][113..140].iter().all(Option::is_none));
+    assert_same("stoch", &plotted[2], &plotted[3]);
+}
+
+/// TradingView's linear interpolation: the 0-based position `p * n - 0.5` clamped to the window.
+const PERCENTILE_REFERENCE: &str = "
+f_percentile(float[] window, float percentage) =>
+    sorted = window.copy()
+    sorted.sort()
+    n = sorted.size()
+    position = math.max(0.0, math.min(n - 1.0, percentage / 100 * n - 0.5))
+    below = int(math.floor(position))
+    above = int(math.ceil(position))
+    sorted.get(below) + (sorted.get(above) - sorted.get(below)) * (position - below)
+";
+
+#[test]
+fn linear_percentiles_interpolate_at_p_times_n_minus_a_half_and_clamp() {
+    let source = format!(
+        "//@version=6
+indicator(\"Percentile\")
+{PERCENTILE_REFERENCE}
+var float[] window = array.new_float()
+window.push(close)
+if window.size() > 20
+    window.shift()
+full = window.size() == 20
+plot(ta.percentile_linear_interpolation(close, 20, 30))
+plot(full ? f_percentile(window, 30) : na)
+plot(full ? window.percentile_linear_interpolation(30) : na)
+plot(ta.percentile_linear_interpolation(close, 20, 1))
+plot(ta.lowest(close, 20))
+plot(ta.percentile_linear_interpolation(close, 20, 99))
+plot(ta.highest(close, 20))
+plot(full ? window.percentile_linear_interpolation(1) : na)
+plot(full ? window.percentile_linear_interpolation(99) : na)
+plot(ta.percentile_linear_interpolation(close, 21, 30))
+plot(ta.percentile_nearest_rank(close, 20, 30))
+"
+    );
+    let plotted = plots(&source, 500);
+    assert_same("ta", &plotted[0], &plotted[1]);
+    assert_same("array", &plotted[2], &plotted[1]);
+    assert_same("p = 1 is the lowest", &plotted[3], &plotted[4]);
+    assert_same("p = 99 is the highest", &plotted[5], &plotted[6]);
+    assert_same("array p = 1", &plotted[7], &plotted[4]);
+    assert_same("array p = 99", &plotted[8], &plotted[6]);
+    assert!(plotted[0].iter().flatten().count() > 400);
+}
+
+/// TradingView's own output (BINANCE:BTCUSDT 5m, the first 130 bars from 2026-11-02 00:00) for a
+/// source that stands still on bars 40 to 79 and 100 to 105 (`flat`, 1000): `A` lines are the bars
+/// (open, high, low, close, volume), `C` lines the 20 results the probe logged on each, in the order
+/// of `FLAT_WINDOW_COLUMNS`; `NaN` is `na`. Every value matches on all 130 bars, except `ta.wvad`
+/// on a bar without a range, which no bar of this data is (it is the formula's 0 / 0, unmeasured).
+#[test]
+fn flat_windows_give_what_tradingview_gives() {
+    let text = include_str!("data/tradingview-flat-windows.log");
+    let data = logged_bars(text);
+    let rows = logged_rows(text, 'C');
+    let mut source = String::from("//@version=6\nindicator(\"Flat\", overlay = true)\n");
+    source.push_str(
+        "flat = (bar_index >= 40 and bar_index < 80) or (bar_index >= 100 and bar_index < 106) ? 1000.0 : close\n",
+    );
+    source
+        .push_str("arr = array.new_float(0)\nfor i = 0 to 9\n    array.push(arr, nz(close[i]))\n");
+    for (_, code) in FLAT_WINDOW_COLUMNS {
+        source.push_str(&format!("plot({code})\n"));
+    }
+    let session = super::bench::run_script(&source, &data, false, |_| {});
+    let output = session.output();
+    assert_eq!(output.plots.len(), FLAT_WINDOW_COLUMNS.len());
+    assert_eq!(rows.len(), 130);
+    let mut mismatches = Vec::new();
+    for (bar, wanted) in &rows {
+        for (((name, _), wanted), plot) in FLAT_WINDOW_COLUMNS.iter().zip(wanted).zip(&output.plots)
+        {
+            let ok = match plot.values[*bar] {
+                None => wanted.is_nan(),
+                // TradingView prints eight decimals.
+                Some(got) => (got - wanted).abs() <= 1e-8 * wanted.abs().max(1.0) + 6e-9,
+            };
+            if !ok {
+                mismatches.push(format!(
+                    "bar {bar} {name}: {:?} against TradingView's {wanted}",
+                    plot.values[*bar]
+                ));
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "{} values differ, first: {:#?}",
+        mismatches.len(),
+        &mismatches[..mismatches.len().min(8)]
+    );
+}
+
+/// What the probe logged on each bar, in order: the column's name and the Pine that draws it.
+const FLAT_WINDOW_COLUMNS: [(&str, &str); 20] = [
+    ("ta.cmo(flat, 10)", "ta.cmo(flat, 10)"),
+    ("ta.cci(flat, 20)", "ta.cci(flat, 20)"),
+    ("ta.cci(flat, 5)", "ta.cci(flat, 5)"),
+    ("ta.mfi(flat, 14)", "ta.mfi(flat, 14)"),
+    ("ta.mfi(hlc3, 14)", "ta.mfi(hlc3, 14)"),
+    (
+        "ta.stoch(flat, flat, flat, 14)",
+        "ta.stoch(flat, flat, flat, 14)",
+    ),
+    (
+        "ta.stoch(close, flat, flat, 14)",
+        "ta.stoch(close, flat, flat, 14)",
+    ),
+    (
+        "ta.stoch(flat, high, low, 14)",
+        "ta.stoch(flat, high, low, 14)",
+    ),
+    (
+        "ta.stoch(close, high, low, 14)",
+        "ta.stoch(close, high, low, 14)",
+    ),
+    (
+        "linear p1 (10)",
+        "ta.percentile_linear_interpolation(close, 10, 1)",
+    ),
+    (
+        "linear p25 (10)",
+        "ta.percentile_linear_interpolation(close, 10, 25)",
+    ),
+    (
+        "linear p50 (10)",
+        "ta.percentile_linear_interpolation(close, 10, 50)",
+    ),
+    (
+        "linear p99 (10)",
+        "ta.percentile_linear_interpolation(close, 10, 99)",
+    ),
+    (
+        "linear p100 (10)",
+        "ta.percentile_linear_interpolation(close, 10, 100)",
+    ),
+    (
+        "linear p37 of flat (7)",
+        "ta.percentile_linear_interpolation(flat, 7, 37)",
+    ),
+    (
+        "nearest p37 (10)",
+        "ta.percentile_nearest_rank(close, 10, 37)",
+    ),
+    (
+        "array linear p25",
+        "array.percentile_linear_interpolation(arr, 25)",
+    ),
+    (
+        "array linear p1",
+        "array.percentile_linear_interpolation(arr, 1)",
+    ),
+    (
+        "array linear p99",
+        "array.percentile_linear_interpolation(arr, 99)",
+    ),
+    ("ta.wvad", "ta.wvad"),
+];
+
+/// TradingView's own output for the same 130 bars as `flat_windows_give_what_tradingview_gives`
+/// (its `A` lines are the bars), for the edges of the flat-window rules; `C` lines in the order of
+/// `FLAT_EDGE_COLUMNS`. A stretch is near-flat where rounding in the mean could hide it: `ta.cci` of
+/// 0.1 (length 3), 1/3 (7), 78454.97 (20) and 0.7 (5) held on bars 40-79; `ta.stoch` of a source
+/// 5e-11, 1e-10 and 2e-10 off a window with no range is `na`, as is the one 5e-11 below (so the
+/// source has to sit exactly on the window, not within the 1e-10 of Pine's `==`). The last five
+/// columns are calls made on every third bar only, so each reads the series of its own calls.
+#[test]
+fn flat_window_edges_give_what_tradingview_gives() {
+    let data = logged_bars(include_str!("data/tradingview-flat-windows.log"));
+    let rows = logged_rows(include_str!("data/tradingview-flat-windows-edges.log"), 'C');
+    let mut source = String::from("//@version=6\nindicator(\"Edges\", overlay = true)\n");
+    source.push_str(
+        "flat = (bar_index >= 40 and bar_index < 80) or (bar_index >= 100 and bar_index < 106) ? 1000.0 : close\n\
+         inflat = bar_index >= 40 and bar_index < 80\n\
+         nf(v) => inflat ? v : v * (1.0 + (close - 78000.0) / 100000.0)\n\
+         fl = inflat ? 1000.0 : close\n\
+         float k1 = na\nfloat k2 = na\nfloat k3 = na\nfloat k4 = na\nfloat k5 = na\n\
+         if bar_index % 3 == 1\n    k1 := ta.cmo(flat, 5)\n    k2 := ta.cci(flat, 5)\n    \
+         k3 := ta.mfi(flat, 5)\n    k4 := ta.stoch(flat, flat, flat, 5)\n    \
+         k5 := ta.percentile_linear_interpolation(flat, 5, 40)\n",
+    );
+    for (_, code) in FLAT_EDGE_COLUMNS {
+        source.push_str(&format!("plot({code})\n"));
+    }
+    let session = super::bench::run_script(&source, &data, false, |_| {});
+    let output = session.output();
+    assert_eq!(output.plots.len(), FLAT_EDGE_COLUMNS.len());
+    assert_eq!(rows.len(), 130);
+    let mut mismatches = Vec::new();
+    for (bar, wanted) in &rows {
+        for (((name, _), wanted), plot) in FLAT_EDGE_COLUMNS.iter().zip(wanted).zip(&output.plots) {
+            // A conditional `ta.cci` differs from TradingView everywhere, and a conditional
+            // `ta.stoch` on its first calls (TradingView has a value from the second call, the
+            // engine from the fifth); neither is about flat windows, see `docs/pine-ta-parity.md`.
+            let skipped =
+                *name == "conditional ta.cci" || (*name == "conditional ta.stoch" && *bar < 13);
+            let ok = skipped
+                || match plot.values[*bar] {
+                    None => wanted.is_nan(),
+                    Some(got) => (got - wanted).abs() <= 1e-8 * wanted.abs().max(1.0) + 6e-9,
+                };
+            if !ok {
+                mismatches.push(format!(
+                    "bar {bar} {name}: {:?} against TradingView's {wanted}",
+                    plot.values[*bar]
+                ));
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "{} values differ, first: {:#?}",
+        mismatches.len(),
+        &mismatches[..mismatches.len().min(8)]
+    );
+}
+
+const FLAT_EDGE_COLUMNS: [(&str, &str); 13] = [
+    ("ta.cci(0.1, 3)", "ta.cci(nf(0.1), 3)"),
+    ("ta.cci(1/3, 7)", "ta.cci(nf(1.0 / 3.0), 7)"),
+    ("ta.cci(78454.97, 20)", "ta.cci(nf(78454.97), 20)"),
+    ("ta.cci(0.7, 5)", "ta.cci(nf(0.7), 5)"),
+    ("stoch +5e-11", "ta.stoch(fl + 0.00000000005, fl, fl, 14)"),
+    ("stoch +2e-10", "ta.stoch(fl + 0.0000000002, fl, fl, 14)"),
+    ("stoch -5e-11", "ta.stoch(fl - 0.00000000005, fl, fl, 14)"),
+    ("stoch +1e-10", "ta.stoch(fl + 0.0000000001, fl, fl, 14)"),
+    ("conditional ta.cmo", "k1"),
+    ("conditional ta.cci", "k2"),
+    ("conditional ta.mfi", "k3"),
+    ("conditional ta.stoch", "k4"),
+    ("conditional linear percentile", "k5"),
+];

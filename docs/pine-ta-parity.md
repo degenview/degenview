@@ -139,3 +139,44 @@ the hole filled or skipped, not the unconditional fill rule, and no combination 
 fits the numbers (for example bar 19: TradingView `78567.34`, last five valid calls `78444.917`,
 chart bars `78537.52`). The test skips that column. To fix it, probe `ta.wma` conditionally without a
 hole first, to see how its window reads a conditional series, then with the hole.
+
+## Windows where the price does not move
+
+Test `flat_windows_give_what_tradingview_gives`, log `src/pine/tests/data/tradingview-flat-windows.log`
+(BINANCE:BTCUSDT 5m, the first 130 bars from 2026-11-02 00:00, checksum-verified): a source that stands
+still on bars 40 to 79 and 100 to 105 (`flat`, 1000) and is the close elsewhere. 20 columns match on all
+130 bars:
+
+- `ta.cmo` is `na` when nothing moved in the window; `ta.cci` repeats its previous value (lengths 5 and
+  20, so windows that are flat and windows that only hold the jump are both covered).
+- `ta.mfi` is 100 whenever the down flow is 0, and its first value is on bar `length - 1`.
+- `ta.stoch` on a window with no range: the previous raw %K when the source sits on its value, `na`
+  otherwise (`flat, flat, flat` and `close, flat, flat`), and the normal formula with a range.
+- `ta.percentile_linear_interpolation` and `array.percentile_linear_interpolation`: p = 1, 25, 50, 99,
+  100, a flat window and the array form; `ta.percentile_nearest_rank` as a control.
+
+**Not measured: `ta.wvad` on a bar without a range** (0 / 0, `na` here). The data has no bar with
+`high == low`; the column is in the fixture, so it covers every normal bar. A thin market would show
+it.
+
+**`ta.cci`'s flat test** is "all values in the window are equal" (`==`). Measured on near-flat
+sources where the mean of equal values is not the value (0.1 with length 3, 1/3 with 7, 78454.97 with
+20, 0.7 with 5; `tradingview-flat-windows-edges.log`): TradingView repeats the previous value on all of
+them, as the engine does.
+
+**`ta.stoch` on a window with no range tests exactly** (`source == highest`): a source 5e-11, 1e-10
+or 2e-10 above, or 5e-11 below, the flat window is `na` on TradingView, so not within Pine's 1e-10.
+
+### Differences that are left (calls made on some bars only)
+
+Test `flat_window_edges_give_what_tradingview_gives` also calls the five functions on every third bar
+over the flat stretches. `ta.cmo`, `ta.mfi` and `ta.percentile_linear_interpolation` match on every
+call. Two do not, and neither is about flat windows (the formula outside them is the same on main):
+
+- **A conditional `ta.cci` differs on every call** (for example bar 13: TradingView `119.806`, engine
+  `112.885`; on the flat stretch TradingView holds `-66.667`, the engine `-41.667`). The test skips
+  the column. Probe `ta.cci` called conditionally without a flat stretch first, and log the `ta.sma`
+  and `ta.dev` of the same calls, to see which series TradingView reads per chart bar.
+- **A conditional `ta.stoch` has a value from the second call on TradingView** (bars 4, 7 and 10 of
+  the test: `0`, `8.666`, `12.462`); the engine gives `na` until the fifth, the window length. From
+  the fifth on they match. The test skips those three bars.
