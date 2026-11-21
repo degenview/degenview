@@ -13,6 +13,38 @@ pub const SUPERTREND_MULTIPLIER: f64 = 3.0;
 pub const EMA_DEFAULT_PERIOD: usize = 20;
 pub const EMA_PERIODS: [usize; 5] = [9, 20, 50, 100, 200];
 
+fn default_subpane_adaptive() -> bool {
+    true
+}
+
+fn default_subpane_classic_pct() -> u8 {
+    30
+}
+
+fn default_adaptive_p1() -> u8 {
+    20
+}
+
+fn default_adaptive_p2_top() -> u8 {
+    16
+}
+
+fn default_adaptive_p2_bot() -> u8 {
+    9
+}
+
+fn default_adaptive_p3_top() -> u8 {
+    15
+}
+
+fn default_adaptive_p3_mid() -> u8 {
+    8
+}
+
+fn default_adaptive_p3_bot() -> u8 {
+    7
+}
+
 /// Which built-in indicators a chart draws.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IndicatorConfig {
@@ -32,6 +64,22 @@ pub struct IndicatorConfig {
     pub hide_bollinger: bool,
     #[serde(default)]
     pub hide_trend_flips: bool,
+    #[serde(default = "default_subpane_adaptive")]
+    pub subpane_adaptive: bool,
+    #[serde(default = "default_subpane_classic_pct")]
+    pub subpane_classic_pct: u8,
+    #[serde(default = "default_adaptive_p1")]
+    pub adaptive_p1: u8,
+    #[serde(default = "default_adaptive_p2_top")]
+    pub adaptive_p2_top: u8,
+    #[serde(default = "default_adaptive_p2_bot")]
+    pub adaptive_p2_bot: u8,
+    #[serde(default = "default_adaptive_p3_top")]
+    pub adaptive_p3_top: u8,
+    #[serde(default = "default_adaptive_p3_mid")]
+    pub adaptive_p3_mid: u8,
+    #[serde(default = "default_adaptive_p3_bot")]
+    pub adaptive_p3_bot: u8,
 }
 
 impl Default for IndicatorConfig {
@@ -48,6 +96,14 @@ impl Default for IndicatorConfig {
             hide_ema: false,
             hide_bollinger: false,
             hide_trend_flips: false,
+            subpane_adaptive: true,
+            subpane_classic_pct: 30,
+            adaptive_p1: 20,
+            adaptive_p2_top: 16,
+            adaptive_p2_bot: 9,
+            adaptive_p3_top: 15,
+            adaptive_p3_mid: 8,
+            adaptive_p3_bot: 7,
         }
     }
 }

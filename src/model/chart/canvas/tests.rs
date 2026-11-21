@@ -477,16 +477,34 @@ fn spec(id: u64, collapsed: bool) -> PaneSpec {
     PaneSpec { id, collapsed }
 }
 
+fn classic_scale() -> SubpaneScaleParams {
+    SubpaneScaleParams {
+        adaptive: false,
+        classic_pct: 30,
+        ..Default::default()
+    }
+}
+
+fn adaptive_scale() -> SubpaneScaleParams {
+    SubpaneScaleParams::default()
+}
+
 #[test]
 fn without_panes_the_main_chart_has_everything() {
-    let split = split_panes(600.0, &[], None, AXIS);
+    let split = split_panes(600.0, &[], None, AXIS, classic_scale());
     assert_eq!(split.main, 600.0);
     assert!(split.panes.is_empty() && !split.main_collapsed);
 }
 
 #[test]
 fn expanded_panes_share_thirty_percent_and_fill_the_area_exactly() {
-    let split = split_panes(600.0, &[spec(1, false), spec(2, false)], None, AXIS);
+    let split = split_panes(
+        600.0,
+        &[spec(1, false), spec(2, false)],
+        None,
+        AXIS,
+        classic_scale(),
+    );
     assert_eq!(split.panes, vec![90.0, 90.0]);
     assert_eq!(split.main, 420.0);
     let odd = split_panes(
@@ -494,17 +512,71 @@ fn expanded_panes_share_thirty_percent_and_fill_the_area_exactly() {
         &[spec(1, false), spec(2, false), spec(3, false)],
         None,
         AXIS,
+        classic_scale(),
     );
     assert_eq!(odd.main + odd.panes.iter().sum::<f32>(), 601.0);
 }
 
 #[test]
+fn adaptive_panes_scale_correctly() {
+    // 1 pane: 20%
+    let s1 = split_panes(600.0, &[spec(1, false)], None, AXIS, adaptive_scale());
+    assert_eq!(s1.panes, vec![120.0]);
+    assert_eq!(s1.main, 480.0);
+
+    // 2 panes: 16% / 9%
+    let s2 = split_panes(
+        600.0,
+        &[spec(1, false), spec(2, false)],
+        None,
+        AXIS,
+        adaptive_scale(),
+    );
+    assert_eq!(s2.panes, vec![96.0, 54.0]);
+    assert_eq!(s2.main, 450.0);
+
+    // 3 panes: 15% / 8% / 7%
+    let s3 = split_panes(
+        600.0,
+        &[spec(1, false), spec(2, false), spec(3, false)],
+        None,
+        AXIS,
+        adaptive_scale(),
+    );
+    assert_eq!(s3.panes, vec![90.0, 48.0, 42.0]);
+    assert_eq!(s3.main, 420.0);
+
+    // Custom adaptive percentages: 10% / 12%
+    let custom = SubpaneScaleParams {
+        adaptive: true,
+        p2_top: 10,
+        p2_bot: 12,
+        ..Default::default()
+    };
+    let sc = split_panes(600.0, &[spec(1, false), spec(2, false)], None, AXIS, custom);
+    assert_eq!(sc.panes, vec![60.0, 72.0]);
+    assert_eq!(sc.main, 468.0);
+}
+
+#[test]
 fn a_collapsed_pane_is_its_strip_and_returns_nothing_to_the_others() {
-    let split = split_panes(600.0, &[spec(1, true), spec(2, false)], None, AXIS);
+    let split = split_panes(
+        600.0,
+        &[spec(1, true), spec(2, false)],
+        None,
+        AXIS,
+        classic_scale(),
+    );
     assert_eq!(split.panes[0], COLLAPSED_PANE_HEIGHT);
     assert_eq!(split.panes[1], 180.0);
     assert_eq!(split.main, 600.0 - 180.0 - COLLAPSED_PANE_HEIGHT);
-    let all = split_panes(600.0, &[spec(1, true), spec(2, true)], None, AXIS);
+    let all = split_panes(
+        600.0,
+        &[spec(1, true), spec(2, true)],
+        None,
+        AXIS,
+        classic_scale(),
+    );
     assert_eq!(all.panes, vec![COLLAPSED_PANE_HEIGHT; 2]);
     assert_eq!(all.main, 600.0 - 2.0 * COLLAPSED_PANE_HEIGHT);
 }
@@ -512,7 +584,7 @@ fn a_collapsed_pane_is_its_strip_and_returns_nothing_to_the_others() {
 #[test]
 fn a_maximized_pane_takes_everything_but_the_strips_and_the_time_axis() {
     let panes = [spec(1, false), spec(2, false), spec(3, true)];
-    let split = split_panes(600.0, &panes, Some(2), AXIS);
+    let split = split_panes(600.0, &panes, Some(2), AXIS, classic_scale());
     assert!(split.main_collapsed);
     assert_eq!(split.main, AXIS);
     assert_eq!(split.panes[0], COLLAPSED_PANE_HEIGHT);
@@ -524,21 +596,27 @@ fn a_maximized_pane_takes_everything_but_the_strips_and_the_time_axis() {
 #[test]
 fn maximizing_a_pane_that_is_gone_or_too_tall_for_the_chart_changes_nothing() {
     let panes = [spec(1, false)];
-    let gone = split_panes(600.0, &panes, Some(9), AXIS);
+    let gone = split_panes(600.0, &panes, Some(9), AXIS, classic_scale());
     assert!(!gone.main_collapsed);
-    let tiny = split_panes(70.0, &panes, Some(1), AXIS);
+    let tiny = split_panes(70.0, &panes, Some(1), AXIS, classic_scale());
     assert!(!tiny.main_collapsed, "no room to maximize into");
 }
 
 #[test]
 fn a_short_chart_keeps_its_main_area_before_its_panes() {
-    let split = split_panes(150.0, &[spec(1, false), spec(2, false)], None, AXIS);
+    let split = split_panes(
+        150.0,
+        &[spec(1, false), spec(2, false)],
+        None,
+        AXIS,
+        classic_scale(),
+    );
     assert!(split.main >= 60.0, "{split:?}");
     assert!(split.panes.iter().all(|height| *height >= 0.0));
     assert!((split.main + split.panes.iter().sum::<f32>() - 150.0).abs() < 0.001);
-    let zero = split_panes(0.0, &[spec(1, false)], None, AXIS);
+    let zero = split_panes(0.0, &[spec(1, false)], None, AXIS, classic_scale());
     assert!(zero.main >= 0.0 && zero.panes.iter().all(|height| *height >= 0.0));
-    let nan = split_panes(f32::NAN, &[spec(1, false)], None, AXIS);
+    let nan = split_panes(f32::NAN, &[spec(1, false)], None, AXIS, classic_scale());
     assert!(nan.main.is_finite());
 }
 

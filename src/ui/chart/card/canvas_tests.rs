@@ -1819,6 +1819,7 @@ fn a_restored_card_heals_a_canvas_with_out_of_range_values() {
 #[test]
 fn every_pane_labels_its_own_scale_with_at_least_two_prices() {
     let mut harness = with_panes(ChartCanvas::default());
+    harness.indicators.subpane_adaptive = false;
     let (drawn, pointer) = harness.draw();
     let rect = pointer.rect.expect("chart");
     let pane_top = rect.top() + rect.height() * 0.68;

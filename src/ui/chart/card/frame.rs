@@ -212,11 +212,22 @@ impl ChartCard {
         let maximized = self
             .maximized_pane
             .filter(|id| pane_specs.iter().any(|pane| pane.id == *id));
+        let scale_params = crate::model::chart::canvas::SubpaneScaleParams {
+            adaptive: data.indicators.subpane_adaptive,
+            classic_pct: data.indicators.subpane_classic_pct,
+            p1: data.indicators.adaptive_p1,
+            p2_top: data.indicators.adaptive_p2_top,
+            p2_bot: data.indicators.adaptive_p2_bot,
+            p3_top: data.indicators.adaptive_p3_top,
+            p3_mid: data.indicators.adaptive_p3_mid,
+            p3_bot: data.indicators.adaptive_p3_bot,
+        };
         let heights = chart::canvas::split_panes(
             rect.height(),
             &pane_specs,
             maximized,
             style.time_axis_height(),
+            scale_params,
         );
         let pane_total: f32 = heights.panes.iter().sum();
         let pane_area_top = rect.max.y - pane_total;

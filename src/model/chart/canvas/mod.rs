@@ -635,14 +635,41 @@ pub struct PaneHeights {
     pub main_collapsed: bool,
 }
 
-/// Splits `total` points of height. Expanded panes share [`PANE_SHARE`] of it, a collapsed pane is
-/// its title strip, and a maximized pane takes everything but the strips and the time axis. A
-/// chart too short for any of that keeps the plain split.
+/// Configuration for subpane scaling in adaptive or classic mode.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SubpaneScaleParams {
+    pub adaptive: bool,
+    pub classic_pct: u8,
+    pub p1: u8,
+    pub p2_top: u8,
+    pub p2_bot: u8,
+    pub p3_top: u8,
+    pub p3_mid: u8,
+    pub p3_bot: u8,
+}
+
+impl Default for SubpaneScaleParams {
+    fn default() -> Self {
+        Self {
+            adaptive: true,
+            classic_pct: (PANE_SHARE * 100.0) as u8,
+            p1: 20,
+            p2_top: 16,
+            p2_bot: 9,
+            p3_top: 15,
+            p3_mid: 8,
+            p3_bot: 7,
+        }
+    }
+}
+
+/// Splits `total` points of height. Expanded panes share space according to adaptive or classic mode.
 pub fn split_panes(
     total: f32,
     panes: &[PaneSpec],
     maximized: Option<u64>,
     time_axis: f32,
+    scale: SubpaneScaleParams,
 ) -> PaneHeights {
     let total = if total.is_finite() {
         total.max(0.0)
@@ -681,29 +708,64 @@ pub fn split_panes(
     let expanded = panes.iter().filter(|pane| !pane.collapsed).count();
     let collapsed = panes.len() - expanded;
     let strips = collapsed as f32 * COLLAPSED_PANE_HEIGHT;
-    let mut shared = if expanded == 0 {
-        0.0
-    } else {
-        (total * PANE_SHARE).round()
-    };
+    if expanded == 0 {
+        return PaneHeights {
+            main: (total - strips).max(0.0),
+            panes: panes.iter().map(|_| COLLAPSED_PANE_HEIGHT).collect(),
+            main_collapsed: false,
+        };
+    }
+
     // The main chart keeps its minimum: the panes give way, down to nothing but their strips.
     let allowed = (total - MIN_MAIN_HEIGHT.min(total * 0.6) - strips).max(0.0);
-    shared = shared.min(allowed);
-    let each = if expanded == 0 {
-        0.0
+
+    let raw_expanded_heights: Vec<f32> = if scale.adaptive {
+        match expanded {
+            1 => vec![(total * (scale.p1 as f32 / 100.0)).round()],
+            2 => vec![
+                (total * (scale.p2_top as f32 / 100.0)).round(),
+                (total * (scale.p2_bot as f32 / 100.0)).round(),
+            ],
+            3 => vec![
+                (total * (scale.p3_top as f32 / 100.0)).round(),
+                (total * (scale.p3_mid as f32 / 100.0)).round(),
+                (total * (scale.p3_bot as f32 / 100.0)).round(),
+            ],
+            n => {
+                let sum_pct = (scale.p3_top + scale.p3_mid + scale.p3_bot) as f32 / 100.0;
+                let each = (total * sum_pct / n as f32).round();
+                vec![each; n]
+            }
+        }
     } else {
-        (shared / expanded as f32).round()
+        let pct = (scale.classic_pct as f32 / 100.0).clamp(0.10, 0.60);
+        let shared = (total * pct).round();
+        let each = (shared / expanded as f32).round();
+        vec![each; expanded]
     };
+
+    let total_requested: f32 = raw_expanded_heights.iter().sum();
+    let shared = total_requested.min(allowed);
+    let scale = if total_requested > 0.0 && total_requested > allowed {
+        allowed / total_requested
+    } else {
+        1.0
+    };
+
+    let mut expanded_iter = raw_expanded_heights
+        .into_iter()
+        .map(|h| (h * scale).round());
     let mut heights: Vec<f32> = panes
         .iter()
         .map(|pane| {
             if pane.collapsed {
                 COLLAPSED_PANE_HEIGHT
             } else {
-                each
+                expanded_iter.next().unwrap_or(0.0)
             }
         })
         .collect();
+
     // Rounding leaves the last expanded pane the remainder, so the split fills the area exactly.
     if let Some(last) = panes.iter().rposition(|pane| !pane.collapsed) {
         let used: f32 = heights.iter().sum::<f32>() - heights[last];
