@@ -12,6 +12,7 @@ use std::sync::Arc;
 use super::fast_hash::FastMap;
 use super::security_slice;
 use super::session::Session;
+use super::site_value::SiteValue;
 use super::state::{LoggedBar, RuntimeState, SecuritySite};
 use super::support::{ChartSpan, SecurityKey};
 use super::types::{BarFlags, RuntimeContext};
@@ -83,6 +84,27 @@ impl ChartBar {
         }
     }
 
+    /// The chart bar a `lookahead_on` request reads a bucket for on history, before the bucket's
+    /// first chart bar even asks: a function of the bucket alone, so every flag is constant over
+    /// it. The chart's last bar is inside the bucket when the history's final bar (`final_bar_end`,
+    /// None when a live bar follows the history) ends within it.
+    fn for_bucket(
+        start: i64,
+        end: i64,
+        final_bar_end: Option<i64>,
+        history_end: Option<i64>,
+    ) -> Self {
+        let holds_final = final_bar_end.filter(|final_end| start < *final_end && *final_end <= end);
+        Self {
+            start,
+            end: holds_final.unwrap_or(i64::MIN),
+            last: holds_final.is_some(),
+            history_end,
+            realtime: false,
+            new: true,
+        }
+    }
+
     /// A confirmed chart bar before the one now running, replayed for a site the call skipped.
     fn replayed(bar: &Kline, seconds: f64, history_end: Option<i64>) -> Self {
         Self {
@@ -99,7 +121,11 @@ impl ChartBar {
         time::bucket::end(time::bucket::start(bar.open_time, seconds), seconds)
     }
 
-    /// The bar states of `candle`, a candle of `interval` seconds, evaluated for this chart bar.
+    /// The bar states of `candle`, a candle of `interval` seconds, evaluated for this chart bar;
+    /// `confirmed` says the candle is complete.
+    ///
+    /// The last candle of the history that is not complete is neither history nor realtime
+    /// (TradingView probe A: `ishistory` and `isrealtime` are both false there, `islast` true).
     ///
     /// The last confirmed history bar belongs to the requested series, not to the chart bar: it is
     /// the last candle that closed with the history, so the one whose successor is not history,
@@ -107,23 +133,46 @@ impl ChartBar {
     ///
     /// A candle is new on history and on the first tick of the chart bar that opens it: a chart bar
     /// that starts inside a candle sees that candle as already running.
-    fn flags_of(&self, candle: &Kline, interval: f64, commit: bool, is_first: bool) -> BarFlags {
+    fn flags_of(&self, candle: &Kline, interval: f64, confirmed: bool, is_first: bool) -> BarFlags {
         let candle_end = time::bucket::end(candle.open_time, interval);
         let holds_last_instant = candle.open_time < self.end && self.end <= candle_end;
         let is_realtime = self.realtime && candle_end > self.start;
         let is_last_confirmed_history = self
             .history_end
             .is_some_and(|end| candle_end <= end && time::bucket::end(candle_end, interval) > end);
+        let is_last = self.last && holds_last_instant;
         BarFlags {
             is_first,
-            is_last: self.last && holds_last_instant,
-            is_history: !is_realtime,
+            is_last,
+            is_history: !is_realtime && (confirmed || !is_last),
             is_realtime,
             is_new: !is_realtime || (self.new && candle.open_time >= self.start),
-            is_confirmed: commit,
+            is_confirmed: confirmed,
             is_last_confirmed_history,
         }
     }
+}
+
+/// How a candle is evaluated: whether the site's state moves on to it, and whether the candle is
+/// complete (`barstate.isconfirmed`). The two come apart for a candle read ahead of its end: the
+/// state stays, the candle is complete.
+#[derive(Clone, Copy)]
+struct Evaluation {
+    keeps: bool,
+    confirmed: bool,
+}
+
+impl Evaluation {
+    /// A completed candle, which the site's state takes in.
+    const COMMIT: Self = Self {
+        keeps: true,
+        confirmed: true,
+    };
+    /// A candle still forming, read and thrown away.
+    const DEVELOPING: Self = Self {
+        keeps: false,
+        confirmed: false,
+    };
 }
 
 /// The session state that belongs to the series now running, which a request's expression swaps for
@@ -598,7 +647,7 @@ impl Session {
                 candle,
                 request,
                 ChartBar::BEFORE_CHART,
-                true,
+                Evaluation::COMMIT,
             )?;
         }
         Ok(())
@@ -616,7 +665,7 @@ impl Session {
         let mut state = self.working.securities.remove(&key).unwrap_or_default();
         let bar = context.bar.clone();
         if state.processed_bar == Some(bar.open_time) {
-            let result = state.bar_result.clone();
+            let result = state.bar_result.hand_out(&mut self.working);
             self.working.securities.insert(key, state);
             return Ok(result);
         }
@@ -643,14 +692,15 @@ impl Session {
             },
         )?;
         let result = if request.gaps_on && !fresh {
-            RuntimeValue::Na
+            SiteValue::na()
         } else {
             result
         };
+        let handed = result.hand_out(&mut self.working);
         state.processed_bar = Some(bar.open_time);
-        state.bar_result = result.clone();
+        state.bar_result = result;
         self.working.securities.insert(key, state);
-        Ok(result)
+        Ok(handed)
     }
 
     /// Takes the confirmed bars of the running series (the chart's, or the candles of the request
@@ -725,7 +775,7 @@ impl Session {
         state: &mut SecuritySite,
         request: &SecurityRequest,
         step: &Step<'_>,
-    ) -> Result<(RuntimeValue, bool), Diagnostic> {
+    ) -> Result<(SiteValue, bool), Diagnostic> {
         let Step {
             bar,
             seconds,
@@ -743,8 +793,13 @@ impl Session {
                 && let Some(pending) = state.accumulated.clone()
             {
                 self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
-                state.last_result =
-                    self.evaluate_higher_timeframe(state, &pending, request, chart, true)?;
+                state.last_result = self.evaluate_higher_timeframe(
+                    state,
+                    &pending,
+                    request,
+                    chart,
+                    Evaluation::COMMIT,
+                )?;
                 fresh = true;
             }
             state.bucket = Some(start);
@@ -765,14 +820,20 @@ impl Session {
         // developing candle.
         let ahead =
             if !replay && request.lookahead_on && !chart.realtime && self.is_known(bar.open_time) {
-                self.ahead_value(state, request, chart, start)?
+                self.ahead_value(state, request, start)?
             } else {
                 None
             };
         let mut result;
         if closes_bucket && confirmed {
             self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
-            result = self.evaluate_higher_timeframe(state, &developing, request, chart, true)?;
+            result = self.evaluate_higher_timeframe(
+                state,
+                &developing,
+                request,
+                chart,
+                Evaluation::COMMIT,
+            )?;
             state.last_result = result.clone();
             state.accumulated = None;
             state.has_pending_bars = false;
@@ -783,8 +844,13 @@ impl Session {
                 state.has_pending_bars = true;
             }
             if !replay && ahead.is_none() && (request.lookahead_on || chart.realtime) {
-                result =
-                    self.evaluate_higher_timeframe(state, &developing, request, chart, false)?;
+                result = self.evaluate_higher_timeframe(
+                    state,
+                    &developing,
+                    request,
+                    chart,
+                    Evaluation::DEVELOPING,
+                )?;
             } else {
                 result = state.last_result.clone();
             }
@@ -808,7 +874,7 @@ impl Session {
         let mut state = self.working.securities.remove(&key).unwrap_or_default();
         let bar = context.bar.clone();
         if state.processed_bar == Some(bar.open_time) {
-            let result = state.bar_result.clone();
+            let result = state.bar_result.hand_out(&mut self.working);
             self.working.securities.insert(key, state);
             return Ok(result);
         }
@@ -821,34 +887,48 @@ impl Session {
                 if time::bucket::end(candle.open_time, request.interval) > chart_close {
                     break;
                 }
-                state.last_result =
-                    self.evaluate_higher_timeframe(&mut state, candle, request, chart, true)?;
+                state.last_result = self.evaluate_higher_timeframe(
+                    &mut state,
+                    candle,
+                    request,
+                    chart,
+                    Evaluation::COMMIT,
+                )?;
                 state.completed_candles += 1;
                 fresh = true;
             }
         }
         let mut result = state.last_result.clone();
         let current = last_index(bar.open_time, candles);
-        if (request.lookahead_on || context.flags.is_realtime)
+        if request.lookahead_on && !context.flags.is_realtime {
+            // A historical bar reads its candle as it ended, from the candle's first chart bar on,
+            // so that is the bar that is new.
+            let opened = current.map(|index| candles[index].open_time);
+            if let Some(index) = current {
+                result = self.ahead_candle(&mut state, request, &candles[index])?;
+            }
+            fresh = opened.is_some() && state.bucket != opened;
+            state.bucket = opened;
+        } else if context.flags.is_realtime
             && let Some(index) = current
             && index >= state.completed_candles
         {
-            result =
-                self.evaluate_higher_timeframe(&mut state, &candles[index], request, chart, false)?;
-        }
-        if request.lookahead_on && !context.flags.is_realtime {
-            // The candle is there from its first chart bar on, so that is the bar that is new.
-            let opened = current.map(|index| candles[index].open_time);
-            fresh = opened.is_some() && state.bucket != opened;
-            state.bucket = opened;
+            result = self.evaluate_higher_timeframe(
+                &mut state,
+                &candles[index],
+                request,
+                chart,
+                Evaluation::DEVELOPING,
+            )?;
         }
         if request.gaps_on && !fresh {
-            result = RuntimeValue::Na;
+            result = SiteValue::na();
         }
+        let handed = result.hand_out(&mut self.working);
         state.processed_bar = Some(bar.open_time);
-        state.bar_result = result.clone();
+        state.bar_result = result;
         self.working.securities.insert(key, state);
-        Ok(result)
+        Ok(handed)
     }
 
     /// The provider's intrabar candles of the chart's own symbol at `seconds`.
@@ -884,7 +964,7 @@ impl Session {
         let mut state = self.working.securities.remove(&key).unwrap_or_default();
         let bar = context.bar.clone();
         if state.processed_bar == Some(bar.open_time) {
-            let result = state.bar_result.clone();
+            let result = state.bar_result.hand_out(&mut self.working);
             self.working.securities.insert(key, state);
             return Ok(result);
         }
@@ -911,13 +991,14 @@ impl Session {
         let mut results = Vec::new();
         let mut index = low;
         while index < candles.len() && candles[index].open_time < end {
-            results.push(self.evaluate_higher_timeframe(
+            let result = self.evaluate_higher_timeframe(
                 &mut state,
                 &candles[index],
                 &request,
                 chart,
-                true,
-            )?);
+                Evaluation::COMMIT,
+            )?;
+            results.push(result.hand_out(&mut self.working));
             index += 1;
         }
         // One array per column when the expression yields a tuple: a literal `[a, b]`, a function that
@@ -950,7 +1031,7 @@ impl Session {
             self.make_array(results)
         };
         state.processed_bar = Some(bar.open_time);
-        state.bar_result = value.clone();
+        state.bar_result = SiteValue::capture(value.clone(), &self.working);
         self.working.securities.insert(key, state);
         Ok(value)
     }
@@ -983,15 +1064,14 @@ impl Session {
     }
 
     /// The expression on the bucket opening at `start` as it ended, for a historical bar of it: the
-    /// known bars of the bucket folded into one candle. Evaluated on the first bar of the bucket
-    /// that asks and kept for the others. None when the known bars hold nothing of the bucket.
+    /// known bars of the bucket folded into one candle. None when the known bars hold nothing of
+    /// the bucket.
     fn ahead_value(
         &mut self,
         state: &mut SecuritySite,
         request: &SecurityRequest,
-        chart: ChartBar,
         start: i64,
-    ) -> Result<Option<RuntimeValue>, Diagnostic> {
+    ) -> Result<Option<SiteValue>, Diagnostic> {
         if let Some((bucket, value)) = &state.ahead
             && *bucket == start
         {
@@ -1007,22 +1087,47 @@ impl Session {
             return Ok(None);
         }
         let candle = fold_one(&known[first..last], request.interval);
-        let value = self.evaluate_higher_timeframe(state, &candle, request, chart, false)?;
-        state.ahead = Some((start, value.clone()));
-        Ok(Some(value))
+        self.ahead_candle(state, request, &candle).map(Some)
     }
 
-    /// Runs the expression on `candle` in the site's own state, for `chart_bar`. A commit keeps
-    /// that state and appends the candle to its histories; otherwise the state is thrown away, like
-    /// a realtime tick.
+    /// The expression on `candle` as it stands in the history, the value `lookahead_on` gives every
+    /// historical chart bar of its bucket. Evaluated once, for the bucket (`ChartBar::for_bucket`:
+    /// the flags depend on the bucket and the history, not on the chart bar that asked first), and
+    /// kept for the others; the candle is complete when the history holds its last instant.
+    fn ahead_candle(
+        &mut self,
+        state: &mut SecuritySite,
+        request: &SecurityRequest,
+        candle: &Kline,
+    ) -> Result<SiteValue, Diagnostic> {
+        if let Some((bucket, value)) = &state.ahead
+            && *bucket == candle.open_time
+        {
+            return Ok(value.clone());
+        }
+        let end = time::bucket::end(candle.open_time, request.interval);
+        let chart =
+            ChartBar::for_bucket(candle.open_time, end, self.final_bar_end, self.history_end);
+        let how = Evaluation {
+            keeps: false,
+            confirmed: self.history_end.is_some_and(|history_end| end <= history_end),
+        };
+        let value = self.evaluate_higher_timeframe(state, candle, request, chart, how)?;
+        state.ahead = Some((candle.open_time, value.clone()));
+        Ok(value)
+    }
+
+    /// Runs the expression on `candle` in the site's own state, for `chart_bar`. A candle the state
+    /// keeps (`how.keeps`) is appended to its histories; otherwise the state is thrown away, like a
+    /// realtime tick. The value is kept apart from the chart's state (`SiteValue`).
     fn evaluate_higher_timeframe(
         &mut self,
         site: &mut SecuritySite,
         candle: &Kline,
         request: &SecurityRequest,
         chart_bar: ChartBar,
-        commit: bool,
-    ) -> Result<RuntimeValue, Diagnostic> {
+        how: Evaluation,
+    ) -> Result<SiteValue, Diagnostic> {
         let chart_bar_seconds = self.bar_seconds;
         if self.keeps_known_bars && site.known.is_none() {
             site.known = self.known_series(request);
@@ -1031,7 +1136,7 @@ impl Session {
         self.security_depth += 1;
         // The chart's state steps aside and the site's takes its place. A commit moves the site's
         // state in and back out; copying it for every call would make a run quadratic in its length.
-        let site_state = if commit {
+        let site_state = if how.keeps {
             std::mem::take(&mut *site.state)
         } else {
             (*site.state).clone()
@@ -1064,7 +1169,7 @@ impl Session {
         let flags = chart_bar.flags_of(
             candle,
             request.interval,
-            commit,
+            how.confirmed,
             self.working.bar_index == 0,
         );
         let mut security_context = RuntimeContext::new(candle.clone(), flags);
@@ -1080,7 +1185,8 @@ impl Session {
         if debugging {
             self.debug_enter_security(&requested.symbol, requested.interval_seconds);
         }
-        self.logs.enter_request(requested, candle.open_time, commit);
+        self.logs
+            .enter_request(requested, candle.open_time, how.keeps);
         // The script variables the expression reads are computed on this series, not read off the chart.
         let slice = self
             .security_slices
@@ -1095,19 +1201,17 @@ impl Session {
         if debugging {
             self.debug_leave();
         }
-        // A returned collection or object lives in the site's state; the chart gets a copy of its own.
-        let value = evaluated.map(|evaluated| {
-            ReferenceExport::new(&self.working).export(evaluated, &mut chart.working)
-        });
-        if commit && value.is_ok() {
+        // A returned collection or object lives in the site's state; the value keeps a copy of its own.
+        let value = evaluated.map(|evaluated| SiteValue::capture(evaluated, &self.working));
+        if how.keeps && value.is_ok() {
             self.commit_histories(candle.clone(), false, Vec::new());
         }
         let request_frame = self.leave_series(chart);
-        if commit {
+        if how.keeps {
             *site.state = request_frame.working;
         }
         site.bars = request_frame.bars;
-        if commit && value.is_ok() {
+        if how.keeps && value.is_ok() {
             site.bars.push(LoggedBar {
                 bar: candle.clone(),
                 seconds: request.interval,
@@ -1229,98 +1333,6 @@ fn last_index(open_time: i64, candles: &[Kline]) -> Option<usize> {
     (low > 0).then(|| low - 1)
 }
 
-// MARK: Reference export
-
-/// Copies the collections and objects a security expression returned out of the site's own state
-/// and into the chart's, so a handle that crossed over does not name an unrelated value. Arrays and
-/// instances are copied following the handles they hold (a handle reached twice is copied once);
-/// handles inside a map or matrix are not followed and become `na`, and so do drawing handles.
-struct ReferenceExport<'a> {
-    source: &'a RuntimeState,
-    copies: HashMap<usize, RuntimeValue>,
-}
-
-impl<'a> ReferenceExport<'a> {
-    fn new(source: &'a RuntimeState) -> Self {
-        Self {
-            source,
-            copies: HashMap::new(),
-        }
-    }
-
-    fn export(&mut self, value: RuntimeValue, target: &mut RuntimeState) -> RuntimeValue {
-        match value {
-            RuntimeValue::Tuple(items) => RuntimeValue::Tuple(
-                items
-                    .into_iter()
-                    .map(|item| self.export(item, target))
-                    .collect(),
-            ),
-            RuntimeValue::Ref(kind, id) => self.copy(kind, id, target),
-            other => other,
-        }
-    }
-
-    fn copy(&mut self, kind: RefKind, id: usize, target: &mut RuntimeState) -> RuntimeValue {
-        if let Some(known) = self.copies.get(&id) {
-            return known.clone();
-        }
-        match kind {
-            RefKind::Array => {
-                let Some(items) = self.source.arrays.get(&id).cloned() else {
-                    return RuntimeValue::Na;
-                };
-                let handle = self.register(kind, id, target);
-                let copied = items
-                    .into_iter()
-                    .map(|item| self.export(item, target))
-                    .collect();
-                target.arrays.insert(handle, copied);
-                self.copies[&id].clone()
-            }
-            RefKind::Object => {
-                let Some(object) = self.source.instances.get(&id).cloned() else {
-                    return RuntimeValue::Na;
-                };
-                let handle = self.register(kind, id, target);
-                let mut copied = object.clone();
-                copied.fields = object
-                    .fields
-                    .into_iter()
-                    .map(|(name, field)| (name, self.export(field, target)))
-                    .collect();
-                target.instances.insert(handle, copied);
-                self.copies[&id].clone()
-            }
-            RefKind::Map => {
-                let Some(map) = self.source.maps.get(&id).cloned() else {
-                    return RuntimeValue::Na;
-                };
-                let handle = self.register(kind, id, target);
-                target.maps.insert(handle, map);
-                self.copies[&id].clone()
-            }
-            RefKind::Matrix => {
-                let Some(matrix) = self.source.matrices.get(&id).cloned() else {
-                    return RuntimeValue::Na;
-                };
-                let handle = self.register(kind, id, target);
-                target.matrices.insert(handle, matrix);
-                self.copies[&id].clone()
-            }
-            // Drawing handles and any other reference belong to the expression's state.
-            _ => RuntimeValue::Na,
-        }
-    }
-
-    fn register(&mut self, kind: RefKind, id: usize, target: &mut RuntimeState) -> usize {
-        target.next_reference += 1;
-        let handle = target.next_reference;
-        self.copies.insert(id, RuntimeValue::Ref(kind, handle));
-        handle
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1336,6 +1348,36 @@ mod tests {
             close,
             volume: 1.0,
         }
+    }
+
+    #[test]
+    fn a_bucket_context_is_the_last_bar_only_where_the_final_history_bar_ends_in_it() {
+        const HOUR: i64 = 3_600_000;
+        let flags = |start_hours: i64, final_end_hours: Option<i64>, confirmed: bool| {
+            let chart = ChartBar::for_bucket(
+                start_hours * HOUR,
+                (start_hours + 4) * HOUR,
+                final_end_hours.map(|hours| hours * HOUR),
+                Some(10 * HOUR),
+            );
+            let candle = bar(start_hours * HOUR, 1.0);
+            chart.flags_of(&candle, 14_400.0, confirmed, false)
+        };
+        // The history ends at 10:00: its final bar is inside the 08:00 bucket only.
+        assert!(!flags(0, Some(10), true).is_last);
+        assert!(!flags(4, Some(10), true).is_last);
+        let last = flags(8, Some(10), false);
+        assert!(last.is_last);
+        // Incomplete and last: neither history nor realtime, and not confirmed.
+        assert!(!last.is_history && !last.is_realtime && !last.is_confirmed);
+        // A bucket that ends with the final bar is complete and still history.
+        let complete = flags(8, Some(12), true);
+        assert!(complete.is_last && complete.is_history && complete.is_confirmed);
+        // With a live bar after the history there is no final bar to be the last.
+        assert!(!flags(8, None, false).is_last);
+        assert!(flags(8, None, false).is_history);
+        // Always history's kind of new, never realtime.
+        assert!(flags(0, Some(10), true).is_new && !flags(0, Some(10), true).is_realtime);
     }
 
     #[test]
@@ -1379,80 +1421,6 @@ mod tests {
         assert_eq!(last_index(3_600_000, &candles), Some(1));
         assert_eq!(last_index(3_599_999, &candles), Some(0));
         assert_eq!(last_index(-1, &candles), None);
-    }
-
-    #[test]
-    fn reference_export_copies_arrays_across_the_boundary() {
-        let mut source = RuntimeState::default();
-        source.next_reference += 1;
-        source.arrays.insert(1, vec![RuntimeValue::Int(5)]);
-        let mut exporter = ReferenceExport::new(&source);
-
-        let mut target = RuntimeState::default();
-        let value = exporter.export(RuntimeValue::Ref(RefKind::Array, 1), &mut target);
-        let RuntimeValue::Ref(RefKind::Array, handle) = value else {
-            panic!("{value:?}");
-        };
-        assert_eq!(target.arrays[&handle], vec![RuntimeValue::Int(5)]);
-    }
-
-    #[test]
-    fn reference_export_follows_nested_handles_and_degrades_drawings() {
-        let mut source = RuntimeState::default();
-        source.next_reference += 1;
-        let array_id = source.next_reference;
-        source.arrays.insert(array_id, vec![RuntimeValue::Int(7)]);
-        source.next_reference += 1;
-        let object_id = source.next_reference;
-        source.instances.insert(
-            object_id,
-            crate::pine::runtime::containers::Object {
-                type_name: "T".to_owned(),
-                fields: [
-                    (
-                        "arr".to_owned(),
-                        RuntimeValue::Ref(RefKind::Array, array_id),
-                    ),
-                    ("line".to_owned(), RuntimeValue::Ref(RefKind::Line, 99)),
-                ]
-                .into_iter()
-                .collect(),
-            },
-        );
-        // A self-referential array (a cycle), to check handles reached twice copy once.
-        source.next_reference += 1;
-        let cycle_id = source.next_reference;
-        source
-            .arrays
-            .insert(cycle_id, vec![RuntimeValue::Ref(RefKind::Array, cycle_id)]);
-
-        let mut exporter = ReferenceExport::new(&source);
-        let mut target = RuntimeState::default();
-
-        let value = exporter.export(RuntimeValue::Ref(RefKind::Object, object_id), &mut target);
-        let RuntimeValue::Ref(RefKind::Object, handle) = value else {
-            panic!("{value:?}");
-        };
-        let object = &target.instances[&handle];
-        let RuntimeValue::Ref(RefKind::Array, arr_handle) = &object.fields["arr"] else {
-            panic!();
-        };
-        assert_eq!(target.arrays[arr_handle], vec![RuntimeValue::Int(7)]);
-        assert_eq!(
-            object.fields["line"],
-            RuntimeValue::Na,
-            "a drawing handle is na"
-        );
-
-        let cycle = exporter.export(RuntimeValue::Ref(RefKind::Array, cycle_id), &mut target);
-        let RuntimeValue::Ref(RefKind::Array, cycle_handle) = cycle else {
-            panic!("{cycle:?}");
-        };
-        assert_eq!(
-            target.arrays[&cycle_handle],
-            vec![RuntimeValue::Ref(RefKind::Array, cycle_handle)],
-            "a cycle survives the copy"
-        );
     }
 
     use crate::pine::compiler::program::{BarEvent, BarPhase, SymbolInfo};

@@ -61,6 +61,7 @@ impl Session {
                 seconds,
             )
         });
+        self.final_bar_end = self.history_end.filter(|_| !precedes_live_bar);
         self.bulk_replay = true;
         let mut failed_bar = 0;
         let result = self.replay_history(bars, bars.len(), precedes_live_bar, &mut failed_bar);

@@ -11,6 +11,8 @@ pub(in crate::pine) mod language;
 #[cfg(test)]
 pub(in crate::pine) mod security_conditional;
 #[cfg(test)]
+pub(in crate::pine) mod security_handout;
+#[cfg(test)]
 pub(in crate::pine) mod security_lookahead;
 #[cfg(test)]
 pub(in crate::pine) mod varip;
