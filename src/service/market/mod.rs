@@ -12,6 +12,7 @@ pub(in crate::service) mod dexscreener;
 pub mod error;
 pub mod fx_rates;
 pub(in crate::service) mod gateio;
+pub(in crate::service) mod htx;
 pub(in crate::service) mod hyperliquid;
 pub(in crate::service) mod kalshi;
 pub(in crate::service) mod kraken;
