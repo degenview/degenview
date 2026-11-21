@@ -55,7 +55,7 @@ pub fn call(name: &str, values: &[RuntimeValue], mintick: f64) -> RuntimeValue {
     if let Some(function) = unary(name) {
         return first
             .number()
-            .map_or(RuntimeValue::Na, |x| RuntimeValue::Float(function(x)));
+            .map_or(RuntimeValue::Na, |x| RuntimeValue::ieee(function(x)));
     }
     match name {
         "math.max" | "math.min" => extremum(name == "math.max", values),
@@ -95,7 +95,7 @@ pub fn call(name: &str, values: &[RuntimeValue], mintick: f64) -> RuntimeValue {
             _ => RuntimeValue::Na,
         },
         "math.pow" => match (first.number(), values.get(1).and_then(RuntimeValue::number)) {
-            (Some(x), Some(y)) => RuntimeValue::Float(x.powf(y)),
+            (Some(x), Some(y)) => RuntimeValue::ieee(x.powf(y)),
             _ => RuntimeValue::Na,
         },
         _ => RuntimeValue::Na,
@@ -113,10 +113,14 @@ fn all_numbers(values: &[RuntimeValue]) -> Option<Vec<f64>> {
     (!numbers.is_empty() && numbers.len() == values.len()).then_some(numbers)
 }
 
+/// `math.max` / `math.min`. They read the IEEE value: `1 / math.max(close / 0, 5)` is 0 on
+/// TradingView, so the maximum stays +infinity (probe P11 S3). The other functions here see an
+/// infinity as na.
 fn extremum(is_max: bool, values: &[RuntimeValue]) -> RuntimeValue {
-    let Some(numbers) = all_numbers(values) else {
+    let numbers: Vec<f64> = values.iter().filter_map(RuntimeValue::raw_number).collect();
+    if numbers.is_empty() || numbers.len() != values.len() || numbers.iter().any(|n| n.is_nan()) {
         return RuntimeValue::Na;
-    };
+    }
     if values.iter().all(RuntimeValue::is_int) {
         let ints = values.iter().filter_map(|value| match value {
             RuntimeValue::Int(x) => Some(*x),
@@ -177,7 +181,61 @@ mod tests {
             Float(std::f64::consts::PI)
         );
         assert_eq!(call("math.sin", &[Float(0.0)]), Float(0.0));
-        assert!(call("math.sqrt", &[Float(-1.0)]).number().unwrap().is_nan());
+    }
+
+    #[test]
+    fn a_function_with_no_value_is_na() {
+        // NaN is na (TradingView, P02: `na(math.sqrt(-1))` is true).
+        assert_eq!(call("math.sqrt", &[Float(-1.0)]), Na);
+        assert_eq!(call("math.log", &[Float(-1.0)]), Na);
+        assert_eq!(call("math.asin", &[Float(2.0)]), Na);
+        assert_eq!(call("math.acos", &[Float(-2.0)]), Na);
+        assert_eq!(call("math.pow", &[Float(-8.0), Float(0.5)]), Na);
+        // `math.log(0)` stays minus infinity.
+        assert_eq!(call("math.log", &[Float(0.0)]), Float(f64::NEG_INFINITY));
+        assert_eq!(call("math.exp", &[Float(1000.0)]), Float(f64::INFINITY));
+        assert_eq!(
+            call("math.pow", &[Float(0.0), Float(-1.0)]),
+            Float(f64::INFINITY)
+        );
+    }
+
+    #[test]
+    fn an_infinity_is_na_to_every_function_but_max_and_min() {
+        let infinity = Float(f64::INFINITY);
+        for name in [
+            "math.sqrt",
+            "math.exp",
+            "math.abs",
+            "math.sign",
+            "math.floor",
+            "math.ceil",
+            "math.round",
+            "math.sin",
+        ] {
+            assert_eq!(call(name, std::slice::from_ref(&infinity)), Na, "{name}");
+        }
+        assert_eq!(call("math.avg", &[infinity.clone(), Float(1.0)]), Na);
+        assert_eq!(call("math.pow", &[infinity.clone(), Float(2.0)]), Na);
+        assert_eq!(call("math.round_to_mintick", &[infinity]), Na);
+    }
+
+    #[test]
+    fn max_and_min_keep_an_infinity() {
+        // `1 / math.max(close / 0, 5)` is 0 on TradingView: the maximum stays +infinity (P11 S3).
+        let infinity = Float(f64::INFINITY);
+        assert_eq!(call("math.max", &[infinity.clone(), Float(5.0)]), infinity);
+        assert_eq!(call("math.max", &[Float(5.0), infinity.clone()]), infinity);
+        assert_eq!(call("math.max", &[infinity.clone(), Int(5)]), infinity);
+        let negative = Float(f64::NEG_INFINITY);
+        assert_eq!(call("math.min", &[negative.clone(), Float(5.0)]), negative);
+        // The other end is the other operand, as with any pair of numbers (unmeasured).
+        assert_eq!(
+            call("math.min", &[infinity.clone(), Float(5.0)]),
+            Float(5.0)
+        );
+        assert_eq!(call("math.max", &[negative, Float(5.0)]), Float(5.0));
+        assert_eq!(call("math.max", &[infinity, Na]), Na, "any na makes na");
     }
 
     #[test]

@@ -81,6 +81,24 @@
   `>=` true, `==` and `!=` are false when either is not finite while `inf > 1` and `-inf < inf`
   hold. Two ints compare exactly. TradingView-measured (probes P10, P11, P13-P15), which is not the
   manual's "round to nine fractional digits" (`1 + 4e-10` and `1` differ, `1e-10 == 2e-10` holds).
+- Division by zero, infinities and NaN (`RuntimeValue`, `runtime/operators.rs`; one rule, measured on
+  TradingView, probes P09 S5, P10 A, P11 S3). `x / 0` is an IEEE infinity (`0 / 0`, `inf - inf`,
+  `0 * inf` are NaN, stored as `Na`: `RuntimeValue::ieee` maps NaN to `Na`). `RuntimeValue::number()`
+  returns None for a float that is not finite, so every builtin, plot, drawing, order, loop bound and
+  `ta.*` input sees it as na; `RuntimeValue::is_na()` (`na()`, `nz()`) agrees. Only the arithmetic and
+  ordering operators, unary minus, `math.max`/`math.min` and the `float()` cast read
+  `RuntimeValue::raw_number()`, the IEEE value: `1 / (close / 0)` is 0, `close / 0 > 1e300` is true,
+  `math.max(close / 0, 5)` stays +inf, `100 - 100 / (1 + up / down)` with `down` = 0 is 100. `==` and `!=`
+  keep their non-finite rule in `float_relation`. Never read a plot, drawing or order quantity with
+  `raw_number`: the renderer does not check for infinities.
+  - Unmeasured, chosen conservatively (probe `V7_infinity_corners.pine`, to be run on TradingView):
+    a constant `1 / 0` folds to the same infinity as a series; `math.abs/sign/floor/ceil/round/sqrt/
+    exp/pow/avg` and every other `math.*` of an infinity are na (`math.log(0)` is -inf, `math.pow(0, -1)`
+    and an overflow are infinities); `math.min` with an infinity picks the other end like any
+    number; `%` follows IEEE except a zero divisor (na); `!=` with an infinity is false
+    (#660's rule); `ta.*` inputs, `int()`,
+    `fixnan` see an infinity as na and `float()` keeps it; a `for` bound that is not finite runs no
+    iteration; an `input.*` default that folds to an infinity is `PINE3010`.
 - Breakpoints and watches: local `scriptDebug.state` setting (never synced; in `sync::record::policy`'s local
   keys).
 - `once` finished flag: `RuntimeState::once_finished` (by site key), deliberately in working state:

@@ -44,9 +44,8 @@ pub fn negate(value: &RuntimeValue) -> RuntimeValue {
         return RuntimeValue::Int(0i64.wrapping_sub(*x));
     }
     value
-        .number()
-        .map(|n| RuntimeValue::Float(-n))
-        .unwrap_or(RuntimeValue::Na)
+        .raw_number()
+        .map_or(RuntimeValue::Na, |n| RuntimeValue::ieee(-n))
 }
 
 fn arithmetic(op: BinaryOperator, a: &RuntimeValue, b: &RuntimeValue) -> RuntimeValue {
@@ -65,28 +64,20 @@ fn arithmetic(op: BinaryOperator, a: &RuntimeValue, b: &RuntimeValue) -> Runtime
             _ => {}
         }
     }
-    let (Some(x), Some(y)) = (a.number(), b.number()) else {
+    // The IEEE value, not the finite one: a zero-divisor quotient is an infinity that the next
+    // operation goes on with (`100 - 100 / (1 + up / down)` with `down` = 0 is 100 on TradingView,
+    // probes P09 S5 and P10 A). What has no value (0 / 0, an infinity minus itself) is NaN, so `na`.
+    let (Some(x), Some(y)) = (a.raw_number(), b.raw_number()) else {
         return RuntimeValue::Na;
     };
     match op {
-        BinaryOperator::Add => RuntimeValue::Float(x + y),
-        BinaryOperator::Subtract => RuntimeValue::Float(x - y),
-        BinaryOperator::Multiply => RuntimeValue::Float(x * y),
-        BinaryOperator::Divide => {
-            if y == 0.0 {
-                RuntimeValue::Na
-            } else {
-                RuntimeValue::Float(x / y)
-            }
-        }
-        BinaryOperator::Modulo => {
-            if y == 0.0 {
-                RuntimeValue::Na
-            } else {
-                RuntimeValue::Float(x % y)
-            }
-        }
-        BinaryOperator::Power => RuntimeValue::Float(x.powf(y)),
+        BinaryOperator::Add => RuntimeValue::ieee(x + y),
+        BinaryOperator::Subtract => RuntimeValue::ieee(x - y),
+        BinaryOperator::Multiply => RuntimeValue::ieee(x * y),
+        BinaryOperator::Divide => RuntimeValue::ieee(x / y),
+        BinaryOperator::Modulo if y == 0.0 => RuntimeValue::Na,
+        BinaryOperator::Modulo => RuntimeValue::ieee(x % y),
+        BinaryOperator::Power => RuntimeValue::ieee(x.powf(y)),
         _ => RuntimeValue::Na,
     }
 }
@@ -98,7 +89,7 @@ fn compare(op: BinaryOperator, a: &RuntimeValue, b: &RuntimeValue) -> RuntimeVal
     if let (RuntimeValue::Int(x), RuntimeValue::Int(y)) = (a, b) {
         return RuntimeValue::Bool(relation(op, x, y));
     }
-    if let (Some(x), Some(y)) = (a.number(), b.number()) {
+    if let (Some(x), Some(y)) = (a.raw_number(), b.raw_number()) {
         return RuntimeValue::Bool(float_relation(op, x, y));
     }
     RuntimeValue::Bool(if op == BinaryOperator::Equal {
@@ -336,6 +327,115 @@ mod tests {
             int(BinaryOperator::LessEqual, 3, 3),
             RuntimeValue::Bool(true)
         );
+    }
+
+    fn arithmetic_of(op: BinaryOperator, x: f64, y: f64) -> RuntimeValue {
+        apply(op, &RuntimeValue::Float(x), &RuntimeValue::Float(y))
+    }
+
+    #[test]
+    fn dividing_by_zero_gives_an_infinity_and_zero_over_zero_gives_na() {
+        use BinaryOperator::Divide;
+        let infinity = f64::INFINITY;
+        assert_eq!(
+            arithmetic_of(Divide, 1.0, 0.0),
+            RuntimeValue::Float(infinity)
+        );
+        assert_eq!(
+            arithmetic_of(Divide, -1.0, 0.0),
+            RuntimeValue::Float(-infinity)
+        );
+        assert_eq!(
+            arithmetic_of(Divide, 1.0, -0.0),
+            RuntimeValue::Float(-infinity)
+        );
+        assert_eq!(arithmetic_of(Divide, 0.0, 0.0), RuntimeValue::Na);
+        // Two ints divide as floats too.
+        assert_eq!(
+            apply(Divide, &RuntimeValue::Int(1), &RuntimeValue::Int(0)),
+            RuntimeValue::Float(infinity)
+        );
+        assert_eq!(
+            apply(Divide, &RuntimeValue::Int(0), &RuntimeValue::Int(0)),
+            RuntimeValue::Na
+        );
+    }
+
+    #[test]
+    fn arithmetic_carries_an_infinity_on() {
+        use BinaryOperator::{Add, Divide, Multiply, Subtract};
+        let infinity = RuntimeValue::Float(f64::INFINITY);
+        // `1 / (close / 0)` is 0 and `100 - 100 / (1 + x / 0)` is 100 (TradingView, P09 S5, P10 A2).
+        assert_eq!(
+            apply(Divide, &RuntimeValue::Float(1.0), &infinity),
+            RuntimeValue::Float(0.0)
+        );
+        let denominator = apply(Add, &RuntimeValue::Float(1.0), &infinity);
+        assert_eq!(denominator, infinity);
+        let ratio = apply(Divide, &RuntimeValue::Float(100.0), &denominator);
+        assert_eq!(
+            apply(Subtract, &RuntimeValue::Float(100.0), &ratio),
+            RuntimeValue::Float(100.0)
+        );
+        assert_eq!(
+            apply(Multiply, &RuntimeValue::Float(2.0), &infinity),
+            infinity
+        );
+        assert_eq!(
+            apply(Multiply, &RuntimeValue::Int(-2), &infinity),
+            RuntimeValue::Float(f64::NEG_INFINITY)
+        );
+    }
+
+    #[test]
+    fn arithmetic_that_has_no_value_is_na() {
+        use BinaryOperator::{Add, Modulo, Multiply, Power, Subtract};
+        let infinity = f64::INFINITY;
+        // `x - x` for an infinite x is NaN, which is na (P10 A5).
+        assert_eq!(
+            arithmetic_of(Subtract, infinity, infinity),
+            RuntimeValue::Na
+        );
+        assert_eq!(arithmetic_of(Add, infinity, -infinity), RuntimeValue::Na);
+        assert_eq!(arithmetic_of(Multiply, 0.0, infinity), RuntimeValue::Na);
+        assert_eq!(arithmetic_of(Power, -8.0, 0.5), RuntimeValue::Na);
+        assert_eq!(arithmetic_of(Modulo, infinity, 3.0), RuntimeValue::Na);
+        assert_eq!(arithmetic_of(Modulo, 3.0, 0.0), RuntimeValue::Na);
+        // na stays na, and a float NaN that reaches an operator behaves as na.
+        assert_eq!(
+            apply(Add, &RuntimeValue::Na, &RuntimeValue::Float(1.0)),
+            RuntimeValue::Na
+        );
+        assert_eq!(arithmetic_of(Add, f64::NAN, 1.0), RuntimeValue::Na);
+        // Overflow is an infinity, not na.
+        assert_eq!(
+            arithmetic_of(Multiply, 1e308, 10.0),
+            RuntimeValue::Float(infinity)
+        );
+    }
+
+    #[test]
+    fn ordering_sees_the_infinity() {
+        use BinaryOperator::{Greater, GreaterEqual, Less, LessEqual};
+        let infinity = f64::INFINITY;
+        // `close / 0 > 1e300` is true on TradingView (P10 A4).
+        assert!(compare_floats(Greater, infinity, 1e300));
+        assert!(compare_floats(GreaterEqual, infinity, 1e300));
+        assert!(compare_floats(Less, -infinity, -1e300));
+        assert!(compare_floats(LessEqual, 1.0, infinity));
+        assert!(!compare_floats(Less, infinity, 1e300));
+        assert!(compare_floats(Greater, infinity, f64::MAX));
+        assert!(!compare_floats(Greater, f64::NAN, 1.0));
+        assert!(!compare_floats(Less, f64::NAN, 1.0));
+    }
+
+    #[test]
+    fn negating_an_infinity_flips_it() {
+        assert_eq!(
+            negate(&RuntimeValue::Float(f64::INFINITY)),
+            RuntimeValue::Float(f64::NEG_INFINITY)
+        );
+        assert_eq!(negate(&RuntimeValue::Float(f64::NAN)), RuntimeValue::Na);
     }
 
     #[test]
