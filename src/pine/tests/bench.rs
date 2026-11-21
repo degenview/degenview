@@ -284,12 +284,12 @@ plot(total + i + k + v)
 /// Six `str.*` calls per bar.
 pub(crate) const MANY_STR: &str = "//@version=6
 indicator(\"Many str\")
-text = str.tostring(close)
-n = str.length(text)
-up = str.upper(text)
+quote = str.tostring(close)
+n = str.length(quote)
+up = str.upper(quote)
 has = str.contains(up, \"1\") ? 1 : 0
-swapped = str.replace_all(text, \".\", \",\")
-tail = str.substring(text, 0, 1)
+swapped = str.replace_all(quote, \".\", \",\")
+tail = str.substring(quote, 0, 1)
 plot(n + has + str.length(swapped) + str.length(tail))
 ";
 
