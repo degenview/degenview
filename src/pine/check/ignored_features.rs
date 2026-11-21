@@ -314,6 +314,10 @@ fn ignored_values()
 /// An ignored argument that is written out with the value it has anyway changes nothing, so it is
 /// not warned about (`calc_on_order_fills = false` is how many scripts spell the default).
 fn states_the_default(function: &str, argument: &str, value: &Expression) -> bool {
+    // `scale.none` is honoured: the chart gives the script a hidden scale of its own.
+    if argument == "scale" {
+        return matches!(value, Expression::Identifier(name, _) if name == "scale.none");
+    }
     let Expression::Literal(literal, _) = value else {
         return false;
     };

@@ -37,6 +37,16 @@ if barstate.islast
     line.new(bar_index, close, bar_index + 500, close)
 ";
 
+/// A plot twenty times the close, far above the candles; `scale` is the declaration's argument.
+fn far_overlay(scale: &str) -> String {
+    format!(
+        "//@version=6
+indicator(\"Far overlay\", overlay = true{scale})
+plot(close * 20)
+"
+    )
+}
+
 /// A line drawn on the last bar, anchored 50 bars ahead and extended left across every bar on
 /// screen, at twenty times the close; `rise` is how far its second end lies above its first.
 fn extended_line_script(extend: &str, rise: f64) -> String {
@@ -224,6 +234,113 @@ fn only_a_level_extended_across_the_screen_is_on_the_scrolled_back_axis() {
             "a line rising {rise} does not stretch the axis, as on TradingView"
         );
     }
+}
+
+#[test]
+fn a_scale_none_overlay_leaves_the_price_axis_to_the_candles() {
+    let maximum = |scale: &str| {
+        let mut harness = Harness::new(ChartCanvas::default());
+        let id = harness
+            .card
+            .add_pine_instance(None, "Far overlay", &far_overlay(scale));
+        wait_for_run(&mut harness, id);
+        settled(&mut harness);
+        let input = input(&harness, false);
+        geometry(&harness, &input).view.maximum
+    };
+    assert!(
+        maximum("") > 4_000.0,
+        "an overlay on the price axis stretches it to its own values"
+    );
+    let own = maximum(", scale = scale.none");
+    assert!(own < 400.0, "the candles keep their range: {own}");
+}
+
+/// The stroked path with the most points on the plot: a script's plot, the longest line there.
+fn longest_path(drawn: &Drawn) -> &[Pos2] {
+    drawn
+        .paths
+        .iter()
+        .max_by_key(|points| points.len())
+        .expect("a path was stroked")
+}
+
+#[test]
+fn a_scale_none_overlay_is_fitted_to_its_own_hidden_scale_inside_the_plot() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id =
+        harness
+            .card
+            .add_pine_instance(None, "Far overlay", &far_overlay(", scale = scale.none"));
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 100,
+            right_offset: 0.0,
+        },
+        None,
+    ));
+    let view = geometry(&harness, &input).view;
+    let drawn = gather(&painted(&harness, &input));
+    let line = longest_path(&drawn);
+    assert!(line.len() >= 90, "the plot is drawn: {} points", line.len());
+    let (top, bottom) = line
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(top, bottom), point| {
+            (top.min(point.y), bottom.max(point.y))
+        });
+    assert!(
+        top >= view.plot.top() && bottom <= view.plot.bottom(),
+        "inside the plot: {top}..{bottom} of {:?}",
+        view.plot
+    );
+    assert!(
+        bottom - top > view.plot.height() * 0.4,
+        "fitted to the plot, not a sliver at the edge: {top}..{bottom} of {:?}",
+        view.plot
+    );
+    // The same plot on the price axis would be off the plot, and the candles a sliver.
+    let mut on_axis = Harness::new(ChartCanvas::default());
+    let id = on_axis
+        .card
+        .add_pine_instance(None, "Far overlay", &far_overlay(""));
+    wait_for_run(&mut on_axis, id);
+    settled(&mut on_axis);
+    let mut shared = self::input(&on_axis, false);
+    shared.frame.viewport = input.frame.viewport;
+    let shared_view = geometry(&on_axis, &shared).view;
+    assert!(shared_view.maximum - shared_view.minimum > 10.0 * (view.maximum - view.minimum));
+}
+
+#[test]
+fn a_scale_none_overlay_follows_the_bars_on_screen() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness.card.add_pine_instance(
+        None,
+        "Jumping overlay",
+        "//@version=6
+indicator(\"Jumping scale none\", overlay = true, scale = scale.none)
+plot(bar_index < 200 ? close : close * 20)
+",
+    );
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(scrolled_back());
+    let view = geometry(&harness, &input).view;
+    let drawn = gather(&painted(&harness, &input));
+    let line = longest_path(&drawn);
+    let (top, bottom) = line
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(top, bottom), point| {
+            (top.min(point.y), bottom.max(point.y))
+        });
+    assert!(
+        bottom - top > view.plot.height() * 0.2,
+        "the hidden scale fits the bars before the jump, not today's values: {top}..{bottom}"
+    );
 }
 
 #[test]

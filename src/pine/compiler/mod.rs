@@ -350,6 +350,25 @@ fn apply_remaining(
         };
         apply_argument(name, value, metadata);
     }
+    // A pane has an axis of its own: `scale.none` is for an overlay on the price axis.
+    if metadata.scale_none
+        && !metadata.overlay
+        && let Some(argument) = declaration
+            .arguments
+            .iter()
+            .find(|argument| argument.name.as_deref() == Some("scale"))
+    {
+        metadata.scale_none = false;
+        diagnostics.push(crate::pine::check::ignored_features::warning(
+            "PINE7001",
+            format!(
+                "{}(): `scale = scale.none` is ignored. It applies to an overlay (`overlay = true`); \
+                 a script with its own pane keeps its axis.",
+                declaration.name
+            ),
+            argument.name_range.unwrap_or(argument.value.range()),
+        ));
+    }
 }
 
 fn apply_argument(name: &str, value: RuntimeValue, metadata: &mut DeclarationMetadata) {
@@ -364,6 +383,7 @@ fn apply_argument(name: &str, value: RuntimeValue, metadata: &mut DeclarationMet
         ("max_boxes_count", RuntimeValue::Int(v)) => metadata.max_boxes_count = Some(*v),
         ("max_polylines_count", RuntimeValue::Int(v)) => metadata.max_polylines_count = Some(*v),
         ("behind_chart", RuntimeValue::Bool(v)) => metadata.behind_chart = Some(*v),
+        ("scale", RuntimeValue::String(v)) => metadata.scale_none = v == "scale.none",
         _ => apply_strategy_setting(name, value, metadata),
     }
 }

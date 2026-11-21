@@ -100,7 +100,7 @@ impl ChartCard {
                 };
                 extras.push(Extra {
                     title,
-                    kind: if output.overlay || line {
+                    kind: if (output.overlay && !output.scale_none) || line {
                         ValueKind::Price
                     } else {
                         ValueKind::Plain
