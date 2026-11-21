@@ -1,4 +1,3 @@
-use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
 mod ticker;
 
 use super::venue::Venue;
@@ -42,7 +41,7 @@ impl MarketSource for CoinGecko {
             crate::service::net::http::Retry::Never,
         )?;
         let prices = parse_prices(&body)?;
-        let candles = fold_prices(&prices, timeframe);
+        let candles = samples::fold_samples(&prices, timeframe);
         let start = candles.len().saturating_sub(limit as usize);
         Ok(candles[start..].to_vec())
     }
@@ -106,37 +105,6 @@ fn parse_prices(body: &str) -> Result<Vec<(i64, f64)>, ProviderError> {
     Ok(prices)
 }
 
-/// Fold a price series into candles of `target`, one candle per calendar bucket.
-///
-/// Each candle opens at the previous one's close, so the series is continuous and a bucket holding
-/// a single sample still gets a body (and a colour); only the first opens at its own first sample.
-fn fold_prices(prices: &[(i64, f64)], target: Timeframe) -> Vec<Kline> {
-    let mut out: Vec<Kline> = Vec::new();
-    for &(ms, price) in prices {
-        let bucket = bucket_start_ms(target, ms);
-        match out.last_mut() {
-            Some(last) if last.open_time == bucket => {
-                last.high = last.high.max(price);
-                last.low = last.low.min(price);
-                last.close = price;
-            }
-            _ => {
-                let open = out.last().map_or(price, |previous| previous.close);
-                out.push(Kline {
-                    open_time: bucket,
-                    close_time: next_bucket_start_ms(target, bucket) - 1,
-                    open,
-                    high: open.max(price),
-                    low: open.min(price),
-                    close: price,
-                    volume: 0.0,
-                });
-            }
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,48 +120,6 @@ mod tests {
                 ProviderError::unsupported(DataSource::CoinGecko, timeframe)
             );
         }
-    }
-
-    #[test]
-    fn folds_prices_into_buckets() {
-        let prices = vec![
-            (1_700_000_000_000, 10.0),
-            (1_700_001_800_000, 12.0), // same hour bucket as above
-            (1_700_003_600_000, 8.0),  // next hour bucket
-        ];
-        let candles = fold_prices(&prices, Timeframe::HOUR_1);
-        assert_eq!(candles.len(), 2);
-        assert_eq!(candles[0].high, 12.0);
-        assert_eq!(candles[0].low, 10.0);
-        assert_eq!(candles[0].close, 12.0);
-        assert_eq!(candles[1].close, 8.0);
-        assert_eq!(candles[1].open, 12.0);
-        assert_eq!(candles[1].high, 12.0);
-        assert_eq!(candles[1].low, 8.0);
-    }
-
-    #[test]
-    fn first_candle_opens_at_its_first_sample() {
-        let candles = fold_prices(&[(1_700_000_000_000, 10.0)], Timeframe::HOUR_1);
-        assert_eq!(candles[0].open, 10.0);
-        assert_eq!(candles[0].close, 10.0);
-    }
-
-    #[test]
-    fn single_sample_buckets_get_a_body_and_a_colour() {
-        // One sample per hour, as `/market_chart` returns for 2–90 days.
-        let prices = vec![
-            (1_700_000_000_000, 10.0),
-            (1_700_003_600_000, 9.0),
-            (1_700_007_200_000, 11.0),
-        ];
-        let candles = fold_prices(&prices, Timeframe::HOUR_1);
-        assert_eq!(candles.len(), 3);
-        assert!(!candles[1].is_up());
-        assert_eq!((candles[1].open, candles[1].close), (10.0, 9.0));
-        assert_eq!((candles[1].high, candles[1].low), (10.0, 9.0));
-        assert!(candles[2].is_up());
-        assert_eq!((candles[2].open, candles[2].close), (9.0, 11.0));
     }
 
     #[test]
