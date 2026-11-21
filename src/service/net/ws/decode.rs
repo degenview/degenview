@@ -16,7 +16,6 @@ pub enum Decode {
     None,
     /// Binary messages are gzip-compressed text (HTX, BingX): they are unpacked and handed over as
     /// text messages, so heartbeats and the venue's parser see plain JSON.
-    #[cfg_attr(not(test), allow(dead_code))] // until HTX or BingX lands
     Gzip,
 }
 

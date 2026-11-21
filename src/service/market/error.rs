@@ -64,6 +64,14 @@ impl ProviderError {
         Self::Other(message.into())
     }
 
+    /// The provider answered HTTP 403, which it gives a country it does not serve.
+    pub fn refused_by_region(provider: DataSource) -> Self {
+        Self::Other(format!(
+            "{} refused the request (HTTP 403): it is not available in every country",
+            provider.display_name()
+        ))
+    }
+
     /// `provider` cannot chart `timeframe`.
     pub fn unsupported(provider: DataSource, timeframe: Timeframe) -> Self {
         Self::UnsupportedInterval {
@@ -182,5 +190,26 @@ mod tests {
         // A message that happens to hold the digits is not a rate limit.
         assert!(!ProviderError::other("No data for 429 days").is_rate_limited());
         assert!(!ProviderError::MissingKey.is_rate_limited());
+    }
+
+    #[test]
+    fn a_regional_refusal_is_worded_once_for_a_chart_and_for_a_price() {
+        use crate::service::watchlist_quotes::{QuoteFailure, provider::refused_by_region};
+        for source in [
+            DataSource::Bybit,
+            DataSource::Gate,
+            DataSource::Mexc,
+            DataSource::Htx,
+        ] {
+            let message = ProviderError::refused_by_region(source).to_string();
+            assert_eq!(
+                message,
+                format!(
+                    "{} refused the request (HTTP 403): it is not available in every country",
+                    source.display_name()
+                )
+            );
+            assert_eq!(refused_by_region(source), QuoteFailure::Failed(message));
+        }
     }
 }

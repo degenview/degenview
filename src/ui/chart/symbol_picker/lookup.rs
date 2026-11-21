@@ -247,6 +247,7 @@ mod tests {
                 "Aster",
                 "Lighter",
                 "Deribit",
+                "HTX",
                 "DEXScreener",
                 "CoinGecko",
                 "Alpaca"

@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 /// How many variants `DataSource` has. Bumped with [`position`], which cannot compile without an
 /// arm for a new variant.
-const VARIANTS: usize = 17;
+const VARIANTS: usize = 18;
 
 /// Where `source` stands in [`DataSource::ALL`]. Exhaustive, so a new variant does not compile
 /// until it is placed here, and then the tests below make it appear in the list.
@@ -21,12 +21,13 @@ fn position(source: DataSource) -> usize {
         DataSource::Aster => 8,
         DataSource::Lighter => 9,
         DataSource::Deribit => 10,
-        DataSource::CoinGecko => 11,
-        DataSource::DexScreener => 12,
-        DataSource::Alpaca => 13,
-        DataSource::Polymarket => 14,
-        DataSource::Kalshi => 15,
-        DataSource::CoinMarketCap => 16,
+        DataSource::Htx => 11,
+        DataSource::CoinGecko => 12,
+        DataSource::DexScreener => 13,
+        DataSource::Alpaca => 14,
+        DataSource::Polymarket => 15,
+        DataSource::Kalshi => 16,
+        DataSource::CoinMarketCap => 17,
     }
 }
 
@@ -116,6 +117,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Aster,
             DataSource::Lighter,
             DataSource::Deribit,
+            DataSource::Htx,
         ]
     );
     assert_eq!(
@@ -130,6 +132,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Aster,
             DataSource::Lighter,
             DataSource::Deribit,
+            DataSource::Htx,
         ]
     );
 }
@@ -154,7 +157,7 @@ fn only_the_sources_with_a_small_rest_allowance_refresh_their_charts_slowly() {
 #[test]
 fn the_picker_lists_markets_by_symbol_and_predictions_apart() {
     let markets: Vec<_> = DataSource::symbol_markets().collect();
-    assert_eq!(markets.len(), 14);
+    assert_eq!(markets.len(), 15);
     assert!(markets.iter().all(|source| !source.is_prediction_market()));
     assert!(!markets.contains(&DataSource::CoinMarketCap));
     assert_eq!(
@@ -180,6 +183,7 @@ fn quotes_are_polled_as_each_source_allows() {
     assert_eq!(timing(DataSource::Aster), (10, 60, 1_000));
     assert_eq!(timing(DataSource::Lighter), (10, 60, 2_000));
     assert_eq!(timing(DataSource::Deribit), (10, 60, 2_000));
+    assert_eq!(timing(DataSource::Htx), (10, 60, 2_000));
     assert_eq!(timing(DataSource::DexScreener), (10, 60, 30));
     assert_eq!(timing(DataSource::CoinGecko), (30, 120, 250));
     assert_eq!(timing(DataSource::Alpaca), (5, 45, 200));
@@ -369,5 +373,48 @@ fn deribit_lists_perpetuals_by_the_names_it_lists_and_folds_what_it_cannot_cut()
             "{folded}"
         );
         assert!(DataSource::Deribit.serves(timeframe), "{folded}");
+    }
+}
+
+#[test]
+fn htx_lists_spot_pairs_and_folds_days_weeks_and_months_from_four_hours() {
+    let profile = DataSource::Htx.profile();
+    assert_eq!(profile.kinds, [MarketKind::Spot]);
+    assert_eq!((profile.slug, profile.display_name), ("HTX", "HTX"));
+    assert!(profile.streams.candles && profile.streams.quotes);
+    assert_eq!(
+        DataSource::from_watchlist_slug("htx"),
+        Some(DataSource::Htx)
+    );
+    for (id, base, quote) in [
+        ("BTCUSDT", "BTC", "USDT"),
+        ("ethbtc", "ETH", "BTC"),
+        ("SUSDT", "S", "USDT"),
+        ("4USDT", "4", "USDT"),
+        ("BTC/USDC", "BTC", "USDC"),
+        ("ETHUSDD", "ETH", "USDD"),
+        ("TRXKGST", "TRX", "KGST"),
+    ] {
+        assert_eq!(DataSource::Htx.base_asset(id), base, "{id}");
+        assert_eq!(
+            DataSource::Htx.quote_asset(id).as_deref(),
+            Some(quote),
+            "{id}"
+        );
+    }
+    // A wrapped coin is an asset, not a one-letter base over BTC; a bare asset has no quote.
+    assert_eq!(DataSource::Htx.base_asset("WBTC"), "WBTC");
+    assert_eq!(DataSource::Htx.quote_asset("SOL"), None);
+    // Six lengths are its own; its days, weeks and months open at 16:00 UTC, so they fold.
+    let natives: Vec<_> = DataSource::Htx
+        .natives()
+        .iter()
+        .map(|native| native.interval())
+        .collect();
+    assert_eq!(natives, ["1m", "5m", "15m", "30m", "1h", "4h"]);
+    for folded in ["3m", "2h", "8h", "1d", "1w", "1M", "3M", "1Y", "22m"] {
+        let timeframe = Timeframe::parse(folded).unwrap();
+        assert!(!DataSource::Htx.natives().contains(&timeframe), "{folded}");
+        assert!(DataSource::Htx.serves(timeframe), "{folded}");
     }
 }

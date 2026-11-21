@@ -9,9 +9,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
 
+mod conversation;
 mod decode;
 mod keepalive;
 
+pub use conversation::{Conversation, ConversationError};
 pub use decode::Decode;
 pub use keepalive::Keepalive;
 
@@ -47,19 +49,31 @@ pub fn connect(
     Ok((socket, route))
 }
 
+/// The TCP stream under a socket, whatever carries the TLS.
+fn tcp(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>) -> io::Result<&mut TcpStream> {
+    match socket.get_mut() {
+        MaybeTlsStream::Plain(stream) => Ok(stream),
+        MaybeTlsStream::Rustls(stream) => Ok(&mut stream.sock),
+        _ => Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "unsupported TLS stream",
+        )),
+    }
+}
+
 pub fn configure(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>) -> io::Result<()> {
-    let stream = match socket.get_mut() {
-        MaybeTlsStream::Plain(stream) => stream,
-        MaybeTlsStream::Rustls(stream) => &mut stream.sock,
-        _ => {
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "unsupported TLS stream",
-            ));
-        }
-    };
+    let stream = tcp(socket)?;
     stream.set_read_timeout(Some(READ_TIMEOUT))?;
     stream.set_write_timeout(Some(READ_TIMEOUT))
+}
+
+/// Makes the next read wait for at most `limit` (never longer than a read normally does, never
+/// zero, which a socket takes for no limit at all).
+fn limit_read(
+    socket: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+    limit: Duration,
+) -> io::Result<()> {
+    tcp(socket)?.set_read_timeout(Some(limit.clamp(Duration::from_millis(1), READ_TIMEOUT)))
 }
 
 pub struct Health {
@@ -289,7 +303,24 @@ impl<'a> Frame<'a> {
     }
 }
 
+/// A connected socket and the check on its health.
+type Connection = (WebSocket<MaybeTlsStream<TcpStream>>, Health);
+
 impl Session {
+    /// Connects and sends the opening messages: the keepalive's own (a heartbeat request) before
+    /// the feed's subscriptions.
+    fn open(&self) -> Result<Connection, String> {
+        let (mut socket, route) = connect(&self.url, &self.host, self.port)?;
+        for message in self.keepalive.greeting().iter().chain(&self.subscribe) {
+            socket
+                .send(Message::Text(message.as_str().into()))
+                .map_err(|error| error.to_string())?;
+        }
+        let health =
+            Health::new(self.max_data_silence, self.keepalive, route).decoding(self.decode);
+        Ok((socket, health))
+    }
+
     /// Connects, subscribes and reads until `shutdown`, reconnecting with backoff whenever the
     /// socket fails. Every text message goes to `on_text`; it answers whether to keep reading
     /// (`false` when nobody is listening any more).
@@ -316,37 +347,26 @@ impl Session {
     ) {
         let mut backoff = Backoff::new();
         while !shutdown.load(Ordering::Acquire) {
-            if let Ok((mut socket, route)) = connect(&self.url, &self.host, self.port) {
-                // The keepalive's own opening message (a heartbeat request) goes before the feed's.
-                let subscribed = self
-                    .keepalive
-                    .greeting()
-                    .iter()
-                    .chain(&self.subscribe)
-                    .all(|message| socket.send(Message::Text(message.as_str().into())).is_ok());
-                if subscribed {
-                    let mut health = Health::new(self.max_data_silence, self.keepalive, route)
-                        .decoding(self.decode);
-                    on_link(true);
-                    let mut listening = true;
-                    while listening && !shutdown.load(Ordering::Acquire) {
-                        match health.read(&mut socket) {
-                            Ok(Some(Message::Text(text))) => {
-                                backoff.reset();
-                                listening = on_frame(Frame::Text(text.as_str()));
-                            }
-                            Ok(Some(Message::Binary(bytes))) => {
-                                backoff.reset();
-                                listening = on_frame(Frame::Binary(&bytes));
-                            }
-                            Ok(Some(Message::Close(_))) | Err(_) => break,
-                            Ok(_) => {}
+            if let Ok((mut socket, mut health)) = self.open() {
+                on_link(true);
+                let mut listening = true;
+                while listening && !shutdown.load(Ordering::Acquire) {
+                    match health.read(&mut socket) {
+                        Ok(Some(Message::Text(text))) => {
+                            backoff.reset();
+                            listening = on_frame(Frame::Text(text.as_str()));
                         }
+                        Ok(Some(Message::Binary(bytes))) => {
+                            backoff.reset();
+                            listening = on_frame(Frame::Binary(&bytes));
+                        }
+                        Ok(Some(Message::Close(_))) | Err(_) => break,
+                        Ok(_) => {}
                     }
-                    on_link(false);
-                    if !listening {
-                        return;
-                    }
+                }
+                on_link(false);
+                if !listening {
+                    return;
                 }
             }
             if shutdown.load(Ordering::Acquire) {
