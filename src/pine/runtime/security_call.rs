@@ -1110,7 +1110,9 @@ impl Session {
             ChartBar::for_bucket(candle.open_time, end, self.final_bar_end, self.history_end);
         let how = Evaluation {
             keeps: false,
-            confirmed: self.history_end.is_some_and(|history_end| end <= history_end),
+            confirmed: self
+                .history_end
+                .is_some_and(|history_end| end <= history_end),
         };
         let value = self.evaluate_higher_timeframe(state, candle, request, chart, how)?;
         state.ahead = Some((candle.open_time, value.clone()));
@@ -1148,7 +1150,7 @@ impl Session {
             .replay_globals
             .take()
             .unwrap_or_else(|| std::mem::take(&mut self.working.variables));
-        let mut chart = self.enter_series(SeriesFrame {
+        let chart = self.enter_series(SeriesFrame {
             working: site_state,
             // The series the expression runs on is this site's own candles, which a request inside
             // it replays.
