@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 /// How many variants `DataSource` has. Bumped with [`position`], which cannot compile without an
 /// arm for a new variant.
-const VARIANTS: usize = 19;
+const VARIANTS: usize = 20;
 
 /// Where `source` stands in [`DataSource::ALL`]. Exhaustive, so a new variant does not compile
 /// until it is placed here, and then the tests below make it appear in the list.
@@ -23,12 +23,13 @@ fn position(source: DataSource) -> usize {
         DataSource::Deribit => 10,
         DataSource::Htx => 11,
         DataSource::Bitfinex => 12,
-        DataSource::CoinGecko => 13,
-        DataSource::DexScreener => 14,
-        DataSource::Alpaca => 15,
-        DataSource::Polymarket => 16,
-        DataSource::Kalshi => 17,
-        DataSource::CoinMarketCap => 18,
+        DataSource::Bitstamp => 13,
+        DataSource::CoinGecko => 14,
+        DataSource::DexScreener => 15,
+        DataSource::Alpaca => 16,
+        DataSource::Polymarket => 17,
+        DataSource::Kalshi => 18,
+        DataSource::CoinMarketCap => 19,
     }
 }
 
@@ -120,6 +121,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Deribit,
             DataSource::Htx,
             DataSource::Bitfinex,
+            DataSource::Bitstamp,
         ]
     );
     assert_eq!(
@@ -136,6 +138,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Deribit,
             DataSource::Htx,
             DataSource::Bitfinex,
+            DataSource::Bitstamp,
         ]
     );
 }
@@ -161,7 +164,7 @@ fn only_the_sources_with_a_small_rest_allowance_refresh_their_charts_slowly() {
 #[test]
 fn the_picker_lists_markets_by_symbol_and_predictions_apart() {
     let markets: Vec<_> = DataSource::symbol_markets().collect();
-    assert_eq!(markets.len(), 16);
+    assert_eq!(markets.len(), 17);
     assert!(markets.iter().all(|source| !source.is_prediction_market()));
     assert!(!markets.contains(&DataSource::CoinMarketCap));
     assert_eq!(
@@ -189,6 +192,7 @@ fn quotes_are_polled_as_each_source_allows() {
     assert_eq!(timing(DataSource::Deribit), (10, 60, 2_000));
     assert_eq!(timing(DataSource::Htx), (10, 60, 2_000));
     assert_eq!(timing(DataSource::Bitfinex), (10, 60, 100));
+    assert_eq!(timing(DataSource::Bitstamp), (10, 60, 2_000));
     assert_eq!(timing(DataSource::DexScreener), (10, 60, 30));
     assert_eq!(timing(DataSource::CoinGecko), (30, 120, 250));
     assert_eq!(timing(DataSource::Alpaca), (5, 45, 200));
@@ -495,5 +499,60 @@ fn bitfinex_runs_short_pairs_together_and_separates_long_ones_with_a_colon() {
             "{folded}"
         );
         assert!(DataSource::Bitfinex.serves(timeframe), "{folded}");
+    }
+}
+
+#[test]
+fn bitstamp_lists_spot_pairs_and_folds_weeks_months_and_years_from_days() {
+    let profile = DataSource::Bitstamp.profile();
+    assert_eq!(profile.kinds, [MarketKind::Spot]);
+    assert_eq!(
+        (profile.slug, profile.display_name),
+        ("BITSTAMP", "Bitstamp")
+    );
+    assert!(profile.streams.candles && profile.streams.quotes);
+    assert_eq!(
+        DataSource::from_watchlist_slug("bitstamp"),
+        Some(DataSource::Bitstamp)
+    );
+    for (id, base, quote) in [
+        ("BTCUSD", "BTC", "USD"),
+        ("btceur", "BTC", "EUR"),
+        ("XRPRLUSD", "XRP", "RLUSD"),
+        ("EURCUSD", "EURC", "USD"),
+        ("EURCVEUR", "EURCV", "EUR"),
+        ("USDCUSDT", "USDC", "USDT"),
+        ("ETHBTC", "ETH", "BTC"),
+        // A one-letter asset, before a fiat or dollar quote only.
+        ("SUSD", "S", "USD"),
+        ("WEUR", "W", "EUR"),
+    ] {
+        assert_eq!(DataSource::Bitstamp.base_asset(id), base, "{id}");
+        assert_eq!(
+            DataSource::Bitstamp.quote_asset(id).as_deref(),
+            Some(quote),
+            "{id}"
+        );
+    }
+    assert_eq!(DataSource::Bitstamp.base_asset("WBTC"), "WBTC");
+    assert_eq!(DataSource::Bitstamp.quote_asset("SOL"), None);
+    let natives: Vec<_> = DataSource::Bitstamp
+        .natives()
+        .iter()
+        .map(|native| native.interval())
+        .collect();
+    assert_eq!(
+        natives,
+        [
+            "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "3d"
+        ]
+    );
+    for folded in ["8h", "2D", "1W", "2W", "1M", "3M", "1Y", "22m"] {
+        let timeframe = Timeframe::parse(folded).unwrap();
+        assert!(
+            !DataSource::Bitstamp.natives().contains(&timeframe),
+            "{folded}"
+        );
+        assert!(DataSource::Bitstamp.serves(timeframe), "{folded}");
     }
 }

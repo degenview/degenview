@@ -141,6 +141,8 @@ mod tests {
 
     #[test]
     fn an_unknown_market_says_who_does_not_list_it_and_is_decided_by_its_variant() {
+        let bare = ProviderError::unknown_market(DataSource::Bitstamp, "FOOUSD", "");
+        assert_eq!(bare.to_string(), "Bitstamp does not list FOOUSD");
         let hinted = ProviderError::unknown_market(
             DataSource::Hyperliquid,
             "btc",

@@ -1,4 +1,5 @@
 use crate::lock::lock;
+use crate::model::market::live::Klines;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::market::venue;
 use crate::service::net::ws::{Flow, Frame, Session};
@@ -49,18 +50,24 @@ pub trait CandleProtocol: Sync {
     fn sessions(&self, symbols: &[String], base: Timeframe) -> Option<Vec<Session>>;
 
     /// What one message says on its own: the market as the venue names it, and its candle. Nothing
-    /// for a message that is not one (an acknowledgement, a heartbeat, another topic). A venue
-    /// whose messages cannot be read alone (they name a subscription, not a market) implements
-    /// [`Self::reader`] instead, and this is never called.
-    fn parse(&self, _frame: Frame<'_>, _base: Timeframe) -> Option<(String, Kline)> {
-        None
-    }
+    /// for a message that is not one (an acknowledgement, a heartbeat, another topic). Every venue
+    /// answers it, so none is left that reads nothing by forgetting both this and [`Self::reader`]:
+    /// a venue whose messages cannot be read alone (they name a subscription, not a market)
+    /// answers `None` here, as it is never called, and reads through [`Self::reader`].
+    fn parse(&self, frame: Frame<'_>, base: Timeframe) -> Option<(String, Kline)>;
 
     /// For a venue that has to remember across messages of one connection (which market a channel
     /// number is): the reader [`LiveFeed`] makes of each connection's messages. `None` for a venue
     /// that reads each message by [`Self::parse`].
     fn reader(&self, _base: Timeframe) -> Option<Box<dyn FrameReader>> {
         None
+    }
+
+    /// What the klines of this venue are to the bars they name: the bar so far, as a candle
+    /// channel sends it, or (for a venue with no candle channel) what trades built since the socket
+    /// connected, which the chart adds to the candle it holds ([`Klines::Trades`]).
+    fn klines(&self) -> Klines {
+        Klines::Bars
     }
 }
 
@@ -122,6 +129,7 @@ impl Reading {
 pub struct LiveFeed {
     pub inbox: Arc<LiveInbox>,
     signature: (Vec<String>, Timeframe),
+    klines: Klines,
     shutdown: Arc<AtomicBool>,
 }
 
@@ -169,8 +177,14 @@ impl LiveFeed {
         Some(Self {
             inbox,
             signature: (symbols, base),
+            klines: protocol.klines(),
             shutdown,
         })
+    }
+
+    /// What the klines of the inbox are to the bars they name.
+    pub fn klines(&self) -> Klines {
+        self.klines
     }
 
     /// The symbols and candle length this feed was opened for, so the owner can tell when a
@@ -231,6 +245,10 @@ mod tests {
 
     impl CandleProtocol for Remembering {
         fn sessions(&self, _: &[String], _: Timeframe) -> Option<Vec<Session>> {
+            None
+        }
+
+        fn parse(&self, _: Frame<'_>, _: Timeframe) -> Option<(String, Kline)> {
             None
         }
 
