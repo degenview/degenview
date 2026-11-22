@@ -480,9 +480,13 @@ const MONDAY: i64 = 4 * DAY;
 
 /// Daily candles of ETHUSDT, 28 of them from the first Monday (four whole weeks), closing 100, 101, ...
 fn eth_days(depth: SeriesDepth) -> CannedData {
-    let days = (0..28)
+    let mut days: Vec<Kline> = (0..28)
         .map(|index| candle(MONDAY + index * DAY, DAY, 1.0, 100.0 + index as f64, 1.0))
         .collect();
+    // A source asked for the newest `n` candles gives just those.
+    if let SeriesDepth::Newest(count) = depth {
+        days.drain(..28 - count.min(28));
+    }
     CannedData::default().with("ETHUSDT", 86_400.0, depth, days)
 }
 
@@ -561,14 +565,15 @@ fn a_foreign_candle_forming_on_the_live_bar_is_read_as_it_stands() {
         .map(|(index, close)| candle(MONDAY + index as i64 * WEEK, WEEK, 1.0, *close, 1.0))
         .collect::<Vec<_>>();
     let values = |options: &str, depth: SeriesDepth| {
+        let served = match depth {
+            SeriesDepth::Newest(count) => weeks[weeks.len() - count..].to_vec(),
+            SeriesDepth::Chart => weeks.clone(),
+        };
         plotted_live(
             &format!("request.security(\"ETHUSDT\", \"1W\", close{options})"),
-            Some(Box::new(CannedData::default().with(
-                "ETHUSDT",
-                604_800.0,
-                depth,
-                weeks.clone(),
-            ))),
+            Some(Box::new(
+                CannedData::default().with("ETHUSDT", 604_800.0, depth, served),
+            )),
             &history,
             candle(MONDAY + 3 * WEEK, WEEK, 10.0, 10.0, 1.0),
         )

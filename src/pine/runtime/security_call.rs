@@ -983,13 +983,12 @@ impl Session {
             return Ok(result);
         }
         let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
-        // `calc_bars_count`: the newest candles up to the chart's last bar are the ones evaluated.
+        // `calc_bars_count`: the newest candles that open before the chart's last bar ends are the
+        // ones evaluated, the one still forming included.
         let first_candle = (request.recent_bars > 0).then(|| {
-            newest_first_index(
-                candles,
-                self.last_bar_time.unwrap_or(bar.open_time),
-                request.recent_bars,
-            )
+            let bar_ms = (self.bar_seconds * 1000.0).round() as i64;
+            let chart_end = self.last_bar_time.unwrap_or(bar.open_time) + bar_ms;
+            newest_first_index(candles, chart_end - 1, request.recent_bars)
         });
         if let Some(first) = first_candle {
             state.completed_candles = state.completed_candles.max(first);
@@ -1017,8 +1016,11 @@ impl Session {
         // The candle a request reads for this bar: the one open at the bar's start, or the first
         // the `calc_bars_count` window has left when it cuts into the bar (a finer request has
         // several candles in a bar). A bar none of whose candles is in the window has no value.
-        let read = last_index(bar.open_time, candles)
-            .map(|index| first_candle.map_or(index, |first| index.max(first)));
+        let read = {
+            let from = last_index(bar.open_time, candles).unwrap_or(0);
+            let index = first_candle.map_or(from, |first| from.max(first));
+            (index < candles.len() && candles[index].open_time < chart.end).then_some(index)
+        };
         let outside = first_candle.is_some_and(|first| {
             last_index(chart.end - 1, candles).is_none_or(|newest| newest < first)
         });
