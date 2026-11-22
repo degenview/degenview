@@ -310,45 +310,72 @@ impl SecurityDataProvider for AnyDepth {
 }
 
 #[test]
-fn a_finer_timeframe_honours_calc_bars_count_in_chart_bars() {
-    // Two one minute chart bars with four 15 second intrabars each.
-    let chart: Vec<Kline> = (0..2)
-        .map(|index| candle(index * MINUTE, MINUTE, 10.0, 10.0, 1.0))
+fn a_finer_timeframe_counts_candles_of_that_timeframe_the_forming_one_included() {
+    // 4 hour chart bars at 00:00, 04:00 and 08:00, the last one still forming with a single hourly
+    // candle (08:00) so far: TradingView, `"60"` with `calc_bars_count = 8` on a live 4h chart at
+    // 08:xx, gave values to 3 chart bars, the 8 hours back.
+    let chart: Vec<Kline> = (0..3)
+        .map(|index| candle(index * 4 * HOUR, 4 * HOUR, 10.0, 10.0, 1.0))
         .collect();
-    let intrabars: Vec<Kline> = (0..8)
-        .map(|index| candle(index * 15_000, 15_000, 1.0, 1.0 + index as f64, 1.0))
+    let hourly: Vec<Kline> = (0..=8)
+        .map(|index| candle(index * HOUR, HOUR, 1.0, 1.0 + index as f64, 1.0))
         .collect();
     let read = |options: &str| {
         let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let provider = AnyDepth {
-            candles: intrabars.clone(),
+            candles: hourly.clone(),
             asked: asked.clone(),
         };
         let source = format!(
-            "//@version=6\nindicator(\"T\")\nplot(request.security(syminfo.tickerid, \"15S\", close{options}), \"x\")"
+            "//@version=6\nindicator(\"T\")\nplot(request.security(syminfo.tickerid, \"60\", close, lookahead = barmerge.lookahead_on{options}), \"x\")"
         );
         let mut session = session_with(&source, Some(Box::new(provider)));
         session.evaluate(&chart).expect("script runs");
         let depths = asked.lock().unwrap().clone();
         (plot_values(&session, "x"), depths)
     };
+    // The first intrabar of each chart bar (`lookahead_on`): hours 0, 4 and 8 have closes 1, 5, 9.
     let (all, depth) = read("");
-    assert_eq!(
-        all,
-        [Some(4.0), Some(8.0)],
-        "the last intrabar of each chart bar"
-    );
+    assert_eq!(all, [Some(1.0), Some(5.0), Some(9.0)]);
     assert_eq!(depth, [SeriesDepth::Chart]);
-    let (newest, depth) = read(", calc_bars_count = 1");
-    assert_eq!(
-        newest,
-        [None, Some(8.0)],
-        "only the newest chart bar has intrabars"
-    );
+    // The 8 newest hourly candles are 01:00-08:00: the first chart bar starts at 01:00.
+    let (eight, depth) = read(", calc_bars_count = 8");
+    assert_eq!(eight, [Some(2.0), Some(5.0), Some(9.0)]);
     assert_eq!(
         depth,
-        [SeriesDepth::Newest(4)],
-        "four 15 second candles per chart bar"
+        [SeriesDepth::Newest(8)],
+        "candles of the requested timeframe"
     );
-    assert_eq!(read(", calc_bars_count = 2").0, all);
+    // Two: 07:00 and 08:00, so the first chart bar has none.
+    assert_eq!(
+        read(", calc_bars_count = 2").0,
+        [None, Some(8.0), Some(9.0)]
+    );
+    assert_eq!(read(", calc_bars_count = 30").0, all);
+}
+
+#[test]
+fn the_candle_forming_at_the_charts_end_is_the_newest_of_the_count() {
+    // Sixty hourly bars: two whole days and half of the third, which is the one still forming.
+    let chart = hourly(60);
+    let read = |count: usize| {
+        plotted(
+            &format!(
+                "request.security(syminfo.tickerid, \"1D\", ta.cum(1), lookahead = barmerge.lookahead_on, calc_bars_count = {count})"
+            ),
+            &chart,
+            CannedData::default(),
+        )
+    };
+    let one = read(1);
+    assert_eq!(one.iter().flatten().count(), 12, "only today's 12 bars");
+    assert_eq!(one[47], None);
+    assert_eq!(one[48], Some(1.0));
+    let three = read(3);
+    assert_eq!(three.iter().flatten().count(), 60);
+    assert_eq!(three[59], Some(3.0), "today and the two days before it");
+    let two = read(2);
+    assert_eq!(two[23], None);
+    assert_eq!(two[24], Some(1.0));
+    assert_eq!(two[59], Some(2.0));
 }

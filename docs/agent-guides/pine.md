@@ -279,11 +279,17 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   candles the source gave (`newest_first_index`, another symbol) or the start of the n-th newest
   bucket counted over the chart's bar times (`Session::bar_opens`, `window_start`; a bounded scan, not
   a calendar walk); older chart bars read `na`, and no pre-chart warm-up is fed in. A request nested
-  in another has no window. For a finer timeframe (`request.security` and `security_lower_tf` alike)
-  the count is in chart bars, as `security_lower_tf` always read it, and becomes that many
-  chart bars' worth of intrabars in the key; older chart bars get no intrabars. Open question, not
-  measured on TradingView: the unit for a finer request, and whether the forming candle is one of the
-  n. A chart that opens inside a candle reads that first candle whole from the provider
+  in another has no window. The unit is the same everywhere, candles of the timeframe the request
+  asks for, and the candle still forming at the chart's last bar is the newest of them
+  (TradingView, probes D and E: daily with `n = 1` gives only today's chart bars; `"60"` with
+  `n = 8` on a live 4h chart at 08:xx gave values to 3 chart bars, the 8 hours back). For a finer
+  timeframe (`request.security` and `security_lower_tf` alike) the window starts at the n-th newest
+  finer candle that opens before the chart's last bar ends (`newest_first_index`): earlier chart
+  bars get no intrabars (`na`, or an empty array), a chart bar the window cuts gets the intrabars
+  inside it, and the expression never runs on the older ones. On the chart's own timeframe the count
+  is of chart bars. **Known divergence:** on TradingView several requests on one timeframe in a
+  script share one window and the largest `calc_bars_count` wins for all of them (daily with 1, 2
+  and 3 in one script all see 3 days); here each request is windowed by its own count. A chart that opens inside a candle reads that first candle whole from the provider
   (`SecuritySite::first_candle`, set by `warm_up`) when it completes, and in `ahead_value` only
   when the run has the candle's last bar. The own-symbol warm-up (about 300 candles before the
   chart, `host::pine::series`) stays, a known divergence from TradingView, whose request has no
