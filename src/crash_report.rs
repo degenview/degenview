@@ -110,6 +110,8 @@ pub fn confirm_first_frame(ctx: &egui::Context) {
                 *probe = Probe::Done;
                 drop(probe);
                 note("first frame presented");
+                // The renderer this start chose works, so the next start keeps it.
+                crate::graphics::confirm_started();
             } else {
                 // The reply is read back a frame or more later; an idle window would not ask for one.
                 ctx.request_repaint_after(std::time::Duration::from_millis(100));

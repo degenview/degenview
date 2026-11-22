@@ -14,6 +14,7 @@ inventory.
 | `native_bridge.rs` | AppKit menus, window behavior, cursor, Keychain/accessibility boundaries |
 | `host/update/mod.rs` | Update checks, install progress, and restart state; `review` holds which window shows the update review sheet |
 | `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
+| `graphics/` | Which wgpu backends the renderer starts with, per platform, and the fallback to the next one after a start that never drew a frame (`graphics.json`); see [Releases and updates](../agent-guides/releases-updates.md#graphics-backend). A leaf: it imports only `paths` and `build_info` |
 | `format.rs`, `platform.rs`, `lock.rs`, `paths.rs`, `build_info.rs`, `clock.rs` | Leaf helpers every layer imports: number/price/date text and plurals, per-platform wording, locks that survive a poisoning panic, the data and cache folders, the build's version and commit, and the wall clock in milliseconds (`clock::now_ms`, the one copy). `layout_tests.rs` keeps them free of the app's other modules |
 
 Feature hosts in `host/` (one directory per domain, see `host/` layout below) bridge pure engines,

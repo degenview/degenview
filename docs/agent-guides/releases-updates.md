@@ -442,6 +442,31 @@ path and window loop, not a real driver (an old Intel driver, a VM, an overlay t
 Ask a reporter for both logs, the Windows version and whether SmartScreen appeared; try
 `set WGPU_BACKEND=gl` or `dx12` from `cmd` to separate a backend problem.
 
+### Graphics backend
+
+`src/graphics/` decides which wgpu backends the renderer may probe; the app no longer takes
+egui-wgpu's default (Vulkan, DX12 and GL together). A driver or injected layer that faults while the
+instance probes Vulkan kills the process with no panic, log line or window (rc.33 on an Intel UHD
+machine: `startup.log` ended at "creating the window and graphics", double-click did nothing, `gl` or
+`dx12` from `cmd` worked), and every launch repeated it.
+
+- `graphics::LADDER` (`ladder.rs`) lists the rungs per platform, first is the default: Windows
+  `dx12` → `gl` → `vulkan`; macOS `metal`; elsewhere `vulkan+gl` → `gl` → `vulkan`.
+- `graphics::begin` runs before `eframe::run_native`, writes `graphics.json` in the data directory with
+  the rung it is trying, and logs `graphics backends: …` to `startup.log`. `confirm_started` clears
+  that mark when `crash_report` logs "first frame presented". A start that leaves the mark behind never
+  drew a frame (a native crash, a hang, or a start that returned an error), so the next start skips
+  that rung, and says so in `startup.log`. A skipped rung stays skipped for that build only: an update
+  tries the first rung again. When every rung has failed the list starts over.
+- `WGPU_BACKEND` still wins and bypasses all of it (nothing is read or written), so a reporter can try
+  each backend by hand. Deleting `graphics.json` resets the memory.
+- A user who kills the app in the second before its first frame draws also moves it down one rung once.
+  That rung works, so nothing is lost but the preferred backend.
+
+Ask a reporter whose app does not open for `startup.log` and `graphics.json`: the `failed` list says
+which backends did not start. Not verified on a real Windows driver; the unit tests cover the policy
+and `smoke-windows` covers the DX12 start on WARP.
+
 ### Windows installer
 
 `DegenView-<tag>-windows-x64-setup.exe` / `-windows-arm64-setup.exe` via

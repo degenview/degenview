@@ -5,6 +5,7 @@ mod build_info;
 mod clock;
 mod crash_report;
 mod format;
+mod graphics;
 mod host;
 #[cfg(test)]
 mod layout_tests;
@@ -61,7 +62,11 @@ pub fn run_gui_with(
     ))?);
     #[cfg(not(target_os = "macos"))]
     let icon = ui::window::chrome::app_icon();
+    // Before the renderer starts: a driver that crashes while it is probed leaves no other trace.
+    let graphics = graphics::begin();
+    crash_report::note(graphics.note());
     let options = eframe::NativeOptions {
+        wgpu_options: graphics.configure(eframe::NativeOptions::default().wgpu_options),
         viewport: egui::ViewportBuilder::default()
             .with_title("DegenView")
             .with_app_id(ui::window::chrome::APP_ID)
