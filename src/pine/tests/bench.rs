@@ -447,7 +447,7 @@ plot(htf)
 
 /// `SECURITY` reading the higher-timeframe bar before it closes, the way TradingView's
 /// `lookahead_on` does.
-pub(crate) const SECURITY_LOOKAHEAD: &str = "//@version=6
+pub(crate) const SECURITY_READ_AHEAD: &str = "//@version=6
 indicator(\"Security lookahead\")
 htf = request.security(syminfo.tickerid, \"5\", ta.sma(close, 10), lookahead = barmerge.lookahead_on)
 plot(htf)
@@ -829,8 +829,8 @@ fn workloads() -> Vec<Workload> {
     {
         let data = minute.clone();
         add(
-            "security_lookahead",
-            Box::new(move || evaluate(SECURITY_LOOKAHEAD, &data, true)),
+            "security_read_ahead",
+            Box::new(move || evaluate(SECURITY_READ_AHEAD, &data, true)),
         );
     }
     {
