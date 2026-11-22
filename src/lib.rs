@@ -85,7 +85,7 @@ pub fn run_gui_with(
     };
 
     crash_report::note("creating the window and graphics");
-    Ok(eframe::run_native(
+    eframe::run_native(
         "DegenView",
         options,
         Box::new(move |creation| {
@@ -101,7 +101,11 @@ pub fn run_gui_with(
                 sync.clone(),
             )))
         }),
-    )?)
+    )?;
+    // A start that runs and quits cleanly has a working renderer, even if it was closed before the
+    // first frame could be confirmed.
+    graphics::confirm_started();
+    Ok(())
 }
 
 pub fn run_alert_agent() -> Result<(), Box<dyn std::error::Error>> {

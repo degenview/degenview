@@ -71,11 +71,20 @@ pub fn note(stage: &str) {
 /// Tags the screenshot the first frame asks for, so no other screenshot is taken for it.
 struct FrameProbe;
 
+/// A window that keeps drawing this long after its first frame has a working renderer, whether or
+/// not the screenshot reply ever comes (a virtual GPU can leave it unanswered).
+const STILL_DRAWING: std::time::Duration = std::time::Duration::from_secs(10);
+
 enum Probe {
     /// No window has drawn yet.
     Idle,
-    /// The window of this viewport drew and asked for a screenshot of its frame.
-    Asked(egui::ViewportId),
+    /// The window of this viewport drew at `since` and asked for a screenshot of its frame.
+    /// `confirmed` is set once the graphics start was told it works.
+    Asked {
+        viewport: egui::ViewportId,
+        since: std::time::Instant,
+        confirmed: bool,
+    },
     Done,
 }
 
@@ -83,12 +92,20 @@ enum Probe {
 /// asks for a screenshot of that frame. The reply only comes once the frame was painted and the GPU
 /// finished with it, so "first frame presented" in `startup.log` means a window really rendered; a
 /// driver that hangs in rendering or presenting stops the log at "first tab window drawn".
+///
+/// The graphics start (`graphics::confirm_started`) is confirmed by the reply, or when the window is
+/// still drawing `STILL_DRAWING` later, whichever comes first. A hang in presenting stops the frames,
+/// so it confirms nothing.
 pub fn confirm_first_frame(ctx: &egui::Context) {
     static PROBE: Mutex<Probe> = Mutex::new(Probe::Idle);
     let Ok(mut probe) = PROBE.lock() else { return };
-    match *probe {
+    match &mut *probe {
         Probe::Idle => {
-            *probe = Probe::Asked(ctx.viewport_id());
+            *probe = Probe::Asked {
+                viewport: ctx.viewport_id(),
+                since: std::time::Instant::now(),
+                confirmed: false,
+            };
             drop(probe);
             note("first tab window drawn");
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
@@ -96,7 +113,11 @@ pub fn confirm_first_frame(ctx: &egui::Context) {
             )));
             ctx.request_repaint();
         }
-        Probe::Asked(viewport) if viewport == ctx.viewport_id() => {
+        Probe::Asked {
+            viewport,
+            since,
+            confirmed,
+        } if *viewport == ctx.viewport_id() => {
             let answered = ctx.input(|input| {
                 input.events.iter().any(|event| match event {
                     egui::Event::Screenshot { user_data, .. } => user_data
@@ -106,18 +127,26 @@ pub fn confirm_first_frame(ctx: &egui::Context) {
                     _ => false,
                 })
             });
+            let confirm_now = !*confirmed && (answered || since.elapsed() >= STILL_DRAWING);
+            if confirm_now {
+                *confirmed = true;
+            }
             if answered {
                 *probe = Probe::Done;
-                drop(probe);
-                note("first frame presented");
-                // The renderer this start chose works, so the next start keeps it.
-                crate::graphics::confirm_started();
             } else {
                 // The reply is read back a frame or more later; an idle window would not ask for one.
                 ctx.request_repaint_after(std::time::Duration::from_millis(100));
             }
+            drop(probe);
+            if answered {
+                note("first frame presented");
+            }
+            if confirm_now {
+                // The renderer this start chose works, so the next start keeps it.
+                crate::graphics::confirm_started();
+            }
         }
-        Probe::Asked(_) | Probe::Done => {}
+        Probe::Asked { .. } | Probe::Done => {}
     }
 }
 

@@ -454,14 +454,16 @@ machine: `startup.log` ended at "creating the window and graphics", double-click
   `dx12` → `gl` → `vulkan`; macOS `metal`; elsewhere `vulkan+gl` → `gl` → `vulkan`.
 - `graphics::begin` runs before `eframe::run_native`, writes `graphics.json` in the data directory with
   the rung it is trying, and logs `graphics backends: …` to `startup.log`. `confirm_started` clears
-  that mark when `crash_report` logs "first frame presented". A start that leaves the mark behind never
-  drew a frame (a native crash, a hang, or a start that returned an error), so the next start skips
-  that rung, and says so in `startup.log`. A skipped rung stays skipped for that build only: an update
+  that mark on the first of: the screenshot reply that logs "first frame presented", the first window
+  still drawing 10 s later (`crash_report::STILL_DRAWING`; a virtual GPU can leave the screenshot
+  unanswered, as the Fedora VM's Venus GPU does), or a clean exit. A start that leaves the mark behind
+  never got that far (a native crash, a hang, a kill, or a start that returned an error), so the next
+  start skips that rung, and says so in `startup.log`. A skipped rung stays skipped for that build only: an update
   tries the first rung again. When every rung has failed the list starts over.
 - `WGPU_BACKEND` still wins and bypasses all of it (nothing is read or written), so a reporter can try
   each backend by hand. Deleting `graphics.json` resets the memory.
-- A user who kills the app in the second before its first frame draws also moves it down one rung once.
-  That rung works, so nothing is lost but the preferred backend.
+- A user who kills the app (not a normal quit) in the 10 s after it opens also moves it down one rung
+  once. That rung works, so nothing is lost but the preferred backend.
 
 Ask a reporter whose app does not open for `startup.log` and `graphics.json`: the `failed` list says
 which backends did not start. Not verified on a real Windows driver; the unit tests cover the policy
