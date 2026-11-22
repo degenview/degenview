@@ -56,7 +56,8 @@ pub struct SecuritySite {
     /// Another symbol's series: how many of its candles have been completed and evaluated.
     pub completed_candles: usize,
     /// Where the newest `calc_bars_count` buckets of the requested timeframe begin, for a request
-    /// that limits them: earlier chart bars read `na`. Found on the first call.
+    /// that limits them: earlier chart bars read `na`. Found on the first call, counting the live
+    /// bar that follows the history among the chart's bars.
     pub window_start: Option<i64>,
     /// The data source's whole candle of the bucket the chart's first bar opens inside, when the
     /// source has it: the chart's bars hold only the rest of it.
