@@ -260,3 +260,10 @@ fn what_the_bundled_font_lacks_falls_back_to_the_rest_of_the_chain() {
     .textures_delta
     .clear();
 }
+
+/// At 1x egui's grid-fitting makes Inter a pixel taller (and heavier) than the font draws, which
+/// reads as stretched text next to a 2x screen.
+#[test]
+fn the_ui_font_is_not_hinted() {
+    assert_eq!(theme::bundled_ui_font().tweak.hinting, Some(false));
+}
