@@ -59,7 +59,7 @@ pub fn command_json(command: &TransportCommand) -> String {
         TransportCommand::Start { zone, engine_state } => json!({
             "cmd": "start",
             "zone": zone,
-            "container": crate::sync::engine::account::CONTAINER,
+            "container": crate::build_info::ICLOUD_CONTAINER,
             "engine_state": optional_b64(engine_state),
         }),
         TransportCommand::AccountCheck => json!({"cmd": "account_check"}),
@@ -334,7 +334,7 @@ impl NativeTransport {
             ));
         }
         let sink = Box::into_raw(Box::new(sink));
-        let config = json!({"container": crate::sync::engine::account::CONTAINER}).to_string();
+        let config = json!({"container": crate::build_info::ICLOUD_CONTAINER}).to_string();
         // SAFETY: `config` is valid for the call; `sink` stays allocated until `Drop`.
         let handle = unsafe { (api.create)(config.as_ptr(), config.len(), on_event, sink.cast()) };
         if handle.is_null() {

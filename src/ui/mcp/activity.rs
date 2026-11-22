@@ -5,6 +5,7 @@
 //! the store: the only thing it asks of the host is [`McpAction::ClearActivity`], and only after
 //! the sheet's own "Clear the log?" question has been answered.
 
+use crate::format::plural;
 use crate::model::mcp::activity::{
     ACTIVITY_PAGE_SIZE, McpActivityClient, McpActivityFilter, McpActivityRange, McpActivityStatus,
     Paging, clients_in,
@@ -212,10 +213,6 @@ fn row_title(entry: &McpAuditEntry) -> String {
         McpAuditKind::Cleared => "Activity log cleared".to_owned(),
         McpAuditKind::Gap => "Some activity was not recorded".to_owned(),
     }
-}
-
-fn plural(count: u32, one: &str, many: &str) -> String {
-    format!("{count} {}", if count == 1 { one } else { many })
 }
 
 /// The small print under a headline: who, what it named, how it ended and how long it took.

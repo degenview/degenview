@@ -11,8 +11,9 @@ use super::apply::{ApplyCtx, ApplyReport, apply_batch, remote_from_inbox};
 use super::core::RemoteBatch;
 use crate::store::Store;
 use crate::sync::engine::SyncError;
+use crate::sync::engine::scripts::scan_scripts;
 use crate::sync::record::policy::EntityKind;
-use crate::sync::record::scripts::{ScriptCache, ScriptSink, scan_scripts};
+use crate::sync::record::scripts::{ScriptCache, ScriptSink};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 

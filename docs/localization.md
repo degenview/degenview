@@ -103,7 +103,7 @@ The system's languages come from `service::system::language`, which asks `sys-lo
 
 One gettext file per language, `assets/locales/<tag>.po`, compiled in (`LANGUAGES`).
 `assets/locales/messages.pot` is the template: every message of the source, untranslated, with where it
-is written. A test fails when it is out of date; rewrite it with
+is written (by file, not line, so an unrelated edit does not change it). A test fails when it is out of date; rewrite it with
 
 ```bash
 UPDATE_POT=1 cargo test --lib i18n::tests::the_template_is_the_messages_in_the_source

@@ -192,7 +192,6 @@ fn plotarrow() -> HashMap<&'static str, &'static str> {
 
 fn hline() -> HashMap<&'static str, &'static str> {
     HashMap::from([
-        ("linestyle", "The line is always solid."),
         (
             "linewidth",
             "The line is always drawn at the default width.",

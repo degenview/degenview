@@ -21,6 +21,15 @@ pub const FIELD_HEIGHT: f32 = 24.0;
 pub const WIDE: f32 = 520.0;
 /// The space between two columns.
 pub const GAP: f32 = 12.0;
+/// The space between two sections of a tab, a caption and its card being one.
+pub const SECTION: f32 = 16.0;
+/// The padding inside a [`panel`], on top of the card's own.
+const PANEL_PADDING: Margin = Margin {
+    left: 14,
+    right: 14,
+    top: 11,
+    bottom: 11,
+};
 
 /// Whether the room left is wide enough for columns.
 pub fn wide(ui: &Ui) -> bool {
@@ -140,14 +149,47 @@ pub fn card<R>(ui: &mut Ui, rows: impl FnOnce(&mut Ui) -> R) -> R {
         .inner
 }
 
+/// A card of free content (figures, a chart) rather than rows: the same card, padded.
+pub fn panel<R>(ui: &mut Ui, content: impl FnOnce(&mut Ui) -> R) -> R {
+    card(ui, |ui| {
+        egui::Frame::new()
+            .inner_margin(PANEL_PADDING)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                content(ui)
+            })
+            .inner
+    })
+}
+
 /// The line between two rows of a card.
 pub fn hairline(ui: &mut Ui) {
+    line(ui, 12.0);
+}
+
+/// The line between two parts of a [`panel`], across its padded width.
+pub fn rule(ui: &mut Ui) {
+    line(ui, 0.0);
+}
+
+fn line(ui: &mut Ui, inset: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
     ui.painter().hline(
-        rect.left() + 12.0..=rect.right() - 12.0,
+        rect.left() + inset..=rect.right() - inset,
         rect.center().y,
         Stroke::new(1.0, theme::ink(10)),
     );
+}
+
+/// A quiet line under a list, such as how much of it is shown.
+pub fn footnote(ui: &mut Ui, text: &str) {
+    ui.add_space(6.0);
+    ui.label(kit::text(
+        text,
+        kit::size::CAPTION,
+        kit::REGULAR,
+        theme::text_tertiary(),
+    ));
 }
 
 /// A small capsule of text in `tint`, like the counts in the tab strip.

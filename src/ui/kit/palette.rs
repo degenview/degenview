@@ -13,10 +13,6 @@ pub const RED: Color32 = Color32::from_rgb(255, 69, 58);
 pub fn window() -> Color32 {
     theme::chrome()
 }
-/// `controlBackgroundColor`: the raised plate of a selected segment.
-pub fn control() -> Color32 {
-    theme::editor_background()
-}
 /// `.separator` at the half opacity cards use.
 pub fn hairline() -> Color32 {
     theme::ink(20)

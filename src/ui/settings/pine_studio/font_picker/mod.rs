@@ -131,34 +131,36 @@ pub fn show(
     include_system: bool,
 ) -> Option<Option<String>> {
     let label = current.unwrap_or(SYSTEM_LABEL);
-    let (rect, response) = ui.allocate_exact_size(vec2(BUTTON_WIDTH, 24.0), Sense::click());
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(BUTTON_WIDTH, kit::outline::HEIGHT), Sense::click());
     let response = crate::ui::accessibility::label(response, format!("Font: {label}"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
-    let painter = ui.painter();
-    painter.rect_filled(rect, 6.0, theme::control_fill());
-    painter.rect_stroke(
-        rect,
-        6.0,
-        Stroke::new(
-            1.0,
-            if response.has_focus() {
-                theme::text_secondary()
-            } else {
-                theme::separator()
-            },
-        ),
-        StrokeKind::Inside,
-    );
+    let wash = if state.was_open || response.is_pointer_button_down_on() {
+        kit::outline::Wash::Open
+    } else if response.hovered() {
+        kit::outline::Wash::Hover
+    } else {
+        kit::outline::Wash::Rest
+    };
+    kit::outline::paint_track(ui.painter(), rect, kit::outline::RADIUS, wash);
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            rect,
+            kit::outline::RADIUS,
+            Stroke::new(1.0, theme::text_secondary()),
+            StrokeKind::Inside,
+        );
+    }
     let text = kit::galley(
         ui,
         label,
         kit::size::BODY,
         kit::REGULAR,
         theme::text_primary(),
-        rect.width() - 34.0,
+        rect.width() - 30.0,
     );
     ui.painter().galley(
-        egui::pos2(rect.left() + 9.0, rect.center().y - text.size().y / 2.0),
+        egui::pos2(rect.left() + 12.0, rect.center().y - text.size().y / 2.0),
         text,
         egui::Color32::PLACEHOLDER,
     );
@@ -166,7 +168,7 @@ pub fn show(
         ui.painter(),
         egui::Rect::from_center_size(
             egui::pos2(rect.right() - 12.0, rect.center().y),
-            vec2(9.0, 12.0),
+            vec2(10.0, 10.0),
         ),
         Icon::ChevronUpDown,
         theme::text_secondary(),

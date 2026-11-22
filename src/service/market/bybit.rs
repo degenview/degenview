@@ -11,6 +11,7 @@ use super::search_rank::normalize;
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
+use crate::service::net::ws::Keepalive;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -21,6 +22,13 @@ pub(crate) const BASE_URL: &str = "https://api.bybit.com/v5/market";
 pub struct Bybit;
 
 pub const BYBIT: Bybit = Bybit;
+
+/// Bybit's heartbeat on every public socket: `{"op":"ping"}`, answered by a reply that starts
+/// `{"success":true,"ret_msg":"pong"`.
+pub const KEEPALIVE: Keepalive = Keepalive::Text {
+    ping: r#"{"op":"ping"}"#,
+    pong: r#"{"success":true,"ret_msg":"pong""#,
+};
 
 /// 1,000 rows a request and 60 pages (a 22-minute chart of 500 candles is 12). Bybit allows 600
 /// requests per 5 seconds per IP, far more than a chart asks for, so the pages are not spaced.
@@ -64,7 +72,7 @@ impl MarketSource for Bybit {
         let requested = PAGING.requested(plan, limit as usize);
         if requested > PAGING.page {
             // More base candles than one request holds: page back from now.
-            let end_ms = crate::service::now_ms() + 1;
+            let end_ms = crate::clock::now_ms() + 1;
             return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
         }
         let rows = fetch_page(&symbol_id(symbol), plan.base(), requested, None)?;

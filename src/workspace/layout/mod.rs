@@ -8,7 +8,8 @@ use super::drawing::merge_remote_markets;
 use super::layout::autosave::AutosaveState;
 
 use super::{ChartWorkspace, PersistedChart, PersistedWorkspace};
-use crate::model::watchlist::{new_id, now_ms};
+use crate::clock::now_ms;
+use crate::model::watchlist::new_id;
 use crate::model::{ChartColumn, ChartConfig, LayoutSnapshot, SavedView};
 use crate::ui::workspace::layout_prompts::{self, NameOutcome, NamePrompt, UnsavedChoice};
 use eframe::egui;

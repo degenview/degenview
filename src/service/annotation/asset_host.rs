@@ -112,8 +112,7 @@ impl AssetHost {
             .flatten();
         let image = match found {
             None => AssetImage::Missing,
-            Some(asset) => asset
-                .verified_bytes()
+            Some(asset) => ingest::verified_bytes(&asset)
                 .and_then(|bytes| ingest::pixels(&bytes))
                 .map_or(AssetImage::Corrupt, |pixels| {
                     AssetImage::Ready(Arc::new(pixels))
@@ -169,8 +168,8 @@ pub fn lookup(ctx: &egui::Context, id: &str) -> AssetImage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::annotation::asset::StoredAsset;
     use crate::store::Store;
-    use crate::store::asset_store::StoredAsset;
 
     fn shared() -> SharedStore {
         Arc::new(Mutex::new(Store::open_in_memory().unwrap()))
@@ -188,7 +187,7 @@ mod tests {
             image::ExtendedColorType::Rgba8,
         )
         .unwrap();
-        StoredAsset::from_ingested(&ingest::ingest(&png).unwrap())
+        ingest::ingest(&png).unwrap().stored()
     }
 
     fn wait(host: &Arc<AssetHost>, ctx: &egui::Context, id: &str) -> AssetImage {

@@ -3,12 +3,14 @@
 //! counting undo steps) played by a small rig.
 
 use super::*;
-use crate::model::{DrawingStyle, Kline, Visibility, VisibilityRow};
+use crate::model::{CursorMode, DrawingStyle, Kline, Visibility, VisibilityRow};
 use eframe::egui::{Event, Key, Modifiers, RawInput, Sense, pos2, vec2};
 use menu::Action;
 
 mod card_tests;
+mod erase_tests;
 mod image_tests;
+mod inert_tests;
 mod note_tests;
 mod table_tests;
 
@@ -66,6 +68,25 @@ const POINTS: [Pos2; 7] = [
 ];
 
 // MARK: Projection and editing
+
+#[test]
+fn an_armed_tool_shows_the_crosshair_over_the_plot_but_not_under_a_floating_panel() {
+    let mut rig = Rig::with_tool(Tool::TrendLine);
+    let (open, covered) = (pos2(700.0, 200.0), pos2(120.0, 200.0));
+    rig.move_to(open);
+    rig.settle();
+    assert_eq!(rig.icon, egui::CursorIcon::Crosshair);
+
+    rig.cover = Some(Rect::from_min_size(pos2(60.0, 100.0), vec2(200.0, 200.0)));
+    rig.settle();
+    rig.move_to(covered);
+    rig.settle();
+    assert_ne!(rig.icon, egui::CursorIcon::Crosshair, "the panel owns it");
+
+    rig.move_to(open);
+    rig.settle();
+    assert_eq!(rig.icon, egui::CursorIcon::Crosshair, "beside the panel");
+}
 
 #[test]
 fn anchors_round_trip_through_the_screen() {
@@ -302,6 +323,8 @@ struct Rig {
     style_copied: Option<(Tool, DrawingStyle)>,
     background_click: Option<Pos2>,
     keys_blocked: bool,
+    /// The cursor the pointer rests on.
+    cursor: CursorMode,
     reveal_all: bool,
     /// What is waiting to be placed by a click (a picture).
     pending: Option<crate::model::annotation::image_content::Content>,
@@ -309,6 +332,10 @@ struct Rig {
     place_now: bool,
     /// A picture to put in place of a drawing's.
     replace: Option<(u64, crate::model::annotation::image_content::ImageContent)>,
+    /// The mouse cursor icon the last frame asked for.
+    icon: egui::CursorIcon,
+    /// A floating panel over the chart, like a tool menu.
+    cover: Option<Rect>,
 }
 
 /// A picture to place, as the Image tool would have it once one is chosen.
@@ -360,10 +387,13 @@ impl Rig {
             style_copied: None,
             background_click: None,
             keys_blocked: false,
+            cursor: CursorMode::Cross,
             reveal_all: false,
             pending: None,
             place_now: false,
             replace: None,
+            icon: egui::CursorIcon::Default,
+            cover: None,
         };
         // egui hit-tests against the previous frame's widgets.
         rig.settle();
@@ -404,9 +434,16 @@ impl Rig {
             .with_style_clipboard(self.style_clipboard)
             .with_pending_content(self.pending.clone())
             .with_picture_work(std::mem::take(&mut self.place_now), self.replace.take())
-            .with_keys_blocked(self.keys_blocked);
-        let (layer, data, scale) = (&mut self.layer, &self.data, &self.scale);
+            .with_keys_blocked(self.keys_blocked)
+            .with_cursor(self.cursor);
+        let (layer, data, scale, cover) = (&mut self.layer, &self.data, &self.scale, self.cover);
         let mut output = self.ctx.run_ui(input, |ui| {
+            if let Some(cover) = cover {
+                egui::Area::new(egui::Id::new("cover"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(cover.min)
+                    .show(ui.ctx(), |ui| ui.allocate_rect(cover, Sense::click()));
+            }
             let response = ui.allocate_rect(PLOT, Sense::click_and_drag());
             let proj = projection(data, scale);
             layer.update(ui, &response, &proj, &mut frame);
@@ -414,6 +451,7 @@ impl Rig {
             layer.overlay(ui, &proj, &mut frame);
         });
         output.textures_delta.clear();
+        self.icon = output.platform_output.cursor_icon;
         self.next_id = frame.next_id;
         if let Some(select) = frame.select.take() {
             self.selected = select;
@@ -436,6 +474,26 @@ impl Rig {
         let commands = std::mem::take(&mut frame.commands);
         drop(frame);
         self.apply(commands);
+    }
+
+    /// Frames in which the card is not drawn (another tab is showing): the window keeps running
+    /// and delivers `events`, but the layer is not updated.
+    fn skip_frames(&mut self, events: Vec<Event>) {
+        for (index, events) in std::iter::once(events)
+            .chain(std::iter::repeat_n(Vec::new(), 2))
+            .enumerate()
+        {
+            self.time += 0.1;
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 400.0))),
+                time: Some(self.time),
+                focused: self.focused,
+                events: if index == 0 { events } else { Vec::new() },
+                ..Default::default()
+            };
+            let mut output = self.ctx.run_ui(input, |_ui| {});
+            output.textures_delta.clear();
+        }
     }
 
     /// What `ChartWorkspace::apply_drawing_commands` does, minus the undo stack's contents.

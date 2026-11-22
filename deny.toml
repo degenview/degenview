@@ -37,7 +37,9 @@ ignore = [
 
 [sources]
 # Crates come from crates.io and nowhere else: no git dependencies, no other registries, no
-# forks. A dependency from another source can change under the same version number.
+# forks. A dependency from another source can change under the same version number. Our own crates
+# (degenview-brokers, degenview-journal, degenview-eframe) are published to crates.io and pinned
+# exactly; a `[patch]` or a vendored copy would bypass this check.
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]

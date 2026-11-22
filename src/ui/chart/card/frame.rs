@@ -201,12 +201,13 @@ impl ChartCard {
         };
         let pane_specs: Vec<PaneSpec> = pane_outputs
             .iter()
-            .map(|(id, _)| PaneSpec {
-                id: *id,
-                collapsed: self
+            .map(|(id, _)| {
+                let pane = self
                     .instances
                     .iter()
-                    .any(|instance| instance.id == *id && instance.pane_collapsed),
+                    .find(|instance| instance.id == *id)
+                    .map(|instance| instance.pane);
+                PaneSpec::of(*id, pane.unwrap_or_default())
             })
             .collect();
         let maximized = self
@@ -396,7 +397,10 @@ impl ChartCard {
             let mut subtitle = self
                 .timeframe
                 .map_or_else(String::new, |timeframe| format!("{} · ", timeframe.label()));
-            subtitle.push_str(data.source.display_name());
+            subtitle.push_str(self.timeframe.map_or_else(
+                || data.source.display_name(),
+                |timeframe| data.source.chart_feed_label(timeframe),
+            ));
             if decor.replay_active {
                 subtitle.push_str(" · Replay");
             }
@@ -655,8 +659,19 @@ impl ChartCard {
                     shown_len: shown.len(),
                     tail,
                     overlays: (&overlay_frame, view),
+                    indicators: &series,
+                    indicator_config: &drawn_indicators,
+                    pane_pine: layout
+                        .pane_outputs
+                        .iter()
+                        .map(|(_, output)| &***output)
+                        .collect(),
                 },
             );
+        }
+
+        if let Some(crosshair) = decor.crosshair.filter(|_| main_visible) {
+            self.paint_dot(painter, plot, decor.chart_id, crosshair);
         }
 
         if main_visible {

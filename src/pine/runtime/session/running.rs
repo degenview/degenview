@@ -296,6 +296,13 @@ impl Session {
             self.capture_intrabar_objects();
         }
         if confirmed {
+            if self.keeps_series_bars {
+                self.series_bars
+                    .push(crate::pine::runtime::state::LoggedBar {
+                        bar: candle.clone(),
+                        seconds: self.bar_seconds,
+                    });
+            }
             let builtins = self.read_history_builtins(&mut context);
             self.commit_histories(candle, true, builtins);
             if replaying {

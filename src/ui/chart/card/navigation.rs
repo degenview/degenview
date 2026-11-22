@@ -107,6 +107,17 @@ pub(super) struct Navigation<'a> {
     pub response: &'a Response,
 }
 
+/// The system pointer a plot shows for a cursor mode. The arrow is the platform's own, so nothing
+/// is set for it.
+fn plot_pointer(shape: crate::model::PointerShape) -> Option<CursorIcon> {
+    use crate::model::PointerShape;
+    match shape {
+        PointerShape::Crosshair => Some(CursorIcon::Crosshair),
+        PointerShape::Arrow => None,
+        PointerShape::Hidden => Some(CursorIcon::None),
+    }
+}
+
 impl ChartCard {
     /// Applies one frame of wheel, trackpad and drag input to the viewport. Returns whether an
     /// Escape press was spent cancelling a drag, so nothing else answers it too.
@@ -316,7 +327,8 @@ impl ChartCard {
         }
     }
 
-    fn set_cursor(&self, ui: &egui::Ui, nav: &Navigation<'_>) {
+    fn set_cursor(&mut self, ui: &egui::Ui, nav: &Navigation<'_>) {
+        self.dot_shown = false;
         let icon = match &self.gesture {
             Some(active) if active.cancelled => None,
             Some(ActiveGesture {
@@ -338,16 +350,24 @@ impl ChartCard {
                 .map(|point| nav.regions.of(point))
                 .and_then(|region| match region {
                     // A drawing or its tool chose a cursor already: it keeps it.
-                    Region::Plot | Region::Pane
+                    Region::Plot
                         if ui.ctx().output(|output| output.cursor_icon) == CursorIcon::Default =>
                     {
-                        Some(CursorIcon::Crosshair)
+                        plot_pointer(self.cursor.caps().pointer)
+                    }
+                    // A pane carries no crosshair of its own, so the dot has nothing to mark.
+                    Region::Pane
+                        if ui.ctx().output(|output| output.cursor_icon) == CursorIcon::Default =>
+                    {
+                        plot_pointer(self.cursor.caps().pointer)
+                            .filter(|icon| *icon != CursorIcon::None)
                     }
                     Region::PriceAxis => Some(CursorIcon::ResizeVertical),
                     Region::TimeAxis => Some(CursorIcon::ResizeHorizontal),
                     _ => None,
                 }),
         };
+        self.dot_shown = icon == Some(CursorIcon::None);
         if let Some(icon) = icon {
             ui.ctx().set_cursor_icon(icon);
         }

@@ -175,7 +175,7 @@ fn windowed_statistics_follow_the_reference_formulas() {
          before = ta.valuewhen(bar_index % 2 == 0, close, 1)",
         5,
     );
-    close_to(&session, "alma", 103.314_326_399_761_74);
+    close_to(&session, "alma", 104.685_673_600_238_26);
     close_to(&session, "nearest", 105.0);
     close_to(&session, "linear", 104.6);
     close_to(&session, "median", 103.0);
@@ -690,6 +690,218 @@ fn a_block_can_declare_a_name_an_outer_scope_already_has() {
 }
 
 #[test]
+fn an_assignment_above_a_blocks_own_declaration_writes_the_outer_variable() {
+    // `x := 5.0` runs before the block's own `x = 9.0` hides the outer `x`, so it sticks.
+    let session = run(
+        "x = 1.0\n\
+         if bar_index >= 0\n    x := 5.0\n    x = 9.0\n\
+         y = x",
+        2,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(5.0));
+    // Two blocks down, and in a loop: each iteration's `x := x + 1` is the outer `x`'s.
+    let session = run(
+        "x = 1.0\n\
+         if bar_index >= 0\n    x := 5.0\n    if true\n        n = 2.0\n        if true\n            x = 9.0\n\
+         y = x\n\
+         z = 0.0\n\
+         for i = 0 to 2\n    z := z + 1\n    z = 100.0\n",
+        2,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(5.0));
+    assert_eq!(value(&session, "z"), RuntimeValue::Float(3.0));
+}
+
+#[test]
+fn a_declaration_in_one_branch_does_not_undo_an_assignment_in_the_other() {
+    let source = |condition: &str| {
+        format!(
+            "x = 1.0\n\
+             if {condition}\n    x := 5.0\nelse\n    x = 7.0\n\
+             y = x"
+        )
+    };
+    let session = run(&source("bar_index >= 0"), 2);
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(5.0));
+    // The `else` declares its own `x`: the outer one is untouched.
+    let session = run(&source("bar_index < 0"), 2);
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(1.0));
+    // A `switch` arm and its sibling.
+    let session = run(
+        "x = 1.0\n\
+         switch bar_index\n    0 => x := 5.0\n    => x = 7.0\n\
+         y = x",
+        1,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(5.0));
+}
+
+#[test]
+fn a_collection_assigned_above_a_blocks_own_declaration_is_the_outer_ones() {
+    // `c0 := b` hits the outer `c0`; the inner `c0 = c0` is a local that ends with the inner block.
+    // The push below goes to `b` while `close > 101` (bars 2 and 3), to `a` before.
+    let session = run(
+        "var a = array.new_float()\nvar b = array.new_float()\n\
+         if bar_index >= 0\n    c0 = a\n    if close > 101\n        c0 := b\n        c0 = c0\n    c0.push(close)\n\
+         in_a = array.size(a)\nin_b = array.size(b)",
+        3,
+    );
+    assert_eq!(value(&session, "in_a"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "in_b"), RuntimeValue::Int(2));
+    // The same through a sibling branch that declares its own `c0`.
+    let session = run(
+        "var a = array.new_float()\nvar b = array.new_float()\n\
+         c0 = a\n\
+         if close > 101\n    c0 := b\nelse\n    c0 = array.new_float()\n\
+         c0.push(close)\n\
+         in_a = array.size(a)\nin_b = array.size(b)",
+        3,
+    );
+    assert_eq!(value(&session, "in_a"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "in_b"), RuntimeValue::Int(2));
+}
+
+#[test]
+fn a_block_left_early_still_puts_the_outer_value_back() {
+    // `break` leaves the body after its declaration, `continue` before it.
+    let session = run(
+        "x = 1.0\n\
+         for i = 0 to 3\n    x := x + 1\n    if i == 1\n        continue\n    x = 50.0\n    if i == 2\n        break\n\
+         y = x",
+        2,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(4.0));
+}
+
+#[test]
+fn a_loop_local_keeps_the_value_of_its_last_iteration_in_its_history() {
+    // `sample` hides nothing: it is a name of the loop body alone, so the slot the first
+    // iteration leaves is not an outer value for the second to save and put back. On the last bar
+    // (2), `sample[1]` is the previous bar's last value, 1 * 10 + 2.
+    let session = run(
+        "f() =>\n    out = 0.0\n    for i = 0 to 2\n        sample = bar_index * 10 + i\n        out := sample[1]\n    out\n\
+         r = f()",
+        3,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(12));
+}
+
+#[test]
+fn a_loop_counter_keeps_the_value_of_its_last_iteration_in_its_history() {
+    // The counter hides nothing, so the slot the previous bar's run leaves is not an outer value
+    // to save and put back. The loop is longer on every bar (3, 5, 7); on the last bar `i[1]` is
+    // the previous bar's last counter, 5, at every iteration.
+    let session = run(
+        "f() =>\n    out = 0.0\n    for i = 0 to 3 + bar_index * 2\n        out := i[1]\n    out\n\
+         r = f()",
+        3,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(5));
+    // Also at the top level, and for the index and value of a `for ... in`.
+    let session = run(
+        "var a = array.new_float()\n\
+         if bar_index == 0\n    a.push(10.0)\n    a.push(20.0)\n\
+         a.push(bar_index)\n\
+         out = 0.0\n\
+         for i = 0 to 3 + bar_index * 2\n    out := i[1]\n\
+         pos = 0.0\n\
+         for [k, v] in a\n    pos := k[1]\n",
+        3,
+    );
+    assert_eq!(value(&session, "out"), RuntimeValue::Int(5));
+    // `a` holds 10, 20, 0, 1, 2 on the last bar: the previous bar's last index was 3.
+    assert_eq!(value(&session, "pos"), RuntimeValue::Int(3));
+}
+
+#[test]
+fn a_declaration_that_hides_an_outer_name_takes_it_after_its_initializer_ran() {
+    // The initializer runs before the block's own `x` exists: its `x := 5` is the outer one's.
+    let session = run(
+        "x = 1\n\
+         if bar_index >= 0\n    x = if bar_index >= 0\n        x := 5\n        9\n    else\n        8\n\
+         y = x",
+        2,
+    );
+    assert_eq!(value(&session, "y"), RuntimeValue::Int(5));
+}
+
+#[test]
+fn a_function_reads_the_global_its_branch_declares_again_outside_that_branch() {
+    // `level = 1.0` is a local of its `if` alone: after the branch, taken or not, and above a
+    // declaration of the function's own, `level` is the global.
+    let session = run(
+        "level = close\n\
+         skipped() =>\n    if false\n        level = 1.0\n    level\n\
+         taken() =>\n    if true\n        level = 1.0\n    level\n\
+         looped() =>\n    for i = 0 to 1\n        level = 1.0\n    level\n\
+         above() =>\n    first = level\n    level = 2.0\n    first + level\n\
+         a = skipped()\n\
+         b = taken()\n\
+         c = looped()\n\
+         d = above()",
+        3,
+    );
+    // The last bar closes at 103.
+    assert_eq!(value(&session, "a"), RuntimeValue::Float(103.0));
+    assert_eq!(value(&session, "b"), RuntimeValue::Float(103.0));
+    assert_eq!(value(&session, "c"), RuntimeValue::Float(103.0));
+    assert_eq!(value(&session, "d"), RuntimeValue::Float(105.0));
+    assert_eq!(value(&session, "level"), RuntimeValue::Float(103.0));
+}
+
+#[test]
+fn a_function_reads_the_global_not_its_callers_local_of_that_name() {
+    // Functions see their own names and the script's, never their caller's: Pine scopes are lexical.
+    let session = run(
+        "len = 1\n\
+         length = 3\n\
+         v = 1\n\
+         g() =>\n    len\n\
+         f() =>\n    len = 50\n    a = g()\n    a + len\n\
+         h() =>\n    length\n\
+         k(length) =>\n    h() + length\n\
+         inner() =>\n    v\n\
+         middle() =>\n    inner()\n\
+         outer() =>\n    v = 7\n    middle() + v\n\
+         a = f()\n\
+         b = k(10)\n\
+         c = outer()",
+        3,
+    );
+    // The caller's own `len` is back after the call.
+    assert_eq!(value(&session, "a"), RuntimeValue::Int(51));
+    // A parameter is a local too.
+    assert_eq!(value(&session, "b"), RuntimeValue::Int(13));
+    // Two calls down, past a function that has no `v` of its own.
+    assert_eq!(value(&session, "c"), RuntimeValue::Int(8));
+}
+
+#[test]
+fn a_function_reads_the_global_its_callers_var_local_shadows() {
+    let session = run(
+        "n = 5\n\
+         g() =>\n    n\n\
+         counter() =>\n    var int n = 10\n    n += 1\n    g() + n\n\
+         x = counter()",
+        3,
+    );
+    assert_eq!(value(&session, "x"), RuntimeValue::Int(18));
+}
+
+#[test]
+fn a_var_local_named_like_a_global_keeps_its_own_value() {
+    let session = run(
+        "n = 5\n\
+         counter() =>\n    var int n = 10\n    n += 1\n    n\n\
+         first = counter()\n\
+         after = n",
+        3,
+    );
+    assert_eq!(value(&session, "first"), RuntimeValue::Int(13));
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(5));
+}
+
+#[test]
 fn a_loop_variable_may_carry_its_type() {
     let session = run(
         "type Zone\n    float top\n\
@@ -968,6 +1180,28 @@ fn a_function_local_keeps_a_history_per_call_site() {
 }
 
 #[test]
+fn the_history_of_a_local_in_a_block_carries_over_the_bars_the_block_did_not_run() {
+    // `u` is set on even bars only. `u[1]` is its last committed value as of the bar before: on
+    // bar 2 that is the value bar 0 left (bar 1 did not run the block), not `na`.
+    let session = run(
+        "f() =>\n    out = -1.0\n    if bar_index % 2 == 0\n        u = bar_index * 10.0\n        out := nz(u[1], -5.0)\n    out\n\
+         r = f()",
+        5,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(20.0));
+    let first = run(
+        "f() =>\n    out = -1.0\n    if bar_index % 2 == 0\n        u = bar_index * 10.0\n        out := nz(u[1], -5.0)\n    out\n\
+         r = f()",
+        1,
+    );
+    assert_eq!(
+        value(&first, "r"),
+        RuntimeValue::Float(-5.0),
+        "no earlier value on the first bar"
+    );
+}
+
+#[test]
 fn trade_properties_read_the_closed_and_open_trades() {
     let source = "//@version=6\nstrategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 2)\n\
          if bar_index == 1\n    strategy.entry(\"L\", strategy.long)\n\
@@ -1066,6 +1300,107 @@ fn a_block_that_shadows_more_names_than_fit_inline_puts_them_all_back() {
         2,
     );
     assert_eq!(value(&session, "sum"), RuntimeValue::Float(21.0));
+}
+
+#[test]
+fn a_counter_that_hides_a_global_leaves_it_and_its_history_alone() {
+    // `i` is the global's, 7 on every bar; the loop's counter is its own and ends with the loop.
+    let session = run(
+        "i = 7\n\
+         for i = 0 to 2 + bar_index\n    x = i * 2\n\
+         after = i\n\
+         lagged = i[1]",
+        3,
+    );
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(7));
+    assert_eq!(value(&session, "lagged"), RuntimeValue::Int(7));
+}
+
+#[test]
+fn a_counter_that_hides_an_enclosing_blocks_local_gives_it_back() {
+    let session = run(
+        "total = 0\n\
+         if bar_index >= 0\n    n = 100\n    for n = 0 to 2\n        total += n\n    total += n\n",
+        2,
+    );
+    // 0 + 1 + 2 from the loop, then the block's `n` is 100 again.
+    assert_eq!(value(&session, "total"), RuntimeValue::Int(103));
+}
+
+#[test]
+fn a_for_in_whose_index_and_value_hide_globals_gives_both_back() {
+    let session = run(
+        "k = 40\nv = 2.5\n\
+         a = array.new_float()\n\
+         a.push(1.0)\na.push(2.0)\na.push(3.0)\n\
+         sum = 0.0\n\
+         for [k, v] in a\n    sum += k * v\n\
+         after_k = k\nafter_v = v\n\
+         lagged_k = k[1]",
+        2,
+    );
+    assert_eq!(value(&session, "sum"), RuntimeValue::Float(8.0));
+    assert_eq!(value(&session, "after_k"), RuntimeValue::Int(40));
+    assert_eq!(value(&session, "after_v"), RuntimeValue::Float(2.5));
+    assert_eq!(value(&session, "lagged_k"), RuntimeValue::Int(40));
+}
+
+#[test]
+fn a_for_in_counters_keep_their_last_values_in_their_history() {
+    // Nothing is hidden: the previous bar's last index and element are what `[1]` reads.
+    let session = run(
+        "a = array.new_float()\n\
+         a.push(10.0 + bar_index)\na.push(20.0 + bar_index)\n\
+         if bar_index > 0\n    a.push(30.0 + bar_index)\n\
+         last_k = -1\nlast_v = 0.0\n\
+         for [k, v] in a\n    last_k := k[1]\n    last_v := v[1]",
+        3,
+    );
+    // Bar 1 ran three elements (indexes 0 to 2, last element 31), bar 2 as many.
+    assert_eq!(value(&session, "last_k"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "last_v"), RuntimeValue::Float(31.0));
+}
+
+#[test]
+fn a_counter_in_a_function_named_like_a_global_leaves_the_global_alone() {
+    let session = run(
+        "i = 7\n\
+         f() =>\n    s = 0\n    for i = 0 to 3\n        s += i\n    s\n\
+         r = f()\n\
+         after = i\n\
+         lagged = i[1]",
+        3,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(6));
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(7));
+    assert_eq!(value(&session, "lagged"), RuntimeValue::Int(7));
+}
+
+#[test]
+fn a_counter_named_like_a_builtin_variable_gives_the_builtin_back() {
+    let session = run(
+        "sum = 0.0\n\
+         for low = 1 to 3\n    sum += low\n\
+         after = low",
+        3,
+    );
+    assert_eq!(value(&session, "sum"), RuntimeValue::Float(6.0));
+    // The last bar's builtin low is 100.
+    assert_eq!(value(&session, "after"), RuntimeValue::Float(100.0));
+}
+
+#[test]
+fn a_loop_left_early_puts_its_counters_back() {
+    let session = run(
+        "j = 40\nq = 1\n\
+         f() =>\n    for q = 0 to 5\n        if q == 2\n            break\n    q\n\
+         for j = 0 to 5\n    if j == 3\n        break\n\
+         r = f()\n\
+         after = j",
+        2,
+    );
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(40));
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(1));
 }
 
 #[test]

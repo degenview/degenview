@@ -4,6 +4,7 @@
 #   tools/clean-worktrees.sh                        list every worktree, its size, and why it stays or can go
 #   tools/clean-worktrees.sh --remove-merged        remove the worktrees marked REMOVABLE (asks first)
 #   tools/clean-worktrees.sh --clean-idle 14        delete target/debug of worktrees not built for 14 days
+#   tools/clean-worktrees.sh --trim-incremental     delete the incremental caches (the bulk of every target/)
 #   tools/clean-worktrees.sh --remove-merged --yes  no prompt
 #
 # Every worktree has its own target/, and cargo never deletes old build output, so finished
@@ -17,12 +18,17 @@
 # --clean-idle keeps the worktrees and deletes only target/debug (a rebuild is a few minutes), in
 # every worktree, the main one included, whose build output has not changed for that many days.
 # Use --clean-idle 0 to clear them all.
+#
+# --trim-incremental keeps everything else and deletes only `incremental/` under debug/ and release/
+# of every target*/ directory in every worktree nothing is running from. That cache is the part that
+# grows without bound (about 60% of 219 GB across 19 worktrees when this was written); the next build
+# recompiles the workspace crate once and reuses the compiled dependencies. Safe to run any time.
 set -eu
 
 cd "$(dirname "$0")/.."
 
 usage() {
-    echo "usage: tools/clean-worktrees.sh [--remove-merged | --clean-idle DAYS] [--yes]" >&2
+    echo "usage: tools/clean-worktrees.sh [--remove-merged | --clean-idle DAYS | --trim-incremental] [--yes]" >&2
     exit "${1:-2}"
 }
 
@@ -39,6 +45,7 @@ while [ $# -gt 0 ]; do
             idle_days="$1"
             case "$idle_days" in '' | *[!0-9]*) usage ;; esac
             ;;
+        --trim-incremental) mode=trim ;;
         --yes) assume_yes=1 ;;
         -h | --help) usage 0 ;;
         *) usage ;;
@@ -193,8 +200,10 @@ idle)
     while IFS="$tab" read -r wt br fl; do
         [ -d "$wt/target/debug" ] || continue
         if in_use "$wt"; then continue; fi
-        # Anything built or touched within the window means it is still being worked on.
-        if [ -n "$(find "$wt/target/debug/deps" -maxdepth 1 -mtime "-$idle_days" 2>/dev/null | head -n 1)" ]; then
+        # Anything built or touched within the window means it is still being worked on. Two levels
+        # deep covers both Cargo layouts: up to 1.99 every build writes into `deps/`; from 1.100
+        # there is no `deps/`, and a build adds to `build/<crate>/` and `incremental/` instead.
+        if [ -n "$(find "$wt/target/debug" -maxdepth 2 -mtime "-$idle_days" 2>/dev/null | head -n 1)" ]; then
             continue
         fi
         echo "$wt" >>"$tmp/idle"
@@ -211,5 +220,35 @@ idle)
         rm -rf "$wt/target/debug"
         echo "cleaned $wt/target/debug"
     done <"$tmp/idle"
+    ;;
+trim)
+    : >"$tmp/incr"
+    trim_total=0
+    while IFS="$tab" read -r wt br fl; do
+        [ -d "$wt" ] || continue
+        if in_use "$wt"; then
+            echo "skipped $wt (in use)"
+            continue
+        fi
+        for t in "$wt"/target "$wt"/target-*; do
+            [ -d "$t" ] || continue
+            for profile in debug release; do
+                [ -d "$t/$profile/incremental" ] || continue
+                echo "$t/$profile/incremental" >>"$tmp/incr"
+                trim_total=$(awk -v a="$trim_total" -v b="$(gigabytes "$t/$profile/incremental")" 'BEGIN { printf "%.1f", a + b }')
+            done
+        done
+    done <"$tmp/worktrees"
+    trim_count=$(wc -l <"$tmp/incr" | tr -d ' ')
+    if [ "$trim_count" -eq 0 ]; then
+        echo "No incremental caches to delete."
+        exit 0
+    fi
+    sed 's/^/  /' "$tmp/incr"
+    confirm "Delete $trim_count incremental cache(s), freeing about $trim_total GB?" || exit 1
+    while IFS= read -r dir; do
+        rm -rf "$dir"
+        echo "deleted $dir"
+    done <"$tmp/incr"
     ;;
 esac

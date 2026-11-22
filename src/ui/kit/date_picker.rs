@@ -210,7 +210,7 @@ pub fn show_popover(
         open = !open;
     }
 
-    let now = parsed.unwrap_or_else(crate::model::watchlist::now_ms);
+    let now = parsed.unwrap_or_else(crate::clock::now_ms);
     let month_key = popup_id.with("month");
     if !open {
         ui.data_mut(|data| data.remove::<(i64, i64)>(month_key));
@@ -248,7 +248,7 @@ fn popover(
     ui.set_width(POPOVER_WIDTH);
     ui.spacing_mut().item_spacing = Vec2::ZERO;
     let (selected, hour, minute) = fields(now, utc_offset_secs);
-    let (today, ..) = fields(crate::model::watchlist::now_ms(), utc_offset_secs);
+    let (today, ..) = fields(crate::clock::now_ms(), utc_offset_secs);
     let mut picked = None;
     let (mut year, mut month) = shown;
 
@@ -463,7 +463,7 @@ fn popover(
         Color32::PLACEHOLDER,
     );
     if now_response.clicked() {
-        let moment = crate::model::watchlist::now_ms();
+        let moment = crate::clock::now_ms();
         let (day, hour, minute) = fields(moment, utc_offset_secs);
         picked = Some(instant(day, hour, minute, utc_offset_secs));
         (year, month) = (day.year, day.month);

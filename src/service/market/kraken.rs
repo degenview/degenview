@@ -125,7 +125,7 @@ fn fetch_ohlc(
         interval(base).ok_or_else(|| ProviderError::unsupported(DataSource::Kraken, base))?;
     let mut url = format!("{BASE_URL}/OHLC?pair={}&interval={minutes}", pair(symbol));
     if let Some(count) = recent.filter(|count| *count < KRAKEN_BARS) {
-        let since = crate::service::now_ms() / 1_000 - (count as i64 + 1) * i64::from(minutes) * 60;
+        let since = crate::clock::now_ms() / 1_000 - (count as i64 + 1) * i64::from(minutes) * 60;
         url.push_str(&format!("&since={since}"));
     }
     parse_ohlc(&get(&url)?, base)

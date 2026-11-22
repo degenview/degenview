@@ -248,6 +248,17 @@ fn a_method_called_on_some_bars_sees_its_previous_call() {
 }
 
 #[test]
+fn a_local_of_a_method_block_keeps_its_value_on_bars_the_block_does_not_run() {
+    let session = run(
+        "method lag(float value) =>\n    out = 0.0\n    if bar_index % 2 == 0\n        seen = value\n        out := nz(seen[1], -1.0)\n    out\n\
+         r = close.lag()",
+        5,
+    );
+    // Bar 4 runs the block; `seen` was last set on bar 2 (close 103), which bar 3 carried.
+    assert_eq!(float(&session, "r"), 103.0);
+}
+
+#[test]
 fn a_call_in_a_loop_is_one_scope() {
     let session = run(
         "method bump(float value) =>\n    var float total = 0.0\n    total += value\n    total\n\

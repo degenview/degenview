@@ -531,7 +531,7 @@ impl Market {
             quote: self.quote.as_ref(),
             balances: &self.snapshot.balances,
             fees: self.snapshot.fees.as_ref(),
-            now_ms: crate::model::watchlist::now_ms(),
+            now_ms: crate::clock::now_ms(),
         }
     }
 }

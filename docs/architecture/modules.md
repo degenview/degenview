@@ -12,10 +12,10 @@ inventory.
 | `workspace/mod.rs` | One chart tab: grid, charts, drawings, fetches, and replay |
 | `host/tab/window.rs` | Window grouping, active tabs, drag/reorder/detach |
 | `native_bridge.rs` | AppKit menus, window behavior, cursor, Keychain/accessibility boundaries |
-| `host/update/mod.rs` | Update checks, install progress, and restart state |
+| `host/update/mod.rs` | Update checks, install progress, and restart state; `review` holds which window shows the update review sheet |
 | `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
-| `format.rs`, `platform.rs`, `lock.rs` | Leaf helpers every layer imports: number/price text, per-platform wording, and locks that survive a poisoning panic |
-| `i18n/` | Leaf: the interface language in use, `tr!` messages and their catalogs, gettext `.po` catalogs, and dates in the language's own form via ICU4X ([Localization](../localization.md)); `host/language` chooses the language, `store/language.rs` saves it |
+| `format.rs`, `platform.rs`, `lock.rs`, `paths.rs`, `build_info.rs`, `clock.rs` | Leaf helpers every layer imports: number/price/date text and plurals, per-platform wording, locks that survive a poisoning panic, the data and cache folders, the build's version and commit, and the wall clock in milliseconds (`clock::now_ms`, the one copy). `layout_tests.rs` keeps them free of the app's other modules |
+| `i18n/` | Leaf: the interface language in use, `tr!` messages, their gettext `.po` catalogs, and dates in the language's own form via ICU4X ([Localization](../localization.md)); `host/language` chooses the language, `store/language.rs` saves it |
 
 Feature hosts in `host/` (one directory per domain, see `host/` layout below) bridge pure engines,
 persistence, workers, and UI. `host/alert/runtime.rs` is the alert loop shared by the GUI fallback and
@@ -67,10 +67,10 @@ part. The children are grouped by domain, like `model/` and `ui/`:
 | --- | --- |
 | `model/` | Alerts, charts/canvas/types, drawings, indicators, instruments, layouts, paper/portfolio engines, replay, tabs, watchlists, and webhooks |
 | `pine/` | Lexer → parser → compiler → session, builtins, strategies, alerts, drawings, libraries, `request.*`, and corpus tests |
-| `pine_studio/` | The script library (registry, names, script picker), editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
+| `pine_studio/` | The script library (script picker, demos), editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
 | `host/` | The stateful seams: one host per feature, bridging engines, stores, workers, and views (one directory per domain, see below) |
 | `service/` | Market providers, HTTP/WebSocket work, updater, caches, images/icons, FX, notifications, files, Keychain, quotes, webhooks, and login-item registration (see the layout below) |
-| `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, webhook persistence, and the file-backed script library (`scripts/`) |
+| `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, webhook persistence, and the file-backed script library (`scripts/`, with `registry`, the libraries the compiler resolves) |
 | `ui/` | egui screens, one directory per domain (see `ui/` layout below), plus the shared `kit/`, `theme/` and `icons` |
 | `mcp/` | Loopback HTTP transport, auth, shared permission state, app bridge, tools, and wire types |
 | `sync/` | iCloud Sync: policy (what syncs), records, merge, outbox, id tagging and the CloudKit transport (bridge in `native/swift`); no UI |
@@ -94,6 +94,10 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | `drawings/`, `annotation/`, `pattern/`, `fib/`, `forecast/` | Drawings and their tools: the shared model and styles, text/image/post/table content, patterns and Elliott waves, Fibonacci and Gann, positions and measurers |
 | `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart, script value types (`script`) and the Pine indicators bundled with the app (`bundled/`) |
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
+| `exchange/` | `Exchange`, `Market` and `Venue`: the exchange and market that liquidations, taker flow and the order book each name their feed by |
+| `liquidation/`, `taker_flow/` | Forced liquidations (`Liquidation`, the rolling `Tape` and its `Snapshot` of totals and rows) and taker flow (`Trade`, `Venue`, the per-second `Flow` and its `Snapshot`, `asset_of`). Pure |
+| `changelog/` | The release notes the update sheet shows: `parse` reads `## <version>` / `### New` / `### Fixed` sections out of a release body (bounded), `ReleaseNotes` merges them and writes the sheet's footnotes (`footnotes`), `notes_for_range` picks the sections between two versions from plain `ListedRelease` values and reports `Coverage`, `Version` is the SemVer tag type the updater shares; `tools/changelog.sh` writes the text |
+| `depth/` | One market's order book and trades as a `DepthSnapshot { link, tick, ladder, tape }` (a `Ladder` of the `View`'s `rows` and a `TapeView` of trades) for a panel: `DepthRecord` (the one door: `apply`, `link`, `snapshot`) over the `Book`, the `Tape` of trades, the `PullStack`, the exact `Price` key, the row `group` sizes and `Side::of_taker` / `row_of`, where a trade and a resting order fold; `sync/` holds one `BookSync` per exchange protocol (`binance`, `bybit`), which judges updates and leaves the `Book` to the record; `market_of`. Pure |
 | `ids/` | The id space engines mint into (`LEGACY_LIMIT`, `GLOBAL_BASE`); sync tags it in `sync::record::ids` |
 | `encoding/` | Standard base64 (`base64_encode`, `base64_decode`) for MCP images, the CloudKit bridge, stored pictures and proxy sign-in |
 
@@ -125,9 +129,10 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 | `system/` | `entitlements`, `file_dialog`, `sandbox`, `timezone` |
 | `sound/` | Short system sounds through the platform's own player (`NSSound`, `PlaySoundW`, `canberra-gtk-play`), no audio crate; `Sounder` is the seam tests replace. The paper-fill sound: `PaperHost` counts fills this Mac made (`drain_fills`, never a reload or a mirrored account), `app/background.rs` plays one sound per frame, and the Notifications page's "Fill sound" switch is the local setting `paper.prefs` |
 | `llm/`, `watchlist_quotes/` | The AI providers; the shared quote stream |
+| `liquidation/`, `taker_flow/`, `depth/`, `stream/` | The exchanges' public liquidation, trade and order-book sockets (`binance`, `bybit` each) filling one `Tape`, `Flow` or `DepthRecord`; `depth/` puts an exchange behind the `DepthVenue` trait (`venue`, which also supplies the exchange's `BookSync`; `venue::for_exchange` is the one registry and `new_record` makes a market's record), so its feed never names one; `stream` is the lease, watchdog, thread runner and retry-until-shutdown the three share |
 
-`host/` has only `mod.rs` at its root. One directory per domain, the host in `mod.rs` and its helpers
-beside it: `alert/` (with `runtime`), `broker/`, `editor_theme/`, `mcp/` (with `confirmation`), `paper/`,
+`host/` has only `mod.rs` at its root (it also holds `repaint_of`, the repaint callback the feed hosts hand their sockets). One directory per domain, the host in `mod.rs` and its helpers
+beside it: `alert/` (with `runtime`), `broker/`, `depth/` (the order-book feeds), `editor_theme/`, `lease_map/` (the lease and entry bookkeeping that `taker_flow` and `depth` share: one feed, record and lease per key), `memo/` (one value kept while its key holds, for their per-frame snapshots), `mcp/` (with `confirmation`), `paper/`,
 `pine/` (with `chart/`, the runs of a chart's scripts and their workers; `batch`, scripts run once
 each; `subscription`), `portfolio/` (with `card` and `import_flow`), `settings/` (the Settings
 window's controller: it builds the page's input and applies its actions), `snapshot/`, `sync/` (with
@@ -149,8 +154,8 @@ beside them, not SQLite) and `sync/`. `sync/` keeps one file per table or concer
 
 | Directory | Holds |
 | --- | --- |
-| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge/`, `outbox`, `account`, and `apply/` (the batch and dispatch in `mod.rs`, one file per record kind: `simple`, `asset`, `script`, `alert`, `layout`, `drawing`, `paper`, `portfolio`; inbox retries in `retry`) |
-| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project/`, `validate/`, `paper`, `scripts` |
+| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge/`, `outbox`, `account`, `scripts` (the library scan that queues script files), and `apply/` (the batch and dispatch in `mod.rs`, one file per record kind: `simple`, `asset`, `script`, `alert`, `layout`, `drawing`, `paper`, `portfolio`; inbox retries in `retry`) |
+| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project/`, `validate/`, `paper`, `scripts` (the script sink). The store builds on it, so it imports nothing from `store/` (`layout_tests.rs`) |
 | `transport/` | The CloudKit boundary: `mod.rs` the trait, its factory, the event sink and events, `native/` (the Swift bridge), `mock` (tests) |
 | `tests/` | End-to-end sync tests, one file per concern |
 
@@ -226,7 +231,7 @@ beside the code they exercise.
 | --- | --- |
 | `ai/`, `debug/`, `profiler/` | The assistant, the debugger and the profiler: their state, host, panel, gallery pictures and `studio_tests` |
 | `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites`; the view itself is `mod.rs` (`show`, the find bar, undoable edits) with `state`, `text_view`, `completion_view`, `signature_view`, `gutter/` (`breakpoints`, `changes`, `profile`), `indent_guides`, `assists`, `navigation` (go to definition, the right-click menu, rename), `edit_actions` (`EditAction`: what the Edit menus ask for, and running it), `menu_state` (what the Edit menu may do) and `status` |
-| `library/` | The script library around its file store (`store::scripts`): `registry`, `picker`, `script_actions` (the rows of a script's menu, shared by the picker and the File menu), `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
+| `library/` | The script library around its file store (`store::scripts`): `picker`, `script_actions` (the rows of a script's menu, shared by the picker and the File menu), `prefs`, `demo` and `demos/`, `unsaved`, `external/` |
 | `drawer/` | The drawer under the preview: `problems/`, `logs/`, the intro, `bottom_bar`, `tab_chrome` |
 | root | `mod.rs` (the manager) with `commands` (`Cmd` and running it), `bar` (the top bar), `rail` (the editor's right rail), `menu_bar/` (File, Edit and View over the editor: `entry`, `file`, `edit`, `view`), `open_script`, `migrate_swift`; `preview/` (`state`, `source`, `fetch`, `chart`, `market_picker`), `inputs`, `workspace`, `sheets`, `theme_preview/` |
 
@@ -241,14 +246,15 @@ picture test sits beside it (`broker/panel_gallery.rs`). A helper used by severa
 | --- | --- |
 | `chart/` | The chart card (`card/`, one child per concern: `header`, `body` and `frame`, `paint`, `crosshair`, `price_scale`, `view`, `scripts`, ...), canvas and series rendering, chart menus, scale menu, indicator strip, table view, object tree, session stats, the snapshot scene builder (`snapshot_scene`), chart settings with templates and overlays (`settings/`, one child per page: `appearance`, `indicators`, `scripts/`, `canvas`, `compare`, ...), the symbol and indicator pickers, and the pieces the symbol picker shares with the portfolio pickers (`picker_kit/`: recents, suggestions, artwork, result rows, search box, header art) |
 | `drawing/` | Drawings: pure geometry (`geometry/`, with `fib`, `line`, `annotation`, `pattern`), the interaction layer (`layer/`), the properties panel (`properties/`, one child per page plus the shared `rows` and the saved `templates`), `render`, and the text/note/table content tools (`content/`) |
+| `market_flow/` | The market-flow panel: Liquidations and Taker flow bodies, and `book/` (the Order book mode: `toolbar`, `ladder`, `tape`, `state`) |
 | `alert/`, `webhook/`, `mcp/` | Alert center, editors, banner and chart lines; webhook editor, picker and settings; MCP activity and confirmation |
 | `paper/`, `broker/`, `trade/` | Paper trading screens (the panel under a chart in `panel/`), live trading screens, and what both share (the order sheet and its fields) |
 | `portfolio/`, `watchlist/`, `replay/` | The Portfolio tab (`tab/`: its bar, pages and import sheets), its Overview (`overview/`) and Statistics (`statistics/`) pages and the blocks both draw with (`blocks`), and its cards; the watchlist sidebar (`sidebar/`: `header`, `content`, `detail`, `menus`, `modals`); the replay bar, date sheet and overlay |
 | `pine/` | Pine output on a chart, report, style view, settings popover, Pine Logs (`logs_view/`) and the script catalog |
 | `settings/` | The Settings window (`window`, run by `host::settings`) and one file per page, a directory for a large one (`mcp/`: `server`, `security`, `credentials`, `clients`, `permissions_sheet`, `controls`); the Pine Studio page owns the font picker and theme editor |
-| `workspace/`, `window/` | Workspace chrome (toolbar, tool rail, layouts, the new-tab page in `empty_state/`, chart linking, snapshot menu) and window chrome (tab strip in `tab_bar/`: `geometry`, `menu`, `rename`, `paint`; tab-link menu, update indicator) |
+| `workspace/`, `window/` | Workspace chrome (toolbar, tool rail, layouts, the new-tab page in `empty_state/`, chart linking, snapshot menu) and window chrome (tab strip in `tab_bar/`: `geometry`, `menu`, `rename`, `paint`; tab-link menu, update indicator and the sheet it opens) |
 | `snapshot_studio/` | The Screenshot Studio: `capture` (a chart or layout frozen at the moment of capture, with its base view) and `compose/` (the one paint function the preview and the export share: `background`, `surround` for the shadow and rounded corners, `styled` for the title block and mark, `layout`, `chart`), `window/` (the Studio's modal: `toolbar`, `swatches`, `preview`, `footer`; immediate mode, answers with actions) and `previews/` (the picture pipeline: generations, one raster job in flight, one reused texture) |
-| `kit/`, `theme/` | Shared widgets, one file per family and all re-exported from `kit` (`kit::push_button`, not `kit::button::push_button`): `text` (type scale, galleys), `palette`, `pill`, `ticker_icon` (market logos, monograms), `tab_bar`, `menu/` (rows, `fit`, `picker`), `button`, `field`, `form` (switch, segmented, `segments` with tooltips and disabled choices, stepper, colour well), `card` (frame, divider), `page` (empty state, footer bar, notice card), `confirm`, `autosave`; plus the modules called by path: `bar` (the flat top bar every tab kind shares, and `show_column`, its vertical icon-only form), `dialog`, `sheet`, `popover`, `ruler` (a dial of sliding ticks), `icon_tabs`, `color_picker`, `date_picker`, `split`, `source_logo`, `sparkline`, `time_text`, `art`, ... And colours and fonts (`theme`) |
+| `kit/`, `theme/` | Shared widgets, one file per family and all re-exported from `kit` (`kit::push_button`, not `kit::button::push_button`): `text` (type scale, galleys), `palette`, `pill`, `ticker_icon` (market logos, monograms), `outline` (the look segmented controls, tab bars and pickers share), `tab_bar`, `menu/` (rows, `fit`, `picker`), `button`, `field`, `form` (switch, segmented, `segments` with tooltips and disabled choices, stepper, colour well), `card` (frame, divider), `page` (empty state, footer bar, notice card), `confirm`, `autosave`; plus the modules called by path: `bar` (the flat top bar every tab kind shares, and `show_column`, its vertical icon-only form), `dialog`, `sheet`, `popover`, `ruler` (a dial of sliding ticks), `icon_tabs`, `color_picker`, `date_picker`, `split`, `source_logo`, `sparkline`, `time_text`, `art`, ... And colours and fonts (`theme`) |
 | root | `mod.rs` and the three single-file foundations: `icons`, `shortcut`, `accessibility` (plus `editor_appearance/`) |
 
 A new screen goes in its domain's directory; a new domain gets a directory and a row here.

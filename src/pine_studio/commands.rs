@@ -2,7 +2,6 @@
 //! renaming, duplicating, exporting and deleting scripts, saving, the panels and the sheets.
 
 use super::library::prefs::{ChartPosition, DrawerTab};
-use super::library::registry::LibraryRegistry;
 use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, ai, debug, editor, library};
 use crate::model::editor_theme::ThemeSelection;
 use crate::model::pine::script::{ScriptId, ScriptType};
@@ -10,6 +9,7 @@ use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
 use crate::service::work_queue;
 use crate::store::scripts::hash_source;
+use crate::store::scripts::registry::LibraryRegistry;
 use eframe::egui;
 use std::path::PathBuf;
 
@@ -370,7 +370,7 @@ impl PineStudio {
     /// What is wrong with `raw` as a script's name, if anything. `renaming` is the script being
     /// renamed: its own name is not taken.
     pub(crate) fn name_problem(&self, raw: &str, renaming: Option<&str>) -> Option<String> {
-        match library::name::validate(raw) {
+        match crate::model::pine::script_name::validate(raw) {
             Err(error) => (!raw.trim().is_empty()).then(|| error.to_string()),
             Ok(clean) => self
                 .scripts

@@ -175,7 +175,7 @@ fn inputs_path() -> Option<std::path::PathBuf> {
     if cfg!(test) {
         return None;
     }
-    crate::store::data_dir().map(|dir| dir.join("script_preview_inputs.json"))
+    crate::paths::data_dir().map(|dir| dir.join("script_preview_inputs.json"))
 }
 
 /// What the toolbar shows of the preview chart: its market, the last price with the change over

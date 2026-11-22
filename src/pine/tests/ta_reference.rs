@@ -1,0 +1,79 @@
+//! A `ta.*` built-in against the formula TradingView documents for it, written out in Pine from the
+//! definition. Each test plots both and compares them bar by bar (the same bars, `na` where the
+//! other is `na`), on a random walk, so a built-in that drifts from its definition fails here.
+
+use super::bench::{bars, run_script};
+
+/// The plotted series of `source`, one `Vec` per `plot`, over `count` one-minute bars.
+pub(super) fn plots(source: &str, count: usize) -> Vec<Vec<Option<f64>>> {
+    let data = bars(count, 60_000);
+    let session = run_script(source, &data, false, |_| {});
+    session
+        .output()
+        .plots
+        .into_iter()
+        .map(|plot| plot.values)
+        .collect()
+}
+
+/// Asserts two series agree: both `na` on the same bars, and within `tolerance` elsewhere.
+pub(super) fn assert_same(label: &str, built_in: &[Option<f64>], reference: &[Option<f64>]) {
+    assert_eq!(built_in.len(), reference.len(), "{label}: length");
+    for (bar, (a, b)) in built_in.iter().zip(reference).enumerate() {
+        match (a, b) {
+            (None, None) => {}
+            (Some(a), Some(b)) => assert!(
+                (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0),
+                "{label}: bar {bar}: built-in {a} against reference {b}"
+            ),
+            _ => panic!("{label}: bar {bar}: built-in {a:?} against reference {b:?}"),
+        }
+    }
+}
+
+fn first_value(series: &[Option<f64>]) -> Option<usize> {
+    series.iter().position(Option::is_some)
+}
+
+#[test]
+fn macd_follows_its_lengths() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Macd\")
+[line, signal, hist] = ta.macd(close, 5, 35, 5)
+fast = ta.ema(close, 5)
+slow = ta.ema(close, 35)
+reference = fast - slow
+plot(line)
+plot(signal)
+plot(hist)
+plot(reference)
+plot(ta.ema(reference, 5))
+plot(reference - ta.ema(reference, 5))
+",
+        1_500,
+    );
+    assert_same("line", &plotted[0], &plotted[3]);
+    assert_same("signal", &plotted[1], &plotted[4]);
+    assert_same("histogram", &plotted[2], &plotted[5]);
+    // The slow EMA seeds on its 35th value; the signal on the fifth value of the line.
+    assert_eq!(first_value(&plotted[0]), Some(34));
+    assert_eq!(first_value(&plotted[1]), Some(38));
+}
+
+#[test]
+fn macd_with_the_default_lengths_matches_the_ema_composition() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Macd\")
+[line, signal, hist] = ta.macd(close, 12, 26, 9)
+plot(line)
+plot(ta.ema(close, 12) - ta.ema(close, 26))
+plot(signal)
+plot(ta.ema(ta.ema(close, 12) - ta.ema(close, 26), 9))
+",
+        800,
+    );
+    assert_same("line", &plotted[0], &plotted[1]);
+    assert_same("signal", &plotted[2], &plotted[3]);
+}

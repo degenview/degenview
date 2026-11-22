@@ -4,8 +4,8 @@
 //! with `{"op":"ping"}`.
 
 use crate::model::{Kline, Timeframe};
-use crate::service::market::bybit::{interval, symbol_id};
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::market::bybit::{KEEPALIVE, interval, symbol_id};
+use crate::service::net::ws::Session;
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -28,10 +28,7 @@ pub(super) fn session(symbols: &[String], base: Timeframe) -> Option<Session> {
         subscribe,
         // A thin market's kline is quiet for minutes: the pong says the socket is alive.
         max_data_silence: Duration::from_secs(600),
-        keepalive: Keepalive::Text {
-            ping: r#"{"op":"ping"}"#,
-            pong: r#"{"success":true,"ret_msg":"pong""#,
-        },
+        keepalive: KEEPALIVE,
     })
 }
 

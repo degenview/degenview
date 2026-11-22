@@ -30,6 +30,7 @@ pub struct ToolbarInput<'a> {
     pub layouts: &'a [(u64, String)],
     pub active_layout: Option<u64>,
     pub watchlist_visible: bool,
+    pub market_flow_visible: bool,
     /// The market the focused chart shows, as its exchange names it; `None` with no chart.
     pub symbol: Option<&'a str>,
     /// The focused market chart the chart type, Indicators and settings buttons act on; `None`
@@ -89,6 +90,7 @@ pub enum ToolbarAction {
     OpenLayout(u64),
     DeleteLayout(u64),
     ToggleWatchlist,
+    ToggleMarketFlow,
     OpenPortfolio,
     OpenPineStudio,
     /// Open the indicator picker for the focused chart.
@@ -315,6 +317,11 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
     } else {
         "Show Watchlists"
     };
+    let market_flow_tip = if input.market_flow_visible {
+        "Hide Market Flow"
+    } else {
+        "Show Market Flow"
+    };
     vec![
         Item::Button(layout),
         Item::Button(
@@ -334,6 +341,13 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
             Button::new("pine-studio", "Pine Studio")
                 .icon(Icon::AngleBrackets)
                 .on_click(ToolbarAction::OpenPineStudio),
+        ),
+        Item::Separator,
+        Item::Button(
+            Button::new("market-flow", market_flow_tip)
+                .icon(Icon::Flame)
+                .active(input.market_flow_visible)
+                .on_click(ToolbarAction::ToggleMarketFlow),
         ),
         Item::Button(
             Button::new("watchlist", watchlist_tip)
@@ -581,6 +595,7 @@ mod tests {
             layouts,
             active_layout: None,
             watchlist_visible: true,
+            market_flow_visible: false,
             symbol: focused.then_some("BTCUSDT"),
             chart: focused.then_some(ToolbarChart {
                 id: 1,

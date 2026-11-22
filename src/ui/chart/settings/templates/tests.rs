@@ -304,3 +304,19 @@ fn a_preset_applies_without_any_saved_template() {
     assert_eq!(card.appearance().canvas, entries[0].appearance.canvas);
     assert_eq!(card.appearance().style.chart_type, ChartType::Candles);
 }
+
+#[test]
+fn the_manager_draws_with_a_template_chosen_for_new_charts() {
+    let (store, mut state, mut card) = (shared(), TemplateState::default(), styled_card());
+    let id = state
+        .templates(&store)
+        .save("Kept", "", &card.appearance())
+        .expect("saved");
+    state
+        .templates(&store)
+        .set_default(Some(id))
+        .expect("chosen");
+    state.dialog = Some(Dialog::Manage(Manage::default()));
+    run(&mut state, &store, &mut card, None);
+    assert!(state.has_dialog());
+}

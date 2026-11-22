@@ -2,11 +2,12 @@
 //! and edits made outside the app (another editor, the MCP server) reaching it.
 
 use super::editor::EditorState;
-use super::library::registry::LibraryRegistry;
 use super::{OpenDiskState, OpenScript, PineStudio, compile_into, editor, library};
-use crate::model::pine::script::{ScriptDraft, ScriptType, now_ms};
+use crate::clock::now_ms;
+use crate::model::pine::script::{ScriptDraft, ScriptType};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
+use crate::store::scripts::registry::LibraryRegistry;
 use crate::store::scripts::{COMPILER_VERSION, hash_source};
 use eframe::egui;
 use std::time::Instant;
@@ -80,7 +81,8 @@ impl PineStudio {
             (None, Some(name)) => scripts.iter().find(|script| {
                 script.script_type == ScriptType::Library
                     && (&script.name == name
-                        || library::registry::title_of(&script.source).as_ref() == Some(name))
+                        || crate::store::scripts::registry::title_of(&script.source).as_ref()
+                            == Some(name))
             }),
             (None, None) => None,
         };

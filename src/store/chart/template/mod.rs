@@ -6,12 +6,14 @@
 //! writes in one transaction and only then shows the result. A table that cannot be read is
 //! never written: the sheet says so and the presets keep working.
 
+pub mod default_look;
+
+use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::ChartAppearance;
 use crate::model::chart::template::{
     ChartAppearanceTemplate, TemplateBook, TemplateError, TemplateId, new_user_id,
 };
-use crate::model::watchlist::now_ms;
 use crate::store::{Document, SharedStore, Store};
 
 const TABLE: &str = "chart_template";
@@ -128,8 +130,28 @@ impl ChartTemplateStore {
         self.mutate(|book| book.duplicate(id, new_user_id(), now_ms()))
     }
 
+    /// Deletes a saved template; if new charts started from it they go back to the app's look.
     pub fn delete(&mut self, id: TemplateId) -> Result<(), String> {
-        self.mutate(|book| book.delete(id))
+        self.mutate(|book| book.delete(id))?;
+        let store = lock(&self.store);
+        if store.default_chart_template().id == Some(id) {
+            store
+                .set_default_chart_template(None)
+                .map_err(|error| format!("Could not save the template: {error}"))?;
+        }
+        Ok(())
+    }
+
+    /// Makes `id` the look new charts start from, or with `None` the app's own.
+    pub fn set_default(&mut self, id: Option<TemplateId>) -> Result<(), String> {
+        if let Some(id) = id
+            && self.book.entry(id).is_none()
+        {
+            return Err(TemplateError::Missing.message());
+        }
+        lock(&self.store)
+            .set_default_chart_template(id)
+            .map_err(|error| format!("Could not save the choice: {error}"))
     }
 }
 

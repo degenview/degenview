@@ -12,10 +12,11 @@
 //! client's request id, and ids from a short list of argument names. Never an argument value, an
 //! error message, a token or a script.
 
+use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome, McpAuditTarget, Peer};
-use crate::model::watchlist::{new_id, now_ms};
+use crate::model::watchlist::new_id;
 use rmcp::model::{CallToolResult, NumberOrString};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, VecDeque};

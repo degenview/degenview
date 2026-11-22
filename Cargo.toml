@@ -1,6 +1,6 @@
 [package]
 name = "degenview"
-version = "0.6.0-rc.30"
+version = "0.6.0-rc.33"
 edition = "2024"
 rust-version = "1.95"
 description = "A native macOS market dashboard, rewritten in Rust"
@@ -30,7 +30,9 @@ dev-unsealed-mcp = []
 dev-mock-broker = ["degenview-brokers/testing"]
 
 [dependencies]
-eframe = { version = "0.36.2", features = ["persistence"] }
+# The patched eframe 0.36.2 in our own crate (a Wayland fix, issue #622): AGENTS.md "Supply chain".
+# The library is still called `eframe`, so `use eframe::...` is unchanged.
+eframe = { package = "degenview-eframe", version = "=0.36.2", features = ["persistence"] }
 # Reads the name and post tables of installed fonts to list the monospaced families (the same
 # version egui already builds).
 ttf-parser = { version = "0.25", default-features = false, features = ["std"] }

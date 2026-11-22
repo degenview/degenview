@@ -1,3 +1,4 @@
+use crate::clock::now_ms;
 use crate::host::mcp::{McpTabs, confirmation};
 use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::chart::control::{ChartChangeResult, TimeframeResult};
@@ -10,7 +11,6 @@ use crate::mcp::types::{
     ChartsResult, DrawingsChangeResult, DrawingsResult, DrawingsStatus, IndicatorStatus,
     IndicatorsInfo, PineInstanceInfo, WorkspaceInfo,
 };
-use crate::model::watchlist::now_ms;
 use crate::model::{
     BuiltIn, ChartType, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId,
     Timeframe,

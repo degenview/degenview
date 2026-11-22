@@ -2,7 +2,7 @@
 //! folding the coarsest finer native one. Every provider plans through this, so what a source can
 //! chart (`DataSource::serves`) and what its fetch asks for cannot drift apart.
 
-use super::{DAY_MS, fold, fold_base};
+use super::{DAY_MS, bucket_start_ms, fold, fold_base};
 use crate::model::{Kline, TimeUnit, Timeframe};
 
 /// The most days a calendar month has, for sizing a fold that must hold a whole month.
@@ -77,6 +77,59 @@ impl FoldPlan {
     /// beginning, so its first fold is a fragment and goes.
     pub fn shape(self, candles: Vec<Kline>, requested: usize, limit: usize) -> Vec<Kline> {
         let truncated = candles.len() >= requested;
+        self.trimmed(candles, truncated, limit)
+    }
+
+    /// [`shape`](Self::shape) for a source that answers a time window, not a count: the window
+    /// began at `since_ms`, so even a short answer is cut off when its first candle sits in a
+    /// bucket that opened before the window did. The candles before `since_ms` may exist, so that
+    /// bucket is a fragment, and an answer that is nothing else has no whole candle to show.
+    ///
+    /// A bucket opens before the window when its earliest base slot does: the bucket's start
+    /// moved by the offset the provider stamps its base candles with (none for intraday bars,
+    /// New York midnight for Alpaca's days and months), so the first bucket of a window that
+    /// began at the first base bar is whole.
+    pub fn shape_since(
+        self,
+        candles: Vec<Kline>,
+        requested: usize,
+        since_ms: i64,
+        limit: usize,
+    ) -> Vec<Kline> {
+        let begins_inside = candles
+            .first()
+            .is_some_and(|first| since_ms > self.earliest_slot(first.open_time));
+        let in_one_bucket = candles.first().zip(candles.last()).is_some_and(|(a, b)| {
+            bucket_start_ms(self.target, a.open_time) == bucket_start_ms(self.target, b.open_time)
+        });
+        if begins_inside && in_one_bucket {
+            return Vec::new();
+        }
+        let truncated = candles.len() >= requested || begins_inside;
+        self.trimmed(candles, truncated, limit)
+    }
+
+    /// The candles of `base` (ascending, of the base length) that fall in the same target bucket
+    /// as the last one: the bars the forming candle is made of. Nothing when the source has the
+    /// target itself, since then the candle is its own bar.
+    pub fn newest_bucket(self, base: &[Kline]) -> Vec<Kline> {
+        let Some(last) = base.last().filter(|_| !self.is_native()) else {
+            return Vec::new();
+        };
+        let bucket = bucket_start_ms(self.target, last.open_time);
+        base.iter()
+            .filter(|candle| bucket_start_ms(self.target, candle.open_time) == bucket)
+            .cloned()
+            .collect()
+    }
+
+    /// Where the first base slot of the target bucket holding `open_time` sits: the bucket's start
+    /// plus the offset the provider stamps base candles with.
+    fn earliest_slot(self, open_time: i64) -> i64 {
+        bucket_start_ms(self.target, open_time) + open_time - bucket_start_ms(self.base, open_time)
+    }
+
+    fn trimmed(self, candles: Vec<Kline>, truncated: bool, limit: usize) -> Vec<Kline> {
         let mut shown = self.fold(candles, truncated);
         let skip = shown.len().saturating_sub(limit);
         shown.drain(..skip);

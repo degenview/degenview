@@ -190,7 +190,7 @@ impl AlertRegistration {
         if decision != GuiRuntimeDecision::Foreground {
             control.lease = None;
         } else if control.lease.is_none()
-            && let Some(directory) = crate::store::data_dir()
+            && let Some(directory) = crate::paths::data_dir()
         {
             control.lease = AlertRuntimeLease::try_acquire(&directory).ok().flatten();
         }

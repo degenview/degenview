@@ -1,6 +1,7 @@
 //! Buttons: push, footer, sheet, large, tinted and destructive buttons, and hover-only icon
 //! buttons.
 
+use super::focus;
 use super::loading::LoadingIndicator;
 use super::{MEDIUM, RED, REGULAR, SEMIBOLD, galley, primary, size};
 use crate::ui::icons::{self, Icon};
@@ -190,6 +191,36 @@ pub fn footer_button(
 
 /// A large sheet button: the prominent one is accent-filled, the other a quiet fill.
 pub fn sheet_button(ui: &mut Ui, label: &str, prominent: bool, enabled: bool) -> egui::Response {
+    sheet_button_in(ui, None, label, prominent, enabled)
+}
+
+/// `sheet_button` under an id the sheet can put the keyboard focus on (`kit::focus::start_on`).
+/// `ring` draws the focus ring while the button has it, like a dialog's buttons.
+pub fn sheet_button_focusable(
+    ui: &mut Ui,
+    id: Id,
+    ring: bool,
+    label: &str,
+    prominent: bool,
+    enabled: bool,
+) -> egui::Response {
+    sheet_button_in(ui, Some(Focusable { id, ring }), label, prominent, enabled)
+}
+
+/// A sheet button the keyboard focus can be put on: its own id, and whether it draws the focus ring.
+#[derive(Clone, Copy)]
+struct Focusable {
+    id: Id,
+    ring: bool,
+}
+
+fn sheet_button_in(
+    ui: &mut Ui,
+    focusable: Option<Focusable>,
+    label: &str,
+    prominent: bool,
+    enabled: bool,
+) -> egui::Response {
     let text = galley(
         ui,
         label,
@@ -204,7 +235,13 @@ pub fn sheet_button(ui: &mut Ui, label: &str, prominent: bool, enabled: bool) ->
     } else {
         Sense::hover()
     };
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 28.0), sense);
+    let (rect, response) = match focusable {
+        Some(Focusable { id, .. }) => {
+            let (rect, _) = ui.allocate_exact_size(vec2(width, 28.0), Sense::hover());
+            (rect, ui.interact(rect, id, sense))
+        }
+        None => ui.allocate_exact_size(vec2(width, 28.0), sense),
+    };
     let response = crate::ui::accessibility::label(response, label);
     let pressed = response.is_pointer_button_down_on();
     let hovered = response.hovered() && enabled;
@@ -232,6 +269,9 @@ pub fn sheet_button(ui: &mut Ui, label: &str, prominent: bool, enabled: bool) ->
         ),
     };
     ui.painter().rect_filled(rect, 7.0, fill);
+    if focusable.is_some_and(|focusable| focusable.ring) && response.has_focus() {
+        focus::paint_ring(ui.painter(), rect, 7.0);
+    }
     ui.painter()
         .galley(rect.center() - text.size() / 2.0, text, color);
     response

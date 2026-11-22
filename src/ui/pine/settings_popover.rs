@@ -9,7 +9,7 @@ use crate::pine::compiler::program::InputSchema;
 use crate::pine::outputs::style_overrides::{StyleOverrides, StyleRow};
 use crate::pine::syntax::token::Limits;
 use crate::pine_studio::inputs::{self, InputValues};
-use crate::pine_studio::library::registry::LibraryRegistry;
+use crate::store::scripts::registry::LibraryRegistry;
 use crate::ui::icons::Icon;
 use crate::ui::kit::popover;
 use crate::ui::kit::{self, SEMIBOLD};

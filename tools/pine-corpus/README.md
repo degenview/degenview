@@ -34,6 +34,11 @@ manifest lists (and rewrites it). Use `--append` to widen the corpus without los
   `line:col` and message. `PINE_CORPUS_REPORT=1` prints one line per script (status, warning count, time),
   `PINE_CORPUS_BARS=5000` runs longer histories (the default is 1000). Use `--release`: the debug build is
   about ten times slower and a script that is merely slow there trips the 10 s evaluation deadline.
+- `PINE_CORPUS_REPORT=1` also prints `values=<hash>` per script, a hash of every plotted value (the test itself only
+  compares status and diagnostic codes, so it cannot see a built-in that now computes something else). To review what
+  a change did to the community scripts, run the test with the variable on the base and on the head and diff the
+  two reports: `diff <(grep -v ' took ' base.txt) <(grep -v ' took ' head.txt)`. A changed hash is a script whose
+  plots moved; judge each one against TradingView, do not just accept it.
 - `expectations.json` is for the default run (1000 one-minute bars). `PINE_CORPUS_SPACING=900` (or 3600, 86400) is for exploring: scripts that check the chart's timeframe on purpose (`runtime.error("Use an intraday chart…")`) will then differ, and scripts that draw nothing on a 1-minute chart may start to draw.
 - To reduce one failure, run a single file with
   `PINE_RUN_FILE=path/to/script.pine [PINE_RUN_BARS=n] cargo test --release run_one_file -- --nocapture`.

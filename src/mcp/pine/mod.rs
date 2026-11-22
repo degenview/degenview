@@ -35,8 +35,8 @@ use crate::model::pine::script::{LocalScript, ScriptDraft};
 use crate::pine::compiler;
 use crate::pine::compiler::program::CompiledProgram;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity, Limits};
-use crate::pine_studio::library::registry::LibraryRegistry;
 use crate::store::scripts::ScriptStore;
+use crate::store::scripts::registry::LibraryRegistry;
 
 /// What the Pine tools hand the app thread, run in `host::mcp::pine`: what a chart's scripts
 /// computed (private to the chart, so only the app thread can read it), and changes to the

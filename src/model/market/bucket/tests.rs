@@ -651,6 +651,89 @@ fn a_folded_answer_that_fills_the_request_loses_the_fragment_it_cut() {
 }
 
 #[test]
+fn a_short_answer_whose_window_began_inside_its_first_bucket_loses_that_bucket() {
+    let plan = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES);
+    // The window began at 01:00 and held hours 1 to 8: the 00:00 bucket may have had an hour
+    // before it, whatever the count says.
+    let hourly = series(HOUR_MS, HOUR_MS, 8);
+    let shown = plan.shape_since(hourly, 20, HOUR_MS, 10);
+    assert_eq!(opens(&shown), [3 * HOUR_MS, 6 * HOUR_MS]);
+}
+
+#[test]
+fn a_short_answer_whose_window_began_on_a_bucket_boundary_keeps_its_first_bucket() {
+    let plan = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES);
+    let hourly = series(0, HOUR_MS, 8);
+    let shown = plan.shape_since(hourly, 20, 0, 10);
+    assert_eq!(opens(&shown), [0, 3 * HOUR_MS, 6 * HOUR_MS]);
+    // A window that began before the first candle's bucket opened held nothing of the one before.
+    let later = series(3 * HOUR_MS, HOUR_MS, 5);
+    let shown = plan.shape_since(later, 20, 2 * HOUR_MS, 10);
+    assert_eq!(opens(&shown), [3 * HOUR_MS, 6 * HOUR_MS]);
+}
+
+#[test]
+fn a_window_answer_that_fills_the_request_still_loses_the_fragment_it_cut() {
+    let plan = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES);
+    let hourly = series(HOUR_MS, HOUR_MS, 8);
+    let shown = plan.shape_since(hourly, 8, 0, 10);
+    assert_eq!(opens(&shown), [3 * HOUR_MS, 6 * HOUR_MS]);
+}
+
+#[test]
+fn a_window_answer_that_is_one_fragment_is_empty() {
+    let plan = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES);
+    // The window began at 01:00 and held hours 1 and 2, which are all of the 00:00 bucket it saw.
+    let hourly = series(HOUR_MS, HOUR_MS, 2);
+    assert!(plan.shape_since(hourly, 20, HOUR_MS, 10).is_empty());
+    // A whole bucket that follows the fragment is kept.
+    let more = series(HOUR_MS, HOUR_MS, 3);
+    let shown = plan.shape_since(more, 20, HOUR_MS, 10);
+    assert_eq!(opens(&shown), [3 * HOUR_MS]);
+}
+
+#[test]
+fn a_window_that_began_at_new_york_midnight_keeps_the_quarter_its_first_month_opens() {
+    // Alpaca stamps a month at New York midnight, five hours past UTC's: a window that began
+    // at 01:00 UTC on January 1 has the whole of January, whatever the UTC bucket start says.
+    let plan = plan(Timeframe::MONTH_3, &SOME_NATIVES);
+    let months: Vec<Kline> = [(1, 31), (2, 29), (3, 31), (4, 30)]
+        .into_iter()
+        .map(|(month, days)| {
+            candle(
+                at(2024, month, 1, 5, 0),
+                days * DAY_MS,
+                100.0 + month as f64,
+            )
+        })
+        .collect();
+    let since = at(2024, 1, 1, 1, 0);
+    let shown = plan.shape_since(months.clone(), 20, since, 10);
+    assert_eq!(opens(&shown), [day(2024, 1, 1), day(2024, 4, 1)]);
+    // A window that began after the first month opened still cuts the quarter.
+    let later = plan.shape_since(months, 20, at(2024, 1, 1, 6, 0), 10);
+    assert_eq!(opens(&later), [day(2024, 4, 1)]);
+}
+
+#[test]
+fn the_newest_bucket_is_the_base_candles_of_the_last_ones_bucket() {
+    let plan = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES);
+    let hourly = series(0, HOUR_MS, 8);
+    // Hours 6 and 7 make the forming 06:00 bucket.
+    assert_eq!(
+        opens(&plan.newest_bucket(&hourly)),
+        [6 * HOUR_MS, 7 * HOUR_MS]
+    );
+    assert!(plan.newest_bucket(&[]).is_empty());
+}
+
+#[test]
+fn a_native_target_has_no_newest_bucket() {
+    let plan = plan(Timeframe::HOUR_1, &SOME_NATIVES);
+    assert!(plan.newest_bucket(&series(0, HOUR_MS, 4)).is_empty());
+}
+
+#[test]
 fn a_folded_answer_is_trimmed_after_folding() {
     let hourly = series(0, HOUR_MS, 24);
     let shown = plan(tf(3, TimeUnit::Hour), &SOME_NATIVES).shape(hourly, 100, 3);

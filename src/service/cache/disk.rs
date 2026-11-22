@@ -3,7 +3,7 @@
 //! Everything here can be deleted at any time and rebuilt from the network, so a failure to read
 //! or write is never an error — it is a miss. User data lives in SQLite (`store`), never here.
 //!
-//! Layout under the cache root (`store::cache_dir`):
+//! Layout under the cache root (`paths::cache_dir`):
 //!
 //! ```text
 //! images/<aa>/<sha256>     one file per icon URL
@@ -16,7 +16,6 @@
 //! Clearing removes only the three directories above, so pointing `DEGENVIEW_CACHE_DIR` at a
 //! shared folder can never delete anything else.
 
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -130,17 +129,14 @@ pub fn global() -> &'static DiskCache {
         if cfg!(test) {
             DiskCache::disabled()
         } else {
-            DiskCache::new(crate::store::cache_dir())
+            DiskCache::new(crate::paths::cache_dir())
         }
     })
 }
 
 /// A stable, filesystem-safe name for any string: the SHA-256 hex digest.
 pub fn digest_name(key: &str) -> String {
-    Sha256::digest(key.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    crate::model::encoding::sha256_hex(key.as_bytes())
 }
 
 impl DiskCache {

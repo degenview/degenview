@@ -260,7 +260,7 @@ impl PaperPanel {
                 // The offset now, as the portfolio tables use: rows from the other side of a
                 // daylight-saving change show an hour off.
                 utc_offset_secs: crate::service::system::timezone::local_utc_offset_secs(
-                    crate::model::watchlist::now_ms(),
+                    crate::clock::now_ms(),
                 ),
             };
             match self.header.tab {

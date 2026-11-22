@@ -104,7 +104,9 @@ impl Session {
         error
     }
 
-    /// A user function's body is about to run, called from the call at `range`.
+    /// A user function's body is about to run, called from the call at `range`. `saved` is what its
+    /// locals' names held as it began, `uncovered` the calling function's own values of the names
+    /// that read the global again during the call (`Session::uncover_caller_globals`).
     #[cold]
     #[inline(never)]
     pub(super) fn hook_enter_function(
@@ -113,11 +115,22 @@ impl Session {
         range: SourceRange,
         scope: Option<&str>,
         first_statement: Option<usize>,
-        shadowed: &[(String, Option<RuntimeValue>)],
+        saved: &[(String, Option<RuntimeValue>)],
+        uncovered: &[(usize, Option<RuntimeValue>)],
     ) {
         match self.hooks.as_deref_mut() {
             Some(Hooks::Debug(debug)) => {
-                debug.enter_function(call_name, range, scope, shadowed.to_vec());
+                // The caller's own values come first: a frame reads a name from its nearest callee
+                // that set it aside.
+                let caller = self.call_frames.last();
+                let shadowed = uncovered
+                    .iter()
+                    .filter_map(|(index, own)| {
+                        caller.map(|caller| (caller.saved[*index].0.clone(), own.clone()))
+                    })
+                    .chain(saved.iter().cloned())
+                    .collect();
+                debug.enter_function(call_name, range, scope, shadowed);
             }
             Some(Hooks::Profile(profile)) => match first_statement {
                 Some(first) if scope.is_none() => {

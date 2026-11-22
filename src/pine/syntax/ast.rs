@@ -115,6 +115,10 @@ impl Expression {
     }
 }
 
+/// Identifies a name a block's declaration may hide, among the program's: an index into the names
+/// the session keeps.
+pub type ShadowId = u32;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     Declaration {
@@ -126,6 +130,11 @@ pub enum Statement {
         mode: DeclarationMode,
         value: Expression,
         range: SourceRange,
+        /// Set when the session is built (`scopes::resolve_with`): the id of this name among the
+        /// ones a block's declaration hides from an outer variable, for an ordinary declaration in
+        /// a block whose name is already visible there. Only such a declaration saves and puts back
+        /// the outer value (`Session::run_block`).
+        shadows: Option<ShadowId>,
     },
     Assignment {
         name: String,
@@ -155,6 +164,10 @@ pub enum Statement {
         step: Option<Expression>,
         body: Vec<Statement>,
         range: SourceRange,
+        /// Like `Declaration::shadows`, for the counter: set when it hides a name visible at the
+        /// loop. The loop saves the outer value once its bounds are evaluated and puts it back
+        /// when it ends (`Session::run_for_range`).
+        shadows: Option<ShadowId>,
     },
     /// `for value in array` / `for [index, value] in array`
     ForIn {
@@ -163,6 +176,8 @@ pub enum Statement {
         collection: Expression,
         body: Vec<Statement>,
         range: SourceRange,
+        /// Like `ForRange::shadows`, for the index and the value, in that order.
+        shadows: [Option<ShadowId>; 2],
     },
     WhileLoop {
         condition: Expression,
@@ -188,6 +203,8 @@ pub enum Statement {
         names: Vec<String>,
         value: Expression,
         range: SourceRange,
+        /// Like `Declaration::shadows`, per name; empty when none of them shadows anything.
+        shadows: Vec<Option<ShadowId>>,
     },
     LoopControl(LoopControl, SourceRange),
     /// `type Name` and its indented field lines.

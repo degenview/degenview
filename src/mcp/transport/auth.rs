@@ -7,11 +7,11 @@
 use crate::mcp::state::McpShared;
 use crate::mcp::transport::PeerAddr;
 use crate::mcp::transport::limits::retry_after_secs;
+use crate::model::encoding::{hex, sha256_hex};
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::time::Duration;
 use subtle::ConstantTimeEq;
@@ -27,22 +27,12 @@ pub fn generate_token() -> Result<String, String> {
 
 /// Lowercase hex SHA-256 of the token: what is stored in place of it.
 pub fn verifier_hex(token: &str) -> String {
-    hex(&Sha256::digest(token.as_bytes()))
+    sha256_hex(token.as_bytes())
 }
 
 /// Constant-time comparison of two stored/presented verifiers.
 pub fn verifiers_match(stored: &str, presented: &str) -> bool {
     stored.as_bytes().ct_eq(presented.as_bytes()).into()
-}
-
-fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    bytes
-        .iter()
-        .fold(String::with_capacity(bytes.len() * 2), |mut out, byte| {
-            let _ = write!(out, "{byte:02x}");
-            out
-        })
 }
 
 fn bearer_token(request: &Request) -> Option<&str> {
@@ -109,7 +99,7 @@ pub async fn require_bearer(
                 // Counted, not listed: a loop of refused calls becomes one row a minute.
                 shared
                     .audit()
-                    .rate_limited(&identity, crate::model::watchlist::now_ms());
+                    .rate_limited(&identity, crate::clock::now_ms());
                 too_many_requests(wait)
             }
         },
@@ -117,9 +107,7 @@ pub async fn require_bearer(
             // A refusal from another machine is the signal worth keeping: counted per address
             // into the activity log (not the token, not the request).
             if let Some(peer) = peer.filter(|peer| !peer.local) {
-                shared
-                    .audit()
-                    .auth_refused(peer, crate::model::watchlist::now_ms());
+                shared.audit().auth_refused(peer, crate::clock::now_ms());
             }
             match shared.note_failed_auth(peer) {
                 Ok(()) => unauthorized(),

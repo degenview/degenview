@@ -19,6 +19,7 @@ pub mod replay;
 pub mod snapshot;
 pub mod watchlist;
 
+use crate::clock::now_ms;
 use crate::mcp::bridge::{self, BridgeClient, BridgeInbox, McpError, Request};
 use crate::mcp::state::{McpShared, McpStatus};
 use crate::mcp::transport::auth::{generate_token, verifier_hex};
@@ -30,7 +31,7 @@ use crate::model::mcp::{
     McpAuditKind, McpClient, McpSettings, Permission, PermissionSet, clean_client_name,
     is_valid_port,
 };
-use crate::model::watchlist::{new_id, now_ms};
+use crate::model::watchlist::new_id;
 use crate::pine_studio::PineStudio;
 use crate::service::keychain::mcp_seal::{KeyState, SealKey, SealKeyStore};
 use crate::store::SharedStore;
@@ -159,7 +160,7 @@ impl McpHost {
             tls_dir: if cfg!(test) {
                 None
             } else {
-                crate::store::data_dir()
+                crate::paths::data_dir()
             },
             tls_fingerprint: None,
         };

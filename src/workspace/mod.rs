@@ -1,3 +1,4 @@
+use crate::clock::now_ms;
 use crate::host::paper::PaperHost;
 use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::lock::lock;
@@ -5,7 +6,7 @@ use crate::model::alert::PriceAlert;
 use crate::model::chart::sync::SyncHub;
 use crate::model::tab::link::LinkColor;
 use crate::model::tab::title::{MAX_CUSTOM_TITLE_CHARS, TabChart};
-use crate::model::watchlist::{WatchlistInstrument, now_ms};
+use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{
     BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, InstrumentId,
     Timeframe,
@@ -48,6 +49,7 @@ mod empty_page;
 mod grid;
 mod input;
 mod layout;
+mod market_flow;
 mod overlay;
 mod pine;
 mod replay;
@@ -185,6 +187,8 @@ pub struct ChartWorkspace {
     quote_coordinator: WatchlistQuoteCoordinator,
     /// The watchlist sidebar and what it asks of the tab.
     watchlist_pane: WatchlistPane,
+    /// The market-flow panel: shown or not, its mode and filters. A tab starts without it.
+    market_flow: market_flow::MarketFlowPane,
     /// The order sheet and the orders panel, and the venue they trade on.
     trade: TradeSide,
     /// The chart menu's state: the open menu, its messages, and the panels it toggles.
@@ -314,6 +318,7 @@ impl ChartWorkspace {
             quote_book,
             quote_coordinator,
             watchlist_pane: WatchlistPane::default(),
+            market_flow: market_flow::MarketFlowPane::default(),
             trade: TradeSide::default(),
             context: ContextState::default(),
             snapshot: SnapshotState::default(),
@@ -351,9 +356,8 @@ impl ChartWorkspace {
             store,
         );
         let chart_id = workspace.fresh_id();
-        workspace
-            .charts
-            .push(Chart::new(chart_id, symbol, source, timeframe, ctx));
+        let chart = workspace.new_chart(chart_id, symbol, source, ctx);
+        workspace.charts.push(chart);
         let chart_ids = [chart_id];
         workspace.columns = ChartColumn::resolved(None, &chart_ids, &mut workspace.next_id);
         workspace.focused = Some(chart_id);
@@ -560,9 +564,11 @@ impl ChartWorkspace {
         paper: &std::sync::Arc<std::sync::Mutex<PaperHost>>,
     ) -> Vec<WorkspaceAction> {
         let ctx = ui.ctx().clone();
+        // Everything below the tab strip: the favorites bar may be moved over all of it.
+        let window = ui.max_rect();
         let timeframe = self.timeframe;
         for chart in &mut self.charts {
-            chart.receive_fetch();
+            chart.receive_fetch(timeframe);
             chart.receive_older(timeframe);
             chart.request_older(timeframe, &ctx);
             if chart.refresh_due() {
@@ -616,6 +622,7 @@ impl ChartWorkspace {
         actions.extend(rail_actions);
 
         self.show_watchlist_panel(ui, &ctx);
+        self.show_market_flow_panel(ui, &ctx);
 
         actions.extend(self.show_trade_panels(ui, paper));
 
@@ -675,7 +682,7 @@ impl ChartWorkspace {
                     .fill(ui::theme::background())
                     .inner_margin(egui::Margin::same(10)),
             )
-            .show(ui, |ui| self.render_grid(ui, &mut lock(paper)));
+            .show(ui, |ui| self.render_grid(ui, &mut lock(paper), window));
         if let Some(item) = self.watchlist_pane.take_new_tab_request() {
             actions.push(WorkspaceAction::OpenWatchlistInNewTab(item));
         }
@@ -725,6 +732,8 @@ impl Drop for ChartWorkspace {
         self.quote_coordinator.release(editor::quote_owner(self.id));
         self.quote_coordinator
             .release(crate::ui::chart::symbol_picker::quote_owner(self.id));
+        self.quote_coordinator
+            .release(trade::paper::paper_quote_owner(self.id));
     }
 }
 

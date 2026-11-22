@@ -36,7 +36,7 @@ impl Form {
                 .map_or(0, |elapsed| elapsed.as_nanos());
             random[..16].copy_from_slice(&nanos.to_le_bytes());
         }
-        let boundary: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+        let boundary = crate::model::encoding::hex(&random);
         Self::with_boundary(format!("----DegenView{boundary}"))
     }
 

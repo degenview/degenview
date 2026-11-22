@@ -9,8 +9,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::fast_hash::FastMap;
+use super::security_slice;
 use super::session::Session;
-use super::state::{RuntimeState, SecuritySite};
+use super::state::{LoggedBar, RuntimeState, SecuritySite};
 use super::support::{ChartSpan, SecurityKey};
 use super::types::{BarFlags, RuntimeContext};
 use super::value::{RefKind, RuntimeValue};
@@ -23,6 +25,35 @@ use crate::pine::time;
 
 /// How many `request.*` expressions may contain one another.
 const SECURITY_NESTING_LIMIT: usize = 3;
+
+/// A chart bar (or a candle of the enclosing request) a call site takes in. `skipped_after` is set
+/// for a bar the site was not called on, replayed later: how many logged bars came after it.
+#[derive(Clone, Copy)]
+struct Step<'a> {
+    bar: &'a Kline,
+    seconds: f64,
+    confirmed: bool,
+    realtime: bool,
+    skipped_after: Option<usize>,
+}
+
+/// The session state that belongs to the series now running, which a request's expression swaps for
+/// its own (`Session::enter_series`, `leave_series`). `bar_index` and `instructions` of `working`
+/// are the request's to advance, and the nesting depth is counted by the caller: neither travels.
+struct SeriesFrame {
+    /// The bar-by-bar state: the chart's, or the call site's own.
+    working: RuntimeState,
+    /// The confirmed bars of the series (`Session::series_bars`).
+    bars: Vec<LoggedBar>,
+    /// The chart variables the running expression reads (`Session::security_globals`); none on the
+    /// chart itself.
+    globals: Option<FastMap<String, RuntimeValue>>,
+    /// The `varip` values of the series.
+    intrabar: FastMap<String, RuntimeValue>,
+    bar_seconds: f64,
+    /// The chart's own bar length, known only while a request runs.
+    chart_bar_seconds: Option<f64>,
+}
 
 /// One `request.security` call's resolved arguments. `foreign` holds another symbol's series; it is
 /// None for the chart's own symbol.
@@ -491,8 +522,119 @@ impl Session {
             return Ok(result);
         }
         if !state.is_warmed_up {
-            self.warm_up(&mut state, request, bar.open_time)?;
+            // History from before the chart's first bar; the chart's own bars, the ones this site
+            // was not called on included, are replayed below.
+            let before = self
+                .series_bars
+                .first()
+                .map_or(bar.open_time, |first| first.bar.open_time);
+            self.warm_up(&mut state, request, before)?;
         }
+        self.replay_skipped_bars(&mut state, request, bar.open_time)?;
+        let seconds = self.bar_seconds;
+        let (result, fresh) = self.advance_site(
+            &mut state,
+            request,
+            &Step {
+                bar: &bar,
+                seconds,
+                confirmed: context.flags.is_confirmed,
+                realtime: context.flags.is_realtime,
+                skipped_after: None,
+            },
+        )?;
+        let result = if request.gaps_on && !fresh {
+            RuntimeValue::Na
+        } else {
+            result
+        };
+        state.processed_bar = Some(bar.open_time);
+        state.bar_result = result.clone();
+        self.working.securities.insert(key, state);
+        Ok(result)
+    }
+
+    /// Takes the confirmed bars of the running series (the chart's, or the candles of the request
+    /// this one sits in) before `before` that this site was not called on into its
+    /// higher-timeframe candle, as TradingView evaluates the expression on every bar whether or not
+    /// the call runs: a call under a condition sees the same candles and builds the same history as
+    /// one that always runs.
+    fn replay_skipped_bars(
+        &mut self,
+        state: &mut SecuritySite,
+        request: &SecurityRequest,
+        before: i64,
+    ) -> Result<(), Diagnostic> {
+        let start = state.processed_bar.map_or(0, |seen| {
+            self.series_bars
+                .partition_point(|logged| logged.bar.open_time <= seen)
+        });
+        let end = self
+            .series_bars
+            .partition_point(|logged| logged.bar.open_time < before);
+        for index in start..end {
+            let LoggedBar { bar, seconds } = self.series_bars[index].clone();
+            let skipped_after = self.series_bars.len() - 1 - index;
+            self.advance_site(
+                state,
+                request,
+                &Step {
+                    bar: &bar,
+                    seconds,
+                    confirmed: true,
+                    realtime: false,
+                    skipped_after: Some(skipped_after),
+                },
+            )?;
+            state.processed_bar = Some(bar.open_time);
+        }
+        Ok(())
+    }
+
+    /// The chart variables (those the expression reads through `security_globals`) as they stood on
+    /// the confirmed bar `back` bars before the latest one, from their histories. A variable that did
+    /// not exist yet is `na`. The values are the ones the bar ended with, so a variable assigned
+    /// after the request in the script reads one bar fresher than a call that ran there would see.
+    fn variables_as_of(&self, back: usize) -> FastMap<String, RuntimeValue> {
+        self.working
+            .variables
+            .keys()
+            .map(|name| {
+                let value = self
+                    .working
+                    .histories
+                    .get(name)
+                    .and_then(|history| {
+                        history
+                            .len()
+                            .checked_sub(back + 1)
+                            .and_then(|at| history.get(at))
+                    })
+                    .cloned()
+                    .unwrap_or(RuntimeValue::Na);
+                (name.clone(), value)
+            })
+            .collect()
+    }
+
+    /// Takes `step`'s bar into the site's candle. Returns the expression's value for the bar and
+    /// whether a higher-timeframe bar was completed on it. A replayed bar (`skipped_after` is set)
+    /// only keeps the site's state current: nothing is evaluated for the bar itself, and a candle it
+    /// completes is evaluated with the chart variables of that bar.
+    fn advance_site(
+        &mut self,
+        state: &mut SecuritySite,
+        request: &SecurityRequest,
+        step: &Step<'_>,
+    ) -> Result<(RuntimeValue, bool), Diagnostic> {
+        let Step {
+            bar,
+            seconds,
+            confirmed,
+            realtime,
+            skipped_after,
+        } = *step;
+        let replay = skipped_after.is_some();
         let start = time::bucket::start(bar.open_time, request.interval);
         let mut fresh = false;
         if state.bucket != Some(start) {
@@ -500,8 +642,9 @@ impl Session {
             if state.has_pending_bars
                 && let Some(pending) = state.accumulated.clone()
             {
+                self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
                 state.last_result =
-                    self.evaluate_higher_timeframe(&mut state, &pending, request, true)?;
+                    self.evaluate_higher_timeframe(state, &pending, request, true)?;
                 fresh = true;
             }
             state.bucket = Some(start);
@@ -515,12 +658,12 @@ impl Session {
         developing.push(bar.clone());
         let developing = fold_one(&developing, request.interval);
         let end = time::bucket::end(start, request.interval);
-        let closes_bucket = bar.open_time + (self.bar_seconds * 1000.0).round() as i64 >= end;
-        let confirmed = context.flags.is_confirmed;
+        let closes_bucket = bar.open_time + (seconds * 1000.0).round() as i64 >= end;
 
         let result;
         if closes_bucket && confirmed {
-            result = self.evaluate_higher_timeframe(&mut state, &developing, request, true)?;
+            self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
+            result = self.evaluate_higher_timeframe(state, &developing, request, true)?;
             state.last_result = result.clone();
             state.accumulated = None;
             state.has_pending_bars = false;
@@ -530,21 +673,13 @@ impl Session {
                 state.accumulated = Some(developing.clone());
                 state.has_pending_bars = true;
             }
-            if request.lookahead_on || context.flags.is_realtime {
-                result = self.evaluate_higher_timeframe(&mut state, &developing, request, false)?;
+            if !replay && (request.lookahead_on || realtime) {
+                result = self.evaluate_higher_timeframe(state, &developing, request, false)?;
             } else {
                 result = state.last_result.clone();
             }
         }
-        let result = if request.gaps_on && !fresh {
-            RuntimeValue::Na
-        } else {
-            result
-        };
-        state.processed_bar = Some(bar.open_time);
-        state.bar_result = result.clone();
-        self.working.securities.insert(key, state);
-        Ok(result)
+        Ok((result, fresh))
     }
 
     /// `request.security` for a symbol the chart does not carry, from the provider's snapshot.
@@ -705,9 +840,6 @@ impl Session {
         commit: bool,
     ) -> Result<RuntimeValue, Diagnostic> {
         let chart_bar_seconds = self.bar_seconds;
-        // The outermost request remembers the chart's own bar length for `timeframe.main_period`.
-        let outer_chart_seconds = self.chart_bar_seconds;
-        self.chart_bar_seconds = Some(outer_chart_seconds.unwrap_or(chart_bar_seconds));
         self.security_depth += 1;
         // The chart's state steps aside and the site's takes its place. A commit moves the site's
         // state in and back out; copying it for every call would make a run quadratic in its length.
@@ -716,14 +848,29 @@ impl Session {
         } else {
             (*site.state).clone()
         };
-        let mut chart = std::mem::replace(&mut self.working, site_state);
-        // The chart's variables stay readable from the expression, without a copy of the table.
-        let outer_globals = self
-            .security_globals
-            .replace(std::mem::take(&mut chart.variables));
+        // The chart's variables stay readable from the expression, without a copy of the table. A
+        // replayed candle reads their values as of its bar instead, which are a copy.
+        let replayed = self.replay_globals.is_some();
+        let globals = self
+            .replay_globals
+            .take()
+            .unwrap_or_else(|| std::mem::take(&mut self.working.variables));
+        let mut chart = self.enter_series(SeriesFrame {
+            working: site_state,
+            // The series the expression runs on is this site's own candles, which a request inside
+            // it replays.
+            bars: std::mem::take(&mut site.bars),
+            globals: Some(globals),
+            // `varip` values are the chart's: the request keeps its own (empty: a `varip` there
+            // acts like `var`, which the declaration reads from the site's variables).
+            intrabar: FastMap::default(),
+            bar_seconds: request.interval,
+            // The outermost request remembers the chart's own bar length for
+            // `timeframe.main_period`.
+            chart_bar_seconds: Some(self.chart_bar_seconds.unwrap_or(chart_bar_seconds)),
+        });
         self.working.instructions = 0;
         self.working.bar_index += 1;
-        self.bar_seconds = request.interval;
 
         let flags = BarFlags {
             is_first: self.working.bar_index == 0,
@@ -748,27 +895,71 @@ impl Session {
             self.debug_enter_security(&requested.symbol, requested.interval_seconds);
         }
         self.logs.enter_request(requested, candle.open_time, commit);
-        let evaluated = self.eval(&request.expression, &mut security_context);
+        // The script variables the expression reads are computed on this series, not read off the chart.
+        let slice = self
+            .security_slices
+            .get(&security_slice::key(&request.expression))
+            .cloned();
+        let evaluated = match slice {
+            Some(slice) => self.run(&slice, &mut security_context).map(|_| ()),
+            None => Ok(()),
+        }
+        .and_then(|()| self.eval(&request.expression, &mut security_context));
         self.logs.leave_request();
         if debugging {
             self.debug_leave();
         }
         // A returned collection or object lives in the site's state; the chart gets a copy of its own.
-        let value = evaluated
-            .map(|evaluated| ReferenceExport::new(&self.working).export(evaluated, &mut chart));
-        if commit {
-            if value.is_ok() {
-                self.commit_histories(candle.clone(), false, Vec::new());
-            }
-            *site.state = std::mem::take(&mut self.working);
+        let value = evaluated.map(|evaluated| {
+            ReferenceExport::new(&self.working).export(evaluated, &mut chart.working)
+        });
+        if commit && value.is_ok() {
+            self.commit_histories(candle.clone(), false, Vec::new());
         }
-        chart.variables =
-            std::mem::replace(&mut self.security_globals, outer_globals).unwrap_or_default();
-        self.working = chart;
-        self.bar_seconds = chart_bar_seconds;
-        self.chart_bar_seconds = outer_chart_seconds;
+        let request_frame = self.leave_series(chart);
+        if commit {
+            *site.state = request_frame.working;
+        }
+        site.bars = request_frame.bars;
+        if commit && value.is_ok() {
+            site.bars.push(LoggedBar {
+                bar: candle.clone(),
+                seconds: request.interval,
+            });
+        }
+        if !replayed {
+            self.working.variables = request_frame.globals.unwrap_or_default();
+        }
         self.security_depth -= 1;
         value
+    }
+
+    /// Puts `inner`, a request's series, in place of the one now running and returns what it
+    /// displaced, which `leave_series` puts back.
+    fn enter_series(&mut self, inner: SeriesFrame) -> SeriesFrame {
+        self.swap_series(inner)
+    }
+
+    /// Puts the `outer` series back and returns the request's own, for its state and candles to be
+    /// kept.
+    fn leave_series(&mut self, outer: SeriesFrame) -> SeriesFrame {
+        self.swap_series(outer)
+    }
+
+    /// Exchanges the session's per-series state with `frame`. Entering and leaving are the same
+    /// exchange, so every field travels in both directions and none is left behind on an exit.
+    fn swap_series(&mut self, frame: SeriesFrame) -> SeriesFrame {
+        SeriesFrame {
+            working: std::mem::replace(&mut self.working, frame.working),
+            bars: std::mem::replace(&mut self.series_bars, frame.bars),
+            globals: std::mem::replace(&mut self.security_globals, frame.globals),
+            intrabar: std::mem::replace(&mut self.intrabar, frame.intrabar),
+            bar_seconds: std::mem::replace(&mut self.bar_seconds, frame.bar_seconds),
+            chart_bar_seconds: std::mem::replace(
+                &mut self.chart_bar_seconds,
+                frame.chart_bar_seconds,
+            ),
+        }
     }
 
     /// A fresh array holding `items`.
@@ -1127,6 +1318,622 @@ mod tests {
         );
         assert_eq!(output.plots.len(), 1);
         assert_eq!(output.plots[0].values.last(), Some(&Some(120.0)));
+    }
+
+    /// ETHUSDT closes 100, 110, 120 on the same bars as a chart that closes 1, 2, 3.
+    fn eth_provider() -> TestProvider {
+        let mut provider = TestProvider::default();
+        provider.candles.insert(
+            SecurityKey {
+                symbol: "ETHUSDT".to_owned(),
+                interval: 60.0,
+                recent_bars: 0,
+            },
+            vec![bar(0, 100.0), bar(60_000, 110.0), bar(120_000, 120.0)],
+        );
+        provider
+    }
+
+    fn last_plotted(source: &str) -> Option<f64> {
+        let chart = [bar(0, 1.0), bar(60_000, 2.0), bar(120_000, 3.0)];
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}\nplot(x)");
+        run(&body, eth_provider(), &chart).plots[0]
+            .values
+            .last()
+            .copied()
+            .flatten()
+    }
+
+    #[test]
+    fn a_script_variable_is_computed_on_the_requested_series() {
+        // The chart's `doubled` is 6; ETHUSDT's is 240.
+        assert_eq!(
+            last_plotted("doubled = close * 2\nx = request.security(\"ETHUSDT\", \"1\", doubled)"),
+            Some(240.0)
+        );
+    }
+
+    #[test]
+    fn a_chain_of_variables_keeps_its_indicator_state_and_history() {
+        // `ta.sma` runs over ETHUSDT's closes (110, 120), and `[1]` reads that series' previous bar.
+        assert_eq!(
+            last_plotted("mean = ta.sma(close, 2)\nx = request.security(\"ETHUSDT\", \"1\", mean)"),
+            Some(115.0)
+        );
+        assert_eq!(
+            last_plotted(
+                "doubled = close * 2\nx = request.security(\"ETHUSDT\", \"1\", doubled[1])"
+            ),
+            Some(220.0)
+        );
+    }
+
+    #[test]
+    fn a_reassigned_variable_and_a_function_that_reads_one_follow_the_series() {
+        assert_eq!(
+            last_plotted(
+                "level = 0.0\nif close > 105\n    level := close\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+        assert_eq!(
+            last_plotted(
+                "factor = 2\nscaled() =>\n    close * factor\nx = request.security(\"ETHUSDT\", \"1\", scaled())"
+            ),
+            Some(240.0)
+        );
+    }
+
+    #[test]
+    fn a_helper_reads_the_requested_global_after_its_unused_branch() {
+        // Only the helper reads `level`; the request still computes it on ETHUSDT.
+        assert_eq!(
+            last_plotted(
+                "level = close\nf() =>\n    if false\n        level = 1.0\n    level\nx = request.security(\"ETHUSDT\", \"1\", f())"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_function_reads_the_requested_global_its_unused_branch_declares_again() {
+        // The expression reads `level` itself, so the request computes it on ETHUSDT; the helper's
+        // branch-local `level` must not hide that value after the branch.
+        assert_eq!(
+            last_plotted(
+                "level = close\nf() =>\n    if false\n        level = 1.0\n    level\nx = request.security(\"ETHUSDT\", \"1\", level > 0 ? f() : 0.0)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_function_in_a_request_inside_a_function_reads_the_global_not_the_callers_local() {
+        // A request inside a function is not sliced: `len` is the chart's global, never `f`'s own.
+        assert_eq!(
+            last_plotted(
+                "len = 1.0\ng() =>\n    len\nf() =>\n    len = 50.0\n    request.security(\"ETHUSDT\", \"1\", g())\nx = f()"
+            ),
+            Some(1.0)
+        );
+    }
+
+    #[test]
+    fn code_after_the_request_is_not_part_of_what_it_computes() {
+        // TradingView computes the variable as it stands where the request is written.
+        assert_eq!(
+            last_plotted(
+                "value = close\nx = request.security(\"ETHUSDT\", \"1\", value)\nvalue := value * 2"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_collection_a_call_fills_is_filled_in_the_request_too() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", ";
+        // The array lives in the request's own state and gets one value per requested bar.
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\narray.push(samples, close)\n{request}array.size(samples))"
+            )),
+            Some(3.0)
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\nsamples.push(close)\nn = samples.size()\n{request}n)"
+            )),
+            Some(3.0)
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\narray.push(samples, close)\nfirst = array.get(samples, 0)\n{request}first)"
+            )),
+            Some(100.0),
+            "no out-of-bounds read of an array nothing filled"
+        );
+    }
+
+    #[test]
+    fn overloads_run_only_the_dependencies_of_the_one_called() {
+        // `bad` is only read by the string overload, and fails where the chart does not run it
+        // (ETHUSDT closes above 50, the chart below).
+        assert_eq!(
+            last_plotted(
+                "arr = array.new_float()\nbad = close > 50 ? array.get(arr, 5) : 0.0\nf(float v) =>\n    v * 2\nf(string s) =>\n    str.tostring(bad)\nx = request.security(\"ETHUSDT\", \"1\", f(close))"
+            ),
+            Some(240.0)
+        );
+    }
+
+    #[test]
+    fn a_function_that_only_reads_its_argument_is_not_replayed() {
+        // `checked` fails on the requested series (ETHUSDT closes above 50) but not on the chart's.
+        // It cannot change `level`, so the request has no business running it.
+        assert_eq!(
+            last_plotted(
+                "id(a) =>\n    a\nchecked(v) =>\n    if v > 50\n        runtime.error(\"boom\")\n    v\nlevel = id(close)\nunused = checked(level)\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_collection_a_function_returned_is_still_filled() {
+        assert_eq!(
+            last_plotted(
+                "makeArray() =>\n    array.new_float()\nvar samples = makeArray()\nsamples.push(close)\nn = samples.size()\nx = request.security(\"ETHUSDT\", \"1\", n)"
+            ),
+            Some(3.0)
+        );
+        assert_eq!(
+            last_plotted(
+                "makeArray() =>\n    array.new_float()\nfill(a) =>\n    a.push(close)\nvar samples = makeArray()\nfill(samples)\nn = array.size(samples)\nx = request.security(\"ETHUSDT\", \"1\", n)"
+            ),
+            Some(3.0),
+            "a function that fills its parameter"
+        );
+    }
+
+    #[test]
+    fn a_local_in_a_block_is_not_resolved_to_the_global_with_its_name() {
+        // The request sees the `level` of the block it is written in.
+        assert_eq!(
+            last_plotted(
+                "level = 10.0\nvar float x = na\nif close > 0\n    level = 20.0\n    x := request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(20.0)
+        );
+    }
+
+    #[test]
+    fn a_read_only_overload_is_not_replayed_for_the_sake_of_a_mutating_one() {
+        // `checked(float)` fails on the requested series; only `checked(array<float>)` changes
+        // its parameter, and the call is the float one.
+        assert_eq!(
+            last_plotted(
+                "checked(float v) =>\n    if v > 50\n        runtime.error(\"boom\")\n    v\nchecked(array<float> a) =>\n    array.push(a, 1.0)\n    1.0\nlevel = close\nunused = checked(level)\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_block_local_assignment_is_not_a_write_of_the_global() {
+        // The block's own `level` is changed; the global is not, so the block stays out of the
+        // request (it would raise the error on the requested series).
+        assert_eq!(
+            last_plotted(
+                "level = close\nif close > 50\n    level = 5.0\n    level += 1\n    runtime.error(\"boom\")\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_collection_changed_through_an_alias_or_a_helper_is_filled() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", array.size(samples))";
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\nalias = samples\nalias.push(close)\n{request}"
+            )),
+            Some(3.0),
+            "through an alias"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\naddSample() =>\n    array.push(samples, close)\naddSample()\n{request}"
+            )),
+            Some(3.0),
+            "a helper without arguments"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\naddSample() =>\n    array.push(samples, close)\nrecord() =>\n    addSample()\nrecord()\n{request}"
+            )),
+            Some(3.0),
+            "a helper of a helper"
+        );
+    }
+
+    #[test]
+    fn a_block_reading_its_own_variable_does_not_pull_in_the_global() {
+        // The global `bad` fails on the requested series (ETHUSDT closes above 50); the block reads
+        // its own `bad`, so the request has no business running the global one.
+        assert_eq!(
+            last_plotted(
+                "arr = array.new_float()\nbad = close > 50 ? array.get(arr, 5) : 0.0\nlevel = close\nif close > 0\n    bad = close\n    level := bad\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_collection_changed_through_a_local_alias_is_filled() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", array.size(samples))";
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\nif close > 0\n    alias = samples\n    alias.push(close)\n{request}"
+            )),
+            Some(3.0),
+            "an alias a block makes"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "var samples = array.new_float()\nfill(a) =>\n    alias = a\n    alias.push(close)\nfill(samples)\n{request}"
+            )),
+            Some(3.0),
+            "an alias a helper makes of its parameter"
+        );
+    }
+
+    #[test]
+    fn the_collection_of_a_builtin_is_found_by_label_or_position() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", array.size(samples))";
+        for call in [
+            "array.push(value = close, id = samples)",
+            "array.push(samples, value = close)",
+            "array.push(samples, close)",
+        ] {
+            assert_eq!(
+                last_plotted(&format!(
+                    "var samples = array.new_float()\n{call}\n{request}"
+                )),
+                Some(3.0),
+                "{call}"
+            );
+        }
+    }
+
+    /// A line that only runs, and fails, on the ETHUSDT series (its closes are above 50).
+    const FAILS_ON_ETH: &str = "bad = close > 50 ? array.get(array.new_float(), 5) : 0.0\n";
+
+    #[test]
+    fn blocks_alias_names_do_not_merge_in_the_request() {
+        assert_eq!(
+            last_plotted(
+                "var samples = array.new_float()\nvar other = array.new_float()\nif close > 0\n    alias = samples\n    alias.push(close)\nif close > 50\n    alias = other\n    alias.push(array.get(other, 5))\nx = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            ),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn a_builtin_does_not_replay_the_script_function_of_its_name() {
+        assert_eq!(
+            last_plotted(&format!(
+                "{FAILS_ON_ETH}sma(float src, int len) =>\n    src + bad\nx = request.security(\"ETHUSDT\", \"1\", ta.sma(close, 2))"
+            )),
+            Some(115.0)
+        );
+    }
+
+    #[test]
+    fn a_read_only_query_is_not_replayed_in_the_request() {
+        assert_eq!(
+            last_plotted(
+                "var samples = array.new_float()\narray.push(samples, close)\nunused = close > 50 ? array.get(array.new_float(), 1) + array.percentrank(samples, 0) : 0.0\nx = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            ),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn a_read_only_user_method_is_not_replayed_in_the_request() {
+        assert_eq!(
+            last_plotted(&format!(
+                "{FAILS_ON_ETH}level = close\nmethod push(float this, float v) =>\n    v + bad\nr = level.push(1.0)\nx = request.security(\"ETHUSDT\", \"1\", level)"
+            )),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_matrix_predicate_is_not_replayed_in_the_request() {
+        assert_eq!(
+            last_plotted(&format!(
+                "{FAILS_ON_ETH}m = matrix.new<float>(2, 2, 0.0)\nunused = matrix.is_zero(m) ? bad : 0.0\nx = request.security(\"ETHUSDT\", \"1\", matrix.rows(m))"
+            )),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn a_namespaced_builtin_does_not_replay_the_script_function_that_fills_a_global() {
+        assert_eq!(
+            last_plotted(&format!(
+                "{FAILS_ON_ETH}var samples = array.new_float()\nsma(float src, int len) =>\n    array.push(samples, src)\n    src\nunused = bad + ta.sma(close, 2)\nx = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            )),
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn an_alias_reassigned_in_an_inner_block_is_filled_through_both_sources() {
+        // On the chart (closes 1, 2, 3) `b` gets two values; on ETHUSDT (all above 1) three.
+        assert_eq!(
+            last_plotted(
+                "var a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    alias = a\n    if close > 1\n        alias := b\n    alias.push(close)\nx = request.security(\"ETHUSDT\", \"1\", array.size(b))"
+            ),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn a_global_a_callee_fills_is_not_the_callers_parameter_of_that_name() {
+        // `fill` runs with its own lexical scope: it fills the global `samples`, not the `samples`
+        // that `f` is handed (`other`). The chart does the same, so the request must too.
+        let script = "var samples = array.new_float()\nvar other = array.new_float()\nfill() =>\n    array.push(samples, close)\n    1.0\nf(samples) =>\n    fill()\nf(other)\n";
+        assert_eq!(
+            last_plotted(&format!("{script}x = array.size(samples)")),
+            Some(3.0),
+            "on the chart"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            )),
+            Some(3.0)
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(other))"
+            )),
+            Some(0.0),
+            "`other` is never filled"
+        );
+    }
+
+    #[test]
+    fn an_alias_an_expression_block_makes_is_followed() {
+        // `alias := samples` sits in the block of `y = if …`; the push through `alias` fills
+        // `samples`, on the chart (three bars) and in the request.
+        let script = "var samples = array.new_float()\nvar alias = array.new_float()\ny = if close > 0\n    alias := samples\n    1.0\nelse\n    0.0\nalias.push(close)\n";
+        assert_eq!(
+            last_plotted(&format!("{script}x = array.size(samples)")),
+            Some(3.0),
+            "on the chart"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(samples))"
+            )),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn an_alias_made_after_the_mutation_does_not_make_the_request_replay_it() {
+        // `a` and `b` are new on every bar. The chart fills and updates `a`; the request reads `b`
+        // on 5m bars, where `a` is empty, so replaying `a.set(0, 7)` there would stop the script.
+        // `a := b` comes after: it makes them one array only from there on.
+        let head = "a = array.new_float()\nb = array.new_float()\nif close < 50\n    a.push(close)\na.set(0, 7.0)\n";
+        let request = "x = request.security(\"ETHUSDT\", \"1\", array.size(b))";
+        for copy in [
+            "flag = if close > 0\n    a := b\n    1.0\nelse\n    0.0\n",
+            "a := b\n",
+        ] {
+            assert_eq!(
+                last_plotted(&format!("{head}{copy}{request}")),
+                Some(0.0),
+                "{copy}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_var_alias_written_after_the_mutation_still_counts() {
+        // `a` is persistent: the copy `a := b` at the end of one bar is what the next bar's
+        // `a.push` fills, so the request must replay that push to see `b` filled: on the second and
+        // third bar, as on the chart.
+        let script =
+            "var a = array.new_float()\nvar b = array.new_float()\na.push(close)\na := b\n";
+        assert_eq!(
+            last_plotted(&format!("{script}x = array.size(b)")),
+            Some(2.0),
+            "on the chart"
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "{script}x = request.security(\"ETHUSDT\", \"1\", array.size(b))"
+            )),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn two_globals_copied_from_a_builtin_are_not_aliases() {
+        // `a` and `b` both hold `close`, which is no object: filling one fills nothing, and what
+        // the unreached branch does to `a` (it fails on ETHUSDT, whose closes are above 50) is not
+        // a reason to replay it for the request that reads `b`.
+        assert_eq!(
+            last_plotted(
+                "a = close\nb = close\nif close > 50\n    a.push(1.0)\nx = request.security(\"ETHUSDT\", \"1\", b)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_block_that_redeclares_a_name_keeps_what_it_assigned_before() {
+        // `c0 := b` runs before the inner block's own `c0 = c0` and is the outer `c0`'s: while
+        // `close > 1` the push below fills `b`, and `a` gets the other bars'. The chart's bars 2
+        // and 3 qualify, and so do all of ETHUSDT's, so the request must fill `b` as well.
+        let script = "var a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    c0 = a\n    if close > 1\n        c0 := b\n        c0 = c0\n    c0.push(close)\n";
+        // The same through a sibling branch that declares a `c0` of its own.
+        let sibling = "var a = array.new_float()\nvar b = array.new_float()\nif close > 0\n    c0 = a\n    if close > 1\n        c0 := b\n    else\n        c0 = array.new_float()\n    c0.push(close)\n";
+        for script in [script, sibling] {
+            for (read, on_chart, requested) in [("a", 1.0, 0.0), ("b", 2.0, 3.0)] {
+                assert_eq!(
+                    last_plotted(&format!("{script}x = array.size({read})")),
+                    Some(on_chart),
+                    "{read} on the chart"
+                );
+                assert_eq!(
+                    last_plotted(&format!(
+                        "{script}x = request.security(\"ETHUSDT\", \"1\", array.size({read}))"
+                    )),
+                    Some(requested),
+                    "{read} in the request"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_write_in_the_block_of_the_request_before_it_follows_the_series() {
+        assert_eq!(
+            last_plotted(
+                "level = 0.0\nx = 0.0\nif close > 0\n    level := close\n    x := request.security(\"ETHUSDT\", \"1\", level)"
+            ),
+            Some(120.0)
+        );
+    }
+
+    #[test]
+    fn a_name_an_expression_statement_declares_is_read_as_declared() {
+        assert_eq!(
+            last_plotted(
+                "level = close\nx = if close > 0\n    level = 20.0\n    request.security(\"ETHUSDT\", \"1\", level)\nelse\n    0.0"
+            ),
+            Some(20.0)
+        );
+    }
+
+    #[test]
+    fn a_variable_is_computed_as_it_stands_where_it_is_read() {
+        let request = "x = request.security(\"ETHUSDT\", \"1\", snapshot)";
+        // The later `level` fails on the requested series (ETHUSDT closes above 50).
+        assert_eq!(
+            last_plotted(&format!(
+                "arr = array.new_float()\nlevel = close\nsnapshot = level\nlevel := close > 50 ? array.get(arr, 5) : close\n{request}"
+            )),
+            Some(120.0)
+        );
+        // A `var` and a history read see what the previous bar wrote after them.
+        assert_eq!(
+            last_plotted(&format!(
+                "var level = 0.0\nsnapshot = level\nlevel := close\n{request}"
+            )),
+            Some(110.0)
+        );
+        assert_eq!(
+            last_plotted(&format!(
+                "level = close\nsnapshot = level[1]\nlevel := level + 1\n{request}"
+            )),
+            Some(111.0)
+        );
+    }
+
+    /// Runs `source` on one chart bar that gets two live ticks, as the session does for a bar that
+    /// has not closed, and returns what `read` makes of the session after each tick.
+    fn after_each_tick<T>(source: &str, read: impl Fn(&Session) -> T) -> Vec<T> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(eth_provider())),
+            None,
+        );
+        [true, false]
+            .into_iter()
+            .map(|is_new| {
+                let _ = session.execute(
+                    BarEvent {
+                        candle: bar(0, 1.0),
+                        phase: BarPhase::RealtimeTick { is_new },
+                    },
+                    true,
+                    None,
+                );
+                read(&session)
+            })
+            .collect()
+    }
+
+    /// The last value of the first plot after each tick.
+    fn plotted_after_each_tick(source: &str) -> Vec<Option<f64>> {
+        after_each_tick(source, |session| {
+            session.output().plots[0].values.last().copied().flatten()
+        })
+    }
+
+    /// The messages of the alerts the session emitted for each tick.
+    fn alerts_after_each_tick(source: &str) -> Vec<Vec<String>> {
+        after_each_tick(source, |session| {
+            session
+                .emitted_alerts
+                .iter()
+                .map(|alert| alert.message.clone())
+                .collect()
+        })
+    }
+
+    #[test]
+    fn a_request_does_not_touch_the_charts_varip_state() {
+        let counter = "varip n = 0\nn += 1\nplot(n)\n";
+        let alone = plotted_after_each_tick(counter);
+        assert_eq!(alone, [Some(1.0), Some(2.0)]);
+        // The same counter, read by a request whose result nothing uses.
+        let requested = plotted_after_each_tick(&format!(
+            "{counter}ignored = request.security(\"ETHUSDT\", \"1\", n)"
+        ));
+        assert_eq!(requested, alone);
+    }
+
+    #[test]
+    fn an_alert_in_a_slice_does_not_fire_from_the_requested_series() {
+        let request = "ignored = request.security(\"ETHUSDT\", \"1\", level)";
+        // The slice replays the whole `if`, alert included; only the chart's own run fires it.
+        assert_eq!(
+            alerts_after_each_tick(&format!(
+                "level = 0.0\nif close > 0\n    level := close\n    alert(\"hi\", alert.freq_all)\n{request}"
+            )),
+            [["hi"], ["hi"]]
+        );
+        assert_eq!(
+            alerts_after_each_tick(&format!(
+                "level = 0.0\nnotify() =>\n    alert(\"hi\", alert.freq_all)\n    close\nif close > 0\n    level := notify()\n{request}"
+            )),
+            [["hi"], ["hi"]],
+            "through a function the slice calls"
+        );
+    }
+
+    #[test]
+    fn a_request_does_not_use_up_the_once_per_bar_alert() {
+        // The request runs `notify` first: on ETHUSDT (closes above 50) the message would read `true`
+        // and the chart's own call would find the bar's alert already given.
+        assert_eq!(
+            alerts_after_each_tick(
+                "notify() =>\n    alert(str.tostring(close > 50), alert.freq_once_per_bar)\n    close\nignored = request.security(\"ETHUSDT\", \"1\", notify())\nplot(notify())"
+            ),
+            [vec!["false"], vec![]]
+        );
     }
 
     #[test]

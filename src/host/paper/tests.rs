@@ -1,4 +1,5 @@
 use super::*;
+use crate::clock::now_ms;
 use crate::model::DataSource;
 use crate::model::paper::{PaperInstrument, PaperOrderStatus};
 use crate::store::Store;
@@ -47,7 +48,7 @@ fn a_tick_that_fills_nothing_changes_no_list_and_saves_nothing() {
         timestamp,
         is_market_open: true,
     };
-    let now = crate::model::watchlist::now_ms();
+    let now = crate::clock::now_ms();
     let before = host.revision();
     host.process_quote(tick(100.0, now)).unwrap();
     host.process_quote(tick(101.0, now + 1)).unwrap();
@@ -128,7 +129,7 @@ fn paper_host_cost() {
         let mut host = PaperHost::load(store.clone());
         let id = account(&mut host);
         let key = "Binance:BTCUSDT";
-        let now = crate::model::watchlist::now_ms();
+        let now = crate::clock::now_ms();
         let tick = |last: f64, n: i64| PaperQuote {
             instrument_key: key.to_owned(),
             bid: Some(last - 0.5),
@@ -200,7 +201,7 @@ fn tracks_only_instruments_with_a_working_order_or_a_position() {
         bid: None,
         ask: None,
         last: Some(100.0),
-        timestamp: crate::model::watchlist::now_ms(),
+        timestamp: crate::clock::now_ms(),
         is_market_open: true,
     })
     .unwrap();
@@ -465,13 +466,6 @@ fn restored_quotes_are_discarded_as_stale() {
 
     let restored = PaperHost::load(store);
     assert!(restored.snapshot().quotes.is_empty());
-}
-
-fn now_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis() as i64)
 }
 
 mod fill_sound {

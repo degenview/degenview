@@ -258,10 +258,12 @@ pub fn setting_policy(key: &str) -> SettingPolicy {
         "appTheme"
         | "drawing.defaults"
         | "drawing.prefs"
+        | "drawing.favorites"
         | "snapshot.prefs"
         | "editor.prefs"
         | "indicatorPicker.favorites"
-        | "timeframePicker.pinned" => SettingPolicy::Portable(Merge::LastWriterWins),
+        | "timeframePicker.pinned"
+        | "chart.defaultTemplate" => SettingPolicy::Portable(Merge::LastWriterWins),
         "watchlist.flags" => SettingPolicy::Portable(Merge::ThreeWay),
         _ => SettingPolicy::Local,
     }
@@ -371,6 +373,8 @@ mod tests {
             // The language is chosen per Mac, like the system's own: a Mac set to another
             // language is not moved by this one.
             "language",
+            // Where the favorite drawing tools' bar sits suits this screen, not another Mac's.
+            "drawing.favoritesBar",
         ] {
             assert_eq!(setting_policy(key), SettingPolicy::Local, "{key}");
         }
@@ -401,6 +405,10 @@ mod tests {
         );
         assert_eq!(
             setting_policy("indicatorPicker.favorites"),
+            SettingPolicy::Portable(Merge::LastWriterWins)
+        );
+        assert_eq!(
+            setting_policy(crate::store::drawing_favorites::KEY),
             SettingPolicy::Portable(Merge::LastWriterWins)
         );
         assert_eq!(

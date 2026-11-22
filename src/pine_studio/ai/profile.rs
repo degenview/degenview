@@ -18,8 +18,8 @@ use crate::pine::profile::{
     Completeness, Interruption, ProfileConfig, ProfileOutcome, ProfileReport, ProfileSession,
 };
 use crate::pine_studio::debug::DebugFeed;
-use crate::pine_studio::library::registry::LibraryRegistry;
 use crate::pine_studio::profiler::marks::{ProfileMarks, count, duration, percent};
+use crate::store::scripts::registry::LibraryRegistry;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 const POLL: Duration = Duration::from_millis(15);

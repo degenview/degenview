@@ -4,6 +4,7 @@
 //! resolver. The `strategy.*` reads live in `strategy::builtins::strategy_value`.
 
 use super::ta;
+use crate::clock::now_ms;
 use crate::model::{ChartKind, Kline};
 use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::runtime::state::RuntimeState;
@@ -37,7 +38,7 @@ pub fn read(name: &str, context: &MarketContext) -> Option<RuntimeValue> {
         "time_tradingday" => Some(RuntimeValue::Int(
             context.bar.open_time.div_euclid(MILLIS_PER_DAY) * MILLIS_PER_DAY,
         )),
-        "timenow" => Some(RuntimeValue::Int(now_millis())),
+        "timenow" => Some(RuntimeValue::Int(now_ms())),
         "ta.tr" => Some(RuntimeValue::Float(ta::true_range(
             context.bar,
             previous_close(context.state),
@@ -153,13 +154,6 @@ fn exchange_prefix(symbol: &SymbolInfo) -> Option<String> {
     } else {
         Some(prefix.to_uppercase())
     }
-}
-
-fn now_millis() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis() as i64)
 }
 
 #[cfg(test)]

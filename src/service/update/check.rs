@@ -2,8 +2,10 @@
 //! picks the newest one the chosen `Channel` accepts and compares its tag with the running version.
 //! Read-only: it never downloads or installs anything, it only reports where the release page is.
 
+use crate::model::changelog::{self, Coverage, ListedRelease, ReleaseNotes, Stability, Version};
 use crate::service::net::http::{self, Retry};
 use serde::Deserialize;
+use std::sync::Arc;
 
 /// The recent releases, prereleases included (`/releases/latest` never returns one, and is "the
 /// most recently created stable release", not the highest version).
@@ -51,16 +53,16 @@ impl Channel {
     /// The channel a build of `version` came from, for a user who never chose: a release candidate
     /// keeps getting release candidates.
     pub fn of_version(version: &str) -> Self {
-        match Version::parse(version).map(|version| version.kind()) {
-            Some(Kind::ReleaseCandidate) => Self::ReleaseCandidate,
+        match Version::parse(version).map(|version| version.stability()) {
+            Some(Stability::ReleaseCandidate) => Self::ReleaseCandidate,
             _ => Self::Stable,
         }
     }
 
     fn accepts(self, version: &Version) -> bool {
         matches!(
-            (self, version.kind()),
-            (_, Kind::Stable) | (Self::ReleaseCandidate, Kind::ReleaseCandidate)
+            (self, version.stability()),
+            (_, Stability::Stable) | (Self::ReleaseCandidate, Stability::ReleaseCandidate)
         )
     }
 }
@@ -83,6 +85,10 @@ pub struct Release {
     pub asset: Option<ReleaseAsset>,
     /// Why the release is only offered for manual download, when it is not installable.
     pub manual_only: Option<&'static str>,
+    /// What changed between the running build (exclusive) and this release (inclusive).
+    pub notes: Arc<ReleaseNotes>,
+    /// What those notes could not read: releases in the range they say nothing about.
+    pub coverage: Coverage,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,6 +125,8 @@ struct ReleaseDto {
     author: Option<AuthorDto>,
     #[serde(default)]
     assets: Vec<AssetDto>,
+    /// The notes the release workflow wrote (`tools/changelog.sh notes`).
+    body: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -206,12 +214,18 @@ fn check_pages(
         return UpdateOutcome::Failed(format!("Could not compare version {current}."));
     };
     let mut releases = Vec::new();
+    // Whether the list was read to where this build's own history starts or to its end. Running out
+    // of pages first leaves releases unread that the offered version's notes may depend on.
+    let mut reached_end = false;
     for page in 1..=MAX_PAGES {
         let body = match fetch(page) {
             Ok(body) => body,
             // No published release yet (or repository not public): nothing newer exists. Past the
             // first page it only means the list ended.
-            Err(http::Error::Status(404)) => break,
+            Err(http::Error::Status(404)) => {
+                reached_end = true;
+                break;
+            }
             Err(http::Error::Status(403 | 429)) => {
                 return UpdateOutcome::Failed(
                     "GitHub is rate limiting requests. Try again later.".to_owned(),
@@ -223,17 +237,20 @@ fn check_pages(
             return UpdateOutcome::Failed("GitHub sent an unreadable reply.".to_owned());
         };
         let last = listed.len() < PAGE_SIZE;
-        // The list is newest-created first: once a page holds a release this build already has (or
-        // an older one) that the channel accepts, later pages only hold older releases.
+        // The list is newest-created first, not by version: a stable hotfix published during a run
+        // of release candidates sorts ahead of candidates that are newer than it in version terms.
+        // So nothing but this build's own release says the list now holds everything newer than
+        // it; any other lower version only says a lower version exists.
         let reached_history = listed
             .iter()
-            .any(|release| offered_version(release, channel).is_some_and(|v| v <= running));
+            .any(|release| is_release_of(release, &running));
         releases.extend(listed);
         if last || reached_history {
+            reached_end = true;
             break;
         }
     }
-    pick(releases, &running, channel)
+    pick(releases, &running, channel, !reached_end)
 }
 
 fn parse_page(body: &str) -> Option<Vec<ReleaseDto>> {
@@ -245,6 +262,12 @@ fn evaluate(body: &str, current: &str, channel: Channel) -> UpdateOutcome {
     check_pages(current, channel, |_| Ok(body.to_owned()))
 }
 
+/// Whether `release` is the published release of exactly this version, whatever the channel: the
+/// running build may be one the channel would not offer.
+fn is_release_of(release: &ReleaseDto, version: &Version) -> bool {
+    !release.draft && Version::parse(&release.tag_name).is_some_and(|found| found == *version)
+}
+
 /// The release's version, when it is a published release `channel` offers.
 fn offered_version(release: &ReleaseDto, channel: Channel) -> Option<Version> {
     if release.draft {
@@ -253,33 +276,55 @@ fn offered_version(release: &ReleaseDto, channel: Channel) -> Option<Version> {
     let version = Version::parse(&release.tag_name)?;
     // GitHub's flag and the tag agree for releases the workflow publishes; a stable tag marked as
     // a prerelease is not trusted as stable.
-    let consistent = !release.prerelease || version.prerelease.is_some();
+    let consistent = !release.prerelease || version.is_prerelease();
     (consistent && channel.accepts(&version)).then_some(version)
 }
 
-fn pick(releases: Vec<ReleaseDto>, running: &Version, channel: Channel) -> UpdateOutcome {
+fn pick(
+    mut releases: Vec<ReleaseDto>,
+    running: &Version,
+    channel: Channel,
+    history_incomplete: bool,
+) -> UpdateOutcome {
     // A tag this version cannot read, or that no channel offers, is skipped rather than failing
     // the whole check: one stray tag must not stop updates.
     let newest = releases
-        .into_iter()
-        .filter_map(|release| Some((offered_version(&release, channel)?, release)))
+        .iter()
+        .enumerate()
+        .filter_map(|(at, release)| Some((offered_version(release, channel)?, at)))
         .max_by(|(a, _), (b, _)| a.cmp(b));
     match newest {
-        Some((latest, release)) if latest > *running => UpdateOutcome::Available(offer(release)),
+        Some((latest, at)) if latest > *running => {
+            let listed = releases.iter().map(|release| ListedRelease {
+                tag: &release.tag_name,
+                draft: release.draft,
+                trusted: by_release_workflow(release),
+                body: release.body.as_deref().unwrap_or_default(),
+            });
+            let (notes, coverage) =
+                changelog::notes_for_range(listed, running, &latest, history_incomplete);
+            UpdateOutcome::Available(offer(releases.swap_remove(at), notes, coverage))
+        }
         _ => UpdateOutcome::UpToDate,
     }
 }
 
-fn offer(release: ReleaseDto) -> Release {
+/// Whether the release workflow published `release`: the only author whose assets or notes the
+/// app acts on.
+fn by_release_workflow(release: &ReleaseDto) -> bool {
+    release.author.as_ref().is_some_and(|author| {
+        RELEASE_AUTHORS
+            .iter()
+            .any(|login| login.eq_ignore_ascii_case(&author.login))
+    })
+}
+
+fn offer(release: ReleaseDto, notes: ReleaseNotes, coverage: Coverage) -> Release {
     // Only install what cannot be swapped after publishing and that the release workflow published;
     // anything else is left to a manual download.
     let manual_only = if !release.immutable {
         Some("Not published as an immutable release, so it needs a manual download.")
-    } else if !release.author.as_ref().is_some_and(|author| {
-        RELEASE_AUTHORS
-            .iter()
-            .any(|login| login.eq_ignore_ascii_case(&author.login))
-    }) {
+    } else if !by_release_workflow(&release) {
         Some("Not published by the release workflow, so it needs a manual download.")
     } else {
         None
@@ -301,139 +346,9 @@ fn offer(release: ReleaseDto) -> Release {
             .unwrap_or_else(|| RELEASES_URL.to_owned()),
         asset: select_asset(assets, &release.tag_name, platform_suffix()),
         manual_only,
+        notes: Arc::new(notes),
+        coverage,
         tag: release.tag_name,
-    }
-}
-
-/// `major.minor.patch` with an optional `v` prefix and an optional `-prerelease`/`+build` tail,
-/// ordered by SemVer 2.0: a prerelease sorts before its release (`0.2.0-rc.1 < 0.2.0`) and its
-/// dot-separated parts compare numerically when numeric (`rc.2 < rc.10`), else as text.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Version {
-    core: [u64; 3],
-    prerelease: Option<String>,
-}
-
-/// What a version's prerelease part says about how settled it is.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Kind {
-    Stable,
-    ReleaseCandidate,
-    /// `alpha`, `beta`, `nightly`, anything unrecognised: no channel offers these.
-    Other,
-}
-
-impl Version {
-    /// SemVer 2.0 with one optional `v`: three numbers without leading zeros, then an optional
-    /// `-prerelease` and `+build`. Anything looser is not a tag the release tooling creates.
-    fn parse(text: &str) -> Option<Self> {
-        let text = text.trim();
-        let text = text.strip_prefix(['v', 'V']).unwrap_or(text);
-        let (text, build) = match text.split_once('+') {
-            Some((text, build)) => (text, Some(build)),
-            None => (text, None),
-        };
-        if build.is_some_and(|build| !build.split('.').all(is_identifier)) {
-            return None;
-        }
-        let (core, prerelease) = match text.split_once('-') {
-            Some((core, pre)) => (core, Some(pre)),
-            None => (text, None),
-        };
-        let mut parts = core.split('.');
-        let mut numbers = [0_u64; 3];
-        for slot in &mut numbers {
-            *slot = parse_number(parts.next()?)?;
-        }
-        if parts.next().is_some() {
-            return None;
-        }
-        if let Some(pre) = prerelease {
-            let valid = pre.split('.').all(|part| {
-                is_identifier(part) && (!is_digits(part) || parse_number(part).is_some())
-            });
-            if !valid {
-                return None;
-            }
-        }
-        Some(Self {
-            core: numbers,
-            prerelease: prerelease.map(str::to_owned),
-        })
-    }
-
-    /// A release candidate is exactly `rc.N` (the form `tools/release.sh` writes); `rc1`, `RC.1`
-    /// and everything else after the hyphen are "other", which no channel offers.
-    fn kind(&self) -> Kind {
-        let Some(pre) = &self.prerelease else {
-            return Kind::Stable;
-        };
-        match pre.strip_prefix("rc.") {
-            Some(number) if is_digits(number) => Kind::ReleaseCandidate,
-            _ => Kind::Other,
-        }
-    }
-}
-
-fn is_digits(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-/// A SemVer identifier: non-empty ASCII letters, digits and hyphens.
-fn is_identifier(text: &str) -> bool {
-    !text.is_empty()
-        && text
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-}
-
-/// Digits only, no leading zero (`0` itself is fine), and small enough for a `u64`.
-fn parse_number(text: &str) -> Option<u64> {
-    (is_digits(text) && (text == "0" || !text.starts_with('0')))
-        .then(|| text.parse().ok())
-        .flatten()
-}
-
-impl PartialOrd for Version {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Version {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-        self.core
-            .cmp(&other.core)
-            .then_with(|| match (&self.prerelease, &other.prerelease) {
-                (None, None) => Ordering::Equal,
-                (Some(_), None) => Ordering::Less,
-                (None, Some(_)) => Ordering::Greater,
-                (Some(a), Some(b)) => cmp_prerelease(a, b),
-            })
-    }
-}
-
-/// SemVer 2.0 precedence of two prerelease strings: part by part, numeric parts numerically and
-/// below text parts, the shorter list first when one is a prefix of the other.
-fn cmp_prerelease(a: &str, b: &str) -> std::cmp::Ordering {
-    use std::cmp::Ordering;
-    let (mut a, mut b) = (a.split('.'), b.split('.'));
-    loop {
-        let order = match (a.next(), b.next()) {
-            (None, None) => return Ordering::Equal,
-            (None, Some(_)) => return Ordering::Less,
-            (Some(_), None) => return Ordering::Greater,
-            (Some(x), Some(y)) => match (x.parse::<u64>(), y.parse::<u64>()) {
-                (Ok(x), Ok(y)) => x.cmp(&y),
-                (Ok(_), Err(_)) => Ordering::Less,
-                (Err(_), Ok(_)) => Ordering::Greater,
-                (Err(_), Err(_)) => x.cmp(y),
-            },
-        };
-        if order != Ordering::Equal {
-            return order;
-        }
     }
 }
 
@@ -489,64 +404,6 @@ mod tests {
             UpdateOutcome::Available(release) => release,
             other => panic!("expected an update, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn versions_order_numerically_not_textually() {
-        let v = |text| Version::parse(text).unwrap();
-        assert!(v("0.10.0") > v("0.9.9"));
-        assert!(v("v1.0.0") > v("0.99.99"));
-        assert!(v("0.2.0-rc.1") < v("0.2.0"));
-        assert!(v("0.2.0-rc1") < v("0.2.0"));
-        assert_eq!(v("v0.1.0"), v("0.1.0+build5"));
-        assert!(Version::parse("0.1").is_none());
-        assert!(Version::parse("nightly").is_none());
-        assert!(Version::parse("1.2.3.4").is_none());
-    }
-
-    /// The client reads remote repository state, so it shares the contract of `tools/release.sh`.
-    #[test]
-    fn versions_must_be_strict_semver() {
-        for tag in [
-            "vv1.0.0",
-            "01.0.0",
-            "1.00.0",
-            "1.0.0-01",
-            "+1.0.0",
-            "1.0.0-",
-            "1.0.0-rc..1",
-            "1.0.0-rc.1+",
-            "1.0.0+a..b",
-            "1.0.0-rc_1",
-            "1.-1.0",
-            "99999999999999999999.0.0",
-        ] {
-            assert!(Version::parse(tag).is_none(), "{tag}");
-        }
-        for tag in [
-            "v1.0.0",
-            "V1.0.0",
-            "0.0.0",
-            "1.0.0-rc.1",
-            "1.0.0-0.3.7",
-            "1.0.0+20130313",
-        ] {
-            assert!(Version::parse(tag).is_some(), "{tag}");
-        }
-    }
-
-    #[test]
-    fn prereleases_follow_semver_precedence() {
-        let v = |text| Version::parse(text).unwrap();
-        // Numeric parts compare as numbers: rc.10 is after rc.2.
-        assert!(v("0.6.0-rc.2") < v("0.6.0-rc.10"));
-        assert!(v("0.6.0-rc.10") < v("0.6.0"));
-        assert!(v("0.6.0-alpha.1") < v("0.6.0-beta.1"));
-        assert!(v("0.6.0-beta.9") < v("0.6.0-rc.1"));
-        // A longer list wins when the shorter is its prefix, and a candidate for the next
-        // version is after the current release.
-        assert!(v("0.6.0-rc") < v("0.6.0-rc.1"));
-        assert!(v("0.5.1") < v("0.6.0-rc.1"));
     }
 
     #[test]
@@ -729,11 +586,82 @@ mod tests {
     }
 
     #[test]
+    fn a_hotfix_listed_before_the_running_release_does_not_end_the_paging() {
+        // Created order: candidates 40..36, the 0.5.2 hotfix, candidates 35..12 fill page one;
+        // the running candidate and the ones between it and the offered one are on page two.
+        let mut all: Vec<String> = (36..=40)
+            .rev()
+            .map(|n| reply(&format!("v0.6.0-rc.{n}")))
+            .collect();
+        all.push(reply("v0.5.2"));
+        all.extend((12..=35).rev().map(|n| reply(&format!("v0.6.0-rc.{n}"))));
+        assert_eq!(all.len(), PAGE_SIZE);
+        all.extend((1..=11).rev().map(|n| reply(&format!("v0.6.0-rc.{n}"))));
+        let reads = std::cell::Cell::new(0);
+        let outcome = check_pages("0.6.0-rc.10", Channel::ReleaseCandidate, paged(all, &reads));
+        let found = available(outcome);
+        assert_eq!(found.version, "0.6.0-rc.40");
+        assert_eq!(reads.get(), 2, "the hotfix is not this build's release");
+        assert!(!found.coverage.history_incomplete);
+    }
+
+    #[test]
+    fn a_running_build_that_is_not_listed_reads_every_page_and_says_the_history_is_cut_short() {
+        // A local or unpublished build: no release carries its version, so nothing says where
+        // its history starts and the older releases on the list prove nothing.
+        let mut all = vec![reply("v0.5.2")];
+        all.extend(candidates(MAX_PAGES * PAGE_SIZE - 1));
+        let reads = std::cell::Cell::new(0);
+        let outcome = check_pages("0.5.1-dev", Channel::Stable, paged(all, &reads));
+        assert_eq!(reads.get(), MAX_PAGES);
+        assert!(available(outcome).coverage.history_incomplete);
+    }
+
+    #[test]
     fn paging_is_bounded() {
         let reads = std::cell::Cell::new(0);
         let outcome = check_pages("0.5.1", Channel::Stable, paged(candidates(200), &reads));
         assert_eq!(outcome, UpdateOutcome::UpToDate);
         assert_eq!(reads.get(), MAX_PAGES);
+    }
+
+    /// Whether the offered update's notes say the list of releases they came from was cut short.
+    fn history_incomplete(all: Vec<String>) -> bool {
+        let reads = std::cell::Cell::new(0);
+        let outcome = check_pages("0.5.1", Channel::Stable, paged(all, &reads));
+        available(outcome).coverage.history_incomplete
+    }
+
+    #[test]
+    fn running_out_of_pages_before_the_running_version_marks_the_history_incomplete() {
+        let mut all = vec![reply("v0.5.2")];
+        all.extend(candidates(MAX_PAGES * PAGE_SIZE - 1));
+        assert_eq!(all.len(), MAX_PAGES * PAGE_SIZE);
+        assert!(history_incomplete(all));
+    }
+
+    #[test]
+    fn a_list_that_ends_or_reaches_the_running_version_is_complete() {
+        // A short last page: the list is all there is.
+        let mut short = vec![reply("v0.5.2")];
+        short.extend(candidates(PAGE_SIZE + 9));
+        assert!(!history_incomplete(short));
+        // The running version on the last page read: what is left is older than it.
+        let mut reached = vec![reply("v0.5.2")];
+        reached.extend(candidates(MAX_PAGES * PAGE_SIZE - 3));
+        reached.push(reply("v0.5.1"));
+        reached.push(reply("v0.5.0"));
+        assert_eq!(reached.len(), MAX_PAGES * PAGE_SIZE);
+        assert!(!history_incomplete(reached));
+        // A page past the first that does not exist: the list ended on a page boundary.
+        let mut first = vec![reply("v0.5.2")];
+        first.extend(candidates(PAGE_SIZE - 1));
+        let first = list(&first);
+        let ended = check_pages("0.5.1", Channel::Stable, |page| match page {
+            1 => Ok(first.clone()),
+            _ => Err(http::Error::Status(404)),
+        });
+        assert!(!available(ended).coverage.history_incomplete);
     }
 
     #[test]
@@ -952,6 +880,128 @@ mod tests {
         foreign.browser_download_url = "https://evil.example/a.zip".to_owned();
         assert!(pick(foreign).is_none());
         assert!(select_asset(vec![asset(name, "x", 5, Some(&digest))], "v1.0.0", None).is_none());
+    }
+
+    /// `reply` with the notes `body` set, as the workflow writes them.
+    fn noted(reply: String, body: &str) -> String {
+        let mut release: serde_json::Value = serde_json::from_str(&reply).unwrap();
+        release["body"] = body.into();
+        release.to_string()
+    }
+
+    fn changes(version: &str, new: &[&str], fixed: &[&str]) -> String {
+        let mut text = format!("## {version} (2026-11-20)\n");
+        for (title, lines) in [("New", new), ("Fixed", fixed)] {
+            if !lines.is_empty() {
+                text.push_str(&format!("\n### {title}\n\n"));
+                for line in lines {
+                    text.push_str(&format!("- {line}\n"));
+                }
+            }
+        }
+        text
+    }
+
+    fn release_noted(tag: &str, body: &str) -> String {
+        noted(reply(tag), body)
+    }
+
+    #[test]
+    fn an_update_carries_the_changes_after_the_running_version_up_to_the_offered_one() {
+        let releases = [
+            release_noted(
+                "v0.6.0-rc.3",
+                &changes("0.6.0-rc.3", &["Three."], &["Fix three."]),
+            ),
+            release_noted("v0.6.0-rc.2", &changes("0.6.0-rc.2", &["Two."], &[])),
+            release_noted("v0.6.0-rc.1", &changes("0.6.0-rc.1", &["One."], &[])),
+            release_noted("v0.5.1", &changes("0.5.1", &["Already installed."], &[])),
+        ];
+        let release = available(eval(&releases, "0.5.1", Channel::ReleaseCandidate));
+        assert_eq!(release.notes.new, ["Three.", "Two.", "One."]);
+        assert_eq!(release.notes.fixed, ["Fix three."]);
+        // Only what the running build lacks.
+        let release = available(eval(&releases, "0.6.0-rc.1", Channel::ReleaseCandidate));
+        assert_eq!(release.notes.new, ["Three.", "Two."]);
+    }
+
+    #[test]
+    fn candidate_fixes_follow_the_running_version_not_the_channel() {
+        let mut body = changes("0.6.0", &[], &["Fix."]);
+        body.push_str("\n### Fixed in release candidates\n\n- Candidate fix.\n");
+        let releases = [release_noted("v0.6.0", &body), release_noted("v0.5.1", "")];
+        // Someone on a candidate, in either channel, may have hit them.
+        for channel in [Channel::ReleaseCandidate, Channel::Stable] {
+            let release = available(eval(&releases, "0.6.0-rc.1", channel));
+            assert_eq!(release.notes.fixed, ["Fix.", "Candidate fix."]);
+        }
+        let release = available(eval(&releases, "0.5.1", Channel::Stable));
+        assert_eq!(release.notes.fixed, ["Fix."]);
+    }
+
+    #[test]
+    fn notes_come_only_from_published_releases_of_the_workflow() {
+        let draft = noted(
+            r#"{"tag_name":"v0.6.0-rc.2","draft":true,"prerelease":true}"#.to_owned(),
+            &changes("0.6.0-rc.2", &["From a draft."], &[]),
+        );
+        let hand_made = noted(
+            reply_by("v0.6.0-rc.3", true, "someone"),
+            &changes("0.6.0-rc.3", &["From a person."], &[]),
+        );
+        let mut forged = changes("0.6.0-rc.4", &["Forged by a stranger."], &[]);
+        forged.push_str(&changes("0.6.0-rc.1", &["Forged too."], &[]));
+        let forging = noted(reply_by("v0.6.0-rc.5", true, "someone"), &forged);
+        let releases = [
+            forging,
+            release_noted("v0.6.0-rc.4", &changes("0.6.0-rc.4", &["Four."], &[])),
+            hand_made,
+            draft,
+            release_noted("v0.6.0-rc.1", &changes("0.6.0-rc.1", &["One."], &[])),
+        ];
+        // The newest release is by a stranger, so it is a manual download; what the sheet lists
+        // is still only what the workflow wrote.
+        let release = available(eval(&releases, "0.5.1", Channel::ReleaseCandidate));
+        assert_eq!(release.version, "0.6.0-rc.5");
+        assert_eq!(release.notes.new, ["Four.", "One."]);
+    }
+
+    #[test]
+    fn releases_without_notes_or_with_a_commit_log_carry_none() {
+        let old = "## Changes since v0.5.0\n\n- Something (abc1234)\n\n## Downloads\n";
+        for releases in [
+            vec![reply("v0.6.0")],
+            vec![release_noted("v0.6.0", old)],
+            vec![noted(reply("v0.6.0"), "")],
+        ] {
+            let release = available(eval(&releases, "0.5.1", Channel::Stable));
+            assert!(release.notes.is_empty());
+            assert_eq!(release.coverage.unsummarized, 1);
+        }
+    }
+
+    #[test]
+    fn releases_in_the_range_with_no_trusted_section_are_counted_once() {
+        let hand_made = noted(
+            reply_by("v0.6.0-rc.2", true, "someone"),
+            &changes("0.6.0-rc.2", &["From a person."], &[]),
+        );
+        let draft = r#"{"tag_name":"v0.6.0-rc.5","draft":true,"prerelease":true}"#.to_owned();
+        let releases = [
+            draft,
+            release_noted("v0.6.0-rc.4", &changes("0.6.0-rc.4", &["Four."], &[])),
+            reply("v0.6.0-rc.3"),
+            hand_made,
+            release_noted("v0.6.0-rc.1", &changes("0.6.0-rc.1", &["One."], &[])),
+            reply("v0.6.0-rc.1"),
+            reply("v0.5.1"),
+            reply("v0.5.0"),
+        ];
+        // rc.3 has no notes and rc.2's are not the workflow's; a draft, the duplicate rc.1 and the
+        // releases up to the running one are not gaps.
+        let release = available(eval(&releases, "0.5.1", Channel::ReleaseCandidate));
+        assert_eq!(release.notes.new, ["Four.", "One."]);
+        assert_eq!(release.coverage.unsummarized, 2);
     }
 
     #[test]

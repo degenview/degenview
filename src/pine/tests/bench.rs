@@ -177,6 +177,18 @@ pub(crate) fn straight_line(statements: usize) -> String {
     source
 }
 
+/// One block with many distinct locals, none hiding anything: what declaring in a block costs per
+/// declaration as the block grows.
+pub(crate) fn wide_block(locals: usize) -> String {
+    let mut source =
+        String::from("//@version=6\nindicator(\"Wide block\")\ntotal = 0.0\nif bar_index >= 0\n");
+    for index in 0..locals {
+        source.push_str(&format!("    w{index} = close + {index}\n"));
+    }
+    source.push_str(&format!("    total := w0 + w{}\nplot(total)\n", locals - 1));
+    source
+}
+
 pub(crate) const MANY_TA: &str = "//@version=6
 indicator(\"Many ta\")
 a = ta.sma(close, 20)
@@ -218,6 +230,55 @@ j = math.pow(close, 2) / close
 k = math.sign(close - open)
 l = math.avg(a, b, c)
 plot(a + b + c + d + e + f + g + h + i + j + k + l)
+";
+
+/// Many blocks per bar, some declaring a name of their own (one that hides an outer variable, one
+/// that does not exist outside) and most not: what a block costs to enter and leave.
+pub(crate) const BLOCKS: &str = "//@version=6
+indicator(\"Blocks\")
+float total = 0.0
+float level = close
+for i = 0 to 15
+    float step = i * 0.5
+    if step > 4.0
+        total += step
+    else
+        total -= 0.25
+    for j = 0 to 2
+        total += j * 0.1
+    if close > open
+        float level = high - low
+        total += level
+    else
+        total += 0.5
+    switch i % 3
+        0 => total += 1.0
+        1 =>
+            float k = step * 2
+            total += k
+        => total += 2.0
+plot(total + level)
+";
+
+/// Hot `for` loops: counters that hide a global (`i`, `k`, `v`), ones that hide nothing (`j`) and a
+/// `for ... in`: what entering and leaving a loop costs per counter.
+pub(crate) const COUNTERS: &str = "//@version=6
+indicator(\"Counters\")
+i = 3
+k = 1
+v = 0.5
+var values = array.new_float(0)
+if array.size(values) < 40
+    array.push(values, close)
+float total = 0.0
+for i = 0 to 40
+    for j = 0 to 3
+        total += j * 0.1
+for [k, v] in values
+    total += k * v
+for n = 0 to 40
+    total += n
+plot(total + i + k + v)
 ";
 
 /// Six `str.*` calls per bar.
@@ -448,6 +509,51 @@ plot(c)
 plot(d)
 plot(e)
 plot(f)
+";
+
+/// Moving averages and oscillators the other workloads leave out: `ta.macd` with its own lengths,
+/// `ta.hma`, `ta.mfi`, `ta.obv` and `ta.vwap(...)`. A change to one of them shows up here.
+pub(crate) const SLOW_INDICATORS: &str = "//@version=6
+indicator(\"SlowIndicators\")
+[line, signal, hist] = ta.macd(close, 5, 35, 5)
+plot(line)
+plot(signal)
+plot(hist)
+plot(ta.hma(close, 21))
+plot(ta.mfi(hlc3, 14))
+plot(ta.obv)
+plot(ta.vwap(hlc3))
+plot(ta.cum(ta.change(close)))
+";
+
+/// `ta.supertrend` as the tuple TradingView returns.
+pub(crate) const SUPERTREND: &str = "//@version=6
+indicator(\"Supertrend\", overlay = true)
+[line, direction] = ta.supertrend(3, 10)
+plot(line)
+plot(direction)
+";
+
+/// `request.security` with `lookahead_on`, with and without the `[1]` idiom.
+pub(crate) const SECURITY_LOOKAHEAD: &str = "//@version=6
+indicator(\"SecurityLookahead\")
+ahead = request.security(syminfo.tickerid, \"5\", close, lookahead = barmerge.lookahead_on)
+safe = request.security(syminfo.tickerid, \"5\", close[1], lookahead = barmerge.lookahead_on)
+gapped = request.security(syminfo.tickerid, \"5\", close, barmerge.gaps_on, barmerge.lookahead_on)
+plot(ahead)
+plot(safe)
+plot(gapped)
+";
+
+/// Divisions by zero, which TradingView keeps as infinity inside a formula.
+pub(crate) const DIVISION_BY_ZERO: &str = "//@version=6
+indicator(\"DivisionByZero\")
+zero = close - close
+ratio = close / zero
+plot(100 - 100 / (1 + ratio))
+plot(math.max(ratio, 5))
+plot(na(ratio) ? 1 : 0)
+plot(close == close + 1e-10 ? 1 : 0)
 ";
 
 /// A script that stops itself part-way through the history.
@@ -691,6 +797,25 @@ fn workloads() -> Vec<Workload> {
     }
     {
         let data = minute.clone();
+        add("blocks", Box::new(move || evaluate(BLOCKS, &data, false)));
+    }
+    {
+        let data = minute.clone();
+        add(
+            "counters",
+            Box::new(move || evaluate(COUNTERS, &data, false)),
+        );
+    }
+    {
+        let data = bars(800, MINUTE_MS);
+        let source = wide_block(300);
+        add(
+            "wide_block",
+            Box::new(move || evaluate(&source, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
         add(
             "many_str",
             Box::new(move || evaluate(MANY_STR, &data, false)),
@@ -767,6 +892,34 @@ fn workloads() -> Vec<Workload> {
         add(
             "varip_sites",
             Box::new(move || evaluate(VARIP_SITES, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "slow_indicators",
+            Box::new(move || evaluate(SLOW_INDICATORS, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "supertrend",
+            Box::new(move || evaluate(SUPERTREND, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "security_lookahead",
+            Box::new(move || evaluate(SECURITY_LOOKAHEAD, &data, true)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "division_by_zero",
+            Box::new(move || evaluate(DIVISION_BY_ZERO, &data, false)),
         );
     }
     {
@@ -931,5 +1084,57 @@ fn bench_workloads() {
             after.bytes - before.bytes,
             after.peak,
         );
+    }
+}
+
+/// What building a session costs on a large script, and the part of it that flags the declarations
+/// that hide a name (`scopes::mark_shadowing`, one `resolve` over the tree).
+#[test]
+#[ignore = "benchmark: cargo test --release --lib session_build_cost -- --ignored --nocapture"]
+fn session_build_cost() {
+    use crate::pine::compiler::symbol_catalog::is_variable;
+    use crate::pine::syntax::scopes::{ShadowNames, mark_shadowing};
+
+    fn median(mut times: Vec<u128>) -> u128 {
+        times.sort_unstable();
+        times[times.len() / 2]
+    }
+    for (name, source) in [
+        ("straight_line_5000", straight_line(5_000)),
+        ("wide_block_2000", wide_block(2_000)),
+        ("blocks", BLOCKS.to_owned()),
+    ] {
+        let program = compile(&source);
+        let build = median(
+            (0..9)
+                .map(|_| {
+                    let program = program.clone();
+                    let started = Instant::now();
+                    let session = Session::new(
+                        program,
+                        HashMap::new(),
+                        limits(),
+                        None,
+                        symbol(),
+                        None,
+                        None,
+                    );
+                    let elapsed = started.elapsed().as_nanos();
+                    drop(session);
+                    elapsed
+                })
+                .collect(),
+        );
+        let marking = median(
+            (0..9)
+                .map(|_| {
+                    let mut statements = program.statements.clone();
+                    let started = Instant::now();
+                    mark_shadowing(&mut statements, &is_variable, &mut ShadowNames::default());
+                    started.elapsed().as_nanos()
+                })
+                .collect(),
+        );
+        println!("BUILD {name} session_new_ns={build} marking_ns={marking}");
     }
 }

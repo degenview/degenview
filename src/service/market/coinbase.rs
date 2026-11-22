@@ -50,8 +50,8 @@ impl MarketSource for Coinbase {
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Coinbase, timeframe)?;
         let (seconds, needed) = Self::request(plan, limit as usize);
-        let source = self.source_candles(&product_id(symbol), seconds, needed)?;
-        Ok(plan.shape(source, needed, limit as usize))
+        let (source, window_start) = self.source_candles(&product_id(symbol), seconds, needed)?;
+        Ok(shaped(plan, source, needed, window_start, limit as usize))
     }
 
     fn fetch_klines_range(
@@ -64,9 +64,9 @@ impl MarketSource for Coinbase {
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Coinbase, timeframe)?;
         let (seconds, needed) = Self::request(plan, max);
-        let source =
+        let (source, window_start) =
             self.source_candles_before(&product_id(symbol), seconds, start_ms, end_ms, needed)?;
-        Ok(plan.shape(source, needed, max))
+        Ok(shaped(plan, source, needed, window_start, max))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -142,14 +142,32 @@ fn parse_products(body: &str) -> Result<Vec<Product>, ProviderError> {
         .collect())
 }
 
+/// `source` shaped into `limit` candles of `plan`'s target. `window_start` is where the paging
+/// stopped short of the product's history, so a first bucket that opened before it is a fragment.
+fn shaped(
+    plan: FoldPlan,
+    source: Vec<Kline>,
+    needed: usize,
+    window_start: Option<i64>,
+    limit: usize,
+) -> Vec<Kline> {
+    match window_start {
+        Some(since) => plan.shape_since(source, needed, since, limit),
+        None => plan.shape(source, needed, limit),
+    }
+}
+
 impl Coinbase {
+    /// The newest `needed` candles, oldest first, paged back from now, and where the paging
+    /// stopped if that was short of the product's history (`None` when an empty page ended it).
     fn source_candles(
         &self,
         id: &str,
         granularity: i64,
         needed: usize,
-    ) -> Result<Vec<Kline>, ProviderError> {
+    ) -> Result<(Vec<Kline>, Option<i64>), ProviderError> {
         let mut candles = self.fetch_page(id, granularity, None, None)?;
+        let mut window_start = None;
         let mut pages = 0;
         while candles.len() < needed && pages < MAX_PAGES {
             let Some(oldest) = candles.first().map(|c| c.open_time) else {
@@ -157,19 +175,23 @@ impl Coinbase {
             };
             std::thread::sleep(Duration::from_millis(120));
             let span = granularity * PAGE_BUCKETS * 1_000;
-            let older = self.fetch_page(id, granularity, Some(oldest - span), Some(oldest))?;
+            let lower = oldest - span;
+            let older = self.fetch_page(id, granularity, Some(lower), Some(oldest))?;
             let older: Vec<Kline> = older.into_iter().filter(|c| c.open_time < oldest).collect();
             if older.is_empty() {
+                window_start = None;
                 break;
             }
             candles = older.into_iter().chain(candles).collect();
+            window_start = Some(lower);
             pages += 1;
         }
-        Ok(candles)
+        Ok((candles, window_start))
     }
 
     /// The newest `needed` candles that open in `[start_ms, end_ms)`, oldest first, paged back from
-    /// `end_ms`. An empty page is the start of the product's history.
+    /// `end_ms`, and where the paging stopped if that was short of the product's history. An empty
+    /// page before `start_ms` is the start of the product's history (`None`).
     fn source_candles_before(
         &self,
         id: &str,
@@ -177,9 +199,10 @@ impl Coinbase {
         start_ms: i64,
         end_ms: i64,
         needed: usize,
-    ) -> Result<Vec<Kline>, ProviderError> {
+    ) -> Result<(Vec<Kline>, Option<i64>), ProviderError> {
         let span = granularity * PAGE_BUCKETS * 1_000;
         let mut candles: Vec<Kline> = Vec::new();
+        let mut window_start = None;
         let mut upper = end_ms;
         for page in 0..MAX_PAGES {
             if candles.len() >= needed || upper <= start_ms {
@@ -191,13 +214,17 @@ impl Coinbase {
             let lower = (upper - span).max(start_ms).max(0);
             let mut batch = self.fetch_page(id, granularity, Some(lower), Some(upper))?;
             batch.retain(|c| c.open_time >= start_ms && c.open_time < upper);
+            window_start = Some(lower);
             let Some(oldest) = batch.first().map(|c| c.open_time) else {
+                if lower > start_ms {
+                    window_start = None;
+                }
                 break;
             };
             upper = oldest;
             candles = batch.into_iter().chain(candles).collect();
         }
-        Ok(candles)
+        Ok((candles, window_start))
     }
 
     fn fetch_page(

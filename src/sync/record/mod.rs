@@ -10,7 +10,7 @@ pub mod scripts;
 pub mod validate;
 
 use super::record::policy::EntityKind;
-use sha2::{Digest, Sha256};
+use crate::model::encoding::sha256_hex;
 
 /// Bumped when a payload changes shape in a way an older app cannot read. Records with a higher
 /// version are preserved untouched and applied after the user updates.
@@ -139,13 +139,6 @@ impl SyncRecord {
     pub fn payload_sha256(&self) -> String {
         sha256_hex(&self.payload)
     }
-}
-
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 #[cfg(test)]

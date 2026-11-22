@@ -23,16 +23,16 @@ mod sheets;
 pub mod theme_preview;
 mod workspace;
 
+use crate::clock::now_ms;
 use crate::host::editor_theme::EditorThemeHost;
 use crate::model::pine::instance::{PineInstance, StoredInput};
-use crate::model::pine::script::{
-    CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType, now_ms,
-};
+use crate::model::pine::script::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
 use crate::service::work_queue::Pending;
 use crate::store::SharedStore;
 use crate::store::scripts::ScriptStore;
+use crate::store::scripts::registry::LibraryRegistry;
 use crate::ui::shortcut;
 use crate::ui::theme;
 use commands::Cmd;
@@ -40,7 +40,6 @@ use editor::EditorState;
 use eframe::egui::{self, Ui};
 use library::picker::Picker;
 use library::prefs::LayoutPrefs;
-use library::registry::LibraryRegistry;
 pub use library::unsaved::{ExitDecision, ExitReason};
 use library::unsaved::{ExitPrompt, UnsavedChoice, UnsavedScript};
 use migrate_swift::swift_scripts_dir;

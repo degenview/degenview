@@ -26,7 +26,7 @@ impl MarketSource for Binance {
         let requested = plan.base_count(limit as usize);
         if requested > MAX_PER_REQUEST {
             // More finer candles than one request holds: page back from now.
-            let end_ms = crate::service::now_ms() + 1;
+            let end_ms = crate::clock::now_ms() + 1;
             return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
         }
         let url = format!(

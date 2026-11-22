@@ -150,8 +150,9 @@ impl Env<'_> {
     }
 
     fn frame_value(&self, frame: usize, name: &str) -> Option<RuntimeValue> {
-        // A callee took the names it declares off the table and parked the caller's values with its
-        // own frame; the nearest callee that did so holds what this frame had.
+        // A callee parks the caller's values of the names it declares, and of the globals the
+        // caller's locals hid, with its own frame (the table then holds the callee's view); the
+        // nearest callee that did so holds what this frame had.
         let callees_end = match self.boundary() {
             Some(boundary) if frame == boundary => return None,
             Some(boundary) if frame < boundary => {

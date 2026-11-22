@@ -1,16 +1,20 @@
 pub mod alert;
 pub mod annotation;
 pub mod cache;
+pub mod depth;
 pub mod editor_theme;
 pub mod image;
 pub mod keychain;
+pub mod liquidation;
 pub mod llm;
 pub mod market;
 pub mod net;
 pub mod portfolio;
 pub mod snapshot;
 pub mod sound;
+pub mod stream;
 pub mod system;
+pub mod taker_flow;
 pub mod update;
 pub mod watchlist_quotes;
 pub mod webhook;
@@ -215,6 +219,48 @@ pub fn fetch_klines(
     }
 }
 
+/// A chart's candles and, for a streamed source that folds its candles, the base candles the
+/// newest of them is made of.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LiveCandles {
+    pub candles: Vec<Kline>,
+    /// The base candles of the newest candle's bucket, which a live feed's klines of the same
+    /// length merge with bar by bar. Empty when the candles are native, the source has no feed or
+    /// the request for them failed.
+    pub bars: Vec<Kline>,
+}
+
+impl From<Vec<Kline>> for LiveCandles {
+    fn from(candles: Vec<Kline>) -> Self {
+        Self {
+            candles,
+            bars: Vec::new(),
+        }
+    }
+}
+
+/// [`fetch_klines`], and for a source in [`DataSource::CANDLE_STREAMS`] that folds `timeframe`
+/// from finer candles, one more small request for those candles of the newest bucket (one bucket's
+/// worth, after the folded answer). A failed second request leaves `bars` empty: the candles are
+/// still good.
+pub fn fetch_klines_live(
+    source: DataSource,
+    symbol: &str,
+    timeframe: Timeframe,
+    limit: u32,
+) -> Result<LiveCandles, ProviderError> {
+    let candles = fetch_klines(source, symbol, timeframe, limit)?;
+    let bars = source
+        .plan(timeframe)
+        .filter(|plan| !plan.is_native() && DataSource::CANDLE_STREAMS.contains(&source))
+        .and_then(|plan| {
+            let base = fetch_klines(source, symbol, plan.base(), plan.per_target() as u32).ok()?;
+            Some(plan.newest_bucket(&base))
+        })
+        .unwrap_or_default();
+    Ok(LiveCandles { candles, bars })
+}
+
 /// `MarketSource::fetch_klines_range` of the provider behind `source`.
 pub fn fetch_klines_range(
     source: DataSource,
@@ -275,13 +321,6 @@ pub fn trending(source: DataSource, limit: usize) -> Result<Vec<SearchResult>, P
         DataSource::Polymarket => market::polymarket::trending(limit),
         _ => Ok(Vec::new()),
     }
-}
-
-/// Milliseconds since the Unix epoch, now.
-pub(crate) fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
 /// Thin to at most `count` points by uniform stride, always keeping the newest one.

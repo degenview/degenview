@@ -4,8 +4,8 @@
 //! The session calls `evaluate` once per bar per call site. The state remembers every source value
 //! (`inputs`, `na` included) and every result (`results`), so windows are read off the history and
 //! the recursive averages (`ema`, `rma`) continue from the last result. Faithful quirks kept on
-//! purpose: `ta.rsi` is the simple (not Wilder-smoothed) average of gains and losses, `ta.variance`
-//! and `ta.stdev` are population statistics, and a window with any `na` yields `na`.
+//! purpose: `ta.variance` and `ta.stdev` are population statistics, and a window with any `na` yields
+//! `na`.
 
 pub mod call;
 pub mod extra;
@@ -17,7 +17,7 @@ use crate::pine::runtime::value::RuntimeValue;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
     /// One entry per evaluation. Usually the indicator's value; for `ta.cross*` the
-    /// `[source, second]` pair, for `ta.macd` the `[macd, signal, histogram]` tuple.
+    /// `[source, second]` pair.
     pub results: Vec<RuntimeValue>,
     /// The source series, one entry per evaluation, `na` included.
     pub inputs: Vec<RuntimeValue>,
@@ -36,6 +36,9 @@ pub struct State {
     pub derived: Vec<extra::Derived>,
     /// `ta.pivot_point_levels` state: the period since the last anchor and the levels it last set.
     pub pivot: Option<extra::PivotPeriod>,
+    /// `ta.macd`'s fast, slow and signal averages. Boxed: `State` is cloned on every realtime tick
+    /// and only a `ta.macd` site has legs.
+    pub macd: Option<Box<[MacdLeg; 3]>>,
 }
 
 /// `ta.supertrend` between bars: the final upper/lower bands, the trend direction (1 up, -1 down),
@@ -49,13 +52,47 @@ pub struct Supertrend {
     pub close: f64,
 }
 
-const MACD_FAST: usize = 12;
-const MACD_SLOW: usize = 26;
-const MACD_SIGNAL: usize = 9;
+/// `ta.macd`'s lengths when a call leaves them out (TradingView requires all three; the session
+/// binds them in `inline_call`).
+pub const MACD_DEFAULTS: [i64; 3] = [12, 26, 9];
+
+/// One exponential average of `ta.macd`. A missing value gives no result and leaves the average
+/// as it was, so a gap neither restarts the seed nor moves the line (TradingView ignores `na`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MacdLeg {
+    /// The first `length` values, until the average exists; empty afterwards.
+    seed: Vec<f64>,
+    last: Option<f64>,
+}
+
+impl MacdLeg {
+    /// Folds `value` in: the average of the first `length` values seeds it, `alpha * x + (1 - alpha)
+    /// * prior` continues it.
+    fn step(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
+        let x = value?;
+        if length == 0 {
+            return None;
+        }
+        if let Some(prior) = self.last {
+            let alpha = 2.0 / (length as f64 + 1.0);
+            let next = alpha * x + (1.0 - alpha) * prior;
+            self.last = Some(next);
+            return Some(next);
+        }
+        self.seed.push(x);
+        if self.seed.len() < length {
+            return None;
+        }
+        let average = self.seed.iter().sum::<f64>() / length as f64;
+        self.seed = Vec::new();
+        self.last = Some(average);
+        Some(average)
+    }
+}
 
 /// The `ta.*` names `evaluate` computes from one source series and a length. The bar-relative ones
 /// (`ta.sar`, `ta.supertrend`) go through `evaluate_price` instead.
-pub const SUPPORTED: [&str; 30] = [
+pub const SUPPORTED: [&str; 29] = [
     "ta.sma",
     "ta.ema",
     "ta.rma",
@@ -69,7 +106,6 @@ pub const SUPPORTED: [&str; 30] = [
     "ta.mom",
     "ta.roc",
     "ta.rsi",
-    "ta.macd",
     "ta.cross",
     "ta.crossover",
     "ta.crossunder",
@@ -123,8 +159,7 @@ pub fn evaluate(
         "ta.rising" => trend(inputs, count, true),
         "ta.falling" => trend(inputs, count, false),
         "ta.mom" | "ta.roc" => momentum(inputs, count, name == "ta.roc"),
-        "ta.rsi" => rsi(inputs, count),
-        "ta.macd" => macd(state),
+        "ta.rsi" => extra::rsi(&mut *state, length),
         "ta.median" => statistic(inputs, count, median),
         "ta.range" => statistic(inputs, count, |values| {
             let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -777,23 +812,6 @@ fn momentum(inputs: &[RuntimeValue], length: usize, is_rate: bool) -> RuntimeVal
     }
 }
 
-fn rsi(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
-    if length == 0 {
-        return RuntimeValue::Na;
-    }
-    let Some(values) = last_valid(inputs, length + 1) else {
-        return RuntimeValue::Na;
-    };
-    let changes: Vec<f64> = values.windows(2).map(|pair| pair[1] - pair[0]).collect();
-    let gain = changes.iter().map(|c| c.max(0.0)).sum::<f64>() / length as f64;
-    let loss = changes.iter().map(|c| (-c).max(0.0)).sum::<f64>() / length as f64;
-    float(if loss == 0.0 {
-        100.0
-    } else {
-        100.0 - 100.0 / (1.0 + gain / loss)
-    })
-}
-
 fn cross(
     name: &str,
     source: &RuntimeValue,
@@ -824,37 +842,25 @@ fn cross(
 
 // MARK: MACD
 
-/// An exponential average seeded from the first `length` values.
-fn exponential_average(values: &[f64], length: usize) -> Option<f64> {
-    if length == 0 || values.len() < length {
-        return None;
-    }
-    let mut average = values[..length].iter().sum::<f64>() / length as f64;
-    for x in &values[length..] {
-        average = (2.0 * x + (length as f64 - 1.0) * average) / (length as f64 + 1.0);
-    }
-    Some(average)
-}
-
-fn macd(state: &State) -> RuntimeValue {
-    let values: Vec<f64> = state
-        .inputs
-        .iter()
-        .filter_map(RuntimeValue::number)
-        .collect();
-    let fast = exponential_average(&values, MACD_FAST);
-    let slow = exponential_average(&values, MACD_SLOW);
+/// `ta.macd(source, fastlen, slowlen, siglen)`: `[macd, signal, histogram]`. The line is the fast
+/// EMA minus the slow one, the signal an EMA of the line. A `na` source bar gives `na` for all
+/// three and leaves every average as it was; each average is seeded with the simple average of its
+/// first `length` values, so the line starts on bar `slowlen - 1` and the signal `siglen - 1` line
+/// values later.
+pub fn evaluate_macd(
+    source: &RuntimeValue,
+    fast: i64,
+    slow: i64,
+    signal: i64,
+    state: &mut State,
+) -> RuntimeValue {
+    let value = source.number();
+    let length = |length: i64| usize::try_from(length).unwrap_or(0);
+    let legs = state.macd.get_or_insert_with(Box::default);
+    let fast = legs[0].step(value, length(fast));
+    let slow = legs[1].step(value, length(slow));
     let line = fast.zip(slow).map(|(fast, slow)| fast - slow);
-    let mut line_history: Vec<f64> = state
-        .results
-        .iter()
-        .filter_map(|result| match result {
-            RuntimeValue::Tuple(parts) => parts.first().and_then(RuntimeValue::number),
-            _ => None,
-        })
-        .collect();
-    line_history.extend(line);
-    let signal = exponential_average(&line_history, MACD_SIGNAL);
+    let signal = legs[2].step(line, length(signal));
     RuntimeValue::Tuple(vec![
         optional(line),
         optional(signal),
@@ -1226,14 +1232,102 @@ mod tests {
     }
 
     #[test]
-    fn rsi_is_the_simple_average_variant_and_saturates() {
+    fn rsi_smooths_gains_and_losses_with_the_rma() {
         let up = numbers(&run("ta.rsi", &[1.0, 2.0, 3.0, 4.0], 3));
         assert_eq!(up[3], Some(100.0), "no losses: 100");
-        assert_eq!(up[2], None);
-        let mixed = numbers(&run("ta.rsi", &[10.0, 11.0, 10.5, 11.5], 3));
-        // gains: 1 + 1 = 2, losses: 0.5 → gain/loss = 4 → 100 − 100/5 = 80.
+        assert_eq!(up[2], None, "the first value needs `length` changes");
+        // Changes +1, -0.5, +1: seeds gain 2/3 and loss 1/6, so rs = 4 and the RSI is 80.
+        let mixed = numbers(&run("ta.rsi", &[10.0, 11.0, 10.5, 11.5, 11.0], 3));
         assert!(close(mixed[3], 80.0));
+        // A fall of 0.5 moves the averages by 1/3: gain 4/9, loss 5/18, so rs = 1.6.
+        assert!(close(mixed[4], 100.0 - 100.0 / 2.6));
         assert_eq!(numbers(&run("ta.rsi", &[1.0, 2.0], 0)), [None, None]);
+    }
+
+    #[test]
+    fn rsi_follows_wilders_published_fourteen_day_series() {
+        // The closes of Wilder's worked example (as StockCharts reproduces it). Seeded with the
+        // simple average of the first 14 changes and smoothed with alpha 1/14, the RSI reads
+        // 70.46 on the 15th close; a window average (the old behaviour) reads 100 or 0 here.
+        let closes = [
+            44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03,
+            45.61, 46.28, 46.28, 46.00, 46.03, 46.41, 46.22, 45.64, 46.21, 46.25, 45.71, 46.45,
+            45.78, 45.35, 44.03, 44.18, 44.22, 44.57, 43.42, 42.66, 43.13,
+        ];
+        let expected = [
+            70.46, 66.25, 66.48, 69.35, 66.29, 57.92, 62.88, 63.21, 56.01, 62.34, 54.67, 50.39,
+            40.02, 41.49, 41.90, 45.50, 37.32, 33.09, 37.79,
+        ];
+        let values = numbers(&run("ta.rsi", &closes, 14));
+        assert!(values[..14].iter().all(Option::is_none), "needs 14 changes");
+        for (offset, want) in expected.iter().enumerate() {
+            let got = values[14 + offset].expect("a value");
+            assert!(
+                (got - want).abs() < 0.005,
+                "bar {}: {got} vs {want}",
+                14 + offset
+            );
+        }
+    }
+
+    #[test]
+    fn rsi_after_a_long_fall_is_low_but_not_zero() {
+        // The simple average over the window read exactly 0 after `length` falls in a row; the
+        // smoothed gain only decays, so a later bounce still moves the value.
+        let mut prices = vec![100.0, 101.0, 100.5, 101.5, 101.0];
+        prices.extend((1..=12).map(|step| 101.0 - f64::from(step)));
+        let values = numbers(&run("ta.rsi", &prices, 3));
+        let last = values[prices.len() - 1].expect("a value");
+        assert!(last > 0.0 && last < 5.0, "{last}");
+    }
+
+    /// `ta.rsi` over a series that may hold `na`, one bar at a time.
+    fn run_rsi_with_gaps(series: &[Option<f64>], length: i64) -> Vec<Option<f64>> {
+        let mut state = State::default();
+        series
+            .iter()
+            .map(|value| {
+                let source = value.map_or(RuntimeValue::Na, float);
+                evaluate("ta.rsi", &source, &RuntimeValue::Na, length, &mut state).number()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn rsi_skips_missing_values_instead_of_restarting() {
+        let gaps = [
+            Some(1.0),
+            None,
+            Some(2.0),
+            None,
+            Some(3.0),
+            None,
+            Some(4.0),
+            None,
+            Some(5.0),
+        ];
+        // Changes are between the valid values; a missing bar repeats the last result.
+        let values = run_rsi_with_gaps(&gaps, 3);
+        assert_eq!(
+            values,
+            [
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(100.0),
+                Some(100.0),
+                Some(100.0)
+            ]
+        );
+        assert_eq!(run_rsi_with_gaps(&gaps, 1)[2], Some(100.0));
+        // Leading `na` (a warm-up) changes nothing: same values as without it.
+        let plain = numbers(&run("ta.rsi", &[10.0, 11.0, 10.5, 11.5, 11.0], 3));
+        let mut padded = vec![None, None];
+        padded.extend([10.0, 11.0, 10.5, 11.5, 11.0].map(Some));
+        assert_eq!(run_rsi_with_gaps(&padded, 3)[2..], plain);
     }
 
     #[test]
@@ -1275,11 +1369,12 @@ mod tests {
         let mut state = State::default();
         let mut results = Vec::new();
         for value in &series {
-            results.push(evaluate(
-                "ta.macd",
+            let [fast, slow, signal] = MACD_DEFAULTS;
+            results.push(evaluate_macd(
                 &float(*value),
-                &RuntimeValue::Na,
-                0,
+                fast,
+                slow,
+                signal,
                 &mut state,
             ));
         }
@@ -1307,6 +1402,39 @@ mod tests {
             later[0].unwrap() > 0.0,
             "a rising series has a positive MACD line"
         );
+    }
+
+    #[test]
+    fn macd_uses_the_lengths_it_is_given_and_skips_a_missing_bar() {
+        let series: Vec<f64> = (1..=60).map(|i| f64::from(i * i % 17) + 100.0).collect();
+        let feed = |values: &[Option<f64>]| {
+            let mut state = State::default();
+            values
+                .iter()
+                .map(|value| {
+                    let source = value.map_or(RuntimeValue::Na, float);
+                    match evaluate_macd(&source, 3, 6, 4, &mut state) {
+                        RuntimeValue::Tuple(parts) => numbers(&parts),
+                        other => panic!("expected a tuple, got {other:?}"),
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        let plain: Vec<Option<f64>> = series.iter().copied().map(Some).collect();
+        let whole = feed(&plain);
+        assert_eq!(whole[4], [None, None, None], "slow EMA not ready");
+        assert!(whole[5][0].is_some() && whole[5][1].is_none());
+        assert!(whole[8].iter().all(Option::is_some), "{:?}", whole[8]);
+
+        // A bar without a source value is na for all three outputs, and the averages carry on as
+        // if that bar had not been there.
+        let mut gapped = plain.clone();
+        gapped.insert(20, None);
+        let with_gap = feed(&gapped);
+        assert_eq!(with_gap[20], [None, None, None]);
+        assert_eq!(with_gap[19], whole[19]);
+        assert_eq!(with_gap[21], whole[20]);
+        assert_eq!(with_gap[40], whole[39]);
     }
 
     #[test]

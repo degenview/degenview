@@ -326,6 +326,8 @@ pub struct ChartCard {
     maximized_pane: Option<u64>,
     /// The scripts that had a pane at the last frame, top to bottom.
     pane_ids: Vec<u64>,
+    /// The line between panes being dragged. View state, not saved.
+    pane_drag: Option<pane_divider::PaneDrag>,
     /// The time a vertical cursor line is locked at (context menu). View state, not saved: it is
     /// not a drawing, and it follows neither templates nor linked charts.
     time_lock: Option<i64>,
@@ -345,6 +347,17 @@ pub struct ChartCard {
     /// The workspace's Select portion mode is on: the pointer is the selection's, not the
     /// chart's. View state, never saved.
     snapshot_select: bool,
+    /// The workspace's cursor: which parts of the crosshair show and what the pointer looks like.
+    /// View state, never saved with the chart.
+    cursor: crate::model::CursorMode,
+    /// The Dot cursor hid the system pointer on the last frame, so the card paints its own mark.
+    dot_shown: bool,
+    /// What the Demonstration cursor drew and has not yet faded. View state, never saved.
+    demo: crate::model::cursor::demo::Marks,
+    /// The option behind the values tooltip on long press, pushed each frame.
+    values_tooltip: bool,
+    /// Where the current press stands on its way to the tooltip.
+    hold: values_tooltip::Hold,
     /// Bars that arrived at the newest end since this card began, whatever the view showed: what a
     /// stored view is translated by (see [`zoom_rect::ViewStep`]).
     arrivals: u64,
@@ -424,6 +437,7 @@ impl Default for ChartCard {
             timeframe: None,
             maximized_pane: None,
             pane_ids: Vec::new(),
+            pane_drag: None,
             time_lock: None,
             bar_marker: None,
             logs_range: None,
@@ -431,6 +445,11 @@ impl Default for ChartCard {
             zoom: zoom_rect::ZoomTool::default(),
             zoom_exact: 0.0,
             snapshot_select: false,
+            cursor: crate::model::CursorMode::default(),
+            dot_shown: false,
+            demo: Default::default(),
+            values_tooltip: true,
+            hold: Default::default(),
             arrivals: 0,
             series_epoch: 0,
             drawn_series: None,
@@ -766,6 +785,8 @@ mod bar_marker;
 mod body;
 mod context;
 mod crosshair;
+mod cursor;
+mod demonstration;
 mod frame;
 mod header;
 mod live_overlays;
@@ -773,12 +794,14 @@ mod navigation;
 mod overlay_card;
 mod overlays;
 mod paint;
+mod pane_divider;
 mod price_scale;
 mod scripts;
 mod snapshot;
 mod snapshot_select;
 mod sync;
 mod table;
+mod values_tooltip;
 mod view;
 mod zoom_rect;
 pub use bar_marker::Scrolled;
@@ -790,6 +813,8 @@ mod time_lock;
 mod canvas_tests;
 #[cfg(test)]
 mod overlay_tests;
+#[cfg(test)]
+mod values_tooltip_tests;
 
 #[cfg(test)]
 mod snapshot_override_tests;

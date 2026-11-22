@@ -57,7 +57,9 @@ pub fn look(view: &UpdateView) -> Option<Look> {
         } => (
             "Update".to_owned(),
             match (installable, note) {
-                (true, _) => format!("DegenView {version} is available. Click to install it."),
+                (true, _) => {
+                    format!("DegenView {version} is available. Click to see what changed.")
+                }
                 (false, Some(note)) => format!("DegenView {version} is available. {note}"),
                 (false, None) => format!("DegenView {version} is available."),
             },
@@ -379,6 +381,8 @@ mod tests {
             url: "https://example.test".to_owned(),
             installable,
             note: (!installable).then(|| "Download it manually.".to_owned()),
+            notes: Default::default(),
+            coverage: Default::default(),
         }
     }
 

@@ -160,7 +160,10 @@ pub fn paint_header(
         painter,
         &format!(
             "{} · {}",
-            chart.source().display_name().to_uppercase(),
+            chart
+                .source()
+                .chart_feed_label(chart.timeframe())
+                .to_uppercase(),
             chart.timeframe().label()
         ),
         (height * SUBLINE_SHARE).max(9.0),

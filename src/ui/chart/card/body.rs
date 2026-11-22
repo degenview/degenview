@@ -176,6 +176,11 @@ impl ChartCard {
             main: layout.rect,
             chart: layout.full_rect,
         };
+        // A long touch is egui's right-click. Only a press the values tooltip has taken (the
+        // layer runs before `handle_hold`, so on the release frame it still has) swallows it: a
+        // press on a drawing, off the plot, with the option off or under a cursor that uses the
+        // press itself keeps its menu.
+        drawing.long_press_values = self.values_hold_claims_drag();
         // The Zoom In tool and Select portion own the pointer while they are on: nothing is drawn
         // or picked.
         let held = self.pointer_is_held(layout.main_visible, replay.selecting);
@@ -196,6 +201,30 @@ impl ChartCard {
         }
         drawing.escape_consumed |=
             self.handle_zoom(ui, response, view.as_ref(), &regions, bars.len(), zooming);
+        // A range being picked (replay start, Pine Logs) has the drag to itself: no stroke over the
+        // bars it selects, and one begun before the pick started is let go.
+        let marks_allowed = layout.main_visible && !held && !replay.selecting;
+        if !marks_allowed {
+            let now = ui.input(|input| input.time);
+            self.demo.end(now);
+        }
+        if marks_allowed && let Some(view) = &view {
+            self.handle_demonstration(
+                ui,
+                response,
+                &view.projection(plot, bars, self.appearance.price_format(), ui.ctx()),
+                plot,
+            );
+        }
+        // Not while a drawing tool is armed: its press places anchors and drags out shapes, which
+        // the drawing layer (run above, before this) has already begun by the time a hold shows.
+        if layout.main_visible && !held && drawing.tool == crate::model::Tool::Cursor {
+            let blocked =
+                replay.selecting || self.layer.claims_drag() || self.demonstration_claims_drag();
+            self.handle_hold(ui, response, plot, blocked);
+        } else {
+            self.hold = Default::default();
+        }
         let navigation = navigation::Navigation {
             regions,
             shown: view
@@ -210,6 +239,8 @@ impl ChartCard {
             logarithmic: view.as_ref().is_some_and(|view| view.scale.logarithmic),
             // Dragging over bars for the logs pane is not a pan.
             drawing_claims: self.layer.claims_drag()
+                || self.demonstration_claims_drag()
+                || self.values_hold_claims_drag()
                 || self.zoom_claims_drag()
                 || self.snapshot_select
                 || (replay.selecting && self.pick_kind == overlay::PickKind::LogsRange),
@@ -369,9 +400,9 @@ impl ChartCard {
             return pointer;
         }
 
-        // A script that isn't an overlay (RSI, MACD …) gets a pane under the candles: 30% of the
-        // chart's height shared between them, the candles keep the rest and the time axis. On a
-        // line chart every script draws over the line instead.
+        // A script that isn't an overlay (RSI, MACD …) gets a pane under the candles, of the height
+        // the user dragged it to or its part of 30% of the chart; the candles keep the rest and the
+        // time axis. On a line chart every script draws over the line instead.
         // A price-based chart type draws bars it constructed from the candles, and the scripts
         // and indicators on it read those same bars; every other type draws the candles as they
         // are. Either way `bars` is what the chart is, and `candles` stays the market.
@@ -428,6 +459,7 @@ impl ChartCard {
             &style,
         );
         self.keep_panes_in_step(&layout);
+        self.handle_pane_dividers(ui, chart_id, &layout, replay.selecting);
         let plot = layout.plot;
         self.axis_width = full_rect.max.x - plot.max.x;
         let pane_rects = &layout.pane_rects;
@@ -516,6 +548,10 @@ impl ChartCard {
         pointer.overlay_action = overlay_action;
         pointer.on_overlay_card = on_overlay_card;
         self.layer = layer;
+        if layout.main_visible && self.cursor.caps().highlights {
+            let now = ui.input(|input| input.time);
+            self.paint_demonstration(&painter, plot, &projection, now);
+        }
         self.apply_overlay_results(
             OverlayResults {
                 pane_actions,

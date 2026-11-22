@@ -24,7 +24,7 @@ use crate::ui::chart::series::{WICK_WIDTH, candle_half_width, snap_candle, snap_
 use crate::ui::pine::geometry::{
     self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, box_text_placement,
     candle_index_for_bar, dash_pattern, extended_line, faded, font_size, is_visible, label_layout,
-    marker_radius, polyline_points, rgba, series_index,
+    polyline_points, rgba, series_index, shape_radius,
 };
 use eframe::egui::{
     self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2,
@@ -38,6 +38,8 @@ pub const LOSS_COLOR: u32 = 0xef53_50ff;
 const AREA_OPACITY: f32 = 0.3;
 const CROSS_HALF_SIZE: f32 = 3.0;
 const MARKER_OFFSET: f32 = 8.0;
+/// The room between a marker's near edge and the candle (or pane edge) it hangs off.
+const MARKER_GAP: f32 = 3.0;
 const LABEL_POINTER: f32 = 5.0;
 const LABEL_PADDING: Vec2 = Vec2::new(10.0, 6.0);
 
@@ -690,8 +692,8 @@ impl PineLayer<'_> {
             stroke_path(
                 painter,
                 &[Pos2::new(self.plot.min.x, y), Pos2::new(self.plot.max.x, y)],
-                Stroke::new(1.0, faded(line.color, 0.8)),
-                &[4.0, 3.0],
+                Stroke::new(1.0, rgba(line.color)),
+                dash_pattern(line.style),
             );
         }
     }
@@ -872,7 +874,7 @@ impl PineLayer<'_> {
                 } else {
                     MarkerLocation::AboveBar
                 };
-                let tip = self.marker_y(location, &[], i);
+                let tip = self.marker_y(location, &[], i, 0.0);
                 draw_arrow(
                     painter,
                     Pos2::new(self.x_at(i), tip),
@@ -971,10 +973,14 @@ impl PineLayer<'_> {
                     continue;
                 }
                 let x = self.x_at(i);
-                let y = self.marker_y(marker.location, &marker.prices, i);
+                let radius = shape_radius(marker.style, marker.size);
+                let reach = match &marker.character {
+                    Some(_) => 6.0,
+                    None => marker_half_height(marker.style, radius),
+                };
+                let y = self.marker_y(marker.location, &marker.prices, i, reach);
                 let color = rgba(self.visible_opt(&marker.colors, i).unwrap_or(marker.color));
                 let centre = Pos2::new(x, y);
-                let radius = marker_radius(marker.size);
                 let half_height = match &marker.character {
                     Some(glyph) => {
                         text_at(painter, glyph, 12.0, color, centre, Align2::CENTER_CENTER);
@@ -1013,25 +1019,36 @@ impl PineLayer<'_> {
         }
     }
 
-    fn marker_y(&self, location: MarkerLocation, prices: &[Option<f64>], i: usize) -> f32 {
+    /// Where a marker's centre sits vertically. A marker that hangs off a bar keeps its near edge
+    /// `MARKER_GAP` clear of the candle (or the pane's edge), so one taller than the usual offset
+    /// (`half_height` is how far it reaches either side of its centre) moves out instead of
+    /// overlapping the candle or running off the pane. `location.absolute` keeps its price.
+    fn marker_y(
+        &self,
+        location: MarkerLocation,
+        prices: &[Option<f64>],
+        i: usize,
+        half_height: f32,
+    ) -> f32 {
         if location == MarkerLocation::Absolute
             && let Some(price) = self.visible_opt(prices, i)
         {
             return self.y(price);
         }
+        let offset = MARKER_OFFSET.max(half_height + MARKER_GAP);
         if self.in_pane {
             // No candles in a script pane: above/below bar pin to its edges.
             return if location.is_below() {
-                self.plot.max.y - MARKER_OFFSET
+                self.plot.max.y - offset
             } else {
-                self.plot.min.y + MARKER_OFFSET
+                self.plot.min.y + offset
             };
         }
         let candle = &self.candles[i];
         if location.is_below() {
-            self.y(candle.low) + MARKER_OFFSET
+            self.y(candle.low) + offset
         } else {
-            self.y(candle.high) - MARKER_OFFSET
+            self.y(candle.high) - offset
         }
     }
 
@@ -1238,7 +1255,10 @@ fn draw_arrow(painter: &Painter, tip: Pos2, up: bool, height: f32, color: Color3
 /// How far `draw_marker_shape` reaches above and below its centre, for placing `text` past it.
 fn marker_half_height(style: MarkerShape, radius: f32) -> f32 {
     match style {
-        MarkerShape::TriangleUp | MarkerShape::TriangleDown | MarkerShape::Square => 0.8 * radius,
+        MarkerShape::TriangleUp | MarkerShape::TriangleDown => {
+            geometry::TRIANGLE_HEIGHT / 2.0 * radius
+        }
+        MarkerShape::Square => 0.8 * radius,
         MarkerShape::Diamond => 1.1 * radius,
         MarkerShape::ArrowUp | MarkerShape::ArrowDown => radius + 3.0,
         MarkerShape::LabelUp | MarkerShape::LabelDown => 1.05 * radius,
@@ -2088,12 +2108,40 @@ mod tests {
                         } else {
                             Color32::from_rgb(239, 83, 80)
                         };
-                        draw_marker_shape(painter, style, centre, marker_radius(size), color);
+                        draw_marker_shape(painter, style, centre, shape_radius(style, size), color);
                     }
                 }
             }));
         }
         screen.save("pine-marker-shapes", last.expect("a frame"));
+    }
+
+    #[test]
+    fn an_hline_is_drawn_in_the_colour_the_script_gave_it() {
+        // `color.new(color.yellow, 70)`: already faint, so the painter must not fade it again.
+        let candles = candles(3);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = VisualOutput {
+            bar_count: 3,
+            ..empty()
+        };
+        let given = 0xFFEB_3B4D;
+        output.hlines.push(HorizontalLine {
+            id: 0,
+            value: 100.0,
+            color: given,
+            title: None,
+            style: LineStyle::Dashed,
+        });
+        let layer = layer(&output, &candles, &x, &y);
+        let shapes = shapes_of(|painter| layer.draw_horizontal_lines(painter));
+        assert!(!shapes.is_empty());
+        for shape in shapes {
+            let Shape::LineSegment { stroke, .. } = shape else {
+                panic!("a dash is a line segment");
+            };
+            assert_eq!(stroke.color, rgba(given), "no extra fade");
+        }
     }
 
     #[test]
@@ -2128,6 +2176,7 @@ mod tests {
             value: 100.0,
             color: 0x8080_80FF,
             title: None,
+            style: LineStyle::Dashed,
         });
         output.backgrounds.push(ColorOutput {
             id: 0,
@@ -2159,21 +2208,35 @@ mod tests {
         assert_eq!(layer.bar_color(0), None);
         // Absolute markers sit at their price (series are right-aligned: one value is the last bar's); bar markers hang off the candle.
         assert_eq!(
-            layer.marker_y(MarkerLocation::Absolute, &[Some(150.0)], 2),
+            layer.marker_y(MarkerLocation::Absolute, &[Some(150.0)], 2, 25.0),
             y_of(150.0)
         );
         assert_eq!(
-            layer.marker_y(MarkerLocation::BelowBar, &[], 1),
+            layer.marker_y(MarkerLocation::BelowBar, &[], 1, 5.0),
             y_of(96.0) + 8.0
         );
         assert_eq!(
-            layer.marker_y(MarkerLocation::AboveBar, &[], 1),
+            layer.marker_y(MarkerLocation::AboveBar, &[], 1, 5.0),
             y_of(106.0) - 8.0
         );
         let mut in_pane = self::layer(&output, &candles, &x, &y);
         in_pane.in_pane = true;
-        assert_eq!(in_pane.marker_y(MarkerLocation::AboveBar, &[], 1), 8.0);
-        assert_eq!(in_pane.marker_y(MarkerLocation::BelowBar, &[], 1), 92.0);
+        assert_eq!(in_pane.marker_y(MarkerLocation::AboveBar, &[], 1, 5.0), 8.0);
+        assert_eq!(
+            in_pane.marker_y(MarkerLocation::BelowBar, &[], 1, 5.0),
+            92.0
+        );
+        // A tall marker moves out so that its near edge stays clear of the candle or pane edge.
+        assert_eq!(
+            layer.marker_y(MarkerLocation::BelowBar, &[], 1, 22.8),
+            y_of(96.0) + 25.8
+        );
+        assert_eq!(
+            layer.marker_y(MarkerLocation::AboveBar, &[], 1, 22.8),
+            y_of(106.0) - 25.8
+        );
+        assert!(in_pane.marker_y(MarkerLocation::AboveBar, &[], 1, 22.8) - 22.8 >= 0.0);
+        assert!(in_pane.marker_y(MarkerLocation::BelowBar, &[], 1, 22.8) + 22.8 <= 100.0);
     }
 
     #[test]

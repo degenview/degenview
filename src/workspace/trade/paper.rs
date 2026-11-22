@@ -1,9 +1,9 @@
 //! Paper trading on charts: quotes handed to the paper host, portfolio cards and chart orders.
 
 use crate::host::paper::PaperHost;
-use crate::model::DataSource;
 use crate::model::paper::{PaperCurrency, PaperInstrument, PaperQuote};
-use crate::model::watchlist::quote::{Freshness, evaluate_freshness};
+use crate::model::watchlist::quote::{Freshness, WatchlistQuote, evaluate_freshness};
+use crate::model::{DataSource, InstrumentId};
 use crate::ui::paper::chart_trading::PaperOverlayAction;
 use crate::workspace::ChartWorkspace;
 use crate::workspace::chart::{Chart, REFRESH_INTERVAL};
@@ -18,18 +18,41 @@ impl ChartWorkspace {
     /// on are sent. Nothing runs while the app is quit, asleep or showing no such chart.
     pub(in crate::workspace) fn sync_paper_quotes(&mut self, host: &mut PaperHost) {
         let now = Instant::now();
-        let wall_clock = crate::model::watchlist::now_ms();
+        let wall_clock = crate::clock::now_ms();
+        let timeframe = self.timeframe;
+        let mut snapshot_demand = Vec::new();
         for chart in &mut self.charts {
             if !chart.is_market() || !Self::supports_paper_trading(chart.source) {
                 continue;
             }
-            let Some(last) = chart.candles.last().map(|candle| candle.close) else {
-                continue;
-            };
             let instrument = Self::paper_instrument(chart);
             if !self.trade.panel_visible && !host.tracks(&instrument.key) {
                 continue;
             }
+            // Bars that may be minutes old cannot price an order: those charts are priced from
+            // the market's real-time snapshot instead.
+            let quote = if chart.source.bars_are_real_time(timeframe) {
+                chart.candles.last().and_then(|candle| {
+                    paper_quote(
+                        instrument.key,
+                        chart.source,
+                        candle.close,
+                        chart.last_data_ms,
+                        wall_clock,
+                    )
+                })
+            } else {
+                let market = InstrumentId::new(chart.source, chart.symbol.as_str());
+                let snapshot = self.quote_book.get(&market);
+                snapshot_demand.push(market);
+                snapshot_quote(instrument.key, snapshot.as_ref(), wall_clock)
+            };
+            let Some(quote) = quote else {
+                continue;
+            };
+            let Some(last) = quote.last else {
+                continue;
+            };
             let should_send = chart.last_paper_quote.is_none_or(|(price, sent_at)| {
                 let elapsed = sent_at.elapsed();
                 (price != last && elapsed >= PAPER_QUOTE_FLUSH_INTERVAL)
@@ -38,18 +61,15 @@ impl ChartWorkspace {
             if !should_send {
                 continue;
             }
-            let Some(quote) = paper_quote(
-                instrument.key,
-                chart.source,
-                last,
-                chart.last_data_ms,
-                wall_clock,
-            ) else {
-                continue;
-            };
             let _ = host.process_quote(quote);
             chart.last_paper_quote = Some((last, now));
         }
+        // Renewed every frame, so it lapses with the workspace (a background tab stops asking).
+        self.quote_coordinator.set_sidebar_demand(
+            paper_quote_owner(self.id),
+            snapshot_demand,
+            true,
+        );
     }
 
     pub(in crate::workspace) fn configure_paper_cards(&mut self, host: &PaperHost) {
@@ -143,6 +163,39 @@ impl ChartWorkspace {
 /// traded on. The timestamp is when the price arrived, not when it is read; a price older than
 /// its source's window is withheld, and a stock outside US hours is sent as closed so no order
 /// fills at yesterday's close.
+/// The quote-demand owner of workspace `workspace_id`'s paper pricing: clear of the sidebar's (the
+/// tab id), the alert sheet's (`1 << 62`) and the symbol picker's (`1 << 61`).
+pub(in crate::workspace) fn paper_quote_owner(workspace_id: u64) -> u64 {
+    (1 << 60) + workspace_id
+}
+
+/// A paper quote from a real-time snapshot of the market (the watchlist quote book), for charts
+/// whose own bars may be late. Withheld unless the snapshot is current; the book ages an
+/// unrefreshed one into `Stale` itself.
+fn snapshot_quote(
+    instrument_key: String,
+    snapshot: Option<&WatchlistQuote>,
+    now_ms: i64,
+) -> Option<PaperQuote> {
+    let snapshot = snapshot?;
+    let last = snapshot
+        .last
+        .filter(|price| price.is_finite() && *price > 0.0)?;
+    let is_market_open = match snapshot.freshness {
+        Freshness::Live => true,
+        Freshness::MarketClosed => false,
+        _ => return None,
+    };
+    Some(PaperQuote {
+        instrument_key,
+        bid: None,
+        ask: None,
+        last: Some(last),
+        timestamp: now_ms,
+        is_market_open,
+    })
+}
+
 fn paper_quote(
     instrument_key: String,
     source: DataSource,
@@ -172,8 +225,11 @@ fn paper_quote(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Timeframe;
     use crate::workspace::chart::displayed_candles;
-    use crate::workspace::test_support::candle;
+    use crate::workspace::test_support::{candle, empty_workspace};
+    use eframe::egui;
+    use std::collections::HashMap;
 
     #[test]
     fn coinmarketcap_index_cards_are_not_paper_markets() {
@@ -249,6 +305,96 @@ mod tests {
         )
         .expect("quote");
         assert!(crypto.is_market_open);
+    }
+
+    fn snapshot(last: Option<f64>, freshness: Freshness) -> WatchlistQuote {
+        WatchlistQuote {
+            last,
+            freshness,
+            ..WatchlistQuote::default()
+        }
+    }
+
+    #[test]
+    fn a_current_snapshot_prices_a_late_chart_stamped_with_the_read_time() {
+        let live = snapshot(Some(200.0), Freshness::Live);
+        let quote = snapshot_quote("alpaca:AAPL".into(), Some(&live), 5_000).expect("quote");
+        assert_eq!(quote.last, Some(200.0));
+        assert_eq!(quote.timestamp, 5_000);
+        assert!(quote.is_market_open);
+        let closed = snapshot(Some(200.0), Freshness::MarketClosed);
+        let quote = snapshot_quote("alpaca:AAPL".into(), Some(&closed), 5_000).expect("quote");
+        assert!(!quote.is_market_open);
+    }
+
+    #[test]
+    fn a_snapshot_that_is_stale_missing_or_unpriced_is_withheld() {
+        for quote in [
+            Some(snapshot(Some(200.0), Freshness::Stale)),
+            Some(snapshot(Some(200.0), Freshness::Unavailable)),
+            Some(snapshot(None, Freshness::Live)),
+            Some(snapshot(Some(0.0), Freshness::Live)),
+            Some(snapshot(Some(f64::NAN), Freshness::Live)),
+            None,
+        ] {
+            assert!(snapshot_quote("alpaca:AAPL".into(), quote.as_ref(), 5_000).is_none());
+        }
+    }
+
+    /// What the paper host holds for the instrument after the workspace synced its charts.
+    fn synced_last(workspace: &mut ChartWorkspace, symbol: &str) -> Option<f64> {
+        let mut host = PaperHost::load(workspace.store.clone());
+        workspace.trade.panel_visible = true;
+        workspace.sync_paper_quotes(&mut host);
+        let key = PaperInstrument::chart(symbol, symbol, DataSource::Alpaca).key;
+        host.snapshot()
+            .quotes
+            .get(&key)
+            .and_then(|quote| quote.last)
+    }
+
+    fn workspace_with_alpaca_chart(timeframe: Timeframe, close: f64) -> ChartWorkspace {
+        let mut workspace = empty_workspace(7);
+        workspace.timeframe = timeframe;
+        let ctx = egui::Context::default();
+        workspace.add_chart_for(&InstrumentId::new(DataSource::Alpaca, "AAPL"), &ctx);
+        let chart = workspace.charts.last_mut().expect("chart");
+        chart.candles = vec![candle(1_000, close)];
+        chart.last_data_ms = Some(crate::clock::now_ms());
+        workspace
+    }
+
+    fn book_quote(workspace: &ChartWorkspace, quote: WatchlistQuote) {
+        let key = InstrumentId::new(DataSource::Alpaca, "AAPL").key();
+        workspace.quote_book.apply(HashMap::from([(key, quote)]));
+    }
+
+    #[test]
+    fn a_daily_alpaca_chart_never_prices_paper_with_its_late_close() {
+        let mut workspace = workspace_with_alpaca_chart(Timeframe::DAY_1, 150.0);
+        assert_eq!(synced_last(&mut workspace, "AAPL"), None);
+    }
+
+    #[test]
+    fn a_daily_alpaca_chart_is_priced_from_the_real_time_snapshot() {
+        let mut workspace = workspace_with_alpaca_chart(Timeframe::DAY_1, 150.0);
+        book_quote(&workspace, snapshot(Some(151.5), Freshness::Live));
+        assert_eq!(synced_last(&mut workspace, "AAPL"), Some(151.5));
+    }
+
+    #[test]
+    fn a_stale_snapshot_does_not_price_a_daily_alpaca_chart() {
+        let mut workspace = workspace_with_alpaca_chart(Timeframe::DAY_1, 150.0);
+        book_quote(&workspace, snapshot(Some(151.5), Freshness::Stale));
+        assert_eq!(synced_last(&mut workspace, "AAPL"), None);
+    }
+
+    #[test]
+    fn an_intraday_alpaca_chart_still_prices_paper_with_its_own_close() {
+        let mut workspace = workspace_with_alpaca_chart(Timeframe::HOUR_1, 150.0);
+        book_quote(&workspace, snapshot(Some(151.5), Freshness::Live));
+        // Weekends and nights read as closed but current: the close still prices the order.
+        assert_eq!(synced_last(&mut workspace, "AAPL"), Some(150.0));
     }
 
     #[test]

@@ -156,7 +156,7 @@ mod tests {
     use crate::service::keychain::api_keys::{KeyBackend, MemoryBackend};
     use crate::service::keychain::gated_backend::gated;
     use std::sync::mpsc;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     const WAIT: Duration = Duration::from_secs(5);
 
@@ -275,6 +275,12 @@ mod tests {
         done.recv_timeout(WAIT).unwrap();
         done.recv_timeout(WAIT).unwrap();
         assert_eq!(status().mode, ProxyMode::Off, "the later save won");
-        assert!(!lock(&applier.queue).running, "the worker left");
+        // The wake fires before the worker's next pass finds the queue empty and clears `running`,
+        // so the worker may still be leaving when the last wake arrives.
+        let deadline = Instant::now() + WAIT;
+        while lock(&applier.queue).running {
+            assert!(Instant::now() < deadline, "the worker left");
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
 }

@@ -1,6 +1,7 @@
 //! Exclusive ownership and the shared price-alert runtime loop used by both the GUI fallback and
 //! the embedded login item. Pine alerts deliberately stay in the GUI.
 
+use crate::clock::now_ms;
 use crate::host::alert::AlertHost;
 use crate::lock::lock;
 use crate::model::alert::{
@@ -168,7 +169,8 @@ impl AlertRuntimeRunner {
 }
 
 pub fn run_alert_agent() -> Result<(), Box<dyn std::error::Error>> {
-    let directory = store::data_dir().ok_or("cannot locate the application data directory")?;
+    let directory =
+        crate::paths::data_dir().ok_or("cannot locate the application data directory")?;
     let _lease = loop {
         if let Some(lease) = AlertRuntimeLease::try_acquire(&directory)? {
             break lease;
@@ -247,13 +249,6 @@ fn refresh_rates(fx: &FxRateService) -> HashMap<AlertCurrency, f64> {
         .map(|rate| (currency, rate))
     })
     .collect()
-}
-
-pub fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

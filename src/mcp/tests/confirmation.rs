@@ -333,6 +333,7 @@ mod summaries {
     //! What the user is shown, built from the app's own data about the target.
 
     use super::super::Harness;
+    use crate::clock::now_ms;
     use crate::host::mcp::confirmation as describe;
     use crate::mcp::bridge::McpError;
     use crate::model::DataSource;
@@ -340,7 +341,6 @@ mod summaries {
         PaperAccountSettings, PaperCurrency, PaperInstrument, PaperOrderChanges, PaperOrderRequest,
         PaperOrderSide, PaperOrderType, PaperQuote, PaperTimeInForce,
     };
-    use crate::model::watchlist::now_ms;
 
     fn instrument() -> PaperInstrument {
         PaperInstrument::chart("BTCUSDT", "Bitcoin", DataSource::Binance)

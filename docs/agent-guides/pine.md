@@ -39,6 +39,32 @@
 - Execution-model gaps: [the audit](../reviews/pine-execution-model-audit.md); read it before relying
   on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
   do not halt the script.
+- Function locals (`Session::invoke_with`): the variable table is flat. An ordinary local hides an
+  outer variable of its name only from its declaration on: a block's to the end of that execution of
+  the block, a top-level one to the end of the call (the call's `saved`). Which block declarations
+  hide something is decided statically: `scopes::mark_shadowing` (at session build, for the script
+  and its libraries) flags an ordinary declaration in a block whose name was a global, local,
+  parameter or builtin variable just before it (`Declaration::shadows`, an id into
+  `Session::shadow_names`); a name that only a slot left by an earlier iteration or bar holds is not
+  an outer binding. Only a flagged declaration saves the outer value, onto `Session::shadow_stack`,
+  after its initializer ran (so a `:=` in the initializer is the outer variable's and stays) and
+  before the local is set; `run_block` puts back down to its mark, in reverse, however the block
+  ends (each branch, arm and loop iteration is its own execution). A `:=` above the declaration or
+  in another branch stays too. A loop's counters work the same way (`ForRange::shadows`,
+  `ForIn::shadows` for the index and the value): a counter that hides a visible name saves the outer
+  value after the bounds or the collection were evaluated and puts it back when the loop ends; one
+  that hides nothing stays in the table, so `i[1]` reads the previous bar's last count. Only
+  `var`/`varip` locals are set at entry (stash value, else unset so the
+  declaration initialises them), so one hides a global of its name for the whole call. Scopes are
+  lexical: a nested call first sets each name its calling function's locals hide back to the global
+  (`uncover_caller_globals`, from the caller's `saved` on `Session::call_frames`; by induction each
+  call starts on the globals) and gives the caller its values back after
+  (`cover_caller_globals`). Only locals named like a script global (top-level declarations,
+  `scopes::top_level_declarations`; first in `RuntimeFunction::saved_order`, `global_locals` of
+  them) are looked at:
+  a call from the script's top level, or from a function whose locals share no global's name,
+  costs nothing. The debugger's frame gets the caller's values first, then `saved`.
+  `call_frames` is kept inside `request.security`: a function there reads the chart's global.
 - `varip` (`Session::intrabar`): globals kept by name, user-function locals by call-site stash key
   (`invoke_with`'s `stash_key`, via `intrabar_key`). After an unconfirmed tick
   `capture_intrabar_objects` keeps what each `varip` variable and `varip` UDT field points at plus
@@ -147,6 +173,72 @@
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, share function bodies
   with `Arc`. Benchmark: `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.
+
+### request.security slices
+
+A `request.security` expression that reads script variables (`longTrend` in
+`request.security(sym, "15", longTrend)`) needs the statements that compute them run on the requested
+series. `runtime::security_slice` finds them at build time, per request.
+
+`syntax::scopes` (`resolve`, once per `build`) is the single scoping authority for static analysis:
+it maps every identifier read, call head, declaration, assignment target, loop variable and function
+parameter to a `Binding` (`Global`, `Local(LocalId)`, `Parameter { function, position }`, `Free`).
+Keyed by source offsets, so it survives cloning the tree. An analysis asks it; it does not re-derive
+Pine's scoping from names. Its rules are the ones `invoke_with` runs with (below), so a change to
+how a name is scoped changes `scopes.rs` and its tests, not each analysis.
+
+The module is a directory: `mod.rs` (`build`, `slice_for`, the position rule), `effects.rs` (what
+functions and statements change), `reads.rs`, `locate.rs` (the blocks around a request), `members.rs`
+(the builtin member tables).
+
+- **What is sliced.** The statements **before the request** that declare, `:=`-reassign or may fill
+  what the expression reads, through other statements and the script's functions. A statement may
+  fill a collection through `array.push(samples, x)`, `samples.push(x)`, a call of the script's own
+  function that changes the parameter it gets the variable as, or the global collection it changes
+  (`Functions::{mutated, global_writes}`, a fixpoint over the call graph). A function that only reads
+  its argument is not replayed. Unknown collection members count as mutating: `READ_ONLY_MEMBERS`
+  lists the array/map/matrix queries and matrix predicates that do not.
+- **Where the statements come from.** The top-level ones before the request's own, and those before
+  the request in the blocks around it (`Location`, found by `locate`; replayed without re-checking
+  the block's condition, since the request was reached). `evaluate_higher_timeframe` runs the slice
+  in the request's own state, before the expression, with its own empty `Session::intrabar` (a
+  `varip` there acts like `var`; the chart's is untouched).
+- **Scoping, aliases and overloads.** Reads and writes are scope-aware, through the bindings: a
+  block's own `level` is not the global. Plain-copy aliases are followed (`alias = samples`, also one
+  a block or a helper makes, and one an inner block reassigns); a builtin's collection argument is
+  found by its `id` label or its position. Aliases are per local (two blocks' `alias` are different
+  `LocalId`s): `Walker` keeps what each was copied from as it walks in source order, a block's
+  additions reach the enclosing block when the statement they belong to ends and never a sibling
+  block, and the globals' aliases are groups of names (`Aliases`). Decisions that depend on the
+  runtime's name-keyed variable table stay by name (a slice that would define a global a
+  request-block local of the same name hides gets no slice). A function call follows the overload
+  the type checker resolved (`Call::target`), all same-name ones when unresolved; a function's
+  parameters, and the names its body declared before reading them, are not
+  reads of a global (a `Local` or `Parameter` binding), the same scoping `invoke_with` runs them
+  with. A dotted call of a builtin namespace (`ta.sma`) never matches a script function called
+  `sma`, for writes as for reads, and a call the type checker resolved to a script method has that
+  method's own effects, not the builtin ones of its name.
+- **Position rule.** A name that is rebound (declared, `:=`) counts only before the statement that
+  reads it (`Facts::writes_needed`, a limit per needed name). A statement's `Facts` are computed once
+  (`FactsCache`), however many requests it precedes. A collection changed through its value,
+  a `var`/`varip` and a `level[1]` read also see later writes.
+- **No slice.** A statement in a block cannot be replayed when it declares something, reads a name a
+  block declared, or sits in a loop or `once` body: when it would be part of the slice, the request
+  gets no slice and reads the chart's values. A name that a block around the request declares before
+  it (`level = 20.0` in the `if` it is in, a loop variable) is not resolved to the global of that
+  name: the expression reads the chart's value (`security_globals`), and when the slice would define
+  a global of that name the request gets no slice. A statement that makes a `request.*` call is never
+  in a slice (nesting; its names keep the chart's value via `security_globals`), and requests inside
+  functions are not sliced.
+- **Alias groups.** Only script globals (`Binding::Global` on both sides of a copy) alias, and a
+  copy (`a := b`, `a = b`, also in the blocks of an expression) reaches only the changes that start
+  after it in the source, or any when it copies into a `var`/`varip`, which keeps it for the next
+  bar (`Aliases::reaching`). A copy after a change in the same loop body is not seen as reaching it.
+- **Alerts.** `alert()` does nothing while a request runs (`security_depth > 0`: a slice, or a
+  function the expression calls): only the chart's own run fires alerts, and the once-per-bar ledger
+  stays its own.
+- **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
+  slice will treat it as a write and replay more than needed.
 
 ## Editor
 
@@ -268,8 +360,24 @@
   with `DEGENVIEW_GALLERY_DIR` set.
 - Problems copy button copies all problems (errors first); right-click a row copies it or just its
   message.
-- `pine_report::show` / `report_content` (chart settings) keep the compact look; the drawer lays out
-  `metric_grid`, `equity_curve` itself.
+- `pine_report::show` / `report_content` (chart settings) keep the compact look. The drawer's Report
+  has its own: `drawer/figures.rs` (net profit large, key figures, quieter ones, aligned `grid`),
+  `drawer/plot.rs` (the equity and simulation charts: scale at the right edge with the capital,
+  readout under the pointer), `drawer/trades.rs` (aligned columns; bars held gives way first when
+  narrow). Pictures in both themes: `cargo test --lib gallery_of_the_report -- --ignored` with
+  `DEGENVIEW_GALLERY_DIR`.
+- Report's Simulation card (`drawer/simulation.rs`) shows `pine::strategy::monte_carlo`: closed
+  trades redrawn with replacement (fixed seed, so a report always gives the same figures). Drawing
+  with replacement is what spreads the final equity (a sum of the drawn profits, so order never
+  changes it); order only shapes the path, so it matters to drawdown. Say that, never "how much came
+  from the order". Profits are added as money, so a percent-of-equity strategy is approximated, not
+  compounded. Takes `MIN_TRADES` (10) to `MAX_TRADES` (20,000) closed trades: runs shrink from 1,000
+  to 100 as the list grows, and `DRAW_BUDGET` is never exceeded, which is why a longer list is
+  refused (`Unavailable`) instead of run. A loss is judged on the run's accumulated gain with a
+  rounding tolerance, not `equity < initial`, and drawdown is not capped at 100%. Frames reuse the
+  answer (or the refusal) until `trades_fingerprint` changes; never run the resampling per frame.
+  Figures are painted galleys, so each carries an accessibility label (`Figure::spoken`). Compact
+  chart settings report does not show it.
 
 ## Manager lifecycle
 

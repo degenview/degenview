@@ -63,7 +63,7 @@ impl MarketSource for Okx {
         let requested = PAGING.requested(plan, limit as usize);
         if requested > PAGING.page {
             // More base candles than one request holds: page back from now.
-            let end_ms = crate::service::now_ms() + 1;
+            let end_ms = crate::clock::now_ms() + 1;
             return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
         }
         let rows = fetch_page(

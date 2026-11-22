@@ -4,6 +4,7 @@
 
 use eframe::egui::{self, Color32, RichText, Sense, Stroke, Vec2};
 
+use crate::clock::now_ms;
 use crate::format::{civil_from_days, days_from_civil};
 use crate::service::system::timezone::local_utc_offset_secs;
 use crate::ui::icons::Icon;
@@ -407,13 +408,6 @@ fn random_unit() -> f64 {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
     (RandomState::new().build_hasher().finish() as f64) / (u64::MAX as f64)
-}
-
-fn now_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis() as i64)
 }
 
 #[cfg(test)]

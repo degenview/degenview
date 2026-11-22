@@ -9,10 +9,11 @@
 //! small enough to travel in one synced record. The result is named by the hash of its bytes, so
 //! the same picture is one asset however many drawings show it.
 
+use crate::model::annotation::asset::StoredAsset;
+use crate::model::encoding::{base64_decode, base64_encode, sha256_hex};
 use image::{
     DynamicImage, ImageEncoder, ImageFormat, ImageReader, Limits, RgbaImage, imageops::FilterType,
 };
-use sha2::{Digest, Sha256};
 use std::io::Cursor;
 
 /// The most a picture may be as a file, in bytes: far above what a chart annotation needs.
@@ -25,6 +26,9 @@ pub const MAX_SIDE: u32 = 2_000;
 /// The most a kept picture may be, in bytes. Base64 in a synced record makes it a third larger,
 /// which must still fit the 900 kB a record may carry.
 pub const MAX_STORED_BYTES: usize = 600_000;
+/// The most side a stored picture may have: what ingest makes is far below it, and a record from
+/// another Mac is held to it too.
+pub const MAX_STORED_SIDE: u32 = 4_096;
 /// The smallest a picture is squeezed to before it is given up on.
 const MIN_SIDE: u32 = 48;
 /// What decoding may allocate, in bytes.
@@ -39,6 +43,19 @@ pub struct Ingested {
     pub width: u32,
     pub height: u32,
     pub bytes: Vec<u8>,
+}
+
+impl Ingested {
+    /// The picture as it is stored and synced.
+    pub fn stored(&self) -> StoredAsset {
+        StoredAsset {
+            id: self.id.clone(),
+            mime: self.mime.to_owned(),
+            width: self.width,
+            height: self.height,
+            data: base64_encode(&self.bytes),
+        }
+    }
 }
 
 /// Why a picture was refused, in words for the person who gave it.
@@ -72,8 +89,7 @@ impl IngestError {
 
 /// The hash a kept picture is named by.
 pub fn hash(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+    sha256_hex(bytes)
 }
 
 /// The format a picture's first bytes say it is, if it is one this accepts.
@@ -260,6 +276,33 @@ pub fn describe(bytes: &[u8]) -> Option<(&'static str, u32, u32)> {
     Some((mime, width, height))
 }
 
+/// A stored picture's bytes, only when they are what it says: a PNG or a JPEG of the type and size
+/// it declares, within the limits, and hashing to its own name. Anything else (damage, a record
+/// from a stranger) gives `None`.
+pub fn verified_bytes(asset: &StoredAsset) -> Option<Vec<u8>> {
+    if asset.id.len() != 64
+        || !asset
+            .id
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return None;
+    }
+    if asset.data.len() > MAX_STORED_BYTES.div_ceil(3) * 4 + 8 {
+        return None;
+    }
+    let bytes = base64_decode(&asset.data)?;
+    if bytes.is_empty() || bytes.len() > MAX_STORED_BYTES {
+        return None;
+    }
+    if hash(&bytes) != asset.id {
+        return None;
+    }
+    let (mime, width, height) = describe(&bytes)?;
+    let sane = (1..=MAX_STORED_SIDE).contains(&width) && (1..=MAX_STORED_SIDE).contains(&height);
+    (mime == asset.mime && width == asset.width && height == asset.height && sane).then_some(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,5 +486,38 @@ mod tests {
         ] {
             assert!(!error.message().is_empty());
         }
+    }
+
+    #[test]
+    fn a_stored_asset_is_trusted_only_when_it_is_what_it_says() {
+        let good = ingest(&png(30, 20, 255)).unwrap().stored();
+        assert!(verified_bytes(&good).is_some());
+        let mut bad = good.clone();
+        bad.id = "a".repeat(64);
+        assert!(
+            verified_bytes(&bad).is_none(),
+            "bytes that hash to another name"
+        );
+        let mut bad = good.clone();
+        bad.id = good.id.to_uppercase();
+        assert!(verified_bytes(&bad).is_none(), "ids are lower case");
+        let mut bad = good.clone();
+        bad.mime = "image/png".into();
+        assert!(verified_bytes(&bad).is_none(), "the wrong type");
+        let mut bad = good.clone();
+        bad.width += 1;
+        assert!(verified_bytes(&bad).is_none(), "the wrong size");
+        let mut bad = good.clone();
+        bad.data = "AAAA".into();
+        assert!(verified_bytes(&bad).is_none(), "not a picture");
+        let mut bad = good.clone();
+        bad.data = "!!!!".into();
+        assert!(verified_bytes(&bad).is_none(), "not base64");
+        let mut bad = good.clone();
+        bad.id = "short".into();
+        assert!(verified_bytes(&bad).is_none());
+        let mut bad = good.clone();
+        bad.data = "A".repeat(2_000_000);
+        assert!(verified_bytes(&bad).is_none(), "past the size limit");
     }
 }

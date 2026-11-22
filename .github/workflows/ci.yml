@@ -12,7 +12,7 @@ permissions:
 
 env:
   # Keep in step with release.yml (see there).
-  RUST_TOOLCHAIN: "1.99.0"
+  RUST_TOOLCHAIN: "1.100.0"
   CARGO_TERM_COLOR: always
 
 # A new push to a PR supersedes the run still going for its previous commit.
@@ -93,6 +93,10 @@ jobs:
         with:
           persist-credentials: false
 
+      # The one validator of the changes/ fragments, the script the release runs.
+      - name: Check changelog fragments
+        run: tools/changelog.sh check
+
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
@@ -160,3 +164,72 @@ jobs:
         env:
           DEGENVIEW_NO_KEYCHAIN: "1"
         run: cargo test --locked --lib -- update::install update::archive update::check host::update windows_credentials tls_protect
+
+  # Starts the real release executable (GUI subsystem, as shipped) and waits for a frame to be presented. The
+  # Windows build was never launched anywhere before this job, so "the app does not open" could not
+  # be told from "it opens". The runner has no GPU: wgpu falls back to the WARP software adapter, which
+  # proves the startup path and the window loop, not any real driver. "First frame presented" is
+  # logged when a screenshot of the first frame comes back, so a hang in rendering is not a pass. `startup.log` (see
+  # `crash_report`) is what the job reads, and prints when it fails.
+  smoke-windows:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Launch windows
+            os: windows-latest
+            key: windows-smoke
+          - name: Launch windows arm64
+            os: windows-11-arm
+            key: windows-arm64-smoke
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ matrix.key }}
+
+      - name: Build the release executable
+        shell: bash
+        run: cargo build --release --locked
+
+      - name: Launch it and wait for a window
+        shell: pwsh
+        run: |
+          $data = Join-Path $env:RUNNER_TEMP 'smoke-data'
+          New-Item -ItemType Directory -Force $data | Out-Null
+          # A scratch profile: no saved session, no real credentials.
+          $env:APPDATA = $data
+          $env:LOCALAPPDATA = $data
+          $env:DEGENVIEW_NO_KEYCHAIN = '1'
+          $log = Join-Path $data 'es.nico.degenview\startup.log'
+          $crash = Join-Path $data 'es.nico.degenview\crash.log'
+          $process = Start-Process -FilePath (Resolve-Path 'target\release\degenview.exe') -PassThru
+          $drawn = $false
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline -and -not $process.HasExited) {
+            if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'first frame presented' -Quiet)) {
+              $drawn = $true
+              break
+            }
+            Start-Sleep -Seconds 1
+          }
+          # A window that presents once and then dies is still a failed start.
+          if ($drawn) { Start-Sleep -Seconds 15 }
+          $process.Refresh()
+          $alive = -not $process.HasExited
+          foreach ($file in @($log, $crash)) {
+            if (Test-Path $file) { Write-Host "::group::$file"; Get-Content $file; Write-Host '::endgroup::' }
+          }
+          if ($alive) { Stop-Process -Id $process.Id -Force }
+          if (-not $drawn) { Write-Host "::error::no frame was presented within 90 s (exited: $($process.HasExited))"; exit 1 }
+          if (-not $alive) { Write-Host "::error::the app exited after presenting its first frame (code $($process.ExitCode))"; exit 1 }

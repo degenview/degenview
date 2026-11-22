@@ -94,7 +94,7 @@ impl ChartWorkspace {
                     .apply(timeframe, base, &mut chart.candles, kline.clone())
             {
                 chart.live = Some(LiveMark::new(open_time, now));
-                chart.last_data_ms = Some(crate::model::watchlist::now_ms());
+                chart.last_data_ms = Some(crate::clock::now_ms());
             }
         }
     }
@@ -347,11 +347,12 @@ mod tests {
         sender
             .send(Ok(crate::workspace::chart::Fetched {
                 candles: vec![fetched],
+                bars: Vec::new(),
                 series: Vec::new(),
             }))
             .unwrap();
         chart.inbox = Some(receiver);
-        chart.receive_fetch();
+        chart.receive_fetch(workspace.timeframe);
 
         // The bar already counted in the refresh's volume adds only what it trades from here.
         kline.volume = 4.5;
@@ -372,5 +373,55 @@ mod tests {
             Instant::now(),
         );
         assert_eq!(workspace.charts[0].candles[0].volume, 10.5);
+    }
+
+    #[test]
+    fn an_answer_with_the_buckets_base_bars_gives_the_forming_candle_what_the_socket_missed() {
+        let mut workspace = empty_workspace(1);
+        workspace.timeframe = Timeframe::parse("5m").unwrap();
+        let mut chart = Chart::blank(1, "BTCUSDT", DataSource::Binance);
+        // The socket was first: it saw only the bar at minute 3, 8 traded.
+        chart.last_fetch = Instant::now();
+        workspace.charts.push(chart);
+        let mut kline = candle(3 * 60_000, 5.0);
+        kline.volume = 8.0;
+        workspace.apply_live_kline(
+            DataSource::Binance,
+            Timeframe::MINUTE_1,
+            "BTCUSDT",
+            kline,
+            Instant::now(),
+        );
+
+        // REST answers later with the bucket's first four minutes, the last one cut at 3.
+        let bars: Vec<Kline> = (0..4)
+            .map(|minute| {
+                let mut bar = candle(minute * 60_000, 4.0);
+                bar.volume = if minute == 3 { 3.0 } else { 2.0 };
+                bar
+            })
+            .collect();
+        let chart = &mut workspace.charts[0];
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender
+            .send(Ok(crate::workspace::chart::Fetched {
+                candles: vec![Kline {
+                    volume: 9.0,
+                    close_time: 5 * 60_000 - 1,
+                    ..candle(0, 4.0)
+                }],
+                bars,
+                series: Vec::new(),
+            }))
+            .unwrap();
+        chart.inbox = Some(receiver);
+        chart.live = Some(LiveMark::new(0, Instant::now()));
+        chart.receive_fetch(workspace.timeframe);
+
+        assert_eq!(workspace.charts[0].candles.len(), 1);
+        assert_eq!(
+            workspace.charts[0].candles[0].volume, 14.0,
+            "three minutes of 2 and the socket's 8"
+        );
     }
 }

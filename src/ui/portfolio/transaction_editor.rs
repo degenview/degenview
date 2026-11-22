@@ -695,7 +695,7 @@ fn footer(
             if submit.clicked()
                 && let Some(transaction) = state
                     .draft
-                    .make_transaction(&state.base, crate::model::watchlist::now_ms())
+                    .make_transaction(&state.base, crate::clock::now_ms())
             {
                 state.submitting = true;
                 state.error = None;

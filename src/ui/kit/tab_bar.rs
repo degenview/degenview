@@ -1,9 +1,10 @@
 //! `IconTabBar`: a pill track of segments, each an icon, a title and an optional count.
 
-use super::{MEDIUM, SEMIBOLD, control, digits, galley, hairline, primary, size};
+use super::outline::{self, SELECTED_WEIGHT};
+use super::{MEDIUM, SEMIBOLD, digits, galley, primary, size};
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
-use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, Color32, Id, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 pub struct TabItem<T> {
     pub value: T,
@@ -97,14 +98,6 @@ impl Density {
             Self::Regular => 34.0,
         }
     }
-
-    /// The track's corner radius; the plates inside sit 3 pt in, so theirs is that much less.
-    fn track_radius(self) -> f32 {
-        match self {
-            Self::Slim => 6.0,
-            Self::Compact | Self::Regular => 11.0,
-        }
-    }
 }
 
 /// Widths for a bar that fills `available`: equal segments, like Swift's `fillsWidth`, unless
@@ -127,7 +120,7 @@ fn segment_width<T: Copy + PartialEq>(
     active: bool,
     density: Density,
 ) -> f32 {
-    let weight = if active { SEMIBOLD } else { MEDIUM };
+    let weight = if active { SELECTED_WEIGHT } else { MEDIUM };
     let title = galley(
         ui,
         item.title,
@@ -180,14 +173,7 @@ fn tab_bar_with<T: Copy + PartialEq>(
         widths.iter().sum::<f32>() + 2.0 * (items.len() - 1) as f32 + 6.0
     };
     let (track, _) = ui.allocate_exact_size(vec2(track_width, height + 6.0), Sense::hover());
-    ui.painter()
-        .rect_filled(track, density.track_radius(), theme::quaternary(0.6));
-    ui.painter().rect_stroke(
-        track,
-        density.track_radius(),
-        Stroke::new(1.0, hairline()),
-        StrokeKind::Inside,
-    );
+    outline::paint_track(ui.painter(), track, outline::RADIUS, outline::Wash::Rest);
     let segment_widths = if fills {
         fill_widths(
             &widths,
@@ -200,7 +186,6 @@ fn tab_bar_with<T: Copy + PartialEq>(
     for (index, item) in items.iter().enumerate() {
         let width = segment_widths[index];
         let segment = Rect::from_min_size(pos2(left, track.top() + 3.0), vec2(width, height));
-        let plate = density.track_radius() - 3.0;
         left += width + 2.0;
         let response = ui
             .interact(segment, id.with(index), Sense::click())
@@ -209,24 +194,9 @@ fn tab_bar_with<T: Copy + PartialEq>(
         let active = item.value == *selected;
         let painter = ui.painter();
         if active {
-            painter.add(
-                egui::Shadow {
-                    offset: [0, 1],
-                    blur: 3,
-                    spread: 0,
-                    color: Color32::from_black_alpha(40),
-                }
-                .as_shape(segment, plate),
-            );
-            painter.rect_filled(segment, plate, control());
-            painter.rect_stroke(
-                segment,
-                plate,
-                Stroke::new(1.0, hairline()),
-                StrokeKind::Inside,
-            );
+            outline::paint_plate(painter, segment, outline::PLATE_RADIUS, false);
         } else if response.hovered() {
-            painter.rect_filled(segment, plate, primary(0.04));
+            painter.rect_filled(segment, outline::PLATE_RADIUS, primary(0.05));
         }
         let title_color = if active {
             theme::text_primary()
@@ -237,7 +207,7 @@ fn tab_bar_with<T: Copy + PartialEq>(
             ui,
             item.title,
             density.font(),
-            if active { SEMIBOLD } else { MEDIUM },
+            if active { SELECTED_WEIGHT } else { MEDIUM },
             title_color,
             // The segment's room less its padding, glyph and gap; the count capsule is measured
             // into the segment, so it never squeezes the title of a hugging bar.
@@ -310,6 +280,14 @@ fn tab_bar_with<T: Copy + PartialEq>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_slim_bar_is_as_tall_as_a_header_control() {
+        assert_eq!(
+            Density::Slim.height() + 2.0 * outline::INSET,
+            outline::TALL_HEIGHT
+        );
+    }
 
     #[test]
     fn a_filling_bar_is_equal_unless_a_title_would_be_cut() {

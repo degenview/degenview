@@ -15,6 +15,7 @@ pub mod date_picker;
 pub mod dialog;
 pub mod error_notice;
 mod field;
+pub mod focus;
 mod form;
 pub mod header_controls;
 pub mod hints;
@@ -23,11 +24,13 @@ pub mod keycap;
 pub mod loading;
 pub mod markdown_view;
 mod menu;
+pub(in crate::ui) mod outline;
 mod page;
 mod palette;
 mod pill;
 pub mod popover;
 pub mod ruler;
+pub mod scroll;
 pub mod search_box;
 pub mod sheet;
 pub mod source_logo;
@@ -43,7 +46,7 @@ pub use autosave::Autosave;
 pub use button::{
     FooterButton, cta_button, destructive_button, destructive_sheet_button, footer_button,
     hover_button, large_button, large_prominent_button, neutral_button, open_button, push_button,
-    sheet_button, tinted_button,
+    sheet_button, sheet_button_focusable, tinted_button,
 };
 pub use card::{CARD_RADIUS, card_frame, divider, paint_card_badge, paint_well, panel_divider};
 pub use confirm::{Alert, Confirm, ConfirmOutcome, Notice, alert, confirm, notice, notice_with};
@@ -60,7 +63,7 @@ pub use menu::{
 };
 pub(crate) use menu::{MENU_FRAME_MARGIN, MENU_MAX_HEIGHT, menu_width_for, menu_width_for_rows};
 pub use page::{empty_state, footer_bar, footer_bar_with, notice_card};
-pub use palette::{ACCENT, GREEN, ORANGE, RED, Tone, control, hairline, primary, window};
+pub use palette::{ACCENT, GREEN, ORANGE, RED, Tone, hairline, primary, window};
 pub use pill::{
     chip_size, paint_chip, paint_count, paint_status_badge, status_badge, status_badge_size,
     tile_chip, tile_chip_text_width, value_chip,

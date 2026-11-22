@@ -50,7 +50,7 @@ impl OverlayBackend for Fake {
         symbol: &str,
         _: Timeframe,
         _: u32,
-    ) -> Result<Vec<Kline>, ProviderError> {
+    ) -> Result<LiveCandles, ProviderError> {
         self.calls.lock().unwrap().push(format!("klines {symbol}"));
         self.answers
             .lock()
@@ -58,6 +58,7 @@ impl OverlayBackend for Fake {
             .get(symbol)
             .cloned()
             .unwrap_or_else(|| Ok(vec![candle(10 * HOUR, 1.0), candle(11 * HOUR, 2.0)]))
+            .map(LiveCandles::from)
     }
 
     fn page(

@@ -520,36 +520,31 @@ pub mod syntax {
 /// selection, tabs and links. The rest of the Rust app keeps its own `ACCENT`.
 pub const SYSTEM_ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
 
-/// Puts the macOS system fonts (SF Pro for text, SF Mono for code) ahead of egui's bundled ones,
-/// like the Swift app, which uses them everywhere. The bundled fonts stay as glyph fallbacks, and
-/// a machine without the files simply keeps the defaults. STIX Two Math and Apple Symbols go last
+/// Puts Inter (bundled, the same on every platform) first in the proportional family and the macOS
+/// system monospace font (SF Mono) first in the monospace one. The fonts egui ships stay as glyph
+/// fallbacks, and a machine without SF Mono simply keeps them. STIX Two Math and Apple Symbols go last
 /// in both families so characters the others lack — "𝓑𝓾𝔂" and other math alphanumerics, arrows,
 /// geometric shapes — draw instead of showing tofu squares.
 fn base_fonts() -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
-    for (name, path, family) in [
-        (
-            "sf-pro",
-            "/System/Library/Fonts/SFNS.ttf",
-            egui::FontFamily::Proportional,
-        ),
-        (
-            "sf-mono",
-            "/System/Library/Fonts/SFNSMono.ttf",
-            egui::FontFamily::Monospace,
-        ),
-    ] {
-        if let Ok(bytes) = std::fs::read(path) {
-            fonts.font_data.insert(
-                name.to_owned(),
-                std::sync::Arc::new(egui::FontData::from_owned(bytes)),
-            );
-            fonts
-                .families
-                .entry(family)
-                .or_default()
-                .insert(0, name.to_owned());
-        }
+    fonts
+        .font_data
+        .insert("inter".to_owned(), bundled_ui_font());
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "inter".to_owned());
+    if let Ok(bytes) = std::fs::read("/System/Library/Fonts/SFNSMono.ttf") {
+        fonts.font_data.insert(
+            "sf-mono".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_owned(bytes)),
+        );
+        fonts
+            .families
+            .entry(egui::FontFamily::Monospace)
+            .or_default()
+            .insert(0, "sf-mono".to_owned());
     }
     for (name, path) in [
         (
@@ -574,6 +569,24 @@ fn base_fonts() -> egui::FontDefinitions {
     }
     add_symbol_fallback(&mut fonts);
     fonts
+}
+
+/// Inter Regular (`assets/fonts`, SIL OFL 1.1; the licence and where the file comes from are in
+/// `assets/fonts/README.md`): the font of the app's text on every platform.
+///
+/// Drawn unhinted: on a 1x screen egui's grid-fitting rounds Inter's x-height and cap height up to
+/// whole pixels (a 13 px line gains a pixel of height and some weight), so text looks stretched
+/// compared with a 2x screen. Unhinted keeps the font's own proportions at any scale.
+pub fn bundled_ui_font() -> std::sync::Arc<egui::FontData> {
+    static FONT: std::sync::OnceLock<std::sync::Arc<egui::FontData>> = std::sync::OnceLock::new();
+    const INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
+    FONT.get_or_init(|| {
+        std::sync::Arc::new(egui::FontData::from_static(INTER).tweak(egui::FontTweak {
+            hinting: Some(false),
+            ..Default::default()
+        }))
+    })
+    .clone()
 }
 
 /// The app's fonts without the editor's choice, read from the system once.

@@ -5,3 +5,12 @@ rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.aarch64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# When resolving (`cargo update`, adding a dependency), skip crate versions published in the last
+# seven days, the same wait Dependabot keeps (.github/dependabot.yml): a hijacked or malicious
+# release is usually yanked or flagged within days. Builds with `--locked` are not affected. To take
+# a fresh release on purpose (an urgent security fix), run that one update with
+# `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`. Needs Cargo 1.100; older Cargo warns
+# and ignores it.
+[registry]
+global-min-publish-age = "7 days"

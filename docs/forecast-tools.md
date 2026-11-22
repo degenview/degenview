@@ -175,7 +175,7 @@ refines a profile with lower-timeframe bars (down to one second, stepping throug
 the range holds fewer than 5,000 bars); this build has no bars under an hour, so a profile here is a distribution of
 the chart's own bars and must not be read as tick-accurate. Volume is not comparable across sources (CoinGecko,
 Polymarket, Kalshi and CoinMarketCap send none; Binance and Coinbase send base volume, GeckoTerminal quote volume;
-Alpaca's feed is IEX only), so a profile's absolute volume is not labelled, only its shape. A range that starts before the
+Alpaca's volume is IEX's, a few percent of the market, below 1D and consolidated from 1D), so a profile's absolute volume is not labelled, only its shape. A range that starts before the
 oldest bar the chart has loaded covers the loaded bars only, and says so (`From the loaded bars only`): scrolling
 back pages older bars in and the drawing follows.
 

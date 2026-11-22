@@ -16,7 +16,6 @@
 //! renames); an app in a folder the user cannot write to simply is not installable.
 
 use crate::service::update::check::ReleaseAsset;
-use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::path::Path;
 
@@ -130,9 +129,7 @@ fn verify(bytes: &[u8], asset: &ReleaseAsset) -> Result<(), String> {
     if bytes.len() as u64 != asset.size {
         return Err("The download is incomplete.".to_owned());
     }
-    let hash = Sha256::digest(bytes);
-    let hex: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
-    if hex != asset.sha256 {
+    if crate::model::encoding::sha256_hex(bytes) != asset.sha256 {
         return Err("The download does not match its published checksum.".to_owned());
     }
     Ok(())

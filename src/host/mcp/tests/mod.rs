@@ -1,6 +1,7 @@
 use super::alert::*;
 use super::pine::*;
 use super::*;
+use crate::clock::now_ms;
 use crate::host::alert::AlertHost;
 use crate::mcp::alert::{AlertCommandOutcome, AlertUpdate, NewAlert};
 use crate::mcp::bridge::McpError;
@@ -18,7 +19,7 @@ use crate::model::mcp::{
     AUDIT_LOG_LIMIT, BindMode, Cidr, MAX_CIDRS, McpAction, McpAuditEntry, McpAuditKind, McpClient,
     McpSettings, Permission, PermissionSet,
 };
-use crate::model::watchlist::{new_id, now_ms};
+use crate::model::watchlist::new_id;
 use crate::model::{DataSource, InstrumentId};
 use crate::service::keychain::mcp_seal::{KeyState, SealKeyStore};
 use crate::service::watchlist_quotes::WatchlistQuoteBook;

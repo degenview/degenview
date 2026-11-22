@@ -6,6 +6,18 @@
 pub type TabId = u64;
 pub type WindowId = u64;
 
+/// Windows and Linux end the app with its last window; macOS stays in the Dock.
+pub const LAST_WINDOW_QUITS: bool = !cfg!(target_os = "macos");
+
+/// What the OS close button of a window asks for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowClose {
+    /// Close the window's tabs one by one, as the strip's × would.
+    CloseTabs,
+    /// Quit the app, keeping every tab for the next launch.
+    Quit,
+}
+
 /// One window's tab strip.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TabWindow {
@@ -59,6 +71,17 @@ impl TabWindows {
 
     pub fn is_empty(&self) -> bool {
         self.windows.is_empty()
+    }
+
+    /// What closing `window` means. The last window quits where `last_window_quits`, because
+    /// closing its tabs instead would save a session with none and lose them all.
+    pub fn close_window(&self, window: WindowId, last_window_quits: bool) -> WindowClose {
+        let only = self.windows.len() == 1 && self.window(window).is_some();
+        if only && last_window_quits {
+            WindowClose::Quit
+        } else {
+            WindowClose::CloseTabs
+        }
     }
 
     /// Tabs in window order, then strip order: the order a session is saved in.
@@ -285,6 +308,33 @@ mod tests {
         );
         assert!(windows.is_empty());
         assert_eq!(windows.close_tab(1), None);
+    }
+
+    #[test]
+    fn closing_the_last_window_quits_where_the_app_ends_with_it() {
+        let windows = TabWindows::from_tabs([1, 2]);
+        let id = windows.windows()[0].id;
+        assert_eq!(windows.close_window(id, true), WindowClose::Quit);
+    }
+
+    #[test]
+    fn closing_one_of_two_windows_closes_its_tabs() {
+        let mut windows = TabWindows::from_tabs([1, 2]);
+        let second = windows.detach(2).unwrap();
+        assert_eq!(windows.close_window(second, true), WindowClose::CloseTabs);
+    }
+
+    #[test]
+    fn closing_the_last_window_closes_its_tabs_where_the_app_stays_open() {
+        let windows = TabWindows::from_tabs([1, 2]);
+        let id = windows.windows()[0].id;
+        assert_eq!(windows.close_window(id, false), WindowClose::CloseTabs);
+    }
+
+    #[test]
+    fn closing_an_unknown_window_never_quits() {
+        let windows = TabWindows::from_tabs([1]);
+        assert_eq!(windows.close_window(99, true), WindowClose::CloseTabs);
     }
 
     #[test]

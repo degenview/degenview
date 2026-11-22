@@ -8,6 +8,7 @@ pub mod fast_hash;
 pub mod library_call;
 pub mod operators;
 pub mod security_call;
+pub(crate) mod security_slice;
 pub mod session;
 pub mod state;
 pub mod support;

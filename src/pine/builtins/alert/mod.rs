@@ -9,6 +9,7 @@ pub mod frequency;
 use std::collections::HashSet;
 
 use super::number_format;
+use crate::clock::now_ms;
 use crate::model::Kline;
 use crate::model::alert::message::{AlertMessageContext, render};
 use crate::pine::compiler::program::SymbolInfo;
@@ -138,7 +139,7 @@ fn message_context(
         volume: Some(bar.volume),
         time_ms: Some(bar.open_time),
         now_ms: if flags.is_realtime {
-            now_millis()
+            now_ms()
         } else {
             bar.open_time
         },
@@ -173,13 +174,6 @@ fn interval_label(bar_seconds: f64) -> Option<String> {
         360..=370 => "12M".to_owned(),
         _ => format!("{days}D"),
     })
-}
-
-fn now_millis() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis() as i64)
 }
 
 fn runtime_error(code: &str, message: String, range: SourceRange) -> Diagnostic {

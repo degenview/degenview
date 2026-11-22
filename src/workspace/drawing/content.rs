@@ -15,7 +15,6 @@ use crate::service::annotation::asset_host;
 use crate::service::annotation::ingest::{self, IngestError};
 use crate::service::{system::file_dialog, work_queue};
 use crate::store::SharedStore;
-use crate::store::asset_store::StoredAsset;
 use crate::ui::drawing::content::sheet::{self, ImageSheet, ImageSheetAction};
 use crate::workspace::ChartWorkspace;
 use eframe::egui::{self, ColorImage};
@@ -183,7 +182,7 @@ fn work(source: Source, store: &SharedStore) -> Outcome {
         .map_err(|_| "The library is busy.".to_owned())
         .and_then(|store| {
             store
-                .put_asset(&StoredAsset::from_ingested(&picture))
+                .put_asset(&picture.stored())
                 .map_err(|error| format!("The picture could not be saved: {error}"))
         });
     if let Err(message) = stored {

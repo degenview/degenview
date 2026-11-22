@@ -77,9 +77,56 @@ impl Derived {
         result
     }
 
+    /// The RMA (Wilder's smoothing, alpha 1/`length`) of everything pushed so far, seeded with the
+    /// simple average of the first `length` values like `ta.rma`. Only that seed window is kept: once
+    /// the average exists, a value is folded into it and not stored.
+    fn rma(&mut self, value: f64, length: usize) -> Option<f64> {
+        if self.last.is_none() {
+            self.values.push(Some(value));
+        }
+        let result = match self.last {
+            _ if length == 0 => None,
+            Some(prior) => {
+                let alpha = 1.0 / length as f64;
+                Some(alpha * value + (1.0 - alpha) * prior)
+            }
+            None => self
+                .window(length)
+                .map(|w| w.iter().sum::<f64>() / length as f64),
+        };
+        if result.is_some() {
+            self.last = result;
+        }
+        result
+    }
+
     fn window(&self, length: usize) -> Option<Vec<f64>> {
         let start = self.values.len().checked_sub(length)?;
         self.values[start..].iter().copied().collect()
+    }
+}
+
+/// `ta.rsi(source, length)` for the bar `state.inputs` just ended on: `100 - 100 / (1 + rs)` with
+/// `rs` the RMA of the gains over the RMA of the losses, as TradingView defines it. The first value
+/// comes once `length` changes exist. No losses is 100. A missing source value is skipped, as
+/// `ta.sma` and `ta.rma` skip it: the bar repeats the last result and a change is measured between
+/// the two latest values that exist.
+pub fn rsi(state: &mut State, length: i64) -> RuntimeValue {
+    let length = count(length);
+    let Some(now) = state.inputs.last().and_then(RuntimeValue::number) else {
+        return state.results.last().cloned().unwrap_or(RuntimeValue::Na);
+    };
+    let earlier = &state.inputs[..state.inputs.len() - 1];
+    let Some(before) = earlier.iter().rev().find_map(RuntimeValue::number) else {
+        return RuntimeValue::Na;
+    };
+    let change = now - before;
+    let gain = derived(state, 0).rma(change.max(0.0), length);
+    let loss = derived(state, 1).rma((-change).max(0.0), length);
+    match (gain, loss) {
+        (Some(_), Some(0.0)) => RuntimeValue::Float(100.0),
+        (Some(gain), Some(loss)) => RuntimeValue::Float(100.0 - 100.0 / (1.0 + gain / loss)),
+        _ => RuntimeValue::Na,
     }
 }
 
@@ -335,7 +382,8 @@ fn last_n(values: &[f64], length: usize) -> Option<&[f64]> {
     (length > 0 && length <= values.len()).then(|| &values[values.len() - length..])
 }
 
-/// `ta.alma(series, length, offset, sigma, floor)`: the Arnaud Legoux moving average.
+/// `ta.alma(series, length, offset, sigma, floor)`: the Arnaud Legoux moving average. Weight `i` is
+/// for the `i`th bar of the window counting from the oldest, so an offset near 1 favours the newest.
 pub fn alma(
     source: &RuntimeValue,
     length: i64,
@@ -355,10 +403,10 @@ pub fn alma(
     }
     let s = length as f64 / sigma;
     let (mut norm, mut sum) = (0.0, 0.0);
-    for i in 0..length {
+    for (i, value) in values.iter().enumerate() {
         let weight = (-((i as f64 - m).powi(2)) / (2.0 * s * s)).exp();
         norm += weight;
-        sum += values[length - 1 - i] * weight;
+        sum += value * weight;
     }
     out((norm != 0.0).then(|| sum / norm))
 }
@@ -813,6 +861,55 @@ mod pivot_and_rank_tests {
     fn close_to(actual: &RuntimeValue, expected: f64) {
         let value = actual.number().unwrap_or_else(|| panic!("{actual:?}"));
         assert!((value - expected).abs() < 1e-9, "{value} vs {expected}");
+    }
+
+    fn alma_of(values: &[f64], length: i64, offset: f64, sigma: f64, floor: bool) -> RuntimeValue {
+        let mut state = State::default();
+        let mut last = RuntimeValue::Na;
+        for value in values {
+            last = alma(
+                &RuntimeValue::Float(*value),
+                length,
+                offset,
+                sigma,
+                floor,
+                &mut state,
+            );
+        }
+        last
+    }
+
+    #[test]
+    fn alma_weights_the_newest_bars_when_the_offset_is_near_one() {
+        // Pine's reference sums `series[length - i - 1] * weight` with the weight peaking at
+        // `offset * (length - 1)`: the window's oldest bar is index 0. Computed by hand.
+        close_to(
+            &alma_of(&[103.0, 104.0, 105.0], 3, 0.85, 6.0, false),
+            104.685_673_600_238_26,
+        );
+        // On a rising ramp an offset above one half lands above the window's middle (3), an
+        // offset below it under; a mirrored window swaps the two.
+        let ramp = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let late = alma_of(&ramp, 5, 0.75, 3.0, false).number().unwrap();
+        let early = alma_of(&ramp, 5, 0.25, 3.0, false).number().unwrap();
+        assert!(late > 3.0 && early < 3.0, "{late}, {early}");
+        assert!(
+            (late + early - 6.0).abs() < 1e-9,
+            "symmetric about the middle"
+        );
+        close_to(
+            &alma_of(&ramp, 5, 0.75, 3.0, false),
+            3.532_902_766_885_532_4,
+        );
+    }
+
+    #[test]
+    fn alma_floors_the_peak_only_when_asked() {
+        // `offset * (length - 1)` is 2.25 here; flooring moves the peak to 2.
+        let ramp = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let exact = alma_of(&ramp, 4, 0.75, 3.0, false).number().unwrap();
+        let floored = alma_of(&ramp, 4, 0.75, 3.0, true).number().unwrap();
+        assert!(floored < exact, "{floored} < {exact}");
     }
 
     #[test]

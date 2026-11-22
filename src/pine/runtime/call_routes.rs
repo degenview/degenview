@@ -170,6 +170,12 @@ impl Session {
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
+        // A request evaluates another series, and the chart's own run is what fires alerts: an event
+        // from a slice or a function the expression calls would repeat the chart's and use up its
+        // once-per-bar ledger.
+        if self.security_depth > 0 {
+            return Ok(RuntimeValue::Void);
+        }
         let args = self.eval_args(arguments, context)?;
         let key = self.site_key(site, context);
         if let Some(event) = alert::call(
@@ -237,6 +243,29 @@ impl Session {
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
+        if name == "ta.macd" {
+            let bound = self.bind_named(
+                arguments,
+                &["source", "fastlen", "slowlen", "siglen"],
+                context,
+            )?;
+            let source = bound.get("source").cloned().unwrap_or(RuntimeValue::Na);
+            let [fast, slow, signal] = ta::MACD_DEFAULTS;
+            let length = |parameter: &str, default: i64| {
+                bound
+                    .get(parameter)
+                    .and_then(RuntimeValue::int_value)
+                    .unwrap_or(default)
+            };
+            let (fast, slow, signal) = (
+                length("fastlen", fast),
+                length("slowlen", slow),
+                length("siglen", signal),
+            );
+            let key = self.site_key(site, context);
+            let state = self.working.ta_states.entry(key).or_default();
+            return Ok(ta::evaluate_macd(&source, fast, slow, signal, state));
+        }
         if matches!(name, "ta.sar" | "ta.supertrend") {
             let values = self.eval_all(arguments, context)?;
             let key = self.site_key(site, context);

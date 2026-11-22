@@ -146,14 +146,19 @@ fn a_text_is_one_message_with_one_set_of_forms() {
 
 // MARK: The template
 
-/// What a catalog needs of each message: one entry per context and text, in a fixed order.
+/// What a catalog needs of each message: one entry per context and text, in a fixed order, with
+/// the files that write it. Files and not lines (`msgcat --add-location=file`): a line number
+/// would make the template stale, and conflict between pull requests, whenever any line above a
+/// message changes.
 fn unique_messages(source: &[(String, Use)]) -> BTreeMap<(String, String), (&Use, Vec<String>)> {
     let mut unique: BTreeMap<(String, String), (&Use, Vec<String>)> = BTreeMap::new();
     for (file, used) in source {
         let entry = unique
             .entry((used.context().to_owned(), used.msgid().to_owned()))
             .or_insert_with(|| (used, Vec::new()));
-        entry.1.push(format!("{file}:{}", used.line));
+        if !entry.1.contains(file) {
+            entry.1.push(file.clone());
+        }
     }
     unique
 }
@@ -357,7 +362,8 @@ fn the_template_lists_each_message_once_with_its_places_and_forms() {
     assert_eq!(text.matches("msgid \"Save\"").count(), 1);
     assert!(text.contains("msgid \"{count} alert\"\nmsgid_plural \"{count} alerts\""));
     assert!(text.contains("msgctxt \"month\"\nmsgid \"May\""));
-    assert!(text.contains("src/x.rs:1 src/x.rs:1"));
+    assert!(text.contains("#: src/x.rs\n"));
+    assert!(!text.contains("src/x.rs:1"));
 }
 
 #[test]
