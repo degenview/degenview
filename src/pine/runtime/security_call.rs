@@ -993,15 +993,27 @@ impl Session {
         if let Some(first) = first_candle {
             state.completed_candles = state.completed_candles.max(first);
         }
-        // The newest candle that opens before the chart bar ends: the one a live bar reads, still
-        // forming (a finer request has several candles in a bar, a coarser one a single candle).
+        // The newest candle that opens before the chart bar ends (a finer request has several
+        // candles in a bar, a coarser one a single candle).
         let newest = last_index(chart.end - 1, candles);
+        // The candle a request reads for this bar: the one open at the bar's start, or the first
+        // the `calc_bars_count` window has left when it cuts into the bar. A bar none of whose
+        // candles is in the window has no value.
+        let read = {
+            let from = last_index(bar.open_time, candles).unwrap_or(0);
+            let index = first_candle.map_or(from, |first| from.max(first));
+            (index < candles.len() && candles[index].open_time < chart.end).then_some(index)
+        };
+        let outside = first_candle.is_some_and(|first| newest.is_none_or(|index| index < first));
+        // What a live bar reads, still forming: the first candle of the bar with lookahead on, the
+        // newest with it off.
+        let live = if request.lookahead_on { read } else { newest };
         // The candles finished by now: those ending by a confirmed bar's close, and on a live tick
-        // every one before the newest, which is still forming.
+        // every one before the one it reads.
         let finished_by = if context.flags.is_confirmed {
             chart.end
         } else {
-            newest.map_or(i64::MIN, |index| candles[index].open_time)
+            live.map_or(i64::MIN, |index| candles[index].open_time)
         };
         let mut fresh = false;
         while state.completed_candles < candles.len() {
@@ -1020,15 +1032,6 @@ impl Session {
             fresh |= context.flags.is_confirmed;
         }
         let mut result = state.last_result.clone();
-        // The candle a request reads for this bar: the one open at the bar's start, or the first
-        // the `calc_bars_count` window has left when it cuts into the bar (a finer request has
-        // several candles in a bar). A bar none of whose candles is in the window has no value.
-        let read = {
-            let from = last_index(bar.open_time, candles).unwrap_or(0);
-            let index = first_candle.map_or(from, |first| from.max(first));
-            (index < candles.len() && candles[index].open_time < chart.end).then_some(index)
-        };
-        let outside = first_candle.is_some_and(|first| newest.is_none_or(|index| index < first));
         if request.lookahead_on && !context.flags.is_realtime {
             // A historical bar reads its candle as it ended, from the candle's first chart bar on,
             // so that is the bar that is new.
@@ -1039,7 +1042,7 @@ impl Session {
             fresh = opened.is_some() && state.bucket != opened;
             state.bucket = opened;
         } else if context.flags.is_realtime
-            && let Some(index) = if request.lookahead_on { read } else { newest }
+            && let Some(index) = live
             && index >= state.completed_candles
         {
             result = self.evaluate_higher_timeframe(
