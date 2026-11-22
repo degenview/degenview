@@ -138,9 +138,15 @@ impl Session {
                     RuntimeValue::String(text) => crate::pine::time::seconds_of_timeframe(&text),
                     _ => None,
                 };
+                // Inside a request the previous bar is the requested series' own, not the chart's.
+                let previous = if self.security_depth > 0 {
+                    self.series_bars.last().map(|logged| logged.bar.open_time)
+                } else {
+                    self.last_committed_open_time
+                };
                 Ok(Some(match seconds {
                     Some(seconds) => RuntimeValue::Bool(crate::pine::time::timeframe_changed(
-                        self.last_committed_open_time,
+                        previous,
                         context.bar.open_time,
                         seconds,
                     )),

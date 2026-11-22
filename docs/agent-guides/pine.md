@@ -237,6 +237,23 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
 - **Alerts.** `alert()` does nothing while a request runs (`security_depth > 0`: a slice, or a
   function the expression calls): only the chart's own run fires alerts, and the once-per-bar ledger
   stays its own.
+- **Request context.** The site's state starts at `bar_index` −1 (`RuntimeState::before_first_bar`),
+  so a request's first candle is bar 0 and `barstate.isfirst` is true on it. `barstate.*` in a request
+  follow the chart bar the call runs for (`ChartBar`): realtime when the chart bar is and the
+  candle does not end before it opens (an older candle caught up on a live bar is history; a
+  developing candle on a historical bar is history), and `islast` / `islastconfirmedhistory` on the
+  candle that holds the chart bar's final instant, the end of its bucket (a 5h bar opened at 20:00
+  ends at midnight), when the chart bar has them. `islastconfirmedhistory` belongs to the requested
+  series: the last candle that closed by the history's end (`Session::history_end`) whose successor
+  ends after it, so a `"1D"` request on a 4h chart has it on yesterday's day (TradingView probe P12,
+  2026-11-21). A `"60"` request reads 1 there where TradingView read 0, which splits history from
+  realtime by wall-clock time. `barstate.isnew` in a request is true on history and, in real time,
+  on the first tick of the chart bar that opens the candle; a chart bar that starts inside a candle,
+  or a later tick, reads false (`ChartBar::new`; TradingView probe C, 2026-11-21: one true tick per
+  requested candle open, none on a mid-candle chart bar). TradingView fires it one tick after the
+  chart bar that opened the candle (feed latency, not modelled here).
+  `timeframe.change` is false on the first bar of the series it runs on (the chart's,
+  or the request's own candles, `series_bars`), TradingView-measured.
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
 
