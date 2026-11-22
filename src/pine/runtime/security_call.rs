@@ -993,24 +993,31 @@ impl Session {
         if let Some(first) = first_candle {
             state.completed_candles = state.completed_candles.max(first);
         }
+        // The newest candle that opens before the chart bar ends: the one a live bar reads, still
+        // forming (a finer request has several candles in a bar, a coarser one a single candle).
+        let newest = last_index(chart.end - 1, candles);
+        // The candles finished by now: those ending by a confirmed bar's close, and on a live tick
+        // every one before the newest, which is still forming.
+        let finished_by = if context.flags.is_confirmed {
+            chart.end
+        } else {
+            newest.map_or(i64::MIN, |index| candles[index].open_time)
+        };
         let mut fresh = false;
-        if context.flags.is_confirmed {
-            let chart_close = chart.end;
-            while state.completed_candles < candles.len() {
-                let candle = &candles[state.completed_candles];
-                if time::bucket::end(candle.open_time, request.interval) > chart_close {
-                    break;
-                }
-                state.last_result = self.evaluate_higher_timeframe(
-                    &mut state,
-                    candle,
-                    request,
-                    chart,
-                    Evaluation::COMMIT,
-                )?;
-                state.completed_candles += 1;
-                fresh = true;
+        while state.completed_candles < candles.len() {
+            let candle = &candles[state.completed_candles];
+            if time::bucket::end(candle.open_time, request.interval) > finished_by {
+                break;
             }
+            state.last_result = self.evaluate_higher_timeframe(
+                &mut state,
+                candle,
+                request,
+                chart,
+                Evaluation::COMMIT,
+            )?;
+            state.completed_candles += 1;
+            fresh |= context.flags.is_confirmed;
         }
         let mut result = state.last_result.clone();
         // The candle a request reads for this bar: the one open at the bar's start, or the first
@@ -1021,9 +1028,7 @@ impl Session {
             let index = first_candle.map_or(from, |first| from.max(first));
             (index < candles.len() && candles[index].open_time < chart.end).then_some(index)
         };
-        let outside = first_candle.is_some_and(|first| {
-            last_index(chart.end - 1, candles).is_none_or(|newest| newest < first)
-        });
+        let outside = first_candle.is_some_and(|first| newest.is_none_or(|index| index < first));
         if request.lookahead_on && !context.flags.is_realtime {
             // A historical bar reads its candle as it ended, from the candle's first chart bar on,
             // so that is the bar that is new.
@@ -1034,7 +1039,7 @@ impl Session {
             fresh = opened.is_some() && state.bucket != opened;
             state.bucket = opened;
         } else if context.flags.is_realtime
-            && let Some(index) = read
+            && let Some(index) = if request.lookahead_on { read } else { newest }
             && index >= state.completed_candles
         {
             result = self.evaluate_higher_timeframe(

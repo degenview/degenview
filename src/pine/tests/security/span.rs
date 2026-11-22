@@ -591,3 +591,69 @@ fn a_foreign_candle_forming_on_the_live_bar_is_read_as_it_stands() {
         "the first week is older than the newest three"
     );
 }
+
+/// ETHUSDT daily candles from the first Monday up to day `last` (inclusive), closing 100 + day;
+/// the last of them is still forming.
+fn eth_days_until(last: i64) -> CannedData {
+    let days = (0..=last)
+        .map(|index| candle(MONDAY + index * DAY, DAY, 1.0, 100.0 + index as f64, 1.0))
+        .collect();
+    CannedData::default().with("ETHUSDT", 86_400.0, SeriesDepth::Chart, days)
+}
+
+/// Three whole weeks of weekly history and the live bar of the fourth, which has run to its
+/// third day (day 23, the forming candle).
+fn live_week(source: &str, data: CannedData) -> Vec<Option<f64>> {
+    let history: Vec<Kline> = (0..3)
+        .map(|index| candle(MONDAY + index * WEEK, WEEK, 10.0, 10.0, 1.0))
+        .collect();
+    plotted_live(
+        source,
+        Some(Box::new(data)),
+        &history,
+        candle(MONDAY + 3 * WEEK, WEEK, 10.0, 10.0, 1.0),
+    )
+}
+
+#[test]
+fn a_finer_symbol_on_a_live_bar_reads_its_newest_candle_as_it_stands() {
+    // Each weekly bar reads the last daily candle it holds; the live one, the forming day.
+    let values = live_week(
+        "request.security(\"ETHUSDT\", \"1D\", close)",
+        eth_days_until(23),
+    );
+    assert_eq!(values, [Some(106.0), Some(113.0), Some(120.0), Some(123.0)]);
+    // With lookahead on, the first candle of the bar.
+    let first = live_week(
+        "request.security(\"ETHUSDT\", \"1D\", close, lookahead = barmerge.lookahead_on)",
+        eth_days_until(23),
+    );
+    assert_eq!(first, [Some(100.0), Some(107.0), Some(114.0), Some(121.0)]);
+}
+
+#[test]
+fn a_finer_expression_on_a_live_bar_has_run_on_every_candle_before_the_forming_one() {
+    // `ta.cum(1)` counts the candles the expression has run on: 7 per whole week, and on the
+    // live bar the three of its days (two finished, one forming).
+    let values = live_week(
+        "request.security(\"ETHUSDT\", \"1D\", ta.cum(1))",
+        eth_days_until(23),
+    );
+    assert_eq!(values, [Some(7.0), Some(14.0), Some(21.0), Some(24.0)]);
+}
+
+#[test]
+fn another_symbol_and_the_charts_own_read_a_finer_live_bar_alike() {
+    let own = live_week("request.security(syminfo.tickerid, \"1D\", close)", {
+        let days = (0..=23)
+            .map(|index| candle(MONDAY + index * DAY, DAY, 1.0, 100.0 + index as f64, 1.0))
+            .collect();
+        CannedData::default().with(&symbol().ticker_id, 86_400.0, SeriesDepth::Chart, days)
+    });
+    let foreign = live_week(
+        "request.security(\"ETHUSDT\", \"1D\", close)",
+        eth_days_until(23),
+    );
+    assert_eq!(own, foreign);
+    assert_eq!(foreign[3], Some(123.0));
+}
