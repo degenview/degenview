@@ -473,3 +473,115 @@ fn a_finer_request_with_a_live_bar_counts_back_from_it() {
     // Hours 1-8 are the newest eight: the first chart bar starts at 01:00.
     assert_eq!(values, [Some(2.0), Some(5.0), Some(9.0)]);
 }
+
+const WEEK: i64 = 7 * DAY;
+
+/// Daily candles of ETHUSDT, 28 of them from the epoch (four whole weeks), closing 100, 101, ...
+fn eth_days(depth: SeriesDepth) -> CannedData {
+    let days = (0..28)
+        .map(|index| candle(index * DAY, DAY, 1.0, 100.0 + index as f64, 1.0))
+        .collect();
+    CannedData::default().with("ETHUSDT", 86_400.0, depth, days)
+}
+
+/// Four weekly chart bars from the epoch (a Thursday: the weeks are 7 days from there, which is
+/// all the fold needs).
+fn weekly_chart() -> Vec<Kline> {
+    (0..4)
+        .map(|index| candle(index * WEEK, WEEK, 10.0, 10.0, 1.0))
+        .collect()
+}
+
+#[test]
+fn a_window_that_cuts_a_chart_bar_gives_it_the_candles_inside_it() {
+    let chart = weekly_chart();
+    let read = |options: &str, depth: SeriesDepth| {
+        plotted(
+            &format!("request.security(\"ETHUSDT\", \"1D\", close{options})"),
+            &chart,
+            eth_days(depth),
+        )
+    };
+    // No limit: each week reads the last daily close the week held (the last intrabar).
+    assert_eq!(
+        read("", SeriesDepth::Chart),
+        [Some(106.0), Some(113.0), Some(120.0), Some(127.0)]
+    );
+    // The newest ten days are 18-27: the second week (days 14-20) is cut and keeps days 18-20.
+    assert_eq!(
+        read(", calc_bars_count = 10", SeriesDepth::Newest(10)),
+        [None, None, Some(120.0), Some(127.0)]
+    );
+    // One day: only the last week, which holds it.
+    assert_eq!(
+        read(", calc_bars_count = 1", SeriesDepth::Newest(1)),
+        [None, None, None, Some(127.0)]
+    );
+    // Eight days (20-27): days 20 and 21 are in different weeks.
+    assert_eq!(
+        read(", calc_bars_count = 8", SeriesDepth::Newest(8)),
+        [None, None, Some(120.0), Some(127.0)]
+    );
+}
+
+#[test]
+fn a_cut_chart_bar_reads_the_first_candle_inside_the_window_with_lookahead_on() {
+    let chart = weekly_chart();
+    let read = |options: &str, depth: SeriesDepth| {
+        plotted(
+            &format!(
+                "request.security(\"ETHUSDT\", \"1D\", close, lookahead = barmerge.lookahead_on{options})"
+            ),
+            &chart,
+            eth_days(depth),
+        )
+    };
+    assert_eq!(
+        read("", SeriesDepth::Chart),
+        [Some(100.0), Some(107.0), Some(114.0), Some(121.0)]
+    );
+    // Days 18-27: the cut week starts at its day 18 instead of 14.
+    assert_eq!(
+        read(", calc_bars_count = 10", SeriesDepth::Newest(10)),
+        [None, None, Some(118.0), Some(121.0)]
+    );
+}
+
+#[test]
+fn a_foreign_candle_forming_on_the_live_bar_is_read_as_it_stands() {
+    // Weekly chart: three whole weeks of history and a live bar for the fourth, with the weekly
+    // candles of another symbol, the fourth still forming (its close so far 40).
+    let history: Vec<Kline> = (0..3)
+        .map(|index| candle(index * WEEK, WEEK, 10.0, 10.0, 1.0))
+        .collect();
+    let weeks = [10.0, 20.0, 30.0, 40.0]
+        .iter()
+        .enumerate()
+        .map(|(index, close)| candle(index as i64 * WEEK, WEEK, 1.0, *close, 1.0))
+        .collect::<Vec<_>>();
+    let values = |options: &str, depth: SeriesDepth| {
+        plotted_live(
+            &format!("request.security(\"ETHUSDT\", \"1W\", close{options})"),
+            Some(Box::new(CannedData::default().with(
+                "ETHUSDT",
+                604_800.0,
+                depth,
+                weeks.clone(),
+            ))),
+            &history,
+            candle(3 * WEEK, WEEK, 10.0, 10.0, 1.0),
+        )
+    };
+    let plain = values("", SeriesDepth::Chart);
+    assert_eq!(
+        plain[3],
+        Some(40.0),
+        "the live bar reads the developing candle"
+    );
+    let counted = values(", calc_bars_count = 3", SeriesDepth::Newest(3));
+    assert_eq!(counted[3], Some(40.0));
+    assert_eq!(
+        counted[0], None,
+        "the first week is older than the newest three"
+    );
+}

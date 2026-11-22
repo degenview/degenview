@@ -1014,20 +1014,25 @@ impl Session {
             }
         }
         let mut result = state.last_result.clone();
-        let current = last_index(bar.open_time, candles);
-        // Older than the newest `calc_bars_count` candles: nothing is evaluated.
-        let outside = first_candle.is_some_and(|first| current.is_none_or(|index| index < first));
+        // The candle a request reads for this bar: the one open at the bar's start, or the first
+        // the `calc_bars_count` window has left when it cuts into the bar (a finer request has
+        // several candles in a bar). A bar none of whose candles is in the window has no value.
+        let read = last_index(bar.open_time, candles)
+            .map(|index| first_candle.map_or(index, |first| index.max(first)));
+        let outside = first_candle.is_some_and(|first| {
+            last_index(chart.end - 1, candles).is_none_or(|newest| newest < first)
+        });
         if request.lookahead_on && !context.flags.is_realtime {
             // A historical bar reads its candle as it ended, from the candle's first chart bar on,
             // so that is the bar that is new.
-            let opened = current.map(|index| candles[index].open_time);
-            if let Some(index) = current.filter(|_| !outside) {
+            let opened = read.map(|index| candles[index].open_time);
+            if let Some(index) = read.filter(|_| !outside) {
                 result = self.ahead_candle(&mut state, request, &candles[index])?;
             }
             fresh = opened.is_some() && state.bucket != opened;
             state.bucket = opened;
         } else if context.flags.is_realtime
-            && let Some(index) = current
+            && let Some(index) = read
             && index >= state.completed_candles
         {
             result = self.evaluate_higher_timeframe(
