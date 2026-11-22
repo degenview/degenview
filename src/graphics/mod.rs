@@ -5,11 +5,14 @@
 //! without a panic, a log line or a window, and the next launch does the same. So the choice is
 //! ours, per platform (`ladder::LADDER`), and it heals itself:
 //!
-//! - `begin` runs before the renderer starts. It reads `graphics.json`; a start that left its rung
+//! - `start` runs the whole start. Each try reads `graphics.json`; a start that left its rung
 //!   marked as in progress never drew a frame, so that rung is skipped from now on (for this build).
+//! - A try that fails cleanly before the renderer exists (no adapter, no surface) moves on to the
+//!   next rung at once, in the same launch, instead of showing an error.
 //! - `confirm_started` runs when the first frame has been presented and clears the mark.
 //!
-//! `WGPU_BACKEND` still wins and bypasses all of it, so a reporter can try each backend by hand.
+//! `WGPU_BACKEND` still wins and bypasses all of it (the memory is neither read nor changed), so a
+//! reporter can try each backend by hand.
 //! Deleting `graphics.json` starts the list over.
 
 mod ladder;
@@ -26,6 +29,8 @@ use ladder::Rung;
 pub struct Selection {
     backends: Backends,
     note: String,
+    /// False when `WGPU_BACKEND` chose: another try would choose the same.
+    can_fall_back: bool,
 }
 
 impl Selection {
@@ -43,20 +48,70 @@ impl Selection {
     }
 }
 
-/// Chooses the backends for this start and marks the choice as in progress.
-pub fn begin() -> Selection {
-    begin_in(
+/// How one try at starting the renderer and the app ended.
+pub enum Outcome<T, E> {
+    /// The app ran and finished.
+    Started(T),
+    /// It failed before the renderer was ready (no adapter, no surface): the next backend may work.
+    NoRenderer(E),
+    /// It failed with the renderer ready: another backend would not help.
+    Failed(E),
+}
+
+/// Runs `run` with the backends for this start, and again with the next rung while it fails before
+/// the renderer is ready. A try that never returns (a crash or a hang in the driver) is handled by
+/// the next launch: see the module comment.
+pub fn start<T, E>(run: impl FnMut(&Selection) -> Outcome<T, E>) -> Result<T, E> {
+    start_in(
         crate::paths::data_dir().as_deref(),
         Backends::from_env(),
         ladder::LADDER,
         crate::build_info::BUILD_ID,
+        run,
     )
 }
 
 /// Clears the in-progress mark: this start presented a frame, so its rung works.
 pub fn confirm_started() {
+    if Backends::from_env().is_some() {
+        return;
+    }
     if let Some(dir) = crate::paths::data_dir() {
         confirm_in(&dir);
+    }
+}
+
+fn start_in<T, E>(
+    dir: Option<&Path>,
+    from_env: Option<Backends>,
+    ladder: &[Rung],
+    build: &str,
+    mut run: impl FnMut(&Selection) -> Outcome<T, E>,
+) -> Result<T, E> {
+    let mut tries = 0;
+    loop {
+        let selection = begin_in(dir, from_env, ladder, build);
+        tries += 1;
+        match run(&selection) {
+            Outcome::NoRenderer(_) if selection.can_fall_back && tries < ladder.len() => {}
+            Outcome::NoRenderer(error) => return Err(error),
+            Outcome::Started(value) => {
+                finish_in(dir, &selection);
+                return Ok(value);
+            }
+            Outcome::Failed(error) => {
+                finish_in(dir, &selection);
+                return Err(error);
+            }
+        }
+    }
+}
+
+/// The renderer was ready, so the rung works whatever else went wrong. A run with `WGPU_BACKEND`
+/// proves nothing about the rungs: it leaves the memory as it found it.
+fn finish_in(dir: Option<&Path>, selection: &Selection) {
+    if let (Some(dir), true) = (dir, selection.can_fall_back) {
+        confirm_in(dir);
     }
 }
 
@@ -70,6 +125,7 @@ fn begin_in(
         return Selection {
             backends,
             note: format!("graphics backends: {backends:?} (WGPU_BACKEND)"),
+            can_fall_back: false,
         };
     }
     let plan = ladder::plan(ladder, dir.map(state::load).unwrap_or_default(), build);
@@ -79,6 +135,7 @@ fn begin_in(
     Selection {
         backends: plan.rung.backends,
         note: plan.note(),
+        can_fall_back: true,
     }
 }
 
@@ -159,6 +216,93 @@ mod tests {
     #[test]
     fn without_a_data_directory_the_first_rung_is_used() {
         assert_eq!(begin_in(None, None, TWO, "build").backends, Backends::DX12);
+    }
+
+    /// Runs `start_in` with a closure that answers from `outcomes`, and says which backends it saw.
+    fn started_with(
+        dir: Option<&Path>,
+        from_env: Option<Backends>,
+        outcomes: Vec<Outcome<&'static str, &'static str>>,
+    ) -> (Result<&'static str, &'static str>, Vec<Backends>) {
+        let mut outcomes = outcomes.into_iter();
+        let mut seen = Vec::new();
+        let result = start_in(dir, from_env, TWO, "build", |selection| {
+            seen.push(selection.backends);
+            outcomes.next().expect("no more tries than answers")
+        });
+        (result, seen)
+    }
+
+    #[test]
+    fn a_start_without_a_renderer_tries_the_next_rung_at_once() {
+        let dir = scratch("no-renderer");
+        let (result, seen) = started_with(
+            Some(&dir),
+            None,
+            vec![Outcome::NoRenderer("no adapter"), Outcome::Started("ran")],
+        );
+        assert_eq!(result, Ok("ran"));
+        assert_eq!(seen, [Backends::DX12, Backends::GL]);
+        let remembered = state::load(&dir);
+        assert_eq!(remembered.failed, ["first"]);
+        assert_eq!(remembered.attempting, None, "the working rung is confirmed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn when_every_rung_has_no_renderer_the_last_error_is_returned() {
+        let dir = scratch("none-works");
+        let (result, seen) = started_with(
+            Some(&dir),
+            None,
+            vec![
+                Outcome::NoRenderer("first error"),
+                Outcome::NoRenderer("second error"),
+            ],
+        );
+        assert_eq!(result, Err("second error"));
+        assert_eq!(seen.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failure_with_the_renderer_ready_is_not_retried_and_keeps_the_rung() {
+        let dir = scratch("failed-ready");
+        let (result, seen) = started_with(Some(&dir), None, vec![Outcome::Failed("app error")]);
+        assert_eq!(result, Err("app error"));
+        assert_eq!(seen, [Backends::DX12]);
+        assert_eq!(state::load(&dir).attempting, None);
+        assert_eq!(
+            begin_in(Some(&dir), None, TWO, "build").backends,
+            Backends::DX12
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_run_with_the_environment_choice_keeps_an_earlier_failure_on_record() {
+        let dir = scratch("env-keeps-mark");
+        // An earlier start died on the first rung and left its mark.
+        begin_in(Some(&dir), None, TWO, "build");
+        let (result, _) = started_with(
+            Some(&dir),
+            Some(Backends::GL),
+            vec![Outcome::Started("ran")],
+        );
+        assert_eq!(result, Ok("ran"));
+        assert_eq!(state::load(&dir).attempting.as_deref(), Some("first"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_environment_choice_is_tried_once() {
+        let (result, seen) = started_with(
+            None,
+            Some(Backends::VULKAN),
+            vec![Outcome::NoRenderer("no adapter")],
+        );
+        assert_eq!(result, Err("no adapter"));
+        assert_eq!(seen, [Backends::VULKAN]);
     }
 
     #[test]
