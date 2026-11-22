@@ -1511,19 +1511,20 @@ fn a_call_of_a_builtin_works_where_a_local_is_called_like_its_namespace() {
 }
 
 #[test]
-fn a_request_keeps_its_slice_where_a_local_is_called_request() {
-    let with_local = plot_values(
-        "f() =>\n    request = 1.0\n    x = request.security(syminfo.tickerid, \"1\", close) + request\n    x\nplot(f(), \"r\")",
-        6,
-        "r",
-    );
-    let without = plot_values(
-        "f() =>\n    x = request.security(syminfo.tickerid, \"1\", close) + 1.0\n    x\nplot(f(), \"r\")",
-        6,
-        "r",
-    );
-    assert_eq!(with_local, without);
-    assert!(with_local.iter().flatten().count() > 3, "{with_local:?}");
+fn a_request_replays_the_bars_it_skipped_where_a_local_is_called_request() {
+    // Both requests sit under a local `request`, so the interpreter holds that as `request#…`; the
+    // gated one runs on every second bar and must read what the ungated one does (it replays the
+    // chart bars it skipped, which only a script that calls `request.security` by its name does).
+    let body = "always = 0.0\ngated = 0.0\n\
+                if true\n    request = 1.0\n    always := request.security(syminfo.tickerid, timeframe.period, ta.sma(close, 3))\n\
+                if bar_index % 2 == 0\n    request = 2.0\n    gated := request.security(syminfo.tickerid, timeframe.period, ta.sma(close, 3))\n\
+                plot(always, \"always\")\nplot(gated, \"gated\")";
+    let always = plot_values(body, 12, "always");
+    let gated = plot_values(body, 12, "gated");
+    assert!(always.iter().flatten().count() > 6, "{always:?}");
+    for bar in (2..12).step_by(2) {
+        assert_eq!(gated[bar], always[bar], "bar {bar}");
+    }
 }
 
 #[test]

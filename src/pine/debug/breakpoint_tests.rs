@@ -261,10 +261,17 @@ r = f()
 
 #[test]
 fn a_condition_calls_a_builtin_by_its_written_name_on_a_renamed_local() {
-    let mut spec = BreakpointSpec::line(1, 6);
-    spec.condition = Some("math.abs(math) == 2".to_owned());
-    let (seen, _) = run(HIDING_MATH, 2, vec![spec], DebugControl::default(), None);
-    assert_eq!(seen.len(), 2, "the condition holds on both bars: {seen:?}");
+    // A condition that cannot be evaluated stops the script and says so, so the false one is the
+    // proof: `math.abs(math)` is 2, the condition is `== 3`, and nothing stops.
+    let stops_for = |condition: &str| {
+        let mut spec = BreakpointSpec::line(1, 6);
+        spec.condition = Some(condition.to_owned());
+        run(HIDING_MATH, 2, vec![spec], DebugControl::default(), None)
+            .0
+            .len()
+    };
+    assert_eq!(stops_for("math.abs(math) == 3"), 0);
+    assert_eq!(stops_for("math.abs(math) == 2"), 2);
 }
 
 #[test]
