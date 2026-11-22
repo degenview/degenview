@@ -4,6 +4,21 @@ What changed for people who use DegenView, release by release, newest first. `to
 each section from the fragments in `changes/` when it cuts the release, and the app shows the
 sections between your version and the one on offer before it updates.
 
+## 0.6.0-rc.34 (2026-11-23)
+
+### New
+
+- Drag the line above a script pane to resize it, as in TradingView; pane heights are saved with the chart.
+
+### Fixed
+
+- The app no longer fails to open without a message on some Windows PCs; it starts with DirectX 12 and switches to another graphics mode by itself if a start does not work.
+
+### Fixed in release candidates
+
+- Text no longer looks tall and stretched on screens that are not Retina.
+- The update sheet no longer says its release notes are complete when it stopped reading the release list early.
+
 ## 0.6.0-rc.33 (2026-11-21)
 
 ### New
