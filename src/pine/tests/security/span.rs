@@ -475,20 +475,21 @@ fn a_finer_request_with_a_live_bar_counts_back_from_it() {
 }
 
 const WEEK: i64 = 7 * DAY;
+/// 1970-01-05, the first Monday: weeks open here, as Pine's weekly buckets do.
+const MONDAY: i64 = 4 * DAY;
 
-/// Daily candles of ETHUSDT, 28 of them from the epoch (four whole weeks), closing 100, 101, ...
+/// Daily candles of ETHUSDT, 28 of them from the first Monday (four whole weeks), closing 100, 101, ...
 fn eth_days(depth: SeriesDepth) -> CannedData {
     let days = (0..28)
-        .map(|index| candle(index * DAY, DAY, 1.0, 100.0 + index as f64, 1.0))
+        .map(|index| candle(MONDAY + index * DAY, DAY, 1.0, 100.0 + index as f64, 1.0))
         .collect();
     CannedData::default().with("ETHUSDT", 86_400.0, depth, days)
 }
 
-/// Four weekly chart bars from the epoch (a Thursday: the weeks are 7 days from there, which is
-/// all the fold needs).
+/// Four weekly chart bars from the first Monday.
 fn weekly_chart() -> Vec<Kline> {
     (0..4)
-        .map(|index| candle(index * WEEK, WEEK, 10.0, 10.0, 1.0))
+        .map(|index| candle(MONDAY + index * WEEK, WEEK, 10.0, 10.0, 1.0))
         .collect()
 }
 
@@ -552,12 +553,12 @@ fn a_foreign_candle_forming_on_the_live_bar_is_read_as_it_stands() {
     // Weekly chart: three whole weeks of history and a live bar for the fourth, with the weekly
     // candles of another symbol, the fourth still forming (its close so far 40).
     let history: Vec<Kline> = (0..3)
-        .map(|index| candle(index * WEEK, WEEK, 10.0, 10.0, 1.0))
+        .map(|index| candle(MONDAY + index * WEEK, WEEK, 10.0, 10.0, 1.0))
         .collect();
     let weeks = [10.0, 20.0, 30.0, 40.0]
         .iter()
         .enumerate()
-        .map(|(index, close)| candle(index as i64 * WEEK, WEEK, 1.0, *close, 1.0))
+        .map(|(index, close)| candle(MONDAY + index as i64 * WEEK, WEEK, 1.0, *close, 1.0))
         .collect::<Vec<_>>();
     let values = |options: &str, depth: SeriesDepth| {
         plotted_live(
@@ -569,7 +570,7 @@ fn a_foreign_candle_forming_on_the_live_bar_is_read_as_it_stands() {
                 weeks.clone(),
             ))),
             &history,
-            candle(3 * WEEK, WEEK, 10.0, 10.0, 1.0),
+            candle(MONDAY + 3 * WEEK, WEEK, 10.0, 10.0, 1.0),
         )
     };
     let plain = values("", SeriesDepth::Chart);
