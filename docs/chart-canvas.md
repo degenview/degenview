@@ -24,6 +24,7 @@ chart-overrides and watermark pages, and the "apply the same settings to all cha
 | Scales have text size, text colour and line colour | Supercharts guide; overrides `scalesProperties` |
 | Navigation buttons: zoom in/out, scroll left/right, reset view | Supercharts guide |
 | Pane buttons: move up/down, collapse, maximize, remove | Supercharts guide |
+| Dragging the line above a pane resizes it; the pane above (or the main chart) gives up what it gains | TradingView behaviour; the exact grab width and minimum heights are ours |
 | Top and bottom margins are percentages | overrides `topMargin`/`bottomMargin` |
 | Settings are per chart, and "Apply to all" copies one chart's to the rest of the layout | apply-to-all article |
 
@@ -59,8 +60,8 @@ opacity. Every row writes straight into the chart, which repaints at once.
   bar while the chart pans. The grid is drawn from the scale and never feeds back into it.
   Each script pane has its own price grid on its own scale and shares the vertical one.
 - **Pane separators.** The line above each script pane: on/off, colour, thickness, style. Shown
-  only when the chart has a pane; with none, the row says so. Panes are not resizable, so the
-  line has no drag behaviour to preserve.
+  only when the chart has a pane; with none, the row says so. The line is also the handle that
+  resizes the pane below it (see Panes).
 - **Crosshair.** Colour, opacity, thickness (1–4 pt) and style. The vertical line runs through the
   price chart and on through every pane; the horizontal line and price tag belong to the chart
   under the pointer. It is drawn above the series, the scripts and the drawings. Restyling does
@@ -109,13 +110,38 @@ slots.
 ### Panes
 
 Pane order is the order of the scripts on the chart (`PineInstance` list), so moving a pane
-reorders that list and there is no second representation. Collapse is stored on the instance
-(`pane_collapsed`, saved with the chart; the script still runs). Maximize is view state and is
+reorders that list and there is no second representation. Collapse and dragged height are the
+instance's pane layout (`PineInstance::pane`, a `PaneLayout`, stored as its `pane_collapsed` and
+`pane_share` fields and saved with the chart; the script still runs). Maximize is view state and is
 not saved. Remove is the same removal as Scripts ▸ Remove from Chart. Layout is
-`model::chart::canvas::split_panes`: expanded panes share 30 % of the height, a collapsed one is a 24 pt
-strip, and a maximized pane takes everything but the strips and the time axis; the price chart
-then draws nothing but its time axis. Built-in indicators (volume, RSI, Bollinger) are drawn
-inside the price plot, not in panes, so they have no pane buttons.
+`model::chart::canvas::split_panes`: an expanded pane has the height it was dragged to
+(`PaneLayout::share`, a fraction of the chart's height), or else its
+part of the default 30 % of the height divided by the number of expanded panes; a collapsed one is a 24 pt strip, and a
+maximized pane takes everything but the strips and the time axis; the price chart then draws nothing
+but its time axis. The main chart takes what the panes leave and keeps at least 90 pt (60 % of a
+very short chart). Every expanded pane, dragged or not, keeps at least 48 pt, enough for its plot
+and its buttons; a chart without room for that gives its panes less, never under 24 pt (the
+buttons' height) while their strips fit, and the main chart yields last. What the panes want beyond those floors is cut
+back in proportion. `pane_limits` holds these numbers for the split and for the drag alike.
+
+Dragging the line above a pane (`card/pane_divider.rs`, 3 pt either side, resize cursor) moves
+height between the two panes it separates, as in TradingView: the pane below gains what the nearest
+expanded pane above it (or the main chart) loses, so the other panes and, between two panes, the
+main chart keep their size. Neither goes under the floors above. The first drag saves
+the heights of every expanded pane; a pane added later takes the default share and the main chart
+gives it the room, one removed gives its room back to the main chart. A height follows its script
+when panes are moved. Undo and redo of a script change (`workspace::undo`) restore which scripts are
+on the chart but keep each script's `pane` as it is now; a script that comes back after a removal has the layout it
+was removed with. Collapsed panes and a maximized pane have no line to drag. The drag is
+measured from the split it began on (`model::chart::canvas::drag_divider`), so rounding never
+accumulates, and every height is a difference of rounded edges, so a pane the drag does not touch
+never moves. A drag ends when the chart's panes or height change under it. The line takes the
+pointer whatever tool is armed (Zoom In included), as the pane buttons do, but a workspace mode that
+owns the whole chart (Select portion, a replay start or Pine Logs range pick) sees no line: no resize
+pointer and no drag. There is no double-click reset.
+
+Built-in indicators (volume, RSI, Bollinger) are drawn inside the price plot, not in panes, so they
+have no pane buttons.
 
 ## The colour picker
 

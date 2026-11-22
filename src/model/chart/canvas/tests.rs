@@ -474,7 +474,11 @@ fn a_non_finite_offset_is_the_newest_bars() {
 const AXIS: f32 = 24.0;
 
 fn spec(id: u64, collapsed: bool) -> PaneSpec {
-    PaneSpec { id, collapsed }
+    PaneSpec {
+        id,
+        collapsed,
+        share: None,
+    }
 }
 
 #[test]
@@ -540,6 +544,235 @@ fn a_short_chart_keeps_its_main_area_before_its_panes() {
     assert!(zero.main >= 0.0 && zero.panes.iter().all(|height| *height >= 0.0));
     let nan = split_panes(f32::NAN, &[spec(1, false)], None, AXIS);
     assert!(nan.main.is_finite());
+}
+
+fn sized(id: u64, share: f32) -> PaneSpec {
+    PaneSpec {
+        id,
+        collapsed: false,
+        share: Some(share),
+    }
+}
+
+#[test]
+fn a_pane_keeps_the_height_it_was_dragged_to_and_the_others_keep_the_default() {
+    let panes = [sized(1, 0.25), spec(2, false)];
+    let split = split_panes(600.0, &panes, None, AXIS);
+    assert_eq!(split.panes[0], 150.0);
+    assert_eq!(split.panes[1], 90.0, "the default share over two panes");
+    assert_eq!(split.main, 360.0);
+    assert_eq!(split.main + split.panes.iter().sum::<f32>(), 600.0);
+}
+
+#[test]
+fn dragged_panes_give_way_to_the_main_chart_and_never_shrink_to_nothing() {
+    let greedy = split_panes(600.0, &[sized(1, 0.6), sized(2, 0.6)], None, AXIS);
+    assert!(greedy.main >= 90.0, "{greedy:?}");
+    assert_eq!(greedy.main + greedy.panes.iter().sum::<f32>(), 600.0);
+    assert!(
+        (greedy.panes[0] - greedy.panes[1]).abs() <= 1.0,
+        "{greedy:?}"
+    );
+    let thin = split_panes(600.0, &[sized(1, 0.0)], None, AXIS);
+    assert_eq!(thin.panes[0], MIN_PANE_HEIGHT);
+}
+
+#[test]
+fn a_collapsed_pane_ignores_its_share() {
+    let mut pane = sized(1, 0.4);
+    pane.collapsed = true;
+    let split = split_panes(600.0, &[pane], None, AXIS);
+    assert_eq!(split.panes, vec![COLLAPSED_PANE_HEIGHT]);
+}
+
+fn drag(total: f32, panes: &[PaneSpec], index: usize, up: f32) -> Vec<(u64, f32)> {
+    let start = split_panes(total, panes, None, AXIS);
+    drag_divider(total, &start, panes, index, up)
+}
+
+#[test]
+fn dragging_the_line_under_the_main_chart_trades_height_with_it() {
+    let panes = [spec(1, false), spec(2, false)];
+    // 600 splits into main 420 and two panes of 90.
+    let up = drag(600.0, &panes, 0, 30.0);
+    assert_eq!(up, vec![(1, 120.0 / 600.0), (2, 90.0 / 600.0)]);
+    let down = drag(600.0, &panes, 0, -30.0);
+    assert_eq!(down, vec![(1, 60.0 / 600.0), (2, 90.0 / 600.0)]);
+}
+
+#[test]
+fn dragging_the_line_between_two_panes_leaves_the_main_chart_alone() {
+    let panes = [spec(1, false), spec(2, false)];
+    let moved = drag(600.0, &panes, 1, 20.0);
+    assert_eq!(moved, vec![(1, 70.0 / 600.0), (2, 110.0 / 600.0)]);
+    let total: f32 = moved.iter().map(|(_, share)| share * 600.0).sum();
+    assert!((total - 180.0).abs() < 0.01, "the panes keep their sum");
+}
+
+#[test]
+fn a_drag_stops_where_a_side_reaches_its_minimum() {
+    let panes = [spec(1, false), spec(2, false)];
+    let far_up = drag(600.0, &panes, 1, 1000.0);
+    assert_eq!(far_up[0].1 * 600.0, MIN_PANE_HEIGHT);
+    assert_eq!(far_up[1].1 * 600.0, 180.0 - MIN_PANE_HEIGHT);
+    let far_down = drag(600.0, &panes, 1, -1000.0);
+    assert_eq!(far_down[1].1 * 600.0, MIN_PANE_HEIGHT);
+    let into_main = drag(600.0, &panes, 0, 1000.0);
+    assert_eq!(
+        into_main[0].1 * 600.0,
+        90.0 + (420.0 - 90.0),
+        "the main chart keeps its minimum"
+    );
+}
+
+#[test]
+fn a_line_skips_collapsed_panes_and_a_collapsed_pane_has_none() {
+    let panes = [spec(1, false), spec(2, true), spec(3, false)];
+    let moved = drag(600.0, &panes, 2, 10.0);
+    let ids: Vec<u64> = moved.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, vec![1, 3], "the strip between them is not resized");
+    assert!(
+        moved[0].1 < moved[1].1,
+        "the pane above gave height to the one below"
+    );
+    assert!(drag(600.0, &panes, 1, 10.0).is_empty());
+    assert!(drag(600.0, &panes, 7, 10.0).is_empty());
+    assert!(drag(0.0, &panes, 0, 10.0).is_empty());
+    assert!(drag(600.0, &panes, 0, f32::NAN).is_empty());
+}
+
+#[test]
+fn default_panes_keep_a_usable_height_while_the_chart_has_room() {
+    // 30 % of 240 would give three panes 24 pt each: no plot (it needs 16 pt of margins).
+    let split = split_panes(
+        240.0,
+        &[spec(1, false), spec(2, false), spec(3, false)],
+        None,
+        AXIS,
+    );
+    assert_eq!(split.panes, vec![MIN_PANE_HEIGHT; 3]);
+    assert_eq!(split.main, 240.0 - 3.0 * MIN_PANE_HEIGHT);
+    assert!(split.main >= 90.0, "the main chart keeps its minimum too");
+}
+
+#[test]
+fn a_chart_too_short_for_the_floors_gives_each_pane_what_it_can_but_keeps_its_buttons() {
+    let many: Vec<PaneSpec> = (1..=4).map(|id| spec(id, false)).collect();
+    let split = split_panes(240.0, &many, None, AXIS);
+    // 150 pt of room for four panes: under 48 pt each, over the 24 pt their buttons need.
+    assert!(
+        split.panes.iter().all(|h| (36.0..48.0).contains(h)),
+        "{split:?}"
+    );
+    assert_eq!(split.main, 90.0);
+    let crowded: Vec<PaneSpec> = (1..=8).map(|id| spec(id, false)).collect();
+    let tight = split_panes(240.0, &crowded, None, AXIS);
+    assert!(
+        tight.panes.iter().all(|h| *h >= COLLAPSED_PANE_HEIGHT),
+        "{tight:?}"
+    );
+    assert!(tight.main >= 0.0);
+    assert!((tight.main + tight.panes.iter().sum::<f32>() - 240.0).abs() < 0.001);
+}
+
+#[test]
+fn more_than_three_panes_share_the_same_thirty_percent() {
+    let panes: Vec<PaneSpec> = (1..=5).map(|id| spec(id, false)).collect();
+    let split = split_panes(1000.0, &panes, None, AXIS);
+    assert_eq!(split.panes, vec![60.0; 5]);
+    assert_eq!(split.main, 700.0);
+}
+
+#[test]
+fn a_dragged_pane_is_cut_back_towards_its_floor_not_below_it() {
+    let split = split_panes(600.0, &[sized(1, 0.9), sized(2, 0.0)], None, AXIS);
+    assert_eq!(split.panes[1], MIN_PANE_HEIGHT);
+    assert_eq!(
+        split.main, 90.0,
+        "the big pane stops where the main chart's minimum is"
+    );
+    assert_eq!(split.panes[0], 600.0 - 90.0 - MIN_PANE_HEIGHT);
+}
+
+/// `panes` with the shares a drag returned.
+fn with_shares(panes: &[PaneSpec], shares: &[(u64, f32)]) -> Vec<PaneSpec> {
+    panes
+        .iter()
+        .map(|pane| PaneSpec {
+            share: shares
+                .iter()
+                .find(|(id, _)| *id == pane.id)
+                .map(|(_, s)| *s),
+            ..*pane
+        })
+        .collect()
+}
+
+#[test]
+fn the_split_keeps_every_height_a_drag_asked_for() {
+    // Short charts have a smaller main minimum and fewer points to spare, so their limits differ
+    // from a tall chart's; a collapsed pane sits between the main chart and the dragged one.
+    for total in [100.0_f32, 240.0, 600.0] {
+        let panes = [
+            spec(1, false),
+            spec(2, true),
+            spec(3, false),
+            spec(4, false),
+        ];
+        let start = split_panes(total, &panes, None, AXIS);
+        for index in [0, 2, 3] {
+            for up in [-1000.0, -12.5, 12.5, 1000.0] {
+                let shares = drag_divider(total, &start, &panes, index, up);
+                let dragged = split_panes(total, &with_shares(&panes, &shares), None, AXIS);
+                for (at, pane) in panes.iter().enumerate().filter(|(_, p)| !p.collapsed) {
+                    let share = shares
+                        .iter()
+                        .find(|(id, _)| *id == pane.id)
+                        .expect("share")
+                        .1;
+                    assert!(
+                        (dragged.panes[at] - share * total).abs() <= 1.0,
+                        "total {total}, line {index}, up {up}: {dragged:?} for {shares:?}"
+                    );
+                }
+                // The main chart yields only to the panes' buttons: with room for those it keeps its
+                // minimum however the line was dragged.
+                if total - 4.0 * COLLAPSED_PANE_HEIGHT >= main_floor(total) {
+                    assert!(dragged.main >= main_floor(total) - 1.0, "{dragged:?}");
+                }
+                let (floor, _) = pane_limits(total, 3, COLLAPSED_PANE_HEIGHT);
+                assert!(
+                    panes
+                        .iter()
+                        .enumerate()
+                        .all(|(at, pane)| pane.collapsed || dragged.panes[at] >= floor.floor()),
+                    "{dragged:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_pane_the_drag_does_not_touch_never_moves() {
+    let panes = [spec(1, false), spec(2, false), spec(3, false)];
+    let start = split_panes(601.0, &panes, None, AXIS);
+    for half_points in 0..40 {
+        let up = half_points as f32 * 0.5;
+        let shares = drag_divider(601.0, &start, &panes, 1, up);
+        let dragged = split_panes(601.0, &with_shares(&panes, &shares), None, AXIS);
+        assert_eq!(dragged.panes[2], start.panes[2], "up {up}: {dragged:?}");
+        assert_eq!(dragged.main, start.main, "up {up}: {dragged:?}");
+    }
+}
+
+#[test]
+fn a_start_that_is_not_the_split_of_these_panes_has_no_line_to_drag() {
+    let two = [spec(1, false), spec(2, false)];
+    let start = split_panes(600.0, &two, None, AXIS);
+    let three = [spec(1, false), spec(2, false), spec(3, false)];
+    assert!(drag_divider(600.0, &start, &three, 1, 10.0).is_empty());
+    assert!(drag_divider(600.0, &start, &two[..1], 0, 10.0).is_empty());
 }
 
 #[test]

@@ -201,12 +201,13 @@ impl ChartCard {
         };
         let pane_specs: Vec<PaneSpec> = pane_outputs
             .iter()
-            .map(|(id, _)| PaneSpec {
-                id: *id,
-                collapsed: self
+            .map(|(id, _)| {
+                let pane = self
                     .instances
                     .iter()
-                    .any(|instance| instance.id == *id && instance.pane_collapsed),
+                    .find(|instance| instance.id == *id)
+                    .map(|instance| instance.pane);
+                PaneSpec::of(*id, pane.unwrap_or_default())
             })
             .collect();
         let maximized = self
