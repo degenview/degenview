@@ -53,6 +53,10 @@ impl Session {
         self.first_bar_time = bars.first().map(|bar| bar.open_time);
         if self.keeps_series_bars {
             self.bar_opens = bars.iter().map(|bar| bar.open_time).collect();
+            // The live bar that follows the history is the chart's newest, though it has not run.
+            if precedes_live_bar && let Some(live) = self.last_bar_time {
+                self.bar_opens.push(live);
+            }
         }
         self.known_bars = self
             .keeps_known_bars

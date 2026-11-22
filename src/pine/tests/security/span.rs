@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use super::lookahead::{HOUR, hourly, hourly_bar, plot_values, session_with};
 use crate::model::Kline;
+use crate::pine::compiler::program::{BarEvent, BarPhase};
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::session::RunError;
 use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey, SeriesDepth};
@@ -378,4 +379,97 @@ fn the_candle_forming_at_the_charts_end_is_the_newest_of_the_count() {
     assert_eq!(two[23], None);
     assert_eq!(two[24], Some(1.0));
     assert_eq!(two[59], Some(2.0));
+}
+
+/// The first plot of `source` after `history` loaded with a live bar to come and `live` ticked.
+fn plotted_live(
+    source: &str,
+    provider: Option<Box<dyn SecurityDataProvider>>,
+    history: &[Kline],
+    live: Kline,
+) -> Vec<Option<f64>> {
+    let body = format!("//@version=6\nindicator(\"T\")\nplot({source}, \"x\")");
+    let mut session = session_with(&body, provider);
+    session
+        .load_history(history, true, None)
+        .expect("history runs");
+    session
+        .execute(
+            BarEvent {
+                candle: live,
+                phase: BarPhase::RealtimeTick { is_new: true },
+            },
+            true,
+            None,
+        )
+        .expect("the live bar runs");
+    plot_values(&session, "x")
+}
+
+#[test]
+fn a_live_bar_is_the_newest_chart_bar_of_calc_bars_count() {
+    // A whole day of hourly bars, then a live bar that opens the next day: the window of the
+    // newest day is the live bar's, not the history's last bar's.
+    let history = hourly(24);
+    let live = hourly_bar(24);
+    let read = |count: usize| {
+        plotted_live(
+            &format!(
+                "request.security(syminfo.tickerid, \"1D\", ta.cum(1), lookahead = barmerge.lookahead_on, calc_bars_count = {count})"
+            ),
+            None,
+            &history,
+            live.clone(),
+        )
+    };
+    let one = read(1);
+    assert_eq!(one.len(), 25);
+    assert_eq!(one.iter().flatten().count(), 1, "only the live bar's day");
+    assert_eq!(one[24], Some(1.0));
+    let two = read(2);
+    assert_eq!(two.iter().flatten().count(), 25, "yesterday and today");
+    assert_eq!(two[24], Some(2.0));
+}
+
+#[test]
+fn another_symbols_window_ends_at_the_live_bar_too() {
+    let history = hourly(24);
+    // Six whole 4h candles and the seventh, forming, which opens with the live bar at 00:00.
+    let candles = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0]
+        .iter()
+        .enumerate()
+        .map(|(index, close)| candle(index as i64 * 4 * HOUR, 4 * HOUR, *close, *close, 1.0))
+        .collect();
+    let data = CannedData::default().with("ETHUSDT", 14_400.0, SeriesDepth::Newest(1), candles);
+    let values = plotted_live(
+        "request.security(\"ETHUSDT\", \"240\", close, lookahead = barmerge.lookahead_on, calc_bars_count = 1)",
+        Some(Box::new(data)),
+        &history,
+        hourly_bar(24),
+    );
+    assert_eq!(values.iter().flatten().count(), 1, "{values:?}");
+    assert_eq!(values[24], Some(70.0));
+}
+
+#[test]
+fn a_finer_request_with_a_live_bar_counts_back_from_it() {
+    // 4 hour bars at 00:00 and 04:00, a live bar at 08:00 and hourly candles up to 08:00.
+    let history: Vec<Kline> = (0..2)
+        .map(|index| candle(index * 4 * HOUR, 4 * HOUR, 10.0, 10.0, 1.0))
+        .collect();
+    let hourly_candles: Vec<Kline> = (0..=8)
+        .map(|index| candle(index * HOUR, HOUR, 1.0, 1.0 + index as f64, 1.0))
+        .collect();
+    let provider = AnyDepth {
+        candles: hourly_candles,
+        asked: Default::default(),
+    };
+    let values = plotted_live(
+        "request.security(syminfo.tickerid, \"60\", close, lookahead = barmerge.lookahead_on, calc_bars_count = 8)",
+        Some(Box::new(provider)),
+        &history,
+        candle(8 * HOUR, 4 * HOUR, 10.0, 10.0, 1.0),
+    );
+    // Hours 1-8 are the newest eight: the first chart bar starts at 01:00.
+    assert_eq!(values, [Some(2.0), Some(5.0), Some(9.0)]);
 }
