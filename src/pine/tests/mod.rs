@@ -9,6 +9,6 @@ pub(in crate::pine) mod corpus;
 #[cfg(test)]
 pub(in crate::pine) mod language;
 #[cfg(test)]
-pub(in crate::pine) mod security_conditional;
+pub(in crate::pine) mod security;
 #[cfg(test)]
 pub(in crate::pine) mod varip;

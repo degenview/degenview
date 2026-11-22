@@ -51,6 +51,9 @@ impl Session {
                 })
         });
         self.first_bar_time = bars.first().map(|bar| bar.open_time);
+        self.known_bars = self
+            .keeps_known_bars
+            .then(|| std::sync::Arc::new(bars.to_vec()));
         let seconds = self.bar_seconds;
         self.history_end = bars.last().map(|bar| {
             crate::pine::time::bucket::end(
@@ -58,6 +61,7 @@ impl Session {
                 seconds,
             )
         });
+        self.final_bar_end = self.history_end.filter(|_| !precedes_live_bar);
         self.bulk_replay = true;
         let mut failed_bar = 0;
         let result = self.replay_history(bars, bars.len(), precedes_live_bar, &mut failed_bar);

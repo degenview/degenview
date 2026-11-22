@@ -263,7 +263,7 @@ session keeps the confirmed bars of the series now running, each with the bar le
 (`Session::series_bars`: the chart's, or while a request's expression runs, the candles that request has
 completed, kept on its `SecuritySite`), and a site replays the ones it was not called on
 (`replay_skipped_bars`) before it takes the current bar, so a conditional call, a nested one and one
-resumed after a gap in the data match an unconditional call (`pine/tests/security_conditional.rs`). The
+resumed after a gap in the data match an unconditional call (`pine/tests/security/conditional.rs`). The
 log is kept only for a script whose parse tree calls `request.security` (or imports a library that does).
 Chart's own symbol only; a foreign symbol or a finer timeframe already walks the provider's candles. The
 warm-up feeds the provider's candles that closed before the chart's first bar, not before the first call.

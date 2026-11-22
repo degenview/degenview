@@ -1,9 +1,12 @@
 //! Everything a script run accumulates, plus the alert event and `request.security` site the
 //! state holds. Ported from `PineRuntimeState.swift`, `PineAlertEvent.swift`, `PineSecuritySite.swift`.
 
+use std::sync::Arc;
+
 use super::fast_hash::FastMap;
 
 use super::containers::{Map, Matrix, Object};
+use super::site_value::SiteValue;
 use super::value::RuntimeValue;
 use crate::model::Kline;
 use crate::pine::builtins::alert::frequency::AlertFrequency;
@@ -41,7 +44,8 @@ pub struct LoggedBar {
 /// What one `request.security` call site remembers between chart bars.
 #[derive(Clone, Debug)]
 pub struct SecuritySite {
-    /// Open of the higher-timeframe bucket the chart bars are currently in.
+    /// Open of the higher-timeframe bucket the chart bars are currently in; for another symbol's
+    /// series read with `lookahead_on`, of the candle the last historical bar was in.
     pub bucket: Option<i64>,
     /// The confirmed chart bars of that bucket so far, folded into one candle.
     pub accumulated: Option<Kline>,
@@ -51,16 +55,23 @@ pub struct SecuritySite {
     pub is_warmed_up: bool,
     /// Another symbol's series: how many of its candles have been completed and evaluated.
     pub completed_candles: usize,
+    /// What `lookahead_on` returned on historical bars of the bucket opening at `.0`: the
+    /// expression on that bucket as it ended, evaluated on the bucket's first call and reused.
+    pub ahead: Option<(i64, SiteValue)>,
+    /// Every candle of the series this site evaluates the expression on, known before the run
+    /// reached them: what a request nested in the expression reads ahead in. Kept only for a script
+    /// that looks ahead.
+    pub known: Option<Arc<Vec<Kline>>>,
     /// The expression's own state, not shared with the chart script.
     pub state: Box<RuntimeState>,
     /// The higher-timeframe candles this site has completed, which a request inside its expression
     /// replays when that inner call skipped some of them. Kept only for scripts that request.
     pub bars: Vec<LoggedBar>,
     /// The expression's value on the last completed higher-timeframe bar.
-    pub last_result: RuntimeValue,
+    pub last_result: SiteValue,
     /// The chart bar this site last answered, and what it answered, for a second call.
     pub processed_bar: Option<i64>,
-    pub bar_result: RuntimeValue,
+    pub bar_result: SiteValue,
 }
 
 impl Default for SecuritySite {
@@ -71,11 +82,13 @@ impl Default for SecuritySite {
             has_pending_bars: false,
             is_warmed_up: false,
             completed_candles: 0,
+            ahead: None,
+            known: None,
             state: Box::new(RuntimeState::before_first_bar()),
             bars: Vec::new(),
-            last_result: RuntimeValue::Na,
+            last_result: SiteValue::na(),
             processed_bar: None,
-            bar_result: RuntimeValue::Na,
+            bar_result: SiteValue::na(),
         }
     }
 }
