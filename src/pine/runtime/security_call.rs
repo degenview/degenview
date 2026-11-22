@@ -884,7 +884,7 @@ impl Session {
         let start = time::bucket::start(bar.open_time, request.interval);
         if state.window_start.is_some_and(|window| start < window) {
             // Older than the newest `calc_bars_count` candles: nothing is evaluated.
-            return Ok((RuntimeValue::Na, false));
+            return Ok((SiteValue::na(), false));
         }
         let mut fresh = false;
         let switched = state.bucket != Some(start);
