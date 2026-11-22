@@ -270,6 +270,19 @@ impl Timeframe {
         }
     }
 
+    /// The least a candle of this timeframe can span: [`nominal_ms`](Self::nominal_ms), but a month
+    /// at its shortest (28 days, a quarter 90, a year 365). It bounds how many candles open in a
+    /// span, which no calendar can exceed.
+    pub const fn shortest_ms(self) -> i64 {
+        let count = self.count as i64;
+        match self.unit {
+            TimeUnit::Month if self.count == 3 => 90 * DAY_MS,
+            TimeUnit::Month if self.count == 12 => 365 * DAY_MS,
+            TimeUnit::Month => count * 28 * DAY_MS,
+            _ => self.nominal_ms(),
+        }
+    }
+
     /// The name older builds saved a [`Timeframe::LEGACY`] value under.
     fn legacy_name(self) -> Option<&'static str> {
         Some(match self {

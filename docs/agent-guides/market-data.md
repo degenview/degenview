@@ -120,6 +120,19 @@ watchlists.
   the buckets the same way as everything else, a length that is no timeframe flooring onto the epoch.
   `request.security_lower_tf` intrabars are folded in the Pine host from the coarsest of its own
   base list that nests (`INTRABAR_BASES`), bounded by `MAX_INTRABAR_CANDLES` base candles.
+- A `request.security` series (another symbol, or the chart's own symbol at a timeframe the chart's
+  bars do not fold into) is asked of the source by **count**, never by elapsed time (a month, a
+  weekend or a holiday makes time a poor measure of candles): `host::pine::newest_before` takes the
+  newest `count` candles that open before the chart's end through `service::fetch_klines_range(.., 0,
+  end, count)` (the range call is by count when the start is 0; only some sources implement it) and
+  falls back to the newest `count` candles of `fetch_klines`. `series_count` is `calc_bars_count`
+  (`SeriesDepth::Newest`, clamped to `MAX_SERIES_CANDLES` where the script's count is read), or the
+  chart's span divided by the timeframe's `Timeframe::shortest_ms` (a month counts as 28 days, so
+  the count is an upper bound), plus one and `WARM_UP_CANDLES` (300) before the first bar. A short
+  answer is the start of the market's history or a source's cap; older chart bars then read `na`.
+  Intrabars of a finer timeframe are a range over the chart's span, or by count with
+  `calc_bars_count`. The cache key includes the chart's span. Same bug class, not changed here:
+  Binance's `fetch_klines_range` turns the count into a start time.
 - `service::fetch_klines` runs every provider through `service::normalize` (ascending, one candle per
   open time, finite prices, range holds open and close). GeckoTerminal lists only traded intervals;
   `bucket::fill_gaps` adds flat zero-volume candles for even spacing. Volume units differ (base asset,

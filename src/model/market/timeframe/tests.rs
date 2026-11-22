@@ -294,3 +294,21 @@ fn text_that_is_no_timeframe_fails_to_decode() {
         assert!(serde_json::from_str::<Timeframe>(json).is_err(), "{json}");
     }
 }
+
+#[test]
+fn the_shortest_candle_of_a_timeframe_bounds_how_many_open_in_a_span() {
+    const DAY: i64 = 86_400_000;
+    assert_eq!(
+        Timeframe::HOUR_1.shortest_ms(),
+        Timeframe::HOUR_1.nominal_ms()
+    );
+    assert_eq!(Timeframe::WEEK_1.shortest_ms(), 7 * DAY);
+    // February has 28 days, a quarter at least 90 (Jan-Mar), a year 365.
+    assert_eq!(Timeframe::MONTH_1.shortest_ms(), 28 * DAY);
+    assert_eq!(Timeframe::MONTH_3.shortest_ms(), 90 * DAY);
+    assert_eq!(Timeframe::YEAR_1.shortest_ms(), 365 * DAY);
+    assert_eq!(tf(2, TimeUnit::Month).shortest_ms(), 56 * DAY);
+    for timeframe in Timeframe::PRESETS {
+        assert!(timeframe.shortest_ms() <= timeframe.nominal_ms());
+    }
+}
