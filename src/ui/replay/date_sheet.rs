@@ -153,10 +153,9 @@ fn picker(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, range: Option<(i6
 fn calendar_header(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, lo: i64, hi: i64) {
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new(crate::i18n::tr!(
-                "{month} {year}",
-                month = crate::i18n::calendar::month_name(state.display_month),
-                year = state.display_year
+            RichText::new(crate::i18n::datetime::month_year(
+                state.display_year,
+                state.display_month,
             ))
             .strong()
             .size(14.0),

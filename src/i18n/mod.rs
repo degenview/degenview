@@ -14,17 +14,23 @@
 //! * `tr_c!("month abbreviation", "Jan")` is for English text that translates differently in
 //!   different places (a verb and a noun spelt alike).
 //!
-//! The English text is the key of the catalogs, so the code reads as it did before, and a message
-//! nobody translated shows in English. `docs/localization.md` has the rules and how a language is
-//! added.
+//! The English text is the key of the catalogs (gettext's `msgid`), so the code reads as it did
+//! before, and a message nobody translated shows in English. The catalogs are gettext `.po` files;
+//! dates and times are written by `datetime` with CLDR's patterns. A message is checked when it
+//! compiles (`check`). `docs/localization.md` has the rules and how a language is added.
+//!
+//! The text a macro returns is for the frame being drawn: a language chosen in Settings changes
+//! it, so do not keep it past a frame. `revision()` changes with the language, for state that
+//! must be made again.
 
 mod active;
-pub mod calendar;
 mod catalog;
+pub mod check;
+pub mod datetime;
 #[cfg(test)]
 mod extract;
 mod locale;
-mod plural;
+mod plural_forms;
 mod preference;
 mod pseudo;
 mod template;
@@ -41,64 +47,87 @@ pub use template::fill;
 /// The text of a message in the language in use, `context` being `""` when it has none.
 pub fn translate(context: &'static str, key: &'static str) -> &'static str {
     let locale = current();
-    if locale == Locale::English {
-        return key;
-    }
-    if locale == Locale::Pseudo {
+    if locale.is_pseudo() {
         return pseudo::text(key);
     }
     catalog::of(locale)
-        .and_then(|catalog| catalog.get(context, key))
-        .map_or(key, catalog::Message::text)
+        .and_then(|catalog| catalog.text(context, key))
+        .unwrap_or(key)
 }
 
 /// The text of a counted message for `count`: `one` or `other` in English, the form the language
-/// uses in any other. A catalog finds the message by `other`.
+/// uses in any other. A catalog finds the message by `one`, as gettext does.
 pub fn translate_counted(count: u64, one: &'static str, other: &'static str) -> &'static str {
     let locale = current();
     let english = if count == 1 { one } else { other };
-    if locale == Locale::English {
-        return english;
-    }
-    if locale == Locale::Pseudo {
+    if locale.is_pseudo() {
         return pseudo::text(english);
     }
     catalog::of(locale)
-        .and_then(|catalog| catalog.get("", other))
-        .map_or(english, |message| {
-            message.form(locale.plural_category(count))
-        })
+        .and_then(|catalog| catalog.counted(one, count))
+        .unwrap_or(english)
 }
 
 /// A message in the language in use. See the module documentation.
 macro_rules! tr {
-    ($key:literal) => {
+    ($key:literal) => {{
+        const { $crate::i18n::check::plain($key) };
         $crate::i18n::translate("", $key)
-    };
-    ($key:literal, $($name:ident = $value:expr),+ $(,)?) => {
+    }};
+    ($key:literal, $($name:ident = $value:expr),+ $(,)?) => {{
+        const {
+            $crate::i18n::check::message(
+                $key,
+                &[$(stringify!($name)),+],
+                &[$(stringify!($name)),+],
+            )
+        };
         $crate::i18n::fill(
             $crate::i18n::translate("", $key),
             &[$((stringify!($name), &$value as &dyn ::std::fmt::Display)),+],
         )
-    };
+    }};
 }
 
 /// A message with a context. See the module documentation.
+// Kept for the messages that need it as the interface moves over; none does yet.
+#[allow(unused_macros)]
 macro_rules! tr_c {
-    ($context:literal, $key:literal) => {
+    ($context:literal, $key:literal) => {{
+        const { $crate::i18n::check::plain($key) };
         $crate::i18n::translate($context, $key)
-    };
-    ($context:literal, $key:literal, $($name:ident = $value:expr),+ $(,)?) => {
+    }};
+    ($context:literal, $key:literal, $($name:ident = $value:expr),+ $(,)?) => {{
+        const {
+            $crate::i18n::check::message(
+                $key,
+                &[$(stringify!($name)),+],
+                &[$(stringify!($name)),+],
+            )
+        };
         $crate::i18n::fill(
             $crate::i18n::translate($context, $key),
             &[$((stringify!($name), &$value as &dyn ::std::fmt::Display)),+],
         )
-    };
+    }};
 }
 
 /// A counted message. See the module documentation.
 macro_rules! tr_n {
     ($count:expr, $one:literal, $other:literal $(, $name:ident = $value:expr)* $(,)?) => {{
+        const {
+            // Either form may leave the count out ("One alert"); `other` must use the rest.
+            $crate::i18n::check::message(
+                $one,
+                &["count" $(, stringify!($name))*],
+                &[],
+            );
+            $crate::i18n::check::message(
+                $other,
+                &["count" $(, stringify!($name))*],
+                &[$(stringify!($name)),*],
+            );
+        };
         let count = ($count) as u64;
         $crate::i18n::fill(
             $crate::i18n::translate_counted(count, $one, $other),
@@ -110,4 +139,5 @@ macro_rules! tr_n {
     }};
 }
 
+#[allow(unused_imports)]
 pub(crate) use {tr, tr_c, tr_n};

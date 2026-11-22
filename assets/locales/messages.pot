@@ -1,0 +1,148 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: DegenView 0.6.0-rc.30\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/ui/settings/window.rs:76
+msgid "Appearance"
+msgstr ""
+
+#: src/ui/settings/window.rs:420 src/ui/settings/window.rs:1058
+msgid "Choose how DegenView looks across every window and chart."
+msgstr ""
+
+#: src/ui/theme/mod.rs:23
+msgid "Dark"
+msgstr ""
+
+#: src/ui/settings/appearance.rs:166 src/ui/settings/appearance.rs:168
+msgid "Default"
+msgstr ""
+
+#: src/ui/settings/appearance.rs:139
+msgid "Interface language"
+msgstr ""
+
+#: src/ui/settings/appearance.rs:135
+msgid "Language"
+msgstr ""
+
+#: src/model/tab/title.rs:41
+msgid "Layout name only"
+msgstr ""
+
+#: src/ui/theme/mod.rs:22
+msgid "Light"
+msgstr ""
+
+#: src/ui/settings/appearance.rs:92
+msgid "Restore default"
+msgstr ""
+
+#: src/ui/settings/appearance.rs:126
+msgid "Same as the system"
+msgstr ""
+
+#: src/model/tab/title.rs:40
+msgid "Symbol only"
+msgstr ""
+
+#: src/model/tab/title.rs:39
+msgid "Symbol, price and layout"
+msgstr ""
+
+#: src/ui/theme/mod.rs:21
+msgid "System"
+msgstr ""
+
+#: src/ui/settings/appearance.rs:24
+msgid "System follows your {computer}'s light or dark setting."
+msgstr ""
+
+#: src/ui/settings/appearance.rs:59
+msgid "Tabs"
+msgstr ""
+
+#: src/ui/settings/appearance.rs:140
+msgid ""
+"The language of menus, labels and messages. Market names, prices and Pine "
+"scripts stay as they are."
+msgstr ""
+
+#: src/ui/settings/appearance.rs:23
+msgid "Theme"
+msgstr ""
+
+#: src/model/alert/feed.rs:132
+msgid "Today"
+msgstr ""
+
+#: src/ui/settings/appearance.rs:60
+msgid ""
+"What a chart tab shows. The layout name and the price follow the tab's "
+"focused chart."
+msgstr ""
+
+#: src/model/alert/feed.rs:135
+msgid "Yesterday"
+msgstr ""
+
+#: src/ui/kit/time_text.rs:41
+msgid "in the future"
+msgstr ""
+
+#: src/ui/kit/time_text.rs:44
+msgid "now"
+msgstr ""
+
+#: src/ui/kit/time_text.rs:48
+msgid "{count} day ago"
+msgid_plural "{count} days ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs:47
+msgid "{count} hr. ago"
+msgid_plural "{count} hr. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs:46
+msgid "{count} min. ago"
+msgid_plural "{count} min. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs:50
+msgid "{count} mo. ago"
+msgid_plural "{count} mo. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs:45
+msgid "{count} sec. ago"
+msgid_plural "{count} sec. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs:49
+msgid "{count} wk. ago"
+msgid_plural "{count} wk. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs:51
+msgid "{count} yr. ago"
+msgid_plural "{count} yr. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/settings/appearance.rs:184
+msgid "{style} tab title"
+msgstr ""
+
+#: src/ui/settings/appearance.rs:328
+msgid "{theme} theme"
+msgstr ""
+

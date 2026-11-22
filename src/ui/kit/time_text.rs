@@ -4,7 +4,7 @@
 //! screen that prints one.
 
 use crate::format::civil_from_days;
-use crate::i18n::calendar::month_abbreviation;
+use crate::i18n::datetime;
 use crate::i18n::{tr, tr_n};
 use crate::service::system::timezone::local_utc_offset_secs;
 
@@ -18,12 +18,7 @@ fn split_utc(epoch_ms: i64) -> (i64, i64, i64, i64, i64, i64) {
 /// "Oct 9, 2026"
 pub fn date_text(epoch_ms: i64) -> String {
     let (year, month, day, ..) = split_utc(epoch_ms);
-    tr!(
-        "{month} {day}, {year}",
-        month = month_abbreviation(month),
-        day = day,
-        year = year
-    )
+    datetime::date(year, month, day)
 }
 
 /// "14:03:07"
@@ -35,13 +30,8 @@ pub fn time_text(epoch_ms: i64) -> String {
 /// "Oct 9, 14:03"
 pub fn compact_text(epoch_ms: i64) -> String {
     let local_ms = epoch_ms + local_utc_offset_secs(epoch_ms) * 1_000;
-    let (_, month, day, hour, minute, _) = split_utc(local_ms);
-    tr!(
-        "{month} {day}, {time}",
-        month = month_abbreviation(month),
-        day = day,
-        time = format!("{hour:02}:{minute:02}")
-    )
+    let (year, month, day, hour, minute, _) = split_utc(local_ms);
+    datetime::month_day_time((year, month, day), (hour, minute, 0), false)
 }
 
 /// Abbreviated relative time: "now", "5 min. ago", "3 hr. ago", "2 days ago".

@@ -33,7 +33,7 @@ mod tests {
     #[test]
     fn a_choice_is_read_back() {
         let store = Store::open_in_memory().expect("store");
-        let fixed = Preference::Fixed(Locale::Pseudo);
+        let fixed = Preference::Fixed(Locale::PSEUDO);
         store.set_language_preference(fixed).expect("save");
         assert_eq!(store.language_preference(), fixed);
         store

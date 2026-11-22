@@ -423,7 +423,7 @@ fn weekday_strip(ui: &mut Ui, set: &mut WeekdaySet) {
     let cell = (width - GAP * 6.0) / 7.0;
     let (strip, _) = ui.allocate_exact_size(vec2(width, DAY_HEIGHT), Sense::hover());
     for day in 0..7 {
-        let name = crate::i18n::calendar::weekday_name(day);
+        let name = crate::i18n::datetime::weekday_name(day);
         let rect = Rect::from_min_size(
             pos2(strip.left() + day as f32 * (cell + GAP), strip.top()),
             vec2(cell, DAY_HEIGHT),
@@ -436,8 +436,8 @@ fn weekday_strip(ui: &mut Ui, set: &mut WeekdaySet) {
                 Sense::click(),
             )
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text(name);
-        response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, on, name));
+            .on_hover_text(&name);
+        response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, on, &name));
         let painter = ui.painter();
         let fill = if on {
             theme::selected_tint(response.hovered())
@@ -462,7 +462,7 @@ fn weekday_strip(ui: &mut Ui, set: &mut WeekdaySet) {
         };
         let galley = kit::galley(
             ui,
-            WeekdaySet::NAMES[day],
+            &crate::i18n::datetime::weekday_short(day),
             kit::size::SUBHEADLINE,
             weight,
             color,

@@ -44,10 +44,10 @@ mod tests {
             return;
         }
         let store = Store::open_in_memory().expect("store");
-        let english = Preference::Fixed(Locale::English);
+        let english = Preference::Fixed(Locale::ENGLISH);
         choose(&store, english).expect("saves");
         assert_eq!(i18n::preference(), english);
-        assert_eq!(i18n::current(), Locale::English);
+        assert_eq!(i18n::current(), Locale::ENGLISH);
         assert_eq!(store.language_preference(), english);
 
         // A later start reads it from the store.
@@ -58,6 +58,6 @@ mod tests {
 
         choose(&store, Preference::System).expect("saves");
         assert_eq!(i18n::preference(), Preference::System);
-        assert_eq!(i18n::current(), Locale::English);
+        assert_eq!(i18n::current(), Locale::ENGLISH);
     }
 }

@@ -1,45 +1,57 @@
 //! The language the interface is in now: one value for the whole process, read by every `tr!`.
 
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::locale::Locale;
 use super::preference::Preference;
-use crate::lock::lock;
 
-/// The language in use and the choice that led to it.
-struct Active {
-    locale: AtomicU8,
-    revision: AtomicU64,
-    preference: Mutex<Preference>,
-}
+/// The language in use, the choice that led to it and how many times either changed, packed in one
+/// word so a reader never sees a language from one change and a revision from another. Reading is
+/// a single load, which matters: every `tr!` of every frame reads it.
+///
+/// Bits 0-7 are the language (its position in the table), 8-15 the choice (0 for "System", else the
+/// language's position plus one), 16-63 the revision.
+struct Active(AtomicU64);
+
+const LOCALE_MASK: u64 = 0xff;
+const CHOICE_SHIFT: u32 = 8;
+const REVISION_SHIFT: u32 = 16;
 
 impl Active {
     const fn new() -> Self {
-        Self {
-            locale: AtomicU8::new(0),
-            revision: AtomicU64::new(0),
-            preference: Mutex::new(Preference::System),
-        }
+        Self(AtomicU64::new(0))
     }
 
     fn locale(&self) -> Locale {
-        Locale::ALL[usize::from(self.locale.load(Ordering::Relaxed))]
+        Locale::from_index((self.0.load(Ordering::Acquire) & LOCALE_MASK) as u8)
+    }
+
+    fn preference(&self) -> Preference {
+        let choice = (self.0.load(Ordering::Acquire) >> CHOICE_SHIFT) & LOCALE_MASK;
+        match choice {
+            0 => Preference::System,
+            fixed => Preference::Fixed(Locale::from_index((fixed - 1) as u8)),
+        }
+    }
+
+    fn revision(&self) -> u64 {
+        self.0.load(Ordering::Acquire) >> REVISION_SHIFT
     }
 
     fn set(&self, preference: Preference, locale: Locale) {
-        let index = Locale::ALL
-            .iter()
-            .position(|known| *known == locale)
-            .unwrap_or(0);
-        let mut held = lock(&self.preference);
-        let changed =
-            *held != preference || usize::from(self.locale.load(Ordering::Relaxed)) != index;
-        *held = preference;
-        self.locale.store(index as u8, Ordering::Relaxed);
-        if changed {
-            self.revision.fetch_add(1, Ordering::AcqRel);
-        }
+        let choice = match preference {
+            Preference::System => 0,
+            Preference::Fixed(fixed) => u64::from(fixed.index()) + 1,
+        };
+        let state = u64::from(locale.index()) | choice << CHOICE_SHIFT;
+        // A repeat of what is already set is not a change, and repaints nothing.
+        let _ = self
+            .0
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |old| {
+                let unchanged = old & ((1 << REVISION_SHIFT) - 1);
+                (unchanged != state)
+                    .then(|| state | ((old >> REVISION_SHIFT) + 1) << REVISION_SHIFT)
+            });
     }
 }
 
@@ -63,12 +75,13 @@ pub fn current() -> Locale {
 
 /// What the person chose, which is not always the language in use: "System" follows the machine.
 pub fn preference() -> Preference {
-    *lock(&ACTIVE.preference)
+    ACTIVE.preference()
 }
 
-/// Changes whenever the language does, so a window with nothing animating knows to draw again.
+/// Changes whenever the language does, so a window with nothing animating knows to draw again, and
+/// so text kept from an earlier frame (which `tr!` does not do for you) is made again.
 pub fn revision() -> u64 {
-    ACTIVE.revision.load(Ordering::Acquire)
+    ACTIVE.revision()
 }
 
 /// Makes `locale` the language in use, remembering the `preference` that led to it.
@@ -96,38 +109,49 @@ mod tests {
 
     #[test]
     fn a_test_can_ask_for_a_language_on_its_own_thread() {
-        assert_eq!(current(), Locale::English);
-        with_locale(Locale::Pseudo, || {
-            assert_eq!(current(), Locale::Pseudo);
-            with_locale(Locale::English, || assert_eq!(current(), Locale::English));
-            assert_eq!(current(), Locale::Pseudo);
+        assert_eq!(current(), Locale::ENGLISH);
+        with_locale(Locale::PSEUDO, || {
+            assert_eq!(current(), Locale::PSEUDO);
+            with_locale(Locale::ENGLISH, || assert_eq!(current(), Locale::ENGLISH));
+            assert_eq!(current(), Locale::PSEUDO);
         });
-        assert_eq!(current(), Locale::English);
+        assert_eq!(current(), Locale::ENGLISH);
     }
 
     #[test]
     fn the_language_is_put_back_after_a_panic() {
-        let result = std::panic::catch_unwind(|| with_locale(Locale::Pseudo, || panic!("boom")));
+        let result = std::panic::catch_unwind(|| with_locale(Locale::PSEUDO, || panic!("boom")));
         assert!(result.is_err());
-        assert_eq!(current(), Locale::English);
+        assert_eq!(current(), Locale::ENGLISH);
     }
 
     #[test]
     fn a_change_of_language_or_of_choice_is_a_new_revision_and_a_repeat_is_not() {
         let active = Active::new();
-        assert_eq!(active.locale(), Locale::English);
-        let fixed = Preference::Fixed(Locale::Pseudo);
+        assert_eq!(active.locale(), Locale::ENGLISH);
+        assert_eq!(active.preference(), Preference::System);
+        let fixed = Preference::Fixed(Locale::PSEUDO);
 
-        active.set(fixed, Locale::Pseudo);
-        assert_eq!(active.locale(), Locale::Pseudo);
-        assert_eq!(active.revision.load(Ordering::Acquire), 1);
+        active.set(fixed, Locale::PSEUDO);
+        assert_eq!(active.locale(), Locale::PSEUDO);
+        assert_eq!(active.preference(), fixed);
+        assert_eq!(active.revision(), 1);
 
-        active.set(fixed, Locale::Pseudo);
-        assert_eq!(active.revision.load(Ordering::Acquire), 1);
+        active.set(fixed, Locale::PSEUDO);
+        assert_eq!(active.revision(), 1);
 
         // The same language reached by another choice is a change too: Settings shows the choice.
-        active.set(Preference::System, Locale::Pseudo);
-        assert_eq!(active.revision.load(Ordering::Acquire), 2);
-        assert_eq!(*lock(&active.preference), Preference::System);
+        active.set(Preference::System, Locale::PSEUDO);
+        assert_eq!(active.revision(), 2);
+        assert_eq!(active.preference(), Preference::System);
+        assert_eq!(active.locale(), Locale::PSEUDO);
+    }
+
+    #[test]
+    fn a_fixed_english_is_not_the_same_choice_as_the_system() {
+        let active = Active::new();
+        active.set(Preference::Fixed(Locale::ENGLISH), Locale::ENGLISH);
+        assert_eq!(active.preference(), Preference::Fixed(Locale::ENGLISH));
+        assert_eq!(active.revision(), 1);
     }
 }

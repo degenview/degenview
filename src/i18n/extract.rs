@@ -1,6 +1,11 @@
 //! Reads the `tr!`, `tr_c!` and `tr_n!` calls out of Rust source, for the tests that keep the
-//! catalogs and the code in step. A message is found by its text, so the text must be a plain
-//! string literal, which the macros already require.
+//! catalogs and the code in step and for the `.pot` template translators start from.
+//!
+//! The source is tokenised the way the compiler does (`proc-macro2`), so comments, doc comments
+//! and string literals can never be taken for a call, and a call inside another macro (`format!`,
+//! `assert_eq!`) or a closure is found like any other.
+
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
 
 /// Which macro a message was written with.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -16,6 +21,7 @@ pub enum Kind {
 pub struct Use {
     pub line: usize,
     pub kind: Kind,
+    /// The text; for a counted message, its `other` form.
     pub key: String,
     /// The names of the values the call passes (a counted message always passes `count`).
     pub args: Vec<String>,
@@ -28,256 +34,123 @@ impl Use {
             _ => "",
         }
     }
-}
 
-const MACROS: [&str; 3] = ["tr!(", "tr_c!(", "tr_n!("];
+    /// The text a catalog is keyed by: gettext's `msgid`, which for a counted message is the
+    /// singular.
+    pub fn msgid(&self) -> &str {
+        match &self.kind {
+            Kind::Counted(one) => one,
+            _ => &self.key,
+        }
+    }
+}
 
 /// Every message `source` writes, or the line and reason of the first call that cannot be read.
 pub fn uses(source: &str) -> Result<Vec<Use>, String> {
+    let tokens: TokenStream = source
+        .parse()
+        .map_err(|error| format!("is not Rust source: {error}"))?;
     let mut found = Vec::new();
-    let mut offset = 0;
-    for text_line in source.split_inclusive('\n') {
-        let trimmed = text_line.trim_start();
-        let is_comment = trimmed.starts_with("//");
-        if !is_comment {
-            for name in MACROS {
-                let mut from = 0;
-                while let Some(at) = text_line[from..].find(name) {
-                    let start = from + at;
-                    from = start + name.len();
-                    let before = text_line[..start].chars().next_back();
-                    if before.is_some_and(|ch| ch.is_alphanumeric() || ch == '_') {
-                        continue;
-                    }
-                    let line = source[..offset].matches('\n').count() + 1;
-                    let body = &source[offset + from..];
-                    found.push(
-                        read_call(name, body)
-                            .map(|(kind, key, args)| Use {
-                                line,
-                                kind,
-                                key,
-                                args,
-                            })
-                            .map_err(|reason| format!("line {line}: {name} {reason}"))?,
-                    );
-                }
-            }
-        }
-        offset += text_line.len();
-    }
+    collect(tokens, &mut found)?;
     Ok(found)
+}
+
+fn collect(tokens: TokenStream, found: &mut Vec<Use>) -> Result<(), String> {
+    let trees: Vec<TokenTree> = tokens.into_iter().collect();
+    let mut at = 0;
+    while at < trees.len() {
+        if let TokenTree::Group(group) = &trees[at] {
+            collect(group.stream(), found)?;
+        } else if let (
+            TokenTree::Ident(name),
+            Some(TokenTree::Punct(bang)),
+            Some(TokenTree::Group(call)),
+        ) = (&trees[at], trees.get(at + 1), trees.get(at + 2))
+            && bang.as_char() == '!'
+            && matches!(name.to_string().as_str(), "tr" | "tr_c" | "tr_n")
+            && call.delimiter() != Delimiter::None
+        {
+            let line = name.span().start().line;
+            let used = read_call(&name.to_string(), call.stream())
+                .map(|(kind, key, args)| Use {
+                    line,
+                    kind,
+                    key,
+                    args,
+                })
+                .map_err(|reason| format!("line {line}: {name}! {reason}"))?;
+            found.push(used);
+            // A value can hold another call (`time = format!(…)`, a nested `tr!`).
+            collect(call.stream(), found)?;
+            at += 3;
+            continue;
+        }
+        at += 1;
+    }
+    Ok(())
 }
 
 type Call = (Kind, String, Vec<String>);
 
-fn read_call(name: &str, body: &str) -> Result<Call, String> {
-    let mut cursor = Cursor { text: body, at: 0 };
+fn read_call(name: &str, stream: TokenStream) -> Result<Call, String> {
+    let mut parts = split_commas(stream).into_iter();
+    let mut next = |what: &str| parts.next().ok_or_else(|| format!("is missing {what}"));
     match name {
-        "tr!(" => {
-            let key = cursor.literal()?;
-            Ok((Kind::Plain, key, cursor.names()?))
+        "tr" => {
+            let key = literal(&next("its text")?)?;
+            Ok((Kind::Plain, key, names(parts)?))
         }
-        "tr_c!(" => {
-            let context = cursor.literal()?;
-            cursor.comma()?;
-            let key = cursor.literal()?;
-            Ok((Kind::Context(context), key, cursor.names()?))
+        "tr_c" => {
+            let context = literal(&next("its context")?)?;
+            let key = literal(&next("its text")?)?;
+            Ok((Kind::Context(context), key, names(parts)?))
         }
         _ => {
-            cursor.skip_expression()?;
-            cursor.comma()?;
-            let one = cursor.literal()?;
-            cursor.comma()?;
-            let other = cursor.literal()?;
-            let mut names = cursor.names()?;
-            names.insert(0, "count".to_owned());
-            Ok((Kind::Counted(one), other, names))
+            next("its count")?;
+            let one = literal(&next("its singular")?)?;
+            let other = literal(&next("its plural")?)?;
+            let mut args = names(parts)?;
+            args.insert(0, "count".to_owned());
+            Ok((Kind::Counted(one), other, args))
         }
     }
 }
 
-struct Cursor<'a> {
-    text: &'a str,
-    at: usize,
+/// The top-level arguments of a call: a `,` inside brackets belongs to the argument.
+fn split_commas(stream: TokenStream) -> Vec<Vec<TokenTree>> {
+    let mut parts = vec![Vec::new()];
+    for tree in stream {
+        match &tree {
+            TokenTree::Punct(punct) if punct.as_char() == ',' => parts.push(Vec::new()),
+            _ => parts.last_mut().expect("one part").push(tree),
+        }
+    }
+    if parts.last().is_some_and(Vec::is_empty) {
+        parts.pop();
+    }
+    parts
 }
 
-impl Cursor<'_> {
-    fn rest(&self) -> &str {
-        &self.text[self.at..]
-    }
+/// The value of an argument that is a plain or raw string literal and nothing else.
+fn literal(tokens: &[TokenTree]) -> Result<String, String> {
+    let [TokenTree::Literal(literal)] = tokens else {
+        return Err("takes a string literal here".to_owned());
+    };
+    syn::parse_str::<syn::LitStr>(&literal.to_string())
+        .map(|text| text.value())
+        .map_err(|_| "takes a string literal here".to_owned())
+}
 
-    fn skip_space(&mut self) {
-        self.at += self.rest().len() - self.rest().trim_start().len();
-    }
-
-    fn comma(&mut self) -> Result<(), String> {
-        self.skip_space();
-        if self.rest().starts_with(',') {
-            self.at += 1;
-            Ok(())
-        } else {
-            Err("expects a comma here".to_owned())
-        }
-    }
-
-    /// A string literal's value, plain or raw.
-    fn literal(&mut self) -> Result<String, String> {
-        self.skip_space();
-        let rest = self.rest();
-        if let Some(raw) = rest.strip_prefix('r') {
-            let hashes = raw.chars().take_while(|ch| *ch == '#').count();
-            let open = &raw[hashes..];
-            if let Some(content) = open.strip_prefix('"') {
-                let close = format!("\"{}", "#".repeat(hashes));
-                let end = content
-                    .find(&close)
-                    .ok_or("has an unterminated raw string")?;
-                let value = content[..end].to_owned();
-                self.at += 1 + hashes + 1 + end + close.len();
-                return Ok(value);
+/// The names of `name = value` arguments.
+fn names(parts: impl Iterator<Item = Vec<TokenTree>>) -> Result<Vec<String>, String> {
+    parts
+        .map(|part| match part.as_slice() {
+            [TokenTree::Ident(name), TokenTree::Punct(equals), ..] if equals.as_char() == '=' => {
+                Ok(name.to_string())
             }
-        }
-        let Some(content) = rest.strip_prefix('"') else {
-            return Err("takes a string literal".to_owned());
-        };
-        let mut value = String::new();
-        let mut chars = content.char_indices();
-        while let Some((index, ch)) = chars.next() {
-            match ch {
-                '"' => {
-                    self.at += 1 + index + 1;
-                    return Ok(value);
-                }
-                '\\' => match chars.next().map(|(_, escaped)| escaped) {
-                    Some('n') => value.push('\n'),
-                    Some('t') => value.push('\t'),
-                    Some('r') => value.push('\r'),
-                    Some('0') => value.push('\0'),
-                    Some(literal @ ('"' | '\'' | '\\')) => value.push(literal),
-                    Some('u') => {
-                        let mut digits = String::new();
-                        for (_, digit) in chars.by_ref() {
-                            if digit == '}' {
-                                break;
-                            }
-                            if digit != '{' {
-                                digits.push(digit);
-                            }
-                        }
-                        value.push(
-                            u32::from_str_radix(&digits, 16)
-                                .ok()
-                                .and_then(char::from_u32)
-                                .ok_or("has a bad \\u escape")?,
-                        );
-                    }
-                    // A backslash at the end of a line drops the line break and the indent.
-                    Some('\n') => {
-                        while chars
-                            .clone()
-                            .next()
-                            .is_some_and(|(_, next)| next.is_whitespace())
-                        {
-                            chars.next();
-                        }
-                    }
-                    _ => return Err("has an escape the tests cannot read".to_owned()),
-                },
-                _ => value.push(ch),
-            }
-        }
-        Err("has an unterminated string".to_owned())
-    }
-
-    /// Skips one argument (the count of a counted message), which may hold calls and strings.
-    fn skip_expression(&mut self) -> Result<(), String> {
-        let mut depth = 0i32;
-        let mut chars = self.rest().char_indices();
-        while let Some((index, ch)) = chars.next() {
-            match ch {
-                '(' | '[' | '{' => depth += 1,
-                ')' | ']' | '}' => depth -= 1,
-                ',' if depth == 0 => {
-                    self.at += index;
-                    return Ok(());
-                }
-                '"' => {
-                    for (_, inner) in chars.by_ref() {
-                        if inner == '"' {
-                            break;
-                        }
-                    }
-                }
-                _ => {}
-            }
-            if depth < 0 {
-                break;
-            }
-        }
-        Err("has no message after its count".to_owned())
-    }
-
-    /// The `name = value` pairs after the text, up to the closing parenthesis.
-    fn names(&mut self) -> Result<Vec<String>, String> {
-        let mut names = Vec::new();
-        loop {
-            self.skip_space();
-            if self.rest().starts_with(')') {
-                return Ok(names);
-            }
-            self.comma()?;
-            self.skip_space();
-            if self.rest().starts_with(')') {
-                return Ok(names);
-            }
-            let name: String = self
-                .rest()
-                .chars()
-                .take_while(|ch| ch.is_alphanumeric() || *ch == '_')
-                .collect();
-            if name.is_empty() {
-                return Err("passes a value without a name".to_owned());
-            }
-            self.at += name.len();
-            self.skip_space();
-            if !self.rest().starts_with('=') || self.rest().starts_with("==") {
-                return Err(format!("passes {name} without `{name} = value`"));
-            }
-            self.at += 1;
-            names.push(name);
-            self.skip_value()?;
-        }
-    }
-
-    /// Skips a value up to the comma or parenthesis that ends it.
-    fn skip_value(&mut self) -> Result<(), String> {
-        let mut depth = 0i32;
-        let mut chars = self.rest().char_indices();
-        while let Some((index, ch)) = chars.next() {
-            match ch {
-                '(' | '[' | '{' => depth += 1,
-                ')' | ']' | '}' if depth > 0 => depth -= 1,
-                ')' | ',' if depth == 0 => {
-                    self.at += index;
-                    return Ok(());
-                }
-                '"' => {
-                    while let Some((_, inner)) = chars.next() {
-                        match inner {
-                            '\\' => {
-                                chars.next();
-                            }
-                            '"' => break,
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        Err("is not closed".to_owned())
-    }
+            _ => Err("passes a value that is not `name = value`".to_owned()),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -285,65 +158,80 @@ mod tests {
     use super::*;
 
     fn one(source: &str) -> Use {
-        let mut found = uses(source).expect("reads");
-        assert_eq!(found.len(), 1, "{source}");
-        found.remove(0)
+        let mut all = uses(source).expect("reads");
+        assert_eq!(all.len(), 1, "{all:?}");
+        all.remove(0)
     }
 
     #[test]
-    fn a_plain_message_and_the_names_it_is_given() {
-        let plain = one(r#"let x = tr!("Save");"#);
-        assert_eq!((plain.kind, plain.key.as_str()), (Kind::Plain, "Save"));
-        assert!(plain.args.is_empty());
-
-        let named = one(r#"tr!("{a} and {b}", a = f(1, 2), b = "x, y")"#);
-        assert_eq!(named.args, ["a", "b"]);
+    fn a_plain_message_and_its_values_are_read() {
+        let used = one(r#"fn f() { let _ = tr!("Hi {name}", name = who()); }"#);
+        assert_eq!(used.kind, Kind::Plain);
+        assert_eq!(used.key, "Hi {name}");
+        assert_eq!(used.args, ["name"]);
+        assert_eq!(used.line, 1);
     }
 
     #[test]
-    fn a_message_with_a_context_and_a_counted_one() {
-        let context = one(r#"crate::i18n::tr_c!("month abbreviation", "Jan")"#);
-        assert_eq!(context.kind, Kind::Context("month abbreviation".into()));
-        assert_eq!(context.key, "Jan");
-        assert_eq!(context.context(), "month abbreviation");
+    fn a_context_and_a_counted_message_are_read() {
+        let used = one(r#"fn f() { tr_c!("month", "{n} left", n = 3) }"#);
+        assert_eq!(used.kind, Kind::Context("month".into()));
+        assert_eq!(used.context(), "month");
+        assert_eq!(used.args, ["n"]);
 
-        let counted = one(r#"tr_n!(items.len(), "{count} item", "{count} items", list = x)"#);
-        assert_eq!(counted.kind, Kind::Counted("{count} item".into()));
-        assert_eq!(counted.key, "{count} items");
-        assert_eq!(counted.args, ["count", "list"]);
+        let used =
+            one(r#"fn f() { tr_n!(items.len(), "{count} alert", "{count} alerts", total = 9) }"#);
+        assert_eq!(used.kind, Kind::Counted("{count} alert".into()));
+        assert_eq!(used.key, "{count} alerts");
+        assert_eq!(used.msgid(), "{count} alert");
+        assert_eq!(used.args, ["count", "total"]);
     }
 
     #[test]
-    fn a_count_may_be_any_expression() {
-        let counted = one(r#"tr_n!(f(a, [1, 2]) as u64, "one", "many")"#);
-        assert_eq!(counted.key, "many");
-        assert_eq!(counted.args, ["count"]);
+    fn a_path_a_nested_call_and_a_raw_string_are_found() {
+        let used = one(r##"fn f() { crate::i18n::tr!(r#"Say "hi""#) }"##);
+        assert_eq!(used.key, r#"Say "hi""#);
+        let all = uses(
+            r#"fn f() { tr!("{month} {time}", month = m, time = format!("{}", tr!("Now"))) }"#,
+        )
+        .expect("reads");
+        let keys: Vec<&str> = all.iter().map(|used| used.key.as_str()).collect();
+        assert_eq!(keys, ["{month} {time}", "Now"]);
     }
 
     #[test]
-    fn escapes_continuations_and_raw_strings_read_as_rust_reads_them() {
-        assert_eq!(one(r#"tr!("a\"b\\c\n\u{2192}")"#).key, "a\"b\\c\n→");
-        assert_eq!(one("tr!(\"long \\\n        line\")").key, "long line");
-        assert_eq!(one(r##"tr!(r#"say "hi""#)"##).key, "say \"hi\"");
+    fn escapes_and_line_continuations_are_decoded() {
+        let used = one("fn f() { tr!(\"a\\n\\u{e9}\\\"b\\\n    c\") }");
+        assert_eq!(used.key, "a\né\"bc");
     }
 
     #[test]
-    fn comments_and_other_macros_with_a_similar_name_are_not_read() {
-        let source = "// tr!(\"in a comment\")\n/// tr!(\"in a doc\")\nlet a = attr!(\"x\");\nlet b = my_tr!(\"y\");\n";
-        assert!(uses(source).expect("reads").is_empty());
+    fn a_comma_inside_brackets_belongs_to_its_value() {
+        let used = one(r#"fn f() { tr!("{a} {b}", a = f(1, 2), b = [3, 4].len()) }"#);
+        assert_eq!(used.args, ["a", "b"]);
     }
 
     #[test]
-    fn the_line_of_each_message_is_reported() {
-        let found = uses("a\n\ntr!(\"x\")\n").expect("reads");
-        assert_eq!(found[0].line, 3);
+    fn comments_strings_definitions_and_other_macros_are_not_calls() {
+        let source = r#"
+            // tr!("In a comment")
+            /* tr!("In a block comment") */
+            /// tr!("In a doc comment")
+            macro_rules! tr { ($key:literal) => {}; }
+            pub(crate) use {tr, tr_c, tr_n};
+            fn f() { let _ = "tr!(\"in a string\")"; print!("tr"); tr!("Real"); }
+        "#;
+        let all = uses(source).expect("reads");
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].key, "Real");
     }
 
     #[test]
-    fn a_call_that_cannot_be_read_says_where() {
-        let error = uses("a\ntr!(some_text)\n").unwrap_err();
-        assert!(error.starts_with("line 2:"), "{error}");
-        assert!(uses("tr!(\"x\", y)").is_err());
-        assert!(uses("tr!(\"unterminated)").is_err());
+    fn a_call_that_cannot_be_read_names_its_line() {
+        let error = uses("fn f() {\n    tr!(TEXT)\n}").expect_err("not a literal");
+        assert!(error.starts_with("line 2: tr!"), "{error}");
+        assert!(uses(r#"fn f() { tr!(concat!("a", "b")) }"#).is_err());
+        assert!(uses(r#"fn f() { tr!("{a}", 5) }"#).is_err());
+        assert!(uses(r#"fn f() { tr_c!("context") }"#).is_err());
     }
 }

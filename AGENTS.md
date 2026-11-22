@@ -12,7 +12,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Live trading, brokers, broker credentials, or Settings ▸ Brokers | [Live trading](docs/broker-trading.md) |
 | The symbol picker (⌘K, Add Chart and a watchlist's plus: markets, prediction markets, indices and portfolio cards), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
 | Any UI: a new or restyled window, sheet, panel, card, sidebar, icon, menu, button, link or dialog | [UI style](docs/agent-guides/ui-style.md) |
-| Any user-facing text, interface languages, `tr!`, dates and month names, or the language setting | [Localization](docs/localization.md) |
+| Any user-facing text, interface languages, `tr!`, dates and times, translation catalogs (`.po`), or the language setting | [Localization](docs/localization.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
 | The Screenshot Studio, Select portion, snapshot compositions or backgrounds, or the camera menu | [Chart snapshots](docs/snapshots.md) |
 | Markets compared on a chart (Compare, overlays), their data, scales, legend or the picker's compare mode | [Chart overlays](docs/chart-overlays.md) |
@@ -134,7 +134,7 @@ old output). Finished worktrees are where the disk goes.
 ## Deeper references
 
 - [Architecture](docs/architecture.md) — module map, data flow.
-- [Localization](docs/localization.md) — `tr!` macros, catalogs, the language setting, the pseudo-locale, adding a language, what is not done.
+- [Localization](docs/localization.md) — `tr!` macros, `.po` catalogs, the language setting, the pseudo-locale, adding a language, what is not done.
 - [Chart types](docs/chart-types.md) — construction rules, Pine semantics.
 - [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, unverified items.
 - [Price scale modes](docs/price-scale.md) — Regular, Percent, Indexed to 100, Logarithmic; reference price, ticks, corner menu, persistence.

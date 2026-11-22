@@ -1,243 +1,302 @@
-//! A language's translations: one JSON file per locale in `assets/locales/`, compiled in.
+//! A language's translations: a gettext catalog, `assets/locales/<tag>.po`, compiled in.
 //!
-//! ```json
-//! {
-//!   "messages": {
-//!     "Save": "Guardar",
-//!     "{count} alerts": { "one": "{count} alerta", "other": "{count} alertas" }
-//!   },
-//!   "contexts": {
-//!     "month abbreviation": { "Jan": "ene" }
-//!   }
-//! }
-//! ```
+//! The format is GNU gettext's, so translators work in the tools they know (Poedit, Weblate,
+//! Crowdin, Transifex) and `msgmerge` carries a catalog from one version of the source to the next.
+//! The message is its English text (`msgid`); a counted one is found by its singular and gives one
+//! `msgstr[i]` per plural form, the form a count takes being what the catalog's own `Plural-Forms`
+//! header says. A `tr_c!` context is the entry's `msgctxt`. `messages.pot` is the template for a
+//! new language.
 //!
-//! A message is found by its English text, which is the key; a counted message by its `other`
-//! (plural) text. Text that means different things in different places has a context, the first
-//! argument of `tr_c!`. A message a catalog lacks is shown in English.
+//! An entry that is untranslated or marked fuzzy is skipped, as gettext does at run time, so the
+//! message shows in English.
 
-use std::collections::{BTreeMap, HashMap};
-
-use serde::Deserialize;
+use std::collections::HashMap;
+use std::io::Cursor;
+use std::ops::Range;
 
 use super::locale::Locale;
-use super::plural::Category;
-
-/// A catalog file as written.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct File {
-    #[serde(default)]
-    pub messages: BTreeMap<String, Entry>,
-    #[serde(default)]
-    pub contexts: BTreeMap<String, BTreeMap<String, Entry>>,
-}
-
-/// One translation: a text, or the forms of a counted message by plural category.
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum Entry {
-    Text(String),
-    Plural(BTreeMap<Category, String>),
-}
+use super::plural_forms::{FormulaError, PluralForms};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CatalogError {
-    #[error("the catalog is not valid JSON of the expected shape: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("the counted message {0:?} has no `other` form")]
-    MissingOther(String),
+    #[error("the catalog is not a valid .po file: {0}")]
+    Po(String),
+    #[error(transparent)]
+    Plural(#[from] FormulaError),
+    #[error("{key:?} has {found} plural forms and the catalog's header says {wanted}")]
+    FormCount {
+        key: String,
+        found: usize,
+        wanted: usize,
+    },
 }
 
-impl File {
-    pub fn parse(json: &str) -> Result<File, CatalogError> {
-        let file: File = serde_json::from_str(json)?;
-        let counted = file.messages.iter().chain(file.contexts.values().flatten());
-        for (key, entry) in counted {
-            if let Entry::Plural(forms) = entry
-                && !forms.contains_key(&Category::Other)
-            {
-                return Err(CatalogError::MissingOther(key.clone()));
-            }
-        }
-        Ok(file)
-    }
-}
-
-/// The text of a message in a language, with its plural forms when it has them.
-#[derive(Clone, Copy, Debug)]
+/// The text of a message in a language: one string, or one per plural form.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Message {
     Text(&'static str),
-    Plural([Option<&'static str>; Category::COUNT]),
-}
-
-impl Message {
-    fn from_entry(entry: &Entry) -> Message {
-        match entry {
-            Entry::Text(text) => Message::Text(leak(text)),
-            Entry::Plural(forms) => {
-                let mut by_category = [None; Category::COUNT];
-                for (category, text) in forms {
-                    by_category[category.index()] = Some(leak(text));
-                }
-                Message::Plural(by_category)
-            }
-        }
-    }
-
-    /// The text a message without a count shows.
-    pub fn text(&self) -> &'static str {
-        match self {
-            Message::Text(text) => text,
-            Message::Plural(forms) => forms[Category::Other.index()].unwrap_or_default(),
-        }
-    }
-
-    /// The form for `category`, the `other` form when the language gave none for it.
-    pub fn form(&self, category: Category) -> &'static str {
-        match self {
-            Message::Text(text) => text,
-            Message::Plural(forms) => forms[category.index()]
-                .or(forms[Category::Other.index()])
-                .unwrap_or_default(),
-        }
-    }
-}
-
-/// Catalogs live as long as the process (one per language, read once), so their text is leaked
-/// to be `'static`, like the English text it replaces.
-fn leak(text: &str) -> &'static str {
-    Box::leak(text.to_owned().into_boxed_str())
+    Plural(Vec<&'static str>),
 }
 
 /// A catalog ready for lookups.
 #[derive(Debug)]
 pub struct Catalog {
-    messages: HashMap<&'static str, Message>,
-    contexts: HashMap<&'static str, HashMap<&'static str, Message>>,
+    /// By context (empty for none), then by English text.
+    messages: HashMap<&'static str, HashMap<&'static str, Message>>,
+    plural: PluralForms,
 }
 
 impl Catalog {
-    pub fn from_file(file: &File) -> Catalog {
-        let build = |entries: &BTreeMap<String, Entry>| -> HashMap<&'static str, Message> {
-            entries
-                .iter()
-                .map(|(key, entry)| (leak(key), Message::from_entry(entry)))
-                .collect()
+    /// Reads a `.po` file. The text of every translation lives as long as the process (a catalog
+    /// is read once per language), so one buffer holds them all and is leaked once, which makes
+    /// each a `&'static str` like the English text it replaces.
+    pub fn parse(po: &str) -> Result<Catalog, CatalogError> {
+        let file = polib::po_file::parse_from_reader(Cursor::new(po.as_bytes()))
+            .map_err(|error| CatalogError::Po(error.to_string()))?;
+        let rules = &file.metadata.plural_rules;
+        let plural = PluralForms::parse(rules.nplurals, &rules.expr)?;
+
+        // Collected as ranges of one buffer, which cannot be sliced until it stops growing.
+        struct Entry {
+            context: Range<usize>,
+            key: Range<usize>,
+            forms: Vec<Range<usize>>,
+            counted: bool,
+        }
+        let mut buffer = String::new();
+        let mut push = |text: &str| {
+            let start = buffer.len();
+            buffer.push_str(text);
+            start..buffer.len()
         };
-        Catalog {
-            messages: build(&file.messages),
-            contexts: file
-                .contexts
+        let mut entries = Vec::new();
+        for message in file.messages() {
+            if !message.is_translated() || message.is_fuzzy() {
+                continue;
+            }
+            let context = push(message.msgctxt().unwrap_or(""));
+            let key = push(message.msgid());
+            let counted = message.is_plural();
+            let forms: Vec<&str> = if counted {
+                let forms = message.msgstr_plural().map_err(|_| unreadable_entry())?;
+                if forms.len() != plural.count() {
+                    return Err(CatalogError::FormCount {
+                        key: message.msgid().to_owned(),
+                        found: forms.len(),
+                        wanted: plural.count(),
+                    });
+                }
+                forms.iter().map(String::as_str).collect()
+            } else {
+                vec![message.msgstr().map_err(|_| unreadable_entry())?]
+            };
+            let forms = forms.into_iter().map(&mut push).collect();
+            entries.push(Entry {
+                context,
+                key,
+                forms,
+                counted,
+            });
+        }
+
+        let buffer: &'static str = Box::leak(buffer.into_boxed_str());
+        let mut messages: HashMap<&'static str, HashMap<&'static str, Message>> = HashMap::new();
+        for entry in entries {
+            let forms: Vec<&'static str> = entry
+                .forms
                 .iter()
-                .map(|(context, entries)| (leak(context), build(entries)))
-                .collect(),
+                .map(|range| &buffer[range.clone()])
+                .collect();
+            let message = if entry.counted {
+                Message::Plural(forms)
+            } else {
+                Message::Text(forms[0])
+            };
+            messages
+                .entry(&buffer[entry.context])
+                .or_default()
+                .insert(&buffer[entry.key], message);
+        }
+        Ok(Catalog { messages, plural })
+    }
+
+    /// The translation of `key`, in `context` (empty when it has none).
+    pub fn get(&self, context: &str, key: &str) -> Option<&Message> {
+        self.messages.get(context)?.get(key)
+    }
+
+    /// The text of a plain message.
+    pub fn text(&self, context: &str, key: &str) -> Option<&'static str> {
+        match self.get(context, key)? {
+            Message::Text(text) => Some(text),
+            Message::Plural(_) => None,
         }
     }
 
-    /// The translation of `key`, in `context` when that is not empty.
-    pub fn get(&self, context: &str, key: &str) -> Option<&Message> {
-        if context.is_empty() {
-            self.messages.get(key)
-        } else {
-            self.contexts.get(context)?.get(key)
+    /// The form of the counted message whose singular is `one` that `count` takes.
+    pub fn counted(&self, one: &str, count: u64) -> Option<&'static str> {
+        match self.get("", one)? {
+            Message::Plural(forms) => forms.get(self.plural.index(count)).copied(),
+            Message::Text(_) => None,
         }
+    }
+
+    /// Every entry, for the tests that keep a catalog and the source in step.
+    #[cfg(test)]
+    pub fn entries(&self) -> impl Iterator<Item = (&'static str, &'static str, &Message)> {
+        self.messages.iter().flat_map(|(context, messages)| {
+            messages
+                .iter()
+                .map(move |(key, message)| (*context, *key, message))
+        })
     }
 
     #[cfg(test)]
     pub fn len(&self) -> usize {
-        self.messages.len() + self.contexts.values().map(HashMap::len).sum::<usize>()
+        self.messages.values().map(HashMap::len).sum()
     }
 }
 
-/// The catalog of `locale`, read once; `None` for English and the pseudo-locale, which are
-/// made from the source text, and for a file that does not parse (the tests fail on one, so a
-/// shipped build never has it: this falls back to English instead of panicking).
+/// `msgstr` and `msgstr_plural` fail only on the wrong kind of entry, which `is_plural` rules out.
+fn unreadable_entry() -> CatalogError {
+    CatalogError::Po("an entry changed kind while it was read".to_owned())
+}
+
+/// The catalog of `locale`, read once; `None` for English and the pseudo-locale, which are made
+/// from the source text. A catalog that does not parse is reported once and then shows English,
+/// instead of taking the app down; the tests fail on one, so a release never has it.
 pub fn of(locale: Locale) -> Option<&'static Catalog> {
-    static CATALOGS: [std::sync::OnceLock<Option<Catalog>>; Locale::ALL.len()] =
-        [const { std::sync::OnceLock::new() }; Locale::ALL.len()];
-    let index = Locale::ALL.iter().position(|known| *known == locale)?;
-    let json = source(locale)?;
-    CATALOGS[index]
-        .get_or_init(|| File::parse(json).ok().map(|file| Catalog::from_file(&file)))
+    static CATALOGS: [std::sync::OnceLock<Option<Catalog>>; Locale::COUNT] =
+        [const { std::sync::OnceLock::new() }; Locale::COUNT];
+    let source = locale.catalog_source()?;
+    CATALOGS[usize::from(locale.index())]
+        .get_or_init(|| match Catalog::parse(source) {
+            Ok(catalog) => Some(catalog),
+            Err(error) => {
+                eprintln!(
+                    "DegenView: the {} catalog is unusable: {error}",
+                    locale.tag()
+                );
+                debug_assert!(false, "the {} catalog is unusable: {error}", locale.tag());
+                None
+            }
+        })
         .as_ref()
-}
-
-/// The embedded JSON of a locale's catalog. A language is added here with its file.
-pub const fn source(locale: Locale) -> Option<&'static str> {
-    match locale {
-        Locale::English | Locale::Pseudo => None,
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const SAMPLE: &str = r#"{
-        "messages": {
-            "Save": "Guardar",
-            "{count} alerts": { "one": "{count} alerta", "other": "{count} alertas" }
-        },
-        "contexts": { "month abbreviation": { "Jan": "ene" } }
-    }"#;
+    const HEADER: &str = r#"msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: ru\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+"#;
+
+    fn russian(body: &str) -> Result<Catalog, CatalogError> {
+        Catalog::parse(&format!("{HEADER}\n{body}"))
+    }
 
     fn sample() -> Catalog {
-        Catalog::from_file(&File::parse(SAMPLE).expect("sample parses"))
+        russian(
+            r#"msgid "Save"
+msgstr "Сохранить"
+
+msgctxt "month abbreviation"
+msgid "May"
+msgstr "май"
+
+msgid "{count} alert"
+msgid_plural "{count} alerts"
+msgstr[0] "{count} оповещение"
+msgstr[1] "{count} оповещения"
+msgstr[2] "{count} оповещений"
+"#,
+        )
+        .expect("sample parses")
     }
 
     #[test]
     fn a_message_is_found_by_its_english_text_and_a_context_by_both() {
         let catalog = sample();
-        assert_eq!(catalog.get("", "Save").map(Message::text), Some("Guardar"));
-        assert_eq!(
-            catalog.get("month abbreviation", "Jan").map(Message::text),
-            Some("ene")
-        );
-        assert!(catalog.get("", "Jan").is_none());
-        assert!(catalog.get("month abbreviation", "Save").is_none());
-        assert!(catalog.get("", "Open").is_none());
+        assert_eq!(catalog.text("", "Save"), Some("Сохранить"));
+        assert_eq!(catalog.text("month abbreviation", "May"), Some("май"));
+        assert_eq!(catalog.text("", "May"), None);
+        assert_eq!(catalog.text("month abbreviation", "Save"), None);
+        assert_eq!(catalog.text("", "Open"), None);
         assert_eq!(catalog.len(), 3);
     }
 
     #[test]
-    fn a_counted_message_has_a_form_per_category_and_falls_back_to_other() {
+    fn a_counted_message_takes_the_form_the_catalog_header_says() {
         let catalog = sample();
-        let counted = catalog.get("", "{count} alerts").expect("counted");
-        assert_eq!(counted.form(Category::One), "{count} alerta");
-        assert_eq!(counted.form(Category::Other), "{count} alertas");
-        assert_eq!(counted.form(Category::Few), "{count} alertas");
-        assert_eq!(counted.text(), "{count} alertas");
+        let form = |n| catalog.counted("{count} alert", n).expect("counted");
+        assert_eq!(form(1), "{count} оповещение");
+        assert_eq!(form(2), "{count} оповещения");
+        assert_eq!(form(5), "{count} оповещений");
+        assert_eq!(form(21), "{count} оповещение");
+        assert_eq!(form(111), "{count} оповещений");
     }
 
     #[test]
-    fn a_plain_text_serves_every_category() {
+    fn a_plain_message_is_not_a_counted_one_and_the_other_way_round() {
         let catalog = sample();
-        let save = catalog.get("", "Save").expect("save");
-        assert_eq!(save.form(Category::One), "Guardar");
-        assert_eq!(save.form(Category::Many), "Guardar");
+        assert_eq!(catalog.counted("Save", 1), None);
+        assert_eq!(catalog.text("", "{count} alert"), None);
     }
 
     #[test]
-    fn a_counted_message_without_other_is_refused() {
-        let json = r#"{"messages":{"{n} x":{"one":"{n} y"}}}"#;
+    fn untranslated_and_fuzzy_entries_are_left_to_english() {
+        let catalog = russian(
+            r#"msgid "Open"
+msgstr ""
+
+#, fuzzy
+msgid "Close"
+msgstr "Закрыть?"
+
+msgid "Save"
+msgstr "Сохранить"
+"#,
+        )
+        .expect("parses");
+        assert_eq!(catalog.text("", "Open"), None);
+        assert_eq!(catalog.text("", "Close"), None);
+        assert_eq!(catalog.text("", "Save"), Some("Сохранить"));
+    }
+
+    #[test]
+    fn a_counted_message_with_the_wrong_number_of_forms_is_refused() {
+        let error = russian(
+            r#"msgid "{count} alert"
+msgid_plural "{count} alerts"
+msgstr[0] "a"
+msgstr[1] "b"
+"#,
+        )
+        .expect_err("two forms for three");
         assert!(matches!(
-            File::parse(json),
-            Err(CatalogError::MissingOther(key)) if key == "{n} x"
+            error,
+            CatalogError::FormCount {
+                found: 2,
+                wanted: 3,
+                ..
+            }
         ));
     }
 
     #[test]
-    fn unknown_sections_and_categories_are_refused() {
-        assert!(File::parse(r#"{"mesages":{}}"#).is_err());
-        assert!(File::parse(r#"{"messages":{"a":{"some":"b","other":"c"}}}"#).is_err());
-        assert!(File::parse("not json").is_err());
-        assert!(File::parse("{}").is_ok());
+    fn a_catalog_that_is_not_po_or_has_a_bad_formula_is_refused() {
+        assert!(Catalog::parse("msgid \"a\"\nmsgstr").is_err());
+        let bad = HEADER.replace("n%10==1", "n%10==");
+        assert!(matches!(Catalog::parse(&bad), Err(CatalogError::Plural(_))));
     }
 
     #[test]
     fn english_and_the_pseudo_locale_have_no_catalog() {
-        assert!(of(Locale::English).is_none());
-        assert!(of(Locale::Pseudo).is_none());
+        assert!(of(Locale::ENGLISH).is_none());
+        assert!(of(Locale::PSEUDO).is_none());
     }
 }

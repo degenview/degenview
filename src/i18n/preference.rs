@@ -47,15 +47,14 @@ mod tests {
             "\"system\""
         );
         assert_eq!(
-            serde_json::to_string(&Preference::Fixed(Locale::Pseudo)).unwrap(),
+            serde_json::to_string(&Preference::Fixed(Locale::PSEUDO)).unwrap(),
             "\"en-XA\""
         );
     }
 
     #[test]
     fn every_choice_reads_back_as_it_was_saved() {
-        let all = std::iter::once(Preference::System)
-            .chain(Locale::ALL.into_iter().map(Preference::Fixed));
+        let all = std::iter::once(Preference::System).chain(Locale::all().map(Preference::Fixed));
         for preference in all {
             let saved = serde_json::to_string(&preference).unwrap();
             assert_eq!(

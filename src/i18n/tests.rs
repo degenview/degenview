@@ -1,9 +1,15 @@
-//! Keeps the messages in the code and the catalogs in step, and checks the macros end to end.
+//! Keeps the messages in the code, the `.pot` template and the catalogs in step, and checks the
+//! macros end to end.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
-use super::catalog::{Entry, File};
+use polib::catalog::Catalog as PoCatalog;
+use polib::message::Message;
+use polib::metadata::CatalogMetadata;
+
+use super::catalog::{Catalog, Message as Translation};
 use super::extract::{self, Kind, Use};
 use super::template::placeholders;
 use super::{Locale, Preference, tr, tr_c, tr_n, with_locale};
@@ -36,11 +42,13 @@ fn a_counted_message_takes_one_or_other_and_passes_its_count() {
         ),
         "1 of 9 alert"
     );
+    // Either form may leave the count out.
+    assert_eq!(tr_n!(1, "One alert", "{count} alerts"), "One alert");
 }
 
 #[test]
 fn the_pseudo_locale_changes_every_kind_of_message_and_keeps_its_values() {
-    with_locale(Locale::Pseudo, || {
+    with_locale(Locale::PSEUDO, || {
         assert_eq!(tr!("Save"), "[Šåvé ~~]");
         assert_eq!(tr_c!("month abbreviation", "Jan"), "[Ĵåñ ~~]");
         assert_eq!(tr!("Hi {name}", name = "Ana"), "[Ĥî Ana ~]");
@@ -56,7 +64,7 @@ fn the_text_of_a_plain_message_is_not_copied() {
     assert!(std::ptr::eq(tr!("Save"), "Save"));
 }
 
-// MARK: Source and catalogs
+// MARK: Source
 
 fn source_files() -> Vec<PathBuf> {
     fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
@@ -75,20 +83,24 @@ fn source_files() -> Vec<PathBuf> {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut found = Vec::new();
     walk(&src, &mut found);
-    // The macros' own documentation and tests write messages that are only examples; the calendar's
-    // names are real messages.
+    // The runtime's own documentation and tests write messages that are only examples.
     let i18n = src.join("i18n");
-    found.retain(|path| !path.starts_with(&i18n) || path.ends_with("calendar.rs"));
+    found.retain(|path| !path.starts_with(&i18n));
     found.sort();
     found
 }
 
-/// Every message the app writes, with where.
+/// Every message the app writes, with the file it is in.
 fn messages_in_source() -> Vec<(String, Use)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut all = Vec::new();
     for path in source_files() {
         let text = std::fs::read_to_string(&path).expect("source reads");
-        let name = path.display().to_string();
+        let name = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
         match extract::uses(&text) {
             Ok(uses) => all.extend(uses.into_iter().map(|used| (name.clone(), used))),
             Err(error) => panic!("{name}: {error}"),
@@ -98,121 +110,145 @@ fn messages_in_source() -> Vec<(String, Use)> {
 }
 
 #[test]
-fn every_message_in_the_source_can_be_read_and_passes_the_values_it_names() {
+fn every_message_in_the_source_can_be_read() {
     let messages = messages_in_source();
     // A scan that found nothing would pass every check below.
     assert!(
         messages.iter().any(|(_, used)| used.key == "Theme"),
         "the scan did not find the messages in the source"
     );
-    let mut problems = Vec::new();
-    for (file, used) in messages {
-        problems.extend(
-            problems_with(&used)
-                .into_iter()
-                .map(|problem| format!("{file}:{}: {problem}", used.line)),
+}
+
+/// What is wrong with how messages are written together, beyond what each one's compile-time check
+/// says: one text must not mean two things.
+#[test]
+fn a_text_is_one_message_with_one_set_of_forms() {
+    let mut forms: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
+    for (_, used) in messages_in_source() {
+        let shape = match &used.kind {
+            Kind::Counted(_) => format!("counted: {}", used.key),
+            _ => "plain".to_owned(),
+        };
+        forms
+            .entry((used.context().to_owned(), used.msgid().to_owned()))
+            .or_default()
+            .insert(shape);
+    }
+    for ((context, msgid), shapes) in forms {
+        assert_eq!(
+            shapes.len(),
+            1,
+            "{context:?} {msgid:?} is written as {shapes:?}: a text that is counted in one place and \
+             plain in another, or has two plurals, cannot share a translation; give one a context"
         );
     }
-    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
-/// What is wrong with how one message is written.
-fn problems_with(used: &Use) -> Vec<String> {
-    let mut problems = Vec::new();
-    if used.key.trim().is_empty() {
-        problems.push("the message is empty".to_owned());
+// MARK: The template
+
+/// What a catalog needs of each message: one entry per context and text, in a fixed order.
+fn unique_messages(source: &[(String, Use)]) -> BTreeMap<(String, String), (&Use, Vec<String>)> {
+    let mut unique: BTreeMap<(String, String), (&Use, Vec<String>)> = BTreeMap::new();
+    for (file, used) in source {
+        let entry = unique
+            .entry((used.context().to_owned(), used.msgid().to_owned()))
+            .or_insert_with(|| (used, Vec::new()));
+        entry.1.push(format!("{file}:{}", used.line));
     }
-    // A translator is not shown spaces around text, and a catalog cannot be sure to keep them.
-    if used.key.trim() != used.key {
-        problems.push(format!("{:?} starts or ends with a space", used.key));
-    }
-    let wanted: BTreeSet<&str> = placeholders(&used.key).into_iter().collect();
-    let given: BTreeSet<&str> = used.args.iter().map(String::as_str).collect();
-    for missing in wanted.difference(&given) {
-        problems.push(format!("{{{missing}}} in {:?} is given no value", used.key));
-    }
-    let counted = matches!(used.kind, Kind::Counted(_));
-    for unused in given.difference(&wanted) {
-        // A counted message may leave its count out of one form ("One alert").
-        if !(counted && *unused == "count") {
-            problems.push(format!(
-                "{unused} is passed but {:?} has no {{{unused}}}",
-                used.key
-            ));
-        }
-    }
-    if let Kind::Counted(one) = &used.kind {
-        for name in placeholders(one) {
-            if !given.contains(name) {
-                problems.push(format!("{{{name}}} in {one:?} is given no value"));
-            }
-        }
-    }
-    problems
+    unique
 }
 
+/// The `.pot` template: every message of the source, untranslated, with where it is written.
+fn template(source: &[(String, Use)]) -> String {
+    let mut catalog = PoCatalog::new(CatalogMetadata::new());
+    catalog.metadata.project_id_version = format!("DegenView {}", env!("CARGO_PKG_VERSION"));
+    catalog.metadata.content_type = "text/plain; charset=UTF-8".to_owned();
+    // English's forms: a translator's tool replaces them with the language's own.
+    catalog.metadata.plural_rules.nplurals = 2;
+    catalog.metadata.plural_rules.expr = "(n != 1)".to_owned();
+    for ((context, msgid), (used, places)) in unique_messages(source) {
+        let mut builder = match &used.kind {
+            Kind::Counted(_) => Message::build_plural(),
+            _ => Message::build_singular(),
+        };
+        builder.with_msgid(msgid).with_source(places.join(" "));
+        if !context.is_empty() {
+            builder.with_msgctxt(context);
+        }
+        if matches!(used.kind, Kind::Counted(_)) {
+            builder
+                .with_msgid_plural(used.key.clone())
+                .with_msgstr_plural(vec![String::new(), String::new()]);
+        }
+        catalog.append_or_update(builder.done());
+    }
+    let mut out = BufWriter::new(Vec::new());
+    polib::po_file::write(&catalog, &mut out).expect("a template writes to memory");
+    String::from_utf8(out.into_inner().expect("flushes")).expect("the template is UTF-8")
+}
+
+fn template_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/locales/messages.pot")
+}
+
+/// `messages.pot` is what translators start from, so it must say what the source says.
+/// `UPDATE_POT=1 cargo test -p degenview i18n::tests::the_template` rewrites it.
 #[test]
-fn one_counted_message_is_not_written_with_two_singulars() {
-    let mut singulars: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for (_, used) in messages_in_source() {
-        if let Kind::Counted(one) = used.kind {
-            singulars.entry(used.key).or_default().insert(one);
-        }
+fn the_template_is_the_messages_in_the_source() {
+    let expected = template(&messages_in_source());
+    let path = template_path();
+    if std::env::var_os("UPDATE_POT").is_some() {
+        std::fs::write(&path, &expected).expect("the template is written");
+        return;
     }
-    for (other, ones) in singulars {
-        assert_eq!(ones.len(), 1, "{other:?} is the plural of {ones:?}");
-    }
+    let committed = std::fs::read_to_string(&path).unwrap_or_default();
+    assert!(
+        committed == expected,
+        "assets/locales/messages.pot is out of date: run `UPDATE_POT=1 cargo test --lib \
+         i18n::tests::the_template_is_the_messages_in_the_source` and commit it"
+    );
 }
+
+// MARK: The catalogs
 
 /// What is wrong with a catalog beside the messages in the source.
-fn problems_in_catalog(file: &File, source: &[Use]) -> Vec<String> {
-    let mut known: BTreeMap<(String, String), &Use> = BTreeMap::new();
-    for used in source {
-        known.insert((used.context().to_owned(), used.key.clone()), used);
-    }
+fn problems_in_catalog(catalog: &Catalog, source: &[(String, Use)]) -> Vec<String> {
+    let unique = unique_messages(source);
     let mut problems = Vec::new();
-    let entries = file
-        .messages
-        .iter()
-        .map(|(key, entry)| ("", key, entry))
-        .chain(file.contexts.iter().flat_map(|(context, entries)| {
-            entries
-                .iter()
-                .map(move |(key, entry)| (context.as_str(), key, entry))
-        }));
-    for (context, key, entry) in entries {
-        let Some(used) = known.get(&(context.to_owned(), key.clone())) else {
+    for (context, msgid, translation) in catalog.entries() {
+        let Some((used, _)) = unique.get(&(context.to_owned(), msgid.to_owned())) else {
             problems.push(format!(
-                "{context:?} {key:?} is not a message in the source"
+                "{context:?} {msgid:?} is not a message in the source"
             ));
             continue;
         };
-        let allowed: BTreeSet<&str> = used.args.iter().map(String::as_str).collect();
-        let texts: Vec<&String> = match entry {
-            Entry::Text(text) => vec![text],
-            Entry::Plural(forms) => forms.values().collect(),
+        let counted = matches!(used.kind, Kind::Counted(_));
+        let texts: Vec<&str> = match translation {
+            Translation::Text(text) => vec![text],
+            Translation::Plural(forms) => forms.clone(),
         };
-        if matches!(entry, Entry::Plural(_)) != matches!(used.kind, Kind::Counted(_)) {
+        if matches!(translation, Translation::Plural(_)) != counted {
             problems.push(format!(
-                "{key:?} is counted in one place and not in the other"
+                "{msgid:?} is counted in one place and not in the other"
             ));
         }
-        for text in texts {
+        // A translation uses the values the source passes, and a plain one all of them.
+        let allowed: BTreeSet<&str> = used.args.iter().map(String::as_str).collect();
+        for text in &texts {
             for name in placeholders(text) {
                 if !allowed.contains(name) {
                     problems.push(format!(
-                        "{{{name}}} in the translation of {key:?} is not one of its values"
+                        "{{{name}}} in the translation of {msgid:?} is not one of its values"
                     ));
                 }
             }
         }
-        if !matches!(entry, Entry::Plural(_)) {
-            let wanted: BTreeSet<&str> = placeholders(key).into_iter().collect();
-            let Entry::Text(text) = entry else { continue };
-            let given: BTreeSet<&str> = placeholders(text).into_iter().collect();
+        if !counted {
+            let wanted: BTreeSet<&str> = placeholders(msgid).into_iter().collect();
+            let given: BTreeSet<&str> = placeholders(texts[0]).into_iter().collect();
             if wanted != given {
                 problems.push(format!(
-                    "the translation of {key:?} does not use the same values"
+                    "the translation of {msgid:?} does not use the same values"
                 ));
             }
         }
@@ -222,16 +258,14 @@ fn problems_in_catalog(file: &File, source: &[Use]) -> Vec<String> {
 
 #[test]
 fn every_catalog_matches_the_messages_in_the_source() {
-    let source: Vec<Use> = messages_in_source()
-        .into_iter()
-        .map(|(_, used)| used)
-        .collect();
-    for locale in Locale::ALL {
-        let Some(json) = super::catalog::source(locale) else {
+    let source = messages_in_source();
+    for locale in Locale::all() {
+        let Some(po) = locale.catalog_source() else {
             continue;
         };
-        let file = File::parse(json).unwrap_or_else(|error| panic!("{}: {error}", locale.tag()));
-        let problems = problems_in_catalog(&file, &source);
+        let catalog =
+            Catalog::parse(po).unwrap_or_else(|error| panic!("{}: {error}", locale.tag()));
+        let problems = problems_in_catalog(&catalog, &source);
         assert!(
             problems.is_empty(),
             "{}:\n{}",
@@ -241,42 +275,25 @@ fn every_catalog_matches_the_messages_in_the_source() {
     }
 }
 
-fn used(kind: Kind, key: &str, args: &[&str]) -> Use {
-    Use {
-        line: 1,
-        kind,
-        key: key.to_owned(),
-        args: args.iter().map(|name| (*name).to_owned()).collect(),
-    }
+fn used(kind: Kind, key: &str, args: &[&str]) -> (String, Use) {
+    (
+        "src/x.rs".to_owned(),
+        Use {
+            line: 1,
+            kind,
+            key: key.to_owned(),
+            args: args.iter().map(|name| (*name).to_owned()).collect(),
+        },
+    )
 }
 
-#[test]
-fn a_message_that_misses_or_adds_a_value_is_reported() {
-    assert!(problems_with(&used(Kind::Plain, "Save", &[])).is_empty());
-    assert!(problems_with(&used(Kind::Plain, "{a} {b}", &["a", "b"])).is_empty());
-    assert_eq!(
-        problems_with(&used(Kind::Plain, "{a} {b}", &["a"])).len(),
-        1
-    );
-    assert_eq!(
-        problems_with(&used(Kind::Plain, "{a}", &["a", "b"])).len(),
-        1
-    );
-    assert_eq!(problems_with(&used(Kind::Plain, " Save", &[])).len(), 1);
-    assert_eq!(problems_with(&used(Kind::Plain, "", &[])).len(), 1);
-}
-
-#[test]
-fn a_counted_message_may_leave_out_its_count_in_one_form() {
-    let counted = Kind::Counted("One alert".to_owned());
-    assert!(problems_with(&used(counted, "{count} alerts", &["count"])).is_empty());
-    let counted = Kind::Counted("One alert".to_owned());
-    assert!(problems_with(&used(counted, "Many alerts", &["count"])).is_empty());
-    let counted = Kind::Counted("{count} of {n}".to_owned());
-    assert_eq!(
-        problems_with(&used(counted, "{count}", &["count"])).len(),
-        1
-    );
+fn russian(body: &str) -> Catalog {
+    Catalog::parse(&format!(
+        "msgid \"\"\nmsgstr \"\"\n\"Content-Type: text/plain; charset=UTF-8\\n\"\n\
+         \"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && \
+         (n%100<10 || n%100>=20) ? 1 : 2);\\n\"\n\n{body}"
+    ))
+    .expect("parses")
 }
 
 #[test]
@@ -291,30 +308,124 @@ fn a_catalog_that_drifted_from_the_source_is_reported() {
         ),
         used(Kind::Context("month".into()), "Jan", &[]),
     ];
-    let good = File::parse(
-        r#"{"messages":{"Save":"Guardar","Hi {name}":"Hola {name}",
-            "{count} alerts":{"one":"{count} alerta","other":"{count} alertas"}},
-            "contexts":{"month":{"Jan":"ene"}}}"#,
-    )
-    .expect("parses");
+    let good = russian(
+        r#"msgid "Save"
+msgstr "Сохранить"
+
+msgid "Hi {name}"
+msgstr "Привет, {name}"
+
+msgctxt "month"
+msgid "Jan"
+msgstr "янв"
+
+msgid "{count} alert"
+msgid_plural "{count} alerts"
+msgstr[0] "{count} оповещение"
+msgstr[1] "{count} оповещения"
+msgstr[2] "{count} оповещений"
+"#,
+    );
     assert_eq!(problems_in_catalog(&good, &source), Vec::<String>::new());
 
-    let stale = File::parse(r#"{"messages":{"Gone":"Ido"}}"#).expect("parses");
+    let stale = russian("msgid \"Gone\"\nmsgstr \"Ушло\"\n");
     assert_eq!(problems_in_catalog(&stale, &source).len(), 1);
 
-    let wrong_value = File::parse(r#"{"messages":{"Hi {name}":"Hola {nombre}"}}"#).expect("parses");
+    let wrong_value = russian("msgid \"Hi {name}\"\nmsgstr \"Привет, {nombre}\"\n");
     assert_eq!(problems_in_catalog(&wrong_value, &source).len(), 2);
 
-    let wrong_context = File::parse(r#"{"messages":{"Jan":"ene"}}"#).expect("parses");
+    let wrong_context = russian("msgid \"Jan\"\nmsgstr \"янв\"\n");
     assert_eq!(problems_in_catalog(&wrong_context, &source).len(), 1);
 
-    let not_counted =
-        File::parse(r#"{"messages":{"{count} alerts":"{count} alertas"}}"#).expect("parses");
+    let not_counted = russian("msgid \"{count} alert\"\nmsgstr \"{count} оповещение\"\n");
     assert_eq!(problems_in_catalog(&not_counted, &source).len(), 1);
+}
+
+#[test]
+fn the_template_lists_each_message_once_with_its_places_and_forms() {
+    let source = [
+        used(Kind::Plain, "Save", &[]),
+        used(Kind::Plain, "Save", &[]),
+        used(
+            Kind::Counted("{count} alert".into()),
+            "{count} alerts",
+            &["count"],
+        ),
+        used(Kind::Context("month".into()), "May", &[]),
+    ];
+    let text = template(&source);
+    assert_eq!(text.matches("msgid \"Save\"").count(), 1);
+    assert!(text.contains("msgid \"{count} alert\"\nmsgid_plural \"{count} alerts\""));
+    assert!(text.contains("msgctxt \"month\"\nmsgid \"May\""));
+    assert!(text.contains("src/x.rs:1 src/x.rs:1"));
 }
 
 #[test]
 fn a_choice_that_names_a_language_the_build_lacks_is_not_a_locale() {
     assert!(Locale::from_tag("tlh").is_none());
     assert_eq!(Preference::default(), Preference::System);
+}
+
+// MARK: Plural formulas against CLDR
+
+/// The formula each of these languages' catalogs carries (GNU gettext's own table), against the
+/// categories CLDR gives the same language: two counts have the same gettext form exactly when they
+/// have the same CLDR category, for every count a screen shows.
+#[test]
+fn the_plural_formulas_translators_write_agree_with_cldr() {
+    use super::plural_forms::PluralForms;
+    use icu_plurals::PluralRules;
+
+    let formulas: [(&str, usize, &str); 9] = [
+        ("de", 2, "n != 1"),
+        ("es", 2, "n != 1"),
+        ("fr", 2, "n > 1"),
+        ("pt-BR", 2, "n > 1"),
+        ("ja", 1, "0"),
+        ("tr", 2, "n != 1"),
+        (
+            "ru",
+            3,
+            "n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2",
+        ),
+        (
+            "pl",
+            3,
+            "n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2",
+        ),
+        (
+            "ar",
+            6,
+            "n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 ? 4 : 5",
+        ),
+    ];
+    for (tag, count, formula) in formulas {
+        let forms = PluralForms::parse(count, formula).expect("valid formula");
+        let rules = PluralRules::try_new_cardinal(
+            tag.parse::<icu_locale_core::Locale>().expect("tag").into(),
+        )
+        .expect("CLDR has the language");
+        let mut index_of_category = BTreeMap::new();
+        let mut category_of_index = BTreeMap::new();
+        for n in 0..=10_000u64 {
+            let category = format!("{:?}", rules.category_for(n));
+            let index = forms.index(n);
+            assert_eq!(
+                *index_of_category.entry(category.clone()).or_insert(index),
+                index,
+                "{tag}: {n} is {category} in CLDR but takes another form than its siblings"
+            );
+            assert_eq!(
+                category_of_index.entry(index).or_insert(category.clone()),
+                &category,
+                "{tag}: {n} shares form {index} with a different CLDR category"
+            );
+        }
+        // Polish and Arabic use categories a 10,000 count does not reach (`many` of 1.5): the
+        // forms the formula has are the categories the counts reach, plus none.
+        assert!(
+            category_of_index.len() <= count,
+            "{tag}: the counts reach more forms than nplurals says"
+        );
+    }
 }

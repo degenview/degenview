@@ -460,12 +460,8 @@ fn sparkline(ui: &Ui, painter: &Painter, rect: Rect, history: &[(i64, f64)]) {
 
 /// Epoch milliseconds → "Sep 27".
 fn date_label(epoch_ms: i64) -> String {
-    let (_, month, day) = crate::format::civil_from_days(epoch_ms.div_euclid(86_400_000));
-    crate::i18n::tr!(
-        "{month} {day}",
-        month = crate::i18n::calendar::month_abbreviation(month),
-        day = day
-    )
+    let (year, month, day) = crate::format::civil_from_days(epoch_ms.div_euclid(86_400_000));
+    crate::i18n::datetime::month_day(year, month, day)
 }
 
 fn altcoin(ui: &Ui, painter: &Painter, rect: Rect, reading: &LatestReading) {
@@ -683,15 +679,17 @@ fn sample(stops: &[Color32], t: f32) -> Color32 {
 /// "2026-09-27" → "Sep 27".
 fn short_date(text: &str) -> String {
     let mut parts = text.get(..10).unwrap_or(text).split('-');
-    let (Some(_), Some(month), Some(day)) = (parts.next(), parts.next(), parts.next()) else {
+    let (Some(year), Some(month), Some(day)) = (parts.next(), parts.next(), parts.next()) else {
         return text.to_owned();
     };
-    match (month.parse::<usize>(), day.parse::<u32>()) {
-        (Ok(month @ 1..=12), Ok(day)) => crate::i18n::tr!(
-            "{month} {day}",
-            month = crate::i18n::calendar::month_abbreviation(month as i64),
-            day = day
-        ),
+    match (
+        year.parse::<i64>(),
+        month.parse::<i64>(),
+        day.parse::<i64>(),
+    ) {
+        (Ok(year), Ok(month @ 1..=12), Ok(day @ 1..=31)) => {
+            crate::i18n::datetime::month_day(year, month, day)
+        }
         _ => text.to_owned(),
     }
 }

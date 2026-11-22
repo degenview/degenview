@@ -15,7 +15,7 @@ inventory.
 | `host/update/mod.rs` | Update checks, install progress, and restart state |
 | `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
 | `format.rs`, `platform.rs`, `lock.rs` | Leaf helpers every layer imports: number/price text, per-platform wording, and locks that survive a poisoning panic |
-| `i18n/` | Leaf: the interface language in use, `tr!` messages and their catalogs, month and weekday names ([Localization](../localization.md)); `host/language` chooses the language, `store/language.rs` saves it |
+| `i18n/` | Leaf: the interface language in use, `tr!` messages and their catalogs, gettext `.po` catalogs, and dates in the language's own form via ICU4X ([Localization](../localization.md)); `host/language` chooses the language, `store/language.rs` saves it |
 
 Feature hosts in `host/` (one directory per domain, see `host/` layout below) bridge pure engines,
 persistence, workers, and UI. `host/alert/runtime.rs` is the alert loop shared by the GUI fallback and

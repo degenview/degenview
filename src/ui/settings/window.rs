@@ -1048,7 +1048,7 @@ mod tests {
         theme::apply(&screen.ctx, crate::ui::theme::AppTheme::Dark);
         let mut chosen = None;
         let mut last = None;
-        with_locale(Locale::Pseudo, || {
+        with_locale(Locale::PSEUDO, || {
             for _ in 0..3 {
                 last = Some(screen.run(Vec::new(), |ui| {
                     let mut page = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
@@ -1067,7 +1067,7 @@ mod tests {
                             );
                             chosen = crate::ui::settings::appearance::language(
                                 ui,
-                                Preference::Fixed(Locale::Pseudo),
+                                Preference::Fixed(Locale::PSEUDO),
                             );
                         },
                     );

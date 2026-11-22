@@ -2,7 +2,7 @@
 //! how many are unseen, and the history bucketed under day headings.
 
 use crate::format::civil_from_days;
-use crate::i18n::calendar::{month_name, weekday_name};
+use crate::i18n::datetime::weekday_month_day;
 use crate::i18n::tr;
 use crate::model::alert::AlertDomainEvent;
 use std::collections::HashSet;
@@ -137,25 +137,7 @@ fn day_title(day_start_ms: i64, today_start_ms: i64, offset_ms: i64) -> String {
     let days = (day_start_ms + offset_ms).div_euclid(DAY_MS);
     let (year, month, day) = civil_from_days(days);
     let (today_year, ..) = civil_from_days((today_start_ms + offset_ms).div_euclid(DAY_MS));
-    // 1970-01-01 was a Thursday; Monday = 0.
-    let weekday = weekday_name((days + 3).rem_euclid(7) as usize);
-    let month = month_name(month);
-    if year != today_year {
-        tr!(
-            "{weekday}, {month} {day}, {year}",
-            weekday = weekday,
-            month = month,
-            day = day,
-            year = year
-        )
-    } else {
-        tr!(
-            "{weekday}, {month} {day}",
-            weekday = weekday,
-            month = month,
-            day = day
-        )
-    }
+    weekday_month_day((year, month, day), year != today_year)
 }
 
 #[cfg(test)]

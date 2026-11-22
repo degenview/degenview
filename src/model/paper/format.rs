@@ -277,18 +277,12 @@ fn round_half_even(value: f64, digits: usize) -> f64 {
 /// "Oct 9, 14:03:07" in the viewer's time zone.
 pub fn timestamp(epoch_ms: i64, utc_offset_secs: i64) -> String {
     let seconds = epoch_ms.div_euclid(1_000) + utc_offset_secs;
-    let (_, month, day) = civil_from_days(seconds.div_euclid(86_400));
+    let (year, month, day) = civil_from_days(seconds.div_euclid(86_400));
     let rest = seconds.rem_euclid(86_400);
-    crate::i18n::tr!(
-        "{month} {day}, {time}",
-        month = crate::i18n::calendar::month_abbreviation(month),
-        day = day,
-        time = format!(
-            "{:02}:{:02}:{:02}",
-            rest / 3_600,
-            rest % 3_600 / 60,
-            rest % 60
-        )
+    crate::i18n::datetime::month_day_time(
+        (year, month, day),
+        (rest / 3_600, rest % 3_600 / 60, rest % 60),
+        true,
     )
 }
 

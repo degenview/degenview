@@ -256,11 +256,7 @@ fn popover(
     let (header, _) = ui.allocate_exact_size(vec2(POPOVER_WIDTH, 26.0), Sense::hover());
     let title = kit::galley(
         ui,
-        &crate::i18n::tr!(
-            "{month} {year}",
-            month = crate::i18n::calendar::month_name(month),
-            year = year
-        ),
+        &crate::i18n::datetime::month_year(year, month),
         kit::size::BODY,
         SEMIBOLD,
         theme::text_primary(),
@@ -298,10 +294,10 @@ fn popover(
     // Weekday initials.
     let (weekdays, _) = ui.allocate_exact_size(vec2(POPOVER_WIDTH, 20.0), Sense::hover());
     for index in 0..7 {
-        let initial = crate::i18n::calendar::weekday_initial(index);
+        let initial = crate::i18n::datetime::weekday_initial(index);
         let galley = kit::galley(
             ui,
-            initial,
+            &initial,
             kit::size::CAPTION,
             MEDIUM,
             theme::text_tertiary(),
