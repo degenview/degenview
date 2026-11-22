@@ -234,8 +234,8 @@ plot(a + b + c + d + e + f + g + h + i + j + k + l)
 
 /// Quotients with a zero divisor on most bars, the way an RSI-style ratio or a guarded division
 /// meets one: what the arithmetic costs when a result is an infinity or has no value.
-pub(crate) const DIVISION_BY_ZERO: &str = "//@version=6
-indicator(\"Division by zero\")
+pub(crate) const DIVISION_BY_ZERO_QUOTIENTS: &str = "//@version=6
+indicator(\"Division by zero quotients\")
 zero = close - close
 up = bar_index % 3 == 0 ? 0.0 : math.max(close - open, 0)
 down = bar_index % 2 == 0 ? 0.0 : math.max(open - close, 0)
@@ -767,8 +767,8 @@ fn workloads() -> Vec<Workload> {
     {
         let data = minute.clone();
         add(
-            "division_by_zero",
-            Box::new(move || evaluate(DIVISION_BY_ZERO, &data, false)),
+            "division_by_zero_quotients",
+            Box::new(move || evaluate(DIVISION_BY_ZERO_QUOTIENTS, &data, false)),
         );
     }
     {
