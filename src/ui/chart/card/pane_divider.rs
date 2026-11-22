@@ -1,6 +1,6 @@
 //! The lines between the price chart and its script panes, and between one pane and the next: a
 //! drag on one moves height between the two panes it separates. A pane's height is saved with its
-//! script (`PineInstance::pane_share`), so it survives a restart and follows the pane when the
+//! script (`PineInstance::pane`), so it survives a restart and follows the pane when the
 //! scripts are reordered.
 
 use crate::egui::{CursorIcon, Id, Rect, Sense, Ui};
@@ -40,10 +40,21 @@ impl PaneDrag {
 impl ChartCard {
     /// Lets the pointer drag the line above each expanded pane. Runs before the chart's own input
     /// so a press on a line is not a pan, a drawing anchor or a hold. Like the pane's own buttons
-    /// it takes the pointer whatever tool is armed.
-    pub(super) fn handle_pane_dividers(&mut self, ui: &Ui, chart_id: u64, layout: &FrameLayout) {
-        if layout.maximized.is_some()
+    /// it takes the pointer whatever tool is armed, but not from a workspace mode that owns the
+    /// whole chart: Select portion, or a pick of bars (`picking`: replay start, Pine Logs range).
+    /// Those see no line at all, so its pointer and its drag stay theirs.
+    pub(super) fn handle_pane_dividers(
+        &mut self,
+        ui: &Ui,
+        chart_id: u64,
+        layout: &FrameLayout,
+        picking: bool,
+    ) {
+        let no_lines = layout.maximized.is_some()
             || layout.heights.main_collapsed
+            || self.snapshot_select
+            || picking;
+        if no_lines
             || self
                 .pane_drag
                 .as_ref()
@@ -51,7 +62,7 @@ impl ChartCard {
         {
             self.pane_drag = None;
         }
-        if layout.maximized.is_some() || layout.heights.main_collapsed {
+        if no_lines {
             return;
         }
         let total = layout.full_rect.height();
@@ -83,7 +94,7 @@ impl ChartCard {
                     canvas::drag_divider(total, &drag.start, &drag.panes, index, origin.y - now.y);
                 for (id, share) in shares {
                     if let Some(instance) = self.instances.iter_mut().find(|i| i.id == id) {
-                        instance.pane_share = Some(share);
+                        instance.pane.share = Some(share);
                     }
                 }
                 ui.ctx().request_repaint();

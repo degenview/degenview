@@ -17,6 +17,7 @@
 //! window.
 
 use crate::model::chart::kind::{LineDash, Rgba};
+use crate::model::pine::instance::PaneLayout;
 use serde::{Deserialize, Serialize};
 
 // MARK: Background
@@ -631,6 +632,17 @@ pub struct PaneSpec {
     /// The height the user dragged the pane to, as a fraction of the chart's height. `None` is the
     /// default: [`PANE_SHARE`] of the chart split equally between the expanded panes.
     pub share: Option<f32>,
+}
+
+impl PaneSpec {
+    /// The pane of script `id`, laid out as `layout` says.
+    pub fn of(id: u64, layout: PaneLayout) -> Self {
+        Self {
+            id,
+            collapsed: layout.collapsed,
+            share: layout.share,
+        }
+    }
 }
 
 /// The vertical split of a chart into its main area (plot and time axis) and its script panes.

@@ -86,8 +86,17 @@ impl Snapshot {
                 mut scripts,
             } => {
                 let current = Self::indicators_of(chart);
+                // The step says which scripts are on the chart, not how their panes are laid out:
+                // a script still there keeps its pane as the user has it now.
                 for script in &mut scripts {
-                    script.keep_pane_layout_of(chart.chart.pine_instances());
+                    if let Some(now) = chart
+                        .chart
+                        .pine_instances()
+                        .iter()
+                        .find(|i| i.id == script.id)
+                    {
+                        script.pane = now.pane;
+                    }
                 }
                 chart.indicators = config;
                 chart.chart.set_pine_instances(scripts);
@@ -907,7 +916,7 @@ mod tests {
             .iter()
             .find(|script| script.name == name)
             .expect("script");
-        (script.pane_collapsed, script.pane_share)
+        (script.pane.collapsed, script.pane.share)
     }
 
     #[test]
@@ -926,8 +935,8 @@ mod tests {
             .add_pine_instance(None, "Second", "plot(close)");
         // Laid out after the step was recorded: the snapshot knows nothing of it.
         lay_out(&mut workspace, "First", |script| {
-            script.pane_share = Some(0.25);
-            script.pane_collapsed = true;
+            script.pane.share = Some(0.25);
+            script.pane.collapsed = true;
         });
 
         workspace.undo(&ctx);
@@ -947,7 +956,7 @@ mod tests {
             .chart
             .add_pine_instance(None, "Mine", "plot(close)");
         lay_out(&mut workspace, "Mine", |script| {
-            script.pane_share = Some(0.4)
+            script.pane.share = Some(0.4)
         });
         workspace
             .history

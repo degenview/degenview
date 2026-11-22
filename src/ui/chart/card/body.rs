@@ -459,7 +459,7 @@ impl ChartCard {
             &style,
         );
         self.keep_panes_in_step(&layout);
-        self.handle_pane_dividers(ui, chart_id, &layout);
+        self.handle_pane_dividers(ui, chart_id, &layout, replay.selecting);
         let plot = layout.plot;
         self.axis_width = full_rect.max.x - plot.max.x;
         let pane_rects = &layout.pane_rects;

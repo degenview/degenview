@@ -110,11 +110,12 @@ slots.
 ### Panes
 
 Pane order is the order of the scripts on the chart (`PineInstance` list), so moving a pane
-reorders that list and there is no second representation. Collapse is stored on the instance
-(`pane_collapsed`, saved with the chart; the script still runs). Maximize is view state and is
+reorders that list and there is no second representation. Collapse and dragged height are the
+instance's pane layout (`PineInstance::pane`, a `PaneLayout`, stored as its `pane_collapsed` and
+`pane_share` fields and saved with the chart; the script still runs). Maximize is view state and is
 not saved. Remove is the same removal as Scripts ▸ Remove from Chart. Layout is
 `model::chart::canvas::split_panes`: an expanded pane has the height it was dragged to
-(`PineInstance::pane_share`, a fraction of the chart's height, saved with the script), or else its
+(`PaneLayout::share`, a fraction of the chart's height), or else its
 part of the default 30 % of the height divided by the number of expanded panes; a collapsed one is a 24 pt strip, and a
 maximized pane takes everything but the strips and the time axis; the price chart then draws nothing
 but its time axis. The main chart takes what the panes leave and keeps at least 90 pt (60 % of a
@@ -130,13 +131,14 @@ main chart keep their size. Neither goes under the floors above. The first drag 
 the heights of every expanded pane; a pane added later takes the default share and the main chart
 gives it the room, one removed gives its room back to the main chart. A height follows its script
 when panes are moved. Undo and redo of a script change (`workspace::undo`) restore which scripts are
-on the chart but keep each pane's height and folded state as they are now
-(`PineInstance::keep_pane_layout_of`); a script that comes back after a removal has the layout it
+on the chart but keep each script's `pane` as it is now; a script that comes back after a removal has the layout it
 was removed with. Collapsed panes and a maximized pane have no line to drag. The drag is
 measured from the split it began on (`model::chart::canvas::drag_divider`), so rounding never
 accumulates, and every height is a difference of rounded edges, so a pane the drag does not touch
 never moves. A drag ends when the chart's panes or height change under it. The line takes the
-pointer whatever tool is armed, as the pane buttons do. There is no double-click reset.
+pointer whatever tool is armed (Zoom In included), as the pane buttons do, but a workspace mode that
+owns the whole chart (Select portion, a replay start or Pine Logs range pick) sees no line: no resize
+pointer and no drag. There is no double-click reset.
 
 Built-in indicators (volume, RSI, Bollinger) are drawn inside the price plot, not in panes, so they
 have no pane buttons.

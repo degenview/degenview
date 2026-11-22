@@ -95,13 +95,22 @@ pub struct PineInstance {
     /// Where the script's visuals sit against the chart's candles.
     #[serde(default)]
     pub visual_order: VisualOrder,
-    /// The script's pane is folded to its title strip. The script still runs: this is layout.
-    #[serde(default)]
-    pub pane_collapsed: bool,
-    /// The height the user dragged the script's pane to, as a fraction of the chart's height; with
-    /// none the pane has its part of the default split.
-    #[serde(default)]
-    pub pane_share: Option<f32>,
+    /// How the script's pane is laid out. Stored inline, as the instance's own fields.
+    #[serde(flatten)]
+    pub pane: PaneLayout,
+}
+
+/// How a script's pane sits on its chart: folded or not, and how high. This is layout, not what is
+/// on the chart: the script runs either way, and undo of a script change leaves it as it is.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct PaneLayout {
+    /// The pane is folded to its title strip.
+    #[serde(default, rename = "pane_collapsed")]
+    pub collapsed: bool,
+    /// The height the user dragged the pane to, as a fraction of the chart's height; with none the
+    /// pane has its part of the default split.
+    #[serde(default, rename = "pane_share")]
+    pub share: Option<f32>,
 }
 
 impl PineInstance {
@@ -115,18 +124,7 @@ impl PineInstance {
             visible: true,
             style_overrides: HashMap::new(),
             visual_order: VisualOrder::Script,
-            pane_collapsed: false,
-            pane_share: None,
-        }
-    }
-
-    /// Takes the pane layout (folded or not, dragged height) of the same script in `current`, if it
-    /// is there. A restored list says which scripts are on a chart, not how their panes are laid
-    /// out, so undo and redo leave a pane the way the user has it now.
-    pub fn keep_pane_layout_of(&mut self, current: &[PineInstance]) {
-        if let Some(now) = current.iter().find(|instance| instance.id == self.id) {
-            self.pane_collapsed = now.pane_collapsed;
-            self.pane_share = now.pane_share;
+            pane: PaneLayout::default(),
         }
     }
 
@@ -193,5 +191,34 @@ mod tests {
         let back: PineInstance =
             serde_json::from_str(&serde_json::to_string(&instance).unwrap()).unwrap();
         assert_eq!(back.visual_order, VisualOrder::Behind);
+    }
+
+    #[test]
+    fn the_pane_layout_is_stored_as_the_instances_own_fields() {
+        let stored: PineInstance = serde_json::from_str(
+            r#"{"id":1,"name":"x","source":"plot(close)","pane_collapsed":true}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            stored.pane,
+            PaneLayout {
+                collapsed: true,
+                share: None
+            }
+        );
+        let minimal: PineInstance =
+            serde_json::from_str(r#"{"id":1,"name":"x","source":"plot(close)"}"#).unwrap();
+        assert_eq!(minimal.pane, PaneLayout::default());
+
+        let mut instance = PineInstance::new(1, None, "x", "plot(close)");
+        instance.pane.share = Some(0.25);
+        let json: serde_json::Value = serde_json::to_value(&instance).unwrap();
+        assert_eq!(json["pane_collapsed"], false);
+        assert_eq!(json["pane_share"], 0.25);
+        assert!(json.get("pane").is_none(), "no nested object: {json}");
+        assert_eq!(
+            serde_json::from_value::<PineInstance>(json).unwrap(),
+            instance
+        );
     }
 }
