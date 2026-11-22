@@ -6,6 +6,7 @@ use crate::host::settings::SettingsHost;
 use crate::host::tab::window::TabRequest;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::model::alert::{AlertRuntimeCommand, AlertRuntimeCommandPayload};
+use crate::model::tab::windows::WindowClose;
 use crate::model::watchlist::new_id;
 use crate::native_bridge::{self, NativeCommand};
 use crate::pine_studio::ExitReason;
@@ -236,11 +237,14 @@ impl DegenViewApp {
                 TabRequest::New(window) => self.add_tab(Some(window)),
                 TabRequest::Close(tab) => self.tabs.request_close(ctx, tab),
                 TabRequest::OpenSettings => self.open_settings(ctx),
-                TabRequest::CloseWindow(window) => {
-                    for tab in self.tabs.windows().tabs_of(window) {
-                        self.tabs.request_close(ctx, tab);
+                TabRequest::CloseWindow(window) => match self.tabs.windows().close_window(window) {
+                    WindowClose::Quit => self.request_quit(ctx),
+                    WindowClose::CloseTabs => {
+                        for tab in self.tabs.windows().tabs_of(window) {
+                            self.tabs.request_close(ctx, tab);
+                        }
                     }
-                }
+                },
             }
         }
         self.tabs.drop_closed(ctx);

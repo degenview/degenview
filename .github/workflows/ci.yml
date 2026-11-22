@@ -93,6 +93,10 @@ jobs:
         with:
           persist-credentials: false
 
+      # The one validator of the changes/ fragments, the script the release runs.
+      - name: Check changelog fragments
+        run: tools/changelog.sh check
+
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}

@@ -400,9 +400,9 @@ impl ChartCard {
             return pointer;
         }
 
-        // A script that isn't an overlay (RSI, MACD …) gets a pane under the candles: 30% of the
-        // chart's height shared between them, the candles keep the rest and the time axis. On a
-        // line chart every script draws over the line instead.
+        // A script that isn't an overlay (RSI, MACD …) gets a pane under the candles, of the height
+        // the user dragged it to or its part of 30% of the chart; the candles keep the rest and the
+        // time axis. On a line chart every script draws over the line instead.
         // A price-based chart type draws bars it constructed from the candles, and the scripts
         // and indicators on it read those same bars; every other type draws the candles as they
         // are. Either way `bars` is what the chart is, and `candles` stays the market.
@@ -459,6 +459,7 @@ impl ChartCard {
             &style,
         );
         self.keep_panes_in_step(&layout);
+        self.handle_pane_dividers(ui, chart_id, &layout, replay.selecting);
         let plot = layout.plot;
         self.axis_width = full_rect.max.x - plot.max.x;
         let pane_rects = &layout.pane_rects;

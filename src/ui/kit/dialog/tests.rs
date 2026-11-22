@@ -300,6 +300,35 @@ fn reopening_a_dialog_asks_for_the_focus_again() {
     assert!(rig.focused("dismiss"), "it starts on Cancel again");
 }
 
+#[test]
+fn a_return_that_opens_a_reopened_dialog_does_not_accept_it() {
+    let dialog = spec();
+    let mut rig = Rig::new();
+    rig.settle(&dialog);
+    assert_eq!(rig.key(Key::Escape, &dialog), Some(Outcome::Dismissed));
+    for _ in 0..3 {
+        rig.frame(Vec::new(), None);
+    }
+    // The key press that asks for the dialog arrives in the frame that first draws it again; egui
+    // runs no sizing pass for a dialog it has already laid out once.
+    let press = Event::Key {
+        key: Key::Enter,
+        physical_key: Some(Key::Enter),
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    assert_eq!(rig.frame(vec![press], Some(&dialog)), None);
+    for _ in 0..3 {
+        assert_eq!(rig.frame(Vec::new(), Some(&dialog)), None);
+    }
+    assert!(
+        rig.focused("accept"),
+        "the focus lands after the opening frame"
+    );
+    assert_eq!(rig.key(Key::Enter, &dialog), Some(Outcome::Accepted));
+}
+
 /// Pictures of the dialogs: destructive short and long, an action that asks a question, a notice,
 /// a disabled action and the three-button save prompt, in both themes.
 #[test]

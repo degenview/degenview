@@ -22,7 +22,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Position, forecast, volume profile, VWAP or measurement drawings | [Forecasting, volume and measurement tools](docs/forecast-tools.md) |
 | Fibonacci or Gann drawings, level lists, fans, circles, arcs, spirals or Gann angles | [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) |
 | Session statistics: gap fills, prior-day breaks, weekday effects, `degenview_get_session_stats` | [Session statistics](docs/session-stats.md) |
-| The Liquidations / Taker flow panel, the exchanges' liquidation or trade sockets, or adding an exchange to them | [Liquidations and taker flow](docs/liquidations.md) |
+| The market flow panel (Liquidations, Taker flow, Order book / DOM), the exchanges' liquidation, trade or order-book sockets, or adding an exchange to them | [Liquidations, taker flow and order book](docs/market-flow.md) |
 | Pine language/runtime, Pine Studio, editor behavior, or example scripts | [Pine and scripts](docs/agent-guides/pine.md) |
 | Adding an indicator to a chart: the toolbar's Indicators button, the indicator catalog, or the Pine indicators bundled with the app | [Indicator catalog](docs/indicator-picker.md) |
 | User-defined functions or methods, overloads, call resolution, or the Pine type checker | [User-defined methods](docs/pine-user-methods.md) |
@@ -39,6 +39,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
+| The changelog, `changes/` fragments, release notes, or the sheet an update opens | [Releases and updates](docs/agent-guides/releases-updates.md#release-notes-and-the-changelog) |
 | The Flatpak, Linux packaging, or the sandbox | [Flatpak](docs/flatpak.md) |
 | Persisting user data: SQLite tables, `setting` keys, saved state, per-Mac IDs | [Storage and sync](docs/agent-guides/storage.md) |
 | iCloud Sync, the sync outbox, or CloudKit | [iCloud Sync](docs/icloud-sync.md) |
@@ -66,6 +67,19 @@ A pull-down is exactly as wide as its longest row. Never guess a width (`set_min
 `kit::fitted_menu` (or `kit::menu_fit`), and look at the opened menu in a picture before shipping.
 Details: [UI style](docs/agent-guides/ui-style.md).
 
+## Changelog
+
+A pull request with a change a person using the app would notice and care about adds
+`changes/<short-slug>.md`: one line per change, `new: ...`, `fixed: ...` or `fixed-rc: ...` (a bug
+only release candidates had; hidden from stable updates), in plain words, what the user sees. Small
+tweaks (spacing, colours, moved or renamed buttons, copy), refactors, tests, CI and docs get none.
+One change, one fragment: look in `changes/` first and edit an existing line for the same change;
+follow-ups to an unreleased change add nothing. `tools/release.sh <v> --dry-run` shows the section
+to review before a release. `tools/release.sh` assembles `CHANGELOG.md` from the fragments; never
+edit its sections by hand except to fix wording before a release. The update sheet and the release
+notes read that shape. Details: [Releases and updates](docs/agent-guides/releases-updates.md#release-notes-and-the-changelog)
+and `changes/README.md`.
+
 ## Supply chain
 
 Nothing reaches a release that was not reviewed, pinned and built from a signed tag on `main`.
@@ -73,7 +87,10 @@ When touching `.github/`, `tools/`, `packaging/`, `build.rs`, `Cargo.toml`/`Carg
 updater (`src/service/update/`): pin every `uses:` to a commit,
 keep job permissions minimal, never run third-party code on a macOS release job after the signing
 certificate is imported, use `--locked`, add no git or non-crates.io dependency, keep
-`cargo deny check` clean. Never ask for, store or use a GitHub token with `admin:ssh_signing_key`,
+`cargo deny check` clean. No `[patch]` and no vendored copy: `eframe` is our own crate
+`degenview-eframe` on crates.io (eframe 0.36.2 plus a Wayland fix, repository `degenview/eframe`),
+pinned like `degenview-brokers`; go back to upstream `eframe` once egui ships the fix. Never ask for,
+store or use a GitHub token with `admin:ssh_signing_key`,
 `admin:*` or `delete_repo` scope; never push a tag. Details:
 [Releases and updates](docs/agent-guides/releases-updates.md#build-hardening).
 
@@ -118,7 +135,12 @@ old output). Finished worktrees are where the disk goes.
 - Remove a worktree when its pull request merges. `tools/clean-worktrees.sh` lists every worktree and
   whether it can go; `--remove-merged` removes finished ones, never one with uncommitted changes,
   newer commits, no pull request, or a process running from it. `--clean-idle DAYS` deletes only the
-  `target/debug` of worktrees not built for that long.
+  `target/debug` of worktrees not built for that long. `--trim-incremental` deletes only the
+  `incremental/` caches, which were about 60% of 219 GB across 19 worktrees; run it when you finish
+  a task, and any time the disk is under ~50 GB free.
+- Incremental compilation is the main disk cost when several worktrees are live. Keep it off by
+  default (`[build] incremental = false` in `~/.cargo/config.toml`) and turn it on with
+  `CARGO_INCREMENTAL=1` only in the one worktree you are iterating in.
 - `[profile.dev]` keeps line tables but drops variable-level debug info (about a third of a fresh
   `target/`; the incremental cache is the rest of the growth). To inspect your code's variables in
   lldb, build with `CARGO_PROFILE_DEV_DEBUG=true` into a separate `CARGO_TARGET_DIR`.
@@ -149,7 +171,7 @@ old output). Finished worktrees are where the disk goes.
   [Tab Linking](docs/tab-linking.md), [Annotation tools](docs/annotation-tools.md),
   [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md),
   [Forecasting, volume and measurement tools](docs/forecast-tools.md),
-  [Session statistics](docs/session-stats.md), [Liquidations and taker flow](docs/liquidations.md), [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md),
+  [Session statistics](docs/session-stats.md), [Liquidations, taker flow and order book](docs/market-flow.md), [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md),
   [Symbol picker](docs/symbol-picker.md), [Workspace toolbar](docs/workspace-toolbar.md),
   [Indicator catalog](docs/indicator-picker.md), [Pine colour picker](docs/pine-color-picker.md),
   [Pine debugger](docs/pine-debugger.md), [Pine profiler](docs/pine-profiler.md),

@@ -9,8 +9,10 @@ use eframe::egui;
 use sha2::{Digest, Sha256};
 
 const FONT: &[u8] = include_bytes!("../../../assets/fonts/JetBrainsMonoNL-Regular.ttf");
+const INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
 const NOTO: &[u8] = include_bytes!("../../../assets/fonts/NotoSansSymbols2-subset.ttf");
 const JETBRAINS_LICENCE: &str = include_str!("../../../assets/fonts/OFL-JetBrainsMono.txt");
+const INTER_LICENCE: &str = include_str!("../../../assets/fonts/OFL-Inter.txt");
 const NOTO_LICENCE: &str = include_str!("../../../assets/fonts/OFL-NotoSansSymbols2.txt");
 const FONTS_README: &str = include_str!("../../../assets/fonts/README.md");
 const ROOT_README: &str = include_str!("../../../README.md");
@@ -46,13 +48,29 @@ fn the_font_is_the_file_the_readme_describes() {
 }
 
 #[test]
-fn both_licence_texts_are_the_ofl_with_the_right_copyright() {
+fn the_ui_font_is_the_file_the_readme_describes() {
+    let line = FONTS_README
+        .lines()
+        .find(|line| line.starts_with("sha256 ") && line.contains("Inter-Regular.ttf"))
+        .expect("the README states Inter's hash");
+    assert!(line.contains(&sha256(INTER)), "{} vs {line}", sha256(INTER));
+    assert!(FONTS_README.contains("411,640 bytes"));
+    assert_eq!(INTER.len(), 411_640);
+    assert_eq!(&INTER[..4], &[0, 1, 0, 0], "a static TrueType font");
+}
+
+#[test]
+fn the_licence_texts_are_the_ofl_with_the_right_copyright() {
     for (text, holder) in [
         (
             JETBRAINS_LICENCE,
             "Copyright 2020 The JetBrains Mono Project Authors",
         ),
         (NOTO_LICENCE, "Copyright 2022 The Noto Project Authors"),
+        (
+            INTER_LICENCE,
+            "Copyright (c) 2016 The Inter Project Authors",
+        ),
     ] {
         let first = text.lines().next().unwrap();
         assert!(first.starts_with(holder), "{first}");
@@ -62,21 +80,26 @@ fn both_licence_texts_are_the_ofl_with_the_right_copyright() {
         );
         assert!(text.contains("SIL Open Font License, Version 1.1"));
         assert!(text.contains("SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007"));
-        assert!(text.contains("PERMISSION & CONDITIONS"));
+        assert!(
+            text.contains("PERMISSION & CONDITIONS") || text.contains("PERMISSION AND CONDITIONS")
+        );
         assert!(text.contains("DISCLAIMER"));
     }
     assert!(JETBRAINS_LICENCE.contains("https://github.com/JetBrains/JetBrainsMono"));
 }
 
 #[test]
-fn the_readmes_name_both_fonts_their_licence_and_their_files() {
+fn the_readmes_name_the_fonts_their_licence_and_their_files() {
     for readme in [FONTS_README, LICENSING] {
         for needed in [
             "JetBrains Mono",
             "Noto Sans Symbols 2",
+            "Inter",
             "SIL Open Font License",
             "OFL-JetBrainsMono.txt",
             "OFL-NotoSansSymbols2.txt",
+            "OFL-Inter.txt",
+            "The Inter Project Authors",
             "The JetBrains Mono Project Authors",
             "The Noto Project Authors",
         ] {
@@ -104,6 +127,8 @@ fn every_file_the_readmes_point_at_exists() {
     for file in [
         "assets/fonts/JetBrainsMonoNL-Regular.ttf",
         "assets/fonts/NotoSansSymbols2-subset.ttf",
+        "assets/fonts/Inter-Regular.ttf",
+        "assets/fonts/OFL-Inter.txt",
         "assets/fonts/OFL-JetBrainsMono.txt",
         "assets/fonts/OFL-NotoSansSymbols2.txt",
         "assets/fonts/README.md",
@@ -133,11 +158,31 @@ fn the_licence_texts_ship_with_every_kind_of_download() {
             text.contains("OFL-NotoSansSymbols2.txt"),
             "{what}: Noto's licence"
         );
+        assert!(text.contains("OFL-Inter.txt"), "{what}: Inter's licence");
     }
     assert!(BUNDLE_SCRIPT.contains("Contents/Resources/Licenses"));
     assert!(FLATPAK.contains("/app/share/licenses/es.nico.degenview"));
     // Linux and Windows archives both.
     assert_eq!(RELEASE.matches("OFL-JetBrainsMono.txt").count(), 2);
+    assert_eq!(RELEASE.matches("OFL-Inter.txt").count(), 2);
+}
+
+#[test]
+fn the_ui_text_is_set_in_inter_on_every_platform() {
+    let ctx = context();
+    ctx.run_ui(egui::RawInput::default(), |ui| {
+        let inter = egui::FontId::new(40.0, egui::FontFamily::Proportional);
+        let (a, i) = ui.fonts_mut(|f| (f.glyph_width(&inter, 'a'), f.glyph_width(&inter, 'i')));
+        // Proportional: 'i' is far narrower than 'a'; Inter's 'a' is ~0.55 em.
+        assert!(i < a * 0.6, "{i} vs {a}");
+        assert!(
+            (a / 40.0 - 0.55).abs() < 0.05,
+            "Inter's 'a' is 0.55 em: {}",
+            a / 40.0
+        );
+    })
+    .textures_delta
+    .clear();
 }
 
 /// A context with the app's fonts, and one frame run so that they exist.
@@ -214,4 +259,11 @@ fn what_the_bundled_font_lacks_falls_back_to_the_rest_of_the_chain() {
     })
     .textures_delta
     .clear();
+}
+
+/// At 1x egui's grid-fitting makes Inter a pixel taller (and heavier) than the font draws, which
+/// reads as stretched text next to a 2x screen.
+#[test]
+fn the_ui_font_is_not_hinted() {
+    assert_eq!(theme::bundled_ui_font().tweak.hinting, Some(false));
 }

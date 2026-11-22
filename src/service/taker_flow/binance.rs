@@ -2,7 +2,8 @@
 //! nothing is sent. An aggregated trade is the fills of one taker order at one price, which is what
 //! flow needs.
 
-use crate::model::taker_flow::{Market, Taker, Trade, Venue};
+use crate::model::exchange::{Market, Venue};
+use crate::model::taker_flow::{Taker, Trade};
 use crate::service::net::ws::{Keepalive, Session};
 use serde_json::Value;
 use std::time::Duration;

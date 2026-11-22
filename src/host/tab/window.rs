@@ -8,7 +8,9 @@
 
 use crate::lock::lock;
 use crate::model::tab::window_frames::{Frame, FrameMemory, Layout, Sample};
-use crate::model::tab::windows::{TabId, TabWindow, TabWindows, WindowId};
+use crate::model::tab::windows::{
+    LAST_WINDOW_QUITS, TabId, TabWindow, TabWindows, WindowClose, WindowId,
+};
 use crate::ui::window::chrome;
 use crate::ui::window::tab_bar::{self, TabBarEvent};
 use eframe::egui::{self, Pos2, Rect, Vec2, ViewportCommand, ViewportId, vec2};
@@ -66,7 +68,8 @@ pub enum TabRequest {
     New(WindowId),
     /// Close one tab (a Pine Studio with edits asks first).
     Close(TabId),
-    /// The OS close button: close every tab of the window.
+    /// The OS close button: `TabWindowHost::close_window` says whether it quits or closes the
+    /// window's tabs.
     CloseWindow(WindowId),
     /// The settings button or its shortcut (Windows and Linux): show the Settings window.
     OpenSettings,
@@ -311,6 +314,11 @@ impl TabWindowHost {
 
     pub fn request_close_window(&self, window: WindowId) {
         self.lock().requests.push(TabRequest::CloseWindow(window));
+    }
+
+    /// What the OS close button of `window` means on this platform.
+    pub fn close_window(&self, window: WindowId) -> WindowClose {
+        self.lock().windows.close_window(window, LAST_WINDOW_QUITS)
     }
 
     /// The tabs of `window`, for closing them one by one.
@@ -830,6 +838,18 @@ mod tests {
         host.add_tab(3);
         assert_eq!(host.window_of(3), Some(second));
         assert_eq!(host.ordered_tabs(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn the_os_close_of_the_only_window_follows_the_platform_policy() {
+        let host = TabWindowHost::restore([1, 2], Placement::default());
+        let window = host.focused_window().unwrap();
+        let expected = if LAST_WINDOW_QUITS {
+            WindowClose::Quit
+        } else {
+            WindowClose::CloseTabs
+        };
+        assert_eq!(host.close_window(window), expected);
     }
 
     #[test]

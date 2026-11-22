@@ -7,6 +7,10 @@
 //! to reconnect or still looking something up, so nothing keeps retrying for a viewer that left.
 //! Dropping the stream closes them at once.
 
+mod retry;
+
+use retry::retry_until_shutdown;
+
 use crate::clock::now_ms;
 use crate::service::net::ws::{Frame, Session};
 use std::sync::Arc;
@@ -69,14 +73,29 @@ impl Worker {
         });
     }
 
+    /// Calls `attempt` until it answers, waiting `every` between tries; `None` when the stream was
+    /// shut down first. For the lookups a feed needs before it can start (a market list, a tick
+    /// size), which fail when the network does.
+    pub fn retry<T>(&self, every: Duration, attempt: impl FnMut() -> Option<T>) -> Option<T> {
+        retry_until_shutdown(&self.shutdown, every, attempt)
+    }
+
+    /// A worker on no stream, shut down already or not, for tests of what runs on one.
+    #[cfg(test)]
+    pub fn detached(stopped: bool) -> Self {
+        Self {
+            lease: Lease::default(),
+            repaint: Arc::new(|| {}),
+            last_repaint: AtomicI64::new(0),
+            shutdown: AtomicBool::new(stopped),
+            started: AtomicUsize::new(0),
+            running: AtomicUsize::new(0),
+        }
+    }
+
     /// Whether anybody still wants the feed.
     pub fn is_wanted(&self) -> bool {
         self.lease.is_held()
-    }
-
-    /// Set once the stream is dropped; long waits poll it.
-    pub fn shutdown(&self) -> &AtomicBool {
-        &self.shutdown
     }
 
     /// Asks for a repaint, at most every 250 ms however many messages arrive.
@@ -186,9 +205,9 @@ mod tests {
         lease.renew(Duration::from_secs(60));
         let stream = stream(&lease, Arc::new(|| {}));
         let worker = Arc::clone(&stream.worker);
-        assert!(!worker.shutdown().load(Ordering::Acquire));
+        assert!(!worker.shutdown.load(Ordering::Acquire));
         drop(stream);
-        assert!(worker.shutdown().load(Ordering::Acquire));
+        assert!(worker.shutdown.load(Ordering::Acquire));
     }
 
     #[test]
@@ -197,7 +216,7 @@ mod tests {
         lease.renew(Duration::from_millis(100));
         let stream = stream(&lease, Arc::new(|| {}));
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !stream.worker.shutdown().load(Ordering::Acquire) {
+        while !stream.worker.shutdown.load(Ordering::Acquire) {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the watchdog never fired"
@@ -214,7 +233,7 @@ mod tests {
             lease.renew(Duration::from_millis(400));
             std::thread::sleep(Duration::from_millis(150));
         }
-        assert!(!stream.worker.shutdown().load(Ordering::Acquire));
+        assert!(!stream.worker.shutdown.load(Ordering::Acquire));
     }
 
     #[test]

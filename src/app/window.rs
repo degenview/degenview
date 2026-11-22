@@ -29,6 +29,7 @@ use crate::ui::settings::window;
 use crate::ui::shortcut;
 use crate::ui::theme;
 use crate::ui::window::tab_bar::{self, TabBar, TabView, WindowChoice};
+use crate::ui::window::update_sheet;
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
@@ -73,6 +74,7 @@ pub(super) struct WindowEnv {
     pub(super) snapshots: SnapshotHost,
     pub(super) liquidations: crate::host::liquidation::LiquidationHost,
     pub(super) taker_flow: crate::host::taker_flow::TakerFlowHost,
+    pub(super) depth: crate::host::depth::DepthHost,
     pub(super) mcp_questions: McpQuestions,
     /// The shared quotes the tab strip reads its prices from.
     pub(super) quote_book: WatchlistQuoteBook,
@@ -91,6 +93,7 @@ fn show_window(
         // The app closes the window's tabs (a script with edits asks first) and drops the
         // window itself; until then it stays up.
         ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        env.updates.close_review_in(ctx.viewport_id());
         env.tabs.windows().request_close_window(window_id);
         ctx.request_repaint_of(egui::ViewportId::ROOT);
         return;
@@ -200,6 +203,7 @@ fn show_window(
     if events.contains(&tab_bar::TabBarEvent::UpdateClicked) {
         env.updates.activate(&ctx);
     }
+    update_sheet::show_review(&ctx, &env.updates, &update);
     if focused {
         show_restart_prompt(&ctx, env, &update);
         show_session_save_error(&ctx, &env.session_save_error);
@@ -346,6 +350,7 @@ impl DegenViewApp {
             snapshots: self.snapshots.clone(),
             liquidations: self.liquidations.clone(),
             taker_flow: self.taker_flow.clone(),
+            depth: self.depth.clone(),
             mcp_questions: self.mcp.questions().clone(),
             quote_book: self.quote_book.clone(),
         };
@@ -423,6 +428,8 @@ impl DegenViewApp {
                 if let Ok(mut host) = host.lock() {
                     host.set_open(false);
                 }
+                // The viewport id is reused when Settings opens again.
+                updates.close_review_in(settings_viewport_id());
                 return;
             }
             if let Ok(mut host) = host.lock() {

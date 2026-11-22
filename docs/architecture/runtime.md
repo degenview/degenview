@@ -3,7 +3,9 @@
 ## Startup and windows
 
 `main` opens `Store`, builds `eframe::NativeOptions`, and starts `DegenViewApp` in a hidden root
-viewport. Each visible deferred viewport renders one `TabWindows` entry: the app-owned tab strip and
+viewport (on Wayland, which cannot hide a window, the `degenview-eframe` crate never presents it, so it
+never maps and its passes never wait on frame callbacks the compositor may withhold; see its
+README). Each visible deferred viewport renders one `TabWindows` entry: the app-owned tab strip and
 its active `ChartWorkspace`, `PortfolioTab`, or `PineStudio`. `TabWindowHost` owns grouping and
 dragging; the app's `TabState` owns the `TabSlot`s, and `DegenViewApp` routes Settings/Alerts window
 actions to shared hosts.

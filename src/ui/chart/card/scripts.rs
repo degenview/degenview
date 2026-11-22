@@ -206,7 +206,7 @@ impl ChartCard {
             }
             PaneAction::ToggleCollapse => {
                 if let Some(instance) = self.instances.iter_mut().find(|i| i.id == id) {
-                    instance.pane_collapsed = !instance.pane_collapsed;
+                    instance.pane.collapsed = !instance.pane.collapsed;
                 }
                 if self.maximized_pane == Some(id) {
                     self.maximized_pane = None;
@@ -218,7 +218,7 @@ impl ChartCard {
                 } else {
                     // A maximized pane is expanded: that is the state it returns to.
                     if let Some(instance) = self.instances.iter_mut().find(|i| i.id == id) {
-                        instance.pane_collapsed = false;
+                        instance.pane.collapsed = false;
                     }
                     self.maximized_pane = Some(id);
                 }

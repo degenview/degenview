@@ -326,6 +326,8 @@ pub struct ChartCard {
     maximized_pane: Option<u64>,
     /// The scripts that had a pane at the last frame, top to bottom.
     pane_ids: Vec<u64>,
+    /// The line between panes being dragged. View state, not saved.
+    pane_drag: Option<pane_divider::PaneDrag>,
     /// The time a vertical cursor line is locked at (context menu). View state, not saved: it is
     /// not a drawing, and it follows neither templates nor linked charts.
     time_lock: Option<i64>,
@@ -435,6 +437,7 @@ impl Default for ChartCard {
             timeframe: None,
             maximized_pane: None,
             pane_ids: Vec::new(),
+            pane_drag: None,
             time_lock: None,
             bar_marker: None,
             logs_range: None,
@@ -791,6 +794,7 @@ mod navigation;
 mod overlay_card;
 mod overlays;
 mod paint;
+mod pane_divider;
 mod price_scale;
 mod scripts;
 mod snapshot;

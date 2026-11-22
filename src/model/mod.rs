@@ -1,11 +1,14 @@
 pub mod alert;
 pub mod annotation;
 pub mod broker;
+pub mod changelog;
 pub mod chart;
 pub mod cursor;
+pub mod depth;
 pub mod drawings;
 pub mod editor_theme;
 pub mod encoding;
+pub mod exchange;
 pub mod fib;
 pub mod forecast;
 pub mod ids;

@@ -28,7 +28,7 @@ impl LiquidationFeed {
             follow(worker, &binance_tape, &binance::session(), binance::parse);
         });
         stream.spawn(move |worker| {
-            let Some(session) = bybit::session(worker.shutdown()) else {
+            let Some(session) = bybit::session(worker) else {
                 return;
             };
             follow(worker, &tape, &session, bybit::parse);
@@ -73,7 +73,8 @@ fn add(tape: &Mutex<Tape>, liquidations: Vec<Liquidation>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::liquidation::{Exchange, MinSize, Side};
+    use crate::model::exchange::Exchange;
+    use crate::model::liquidation::{MinSize, Side};
     use std::time::Duration;
 
     fn liquidation() -> Liquidation {

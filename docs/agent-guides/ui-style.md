@@ -6,6 +6,9 @@ do not restyle screens you were not asked to touch, and do not copy their older 
 
 ## Rules
 
+- **One bundled UI font.** Text is Inter Regular on every platform (`theme::bundled_ui_font`, first of the
+  proportional family); never reintroduce a system font for text. One weight only: `strong()` brightens, it
+  does not embolden. No tabular digits (egui has no OpenType features). Details: `assets/fonts/README.md`.
 - **Flat surfaces.** Faint fill (`theme::card_fill`), 1px hairline (`theme::card_border`, a clearly
   visible lighter gray, not faint), radius `kit::CARD_RADIUS` (10). Build cards with `kit::card_frame`.
   No gradients, lit top edge or drop shadows; shadows only for things floating above the app (menus,
@@ -32,6 +35,7 @@ do not restyle screens you were not asked to touch, and do not copy their older 
   its text, centred); a progress toast puts a 48 one above its text, as the snapshot notice does.
   Every busy state in the app uses it: the large ones above, and the small inline ones (Test
   buttons, busy buttons, field adornments, import rows) at 10-16.
+- **Lists that scroll say so.** A scrolling list in a sheet keeps its bar in view (`kit::scroll::keep_bars_visible` around the `ScrollArea`) and fades the edge that has more past it (`kit::scroll::Beyond::of` from the area's offset, content and viewport, then `fade_edges`), so a cut list never looks finished. The update sheet is the reference.
 - **One scale of text.** Page title `kit::size::TITLE2 + 3`, section heading `HEADLINE` bold, body
   `BODY`, hints `CAPTION` in `text_secondary`. Sizes only from `kit::size`.
 
@@ -39,6 +43,12 @@ do not restyle screens you were not asked to touch, and do not copy their older 
 
 - **One top bar per tab.** Every tab kind (chart, Portfolio, Pine Studio) opens with `ui::kit::bar`: 44 pt (`kit::bar::HEIGHT`) on `theme::chrome()`, flat buttons, hairline separators, labels falling back to icons. Build a new tab's controls as items of that bar ([Workspace toolbar](../workspace-toolbar.md)); never a second header style.
 - **Docked panels.** Only egui's separator (`theme::border()`). Never `Frame::stroke` or painted edge lines. `show_separator_line(false)` only when deliberately replacing the separator.
+- **Outlined controls.** Segmented controls, tab bars and pull-down pickers share one look from
+  `kit::outline`: a dark well with a hairline border (`RADIUS` 8), the chosen segment on a flat lighter
+  plate in bold type, a thin divider between unselected neighbours, `HEIGHT` 24 in a form row (level with fields and
+  buttons), `TALL_HEIGHT` 28 in a header row. Never paint your own
+  track or plate; a header control that sits beside them (an account chip, a venue pill) uses
+  `outline::paint_track` and `outline::TALL_HEIGHT`/`RADIUS`, so a row of them shares one edge.
 - **Menus.** `kit::menu_row`, `menu_item`, `menu_heading`, `menu_separator`, `menu_submenu` inside `kit::menu_popup` or `kit::context_popup`, after `kit::menu_scope`. Never bare egui buttons, radios, checkboxes or menu buttons. `ui.close()` for actions that dismiss; toggles keep it open.
 - **Menu sizing.** Fit to the longest row, never wider: `kit::fitted_menu` / `fitted_menu_rows` for button menus, `fitted_context_menu` for right-clicks, `menu_fit` / `menu_fit_rows` inside popups. Helpers measure dynamic menus only while open. Test fixed-width menus against `kit::menu_width_for_rows` (see `menu_widths_fit_their_rows` in `watchlist/sidebar/tests.rs`). Never guess widths with `set_min_width` or `set_width`. Check visually that the longest label ends one row inset from the edge.
 - **Buttons are neutral, never blue.** No blue accent in fills, borders, labels or outlines. Use `kit::sheet_button` (`prominent`), `kit::push_button`, footer Primary, or `theme::card_fill` / `card_border` with `text_primary`. Large sheet actions: `kit::large_prominent_button`; destructive: `kit::destructive_sheet_button`. Accent colours are for data and state, not controls. Compare new buttons with neighbouring sheets; existing accent buttons are not all audited.
@@ -73,14 +83,16 @@ content they act on.
 | Palette (`palette`) | `Tone`, `primary`, `hairline`, `window`, `control`, `GREEN`/`ORANGE`/`RED`; byte alphas with `theme::with_alpha_byte`, opacities with `theme::with_alpha` |
 | Pills (`pill`) | `status_badge`, `paint_status_badge`, `paint_chip`, `paint_count`, `value_chip` |
 | Market logos (`ticker_icon`) | `ticker_icon`, `chart_icon`, `cached_logo` (the icon cache's logo in a circle, asking for it when missing), `round_image`, `monogram_with`, `source_badge` |
+| Outlined look (`outline`) | the one look of segmented controls, tab bars and pickers: `paint_track`, `paint_plate`, `paint_divider`, `HEIGHT`, `RADIUS` |
 | Tabs (`tab_bar`) | `tab_bar`, `tab_bar_slim`, `tab_bar_regular` |
-| Menus (`menu/`) | see Menus above, plus `menu_picker` |
+| Menus (`menu/`) | see Menus above, plus `menu_picker` (outlined pull-down) |
 | Buttons (`button`) | `push_button`, `sheet_button`, `footer_button`, `large_button`, `large_prominent_button`, `neutral_button` (32 pt: a near-white / near-black plate for a window's main action, or a quiet fill; `busy`), `tinted_button`, `cta_button`, `destructive_sheet_button`, `destructive_button` (red text), `open_button` (opens a URL), `hover_button` |
 | Fields (`field`) | `field` (labelled, with a reveal eye for secrets), `search_field`, `plain_field`, `input_frame`, `field_frame`, `FIELD_HEIGHT`; saving as typed: `Autosave` (`autosave`) |
 | Form controls (`form`) | `switch`, `paint_switch`, `segmented`, `segments` (per-choice tooltip and disabled, focus ring), `stepper`, `color_well`; by path `ruler` (a dial of sliding ticks) |
 | Cards (`card`) | `card_frame`, `CARD_RADIUS`, `paint_card_badge`, `paint_well`, `divider` (hairline across), `panel_divider` (a docked panel's separator line) |
 | Pages (`page`) | `empty_state`, `footer_bar`, `notice_card` |
 | Dialogs (`confirm`) | `confirm`, `alert`, `notice` over `kit::dialog` |
+| Modal focus (`focus`) | `start_on` (the opening focus of a dialog or sheet, repeated through egui's sizing pass), `paint_ring`; a sheet's focusable buttons: `sheet_button_focusable` |
 | Times (`time_text`, by path) | `date_text`, `clock_time`, `clock_time_seconds` (a table's hh:mm:ss cell), `relative_time` |
 
 ## Sidebar and page layout

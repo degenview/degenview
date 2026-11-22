@@ -34,17 +34,25 @@ final `0.6.0` is a new tag rebuilt from the last commit, never a promoted RC bin
   Informational: nothing reads it back, never sent anywhere. Each release has its tag commit's id.
 
 1. Land on `main`; require a clean tree plus test, clippy, and fmt checks.
-2. Preview with `tools/release.sh <version> --dry-run`.
+2. Preview with `tools/release.sh <version> --dry-run`. The script starts by fetching `origin/main`
+   and refuses unless the local `main` is exactly that commit (also with `--dry-run`, so the
+   preview shows the section for what would ship): behind, it says to `git pull --ff-only`; ahead
+   or diverged, `main` holds commits that never went through a pull request. The release commit is
+   cut from the local `main` and the tag goes on it, so a stale `main` would publish a tag that
+   misses what was already merged.
 3. Run `tools/release.sh <version>` (`--yes` skips confirmation): creates `release/v<version>`,
-   bumps Cargo files, opens a PR, merge-commits it, then creates and pushes a signed tag on merged
-   `main`. Hyphenated versions publish as GitHub prereleases; only Release Candidate offers `-rc.N`.
+   bumps Cargo files, writes the changelog section and deletes the fragments, opens a PR,
+   merge-commits it, then creates and pushes a signed tag on the release commit (not `main`'s tip:
+   a pull request merged while the release was open would ship in the tag without a changelog line). Before tagging it checks `main` contains that commit, its `Cargo.toml` has
+   the version and `changes/` holds only `README.md`; any failure says no tag was created. Hyphenated
+   versions publish as GitHub prereleases; only Release Candidate offers `-rc.N`.
 4. The tag-triggered Release workflow verifies tag identity/version, builds macOS arm64/x64 (zip +
    disk image each), Windows x64/ARM64 (zip + per-user installer each), Linux x64/arm64 tarballs and a
    Flatpak per Linux CPU, then publishes. Watch with `gh run watch`; confirm all twelve assets.
 
-Release notes: generated from `git log --no-merges` (no changelog file). Stable lists everything
-since the previous stable tag (`0.6.0` repeats `0.6.0-rc.1`); an RC only what is new since the
-previous tag. The workflow runs from the tag's commit, so a notes-step change must be on `main` first.
+Release notes: curated, not generated from commits; see [Release notes and the
+changelog](#release-notes-and-the-changelog). The workflow runs from the tag's commit, so a
+notes-step change must be on `main` first.
 
 Release builds restore **no build cache**: whatever could write one would end up signed in the next
 release. (`release-cache.yml` and its weekly glibc check are gone; `release.yml` runs that check on
@@ -68,6 +76,85 @@ steps (steps share no shell state; a shared file prevents drift); `tools/test-re
 
 Never squash/rebase the release PR or reuse/move a published tag. Fix a bad release with a new
 version. Re-run a failed tagged build through the Release workflow dispatch.
+
+## Release notes and the changelog
+
+What a person using the app notices, per release, in plain words. Three stages, one format.
+
+1. **Fragments.** A pull request with a user-visible change adds `changes/<short-slug>.md`: one change
+   per line, `new: <text>`, `fixed: <text>` or `fixed-rc: <text>`, nothing else (`changes/README.md`
+   has the rules, tone and examples). Many parallel pull requests each add their own file, so none
+   conflict. Small tweaks (polish, moved or renamed buttons, copy) and internal-only work
+   (refactors, tests, CI, docs) add none. One change is one line: a stack of pull requests building
+   a feature adds it once, a follow-up to something unreleased edits that line instead of adding
+   one. `fixed:` is for a bug that reached a stable release; `fixed-rc:` for one that only ever
+   shipped in release candidates. `tools/changelog.sh` is the only validator of the format: it also
+   refuses the same change text on two lines, naming both `file:line`s. CI's lint job runs `check`,
+   and `cargo test` runs the script (the repository's fragments, and scratch trees for what it
+   rejects and for the render, insert and notes round trip); no Rust code restates the grammar, so
+   the two cannot disagree.
+2. **`CHANGELOG.md`**, newest first. `tools/release.sh` renders the fragments into a new section
+   (`tools/changelog.sh render|insert`), deletes them and commits both with the version bump in the
+   release pull request. `--dry-run` prints the section; a malformed fragment fails with
+   `file:line` before anything is touched, and so does one that is untracked, ignored or has
+   uncommitted changes (it names the file; otherwise `git rm` would fail after the Cargo and
+   changelog edits). A release with no fragments still gets its heading.
+   `fixed-rc:` lines render under `### Fixed in release candidates`, after `### Fixed`, and the
+   subsection is left out when empty. Run `tools/release.sh <v> --dry-run` before cutting a release
+   and merge or reword the fragments in a normal pull request first. Never edit old sections by
+   hand beyond fixing wording before the release.
+3. **The release body** (`release.yml`, "Generate release notes"): `tools/changelog.sh notes <tag>
+   <prev>` copies the sections after the previous release (stable: after the previous stable, so
+   `0.6.0` carries every `0.6.0-rc.N` section; release candidate: after the previous tag) verbatim
+   with no wrapper heading, then the commit list folded in `<details><summary>All commits</summary>`,
+   the Full diff line and the Downloads table. A tag with no section writes only the rest. For a
+   stable tag each `### Fixed in release candidates` subsection (the aggregate's and the candidates'
+   own) is wrapped in an HTML comment, a `<!-- release-candidate fixes` line before its heading and
+   a `-->` line after its last entry, so GitHub does not show bugs a reader coming from a stable
+   release never had; a candidate's notes show them. A section that held only those fixes is wrapped
+   whole in one such comment, heading included (an empty release's own heading stays). They are
+   hidden, not dropped, because a fix first shipped in the stable release is in no candidate's body,
+   and a person on `0.6.0-rc.1` reads it only here. `check` refuses a change containing `<!--` or
+   `-->`, which would break the comment. Releases before the changelog existed keep their commit-list bodies.
+
+The shape is a contract with the app. `model::changelog::parse` reads release bodies for the update
+sheet: a `## <version> ...` heading (optional `v`) opens a section, `### New` / `### Fixed` /
+`### Fixed in release candidates` set the list (the last is `Section::fixed_rc`), `- ` bullets are
+the entries; any other `#`/`##` heading ends the section (so `## Downloads` and the old
+`## Changes since ...` commit-log bodies yield nothing) and `<details>` blocks are skipped. The
+comment's two marker lines are neither headings nor bullets, so they are ignored and what is
+between them is read like any other text.
+`model::changelog::notes_for_range` builds the sheet's lists. `service::update::check` only maps each
+`ReleaseDto` to a `ListedRelease` (tag, draft, whether the release workflow wrote it, body) and calls
+it; the policy is pure and tested in `model/changelog/tests.rs`. It reads the sections of every
+published release the workflow wrote, keeps those after the running version up to the offered one,
+newest first, one per version (the release of that version wins over a repeat in a later body), and
+hands them to `ReleaseNotes::from_sections(sections, include_rc_fixes)`, passing true only when the
+running version is a prerelease: then the candidate fixes follow each section's own fixes in the
+sheet's Fixed list; otherwise they are dropped and not counted as omitted (`Section::omitted_rc`
+holds what the caps left out of them, added to `omitted` only then), so a person updating from a
+stable version never sees them, whatever the release body holds. `Version` (SemVer order, `Stability`)
+lives beside it in `model::changelog` so the updater's channels and the range read a tag the same
+way. What the lists cannot say is `Coverage`, not part of `ReleaseNotes`, carried on
+`check::Release::coverage` and `Phase::Available::coverage`: `unsummarized` is the published
+releases in the range (any author, drafts excluded) whose version no trusted body has a section for,
+such as releases from before the changelog; `check_pages` reads at most three pages of 30 releases
+and, when it stops there without a short last page, a 404 or a release at or below the running
+version, sets `history_incomplete` (releases it never read are not in `unsummarized`). The sheet's
+closing lines come from `ReleaseNotes::footnotes(&Coverage)` and the sheet only draws them: when the
+lists are not empty it ends with what the caps left out ("And N more changes in the full release
+notes.", or without a count when a body was cut short), "N releases since your version have no
+summary, so their changes are not listed." and "Older releases are not listed here, so some changes
+may be missing."; with nothing to list it shows only "No summary of changes is available for this
+version." Changing the headings or bullets in `tools/changelog.sh` or the workflow breaks
+the sheet. `cargo test` runs the script on the fragments and checks `CHANGELOG.md` against the same rules, so
+CI catches a malformed one; the archive is checked section by section, since the caps below are for one
+release body and the file grows with every release. Input is bounded (64 KiB body, 64 sections, 100 entries per list per
+section, 400 characters per entry, 300 entries per merged list). A body over 64 KiB is cut back to
+its last whole line and the section being read there is `truncated`; the sheet then ends with "And
+more changes in the full release notes." instead of a count, which would be too low. Not verified: a real release body
+produced by the workflow, and the sheet against a live GitHub reply; both wait for the first
+release cut with fragments.
 
 ## Trust and packaging
 
@@ -138,11 +225,16 @@ Keeps a hostile change out of a signed release; each rule's reason is in `releas
 - **Dependencies.** `supply-chain.yml` runs `cargo deny` (`deny.toml`: RustSec advisories, yanked
   crates, crates.io only, license allow list, banned TLS stacks) on every PR and weekly. An `ignore`
   needs a reason. Locally: `cargo install cargo-deny --locked && cargo deny check`.
+  Nothing is patched or vendored. The one dependency we changed is `eframe` (a Wayland fix for hidden
+  viewports, issue #622): it is our own crate `degenview-eframe` (repository `degenview/eframe`, eframe
+  0.36.2 plus that diff), published to crates.io and pinned exactly in `Cargo.toml` as
+  `eframe = { package = "degenview-eframe", version = "=0.36.2" }`, so `cargo deny` and the checksum in
+  `Cargo.lock` cover it like any other crate. Remove it once egui ships the fix.
 - **Seven-day cooldown.** `.cargo/config.toml` sets `global-min-publish-age = "7 days"` (Cargo
   1.100+), matching Dependabot's `cooldown`: resolving skips crate versions newer than a week.
-  `--locked` builds are unaffected. Our own `degenview-brokers` falls under it too, so bumping its pin
-  right after a publish fails to resolve; that update, or an urgent security fix, runs with
-  `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`.
+  `--locked` builds are unaffected. Our own `degenview-brokers` and `degenview-eframe` fall under it
+  too, so bumping a pin right after a publish fails to resolve; that update, or an urgent security
+  fix, runs with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`.
 - **Repository settings** (not settable by workflows): a `release` environment with the signing
   secrets, deploying only from `v*` tags; a ruleset blocking creating/moving `v*` tags except by the
   maintainer; required status checks on `main`; "Require actions to be pinned to a full-length commit
@@ -404,6 +496,31 @@ executables). Deploy Production's CloudKit schema before a release that changes 
   check or a channel switch clears it directly.
 - `install_target` (runs `codesign` on macOS) is looked up on the update worker by the first tick, not
   at app start; until then an available update says so and is not installable.
+- **Review sheet.** Clicking the tab-bar mark or About's **Update…** on an available update opens
+  `ui::window::update_sheet` (New / Fixed lists, Update and Cancel); installing starts only from its
+  Update. A build that cannot install gets the same sheet with **View Release** as the primary
+  (About's button reads **View Release…**, so the page opens only from the sheet). The primary
+  button takes the keyboard focus when the sheet opens (`kit::focus::start_on`, as in `kit::dialog`)
+  and the sheet reads no Return of its own: the Return that pressed About's button must not confirm
+  the sheet in the same frame. `start_on` asks for the focus from the frame after the opening one,
+  because egui runs no sizing pass for a sheet it has drawn before, so a focused button would answer
+  the opening Return. Update installs the version the sheet drew
+  (`UpdateHost::install(ctx, version)` does nothing when a check has replaced the offer meanwhile,
+  and the sheet stays open on the new one); a version drawn for the first time in a frame is not
+  answered either (`UpdateHost::note_shown`), so a Return meant for the old offer does not install
+  the new one. Cancel always counts. The list takes the height the window leaves after the
+  rest of the sheet (measured on the previous frame), between 96 and 360 pt, so the footer stays
+  inside the app's smallest windows. The
+  host holds which window shows it (`UpdateHost::review`, `review_open_in`, `close_review`, `close_review_in`
+  over `host::update::review::ReviewState`; memory only, one window; a window that is closing, Settings
+  and tab windows, calls `close_review_in` with its viewport so a reused viewport id does not bring the
+  sheet back): asking (`review_open_in`) changes nothing; the sheet ends where the offer changes
+  (`State::settle`, run by a channel switch, a check's answer, an install starting or ending), when
+  the phase leaves `Available`, and does not return for a later update. A failed install retries from the mark without
+  the sheet. The notes are `Phase::Available::notes` (an `Arc`) with their `coverage`:
+  `model::changelog::notes_for_range` merges the sections of every release body `update::check`
+  read in that check (see Release notes above), whatever the channel; no extra request. Not
+  verified in a real window or against a live GitHub reply.
 - Tab-bar indicator and About card render `UpdateView::Phase`; UI never reads host internals. The
   indicator reserves strip space. Progress: 0–5% signature, 5–90% download, 90–100% unpack. Workers
   repaint only viewports that drew the state.

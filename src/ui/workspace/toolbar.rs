@@ -30,7 +30,7 @@ pub struct ToolbarInput<'a> {
     pub layouts: &'a [(u64, String)],
     pub active_layout: Option<u64>,
     pub watchlist_visible: bool,
-    pub liquidations_visible: bool,
+    pub market_flow_visible: bool,
     /// The market the focused chart shows, as its exchange names it; `None` with no chart.
     pub symbol: Option<&'a str>,
     /// The focused market chart the chart type, Indicators and settings buttons act on; `None`
@@ -90,7 +90,7 @@ pub enum ToolbarAction {
     OpenLayout(u64),
     DeleteLayout(u64),
     ToggleWatchlist,
-    ToggleLiquidations,
+    ToggleMarketFlow,
     OpenPortfolio,
     OpenPineStudio,
     /// Open the indicator picker for the focused chart.
@@ -317,7 +317,7 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
     } else {
         "Show Watchlists"
     };
-    let liquidations_tip = if input.liquidations_visible {
+    let market_flow_tip = if input.market_flow_visible {
         "Hide Market Flow"
     } else {
         "Show Market Flow"
@@ -344,10 +344,10 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
         ),
         Item::Separator,
         Item::Button(
-            Button::new("liquidations", liquidations_tip)
+            Button::new("market-flow", market_flow_tip)
                 .icon(Icon::Flame)
-                .active(input.liquidations_visible)
-                .on_click(ToolbarAction::ToggleLiquidations),
+                .active(input.market_flow_visible)
+                .on_click(ToolbarAction::ToggleMarketFlow),
         ),
         Item::Button(
             Button::new("watchlist", watchlist_tip)
@@ -595,7 +595,7 @@ mod tests {
             layouts,
             active_layout: None,
             watchlist_visible: true,
-            liquidations_visible: false,
+            market_flow_visible: false,
             symbol: focused.then_some("BTCUSDT"),
             chart: focused.then_some(ToolbarChart {
                 id: 1,

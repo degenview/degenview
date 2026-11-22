@@ -40,15 +40,6 @@ fn net_is_what_takers_bought_minus_what_they_sold() {
 }
 
 #[test]
-fn every_venue_has_a_label() {
-    let labels: Vec<String> = Venue::ALL.iter().map(|venue| venue.label()).collect();
-    assert_eq!(
-        labels,
-        ["Binance spot", "Binance perp", "Bybit spot", "Bybit perp"]
-    );
-}
-
-#[test]
 fn each_venue_adds_up_its_own_spans() {
     let flow = flow(&[
         trade(binance_spot(), Taker::Buy, 1_000.0, 10_000),

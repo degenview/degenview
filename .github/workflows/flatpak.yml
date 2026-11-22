@@ -111,19 +111,51 @@ jobs:
           name: flatpak-sources
           path: ${{ env.MANIFEST_DIR }}
 
-      # No cache: a tag run cannot restore one saved elsewhere (docs/agent-guides/releases-updates.md),
-      # so saving it would only use up space.
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
-        with:
-          bundle: ${{ inputs.bundle-prefix }}-${{ matrix.label }}.flatpak
-          arch: ${{ matrix.arch }}
-          manifest-path: ${{ env.MANIFEST_DIR }}/es.nico.degenview.yml
-          branch: ${{ inputs.branch }}
-          repository-url: https://dl.flathub.org/repo/flathub.flatpakrepo
-          cache: false
-          restore-cache: false
-          save-cache: false
-          upload-artifact: false
+      # The Flathub container fails now and then before it builds anything: installing the runtime
+      # died once with `Invalid cross-device link` and an `xvfb-run` segfault (exit 139). So the
+      # build runs up to three times, pausing 30 then 60 seconds. The steps are the ones the
+      # `flatpak-github-actions` builder action ran (remote, flatpak-builder, build-bundle), minus
+      # its cache, test and screenshot options, which this build never used; a shell loop is what
+      # lets them be retried without another third-party action.
+      #
+      # `.flatpak-builder` and `repo` are kept between attempts: flatpak-builder resumes from its
+      # state, so a retry does not download the sources or rebuild finished modules again. No
+      # cache across runs: a tag run cannot restore one saved elsewhere
+      # (docs/agent-guides/releases-updates.md), so saving it would only use up space.
+      - name: Build the Flatpak bundle
+        env:
+          ARCH: ${{ matrix.arch }}
+          BRANCH: ${{ inputs.branch }}
+          BUNDLE: ${{ inputs.bundle-prefix }}-${{ matrix.label }}.flatpak
+          APP_ID: es.nico.degenview
+          FLATHUB_REPO: https://dl.flathub.org/repo/flathub.flatpakrepo
+        run: |
+          build() {
+            flatpak remote-add --if-not-exists flathub "$FLATHUB_REPO" &&
+            xvfb-run --auto-servernum flatpak-builder \
+              --repo=repo --disable-rofiles-fuse --install-deps-from=flathub \
+              --subject="Built from $GITHUB_SHA" --force-clean \
+              --default-branch="$BRANCH" --arch="$ARCH" \
+              --state-dir .flatpak-builder flatpak_app "$MANIFEST_DIR/es.nico.degenview.yml" &&
+            flatpak build-bundle repo "$BUNDLE" --runtime-repo="$FLATHUB_REPO" \
+              --arch="$ARCH" "$APP_ID" "$BRANCH"
+          }
+
+          for attempt in 1 2 3; do
+            echo "::group::Flatpak build, attempt $attempt of 3"
+            if build; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            [ "$attempt" -lt 3 ] || break
+            echo "::warning::Flatpak build attempt $attempt failed; retrying"
+            # A runtime update that died half way leaves the installation to repair.
+            flatpak repair --system || true
+            sleep $((attempt * 30))
+          done
+          echo "::error::Flatpak build failed three times"
+          exit 1
 
       # The release job downloads every `DegenView-*` artifact into dist/.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
