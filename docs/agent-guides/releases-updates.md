@@ -450,21 +450,37 @@ instance probes Vulkan kills the process with no panic, log line or window (rc.3
 machine: `startup.log` ended at "creating the window and graphics", double-click did nothing, `gl` or
 `dx12` from `cmd` worked), and every launch repeated it.
 
-- `graphics::LADDER` (`ladder.rs`) lists the rungs per platform, first is the default: Windows
-  `dx12` → `gl` → `vulkan`; macOS `metal`; elsewhere `vulkan+gl` → `gl` → `vulkan`.
-- `graphics::start` wraps `eframe::run_native` (`lib.rs`). Each try writes `graphics.json` in the data
-  directory with the rung it is trying, and logs `graphics backends: …` to `startup.log`. `confirm_started` clears
-  that mark on the first of: the screenshot reply that logs "first frame presented", the first window
-  still drawing 10 s later (`crash_report::STILL_DRAWING`; a virtual GPU can leave the screenshot
-  unanswered, as the Fedora VM's Venus GPU does), or a clean exit. A start that leaves the mark behind
-  never got that far (a native crash, a hang, a kill, or a start that returned an error), so the next
-  start skips that rung, and says so in `startup.log`. A try that fails cleanly before the
-  renderer exists (`No suitable graphics adapter`, no surface: typical of `gl` on a machine with no
-  OpenGL driver) does not wait for the next launch: `start` moves to the next rung at once, up to the
-  length of the list, and the window or error dialog only appears if every rung fails. A skipped rung stays skipped for that build only: an update
-  tries the first rung again. When every rung has failed the list starts over.
-- `WGPU_BACKEND` still wins and bypasses all of it (nothing is read, and a run never clears an earlier failed-start mark), so a reporter can try
-  each backend by hand. Deleting `graphics.json` resets the memory.
+| File | Owns |
+| --- | --- |
+| `ladder.rs` | The rungs per platform, first is the default: Windows `dx12` → `gl` → `vulkan`; macOS `metal`; elsewhere `vulkan+gl` → `gl` → `vulkan` |
+| `record.rs` | The memory of past starts as a pure state machine (`Record`, `Attempt`): `open`, `select`, `fail`, `confirm` |
+| `persist.rs` | `graphics.json` in the data directory, best effort |
+| `session.rs` | One launch's `Record`, held in memory and persisted after every move, never read back |
+| `presentation.rs` | The evidence that frames reach the screen |
+| `mod.rs` | `start`, `Outcome`, `Selection`, `observe_frame` |
+
+- **Attempts have an owner.** `select` marks the rung in progress as an `Attempt { rung, launch }`; the
+  launch id is per process. `open` turns an attempt left by an earlier launch into a failure (a native
+  crash, a hang, a kill or an error: it never confirmed), so the next start skips that rung, for this
+  build only (an update tries the first rung again) and says so in `startup.log`. `confirm` clears the
+  mark only if it is still this launch's own, judged by the file as it is on disk, so a launch that
+  quits late cannot erase another launch's failure. When every rung has failed the list starts over.
+  Two launches starting at the same moment can still see each other's in-progress mark: one file, no
+  locking.
+- **A launch's progress is in memory.** A try that fails cleanly before the renderer exists
+  (`No suitable graphics adapter`, no surface: typical of `gl` on a machine with no OpenGL driver) is
+  `Session::fail`ed and `start` moves to the next rung at once, up to the length of the list; the file is
+  only a record. An unwritable file costs the memory between launches, not the same-launch fallback.
+- **Healthy means frames reached the screen.** Building the UI proves nothing, since egui-wgpu skips a
+  frame it cannot acquire a surface for while eframe keeps running the UI. `graphics::observe_frame`
+  (called by every window) confirms the start on the first of: the screenshot the first window asks
+  for coming back (logged as "first frame presented"), or the paint probe (a paint callback, which
+  runs in the render pass only after the surface texture was acquired) having painted continuously
+  for 10 s and still painting (`presentation::HEALTHY_AFTER`; a driver whose read-back never completes
+  leaves the screenshot unanswered, and frames are the fallback), or the start returning, which includes a normal
+  quit. A hang in presenting stops the frames, so it confirms nothing.
+- `WGPU_BACKEND` still wins and bypasses all of it (nothing is read or written, nothing is retried),
+  so a reporter can try each backend by hand. Deleting `graphics.json` resets the memory.
 - A user who kills the app (not a normal quit) in the 10 s after it opens also moves it down one rung
   once. That rung works, so nothing is lost but the preferred backend.
 

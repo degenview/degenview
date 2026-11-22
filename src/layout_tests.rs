@@ -138,17 +138,15 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
     ("format", EVERY_MODULE),
     ("lock", EVERY_MODULE),
     ("paths", EVERY_MODULE),
-    // Chooses the renderer before anything else starts: it needs only the data directory and the
-    // build id, and `crash_report` (which confirms the first frame) calls it, not the reverse.
+    // Chooses the renderer before anything else starts: it needs only the data directory, the build
+    // id and the startup log.
     (
         "graphics",
         &[
             "app",
             "clock",
-            "crash_report",
             "format",
             "host",
-            "lock",
             "mcp",
             "model",
             "native_bridge",
@@ -168,6 +166,7 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
         "crash_report",
         &[
             "app",
+            "graphics",
             "host",
             "mcp",
             "pine_studio",
