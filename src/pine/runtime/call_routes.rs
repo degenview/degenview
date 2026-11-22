@@ -228,7 +228,10 @@ impl Session {
             Diagnostic::error(
                 "PINE4007",
                 DiagnosticCategory::Runtime,
-                format!("Unknown or unsupported function '{name}'."),
+                format!(
+                    "Unknown or unsupported function '{}'.",
+                    crate::pine::syntax::rename::display_text(name)
+                ),
                 range,
             )
         })
@@ -470,7 +473,10 @@ impl Session {
         Err(Diagnostic::error(
             "PINE4007",
             DiagnosticCategory::Runtime,
-            format!("Unknown or unsupported function '{name}'."),
+            format!(
+                "Unknown or unsupported function '{}'.",
+                crate::pine::syntax::rename::display_text(name)
+            ),
             range,
         ))
     }

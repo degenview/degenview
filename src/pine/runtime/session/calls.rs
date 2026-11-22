@@ -10,6 +10,7 @@ use crate::pine::runtime::types::{RuntimeContext, RuntimeFunction};
 use crate::pine::runtime::user_methods::Supplied;
 use crate::pine::runtime::value::{RefKind, RuntimeValue};
 use crate::pine::syntax::ast::{AssignmentOperator, Expression};
+use crate::pine::syntax::rename;
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
 use crate::pine::{
     builtins::alert, builtins::array, builtins::map, builtins::math, builtins::matrix,
@@ -178,7 +179,10 @@ impl Session {
         Err(Diagnostic::error(
             "PINE4007",
             DiagnosticCategory::Runtime,
-            format!("Unknown or unsupported function '{name}'."),
+            format!(
+                "Unknown or unsupported function '{}'.",
+                rename::display_text(name)
+            ),
             range,
         ))
     }
@@ -624,7 +628,10 @@ impl Session {
             return Err(Diagnostic::error(
                 "PINE8005",
                 DiagnosticCategory::Resource,
-                format!("Call depth limit exceeded in '{call_name}'."),
+                format!(
+                    "Call depth limit exceeded in '{}'.",
+                    rename::display_text(call_name)
+                ),
                 range,
             ));
         }

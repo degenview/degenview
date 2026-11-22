@@ -1432,6 +1432,44 @@ fn a_library_local_is_not_the_scripts_global_of_the_same_name() {
     assert_eq!(value(&session, "y"), RuntimeValue::Float(7.0));
 }
 
+/// The message of the error `body` fails with at run time, under `limits`.
+fn failure_message(body: &str, limits: Limits) -> String {
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    let program = compiler::compile(&source, limits, &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        limits,
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    match session.evaluate(&bars(3)) {
+        Err(crate::pine::runtime::session::RunError::Script(diagnostic)) => diagnostic.message,
+        Ok(_) => panic!("expected a run-time error"),
+        Err(other) => panic!("expected a script error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_message_names_a_renamed_local_as_the_script_does() {
+    // `b` in the function hides the global `b`, so the interpreter holds it as `b#…`. The call that
+    // runs out of depth on it names it as written. (The checker refuses a script whose calls could
+    // reach the other messages that hold a call's name.)
+    let message = failure_message(
+        "type B\n    float v = 1.0\nmethod area(B self) => self.v\nb = B.new()\n\
+         f() =>\n    b = B.new()\n    b.area()\nr = f()",
+        Limits {
+            call_depth: 1,
+            ..Limits::default()
+        },
+    );
+    assert!(!message.contains('#'), "{message}");
+    assert!(message.contains("b.area"), "{message}");
+}
+
 /// The values of the plot titled `title` after `body` ran over `count` bars.
 fn plot_values(body: &str, count: usize, title: &str) -> Vec<Option<f64>> {
     let session = run(body, count);

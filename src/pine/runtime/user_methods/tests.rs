@@ -867,3 +867,12 @@ fn a_method_in_an_alert_condition_alerts_as_its_function_twin_does() {
     assert_eq!(by_method, ticked(&alerting(false)));
     assert!(by_method.iter().any(|(.., alerts)| *alerts > 0));
 }
+
+#[test]
+fn no_overload_names_the_receiver_as_written() {
+    let error = super::no_overload("b#12.area", crate::pine::SourceRange::ZERO);
+    assert_eq!(
+        error.message,
+        "No overload of 'b.area' accepts these arguments."
+    );
+}

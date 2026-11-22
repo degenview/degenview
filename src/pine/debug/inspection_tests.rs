@@ -720,6 +720,37 @@ if bar_index > 0
 }
 
 #[test]
+fn a_frame_names_a_method_called_on_a_renamed_local_as_written() {
+    // `b` in `f` hides the global `b`; the stack says `b.area()`, not the interpreter's `b#…`.
+    let body = "type B
+    float v = 1.0
+method area(B self) =>
+    self.v
+b = B.new()
+f() =>
+    b = B.new()
+    b.area()
+r = f()
+";
+    let (probe, captured) = capture_all();
+    // Line 6 is `self.v`, inside the method.
+    at_lines(body, 1, &[6], probe);
+    let captured = captured.lock().unwrap();
+    let labels: Vec<&String> = captured
+        .iter()
+        .flat_map(|stop| stop.frames.iter().map(|(label, _)| label))
+        .collect();
+    assert!(
+        labels.iter().any(|label| *label == "b.area()"),
+        "{labels:?}"
+    );
+    assert!(
+        labels.iter().all(|label| !label.contains('#')),
+        "{labels:?}"
+    );
+}
+
+#[test]
 fn a_watch_that_returns_a_collection_can_be_expanded() {
     let body = "var arr = array.new_float(0)
 array.push(arr, close)

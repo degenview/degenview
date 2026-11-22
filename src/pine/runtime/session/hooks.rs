@@ -126,7 +126,12 @@ impl Session {
     ) {
         match self.hooks.as_deref_mut() {
             Some(Hooks::Debug(debug)) => {
-                debug.enter_function(call_name, range, scope, saved.to_vec());
+                debug.enter_function(
+                    &crate::pine::syntax::rename::display_text(call_name),
+                    range,
+                    scope,
+                    saved.to_vec(),
+                );
             }
             // A library's offsets belong to another text: its calls are not timed.
             Some(Hooks::Profile(profile)) if scope.is_none() => {

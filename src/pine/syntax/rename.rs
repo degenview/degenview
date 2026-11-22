@@ -21,6 +21,7 @@
 //! A [`Renames`] is a plan over a tree that is not touched until [`Renames::apply`], so the debugger
 //! can ask what a script's names will be called without running one.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use super::ast::{Expression, SYNTHETIC, Statement};
@@ -35,14 +36,16 @@ pub fn display_name(name: &str) -> &str {
     name.split_once(MARK).map_or(name, |(shown, _)| shown)
 }
 
-/// [`display_name`] for a name that may be dotted: `zone.top` for `zone#42.top`.
-pub fn display_text(name: &str) -> String {
+/// [`display_name`] for a name that may be dotted: `zone.top` for `zone#42.top`. A name nothing
+/// renamed is handed back as it is. Every message a person can read that holds a variable's name,
+/// or the written name of a call on one, goes through this.
+pub fn display_text(name: &str) -> Cow<'_, str> {
     match name.split_once(MARK) {
-        None => name.to_owned(),
-        Some((shown, renamed)) => match renamed.split_once('.') {
+        None => Cow::Borrowed(name),
+        Some((shown, renamed)) => Cow::Owned(match renamed.split_once('.') {
             Some((_, rest)) => format!("{shown}.{rest}"),
             None => shown.to_owned(),
-        },
+        }),
     }
 }
 

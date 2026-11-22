@@ -251,7 +251,10 @@ fn no_overload(name: &str, range: SourceRange) -> Diagnostic {
     Diagnostic::error(
         "PINE4007",
         DiagnosticCategory::Runtime,
-        format!("No overload of '{name}' accepts these arguments."),
+        format!(
+            "No overload of '{}' accepts these arguments.",
+            crate::pine::syntax::rename::display_text(name)
+        ),
         range,
     )
 }
