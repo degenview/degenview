@@ -331,9 +331,48 @@ fn a_finer_timeframe_with_lookahead_on_reads_the_first_intrabar() {
 }
 
 #[derive(Clone)]
-struct Intrabars {
+pub(super) struct Intrabars {
     key: SecurityKey,
     candles: Vec<Kline>,
+}
+
+impl Intrabars {
+    /// 15 second candles of the chart's own symbol over two minutes, closing 1 to 8.
+    pub(super) fn fifteen_seconds() -> Self {
+        Self {
+            key: SecurityKey {
+                symbol: symbol().ticker_id,
+                interval: 15.0,
+                depth: SeriesDepth::Chart,
+            },
+            candles: (0..8)
+                .map(|index| Kline {
+                    open_time: index * 15_000,
+                    close_time: index * 15_000 + 14_999,
+                    open: 1.0,
+                    high: 1.0,
+                    low: 1.0,
+                    close: 1.0 + index as f64,
+                    volume: 1.0,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// `count` one minute bars from the epoch.
+pub(super) fn minute_chart(count: i64) -> Vec<Kline> {
+    (0..count)
+        .map(|index| Kline {
+            open_time: index * 60_000,
+            close_time: index * 60_000 + 59_999,
+            open: 10.0,
+            high: 10.0,
+            low: 10.0,
+            close: 10.0,
+            volume: 1.0,
+        })
+        .collect()
 }
 
 impl SecurityDataProvider for Intrabars {
@@ -344,7 +383,7 @@ impl SecurityDataProvider for Intrabars {
 
 /// ETHUSDT 4h candles closing 10, 20 and 30 over three periods of a 1h chart.
 #[derive(Clone)]
-struct EthFourHour;
+pub(super) struct EthFourHour;
 
 impl SecurityDataProvider for EthFourHour {
     fn candles(&self, key: &SecurityKey) -> Option<Vec<Kline>> {
@@ -445,4 +484,227 @@ fn a_live_bar_still_reads_its_developing_period() {
         Some(chart[6].close),
         "the live bar reads the developing period"
     );
+}
+
+// MARK: barstate in a request that looks ahead (TradingView probes A and B, NASDAQ:AAPL 1D, "1M")
+
+/// The five flags read in a request, in the order of the probes: `islast`, `isconfirmed`,
+/// `ishistory`, `isrealtime`, `islastconfirmedhistory`.
+const FLAGS: [(&str, &str); 5] = [
+    ("islast", "barstate.islast"),
+    ("isconfirmed", "barstate.isconfirmed"),
+    ("ishistory", "barstate.ishistory"),
+    ("isrealtime", "barstate.isrealtime"),
+    ("islastconfirmedhistory", "barstate.islastconfirmedhistory"),
+];
+
+/// The flags as `request` reads them on each bar of `chart`.
+fn flag_rows(chart: &[Kline], request_of: impl Fn(&str) -> String) -> Vec<[Option<f64>; 5]> {
+    let expressions: Vec<(&str, String)> = FLAGS
+        .iter()
+        .map(|(title, state)| (*title, request_of(&format!("{state} ? 1.0 : 0.0"))))
+        .collect();
+    let plots: Vec<(&str, &str)> = expressions
+        .iter()
+        .map(|(title, expression)| (*title, expression.as_str()))
+        .collect();
+    let session = run(&plots, chart);
+    let columns: Vec<Vec<Option<f64>>> = FLAGS
+        .iter()
+        .map(|(title, _)| plot_values(&session, title))
+        .collect();
+    (0..chart.len())
+        .map(|bar| {
+            let mut row = [None; 5];
+            for (flag, column) in columns.iter().enumerate() {
+                row[flag] = column[bar];
+            }
+            row
+        })
+        .collect()
+}
+
+/// Each 4h bucket's flags, repeated over its chart bars.
+fn per_bucket(buckets: &[[f64; 5]], bars: usize) -> Vec<[Option<f64>; 5]> {
+    (0..bars)
+        .map(|bar| buckets[bar / FOUR_HOURS].map(Some))
+        .collect()
+}
+
+#[test]
+fn the_flags_of_a_bucket_read_ahead_are_constant_over_it_and_follow_the_probes() {
+    let ahead = |expression: &str| request(expression, AHEAD);
+    // Ten bars: two complete buckets and the third, with the chart's last bar, incomplete. A complete
+    // bucket is history and confirmed; the last confirmed history one is the newest of them; the
+    // incomplete final one is the last bar, unconfirmed, and neither history nor realtime.
+    assert_eq!(
+        flag_rows(&hourly(10), ahead),
+        per_bucket(
+            &[
+                [0.0, 1.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 1.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0],
+            ],
+            10
+        )
+    );
+    // Twelve bars end with a complete bucket, which holds the chart's last bar.
+    assert_eq!(
+        flag_rows(&hourly(12), ahead),
+        per_bucket(
+            &[
+                [0.0, 1.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 1.0, 0.0, 0.0],
+                [1.0, 1.0, 1.0, 0.0, 1.0],
+            ],
+            12
+        )
+    );
+    assert_eq!(
+        flag_rows(&hourly(8), ahead),
+        per_bucket(&[[0.0, 1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 0.0, 1.0]], 8)
+    );
+}
+
+#[test]
+fn a_complete_bucket_reads_ahead_what_the_plain_request_reads_at_its_last_bar() {
+    let chart = hourly(12);
+    let ahead = flag_rows(&chart, |expression| request(expression, AHEAD));
+    let plain = flag_rows(&chart, |expression| request(expression, ""));
+    for bucket in 0..2 {
+        let last = bucket * FOUR_HOURS + FOUR_HOURS - 1;
+        for (bar, row) in ahead
+            .iter()
+            .enumerate()
+            .take(last + 1)
+            .skip(bucket * FOUR_HOURS)
+        {
+            assert_eq!(*row, plain[last], "bar {bar} of bucket {bucket}");
+        }
+    }
+}
+
+#[test]
+fn a_call_that_first_asks_in_the_middle_of_a_bucket_reads_the_buckets_flags() {
+    let chart = hourly(10);
+    let flags = |gate: &str| {
+        flag_rows(&chart, |expression| {
+            format!("({gate}{})", request(expression, AHEAD))
+        })
+    };
+    let always = flags("");
+    let gated = {
+        let expressions: Vec<(&str, String)> = FLAGS
+            .iter()
+            .map(|(title, state)| {
+                (
+                    *title,
+                    format!(
+                        "bar_index % 4 == 2 ? {} : na",
+                        request(&format!("{state} ? 1.0 : 0.0"), AHEAD)
+                    ),
+                )
+            })
+            .collect();
+        let plots: Vec<(&str, &str)> = expressions
+            .iter()
+            .map(|(title, expression)| (*title, expression.as_str()))
+            .collect();
+        let session = run(&plots, &chart);
+        FLAGS
+            .iter()
+            .map(|(title, _)| plot_values(&session, title))
+            .collect::<Vec<_>>()
+    };
+    for bar in (2..10).step_by(4) {
+        for (flag, column) in gated.iter().enumerate() {
+            assert_eq!(column[bar], always[bar][flag], "flag {flag} on bar {bar}");
+        }
+    }
+}
+
+#[test]
+fn a_live_bar_after_the_history_leaves_the_last_bucket_unfinished_and_not_the_last_bar() {
+    let chart = hourly(7);
+    let source = {
+        let mut body = String::new();
+        for (title, state) in FLAGS {
+            body += &format!(
+                "plot({}, \"{title}\")\n",
+                request(&format!("{state} ? 1.0 : 0.0"), AHEAD)
+            );
+        }
+        format!("//@version=6\nindicator(\"T\")\n{body}")
+    };
+    let mut session = session_with(&source, None);
+    session
+        .load_history(&chart[..6], true, None)
+        .expect("history runs");
+    session
+        .execute(
+            BarEvent {
+                candle: chart[6].clone(),
+                phase: BarPhase::RealtimeTick { is_new: true },
+            },
+            true,
+            None,
+        )
+        .expect("the live bar runs");
+    let at = |title: &str, bar: usize| plot_values(&session, title)[bar];
+    // The history's bars in the period the live bar will finish: not the last bar, not confirmed,
+    // still history (a live bar follows them).
+    assert_eq!(at("islast", 5), Some(0.0));
+    assert_eq!(at("isconfirmed", 5), Some(0.0));
+    assert_eq!(at("ishistory", 5), Some(1.0));
+    assert_eq!(at("isrealtime", 5), Some(0.0));
+    // The live bar reads the developing period as realtime.
+    assert_eq!(at("isrealtime", 6), Some(1.0));
+    assert_eq!(at("ishistory", 6), Some(0.0));
+}
+
+#[test]
+fn a_request_inside_a_request_reads_the_flags_of_the_bucket_it_looks_ahead_in() {
+    // Thirty bars: the day that ends the chart is incomplete, so every 4h bar of it is in the last
+    // (unconfirmed) day the inner request reads.
+    let nested = format!(
+        "request.security(syminfo.tickerid, \"240\", request.security(syminfo.tickerid, \"1D\", barstate.islast ? 1.0 : 0.0{AHEAD}){AHEAD})"
+    );
+    let session = run(&[("last", &nested)], &hourly(30));
+    let values = plot_values(&session, "last");
+    for (hour, value) in values.iter().enumerate() {
+        assert_eq!(
+            *value,
+            Some(if hour >= 24 { 1.0 } else { 0.0 }),
+            "hour {hour}"
+        );
+    }
+}
+
+#[test]
+fn another_symbols_candle_read_ahead_has_the_flags_of_its_bucket() {
+    let source = {
+        let mut body = String::new();
+        for (title, state) in FLAGS {
+            body += &format!(
+                "plot(request.security(\"ETHUSDT\", \"240\", {state} ? 1.0 : 0.0{AHEAD}), \"{title}\")\n"
+            );
+        }
+        format!("//@version=6\nindicator(\"T\")\n{body}")
+    };
+    let mut session = session_with(&source, Some(Box::new(EthFourHour)));
+    session.evaluate(&hourly(10)).expect("script runs");
+    let expected = per_bucket(
+        &[
+            [0.0, 1.0, 1.0, 0.0, 0.0],
+            [0.0, 1.0, 1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 0.0, 0.0],
+        ],
+        10,
+    );
+    for (flag, (title, _)) in FLAGS.iter().enumerate() {
+        let column = plot_values(&session, title);
+        for (bar, value) in column.iter().enumerate() {
+            assert_eq!(*value, expected[bar][flag], "{title} on bar {bar}");
+        }
+    }
 }
