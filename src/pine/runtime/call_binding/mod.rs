@@ -81,6 +81,34 @@ pub(crate) const INLINE: [&str; 18] = [
     "ta.variance",
 ];
 
+/// The builtins `Session::call`'s chain evaluates by value or one-off, which have no `Route`:
+/// `request.*`, `log.*`, `ticker.*`, `str.split`, the footprint accessors and the few
+/// `strategy` converters. Listed once, here; the tests hold every registered function to being
+/// either routed or one of these.
+pub fn is_by_value(name: &str) -> bool {
+    name.starts_with("request.")
+        || name.starts_with("log.")
+        || name.starts_with("ticker.")
+        || name.starts_with("footprint.")
+        || name.starts_with("volume_row.")
+        || name.starts_with("chart.point")
+        || matches!(
+            name,
+            "str.split"
+                | "max_bars_back"
+                | "strategy.convert_to_account"
+                | "strategy.convert_to_symbol"
+        )
+}
+
+/// Whether the call written as `name` is a builtin: the chain finds it before it looks for a
+/// variable that has the member (`levels.push(x)`). A builtin keeps the name it is written with,
+/// whatever a local called like its namespace is renamed to (`syntax::rename`), and the debugger's
+/// expressions follow the same rule.
+pub fn is_builtin_call(name: &str) -> bool {
+    route_of(name).is_some() || is_by_value(name)
+}
+
 /// The family that evaluates a call to `name`, as `Session::call`'s chain would reach it. `None` for
 /// what the chain handles by value or one-off: `request.*`, `log.*`, `ticker.*`, `str.split`, and
 /// anything unknown.

@@ -1152,8 +1152,13 @@ fn session_build_cost() {
                 .map(|_| {
                     let mut statements = program.statements.clone();
                     let started = Instant::now();
-                    rename::plan(&statements, &is_variable, rename::Program::Script)
-                        .apply(&mut statements);
+                    rename::plan(
+                        &statements,
+                        &is_variable,
+                        &crate::pine::runtime::call_binding::is_builtin_call,
+                        rename::Program::Script,
+                    )
+                    .apply(&mut statements);
                     started.elapsed().as_nanos()
                 })
                 .collect(),

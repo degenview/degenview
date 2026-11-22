@@ -1470,6 +1470,92 @@ fn a_message_names_a_renamed_local_as_the_script_does() {
     assert!(message.contains("b.area"), "{message}");
 }
 
+// MARK: A local that is called like a builtin's namespace
+
+/// A session over `body`, run over `count` bars with its logs on.
+fn run_logging(body: &str, count: usize) -> Session {
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session.logs.enable();
+    if let Err(error) = session.evaluate(&bars(count)) {
+        panic!("{error:?}");
+    }
+    session
+}
+
+#[test]
+fn a_call_of_a_builtin_works_where_a_local_is_called_like_its_namespace() {
+    let mut session = run_logging(
+        "log = 1.0\nf() =>\n    log = 2.0\n    log.info(\"hello\")\n    log\nr = f()",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(2.0));
+    let messages: Vec<String> = session
+        .logs
+        .take()
+        .events
+        .into_iter()
+        .map(|event| event.message)
+        .collect();
+    assert_eq!(messages, ["hello", "hello"]);
+}
+
+#[test]
+fn a_request_keeps_its_slice_where_a_local_is_called_request() {
+    let with_local = plot_values(
+        "f() =>\n    request = 1.0\n    x = request.security(syminfo.tickerid, \"1\", close) + request\n    x\nplot(f(), \"r\")",
+        6,
+        "r",
+    );
+    let without = plot_values(
+        "f() =>\n    x = request.security(syminfo.tickerid, \"1\", close) + 1.0\n    x\nplot(f(), \"r\")",
+        6,
+        "r",
+    );
+    assert_eq!(with_local, without);
+    assert!(with_local.iter().flatten().count() > 3, "{with_local:?}");
+}
+
+#[test]
+fn a_named_constant_is_read_by_its_written_name_where_a_local_has_its_namespace() {
+    let session = run(
+        "color = 1\nf() =>\n    color = 2\n    color.red\nr = f()",
+        2,
+    );
+    assert_eq!(
+        value(&session, "r"),
+        RuntimeValue::Color(crate::pine::builtins::color("color.red").expect("a colour"))
+    );
+}
+
+#[test]
+fn a_field_of_a_local_wins_over_a_constant_of_the_same_spelling() {
+    let session = run(
+        "type P\n    int red = 7\ncolor = 1\nf() =>\n    color = P.new()\n    color.red\nr = f()",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(7));
+}
+
+#[test]
+fn a_math_function_takes_a_local_called_math_as_its_argument() {
+    let session = run(
+        "math = 1.0\nf() =>\n    math = -2.0\n    math.abs(math)\nr = f()",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(2.0));
+}
+
 /// The values of the plot titled `title` after `body` ran over `count` bars.
 fn plot_values(body: &str, count: usize, title: &str) -> Vec<Option<f64>> {
     let session = run(body, count);

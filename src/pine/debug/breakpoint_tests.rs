@@ -250,6 +250,32 @@ fn a_logpoint_inside_a_function_logs_every_call() {
     assert_eq!(messages(&mut session), vec!["x=101", "x=100"]);
 }
 
+/// A function whose local `math` hides the global of its name; line 6 is `x = …`, inside it.
+const HIDING_MATH: &str = "math = 1.0
+f() =>
+    math = -2.0
+    x = math * 1
+    x
+r = f()
+";
+
+#[test]
+fn a_condition_calls_a_builtin_by_its_written_name_on_a_renamed_local() {
+    let mut spec = BreakpointSpec::line(1, 6);
+    spec.condition = Some("math.abs(math) == 2".to_owned());
+    let (seen, _) = run(HIDING_MATH, 2, vec![spec], DebugControl::default(), None);
+    assert_eq!(seen.len(), 2, "the condition holds on both bars: {seen:?}");
+}
+
+#[test]
+fn a_logpoint_calls_a_builtin_by_its_written_name_on_a_renamed_local() {
+    let mut spec = BreakpointSpec::line(1, 6);
+    spec.log_message = Some("{math.abs(math)}".to_owned());
+    let (seen, mut session) = run(HIDING_MATH, 2, vec![spec], DebugControl::default(), None);
+    assert!(seen.is_empty());
+    assert_eq!(messages(&mut session), vec!["2", "2"]);
+}
+
 #[test]
 fn the_logs_stay_bounded_however_often_a_logpoint_fires() {
     let spec = at_call(|spec| spec.log_message = Some("tick".to_owned()));

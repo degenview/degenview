@@ -123,6 +123,7 @@ impl SourceMap {
         rename::plan(
             &renamed,
             &crate::pine::compiler::symbol_catalog::is_variable,
+            &crate::pine::runtime::call_binding::is_builtin_call,
             rename::Program::Script,
         )
         .apply(&mut renamed);

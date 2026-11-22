@@ -750,6 +750,33 @@ r = f()
     );
 }
 
+/// A function whose locals hide the globals of their names; line 9 is `x`, inside it.
+const HIDING_NAMESPACE: &str = "math = 1.0
+levels = array.new_float(2)
+f() =>
+    math = -2.0
+    levels = array.new_float(3)
+    x = math * 1
+    x
+r = f()
+";
+
+#[test]
+fn a_watch_calls_a_builtin_by_its_written_name_on_a_renamed_local() {
+    // `math` is the local -2 here (held as `math#…`): `math.abs(math)` is the builtin applied to it,
+    // and `levels.size()` is the local array's own method.
+    let results = watches(
+        HIDING_NAMESPACE,
+        1,
+        9,
+        0,
+        &["math.abs(math)", "levels.size()", "math * 3"],
+    );
+    assert_eq!(results[0], "math.abs(math) => 2 (float)");
+    assert_eq!(results[1], "levels.size() => 3 (int)");
+    assert_eq!(results[2], "math * 3 => -6 (float)");
+}
+
 #[test]
 fn a_watch_that_returns_a_collection_can_be_expanded() {
     let body = "var arr = array.new_float(0)

@@ -11,6 +11,7 @@
 use std::collections::HashSet;
 
 use super::source_map::ScopeEntry;
+use crate::pine::runtime::call_binding::is_builtin_call;
 use crate::pine::syntax::ast::{Argument, Expression, Statement};
 use crate::pine::syntax::{scopes, traversal};
 use crate::pine::{Lexer, Limits, Parser};
@@ -43,7 +44,10 @@ impl DebugExpression {
         traversal::walk_expression_mut(&mut expression, &mut |node| {
             let name = match node {
                 Expression::Identifier(name, _) => name,
-                Expression::Call { name, .. } if name.contains('.') => name,
+                // A builtin's call keeps its written name, as in the script.
+                Expression::Call { name, .. } if name.contains('.') && !is_builtin_call(name) => {
+                    name
+                }
                 _ => return,
             };
             let head = scopes::head(name);

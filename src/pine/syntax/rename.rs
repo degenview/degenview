@@ -70,10 +70,12 @@ pub struct Renames {
 }
 
 /// Plans the renames of the program `statements`. `is_builtin` says which free names are builtin
-/// variables (`low`, `time`).
+/// variables (`low`, `time`), `is_builtin_call` which written call names are builtin functions
+/// (`log.info`): a call of one keeps its name, whatever a local called like its namespace is.
 pub fn plan(
     statements: &[Statement],
     is_builtin: &dyn Fn(&str) -> bool,
+    is_builtin_call: &dyn Fn(&str) -> bool,
     program: Program,
 ) -> Renames {
     let bindings = scopes::resolve(statements);
@@ -144,6 +146,13 @@ pub fn plan(
         if let Some(new) = new_name(binding) {
             renames.names.insert(slot, new);
         }
+    }
+    if !renames.uses.is_empty() {
+        traversal::for_each_call(statements, &mut |name, range| {
+            if is_builtin_call(name) {
+                renames.uses.remove(&span(range));
+            }
+        });
     }
     renames
 }
@@ -222,14 +231,9 @@ impl Renames {
                     replace_head(name, new);
                 }
             }
-            // A call of a builtin keeps its name, even where a variable is called like its
-            // namespace; a plain name is a function, never a variable.
-            Expression::Call {
-                name,
-                range,
-                route: None,
-                ..
-            } if name.contains('.') => {
+            // A plain name is a function, never a variable. A builtin's call was left out of the
+            // plan: it keeps its name, even where a variable is called like its namespace.
+            Expression::Call { name, range, .. } if name.contains('.') => {
                 if let Some(new) = self.read(span(*range)) {
                     replace_head(name, new);
                 }
@@ -262,9 +266,14 @@ mod tests {
         statements
     }
 
+    /// What a session counts as a builtin function here.
+    fn is_log(name: &str) -> bool {
+        name.starts_with("log.") || name.starts_with("request.") || name.starts_with("ticker.")
+    }
+
     fn renamed(source: &str, program: Program) -> Vec<Statement> {
         let mut statements = parse(source);
-        plan(&statements, &|name| name == "low", program).apply(&mut statements);
+        plan(&statements, &|name| name == "low", &is_log, program).apply(&mut statements);
         statements
     }
 
@@ -344,7 +353,7 @@ mod tests {
     #[test]
     fn a_parameter_is_renamed_in_its_slot_and_keeps_its_label() {
         let mut statements = parse("len = 10\nf(len, shift) =>\n    len + shift\n");
-        plan(&statements, &|_| false, Program::Script).apply(&mut statements);
+        plan(&statements, &|_| false, &is_log, Program::Script).apply(&mut statements);
         let Statement::Function {
             parameters, body, ..
         } = &statements[1]
@@ -391,6 +400,43 @@ mod tests {
     }
 
     #[test]
+    fn a_call_of_a_builtin_keeps_its_name_where_a_variable_has_its_namespace() {
+        let statements = renamed(
+            "log = 1.0\nrequest = 1.0\nticker = 1.0\nlevels = 1.0\nf() =>\n    log = 2.0\n    request = 2.0\n    ticker = 2.0\n    levels = array.new_float(0)\n    log.info(\"hi\")\n    request.security(syminfo.tickerid, \"D\", close)\n    ticker.new(\"a\", \"b\")\n    levels.push(1.0)\n    color.red\n",
+            Program::Script,
+        );
+        let mut called = Vec::new();
+        traversal::for_each_call(&statements, &mut |name, _| called.push(name.to_owned()));
+        assert!(called.contains(&"log.info".to_owned()), "{called:?}");
+        assert!(
+            called.contains(&"request.security".to_owned()),
+            "{called:?}"
+        );
+        assert!(called.contains(&"ticker.new".to_owned()), "{called:?}");
+        // A variable's own member is its receiver: renamed with it.
+        assert!(
+            called
+                .iter()
+                .any(|name| name.starts_with("levels#") && name.ends_with(".push")),
+            "{called:?}"
+        );
+    }
+
+    #[test]
+    fn a_read_of_a_dotted_name_renames_its_head_so_a_variables_field_wins() {
+        let statements = renamed(
+            "color = 1\nf() =>\n    color = 2\n    color.red\n",
+            Program::Script,
+        );
+        let read = reads(&statements);
+        assert!(
+            read.iter()
+                .any(|name| name.starts_with("color#") && name.ends_with(".red")),
+            "{read:?}"
+        );
+    }
+
+    #[test]
     fn a_library_names_every_local_after_its_number() {
         let statements = renamed("export f(x) =>\n    y = x\n    y\n", Program::Library(2));
         assert_eq!(names(&statements).len(), 2);
@@ -413,7 +459,7 @@ mod tests {
     #[test]
     fn a_plan_names_what_it_will_apply_without_touching_the_tree() {
         let statements = parse("x = 1\nif close > 0\n    x = 2\n");
-        let renames = plan(&statements, &|_| false, Program::Script);
+        let renames = plan(&statements, &|_| false, &is_log, Program::Script);
         let Statement::Conditional { when_true, .. } = &statements[1] else {
             panic!("an if");
         };

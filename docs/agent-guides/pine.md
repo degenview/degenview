@@ -77,6 +77,18 @@
   values (`invoke_with`'s `saved`, `restore_saved`) so none outlives it. A loop counter or block local
   that nothing shares stays in the table, so `i[1]` reads the previous bar's last count. `var`/`varip`
   locals are set at entry (stash value, else unset so the declaration initialises them).
+  - **A builtin keeps the name it is written with; a variable is held under its slot.** A call whose
+    written name is a builtin (`call_binding::is_builtin_call`: `route_of`, plus the by-value names in
+    `is_by_value`: `request.*`, `log.*`, `ticker.*`, `str.split`, …) is never renamed, so
+    `log.info(...)` works in a function that has a local `log`, and the post-rename passes
+    (`security_slice`, `replays_chart_bars`, `looks_ahead`) still see `request.security`. A call on a
+    variable (`levels.push(x)`) is renamed with its receiver. `resolve_identifier` finds variables and
+    fields by the held name and every builtin table (`market`, `flags`, `builtins::color`/`constant`,
+    libraries, named constants, enums, `ta.*` variables, `line.all`) by `rename::display_text`, so
+    `color.red` is the constant where `color` is a local without that field. The debugger applies the
+    same rule to a watch, condition or logpoint (`DebugExpression::in_scope`). A new builtin family
+    must be a `Route` or listed in `is_by_value`; `every_registered_function_is_a_builtin_call` fails
+    otherwise.
   - Anything that shows a name uses `rename::display_name` (`level#42` → `level`). The debugger builds
     its `SourceMap` from a renamed copy (`ScopeEntry::name` is the interpreter's name, `display()` the
     script's) and `DebugExpression::in_scope` rewrites a watch's names through the scope at the frame,

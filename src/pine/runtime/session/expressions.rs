@@ -7,6 +7,7 @@ use crate::pine::runtime::operators;
 use crate::pine::runtime::types::RuntimeContext;
 use crate::pine::runtime::value::{RefKind, RuntimeValue};
 use crate::pine::syntax::ast::{BinaryOperator, Expression, Literal, UnaryOperator};
+use crate::pine::syntax::rename;
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
 use crate::pine::{builtins::array, builtins::market_values, strategy::builtins};
 
@@ -145,42 +146,48 @@ impl Session {
         if let Some(value) = self.working.variables.get(name) {
             return Ok(value.clone());
         }
+        // A variable, or a field of one, is found by the name the interpreter holds it under. What is
+        // not one is a builtin, looked up by the name the script wrote: a variable that hides a
+        // namespace (`color = 2` in a function) is held as `color#…`, and `color.red` still means
+        // the constant when the variable has no such field.
+        let written = rename::display_text(name);
+        let written = written.as_ref();
         // The names below are all dotted; a plain `close` skips straight to the market values.
         if name.contains('.') {
             if let Some(value) = self.field_path(name, range)? {
                 return Ok(value);
             }
-            if let Some(value) = self.cumulative_variable(name, context) {
+            if let Some(value) = self.cumulative_variable(written, context) {
                 return Ok(value);
             }
-            if let Some(value) = self.all_drawings(name) {
+            if let Some(value) = self.all_drawings(written) {
                 return Ok(value);
             }
         }
         if let Some(value) = self.security_globals.as_ref().and_then(|g| g.get(name)) {
             return Ok(value.clone());
         }
-        if let Some(value) = self.market(name, context) {
+        if let Some(value) = self.market(written, context) {
             return Ok(value);
         }
-        if let Some(flag) = context.flags.value(name) {
+        if let Some(flag) = context.flags.value(written) {
             return Ok(RuntimeValue::Bool(flag));
         }
-        if let Some(color) = crate::pine::builtins::color(name) {
+        if let Some(color) = crate::pine::builtins::color(written) {
             return Ok(RuntimeValue::Color(color));
         }
-        if let Some(constant) = crate::pine::builtins::constant(name) {
+        if let Some(constant) = crate::pine::builtins::constant(written) {
             return Ok(constant);
         }
         // A library constant or enum member (via an import alias).
-        if let Some(value) = self.library_identifier(name, range, context)? {
+        if let Some(value) = self.library_identifier(written, range, context)? {
             return Ok(value);
         }
         // A dotted name that matches nothing is a named constant (`size.small`) and stands for itself.
-        if name.contains('.') && crate::pine::compiler::is_named_constant(name) {
-            return Ok(RuntimeValue::String(name.to_owned()));
+        if written.contains('.') && crate::pine::compiler::is_named_constant(written) {
+            return Ok(RuntimeValue::String(written.to_owned()));
         }
-        if let Some((enum_name, member)) = name.split_once('.')
+        if let Some((enum_name, member)) = written.split_once('.')
             && let Some(members) = self.enums.get(enum_name)
         {
             if !members.iter().any(|m| m.name == member) {
@@ -191,23 +198,20 @@ impl Session {
                     range,
                 ));
             }
-            return Ok(RuntimeValue::String(name.to_owned()));
+            return Ok(RuntimeValue::String(written.to_owned()));
         }
         // A dotted name no table knows is a named constant (`label.style_label_up`) unless its
         // namespace holds variables: there an unknown member is a feature this engine lacks, and
         // handing the script a string would hide that.
-        if let Some((namespace, _)) = name.split_once('.')
+        if let Some((namespace, _)) = written.split_once('.')
             && !VARIABLE_NAMESPACES.contains(&namespace)
         {
-            return Ok(RuntimeValue::String(name.to_owned()));
+            return Ok(RuntimeValue::String(written.to_owned()));
         }
         Err(Diagnostic::error(
             "PINE4008",
             DiagnosticCategory::Runtime,
-            format!(
-                "Undefined variable '{}'.",
-                crate::pine::syntax::rename::display_text(name)
-            ),
+            format!("Undefined variable '{written}'."),
             range,
         ))
     }
