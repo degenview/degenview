@@ -259,14 +259,6 @@ impl Session {
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
-        // `calc_bars_count` counts chart bars here, as for `request.security_lower_tf`: older bars
-        // are given no intrabars.
-        if self.outside_calc_window(request.recent_bars) {
-            return Ok(match self.tuple_arity(&request.expression, context) {
-                Some(columns) => RuntimeValue::Tuple(vec![RuntimeValue::Na; columns]),
-                None => RuntimeValue::Na,
-            });
-        }
         let Some(candles) =
             self.lower_timeframe_candles(None, request.interval, request.recent_bars)
         else {
@@ -280,6 +272,7 @@ impl Session {
         let intrabars = self.serve_intrabars(
             &candles,
             request.interval,
+            request.recent_bars,
             &request.expression,
             site,
             context,
@@ -377,16 +370,24 @@ impl Session {
                 range,
             ));
         }
-        if self.outside_calc_window(recent_bars) {
-            let columns = self.tuple_arity(&expression, context);
-            return Ok(empty_shaped(columns, self));
-        }
         if let Some(seconds) = seconds
             && seconds < self.bar_seconds
             && let Some(candles) =
                 self.lower_timeframe_candles(values.get("symbol"), seconds, recent_bars)
         {
-            return self.serve_intrabars(&candles, seconds, &expression, site, context);
+            return self.serve_intrabars(
+                &candles,
+                seconds,
+                recent_bars,
+                &expression,
+                site,
+                context,
+            );
+        }
+        // The chart's own timeframe: its bars are the candles the count is of.
+        if self.outside_calc_window(recent_bars) {
+            let columns = self.tuple_arity(&expression, context);
+            return Ok(empty_shaped(columns, self));
         }
         // The chart's own timeframe: each chart bar is its own single intrabar.
         let mut intrabars: Option<RuntimeValue> = None;
@@ -597,7 +598,7 @@ impl Session {
     }
 
     /// Whether the chart bar now running is older than the newest `recent_bars` chart bars, which
-    /// the chart-bar form of `calc_bars_count` limits a request to (0 is no limit).
+    /// `calc_bars_count` limits a request on the chart's own timeframe to (0 is no limit).
     fn outside_calc_window(&self, recent_bars: usize) -> bool {
         recent_bars > 0
             && self.working.bar_index
@@ -1061,22 +1062,24 @@ impl Session {
             Some(RuntimeValue::String(text)) if !text.is_empty() => text.clone(),
             _ => self.symbol.ticker_id.clone(),
         };
-        // The newest `recent_bars` chart bars hold at most this many intrabars each.
-        let per_bar = (self.bar_seconds / seconds).ceil().max(1.0) as usize;
         let key = SecurityKey {
             symbol,
             interval: seconds,
-            depth: SeriesDepth::of(recent_bars.saturating_mul(per_bar)),
+            depth: SeriesDepth::of(recent_bars),
         };
         // Asked of the provider once per run, not once per chart bar.
         self.series(key).filter(|candles| !candles.is_empty())
     }
 
-    /// The expression on every intrabar that opens inside the chart bar.
+    /// The expression on every intrabar that opens inside the chart bar. `calc_bars_count`
+    /// (`recent_bars`, in intrabars) limits it to the newest intrabars that open before the chart's
+    /// last bar ends, the one still forming included; a chart bar with none of them gets no
+    /// intrabars, and the expression never runs on the older ones.
     fn serve_intrabars(
         &mut self,
         candles: &[Kline],
         interval: f64,
+        recent_bars: usize,
         expression: &Expression,
         site: usize,
         context: &mut RuntimeContext,
@@ -1089,7 +1092,14 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
-        let end = bar.open_time + (self.bar_seconds * 1000.0).round() as i64;
+        let bar_ms = (self.bar_seconds * 1000.0).round() as i64;
+        let end = bar.open_time + bar_ms;
+        let first_allowed = if recent_bars > 0 && self.security_depth == 0 {
+            let chart_end = self.last_bar_time.unwrap_or(bar.open_time) + bar_ms;
+            newest_first_index(candles, chart_end - 1, recent_bars)
+        } else {
+            0
+        };
         let mut low = 0usize;
         let mut high = candles.len();
         while low < high {
@@ -1111,7 +1121,7 @@ impl Session {
         };
         let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
         let mut results = Vec::new();
-        let mut index = low;
+        let mut index = low.max(first_allowed);
         while index < candles.len() && candles[index].open_time < end {
             let result = self.evaluate_higher_timeframe(
                 &mut state,
