@@ -573,11 +573,20 @@ fn base_fonts() -> egui::FontDefinitions {
 
 /// Inter Regular (`assets/fonts`, SIL OFL 1.1; the licence and where the file comes from are in
 /// `assets/fonts/README.md`): the font of the app's text on every platform.
+///
+/// Drawn unhinted: on a 1x screen egui's grid-fitting rounds Inter's x-height and cap height up to
+/// whole pixels (a 13 px line gains a pixel of height and some weight), so text looks stretched
+/// compared with a 2x screen. Unhinted keeps the font's own proportions at any scale.
 pub fn bundled_ui_font() -> std::sync::Arc<egui::FontData> {
     static FONT: std::sync::OnceLock<std::sync::Arc<egui::FontData>> = std::sync::OnceLock::new();
     const INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
-    FONT.get_or_init(|| std::sync::Arc::new(egui::FontData::from_static(INTER)))
-        .clone()
+    FONT.get_or_init(|| {
+        std::sync::Arc::new(egui::FontData::from_static(INTER).tweak(egui::FontTweak {
+            hinting: Some(false),
+            ..Default::default()
+        }))
+    })
+    .clone()
 }
 
 /// The app's fonts without the editor's choice, read from the system once.
