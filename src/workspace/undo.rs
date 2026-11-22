@@ -81,8 +81,14 @@ impl Snapshot {
                 let current = std::mem::replace(&mut chart.drawings, drawings);
                 Self::Drawings(current.into_iter().filter(|d| !is_ruler(d)).collect())
             }
-            Self::Indicators { config, scripts } => {
+            Self::Indicators {
+                config,
+                mut scripts,
+            } => {
                 let current = Self::indicators_of(chart);
+                for script in &mut scripts {
+                    script.keep_pane_layout_of(chart.chart.pine_instances());
+                }
                 chart.indicators = config;
                 chart.chart.set_pine_instances(scripts);
                 current
@@ -399,6 +405,7 @@ impl ChartWorkspace {
 mod tests {
     use super::*;
     use crate::model::Tool;
+    use crate::model::pine::instance::PineInstance;
     use crate::workspace::test_support::{
         chart_with_drawings, drawing_ids, empty_workspace, rectangle,
     };
@@ -881,6 +888,74 @@ mod tests {
             assert!(workspace.charts[0].chart.pine_instances().is_empty());
             workspace.undo(&ctx);
         }
+    }
+
+    /// The chart's scripts with `change` applied to the one named `name`.
+    fn lay_out(workspace: &mut ChartWorkspace, name: &str, change: impl Fn(&mut PineInstance)) {
+        let mut scripts = workspace.charts[0].chart.pine_instances().to_vec();
+        scripts
+            .iter_mut()
+            .filter(|script| script.name == name)
+            .for_each(change);
+        workspace.charts[0].chart.set_pine_instances(scripts);
+    }
+
+    fn layout_of(workspace: &ChartWorkspace, name: &str) -> (bool, Option<f32>) {
+        let script = workspace.charts[0]
+            .chart
+            .pine_instances()
+            .iter()
+            .find(|script| script.name == name)
+            .expect("script");
+        (script.pane_collapsed, script.pane_share)
+    }
+
+    #[test]
+    fn undo_and_redo_of_a_script_change_leave_the_panes_as_the_user_has_them() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(14);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.charts[0]
+            .chart
+            .add_pine_instance(None, "First", "plot(close)");
+        workspace
+            .history
+            .record(chart, Snapshot::indicators_of(&workspace.charts[0]));
+        workspace.charts[0]
+            .chart
+            .add_pine_instance(None, "Second", "plot(close)");
+        // Laid out after the step was recorded: the snapshot knows nothing of it.
+        lay_out(&mut workspace, "First", |script| {
+            script.pane_share = Some(0.25);
+            script.pane_collapsed = true;
+        });
+
+        workspace.undo(&ctx);
+        assert_eq!(workspace.charts[0].chart.pine_instances().len(), 1);
+        assert_eq!(layout_of(&workspace, "First"), (true, Some(0.25)));
+        workspace.redo(&ctx);
+        assert_eq!(workspace.charts[0].chart.pine_instances().len(), 2);
+        assert_eq!(layout_of(&workspace, "First"), (true, Some(0.25)));
+    }
+
+    #[test]
+    fn a_script_that_comes_back_has_the_layout_it_was_removed_with() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(15);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.charts[0]
+            .chart
+            .add_pine_instance(None, "Mine", "plot(close)");
+        lay_out(&mut workspace, "Mine", |script| {
+            script.pane_share = Some(0.4)
+        });
+        workspace
+            .history
+            .record(chart, Snapshot::indicators_of(&workspace.charts[0]));
+        workspace.charts[0].chart.set_pine_instances(Vec::new());
+
+        workspace.undo(&ctx);
+        assert_eq!(layout_of(&workspace, "Mine"), (false, Some(0.4)));
     }
 
     #[test]

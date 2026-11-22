@@ -98,6 +98,10 @@ pub struct PineInstance {
     /// The script's pane is folded to its title strip. The script still runs: this is layout.
     #[serde(default)]
     pub pane_collapsed: bool,
+    /// The height the user dragged the script's pane to, as a fraction of the chart's height; with
+    /// none the pane has its part of the default split.
+    #[serde(default)]
+    pub pane_share: Option<f32>,
 }
 
 impl PineInstance {
@@ -112,6 +116,17 @@ impl PineInstance {
             style_overrides: HashMap::new(),
             visual_order: VisualOrder::Script,
             pane_collapsed: false,
+            pane_share: None,
+        }
+    }
+
+    /// Takes the pane layout (folded or not, dragged height) of the same script in `current`, if it
+    /// is there. A restored list says which scripts are on a chart, not how their panes are laid
+    /// out, so undo and redo leave a pane the way the user has it now.
+    pub fn keep_pane_layout_of(&mut self, current: &[PineInstance]) {
+        if let Some(now) = current.iter().find(|instance| instance.id == self.id) {
+            self.pane_collapsed = now.pane_collapsed;
+            self.pane_share = now.pane_share;
         }
     }
 

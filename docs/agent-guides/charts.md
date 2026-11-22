@@ -97,8 +97,8 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 - Resolve canvas/theme once per frame with `CanvasStyle::resolve`; painters never read canvas colors
   from `theme::*`. Grid and axis labels share `canvas::{price_ticks,time_ticks}`. Price range,
   visible-window, pane-split geometry stay pure in `model/chart/canvas/mod.rs`.
-- Pane order/collapse live on `PineInstance`; maximize is card view state. Buttons report clicks,
-  `ChartCard` applies them.
+- Pane order, collapse and dragged height (`pane_share`) live on `PineInstance`; maximize is card view
+  state. Buttons report clicks, `ChartCard` applies them.
 - Templates snapshot `ChartAppearance`. Apply with `ChartCard::apply_template`; plan all
   apply-to-all changes before applying any, so type changes go through `set_chart_type`.
   `ChartTemplateStore` re-reads before writes, refuses to overwrite undecodable rows.

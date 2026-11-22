@@ -611,18 +611,26 @@ pub fn visible_window(len: usize, visible: usize, right_offset: f64, reserved: u
 
 /// Height of a collapsed pane: its title strip.
 pub const COLLAPSED_PANE_HEIGHT: f32 = 24.0;
-/// The share of the chart the expanded script panes share.
+/// The share of the chart the expanded panes take by default: a pane nobody dragged has this share
+/// divided by the number of expanded panes.
 pub const PANE_SHARE: f32 = 0.3;
 /// The least the main chart keeps while panes share the rest.
 const MIN_MAIN_HEIGHT: f32 = 90.0;
+/// The least an expanded pane keeps when the chart has room: its title strip and a few rows. A
+/// chart too short for that gives its panes less, never under [`COLLAPSED_PANE_HEIGHT`], the height
+/// their buttons need.
+pub const MIN_PANE_HEIGHT: f32 = 48.0;
 /// The smallest a maximized pane is worth drawing.
 const MIN_MAXIMIZED_HEIGHT: f32 = 60.0;
 
 /// What the layout needs to know of one script pane.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PaneSpec {
     pub id: u64,
     pub collapsed: bool,
+    /// The height the user dragged the pane to, as a fraction of the chart's height. `None` is the
+    /// default: [`PANE_SHARE`] of the chart split equally between the expanded panes.
+    pub share: Option<f32>,
 }
 
 /// The vertical split of a chart into its main area (plot and time axis) and its script panes.
@@ -635,9 +643,11 @@ pub struct PaneHeights {
     pub main_collapsed: bool,
 }
 
-/// Splits `total` points of height. Expanded panes share [`PANE_SHARE`] of it, a collapsed pane is
-/// its title strip, and a maximized pane takes everything but the strips and the time axis. A
-/// chart too short for any of that keeps the plain split.
+/// Splits `total` points of height. An expanded pane has the height it was dragged to, or its part
+/// of [`PANE_SHARE`]; a collapsed pane is its title strip, and a maximized pane takes everything
+/// but the strips and the time axis. The main chart takes what the panes leave, down to its
+/// minimum, below which the panes give way (see `pane_limits`). Every height is a difference of
+/// rounded edges, so a pane's height only changes when one of its own edges moves.
 pub fn split_panes(
     total: f32,
     panes: &[PaneSpec],
@@ -679,42 +689,125 @@ pub fn split_panes(
         }
     }
     let expanded = panes.iter().filter(|pane| !pane.collapsed).count();
-    let collapsed = panes.len() - expanded;
-    let strips = collapsed as f32 * COLLAPSED_PANE_HEIGHT;
-    let mut shared = if expanded == 0 {
-        0.0
-    } else {
-        (total * PANE_SHARE).round()
-    };
-    // The main chart keeps its minimum: the panes give way, down to nothing but their strips.
-    let allowed = (total - MIN_MAIN_HEIGHT.min(total * 0.6) - strips).max(0.0);
-    shared = shared.min(allowed);
-    let each = if expanded == 0 {
-        0.0
-    } else {
-        (shared / expanded as f32).round()
-    };
-    let mut heights: Vec<f32> = panes
+    let strips = (panes.len() - expanded) as f32 * COLLAPSED_PANE_HEIGHT;
+    let (floor, budget) = pane_limits(total, expanded, strips);
+    let default_height = total * PANE_SHARE / expanded.max(1) as f32;
+    // Each expanded pane wants its dragged height or its part of the default, but at least the
+    // floor. What the panes want beyond their floors is cut back, in proportion, to what the
+    // budget leaves above them; the floors themselves are kept.
+    let wanted: Vec<f32> = panes
         .iter()
+        .filter(|pane| !pane.collapsed)
         .map(|pane| {
-            if pane.collapsed {
-                COLLAPSED_PANE_HEIGHT
-            } else {
-                each
-            }
+            pane.share
+                .map_or(default_height, |share| total * share.clamp(0.0, 1.0))
+                .max(floor)
         })
         .collect();
-    // Rounding leaves the last expanded pane the remainder, so the split fills the area exactly.
-    if let Some(last) = panes.iter().rposition(|pane| !pane.collapsed) {
-        let used: f32 = heights.iter().sum::<f32>() - heights[last];
-        heights[last] = (shared + strips - used).max(0.0);
-    }
+    let extra_wanted: f32 = wanted.iter().map(|height| height - floor).sum();
+    let extra_room = (budget - floor * expanded as f32).max(0.0);
+    let keep = if extra_wanted > extra_room {
+        extra_room / extra_wanted
+    } else {
+        1.0
+    };
+    let mut wanted = wanted.into_iter();
+    let mut edge = 0.0;
+    let mut rounded_edge = 0.0;
+    let heights: Vec<f32> = panes
+        .iter()
+        .map(|pane| {
+            edge += if pane.collapsed {
+                COLLAPSED_PANE_HEIGHT
+            } else {
+                floor + (wanted.next().unwrap_or(floor) - floor) * keep
+            };
+            let height = edge.round() - rounded_edge;
+            rounded_edge += height;
+            height
+        })
+        .collect();
     let main = (total - heights.iter().sum::<f32>()).max(0.0);
     PaneHeights {
         main,
         panes: heights,
         main_collapsed: false,
     }
+}
+
+/// What the main chart keeps of `total` while it has panes under it.
+fn main_floor(total: f32) -> f32 {
+    MIN_MAIN_HEIGHT.min(total * 0.6)
+}
+
+/// The least each of `expanded` panes keeps and the most they take together, on a chart `total`
+/// high whose collapsed panes take `strips`. The main chart keeps its minimum and the panes share
+/// the rest, down to [`COLLAPSED_PANE_HEIGHT`] each: below that the main chart gives way, down to
+/// nothing on a chart too short for its panes' strips. The drag of a line and the split read the
+/// same limits, so a pane is never dragged to a height the split would change.
+fn pane_limits(total: f32, expanded: usize, strips: f32) -> (f32, f32) {
+    if expanded == 0 {
+        return (0.0, 0.0);
+    }
+    let count = expanded as f32;
+    let room = (total - main_floor(total) - strips).max(0.0);
+    let floor = (room / count).clamp(COLLAPSED_PANE_HEIGHT, MIN_PANE_HEIGHT);
+    let budget = room.max(floor * count).min((total - strips).max(0.0));
+    (floor.min(budget / count), budget)
+}
+
+/// The heights, as fractions of `total`, that dragging the line above pane `index` by `up` points
+/// (down when negative) leaves the expanded panes with, measured from the `start` split the drag
+/// began on. As in a chart's own panes, the pane below the line takes what the one above it gives
+/// up: the nearest expanded pane above, or the main chart when there is none. Neither goes under
+/// the floor the split keeps it at. A collapsed pane, a maximized chart, a chart with no height and
+/// a `start` that is not the split of `panes` have no line to drag.
+pub fn drag_divider(
+    total: f32,
+    start: &PaneHeights,
+    panes: &[PaneSpec],
+    index: usize,
+    up: f32,
+) -> Vec<(u64, f32)> {
+    let below = panes.get(index).filter(|pane| !pane.collapsed);
+    if start.main_collapsed
+        || start.panes.len() != panes.len()
+        || !total.is_finite()
+        || total <= 0.0
+        || !up.is_finite()
+    {
+        return Vec::new();
+    }
+    let Some(below) = below else {
+        return Vec::new();
+    };
+    let expanded = panes.iter().filter(|pane| !pane.collapsed).count();
+    let strips = (panes.len() - expanded) as f32 * COLLAPSED_PANE_HEIGHT;
+    let (floor, _) = pane_limits(total, expanded, strips);
+    let above = panes[..index].iter().rposition(|pane| !pane.collapsed);
+    let (above_height, above_least) = match above {
+        Some(above) => (start.panes[above], floor),
+        None => (start.main, main_floor(total)),
+    };
+    let shrink = (start.panes[index] - floor).max(0.0);
+    let grow = (above_height - above_least).max(0.0);
+    let moved = up.clamp(-shrink, grow);
+    panes
+        .iter()
+        .enumerate()
+        .filter(|(_, pane)| !pane.collapsed)
+        .map(|(at, pane)| {
+            let height = start.panes[at]
+                + if pane.id == below.id {
+                    moved
+                } else if Some(at) == above {
+                    -moved
+                } else {
+                    0.0
+                };
+            (pane.id, height / total)
+        })
+        .collect()
 }
 
 #[cfg(test)]

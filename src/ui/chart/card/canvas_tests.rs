@@ -1715,6 +1715,117 @@ fn pane_buttons_move_collapse_maximize_and_remove_the_right_script() {
     );
 }
 
+/// Presses on `from`, drags to `to` and lets go, a frame each.
+fn drag_pointer(harness: &mut Harness, from: Pos2, to: Pos2) {
+    harness.pointer = Some(from);
+    harness.frame();
+    harness.button = Some(true);
+    harness.frame();
+    harness.pointer = Some(to);
+    harness.frame();
+    harness.frame();
+    harness.button = Some(false);
+    harness.frame();
+}
+
+/// The heights the chart's panes have by default, and where its first pane's line is.
+fn pane_heights(harness: &Harness) -> (chart::canvas::PaneHeights, f32) {
+    let specs: Vec<chart::canvas::PaneSpec> = harness
+        .card
+        .pine_instances()
+        .iter()
+        .map(|instance| chart::canvas::PaneSpec {
+            id: instance.id,
+            collapsed: instance.pane_collapsed,
+            share: instance.pane_share,
+        })
+        .collect();
+    let area = harness.card.body_rect;
+    let heights = chart::canvas::split_panes(area.height(), &specs, None, 0.0);
+    let line = area.top() + heights.main;
+    (heights, line)
+}
+
+#[test]
+fn dragging_the_line_above_a_pane_resizes_it_and_the_height_stays() {
+    let mut harness = with_panes(ChartCanvas::default());
+    harness.draw();
+    let (before, line) = pane_heights(&harness);
+    let x = harness.card.body_rect.center().x;
+    drag_pointer(&mut harness, Pos2::new(x, line), Pos2::new(x, line - 40.0));
+    let (after, _) = pane_heights(&harness);
+    assert!(
+        (after.panes[0] - before.panes[0] - 40.0).abs() <= 1.0,
+        "{before:?} {after:?}"
+    );
+    assert_eq!(
+        after.panes[1], before.panes[1],
+        "the other pane is untouched"
+    );
+    assert!(after.main < before.main, "the main chart gave the height");
+    assert!(harness.card.pine_instances()[0].pane_share.is_some());
+    assert!(harness.card.pane_drag.is_none(), "letting go ends the drag");
+    // The saved height is what the next frames draw.
+    harness.draw();
+    assert_eq!(pane_heights(&harness).0, after);
+}
+
+#[test]
+fn a_press_beside_the_line_leaves_the_panes_alone() {
+    let mut harness = with_panes(ChartCanvas::default());
+    harness.draw();
+    let (_, line) = pane_heights(&harness);
+    let x = harness.card.body_rect.center().x;
+    drag_pointer(
+        &mut harness,
+        Pos2::new(x, line - 40.0),
+        Pos2::new(x - 60.0, line - 40.0),
+    );
+    assert!(
+        harness
+            .card
+            .pine_instances()
+            .iter()
+            .all(|instance| instance.pane_share.is_none())
+    );
+}
+
+#[test]
+fn a_drag_ends_when_the_panes_change_under_it() {
+    let mut harness = with_panes(ChartCanvas::default());
+    harness.draw();
+    let (_, line) = pane_heights(&harness);
+    let x = harness.card.body_rect.center().x;
+    harness.pointer = Some(Pos2::new(x, line));
+    harness.frame();
+    harness.button = Some(true);
+    harness.frame();
+    harness.pointer = Some(Pos2::new(x, line - 20.0));
+    harness.frame();
+    assert!(harness.card.pane_drag.is_some());
+    let ids = harness.card.pane_ids.clone();
+    // The pane below the held line goes away mid-drag; the rest must keep their own heights.
+    harness.card.apply_pane_action(ids[1], PaneAction::Remove);
+    harness.pointer = Some(Pos2::new(x, line - 60.0));
+    for _ in 0..3 {
+        harness.frame();
+    }
+    assert!(harness.card.pane_drag.is_none());
+    harness.button = Some(false);
+    harness.frame();
+    let shares: Vec<_> = harness
+        .card
+        .pine_instances()
+        .iter()
+        .map(|instance| instance.pane_share)
+        .collect();
+    assert_eq!(shares.len(), 1);
+    assert!(
+        shares[0].is_none_or(|share| share < 0.4),
+        "no stale height was written: {shares:?}"
+    );
+}
+
 #[test]
 fn a_maximized_pane_leaves_the_time_axis_and_a_vanished_one_restores_the_chart() {
     let mut harness = with_panes(ChartCanvas::default());
