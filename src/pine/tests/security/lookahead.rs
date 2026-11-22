@@ -10,15 +10,15 @@ use crate::model::Kline;
 use crate::pine::compiler::program::{BarEvent, BarPhase};
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::session::Session;
-use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey};
+use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey, SeriesDepth};
 use crate::pine::tests::bench::{limits, run_script, symbol};
 
-const HOUR: i64 = 3_600_000;
+pub(super) const HOUR: i64 = 3_600_000;
 const FOUR_HOURS: usize = 4;
 
 /// An hourly bar whose five values all differ from its neighbours', so a bucket folded from the
 /// wrong bars changes at least one of them.
-fn hourly_bar(hour: i64) -> Kline {
+pub(super) fn hourly_bar(hour: i64) -> Kline {
     let open = 100.0 + hour as f64;
     Kline {
         open_time: hour * HOUR,
@@ -289,7 +289,7 @@ fn a_finer_timeframe_with_lookahead_on_reads_the_first_intrabar() {
         key: SecurityKey {
             symbol: symbol().ticker_id,
             interval: 15.0,
-            recent_bars: 0,
+            depth: SeriesDepth::Chart,
         },
         candles: vec![
             intrabar(60_000, 1.0),
@@ -343,7 +343,7 @@ impl Intrabars {
             key: SecurityKey {
                 symbol: symbol().ticker_id,
                 interval: 15.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             candles: (0..8)
                 .map(|index| Kline {

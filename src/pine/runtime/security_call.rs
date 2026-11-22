@@ -14,7 +14,7 @@ use super::security_slice;
 use super::session::Session;
 use super::site_value::SiteValue;
 use super::state::{LoggedBar, RuntimeState, SecuritySite};
-use super::support::{ChartSpan, SecurityKey};
+use super::support::{ChartSpan, MAX_SERIES_CANDLES, SecurityKey, SeriesDepth};
 use super::types::{BarFlags, RuntimeContext};
 use super::value::{RefKind, RuntimeValue};
 use crate::model::Kline;
@@ -204,6 +204,9 @@ struct SecurityRequest {
     expression: Expression,
     lookahead_on: bool,
     gaps_on: bool,
+    /// `calc_bars_count`: the newest candles of the requested timeframe the request evaluates. 0 is
+    /// every one.
+    recent_bars: usize,
     foreign: Option<Arc<Vec<Kline>>>,
 }
 
@@ -256,7 +259,9 @@ impl Session {
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
-        let Some(candles) = self.lower_timeframe_candles(None, request.interval, 0) else {
+        let Some(candles) =
+            self.lower_timeframe_candles(None, request.interval, request.recent_bars)
+        else {
             return Err(Diagnostic::error(
                 "PINE4021",
                 DiagnosticCategory::Runtime,
@@ -267,6 +272,7 @@ impl Session {
         let intrabars = self.serve_intrabars(
             &candles,
             request.interval,
+            request.recent_bars,
             &request.expression,
             site,
             context,
@@ -351,11 +357,7 @@ impl Session {
             .get("timeframe")
             .and_then(RuntimeValue::text_value)
             .and_then(time::seconds_of_timeframe);
-        let recent_bars = values
-            .get("calc_bars_count")
-            .and_then(RuntimeValue::int_value)
-            .unwrap_or(0)
-            .max(0) as usize;
+        let recent_bars = calc_bars_count(&values);
         let usable = seconds.is_some_and(|seconds| seconds <= self.bar_seconds);
         if !usable
             && self.bar_seconds > 0.0
@@ -368,19 +370,24 @@ impl Session {
                 range,
             ));
         }
-        // `calc_bars_count` limits the request to the newest chart bars: older ones get no intrabars.
-        let outside_window = recent_bars > 0
-            && self.working.bar_index < self.last_bar_index - recent_bars as i64 + 1;
-        if outside_window {
-            let columns = self.tuple_arity(&expression, context);
-            return Ok(empty_shaped(columns, self));
-        }
         if let Some(seconds) = seconds
             && seconds < self.bar_seconds
             && let Some(candles) =
                 self.lower_timeframe_candles(values.get("symbol"), seconds, recent_bars)
         {
-            return self.serve_intrabars(&candles, seconds, &expression, site, context);
+            return self.serve_intrabars(
+                &candles,
+                seconds,
+                recent_bars,
+                &expression,
+                site,
+                context,
+            );
+        }
+        // The chart's own timeframe: its bars are the candles the count is of.
+        if self.outside_calc_window(recent_bars) {
+            let columns = self.tuple_arity(&expression, context);
+            return Ok(empty_shaped(columns, self));
         }
         // The chart's own timeframe: each chart bar is its own single intrabar.
         let mut intrabars: Option<RuntimeValue> = None;
@@ -394,6 +401,7 @@ impl Session {
                     expression: expression.clone(),
                     lookahead_on: false,
                     gaps_on: false,
+                    recent_bars,
                     foreign: None,
                 },
                 site,
@@ -488,14 +496,24 @@ impl Session {
                 return Err(error);
             }
         };
-        let foreign = if !is_chart_symbol {
+        // Chart bars that straddle the requested candle's boundaries cannot be folded into it: the
+        // candle comes from the data source, as another symbol's does.
+        let straddles = is_chart_symbol
+            && interval > self.bar_seconds
+            && self.bar_seconds > 0.0
+            && !time::bucket::nests(interval, self.bar_seconds);
+        let recent_bars = calc_bars_count(&values);
+        let foreign = if !is_chart_symbol || straddles {
             let key = SecurityKey {
                 symbol: symbol_name.clone(),
                 interval,
-                recent_bars: 0,
+                depth: SeriesDepth::of(recent_bars),
             };
             match self.series(key) {
                 Some(candles) => Some(candles),
+                None if straddles => {
+                    return Err(self.unfoldable_timeframe(interval, range));
+                }
                 None => {
                     if ignore_symbol {
                         return Ok(None);
@@ -518,6 +536,7 @@ impl Session {
                 == Some("barmerge.lookahead_on"),
             gaps_on: values.get("gaps").and_then(RuntimeValue::text_value)
                 == Some("barmerge.gaps_on"),
+            recent_bars,
             foreign,
         }))
     }
@@ -550,6 +569,59 @@ impl Session {
         }
         self.security_series.insert(key, answer.clone());
         answer
+    }
+
+    /// Where the newest `count` buckets of `interval` seconds begin among the chart's bars, found by
+    /// counting the buckets the bars fall in, newest first: the loop is bounded by the chart, not by
+    /// the script's `calc_bars_count`. No window (`i64::MIN`) inside another request, whose
+    /// candles' bar times are not kept.
+    fn window_start(&self, interval: f64, count: usize) -> i64 {
+        if self.security_depth > 0 {
+            return i64::MIN;
+        }
+        let mut window = i64::MIN;
+        let mut buckets = 0;
+        let mut newest = None;
+        for open_time in self.bar_opens.iter().rev() {
+            let bucket = time::bucket::start(*open_time, interval);
+            if newest == Some(bucket) {
+                continue;
+            }
+            if buckets == count {
+                break;
+            }
+            buckets += 1;
+            newest = Some(bucket);
+            window = bucket;
+        }
+        window
+    }
+
+    /// Whether the chart bar now running is older than the newest `recent_bars` chart bars, which
+    /// `calc_bars_count` limits a request on the chart's own timeframe to (0 is no limit).
+    fn outside_calc_window(&self, recent_bars: usize) -> bool {
+        recent_bars > 0
+            && self.working.bar_index
+                < self.last_bar_index - i64::try_from(recent_bars).unwrap_or(i64::MAX) + 1
+    }
+
+    /// A candle that the chart's bars cannot be folded into, and the data source has none of.
+    fn unfoldable_timeframe(&self, interval: f64, range: SourceRange) -> Diagnostic {
+        let label = |seconds: f64| {
+            time::timeframe_from_seconds(seconds.round() as i64)
+                .unwrap_or_else(|| format!("{seconds}s"))
+        };
+        Diagnostic::error(
+            "PINE4021",
+            DiagnosticCategory::Runtime,
+            format!(
+                "request.security cannot build a {} candle from the chart's {} bars, which straddle its boundaries, and the data source has no {} candles for this symbol.",
+                label(interval),
+                label(self.bar_seconds),
+                label(interval)
+            ),
+            range,
+        )
     }
 
     fn unserved_symbol(&self, name: &str, range: SourceRange) -> Diagnostic {
@@ -633,7 +705,7 @@ impl Session {
         let key = SecurityKey {
             symbol: self.symbol.ticker_id.clone(),
             interval: request.interval,
-            recent_bars: 0,
+            depth: SeriesDepth::Chart,
         };
         let Some(candles) = self.series(key) else {
             return Ok(());
@@ -641,6 +713,12 @@ impl Session {
         for candle in candles.iter() {
             if time::bucket::end(candle.open_time, request.interval) > before {
                 break;
+            }
+            if site
+                .window_start
+                .is_some_and(|window| candle.open_time < window)
+            {
+                continue;
             }
             site.last_result = self.evaluate_higher_timeframe(
                 site,
@@ -650,7 +728,24 @@ impl Session {
                 Evaluation::COMMIT,
             )?;
         }
+        // A chart that opens inside a candle holds only the rest of it.
+        let chart_candle = time::bucket::start(before, request.interval);
+        if chart_candle < before {
+            site.first_candle = candles
+                .iter()
+                .find(|candle| candle.open_time == chart_candle)
+                .cloned();
+        }
         Ok(())
+    }
+
+    /// `folded`, a candle built from the chart's bars, or the data source's whole candle of the same
+    /// bucket when the chart opened inside it and the source has it.
+    fn whole_candle(site: &SecuritySite, folded: Kline) -> Kline {
+        match &site.first_candle {
+            Some(whole) if whole.open_time == folded.open_time => whole.clone(),
+            _ => folded,
+        }
     }
 
     /// The expression on the higher-timeframe bar the chart bar belongs to, through the call site's
@@ -668,6 +763,9 @@ impl Session {
             let result = state.bar_result.hand_out(&mut self.working);
             self.working.securities.insert(key, state);
             return Ok(result);
+        }
+        if request.recent_bars > 0 && state.window_start.is_none() {
+            state.window_start = Some(self.window_start(request.interval, request.recent_bars));
         }
         if !state.is_warmed_up {
             // History from before the chart's first bar; the chart's own bars, the ones this site
@@ -785,6 +883,10 @@ impl Session {
         } = *step;
         let replay = skipped_after.is_some();
         let start = time::bucket::start(bar.open_time, request.interval);
+        if state.window_start.is_some_and(|window| start < window) {
+            // Older than the newest `calc_bars_count` candles: nothing is evaluated.
+            return Ok((SiteValue::na(), false));
+        }
         let mut fresh = false;
         let switched = state.bucket != Some(start);
         if switched {
@@ -793,6 +895,7 @@ impl Session {
                 && let Some(pending) = state.accumulated.clone()
             {
                 self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
+                let pending = Self::whole_candle(state, pending);
                 state.last_result = self.evaluate_higher_timeframe(
                     state,
                     &pending,
@@ -827,9 +930,10 @@ impl Session {
         let mut result;
         if closes_bucket && confirmed {
             self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
+            let completed = Self::whole_candle(state, developing.clone());
             result = self.evaluate_higher_timeframe(
                 state,
-                &developing,
+                &completed,
                 request,
                 chart,
                 Evaluation::COMMIT,
@@ -879,38 +983,66 @@ impl Session {
             return Ok(result);
         }
         let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
+        // `calc_bars_count`: the newest candles that open before the chart's last bar ends are the
+        // ones evaluated, the one still forming included.
+        let first_candle = (request.recent_bars > 0).then(|| {
+            let bar_ms = (self.bar_seconds * 1000.0).round() as i64;
+            let chart_end = self.last_bar_time.unwrap_or(bar.open_time) + bar_ms;
+            newest_first_index(candles, chart_end - 1, request.recent_bars)
+        });
+        if let Some(first) = first_candle {
+            state.completed_candles = state.completed_candles.max(first);
+        }
+        // The newest candle that opens before the chart bar ends (a finer request has several
+        // candles in a bar, a coarser one a single candle).
+        let newest = last_index(chart.end - 1, candles);
+        // The candle a request reads for this bar: the one open at the bar's start, or the first
+        // the `calc_bars_count` window has left when it cuts into the bar. A bar none of whose
+        // candles is in the window has no value.
+        let read = {
+            let from = last_index(bar.open_time, candles).unwrap_or(0);
+            let index = first_candle.map_or(from, |first| from.max(first));
+            (index < candles.len() && candles[index].open_time < chart.end).then_some(index)
+        };
+        let outside = first_candle.is_some_and(|first| newest.is_none_or(|index| index < first));
+        // What a live bar reads, still forming: the first candle of the bar with lookahead on, the
+        // newest with it off.
+        let live = if request.lookahead_on { read } else { newest };
+        // The candles finished by now: those ending by a confirmed bar's close, and on a live tick
+        // every one before the one it reads.
+        let finished_by = if context.flags.is_confirmed {
+            chart.end
+        } else {
+            live.map_or(i64::MIN, |index| candles[index].open_time)
+        };
         let mut fresh = false;
-        if context.flags.is_confirmed {
-            let chart_close = chart.end;
-            while state.completed_candles < candles.len() {
-                let candle = &candles[state.completed_candles];
-                if time::bucket::end(candle.open_time, request.interval) > chart_close {
-                    break;
-                }
-                state.last_result = self.evaluate_higher_timeframe(
-                    &mut state,
-                    candle,
-                    request,
-                    chart,
-                    Evaluation::COMMIT,
-                )?;
-                state.completed_candles += 1;
-                fresh = true;
+        while state.completed_candles < candles.len() {
+            let candle = &candles[state.completed_candles];
+            if time::bucket::end(candle.open_time, request.interval) > finished_by {
+                break;
             }
+            state.last_result = self.evaluate_higher_timeframe(
+                &mut state,
+                candle,
+                request,
+                chart,
+                Evaluation::COMMIT,
+            )?;
+            state.completed_candles += 1;
+            fresh |= context.flags.is_confirmed;
         }
         let mut result = state.last_result.clone();
-        let current = last_index(bar.open_time, candles);
         if request.lookahead_on && !context.flags.is_realtime {
             // A historical bar reads its candle as it ended, from the candle's first chart bar on,
             // so that is the bar that is new.
-            let opened = current.map(|index| candles[index].open_time);
-            if let Some(index) = current {
+            let opened = read.map(|index| candles[index].open_time);
+            if let Some(index) = read.filter(|_| !outside) {
                 result = self.ahead_candle(&mut state, request, &candles[index])?;
             }
             fresh = opened.is_some() && state.bucket != opened;
             state.bucket = opened;
         } else if context.flags.is_realtime
-            && let Some(index) = current
+            && let Some(index) = live
             && index >= state.completed_candles
         {
             result = self.evaluate_higher_timeframe(
@@ -920,6 +1052,9 @@ impl Session {
                 chart,
                 Evaluation::DEVELOPING,
             )?;
+        }
+        if outside {
+            result = SiteValue::na();
         }
         if request.gaps_on && !fresh {
             result = SiteValue::na();
@@ -945,17 +1080,21 @@ impl Session {
         let key = SecurityKey {
             symbol,
             interval: seconds,
-            recent_bars,
+            depth: SeriesDepth::of(recent_bars),
         };
         // Asked of the provider once per run, not once per chart bar.
         self.series(key).filter(|candles| !candles.is_empty())
     }
 
-    /// The expression on every intrabar that opens inside the chart bar.
+    /// The expression on every intrabar that opens inside the chart bar. `calc_bars_count`
+    /// (`recent_bars`, in intrabars) limits it to the newest intrabars that open before the chart's
+    /// last bar ends, the one still forming included; a chart bar with none of them gets no
+    /// intrabars, and the expression never runs on the older ones.
     fn serve_intrabars(
         &mut self,
         candles: &[Kline],
         interval: f64,
+        recent_bars: usize,
         expression: &Expression,
         site: usize,
         context: &mut RuntimeContext,
@@ -968,7 +1107,14 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
-        let end = bar.open_time + (self.bar_seconds * 1000.0).round() as i64;
+        let bar_ms = (self.bar_seconds * 1000.0).round() as i64;
+        let end = bar.open_time + bar_ms;
+        let first_allowed = if recent_bars > 0 && self.security_depth == 0 {
+            let chart_end = self.last_bar_time.unwrap_or(bar.open_time) + bar_ms;
+            newest_first_index(candles, chart_end - 1, recent_bars)
+        } else {
+            0
+        };
         let mut low = 0usize;
         let mut high = candles.len();
         while low < high {
@@ -985,11 +1131,12 @@ impl Session {
             expression: expression.clone(),
             lookahead_on: false,
             gaps_on: false,
+            recent_bars: 0,
             foreign: None,
         };
         let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
         let mut results = Vec::new();
-        let mut index = low;
+        let mut index = low.max(first_allowed);
         while index < candles.len() && candles[index].open_time < end {
             let result = self.evaluate_higher_timeframe(
                 &mut state,
@@ -1086,7 +1233,15 @@ impl Session {
         if first == last {
             return Ok(None);
         }
-        let candle = fold_one(&known[first..last], request.interval);
+        let mut candle = fold_one(&known[first..last], request.interval);
+        // Only a run that has the bucket's last bar may take the source's whole candle for it:
+        // nothing past the bars it was given leaks in.
+        if self
+            .history_end
+            .is_some_and(|history_end| end <= history_end)
+        {
+            candle = Self::whole_candle(state, candle);
+        }
         self.ahead_candle(state, request, &candle).map(Some)
     }
 
@@ -1307,6 +1462,24 @@ fn fold_one(candles: &[Kline], interval_seconds: f64) -> Kline {
     folded
 }
 
+/// What `calc_bars_count` asks for, 0 when it is absent or not positive, and never more than a
+/// series may hold.
+fn calc_bars_count(values: &HashMap<String, RuntimeValue>) -> usize {
+    values
+        .get("calc_bars_count")
+        .and_then(RuntimeValue::int_value)
+        .map_or(0, |count| {
+            usize::try_from(count).map_or(0, |count| count.min(MAX_SERIES_CANDLES))
+        })
+}
+
+/// The index of the oldest of the newest `count` candles that open at or before `last_open`: an
+/// index into the candles the source gave, so a month, a weekend or a holiday between them does
+/// not matter.
+fn newest_first_index(candles: &[Kline], last_open: i64, count: usize) -> usize {
+    last_index(last_open, candles).map_or(0, |last| (last + 1).saturating_sub(count))
+}
+
 /// `candles` folded into candles of `interval_seconds`, one per bucket they open in.
 fn fold_all(candles: &[Kline], interval_seconds: f64) -> Vec<Kline> {
     let mut folded: Vec<Kline> = Vec::new();
@@ -1350,6 +1523,66 @@ mod tests {
             close,
             volume: 1.0,
         }
+    }
+
+    fn candle_opening(open_time: i64) -> Kline {
+        bar(open_time, 1.0)
+    }
+
+    #[test]
+    fn the_newest_candles_are_found_by_index_not_by_elapsed_time() {
+        const DAY: i64 = 86_400_000;
+        // 2024-06-01, 07-01 and 08-01: months of 30, 31 and 31 days.
+        let months: Vec<Kline> = [1_717_200_000_000, 1_719_792_000_000, 1_722_470_400_000]
+            .into_iter()
+            .map(candle_opening)
+            .collect();
+        let august_31 = 1_722_470_400_000 + 30 * DAY;
+        assert_eq!(
+            newest_first_index(&months, august_31, 2),
+            1,
+            "July and August"
+        );
+        assert_eq!(newest_first_index(&months, august_31, 1), 2);
+        assert_eq!(
+            newest_first_index(&months, august_31, 9),
+            0,
+            "fewer than asked for"
+        );
+        // A weekday source: Friday, then Monday and Tuesday after the weekend.
+        let friday = 1_717_718_400_000;
+        let days: Vec<Kline> = [friday, friday + 3 * DAY, friday + 4 * DAY]
+            .into_iter()
+            .map(candle_opening)
+            .collect();
+        assert_eq!(
+            newest_first_index(&days, friday + 4 * DAY, 2),
+            1,
+            "Monday and Tuesday"
+        );
+        assert_eq!(
+            newest_first_index(&days, friday + 2 * DAY, 2),
+            0,
+            "Saturday sees Friday"
+        );
+        assert_eq!(
+            newest_first_index(&days, friday - DAY, 2),
+            0,
+            "before every candle"
+        );
+        assert_eq!(newest_first_index(&[], 0, 2), 0);
+    }
+
+    #[test]
+    fn calc_bars_count_is_read_once_and_bounded() {
+        let count = |value: RuntimeValue| {
+            calc_bars_count(&HashMap::from([("calc_bars_count".to_owned(), value)]))
+        };
+        assert_eq!(count(RuntimeValue::Int(5)), 5);
+        assert_eq!(count(RuntimeValue::Int(-3)), 0);
+        assert_eq!(count(RuntimeValue::Int(i64::MAX)), MAX_SERIES_CANDLES);
+        assert_eq!(count(RuntimeValue::Na), 0);
+        assert_eq!(calc_bars_count(&HashMap::new()), 0);
     }
 
     #[test]
@@ -1476,7 +1709,7 @@ mod tests {
             SecurityKey {
                 symbol: "ETHUSDT".to_owned(),
                 interval: 60.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![bar(0, 100.0), bar(60_000, 110.0), bar(120_000, 120.0)],
         );
@@ -1497,7 +1730,7 @@ mod tests {
             SecurityKey {
                 symbol: "ETHUSDT".to_owned(),
                 interval: 60.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![bar(0, 100.0), bar(60_000, 110.0), bar(120_000, 120.0)],
         );
@@ -1739,7 +1972,7 @@ mod tests {
             SecurityKey {
                 symbol: "ETHUSDT".to_owned(),
                 interval: 3600.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             candles.clone(),
         );
@@ -2431,7 +2664,7 @@ mod tests {
             SecurityKey {
                 symbol: String::new(),
                 interval: 15.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![
                 bar(60_000, 1.0),
@@ -2511,7 +2744,7 @@ mod tests {
             SecurityKey {
                 symbol: "ETHUSDT".to_owned(),
                 interval: 15.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![bar(60_000, 5.0), bar(75_000, 6.0), bar(90_000, 7.0)],
         );
@@ -2531,7 +2764,7 @@ mod tests {
             SecurityKey {
                 symbol: String::new(),
                 interval: 15.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![
                 bar(60_000, 1.0),
@@ -2560,7 +2793,7 @@ mod tests {
             SecurityKey {
                 symbol: String::new(),
                 interval: 15.0,
-                recent_bars: 0,
+                depth: SeriesDepth::Chart,
             },
             vec![
                 bar(60_000, 1.0),

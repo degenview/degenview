@@ -55,6 +55,13 @@ pub struct SecuritySite {
     pub is_warmed_up: bool,
     /// Another symbol's series: how many of its candles have been completed and evaluated.
     pub completed_candles: usize,
+    /// Where the newest `calc_bars_count` buckets of the requested timeframe begin, for a request
+    /// that limits them: earlier chart bars read `na`. Found on the first call, counting the live
+    /// bar that follows the history among the chart's bars.
+    pub window_start: Option<i64>,
+    /// The data source's whole candle of the bucket the chart's first bar opens inside, when the
+    /// source has it: the chart's bars hold only the rest of it.
+    pub first_candle: Option<Kline>,
     /// What `lookahead_on` returned on historical bars of the bucket opening at `.0`: the
     /// expression on that bucket as it ended, evaluated on the bucket's first call and reused.
     pub ahead: Option<(i64, SiteValue)>,
@@ -82,6 +89,8 @@ impl Default for SecuritySite {
             has_pending_bars: false,
             is_warmed_up: false,
             completed_candles: 0,
+            window_start: None,
+            first_candle: None,
             ahead: None,
             known: None,
             state: Box::new(RuntimeState::before_first_bar()),

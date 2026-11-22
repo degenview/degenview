@@ -53,6 +53,27 @@ pub fn end(start: i64, seconds: f64) -> i64 {
     }
 }
 
+/// Whether every bucket of `coarser` seconds opens where a bucket of `finer` seconds does, so bars
+/// of the finer length never straddle a boundary of the coarser one and fold into it whole. A 45
+/// minute bucket does not nest in 30 minute bars (the bar at 00:30 spans 00:45); a daily one nests
+/// in any intraday bars, as every bar is cut at midnight.
+pub fn nests(coarser: f64, finer: f64) -> bool {
+    use TimeUnit::{Day, Hour, Minute, Month, Week};
+    let (Some(coarse), Some(fine)) = (timeframe_of(coarser), timeframe_of(finer)) else {
+        let (coarse, fine) = (epoch_grid_ms(coarser), epoch_grid_ms(finer));
+        return coarse % fine == 0;
+    };
+    let count_nests = || coarse.count() % fine.count() == 0;
+    match (coarse.unit(), fine.unit()) {
+        (Minute | Hour, Minute | Hour) => coarse.nominal_ms() % fine.nominal_ms() == 0,
+        (Day | Week | Month, Minute | Hour) => true,
+        (Day, Day) | (Week, Week) | (Month, Month) => count_nests(),
+        // Weeks start on Monday and months on the 1st: only single days begin both.
+        (Week | Month, Day) => fine.count() == 1,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +144,31 @@ mod tests {
         assert_eq!(end(ms(2024, 4, 1, 0), 7_776_000.0), ms(2024, 7, 1, 0));
         assert_eq!(start(may, 31_104_000.0), ms(2024, 1, 1, 0));
         assert_eq!(end(ms(2024, 1, 1, 0), 31_104_000.0), ms(2025, 1, 1, 0));
+    }
+
+    #[test]
+    fn a_bucket_nests_in_bars_when_every_boundary_is_a_bar_boundary() {
+        let nests = |coarser: f64, finer: f64| super::nests(coarser, finer);
+        assert!(nests(14_400.0, 3_600.0), "4h in 1h");
+        assert!(nests(14_400.0, 900.0), "4h in 15m");
+        assert!(!nests(2_700.0, 1_800.0), "45m in 30m");
+        assert!(!nests(10_800.0, 18_000.0 / 2.0), "3h in 2.5h");
+        assert!(
+            nests(86_400.0, 18_000.0),
+            "a day in 5h bars cut at midnight"
+        );
+        assert!(nests(36_000.0, 18_000.0), "10h in 5h");
+        assert!(!nests(10_800.0, 18_000.0), "3h in 5h");
+        assert!(nests(604_800.0, 86_400.0), "a week in days");
+        assert!(!nests(604_800.0, 172_800.0), "a week in 2D bars");
+        assert!(nests(172_800.0, 172_800.0), "2D in 2D");
+        assert!(!nests(172_800.0, 259_200.0), "2D in 3D");
+        assert!(!nests(2_592_000.0, 604_800.0), "a month in weeks");
+        assert!(nests(2_592_000.0, 86_400.0), "a month in days");
+        assert!(nests(7_776_000.0, 2_592_000.0), "3M in 1M");
+        assert!(!nests(2_592_000.0, 7_776_000.0), "1M in 3M");
+        assert!(nests(90.0, 30.0), "90s in 30s");
+        assert!(!nests(90.0, 60.0), "90s in 60s");
     }
 
     #[test]

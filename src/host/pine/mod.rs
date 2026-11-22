@@ -17,7 +17,7 @@ use crate::pine::compiler;
 use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::runtime::session::{RunError, Session};
 use crate::pine::runtime::support::{
-    ChartSpan, MAX_INTRABAR_CANDLES, SecurityDataProvider, SecurityKey,
+    ChartSpan, MAX_SERIES_CANDLES, SecurityDataProvider, SecurityKey, SeriesDepth,
 };
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity, Limits};
 use crate::pine::time::bucket::timeframe_of;
@@ -68,9 +68,9 @@ impl KlineSecurityDataProvider {
         let base_ms = base.nominal_ms();
         let mut start = chart
             .start_ms
-            .max(chart.end_ms - base_ms * MAX_INTRABAR_CANDLES as i64);
-        if key.recent_bars > 0 {
-            start = start.max(chart.end_ms - chart.spacing_ms * key.recent_bars as i64);
+            .max(chart.end_ms - base_ms * MAX_SERIES_CANDLES as i64);
+        if let SeriesDepth::Newest(count) = key.depth {
+            start = start.max(chart.end_ms - (key.interval * 1_000.0) as i64 * count as i64);
         }
         let candles = crate::service::fetch_klines_range(
             source,
@@ -78,7 +78,7 @@ impl KlineSecurityDataProvider {
             base,
             start,
             chart.end_ms,
-            MAX_INTRABAR_CANDLES,
+            MAX_SERIES_CANDLES,
         )
         .ok()
         .filter(|candles| !candles.is_empty())?;
@@ -102,6 +102,11 @@ impl KlineSecurityDataProvider {
             let covering = (chart.end_ms - chart.start_ms) / (key.interval as i64 * 1_000).max(1);
             (covering + 300).clamp(500, 1_000) as u32
         });
+        // `calc_bars_count` asks for the newest candles only.
+        let limit = match key.depth {
+            SeriesDepth::Chart => limit,
+            SeriesDepth::Newest(count) => limit.min(u32::try_from(count).unwrap_or(u32::MAX)),
+        };
         let candles = crate::service::fetch_klines(source, &symbol, timeframe, limit).ok()?;
         Some(construct(modifier, candles))
     }

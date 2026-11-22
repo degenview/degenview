@@ -159,6 +159,9 @@ pub struct Session {
     pub(crate) replay_globals: Option<FastMap<String, RuntimeValue>>,
     /// Whether `series_bars` is kept.
     keeps_series_bars: bool,
+    /// When each bar of the chart opens, past and (from `load_history`) future, kept with
+    /// `series_bars`: `calc_bars_count` counts buckets in it.
+    pub(crate) bar_opens: Vec<i64>,
     /// Every candle of the series now running, known before the run reached them: the chart's bars
     /// as `load_history` was given them, or, while a request's expression runs, the candles of that
     /// request. A request with `lookahead_on` on a historical bar reads its higher-timeframe bar as
@@ -238,6 +241,7 @@ impl Session {
         self.last_bar_time = None;
         self.first_bar_time = None;
         self.known_bars = None;
+        self.bar_opens.clear();
         self.history_end = None;
         self.final_bar_end = None;
         self.mintick = self.supplied_mintick.unwrap_or(DEFAULT_MINTICK);

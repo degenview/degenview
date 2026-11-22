@@ -17,7 +17,7 @@ use crate::model::Kline;
 use crate::pine::builtins::array;
 use crate::pine::footprint;
 use crate::pine::runtime::session::Session;
-use crate::pine::runtime::support::{MAX_INTRABAR_CANDLES, SecurityKey};
+use crate::pine::runtime::support::{MAX_SERIES_CANDLES, SecurityKey, SeriesDepth};
 use crate::pine::runtime::types::RuntimeContext;
 use crate::pine::runtime::value::{RefKind, RuntimeValue};
 use crate::pine::syntax::ast::Argument;
@@ -230,12 +230,12 @@ impl Session {
         let seconds = INTRABAR_SECONDS.iter().copied().find(|seconds| {
             *seconds < self.bar_seconds
                 && (self.bar_seconds / seconds).fract() == 0.0
-                && span_ms as f64 / (seconds * 1000.0) <= MAX_INTRABAR_CANDLES as f64
+                && span_ms as f64 / (seconds * 1000.0) <= MAX_SERIES_CANDLES as f64
         })?;
         let key = SecurityKey {
             symbol: self.symbol.ticker_id.clone(),
             interval: seconds,
-            recent_bars: 0,
+            depth: SeriesDepth::Chart,
         };
         let inside = |candles: &[Kline]| {
             let first = candles.partition_point(|candle| candle.open_time < bar.open_time);

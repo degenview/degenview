@@ -953,7 +953,9 @@ fn time_spent_waiting_for_data_is_in_no_region_and_not_in_the_total() {
 
 #[test]
 fn the_meter_forwards_every_request_and_counts_the_time() {
-    use crate::pine::runtime::support::{ChartSpan, SecurityDataProvider, SecurityKey};
+    use crate::pine::runtime::support::{
+        ChartSpan, SecurityDataProvider, SecurityKey, SeriesDepth,
+    };
 
     struct Slow;
     impl SecurityDataProvider for Slow {
@@ -967,7 +969,7 @@ fn the_meter_forwards_every_request_and_counts_the_time() {
     let key = SecurityKey {
         symbol: "X".into(),
         interval: 60.0,
-        recent_bars: 0,
+        depth: SeriesDepth::Chart,
     };
     assert_eq!(meter.candles(&key).map(|c| c.len()), Some(3));
     // `candles_over` falls back to `candles` for a provider that does not care about the span.
