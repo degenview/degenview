@@ -17,6 +17,7 @@
 pub(crate) mod hoist;
 #[cfg(test)]
 pub(in crate::pine) mod tests;
+pub(crate) mod total;
 
 use std::collections::HashSet;
 

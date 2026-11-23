@@ -69,6 +69,7 @@ impl Session {
                             .map(|p| linkage.canonical(p, "", &HashSet::new()))
                             .collect(),
                         body.clone(),
+                        statement.range().start.offset,
                     );
                     function.mark_globals(&globals);
                     callables.push(function.clone());

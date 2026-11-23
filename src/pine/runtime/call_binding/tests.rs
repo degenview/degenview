@@ -5,7 +5,9 @@
 
 use std::collections::HashMap;
 
-use super::{bind, route_of};
+use super::total::{self, is_total};
+use super::{INLINE, MORE_SCALAR_NAMES, SCALAR_NAMES, bind, route_of};
+use crate::pine::builtins::ta::extra;
 use crate::pine::compiler::{self, LibraryResolver, NoLibraries};
 use crate::pine::runtime::session::{RunError, Session};
 use crate::pine::syntax::ast::{Expression, Route, Statement};
@@ -532,6 +534,10 @@ fn a_call_that_could_fail_or_change_something_stays_where_it_is() {
         "lag = bar_index - 1\nx = lag >= 0 ? ta.sma(close[lag], 3)[1] : na",
         "lag = bar_index - 1\nx = lag >= 0 ? ta.sma(close[-1], 3)[1] : na",
         "f(l) =>\n    math.abs(close[l])\nlag = bar_index - 1\nx = lag >= 0 ? f(lag)[1] : na",
+        // Builtins that can raise, in families whose other members cannot.
+        "x = close > 0 ? runtime.error(\"x\")[1] : na",
+        "x = close > 0 ? time(\"nonsense\")[1] : na",
+        "x = close > 0 ? time_close(\"nonsense\")[1] : na",
     ] {
         assert!(hoisted_calls(body).is_empty(), "{body}");
     }
@@ -562,9 +568,82 @@ fn a_user_function_moves_only_when_it_only_computes() {
         "f() =>\n    na(close) ? 1.0 : label.new(bar_index, close).get_x()\n",
         "g() =>\n    plot(close)\n    1.0\nf() =>\n    g()\n",
         "f() =>\n    i = 0\n    while i < 3\n        i += 1\n    i\n",
+        "f() =>\n    runtime.error(\"x\")\n    1.0\n",
+        "f() =>\n    time(\"nonsense\")\n",
+        // A loop is total only when its trip count is known: a zero step raises, and a bound the
+        // data sets can run past the per-bar instruction budget.
+        "f() =>\n    s = 0.0\n    for i = 0 to 3 by 0\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 0 to 3 by bar_index\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 0 to bar_index\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = bar_index to 3\n        s += 1.0\n    s\n",
     ] {
         let source = format!("{impure}x = close > 0 ? f()[1] : na");
         assert!(hoisted_calls(&source).is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn a_loop_with_a_known_trip_count_is_total() {
+    for body in [
+        "for i = 0 to 3\n        s += 1.0",
+        "for i = 0 to 3 by 1\n        s += 1.0",
+        "for i = 3 to 0 by -1\n        s += 1.0",
+        "for i = 0 to 10 by 2.5\n        s += 1.0",
+    ] {
+        let source = format!("f() =>\n    s = 0.0\n    {body}\n    s\nx = close > 0 ? f()[1] : na");
+        assert_eq!(hoisted_calls(&source), ["f"], "{source}");
+    }
+}
+
+// MARK: Which builtins may run ahead of their guard
+
+#[test]
+fn the_builtins_that_can_raise_or_draw_on_a_generator_are_not_total() {
+    for name in [
+        "runtime.error",
+        "ta.pivot_point_levels",
+        "time",
+        "time_close",
+        "math.random",
+        "array.get",
+        "str.tostring",
+        "request.security",
+        "plot",
+        "no.such.function",
+    ] {
+        assert!(!is_total(name), "{name}");
+    }
+    for name in [
+        "ta.sma", "ta.ema", "ta.atr", "math.abs", "math.max", "nz", "na", "fixnan",
+    ] {
+        assert!(is_total(name), "{name}");
+    }
+}
+
+#[test]
+fn every_name_that_is_total_is_a_builtin_the_compiler_knows() {
+    for name in total::NAMES.iter().chain(total::REFUSED) {
+        assert!(route_of(name).is_some(), "{name} has no route");
+    }
+}
+
+#[test]
+fn a_builtin_has_to_be_decided_before_it_may_run_ahead() {
+    // Every name the families that can raise answer is listed as total or as refused: a builtin
+    // added to one of them is neither until someone reads its evaluator, and until then it stays.
+    let answered = INLINE
+        .iter()
+        .chain(&extra::FUNCTIONS)
+        .chain(&SCALAR_NAMES)
+        .chain(&MORE_SCALAR_NAMES)
+        .chain(&crate::pine::time::PART_NAMES);
+    for name in answered {
+        let listed = total::NAMES.contains(name) as usize + total::REFUSED.contains(name) as usize;
+        assert_eq!(
+            listed, 1,
+            "{name} must be in exactly one of NAMES and REFUSED"
+        );
+        assert_eq!(is_total(name), total::NAMES.contains(name), "{name}");
     }
 }
 

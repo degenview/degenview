@@ -67,6 +67,9 @@ struct Frame {
     outermost: bool,
     /// The same, for the call site.
     outermost_call: bool,
+    /// Whether its end is an execution of its region. What the session runs ahead of a statement is
+    /// time of that statement, not another run of it.
+    counted: bool,
 }
 
 pub struct ProfileRuntime {
@@ -217,7 +220,7 @@ impl ProfileRuntime {
     pub fn enter_statement(&mut self, offset: usize) -> bool {
         match self.table.at_offset(offset) {
             Some(region) => {
-                self.push(region, None);
+                self.push(region, None, true);
                 true
             }
             None => {
@@ -227,14 +230,36 @@ impl ProfileRuntime {
         }
     }
 
-    /// A user-defined function's body starts, called from the call at `call_offset`. `first_statement`
-    /// is the offset of the first statement of the body, which names the function. Returns whether
-    /// it is a measured region; either way a frame is open until [`exit`](Self::exit).
-    #[inline]
-    pub fn enter_function(&mut self, first_statement: usize, call_offset: usize) -> bool {
-        match self.table.function_with_body(first_statement) {
+    /// Something the session runs ahead of a statement starts (a call it moved out of a lazy
+    /// operand), at `offset` in that statement's text. Its time is the statement's, the one written
+    /// in the region that is open, but running it is not an execution of the statement. Returns
+    /// whether it is a measured region; either way a frame is open until [`exit`](Self::exit).
+    pub fn enter_run_ahead(&mut self, offset: usize) -> bool {
+        let around = match self.stack.last() {
+            Some(frame) if frame.region == UNTIMED => None,
+            Some(frame) => Some(Some(frame.region)),
+            None => Some(None),
+        };
+        match around.and_then(|around| self.table.statement_around(offset, around)) {
             Some(region) => {
-                self.push(region, Some(call_offset));
+                self.push(region, None, false);
+                true
+            }
+            None => {
+                self.enter_untimed();
+                false
+            }
+        }
+    }
+
+    /// A user-defined function's body starts, called from the call at `call_offset`. `declared_at`
+    /// is where the function's declaration starts, which names it. Returns whether it is a measured
+    /// region; either way a frame is open until [`exit`](Self::exit).
+    #[inline]
+    pub fn enter_function(&mut self, declared_at: usize, call_offset: usize) -> bool {
+        match self.table.function_at(declared_at) {
+            Some(region) => {
+                self.push(region, Some(call_offset), true);
                 true
             }
             None => {
@@ -255,11 +280,12 @@ impl ProfileRuntime {
             children: 0,
             outermost: false,
             outermost_call: false,
+            counted: false,
         });
     }
 
     #[inline]
-    fn push(&mut self, region: u32, call: Option<usize>) {
+    fn push(&mut self, region: u32, call: Option<usize>, counted: bool) {
         let counters = &mut self.counters[region as usize];
         let outermost = counters.active == 0;
         counters.active += 1;
@@ -292,6 +318,7 @@ impl ProfileRuntime {
             children: 0,
             outermost,
             outermost_call,
+            counted,
         });
     }
 
@@ -322,9 +349,11 @@ impl ProfileRuntime {
         let elapsed = now.saturating_sub(frame.start);
         let exclusive = elapsed.saturating_sub(frame.children);
         let counters = &mut self.counters[frame.region as usize];
-        counters.executions += 1;
+        if frame.counted {
+            counters.executions += 1;
+            counters.slowest = counters.slowest.max(elapsed);
+        }
         counters.exclusive += exclusive;
-        counters.slowest = counters.slowest.max(elapsed);
         counters.active -= 1;
         if frame.outermost {
             counters.inclusive += elapsed;

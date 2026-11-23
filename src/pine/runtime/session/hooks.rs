@@ -60,13 +60,13 @@ impl Session {
                 // Library code is not timed: its offsets belong to another text, and its time is
                 // part of the statement that called it. Walking past a function's declaration runs
                 // nothing; its calls are timed in `invoke`.
-                if synthetic
-                    || context.scope.is_some()
-                    || matches!(statement, Statement::Function { .. })
-                {
+                let offset = statement.range().start.offset;
+                if context.scope.is_some() || matches!(statement, Statement::Function { .. }) {
                     profile.enter_untimed();
+                } else if synthetic {
+                    profile.enter_run_ahead(offset);
                 } else {
-                    profile.enter_statement(statement.range().start.offset);
+                    profile.enter_statement(offset);
                 }
                 Ok(())
             }
@@ -122,7 +122,7 @@ impl Session {
         call_name: &str,
         range: SourceRange,
         scope: Option<&str>,
-        first_statement: Option<usize>,
+        declared_at: usize,
         saved: &[(String, Option<RuntimeValue>)],
         uncovered: &[(usize, Option<RuntimeValue>)],
     ) {
@@ -140,12 +140,11 @@ impl Session {
                     .collect();
                 debug.enter_function(call_name, range, scope, shadowed);
             }
-            Some(Hooks::Profile(profile)) => match first_statement {
-                Some(first) if scope.is_none() => {
-                    profile.enter_function(first, range.start.offset);
-                }
-                _ => profile.enter_untimed(),
-            },
+            // A library's offsets belong to another text: its calls are not timed.
+            Some(Hooks::Profile(profile)) if scope.is_none() => {
+                profile.enter_function(declared_at, range.start.offset);
+            }
+            Some(Hooks::Profile(profile)) => profile.enter_untimed(),
             None => {}
         }
     }

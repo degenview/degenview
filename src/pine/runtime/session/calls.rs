@@ -653,15 +653,11 @@ impl Session {
             Some(function.locals.clone())
         };
         if self.hooks.is_some() {
-            let first_statement = function
-                .body
-                .first()
-                .map(|first| first.range().start.offset);
             self.hook_enter_function(
                 call_name,
                 range,
                 function.scope.as_deref(),
-                first_statement,
+                function.declared_at,
                 &saved,
                 &uncovered,
             );

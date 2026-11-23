@@ -21,25 +21,34 @@
 //! A *lazy* operand is the right side of `and`/`or`, either arm of `?:`, the arms of an `if` or
 //! `switch` used for its value, and a `switch` arm's condition after the first. Only a *total*
 //! call moves: running it early cannot fail or change anything, so it cannot change what the script
-//! does on the bars its branch skips. That is a `ta.*` function, a math or scalar builtin or a user
-//! function built from those, with arguments that are total too, and a history only at a literal
-//! non-negative offset (`close[lag]` fails for a negative `lag`, which a guard may be keeping out).
-//! Anything that could fail, change state or draw (`array.get`, `array.push`, `plot`, a method, a
-//! field read, `request.*`) stays where it is, as does a call whose arguments read a name the
-//! statement itself declares or assigns.
+//! does on the bars its branch skips. Which builtins are total is decided by `total::is_total`; a
+//! user function is total when its body only computes with total calls, and a loop in it has a trip
+//! count that is known and cannot fail (its bounds and step are literals and the step is not zero:
+//! a zero step raises, and a bound the data sets can run past the per-bar instruction budget). A
+//! history is total only at a literal non-negative offset (`close[lag]` fails for a negative `lag`,
+//! which a guard may be keeping out). Anything that could fail, change state or draw (`array.get`,
+//! `array.push`, `plot`, `runtime.error`, `time`, a method, a field read, `request.*`) stays where
+//! it is, as does a call whose arguments read a name the statement itself declares or assigns.
+//!
+//! The scope is the script's own statements and the libraries it imports, in blocks and functions
+//! alike. A call inside a `request.*` expression is not moved: that expression runs on the requested
+//! series, so a lazy `call[]` written there keeps its old reading (`na` on the bars its branch
+//! skips). A call to a library's function is never moved either, since a library's functions are not
+//! in the script's resolutions.
 //!
 //! The synthetic declaration starts where the call does, so its offset is unique among
-//! declarations, and `SYNTHETIC` marks its name: the debugger and the profiler skip it, so the
-//! statement it was taken from stays the unit they measure and stop at.
+//! declarations, and `SYNTHETIC` marks its name: the debugger skips it, and the profiler charges
+//! its time to the statement it was taken from, which stays the unit they measure and stop at.
 
 use std::collections::{HashMap, HashSet};
 
+use super::total::is_total;
 use super::{Targets, collect_captured, route_for};
 use crate::pine::SourceRange;
 use crate::pine::compiler::program::CompiledProgram;
 use crate::pine::syntax::ast::{
-    BinaryOperator, DeclarationMode, Expression, FunctionKind, Literal, Parameter, Route,
-    SYNTHETIC, Statement, TypeAnnotation,
+    BinaryOperator, DeclarationMode, Expression, FunctionKind, Literal, Parameter, SYNTHETIC,
+    Statement, TypeAnnotation, UnaryOperator,
 };
 use crate::pine::syntax::traversal::{children, expressions, nested_blocks};
 
@@ -176,6 +185,9 @@ impl<'c> Calls<'c> {
                 when_false,
                 ..
             } => self.expression(condition, locals) && all(when_true) && all(when_false),
+            // A loop is total when its trip count is known and cannot fail: a zero step raises, and
+            // a bound the data sets can run past the per-bar instruction budget (PINE8004), on a
+            // bar its branch was keeping out.
             Statement::ForRange {
                 from,
                 to,
@@ -183,14 +195,15 @@ impl<'c> Calls<'c> {
                 body,
                 ..
             } => {
-                self.expression(from, locals)
-                    && self.expression(to, locals)
-                    && step.iter().all(|step| self.expression(step, locals))
+                literal_number(from).is_some()
+                    && literal_number(to).is_some()
+                    && step
+                        .iter()
+                        .all(|step| literal_number(step).is_some_and(|step| step != 0.0))
                     && all(body)
             }
-            Statement::ForIn {
-                collection, body, ..
-            } => self.expression(collection, locals) && all(body),
+            // How often it runs is the collection's size.
+            Statement::ForIn { .. } => false,
             Statement::Switch { subject, arms, .. } => {
                 subject
                     .iter()
@@ -249,7 +262,7 @@ impl<'c> Calls<'c> {
     /// Whether running the call on a bar its branch skips is harmless.
     fn call(&self, name: &str, site: usize) -> bool {
         match route_for(name, self.captured) {
-            Some(route) => Self::builtin_is_safe(name, route),
+            Some(_) => is_total(name),
             None => {
                 let callees = match self.targets.get(&site) {
                     Some(target) => std::slice::from_ref(target),
@@ -258,16 +271,6 @@ impl<'c> Calls<'c> {
                 !callees.is_empty() && callees.iter().all(|callee| self.pure[*callee])
             }
         }
-    }
-
-    /// The `ta` functions and the math and scalar builtins compute from their arguments. The ones
-    /// excluded fail on a bad argument (`ta.pivot_point_levels` with an unknown type) or draw on a
-    /// generator (`math.random`).
-    fn builtin_is_safe(name: &str, route: Route) -> bool {
-        matches!(
-            route,
-            Route::TaTable | Route::TaExtra | Route::TaInline | Route::Math | Route::Scalar
-        ) && !matches!(name, "ta.pivot_point_levels" | "math.random")
     }
 
     /// Whether `expression` calls something that is not a builtin.
@@ -568,6 +571,25 @@ fn held_in<'a>(expression: &'a Expression, visit: &mut impl FnMut(&'a Statement)
     }
     for child in children(expression) {
         held_in(child, visit);
+    }
+}
+
+/// The value of a number written in the source, with its sign (`3`, `-1`, `2.5`).
+fn literal_number(expression: &Expression) -> Option<f64> {
+    match expression {
+        Expression::Literal(Literal::Int(n), _) => Some(*n as f64),
+        Expression::Literal(Literal::Float(n), _) => Some(*n),
+        Expression::Unary {
+            op: UnaryOperator::Negate,
+            operand,
+            ..
+        } => literal_number(operand).map(|n| -n),
+        Expression::Unary {
+            op: UnaryOperator::Plus,
+            operand,
+            ..
+        } => literal_number(operand),
+        _ => None,
     }
 }
 

@@ -1405,6 +1405,76 @@ fn a_lazy_history_inside_a_request_expression_still_runs() {
 }
 
 #[test]
+fn a_lazy_history_directly_inside_a_request_expression_is_not_run_ahead() {
+    // Supported scope: the hoist works on the chart's own statements. A request's expression runs on
+    // the requested series, so a lazy `call[]` written inside it keeps the pre-hoist reading (`na` on
+    // the bars the branch skips, which is every bar here). The same expression on the chart is hoisted.
+    let guarded = "int(close) % 2 == 1 ? ta.sma(close, 3)[1] : na";
+    let source = format!(
+        "y = request.security(syminfo.tickerid, timeframe.period, {guarded})\n\
+         x = {guarded}\nplot(x, \"x\")\nplot(y, \"y\")"
+    );
+    assert!(plot_values(&source, 30, "x").iter().flatten().count() > 10);
+    assert!(plot_values(&source, 30, "y").iter().all(Option::is_none));
+}
+
+// What may run ahead of its guard: a hoisted call runs on bars its branch skips, so it must not be
+// able to fail there. Each script keeps a call that fails behind a guard that never holds; the run
+// panics on the first error, so these pass only when the call stays where it is.
+
+#[test]
+fn a_function_that_raises_is_not_run_ahead_of_its_guard() {
+    let body = "f() =>\n    runtime.error(\"unreachable\")\n    1.0\n\
+                never = bar_index < 0\nr = never ? f()[1] : na\nplot(r, \"r\")";
+    assert_eq!(plot_values(body, 6, "r"), vec![None; 6]);
+}
+
+#[test]
+fn a_timeframe_the_guard_keeps_out_is_not_read_ahead_of_it() {
+    // `time` and `time_close` raise PINE4021 for a timeframe they cannot read.
+    for call in ["time(tf)", "time_close(tf)"] {
+        let body = format!(
+            "tf = \"nonsense\"\nnever = bar_index < 0\nr = never ? {call}[1] : na\nplot(r, \"r\")"
+        );
+        assert_eq!(plot_values(&body, 6, "r"), vec![None; 6], "{call}");
+    }
+}
+
+#[test]
+fn a_loop_that_cannot_run_is_not_run_ahead_of_its_guard() {
+    // A zero step raises, and a bound the guard keeps out exhausts the per-bar instruction budget
+    // (PINE8004); neither may run on a bar whose branch is skipped.
+    for (name, helper, call) in [
+        (
+            "zero step",
+            "f() =>\n    s = 0.0\n    for i = 0 to 3 by 0\n        s += 1.0\n    s\n",
+            "f()",
+        ),
+        (
+            "bound the guard keeps out",
+            "f(n) =>\n    s = 0.0\n    for i = 0 to n\n        s += 1.0\n    s\n",
+            "f(2000000000)",
+        ),
+    ] {
+        let body =
+            format!("{helper}never = bar_index < 0\nr = never ? {call}[1] : na\nplot(r, \"r\")");
+        assert_eq!(plot_values(&body, 6, "r"), vec![None; 6], "{name}");
+    }
+}
+
+#[test]
+fn a_loop_with_a_known_trip_count_is_still_run_ahead() {
+    let body = "f() =>\n    s = 0.0\n    for i = 0 to 3\n        s += close\n    s\n\
+                cond = bar_index % 2 == 0\nr = cond ? f()[1] : na\nplot(r, \"r\")\nplot(f(), \"every\")";
+    let r = plot_values(body, 20, "r");
+    let every = plot_values(body, 20, "every");
+    for bar in 2..20 {
+        let want = if bar % 2 == 0 { every[bar - 1] } else { None };
+        assert_eq!(r[bar], want, "bar {bar}");
+    }
+}
+
+#[test]
 fn trade_properties_read_the_closed_and_open_trades() {
     let source = "//@version=6\nstrategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 2)\n\
          if bar_index == 1\n    strategy.entry(\"L\", strategy.long)\n\

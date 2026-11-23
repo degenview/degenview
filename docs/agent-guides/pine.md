@@ -447,19 +447,37 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   without `[]` keeps its own state. The call moves, unchanged and with its `site`, into a synthetic
   declaration `\u{1}h<n> = <call>` before its statement, and the operand reads `\u{1}h<n>[k]`: the
   ordinary history of a variable, no new runtime code.
-  - Only a *total* call moves (`Calls::expression`, an exhaustive match over `Expression`: a new variant
-    must be decided): `ta.*`, math and scalar builtins (not `math.random`, `ta.pivot_point_levels`) and
-    user functions built only from those, with total arguments; a history only at a literal non-negative
-    offset (`close[lag]` raises PINE4006 for a negative `lag` a guard may keep out). No loop with a
-    data-dependent end, field assignment, method or field read, or assignment to a global. Never
-    `array.get`, `request.*`, a method, a draw. A call that reads a name its statement declares stays.
-  - Nothing moves out of a loop inside an arm, a `while` condition or a `request.*` argument.
-  - `SYNTHETIC` (`syntax::ast`) starts the name; `Statement::is_synthetic` makes `hook_before`/`hook_after`
-    skip it, and `SourceMap`/`RegionTable` leave it out, so the debugger shows no such variable or stop and
-    the profile keeps the statement it came from as the unit. Its range starts at the call, unique among
-    declarations in `syntax::scopes`.
+  - Only a *total* call moves: running it on a bar its branch skips cannot fail or change anything
+    (`Calls::expression`, an exhaustive match over `Expression`: a new variant must be decided). Which
+    builtins are total is `call_binding::total::is_total`, decided by the evaluator, not by its family:
+    `math.*` (not `math.random`, which draws on the generator) and the `ta` table cannot fail because
+    their evaluators return a bare value; the inline and extra `ta` functions and the scalars return a
+    `Result` and are opt-in by name (`total::NAMES`; `runtime.error`, `ta.pivot_point_levels`, `time`
+    and `time_close` raise). A test makes every name of those families be in `NAMES` or `REFUSED`, so a
+    new builtin must be decided; anything unknown, `array.*`, `str.*`, `request.*`, a method or a draw
+    is not total. A user function is total when its body only computes with total calls and
+    declarations of its own. A loop is total only when its bounds and step are numeric literals and the
+    step is not zero (a zero step raises, a bound the data sets can pass the per-bar budget, PINE8004);
+    no `while`, `for … in`, field assignment, method or field read, or assignment to a global. A
+    history only at a literal non-negative offset (`close[lag]` raises PINE4006 for a negative `lag` a
+    guard may keep out). A call that reads a name its statement declares stays.
+  - Nothing moves out of a loop inside an arm or a `while` condition.
+  - **Scope**: the script's own statements and the libraries it imports. A lazy `call[]` written
+    directly inside a `request.*` expression is not moved (that expression runs on the requested
+    series, in the request's own state), so it keeps its old reading, `na` on the bars its branch
+    skips; the same expression on the chart is hoisted (`a_lazy_history_directly_inside_a_request_expression_is_not_run_ahead`).
+    A variable the request reads is replayed by its slice, hoisted call included.
+  - `SYNTHETIC` (`syntax::ast`) starts the name; `Statement::is_synthetic` makes the debugger's
+    `hook_before`/`hook_after` skip it and `SourceMap`/`RegionTable` leave it out, so the debugger shows
+    no such variable or stop. The profiler times it as the statement it came from, written in the open
+    region (`RegionTable::statement_around`, `ProfileRuntime::enter_run_ahead`), without counting an
+    execution; a function is named to the profiler by its declaration (`RuntimeFunction::declared_at`),
+    never by its first body statement, which may be a synthetic one. Its range starts at the call,
+    unique among declarations in `syntax::scopes`.
   - A hoist inside a block runs when the block does, so the history carries over the bars it did not run
     (not measured on TradingView).
+  - Not part of the hoist, and still different from Pine: `nz(a, ta.sma(…))` evaluates its second
+    argument only when `a` is `na` (`Session::scalar_call`), where Pine evaluates both.
 - A run-time failure has no profile (`Profiler::finish`), only the failure, also in Problems.
 - Never close a Pine Studio tab or quit over unsaved editor text or retained drafts without the
   `unsaved` flow. Tab close starts `begin_exit(CloseTab)` and cancels close; quit/update restart use

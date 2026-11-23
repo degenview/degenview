@@ -66,8 +66,6 @@ pub struct RegionTable {
     regions: Vec<Region>,
     /// `(start offset, region)`, sorted by offset.
     by_offset: Vec<(usize, u32)>,
-    /// `(start offset of a function's first body statement, the function's region)`, sorted.
-    function_bodies: Vec<(usize, u32)>,
 }
 
 impl RegionTable {
@@ -85,21 +83,7 @@ impl RegionTable {
             .collect();
         by_offset.sort_unstable();
         by_offset.dedup_by_key(|(offset, _)| *offset);
-        let mut function_bodies: Vec<(usize, u32)> = regions
-            .iter()
-            .enumerate()
-            .filter(|(_, region)| region.kind == RegionKind::Function)
-            .filter_map(|(index, region)| {
-                let first = (*region.blocks.first()?)?;
-                Some((regions[first as usize].offset, index as u32))
-            })
-            .collect();
-        function_bodies.sort_unstable();
-        Self {
-            regions,
-            by_offset,
-            function_bodies,
-        }
+        Self { regions, by_offset }
     }
 
     /// One statement at offset 0, to measure the cost of measuring.
@@ -117,11 +101,10 @@ impl RegionTable {
                 has_children: false,
             }],
             by_offset: vec![(0, 0)],
-            function_bodies: Vec::new(),
         }
     }
 
-    /// One user function whose body starts at offset 0, to measure the cost of timing a call.
+    /// One user function declared at offset 0, to measure the cost of timing a call.
     pub(super) fn single_function() -> Self {
         let position = SourcePosition::new(1, 1, 0);
         Self {
@@ -136,7 +119,6 @@ impl RegionTable {
                 has_children: false,
             }],
             by_offset: vec![(0, 0)],
-            function_bodies: vec![(0, 0)],
         }
     }
 
@@ -161,13 +143,24 @@ impl RegionTable {
             .map(|position| self.by_offset[position].1)
     }
 
-    /// The function whose body starts with the statement at `first_statement`.
+    /// The function declared at `offset`.
     #[inline]
-    pub fn function_with_body(&self, first_statement: usize) -> Option<u32> {
-        self.function_bodies
-            .binary_search_by_key(&first_statement, |(start, _)| *start)
-            .ok()
-            .map(|position| self.function_bodies[position].1)
+    pub fn function_at(&self, offset: usize) -> Option<u32> {
+        self.at_offset(offset)
+            .filter(|index| self.regions[*index as usize].kind == RegionKind::Function)
+    }
+
+    /// The statement, written directly in the region `parent` (`None`: at the top of the script),
+    /// that contains `offset`: for something the session runs ahead of a statement, the statement.
+    pub fn statement_around(&self, offset: usize, parent: Option<u32>) -> Option<u32> {
+        let mut region = self.enclosing(offset)?;
+        loop {
+            let up = self.regions[region as usize].parent;
+            if up == parent {
+                return Some(region);
+            }
+            region = up?;
+        }
     }
 
     /// The innermost region whose text contains `offset`.
