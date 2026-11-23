@@ -1856,14 +1856,19 @@ fn gallery_of_a_script() {
         harness.card.set_visible_candles(count);
     }
     let id = harness.card.add_pine_instance(None, "Script", &source);
-    wait_for_run(&mut harness, id);
-    assert!(
-        harness
-            .card
-            .pine_status(id)
-            .is_some_and(|s| s.error.is_none()),
-        "the script ran"
-    );
+    // A real script over thousands of bars takes far longer than the card tests' few seconds.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+    while harness.card.pine_status(id).is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the script never finished"
+        );
+        harness.frame();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    if let Some(error) = harness.card.pine_status(id).and_then(|status| status.error) {
+        panic!("the script failed: {error:?}");
+    }
     settled(&mut harness);
     let image = crate::service::snapshot::raster::rasterize(&scene_of(&harness, SnapshotScale::X2))
         .expect("drawn");
