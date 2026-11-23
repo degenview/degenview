@@ -16,15 +16,15 @@ use crate::model::Kline;
 use crate::model::chart::look::drawn_extremes;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, LabelOutput, LabelStyle, MarkerLocation, MarkerShape, PlotOutput, PlotStyle,
-    TableOutput, YLocation,
+    DISPLAY_PANE, LabelOutput, LabelStyle, MarkerLocation, MarkerOutput, MarkerShape, PlotOutput,
+    PlotStyle, Size, TableOutput, YLocation,
 };
 use crate::pine::strategy::StrategyReport;
 use crate::ui::chart::series::{WICK_WIDTH, candle_half_width, snap_candle, snap_rows};
 use crate::ui::pine::geometry::{
     self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, box_text_placement,
-    candle_index_for_bar, dash_pattern, extended_line, faded, font_size, is_visible, label_layout,
-    polyline_points, rgba, series_index, shape_radius,
+    candle_index_for_bar, dash_pattern, extended_line, faded, is_visible, label_font_size,
+    label_layout, polyline_points, rgba, series_index, shape_radius, table_font_size,
 };
 use eframe::egui::{
     self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2,
@@ -40,8 +40,6 @@ const CROSS_HALF_SIZE: f32 = 3.0;
 const MARKER_OFFSET: f32 = 8.0;
 /// The room between a marker's near edge and the candle (or pane edge) it hangs off.
 const MARKER_GAP: f32 = 3.0;
-const LABEL_POINTER: f32 = 5.0;
-const LABEL_PADDING: Vec2 = Vec2::new(10.0, 6.0);
 
 /// A place a script gave a tooltip: a label, or a table cell. `rect` is what was drawn, so the
 /// hover and the picture agree.
@@ -745,7 +743,7 @@ impl PineLayer<'_> {
                 text_at(
                     &painter.with_clip_rect(rect.intersect(painter.clip_rect())),
                     &item.text,
-                    font_size(item.text_size),
+                    label_font_size(item.text_size),
                     rgba(item.text_color),
                     point,
                     anchor,
@@ -895,7 +893,7 @@ impl PineLayer<'_> {
             let Some(layout) = self.label_geometry(painter, label) else {
                 continue;
             };
-            let size = font_size(label.size);
+            let size = label_font_size(label.size);
             let text = rgba(label.text_color);
             if let Some(fill) = label.color.filter(|c| is_visible(*c)) {
                 draw_label_shape(painter, &layout, rgba(fill));
@@ -920,12 +918,13 @@ impl PineLayer<'_> {
     ) -> Option<geometry::LabelLayout> {
         let y = self.label_y(label)?;
         let anchor = Pos2::new(self.x_bar(label.x), y);
-        let measured = measure(painter, &label.text, font_size(label.size));
+        let font = label_font_size(label.size);
+        let measured = measure(painter, &label.text, font);
         Some(label_layout(
             label.style,
             anchor,
-            measured + LABEL_PADDING,
-            LABEL_POINTER,
+            measured + geometry::label_padding(font),
+            geometry::label_pointer(font),
         ))
     }
 
@@ -973,6 +972,12 @@ impl PineLayer<'_> {
                     continue;
                 }
                 let x = self.x_at(i);
+                if marker.character.is_none()
+                    && matches!(marker.style, MarkerShape::LabelUp | MarkerShape::LabelDown)
+                {
+                    self.draw_label_shape_marker(painter, marker, i, x);
+                    continue;
+                }
                 let radius = shape_radius(marker.style, marker.size);
                 let reach = match &marker.character {
                     Some(_) => 6.0,
@@ -1009,7 +1014,7 @@ impl PineLayer<'_> {
                     text_at(
                         painter,
                         text,
-                        font_size(marker.size),
+                        label_font_size(marker.size),
                         text_color,
                         at,
                         anchor,
@@ -1023,6 +1028,73 @@ impl PineLayer<'_> {
     /// `MARKER_GAP` clear of the candle (or the pane's edge), so one taller than the usual offset
     /// (`half_height` is how far it reaches either side of its centre) moves out instead of
     /// overlapping the candle or running off the pane. `location.absolute` keeps its price.
+    /// A `shape.labelup` / `shape.labeldown` marker: a bubble around its `text`, its pointer's tip
+    /// where `location` puts it (the price for `location.absolute`, else a size's gap from the bar).
+    fn draw_label_shape_marker(&self, painter: &Painter, marker: &MarkerOutput, i: usize, x: f32) {
+        let metrics = geometry::shape_label(marker.size);
+        let text = self
+            .visible(&marker.texts, i)
+            .and_then(|text| text.as_deref())
+            .unwrap_or("");
+        let font = label_font_size(Size::Normal);
+        let measured = measure(painter, text, font);
+        let tip = Pos2::new(
+            x,
+            self.marker_tip_y(marker.location, &marker.prices, i, metrics.gap),
+        );
+        let style = if marker.style.points_down() {
+            LabelStyle::LabelDown
+        } else {
+            LabelStyle::LabelUp
+        };
+        let layout = label_layout(style, tip, measured + metrics.padding, metrics.pointer);
+        let fill = rgba(self.visible_opt(&marker.colors, i).unwrap_or(marker.color));
+        draw_label_shape(painter, &layout, fill);
+        if !text.is_empty() {
+            let text_color = rgba(
+                self.visible_opt(&marker.text_colors, i)
+                    .unwrap_or(marker.color),
+            );
+            text_at(
+                painter,
+                text,
+                font,
+                text_color,
+                layout.body.center(),
+                Align2::CENTER_CENTER,
+            );
+        }
+    }
+
+    /// Where the tip of a label shape stands: `gap` away from the bar's low (below) or high
+    /// (above), or at the price for `location.absolute`; pinned to the pane's edges in a pane.
+    fn marker_tip_y(
+        &self,
+        location: MarkerLocation,
+        prices: &[Option<f64>],
+        i: usize,
+        gap: f32,
+    ) -> f32 {
+        if location == MarkerLocation::Absolute
+            && let Some(price) = self.visible_opt(prices, i)
+        {
+            return self.y(price);
+        }
+        if self.in_pane {
+            return if location.is_below() {
+                self.plot.max.y - gap
+            } else {
+                self.plot.min.y + gap
+            };
+        }
+        let candle = &self.candles[i];
+        if location.is_below() {
+            self.y(candle.low) + gap
+        } else {
+            self.y(candle.high) - gap
+        }
+    }
+
     fn marker_y(
         &self,
         location: MarkerLocation,
@@ -1443,12 +1515,12 @@ fn draw_table(
             rect,
             cell.text_horizontal_align,
             cell.text_vertical_align,
-            geometry::CELL_PADDING.x / 2.0,
+            geometry::cell_padding(table_font_size(cell.text_size)).x / 2.0,
         );
         text_at(
             painter,
             &cell.text,
-            font_size(cell.text_size),
+            table_font_size(cell.text_size),
             rgba(cell.text_color),
             point,
             anchor,
@@ -2664,8 +2736,12 @@ mod tests {
         let mut label = tip_label(9, 200.0 - cell.center().y as f64, "L", Some("label of B"));
         label.style = LabelStyle::LabelCenter;
         b.labels.push(label);
-        let over = Pos2::new(x_of(9), cell.center().y);
-        assert!(cell.contains(over), "the label is over the cell: {cell:?}");
+        // The cell's centre, under the bubble of the label at the last bar.
+        let over = cell.center();
+        assert!(
+            (over.x - x_of(9)).abs() < 12.0,
+            "the label is over the cell: {cell:?}"
+        );
         let hovered = |layers: &[(PineLayer, bool)]| {
             with_painter(|painter| {
                 target_at(&hover_targets_in_order(layers, painter), over).map(|t| t.text.clone())
