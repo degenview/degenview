@@ -116,10 +116,18 @@ jobs:
 
       # Tests never touch the Keychain or the network (see AGENTS.md); the flag keeps a stray
       # code path from blocking on a Keychain prompt on the runner.
+      #
+      # `--lib`: every test is in the library (no `tests/` directory, `doctest = false`, and the two
+      # binaries hold none). A plain `cargo test` also builds the library a second time, without
+      # `cfg(test)`, only to link those binaries: on `Test macos` that was 439 s of compiling next to
+      # the 661 s test build (3 cores, 7 GiB; see `build-timings.yml`), on Linux 67 s next to 112 s.
+      # The binaries are still compiled by `Lint` (`clippy --all-targets`), `Test windows` (`cargo
+      # check`) and `Build icloud macos`. A test added to a binary or under `tests/` needs this
+      # line changed back.
       - name: Run tests
         env:
           DEGENVIEW_NO_KEYCHAIN: "1"
-        run: cargo test --locked
+        run: cargo test --locked --lib
 
   # The iCloud bridge is Swift and macOS-only; this proves it still compiles and links for the
   # runner's architecture, and that the background alert agent still does not link Swift. A job of
