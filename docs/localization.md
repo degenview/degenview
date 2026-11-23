@@ -102,11 +102,14 @@ The system's languages come from `service::system::language`, which asks `sys-lo
 ## Catalogs
 
 One gettext file per language, `assets/locales/<tag>.po`, compiled in (`LANGUAGES`).
-`assets/locales/messages.pot` is the template: every message of the source, untranslated, with where it
-is written (by file, not line, so an unrelated edit does not change it). A test fails when it is out of date; rewrite it with
+`assets/locales/messages.pot` is the template: every message of the source, untranslated, with the
+files that write it. A test fails when the template lacks a message the source writes or lists one it no
+longer does, and names them. That is the whole contract: the order, the header and the `#:` references
+are informational (`msgmerge` and translation platforms refresh them), so moving a message to another
+file or releasing a version does not fail it. Rewrite the file with
 
 ```bash
-UPDATE_POT=1 cargo test --lib i18n::tests::the_template_is_the_messages_in_the_source
+UPDATE_POT=1 cargo test --lib i18n::tests::the_template_lists
 ```
 
 ```po

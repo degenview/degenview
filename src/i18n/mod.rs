@@ -68,6 +68,10 @@ pub fn translate_counted(count: u64, one: &'static str, other: &'static str) -> 
         .unwrap_or(english)
 }
 
+// The macros' arguments are `key`, `context`, `one` and `other` string literals, a `count` and a
+// `$name:ident = $value:expr` per value. `extract::read_call` reads calls with the same grammar, and
+// `tests::the_extractor_reads_every_form_the_macros_accept` keeps the two in step.
+
 /// A message in the language in use. See the module documentation.
 macro_rules! tr {
     ($key:literal) => {{

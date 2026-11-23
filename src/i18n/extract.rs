@@ -3,9 +3,12 @@
 //!
 //! The source is tokenised the way the compiler does (`proc-macro2`), so comments, doc comments
 //! and string literals can never be taken for a call, and a call inside another macro (`format!`,
-//! `assert_eq!`) or a closure is found like any other.
+//! `assert_eq!`) or a closure is found like any other. Each call is then read with the grammar of
+//! the macros themselves (`read_call`), not with a parser of its own.
 
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
+use syn::parse::{ParseStream, Parser};
+use syn::{Expr, Ident, LitStr, Token};
 
 /// Which macro a message was written with.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -92,65 +95,46 @@ fn collect(tokens: TokenStream, found: &mut Vec<Use>) -> Result<(), String> {
 
 type Call = (Kind, String, Vec<String>);
 
-fn read_call(name: &str, stream: TokenStream) -> Result<Call, String> {
-    let mut parts = split_commas(stream).into_iter();
-    let mut next = |what: &str| parts.next().ok_or_else(|| format!("is missing {what}"));
-    match name {
-        "tr" => {
-            let key = literal(&next("its text")?)?;
-            Ok((Kind::Plain, key, names(parts)?))
-        }
-        "tr_c" => {
-            let context = literal(&next("its context")?)?;
-            let key = literal(&next("its text")?)?;
-            Ok((Kind::Context(context), key, names(parts)?))
-        }
-        _ => {
-            next("its count")?;
-            let one = literal(&next("its singular")?)?;
-            let other = literal(&next("its plural")?)?;
-            let mut args = names(parts)?;
-            args.insert(0, "count".to_owned());
-            Ok((Kind::Counted(one), other, args))
-        }
-    }
-}
-
-/// The top-level arguments of a call: a `,` inside brackets belongs to the argument.
-fn split_commas(stream: TokenStream) -> Vec<Vec<TokenTree>> {
-    let mut parts = vec![Vec::new()];
-    for tree in stream {
-        match &tree {
-            TokenTree::Punct(punct) if punct.as_char() == ',' => parts.push(Vec::new()),
-            _ => parts.last_mut().expect("one part").push(tree),
-        }
-    }
-    if parts.last().is_some_and(Vec::is_empty) {
-        parts.pop();
-    }
-    parts
-}
-
-/// The value of an argument that is a plain or raw string literal and nothing else.
-fn literal(tokens: &[TokenTree]) -> Result<String, String> {
-    let [TokenTree::Literal(literal)] = tokens else {
-        return Err("takes a string literal here".to_owned());
-    };
-    syn::parse_str::<syn::LitStr>(&literal.to_string())
-        .map(|text| text.value())
-        .map_err(|_| "takes a string literal here".to_owned())
-}
-
-/// The names of `name = value` arguments.
-fn names(parts: impl Iterator<Item = Vec<TokenTree>>) -> Result<Vec<String>, String> {
-    parts
-        .map(|part| match part.as_slice() {
-            [TokenTree::Ident(name), TokenTree::Punct(equals), ..] if equals.as_char() == '=' => {
-                Ok(name.to_string())
+/// Reads one call with the grammar of the macros themselves (the `macro_rules` arms in
+/// `i18n/mod.rs`), so what compiles is what is extracted:
+///
+/// * `tr!(key $(, name = value)* $(,)?)`
+/// * `tr_c!(context, key $(, name = value)* $(,)?)`
+/// * `tr_n!(count, one, other $(, name = value)* $(,)?)`
+///
+/// `key`, `context`, `one` and `other` are string literals; `count` and each `value` are any Rust
+/// expression, which `syn` reads the way the compiler does.
+fn read_call(name: &str, stream: TokenStream) -> syn::Result<Call> {
+    let grammar = |input: ParseStream| -> syn::Result<Call> {
+        let (kind, key) = match name {
+            "tr" => (Kind::Plain, input.parse::<LitStr>()?.value()),
+            "tr_c" => {
+                let context = input.parse::<LitStr>()?.value();
+                input.parse::<Token![,]>()?;
+                (Kind::Context(context), input.parse::<LitStr>()?.value())
             }
-            _ => Err("passes a value that is not `name = value`".to_owned()),
-        })
-        .collect()
+            _ => {
+                input.parse::<Expr>()?;
+                input.parse::<Token![,]>()?;
+                let one = input.parse::<LitStr>()?.value();
+                input.parse::<Token![,]>()?;
+                (Kind::Counted(one), input.parse::<LitStr>()?.value())
+            }
+        };
+        let mut args = Vec::new();
+        if matches!(kind, Kind::Counted(_)) {
+            // `tr_n!` passes the count for you.
+            args.push("count".to_owned());
+        }
+        // `$(, $name:ident = $value:expr)* $(,)?`
+        while input.parse::<Option<Token![,]>>()?.is_some() && !input.is_empty() {
+            args.push(input.parse::<Ident>()?.to_string());
+            input.parse::<Token![=]>()?;
+            input.parse::<Expr>()?;
+        }
+        Ok((kind, key, args))
+    };
+    grammar.parse2(stream)
 }
 
 #[cfg(test)]
@@ -206,9 +190,18 @@ mod tests {
     }
 
     #[test]
-    fn a_comma_inside_brackets_belongs_to_its_value() {
-        let used = one(r#"fn f() { tr!("{a} {b}", a = f(1, 2), b = [3, 4].len()) }"#);
+    fn a_value_is_any_expression_the_compiler_reads() {
+        // Commas outside any brackets: generic arguments and closure parameters.
+        let used = one(r#"fn f() { tr!("{n}", n = f::<u8, u16>()) }"#);
+        assert_eq!(used.args, ["n"]);
+        let used = one(r#"fn f() { tr!("{n}", n = v.iter().fold(0, |a, b| a + b)) }"#);
+        assert_eq!(used.args, ["n"]);
+        let used = one(r#"fn f() { tr!("{a} {b}", a = f(1, 2), b = [3, 4].len(),) }"#);
         assert_eq!(used.args, ["a", "b"]);
+        let used = one(
+            r#"fn f() { tr_n!(n.min(3), "{count} of {t}", "{count} of {t}", t = if a { 1 } else { 2 }) }"#,
+        );
+        assert_eq!(used.args, ["count", "t"]);
     }
 
     #[test]

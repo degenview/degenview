@@ -64,6 +64,86 @@ fn the_text_of_a_plain_message_is_not_copied() {
     assert!(std::ptr::eq(tr!("Save"), "Save"));
 }
 
+/// Compiles the call with the real macros and gives back its tokens as text, so the extractor reads
+/// exactly what the compiler accepted.
+macro_rules! accepted {
+    ($call:expr) => {{
+        let _ = $call;
+        stringify!($call)
+    }};
+}
+
+/// The extractor reads each call with the grammar of the macros (`extract::read_call`). The calls
+/// here are compiled by the macros and read by the extractor from the same tokens, so the two cannot
+/// drift apart: a form one accepts and the other refuses fails here.
+#[test]
+fn the_extractor_reads_every_form_the_macros_accept() {
+    fn generic<A, B>() -> usize {
+        std::mem::size_of::<A>() + std::mem::size_of::<B>()
+    }
+    let n = 2usize;
+    let values = [1, 2, 3];
+    let calls: [(&str, Kind, &str, &[&str]); 8] = [
+        (accepted!(tr!("Save")), Kind::Plain, "Save", &[]),
+        (
+            accepted!(tr!("{n}", n = generic::<u8, u16>())),
+            Kind::Plain,
+            "{n}",
+            &["n"],
+        ),
+        (
+            accepted!(tr!(
+                "{n}",
+                n = values.iter().min_by(|a, b| b.cmp(a)).unwrap_or(&0)
+            )),
+            Kind::Plain,
+            "{n}",
+            &["n"],
+        ),
+        (
+            accepted!(tr!("{a} {b}", a = 1, b = 2,)),
+            Kind::Plain,
+            "{a} {b}",
+            &["a", "b"],
+        ),
+        (
+            accepted!(tr!("{x}", x = tr!("Now"))),
+            Kind::Plain,
+            "{x}",
+            &["x"],
+        ),
+        (
+            accepted!(tr_c!("month", "May")),
+            Kind::Context("month".into()),
+            "May",
+            &[],
+        ),
+        (
+            accepted!(tr_c!("month", "{d} left", d = n)),
+            Kind::Context("month".into()),
+            "{d} left",
+            &["d"],
+        ),
+        (
+            accepted!(tr_n!(n.min(3), "One of {t}", "{count} of {t}", t = 9,)),
+            Kind::Counted("One of {t}".into()),
+            "{count} of {t}",
+            &["count", "t"],
+        ),
+    ];
+    for (call, kind, key, args) in calls {
+        let found = extract::uses(&format!("fn f() {{ {call} }}"))
+            .unwrap_or_else(|error| panic!("{call}: {error}"));
+        let first = &found[0];
+        let names: Vec<&str> = first.args.iter().map(String::as_str).collect();
+        assert_eq!(
+            (&first.kind, first.key.as_str(), names.as_slice()),
+            (&kind, key, args),
+            "{call}"
+        );
+    }
+}
+
 // MARK: Source
 
 fn source_files() -> Vec<PathBuf> {
@@ -90,17 +170,25 @@ fn source_files() -> Vec<PathBuf> {
     found
 }
 
+/// Where a message is written, as the template names it: the file's path under the crate with `/`
+/// between its parts on every OS. (`Path::display` writes the separators of the OS it runs on;
+/// `components` reads them, so the same file has the same reference on all of them.)
+fn reference(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Every message the app writes, with the file it is in.
 fn messages_in_source() -> Vec<(String, Use)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut all = Vec::new();
     for path in source_files() {
         let text = std::fs::read_to_string(&path).expect("source reads");
-        let name = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .display()
-            .to_string();
+        let name = reference(root, &path);
         match extract::uses(&text) {
             Ok(uses) => all.extend(uses.into_iter().map(|used| (name.clone(), used))),
             Err(error) => panic!("{name}: {error}"),
@@ -193,25 +281,100 @@ fn template(source: &[(String, Use)]) -> String {
     String::from_utf8(out.into_inner().expect("flushes")).expect("the template is UTF-8")
 }
 
+/// A message as a translator sees it: its context, its text and, when it is counted, its plural.
+type Key = (String, String, Option<String>);
+
+fn keys_in_source(source: &[(String, Use)]) -> BTreeSet<Key> {
+    source
+        .iter()
+        .map(|(_, used)| {
+            let plural = matches!(used.kind, Kind::Counted(_)).then(|| used.key.clone());
+            (used.context().to_owned(), used.msgid().to_owned(), plural)
+        })
+        .collect()
+}
+
+fn read_template(text: &str) -> Result<polib::catalog::Catalog, String> {
+    polib::po_file::parse_from_reader(std::io::Cursor::new(text.as_bytes()))
+        .map_err(|error| error.to_string())
+}
+
+fn keys_in_template(template: &polib::catalog::Catalog) -> BTreeSet<Key> {
+    template
+        .messages()
+        .map(|message| {
+            (
+                message.msgctxt().unwrap_or("").to_owned(),
+                message.msgid().to_owned(),
+                message.msgid_plural().ok().map(str::to_owned),
+            )
+        })
+        .collect()
+}
+
 fn template_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/locales/messages.pot")
 }
 
-/// `messages.pot` is what translators start from, so it must say what the source says.
-/// `UPDATE_POT=1 cargo test -p degenview i18n::tests::the_template` rewrites it.
+/// `messages.pot` is what translators start from, so it must list the messages the source writes.
+/// That is the whole contract: the order, the header and the `#:` references are informational and
+/// `msgmerge` (or Weblate) refreshes them, so none of them can fail this test. The test names the
+/// messages that differ. `UPDATE_POT=1 cargo test --lib i18n::tests::the_template_lists` rewrites
+/// the file.
 #[test]
-fn the_template_is_the_messages_in_the_source() {
-    let expected = template(&messages_in_source());
+fn the_template_lists_the_messages_in_the_source() {
+    let source = messages_in_source();
     let path = template_path();
     if std::env::var_os("UPDATE_POT").is_some() {
-        std::fs::write(&path, &expected).expect("the template is written");
+        std::fs::write(&path, template(&source)).expect("the template is written");
         return;
     }
     let committed = std::fs::read_to_string(&path).unwrap_or_default();
+    let template = read_template(&committed).expect("assets/locales/messages.pot is a .po file");
+    let wanted = keys_in_source(&source);
+    let found = keys_in_template(&template);
+    let missing: Vec<_> = wanted.difference(&found).collect();
+    let extra: Vec<_> = found.difference(&wanted).collect();
     assert!(
-        committed == expected,
-        "assets/locales/messages.pot is out of date: run `UPDATE_POT=1 cargo test --lib \
-         i18n::tests::the_template_is_the_messages_in_the_source` and commit it"
+        missing.is_empty() && extra.is_empty(),
+        "assets/locales/messages.pot lacks {missing:#?} and lists {extra:#?}: run \
+         `UPDATE_POT=1 cargo test --lib i18n::tests::the_template_lists` and commit it"
+    );
+}
+
+#[test]
+fn the_template_is_untranslated_and_gives_every_counted_message_two_forms() {
+    let committed = std::fs::read_to_string(template_path()).expect("the template exists");
+    let template = read_template(&committed).expect("a .po file");
+    assert_eq!(template.metadata.plural_rules.nplurals, 2);
+    for message in template.messages() {
+        if message.is_plural() {
+            let forms = message.msgstr_plural().expect("counted");
+            assert!(forms.len() == 2 && forms.iter().all(String::is_empty));
+        } else {
+            assert_eq!(message.msgstr().expect("plain"), "", "{}", message.msgid());
+        }
+    }
+}
+
+#[test]
+fn a_reference_is_the_path_under_the_crate_with_slashes() {
+    let root = Path::new("repo");
+    assert_eq!(
+        reference(root, &root.join("src").join("ui").join("x.rs")),
+        "src/ui/x.rs"
+    );
+    assert_eq!(reference(root, Path::new("lib.rs")), "lib.rs");
+}
+
+/// The separators of Windows are read there, and a path never carries the other OS's.
+#[cfg(windows)]
+#[test]
+fn a_windows_path_has_the_same_reference_as_on_any_other_os() {
+    let root = Path::new(r"C:\repo");
+    assert_eq!(
+        reference(root, Path::new(r"C:\repo\src\ui\x.rs")),
+        "src/ui/x.rs"
     );
 }
 

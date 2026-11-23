@@ -183,7 +183,7 @@ strip = true
 [dev-dependencies]
 # `i18n` tests: read the `tr!` calls out of the source (both already in the tree) and check the
 # gettext plural formulas of the catalogs against CLDR (`icu_plurals`).
-syn = "2"
+syn = { version = "2", features = ["full"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 icu_plurals = "2.4.0"
 # The crate's loopback mock exchange, for tests of the live-trading host.
