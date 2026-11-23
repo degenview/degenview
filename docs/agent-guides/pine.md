@@ -98,9 +98,17 @@
   editor offers these names. Drawings store bar indexes and `time_anchored`; `set_xloc` re-reads
   coordinates and flips it. Label `yloc` stored with its price, ignored (may be `na`) above/below the
   bar; `PineLayer::label_y` resolves it against the candle, price scale unaffected.
-- `table.cell_set_*` creates a blank cell if undefined (inferred). Numeric text size is
-  `Size::Points(n)` (`font_size` scales TradingView's 14 points to our 12). Undrawable properties
+- `table.cell_set_*` creates a blank cell if undefined (inferred). Undrawable properties
   (font family, bold/italic) warned via `ignored_features`, never silently dropped.
+- Text sizes are measured on TradingView (a probe of every size, drawn there and here with
+  `gallery_of_a_script`, `ui::chart::card::snapshot_tests`), in `ui::pine::geometry`, never inline.
+  Table text (`table_font_size`) is its named size in pixels: 8, 10, 14, 20, 36; a cell is 1.68
+  font sizes high and 0.58 wider than its text (`cell_padding`). Label and box text
+  (`label_font_size`) is 7, 9, 12, 18, 24, a bubble 2.1 font sizes high and 1.55 wider than its
+  text (`label_padding`, `label_pointer`): the same names are smaller on a label. A numeric size
+  (`Size::Points(n)`) is `n` for a table and `n * 12 / 14` for a label. A box's text is not
+  measured and reads the label scale. Measured heights match to a pixel at every size; widths
+  differ by a few percent because the font does.
 - Hover tooltips (`tooltip=`, `label.set_tooltip`, `table.cell_set_tooltip`):
   `hover_targets_in_order` gives drawn rectangles in paint order across scripts (behind-chart labels,
   other labels, then all tables; filled bubble includes pointer) and must keep sharing
