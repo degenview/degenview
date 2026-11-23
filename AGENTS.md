@@ -25,6 +25,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Session statistics: gap fills, prior-day breaks, weekday effects, `degenview_get_session_stats` | [Session statistics](docs/session-stats.md) |
 | The market flow panel (Liquidations, Taker flow, Order book / DOM), the exchanges' liquidation, trade or order-book sockets, or adding an exchange to them | [Liquidations, taker flow and order book](docs/market-flow.md) |
 | Pine language/runtime, Pine Studio, editor behavior, or example scripts | [Pine and scripts](docs/agent-guides/pine.md) |
+| Recording a tutorial or demo video: screen capture, voice-over, subtitles | [Tutorial videos](tools/tutorial-video/README.md) |
 | Adding an indicator to a chart: the toolbar's Indicators button, the indicator catalog, or the Pine indicators bundled with the app | [Indicator catalog](docs/indicator-picker.md) |
 | User-defined functions or methods, overloads, call resolution, or the Pine type checker | [User-defined methods](docs/pine-user-methods.md) |
 | Editor colours, syntax roles, editor themes or fonts | [Editor themes](docs/editor-themes.md) |
@@ -172,6 +173,7 @@ old output). Finished worktrees are where the disk goes.
 - [Portfolio cards](docs/portfolio-cards.md) — card design, known gaps.
 - [New-tab page](docs/new-tab-page.md) — the blank tab: search launcher, tabs, sparklines, animated backdrop.
 - [README hero GIF](tools/readme-gif/README.md): how the animated picture is recorded from the real app, and when to retake it.
+- [Tutorial videos](tools/tutorial-video/README.md): narrated screen-capture tutorials from the real app (the Pine debugger one), how to make or retake one.
 - [Chart snapshots](docs/snapshots.md) — camera menu, shared renderer, Screenshot Studio (Select portion, composer, backdrops, remembered look), hosted sharing via providers (ImgBB, your own host, adding one), privacy.
 - [MCP implementation](docs/mcp-implementation.md) and [remaining work](docs/mcp-remaining-work.md).
 - Also in Required reading, with details and what is verified versus decided:
