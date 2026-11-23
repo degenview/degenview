@@ -626,3 +626,250 @@ fn only_the_setters_that_place_a_point_read_their_first_argument_as_a_time() {
     assert_eq!(state.boxes[&box_id].top, 4_000.0);
     assert_eq!(state.boxes[&box_id].border_width, 2);
 }
+
+// The test bar opens at 0 and lasts a minute, so a time of `n` minutes is bar index `n`.
+fn timed() -> Arg {
+    named("xloc", Str("xloc.bar_time".into()))
+}
+
+/// A `chart.point` placed by time (no index), as `chart.point.from_time` makes one.
+fn time_point(state: &mut RuntimeState, time: i64, price: f64) -> RuntimeValue {
+    let id = allocate(state);
+    let mut fields = HashMap::new();
+    fields.insert("index".to_owned(), Na);
+    fields.insert("time".to_owned(), Int(time));
+    fields.insert("price".to_owned(), Float(price));
+    state.instances.insert(
+        id,
+        Object {
+            type_name: CHART_POINT_TYPE.to_owned(),
+            fields,
+        },
+    );
+    RuntimeValue::Ref(RefKind::Object, id)
+}
+
+fn timed_line(state: &mut RuntimeState) -> (RuntimeValue, usize) {
+    let line = run(
+        state,
+        "line.new",
+        &[
+            arg(Int(60_000)),
+            arg(Float(10.0)),
+            arg(Int(120_000)),
+            arg(Float(20.0)),
+            timed(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Line, id) = line.clone() else {
+        panic!("{line:?}")
+    };
+    (line, id)
+}
+
+fn timed_label(state: &mut RuntimeState) -> (RuntimeValue, usize) {
+    let label = run(
+        state,
+        "label.new",
+        &[
+            arg(Int(60_000)),
+            arg(Float(10.0)),
+            arg(Str("hi".into())),
+            timed(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Label, id) = label.clone() else {
+        panic!("{label:?}")
+    };
+    (label, id)
+}
+
+fn timed_box(state: &mut RuntimeState) -> (RuntimeValue, usize) {
+    let boxed = run(
+        state,
+        "box.new",
+        &[
+            arg(Int(60_000)),
+            arg(Float(10.0)),
+            arg(Int(120_000)),
+            arg(Float(20.0)),
+            timed(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Box, id) = boxed.clone() else {
+        panic!("{boxed:?}")
+    };
+    (boxed, id)
+}
+
+#[test]
+fn a_timed_line_converts_the_x_of_a_point_setter_and_keeps_its_price() {
+    let mut state = RuntimeState::default();
+    let (line, id) = timed_line(&mut state);
+    run(
+        &mut state,
+        "line.set_xy1",
+        &[arg(line.clone()), arg(Int(180_000)), arg(Int(77))],
+    )
+    .unwrap();
+    assert_eq!((state.lines[&id].x1, state.lines[&id].y1), (3, 77.0));
+    run(
+        &mut state,
+        "line.set_xy2",
+        &[arg(line.clone()), arg(Int(240_000)), arg(Int(88))],
+    )
+    .unwrap();
+    assert_eq!((state.lines[&id].x2, state.lines[&id].y2), (4, 88.0));
+    run(
+        &mut state,
+        "line.set_x1",
+        &[arg(line.clone()), arg(Int(300_000))],
+    )
+    .unwrap();
+    assert_eq!(state.lines[&id].x1, 5);
+    run(&mut state, "line.set_y2", &[arg(line), arg(Int(9))]).unwrap();
+    assert_eq!(state.lines[&id].y2, 9.0);
+}
+
+#[test]
+fn a_timed_label_converts_x_and_keeps_its_price_and_size() {
+    let mut state = RuntimeState::default();
+    let (label, id) = timed_label(&mut state);
+    run(
+        &mut state,
+        "label.set_size",
+        &[arg(label.clone()), arg(Int(12))],
+    )
+    .unwrap();
+    assert_eq!(state.labels[&id].size, Size::Points(12));
+    run(
+        &mut state,
+        "label.set_xy",
+        &[arg(label.clone()), arg(Int(300_000)), arg(Int(55))],
+    )
+    .unwrap();
+    assert_eq!((state.labels[&id].x, state.labels[&id].y), (5, 55.0));
+    run(
+        &mut state,
+        "label.set_x",
+        &[arg(label.clone()), arg(Int(360_000))],
+    )
+    .unwrap();
+    assert_eq!(state.labels[&id].x, 6);
+    run(&mut state, "label.set_y", &[arg(label), arg(Int(9))]).unwrap();
+    assert_eq!(state.labels[&id].y, 9.0);
+}
+
+#[test]
+fn a_timed_box_converts_x_and_keeps_its_prices() {
+    let mut state = RuntimeState::default();
+    let (boxed, id) = timed_box(&mut state);
+    run(
+        &mut state,
+        "box.set_lefttop",
+        &[arg(boxed.clone()), arg(Int(180_000)), arg(Int(77))],
+    )
+    .unwrap();
+    assert_eq!((state.boxes[&id].left, state.boxes[&id].top), (3, 77.0));
+    run(
+        &mut state,
+        "box.set_rightbottom",
+        &[arg(boxed.clone()), arg(Int(240_000)), arg(Int(66))],
+    )
+    .unwrap();
+    assert_eq!((state.boxes[&id].right, state.boxes[&id].bottom), (4, 66.0));
+    run(
+        &mut state,
+        "box.set_left",
+        &[arg(boxed.clone()), arg(Int(300_000))],
+    )
+    .unwrap();
+    assert_eq!(state.boxes[&id].left, 5);
+    run(
+        &mut state,
+        "box.set_right",
+        &[arg(boxed.clone()), arg(Int(360_000))],
+    )
+    .unwrap();
+    assert_eq!(state.boxes[&id].right, 6);
+    run(&mut state, "box.set_bottom", &[arg(boxed), arg(Int(5))]).unwrap();
+    assert_eq!(state.boxes[&id].bottom, 5.0);
+}
+
+#[test]
+fn a_chart_point_setter_takes_the_resolved_index_and_price_once() {
+    let mut state = RuntimeState::default();
+    // A point placed by time becomes the bar of that time; one placed by index keeps it. Neither
+    // is read as a time a second time.
+    let by_time = time_point(&mut state, 300_000, 42.0);
+    let by_index = point(&mut state, 7, 55.0);
+
+    let (line, line_id) = timed_line(&mut state);
+    run(
+        &mut state,
+        "line.set_first_point",
+        &[arg(line.clone()), arg(by_time.clone())],
+    )
+    .unwrap();
+    assert_eq!(
+        (state.lines[&line_id].x1, state.lines[&line_id].y1),
+        (5, 42.0)
+    );
+    run(
+        &mut state,
+        "line.set_second_point",
+        &[arg(line), arg(by_index.clone())],
+    )
+    .unwrap();
+    assert_eq!(
+        (state.lines[&line_id].x2, state.lines[&line_id].y2),
+        (7, 55.0)
+    );
+
+    let (label, label_id) = timed_label(&mut state);
+    run(
+        &mut state,
+        "label.set_point",
+        &[arg(label.clone()), arg(by_time.clone())],
+    )
+    .unwrap();
+    assert_eq!(
+        (state.labels[&label_id].x, state.labels[&label_id].y),
+        (5, 42.0)
+    );
+    run(
+        &mut state,
+        "label.set_point",
+        &[arg(label), arg(by_index.clone())],
+    )
+    .unwrap();
+    assert_eq!(
+        (state.labels[&label_id].x, state.labels[&label_id].y),
+        (7, 55.0)
+    );
+
+    let (boxed, box_id) = timed_box(&mut state);
+    run(
+        &mut state,
+        "box.set_top_left_point",
+        &[arg(boxed.clone()), arg(by_time)],
+    )
+    .unwrap();
+    assert_eq!(
+        (state.boxes[&box_id].left, state.boxes[&box_id].top),
+        (5, 42.0)
+    );
+    run(
+        &mut state,
+        "box.set_bottom_right_point",
+        &[arg(boxed), arg(by_index)],
+    )
+    .unwrap();
+    assert_eq!(
+        (state.boxes[&box_id].right, state.boxes[&box_id].bottom),
+        (7, 55.0)
+    );
+}
