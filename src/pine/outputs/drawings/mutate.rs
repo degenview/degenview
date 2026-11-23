@@ -1,6 +1,6 @@
 //! Changing and reading drawings: `*.set_*`, `*.get_*` and `*.delete`.
 
-use super::coordinates::{known_index, known_price, point_coordinates, x_index};
+use super::coordinates::{known_index, known_price, point_coordinates, takes_x_first, x_index};
 use super::names::size_of;
 use super::table::set_cell_setter;
 use super::{Arg, FromName, parse, runtime_error, unknown_function};
@@ -89,7 +89,11 @@ fn with_line(
             mutate_line(&mut line, setter, &x, &y, range)?
         }
         _ => {
-            let x = x_index(a, line.time_anchored, bar, bar_seconds, state);
+            let x = if takes_x_first(member) {
+                x_index(a, line.time_anchored, bar, bar_seconds, state)
+            } else {
+                a
+            };
             mutate_line(&mut line, member, &x, &b, range)?
         }
     };
@@ -124,7 +128,11 @@ fn with_label(
         };
         mutate_label(&mut label, "set_xy", &x, &y, range)?
     } else {
-        let x = x_index(a, label.time_anchored, bar, bar_seconds, state);
+        let x = if takes_x_first(member) {
+            x_index(a, label.time_anchored, bar, bar_seconds, state)
+        } else {
+            a
+        };
         mutate_label(&mut label, member, &x, &b, range)?
     };
     state.labels.insert(id, label);
@@ -165,7 +173,11 @@ fn with_box(
             mutate_box(&mut boxed, setter, &x, &y, range)?
         }
         _ => {
-            let x = x_index(a, boxed.time_anchored, bar, bar_seconds, state);
+            let x = if takes_x_first(member) {
+                x_index(a, boxed.time_anchored, bar, bar_seconds, state)
+            } else {
+                a
+            };
             mutate_box(&mut boxed, member, &x, &b, range)?
         }
     };

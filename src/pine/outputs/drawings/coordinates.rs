@@ -24,6 +24,25 @@ pub(super) fn x_index(
     value
 }
 
+/// Whether the first argument of `member` (a `set_*` of a line, label or box) is a horizontal
+/// coordinate, which a time-anchored drawing is given as a time and keeps as a bar index. Every
+/// other first argument is a price, a width, a colour, a size or text and is never read as a time.
+pub(super) fn takes_x_first(member: &str) -> bool {
+    matches!(
+        member,
+        "set_x1"
+            | "set_x2"
+            | "set_xy1"
+            | "set_xy2"
+            | "set_x"
+            | "set_xy"
+            | "set_left"
+            | "set_right"
+            | "set_lefttop"
+            | "set_rightbottom"
+    )
+}
+
 pub(super) fn is_time_anchored(bound: &HashMap<String, RuntimeValue>) -> bool {
     bound.get("xloc").and_then(RuntimeValue::text_value) == Some("xloc.bar_time")
 }

@@ -499,3 +499,79 @@ fn copies_keep_force_overlay() {
     assert!(state.labels[&label_id].force_overlay);
     assert!(state.boxes[&box_id].force_overlay);
 }
+
+#[test]
+fn only_the_setters_that_place_a_point_read_their_first_argument_as_a_time() {
+    let mut state = RuntimeState::default();
+    let bar_time = || named("xloc", Str("xloc.bar_time".into()));
+    let line = run(
+        &mut state,
+        "line.new",
+        &[
+            arg(Int(60_000)),
+            arg(Float(10.0)),
+            arg(Int(120_000)),
+            arg(Float(20.0)),
+            bar_time(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Line, line_id) = line.clone() else {
+        panic!("{line:?}")
+    };
+    assert!(state.lines[&line_id].time_anchored);
+    // A price, a width and a size given as integers are what the script wrote, whatever the
+    // drawing is anchored to.
+    run(
+        &mut state,
+        "line.set_y1",
+        &[arg(line.clone()), arg(Int(3_000))],
+    )
+    .unwrap();
+    run(
+        &mut state,
+        "line.set_width",
+        &[arg(line.clone()), arg(Int(3))],
+    )
+    .unwrap();
+    assert_eq!(state.lines[&line_id].y1, 3_000.0);
+    assert_eq!(state.lines[&line_id].width, 3);
+    // A time is still a time.
+    let before = state.lines[&line_id].x2;
+    run(&mut state, "line.set_x2", &[arg(line), arg(Int(600_000))]).unwrap();
+    assert_ne!(state.lines[&line_id].x2, before, "the x coordinate moved");
+    assert_ne!(
+        state.lines[&line_id].x2, 600_000,
+        "and was turned into a bar index"
+    );
+
+    let boxed = run(
+        &mut state,
+        "box.new",
+        &[
+            arg(Int(60_000)),
+            arg(Float(10.0)),
+            arg(Int(120_000)),
+            arg(Float(20.0)),
+            bar_time(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Box, box_id) = boxed.clone() else {
+        panic!("{boxed:?}")
+    };
+    run(
+        &mut state,
+        "box.set_top",
+        &[arg(boxed.clone()), arg(Int(4_000))],
+    )
+    .unwrap();
+    run(
+        &mut state,
+        "box.set_border_width",
+        &[arg(boxed), arg(Int(2))],
+    )
+    .unwrap();
+    assert_eq!(state.boxes[&box_id].top, 4_000.0);
+    assert_eq!(state.boxes[&box_id].border_width, 2);
+}
