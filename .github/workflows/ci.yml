@@ -30,6 +30,53 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Decides whether the Windows launch job below has anything to prove. That job is the slowest
+  # check on a pull request (a release build on two runners, 9-11 min) and only answers "does the
+  # app still start", so a pull request that touches nothing but the paths listed in `skip` cannot
+  # have changed the answer. The list is of paths that are safe to skip, not of paths that run it:
+  # a new or unlisted path runs the job, so a forgotten entry costs minutes, never coverage. Every
+  # event but `pull_request` (a push to `main`, a manual run) always runs it.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      smoke: ${{ steps.diff.outputs.smoke }}
+    steps:
+      - name: Decide whether to launch the app
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ]; then
+            echo "smoke=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The pull request's own diff against its base (a stacked one against its parent). A rename
+          # counts under both names, so moving a file out of a runtime path still runs the job.
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)')
+          smoke=false
+          [ -n "$files" ] || smoke=true
+          while IFS= read -r file; do
+            case "$file" in
+              # Changelog fragments (checked by the lint job), docs, and Pine label/table drawing,
+              # which the headless snapshot tests in `test` cover and startup never runs; and files that
+              # only hold tests.
+              changes/* | docs/* | *.md | src/ui/pine/* | *_tests.rs | tests/*) ;;
+              *) smoke=true; break ;;
+            esac
+          done <<< "$files"
+          echo "smoke=$smoke" >> "$GITHUB_OUTPUT"
+          echo "Launch the app: $smoke"
+          echo "$files"
+
   test:
     name: Test ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -204,6 +251,8 @@ jobs:
   # `crash_report`) is what the job reads, and prints when it fails.
   smoke-windows:
     name: ${{ matrix.name }}
+    needs: changes
+    if: needs.changes.outputs.smoke == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
