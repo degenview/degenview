@@ -18,6 +18,8 @@ use std::time::{Duration, Instant};
 pub const TTL: Duration = Duration::from_secs(24 * 3_600);
 /// How long to leave a provider alone after a failed (or empty) download.
 const FAILURE_BACKOFF: Duration = Duration::from_secs(300);
+/// The least time between two downloads made because a market was not in the list.
+const MISS_REFRESH: Duration = Duration::from_secs(600);
 const KEY: &str = "all";
 
 struct Loaded<T> {
@@ -31,6 +33,8 @@ pub struct Catalog<T> {
     memory: Mutex<Option<Loaded<T>>>,
     /// Held while downloading, so concurrent searches share one request.
     refresh: Mutex<()>,
+    /// When the list was last downloaded again because a market was not in it.
+    last_miss: Mutex<Option<Instant>>,
 }
 
 impl<T: Serialize + DeserializeOwned> Catalog<T> {
@@ -39,6 +43,7 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
             namespace,
             memory: Mutex::new(None),
             refresh: Mutex::new(()),
+            last_miss: Mutex::new(None),
         }
     }
 
@@ -48,6 +53,54 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
         download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
         self.get_from(lookup::shared(), download)
+    }
+
+    /// [`Self::get`], downloaded again when `found` finds no market in it: a market listed since
+    /// the last download is not "not listed" for the day the list is held. A miss downloads at most
+    /// once every ten minutes, so a mistyped name is one request and not one per keystroke; a
+    /// download that fails or is empty leaves the list held as it is.
+    pub fn get_or_refresh_on_miss(
+        &self,
+        download: impl Fn() -> Result<Vec<T>, ProviderError>,
+        found: impl Fn(&[T]) -> bool,
+    ) -> Result<Arc<Vec<T>>, ProviderError> {
+        self.get_or_refresh_on_miss_from(lookup::shared(), Instant::now(), download, found)
+    }
+
+    fn get_or_refresh_on_miss_from(
+        &self,
+        cache: &LookupCache,
+        now: Instant,
+        download: impl Fn() -> Result<Vec<T>, ProviderError>,
+        found: impl Fn(&[T]) -> bool,
+    ) -> Result<Arc<Vec<T>>, ProviderError> {
+        let items = self.get_from(cache, &download)?;
+        if found(&items) {
+            return Ok(items);
+        }
+        {
+            let mut last = self
+                .last_miss
+                .lock()
+                .map_err(|_| ProviderError::other("catalog unavailable"))?;
+            if last.is_some_and(|at| now.saturating_duration_since(at) < MISS_REFRESH) {
+                return Ok(items);
+            }
+            *last = Some(now);
+        }
+        let _refreshing = self
+            .refresh
+            .lock()
+            .map_err(|_| ProviderError::other("catalog unavailable"))?;
+        match download() {
+            Ok(fresh) if !fresh.is_empty() => {
+                cache.put(self.namespace, KEY, &fresh);
+                let fresh = Arc::new(fresh);
+                self.keep(&fresh, TTL);
+                Ok(fresh)
+            }
+            _ => Ok(items),
+        }
     }
 
     fn get_from(
@@ -124,6 +177,13 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
         }
     }
 
+    /// The list as it is in memory, however old; nothing before the first download. For a caller
+    /// that must not wait on the network (one that runs on the UI thread).
+    pub fn held(&self) -> Option<Arc<Vec<T>>> {
+        let memory = self.memory.lock().ok()?;
+        memory.as_ref().map(|loaded| Arc::clone(&loaded.items))
+    }
+
     pub fn clear_memory(&self) {
         if let Ok(mut memory) = self.memory.lock() {
             *memory = None;
@@ -182,6 +242,94 @@ mod tests {
         fn downloads(&self) -> usize {
             self.downloads.load(Ordering::SeqCst)
         }
+    }
+
+    #[test]
+    fn held_is_what_memory_has_and_never_downloads() {
+        let fixture = Fixture::new();
+        let (cache, catalog) = fixture.launch();
+        assert!(catalog.held().is_none());
+        catalog
+            .get_from(&cache, fixture.download(Ok(pairs(&["BTCUSDT"]))))
+            .unwrap();
+        assert_eq!(catalog.held().map(|items| items.len()), Some(1));
+        catalog.clear_memory();
+        assert!(catalog.held().is_none());
+        assert_eq!(fixture.downloads(), 1);
+    }
+
+    /// Downloads that answer `lists[n]` the n-th time, the last one after that.
+    fn listing<'a>(
+        fixture: &'a Fixture,
+        lists: &'a [&'a [&'a str]],
+    ) -> impl Fn() -> Result<Vec<Pair>, ProviderError> + 'a {
+        move || {
+            let made = fixture.downloads.fetch_add(1, Ordering::SeqCst);
+            Ok(pairs(lists[made.min(lists.len() - 1)]))
+        }
+    }
+
+    fn has(name: &'static str) -> impl Fn(&[Pair]) -> bool {
+        move |items| items.iter().any(|pair| pair.0 == name)
+    }
+
+    #[test]
+    fn a_market_the_list_lacks_is_looked_for_again_once_in_ten_minutes() {
+        let fixture = Fixture::new();
+        let (cache, catalog) = fixture.launch();
+        let start = Instant::now();
+        let download = listing(&fixture, &[&["BTC"], &["BTC", "NEW"]]);
+        // A listed market costs the one download of the day.
+        let items = catalog
+            .get_or_refresh_on_miss_from(&cache, start, &download, has("BTC"))
+            .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(fixture.downloads(), 1);
+
+        // A market listed since is found by downloading again...
+        let items = catalog
+            .get_or_refresh_on_miss_from(&cache, start, &download, has("NEW"))
+            .unwrap();
+        assert_eq!(*items, pairs(&["BTC", "NEW"]));
+        assert_eq!(fixture.downloads(), 2);
+
+        // ...and a name the list never holds asks only once in the throttle.
+        for minutes in [1, 5, 9] {
+            let later = start + Duration::from_secs(minutes * 60);
+            let items = catalog
+                .get_or_refresh_on_miss_from(&cache, later, &download, has("NOPE"))
+                .unwrap();
+            assert_eq!(items.len(), 2);
+        }
+        assert_eq!(fixture.downloads(), 2, "the miss at the start was the last");
+        let later = start + MISS_REFRESH + Duration::from_secs(1);
+        catalog
+            .get_or_refresh_on_miss_from(&cache, later, &download, has("NOPE"))
+            .unwrap();
+        assert_eq!(fixture.downloads(), 3);
+    }
+
+    #[test]
+    fn a_failed_or_empty_download_on_a_miss_keeps_the_list() {
+        let fixture = Fixture::new();
+        let (cache, catalog) = fixture.launch();
+        let start = Instant::now();
+        catalog
+            .get_from(&cache, fixture.download(Ok(pairs(&["BTC"]))))
+            .unwrap();
+        let failing =
+            || -> Result<Vec<Pair>, ProviderError> { Err(ProviderError::other("offline")) };
+        let items = catalog
+            .get_or_refresh_on_miss_from(&cache, start, failing, has("NEW"))
+            .unwrap();
+        assert_eq!(*items, pairs(&["BTC"]));
+        let later = start + MISS_REFRESH + Duration::from_secs(1);
+        let empty = || -> Result<Vec<Pair>, ProviderError> { Ok(Vec::new()) };
+        let items = catalog
+            .get_or_refresh_on_miss_from(&cache, later, empty, has("NEW"))
+            .unwrap();
+        assert_eq!(*items, pairs(&["BTC"]));
+        assert_eq!(catalog.held().map(|held| held.len()), Some(1));
     }
 
     #[test]
