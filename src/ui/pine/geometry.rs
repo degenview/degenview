@@ -1473,4 +1473,58 @@ mod tests {
         );
         assert_eq!(overlay_extent(&[], 5), OverlayExtent::default());
     }
+    /// What `table_font_size`, `cell_padding`, `label_padding` and `shape_label` were fitted to:
+    /// heights read from TradingView's canvas, with this font's line 1.2 sizes high.
+    #[test]
+    fn cells_bubbles_and_label_shapes_are_as_tall_as_measured_on_tradingview() {
+        let line = |font: f32| font * 1.2;
+        let near = |got: f32, want: f32, what: &str| {
+            assert!((got - want).abs() <= 1.5, "{what}: {got} against {want}");
+        };
+        // A one-cell table's height in 2x pixels, tiny to huge.
+        for (size, measured) in [
+            (Size::Tiny, 27.0),
+            (Size::Small, 34.0),
+            (Size::Normal, 47.0),
+            (Size::Large, 67.0),
+            (Size::Huge, 120.0),
+        ] {
+            let font = table_font_size(size);
+            near(
+                2.0 * (line(font) + cell_padding(font).y),
+                measured,
+                &format!("a {size:?} table cell"),
+            );
+        }
+        // A label's bubble is 2.1 font sizes high at every size.
+        for size in [
+            Size::Tiny,
+            Size::Small,
+            Size::Normal,
+            Size::Large,
+            Size::Huge,
+        ] {
+            let font = label_font_size(size);
+            let height = line(font) + label_padding(font).y;
+            assert!((height / font - 2.1).abs() < 1e-4, "{size:?}");
+        }
+        // A label shape's bubble and pointer in points, and the tip's distance from the bar: the
+        // text is always at the normal size, whatever the shape's.
+        let text = line(label_font_size(Size::Normal));
+        for (size, height, gap) in [
+            (Size::Tiny, 22.0, 11.0),
+            (Size::Small, 31.0, 23.0),
+            (Size::Normal, 40.0, 34.0),
+            (Size::Large, 52.0, 56.0),
+            (Size::Huge, 64.0, 75.0),
+        ] {
+            let shape = shape_label(size);
+            near(
+                text + shape.padding.y + shape.pointer,
+                height,
+                &format!("a {size:?} label shape"),
+            );
+            assert_eq!(shape.gap, gap, "{size:?}");
+        }
+    }
 }

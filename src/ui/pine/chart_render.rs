@@ -1024,10 +1024,6 @@ impl PineLayer<'_> {
         }
     }
 
-    /// Where a marker's centre sits vertically. A marker that hangs off a bar keeps its near edge
-    /// `MARKER_GAP` clear of the candle (or the pane's edge), so one taller than the usual offset
-    /// (`half_height` is how far it reaches either side of its centre) moves out instead of
-    /// overlapping the candle or running off the pane. `location.absolute` keeps its price.
     /// A `shape.labelup` / `shape.labeldown` marker: a bubble around its `text`, its pointer's tip
     /// where `location` puts it (the price for `location.absolute`, else a size's gap from the bar).
     fn draw_label_shape_marker(&self, painter: &Painter, marker: &MarkerOutput, i: usize, x: f32) {
@@ -1095,6 +1091,10 @@ impl PineLayer<'_> {
         }
     }
 
+    /// Where a marker's centre sits vertically. A marker that hangs off a bar keeps its near edge
+    /// `MARKER_GAP` clear of the candle (or the pane's edge), so one taller than the usual offset
+    /// (`half_height` is how far it reaches either side of its centre) moves out instead of
+    /// overlapping the candle or running off the pane. `location.absolute` keeps its price.
     fn marker_y(
         &self,
         location: MarkerLocation,
