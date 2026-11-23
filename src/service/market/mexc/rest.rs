@@ -43,9 +43,7 @@ pub(in crate::service) fn get(url: &str) -> Result<String, ProviderError> {
         Err(http::Error::Status(400)) => Err(ProviderError::other(
             "MEXC refused the request (HTTP 400): it does not list this market",
         )),
-        Err(http::Error::Status(403)) => Err(ProviderError::other(
-            "MEXC refused the request (HTTP 403): it is not available in every country",
-        )),
+        Err(http::Error::Status(403)) => Err(ProviderError::refused_by_region(DataSource::Mexc)),
         Err(error) => Err(error.into()),
     }
 }

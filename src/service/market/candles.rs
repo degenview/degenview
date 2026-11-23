@@ -134,13 +134,13 @@ mod tests {
         }
     }
 
-    /// Fetches ETH from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit and a Uniswap pool and compares their buckets. Run with
+    /// Fetches ETH from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, HTX and a Uniswap pool and compares their buckets. Run with
     /// `cargo test --release --lib live_sources_cut -- --ignored --nocapture`.
     #[test]
     #[ignore = "needs the network"]
     fn live_sources_cut_the_same_buckets() {
         use crate::model::DataSource::{
-            Aster, Binance, Bybit, Coinbase, Deribit, DexScreener, Gate, Hyperliquid, Kraken,
+            Aster, Binance, Bybit, Coinbase, Deribit, DexScreener, Gate, Htx, Hyperliquid, Kraken,
             Lighter, Mexc, Okx,
         };
         let pool = "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640";
@@ -162,6 +162,7 @@ mod tests {
             let aster = fetch(Aster, "ETHUSDT").unwrap();
             let lighter = fetch(Lighter, "ETH").unwrap();
             let deribit = fetch(Deribit, "ETH-PERPETUAL").unwrap();
+            let htx = fetch(Htx, "ETHUSDT").unwrap();
             // GeckoTerminal's free quota is small; a refusal skips it rather than failing the rest.
             let dex = fetch(DexScreener, pool)
                 .map_err(|error| println!("skipped: {error}"))
@@ -169,7 +170,7 @@ mod tests {
             let opens = |bars: &[Kline]| -> std::collections::BTreeSet<i64> {
                 bars.iter().map(|bar| bar.open_time).collect()
             };
-            let (b, c, o, k, y, g, m, h, a, l, r) = (
+            let (b, c, o, k, y, g, m, h, a, l, r, x) = (
                 opens(&binance),
                 opens(&coinbase),
                 opens(&okx),
@@ -181,6 +182,7 @@ mod tests {
                 opens(&aster),
                 opens(&lighter),
                 opens(&deribit),
+                opens(&htx),
             );
             let d = dex.as_deref().map(opens);
             // Compare inside the range every source covers.
@@ -196,6 +198,7 @@ mod tests {
                 a.first(),
                 l.first(),
                 r.first(),
+                x.first(),
                 d.as_ref().and_then(|d| d.first()),
             ]
             .into_iter()
@@ -207,7 +210,7 @@ mod tests {
                 set.iter().copied().filter(|time| *time >= from).collect()
             };
             println!(
-                "{interval:>3}: binance {:>4} coinbase {:>4} okx {:>4} kraken {:>4} bybit {:>4} gate {:>4} mexc {:>4} hyperliquid {:>4} aster {:>4} lighter {:>4} deribit {:>4} dex {:>4} | shared range {:>4} bars",
+                "{interval:>3}: binance {:>4} coinbase {:>4} okx {:>4} kraken {:>4} bybit {:>4} gate {:>4} mexc {:>4} hyperliquid {:>4} aster {:>4} lighter {:>4} deribit {:>4} htx {:>4} dex {:>4} | shared range {:>4} bars",
                 b.len(),
                 c.len(),
                 o.len(),
@@ -219,6 +222,7 @@ mod tests {
                 a.len(),
                 l.len(),
                 r.len(),
+                x.len(),
                 d.as_ref().map_or(0, |d| d.len()),
                 within(&b).len(),
             );
@@ -232,6 +236,7 @@ mod tests {
             assert_eq!(within(&b), within(&a), "{interval} binance vs aster");
             assert_eq!(within(&b), within(&l), "{interval} binance vs lighter");
             assert_eq!(within(&b), within(&r), "{interval} binance vs deribit");
+            assert_eq!(within(&b), within(&x), "{interval} binance vs htx");
             if let Some(d) = &d {
                 assert_eq!(within(&b), within(d), "{interval} binance vs dexscreener");
             }

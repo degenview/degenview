@@ -6,6 +6,7 @@
 use super::engine::Outcome;
 use crate::model::watchlist::quote::SourceQuote;
 use crate::model::{DataSource, Timeframe};
+use crate::service::ProviderError;
 use crate::service::market::venue;
 use crate::service::net::http;
 use serde_json::Value;
@@ -125,10 +126,7 @@ pub(in crate::service) fn rejected(code: u16) -> QuoteFailure {
 
 /// The answer for a venue that refuses some countries, and a client that asks too often, with a 403.
 pub(in crate::service) fn refused_by_region(source: DataSource) -> QuoteFailure {
-    QuoteFailure::Failed(format!(
-        "{} refused the request (HTTP 403): it is not available in every country",
-        source.display_name()
-    ))
+    QuoteFailure::Failed(ProviderError::refused_by_region(source).to_string())
 }
 
 /// How many answers in a row may fail before an adapter stops asking: the endpoint is

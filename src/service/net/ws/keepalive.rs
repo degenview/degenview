@@ -42,7 +42,6 @@ pub enum Keepalive {
     /// The server sends a JSON object holding only `ask` and the client echoes its value under
     /// `answer` (HTX: `{"ping":1492420473027}` is answered `{"pong":1492420473027}`). The client
     /// sends nothing on its own.
-    #[cfg_attr(not(test), allow(dead_code))] // until a venue that needs it lands
     EchoJson {
         ask: &'static str,
         answer: &'static str,
