@@ -4,6 +4,7 @@
 
 use crate::model::DataSource;
 use crate::model::exchange::Venue;
+use crate::model::market::profile::{Class, PairStyle};
 use std::collections::VecDeque;
 
 #[cfg(test)]
@@ -36,17 +37,14 @@ pub struct Trade {
 /// Coinbase's `BTC-USD`), when `source` is a crypto exchange and the name is one a venue could
 /// list: letters and digits only. `None` for stocks, prediction markets and aggregators.
 pub fn asset_of(source: DataSource, symbol: &str) -> Option<String> {
-    use DataSource::{Binance, Bybit, Coinbase, Gate, Kraken, Mexc, Okx};
-    if !matches!(
-        source,
-        Binance | Bybit | Okx | Kraken | Gate | Mexc | Coinbase
-    ) {
+    let profile = source.profile();
+    if profile.class != Class::Exchange {
         return None;
     }
     let mut base = source.base_asset(symbol);
     // Binance and Bybit do not split a one-letter base off its quote (`SUSDT` stays whole, as
     // `WBTC` is not W/BTC), but a dollar quote after a letter is no wrapped asset: it is `S`.
-    if matches!(source, Binance | Bybit)
+    if matches!(&profile.pair, PairStyle::Concat(concat) if concat.wrapped_asset_guard)
         && let Some(stem) = ["USDT", "USDC"]
             .iter()
             .find_map(|quote| base.strip_suffix(quote))

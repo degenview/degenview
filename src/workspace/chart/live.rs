@@ -10,7 +10,7 @@ use std::time::Instant;
 
 impl ChartWorkspace {
     pub(in crate::workspace) fn update_live_feeds(&mut self, ctx: &egui::Context) {
-        for source in DataSource::CANDLE_STREAMS {
+        for source in DataSource::candle_streams() {
             self.update_live_feed(source, ctx);
         }
     }

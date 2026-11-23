@@ -181,21 +181,7 @@ pub trait MarketSource {
 }
 
 pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
-    match source {
-        DataSource::Binance => &market::binance::BINANCE,
-        DataSource::Coinbase => &market::coinbase::COINBASE,
-        DataSource::Okx => &market::okx::OKX,
-        DataSource::Kraken => &market::kraken::KRAKEN,
-        DataSource::Bybit => &market::bybit::BYBIT,
-        DataSource::Gate => &market::gateio::GATE,
-        DataSource::Mexc => &market::mexc::MEXC,
-        DataSource::CoinGecko => &market::coingecko::COINGECKO,
-        DataSource::DexScreener => &market::dexscreener::DEXSCREENER,
-        DataSource::Alpaca => &market::alpaca::ALPACA,
-        DataSource::Polymarket => &market::polymarket::POLYMARKET,
-        DataSource::Kalshi => &market::kalshi::KALSHI,
-        DataSource::CoinMarketCap => &market::cmc::COIN_MARKET_CAP,
-    }
+    market::venue::of(source).candles()
 }
 
 /// Fetch candles of `timeframe` from the provider behind `source`, oldest first. A source folds
@@ -239,7 +225,7 @@ impl From<Vec<Kline>> for LiveCandles {
     }
 }
 
-/// [`fetch_klines`], and for a source in [`DataSource::CANDLE_STREAMS`] that folds `timeframe`
+/// [`fetch_klines`], and for a source whose profile streams candles that folds `timeframe`
 /// from finer candles, one more small request for those candles of the newest bucket (one bucket's
 /// worth, after the folded answer). A failed second request leaves `bars` empty: the candles are
 /// still good.
@@ -252,7 +238,7 @@ pub fn fetch_klines_live(
     let candles = fetch_klines(source, symbol, timeframe, limit)?;
     let bars = source
         .plan(timeframe)
-        .filter(|plan| !plan.is_native() && DataSource::CANDLE_STREAMS.contains(&source))
+        .filter(|plan| !plan.is_native() && source.profile().streams.candles)
         .and_then(|plan| {
             let base = fetch_klines(source, symbol, plan.base(), plan.per_target() as u32).ok()?;
             Some(plan.newest_bucket(&base))
@@ -312,15 +298,12 @@ pub fn search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Prov
 
 /// Whether a provider can say which markets are busiest right now (Kalshi cannot).
 pub fn supports_trending(source: DataSource) -> bool {
-    source == DataSource::Polymarket
+    market::venue::of(source).supports_trending()
 }
 
 /// The provider's busiest markets, or an empty list when it cannot say.
 pub fn trending(source: DataSource, limit: usize) -> Result<Vec<SearchResult>, ProviderError> {
-    match source {
-        DataSource::Polymarket => market::polymarket::trending(limit),
-        _ => Ok(Vec::new()),
-    }
+    market::venue::of(source).trending(limit)
 }
 
 /// Thin to at most `count` points by uniform stride, always keeping the newest one.

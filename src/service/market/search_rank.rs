@@ -16,7 +16,6 @@
 //! Inside a tier the order is the order the providers were asked in, then the quote
 //! (the exchange's main dollar quote, then USD, USDT, USDC), then the provider's own order.
 
-use crate::model::DataSource;
 use crate::service::SearchResult;
 
 /// Quotes that read as US dollars, in the order they sort.
@@ -95,20 +94,11 @@ impl Key {
     }
 }
 
-/// An exchange's main dollar quote first (USDT on Binance, OKX, Bybit, Gate.io and MEXC, USD on Coinbase and Kraken), then the other dollar
+/// An exchange's home quote first (`Profile::home_quote`: USDT or USD), then the other dollar
 /// quotes in their own order; a hit with no quote (a coin, a share) after the exchange pairs;
 /// other quotes last.
 fn quote_order(result: &SearchResult) -> usize {
-    let home = match result.source {
-        DataSource::Binance => Some("USDT"),
-        DataSource::Coinbase => Some("USD"),
-        DataSource::Okx => Some("USDT"),
-        DataSource::Kraken => Some("USD"),
-        DataSource::Bybit => Some("USDT"),
-        DataSource::Gate => Some("USDT"),
-        DataSource::Mexc => Some("USDT"),
-        _ => None,
-    };
+    let home = result.source.profile().home_quote;
     match result.quote.as_deref() {
         Some(quote) if home.is_some_and(|home| home.eq_ignore_ascii_case(quote)) => 0,
         Some(quote) => dollar_rank(quote).map_or(DOLLAR_QUOTES.len() + 2, |rank| rank + 1),

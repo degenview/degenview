@@ -146,28 +146,9 @@ fn construct(modifier: Option<ticker::TickerModifier>, candles: Vec<Kline>) -> V
 /// source.
 fn resolve_symbol(symbol: &str) -> Option<(DataSource, String)> {
     if let Some((prefix, rest)) = symbol.split_once(':') {
-        return Some((source_for_slug(prefix)?, rest.to_owned()));
+        return Some((DataSource::from_watchlist_slug(prefix)?, rest.to_owned()));
     }
     Some((DataSource::Binance, symbol.to_owned()))
-}
-
-fn source_for_slug(slug: &str) -> Option<DataSource> {
-    match slug.to_ascii_uppercase().as_str() {
-        "BINANCE" => Some(DataSource::Binance),
-        "COINBASE" => Some(DataSource::Coinbase),
-        "OKX" => Some(DataSource::Okx),
-        "KRAKEN" => Some(DataSource::Kraken),
-        "BYBIT" => Some(DataSource::Bybit),
-        "GATEIO" => Some(DataSource::Gate),
-        "MEXC" => Some(DataSource::Mexc),
-        "COINGECKO" => Some(DataSource::CoinGecko),
-        "DEXSCREENER" => Some(DataSource::DexScreener),
-        "ALPACA" => Some(DataSource::Alpaca),
-        "POLYMARKET" => Some(DataSource::Polymarket),
-        "KALSHI" => Some(DataSource::Kalshi),
-        "CMC" => Some(DataSource::CoinMarketCap),
-        _ => None,
-    }
 }
 
 /// Compiles `source` and runs it once over every bar (historical phase) with the user's input

@@ -9,13 +9,12 @@
 //! by splitting the batch and then left out for ten minutes.
 
 use super::book::WatchlistQuoteBook;
-use super::provider::{QuoteFailure, QuoteProvider, QuoteRequest, chunk_size};
+use super::provider::{QuoteFailure, QuoteProvider, QuoteRequest};
 use super::quote_stream::StreamTick;
 use crate::lock::lock;
 use crate::model::alert::AlertProviderHealth;
-use crate::model::watchlist::quote::{
-    Freshness, SourceQuote, WatchlistQuote, evaluate_freshness, refresh_interval_secs,
-};
+use crate::model::market::profile::Class;
+use crate::model::watchlist::quote::{Freshness, SourceQuote, WatchlistQuote, evaluate_freshness};
 use crate::model::{DataSource, InstrumentId};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Mutex;
@@ -364,7 +363,7 @@ impl Engine {
             return;
         }
         for (key, instrument) in &wanted {
-            if instrument.source == DataSource::CoinMarketCap && !self.known.contains_key(key) {
+            if instrument.source.profile().class == Class::Index && !self.known.contains_key(key) {
                 self.publish(
                     key,
                     WatchlistQuote::unsupported(Some(
@@ -463,7 +462,7 @@ impl Engine {
         self.wanted()
             .into_iter()
             .filter(|(key, instrument)| {
-                instrument.source == DataSource::DexScreener
+                instrument.source.profile().class == Class::Dex
                     && !self.chains.contains_key(key)
                     && !self.unresolved_chains.contains(key)
             })
@@ -499,7 +498,8 @@ impl Engine {
             return None;
         }
         match instrument.source {
-            DataSource::CoinMarketCap => None,
+            // Index charts and portfolio cards have no quote to poll.
+            source if source.profile().class == Class::Index => None,
             source if source.streams_quotes() => {
                 // The socket supplies prices; REST fills a product it has not answered, and
                 // refreshes one it has gone quiet on, so a thin market's price never ages.
@@ -509,10 +509,10 @@ impl Engine {
                 let since = self.stream_subscribed_at.get(key)?;
                 (now - since >= self.config.stream_fallback_delay_ms).then_some(source)
             }
-            DataSource::DexScreener => self
-                .chains
-                .contains_key(key)
-                .then_some(DataSource::DexScreener),
+            // A DEX pair is asked for by its network, once that is known.
+            source if source.profile().class == Class::Dex => {
+                self.chains.contains_key(key).then_some(source)
+            }
             source => Some(source),
         }
     }
@@ -523,7 +523,7 @@ impl Engine {
             return false;
         }
         // A second of slack: rounds drift a little late.
-        now - state.last_poll_ms >= refresh_interval_secs(source) as i64 * 1_000 - 1_000
+        now - state.last_poll_ms >= source.profile().quotes.refresh_secs as i64 * 1_000 - 1_000
     }
 
     /// One round: every due source gets one batched request.
@@ -713,7 +713,7 @@ impl Engine {
     /// The source behind an instrument key (`SLUG:SYMBOL`).
     fn source_of(&self, key: &str) -> Option<DataSource> {
         let slug = key.split(':').next()?;
-        ALL_SOURCES
+        DataSource::ALL
             .into_iter()
             .find(|source| source.watchlist_slug() == slug)
     }
@@ -759,25 +759,9 @@ impl Engine {
     }
 }
 
-const ALL_SOURCES: [DataSource; 13] = [
-    DataSource::Binance,
-    DataSource::Coinbase,
-    DataSource::Okx,
-    DataSource::Kraken,
-    DataSource::Bybit,
-    DataSource::Gate,
-    DataSource::Mexc,
-    DataSource::CoinGecko,
-    DataSource::DexScreener,
-    DataSource::Alpaca,
-    DataSource::Polymarket,
-    DataSource::Kalshi,
-    DataSource::CoinMarketCap,
-];
-
 /// A stable order for sources, so rounds are deterministic.
 fn source_order(source: DataSource) -> u8 {
-    ALL_SOURCES
+    DataSource::ALL
         .iter()
         .position(|candidate| *candidate == source)
         .unwrap_or(usize::MAX) as u8
@@ -798,7 +782,7 @@ pub fn fetch(
     source: DataSource,
     requests: &[QuoteRequest],
 ) -> Outcome {
-    fetch_chunked(provider, source, requests, chunk_size(source))
+    fetch_chunked(provider, source, requests, source.profile().quotes.batch)
 }
 
 fn fetch_chunked(

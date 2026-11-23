@@ -3,6 +3,8 @@
 //! line up exactly (see `watchlist_style`), and each returns the `Response` the
 //! sidebar uses for clicks, drags and menus.
 
+use crate::model::InstrumentId;
+use crate::model::market::profile::{Class, PairStyle};
 use crate::model::market::trend::Trend;
 use crate::model::watchlist;
 use crate::model::watchlist::layout::Flags;
@@ -11,7 +13,6 @@ use crate::model::watchlist::{
     WatchlistColumn, WatchlistDisplaySettings, WatchlistInstrument, WatchlistSection,
     WatchlistSortKey,
 };
-use crate::model::{DataSource, InstrumentId};
 use crate::ui::accessibility;
 use crate::ui::kit::{self, size, sparkline};
 use crate::ui::theme;
@@ -49,8 +50,9 @@ fn fitted(
 /// The asset whose artwork to look up, matching what a chart card uses.
 pub fn icon_base_symbol(item: &WatchlistInstrument) -> String {
     let symbol = &item.instrument.symbol;
-    match item.instrument.source {
-        DataSource::Binance | DataSource::Bybit | DataSource::Mexc => {
+    let profile = item.instrument.source.profile();
+    match (&profile.pair, profile.class) {
+        (PairStyle::Concat(_), _) => {
             let upper = symbol.to_uppercase();
             ["USDT", "USDC", "BUSD", "FDUSD", "USD"]
                 .iter()
@@ -58,23 +60,23 @@ pub fn icon_base_symbol(item: &WatchlistInstrument) -> String {
                 .unwrap_or(&upper)
                 .to_owned()
         }
-        DataSource::Coinbase | DataSource::Okx => {
-            symbol.split('-').next().unwrap_or(symbol).to_uppercase()
-        }
-        DataSource::Kraken => symbol.split('/').next().unwrap_or(symbol).to_uppercase(),
-        DataSource::Gate => symbol.split('_').next().unwrap_or(symbol).to_uppercase(),
-        DataSource::CoinGecko | DataSource::DexScreener => item
+        (PairStyle::Separated(style), _) => symbol
+            .split(style.separator)
+            .next()
+            .unwrap_or(symbol)
+            .to_uppercase(),
+        (PairStyle::None, Class::Aggregator | Class::Dex) => item
             .label
             .split('/')
             .next()
             .unwrap_or(&item.label)
             .to_uppercase(),
-        DataSource::Polymarket | DataSource::Kalshi => item
+        (PairStyle::None, Class::Prediction) => item
             .display_name
             .clone()
             .unwrap_or_else(|| item.name.clone()),
-        DataSource::Alpaca => symbol.to_uppercase(),
-        DataSource::CoinMarketCap => "CMC".to_owned(),
+        (PairStyle::None, Class::Index) => profile.slug.to_owned(),
+        (PairStyle::None, Class::Exchange | Class::Stock) => symbol.to_uppercase(),
     }
 }
 

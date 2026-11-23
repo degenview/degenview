@@ -8,16 +8,14 @@
 
 mod book;
 mod engine;
-mod provider;
-mod quote_stream;
+pub(in crate::service) mod provider;
+pub(in crate::service) mod quote_stream;
 
 use crate::lock::lock;
 pub use book::WatchlistQuoteBook;
 pub use engine::Config;
-#[cfg(test)]
 pub use engine::Outcome;
 pub use provider::QuoteProvider;
-#[cfg(test)]
 pub use provider::{QuoteFailure, QuoteRequest};
 
 use crate::clock::now_ms;
@@ -124,7 +122,9 @@ fn run(
             let mut guard = lock(engine);
             guard.expire_leases(now);
             (
-                DataSource::QUOTE_STREAMS.map(|source| (source, guard.stream_products(source))),
+                DataSource::quote_streams()
+                    .map(|source| (source, guard.stream_products(source)))
+                    .collect::<Vec<_>>(),
                 guard.poll_interval_ms(),
                 guard.has_subscriptions(),
                 guard.lease_aging(now),

@@ -10,6 +10,7 @@ pub mod control;
 pub mod disk;
 pub mod lookup;
 
+use crate::model::market::profile::CachedSeries;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::ProviderError;
 use std::collections::HashMap;
@@ -37,19 +38,13 @@ pub struct Policy {
 /// answers 300 candles a request, so even a chart of its own length takes two. The
 /// line charts are small.
 pub fn policy(source: DataSource, timeframe: Timeframe) -> Option<Policy> {
-    let fresh = match source {
-        DataSource::CoinGecko => 120,
-        DataSource::DexScreener => 30,
-        DataSource::Coinbase | DataSource::Okx | DataSource::Alpaca => 0,
-        DataSource::Binance | DataSource::Bybit | DataSource::Gate | DataSource::Mexc
-            if source.plan(timeframe).is_some_and(|plan| !plan.is_native()) =>
-        {
-            0
-        }
-        _ => return None,
+    let cache = source.profile().cache?;
+    let held = match cache.of {
+        CachedSeries::Every => true,
+        CachedSeries::Folded => source.plan(timeframe).is_some_and(|plan| !plan.is_native()),
     };
-    Some(Policy {
-        fresh: Duration::from_secs(fresh),
+    held.then(|| Policy {
+        fresh: Duration::from_secs(cache.fresh_secs),
     })
 }
 

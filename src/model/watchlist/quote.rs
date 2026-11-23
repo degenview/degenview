@@ -2,43 +2,11 @@
 //! watchlist, and a missing value stays `None` so the row shows a dash, not zero.
 
 use crate::format;
+use crate::model::market::profile::ChangeBasis;
 use crate::model::{DataSource, PriceFormat};
 
 /// Text for a value the provider did not supply.
 pub const MISSING: &str = "–";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ChangeBasis {
-    Rolling24h,
-    PreviousClose,
-    Window,
-}
-
-impl ChangeBasis {
-    pub fn for_source(source: DataSource) -> Self {
-        match source {
-            DataSource::Binance
-            | DataSource::Coinbase
-            | DataSource::Okx
-            | DataSource::Kraken
-            | DataSource::Bybit
-            | DataSource::Gate
-            | DataSource::Mexc
-            | DataSource::CoinGecko
-            | DataSource::DexScreener => Self::Rolling24h,
-            DataSource::Alpaca => Self::PreviousClose,
-            DataSource::Polymarket | DataSource::Kalshi | DataSource::CoinMarketCap => Self::Window,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Rolling24h => "Change over the last 24 hours",
-            Self::PreviousClose => "Change since the previous close",
-            Self::Window => "Change over the market's comparison window",
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Freshness {
@@ -154,7 +122,7 @@ impl WatchlistQuote {
             last: Some(quote.price),
             change,
             change_percent: percent,
-            change_basis: Some(ChangeBasis::for_source(source)),
+            change_basis: Some(source.profile().change),
             volume: quote.volume_24h,
             volume_kind: quote.volume_kind,
             timestamp_ms: quote.timestamp_ms.or(Some(received_at_ms)),
@@ -166,46 +134,10 @@ impl WatchlistQuote {
 
 // MARK: Freshness
 
-/// Seconds between refreshes of a source while a sidebar is visible.
-pub fn refresh_interval_secs(source: DataSource) -> u64 {
-    match source {
-        DataSource::Binance
-        | DataSource::Coinbase
-        | DataSource::Okx
-        | DataSource::Kraken
-        | DataSource::Bybit
-        | DataSource::Gate
-        | DataSource::Mexc
-        | DataSource::Alpaca => 5,
-        DataSource::DexScreener => 10,
-        DataSource::CoinGecko | DataSource::Polymarket | DataSource::Kalshi => 30,
-        DataSource::CoinMarketCap => 0,
-    }
-}
-
-/// How long after its last refresh a price is still shown as current: a few poll
-/// intervals, so one missed round does not dim a row but a real outage does.
-pub fn maximum_age_secs(source: DataSource) -> i64 {
-    match source {
-        DataSource::Binance
-        | DataSource::Okx
-        | DataSource::Kraken
-        | DataSource::Bybit
-        | DataSource::Gate
-        | DataSource::Mexc
-        | DataSource::Alpaca => 45,
-        DataSource::DexScreener => 60,
-        // Coinbase is refreshed from REST every 30 seconds when the socket has been quiet.
-        DataSource::Coinbase => 90,
-        DataSource::CoinGecko | DataSource::Polymarket | DataSource::Kalshi => 120,
-        DataSource::CoinMarketCap => 0,
-    }
-}
-
 /// `Stale` once the last refresh is older than the source's window; a stock outside US
 /// hours reads `MarketClosed` (its last price is the close, still current); else `Live`.
 pub fn evaluate_freshness(source: DataSource, received_at_ms: i64, now_ms: i64) -> Freshness {
-    if now_ms - received_at_ms > maximum_age_secs(source) * 1_000 {
+    if now_ms - received_at_ms > source.profile().quotes.max_age_secs * 1_000 {
         return Freshness::Stale;
     }
     if source == DataSource::Alpaca && !is_us_market_open(now_ms) {

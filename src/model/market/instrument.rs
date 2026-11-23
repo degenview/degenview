@@ -1,4 +1,5 @@
 use crate::model::DataSource;
+use crate::model::market::profile::{Casing, PairStyle};
 use serde::{Deserialize, Serialize};
 
 /// A market on one provider. Equality and identity are source-qualified: a
@@ -34,58 +35,8 @@ impl InstrumentId {
     /// USDT, Coinbase ids are `BASE-QUOTE` (a bare asset is quoted in USD) and so are OKX's (in
     /// USDT); Kraken's are `BASE/QUOTE` (USD) in the common tickers, never the legacy `XBT`.
     pub fn api_symbol(&self) -> String {
-        match self.source {
-            DataSource::Mexc => {
-                let upper = self.symbol.to_uppercase().replace(['/', '-', '_', ' '], "");
-                // Its own quotes (`USD1`, `USDE`), and a one-letter base is a real asset (`S`).
-                if crate::model::market::source::split_mexc_pair(&upper).is_some() {
-                    upper
-                } else {
-                    format!("{upper}USDT")
-                }
-            }
-            DataSource::Binance | DataSource::Bybit => {
-                let upper = self.symbol.to_uppercase().replace(['/', '-'], "");
-                // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
-                if crate::model::market::source::split_binance_pair(&upper)
-                    .is_some_and(|(base, _)| base.len() > 1)
-                {
-                    upper
-                } else {
-                    format!("{upper}USDT")
-                }
-            }
-            DataSource::Coinbase | DataSource::Okx => {
-                let id = self.symbol.to_uppercase().replace('/', "-");
-                if id.contains('-') {
-                    id
-                } else if self.source == DataSource::Okx {
-                    format!("{id}-USDT")
-                } else {
-                    format!("{id}-USD")
-                }
-            }
-            DataSource::Gate => {
-                let id = self.symbol.to_uppercase().replace(['/', '-', ' '], "_");
-                if id.contains('_') {
-                    id
-                } else {
-                    format!("{id}_USDT")
-                }
-            }
-            DataSource::Kraken => {
-                let id = self.symbol.to_uppercase().replace(['-', ' '], "/");
-                match id.split_once('/') {
-                    Some((base, quote)) => format!(
-                        "{}/{}",
-                        crate::model::market::source::kraken_asset(base),
-                        crate::model::market::source::kraken_asset(quote)
-                    ),
-                    None => format!("{}/USD", crate::model::market::source::kraken_asset(&id)),
-                }
-            }
-            _ => self.symbol.clone(),
-        }
+        let profile = self.source.profile();
+        profile.pair.api_symbol(&self.symbol, profile.home_quote)
     }
 
     /// Whether both name one market on one provider, comparing by the id the
@@ -104,17 +55,14 @@ impl InstrumentId {
     }
 
     fn normalized(symbol: &str, source: DataSource) -> String {
-        match source {
-            DataSource::Binance
-            | DataSource::Bybit
-            | DataSource::Mexc
-            | DataSource::Coinbase
-            | DataSource::Okx
-            | DataSource::Kraken
-            | DataSource::Gate => Self::new(source, symbol).api_symbol(),
-            DataSource::Alpaca => symbol.to_uppercase(),
-            DataSource::CoinGecko => symbol.to_lowercase(),
-            _ => symbol.to_owned(),
+        let profile = source.profile();
+        if !matches!(profile.pair, PairStyle::None) {
+            return Self::new(source, symbol).api_symbol();
+        }
+        match profile.id {
+            Casing::Upper => symbol.to_uppercase(),
+            Casing::Lower => symbol.to_lowercase(),
+            Casing::AsGiven => symbol.to_owned(),
         }
     }
 }

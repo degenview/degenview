@@ -664,7 +664,7 @@ impl SymbolPicker {
 
     /// Whether a market can be drawn over another chart: a crypto or stock market can.
     fn comparable(result: &SearchResult) -> bool {
-        search::PROVIDERS.contains(&result.source)
+        result.source.profile().class.is_symbol_market()
     }
 
     /// What Return does on `item`: fold an event, or use what the row stands for.

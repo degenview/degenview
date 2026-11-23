@@ -16,7 +16,6 @@ use crate::model::alert::{
     AlertCurrency, AlertNotificationSettings, AlertPersistenceSnapshot, AlertRuntimeHealth,
     AlertTriggerEvent, MarketQuote,
 };
-use crate::model::watchlist::quote::maximum_age_secs;
 use crate::model::webhook::WebhookDeliverySource;
 use crate::model::webhook::policy::price_event_is_sendable;
 use crate::pine::runtime::state::AlertEvent;
@@ -306,7 +305,7 @@ impl AlertHost {
                     currency,
                     source_timestamp_ms,
                     received_at_ms: now_ms,
-                    maximum_age_secs: maximum_age_secs(source) as f64,
+                    maximum_age_secs: source.profile().quotes.max_age_secs as f64,
                     fingerprint: source_timestamp_ms.to_string(),
                     candle: None,
                 };

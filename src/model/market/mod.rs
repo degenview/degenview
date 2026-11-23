@@ -10,6 +10,7 @@ pub mod line;
 pub mod live;
 pub mod natives;
 pub(in crate::model) mod pm_series;
+pub mod profile;
 pub mod samples;
 pub(in crate::model) mod source;
 pub(in crate::model) mod timeframe;

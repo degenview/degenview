@@ -20,6 +20,7 @@
 
 use crate::lock::lock;
 use crate::model::DataSource;
+use crate::model::market::profile::Class;
 use crate::service::cache::lookup::{self, Hit, LookupCache};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -192,15 +193,10 @@ pub fn clear_memory() {
 
 /// The symbol reduced to its base asset, used by the symbol-keyed steps of the chain.
 fn base_symbol(source: DataSource, symbol: &str) -> String {
-    match source {
-        DataSource::Binance
-        | DataSource::Coinbase
-        | DataSource::Okx
-        | DataSource::Kraken
-        | DataSource::Bybit
-        | DataSource::Gate
-        | DataSource::Mexc => source.base_asset(symbol).to_lowercase(),
-        _ => symbol.to_lowercase(),
+    if source.profile().class == Class::Exchange {
+        source.base_asset(symbol).to_lowercase()
+    } else {
+        symbol.to_lowercase()
     }
 }
 

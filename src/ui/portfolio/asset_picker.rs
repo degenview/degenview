@@ -20,18 +20,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub const DEBOUNCE: Duration = Duration::from_millis(300);
-pub const CRYPTO_SOURCES: [DataSource; 9] = [
-    DataSource::Binance,
-    DataSource::Coinbase,
-    DataSource::Okx,
-    DataSource::Kraken,
-    DataSource::Bybit,
-    DataSource::Gate,
-    DataSource::Mexc,
-    DataSource::CoinGecko,
-    DataSource::DexScreener,
-];
-pub const STOCK_SOURCES: [DataSource; 1] = [DataSource::Alpaca];
 
 /// A provider's ticker search: results, or why there are none.
 pub type SearchFn =
@@ -148,8 +136,8 @@ impl AssetPickerState {
     /// The providers the current section asks.
     pub fn sources(&self) -> Vec<DataSource> {
         match self.tab {
-            PickerTab::Crypto => CRYPTO_SOURCES.to_vec(),
-            PickerTab::Stocks => STOCK_SOURCES.to_vec(),
+            PickerTab::Crypto => DataSource::crypto_markets().collect(),
+            PickerTab::Stocks => DataSource::stock_markets().collect(),
             PickerTab::Predictions => vec![self.provider],
         }
     }
@@ -669,7 +657,7 @@ mod tests {
         state.start(&egui::Context::default());
         wait(&mut state);
         let sources: Vec<DataSource> = state.results().iter().map(|(source, _)| *source).collect();
-        assert_eq!(sources, CRYPTO_SOURCES);
+        assert_eq!(sources, DataSource::crypto_markets().collect::<Vec<_>>());
         let binance = state.results()[0].1.as_ref().unwrap();
         assert_eq!(
             binance[0].full_symbol, "BTCUSDT",
@@ -707,7 +695,7 @@ mod tests {
             state.results().len() == 1,
             "re-selecting the same tab changes nothing"
         );
-        assert_eq!(state.sources(), STOCK_SOURCES);
+        assert_eq!(state.sources(), [DataSource::Alpaca]);
         state.select_tab(PickerTab::Predictions);
         assert!(state.is_due(Instant::now() + Duration::from_secs(1)));
         state.start(&egui::Context::default());

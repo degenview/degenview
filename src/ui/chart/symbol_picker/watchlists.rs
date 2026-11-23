@@ -1,7 +1,6 @@
 //! The Watchlists tab: the markets of the user's watchlists, in their order, grouped by list.
 //! Nothing is searched; the query filters what the lists already hold.
 
-use super::search::PROVIDERS;
 use crate::model::DataSource;
 use crate::model::watchlist::{Watchlist, WatchlistInstrument};
 use crate::service::{NAME_SEPARATOR, SearchResult, market::search_rank::normalize};
@@ -32,7 +31,7 @@ pub fn groups(lists: &[Watchlist]) -> Vec<WatchlistGroup> {
 /// picker does not open: a portfolio card, a prediction market, a CoinMarketCap index.
 fn market(item: &WatchlistInstrument) -> Option<SearchResult> {
     let source = item.instrument.source;
-    if item.card.is_some() || !PROVIDERS.contains(&source) {
+    if item.card.is_some() || !source.profile().class.is_symbol_market() {
         return None;
     }
     let id = item.instrument.symbol.as_str();
