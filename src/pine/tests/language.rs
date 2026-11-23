@@ -1911,14 +1911,14 @@ fn text_sizes_may_be_numbers_of_points() {
 fn the_cell_properties_the_chart_cannot_draw_are_warned_about() {
     let codes = diagnostic_codes(
         "t = table.new(position.top_left, 1, 1)\n\
-         table.cell(t, 0, 0, \"x\", tooltip = \"tip\", text_font_family = font.family_monospace)\n\
+         table.cell(t, 0, 0, \"x\", tooltip = \"tip\", text_formatting = text.format_bold, text_font_family = font.family_monospace)\n\
          table.cell_set_tooltip(t, 0, 0, \"tip\")\n\
          table.cell_set_text_formatting(t, 0, 0, text.format_bold)\n\
          table.cell_set_text_font_family(t, 0, 0, font.family_monospace)",
     );
-    // The tooltip is drawn now: only the font family and the text formatting are still ignored.
+    // The tooltip and the font family are drawn: only the text formatting is still ignored.
     assert_eq!(codes.iter().filter(|c| *c == "PINE7001").count(), 1);
-    assert_eq!(codes.iter().filter(|c| *c == "PINE7005").count(), 2);
+    assert_eq!(codes.iter().filter(|c| *c == "PINE7005").count(), 1);
 }
 
 #[test]

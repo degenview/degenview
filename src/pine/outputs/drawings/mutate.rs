@@ -302,7 +302,10 @@ fn mutate_label(
             label.text_align = parse(a.text_value(), label.text_align, label.text_align);
         }
         "set_yloc" => label.yloc = parse(a.text_value(), label.yloc, label.yloc),
-        "set_text_font_family" | "set_text_formatting" => {}
+        "set_text_font_family" => {
+            label.font_family = parse(a.text_value(), label.font_family, label.font_family);
+        }
+        "set_text_formatting" => {}
         "get_x" => return Ok(known_index(label.x)),
         "get_y" => return Ok(known_price(label.y)),
         "get_text" => return Ok(RuntimeValue::String(label.text.clone())),
@@ -364,7 +367,14 @@ fn mutate_box(
                 boxed.text_vertical_align,
             );
         }
-        "set_text_wrap" | "set_text_font_family" | "set_text_formatting" => {}
+        "set_text_font_family" => {
+            boxed.text_font_family = parse(
+                a.text_value(),
+                boxed.text_font_family,
+                boxed.text_font_family,
+            );
+        }
+        "set_text_wrap" | "set_text_formatting" => {}
         "get_left" => return Ok(known_index(boxed.left)),
         "get_right" => return Ok(known_index(boxed.right)),
         "get_top" => return Ok(known_price(boxed.top)),

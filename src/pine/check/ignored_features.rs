@@ -71,6 +71,7 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
     table.insert("fill", fill());
     table.insert("plotcandle", plotcandle());
     table.insert("box.new", box_new());
+    table.insert("label.new", label_new());
     table.insert("table.cell", table_cell());
     let mut request_security = request();
     request_security.insert("calc_bars_count", "The whole history is always requested.");
@@ -82,16 +83,10 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
 }
 
 fn table_cell() -> HashMap<&'static str, &'static str> {
-    HashMap::from([
-        (
-            "text_font_family",
-            "Cell text is always drawn in the chart's own font.",
-        ),
-        (
-            "text_formatting",
-            "Cell text is never drawn bold or italic.",
-        ),
-    ])
+    HashMap::from([(
+        "text_formatting",
+        "Cell text is never drawn bold or italic.",
+    )])
 }
 
 fn declaration() -> HashMap<&'static str, &'static str> {
@@ -222,10 +217,16 @@ fn plotcandle() -> HashMap<&'static str, &'static str> {
     )])
 }
 
+fn label_new() -> HashMap<&'static str, &'static str> {
+    HashMap::from([(
+        "text_formatting",
+        "Label text is never drawn bold or italic.",
+    )])
+}
+
 fn box_new() -> HashMap<&'static str, &'static str> {
     HashMap::from([
         ("text_wrap", "Box text is never wrapped."),
-        ("text_font_family", "Box text uses the default font."),
         (
             "text_formatting",
             "Box text has no bold or italic formatting.",
@@ -275,8 +276,8 @@ fn stubbed_functions() -> Vec<(&'static str, &'static str)> {
         ));
     }
     table.push((
-        "table.cell_set_text_font_family",
-        "Cell text is always drawn in the chart's own font.",
+        "label.set_text_formatting",
+        "Label text is never drawn bold or italic.",
     ));
     table.push((
         "table.cell_set_text_formatting",

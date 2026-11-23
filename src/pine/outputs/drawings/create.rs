@@ -11,9 +11,9 @@ use super::{
 };
 use crate::model::Kline;
 use crate::pine::outputs::{
-    BoxOutput, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle, LinefillOutput,
-    MISSING_INDEX, PolylineOutput, PolylinePoint, Size, TextAlign, YLocation, index_is_known,
-    price_is_known,
+    BoxOutput, FontFamily, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle,
+    LinefillOutput, MISSING_INDEX, PolylineOutput, PolylinePoint, Size, TextAlign, YLocation,
+    index_is_known, price_is_known,
 };
 use crate::pine::runtime::containers::Object;
 use crate::pine::runtime::fast_hash::FastMap;
@@ -212,6 +212,11 @@ pub(super) fn new_label(
                 LabelStyle::LabelCenter,
             ),
             size: size_of(b.get("size"), Size::Normal),
+            font_family: parse(
+                b.get("text_font_family").and_then(RuntimeValue::text_value),
+                FontFamily::Default,
+                FontFamily::Default,
+            ),
             tooltip: text(&b, "tooltip"),
             text_align: parse(
                 b.get("textalign").and_then(RuntimeValue::text_value),
@@ -353,6 +358,11 @@ pub(super) fn new_box(
             text: text(&b, "text").unwrap_or_default(),
             text_color: color_value(b.get("text_color"), Some(OPAQUE_BLACK)).unwrap_or(0),
             text_size: size_of(b.get("text_size"), Size::Normal),
+            text_font_family: parse(
+                b.get("text_font_family").and_then(RuntimeValue::text_value),
+                FontFamily::Default,
+                FontFamily::Default,
+            ),
             text_horizontal_align: parse(
                 b.get("text_halign").and_then(RuntimeValue::text_value),
                 TextAlign::Center,

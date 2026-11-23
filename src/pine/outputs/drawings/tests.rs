@@ -1,5 +1,5 @@
 use super::*;
-use crate::pine::outputs::{LabelStyle, Size, TablePosition};
+use crate::pine::outputs::{FontFamily, LabelStyle, Size, TablePosition};
 use crate::pine::runtime::containers::Object;
 use crate::pine::runtime::value::RefKind;
 use RuntimeValue::{Float, Int, Na, String as Str};
@@ -871,5 +871,91 @@ fn a_chart_point_setter_takes_the_resolved_index_and_price_once() {
     assert_eq!(
         (state.boxes[&box_id].right, state.boxes[&box_id].bottom),
         (7, 55.0)
+    );
+}
+
+#[test]
+fn text_font_family_is_kept_by_labels_boxes_and_cells_and_changed_by_their_setters() {
+    let mut state = RuntimeState::default();
+    let mono = || Str("font.family_monospace".into());
+    let label = run(
+        &mut state,
+        "label.new",
+        &[
+            arg(Int(1)),
+            arg(Float(10.0)),
+            named("text_font_family", mono()),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Label, label_id) = label.clone() else {
+        panic!("{label:?}")
+    };
+    assert_eq!(state.labels[&label_id].font_family, FontFamily::Monospace);
+    run(
+        &mut state,
+        "label.set_text_font_family",
+        &[arg(label), arg(Str("font.family_default".into()))],
+    )
+    .unwrap();
+    assert_eq!(state.labels[&label_id].font_family, FontFamily::Default);
+
+    let boxed = run(
+        &mut state,
+        "box.new",
+        &[
+            arg(Int(1)),
+            arg(Float(10.0)),
+            arg(Int(3)),
+            arg(Float(20.0)),
+            named("text_font_family", mono()),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Box, box_id) = boxed else {
+        panic!("{boxed:?}")
+    };
+    assert_eq!(state.boxes[&box_id].text_font_family, FontFamily::Monospace);
+
+    let table = run(
+        &mut state,
+        "table.new",
+        &[arg(Int(0)), arg(Int(1)), arg(Int(1))],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Table, table_id) = table else {
+        panic!("{table:?}")
+    };
+    let handle = || arg(RuntimeValue::Ref(RefKind::Table, table_id));
+    run(
+        &mut state,
+        "table.cell",
+        &[
+            handle(),
+            arg(Int(0)),
+            arg(Int(0)),
+            arg(Str("x".into())),
+            named("text_font_family", mono()),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        state.tables[&table_id].cells[0].text_font_family,
+        FontFamily::Monospace
+    );
+    run(
+        &mut state,
+        "table.cell_set_text_font_family",
+        &[
+            handle(),
+            arg(Int(0)),
+            arg(Int(0)),
+            arg(Str("font.family_default".into())),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        state.tables[&table_id].cells[0].text_font_family,
+        FontFamily::Default
     );
 }

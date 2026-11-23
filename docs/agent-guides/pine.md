@@ -98,8 +98,10 @@
   editor offers these names. Drawings store bar indexes and `time_anchored`; `set_xloc` re-reads
   coordinates and flips it. Label `yloc` stored with its price, ignored (may be `na`) above/below the
   bar; `PineLayer::label_y` resolves it against the candle, price scale unaffected.
-- `table.cell_set_*` creates a blank cell if undefined (inferred). Undrawable properties
-  (font family, bold/italic) warned via `ignored_features`, never silently dropped.
+- `table.cell_set_*` creates a blank cell if undefined (inferred). `text_font_family`
+  (`font.family_default` / `font.family_monospace`) is stored as `FontFamily` on labels, boxes and
+  cells and drawn through `chart_render::font_id` (egui's monospace face), measured in the same face.
+  Bold/italic are not drawn and are warned via `ignored_features`, never silently dropped.
 - Text sizes are measured on TradingView (a probe of every size, drawn there and here with
   `gallery_of_a_script`, `ui::chart::card::snapshot_tests`), in `ui::pine::geometry`, never inline.
   Table and box text (`block_font_size`) is its named size in pixels: 8, 10, 14, 20, 36; a cell is
