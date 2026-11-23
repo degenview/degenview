@@ -22,13 +22,20 @@
 //! `switch` used for its value, and a `switch` arm's condition after the first. Only a *total*
 //! call moves: running it early cannot fail or change anything, so it cannot change what the script
 //! does on the bars its branch skips. Which builtins are total is decided by `total::is_total`; a
-//! user function is total when its body only computes with total calls, and a loop in it has a trip
-//! count that is known and cannot fail (its bounds and step are literals and the step is not zero:
-//! a zero step raises, and a bound the data sets can run past the per-bar instruction budget). A
-//! history is total only at a literal non-negative offset (`close[lag]` fails for a negative `lag`,
-//! which a guard may be keeping out). Anything that could fail, change state or draw (`array.get`,
-//! `array.push`, `plot`, `runtime.error`, `time`, a method, a field read, `request.*`) stays where
-//! it is, as does a call whose arguments read a name the statement itself declares or assigns.
+//! user function is total when its body, and the defaults of its parameters (which every call that
+//! leaves one out evaluates), only compute with total calls, and a loop in it has a trip count that
+//! is known and cannot fail (its bounds and step are literals and the step is not zero: a zero step
+//! raises). A history is total only at a literal non-negative offset (`close[lag]` fails for a
+//! negative `lag`, which a guard may be keeping out). Anything that could fail, change state or draw
+//! (`array.get`, `array.push`, `plot`, `runtime.error`, `time`, a method, a field read, `request.*`)
+//! stays where it is, as does a call whose arguments read a name the statement itself declares or
+//! assigns.
+//!
+//! A moved call also adds its cost to every bar, and a bar has a budget (PINE8004, and a deadline)
+//! that the guard may be keeping the script under: a function that costs more than
+//! `RUN_AHEAD_WORK` (statements run and loop passes, the loops of the functions it calls included)
+//! stays where it is, however its loops are written. A script close to the budget can still be
+//! pushed over it by what does move.
 //!
 //! The scope is the script's own statements and the libraries it imports, in blocks and functions
 //! alike. A call inside a `request.*` expression is not moved: that expression runs on the requested
@@ -145,12 +152,17 @@ impl<'c> Calls<'c> {
             by_name,
             pure: vec![true; bodies.len()],
         };
+        // What a call of each function costs, which no other function's purity changes.
+        let work = Work::new(&calls, &bodies).of_each();
         // Greatest fixpoint: a function is pure unless its body calls something that is not.
         loop {
             let next: Vec<bool> = bodies
                 .iter()
                 .zip(&calls.pure)
-                .map(|((parameters, body), pure)| *pure && calls.body_is_pure(parameters, body))
+                .zip(&work)
+                .map(|(((parameters, body), pure), work)| {
+                    *pure && *work <= RUN_AHEAD_WORK && calls.body_is_pure(parameters, body)
+                })
                 .collect();
             if next == calls.pure {
                 return calls;
@@ -159,13 +171,20 @@ impl<'c> Calls<'c> {
         }
     }
 
-    /// A body that only computes: it assigns nothing but its own names and calls only what is safe.
+    /// A body that only computes: it assigns nothing but its own names and calls only what is safe,
+    /// and so do the defaults of its parameters, which every call that leaves one out evaluates.
     fn body_is_pure(&self, parameters: &[Parameter], body: &[Statement]) -> bool {
         let mut locals: HashSet<String> = parameters.iter().map(|p| p.name.clone()).collect();
         for statement in body {
             visit_statements(statement, &mut |inner| declared(inner, &mut locals));
         }
-        body.iter()
+        parameters.iter().all(|parameter| {
+            parameter
+                .default_value
+                .as_ref()
+                .is_none_or(|default| self.expression(default, &locals))
+        }) && body
+            .iter()
             .all(|statement| self.statement(statement, &locals))
     }
 
@@ -187,21 +206,14 @@ impl<'c> Calls<'c> {
             } => self.expression(condition, locals) && all(when_true) && all(when_false),
             // A loop is total when its trip count is known and cannot fail: a zero step raises, and
             // a bound the data sets can run past the per-bar instruction budget (PINE8004), on a
-            // bar its branch was keeping out.
+            // bar its branch was keeping out. How much a function may cost is `RUN_AHEAD_WORK`.
             Statement::ForRange {
                 from,
                 to,
                 step,
                 body,
                 ..
-            } => {
-                literal_number(from).is_some()
-                    && literal_number(to).is_some()
-                    && step
-                        .iter()
-                        .all(|step| literal_number(step).is_some_and(|step| step != 0.0))
-                    && all(body)
-            }
+            } => trips(from, to, step.as_ref()) != u64::MAX && all(body),
             // How often it runs is the collection's size.
             Statement::ForIn { .. } => false,
             Statement::Switch { subject, arms, .. } => {
@@ -264,12 +276,17 @@ impl<'c> Calls<'c> {
         match route_for(name, self.captured) {
             Some(_) => is_total(name),
             None => {
-                let callees = match self.targets.get(&site) {
-                    Some(target) => std::slice::from_ref(target),
-                    None => self.by_name.get(name).map_or(&[][..], Vec::as_slice),
-                };
+                let callees = self.callees(name, site);
                 !callees.is_empty() && callees.iter().all(|callee| self.pure[*callee])
             }
+        }
+    }
+
+    /// The script's functions a call of `name` at `site` may reach.
+    fn callees(&self, name: &str, site: usize) -> &[usize] {
+        match self.targets.get(&site) {
+            Some(target) => std::slice::from_ref(target),
+            None => self.by_name.get(name).map_or(&[][..], Vec::as_slice),
         }
     }
 
@@ -571,6 +588,130 @@ fn held_in<'a>(expression: &'a Expression, visit: &mut impl FnMut(&'a Statement)
     }
     for child in children(expression) {
         held_in(child, visit);
+    }
+}
+
+/// The most a function may cost one call, in statements run and loop passes, to be run ahead. A
+/// moved call adds its cost to every bar, and a bar has a budget (`instructions_per_bar`, PINE8004)
+/// that the guard may be keeping the script under; this is a small part of it (the budget is 20
+/// million, each statement and each loop pass costing at least one).
+const RUN_AHEAD_WORK: u64 = 100_000;
+
+/// How many passes a `for` loop makes when its bounds and step are numbers written in the source and
+/// the step is not zero; `u64::MAX` for any other loop (what the data decides is unknown, and a zero
+/// step raises).
+fn trips(from: &Expression, to: &Expression, step: Option<&Expression>) -> u64 {
+    let (Some(from), Some(to)) = (literal_number(from), literal_number(to)) else {
+        return u64::MAX;
+    };
+    let stride = match step.map(literal_number) {
+        None => 1.0,
+        Some(Some(step)) if step != 0.0 => step.abs(),
+        Some(_) => return u64::MAX,
+    };
+    let passes = ((to - from).abs() / stride).floor() + 1.0;
+    if passes >= u64::MAX as f64 {
+        u64::MAX
+    } else {
+        passes as u64
+    }
+}
+
+/// What running a function costs one call, counted the way `RUN_AHEAD_WORK` is: every statement and
+/// expression once, a loop body once per pass, and what a user function it calls costs (the most of
+/// the ones the call may reach). Saturates: a loop that is not bounded costs everything.
+struct Work<'w, 'c> {
+    calls: &'w Calls<'c>,
+    bodies: &'w [(&'w [Parameter], &'w [Statement])],
+    /// Each function's cost once known. A function met while it is being counted costs everything,
+    /// which only a recursive one can be (the compiler refuses those).
+    memo: std::cell::RefCell<Vec<Option<u64>>>,
+}
+
+impl<'w, 'c> Work<'w, 'c> {
+    fn new(calls: &'w Calls<'c>, bodies: &'w [(&'w [Parameter], &'w [Statement])]) -> Self {
+        Self {
+            calls,
+            bodies,
+            memo: std::cell::RefCell::new(vec![None; bodies.len()]),
+        }
+    }
+
+    fn of_each(&self) -> Vec<u64> {
+        (0..self.bodies.len())
+            .map(|index| self.function(index))
+            .collect()
+    }
+
+    fn function(&self, index: usize) -> u64 {
+        if let Some(known) = self.memo.borrow()[index] {
+            return known;
+        }
+        self.memo.borrow_mut()[index] = Some(u64::MAX);
+        let (parameters, body) = self.bodies[index];
+        let defaults = parameters
+            .iter()
+            .filter_map(|parameter| parameter.default_value.as_ref())
+            .map(|default| self.expression(default))
+            .fold(0, u64::saturating_add);
+        let cost = self.block(body).saturating_add(defaults);
+        self.memo.borrow_mut()[index] = Some(cost);
+        cost
+    }
+
+    fn block(&self, statements: &[Statement]) -> u64 {
+        statements
+            .iter()
+            .map(|statement| self.statement(statement))
+            .fold(0, u64::saturating_add)
+    }
+
+    fn statement(&self, statement: &Statement) -> u64 {
+        let own = expressions(statement)
+            .into_iter()
+            .map(|expression| self.expression(expression))
+            .fold(1, u64::saturating_add);
+        if let Statement::ForRange {
+            from,
+            to,
+            step,
+            body,
+            ..
+        } = statement
+        {
+            let passes = trips(from, to, step.as_ref());
+            return own.saturating_add(passes.saturating_mul(self.block(body).saturating_add(1)));
+        }
+        nested_blocks(statement)
+            .into_iter()
+            .map(|block| self.block(block))
+            .fold(own, u64::saturating_add)
+    }
+
+    fn expression(&self, expression: &Expression) -> u64 {
+        let mut cost = children(expression)
+            .into_iter()
+            .map(|child| self.expression(child))
+            .fold(1, u64::saturating_add);
+        match expression {
+            Expression::Call { name, site, .. }
+                if route_for(name, self.calls.captured).is_none() =>
+            {
+                let callee = self
+                    .calls
+                    .callees(name, *site)
+                    .iter()
+                    .map(|callee| self.function(*callee))
+                    .max()
+                    .unwrap_or(0);
+                cost = cost.saturating_add(callee);
+            }
+            Expression::Statement(statement, _) => {
+                cost = cost.saturating_add(self.statement(statement));
+            }
+            _ => {}
+        }
+        cost
     }
 }
 

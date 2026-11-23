@@ -25,6 +25,10 @@ struct Counters {
     inclusive: u64,
     exclusive: u64,
     slowest: u64,
+    /// Time the session spent ahead of this region's statement since it last ran, which its next
+    /// execution takes into its own: `slowest` is the longest an execution took, run-ahead included,
+    /// as `inclusive` is.
+    run_ahead: u64,
     /// Executions of this region that are open right now: more than one means recursion.
     active: u32,
 }
@@ -351,7 +355,10 @@ impl ProfileRuntime {
         let counters = &mut self.counters[frame.region as usize];
         if frame.counted {
             counters.executions += 1;
-            counters.slowest = counters.slowest.max(elapsed);
+            let ran = elapsed.saturating_add(std::mem::take(&mut counters.run_ahead));
+            counters.slowest = counters.slowest.max(ran);
+        } else {
+            counters.run_ahead = counters.run_ahead.saturating_add(elapsed);
         }
         counters.exclusive += exclusive;
         counters.active -= 1;

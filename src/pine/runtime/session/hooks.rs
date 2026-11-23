@@ -100,6 +100,9 @@ impl Session {
     ) -> Diagnostic {
         if let Some(mut hooks) = self.hooks.take() {
             match &mut *hooks {
+                // Nothing stopped at a statement the session added, and its range is the call's:
+                // the debugger would stop at a line of a branch that was not taken.
+                Hooks::Debug(_) if statement.is_synthetic() => {}
                 Hooks::Debug(debug) => debug.failed(self, context, statement, &error),
                 Hooks::Profile(profile) => {
                     if entered {

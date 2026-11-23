@@ -576,9 +576,32 @@ fn a_user_function_moves_only_when_it_only_computes() {
         "f() =>\n    s = 0.0\n    for i = 0 to 3 by bar_index\n        s += 1.0\n    s\n",
         "f() =>\n    s = 0.0\n    for i = 0 to bar_index\n        s += 1.0\n    s\n",
         "f() =>\n    s = 0.0\n    for i = bar_index to 3\n        s += 1.0\n    s\n",
+        // Known, but more than a bar may be asked to spend ahead of its guard (PINE8004 is at 20
+        // million instructions): a long loop, loops that multiply, a function that calls one twice.
+        "f() =>\n    s = 0.0\n    for i = 0 to 30000000\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 0 to 1 by 0.00000001\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 0 to 1000\n        for j = 0 to 1000\n            s += 1.0\n    s\n",
+        "g() =>\n    s = 0.0\n    for i = 0 to 20000\n        s += 1.0\n    s\nf() =>\n    g() + g()\n",
+        // What a call leaves out is evaluated for it: a default is part of the function.
+        "f(v = math.random(0, 1)) =>\n    v\n",
+        "f(v = time(\"nonsense\")) =>\n    v\n",
+        "f(v = array.get(array.new_float(0), 0)) =>\n    v\n",
+        "g() =>\n    plot(close)\n    1.0\nf(v = g()) =>\n    v\n",
     ] {
         let source = format!("{impure}x = close > 0 ? f()[1] : na");
         assert!(hoisted_calls(&source).is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn a_function_with_a_total_default_or_a_loop_within_the_budget_is_run_ahead() {
+    for helper in [
+        "f(v = 2.0) =>\n    v\n",
+        "f(v = ta.sma(close, 3)) =>\n    v\n",
+        "g() =>\n    s = 0.0\n    for i = 0 to 20000\n        s += 1.0\n    s\nf() =>\n    g()\n",
+    ] {
+        let source = format!("{helper}x = close > 0 ? f()[1] : na");
+        assert_eq!(hoisted_calls(&source), ["f"], "{source}");
     }
 }
 
@@ -736,8 +759,19 @@ fn hoisted_scripts_run_the_same_both_ways() {
 // MARK: The builtins that are total survive hostile arguments
 
 /// Arguments that are likeliest to break a builtin that trusts its inputs: a missing value, zero and
-/// negative lengths, a huge one, a series, an empty string and one that is no timeframe or format.
-const HOSTILE: [&str; 7] = ["na", "0", "-1", "1000000", "close", "\"\"", "\"x\""];
+/// negative lengths, huge ones, a series, a condition, an empty string and one that is no timeframe
+/// or format.
+const HOSTILE: [&str; 9] = [
+    "na",
+    "0",
+    "-1",
+    "1000000",
+    "1e300",
+    "close",
+    "close > open",
+    "\"\"",
+    "\"x\"",
+];
 
 /// Every argument list of up to three `HOSTILE` values (the first of a list of three is a series or
 /// `na`, which is what a builtin of three arguments reads first).

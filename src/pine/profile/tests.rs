@@ -79,7 +79,19 @@ fn assert_consistent(report: &ProfileReport) {
             stats.inclusive_ns
         );
         assert!(stats.inclusive_ns <= summary.total_ns);
-        assert!(stats.slowest_ns <= stats.inclusive_ns.max(stats.slowest_ns));
+        assert!(
+            stats.slowest_ns <= stats.inclusive_ns,
+            "region {index}: slowest {} over inclusive {}",
+            stats.slowest_ns,
+            stats.inclusive_ns
+        );
+        assert!(
+            stats.slowest_ns * stats.executions >= stats.inclusive_ns || stats.executions == 0,
+            "region {index}: slowest {} under the average of {} over {}",
+            stats.slowest_ns,
+            stats.inclusive_ns,
+            stats.executions
+        );
         let region = report.table.get(index as u32).unwrap();
         if let Some(parent) = region.parent {
             assert!(parent < index as u32, "a parent comes first");
@@ -234,6 +246,13 @@ fn what_the_session_runs_ahead_of_a_statement_is_time_of_that_statement() {
         line(&ahead, statement).line_time_ns,
         line(&plain, statement).line_time_ns + 20 * STEP,
         "the moved call is charged to its statement"
+    );
+    // The longest execution takes the moved call with it, as the total does: it cannot be shorter
+    // than the average.
+    let stats = ahead.stats_of(line(&ahead, statement).region);
+    assert!(
+        stats.slowest_ns * stats.executions >= stats.inclusive_ns,
+        "{stats:?}"
     );
     assert_consistent(&ahead);
 }

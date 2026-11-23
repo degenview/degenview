@@ -1455,11 +1455,30 @@ fn a_loop_that_cannot_run_is_not_run_ahead_of_its_guard() {
             "f(n) =>\n    s = 0.0\n    for i = 0 to n\n        s += 1.0\n    s\n",
             "f(2000000000)",
         ),
+        (
+            "literal bound past the budget",
+            "f() =>\n    s = 0.0\n    for i = 0 to 30000000\n        s += 1.0\n    s\n",
+            "f()",
+        ),
+        (
+            "loops that multiply",
+            "f() =>\n    s = 0.0\n    for i = 0 to 10000\n        for j = 0 to 10000\n            s += 1.0\n    s\n",
+            "f()",
+        ),
     ] {
         let body =
             format!("{helper}never = bar_index < 0\nr = never ? {call}[1] : na\nplot(r, \"r\")");
         assert_eq!(plot_values(&body, 6, "r"), vec![None; 6], "{name}");
     }
+}
+
+#[test]
+fn a_default_that_cannot_run_is_not_run_ahead_of_its_guard() {
+    // A call that leaves a parameter out evaluates its default, so the default is part of the
+    // function: `array.get` of an empty array raises, `math.random` moves every later draw.
+    let body = "values = array.new_float(0)\nf(v = array.get(values, 0)) =>\n    v\n\
+                never = bar_index < 0\nr = never ? f()[1] : na\nplot(r, \"r\")";
+    assert_eq!(plot_values(body, 6, "r"), vec![None; 6]);
 }
 
 #[test]
