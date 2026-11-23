@@ -13,9 +13,9 @@ pub struct PluralForms {
 }
 
 #[derive(Debug, PartialEq, thiserror::Error)]
-#[error("the plural formula {formula:?} is not valid: {reason}")]
-pub struct FormulaError {
-    formula: String,
+#[error("the plural forms {text:?} are not valid: {reason}")]
+pub struct PluralFormsError {
+    text: String,
     reason: &'static str,
 }
 
@@ -46,17 +46,42 @@ enum Op {
 }
 
 impl PluralForms {
-    /// English and every language that only tells one from many: `n != 1`.
-    #[cfg(test)]
+    /// What gettext assumes of a catalog that has no `Plural-Forms` header, and what English and
+    /// every language that only tells one from many says: `nplurals=2; plural=n != 1;`.
     pub fn english() -> Self {
         Self::parse(2, "n != 1").expect("the English formula is valid")
     }
 
-    /// The forms of a catalog whose header says `nplurals` and `formula` (the text after
-    /// `plural=`, without the final semicolon).
-    pub fn parse(count: usize, formula: &str) -> Result<Self, FormulaError> {
-        let fail = |reason| FormulaError {
-            formula: formula.to_owned(),
+    /// The forms a `Plural-Forms` header declares: `nplurals=3; plural=EXPR;`.
+    pub fn from_header(header: &str) -> Result<Self, PluralFormsError> {
+        let fail = |reason| PluralFormsError {
+            text: header.to_owned(),
+            reason,
+        };
+        let (mut count, mut formula) = (None, None);
+        for part in header.split(';') {
+            // The formula has `=` of its own (`==`), so only the first one separates the key.
+            let Some((key, value)) = part.split_once('=') else {
+                continue;
+            };
+            match key.trim() {
+                "nplurals" => {
+                    let value = value.trim().parse::<usize>();
+                    count = Some(value.map_err(|_| fail("nplurals is not a number"))?);
+                }
+                "plural" => formula = Some(value.trim()),
+                _ => {}
+            }
+        }
+        let count = count.ok_or_else(|| fail("nplurals is missing"))?;
+        let formula = formula.ok_or_else(|| fail("plural is missing"))?;
+        Self::parse(count, formula)
+    }
+
+    /// The forms of a language with `count` of them and `formula` for the one a count takes.
+    pub fn parse(count: usize, formula: &str) -> Result<Self, PluralFormsError> {
+        let fail = |reason| PluralFormsError {
+            text: formula.to_owned(),
             reason,
         };
         if count == 0 {
@@ -300,6 +325,41 @@ mod tests {
         assert_eq!(forms(9, "(1 + 2) * 3").index(0), 8);
         assert_eq!(forms(9, "n / 0").index(5), 0);
         assert_eq!(forms(9, "n % 0").index(5), 0);
+    }
+
+    #[test]
+    fn a_header_gives_the_count_and_the_formula() {
+        let russian = PluralForms::from_header(
+            "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);",
+        )
+        .expect("valid");
+        assert_eq!(russian.count(), 3);
+        assert_eq!(russian.index(22), 1);
+        // Spacing, a missing final semicolon and a formula that is only a comparison.
+        let german = PluralForms::from_header("nplurals=2;plural=n!=1").expect("valid");
+        assert_eq!(
+            (german.count(), german.index(1), german.index(2)),
+            (2, 0, 1)
+        );
+        let french =
+            PluralForms::from_header("  nplurals = 2 ;  plural = n > 1 ; ").expect("valid");
+        assert_eq!(
+            (french.index(0), french.index(1), french.index(2)),
+            (0, 0, 1)
+        );
+    }
+
+    #[test]
+    fn a_header_that_does_not_say_both_is_refused() {
+        for bad in [
+            "",
+            "nplurals=2",
+            "plural=n != 1",
+            "nplurals=two; plural=0;",
+            "nplurals=0; plural=0;",
+        ] {
+            assert!(PluralForms::from_header(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

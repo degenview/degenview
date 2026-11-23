@@ -53,6 +53,38 @@ impl Screen {
         output
     }
 
+    /// The text `output` (a frame this screen ran) shows cut short with an ellipsis, in full: a label
+    /// that did not fit its room. A text that has an ellipsis of its own ("Drawing the image…")
+    /// does not count; only an ellipsis the layout added does. A page drawn in the pseudo-locale,
+    /// which is 40% longer than English, must report none.
+    pub(crate) fn truncated_text(output: &egui::FullOutput) -> Vec<String> {
+        fn visit(shape: &egui::epaint::Shape, found: &mut Vec<String>) {
+            match shape {
+                egui::epaint::Shape::Vec(shapes) => {
+                    shapes.iter().for_each(|shape| visit(shape, found));
+                }
+                egui::epaint::Shape::Text(text) => {
+                    let ellipses = |text: &str| text.matches('…').count();
+                    let shown: String = text
+                        .galley
+                        .rows
+                        .iter()
+                        .flat_map(|row| row.glyphs.iter().map(|glyph| glyph.chr))
+                        .collect();
+                    if ellipses(&shown) > ellipses(text.galley.text()) {
+                        found.push(text.galley.text().to_owned());
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut found = Vec::new();
+        for clipped in &output.shapes {
+            visit(&clipped.shape, &mut found);
+        }
+        found
+    }
+
     /// Writes `output` (a frame this screen ran) as `name`.png in the gallery folder.
     pub(crate) fn save(&mut self, name: &str, output: egui::FullOutput) {
         let Some(dir) = gallery_dir() else {

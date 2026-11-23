@@ -27,7 +27,12 @@ fn apply(preference: Preference) {
     let forced = std::env::var(FORCE_ENV)
         .ok()
         .and_then(|tag| Locale::from_tag(&tag));
-    let locale = i18n::resolve(preference, forced, &language::preferred());
+    let locale = i18n::resolve(
+        preference,
+        forced,
+        &language::preferred(),
+        &Locale::selectable(),
+    );
     i18n::set(preference, locale);
 }
 

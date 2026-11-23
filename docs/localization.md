@@ -7,7 +7,7 @@ The pieces are the standard ones, so a translator's tools and a new engineer's e
 
 | Need | Standard used |
 | --- | --- |
-| Catalogs | GNU gettext `.po` files and a `.pot` template (`polib` reads them) |
+| Catalogs | GNU gettext `.po` files and a `.pot` template (`ferrocat-po` reads and writes them; GNU `msgfmt` is the judge of validity) |
 | Plural forms | the catalog's own `Plural-Forms` header, tested against CLDR (`icu_plurals`) |
 | Language tags and fallback | BCP 47 and CLDR's fallback chain (`icu_locale_core`, `icu_locale`) |
 | The system's languages | `sys-locale` |
@@ -51,7 +51,8 @@ Rules that need a person:
   frame is made again when `i18n::revision()` changes. (A `const` or `static` cannot hold one: the
   macros are not `const`.)
 - Do not translate what is not interface text: symbols, tickers, Pine source and its errors, log
-  lines, MCP tool descriptions, market and provider data, file formats, keys of saved data.
+  lines, MCP tool descriptions, market and provider data, file formats, keys of saved data, and
+  names the person gave (a layout, a watchlist, a script), including the example ones in a picture.
 - Wording that depends on the platform (`platform.rs`) is converted with the rest of the interface;
   until then it stays English in every language.
 
@@ -67,6 +68,11 @@ month name in a sentence. The language's own order, names and separators come fr
 - English output is what it always was (`Oct 9, 2026`, `Oct 9, 14:03`, `Monday, October 9`), except
   Settings ▸ About, which wrote the build date day first (`11 Oct 2026`) and now writes it like every
   other date (`Oct 11, 2026`).
+- Dates are **Gregorian in every language** (the formatters are built with `-u-ca-gregory`, in one
+  place). The model, Pine and the pickers' grids count Gregorian days, and ICU would otherwise write a
+  Persian or Thai date in its own calendar ("Bahman 1404") over a Gregorian grid. A language's own
+  calendar is decided with the first language that has one, because the grids and the date parser
+  have to follow.
 - Times are on a 24-hour clock in every language, as a trading app shows them. `month_day_clock` is the
   one place that follows the language's own clock (the alert drawer).
 - ICU writes U+202F before "PM"; it is turned into a plain space, because fonts rarely have it.
@@ -83,19 +89,28 @@ It is offered in the language picker of debug builds only.
 - **Look at a screen in it:** `DEGENVIEW_LOCALE=en-XA cargo run`, or pick it in Settings ▸ Appearance
   (debug builds). `DEGENVIEW_LOCALE` names the language for one run over the saved choice and the
   system's; use it for screenshots too.
+- **Text must not be cut.** A label that does not fit wraps (`kit::paragraph`) or makes its row
+  taller, or, in a miniature, shrinks to fit (`kit::galley_fitted`); `kit::galley` cuts with an
+  ellipsis and is for chrome that has a real width limit. `render_tests::Screen::truncated_text`
+  reports the text a frame shows cut with an ellipsis, and a page's pseudo-locale test asserts it is
+  empty.
 - **In a test:** `i18n::with_locale(Locale::PSEUDO, || …)` sets the language for the test's own
   thread, so tests running beside it are not affected. Never call `i18n::set` in a test: it changes the
   language of every thread.
 
 ### Choosing the language
 
-`DEGENVIEW_LOCALE` (a tag) over the saved choice (`Preference::Fixed`) over the system's first language
-the app has (`Locale::negotiate`: exact tag, then CLDR's fallback chain, so `es-MX` gets Spanish and
-`zh-Hant-TW` gets Traditional Chinese) over English. The choice is the `language` setting (`"system"` or
-a tag), local to the Mac: it is not in `sync::record::policy`, so another Mac is not moved.
-`host::language` reads it at startup and applies a change from Settings; `app/tabs.rs` repaints every
-window when `i18n::revision()` changes, because a window with nothing animating would keep the old
-words.
+`DEGENVIEW_LOCALE` (a tag, which may name any language, the pseudo-locale included) over the saved
+choice (`Preference::Fixed`) over the system's first language the app offers (`Locale::negotiate`:
+exact tag, then CLDR's fallback chain, so `es-MX` gets Spanish and `zh-Hant-TW` gets Traditional
+Chinese) over English. "Offered" is `Locale::selectable()`, the languages the picker lists: natural
+languages, plus the pseudo-locale in debug builds. Resolution takes that list as an input, so a choice
+the picker cannot show (a pseudo-locale saved by a debug build and read by a release build, whose
+picker is hidden) is kept in the store and not applied, and the system's languages cannot select it
+either. The choice is the `language` setting (`"system"` or a tag), local to the Mac: it is not in
+`sync::record::policy`, so another Mac is not moved. `host::language` reads it at startup and applies a
+change from Settings; `app/tabs.rs` repaints every window when `i18n::revision()` changes, because a
+window with nothing animating would keep the old words.
 
 The system's languages come from `service::system::language`, which asks `sys-locale`.
 
@@ -134,6 +149,11 @@ msgstr[1] "{count} alertas"
 
 - A message is found by its English text (`msgid`) and its context (`msgctxt`); a counted one by its
   singular, with one `msgstr[i]` per form of the header's `Plural-Forms`.
+- A catalog may be laid out any way GNU gettext accepts (entries with or without blank lines, comments,
+  wrapped strings, CRLF): an entry starts at its `msgctxt` or `msgid`, as in gettext's grammar. The
+  loader reads valid catalogs; deciding that one is valid is `msgfmt`'s, which
+  `the_catalogs_and_layouts_are_valid_gettext` runs on every shipped file and on each layout the tests
+  use (it needs gettext's tools, which CI's Linux image has).
 - A message the catalog lacks, leaves empty, or marks `fuzzy` shows in English. Nothing breaks while a
   language is incomplete.
 - Bring a catalog up to date with the source: `msgmerge -U assets/locales/es.po

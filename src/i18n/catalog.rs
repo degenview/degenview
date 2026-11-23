@@ -11,18 +11,21 @@
 //! message shows in English.
 
 use std::collections::HashMap;
-use std::io::Cursor;
 use std::ops::Range;
 
+use ferrocat_po::{MsgStr, parse_po};
+
 use super::locale::Locale;
-use super::plural_forms::{FormulaError, PluralForms};
+use super::plural_forms::{PluralForms, PluralFormsError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CatalogError {
     #[error("the catalog is not a valid .po file: {0}")]
     Po(String),
     #[error(transparent)]
-    Plural(#[from] FormulaError),
+    Plural(#[from] PluralFormsError),
+    #[error("{0:?} is plural but gives one translation, or gives forms and is not plural")]
+    KindMismatch(String),
     #[error("{key:?} has {found} plural forms and the catalog's header says {wanted}")]
     FormCount {
         key: String,
@@ -51,10 +54,16 @@ impl Catalog {
     /// is read once per language), so one buffer holds them all and is leaked once, which makes
     /// each a `&'static str` like the English text it replaces.
     pub fn parse(po: &str) -> Result<Catalog, CatalogError> {
-        let file = polib::po_file::parse_from_reader(Cursor::new(po.as_bytes()))
-            .map_err(|error| CatalogError::Po(error.to_string()))?;
-        let rules = &file.metadata.plural_rules;
-        let plural = PluralForms::parse(rules.nplurals, &rules.expr)?;
+        let file = parse_po(po).map_err(|error| CatalogError::Po(error.to_string()))?;
+        // gettext's own default when a catalog does not say.
+        let plural = match file
+            .headers
+            .iter()
+            .find(|header| header.key == "Plural-Forms")
+        {
+            Some(header) => PluralForms::from_header(&header.value)?,
+            None => PluralForms::english(),
+        };
 
         // Collected as ranges of one buffer, which cannot be sliced until it stops growing.
         struct Entry {
@@ -70,26 +79,32 @@ impl Catalog {
             start..buffer.len()
         };
         let mut entries = Vec::new();
-        for message in file.messages() {
-            if !message.is_translated() || message.is_fuzzy() {
+        for item in &file.items {
+            // What gettext leaves out at run time: retired, doubtful and untranslated entries.
+            let fuzzy = item.flags.iter().any(|flag| flag == "fuzzy");
+            if item.obsolete || fuzzy {
                 continue;
             }
-            let context = push(message.msgctxt().unwrap_or(""));
-            let key = push(message.msgid());
-            let counted = message.is_plural();
-            let forms: Vec<&str> = if counted {
-                let forms = message.msgstr_plural().map_err(|_| unreadable_entry())?;
-                if forms.len() != plural.count() {
-                    return Err(CatalogError::FormCount {
-                        key: message.msgid().to_owned(),
-                        found: forms.len(),
-                        wanted: plural.count(),
-                    });
+            let (forms, counted): (Vec<&str>, bool) = match (&item.msgstr, &item.msgid_plural) {
+                (MsgStr::Singular(text), None) => (vec![text], false),
+                (MsgStr::Plural(forms), Some(_)) => {
+                    if forms.len() != plural.count() {
+                        return Err(CatalogError::FormCount {
+                            key: item.msgid.clone(),
+                            found: forms.len(),
+                            wanted: plural.count(),
+                        });
+                    }
+                    (forms.iter().map(String::as_str).collect(), true)
                 }
-                forms.iter().map(String::as_str).collect()
-            } else {
-                vec![message.msgstr().map_err(|_| unreadable_entry())?]
+                (MsgStr::None, _) => continue,
+                _ => return Err(CatalogError::KindMismatch(item.msgid.clone())),
             };
+            if forms.iter().any(|form| form.is_empty()) {
+                continue;
+            }
+            let context = push(item.msgctxt.as_deref().unwrap_or(""));
+            let key = push(&item.msgid);
             let forms = forms.into_iter().map(&mut push).collect();
             entries.push(Entry {
                 context,
@@ -155,11 +170,6 @@ impl Catalog {
     pub fn len(&self) -> usize {
         self.messages.values().map(HashMap::len).sum()
     }
-}
-
-/// `msgstr` and `msgstr_plural` fail only on the wrong kind of entry, which `is_plural` rules out.
-fn unreadable_entry() -> CatalogError {
-    CatalogError::Po("an entry changed kind while it was read".to_owned())
 }
 
 /// The catalog of `locale`, read once; `None` for English and the pseudo-locale, which are made
@@ -289,7 +299,10 @@ msgstr[1] "b"
 
     #[test]
     fn a_catalog_that_is_not_po_or_has_a_bad_formula_is_refused() {
-        assert!(Catalog::parse("msgid \"a\"\nmsgstr").is_err());
+        // A line that is none of gettext's. Telling a catalog that is valid from one that is not is
+        // `msgfmt`'s work, which `tests::the_catalogs_and_layouts_are_valid_gettext` does for what
+        // ships; this reader's is to read a valid one as GNU gettext does.
+        assert!(Catalog::parse("msgid \"a\"\nwhat is this\nmsgstr \"b\"\n").is_err());
         let bad = HEADER.replace("n%10==1", "n%10==");
         assert!(matches!(Catalog::parse(&bad), Err(CatalogError::Plural(_))));
     }

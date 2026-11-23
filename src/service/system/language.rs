@@ -18,6 +18,6 @@ mod tests {
     fn what_the_system_says_is_text_negotiation_can_take() {
         // Whatever this machine is set to (and nothing in a bare CI container).
         let tags = preferred();
-        let _ = crate::i18n::Locale::negotiate(&tags);
+        let _ = crate::i18n::Locale::negotiate(&tags, &crate::i18n::Locale::selectable());
     }
 }

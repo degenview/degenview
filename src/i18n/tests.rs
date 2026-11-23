@@ -2,15 +2,13 @@
 //! macros end to end.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
-use polib::catalog::Catalog as PoCatalog;
-use polib::message::Message;
-use polib::metadata::CatalogMetadata;
+use ferrocat_po::{Header, MsgStr, PoFile, PoItem, SerializeOptions, parse_po, stringify_po};
 
 use super::catalog::{Catalog, Message as Translation};
 use super::extract::{self, Kind, Use};
+use super::plural_forms::PluralForms;
 use super::template::placeholders;
 use super::{Locale, Preference, tr, tr_c, tr_n, with_locale};
 
@@ -253,32 +251,35 @@ fn unique_messages(source: &[(String, Use)]) -> BTreeMap<(String, String), (&Use
 
 /// The `.pot` template: every message of the source, untranslated, with where it is written.
 fn template(source: &[(String, Use)]) -> String {
-    let mut catalog = PoCatalog::new(CatalogMetadata::new());
-    // No version: a release bump would make the template stale without a message changing.
-    catalog.metadata.project_id_version = "DegenView".to_owned();
-    catalog.metadata.content_type = "text/plain; charset=UTF-8".to_owned();
-    // English's forms: a translator's tool replaces them with the language's own.
-    catalog.metadata.plural_rules.nplurals = 2;
-    catalog.metadata.plural_rules.expr = "(n != 1)".to_owned();
+    let header = |key: &str, value: &str| Header {
+        key: key.to_owned(),
+        value: value.to_owned(),
+    };
+    let mut file = PoFile {
+        headers: vec![
+            // No version: a release bump would make the template stale without a message changing.
+            header("Project-Id-Version", "DegenView"),
+            header("Content-Type", "text/plain; charset=UTF-8"),
+            // English's forms: a translator's tool replaces them with the language's own.
+            header("Plural-Forms", "nplurals=2; plural=(n != 1);"),
+        ],
+        ..PoFile::default()
+    };
     for ((context, msgid), (used, places)) in unique_messages(source) {
-        let mut builder = match &used.kind {
-            Kind::Counted(_) => Message::build_plural(),
-            _ => Message::build_singular(),
-        };
-        builder.with_msgid(msgid).with_source(places.join(" "));
-        if !context.is_empty() {
-            builder.with_msgctxt(context);
+        let counted = matches!(used.kind, Kind::Counted(_));
+        let mut item = PoItem::new(2);
+        item.msgid = msgid;
+        item.msgctxt = (!context.is_empty()).then_some(context);
+        item.references = places.into();
+        if counted {
+            item.msgid_plural = Some(used.key.clone());
+            item.msgstr = MsgStr::Plural(vec![String::new(), String::new()]);
+        } else {
+            item.msgstr = MsgStr::Singular(String::new());
         }
-        if matches!(used.kind, Kind::Counted(_)) {
-            builder
-                .with_msgid_plural(used.key.clone())
-                .with_msgstr_plural(vec![String::new(), String::new()]);
-        }
-        catalog.append_or_update(builder.done());
+        file.items.push(item);
     }
-    let mut out = BufWriter::new(Vec::new());
-    polib::po_file::write(&catalog, &mut out).expect("a template writes to memory");
-    String::from_utf8(out.into_inner().expect("flushes")).expect("the template is UTF-8")
+    stringify_po(&file, &SerializeOptions::default())
 }
 
 /// A message as a translator sees it: its context, its text and, when it is counted, its plural.
@@ -294,19 +295,19 @@ fn keys_in_source(source: &[(String, Use)]) -> BTreeSet<Key> {
         .collect()
 }
 
-fn read_template(text: &str) -> Result<polib::catalog::Catalog, String> {
-    polib::po_file::parse_from_reader(std::io::Cursor::new(text.as_bytes()))
-        .map_err(|error| error.to_string())
+fn read_template(text: &str) -> Result<PoFile, String> {
+    parse_po(text).map_err(|error| error.to_string())
 }
 
-fn keys_in_template(template: &polib::catalog::Catalog) -> BTreeSet<Key> {
+fn keys_in_template(template: &PoFile) -> BTreeSet<Key> {
     template
-        .messages()
-        .map(|message| {
+        .items
+        .iter()
+        .map(|item| {
             (
-                message.msgctxt().unwrap_or("").to_owned(),
-                message.msgid().to_owned(),
-                message.msgid_plural().ok().map(str::to_owned),
+                item.msgctxt.clone().unwrap_or_default(),
+                item.msgid.clone(),
+                item.msgid_plural.clone(),
             )
         })
         .collect()
@@ -346,13 +347,24 @@ fn the_template_lists_the_messages_in_the_source() {
 fn the_template_is_untranslated_and_gives_every_counted_message_two_forms() {
     let committed = std::fs::read_to_string(template_path()).expect("the template exists");
     let template = read_template(&committed).expect("a .po file");
-    assert_eq!(template.metadata.plural_rules.nplurals, 2);
-    for message in template.messages() {
-        if message.is_plural() {
-            let forms = message.msgstr_plural().expect("counted");
-            assert!(forms.len() == 2 && forms.iter().all(String::is_empty));
-        } else {
-            assert_eq!(message.msgstr().expect("plain"), "", "{}", message.msgid());
+    let header = template
+        .headers
+        .iter()
+        .find(|header| header.key == "Plural-Forms")
+        .expect("the template says its plural forms");
+    assert_eq!(
+        PluralForms::from_header(&header.value)
+            .expect("valid")
+            .count(),
+        2
+    );
+    for item in &template.items {
+        match &item.msgstr {
+            MsgStr::Plural(forms) => {
+                assert!(forms.len() == 2 && forms.iter().all(String::is_empty));
+            }
+            MsgStr::Singular(text) => assert_eq!(text, "", "{}", item.msgid),
+            MsgStr::None => {}
         }
     }
 }
@@ -534,6 +546,124 @@ fn the_template_lists_each_message_once_with_its_places_and_forms() {
 fn a_choice_that_names_a_language_the_build_lacks_is_not_a_locale() {
     assert!(Locale::from_tag("tlh").is_none());
     assert_eq!(Preference::default(), Preference::System);
+}
+
+// MARK: GNU gettext compatibility
+
+const LAYOUT_HEADER: &str = "msgid \"\"\nmsgstr \"\"\n\
+    \"Content-Type: text/plain; charset=UTF-8\\n\"\n\
+    \"Language: es\\n\"\n\
+    \"Plural-Forms: nplurals=2; plural=(n != 1);\\n\"\n";
+
+/// One catalog of three messages (`Save`, `May` in the context `month`, and a counted one), laid
+/// out the ways GNU gettext accepts: its tools write the first, people and other editors write the
+/// rest. A reader that ends an entry anywhere but at the next `msgid`/`msgctxt` reads the others
+/// wrongly or not at all.
+fn gnu_layouts() -> Vec<(&'static str, String)> {
+    let body = |separator: &str, comment: &str| {
+        format!(
+            "{comment}msgid \"Save\"\nmsgstr \"Guardar\"\n{separator}\
+             {comment}msgctxt \"month\"\nmsgid \"May\"\nmsgstr \"mayo\"\n{separator}\
+             {comment}msgid \"{{count}} alert\"\nmsgid_plural \"{{count}} alerts\"\n\
+             msgstr[0] \"{{count}} alerta\"\nmsgstr[1] \"{{count}} alertas\"\n"
+        )
+    };
+    let canonical = format!("{LAYOUT_HEADER}\n{}", body("\n", "#: src/a.rs\n"));
+    let no_blank_lines = format!("{LAYOUT_HEADER}{}", body("", "#: src/a.rs\n"));
+    let crlf = canonical.replace('\n', "\r\n");
+    // Translator and extracted comments, flags, a previous msgid, and an obsolete entry.
+    let annotated = format!(
+        "{LAYOUT_HEADER}\n#. A button\n# translator note\n#, c-format\n#| msgid \"Store\"\n{}\n\
+         #~ msgid \"Gone\"\n#~ msgstr \"Ido\"\n",
+        body("\n", "")
+    );
+    // Strings broken over lines, as `xgettext` and `msgmerge` wrap long ones.
+    let wrapped = canonical
+        .replace("msgstr \"Guardar\"", "msgstr \"\"\n\"Guar\"\n\"dar\"")
+        .replace("msgid \"Save\"", "msgid \"\"\n\"Sa\"\n\"ve\"");
+    vec![
+        ("canonical", canonical),
+        ("no blank lines", no_blank_lines),
+        ("CRLF line ends", crlf),
+        ("comments, flags, previous and obsolete entries", annotated),
+        ("strings over several lines", wrapped),
+    ]
+}
+
+#[test]
+fn every_layout_gnu_gettext_accepts_reads_as_the_same_catalog() {
+    let entries = |po: &str| -> Vec<(String, String, String)> {
+        let catalog = Catalog::parse(po).unwrap_or_else(|error| panic!("{error}\n{po}"));
+        let mut entries: Vec<_> = catalog
+            .entries()
+            .map(|(context, key, message)| {
+                (context.to_owned(), key.to_owned(), format!("{message:?}"))
+            })
+            .collect();
+        entries.sort();
+        entries
+    };
+    let layouts = gnu_layouts();
+    let expected = entries(&layouts[0].1);
+    assert_eq!(expected.len(), 3, "{expected:?}");
+    for (name, po) in &layouts {
+        assert_eq!(entries(po), expected, "{name}");
+    }
+}
+
+/// GNU `msgfmt` is the judge of what is valid gettext: it must accept the layouts above (so they are
+/// not only our reading of the format) and every catalog and template the app ships. Needs gettext's
+/// tools on the `PATH` (CI's Linux image has them); without them the test says so and passes.
+#[test]
+fn the_catalogs_and_layouts_are_valid_gettext() {
+    use std::process::Command;
+    let msgfmt = |file: &Path| {
+        Command::new("msgfmt")
+            .args(["--check-format", "--output-file=-"])
+            .arg(file)
+            .output()
+    };
+    let directory = std::env::temp_dir().join(format!("degenview-gettext-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("a scratch folder");
+    let mut files: Vec<(String, PathBuf)> = Vec::new();
+    for (index, (name, po)) in gnu_layouts().into_iter().enumerate() {
+        let file = directory.join(format!("layout-{index}.po"));
+        std::fs::write(&file, po).expect("written");
+        files.push((name.to_owned(), file));
+    }
+    let shipped = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/locales");
+    for entry in std::fs::read_dir(shipped)
+        .expect("the catalogs folder")
+        .flatten()
+    {
+        let path = entry.path();
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "po" || extension == "pot")
+        {
+            files.push((path.display().to_string(), path));
+        }
+    }
+    let mut checked = 0;
+    for (name, file) in &files {
+        match msgfmt(file) {
+            Ok(output) => {
+                assert!(
+                    output.status.success(),
+                    "msgfmt refuses {name}:\n{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                checked += 1;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("msgfmt is not installed: gettext compatibility not checked");
+                break;
+            }
+            Err(error) => panic!("msgfmt could not run: {error}"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&directory);
+    assert!(checked == 0 || checked == files.len());
 }
 
 // MARK: Plural formulas against CLDR

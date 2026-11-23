@@ -134,24 +134,17 @@ impl Locale {
         Self::all().find(|locale| parse_tag(locale.tag()).as_ref() == Some(&wanted))
     }
 
-    /// The first of `requested` (the system's languages, most wanted first) that this app has: by
-    /// exact tag, then along the tag's fallback chain (`es-MX` gets Spanish). English when none
-    /// match. The pseudo-locale is chosen by its exact tag only.
-    pub fn negotiate<S: AsRef<str>>(requested: &[S]) -> Locale {
+    /// The first of `requested` (the system's languages, most wanted first) that is among
+    /// `offered`: by exact tag, then along the tag's CLDR fallback chain (`es-MX` gets Spanish).
+    /// English when none is. A language that is not offered is never chosen, whatever the system
+    /// says: the pseudo-locale, for one, is a tool of debug builds.
+    pub fn negotiate<S: AsRef<str>>(requested: &[S], offered: &[Locale]) -> Locale {
         let fallbacker = LocaleFallbacker::new();
+        let tags: Vec<&str> = offered.iter().map(|locale| locale.tag()).collect();
         requested
             .iter()
-            .find_map(|tag| {
-                Self::from_tag(tag.as_ref())
-                    .or_else(|| Self::by_fallback(&fallbacker, tag.as_ref()))
-            })
-            .unwrap_or(Locale::ENGLISH)
-    }
-
-    fn by_fallback(fallbacker: &LocaleFallbackerBorrowed<'_>, tag: &str) -> Option<Locale> {
-        let natural: Vec<Locale> = Self::all().filter(|locale| locale.is_natural()).collect();
-        let tags: Vec<&str> = natural.iter().map(|locale| locale.tag()).collect();
-        fallback_match(fallbacker, tag, &tags).map(|index| natural[index])
+            .find_map(|tag| fallback_match(&fallbacker, tag.as_ref(), &tags))
+            .map_or(Locale::ENGLISH, |index| offered[index])
     }
 }
 
@@ -184,19 +177,25 @@ fn parse_tag(tag: &str) -> Option<LanguageIdentifier> {
     LanguageIdentifier::try_from_str(&tag.trim().replace('_', "-")).ok()
 }
 
-/// The locale the interface uses: the one named for this run (`DEGENVIEW_LOCALE`), else the
-/// person's choice, else the first of the system's languages the app has.
+/// The locale the interface uses: the one named for this run (`DEGENVIEW_LOCALE`, which may name
+/// any language), else the person's choice when this build offers it, else the first of the
+/// system's languages that is offered. `offered` is [`Locale::selectable`]: what the picker lists
+/// is what can be in use, so a choice the picker cannot show (a pseudo-locale a debug build saved,
+/// read by a release build) is left in the store and not applied.
 pub fn resolve<S: AsRef<str>>(
     preference: super::Preference,
     forced: Option<Locale>,
     system: &[S],
+    offered: &[Locale],
 ) -> Locale {
     if let Some(locale) = forced {
         return locale;
     }
     match preference {
-        super::Preference::Fixed(locale) => locale,
-        super::Preference::System => Locale::negotiate(system),
+        super::Preference::Fixed(locale) if offered.contains(&locale) => locale,
+        super::Preference::Fixed(_) | super::Preference::System => {
+            Locale::negotiate(system, offered)
+        }
     }
 }
 
@@ -231,14 +230,20 @@ mod tests {
         assert!(Locale::PSEUDO.catalog_source().is_none());
     }
 
+    const BOTH: [Locale; 2] = [Locale::ENGLISH, Locale::PSEUDO];
+    const ENGLISH_ONLY: [Locale; 1] = [Locale::ENGLISH];
+
     #[test]
     fn the_system_languages_are_matched_in_order_by_tag_then_fallback() {
-        assert_eq!(Locale::negotiate(&["en-US", "es"]), Locale::ENGLISH);
-        assert_eq!(Locale::negotiate(&["de-DE", "en-GB"]), Locale::ENGLISH);
-        assert_eq!(Locale::negotiate(&["en_AU"]), Locale::ENGLISH);
-        assert_eq!(Locale::negotiate::<&str>(&[]), Locale::ENGLISH);
-        assert_eq!(Locale::negotiate(&["xx"]), Locale::ENGLISH);
-        assert_eq!(Locale::negotiate(&["not a tag"]), Locale::ENGLISH);
+        assert_eq!(Locale::negotiate(&["en-US", "es"], &BOTH), Locale::ENGLISH);
+        assert_eq!(
+            Locale::negotiate(&["de-DE", "en-GB"], &BOTH),
+            Locale::ENGLISH
+        );
+        assert_eq!(Locale::negotiate(&["en_AU"], &BOTH), Locale::ENGLISH);
+        assert_eq!(Locale::negotiate::<&str>(&[], &BOTH), Locale::ENGLISH);
+        assert_eq!(Locale::negotiate(&["xx"], &BOTH), Locale::ENGLISH);
+        assert_eq!(Locale::negotiate(&["not a tag"], &BOTH), Locale::ENGLISH);
     }
 
     #[test]
@@ -258,32 +263,69 @@ mod tests {
 
     #[test]
     fn the_pseudo_locale_is_only_chosen_by_its_exact_tag() {
-        assert_eq!(Locale::negotiate(&["en-XA"]), Locale::PSEUDO);
+        assert_eq!(Locale::negotiate(&["en-XA"], &BOTH), Locale::PSEUDO);
+        assert_eq!(Locale::negotiate(&["en_xa"], &BOTH), Locale::PSEUDO);
         // A machine set to English never lands on it.
-        assert_eq!(Locale::negotiate(&["en"]), Locale::ENGLISH);
-        assert_eq!(Locale::negotiate(&["en-US"]), Locale::ENGLISH);
+        assert_eq!(Locale::negotiate(&["en"], &BOTH), Locale::ENGLISH);
+        assert_eq!(Locale::negotiate(&["en-US"], &BOTH), Locale::ENGLISH);
+    }
+
+    #[test]
+    fn a_language_the_build_does_not_offer_is_never_chosen() {
+        // A release build offers English only.
+        assert_eq!(
+            Locale::negotiate(&["en-XA"], &ENGLISH_ONLY),
+            Locale::ENGLISH
+        );
+        assert_eq!(
+            Locale::negotiate(&["en-XA", "en"], &ENGLISH_ONLY),
+            Locale::ENGLISH
+        );
     }
 
     #[test]
     fn a_locale_named_for_the_run_beats_the_choice_and_the_system() {
         let system = ["en-US"];
+        let pseudo = Preference::Fixed(Locale::PSEUDO);
+        let english = Preference::Fixed(Locale::ENGLISH);
+        assert_eq!(
+            resolve(english, Some(Locale::PSEUDO), &system, &BOTH),
+            Locale::PSEUDO
+        );
+        // The override is explicit: it names a language the build does not list, too.
         assert_eq!(
             resolve(
-                Preference::Fixed(Locale::ENGLISH),
+                Preference::System,
                 Some(Locale::PSEUDO),
-                &system
+                &system,
+                &ENGLISH_ONLY
             ),
             Locale::PSEUDO
         );
+        assert_eq!(resolve(pseudo, None, &system, &BOTH), Locale::PSEUDO);
         assert_eq!(
-            resolve(Preference::Fixed(Locale::PSEUDO), None, &system),
+            resolve(Preference::System, None, &["en-XA"], &BOTH),
             Locale::PSEUDO
         );
         assert_eq!(
-            resolve(Preference::System, None, &["en-XA"]),
-            Locale::PSEUDO
+            resolve(Preference::System, None, &system, &BOTH),
+            Locale::ENGLISH
         );
-        assert_eq!(resolve(Preference::System, None, &system), Locale::ENGLISH);
+    }
+
+    #[test]
+    fn a_choice_the_build_does_not_offer_is_not_applied() {
+        // The pseudo-locale a debug build saved, read by a release build that offers English only.
+        let saved = Preference::Fixed(Locale::PSEUDO);
+        assert_eq!(
+            resolve(saved, None, &["en-US"], &ENGLISH_ONLY),
+            Locale::ENGLISH
+        );
+        assert_eq!(
+            resolve(saved, None, &["en-XA"], &ENGLISH_ONLY),
+            Locale::ENGLISH
+        );
+        assert_eq!(resolve(saved, None, &["en-US"], &BOTH), Locale::PSEUDO);
     }
 
     #[test]

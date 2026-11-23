@@ -49,11 +49,11 @@ sha2 = "0.10.9"
 # Error enums derive their messages (`#[error("...")]`) instead of hand-written Display and Error
 # impls. Already in the tree through rustls, rmcp and others; derive only, no runtime.
 thiserror = "2.0.21"
-# Interface languages (`i18n`, docs/localization.md): gettext `.po` catalogs, the languages the
+# Interface languages (`i18n`, docs/localization.md): gettext `.po` catalogs (a parser that follows gettext's grammar), the languages the
 # system is set to, CLDR locale fallback, and dates written the way a language writes them. ICU4X
 # formatters use their compiled-in data (every language, about 1.5 MB in a release build); no
 # build script and no data files to ship.
-polib = "0.3.0"
+ferrocat-po = { version = "3.6.0", default-features = false }
 sys-locale = "0.3.2"
 icu_locale = "2.4.0"
 icu_locale_core = "2.4.0"

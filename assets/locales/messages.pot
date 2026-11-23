@@ -17,10 +17,6 @@ msgid "Dark"
 msgstr ""
 
 #: src/ui/settings/appearance.rs
-msgid "Default"
-msgstr ""
-
-#: src/ui/settings/appearance.rs
 msgid "Interface language"
 msgstr ""
 
@@ -80,8 +76,8 @@ msgstr ""
 
 #: src/ui/settings/appearance.rs
 msgid ""
-"What a chart tab shows. The layout name and the price follow the tab's "
-"focused chart."
+"What a chart tab shows. The layout name and the price follow the tab's focused"
+" chart."
 msgstr ""
 
 #: src/model/alert/feed.rs
@@ -145,4 +141,3 @@ msgstr ""
 #: src/ui/settings/appearance.rs
 msgid "{theme} theme"
 msgstr ""
-

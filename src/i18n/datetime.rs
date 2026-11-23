@@ -20,6 +20,7 @@ use icu_datetime::DateTimeFormatter;
 use icu_datetime::fieldsets::{E, MD, MDE, MDT, YM, YMD, YMDE};
 use icu_datetime::options::TimePrecision;
 use icu_locale_core::Locale as IcuLocale;
+use icu_locale_core::extensions::unicode::{key, value};
 use icu_time::{DateTime, Time};
 
 use super::{Locale, current};
@@ -54,7 +55,7 @@ macro_rules! formatter {
                             // The locale is one of the table's tags, which ICU4X has data for, and any it
                             // lacks falls back to the root locale, so this does not fail.
                             let formatter = DateTimeFormatter::try_new(
-                                icu_locale(locale, clock).into(),
+                                formatting_locale(locale.icu(), clock).into(),
                                 fields,
                             )
                             .or_else(|_| {
@@ -87,14 +88,21 @@ formatter!(month_year_formatter, YM, YM::long());
 formatter!(weekday_long_formatter, E, E::long());
 formatter!(weekday_short_formatter, E, E::short());
 
-/// The locale ICU4X is asked for: the language's, with the 24-hour clock when that is wanted.
-fn icu_locale(locale: Locale, clock: Clock) -> IcuLocale {
-    match clock {
-        Clock::Language => locale.icu(),
-        Clock::Day24 => format!("{}-u-hc-h23", locale.icu())
-            .parse()
-            .unwrap_or_else(|_| locale.icu()),
+/// The locale ICU4X formats for: the language's, on the Gregorian calendar and, for [`Clock::Day24`],
+/// the 24-hour clock. This is the one place either is chosen.
+///
+/// The calendar is Gregorian in every language because the app's dates are: the model, Pine, the
+/// pickers' grids and what a click on one selects all count Gregorian days. Left to ICU, a language
+/// writes its own calendar (Persian, Buddhist, Islamic), and a picker would head a February grid
+/// "Bahman 1404". A language's own calendar is a decision for the first one that has it, because
+/// the grids and the date parser have to follow.
+fn formatting_locale(mut locale: IcuLocale, clock: Clock) -> IcuLocale {
+    let keywords = &mut locale.extensions.unicode.keywords;
+    keywords.set(key!("ca"), value!("gregory"));
+    if clock == Clock::Day24 {
+        keywords.set(key!("hc"), value!("h23"));
     }
+    locale
 }
 
 fn iso(year: i64, month: i64, day: i64) -> Option<Date<icu_calendar::Iso>> {
@@ -315,6 +323,34 @@ mod tests {
         with_locale(Locale::PSEUDO, || {
             assert_eq!(date(2026, 10, 9), "Oct 9, 2026");
         });
+    }
+
+    /// February 2026 as a header of the year and month, in `tag` with Latin digits so the year can be
+    /// read; `pinned` is how the app formats, and not pinned is ICU's own choice of calendar.
+    fn february_2026(tag: &str, pinned: bool) -> String {
+        let locale: IcuLocale = format!("{tag}-u-nu-latn").parse().expect("tag");
+        let locale = if pinned {
+            formatting_locale(locale, Clock::Day24)
+        } else {
+            locale
+        };
+        DateTimeFormatter::try_new((&locale).into(), YM::long())
+            .expect("a formatter")
+            .format(&iso(2026, 2, 1).expect("date"))
+            .to_string()
+    }
+
+    #[test]
+    fn every_language_counts_the_gregorian_year_the_grids_count() {
+        // Left alone, ICU writes Persian and Thai dates in the Persian and Buddhist calendars, which
+        // a Gregorian grid under the header contradicts.
+        for (tag, own_year) in [("fa", "1404"), ("th", "2569")] {
+            let own = february_2026(tag, false);
+            assert!(own.contains(own_year), "{tag} without the pin: {own}");
+            let pinned = february_2026(tag, true);
+            assert!(pinned.contains("2026"), "{tag} with the pin: {pinned}");
+            assert!(!pinned.contains(own_year), "{tag} with the pin: {pinned}");
+        }
     }
 
     #[test]
