@@ -138,11 +138,35 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
     ("format", EVERY_MODULE),
     ("lock", EVERY_MODULE),
     ("paths", EVERY_MODULE),
+    // Chooses the renderer before anything else starts: it needs only the data directory, the build
+    // id and the startup log.
+    (
+        "graphics",
+        &[
+            "app",
+            "clock",
+            "format",
+            "host",
+            "mcp",
+            "model",
+            "native_bridge",
+            "pine",
+            "pine_studio",
+            "platform",
+            "service",
+            "store",
+            "sync",
+            "trading",
+            "ui",
+            "workspace",
+        ],
+    ),
     // Runs from the panic hook, before and after the store opens: it may not need either.
     (
         "crash_report",
         &[
             "app",
+            "graphics",
             "host",
             "mcp",
             "pine_studio",
@@ -163,6 +187,7 @@ const EVERY_MODULE: &[&str] = &[
     "clock",
     "crash_report",
     "format",
+    "graphics",
     "host",
     "lock",
     "mcp",

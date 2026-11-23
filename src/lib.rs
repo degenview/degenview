@@ -5,6 +5,7 @@ mod build_info;
 mod clock;
 mod crash_report;
 mod format;
+mod graphics;
 mod host;
 mod i18n;
 #[cfg(test)]
@@ -64,42 +65,59 @@ pub fn run_gui_with(
     ))?);
     #[cfg(not(target_os = "macos"))]
     let icon = ui::window::chrome::app_icon();
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("DegenView")
-            .with_app_id(ui::window::chrome::APP_ID)
-            // The surface is shared by every window, and eframe reads whether it may be
-            // transparent from this first one (`ui::window::corners`).
-            .with_transparent(ui::window::chrome::rounded_corners())
-            .with_icon(icon)
-            .with_inner_size([1.0, 1.0])
-            .with_position([-10_000.0, -10_000.0])
-            // The root is only the coordinator. Wayland cannot hide a window, so `degenview-eframe`
-            // (eframe with a Wayland fix) never presents a viewport asked to be hidden: the root
-            // stays unmapped.
-            // Elsewhere eframe still shows it for its first frame, and `DegenViewApp::ui` hides it.
-            .with_visible(false),
-        ..Default::default()
-    };
+    graphics::start(|graphics| {
+        // The window is built afresh for each try: `run_native` takes its options and the app's
+        // constructor by value, and a try that fails before the renderer exists never calls it.
+        // Before the renderer starts: a driver that crashes while it is probed leaves no other trace.
+        crash_report::note(graphics.note());
+        let options = eframe::NativeOptions {
+            wgpu_options: graphics.configure(eframe::NativeOptions::default().wgpu_options),
+            viewport: egui::ViewportBuilder::default()
+                .with_title("DegenView")
+                .with_app_id(ui::window::chrome::APP_ID)
+                // The surface is shared by every window, and eframe reads whether it may be
+                // transparent from this first one (`ui::window::corners`).
+                .with_transparent(ui::window::chrome::rounded_corners())
+                .with_icon(icon.clone())
+                .with_inner_size([1.0, 1.0])
+                .with_position([-10_000.0, -10_000.0])
+                // The root is only the coordinator. Wayland cannot hide a window, so `degenview-eframe`
+                // (eframe with a Wayland fix) never presents a viewport asked to be hidden: the root
+                // stays unmapped.
+                // Elsewhere eframe still shows it for its first frame, and `DegenViewApp::ui` hides it.
+                .with_visible(false),
+            ..Default::default()
+        };
 
-    crash_report::note("creating the window and graphics");
-    Ok(eframe::run_native(
-        "DegenView",
-        options,
-        Box::new(move |creation| {
-            // Which adapter and backend was chosen is the first thing to ask about a start that
-            // shows nothing (a driver that hangs or crashes ends the log here).
-            crash_report::note(&match &creation.wgpu_render_state {
-                Some(state) => format!("graphics ready: {:?}", state.adapter.get_info()),
-                None => "graphics ready".to_owned(),
-            });
-            Ok(Box::new(DegenViewApp::new(
-                creation,
-                store.clone(),
-                sync.clone(),
-            )))
-        }),
-    )?)
+        crash_report::note("creating the window and graphics");
+        let renderer_ready = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let ready = renderer_ready.clone();
+        let (store, sync) = (store.clone(), sync.clone());
+        let result = eframe::run_native(
+            "DegenView",
+            options,
+            Box::new(move |creation| {
+                ready.store(true, std::sync::atomic::Ordering::Relaxed);
+                // Which adapter and backend was chosen is the first thing to ask about a start that
+                // shows nothing (a driver that hangs or crashes ends the log here).
+                crash_report::note(&match &creation.wgpu_render_state {
+                    Some(state) => format!("graphics ready: {:?}", state.adapter.get_info()),
+                    None => "graphics ready".to_owned(),
+                });
+                Ok(Box::new(DegenViewApp::new(creation, store, sync)))
+            }),
+        );
+        match result {
+            Ok(()) => graphics::Outcome::Started(()),
+            Err(error) if renderer_ready.load(std::sync::atomic::Ordering::Relaxed) => {
+                graphics::Outcome::Failed(error.into())
+            }
+            Err(error) => {
+                crash_report::note(&format!("no renderer on these backends: {error}"));
+                graphics::Outcome::NoRenderer(error.into())
+            }
+        }
+    })
 }
 
 pub fn run_alert_agent() -> Result<(), Box<dyn std::error::Error>> {
