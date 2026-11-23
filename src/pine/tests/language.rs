@@ -1921,6 +1921,74 @@ fn the_cell_properties_the_chart_cannot_draw_are_warned_about() {
     assert_eq!(codes.iter().filter(|c| *c == "PINE7005").count(), 1);
 }
 
+fn diagnostic_messages(body: &str) -> Vec<String> {
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    compiler::compile(&source, Limits::default(), &NoLibraries)
+        .diagnostics
+        .into_iter()
+        .filter(|d| d.code.starts_with("PINE7"))
+        .map(|d| d.message)
+        .collect()
+}
+
+#[test]
+fn an_ignored_argument_is_warned_about_by_name_and_by_position() {
+    let named = diagnostic_messages(
+        "label.new(0, 1.0, \"x\", text_formatting = text.format_bold)\n\
+         box.new(0, 1.0, 1, 2.0, text_formatting = text.format_bold)",
+    );
+    // `text_formatting` is the last parameter of both, whichever way it is passed.
+    let by_position = diagnostic_messages(
+        "label.new(0, 1.0, \"x\", xloc.bar_index, yloc.price, color.red, label.style_label_down, color.white, size.normal, text.align_center, \"tip\", font.family_default, false, text.format_bold)\n\
+         box.new(0, 1.0, 1, 2.0, color.red, 1, line.style_solid, extend.none, xloc.bar_index, color.blue, \"t\", size.normal, color.white, text.align_center, text.align_center, text.wrap_none, font.family_default, false, text.format_bold)",
+    );
+    assert_eq!(named.len(), 2, "{named:?}");
+    // The box's positional `text.wrap_none` fills `text_wrap`, which is ignored too.
+    assert_eq!(by_position.len(), 3, "{by_position:?}");
+    assert!(by_position[1].contains("`text_wrap`"), "{by_position:?}");
+    assert_eq!([&by_position[0], &by_position[2]], [&named[0], &named[1]]);
+    let point_form = diagnostic_messages(
+        "label.new(chart.point.now(1.0), \"x\", xloc.bar_index, yloc.price, color.red, label.style_label_down, color.white, size.normal, text.align_center, \"tip\", font.family_default, false, text.format_bold)",
+    );
+    assert_eq!(point_form.len(), 1, "{point_form:?}");
+    let table_cell = diagnostic_messages(
+        "t = table.new(position.top_left, 1, 1)\n\
+         table.cell(t, 0, 0, \"x\", 0, 0, color.white, text.align_center, text.align_center, size.normal, color.black, \"tip\", font.family_default, text.format_bold)",
+    );
+    assert_eq!(table_cell.len(), 1, "{table_cell:?}");
+    let plot = diagnostic_messages(
+        "plot(close, \"c\", color.red, 1, plot.style_line, true)\nplot(close, \"d\", color.red, 1, plot.style_line, false)",
+    );
+    assert_eq!(plot.len(), 2, "trackprice is ignored either way: {plot:?}");
+}
+
+#[test]
+fn an_ignored_setter_is_warned_about_when_called_as_a_method() {
+    let function_form = diagnostic_messages(
+        "l = label.new(0, 1.0, \"x\")\nlabel.set_text_formatting(l, text.format_italic)",
+    );
+    let method_form = diagnostic_messages(
+        "l = label.new(0, 1.0, \"x\")\nl.set_text_formatting(text.format_italic)",
+    );
+    assert_eq!(function_form.len(), 1, "{function_form:?}");
+    assert_eq!(method_form, function_form);
+    let on_a_call = diagnostic_messages(
+        "pick() => label.new(0, 1.0, \"x\")\npick().set_text_formatting(text.format_italic)",
+    );
+    assert_eq!(on_a_call, function_form);
+    let table_method = diagnostic_messages(
+        "t = table.new(position.top_left, 1, 1)\nt.cell_set_text_formatting(0, 0, text.format_bold)",
+    );
+    assert_eq!(table_method.len(), 1, "{table_method:?}");
+    // What is drawn, and a method the script declares itself, is never warned about.
+    let quiet = diagnostic_messages(
+        "l = label.new(0, 1.0, \"x\")\nl.set_text_font_family(font.family_monospace)\n\
+         method set_text_formatting(label this, int style) => this\n\
+         l.set_text_formatting(1)",
+    );
+    assert!(quiet.is_empty(), "{quiet:?}");
+}
+
 #[test]
 fn plotarrow_records_a_value_and_both_colors_for_each_bar() {
     let session = run(

@@ -24,6 +24,7 @@ mod coordinates;
 mod create;
 mod mutate;
 mod names;
+mod parameters;
 mod table;
 
 use coordinates::{is_chart_point, line_price, set_xloc};
@@ -32,6 +33,7 @@ use create::{
     new_linefill, new_polyline,
 };
 use mutate::mutate_drawing;
+pub use parameters::{parameters, point_parameters};
 use table::{clear_table_cells, merge_table_cells, new_table, set_table_cell};
 
 /// `color.blue`, the default drawing color.
@@ -333,14 +335,43 @@ pub fn bind(args: &[Arg], names: &[&str]) -> HashMap<String, RuntimeValue> {
     out
 }
 
-/// Like `bind`, but switches to the `point` parameter set when the first positional argument is a
-/// `chart.point`, or a point parameter is named.
+/// The values of the first `N` of a function's `parameters`, by position or by name, `na` where
+/// the call gave none. `bind` without the map, for the setters and getters a script calls on every
+/// bar.
+fn bind_slots<const N: usize>(args: &[Arg], parameters: &[&str]) -> [RuntimeValue; N] {
+    let mut slots = [(); N].map(|()| RuntimeValue::Na);
+    let mut position = 0usize;
+    for arg in args {
+        let slot = match &arg.name {
+            Some(name) => parameters.iter().position(|parameter| parameter == name),
+            None => {
+                position += 1;
+                Some(position - 1)
+            }
+        };
+        if let Some(slot) = slot.filter(|slot| *slot < N) {
+            slots[slot] = arg.value.clone();
+        }
+    }
+    slots
+}
+
+/// The handle a call works on (`id`, or `table_id`), passed first or by name.
+fn handle(name: &str, args: &[Arg]) -> Option<RuntimeValue> {
+    let [handle] = bind_slots(args, parameters(name));
+    (handle != RuntimeValue::Na).then_some(handle)
+}
+
+/// Like `bind` for a constructor with a `chart.point` form (`line.new`, `label.new`, `box.new`):
+/// switches to the point parameters when the first positional argument is a `chart.point`, or a
+/// point parameter is named.
 fn bind_overload(
+    name: &str,
     args: &[Arg],
-    plain: &[&str],
-    point: &[&str],
     state: &RuntimeState,
 ) -> (HashMap<String, RuntimeValue>, bool) {
+    let plain = parameters(name);
+    let point = point_parameters(name).unwrap_or(plain);
     let mut out = HashMap::new();
     let mut names = plain;
     let mut is_point = false;

@@ -959,3 +959,109 @@ fn text_font_family_is_kept_by_labels_boxes_and_cells_and_changed_by_their_sette
         FontFamily::Default
     );
 }
+
+#[test]
+fn setters_and_getters_take_their_arguments_by_name_in_any_order() {
+    let mut state = RuntimeState::default();
+    let label = run(
+        &mut state,
+        "label.new",
+        &[arg(Int(1)), arg(Float(10.0)), arg(Str("a".into()))],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Label, label_id) = label.clone() else {
+        panic!("{label:?}")
+    };
+    run(
+        &mut state,
+        "label.set_text_font_family",
+        &[
+            named("text_font_family", Str("font.family_monospace".into())),
+            named("id", label.clone()),
+        ],
+    )
+    .unwrap();
+    assert_eq!(state.labels[&label_id].font_family, FontFamily::Monospace);
+    run(
+        &mut state,
+        "label.set_xy",
+        &[
+            named("y", Float(5.0)),
+            named("x", Int(3)),
+            named("id", label.clone()),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        (state.labels[&label_id].x, state.labels[&label_id].y),
+        (3, 5.0)
+    );
+    run(
+        &mut state,
+        "label.set_text",
+        &[arg(label.clone()), named("text", Str("b".into()))],
+    )
+    .unwrap();
+    assert_eq!(state.labels[&label_id].text, "b");
+    assert_eq!(
+        run(&mut state, "label.get_text", &[named("id", label.clone())]).unwrap(),
+        Str("b".into())
+    );
+
+    let boxed = run(
+        &mut state,
+        "box.new",
+        &[arg(Int(1)), arg(Float(10.0)), arg(Int(3)), arg(Float(20.0))],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Box, box_id) = boxed.clone() else {
+        panic!("{boxed:?}")
+    };
+    run(
+        &mut state,
+        "box.set_text_font_family",
+        &[
+            named("text_font_family", Str("font.family_monospace".into())),
+            named("id", boxed.clone()),
+        ],
+    )
+    .unwrap();
+    assert_eq!(state.boxes[&box_id].text_font_family, FontFamily::Monospace);
+    run(
+        &mut state,
+        "box.set_lefttop",
+        &[
+            named("top", Float(30.0)),
+            named("id", boxed),
+            named("left", Int(2)),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        (state.boxes[&box_id].left, state.boxes[&box_id].top),
+        (2, 30.0)
+    );
+
+    let table = run(
+        &mut state,
+        "table.new",
+        &[arg(Int(0)), arg(Int(1)), arg(Int(1))],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Table, table_id) = table.clone() else {
+        panic!("{table:?}")
+    };
+    run(
+        &mut state,
+        "table.set_position",
+        &[
+            named("position", Str("position.bottom_left".into())),
+            named("table_id", table),
+        ],
+    )
+    .unwrap();
+    assert_eq!(state.tables[&table_id].position, TablePosition::BottomLeft);
+
+    let copy = run(&mut state, "label.copy", &[named("id", label)]).unwrap();
+    assert!(matches!(copy, RuntimeValue::Ref(RefKind::Label, _)));
+}

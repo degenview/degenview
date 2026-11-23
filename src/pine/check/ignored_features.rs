@@ -3,9 +3,11 @@
 
 use std::collections::HashMap;
 
-use crate::pine::syntax::ast::{Expression, Literal, Statement};
+use crate::pine::compiler::signatures;
+use crate::pine::outputs::drawings;
+use crate::pine::syntax::ast::{Argument, Expression, Literal, Statement};
 use crate::pine::syntax::traversal::{
-    for_each_call_with_args, for_each_identifier, for_each_string_literal,
+    for_each_call_site, for_each_identifier, for_each_string_literal,
 };
 use crate::pine::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange};
 
@@ -325,7 +327,44 @@ fn states_the_default(function: &str, argument: &str, value: &Expression) -> boo
     }
 }
 
-pub fn validate(statements: &[Statement]) -> Vec<Diagnostic> {
+/// The parameter each argument of a call to `function` fills, by name or by position. A method-style
+/// call (`lbl.set_text(…)`) leaves out the receiver, which fills the first parameter.
+fn argument_names<'a>(
+    function: &str,
+    arguments: &'a [Argument],
+    receiver_before: bool,
+) -> Vec<Option<&'a str>> {
+    let mut parameters = signatures::parameters(function).unwrap_or_default();
+    // A constructor given `chart.point`s takes their parameter list, not the coordinates'.
+    let first_positional = arguments.iter().find(|argument| argument.name.is_none());
+    if let Some(Argument {
+        value: Expression::Call { name, .. },
+        ..
+    }) = first_positional
+        && name.starts_with("chart.point")
+        && let Some(point) = drawings::point_parameters(function)
+    {
+        parameters = point.to_vec();
+    }
+    let mut positional = usize::from(receiver_before);
+    arguments
+        .iter()
+        .map(|argument| match argument.name.as_deref() {
+            Some(name) => Some(name),
+            None => {
+                positional += 1;
+                parameters.get(positional - 1).copied()
+            }
+        })
+        .collect()
+}
+
+/// Warnings for the features of the calls in `statements` that the engine accepts and ignores.
+/// `builtin_methods` is what the type checker found the method-style calls to mean, by call site.
+pub fn validate(
+    statements: &[Statement],
+    builtin_methods: &HashMap<usize, String>,
+) -> Vec<Diagnostic> {
     let own: std::collections::HashSet<&str> = statements
         .iter()
         .filter_map(|statement| match statement {
@@ -340,33 +379,41 @@ pub fn validate(statements: &[Statement]) -> Vec<Diagnostic> {
     let partly = partly_supported_functions();
 
     let mut diagnostics = Vec::new();
-    for_each_call_with_args(statements, &mut |name, call_arguments, range| {
-        if own.contains(name) {
+    for_each_call_site(statements, &mut |call| {
+        let resolved = builtin_methods.get(&call.site);
+        // A method called on an expression is known only by what the checker made of it.
+        if own.contains(call.name) || (call.method && resolved.is_none()) {
             return;
         }
+        let name = resolved.map_or(call.name, String::as_str);
+        let range = call.range;
         if let Some((_, explanation)) = prefixes.iter().find(|(p, _)| name.starts_with(p)) {
             diagnostics.push(warning(
                 "PINE7002",
                 format!("{name}() is ignored. {explanation}"),
-                spanning(name, range),
+                spanning(call.name, range),
             ));
         }
         if let Some((_, explanation)) = stubbed.iter().find(|(stub, _)| *stub == name) {
             diagnostics.push(warning(
                 "PINE7005",
                 format!("{name}() is not supported. {explanation}"),
-                spanning(name, range),
+                spanning(call.name, range),
             ));
         }
         if let Some((_, limit)) = partly.iter().find(|(partial, _)| *partial == name) {
             diagnostics.push(warning(
                 "PINE7001",
                 format!("{name}() is only partly supported. {limit}"),
-                spanning(name, range),
+                spanning(call.name, range),
             ));
         }
-        for argument in call_arguments {
-            let Some(argument_name) = argument.name.as_deref() else {
+        if !arguments.contains_key(name) && !values.contains_key(name) {
+            return;
+        }
+        let names = argument_names(name, call.arguments, resolved.is_some());
+        for (argument, argument_name) in call.arguments.iter().zip(names) {
+            let Some(argument_name) = argument_name else {
                 continue;
             };
             if let Some(explanation) = arguments
