@@ -468,7 +468,7 @@ pub enum CachedSeries {
 impl DataSource {
     /// Every source, in the order the picker asks them. The one list: a new variant fails to compile
     /// in [`table::profile_of`] until it has a profile, and the tests until it is listed here.
-    pub const ALL: [DataSource; 20] = ALL;
+    pub const ALL: [DataSource; 21] = ALL;
 
     pub fn profile(self) -> &'static Profile {
         profile_of(self)

@@ -12,7 +12,7 @@ use crate::model::market::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
 
 /// Every source, in the order lists of sources are searched and shown.
-pub const ALL: [DataSource; 20] = [
+pub const ALL: [DataSource; 21] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -27,6 +27,7 @@ pub const ALL: [DataSource; 20] = [
     DataSource::Htx,
     DataSource::Bitfinex,
     DataSource::Bitstamp,
+    DataSource::Bingx,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -51,6 +52,7 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
         DataSource::Htx => &HTX,
         DataSource::Bitfinex => &BITFINEX,
         DataSource::Bitstamp => &BITSTAMP,
+        DataSource::Bingx => &BINGX,
         DataSource::CoinGecko => &COINGECKO,
         DataSource::DexScreener => &DEXSCREENER,
         DataSource::Alpaca => &ALPACA,
@@ -1148,6 +1150,67 @@ pub static BITSTAMP: Profile = Profile {
         batch: 2_000,
     },
     // Weeks, months and years fold from days and take several requests of their own.
+    cache: Some(CachePolicy {
+        fresh_secs: 0,
+        of: CachedSeries::Folded,
+    }),
+    own_lane: false,
+};
+
+/// BingX's candle intervals that open where this app cuts: `1m`, `3m`, `5m`, `15m`, `30m`, `1h`,
+/// `2h`, `4h` and `8h` (checked against both of its candle endpoints on 2026-11-21: every bar opens
+/// on a multiple of its length counted from the epoch). Left out: its `6h` and `12h` open at 04:00
+/// and 16:00 UTC, its `1d` and `3d` at 16:00 UTC and its `1w` on a Sunday at 16:00 UTC (all cut at
+/// UTC+8 midnight), so those, and months and years, fold from the finer bars.
+const BINGX_NATIVES: [Timeframe; 9] = [
+    minutes(1),
+    minutes(3),
+    minutes(5),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(2),
+    hours(4),
+    hours(8),
+];
+
+pub static BINGX: Profile = Profile {
+    display_name: "BingX",
+    slug: "BINGX",
+    mcp_id: "bingx",
+    class: Class::Exchange,
+    opaque_ids: false,
+    kinds: SPOT,
+    series: Series::Candles,
+    // Candle volume is the base asset.
+    volume: true,
+    display: Casing::Upper,
+    id: Casing::AsGiven,
+    pair: PairStyle::Separated(Separated {
+        separator: '-',
+        noun: "spot markets",
+        also_typed_as: &['/'],
+        aliases: &[],
+    }),
+    home_quote: Some("USDT"),
+    natives: &BINGX_NATIVES,
+    // The history endpoint pages back to a market's first candle (one-minute to fifteen-minute
+    // candles to the start of 2025 only).
+    older_history: OlderHistory::Always,
+    slow_refresh: false,
+    streams: Streams {
+        candles: true,
+        quotes: true,
+    },
+    change: ChangeBasis::Rolling24h,
+    // One call answers every market (206 KB), so prices are asked every ten seconds beside the
+    // socket.
+    quotes: QuoteTiming {
+        refresh_secs: 10,
+        max_age_secs: 60,
+        batch: 2_000,
+    },
+    // Days, weeks and months fold from finer bars and take several requests of their own.
     cache: Some(CachePolicy {
         fresh_secs: 0,
         of: CachedSeries::Folded,

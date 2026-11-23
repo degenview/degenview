@@ -143,12 +143,19 @@ pub enum McpSource {
     Htx,
     Bitfinex,
     Bitstamp,
+    Bingx,
     Coingecko,
     Dexscreener,
     Alpaca,
 }
 
 impl McpSource {
+    /// The provider as MCP names it (`Profile::mcp_id`); `None` for one a chart cannot be added from
+    /// by symbol (a prediction market, a CoinMarketCap index).
+    pub(super) fn of(source: DataSource) -> Option<Self> {
+        serde_json::from_value(Value::String(source.profile().mcp_id.to_owned())).ok()
+    }
+
     pub(super) fn data_source(self) -> DataSource {
         match self {
             Self::Binance => DataSource::Binance,
@@ -165,6 +172,7 @@ impl McpSource {
             Self::Htx => DataSource::Htx,
             Self::Bitfinex => DataSource::Bitfinex,
             Self::Bitstamp => DataSource::Bitstamp,
+            Self::Bingx => DataSource::Bingx,
             Self::Coingecko => DataSource::CoinGecko,
             Self::Dexscreener => DataSource::DexScreener,
             Self::Alpaca => DataSource::Alpaca,

@@ -2,7 +2,7 @@
 
 The marks in `assets/source_logos/` identify the provider a market's data comes from, in the symbol
 picker, on chart cards and in watchlists. Each belongs to its owner and stands for that owner only:
-Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, HTX, Bitfinex, Bitstamp, CoinGecko, CoinMarketCap, DEXScreener, Alpaca, Polymarket and Kalshi. They are
+Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Hyperliquid, Aster, Lighter, Deribit, HTX, Bitfinex, Bitstamp, BingX, CoinGecko, CoinMarketCap, DEXScreener, Alpaca, Polymarket and Kalshi. They are
 not licensed under the application's GPL-3.0-only terms.
 
 A new provider adds its mark here (one file named after the provider, `.svg` where the owner publishes one),
@@ -20,4 +20,6 @@ less than a third of a pixel off. Bitfinex's is the 48 by 48 pixel favicon its s
 a dark square), used as it is in `bitfinex.png`, since the owner publishes no vector mark. Bitstamp's is the vector its site publishes as the pinned-tab icon
 (`safari-pinned-tab.svg`: the rounded square with the B cut out of it, two more paths for the
 counters of the B), kept as published and coloured `#003a2f` (the green of its `apple-touch-icon.png`,
-measured from the pixels), with a white square behind the B so that it shows white.
+measured from the pixels), with a white square behind the B so that it shows white. BingX's is the 120 by 120 pixel
+`apple-touch-icon.png` its site serves (the white X on a blue square), used as it is in `bingx.png`,
+since the owner publishes no vector mark.
