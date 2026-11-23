@@ -1,5 +1,5 @@
 use super::*;
-use crate::pine::outputs::{LabelStyle, TablePosition};
+use crate::pine::outputs::{LabelStyle, Size, TablePosition};
 use crate::pine::runtime::containers::Object;
 use crate::pine::runtime::value::RefKind;
 use RuntimeValue::{Float, Int, Na, String as Str};
@@ -504,6 +504,7 @@ fn copies_keep_force_overlay() {
 fn only_the_setters_that_place_a_point_read_their_first_argument_as_a_time() {
     let mut state = RuntimeState::default();
     let bar_time = || named("xloc", Str("xloc.bar_time".into()));
+    // The test bar opens at 0 and lasts a minute, so a time of `n` minutes is bar index `n`.
     let line = run(
         &mut state,
         "line.new",
@@ -537,13 +538,63 @@ fn only_the_setters_that_place_a_point_read_their_first_argument_as_a_time() {
     assert_eq!(state.lines[&line_id].y1, 3_000.0);
     assert_eq!(state.lines[&line_id].width, 3);
     // A time is still a time.
-    let before = state.lines[&line_id].x2;
-    run(&mut state, "line.set_x2", &[arg(line), arg(Int(600_000))]).unwrap();
-    assert_ne!(state.lines[&line_id].x2, before, "the x coordinate moved");
-    assert_ne!(
-        state.lines[&line_id].x2, 600_000,
-        "and was turned into a bar index"
-    );
+    run(
+        &mut state,
+        "line.set_x2",
+        &[arg(line.clone()), arg(Int(600_000))],
+    )
+    .unwrap();
+    assert_eq!(state.lines[&line_id].x2, 10);
+    // One call that sets both: the x is converted and the y is kept as given.
+    run(
+        &mut state,
+        "line.set_xy1",
+        &[arg(line.clone()), arg(Int(180_000)), arg(Int(77))],
+    )
+    .unwrap();
+    assert_eq!(state.lines[&line_id].x1, 3);
+    assert_eq!(state.lines[&line_id].y1, 77.0);
+    // A chart.point already holds a bar index: it is not read as a time a second time.
+    let placed = point(&mut state, 7, 55.0);
+    run(
+        &mut state,
+        "line.set_first_point",
+        &[arg(line), arg(placed)],
+    )
+    .unwrap();
+    assert_eq!(state.lines[&line_id].x1, 7);
+    assert_eq!(state.lines[&line_id].y1, 55.0);
+
+    let label = run(
+        &mut state,
+        "label.new",
+        &[
+            arg(Int(60_000)),
+            arg(Float(10.0)),
+            arg(Str("hi".into())),
+            bar_time(),
+        ],
+    )
+    .unwrap();
+    let RuntimeValue::Ref(RefKind::Label, label_id) = label.clone() else {
+        panic!("{label:?}")
+    };
+    assert!(state.labels[&label_id].time_anchored);
+    run(
+        &mut state,
+        "label.set_size",
+        &[arg(label.clone()), arg(Int(12))],
+    )
+    .unwrap();
+    assert_eq!(state.labels[&label_id].size, Size::Points(12));
+    run(
+        &mut state,
+        "label.set_xy",
+        &[arg(label), arg(Int(300_000)), arg(Int(55))],
+    )
+    .unwrap();
+    assert_eq!(state.labels[&label_id].x, 5);
+    assert_eq!(state.labels[&label_id].y, 55.0);
 
     let boxed = run(
         &mut state,

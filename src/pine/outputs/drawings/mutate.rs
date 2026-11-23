@@ -1,6 +1,6 @@
 //! Changing and reading drawings: `*.set_*`, `*.get_*` and `*.delete`.
 
-use super::coordinates::{known_index, known_price, point_coordinates, takes_x_first, x_index};
+use super::coordinates::{known_index, known_price, point_coordinates, x_coordinate};
 use super::names::size_of;
 use super::table::set_cell_setter;
 use super::{Arg, FromName, parse, runtime_error, unknown_function};
@@ -76,25 +76,24 @@ fn with_line(
         state.lines.remove(&id);
         return Ok(RuntimeValue::Void);
     }
+    let anchored = line.time_anchored;
     let result = match member {
         "set_first_point" | "set_second_point" => {
-            let Some((x, y)) = set_point(&a, line.time_anchored, bar, bar_seconds, state) else {
+            let Some((x, y)) = point_coordinates(&a, anchored, bar, bar_seconds, state) else {
                 return Ok(RuntimeValue::Void);
             };
-            let setter = if member == "set_first_point" {
-                "set_xy1"
+            // Already a bar index and a price: not read as a time again.
+            if member == "set_first_point" {
+                (line.x1, line.y1) = (x, y);
             } else {
-                "set_xy2"
-            };
-            mutate_line(&mut line, setter, &x, &y, range)?
+                (line.x2, line.y2) = (x, y);
+            }
+            RuntimeValue::Void
         }
         _ => {
-            let x = if takes_x_first(member) {
-                x_index(a, line.time_anchored, bar, bar_seconds, state)
-            } else {
-                a
-            };
-            mutate_line(&mut line, member, &x, &b, range)?
+            let resolve_x =
+                |value: &RuntimeValue| x_coordinate(value, anchored, bar, bar_seconds, state);
+            mutate_line(&mut line, member, &a, &b, resolve_x, range)?
         }
     };
     state.lines.insert(id, line);
@@ -122,18 +121,18 @@ fn with_label(
         state.labels.remove(&id);
         return Ok(RuntimeValue::Void);
     }
+    let anchored = label.time_anchored;
     let result = if member == "set_point" {
-        let Some((x, y)) = set_point(&a, label.time_anchored, bar, bar_seconds, state) else {
+        let Some((x, y)) = point_coordinates(&a, anchored, bar, bar_seconds, state) else {
             return Ok(RuntimeValue::Void);
         };
-        mutate_label(&mut label, "set_xy", &x, &y, range)?
+        // Already a bar index and a price: not read as a time again.
+        (label.x, label.y) = (x, y);
+        RuntimeValue::Void
     } else {
-        let x = if takes_x_first(member) {
-            x_index(a, label.time_anchored, bar, bar_seconds, state)
-        } else {
-            a
-        };
-        mutate_label(&mut label, member, &x, &b, range)?
+        let resolve_x =
+            |value: &RuntimeValue| x_coordinate(value, anchored, bar, bar_seconds, state);
+        mutate_label(&mut label, member, &a, &b, resolve_x, range)?
     };
     state.labels.insert(id, label);
     Ok(result)
@@ -160,25 +159,24 @@ fn with_box(
         state.boxes.remove(&id);
         return Ok(RuntimeValue::Void);
     }
+    let anchored = boxed.time_anchored;
     let result = match member {
         "set_top_left_point" | "set_bottom_right_point" => {
-            let Some((x, y)) = set_point(&a, boxed.time_anchored, bar, bar_seconds, state) else {
+            let Some((x, y)) = point_coordinates(&a, anchored, bar, bar_seconds, state) else {
                 return Ok(RuntimeValue::Void);
             };
-            let setter = if member == "set_top_left_point" {
-                "set_lefttop"
+            // Already a bar index and a price: not read as a time again.
+            if member == "set_top_left_point" {
+                (boxed.left, boxed.top) = (x, y);
             } else {
-                "set_rightbottom"
-            };
-            mutate_box(&mut boxed, setter, &x, &y, range)?
+                (boxed.right, boxed.bottom) = (x, y);
+            }
+            RuntimeValue::Void
         }
         _ => {
-            let x = if takes_x_first(member) {
-                x_index(a, boxed.time_anchored, bar, bar_seconds, state)
-            } else {
-                a
-            };
-            mutate_box(&mut boxed, member, &x, &b, range)?
+            let resolve_x =
+                |value: &RuntimeValue| x_coordinate(value, anchored, bar, bar_seconds, state);
+            mutate_box(&mut boxed, member, &a, &b, resolve_x, range)?
         }
     };
     state.boxes.insert(id, boxed);
@@ -229,36 +227,27 @@ fn with_linefill(
     Ok(result)
 }
 
-/// The bar index and price of the `chart.point` in `value`, as runtime values.
-fn set_point(
-    value: &RuntimeValue,
-    anchored_to_time: bool,
-    bar: &Kline,
-    bar_seconds: f64,
-    state: &RuntimeState,
-) -> Option<(RuntimeValue, RuntimeValue)> {
-    let (index, price) = point_coordinates(value, anchored_to_time, bar, bar_seconds, state)?;
-    Some((RuntimeValue::Int(index), RuntimeValue::Float(price)))
-}
-
+/// `resolve_x` reads an argument as a horizontal coordinate (a bar index, or a time converted to
+/// one when the drawing is anchored to time). Only the setters that write an x call it.
 fn mutate_line(
     line: &mut LineOutput,
     member: &str,
     a: &RuntimeValue,
     b: &RuntimeValue,
+    resolve_x: impl Fn(&RuntimeValue) -> Option<i64>,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
     match member {
-        "set_x1" => line.x1 = a.int_value().unwrap_or(line.x1),
-        "set_x2" => line.x2 = a.int_value().unwrap_or(line.x2),
+        "set_x1" => line.x1 = resolve_x(a).unwrap_or(line.x1),
+        "set_x2" => line.x2 = resolve_x(a).unwrap_or(line.x2),
         "set_y1" => line.y1 = a.number().unwrap_or(line.y1),
         "set_y2" => line.y2 = a.number().unwrap_or(line.y2),
         "set_xy1" => {
-            line.x1 = a.int_value().unwrap_or(line.x1);
+            line.x1 = resolve_x(a).unwrap_or(line.x1);
             line.y1 = b.number().unwrap_or(line.y1);
         }
         "set_xy2" => {
-            line.x2 = a.int_value().unwrap_or(line.x2);
+            line.x2 = resolve_x(a).unwrap_or(line.x2);
             line.y2 = b.number().unwrap_or(line.y2);
         }
         "set_color" => line.color = color_value(Some(a), None).unwrap_or(0),
@@ -282,18 +271,21 @@ fn mutate_line(
     Ok(RuntimeValue::Void)
 }
 
+/// `resolve_x` reads an argument as a horizontal coordinate (a bar index, or a time converted to
+/// one when the drawing is anchored to time). Only the setters that write an x call it.
 fn mutate_label(
     label: &mut LabelOutput,
     member: &str,
     a: &RuntimeValue,
     b: &RuntimeValue,
+    resolve_x: impl Fn(&RuntimeValue) -> Option<i64>,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
     match member {
-        "set_x" => label.x = a.int_value().unwrap_or(label.x),
+        "set_x" => label.x = resolve_x(a).unwrap_or(label.x),
         "set_y" => label.y = a.number().unwrap_or(label.y),
         "set_xy" => {
-            label.x = a.int_value().unwrap_or(label.x);
+            label.x = resolve_x(a).unwrap_or(label.x);
             label.y = b.number().unwrap_or(label.y);
         }
         "set_text" => label.text = a.text_value().unwrap_or("").to_owned(),
@@ -319,24 +311,27 @@ fn mutate_label(
     Ok(RuntimeValue::Void)
 }
 
+/// `resolve_x` reads an argument as a horizontal coordinate (a bar index, or a time converted to
+/// one when the drawing is anchored to time). Only the setters that write an x call it.
 fn mutate_box(
     boxed: &mut BoxOutput,
     member: &str,
     a: &RuntimeValue,
     b: &RuntimeValue,
+    resolve_x: impl Fn(&RuntimeValue) -> Option<i64>,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
     match member {
-        "set_left" => boxed.left = a.int_value().unwrap_or(boxed.left),
-        "set_right" => boxed.right = a.int_value().unwrap_or(boxed.right),
+        "set_left" => boxed.left = resolve_x(a).unwrap_or(boxed.left),
+        "set_right" => boxed.right = resolve_x(a).unwrap_or(boxed.right),
         "set_top" => boxed.top = a.number().unwrap_or(boxed.top),
         "set_bottom" => boxed.bottom = a.number().unwrap_or(boxed.bottom),
         "set_lefttop" => {
-            boxed.left = a.int_value().unwrap_or(boxed.left);
+            boxed.left = resolve_x(a).unwrap_or(boxed.left);
             boxed.top = b.number().unwrap_or(boxed.top);
         }
         "set_rightbottom" => {
-            boxed.right = a.int_value().unwrap_or(boxed.right);
+            boxed.right = resolve_x(a).unwrap_or(boxed.right);
             boxed.bottom = b.number().unwrap_or(boxed.bottom);
         }
         "set_bgcolor" => boxed.background_color = color_value(Some(a), None),
