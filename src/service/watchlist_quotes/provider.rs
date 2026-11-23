@@ -3,6 +3,7 @@
 //! response shapes are covered without a network.
 
 use super::engine::Outcome;
+use crate::i18n::tr;
 use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
 use crate::model::{DataSource, Timeframe};
 use serde_json::Value;
@@ -32,9 +33,9 @@ pub enum QuoteFailure {
 impl QuoteFailure {
     pub fn message(&self) -> String {
         match self {
-            Self::RateLimited => "Rate limited by the provider".to_owned(),
+            Self::RateLimited => tr!("Rate limited by the provider").to_owned(),
             Self::CredentialsMissing => {
-                "Add your Alpaca API key in Settings to see stock quotes".to_owned()
+                tr!("Add your Alpaca API key in Settings to see stock quotes").to_owned()
             }
             Self::Rejected(message) | Self::Failed(message) => message.clone(),
         }
@@ -128,7 +129,10 @@ fn get(source: DataSource, url: &str, headers: &[(&str, &str)]) -> Result<String
     {
         Ok(body) => Ok(body),
         Err(crate::service::net::http::Error::Status(code)) => Err(classify_status(source, code)),
-        Err(error) => Err(QuoteFailure::Failed(format!("Network error: {error}"))),
+        Err(error) => Err(QuoteFailure::Failed(tr!(
+            "Network error: {error}",
+            error = error
+        ))),
     }
 }
 
@@ -139,31 +143,33 @@ fn get(source: DataSource, url: &str, headers: &[(&str, &str)]) -> Result<String
 pub fn classify_status(source: DataSource, code: u16) -> QuoteFailure {
     match (source, code) {
         (_, 429) => QuoteFailure::RateLimited,
-        (DataSource::Alpaca, 401 | 403) => {
-            QuoteFailure::Failed("Alpaca refused your API key. Check it in Settings".to_owned())
-        }
+        (DataSource::Alpaca, 401 | 403) => QuoteFailure::Failed(
+            tr!("Alpaca refused your API key. Check it in Settings").to_owned(),
+        ),
         // Binance answers an unknown symbol in a batch with 400; so does Alpaca.
         (DataSource::Binance | DataSource::Alpaca, 400) => {
-            QuoteFailure::Rejected("The provider answered HTTP 400".to_owned())
+            QuoteFailure::Rejected(tr!("The provider answered HTTP 400").to_owned())
         }
         // Bybit refuses some countries, and a client that asks too often, with a 403.
         (DataSource::Bybit, 403) => QuoteFailure::Failed(
-            "Bybit refused the request (HTTP 403): it is not available in every country".to_owned(),
+            tr!("Bybit refused the request (HTTP 403): it is not available in every country")
+                .to_owned(),
         ),
         // Gate.io refuses some countries, and a client that asks too often, with a 403.
         (DataSource::Gate, 403) => QuoteFailure::Failed(
-            "Gate.io refused the request (HTTP 403): it is not available in every country"
+            tr!("Gate.io refused the request (HTTP 403): it is not available in every country")
                 .to_owned(),
         ),
         // MEXC refuses some countries with a 403.
         (DataSource::Mexc, 403) => QuoteFailure::Failed(
-            "MEXC refused the request (HTTP 403): it is not available in every country".to_owned(),
+            tr!("MEXC refused the request (HTTP 403): it is not available in every country")
+                .to_owned(),
         ),
         // Coinbase is asked one product at a time: a 404 names that product.
         (DataSource::Coinbase, 404) => {
-            QuoteFailure::Rejected("The provider answered HTTP 404".to_owned())
+            QuoteFailure::Rejected(tr!("The provider answered HTTP 404").to_owned())
         }
-        _ => QuoteFailure::Failed(format!("The provider answered HTTP {code}")),
+        _ => QuoteFailure::Failed(tr!("The provider answered HTTP {code}", code = code)),
     }
 }
 
@@ -417,7 +423,8 @@ fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
 // MARK: Parsers
 
 fn json(body: &str) -> Result<Value, QuoteFailure> {
-    serde_json::from_str(body).map_err(|error| QuoteFailure::Failed(format!("Data error: {error}")))
+    serde_json::from_str(body)
+        .map_err(|error| QuoteFailure::Failed(tr!("Data error: {error}", error = error)))
 }
 
 fn number(value: Option<&Value>) -> Option<f64> {
@@ -441,7 +448,7 @@ pub fn parse_binance(
     let value = json(body)?;
     let tickers: HashMap<String, &Value> = value
         .as_array()
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Binance response".to_owned()))?
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Binance response").to_owned()))?
         .iter()
         .filter_map(|ticker| Some((ticker.get("symbol")?.as_str()?.to_uppercase(), ticker)))
         .collect();
@@ -484,7 +491,7 @@ pub fn parse_mexc(
     let value = json(body)?;
     let tickers: HashMap<String, SourceQuote> = value
         .as_array()
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected MEXC response".to_owned()))?
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected MEXC response").to_owned()))?
         .iter()
         .filter_map(|ticker| {
             let id = ticker.get("symbol")?.as_str()?.to_uppercase();
@@ -547,7 +554,7 @@ pub fn parse_gateio(
     let value = json(body)?;
     let tickers: HashMap<String, SourceQuote> = value
         .as_array()
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Gate.io response".to_owned()))?
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Gate.io response").to_owned()))?
         .iter()
         .filter_map(gateio_ticker)
         .collect();
@@ -592,7 +599,7 @@ pub fn parse_bybit(
     let code = value
         .get("retCode")
         .and_then(Value::as_i64)
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Bybit response".to_owned()))?;
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Bybit response").to_owned()))?;
     if code != 0 {
         return Err(if crate::service::market::bybit::is_rate_limit(code) {
             QuoteFailure::RateLimited
@@ -601,13 +608,13 @@ pub fn parse_bybit(
                 .get("retMsg")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            QuoteFailure::Failed(format!("Bybit error: {message}"))
+            QuoteFailure::Failed(tr!("Bybit error: {message}", message = message))
         });
     }
     let tickers: HashMap<String, SourceQuote> = value
         .pointer("/result/list")
         .and_then(Value::as_array)
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Bybit response".to_owned()))?
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Bybit response").to_owned()))?
         .iter()
         .filter_map(bybit_ticker)
         .collect();
@@ -656,13 +663,13 @@ pub fn parse_kraken(
         } else if code.starts_with("EQuery:") {
             QuoteFailure::Rejected(text)
         } else {
-            QuoteFailure::Failed(format!("Kraken error: {text}"))
+            QuoteFailure::Failed(tr!("Kraken error: {text}", text = text))
         });
     }
     let tickers = value
         .get("result")
         .and_then(Value::as_object)
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Kraken response".to_owned()))?;
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Kraken response").to_owned()))?;
     let mut quotes = HashMap::new();
     for request in requests {
         let Some(ticker) = tickers.get(&request.symbol) else {
@@ -723,7 +730,7 @@ pub fn parse_okx(
     let tickers: HashMap<String, SourceQuote> = value
         .get("data")
         .and_then(Value::as_array)
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected OKX response".to_owned()))?
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected OKX response").to_owned()))?
         .iter()
         .filter_map(okx_ticker)
         .collect();
@@ -784,7 +791,7 @@ pub fn parse_coingecko_markets(
     let value = json(body)?;
     let coins: HashMap<String, &Value> = value
         .as_array()
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected CoinGecko response".to_owned()))?
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected CoinGecko response").to_owned()))?
         .iter()
         .filter_map(|coin| Some((coin.get("id")?.as_str()?.to_lowercase(), coin)))
         .collect();
@@ -867,7 +874,7 @@ pub fn parse_alpaca_snapshots(
     let value = json(body)?;
     let snapshots = value
         .as_object()
-        .ok_or_else(|| QuoteFailure::Failed("Unexpected Alpaca response".to_owned()))?;
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Alpaca response").to_owned()))?;
     let mut quotes = HashMap::new();
     for request in requests {
         let Some(snapshot) = snapshots.get(&request.symbol.to_uppercase()) else {
@@ -1441,5 +1448,19 @@ mod tests {
         assert_eq!(chunk_size(DataSource::Coinbase), 20);
         assert_eq!(chunk_size(DataSource::DexScreener), 30);
         assert_eq!(chunk_size(DataSource::CoinGecko), 250);
+    }
+
+    #[test]
+    fn a_quote_failure_is_worded_in_the_language() {
+        use crate::i18n::{Locale, with_locale};
+        for failure in [QuoteFailure::RateLimited, QuoteFailure::CredentialsMissing] {
+            let english = failure.message();
+            assert_ne!(with_locale(Locale::PSEUDO, || failure.message()), english);
+        }
+        let provider_text = QuoteFailure::Failed("HTTP 500 from the provider".to_owned());
+        assert_eq!(
+            with_locale(Locale::PSEUDO, || provider_text.message()),
+            "HTTP 500 from the provider"
+        );
     }
 }

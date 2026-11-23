@@ -4,20 +4,420 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#: src/service/update/install/portable_binary.rs
+msgid "A development build does not update itself."
+msgstr ""
+
+#: src/service/system/entitlements.rs
+msgid "A development build must not use iCloud's Production environment."
+msgstr ""
+
+#: src/service/system/entitlements.rs
+msgid "A release build must not use iCloud's Development environment."
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "A token has no spaces and only plain letters, digits and symbols."
+msgstr ""
+
+#: src/trading/confirm.rs
+msgid "Account"
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "Action"
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid ""
+"Add the address of your snapshot host in Settings ▸ Snapshots to share."
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add your Alpaca API key in Settings to see stock quotes"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Alpaca refused your API key. Check it in Settings"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "An API key has no spaces and is at most 128 plain characters."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "An estimate: {assets} could not be priced and is left out."
+msgstr ""
+
 #: src/ui/settings/window.rs
 msgid "Appearance"
+msgstr ""
+
+#: src/service/update/install/app_bundle.rs
+msgid "Automatic updates are not available on this platform."
+msgstr ""
+
+#: src/trading/paper/stats.rs
+msgid "Available"
+msgstr ""
+
+#: src/trading/paper/stats.rs
+msgid "Available funds as a share of equity"
+msgstr ""
+
+#: src/trading/paper/stats.rs
+msgid "Balance"
+msgstr ""
+
+#: src/trading/draft.rs
+#: src/trading/edit/mod.rs
+msgid "Buy"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Bybit error: {message}"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid ""
+"Bybit refused the request (HTTP 403): it is not available in every country"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Cancel requested"
+msgstr ""
+
+#: src/trading/broker/commands.rs
+msgid "Cancel requested. The order stays until the broker confirms."
+msgid_plural ""
+"{count} cancels requested. The orders stay until the broker confirms."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/trading/broker/backend.rs
+msgid "Cash"
+msgstr ""
+
+#: src/service/update/install/mod.rs
+msgid "Checking the release signature…"
+msgstr ""
+
+#: src/host/update/mod.rs
+msgid "Checking whether this copy can update itself…"
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+msgid "Checking your saved key. Try again in a moment."
+msgstr ""
+
+#: src/host/portfolio/import_flow.rs
+msgid "Choose a CoinMarketCap transactions export"
+msgstr ""
+
+#: src/host/portfolio/import_flow.rs
+msgid "Choose a transactions CSV to import"
 msgstr ""
 
 #: src/ui/settings/window.rs
 msgid "Choose how DegenView looks across every window and chart."
 msgstr ""
 
+#: src/trading/paper/backend.rs
+msgid ""
+"CoinMarketCap charts have no tradable price, so paper trading skips them."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Committed to open orders"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not act on that choice: {error}"
+msgstr ""
+
+#: src/host/settings/mod.rs
+msgid "Could not clear them: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not combine this Mac's data with iCloud's: {error}"
+msgstr ""
+
+#: src/service/update/check.rs
+msgid "Could not compare version {current}."
+msgstr ""
+
+#: src/service/update/install/app_bundle.rs
+#: src/service/update/install/portable_binary.rs
+msgid "Could not create {name}: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not dismiss those notes: {error}"
+msgstr ""
+
+#: src/service/snapshot/job.rs
+msgid "Could not draw the image."
+msgstr ""
+
+#: src/service/snapshot/export.rs
+msgid "Could not find a folder to save the image in."
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not finish deleting iCloud data: {error}"
+msgstr ""
+
+#: src/service/update/install/mod.rs
+msgid "Could not install the new app: {error}"
+msgstr ""
+
+#: src/service/update/install/mod.rs
+msgid ""
+"Could not install the new app: {error}. Putting the old one back failed too "
+"({restore}). It is at {old}: move it to {current} to get it back."
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not keep those items in iCloud: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not look for changes made on this Mac: {error}"
+msgstr ""
+
+#: src/service/snapshot/export.rs
+msgid "Could not make the image: {why}"
+msgstr ""
+
+#: src/service/update/install/mod.rs
+msgid "Could not move the current app aside: {error}"
+msgstr ""
+
+#: src/service/system/file_dialog.rs
+msgid "Could not open the file dialog: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not read the sync state to save iCloud's changes."
+msgstr ""
+
+#: src/service/update/code_signature.rs
+msgid "Could not read this app's signature: {error}"
+msgstr ""
+
+#: src/service/system/file_dialog.rs
+msgid "Could not read {path}: {error}"
+msgstr ""
+
+#: src/service/keychain/secret_service.rs
+msgid "Could not remove it from the keyring: {reason}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not save changes from iCloud: {error}"
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+msgid "Could not save it: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not save that choice: {error}"
+msgstr ""
+
+#: src/service/update/install/app_bundle.rs
+msgid "Could not save the download: {error}"
+msgstr ""
+
+#: src/host/editor_theme/mod.rs
+msgid "Could not save the editor settings: {error}"
+msgstr ""
+
+#: src/service/snapshot/export.rs
+msgid "Could not save the image: {why}"
+msgstr ""
+
+#: src/host/language/mod.rs
+msgid "Could not save the language: {error}"
+msgstr ""
+
+#: src/host/settings/mod.rs
+msgid "Could not save the settings: {error}"
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+msgid "Could not save the snapshot settings: {error}"
+msgstr ""
+
+#: src/host/tab/link.rs
+msgid "Could not save the tab linking settings: {error}"
+msgstr ""
+
+#: src/host/tab/title.rs
+msgid "Could not save the tab title setting: {error}"
+msgstr ""
+
+#: src/service/keychain/secret_service.rs
+msgid "Could not save to the keyring: {reason}"
+msgstr ""
+
+#: src/host/editor_theme/mod.rs
+msgid "Could not save your themes: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not send those deletions: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not set up this Mac for iCloud Sync: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not switch to that Apple Account: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not turn iCloud Sync off: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not turn iCloud Sync on: {error}"
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "Could not unpack the download: {error}"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "Could not use this Apple Account: {error}"
+msgstr ""
+
+#: src/service/update/install/portable_binary.rs
+msgid ""
+"Could not wait for the previous DegenView to exit (wait returned {code})."
+msgstr ""
+
+#: src/service/system/file_dialog.rs
+msgid "Could not write {path}: {error}"
+msgstr ""
+
+#: src/service/watchlist_quotes/engine.rs
+msgid "Couldn't find this pair's network"
+msgstr ""
+
 #: src/ui/theme/mod.rs
 msgid "Dark"
 msgstr ""
 
+#: src/service/watchlist_quotes/provider.rs
+msgid "Data error: {error}"
+msgstr ""
+
+#: src/service/update/install/mod.rs
+msgid ""
+"DegenView is missing from {target} and the previous version is in {old}. Move "
+"it back, then try the update again."
+msgstr ""
+
+#: src/service/update/install/app_bundle.rs
+msgid "DegenView is not running from an app bundle."
+msgstr ""
+
+#: src/service/update/install/mod.rs
+msgid "Downloading the new version…"
+msgstr ""
+
+#: src/service/update/install/app_bundle.rs
+msgid "Drag DegenView from the disk image to the Applications folder first."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Edit requested"
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "Edit sent. The order updates when the broker confirms it."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+#: src/trading/paper/stats.rs
+msgid "Equity"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Everything held except {currency}, at the latest prices"
+msgstr ""
+
+#: src/service/portfolio/quotes.rs
+msgid "Exchange rate from {from} to {to} is unavailable."
+msgstr ""
+
+#: src/host/portfolio/import_flow.rs
+msgid "Export"
+msgstr ""
+
+#: src/service/editor_theme/files.rs
+msgid "Export theme"
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "Fee (broker's estimate)"
+msgstr ""
+
+#: src/trading/confirm.rs
+msgid "Fee (estimate)"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Fees"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid ""
+"Gate.io refused the request (HTTP 403): it is not available in every country"
+msgstr ""
+
+#: src/service/update/check.rs
+#: src/service/update/tag_signature.rs
+msgid "GitHub is rate limiting requests. Try again later."
+msgstr ""
+
+#: src/service/update/check.rs
+msgid "GitHub sent an unreadable reply."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Holdings"
+msgstr ""
+
+#: src/service/editor_theme/files.rs
+msgid "Import a theme"
+msgstr ""
+
+#: src/service/watchlist_quotes/engine.rs
+msgid "Index charts have no market quote"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Interface language"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "It filled before the cancel arrived."
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Keeps images for ever"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Keeps images for {duration}"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Kraken error: {text}"
 msgstr ""
 
 #: src/ui/settings/appearance.rs
@@ -32,12 +432,201 @@ msgstr ""
 msgid "Light"
 msgstr ""
 
+#: src/trading/confirm.rs
+#: src/trading/edit/mod.rs
+msgid "Limit price"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid ""
+"MEXC refused the request (HTTP 403): it is not available in every country"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Maker / taker, {tier}"
+msgstr ""
+
+#: src/trading/paper/stats.rs
+msgid "Margin buffer"
+msgstr ""
+
+#: src/trading/paper/stats.rs
+msgid "Margin used"
+msgstr ""
+
+#: src/trading/confirm.rs
+#: src/trading/edit/mod.rs
+msgid "Market"
+msgstr ""
+
+#: src/service/update/install/app_bundle.rs
+msgid "Move DegenView to the Applications folder first."
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Network error: {error}"
+msgstr ""
+
+#: src/service/update/check.rs
+msgid "Not published as an immutable release, so it needs a manual download."
+msgstr ""
+
+#: src/service/update/check.rs
+msgid "Not published by the release workflow, so it needs a manual download."
+msgstr ""
+
+#: src/trading/confirm.rs
+msgid "Note"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "On hold"
+msgstr ""
+
+#: src/trading/broker/commands.rs
+msgid "One order could not be found (it may already be finished)."
+msgstr ""
+
+#: src/trading/broker/commands.rs
+msgid ""
+"One order did not get an answer: it may or may not be cancelled, and is being "
+"read again."
+msgstr ""
+
+#: src/trading/broker/commands.rs
+msgid "One order had already filled."
+msgstr ""
+
+#: src/trading/broker/commands.rs
+msgid "One order is being edited; try again in a moment."
+msgstr ""
+
+#: src/service/annotation/ingest.rs
+msgid "Only PNG and JPEG pictures can be added."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Open orders"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Orders resting at the broker or being sent"
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgid "Paper trading"
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgid "Paper trading has no price for this chart."
+msgstr ""
+
+#: src/host/paper/mod.rs
+msgid ""
+"Paused: two Macs changed this account. Placing an order here takes it over."
+msgstr ""
+
+#: src/service/watchlist_quotes/engine.rs
+msgid "Portfolio cards have no market quote"
+msgstr ""
+
+#: src/trading/paper/stats.rs
+msgid "Positions {positions} · Orders {orders}"
+msgstr ""
+
+#: src/trading/confirm.rs
+msgid "Post only"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Practice orders on {broker}'s test environment. No real money."
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgid "Practice with pretend money. Nothing leaves this computer."
+msgstr ""
+
+#: src/trading/confirm.rs
+#: src/trading/edit/mod.rs
+msgid "Price"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Rate limited by the provider"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Real orders on your {broker} account."
+msgstr ""
+
+#: src/trading/paper/stats.rs
+msgid "Realized P&L"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "Reconnecting ({reason}). New orders are paused."
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Restore default"
 msgstr ""
 
+#: src/trading/confirm.rs
+msgid "Rests; never takes"
+msgstr ""
+
+#: src/service/system/sandbox.rs
+msgid ""
+"Run flatpak update if you installed from the DegenView repository, or download"
+" the new .flatpak from the release page."
+msgstr ""
+
+#: src/host/paper/mod.rs
+msgid "Running on another Mac. Placing an order here takes it over."
+msgstr ""
+
+#: src/host/paper/mod.rs
+msgid "Running on {name}. Placing an order here takes it over."
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Same as the system"
+msgstr ""
+
+#: src/service/snapshot/export.rs
+msgid "Save chart image"
+msgstr ""
+
+#: src/host/settings/mod.rs
+msgid "Saved conversations cleared."
+msgstr ""
+
+#: src/host/portfolio/import_flow.rs
+msgid ""
+"Select the destination portfolio before importing CoinMarketCap transactions."
+msgstr ""
+
+#: src/trading/draft.rs
+#: src/trading/edit/mod.rs
+msgid "Sell"
+msgstr ""
+
+#: src/trading/confirm.rs
+msgid "Side"
+msgstr ""
+
+#: src/trading/confirm.rs
+#: src/trading/edit/mod.rs
+msgid "Size"
+msgstr ""
+
+#: src/trading/confirm.rs
+msgid "Spend"
+msgstr ""
+
+#: src/trading/confirm.rs
+#: src/trading/edit/mod.rs
+msgid "Stop price"
 msgstr ""
 
 #: src/model/tab/title.rs
@@ -60,18 +649,381 @@ msgstr ""
 msgid "Tabs"
 msgstr ""
 
+#: src/host/broker/mod.rs
+msgid "That broker is not available."
+msgstr ""
+
+#: src/service/annotation/ingest.rs
+msgid "That file is empty."
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgid "That is not a paper order."
+msgstr ""
+
+#: src/service/annotation/ingest.rs
+msgid "That picture could not be made small enough to keep."
+msgstr ""
+
+#: src/service/annotation/ingest.rs
+msgid "That picture could not be read."
+msgstr ""
+
+#: src/service/annotation/ingest.rs
+msgid "That picture is over 10 MB. Choose a smaller one."
+msgstr ""
+
+#: src/service/annotation/ingest.rs
+msgid "That picture is too large (over 8192 pixels a side)."
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+msgid "That snapshot host is not available."
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgid ""
+"The account changed since the order was set up. Nothing was sent. Check the "
+"order again."
+msgstr ""
+
+#: src/service/update/install/portable_binary.rs
+msgid "The app has no file name."
+msgstr ""
+
+#: src/service/update/install/app_bundle.rs
+#: src/service/update/install/portable_binary.rs
+msgid "The app has no parent folder."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "The broker does not know this order any more."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "The broker is not connected, so the order was not edited."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "The broker is not connected."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "The broker's check of this change is out of date. Review it again."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "The cancel was sent but the answer was lost. The order is being checked."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid ""
+"The connection changed since the order was set up. Nothing was sent. Check the"
+" order again."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "The download contains an unsafe file path."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "The download contains the same file twice."
+msgstr ""
+
+#: src/service/update/install/mod.rs
+msgid "The download does not match its published checksum."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "The download has an unexpected number of files."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "The download is for a different kind of processor."
+msgstr ""
+
+#: src/service/update/install/mod.rs
+msgid "The download is incomplete."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "The download is not a DegenView app ({problem})."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "The download is not a DegenView app."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "The download is not a valid archive."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "The download is not a valid zip."
+msgstr ""
+
+#: src/service/update/code_signature.rs
+msgid "The download is not signed by the same developer as this app."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "The download unpacks to more data than an update should."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "The download uses an unsupported zip format."
+msgstr ""
+
+#: src/service/system/file_dialog.rs
+msgid "The file dialog failed: {message}"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid ""
 "The language of menus, labels and messages. Market names, prices and Pine "
 "scripts stay as they are."
 msgstr ""
 
+#: src/trading/broker/backend.rs
+msgid "The market's rules have not been read yet."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid ""
+"The order changed while you were reviewing it. Nothing was sent. Review it "
+"again."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "The order is being changed. Try again in a moment."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "The order is no longer open, so it was not edited."
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgid "The order is not complete."
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgid "The paper account could not be read from this computer's database."
+msgstr ""
+
+#: src/host/settings/mod.rs
+msgid ""
+"The password could not be saved for later ({error}). It works until you quit "
+"DegenView."
+msgstr ""
+
+#: src/host/portfolio/card.rs
+msgid "The portfolio database is unavailable."
+msgstr ""
+
+#: src/service/annotation/link_fetch.rs
+msgid "The preview could not be fetched. Check your connection."
+msgstr ""
+
+#: src/service/annotation/link_fetch.rs
+msgid "The preview is unavailable: the link may be deleted or private."
+msgstr ""
+
+#: src/service/update/install/portable_binary.rs
+msgid ""
+"The previous DegenView is still running. Close it, then open DegenView again."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "The price is not a number."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid ""
+"The price must be a multiple of {increment}. The nearest valid price below is "
+"{nearest}."
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "The provider answered HTTP 400"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "The provider answered HTTP 404"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "The provider answered HTTP {code}"
+msgstr ""
+
+#: src/service/watchlist_quotes/engine.rs
+msgid "The provider doesn't know this market"
+msgstr ""
+
+#: src/service/watchlist_quotes/engine.rs
+msgid "The provider returned no quote"
+msgstr ""
+
+#: src/host/broker/mod.rs
+msgid "The secret store stopped answering."
+msgstr ""
+
+#: src/service/annotation/link_fetch.rs
+msgid "The service refused the request ({status})."
+msgstr ""
+
+#: src/service/annotation/link_fetch.rs
+msgid "The service sent nothing a card can show."
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+#: src/host/tab/link.rs
+#: src/host/tab/title.rs
+msgid "The settings database is unavailable."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "The size cannot be less than what has already filled."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "The size is below the minimum of {minimum}."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "The size is not a number."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "The size must be a multiple of {increment}."
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Theme"
 msgstr ""
 
+#: src/trading/paper/backend.rs
+msgid "There is no paper account yet."
+msgstr ""
+
+#: src/host/update/mod.rs
+msgid "There is no update ready to install."
+msgstr ""
+
+#: src/service/update/code_signature.rs
+msgid "This app's Team ID is not valid."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "This broker has no plain stop order. Use a stop limit."
+msgstr ""
+
+#: src/service/system/entitlements.rs
+msgid "This build has an unrecognised iCloud environment."
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "This change has not been checked."
+msgstr ""
+
+#: src/service/system/entitlements.rs
+msgid ""
+"This copy of DegenView is not signed for iCloud. Install a release downloaded "
+"from the DegenView website."
+msgstr ""
+
+#: src/service/update/code_signature.rs
+msgid ""
+"This copy of DegenView is not signed with a Developer ID, so it cannot update "
+"itself."
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgid "This needs {short} more than the {free} free."
+msgstr ""
+
+#: src/host/update/mod.rs
+#: src/service/update/install/app_bundle.rs
+#: src/service/update/install/portable_binary.rs
+msgid "This release has no download for this computer."
+msgstr ""
+
+#: src/service/system/entitlements.rs
+msgid "This release is missing its iCloud environment."
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+msgid ""
+"This snapshot host is not in this version of DegenView. Choose another in "
+"Settings ▸ Snapshots."
+msgstr ""
+
 #: src/model/alert/feed.rs
 msgid "Today"
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "Total (broker's estimate)"
+msgstr ""
+
+#: src/trading/confirm.rs
+msgid "Total (estimate)"
+msgstr ""
+
+#: src/trading/confirm.rs
+msgid "Total (venue's estimate)"
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+msgid "Turn on a snapshot host in Settings ▸ Snapshots to share."
+msgstr ""
+
+#: src/trading/confirm.rs
+msgid "Type"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected Alpaca response"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected Binance response"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected Bybit response"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected CoinGecko response"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected Gate.io response"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected Kraken response"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected MEXC response"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected OKX response"
+msgstr ""
+
+#: src/service/update/install/mod.rs
+msgid "Unpacking and checking it…"
+msgstr ""
+
+#: src/service/update/install/app_bundle.rs
+#: src/service/update/install/portable_binary.rs
+msgid "Updated, but could not restart: {error}. Reopen DegenView."
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Uploads to {host}"
 msgstr ""
 
 #: src/ui/settings/appearance.rs
@@ -84,13 +1036,67 @@ msgstr ""
 msgid "Yesterday"
 msgstr ""
 
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Your saved access token is sent with it."
+msgstr ""
+
+#: src/service/update/code_signature.rs
+msgid "checking the signature took too long"
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "could not measure it ({error})"
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "iCloud Sync did not start: could not set up this Mac ({error})."
+msgstr ""
+
+#: src/host/sync/mod.rs
+msgid "iCloud Sync is not included in this build of DegenView."
+msgstr ""
+
 #: src/ui/kit/time_text.rs
 msgid "in the future"
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "it unpacks to more data than an update should"
 msgstr ""
 
 #: src/ui/kit/time_text.rs
 msgid "now"
 msgstr ""
+
+#: src/trading/paper/stats.rs
+msgid "open"
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "unexpected executable {relative}"
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "unpacking failed ({status})"
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "unpacking took too long"
+msgstr ""
+
+#: src/service/update/tag_signature.rs
+msgid "unreadable reply from GitHub"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "{assets} · {unpriced} unpriced"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "{count} asset"
+msgid_plural "{count} assets"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/ui/kit/time_text.rs
 msgid "{count} day ago"
@@ -122,6 +1128,16 @@ msgid_plural "{count} sec. ago"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/trading/broker/backend.rs
+msgid ""
+"{count} unconfirmed order belongs to a different account. It is left untouched"
+" here and checked when that account is connected."
+msgid_plural ""
+"{count} unconfirmed orders belong to a different account. They are left "
+"untouched here and checked when that account is connected."
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/kit/time_text.rs
 msgid "{count} wk. ago"
 msgid_plural "{count} wk. ago"
@@ -134,10 +1150,196 @@ msgid_plural "{count} yr. ago"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/trading/broker/backend.rs
+msgid "{currency} free to spend"
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "{error} The order is being read again to see what happened."
+msgstr ""
+
+#: src/host/paper/mod.rs
+msgid "{first} (and {count} more)"
+msgid_plural "{first} (and {count} more)"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/service/update/install/app_bundle.rs
+msgid "{folder} is not writable."
+msgstr ""
+
+#: src/service/update/install/portable_binary.rs
+msgid ""
+"{folder} is not writable. Install DegenView in a folder you own, such as "
+"~/.local/bin."
+msgstr ""
+
+#: src/service/update/install/portable_binary.rs
+msgid ""
+"{folder} is not writable. Move DegenView to a folder you own, such as "
+"Documents."
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+msgid "{name} has no secret called {key}."
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+msgid "{name} has no setting called {key}."
+msgstr ""
+
+#: src/service/system/file_dialog.rs
+msgid ""
+"{path} is {size} KB, which is too large to be what was asked for (the limit is"
+" {limit} KB)."
+msgstr ""
+
+#: src/service/update/archive.rs
+msgid "{relative} links outside the app"
+msgstr ""
+
+#: src/trading/edit/mod.rs
+msgid "{side} {size} {product} · {kind}"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "{style} tab title"
 msgstr ""
 
 #: src/ui/settings/appearance.rs
 msgid "{theme} theme"
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+msgid "{title} is kept in the secure storage."
+msgstr ""
+
+#: src/host/snapshot/mod.rs
+msgid "{value} is not a choice for {title}."
+msgstr ""
+
+#: src/trading/model.rs
+msgctxt "order duration"
+msgid "Day"
+msgstr ""
+
+#: src/trading/model.rs
+msgctxt "order duration"
+msgid "Fill or kill"
+msgstr ""
+
+#: src/trading/model.rs
+msgctxt "order duration"
+msgid "Good til cancelled"
+msgstr ""
+
+#: src/trading/model.rs
+msgctxt "order duration"
+msgid "Immediate or cancel"
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgctxt "order status"
+msgid "Cancelled"
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgctxt "order status"
+msgid "Cancelling"
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgctxt "order status"
+msgid "Expired"
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgctxt "order status"
+msgid "Filled"
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgctxt "order status"
+msgid "Open"
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgctxt "order status"
+msgid "Partly filled"
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgctxt "order status"
+msgid "Pending"
+msgstr ""
+
+#: src/trading/paper/backend.rs
+msgctxt "order status"
+msgid "Rejected"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgctxt "order status"
+msgid "Sending…"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgctxt "order status"
+msgid "Unconfirmed"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+#: src/trading/model.rs
+#: src/trading/paper/backend.rs
+msgctxt "order type"
+msgid "Limit"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+#: src/trading/model.rs
+#: src/trading/paper/backend.rs
+msgctxt "order type"
+msgid "Market"
+msgstr ""
+
+#: src/trading/model.rs
+#: src/trading/paper/backend.rs
+msgctxt "order type"
+msgid "Stop"
+msgstr ""
+
+#: src/trading/model.rs
+msgctxt "order type"
+msgid "Stop limit"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+#: src/trading/paper/backend.rs
+msgctxt "order type"
+msgid "Stop-limit"
+msgstr ""
+
+#: src/service/update/check.rs
+msgctxt "update channel"
+msgid "Release Candidate"
+msgstr ""
+
+#: src/service/update/check.rs
+msgctxt "update channel"
+msgid "Stable"
+msgstr ""
+
+#: src/trading/model.rs
+msgctxt "venue kind"
+msgid "Live"
+msgstr ""
+
+#: src/trading/model.rs
+msgctxt "venue kind"
+msgid "Simulated"
+msgstr ""
+
+#: src/trading/model.rs
+msgctxt "venue kind"
+msgid "Test"
 msgstr ""

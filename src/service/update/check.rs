@@ -2,6 +2,7 @@
 //! picks the newest one the chosen `Channel` accepts and compares its tag with the running version.
 //! Read-only: it never downloads or installs anything, it only reports where the release page is.
 
+use crate::i18n::{tr, tr_c};
 use crate::model::changelog::{self, Coverage, ListedRelease, ReleaseNotes, Stability, Version};
 use crate::service::net::http::{self, Retry};
 use serde::Deserialize;
@@ -33,8 +34,8 @@ impl Channel {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Stable => "Stable",
-            Self::ReleaseCandidate => "Release Candidate",
+            Self::Stable => tr_c!("update channel", "Stable"),
+            Self::ReleaseCandidate => tr_c!("update channel", "Release Candidate"),
         }
     }
 
@@ -211,7 +212,10 @@ fn check_pages(
     fetch: impl Fn(usize) -> Result<String, http::Error>,
 ) -> UpdateOutcome {
     let Some(running) = Version::parse(current) else {
-        return UpdateOutcome::Failed(format!("Could not compare version {current}."));
+        return UpdateOutcome::Failed(tr!(
+            "Could not compare version {current}.",
+            current = current
+        ));
     };
     let mut releases = Vec::new();
     // Whether the list was read to where this build's own history starts or to its end. Running out
@@ -228,13 +232,13 @@ fn check_pages(
             }
             Err(http::Error::Status(403 | 429)) => {
                 return UpdateOutcome::Failed(
-                    "GitHub is rate limiting requests. Try again later.".to_owned(),
+                    tr!("GitHub is rate limiting requests. Try again later.").to_owned(),
                 );
             }
             Err(error) => return UpdateOutcome::Failed(error.to_string()),
         };
         let Some(listed) = parse_page(&body) else {
-            return UpdateOutcome::Failed("GitHub sent an unreadable reply.".to_owned());
+            return UpdateOutcome::Failed(tr!("GitHub sent an unreadable reply.").to_owned());
         };
         let last = listed.len() < PAGE_SIZE;
         // The list is newest-created first, not by version: a stable hotfix published during a run
@@ -323,9 +327,13 @@ fn offer(release: ReleaseDto, notes: ReleaseNotes, coverage: Coverage) -> Releas
     // Only install what cannot be swapped after publishing and that the release workflow published;
     // anything else is left to a manual download.
     let manual_only = if !release.immutable {
-        Some("Not published as an immutable release, so it needs a manual download.")
+        Some(tr!(
+            "Not published as an immutable release, so it needs a manual download."
+        ))
     } else if !by_release_workflow(&release) {
-        Some("Not published by the release workflow, so it needs a manual download.")
+        Some(tr!(
+            "Not published by the release workflow, so it needs a manual download."
+        ))
     } else {
         None
     };
@@ -1029,5 +1037,19 @@ mod tests {
             one(r#"{"tag_name":"nightly"}"#, "0.1.0"),
             UpdateOutcome::UpToDate
         );
+    }
+
+    #[test]
+    fn a_channel_is_named_in_the_language_but_saved_the_same() {
+        use crate::i18n::{Locale, with_locale};
+        for channel in Channel::ALL {
+            let english = channel.label();
+            with_locale(Locale::PSEUDO, || {
+                assert_ne!(channel.label(), english);
+                assert_eq!(Channel::from_key(channel.key()), Some(channel));
+            });
+        }
+        assert_eq!(Channel::Stable.key(), "stable");
+        assert_eq!(Channel::ReleaseCandidate.key(), "rc");
     }
 }

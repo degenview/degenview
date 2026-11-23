@@ -1,6 +1,7 @@
 //! The paper account's numbers in the words every venue's strip uses: the account strip's hero,
 //! its cells, and the metric strings the paper panel shares. Pure: plain values in, text out.
 
+use crate::i18n::tr;
 use crate::model::paper::format::{
     self as fmt, BufferLevel, PnlTone, margin_buffer_level, pnl_tone,
 };
@@ -53,11 +54,11 @@ pub fn metric_cells(
 ) -> Vec<MetricCell> {
     let Some(metrics) = metrics else {
         return [
-            "Balance",
-            "Realized P&L",
-            "Available",
-            "Margin used",
-            "Margin buffer",
+            tr!("Balance"),
+            tr!("Realized P&L"),
+            tr!("Available"),
+            tr!("Margin used"),
+            tr!("Margin buffer"),
         ]
         .into_iter()
         .map(|title| MetricCell {
@@ -72,43 +73,43 @@ pub fn metric_cells(
     let money = |value| fmt::money(value, currency);
     vec![
         MetricCell {
-            title: "Balance",
+            title: tr!("Balance"),
             value: money(metrics.balance),
             tone: None,
             buffer: None,
-            help: "Balance".to_owned(),
+            help: tr!("Balance").to_owned(),
         },
         MetricCell {
-            title: "Realized P&L",
+            title: tr!("Realized P&L"),
             value: fmt::signed_money(metrics.realized_pnl, currency),
             tone: Some(pnl_tone(metrics.realized_pnl)),
             buffer: None,
-            help: "Realized P&L".to_owned(),
+            help: tr!("Realized P&L").to_owned(),
         },
         MetricCell {
-            title: "Available",
+            title: tr!("Available"),
             value: money(metrics.available_funds),
             tone: None,
             buffer: None,
-            help: "Available".to_owned(),
+            help: tr!("Available").to_owned(),
         },
         MetricCell {
-            title: "Margin used",
+            title: tr!("Margin used"),
             value: money(metrics.position_margin + metrics.orders_margin),
             tone: None,
             buffer: None,
-            help: format!(
-                "Positions {} · Orders {}",
-                money(metrics.position_margin),
-                money(metrics.orders_margin)
+            help: tr!(
+                "Positions {positions} · Orders {orders}",
+                positions = money(metrics.position_margin),
+                orders = money(metrics.orders_margin)
             ),
         },
         MetricCell {
-            title: "Margin buffer",
+            title: tr!("Margin buffer"),
             value: fmt::percent(metrics.margin_buffer),
             tone: None,
             buffer: Some(margin_buffer_level(metrics.margin_buffer)),
-            help: "Available funds as a share of equity".to_owned(),
+            help: tr!("Available funds as a share of equity").to_owned(),
         },
     ]
 }
@@ -135,12 +136,12 @@ pub fn stats(metrics: Option<&PaperAccountMetrics>, currency: PaperCurrency) -> 
             trend,
             text: unrealized_text(m, currency),
             tone: stat_tone(pnl_tone(m.unrealized_pnl)),
-            label: "open".to_owned(),
+            label: tr!("open").to_owned(),
         }
     });
     AccountStats {
         hero: Hero {
-            title: "Equity".to_owned(),
+            title: tr!("Equity").to_owned(),
             value: metrics.map_or_else(|| "—".to_owned(), |m| fmt::money(m.equity, currency)),
             help: None,
             note,
@@ -293,5 +294,17 @@ mod tests {
                 .iter()
                 .all(|c| c.value == "—" && c.tone.is_none() && c.buffer.is_none())
         );
+    }
+
+    #[test]
+    fn the_strip_is_worded_in_the_language() {
+        use crate::i18n::{Locale, with_locale};
+        let english = metric_cells(None, PaperCurrency::Usd);
+        let pseudo = with_locale(Locale::PSEUDO, || metric_cells(None, PaperCurrency::Usd));
+        assert_eq!(english.len(), pseudo.len());
+        for (plain, shown) in english.iter().zip(&pseudo) {
+            assert_ne!(plain.title, shown.title);
+            assert_eq!(plain.value, shown.value);
+        }
     }
 }

@@ -13,6 +13,7 @@ use super::{
     Choice, FieldKind, FieldSpec, Link, Logo, ProviderDescriptor, Purpose, Request, Secrets,
     SnapshotProvider, common_failure,
 };
+use crate::i18n::tr;
 use crate::model::chart::snapshot::{FieldValues, SharedSnapshot, UploadError, checked_link};
 use crate::model::webhook::policy::url_encode;
 use crate::service::net::multipart::Form;
@@ -89,8 +90,9 @@ fn logo() -> egui::ImageSource<'static> {
 
 fn key_problem(text: &str) -> Option<&'static str> {
     let text = text.trim();
-    (text.chars().count() > MAX_KEY_CHARS || !text.chars().all(|c| c.is_ascii_graphic()))
-        .then_some("An API key has no spaces and is at most 128 plain characters.")
+    (text.chars().count() > MAX_KEY_CHARS || !text.chars().all(|c| c.is_ascii_graphic())).then_some(
+        tr!("An API key has no spaces and is at most 128 plain characters."),
+    )
 }
 
 static DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
@@ -228,8 +230,8 @@ impl SnapshotProvider for ImgBb {
             .field(EXPIRY)
             .and_then(|field| field.choice(settings.get(EXPIRY).map(String::as_str)));
         match choice {
-            Some(choice) if choice.value == "never" => "Keeps images for ever".to_owned(),
-            Some(choice) => format!("Keeps images for {}", choice.label),
+            Some(choice) if choice.value == "never" => tr!("Keeps images for ever").to_owned(),
+            Some(choice) => tr!("Keeps images for {duration}", duration = choice.label),
             None => DESCRIPTOR.summary.to_owned(),
         }
     }

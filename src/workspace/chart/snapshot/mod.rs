@@ -8,7 +8,7 @@
 //! window's to drive, so they run here, when the outcome arrives, and a message only says what
 //! has happened.
 
-use crate::host::snapshot::{Hosting, SnapshotHost, TURN_ON_A_HOST};
+use crate::host::snapshot::{Hosting, SnapshotHost, turn_on_a_host};
 use crate::model::chart::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
 use crate::service::snapshot::job::{self, Outcome, Retry, SystemBackend};
 use crate::service::snapshot::providers::Destination;
@@ -153,7 +153,7 @@ impl ChartWorkspace {
     /// What the camera menu needs to know about hosting.
     pub(in crate::workspace) fn snapshot_hosting(&self) -> Hosting {
         self.snapshots.as_ref().map_or_else(
-            || Hosting::Unavailable(TURN_ON_A_HOST.to_owned()),
+            || Hosting::Unavailable(turn_on_a_host().to_owned()),
             SnapshotHost::hosting,
         )
     }

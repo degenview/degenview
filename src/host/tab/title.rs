@@ -2,6 +2,7 @@
 //! window and Settings, written to the `setting` table on every change. The choice is local to
 //! the Mac, like the tabs themselves.
 
+use crate::i18n::tr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -61,7 +62,12 @@ impl TabTitleHost {
         let write = |store: &Store| {
             store
                 .set_setting(TabTitleStyle::KEY, &style)
-                .map_err(|error| format!("Could not save the tab title setting: {error}"))
+                .map_err(|error| {
+                    tr!(
+                        "Could not save the tab title setting: {error}",
+                        error = error
+                    )
+                })
         };
         if let Some(store) = held {
             return write(store);
@@ -71,7 +77,7 @@ impl TabTitleHost {
         };
         let store = shared
             .lock()
-            .map_err(|_| "The settings database is unavailable.".to_owned())?;
+            .map_err(|_| tr!("The settings database is unavailable.").to_owned())?;
         write(&store)
     }
 }

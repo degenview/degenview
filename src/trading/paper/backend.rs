@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use degenview_brokers::{Decimal, MarketRef, Side};
 
 use crate::host::paper::PaperHost;
+use crate::i18n::{tr, tr_c};
 use crate::lock::lock;
 use crate::model::DataSource;
 use crate::model::broker::ticket::display;
@@ -78,24 +79,24 @@ fn side(side: PaperOrderSide) -> Side {
 
 fn status(status: PaperOrderStatus) -> RowStatus {
     let (label, tone) = match status {
-        PaperOrderStatus::PendingSubmission => ("Pending", Tone::Neutral),
-        PaperOrderStatus::Working => ("Open", Tone::Good),
-        PaperOrderStatus::PartiallyFilled => ("Partly filled", Tone::Good),
-        PaperOrderStatus::Filled => ("Filled", Tone::Good),
-        PaperOrderStatus::PendingCancel => ("Cancelling", Tone::Warning),
-        PaperOrderStatus::Canceled => ("Cancelled", Tone::Neutral),
-        PaperOrderStatus::Rejected => ("Rejected", Tone::Bad),
-        PaperOrderStatus::Expired => ("Expired", Tone::Neutral),
+        PaperOrderStatus::PendingSubmission => (tr_c!("order status", "Pending"), Tone::Neutral),
+        PaperOrderStatus::Working => (tr_c!("order status", "Open"), Tone::Good),
+        PaperOrderStatus::PartiallyFilled => (tr_c!("order status", "Partly filled"), Tone::Good),
+        PaperOrderStatus::Filled => (tr_c!("order status", "Filled"), Tone::Good),
+        PaperOrderStatus::PendingCancel => (tr_c!("order status", "Cancelling"), Tone::Warning),
+        PaperOrderStatus::Canceled => (tr_c!("order status", "Cancelled"), Tone::Neutral),
+        PaperOrderStatus::Rejected => (tr_c!("order status", "Rejected"), Tone::Bad),
+        PaperOrderStatus::Expired => (tr_c!("order status", "Expired"), Tone::Neutral),
     };
     RowStatus { label, tone }
 }
 
 fn kind_label(kind: PaperOrderType) -> &'static str {
     match kind {
-        PaperOrderType::Market => "Market",
-        PaperOrderType::Limit => "Limit",
-        PaperOrderType::Stop => "Stop",
-        PaperOrderType::StopLimit => "Stop-limit",
+        PaperOrderType::Market => tr_c!("order type", "Market"),
+        PaperOrderType::Limit => tr_c!("order type", "Limit"),
+        PaperOrderType::Stop => tr_c!("order type", "Stop"),
+        PaperOrderType::StopLimit => tr_c!("order type", "Stop-limit"),
     }
 }
 
@@ -143,11 +144,11 @@ fn instrument(market: &MarketRef) -> Result<PaperInstrument, Unavailable> {
         text: text.to_owned(),
     };
     let source = DataSource::from_watchlist_slug(&market.source)
-        .ok_or_else(|| not_here("Paper trading has no price for this chart."))?;
+        .ok_or_else(|| not_here(tr!("Paper trading has no price for this chart.")))?;
     if source == DataSource::CoinMarketCap {
-        return Err(not_here(
-            "CoinMarketCap charts have no tradable price, so paper trading skips them.",
-        ));
+        return Err(not_here(tr!(
+            "CoinMarketCap charts have no tradable price, so paper trading skips them."
+        )));
     }
     Ok(PaperInstrument::chart(
         market.symbol.clone(),
@@ -220,17 +221,21 @@ fn field_of(field: TicketField) -> DraftField {
     }
 }
 
-const NO_ACCOUNT: &str = "There is no paper account yet.";
-const ACCOUNT_CHANGED: &str =
-    "The account changed since the order was set up. Nothing was sent. Check the order again.";
+fn no_account() -> &'static str {
+    tr!("There is no paper account yet.")
+}
+
+fn account_changed() -> &'static str {
+    tr!("The account changed since the order was set up. Nothing was sent. Check the order again.")
+}
 
 impl TradingBackend for PaperBackend {
     fn info(&self) -> VenueInfo {
         VenueInfo {
             venue: TradingVenue::Paper,
-            name: "Paper trading".to_owned(),
+            name: tr!("Paper trading").to_owned(),
             kind: VenueKind::Simulated,
-            summary: "Practice with pretend money. Nothing leaves this computer.".to_owned(),
+            summary: tr!("Practice with pretend money. Nothing leaves this computer.").to_owned(),
             needs_no_credentials: true,
         }
     }
@@ -239,7 +244,8 @@ impl TradingBackend for PaperBackend {
         let host = self.host();
         if host.load_failed() {
             return BackendState::NeedsAttention(
-                "The paper account could not be read from this computer's database.".to_owned(),
+                tr!("The paper account could not be read from this computer's database.")
+                    .to_owned(),
             );
         }
         if host.snapshot().accounts.is_empty() {
@@ -299,7 +305,7 @@ impl TradingBackend for PaperBackend {
         if self.state() != BackendState::Ready {
             return MarketAccess::Unavailable(Unavailable {
                 kind: UnavailableKind::Waiting,
-                text: "There is no paper account yet.".to_owned(),
+                text: no_account().to_owned(),
             });
         }
         MarketAccess::Ready(Box::new(MarketRules {
@@ -368,7 +374,7 @@ impl TradingBackend for PaperBackend {
         let host = self.host();
         let Some((ticket, _)) = paper_ticket(&host, market, draft) else {
             return DraftCheck {
-                issues: vec![DraftIssue::new(DraftField::Order, NO_ACCOUNT)],
+                issues: vec![DraftIssue::new(DraftField::Order, no_account())],
                 missing,
                 estimate: Estimate::default(),
             };
@@ -383,10 +389,10 @@ impl TradingBackend for PaperBackend {
         if let (Some(short), true) = (ticket.shortfall(), ticket.quantity().is_some()) {
             issues.push(DraftIssue::new(
                 DraftField::Size,
-                format!(
-                    "This needs {} more than the {} free.",
-                    display(dec(short)),
-                    display(dec(ticket.available_funds.unwrap_or_default()))
+                tr!(
+                    "This needs {short} more than the {free} free.",
+                    short = display(dec(short)),
+                    free = display(dec(ticket.available_funds.unwrap_or_default()))
                 ),
             ));
         }
@@ -440,13 +446,13 @@ impl TradingBackend for PaperBackend {
     ) -> Task<Result<PreviewResult, String>> {
         let host = self.host();
         let Some((ticket, account)) = paper_ticket(&host, market, draft) else {
-            return Task::ready(Err(NO_ACCOUNT.to_owned()));
+            return Task::ready(Err(no_account().to_owned()));
         };
         if binding.account != account.to_string() {
-            return Task::ready(Err(ACCOUNT_CHANGED.to_owned()));
+            return Task::ready(Err(account_changed().to_owned()));
         }
         let Some(request) = ticket.request(account) else {
-            return Task::ready(Err("The order is not complete.".to_owned()));
+            return Task::ready(Err(tr!("The order is not complete.").to_owned()));
         };
         // The engine decides on a throwaway copy: nothing is saved or recorded.
         let answer = match host.check_order(request) {
@@ -475,14 +481,14 @@ impl TradingBackend for PaperBackend {
     ) -> Task<SubmitResult> {
         let mut host = self.host();
         let Some((ticket, account)) = paper_ticket(&host, market, draft) else {
-            return Task::ready(Err(NO_ACCOUNT.to_owned()));
+            return Task::ready(Err(no_account().to_owned()));
         };
         // Another paper account was chosen since the order was reviewed: not sent to that one.
         if binding.account != account.to_string() {
-            return Task::ready(Err(ACCOUNT_CHANGED.to_owned()));
+            return Task::ready(Err(account_changed().to_owned()));
         }
         let Some(request) = ticket.request(account) else {
-            return Task::ready(Err("The order is not complete.".to_owned()));
+            return Task::ready(Err(tr!("The order is not complete.").to_owned()));
         };
         Task::ready(
             host.submit(request)
@@ -493,7 +499,7 @@ impl TradingBackend for PaperBackend {
 
     fn cancel(&self, order_id: &str) -> Task<CancelResult> {
         let Ok(id) = order_id.parse::<u64>() else {
-            return Task::ready(Err("That is not a paper order.".to_owned()));
+            return Task::ready(Err(tr!("That is not a paper order.").to_owned()));
         };
         Task::ready(self.host().cancel(id).map_err(|error| error.to_string()))
     }
