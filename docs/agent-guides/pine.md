@@ -455,10 +455,14 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     `Result` and are opt-in by name (`total::NAMES`; `runtime.error`, `ta.pivot_point_levels`, `time`
     and `time_close` raise). A test makes every name of those families be in `NAMES` or `REFUSED`, so a
     new builtin must be decided; anything unknown, `array.*`, `str.*`, `request.*`, a method or a draw
-    is not total. A user function is total when its body only computes with total calls and
-    declarations of its own. A loop is total only when its bounds and step are numeric literals and the
-    step is not zero (a zero step raises, a bound the data sets can pass the per-bar budget, PINE8004);
-    no `while`, `for … in`, field assignment, method or field read, or assignment to a global. A
+    is not total. A user function is total when its body, and the defaults of its parameters (every
+    call that leaves one out evaluates it), only compute with total calls and declarations of its own.
+    A loop is total only when its bounds and step are numeric literals and the step is not zero (a zero
+    step raises); no `while`, `for … in`, field assignment, method or field read, or assignment to a
+    global. A moved call adds its cost to every bar, and a bar has a budget the guard may be keeping the
+    script under (PINE8004, 20 million instructions): a function that costs more than `RUN_AHEAD_WORK`
+    (100k statements run and loop passes, its callees' loops included) stays where it is, however its
+    loops are written, and a script close to the budget can still be pushed over it by what does move. A
     history only at a literal non-negative offset (`close[lag]` raises PINE4006 for a negative `lag` a
     guard may keep out). A call that reads a name its statement declares stays.
   - Nothing moves out of a loop inside an arm or a `while` condition.
@@ -469,11 +473,13 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     A variable the request reads is replayed by its slice, hoisted call included.
   - `SYNTHETIC` (`syntax::ast`) starts the name; `Statement::is_synthetic` makes the debugger's
     `hook_before`/`hook_after` skip it and `SourceMap`/`RegionTable` leave it out, so the debugger shows
-    no such variable or stop. The profiler times it as the statement it came from, written in the open
-    region (`RegionTable::statement_around`, `ProfileRuntime::enter_run_ahead`), without counting an
-    execution; a function is named to the profiler by its declaration (`RuntimeFunction::declared_at`),
-    never by its first body statement, which may be a synthetic one. Its range starts at the call,
-    unique among declarations in `syntax::scopes`.
+    no such variable or stop (nor a stop where it fails: `hook_failed` skips it too). The profiler times
+    it as the statement it came from, written in the open region (`RegionTable::statement_around`,
+    `ProfileRuntime::enter_run_ahead`), without counting an execution; its time goes into the
+    statement's next execution, so Slowest is never below the average. A function is named to the
+    profiler by its declaration (`RuntimeFunction::declared_at`), never by its first body statement,
+    which may be a synthetic one. Its range starts at the call, unique among declarations in
+    `syntax::scopes`.
   - A hoist inside a block runs when the block does, so the history carries over the bars it did not run
     (not measured on TradingView).
   - Not part of the hoist, and still different from Pine: `nz(a, ta.sma(…))` evaluates its second
