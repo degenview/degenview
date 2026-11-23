@@ -5,6 +5,7 @@
 //! host therefore persists and publishes every candidate engine state, including a domain-error
 //! result, while still refusing all writes after an initial load failure.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::paper::engine::PaperTradingEngine;
 use crate::model::paper::prefs::{KEY as PREFS_KEY, PaperPrefs};
 use crate::model::paper::{
@@ -78,7 +79,12 @@ fn check_integrity(snapshot: &PaperTradingSnapshot) -> Result<(), PaperHostError
     match issues.first() {
         None => Ok(()),
         Some(first) => Err(PaperHostError::Integrity(if issues.len() > 1 {
-            format!("{first} (and {} more)", issues.len() - 1)
+            tr_n!(
+                issues.len() - 1,
+                "{first} (and {count} more)",
+                "{first} (and {count} more)",
+                first = first
+            )
         } else {
             first.clone()
         })),
@@ -600,13 +606,14 @@ impl PaperHost {
 /// What a mirrored account says about itself, in one quiet line.
 pub fn owner_text(elsewhere: &Elsewhere) -> String {
     if elsewhere.paused {
-        "Paused: two Macs changed this account. Placing an order here takes it over.".to_owned()
+        tr!("Paused: two Macs changed this account. Placing an order here takes it over.")
+            .to_owned()
     } else if elsewhere.name.is_empty() {
-        "Running on another Mac. Placing an order here takes it over.".to_owned()
+        tr!("Running on another Mac. Placing an order here takes it over.").to_owned()
     } else {
-        format!(
-            "Running on {}. Placing an order here takes it over.",
-            elsewhere.name
+        tr!(
+            "Running on {name}. Placing an order here takes it over.",
+            name = elsewhere.name
         )
     }
 }

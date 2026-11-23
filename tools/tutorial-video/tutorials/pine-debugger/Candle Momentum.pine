@@ -1,0 +1,20 @@
+//@version=6
+indicator("Candle Momentum", overlay = false)
+
+length = input.int(5, "Length", minval = 2)
+
+// Average candle body over the last `n` bars.
+avgBody(n) =>
+    total = 0.0
+    for i = 0 to n - 1
+        total += nz(math.abs(close[i] - open[i]))
+    total / n
+
+var int bullish = 0
+body = avgBody(length)
+if close > open
+    bullish += 1
+momentum = body > 0 ? (close - open) / body : 0.0
+
+plot(momentum, "Momentum", color.aqua)
+plot(bullish, "Bullish bars", color.orange)

@@ -53,6 +53,36 @@ impl Screen {
         output
     }
 
+    /// The text `output` (a frame this screen ran) shows cut short with an ellipsis, in full: a label
+    /// that did not fit its room. A text that has an ellipsis of its own ("Drawing the image…")
+    /// does not count; only an ellipsis the layout added does. A page drawn in the pseudo-locale,
+    /// which is 40% longer than English, must report none.
+    pub(crate) fn truncated_text(output: &egui::FullOutput) -> Vec<String> {
+        let ellipses = |text: &str| text.matches('…').count();
+        painted_texts(output)
+            .into_iter()
+            .filter(|text| {
+                let shown: String = text
+                    .galley
+                    .rows
+                    .iter()
+                    .flat_map(|row| row.glyphs.iter().map(|glyph| glyph.chr))
+                    .collect();
+                ellipses(&shown) > ellipses(text.galley.text())
+            })
+            .map(|text| text.galley.text().to_owned())
+            .collect()
+    }
+
+    /// Every text `output` (a frame this screen ran) paints, as written in the source: the words of
+    /// a screen, for the tests that check a page is drawn in the language they run in.
+    pub(crate) fn words(output: &egui::FullOutput) -> Vec<String> {
+        painted_texts(output)
+            .into_iter()
+            .map(|text| text.galley.text().to_owned())
+            .collect()
+    }
+
     /// Writes `output` (a frame this screen ran) as `name`.png in the gallery folder.
     pub(crate) fn save(&mut self, name: &str, output: egui::FullOutput) {
         let Some(dir) = gallery_dir() else {
@@ -70,6 +100,23 @@ impl Screen {
         let png = export::encode_png(&image).expect("encoded");
         std::fs::write(dir.join(format!("{name}.png")), png).expect("written");
     }
+}
+
+/// Every text shape of a frame, grouped shapes opened: the one walk `Screen::words` and
+/// `Screen::truncated_text` share.
+fn painted_texts(output: &egui::FullOutput) -> Vec<&egui::epaint::TextShape> {
+    fn visit<'a>(shape: &'a egui::epaint::Shape, found: &mut Vec<&'a egui::epaint::TextShape>) {
+        match shape {
+            egui::epaint::Shape::Vec(shapes) => shapes.iter().for_each(|shape| visit(shape, found)),
+            egui::epaint::Shape::Text(text) => found.push(text),
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for clipped in &output.shapes {
+        visit(&clipped.shape, &mut found);
+    }
+    found
 }
 
 impl Drop for Screen {

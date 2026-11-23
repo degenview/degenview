@@ -1,5 +1,6 @@
 //! Settings ▸ Appearance: the app theme, picked from small previews of a window in each theme.
 
+use crate::i18n::{Locale, Preference, tr};
 use crate::model::tab::title::TabTitleStyle;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
@@ -13,32 +14,38 @@ const TAB_PREVIEW_HEIGHT: f32 = 64.0;
 const TILE_GAP: f32 = 12.0;
 /// Each tile keeps this width however wide the window is; extra room stays empty on the right.
 const TILE_WIDTH: f32 = 170.0;
+/// The space between a tile's edge and its picture, and between its picture and its name.
+const TILE_PADDING: f32 = 10.0;
+/// One line of a tile's name: the icon and the round mark are centred on it.
+const LABEL_LINE: f32 = 18.0;
+/// What the round mark at the right end of a name, and the icon at the left, take of its width.
+const MARK_ROOM: f32 = 22.0;
+const ICON_ROOM: f32 = 20.0;
 
 /// The theme tiles. Returns the theme picked this frame.
 pub fn body(ui: &mut egui::Ui, current: AppTheme) -> Option<AppTheme> {
     let mut picked = None;
     super::window::section(
         ui,
-        "Theme",
-        Some(&format!(
-            "System follows your {}'s light or dark setting.",
-            crate::platform::computer()
+        tr!("Theme"),
+        Some(&tr!(
+            "System follows your {computer}'s light or dark setting.",
+            computer = crate::platform::computer()
         )),
         |ui| {
-            let width = TILE_WIDTH * 3.0 + TILE_GAP * 2.0;
-            let (row, _) = ui.allocate_exact_size(
-                Vec2::new(width, 10.0 + PREVIEW_HEIGHT + 10.0 + 18.0 + 10.0),
-                Sense::hover(),
-            );
+            let labels: Vec<TileLabel> = AppTheme::ALL
+                .into_iter()
+                .map(|theme| TileLabel::new(ui, theme.title(), Some(icon(theme))))
+                .collect();
+            let row = allocate_tile_row(ui, PREVIEW_HEIGHT, &labels);
             for (index, theme) in AppTheme::ALL.into_iter().enumerate() {
-                let rect = Rect::from_min_size(
-                    pos2(
-                        row.left() + index as f32 * (TILE_WIDTH + TILE_GAP),
-                        row.top(),
-                    ),
-                    Vec2::new(TILE_WIDTH, row.height()),
-                );
-                if tile(ui, rect, theme, theme == current) {
+                if tile(
+                    ui,
+                    tile_rect(row, index),
+                    theme,
+                    &labels[index],
+                    theme == current,
+                ) {
                     picked = Some(theme);
                 }
             }
@@ -55,32 +62,24 @@ pub fn tabs(ui: &mut egui::Ui, current: TabTitleStyle) -> Option<TabTitleStyle> 
     let mut picked = None;
     super::window::section(
         ui,
-        "Tabs",
-        Some(
-            "What a chart tab shows. The layout name and the price follow the tab's focused chart.",
-        ),
+        tr!("Tabs"),
+        Some(tr!(
+            "What a chart tab shows. The layout name and the price follow the tab's focused chart."
+        )),
         |ui| {
-            let width = TILE_WIDTH * 3.0 + TILE_GAP * 2.0;
-            let (row, _) = ui.allocate_exact_size(
-                Vec2::new(width, 10.0 + TAB_PREVIEW_HEIGHT + 10.0 + 18.0 + 10.0),
-                Sense::hover(),
-            );
-            for (index, style) in [
+            let styles = [
                 TabTitleStyle::Full,
                 TabTitleStyle::SymbolOnly,
                 TabTitleStyle::LayoutOnly,
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                let rect = Rect::from_min_size(
-                    pos2(
-                        row.left() + index as f32 * (TILE_WIDTH + TILE_GAP),
-                        row.top(),
-                    ),
-                    Vec2::new(TILE_WIDTH, row.height()),
-                );
-                if tab_tile(ui, rect, style, style == current) {
+            ];
+            let labels: Vec<TileLabel> = styles
+                .into_iter()
+                .map(|style| TileLabel::new(ui, style.label(), None))
+                .collect();
+            let row = allocate_tile_row(ui, TAB_PREVIEW_HEIGHT, &labels);
+            for (index, style) in styles.into_iter().enumerate() {
+                let rect = tile_rect(row, index);
+                if tab_tile(ui, rect, style, &labels[index], style == current) {
                     picked = Some(style);
                 }
             }
@@ -88,7 +87,7 @@ pub fn tabs(ui: &mut egui::Ui, current: TabTitleStyle) -> Option<TabTitleStyle> 
                 ui.add_space(10.0);
                 let restore = ui.add(
                     egui::Label::new(
-                        egui::RichText::new("Restore default")
+                        egui::RichText::new(tr!("Restore default"))
                             .size(kit::size::SUBHEADLINE + 1.0)
                             .underline()
                             .color(theme::text_secondary()),
@@ -107,44 +106,95 @@ pub fn tabs(ui: &mut egui::Ui, current: TabTitleStyle) -> Option<TabTitleStyle> 
     picked.filter(|style| *style != current)
 }
 
-/// The words a tab shows in `style`, as they read on a strip: the price is the app's addition.
-fn tab_sample(style: TabTitleStyle) -> &'static str {
-    match style {
-        TabTitleStyle::Full => "BTC-USD 73,986 / Default",
-        TabTitleStyle::SymbolOnly => "BTC-USD",
-        TabTitleStyle::LayoutOnly => "Default",
+/// Width of the language pull-down: the longest language name and its chevrons.
+const LANGUAGE_PICKER_WIDTH: f32 = 220.0;
+
+/// The language card: "Same as the system" and each language by its own name. Draws nothing
+/// while there is only one language to pick. Returns the choice made this frame.
+pub fn language(ui: &mut egui::Ui, current: Preference) -> Option<Preference> {
+    let languages = Locale::selectable();
+    if languages.len() < 2 {
+        return None;
     }
+    ui.add_space(22.0);
+    let choices: Vec<Preference> = std::iter::once(Preference::System)
+        .chain(languages.into_iter().map(Preference::Fixed))
+        .collect();
+    let name = |choice: &Preference| match choice {
+        Preference::System => tr!("Same as the system").to_owned(),
+        Preference::Fixed(locale) => locale.native_name().to_owned(),
+    };
+    let labels: Vec<String> = choices.iter().map(name).collect();
+    let selected = choices
+        .iter()
+        .position(|choice| *choice == current)
+        .unwrap_or(usize::MAX);
+    let mut picked = None;
+    super::window::section(ui, tr!("Language"), None, |ui| {
+        super::card::card_reserving(
+            ui,
+            Icon::Globe,
+            tr!("Interface language"),
+            Some(tr!(
+                "The language of menus, labels and messages. Market names, prices and Pine scripts stay as they are."
+            )),
+            LANGUAGE_PICKER_WIDTH,
+            |ui| {
+                // A saved language this build does not offer (a copied database) is still named.
+                let hint = name(&current);
+                if let Some(index) = kit::menu_picker_hinted(
+                    ui,
+                    LANGUAGE_PICKER_WIDTH,
+                    &labels,
+                    selected,
+                    true,
+                    &hint,
+                ) {
+                    picked = Some(choices[index]);
+                }
+            },
+        );
+    });
+    picked.filter(|choice| *choice != current)
 }
 
-fn tab_label(style: TabTitleStyle) -> &'static str {
+/// The name of the example layout in the miniature tabs. A layout's name is the person's own, not
+/// interface text, so it is not translated.
+const SAMPLE_LAYOUT: &str = "Default";
+
+/// The words a tab shows in `style`, as they read on a strip: the price is the app's addition.
+fn tab_sample(style: TabTitleStyle) -> String {
     match style {
-        TabTitleStyle::Full => "Symbol, price and layout",
-        TabTitleStyle::SymbolOnly => "Symbol only",
-        TabTitleStyle::LayoutOnly => "Layout name only",
+        TabTitleStyle::Full => format!("BTC-USD 73,986 / {SAMPLE_LAYOUT}"),
+        TabTitleStyle::SymbolOnly => "BTC-USD".to_owned(),
+        TabTitleStyle::LayoutOnly => SAMPLE_LAYOUT.to_owned(),
     }
 }
 
 /// One tab title style: a miniature tab strip with the title as it would read, and its name.
-fn tab_tile(ui: &mut egui::Ui, rect: Rect, style: TabTitleStyle, selected: bool) -> bool {
+fn tab_tile(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    style: TabTitleStyle,
+    label: &TileLabel,
+    selected: bool,
+) -> bool {
     let response = ui
         .interact(
             rect,
-            egui::Id::new(("appearance-tab-title", tab_label(style))),
+            egui::Id::new(("appearance-tab-title", std::mem::discriminant(&style))),
             Sense::click(),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let response = crate::ui::accessibility::label_as(
         response,
         egui::WidgetType::RadioButton,
-        format!("{} tab title", tab_label(style)),
+        tr!("{style} tab title", style = style.label()),
     );
     let painter = ui.painter();
     paint_tile_frame(painter, rect, selected, response.hovered());
 
-    let preview = Rect::from_min_size(
-        rect.min + Vec2::splat(10.0),
-        Vec2::new(rect.width() - 20.0, TAB_PREVIEW_HEIGHT),
-    );
+    let preview = tile_preview(rect, TAB_PREVIEW_HEIGHT);
     painter.rect_filled(preview, 8.0, theme::background());
     // The strip, and the open tab in it.
     let strip = Rect::from_min_size(preview.min, Vec2::new(preview.width(), 26.0));
@@ -158,13 +208,15 @@ fn tab_tile(ui: &mut egui::Ui, rect: Rect, style: TabTitleStyle, selected: bool)
         },
         theme::ink(8),
     );
-    let text = kit::galley(
+    // The tab holds a dot (10 + 6 either side) and 12 at its right end inside the strip's margins.
+    let room = strip.width() - 12.0 - (10.0 + 6.0 + 12.0);
+    let text = kit::galley_fitted(
         ui,
-        tab_sample(style),
+        &tab_sample(style),
         9.5,
         kit::MEDIUM,
         theme::text_primary(),
-        preview.width() - 36.0,
+        room,
     );
     let tab = Rect::from_min_size(
         strip.min + Vec2::new(6.0, 4.0),
@@ -199,13 +251,7 @@ fn tab_tile(ui: &mut egui::Ui, rect: Rect, style: TabTitleStyle, selected: bool)
         StrokeKind::Inside,
     );
 
-    paint_tile_label(
-        ui,
-        preview,
-        tab_label(style),
-        selected,
-        preview.bottom() + 10.0 + 9.0,
-    );
+    paint_tile_label(painter, preview, label, selected);
     response.clicked()
 }
 
@@ -231,29 +277,99 @@ fn paint_tile_frame(painter: &egui::Painter, rect: Rect, selected: bool, hovered
     );
 }
 
-/// The name under a tile's picture, with the round mark at its right end that says which is chosen.
-fn paint_tile_label(ui: &egui::Ui, preview: Rect, label: &str, selected: bool, y: f32) {
-    let painter = ui.painter();
-    let title = kit::galley(
-        ui,
-        label,
-        kit::size::SUBHEADLINE,
-        kit::SEMIBOLD,
-        theme::text_primary(),
-        preview.width() - 24.0,
-    );
+/// The name under a tile's picture: its words, wrapped at the room the tile has and never cut (a
+/// longer language or the pseudo-locale takes more lines, and the row grows to fit them), and the
+/// icon that goes with it, if any.
+struct TileLabel {
+    name: std::sync::Arc<egui::Galley>,
+    icon: Option<Icon>,
+}
+
+impl TileLabel {
+    fn new(ui: &egui::Ui, text: &str, icon: Option<Icon>) -> Self {
+        let room = TILE_WIDTH - 2.0 * TILE_PADDING - MARK_ROOM - icon.map_or(0.0, |_| ICON_ROOM);
+        Self {
+            name: kit::paragraph(
+                ui,
+                text,
+                kit::size::SUBHEADLINE,
+                kit::SEMIBOLD,
+                theme::text_primary(),
+                room,
+            ),
+            icon,
+        }
+    }
+
+    fn height(&self) -> f32 {
+        self.name.size().y.max(LABEL_LINE)
+    }
+}
+
+/// A row of three tiles tall enough for the tallest name, which the caller lays them out in with
+/// [`tile_rect`].
+fn allocate_tile_row(ui: &mut egui::Ui, preview_height: f32, labels: &[TileLabel]) -> Rect {
+    let name_height = labels
+        .iter()
+        .map(TileLabel::height)
+        .fold(LABEL_LINE, f32::max);
+    let width = TILE_WIDTH * 3.0 + TILE_GAP * 2.0;
+    let height = TILE_PADDING + preview_height + TILE_PADDING + name_height + TILE_PADDING;
+    ui.allocate_exact_size(Vec2::new(width, height), Sense::hover())
+        .0
+}
+
+/// The `index`th tile of a row from [`allocate_tile_row`].
+fn tile_rect(row: Rect, index: usize) -> Rect {
+    Rect::from_min_size(
+        pos2(
+            row.left() + index as f32 * (TILE_WIDTH + TILE_GAP),
+            row.top(),
+        ),
+        Vec2::new(TILE_WIDTH, row.height()),
+    )
+}
+
+/// The picture inside a tile, `height` tall.
+fn tile_preview(tile: Rect, height: f32) -> Rect {
+    Rect::from_min_size(
+        tile.min + Vec2::splat(TILE_PADDING),
+        Vec2::new(tile.width() - 2.0 * TILE_PADDING, height),
+    )
+}
+
+/// The name under a tile's picture, with its icon at the left and, at the right end of its first
+/// line, the round mark that says which tile is chosen.
+fn paint_tile_label(painter: &egui::Painter, preview: Rect, label: &TileLabel, selected: bool) {
+    let middle = preview.bottom() + TILE_PADDING + LABEL_LINE / 2.0;
+    let mut left = preview.left() + 2.0;
+    if let Some(icon) = label.icon {
+        let tint = if selected {
+            theme::text_primary()
+        } else {
+            theme::text_secondary()
+        };
+        icons::paint(
+            painter,
+            Rect::from_center_size(pos2(preview.left() + 7.0, middle), Vec2::splat(13.0)),
+            icon,
+            tint,
+        );
+        left = preview.left() + ICON_ROOM;
+    }
+    let line = label.name.size().y / label.name.rows.len().max(1) as f32;
     painter.galley(
-        pos2(preview.left() + 2.0, y - title.size().y / 2.0),
-        title,
+        pos2(left, middle - line / 2.0),
+        label.name.clone(),
         Color32::PLACEHOLDER,
     );
-    let check = Rect::from_center_size(pos2(preview.right() - 7.0, y), Vec2::splat(14.0));
+    let mark = Rect::from_center_size(pos2(preview.right() - 7.0, middle), Vec2::splat(14.0));
     if selected {
-        icons::paint(painter, check, Icon::CheckCircleFill, theme::text_primary());
+        icons::paint(painter, mark, Icon::CheckCircleFill, theme::text_primary());
     } else {
         icons::paint(
             painter,
-            check,
+            mark,
             Icon::Circle,
             theme::text_secondary().gamma_multiply(0.6),
         );
@@ -269,26 +385,23 @@ fn icon(theme: AppTheme) -> Icon {
 }
 
 /// One theme as a miniature window in that theme (System shows both halves), with its name.
-fn tile(ui: &mut egui::Ui, rect: Rect, theme: AppTheme, selected: bool) -> bool {
+fn tile(ui: &mut egui::Ui, rect: Rect, theme: AppTheme, label: &TileLabel, selected: bool) -> bool {
     let response = ui
         .interact(
             rect,
-            egui::Id::new(("appearance-theme", theme.title())),
+            egui::Id::new(("appearance-theme", std::mem::discriminant(&theme))),
             Sense::click(),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let response = crate::ui::accessibility::label_as(
         response,
         egui::WidgetType::RadioButton,
-        format!("{} theme", theme.title()),
+        tr!("{theme} theme", theme = theme.title()),
     );
     let painter = ui.painter();
     paint_tile_frame(painter, rect, selected, response.hovered());
 
-    let preview = Rect::from_min_size(
-        rect.min + Vec2::splat(10.0),
-        Vec2::new(rect.width() - 20.0, PREVIEW_HEIGHT),
-    );
+    let preview = tile_preview(rect, PREVIEW_HEIGHT);
     match theme {
         AppTheme::Light => mini_window(painter, preview, false, CornerRadius::same(8)),
         AppTheme::Dark => mini_window(painter, preview, true, CornerRadius::same(8)),
@@ -305,42 +418,7 @@ fn tile(ui: &mut egui::Ui, rect: Rect, theme: AppTheme, selected: bool) -> bool 
         StrokeKind::Inside,
     );
 
-    let label_y = preview.bottom() + 10.0 + 9.0;
-    let tint = if selected {
-        theme::text_primary()
-    } else {
-        theme::text_secondary()
-    };
-    icons::paint(
-        painter,
-        Rect::from_center_size(pos2(preview.left() + 7.0, label_y), Vec2::splat(13.0)),
-        icon(theme),
-        tint,
-    );
-    let title = kit::galley(
-        ui,
-        theme.title(),
-        kit::size::SUBHEADLINE,
-        kit::SEMIBOLD,
-        theme::text_primary(),
-        preview.width() - 44.0,
-    );
-    painter.galley(
-        pos2(preview.left() + 20.0, label_y - title.size().y / 2.0),
-        title,
-        Color32::PLACEHOLDER,
-    );
-    let check = Rect::from_center_size(pos2(preview.right() - 7.0, label_y), Vec2::splat(14.0));
-    if selected {
-        icons::paint(painter, check, Icon::CheckCircleFill, theme::text_primary());
-    } else {
-        icons::paint(
-            painter,
-            check,
-            Icon::Circle,
-            theme::text_secondary().gamma_multiply(0.6),
-        );
-    }
+    paint_tile_label(painter, preview, label, selected);
     response.clicked()
 }
 

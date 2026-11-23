@@ -4,6 +4,7 @@
 
 use super::draft::{Estimate, PreviewResult, TradeDraft};
 use super::model::{MarketRules, OrderClass, VenueKind};
+use crate::i18n::tr;
 use crate::model::broker::ticket::{display, price_at};
 
 /// Whether an order must be reviewed before it is sent. Only an order that costs real money is: a
@@ -23,18 +24,24 @@ pub fn lines(
 ) -> Vec<(String, String)> {
     let mut rows = Vec::new();
     if let Some(account) = account {
-        rows.push(("Account".to_owned(), account.to_owned()));
+        rows.push((tr!("Account").to_owned(), account.to_owned()));
     }
     rows.extend([
-        ("Market".to_owned(), rules.name.clone()),
-        ("Side".to_owned(), draft.side_label().to_owned()),
-        ("Type".to_owned(), draft.class.label().to_owned()),
+        (tr!("Market").to_owned(), rules.name.clone()),
+        (tr!("Side").to_owned(), draft.side_label().to_owned()),
+        (tr!("Type").to_owned(), draft.class.label().to_owned()),
     ]);
     let size = draft.size_text.trim();
     if draft.spend_in_quote {
-        rows.push(("Spend".to_owned(), format!("{size} {}", rules.quote_asset)));
+        rows.push((
+            tr!("Spend").to_owned(),
+            format!("{size} {}", rules.quote_asset),
+        ));
     } else {
-        rows.push(("Size".to_owned(), format!("{size} {}", rules.base_asset)));
+        rows.push((
+            tr!("Size").to_owned(),
+            format!("{size} {}", rules.base_asset),
+        ));
     }
     let price = |text: &str| {
         degenview_brokers::model::ticket::parse_decimal(text)
@@ -52,25 +59,28 @@ pub fn lines(
             )
     };
     if draft.uses_stop_price() {
-        rows.push(("Stop price".to_owned(), price(&draft.stop_text)));
+        rows.push((tr!("Stop price").to_owned(), price(&draft.stop_text)));
     }
     if draft.uses_limit_price() {
         let label = if draft.class == OrderClass::StopLimit {
-            "Limit price"
+            tr!("Limit price")
         } else {
-            "Price"
+            tr!("Price")
         };
         rows.push((label.to_owned(), price(&draft.price_text)));
     }
     if draft.post_only {
-        rows.push(("Post only".to_owned(), "Rests; never takes".to_owned()));
+        rows.push((
+            tr!("Post only").to_owned(),
+            tr!("Rests; never takes").to_owned(),
+        ));
     }
     let total = preview.and_then(|p| p.total).or(estimate.notional);
     if let Some(total) = total {
         let label = if preview.and_then(|p| p.total).is_some() {
-            "Total (venue's estimate)"
+            tr!("Total (venue's estimate)")
         } else {
-            "Total (estimate)"
+            tr!("Total (estimate)")
         };
         rows.push((
             label.to_owned(),
@@ -79,13 +89,13 @@ pub fn lines(
     }
     if let Some(fee) = preview.and_then(|p| p.fee).or(estimate.fee) {
         rows.push((
-            "Fee (estimate)".to_owned(),
+            tr!("Fee (estimate)").to_owned(),
             format!("≈ {} {}", display(fee), rules.quote_asset),
         ));
     }
     if let Some(preview) = preview {
         for warning in &preview.warnings {
-            rows.push(("Note".to_owned(), warning.clone()));
+            rows.push((tr!("Note").to_owned(), warning.clone()));
         }
     }
     rows
@@ -210,5 +220,27 @@ mod tests {
         let rows = lines(&draft, &rules(), None, &Estimate::default(), None);
         assert!(rows.iter().any(|(l, v)| l == "Spend" && v == "100 USD"));
         assert!(!rows.iter().any(|(l, _)| l == "Size"));
+    }
+
+    #[test]
+    fn the_labels_follow_the_language_and_the_values_do_not() {
+        use crate::i18n::{Locale, with_locale};
+        let mut draft = TradeDraft::new(Side::Buy);
+        draft.size_text = "0.001".to_owned();
+        draft.price_text = "90000".to_owned();
+        let rows = |locale| {
+            with_locale(locale, || {
+                lines(&draft, &rules(), Some("Main"), &Estimate::default(), None)
+            })
+        };
+        let english = rows(Locale::ENGLISH);
+        let pseudo = rows(Locale::PSEUDO);
+        assert_eq!(english.len(), pseudo.len());
+        for (plain, shown) in english.iter().zip(&pseudo) {
+            assert_ne!(plain.0, shown.0, "{} is a label", plain.0);
+        }
+        assert_eq!(english[0].1, "Main");
+        assert_eq!(pseudo[0].1, "Main", "the account's name is the user's");
+        assert_eq!(english[1].1, pseudo[1].1, "the market is provider data");
     }
 }

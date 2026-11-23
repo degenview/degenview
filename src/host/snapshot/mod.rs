@@ -5,6 +5,7 @@
 //! change. The secrets a provider asks for are not here: they are in the secure storage
 //! (`keychain::snapshot_secrets`).
 
+use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::chart::snapshot::studio::StudioPrefs;
 use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale};
@@ -15,7 +16,9 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 /// Said while no provider is turned on.
-pub const TURN_ON_A_HOST: &str = "Turn on a snapshot host in Settings ▸ Snapshots to share.";
+pub fn turn_on_a_host() -> &'static str {
+    tr!("Turn on a snapshot host in Settings ▸ Snapshots to share.")
+}
 
 /// Whether the hosted actions can be used.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,13 +82,14 @@ impl SnapshotHost {
     pub fn hosting(&self) -> Hosting {
         let prefs = self.prefs();
         let Some(id) = prefs.provider.as_deref() else {
-            return Hosting::Unavailable(TURN_ON_A_HOST.to_owned());
+            return Hosting::Unavailable(turn_on_a_host().to_owned());
         };
         let Some(provider) = providers::provider(id) else {
             return Hosting::Unavailable(
-                "This snapshot host is not in this version of DegenView. Choose another in \
-                 Settings ▸ Snapshots."
-                    .to_owned(),
+                tr!(
+                    "This snapshot host is not in this version of DegenView. Choose another in Settings ▸ Snapshots."
+                )
+                .to_owned(),
             );
         };
         let settings = prefs.settings_of(id);
@@ -93,7 +97,7 @@ impl SnapshotHost {
         if present.is_pending() {
             // The secure storage is being asked, off this thread: "no key" would be a guess.
             return Hosting::Unavailable(
-                "Checking your saved key. Try again in a moment.".to_owned(),
+                tr!("Checking your saved key. Try again in a moment.").to_owned(),
             );
         }
         match provider.readiness(&settings, &present) {
@@ -123,7 +127,12 @@ impl SnapshotHost {
         let write = |store: &Store| {
             store
                 .set_setting(SnapshotPrefs::KEY, &*prefs)
-                .map_err(|error| format!("Could not save the snapshot settings: {error}"))
+                .map_err(|error| {
+                    tr!(
+                        "Could not save the snapshot settings: {error}",
+                        error = error
+                    )
+                })
         };
         if let Some(store) = held {
             return write(store);
@@ -133,7 +142,7 @@ impl SnapshotHost {
         };
         let store = shared
             .lock()
-            .map_err(|_| "The settings database is unavailable.".to_owned())?;
+            .map_err(|_| tr!("The settings database is unavailable.").to_owned())?;
         write(&store)
     }
 
@@ -188,7 +197,7 @@ impl SnapshotHost {
         if let Some(id) = provider
             && providers::provider(id).is_none()
         {
-            return Err("That snapshot host is not available.".to_owned());
+            return Err(tr!("That snapshot host is not available.").to_owned());
         }
         self.update(held, |prefs| prefs.activate(provider))
     }
@@ -202,16 +211,23 @@ impl SnapshotHost {
         fields: &BTreeMap<String, String>,
     ) -> Result<(), String> {
         let descriptor = providers::provider(provider)
-            .ok_or_else(|| "That snapshot host is not available.".to_owned())?
+            .ok_or_else(|| tr!("That snapshot host is not available.").to_owned())?
             .descriptor();
         for (key, value) in fields {
-            let field = descriptor
-                .field(key)
-                .ok_or_else(|| format!("{} has no setting called {key}.", descriptor.name))?;
+            let field = descriptor.field(key).ok_or_else(|| {
+                tr!(
+                    "{name} has no setting called {key}.",
+                    name = descriptor.name,
+                    key = key
+                )
+            })?;
             let value = value.trim();
             match field.kind {
                 FieldKind::Secret => {
-                    return Err(format!("{} is kept in the secure storage.", field.title));
+                    return Err(tr!(
+                        "{title} is kept in the secure storage.",
+                        title = field.title
+                    ));
                 }
                 FieldKind::Text => {
                     if !value.is_empty()
@@ -222,7 +238,11 @@ impl SnapshotHost {
                 }
                 FieldKind::Choice(choices) => {
                     if !value.is_empty() && !choices.iter().any(|choice| choice.value == value) {
-                        return Err(format!("{value} is not a choice for {}.", field.title));
+                        return Err(tr!(
+                            "{value} is not a choice for {title}.",
+                            value = value,
+                            title = field.title
+                        ));
                     }
                 }
             }
@@ -245,7 +265,7 @@ impl SnapshotHost {
         }
         self.secrets
             .save(id, field, value)
-            .map_err(|error| format!("Could not save it: {error}"))
+            .map_err(|error| tr!("Could not save it: {error}", error = error))
     }
 
     pub fn remove_secret(&self, provider: &str, key: &str) -> Result<(), String> {
@@ -260,13 +280,19 @@ impl SnapshotHost {
         key: &str,
     ) -> Result<(&'static str, &'static providers::FieldSpec), String> {
         let descriptor = providers::provider(provider)
-            .ok_or_else(|| "That snapshot host is not available.".to_owned())?
+            .ok_or_else(|| tr!("That snapshot host is not available.").to_owned())?
             .descriptor();
         descriptor
             .field(key)
             .filter(|field| field.is_secret())
             .map(|field| (descriptor.id, field))
-            .ok_or_else(|| format!("{} has no secret called {key}.", descriptor.name))
+            .ok_or_else(|| {
+                tr!(
+                    "{name} has no secret called {key}.",
+                    name = descriptor.name,
+                    key = key
+                )
+            })
     }
 
     pub fn consent(&self, held: Option<&Store>, destination: &str) -> Result<(), String> {
@@ -312,7 +338,7 @@ mod tests {
         let host = host_with(store());
         assert_eq!(
             host.hosting(),
-            Hosting::Unavailable(TURN_ON_A_HOST.to_owned())
+            Hosting::Unavailable(turn_on_a_host().to_owned())
         );
         let prefs = host.prefs();
         assert_eq!(prefs.provider, None);

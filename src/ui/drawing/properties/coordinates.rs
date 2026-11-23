@@ -3,6 +3,7 @@
 use super::rows::Page;
 use super::{CONTROL_WIDTH, CoordinateText, DrawingProperties, MAX_LISTED};
 use crate::format;
+use crate::i18n::{tr, tr_n};
 use crate::model::{Anchor, Geometry, Tool};
 use crate::ui::chart::settings::style::{number_field, number_field_sized};
 use crate::ui::icons::Icon;
@@ -28,85 +29,122 @@ pub(super) fn anchor_label(tool: Tool, index: usize) -> String {
         | Tool::InfoLine
         | Tool::ExtendedLine
         | Tool::TrendAngle
-        | Tool::FibRetracement => &["Point 1", "Point 2"],
-        Tool::FibExtension => &["Start of move", "End of move", "End of retracement"],
-        Tool::FibChannel => &["Point 1", "Point 2", "Channel width"],
-        Tool::FibTimeZone | Tool::FibSpeedFan | Tool::FibSpeedArcs => &["Point 1", "Point 2"],
-        Tool::FibCircles => &["Point 1", "Point 2"],
-        Tool::FibSpiral => &["Center", "Point on the spiral"],
-        Tool::FibWedge => &["Apex", "Radius and first arm", "Second arm"],
-        Tool::Pitchfan => &["Point 1", "Point 2", "Point 3"],
-        Tool::GannBox | Tool::GannSquareFixed | Tool::GannSquare => &["Point 1", "Point 2"],
-        Tool::GannFan => &["Origin", "Point on the 1x1 angle"],
-        Tool::FibTrendTime => &["Point 1", "Point 2", "Point 3"],
-        Tool::HorizontalLine => &["Price level"],
-        Tool::HorizontalRay | Tool::Crossline => &["Anchor"],
-        Tool::VerticalLine => &["Time"],
-        Tool::ParallelChannel => &["Point 1", "Point 2", "Offset point"],
-        Tool::FlatChannel => &["Point 1", "Point 2", "Level"],
-        Tool::DisjointChannel => &["Point 1", "Point 2", "Point 3", "End of second edge"],
-        Tool::RegressionTrend => &["Start bar", "End bar"],
+        | Tool::FibRetracement => &[tr!("Point 1"), tr!("Point 2")],
+        Tool::FibExtension => &[
+            tr!("Start of move"),
+            tr!("End of move"),
+            tr!("End of retracement"),
+        ],
+        Tool::FibChannel => &[tr!("Point 1"), tr!("Point 2"), tr!("Channel width")],
+        Tool::FibTimeZone | Tool::FibSpeedFan | Tool::FibSpeedArcs => {
+            &[tr!("Point 1"), tr!("Point 2")]
+        }
+        Tool::FibCircles => &[tr!("Point 1"), tr!("Point 2")],
+        Tool::FibSpiral => &[tr!("Center"), tr!("Point on the spiral")],
+        Tool::FibWedge => &[tr!("Apex"), tr!("Radius and first arm"), tr!("Second arm")],
+        Tool::Pitchfan => &[tr!("Point 1"), tr!("Point 2"), tr!("Point 3")],
+        Tool::GannBox | Tool::GannSquareFixed | Tool::GannSquare => {
+            &[tr!("Point 1"), tr!("Point 2")]
+        }
+        Tool::GannFan => &[tr!("Origin"), tr!("Point on the 1x1 angle")],
+        Tool::FibTrendTime => &[tr!("Point 1"), tr!("Point 2"), tr!("Point 3")],
+        Tool::HorizontalLine => &[tr!("Price level")],
+        Tool::HorizontalRay | Tool::Crossline => &[tr!("Anchor")],
+        Tool::VerticalLine => &[tr!("Time")],
+        Tool::ParallelChannel => &[tr!("Point 1"), tr!("Point 2"), tr!("Offset point")],
+        Tool::FlatChannel => &[tr!("Point 1"), tr!("Point 2"), tr!("Level")],
+        Tool::DisjointChannel => &[
+            tr!("Point 1"),
+            tr!("Point 2"),
+            tr!("Point 3"),
+            tr!("End of second edge"),
+        ],
+        Tool::RegressionTrend => &[tr!("Start bar"), tr!("End bar")],
         Tool::Pitchfork
         | Tool::SchiffPitchfork
         | Tool::ModifiedSchiffPitchfork
-        | Tool::InsidePitchfork => &["Point 1", "Point 2", "Point 3"],
-        Tool::RotatedRectangle => &["Point 1", "Point 2", "Width point"],
-        Tool::Circle => &["Center", "Radius point"],
-        Tool::Arc => &["Start", "End", "Curvature point"],
-        Tool::Curve => &["Start", "End", "Control point"],
-        Tool::DoubleCurve => &["Start", "End", "Control point 1", "Control point 2"],
-        Tool::ArrowMarkUp | Tool::ArrowMarkDown => &["Anchor"],
-        Tool::Text => &["Top-left corner"],
-        Tool::Note | Tool::PriceNote | Tool::Callout => &["Anchor", "Label position"],
-        Tool::Signpost => &["Anchor", "Label height"],
-        Tool::Comment | Tool::PriceLabel | Tool::FlagMark | Tool::Pin => &["Anchor"],
-        Tool::XabcdPattern | Tool::CypherPattern => &["X", "A", "B", "C", "D"],
-        Tool::AbcdPattern | Tool::TrianglePattern => &["A", "B", "C", "D"],
+        | Tool::InsidePitchfork => &[tr!("Point 1"), tr!("Point 2"), tr!("Point 3")],
+        Tool::RotatedRectangle => &[tr!("Point 1"), tr!("Point 2"), tr!("Width point")],
+        Tool::Circle => &[tr!("Center"), tr!("Radius point")],
+        Tool::Arc => &[tr!("Start"), tr!("End"), tr!("Curvature point")],
+        Tool::Curve => &[tr!("Start"), tr!("End"), tr!("Control point")],
+        Tool::DoubleCurve => &[
+            tr!("Start"),
+            tr!("End"),
+            tr!("Control point 1"),
+            tr!("Control point 2"),
+        ],
+        Tool::ArrowMarkUp | Tool::ArrowMarkDown => &[tr!("Anchor")],
+        Tool::Text => &[tr!("Top-left corner")],
+        Tool::Note | Tool::PriceNote | Tool::Callout => &[tr!("Anchor"), tr!("Label position")],
+        Tool::Signpost => &[tr!("Anchor"), tr!("Label height")],
+        Tool::Comment | Tool::PriceLabel | Tool::FlagMark | Tool::Pin => &[tr!("Anchor")],
+        Tool::XabcdPattern | Tool::CypherPattern => {
+            &[tr!("X"), tr!("A"), tr!("B"), tr!("C"), tr!("D")]
+        }
+        Tool::AbcdPattern | Tool::TrianglePattern => &[tr!("A"), tr!("B"), tr!("C"), tr!("D")],
         Tool::HeadAndShoulders => &[
-            "Start",
-            "Left shoulder",
-            "Left neckline",
-            "Head",
-            "Right neckline",
-            "Right shoulder",
-            "End",
+            tr!("Start"),
+            tr!("Left shoulder"),
+            tr!("Left neckline"),
+            tr!("Head"),
+            tr!("Right neckline"),
+            tr!("Right shoulder"),
+            tr!("End"),
         ],
         Tool::ThreeDrivesPattern => &[
-            "Start",
-            "Drive 1",
-            "Retracement A",
-            "Drive 2",
-            "Retracement C",
-            "Drive 3",
+            tr!("Start"),
+            tr!("Drive 1"),
+            tr!("Retracement A"),
+            tr!("Drive 2"),
+            tr!("Retracement C"),
+            tr!("Drive 3"),
         ],
-        Tool::ElliottImpulse => &["Start", "Wave 1", "Wave 2", "Wave 3", "Wave 4", "Wave 5"],
-        Tool::ElliottCorrection => &["Start", "Wave A", "Wave B", "Wave C"],
-        Tool::ElliottTriangle => &["Start", "Wave A", "Wave B", "Wave C", "Wave D", "Wave E"],
-        Tool::ElliottDoubleCombo => &["Start", "Wave W", "Wave X", "Wave Y"],
+        Tool::ElliottImpulse => &[
+            tr!("Start"),
+            tr!("Wave 1"),
+            tr!("Wave 2"),
+            tr!("Wave 3"),
+            tr!("Wave 4"),
+            tr!("Wave 5"),
+        ],
+        Tool::ElliottCorrection => &[tr!("Start"), tr!("Wave A"), tr!("Wave B"), tr!("Wave C")],
+        Tool::ElliottTriangle => &[
+            tr!("Start"),
+            tr!("Wave A"),
+            tr!("Wave B"),
+            tr!("Wave C"),
+            tr!("Wave D"),
+            tr!("Wave E"),
+        ],
+        Tool::ElliottDoubleCombo => &[tr!("Start"), tr!("Wave W"), tr!("Wave X"), tr!("Wave Y")],
         Tool::ElliottTripleCombo => &[
-            "Start",
-            "Wave W",
-            "Wave X",
-            "Wave Y",
-            "Second wave X",
-            "Wave Z",
+            tr!("Start"),
+            tr!("Wave W"),
+            tr!("Wave X"),
+            tr!("Wave Y"),
+            tr!("Second wave X"),
+            tr!("Wave Z"),
         ],
-        Tool::LongPosition | Tool::ShortPosition => &["Entry", "Target", "Stop"],
-        Tool::PositionForecast => &["Source", "Target"],
-        Tool::BarsPattern => &["First bar's close"],
-        Tool::GhostFeed => &["Start", "End"],
-        Tool::Sector => &["Center", "Radius point", "End of arc"],
-        Tool::AnchoredVwap | Tool::AnchoredVolumeProfile => &["Start bar"],
-        Tool::FixedRangeVolumeProfile => &["Left edge", "Right edge"],
-        Tool::PriceRange | Tool::DateRange | Tool::DateAndPriceRange => &["Point 1", "Point 2"],
-        Tool::CyclicLines => &["First line", "Second line"],
-        Tool::TimeCycles => &["Start", "End of first cycle"],
-        Tool::SineLine => &["First extreme", "Next extreme"],
+        Tool::LongPosition | Tool::ShortPosition => &[tr!("Entry"), tr!("Target"), tr!("Stop")],
+        Tool::PositionForecast => &[tr!("Source"), tr!("Target")],
+        Tool::BarsPattern => &[tr!("First bar's close")],
+        Tool::GhostFeed => &[tr!("Start"), tr!("End")],
+        Tool::Sector => &[tr!("Center"), tr!("Radius point"), tr!("End of arc")],
+        Tool::AnchoredVwap | Tool::AnchoredVolumeProfile => &[tr!("Start bar")],
+        Tool::FixedRangeVolumeProfile => &[tr!("Left edge"), tr!("Right edge")],
+        Tool::PriceRange | Tool::DateRange | Tool::DateAndPriceRange => {
+            &[tr!("Point 1"), tr!("Point 2")]
+        }
+        Tool::CyclicLines => &[tr!("First line"), tr!("Second line")],
+        Tool::TimeCycles => &[tr!("Start"), tr!("End of first cycle")],
+        Tool::SineLine => &[tr!("First extreme"), tr!("Next extreme")],
         _ => &[],
     };
-    named
-        .get(index)
-        .map_or_else(|| format!("Point {}", index + 1), |name| (*name).to_owned())
+    named.get(index).map_or_else(
+        || tr!("Point {number}", number = index + 1),
+        |name| (*name).to_owned(),
+    )
 }
 
 impl DrawingProperties {
@@ -122,19 +160,21 @@ impl DrawingProperties {
         };
         page.section(
             ui,
-            "Position on screen",
-            Some("The table stays here however the chart is scrolled."),
+            tr!("Position on screen"),
+            Some(tr!("The table stays here however the chart is scrolled.")),
         );
         let mut edited = place;
         for (title, id, value) in [
-            ("Horizontal", "table-pin-x", &mut edited.x),
-            ("Vertical", "table-pin-y", &mut edited.y),
+            (tr!("Horizontal"), "table-pin-x", &mut edited.x),
+            (tr!("Vertical"), "table-pin-y", &mut edited.y),
         ] {
             if let Some(percent) = card::card(
                 ui,
                 Icon::ArrowLeftRight,
                 title,
-                Some("Percent of the chart's width or height, from its top-left corner."),
+                Some(tr!(
+                    "Percent of the chart's width or height, from its top-left corner."
+                )),
                 |ui| {
                     number_field(
                         ui,
@@ -174,7 +214,7 @@ impl DrawingProperties {
             let step = 10f64.powi(-(decimals as i32));
             let price_id = Id::new(("drawing-price", self.draft.id(), index));
             if reads_price
-                && let Some(price) = card::card(ui, Icon::Tag, "Price", None, |ui| {
+                && let Some(price) = card::card(ui, Icon::Tag, tr!("Price"), None, |ui| {
                     number_field_sized(
                         ui,
                         price_id,
@@ -199,9 +239,10 @@ impl DrawingProperties {
         }
         if anchors.len() > shown {
             ui.label(kit::text(
-                format!(
-                    "{} more points: drag them on the chart.",
-                    anchors.len() - shown
+                tr_n!(
+                    anchors.len() - shown,
+                    "{count} more point: drag it on the chart.",
+                    "{count} more points: drag them on the chart."
                 ),
                 kit::size::SUBHEADLINE,
                 kit::REGULAR,
@@ -242,7 +283,7 @@ fn time_row(ui: &mut Ui, id: Id, state: &mut CoordinateText) -> Option<i64> {
     card::card_reserving(
         ui,
         Icon::Clock,
-        "Time (UTC)",
+        tr!("Time (UTC)"),
         None,
         TIME_FIELD_WIDTH,
         |ui| {

@@ -19,6 +19,7 @@ pub mod drawing_template;
 pub mod editor_theme;
 pub mod frame_cache;
 pub mod identity;
+pub mod language;
 pub mod mcp;
 pub mod paper;
 pub mod pine;

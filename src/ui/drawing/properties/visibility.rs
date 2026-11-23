@@ -2,6 +2,7 @@
 
 use super::DrawingProperties;
 use super::rows::{Page, toggle_row};
+use crate::i18n::tr;
 use crate::model::{Visibility, VisibilityRow};
 use crate::ui::icons::Icon;
 use eframe::egui::Ui;
@@ -13,12 +14,14 @@ impl DrawingProperties {
         let mut page = Page::new(true);
         page.section(
             ui,
-            "Show on",
-            Some("The drawing is kept when you switch to a timeframe it is not shown on."),
+            tr!("Show on"),
+            Some(tr!(
+                "The drawing is kept when you switch to a timeframe it is not shown on."
+            )),
         );
         let mut all = visibility.is_all();
         let was_all = all;
-        toggle_row(ui, Icon::Eye, "All timeframes", "", &mut all);
+        toggle_row(ui, Icon::Eye, tr!("All timeframes"), "", &mut all);
         if all && !was_all {
             visibility = Visibility::ALL;
         }

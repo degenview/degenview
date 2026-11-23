@@ -539,26 +539,13 @@ mod tests {
 
 const ALERT_LIMIT: usize = 100;
 
-/// "Jan 5, 3:07 PM"-style stamp in the system time zone: `MMM d, h:mm`.
+/// "Jan 5, 3:07 PM" in the system time zone, on the language's own clock.
 pub fn alert_time(ms: i64) -> String {
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
     let local = ms + crate::service::system::timezone::local_utc_offset_secs(ms) * 1000;
     let secs = local.div_euclid(1000);
-    let (_, month, day) = crate::format::civil_from_days(secs.div_euclid(86_400));
+    let (year, month, day) = crate::format::civil_from_days(secs.div_euclid(86_400));
     let rem = secs.rem_euclid(86_400);
-    let hour = rem / 3600;
-    let clock = match hour % 12 {
-        0 => 12,
-        h => h,
-    };
-    format!(
-        "{} {day}, {clock}:{:02} {}",
-        MONTHS[(month as usize).clamp(1, 12) - 1],
-        rem % 3600 / 60,
-        if hour < 12 { "AM" } else { "PM" }
-    )
+    crate::i18n::datetime::month_day_clock((year, month, day), (rem / 3600, rem % 3600 / 60))
 }
 
 /// (live, historical) alert counts.

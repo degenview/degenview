@@ -12,6 +12,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Live trading, brokers, broker credentials, or Settings ▸ Brokers | [Live trading](docs/broker-trading.md) |
 | The symbol picker (⌘K, Add Chart and a watchlist's plus: markets, prediction markets, indices and portfolio cards), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
 | Any UI: a new or restyled window, sheet, panel, card, sidebar, icon, menu, button, link or dialog | [UI style](docs/agent-guides/ui-style.md) |
+| Any user-facing text, interface languages, `tr!`, dates and times, translation catalogs (`.po`), or the language setting | [Localization](docs/localization.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
 | The cursor menu (Cross, Dot, Arrow, Demonstration, Eraser), the crosshair's parts, the pointer shape over a plot, or the values tooltip on long press | [Chart cursors](docs/chart-cursors.md) |
 | The Screenshot Studio, Select portion, snapshot compositions or backgrounds, or the camera menu | [Chart snapshots](docs/snapshots.md) |
@@ -24,6 +25,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Session statistics: gap fills, prior-day breaks, weekday effects, `degenview_get_session_stats` | [Session statistics](docs/session-stats.md) |
 | The market flow panel (Liquidations, Taker flow, Order book / DOM), the exchanges' liquidation, trade or order-book sockets, or adding an exchange to them | [Liquidations, taker flow and order book](docs/market-flow.md) |
 | Pine language/runtime, Pine Studio, editor behavior, or example scripts | [Pine and scripts](docs/agent-guides/pine.md) |
+| Recording a tutorial or demo video: screen capture, voice-over, subtitles | [Tutorial videos](tools/tutorial-video/README.md) |
 | Adding an indicator to a chart: the toolbar's Indicators button, the indicator catalog, or the Pine indicators bundled with the app | [Indicator catalog](docs/indicator-picker.md) |
 | User-defined functions or methods, overloads, call resolution, or the Pine type checker | [User-defined methods](docs/pine-user-methods.md) |
 | Editor colours, syntax roles, editor themes or fonts | [Editor themes](docs/editor-themes.md) |
@@ -46,6 +48,13 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 
 For cross-cutting work, load all matching guides. They hold implementation constraints, not
 background; never skip one because the code looks self-explanatory.
+
+## Words go through `tr!`
+
+New or changed user-facing text is written with `tr!` / `tr_n!` / `tr_c!` (`crate::i18n`), never as a
+bare literal in a widget call, and never a sentence assembled from pieces. Existing literals move over
+directory by directory. Rules and the pseudo-locale for checking a screen:
+[Localization](docs/localization.md).
 
 ## Never blue
 
@@ -124,6 +133,13 @@ unit-test wall-clock, so it sits behind the `corpus` cargo feature, off by defau
 - `cargo test` — fast suite, corpus excluded.
 - `cargo test --features corpus` — full suite including the Pine corpus.
 
+Iterating on one change: the library is a single crate, so with incremental compilation off (the
+default here, for disk) every edit recompiles all of it: 5+ min on a loaded machine. In the one
+worktree you are iterating in, run `CARGO_INCREMENTAL=1 cargo test --lib <filter>`: the same edit
+rebuilt in about 2 min (measured on a loaded machine; the first build is slower). Use `cargo check`
+while you only need the compiler's answer, and trim the caches when done
+(`tools/clean-worktrees.sh --trim-incremental`).
+
 ## Worktrees and build space
 
 Each worktree builds into its own `target/` (5 GB fresh, growing every rebuild; cargo never deletes
@@ -150,6 +166,7 @@ old output). Finished worktrees are where the disk goes.
 ## Deeper references
 
 - [Architecture](docs/architecture.md) — module map, data flow.
+- [Localization](docs/localization.md) — `tr!` macros, `.po` catalogs, the language setting, the pseudo-locale, adding a language, what is not done.
 - [Chart types](docs/chart-types.md) — construction rules, Pine semantics.
 - [Chart cursors](docs/chart-cursors.md) — the cursor modes and the capability table that decides what each shows.
 - [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, unverified items.
@@ -163,6 +180,7 @@ old output). Finished worktrees are where the disk goes.
 - [Portfolio cards](docs/portfolio-cards.md) — card design, known gaps.
 - [New-tab page](docs/new-tab-page.md) — the blank tab: search launcher, tabs, sparklines, animated backdrop.
 - [README hero GIF](tools/readme-gif/README.md): how the animated picture is recorded from the real app, and when to retake it.
+- [Tutorial videos](tools/tutorial-video/README.md): narrated screen-capture tutorials from the real app (the Pine debugger one), how to make or retake one.
 - [Chart snapshots](docs/snapshots.md) — camera menu, shared renderer, Screenshot Studio (Select portion, composer, backdrops, remembered look), hosted sharing via providers (ImgBB, your own host, adding one), privacy.
 - [MCP implementation](docs/mcp-implementation.md) and [remaining work](docs/mcp-remaining-work.md).
 - Also in Required reading, with details and what is verified versus decided:

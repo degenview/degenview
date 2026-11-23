@@ -1,6 +1,7 @@
 //! A snapshot as a file: PNG encoding, where it is saved and writing it so a failure never
 //! leaves half a file behind.
 
+use crate::i18n::tr;
 use crate::model::chart;
 use eframe::egui::ColorImage;
 use image::ImageEncoder;
@@ -24,9 +25,9 @@ pub enum ExportError {
 impl ExportError {
     pub fn message(&self) -> String {
         match self {
-            Self::Encode(why) => format!("Could not make the image: {why}"),
-            Self::Write(why) => format!("Could not save the image: {why}"),
-            Self::NoFolder => "Could not find a folder to save the image in.".to_owned(),
+            Self::Encode(why) => tr!("Could not make the image: {why}", why = why),
+            Self::Write(why) => tr!("Could not save the image: {why}", why = why),
+            Self::NoFolder => tr!("Could not find a folder to save the image in.").to_owned(),
             Self::Dialog(why) => why.clone(),
         }
     }
@@ -108,7 +109,7 @@ pub fn downloads_path(name: &str) -> Result<PathBuf, ExportError> {
 pub fn choose_destination(name: &str) -> Result<Option<PathBuf>, ExportError> {
     if crate::platform::has_file_dialogs() {
         let chosen =
-            crate::service::system::file_dialog::choose_save_path("Save chart image", name)
+            crate::service::system::file_dialog::choose_save_path(tr!("Save chart image"), name)
                 .map_err(ExportError::Dialog)?;
         Ok(
             chosen.map(|path| match path.file_name().and_then(|n| n.to_str()) {

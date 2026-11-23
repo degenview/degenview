@@ -18,6 +18,7 @@ mod styled;
 mod surround;
 
 use super::capture::Capture;
+use crate::i18n::tr;
 use crate::model::chart::snapshot::composition::{self, Composition};
 use crate::model::chart::snapshot::studio::StudioConfig;
 use crate::model::chart::snapshot::{SnapshotDimensions, SnapshotScale};
@@ -49,7 +50,7 @@ pub enum Target {
 pub enum ComposeError {
     #[error("{}", .0.message())]
     Chart(SnapshotError),
-    #[error("This image is too large to draw. Try a different size or background.")]
+    #[error("{}", tr!("This image is too large to draw. Try a different size or background."))]
     TooLarge,
 }
 

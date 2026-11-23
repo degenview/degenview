@@ -9,6 +9,7 @@
 //! small enough to travel in one synced record. The result is named by the hash of its bytes, so
 //! the same picture is one asset however many drawings show it.
 
+use crate::i18n::tr;
 use crate::model::annotation::asset::StoredAsset;
 use crate::model::encoding::{base64_decode, base64_encode, sha256_hex};
 use image::{
@@ -75,14 +76,14 @@ pub enum IngestError {
 }
 
 impl IngestError {
-    pub const fn message(self) -> &'static str {
+    pub fn message(self) -> &'static str {
         match self {
-            Self::Empty => "That file is empty.",
-            Self::TooLarge => "That picture is over 10 MB. Choose a smaller one.",
-            Self::Unsupported => "Only PNG and JPEG pictures can be added.",
-            Self::Corrupt => "That picture could not be read.",
-            Self::TooManyPixels => "That picture is too large (over 8192 pixels a side).",
-            Self::CannotFit => "That picture could not be made small enough to keep.",
+            Self::Empty => tr!("That file is empty."),
+            Self::TooLarge => tr!("That picture is over 10 MB. Choose a smaller one."),
+            Self::Unsupported => tr!("Only PNG and JPEG pictures can be added."),
+            Self::Corrupt => tr!("That picture could not be read."),
+            Self::TooManyPixels => tr!("That picture is too large (over 8192 pixels a side)."),
+            Self::CannotFit => tr!("That picture could not be made small enough to keep."),
         }
     }
 }
@@ -519,5 +520,18 @@ mod tests {
         let mut bad = good.clone();
         bad.data = "A".repeat(2_000_000);
         assert!(verified_bytes(&bad).is_none(), "past the size limit");
+    }
+
+    #[test]
+    fn a_refusal_is_worded_in_the_language() {
+        use crate::i18n::{Locale, with_locale};
+        for error in [
+            IngestError::Empty,
+            IngestError::TooLarge,
+            IngestError::Corrupt,
+        ] {
+            let english = error.message();
+            assert_ne!(with_locale(Locale::PSEUDO, || error.message()), english);
+        }
     }
 }

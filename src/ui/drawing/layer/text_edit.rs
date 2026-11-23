@@ -14,6 +14,7 @@
 
 use super::shape::TextPlace;
 use super::{DrawingFrame, DrawingLayer, Projection, text};
+use crate::i18n::tr;
 use crate::model::annotation::table::MAX_CELL_CHARS;
 use crate::model::drawings::style::{HorizontalAlign, TextStyle};
 use crate::model::{Caps, Drawing, DrawingCommand, Geometry};
@@ -552,7 +553,7 @@ impl DrawingLayer {
                                 .desired_rows(1)
                                 .char_limit(limit)
                                 .frame(egui::Frame::NONE)
-                                .hint_text("Add text"),
+                                .hint_text(tr!("Add text")),
                         );
                         if !editing.focused {
                             response.request_focus();

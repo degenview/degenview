@@ -4,11 +4,9 @@
 //! screen that prints one.
 
 use crate::format::civil_from_days;
+use crate::i18n::datetime;
+use crate::i18n::{tr, tr_n};
 use crate::service::system::timezone::local_utc_offset_secs;
-
-const MONTHS: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
 
 fn split_utc(epoch_ms: i64) -> (i64, i64, i64, i64, i64, i64) {
     let seconds = epoch_ms.div_euclid(1_000);
@@ -20,7 +18,7 @@ fn split_utc(epoch_ms: i64) -> (i64, i64, i64, i64, i64, i64) {
 /// "Oct 9, 2026"
 pub fn date_text(epoch_ms: i64) -> String {
     let (year, month, day, ..) = split_utc(epoch_ms);
-    format!("{} {day}, {year}", MONTHS[(month - 1) as usize])
+    datetime::date(year, month, day)
 }
 
 /// "14:03:07"
@@ -32,33 +30,26 @@ pub fn time_text(epoch_ms: i64) -> String {
 /// "Oct 9, 14:03"
 pub fn compact_text(epoch_ms: i64) -> String {
     let local_ms = epoch_ms + local_utc_offset_secs(epoch_ms) * 1_000;
-    let (_, month, day, hour, minute, _) = split_utc(local_ms);
-    format!(
-        "{} {day}, {hour:02}:{minute:02}",
-        MONTHS[(month - 1) as usize]
-    )
+    let (year, month, day, hour, minute, _) = split_utc(local_ms);
+    datetime::month_day_time((year, month, day), (hour, minute, 0), false)
 }
 
 /// Abbreviated relative time: "now", "5 min. ago", "3 hr. ago", "2 days ago".
 pub fn relative_time(now_ms: i64, then_ms: i64) -> String {
     let secs = (now_ms - then_ms) / 1_000;
     if secs < 0 {
-        return "in the future".to_owned();
+        return tr!("in the future").to_owned();
     }
-    let (value, unit) = match secs {
-        0..=4 => return "now".to_owned(),
-        5..=59 => (secs, "sec."),
-        60..=3_599 => (secs / 60, "min."),
-        3_600..=86_399 => (secs / 3_600, "hr."),
-        86_400..=604_799 => (
-            secs / 86_400,
-            if secs / 86_400 == 1 { "day" } else { "days" },
-        ),
-        604_800..=2_591_999 => (secs / 604_800, "wk."),
-        2_592_000..=31_535_999 => (secs / 2_592_000, "mo."),
-        _ => (secs / 31_536_000, "yr."),
-    };
-    format!("{value} {unit} ago")
+    match secs {
+        0..=4 => tr!("now").to_owned(),
+        5..=59 => tr_n!(secs, "{count} sec. ago", "{count} sec. ago"),
+        60..=3_599 => tr_n!(secs / 60, "{count} min. ago", "{count} min. ago"),
+        3_600..=86_399 => tr_n!(secs / 3_600, "{count} hr. ago", "{count} hr. ago"),
+        86_400..=604_799 => tr_n!(secs / 86_400, "{count} day ago", "{count} days ago"),
+        604_800..=2_591_999 => tr_n!(secs / 604_800, "{count} wk. ago", "{count} wk. ago"),
+        2_592_000..=31_535_999 => tr_n!(secs / 2_592_000, "{count} mo. ago", "{count} mo. ago"),
+        _ => tr_n!(secs / 31_536_000, "{count} yr. ago", "{count} yr. ago"),
+    }
 }
 
 /// "14:03" in the viewer's time zone.

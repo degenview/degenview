@@ -685,3 +685,48 @@ fn groups_that_do_not_fit_wrap_and_every_group_is_somewhere() {
     seen.sort_unstable();
     assert_eq!(seen, [0, 1, 2, 3, 4]);
 }
+
+// MARK: Languages
+
+/// The window in the pseudo-locale at its smallest size, in both themes: every word of it goes
+/// through `tr!`, so none shows without its brackets, and the longer text still has room: no label
+/// is cut. With
+/// `DEGENVIEW_GALLERY_DIR` set the pictures are written out to look at.
+#[test]
+fn the_window_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, tr, with_locale};
+    use crate::ui::render_tests::{Screen, gallery_dir};
+    let _restore = crate::ui::theme::RestoreDefaultTheme;
+    with_locale(Locale::PSEUDO, || {
+        for light in [false, true] {
+            let scenario = Scenario::new(styled());
+            let mut rig = Rig::new(vec2(960.0, 620.0), light);
+            let (_, full) = rig.settle(&scenario);
+            for word in [
+                tr!("Studio"),
+                tr!("Include"),
+                tr!("Background"),
+                tr!("Width"),
+                tr!("Height"),
+                tr!("Download PNG"),
+                tr!("Copy image"),
+            ] {
+                assert!(word.starts_with('['), "{word} is not in the pseudo-locale");
+                assert!(
+                    rig.words.iter().any(|shown| shown == word),
+                    "{word} is not drawn: {:?}",
+                    rig.words
+                );
+            }
+            assert_eq!(
+                Screen::truncated_text(&full),
+                Vec::<String>::new(),
+                "a label was cut"
+            );
+            if gallery_dir().is_some() {
+                let theme = if light { "light" } else { "dark" };
+                rig.screen.save(&format!("studio-pseudo-{theme}"), full);
+            }
+        }
+    });
+}

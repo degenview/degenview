@@ -27,10 +27,6 @@ const BADGE_SPACING: f32 = 12.0;
 /// How long "Copied" shows after the build summary goes to the clipboard.
 const COPIED_FOR: Duration = Duration::from_millis(1_600);
 
-const MONTHS: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
 /// When the running executable was built, as epoch milliseconds: its modification time, unless
 /// that is older than the build itself (`build.rs` stamps it), as in a Flatpak, which installs
 /// every file dated 1 Jan 1970.
@@ -55,17 +51,14 @@ fn pick_build_time(modified: Option<i64>, compiled: Option<i64>) -> Option<i64> 
     }
 }
 
-/// "11 Oct 2026" in the viewer's time zone.
+/// "Oct 11, 2026" in the viewer's time zone.
 pub fn date_label(ms: i64) -> String {
     let local = ms + crate::service::system::timezone::local_utc_offset_secs(ms) * 1_000;
     let (year, month, day) = civil_from_days(local.div_euclid(86_400_000));
-    format!(
-        "{day} {} {year}",
-        MONTHS[(month as usize).saturating_sub(1).min(11)]
-    )
+    crate::i18n::datetime::date(year, month, day)
 }
 
-/// The header's second line: "Version 0.1.0 - 11 Oct 2026".
+/// The header's second line: "Version 0.1.0 - Oct 11, 2026".
 pub fn header_subtitle(build_ms: Option<i64>) -> String {
     match build_ms {
         Some(ms) => format!("Version {VERSION} - {}", date_label(ms)),
@@ -73,7 +66,7 @@ pub fn header_subtitle(build_ms: Option<i64>) -> String {
     }
 }
 
-/// One line for bug reports: "DegenView 0.1.0 (59d2aa59f) · built 11 Oct 2026 at 02:14".
+/// One line for bug reports: "DegenView 0.1.0 (59d2aa59f) · built Oct 11, 2026 at 02:14".
 pub fn clipboard_summary(build_ms: Option<i64>) -> String {
     match build_ms {
         Some(ms) => {
@@ -931,10 +924,10 @@ mod tests {
     fn the_version_lines_read_like_swift() {
         // 2026-10-11 02:14 UTC; tests run in UTC.
         let ms = 1_791_684_840_000;
-        assert_eq!(date_label(ms), "11 Oct 2026");
+        assert_eq!(date_label(ms), "Oct 11, 2026");
         assert_eq!(
             header_subtitle(Some(ms)),
-            format!("Version {VERSION} - 11 Oct 2026")
+            format!("Version {VERSION} - Oct 11, 2026")
         );
         assert_eq!(header_subtitle(None), format!("Version {VERSION}"));
         assert_eq!(
@@ -943,7 +936,7 @@ mod tests {
         );
         assert_eq!(
             clipboard_summary(Some(ms)),
-            format!("DegenView {VERSION} ({BUILD_ID}) · built 11 Oct 2026 at 02:14")
+            format!("DegenView {VERSION} ({BUILD_ID}) · built Oct 11, 2026 at 02:14")
         );
     }
 

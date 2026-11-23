@@ -11,6 +11,7 @@
 use super::book::WatchlistQuoteBook;
 use super::provider::{QuoteFailure, QuoteProvider, QuoteRequest, chunk_size};
 use super::quote_stream::StreamTick;
+use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::alert::AlertProviderHealth;
 use crate::model::watchlist::quote::{
@@ -369,9 +370,9 @@ impl Engine {
                     key,
                     WatchlistQuote::unsupported(Some(
                         if instrument.symbol.starts_with("portfolio:") {
-                            "Portfolio cards have no market quote"
+                            tr!("Portfolio cards have no market quote")
                         } else {
-                            "Index charts have no market quote"
+                            tr!("Index charts have no market quote")
                         }
                         .to_owned(),
                     )),
@@ -485,7 +486,7 @@ impl Engine {
                     &key,
                     WatchlistQuote {
                         freshness: Freshness::Unavailable,
-                        note: Some("Couldn't find this pair's network".to_owned()),
+                        note: Some(tr!("Couldn't find this pair's network").to_owned()),
                         ..WatchlistQuote::default()
                     },
                 );
@@ -595,7 +596,7 @@ impl Engine {
                 // A symbol is only called bad when its neighbours answered; if nothing did,
                 // the source is down.
                 state.last_error =
-                    (!source_answered).then(|| "The provider returned no quote".to_owned());
+                    (!source_answered).then(|| tr!("The provider returned no quote").to_owned());
             }
         }
         if source_answered {
@@ -628,14 +629,14 @@ impl Engine {
                     key.clone(),
                     WatchlistQuote {
                         freshness: Freshness::Unavailable,
-                        note: Some("The provider doesn't know this market".to_owned()),
+                        note: Some(tr!("The provider doesn't know this market").to_owned()),
                         ..WatchlistQuote::default()
                     },
                 );
             } else {
                 updates.insert(
                     key.clone(),
-                    self.fallback(key, Some("The provider returned no quote".to_owned())),
+                    self.fallback(key, Some(tr!("The provider returned no quote").to_owned())),
                 );
             }
         }

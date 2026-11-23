@@ -100,6 +100,12 @@ impl ChartCard {
         self.pine.set_logging(id, enabled);
     }
 
+    /// Whether a script on this chart is visible, so it runs: the chart is asked for the history
+    /// scripts are meant to run over.
+    pub fn runs_scripts(&self) -> bool {
+        self.instances.iter().any(|instance| instance.visible)
+    }
+
     pub fn pine_status(&self, id: u64) -> Option<InstanceStatus<'_>> {
         self.pine.status(id)
     }

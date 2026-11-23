@@ -4,6 +4,7 @@
 use super::{
     Progress, STAGING_NAME, Stage, forwarded_env, is_writable, keep_only_copy, swap_paths, verify,
 };
+use crate::i18n::tr;
 use crate::service::update::check::{Release, ReleaseAsset};
 use crate::service::update::{archive, code_signature, download, tag_signature};
 use std::ffi::OsString;
@@ -36,11 +37,11 @@ impl Prepared {
 /// The `.app` bundle this process runs from, when it can be replaced in place.
 pub fn install_target() -> Result<PathBuf, String> {
     if !cfg!(target_os = "macos") {
-        // See `sandbox::FLATPAK_UPDATE_NOTE`.
+        // See `sandbox::flatpak_update_note`.
         return Err(if crate::service::system::sandbox::is_flatpak() {
-            crate::service::system::sandbox::FLATPAK_UPDATE_NOTE
+            crate::service::system::sandbox::flatpak_update_note()
         } else {
-            "Automatic updates are not available on this platform."
+            tr!("Automatic updates are not available on this platform.")
         }
         .to_owned());
     }
@@ -48,14 +49,14 @@ pub fn install_target() -> Result<PathBuf, String> {
         .and_then(|exe| exe.canonicalize())
         .map_err(|error| error.to_string())?;
     let app = bundle_for_executable(&exe)
-        .ok_or_else(|| "DegenView is not running from an app bundle.".to_owned())?;
+        .ok_or_else(|| tr!("DegenView is not running from an app bundle.").to_owned())?;
     if app
         .components()
         .any(|part| part.as_os_str() == "AppTranslocation")
     {
-        return Err("Move DegenView to the Applications folder first.".to_owned());
+        return Err(tr!("Move DegenView to the Applications folder first.").to_owned());
     }
-    let parent = app.parent().ok_or("The app has no parent folder.")?;
+    let parent = app.parent().ok_or(tr!("The app has no parent folder."))?;
     if !is_writable(parent) {
         return Err(not_writable_message(&app, parent));
     }
@@ -69,9 +70,10 @@ pub fn install_target() -> Result<PathBuf, String> {
 /// disk image it was downloaded in, which the user fixes by dragging it to Applications.
 fn not_writable_message(app: &Path, parent: &Path) -> String {
     if app.starts_with("/Volumes") {
-        return "Drag DegenView from the disk image to the Applications folder first.".to_owned();
+        return tr!("Drag DegenView from the disk image to the Applications folder first.")
+            .to_owned();
     }
-    format!("{} is not writable.", parent.display())
+    tr!("{folder} is not writable.", folder = parent.display())
 }
 
 /// `/…/DegenView.app` for `/…/DegenView.app/Contents/MacOS/DegenView`.
@@ -96,16 +98,21 @@ pub fn prepare(
     let asset = release
         .asset
         .as_ref()
-        .ok_or("This release has no download for this computer.")?;
+        .ok_or(tr!("This release has no download for this computer."))?;
     progress(Progress::new(Stage::Verifying));
     tag_signature::verify_release_tag(&release.tag).map_err(|error| error.to_string())?;
     let team_id = code_signature::team_id(app)?;
-    let parent = app.parent().ok_or("The app has no parent folder.")?;
+    let parent = app.parent().ok_or(tr!("The app has no parent folder."))?;
     let staging = parent.join(STAGING_NAME);
     keep_only_copy(&staging, app)?;
     let _ = std::fs::remove_dir_all(&staging);
-    std::fs::create_dir(&staging)
-        .map_err(|error| format!("Could not create {STAGING_NAME}: {error}"))?;
+    std::fs::create_dir(&staging).map_err(|error| {
+        tr!(
+            "Could not create {name}: {error}",
+            name = STAGING_NAME,
+            error = error
+        )
+    })?;
     prepare_in(&staging, app, asset, &team_id, progress).inspect_err(|_| {
         let _ = std::fs::remove_dir_all(&staging);
     })
@@ -134,7 +141,7 @@ fn prepare_in(
     archive::precheck(&bytes)?;
     let zip = staging.join("update.zip");
     std::fs::write(&zip, &bytes)
-        .map_err(|error| format!("Could not save the download: {error}"))?;
+        .map_err(|error| tr!("Could not save the download: {error}", error = error))?;
     drop(bytes);
     let extracted = staging.join("new");
     archive::extract(&zip, &extracted)?;
@@ -161,7 +168,10 @@ pub fn apply(prepared: &Prepared) -> Result<(), String> {
 pub fn relaunch(prepared: &Prepared) -> Result<(), String> {
     spawn_relaunch(prepared).map_err(|error| {
         // Without the helper nobody would reopen the app; the new bundle is in place regardless.
-        format!("Updated, but could not restart: {error}. Reopen DegenView.")
+        tr!(
+            "Updated, but could not restart: {error}. Reopen DegenView.",
+            error = error
+        )
     })
 }
 

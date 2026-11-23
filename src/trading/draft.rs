@@ -4,6 +4,7 @@
 //! reads it with its own rules (a broker's validation, the paper engine's) and answers with
 //! [`DraftCheck`]: what is wrong, field by field, and what the order would cost.
 
+use crate::i18n::tr;
 use degenview_brokers::{Decimal, Side};
 
 use super::model::{OrderClass, TicketCaps, TimeInForce};
@@ -92,8 +93,8 @@ impl TradeDraft {
 
     pub fn side_label(&self) -> &'static str {
         match self.side {
-            Side::Buy => "Buy",
-            Side::Sell => "Sell",
+            Side::Buy => tr!("Buy"),
+            Side::Sell => tr!("Sell"),
         }
     }
 

@@ -39,6 +39,32 @@ pub fn galley(
     galley_on(ui.painter(), value, size, weight, color, max_width)
 }
 
+/// A one-line galley at `size`, or at the smaller size that makes all of it fit `max_width`: for a
+/// miniature of something, which shows every word of it and has no room to wrap or to cut.
+pub fn galley_fitted(
+    ui: &Ui,
+    value: &str,
+    size: f32,
+    weight: f32,
+    color: Color32,
+    max_width: f32,
+) -> Arc<Galley> {
+    // Laid out as wide as it likes, to learn how wide it wants to be.
+    let natural = paragraph(ui, value, size, weight, color, 100_000.0);
+    let width = natural.size().x;
+    if width <= max_width {
+        return natural;
+    }
+    galley(
+        ui,
+        value,
+        size * max_width / width,
+        weight,
+        color,
+        max_width,
+    )
+}
+
 /// [`galley`] for code that paints on a bare [`Painter`], such as a picture of a chart.
 pub fn galley_on(
     painter: &Painter,

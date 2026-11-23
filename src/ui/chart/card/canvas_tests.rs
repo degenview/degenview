@@ -1406,6 +1406,21 @@ pub(super) fn wait_for_run(harness: &mut Harness, id: u64) {
 }
 
 #[test]
+fn a_chart_runs_scripts_only_while_one_is_visible() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    assert!(!harness.card.runs_scripts());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Overlay", OVERLAY_SCRIPT);
+    assert!(harness.card.runs_scripts());
+    harness.card.set_pine_visible(id, false);
+    assert!(
+        !harness.card.runs_scripts(),
+        "a hidden script does not run, so it asks for no history"
+    );
+}
+
+#[test]
 fn a_new_overlay_script_never_claims_a_pane_while_it_evaluates() {
     let mut harness = Harness::new(ChartCanvas::default());
     let id = harness

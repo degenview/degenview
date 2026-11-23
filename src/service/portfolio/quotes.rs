@@ -5,6 +5,7 @@
 //! projection can touch the network, so it runs off the UI thread and publishes an immutable
 //! snapshot when every historical/current conversion is ready.
 
+use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::InstrumentId;
 use crate::model::portfolio::accounting::{holdings, unique_assets};
@@ -570,10 +571,10 @@ fn historical_conversion(
         .and_then(|by_date| by_date.get(&timestamp))
         .cloned()
         .unwrap_or_else(|| {
-            Err(format!(
-                "Exchange rate from {} to {} is unavailable.",
-                from.display_name(),
-                to.display_name()
+            Err(tr!(
+                "Exchange rate from {from} to {to} is unavailable.",
+                from = from.display_name(),
+                to = to.display_name()
             ))
         })
 }

@@ -7,6 +7,7 @@
 
 use super::rows::{Page, color_card, color_well, toggle_row};
 use super::{DrawingProperties, Icon, Id, Ui, card, number_field, picker_row};
+use crate::i18n::{tr, tr_n};
 use crate::model::chart::kind::PriceSource;
 use crate::model::forecast::style::{
     MAX_ACCOUNT, MAX_BAND_MULTIPLIER, MAX_QTY_PRECISION, MAX_ROW_TICKS, ProfileVolume, RowsLayout,
@@ -14,12 +15,6 @@ use crate::model::forecast::style::{
 use crate::model::forecast::volume_profile::MAX_ROWS;
 use crate::model::pattern::bars::BarsMode;
 use crate::model::{Caps, Geometry};
-
-/// The names of the places a quantity can be rounded to.
-const QTY_PLACES: [&str; 9] = [
-    "0 places", "1 place", "2 places", "3 places", "4 places", "5 places", "6 places", "7 places",
-    "8 places",
-];
 
 /// A card with a number in it. `Some` is the new value when it was edited.
 #[allow(clippy::too_many_arguments)]
@@ -69,14 +64,16 @@ impl DrawingProperties {
         let options = &mut style.position;
         page.section(
             ui,
-            "Account",
-            Some("A drawing only: it never places an order, and what it says is hypothetical."),
+            tr!("Account"),
+            Some(tr!(
+                "A drawing only: it never places an order, and what it says is hypothetical."
+            )),
         );
         if let Some(value) = number_card(
             ui,
             Icon::Hash,
-            "Account size",
-            Some("The balance the risk and the size are worked from."),
+            tr!("Account size"),
+            Some(tr!("The balance the risk and the size are worked from.")),
             "position-account",
             options.account,
             100.0,
@@ -88,8 +85,8 @@ impl DrawingProperties {
         if let Some(value) = number_card(
             ui,
             Icon::Hash,
-            "Lot size",
-            Some("The smallest amount traded: a quantity is in lots."),
+            tr!("Lot size"),
+            Some(tr!("The smallest amount traded: a quantity is in lots.")),
             "position-lot",
             options.lot,
             1.0,
@@ -98,11 +95,11 @@ impl DrawingProperties {
         ) {
             options.lot = value;
         }
-        let units = [(true, "% of account"), (false, "Amount")];
+        let units = [(true, tr!("% of account")), (false, tr!("Amount"))];
         picker_row(
             ui,
             Icon::Percent,
-            "Risk is",
+            tr!("Risk is"),
             None,
             &units,
             &mut options.risk_percent,
@@ -115,8 +112,8 @@ impl DrawingProperties {
         if let Some(value) = number_card(
             ui,
             Icon::Percent,
-            "Risk",
-            Some("What is lost if the stop is reached."),
+            tr!("Risk"),
+            Some(tr!("What is lost if the stop is reached.")),
             "position-risk",
             options.risk,
             1.0,
@@ -128,8 +125,10 @@ impl DrawingProperties {
         if let Some(value) = number_card(
             ui,
             Icon::Hash,
-            "Leverage",
-            Some("Caps the size at the account times this over the entry price."),
+            tr!("Leverage"),
+            Some(tr!(
+                "Caps the size at the account times this over the entry price."
+            )),
             "position-leverage",
             options.leverage,
             1.0,
@@ -138,47 +137,57 @@ impl DrawingProperties {
         ) {
             options.leverage = value;
         }
-        let places: Vec<(u8, &str)> = (0..=MAX_QTY_PRECISION)
-            .map(|places| (places, QTY_PLACES[usize::from(places)]))
+        let names: Vec<(u8, String)> = (0..=MAX_QTY_PRECISION)
+            .map(|places| (places, tr_n!(places, "{count} place", "{count} places")))
+            .collect();
+        let places: Vec<(u8, &str)> = names
+            .iter()
+            .map(|(places, name)| (*places, name.as_str()))
             .collect();
         picker_row(
             ui,
             Icon::Hash,
-            "Quantity precision",
+            tr!("Quantity precision"),
             None,
             &places,
             &mut options.qty_precision,
         );
-        page.section(ui, "Stats", None);
+        page.section(ui, tr!("Stats"), None);
         toggle_row(
             ui,
             Icon::TextFormat,
-            "Compact stats",
-            "Shorter tags.",
+            tr!("Compact stats"),
+            tr!("Shorter tags."),
             &mut options.compact,
         );
         toggle_row(
             ui,
             Icon::Eye,
-            "Always show stats",
-            "Off shows them only while the position is selected.",
+            tr!("Always show stats"),
+            tr!("Off shows them only while the position is selected."),
             &mut options.always_stats,
         );
-        page.section(ui, "Colors", None);
-        color_card(ui, Icon::Palette, "Target", None, &mut options.profit);
-        color_card(ui, Icon::Palette, "Stop", None, &mut options.stop);
-        color_card(ui, Icon::Palette, "Stats plate", None, &mut options.label);
+        page.section(ui, tr!("Colors"), None);
+        color_card(ui, Icon::Palette, tr!("Target"), None, &mut options.profit);
+        color_card(ui, Icon::Palette, tr!("Stop"), None, &mut options.stop);
         color_card(
             ui,
             Icon::Palette,
-            "Target reached",
+            tr!("Stats plate"),
+            None,
+            &mut options.label,
+        );
+        color_card(
+            ui,
+            Icon::Palette,
+            tr!("Target reached"),
             None,
             &mut options.success,
         );
         color_card(
             ui,
             Icon::Palette,
-            "Stop reached",
+            tr!("Stop reached"),
             None,
             &mut options.failure,
         );
@@ -193,20 +202,22 @@ impl DrawingProperties {
         let mut page = Page::new(true);
         page.section(
             ui,
-            "Result",
-            Some("Shown once the bars say whether the price reached the target in time."),
+            tr!("Result"),
+            Some(tr!(
+                "Shown once the bars say whether the price reached the target in time."
+            )),
         );
         color_card(
             ui,
             Icon::Palette,
-            "Success",
+            tr!("Success"),
             None,
             &mut style.position.success,
         );
         color_card(
             ui,
             Icon::Palette,
-            "Failure",
+            tr!("Failure"),
             None,
             &mut style.position.failure,
         );
@@ -225,37 +236,46 @@ impl DrawingProperties {
         let mut page = Page::new(true);
         page.section(
             ui,
-            "Bars",
-            Some("A copy kept in the drawing: later changes to the chart do not move it."),
+            tr!("Bars"),
+            Some(tr!(
+                "A copy kept in the drawing: later changes to the chart do not move it."
+            )),
         );
         let modes: Vec<(BarsMode, &str)> = BarsMode::ALL
             .iter()
             .map(|mode| (*mode, mode.label()))
             .collect();
-        picker_row(ui, Icon::ChartLine, "Mode", None, &modes, &mut edited.mode);
+        picker_row(
+            ui,
+            Icon::ChartLine,
+            tr!("Mode"),
+            None,
+            &modes,
+            &mut edited.mode,
+        );
         toggle_row(
             ui,
             Icon::ChevronUpDown,
-            "Mirrored",
-            "Reflect the pattern vertically.",
+            tr!("Mirrored"),
+            tr!("Reflect the pattern vertically."),
             &mut edited.mirrored,
         );
         toggle_row(
             ui,
             Icon::ArrowLeftRight,
-            "Flipped",
-            "Run the pattern backwards in time.",
+            tr!("Flipped"),
+            tr!("Run the pattern backwards in time."),
             &mut edited.flipped,
         );
-        page.section(ui, "Copied from", None);
+        page.section(ui, tr!("Copied from"), None);
         card::card(
             ui,
             Icon::Clock,
-            &format!("{} bars", edited.bars.len()),
-            Some(&format!(
-                "{} to {}",
-                crate::format::timestamp(edited.from_ms),
-                crate::format::timestamp(edited.to_ms)
+            &tr_n!(edited.bars.len(), "{count} bar", "{count} bars"),
+            Some(&tr!(
+                "{from} to {to}",
+                from = crate::format::timestamp(edited.from_ms),
+                to = crate::format::timestamp(edited.to_ms)
             )),
             |_| {},
         );
@@ -275,16 +295,18 @@ impl DrawingProperties {
         let options = &mut style.ghost;
         page.section(
             ui,
-            "Candles",
-            Some("A made-up run between the two points: not a forecast, and never real candles."),
+            tr!("Candles"),
+            Some(tr!(
+                "A made-up run between the two points: not a forecast, and never real candles."
+            )),
         );
         if let Some(value) = number_card(
             ui,
             Icon::Percent,
-            "Average high-low",
-            Some(
-                "A candle's range, in percent of the first price. Zero takes the average range of the chart's last 20 bars.",
-            ),
+            tr!("Average high-low"),
+            Some(tr!(
+                "A candle's range, in percent of the first price. Zero takes the average range of the chart's last 20 bars."
+            )),
             "ghost-average",
             f64::from(options.average),
             0.1,
@@ -296,8 +318,8 @@ impl DrawingProperties {
         if let Some(value) = number_card(
             ui,
             Icon::Percent,
-            "Variance",
-            Some("How much the ranges and the path wander, in percent."),
+            tr!("Variance"),
+            Some(tr!("How much the ranges and the path wander, in percent.")),
             "ghost-variance",
             f64::from(options.variance),
             5.0,
@@ -306,35 +328,47 @@ impl DrawingProperties {
         ) {
             options.variance = value as f32;
         }
-        page.section(ui, "Colors", None);
-        color_card(ui, Icon::Palette, "Up candle", None, &mut options.up);
-        color_card(ui, Icon::Palette, "Down candle", None, &mut options.down);
-        toggle_row(ui, Icon::Eye, "Borders", "", &mut options.draw_border);
+        page.section(ui, tr!("Colors"), None);
+        color_card(ui, Icon::Palette, tr!("Up candle"), None, &mut options.up);
+        color_card(
+            ui,
+            Icon::Palette,
+            tr!("Down candle"),
+            None,
+            &mut options.down,
+        );
+        toggle_row(ui, Icon::Eye, tr!("Borders"), "", &mut options.draw_border);
         if options.draw_border {
-            color_card(ui, Icon::Palette, "Up border", None, &mut options.up_border);
             color_card(
                 ui,
                 Icon::Palette,
-                "Down border",
+                tr!("Up border"),
+                None,
+                &mut options.up_border,
+            );
+            color_card(
+                ui,
+                Icon::Palette,
+                tr!("Down border"),
                 None,
                 &mut options.down_border,
             );
         }
-        toggle_row(ui, Icon::Eye, "Wicks", "", &mut options.draw_wick);
+        toggle_row(ui, Icon::Eye, tr!("Wicks"), "", &mut options.draw_wick);
         if options.draw_wick {
-            color_card(ui, Icon::Palette, "Wick", None, &mut options.wick);
+            color_card(ui, Icon::Palette, tr!("Wick"), None, &mut options.wick);
         }
         if style != before {
             self.set_style(style);
         }
         // Another run: the same inputs and a different seed draw different candles.
-        page.section(ui, "Run", None);
+        page.section(ui, tr!("Run"), None);
         let clicked = card::card(
             ui,
             Icon::Switch,
-            "Draw another run",
-            Some("The same size, different candles."),
-            |ui| ui.button("New run").clicked(),
+            tr!("Draw another run"),
+            Some(tr!("The same size, different candles.")),
+            |ui| ui.button(tr!("New run")).clicked(),
         );
         if clicked && let Some(Geometry::Ghost { seed, .. }) = self.draft.geometry_mut() {
             *seed = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -350,8 +384,10 @@ impl DrawingProperties {
         let options = &mut style.vwap;
         page.section(
             ui,
-            "Inputs",
-            Some("Worked from the volume of the bars the chart draws: no volume, no line."),
+            tr!("Inputs"),
+            Some(tr!(
+                "Worked from the volume of the bars the chart draws: no volume, no line."
+            )),
         );
         let sources: Vec<(PriceSource, &str)> = PriceSource::ALL
             .iter()
@@ -360,22 +396,22 @@ impl DrawingProperties {
         picker_row(
             ui,
             Icon::ChartLine,
-            "Source",
-            Some("The price that is averaged."),
+            tr!("Source"),
+            Some(tr!("The price that is averaged.")),
             &sources,
             &mut options.source,
         );
         toggle_row(
             ui,
             Icon::Eye,
-            "Fill the bands",
-            "Shade between each band and its mirror.",
+            tr!("Fill the bands"),
+            tr!("Shade between each band and its mirror."),
             &mut options.fill,
         );
         for (index, band) in options.bands.iter_mut().enumerate() {
-            page.titled_section(ui, &format!("Band {}", index + 1), None);
-            card::card(ui, Icon::Eye, "Show", None, |ui| {
-                color_well(ui, "Band color", &mut band.color);
+            page.titled_section(ui, &tr!("Band {number}", number = index + 1), None);
+            card::card(ui, Icon::Eye, tr!("Show"), None, |ui| {
+                color_well(ui, tr!("Band color"), &mut band.color);
                 card::switch(ui, &mut band.enabled);
             });
             if band.enabled {
@@ -383,8 +419,8 @@ impl DrawingProperties {
                 if let Some(value) = number_card(
                     ui,
                     Icon::Hash,
-                    "Standard deviations",
-                    Some("How far from the VWAP, either side."),
+                    tr!("Standard deviations"),
+                    Some(tr!("How far from the VWAP, either side.")),
                     id,
                     f64::from(band.multiplier),
                     0.5,
@@ -409,11 +445,10 @@ impl DrawingProperties {
         let options = &mut style.profile;
         page.section(
             ui,
-            "Rows",
-            Some(
-                "The volume of each bar is spread over its high to low: an approximation, not \
-                 tick data.",
-            ),
+            tr!("Rows"),
+            Some(tr!(
+                "The volume of each bar is spread over its high to low: an approximation, not tick data."
+            )),
         );
         let layouts: Vec<(RowsLayout, &str)> = RowsLayout::ALL
             .iter()
@@ -422,7 +457,7 @@ impl DrawingProperties {
         picker_row(
             ui,
             Icon::Sliders,
-            "Rows layout",
+            tr!("Rows layout"),
             None,
             &layouts,
             &mut options.layout,
@@ -432,8 +467,8 @@ impl DrawingProperties {
                 if let Some(value) = number_card(
                     ui,
                     Icon::Hash,
-                    "Row size",
-                    Some("How many rows the range is cut into."),
+                    tr!("Row size"),
+                    Some(tr!("How many rows the range is cut into.")),
                     "profile-rows",
                     f64::from(options.rows),
                     1.0,
@@ -447,8 +482,10 @@ impl DrawingProperties {
                 if let Some(value) = number_card(
                     ui,
                     Icon::Hash,
-                    "Row size",
-                    Some("Each row's height, in steps of the chart's last printed price place."),
+                    tr!("Row size"),
+                    Some(tr!(
+                        "Each row's height, in steps of the chart's last printed price place."
+                    )),
                     "profile-ticks",
                     f64::from(options.ticks),
                     1.0,
@@ -466,7 +503,7 @@ impl DrawingProperties {
         picker_row(
             ui,
             Icon::ChartLine,
-            "Volume",
+            tr!("Volume"),
             None,
             &volumes,
             &mut options.volume,
@@ -474,10 +511,10 @@ impl DrawingProperties {
         if let Some(value) = number_card(
             ui,
             Icon::Percent,
-            "Value area volume",
-            Some(
-                "The share of the volume the value area holds, grown out from the point of control.",
-            ),
+            tr!("Value area volume"),
+            Some(tr!(
+                "The share of the volume the value area holds, grown out from the point of control."
+            )),
             "profile-value-area",
             f64::from(options.value_area),
             1.0,
@@ -486,12 +523,12 @@ impl DrawingProperties {
         ) {
             options.value_area = value as f32;
         }
-        page.section(ui, "Look", None);
+        page.section(ui, tr!("Look"), None);
         if let Some(value) = number_card(
             ui,
             Icon::Percent,
-            "Width",
-            Some("The longest bar, in percent of the range's width."),
+            tr!("Width"),
+            Some(tr!("The longest bar, in percent of the range's width.")),
             "profile-width",
             f64::from(options.width),
             5.0,
@@ -500,11 +537,11 @@ impl DrawingProperties {
         ) {
             options.width = value as f32;
         }
-        let placements = [(false, "Left"), (true, "Right")];
+        let placements = [(false, tr!("Left")), (true, tr!("Right"))];
         picker_row(
             ui,
             Icon::ArrowLeftRight,
-            "Placement",
+            tr!("Placement"),
             None,
             &placements,
             &mut options.right,
@@ -512,38 +549,44 @@ impl DrawingProperties {
         toggle_row(
             ui,
             Icon::Eye,
-            "Point of control",
-            "The row with the most volume.",
+            tr!("Point of control"),
+            tr!("The row with the most volume."),
             &mut options.poc,
         );
         toggle_row(
             ui,
             Icon::Eye,
-            "Value area high and low",
+            tr!("Value area high and low"),
             "",
             &mut options.value_area_lines,
         );
         toggle_row(
             ui,
             Icon::ArrowLeftRight,
-            "Extend point of control",
-            "Run it on to the edge of the chart.",
+            tr!("Extend point of control"),
+            tr!("Run it on to the edge of the chart."),
             &mut options.extend_poc,
         );
-        page.section(ui, "Colors", None);
-        color_card(ui, Icon::Palette, "Up volume", None, &mut options.up);
-        color_card(ui, Icon::Palette, "Down volume", None, &mut options.down);
+        page.section(ui, tr!("Colors"), None);
+        color_card(ui, Icon::Palette, tr!("Up volume"), None, &mut options.up);
         color_card(
             ui,
             Icon::Palette,
-            "Point of control",
+            tr!("Down volume"),
+            None,
+            &mut options.down,
+        );
+        color_card(
+            ui,
+            Icon::Palette,
+            tr!("Point of control"),
             None,
             &mut options.poc_color,
         );
         color_card(
             ui,
             Icon::Palette,
-            "Value area lines",
+            tr!("Value area lines"),
             None,
             &mut options.value_area_color,
         );
@@ -566,40 +609,40 @@ impl DrawingProperties {
         let mut page = Page::new(true);
         let options = &mut style.measure;
         if kind.has_price() {
-            page.section(ui, "Price", None);
-            toggle_row(ui, Icon::Hash, "Price change", "", &mut options.price);
+            page.section(ui, tr!("Price"), None);
+            toggle_row(ui, Icon::Hash, tr!("Price change"), "", &mut options.price);
             toggle_row(
                 ui,
                 Icon::Percent,
-                "Percent change",
+                tr!("Percent change"),
                 "",
                 &mut options.percent,
             );
             toggle_row(
                 ui,
                 Icon::Hash,
-                "Change in ticks",
-                "Steps of the chart's last printed price place.",
+                tr!("Change in ticks"),
+                tr!("Steps of the chart's last printed price place."),
                 &mut options.ticks,
             );
         }
         if kind.has_time() {
-            page.section(ui, "Time", None);
-            toggle_row(ui, Icon::Hash, "Bars", "", &mut options.bars);
-            toggle_row(ui, Icon::Clock, "Date and time", "", &mut options.time);
+            page.section(ui, tr!("Time"), None);
+            toggle_row(ui, Icon::Hash, tr!("Bars"), "", &mut options.bars);
+            toggle_row(ui, Icon::Clock, tr!("Date and time"), "", &mut options.time);
             toggle_row(
                 ui,
                 Icon::ChartLine,
-                "Volume",
-                "Shown when the market has any.",
+                tr!("Volume"),
+                tr!("Shown when the market has any."),
                 &mut options.volume,
             );
         }
-        page.section(ui, "Label", None);
+        page.section(ui, tr!("Label"), None);
         color_card(
             ui,
             Icon::Palette,
-            "Label background",
+            tr!("Label background"),
             None,
             &mut options.label,
         );

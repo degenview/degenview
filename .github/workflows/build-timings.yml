@@ -1,0 +1,100 @@
+name: Build timings
+
+# Measures where the time goes in the compile that `Test macos` and `Test linux` (ci.yml) do first:
+# `Test macos` spent about 10 min on it with a full cache hit, `Test linux` about 2, and nothing
+# in the logs says why. This runs the same build, `cargo test --no-run`, with `--timings`, on the
+# same two runners and with the same cache, and uploads Cargo's HTML report (per-crate start, end
+# and codegen time, and how many crates were building at once) plus the runner's size and
+# toolchain, so the two can be compared side by side.
+#
+# Run it by hand (workflow_dispatch) when CI gets slower or the runners change. It also runs on a
+# pull request that changes this file, so a change to it is tried before it is merged.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/build-timings.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Keep in step with release.yml (see there).
+  RUST_TOOLCHAIN: "1.100.0"
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The job id and the cache `key` are the ones ci.yml's `test` job uses, so this restores the very
+  # cache `Test macos` and `Test linux` restore (rust-cache names it after both) and measures the
+  # build they do, not a colder or warmer one. It only restores: the cache is saved by `main`'s CI runs.
+  test:
+    name: Timings ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            os: macos-latest
+          - name: linux
+            os: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ matrix.name }}
+          save-if: false
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libssl-dev pkg-config
+
+      # What the runner is, written next to the report: a different CPU count or linker explains
+      # a difference the report alone cannot.
+      - name: Describe the runner
+        run: |
+          {
+            echo "## Runner ($RUNNER_OS)"
+            echo '```'
+            if [ "$RUNNER_OS" = macOS ]; then
+              echo "cpus: $(sysctl -n hw.ncpu) ($(sysctl -n machdep.cpu.brand_string))"
+              echo "memory: $(( $(sysctl -n hw.memsize) / 1073741824 )) GiB"
+              echo "linker: $(xcrun --find ld) / $(xcrun ld -v 2>&1 | head -1)"
+            else
+              echo "cpus: $(nproc) ($(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs))"
+              echo "memory: $(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1048576 )) GiB"
+              echo "linker: $(cc -Wl,--version 2>&1 | head -1)"
+            fi
+            rustc -vV
+            echo '```'
+          } | tee "$GITHUB_STEP_SUMMARY"
+
+      # Same command as `Run tests` in ci.yml, up to the point where the tests would start.
+      - name: Build the tests with timings
+        env:
+          DEGENVIEW_NO_KEYCHAIN: "1"
+        run: cargo test --locked --no-run --timings
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: cargo-timing-${{ matrix.name }}
+          path: target/cargo-timings/cargo-timing.html
+          if-no-files-found: error
+          retention-days: 30

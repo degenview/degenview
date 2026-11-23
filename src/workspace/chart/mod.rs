@@ -403,9 +403,16 @@ impl Chart {
         let Some(end) = market::history::page_end(&self.candles) else {
             return;
         };
+        // Near the oldest candle, ahead of the user once, or while the scripts on the chart have
+        // fewer candles than they are meant to run over.
         let wanted = self.older.should_request(
             self.source.supports_older_history(timeframe),
-            self.chart.near_oldest_bar() || self.older.untouched(),
+            self.chart.near_oldest_bar()
+                || self.older.untouched()
+                || market::history::short_for_scripts(
+                    self.chart.runs_scripts(),
+                    self.candles.len(),
+                ),
             self.candles.len(),
             Instant::now(),
         );

@@ -300,6 +300,10 @@ pine::tests::bench -- --ignored --nocapture` prints one workload per line, with
 `--features alloc-count` adding allocations and peak memory. Pictures: `DEGENVIEW_GALLERY_DIR=… cargo
 test --lib pine_studio::debug::gallery -- --ignored`.
 
+A narrated walkthrough of the panel is recorded from the real app by `tools/tutorial-video` (the
+`pine-debugger` tutorial). Its clicks are positions inside the panel, so retake it, and measure the new
+ones with `probe.py`, when the panel's layout changes.
+
 ## Not verified / limitations
 
 * Nothing is checked against TradingView, which has no debugger.

@@ -4,6 +4,7 @@
 //! handed back as an [`Outcome`] for the window to carry out, so the app never reports a copy or
 //! an open that did not happen.
 
+use crate::i18n::tr;
 use crate::model::chart::snapshot::{SharedSnapshot, SnapshotAction, UploadError};
 use crate::service::keychain::snapshot_secrets::SnapshotSecrets;
 use crate::service::snapshot::export::{self, ExportError};
@@ -105,7 +106,7 @@ fn failed(message: impl Into<String>) -> Outcome {
 
 /// Draws `scene` and encodes it.
 fn picture(scene: &Scene) -> Result<ColorImage, Outcome> {
-    raster::rasterize(scene).map_err(|_| failed("Could not draw the image."))
+    raster::rasterize(scene).map_err(|_| failed(tr!("Could not draw the image.")))
 }
 
 fn png_of(image: &ColorImage) -> Result<Vec<u8>, Outcome> {

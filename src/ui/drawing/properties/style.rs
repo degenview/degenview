@@ -3,6 +3,7 @@
 
 use super::DrawingProperties;
 use super::rows::{Page, color_card, color_well, dash_card, toggle_row};
+use crate::i18n::tr;
 use crate::model::drawings::style::{DrawingStyle, Emoji, LineEnd, StatsPosition};
 use crate::model::{Caps, Geometry, PitchforkVariant, Tool};
 use crate::ui::chart::settings::style::{number_field, picker_row};
@@ -41,7 +42,7 @@ impl DrawingProperties {
         // The four pitchforks are one drawing in four constructions: switching keeps the three
         // pivots, so a fork can be tried every way without redrawing it.
         if let Some(current) = variant {
-            page.section(ui, "Pitchfork", None);
+            page.section(ui, tr!("Pitchfork"), None);
             let options: Vec<(PitchforkVariant, &str)> = PitchforkVariant::ALL
                 .iter()
                 .map(|option| (*option, option.label()))
@@ -50,8 +51,8 @@ impl DrawingProperties {
             picker_row(
                 ui,
                 Icon::ForkAndrews,
-                "Style",
-                Some("Where the median starts and ends."),
+                tr!("Style"),
+                Some(tr!("Where the median starts and ends.")),
                 &options,
                 &mut chosen,
             );
@@ -61,23 +62,23 @@ impl DrawingProperties {
         }
         if line {
             let title = if variant.is_some() {
-                "Median"
+                tr!("Median")
             } else if caps.has(Caps::FIB) {
-                "Trend line"
+                tr!("Trend line")
             } else if caps.has(Caps::WIDTH) || caps.has(Caps::DASH) {
-                "Line"
+                tr!("Line")
             } else {
-                "Marker"
+                tr!("Marker")
             };
             page.section(ui, title, None);
         }
         if caps.has(Caps::COLOR) {
             let title = if variant.is_some() {
-                "Median color"
+                tr!("Median color")
             } else if caps.has(Caps::WIDTH) {
-                "Line color"
+                tr!("Line color")
             } else {
-                "Color"
+                tr!("Color")
             };
             // A wave's labels are in its line's colour until they are given one of their own.
             let labels_follow = caps.has(Caps::WAVE) && style.text.color == style.stroke.color;
@@ -89,7 +90,7 @@ impl DrawingProperties {
         }
         if caps.has(Caps::WIDTH) {
             let max = crate::model::drawings::style::MAX_STROKE_WIDTH as f64;
-            if let Some(width) = card::card(ui, Icon::Sliders, "Thickness", None, |ui| {
+            if let Some(width) = card::card(ui, Icon::Sliders, tr!("Thickness"), None, |ui| {
                 number_field(
                     ui,
                     Id::new("drawing-width"),
@@ -103,16 +104,16 @@ impl DrawingProperties {
             }
         }
         if caps.has(Caps::DASH) {
-            dash_card(ui, "Line style", &mut style.stroke.dash);
+            dash_card(ui, tr!("Line style"), &mut style.stroke.dash);
         }
         if caps.has(Caps::ENDS) {
-            page.section(ui, "Arrowheads", None);
+            page.section(ui, tr!("Arrowheads"), None);
             let options: Vec<(LineEnd, &str)> =
                 LineEnd::ALL.iter().map(|end| (*end, end.label())).collect();
             picker_row(
                 ui,
                 Icon::ArrowUpRight,
-                "Start",
+                tr!("Start"),
                 None,
                 &options,
                 &mut style.head_start,
@@ -120,58 +121,60 @@ impl DrawingProperties {
             picker_row(
                 ui,
                 Icon::ArrowUpRight,
-                "End",
+                tr!("End"),
                 None,
                 &options,
                 &mut style.head_end,
             );
         }
         if shape {
-            page.section(ui, if boxed { "Box" } else { "Shape" }, None);
+            page.section(ui, if boxed { tr!("Box") } else { tr!("Shape") }, None);
         }
         if caps.has(Caps::FILL) {
             // A channel or a fork fills the space between its lines: a background.
             let title = if self.tool.spec().group == crate::model::ToolGroup::Shapes {
-                "Fill"
+                tr!("Fill")
             } else if self.tool == Tool::Signpost {
-                "Plate"
+                tr!("Plate")
             } else {
-                "Background"
+                tr!("Background")
             };
             card::card(ui, Icon::RectFill, title, None, |ui| {
-                color_well(ui, "Fill color", &mut style.fill.color);
+                color_well(ui, tr!("Fill color"), &mut style.fill.color);
                 card::switch(ui, &mut style.fill.enabled);
             });
         }
         if boxed {
-            card::card(ui, Icon::RectDashed, "Border", None, |ui| {
-                color_well(ui, "Border color", &mut style.border.color);
+            card::card(ui, Icon::RectDashed, tr!("Border"), None, |ui| {
+                color_well(ui, tr!("Border color"), &mut style.border.color);
                 card::switch(ui, &mut style.border.enabled);
             });
             if style.border.enabled {
                 let max = crate::model::drawings::style::MAX_STROKE_WIDTH as f64;
-                if let Some(width) = card::card(ui, Icon::Sliders, "Border thickness", None, |ui| {
-                    number_field(
-                        ui,
-                        Id::new("drawing-border-width"),
-                        f64::from(style.border.width),
-                        1.0,
-                        1.0..=max,
-                        0,
-                    )
-                }) {
+                if let Some(width) =
+                    card::card(ui, Icon::Sliders, tr!("Border thickness"), None, |ui| {
+                        number_field(
+                            ui,
+                            Id::new("drawing-border-width"),
+                            f64::from(style.border.width),
+                            1.0,
+                            1.0..=max,
+                            0,
+                        )
+                    })
+                {
                     style.border.width = width as f32;
                 }
-                dash_card(ui, "Border style", &mut style.border.dash);
+                dash_card(ui, tr!("Border style"), &mut style.border.dash);
             }
         }
         if caps.has(Caps::EMOJI) {
-            page.section(ui, "Emoji pin", None);
+            page.section(ui, tr!("Emoji pin"), None);
             toggle_row(
                 ui,
                 Icon::SignpostTool,
-                "Emoji pin",
-                "Show an emoji on the marker at the anchor.",
+                tr!("Emoji pin"),
+                tr!("Show an emoji on the marker at the anchor."),
                 &mut style.emoji_shown,
             );
             if style.emoji_shown {
@@ -184,51 +187,58 @@ impl DrawingProperties {
                     .zip(&names)
                     .map(|(emoji, name)| (*emoji, name.as_str()))
                     .collect();
-                picker_row(ui, Icon::Sliders, "Emoji", None, &options, &mut style.emoji);
+                picker_row(
+                    ui,
+                    Icon::Sliders,
+                    tr!("Emoji"),
+                    None,
+                    &options,
+                    &mut style.emoji,
+                );
                 color_card(
                     ui,
                     Icon::Palette,
-                    "Emoji background",
+                    tr!("Emoji background"),
                     None,
                     &mut style.emoji_fill,
                 );
             }
         }
         if caps.has(Caps::MIDDLE_LINE) {
-            card::card(ui, Icon::Minus, "Middle line", None, |ui| {
-                color_well(ui, "Middle line color", &mut style.middle_line.color);
+            card::card(ui, Icon::Minus, tr!("Middle line"), None, |ui| {
+                color_well(ui, tr!("Middle line color"), &mut style.middle_line.color);
                 card::switch(ui, &mut style.middle_line.enabled);
             });
             if style.middle_line.enabled {
-                dash_card(ui, "Middle line style", &mut style.middle_line.dash);
+                dash_card(ui, tr!("Middle line style"), &mut style.middle_line.dash);
             }
         }
         if caps.has(Caps::EXTEND) {
-            page.section(ui, "Extend", None);
+            page.section(ui, tr!("Extend"), None);
             toggle_row(
                 ui,
                 Icon::ArrowLeftRight,
-                "Extend left",
-                "Continue to the left edge of the chart.",
+                tr!("Extend left"),
+                tr!("Continue to the left edge of the chart."),
                 &mut style.extend_left,
             );
             toggle_row(
                 ui,
                 Icon::ArrowLeftRight,
-                "Extend right",
-                "Continue to the right edge of the chart.",
+                tr!("Extend right"),
+                tr!("Continue to the right edge of the chart."),
                 &mut style.extend_right,
             );
         }
         if details {
-            page.section(ui, "Details", None);
+            page.section(ui, tr!("Details"), None);
         }
         if caps.has(Caps::MIDDLE_POINT) {
             toggle_row(
                 ui,
                 Icon::Circle,
-                "Middle point",
-                "A dot halfway along the line.",
+                tr!("Middle point"),
+                tr!("A dot halfway along the line."),
                 &mut style.middle_point,
             );
         }
@@ -242,14 +252,14 @@ impl DrawingProperties {
                 ui,
                 Icon::Tag,
                 if on_axis {
-                    "Price label"
+                    tr!("Price label")
                 } else {
-                    "Price labels"
+                    tr!("Price labels")
                 },
                 if on_axis {
-                    "A tag with the price on the price axis."
+                    tr!("A tag with the price on the price axis.")
                 } else {
-                    "The price at each end."
+                    tr!("The price at each end.")
                 },
                 &mut style.price_labels,
             );
@@ -258,8 +268,8 @@ impl DrawingProperties {
             toggle_row(
                 ui,
                 Icon::Clock,
-                "Time label",
-                "A tag with the time on the time axis.",
+                tr!("Time label"),
+                tr!("A tag with the time on the time axis."),
                 &mut style.time_label,
             );
         }
@@ -276,57 +286,53 @@ impl DrawingProperties {
 
     fn stats_section(&self, ui: &mut Ui, page: &mut Page, style: &mut DrawingStyle) {
         // Always titled: its subtitle says what the switches below it print.
-        let noun = if self.tool == Tool::Arrow {
-            "arrow"
+        let subtitle = if self.tool == Tool::Arrow {
+            tr!("Measurements printed beside the arrow.")
         } else {
-            "line"
+            tr!("Measurements printed beside the line.")
         };
-        page.titled_section(
-            ui,
-            "Statistics",
-            Some(&format!("Measurements printed beside the {noun}.")),
-        );
+        page.titled_section(ui, tr!("Statistics"), Some(subtitle));
         let stats = &mut style.stats;
         toggle_row(
             ui,
             Icon::Hash,
-            "Price range",
-            "The price change between the ends.",
+            tr!("Price range"),
+            tr!("The price change between the ends."),
             &mut stats.price_range,
         );
         toggle_row(
             ui,
             Icon::Percent,
-            "Percent change",
-            "The change as a percentage of the start.",
+            tr!("Percent change"),
+            tr!("The change as a percentage of the start."),
             &mut stats.percent,
         );
         toggle_row(
             ui,
             Icon::ChartLine,
-            "Bars",
-            "How many bars the arrow spans.",
+            tr!("Bars"),
+            tr!("How many bars the arrow spans."),
             &mut stats.bars,
         );
         toggle_row(
             ui,
             Icon::Clock,
-            "Time range",
-            "How long the arrow spans.",
+            tr!("Time range"),
+            tr!("How long the arrow spans."),
             &mut stats.time,
         );
         toggle_row(
             ui,
             Icon::ArrowLeftRight,
-            "Distance",
-            "The signed number of bars from start to end.",
+            tr!("Distance"),
+            tr!("The signed number of bars from start to end."),
             &mut stats.distance,
         );
         toggle_row(
             ui,
             Icon::ArrowUpRight,
-            "Angle",
-            "The arrow's angle as drawn on screen.",
+            tr!("Angle"),
+            tr!("The arrow's angle as drawn on screen."),
             &mut stats.angle,
         );
         let options: Vec<(StatsPosition, &str)> = StatsPosition::ALL
@@ -336,7 +342,7 @@ impl DrawingProperties {
         picker_row(
             ui,
             Icon::Sliders,
-            "Position",
+            tr!("Position"),
             None,
             &options,
             &mut stats.position,
@@ -344,8 +350,8 @@ impl DrawingProperties {
         toggle_row(
             ui,
             Icon::Eye,
-            "Always show",
-            "Off shows the statistics only while the arrow is selected.",
+            tr!("Always show"),
+            tr!("Off shows the statistics only while the arrow is selected."),
             &mut stats.always_show,
         );
     }

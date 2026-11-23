@@ -36,6 +36,10 @@ do not restyle screens you were not asked to touch, and do not copy their older 
   Every busy state in the app uses it: the large ones above, and the small inline ones (Test
   buttons, busy buttons, field adornments, import rows) at 10-16.
 - **Lists that scroll say so.** A scrolling list in a sheet keeps its bar in view (`kit::scroll::keep_bars_visible` around the `ScrollArea`) and fades the edge that has more past it (`kit::scroll::Beyond::of` from the area's offset, content and viewport, then `fade_edges`), so a cut list never looks finished. The update sheet is the reference.
+- **Words go through `tr!`.** A label, hint, tooltip or message is `tr!("…")`, and a widget's `egui::Id`
+  is never made from it. Text grows in other languages (German by a third): let labels fall back to
+  icons or wrap, and look at the screen in the pseudo-locale (`DEGENVIEW_LOCALE=en-XA`). Details:
+  [Localization](../localization.md).
 - **One scale of text.** Page title `kit::size::TITLE2 + 3`, section heading `HEADLINE` bold, body
   `BODY`, hints `CAPTION` in `text_secondary`. Sizes only from `kit::size`.
 

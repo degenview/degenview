@@ -11,6 +11,12 @@ use std::time::{Duration, Instant};
 pub const PAGE: usize = 1_000;
 /// The most candles a chart keeps; paging stops there rather than growing without bound.
 pub const MAX_CANDLES: usize = 100_000;
+/// How many candles a chart with a script on it pages back to by itself, without the user scrolling
+/// there: the 5,000 bars TradingView's Basic plan runs a script over (a Basic account's 5m chart
+/// of OKX BTC-USDC held 6,063, 21 days). A script keeps state across
+/// days (sessions, last week's high, the crossovers of the last five days), and over the 500 candles
+/// a chart first loads it draws less than it does there.
+pub const SCRIPT_DEPTH: usize = 5_000;
 /// How long a failed request waits before the next one: scrolling must not hammer a provider.
 pub const RETRY_AFTER: Duration = Duration::from_secs(15);
 
@@ -86,6 +92,11 @@ impl OlderHistory {
     pub fn keeps_older(&self) -> bool {
         self.loaded || self.in_flight
     }
+}
+
+/// Whether a chart that runs scripts holds fewer candles than they are meant to run over.
+pub fn short_for_scripts(runs_scripts: bool, held: usize) -> bool {
+    runs_scripts && held < SCRIPT_DEPTH
 }
 
 /// The open time before which a page is wanted: the oldest candle held.

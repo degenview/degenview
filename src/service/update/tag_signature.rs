@@ -19,6 +19,7 @@
 //! Windows and Linux have none beyond this and the GitHub digest (see
 //! `docs/agent-guides/releases-updates.md`).
 
+use crate::i18n::tr;
 use crate::service::net::http::{self, Retry};
 use crate::service::update::check::github_headers;
 use serde::Deserialize;
@@ -97,7 +98,7 @@ fn verify_release_tag_at(api: &str, tag: &str) -> Result<(), TagError> {
     let fetch = |url: String| {
         http::get_text(&url, &github_headers(), Retry::Transient).map_err(network_error)
     };
-    let unreadable = |_| TagError::Network("unreadable reply from GitHub".to_owned());
+    let unreadable = |_| TagError::Network(tr!("unreadable reply from GitHub").to_owned());
     let reference: RefDto =
         serde_json::from_str(&fetch(format!("{api}/ref/tags/{tag}"))?).map_err(unreadable)?;
     if reference.object.kind != "tag" {
@@ -116,7 +117,7 @@ fn verify_release_tag_at(api: &str, tag: &str) -> Result<(), TagError> {
 fn network_error(error: http::Error) -> TagError {
     match error {
         http::Error::Status(403 | 429) => {
-            TagError::Network("GitHub is rate limiting requests. Try again later.".to_owned())
+            TagError::Network(tr!("GitHub is rate limiting requests. Try again later.").to_owned())
         }
         other => TagError::Network(other.to_string()),
     }

@@ -6,6 +6,7 @@
 //! as a plain `UpdateView` both UIs draw. Nothing here is persisted: a launch starts unchecked.
 
 use crate::build_info::VERSION;
+use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::changelog::{Coverage, ReleaseNotes};
 use crate::service::update::check::{self, Channel, Release, UpdateOutcome};
@@ -32,7 +33,9 @@ const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 const RETRY_INTERVAL: Duration = Duration::from_secs(30 * 60);
 /// What an available update says about itself until `install_target` has answered. On macOS that
 /// runs `codesign`, which must not hold up the first window.
-const PENDING_TARGET: &str = "Checking whether this copy can update itself…";
+fn pending_target() -> &'static str {
+    tr!("Checking whether this copy can update itself…")
+}
 
 /// Where installing the available release has got to.
 #[derive(Clone)]
@@ -67,7 +70,7 @@ struct State {
     last_failed: bool,
     install: Install,
     /// The app bundle an update can replace, or why there is none (a `cargo run` build). Starts as
-    /// `PENDING_TARGET` and is resolved on the update worker (`tick`), never while the app starts.
+    /// `pending_target()` and is resolved on the update worker (`tick`), never while the app starts.
     target: Result<PathBuf, String>,
     /// The lookup has not been started yet.
     target_pending: bool,
@@ -178,7 +181,10 @@ impl UpdateHost {
     /// Starts on the running version's own channel (a release candidate keeps getting release
     /// candidates until the user picks one).
     pub fn new() -> Self {
-        let host = Self::with_target(Err(PENDING_TARGET.to_owned()), Channel::of_version(VERSION));
+        let host = Self::with_target(
+            Err(pending_target().to_owned()),
+            Channel::of_version(VERSION),
+        );
         host.lock().target_pending = true;
         host
     }
@@ -549,7 +555,7 @@ impl UpdateHost {
                 applied,
                 version,
             } => (prepared.clone(), *applied, version.clone()),
-            _ => return Err("There is no update ready to install.".to_owned()),
+            _ => return Err(tr!("There is no update ready to install.").to_owned()),
         };
         // Outside the lock: this renames the bundle on disk. Not again after a quit that was
         // called off and is now asked for a second time: the new version is already in place, and
@@ -654,7 +660,7 @@ fn available_phase(release: &Release, target: &Result<PathBuf, String>) -> Phase
     } else if let Err(reason) = target {
         Some(reason.clone())
     } else {
-        Some("This release has no download for this computer.".to_owned())
+        Some(tr!("This release has no download for this computer.").to_owned())
     };
     Phase::Available {
         version: release.version.clone(),
@@ -988,7 +994,7 @@ mod tests {
         // Until the worker answers, the update is on offer but not yet installable.
         assert!(matches!(
             host.view().phase,
-            Phase::Available { installable: false, note: Some(ref note), .. } if note == PENDING_TARGET
+            Phase::Available { installable: false, note: Some(ref note), .. } if note == pending_target()
         ));
         // The lookup is started once, by the first tick.
         host.tick(&ctx());
