@@ -53,6 +53,9 @@ struct ChartBar {
     /// Where the chart's history ends, when it is known: the candle that closed last with it is the
     /// request's last confirmed history bar (`barstate.islastconfirmedhistory`).
     history_end: Option<i64>,
+    /// Where the history the session was loaded with ends (`Session::history_end`), None when it
+    /// was never loaded as one: a candle that closed by then is confirmed (`barstate.isconfirmed`).
+    loaded_end: Option<i64>,
     realtime: bool,
     /// Whether this is the chart bar's first tick (`barstate.isnew`); true on history.
     new: bool,
@@ -65,6 +68,7 @@ impl ChartBar {
         end: i64::MIN,
         last: false,
         history_end: None,
+        loaded_end: None,
         realtime: false,
         new: true,
     };
@@ -78,6 +82,7 @@ impl ChartBar {
             end,
             last: flags.is_last,
             history_end: history_end.or(flags.is_last_confirmed_history.then_some(end)),
+            loaded_end: history_end,
             realtime: flags.is_realtime,
             new: flags.is_new,
         }
@@ -89,6 +94,7 @@ impl ChartBar {
             start: bar.open_time,
             end: Self::end_of(bar, seconds),
             history_end,
+            loaded_end: history_end,
             ..Self::BEFORE_CHART
         }
     }
@@ -107,6 +113,12 @@ impl ChartBar {
     ///
     /// A candle is new on history and on the first tick of the chart bar that opens it: a chart bar
     /// that starts inside a candle sees that candle as already running.
+    ///
+    /// A candle is confirmed once it closed, and on history also while it develops (`lookahead_on`)
+    /// when it closes by the history's end: the candle is complete in the data, whichever chart bar
+    /// reads it. The one still open at the history's end, and one developing in real time, is not
+    /// (TradingView-measured: a completed month reads 1 from every chart bar inside it, the final
+    /// incomplete month 0, probes A and B; a developing day on a 4h history reads 1, probe R1).
     fn flags_of(&self, candle: &Kline, interval: f64, commit: bool, is_first: bool) -> BarFlags {
         let candle_end = time::bucket::end(candle.open_time, interval);
         let holds_last_instant = candle.open_time < self.end && self.end <= candle_end;
@@ -120,7 +132,7 @@ impl ChartBar {
             is_history: !is_realtime,
             is_realtime,
             is_new: !is_realtime || (self.new && candle.open_time >= self.start),
-            is_confirmed: commit,
+            is_confirmed: commit || self.loaded_end.is_some_and(|end| candle_end <= end),
             is_last_confirmed_history,
         }
     }
@@ -1759,6 +1771,65 @@ mod tests {
         let hours = lch("240", 12);
         assert_eq!(hours[7], Some(0.0));
         assert_eq!(hours[11], Some(1.0));
+    }
+
+    #[test]
+    fn a_developing_candle_on_history_is_confirmed_when_it_closes_by_the_end_of_the_history() {
+        // TradingView (probe R1, 4h BTCUSDT, `"D"` with lookahead on): every historical chart bar
+        // reads 1, the developing day included; the final incomplete bucket reads 0 (probes A, B).
+        let states = |lookahead: &str| {
+            plotted_as_history(
+                &format!(
+                    "plot(request.security(syminfo.tickerid, \"1D\", barstate.isconfirmed ? 1.0 : 0.0{lookahead}))"
+                ),
+                &hourly_chart(0, 30),
+            )
+        };
+        // Hours 0-29: day 0 closes at hour 24, day 1 is still open when the history ends.
+        let developing = states(", lookahead = barmerge.lookahead_on");
+        assert_eq!(
+            developing[5],
+            Some(1.0),
+            "day 0 develops, and closes inside the history"
+        );
+        assert_eq!(developing[23], Some(1.0));
+        assert_eq!(
+            developing[24],
+            Some(0.0),
+            "day 1 is still open when the history ends"
+        );
+        assert_eq!(developing[29], Some(0.0));
+        let completed = states("");
+        assert_eq!(completed[29], Some(1.0), "the last completed day");
+    }
+
+    #[test]
+    fn a_candle_developing_in_real_time_is_not_confirmed() {
+        // The history ends at hour 5; the live bar sits inside the 4h candle of hours 4-8.
+        let source = "//@version=6\nindicator(\"T\")\nplot(request.security(syminfo.tickerid, \"240\", barstate.isconfirmed ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))";
+        let program = compiler::compile(source, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(TestProvider::default())),
+            None,
+        );
+        session
+            .load_history(&hourly_chart(0, 5), true, Some(3600.0))
+            .expect("runs");
+        let _ = session.execute(
+            BarEvent {
+                candle: bar(5 * 3_600_000, 6.0),
+                phase: BarPhase::RealtimeTick { is_new: true },
+            },
+            true,
+            None,
+        );
+        let values = &session.output().plots[0].values;
+        assert_eq!(values.last(), Some(&Some(0.0)));
     }
 
     #[test]

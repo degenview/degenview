@@ -252,6 +252,10 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   or a later tick, reads false (`ChartBar::new`; TradingView probe C, 2026-11-21: one true tick per
   requested candle open, none on a mid-candle chart bar). TradingView fires it one tick after the
   chart bar that opened the candle (feed latency, not modelled here).
+  `barstate.isconfirmed` in a request is true once the candle closed, and on history also for a
+  developing candle (`lookahead_on`) that closes by the history's end (`ChartBar::loaded_end`): the
+  candle is complete in the data whichever chart bar reads it. The candle still open at the
+  history's end, and one developing in real time, read false (TradingView probes A, B and R1).
   `timeframe.change` is false on the first bar of the series it runs on (the chart's,
   or the request's own candles, `series_bars`), TradingView-measured.
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
