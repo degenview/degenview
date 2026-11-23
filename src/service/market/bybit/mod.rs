@@ -22,7 +22,7 @@ use crate::service::watchlist_quotes::provider::refused_by_region;
 use crate::service::watchlist_quotes::quote_stream::QuoteProtocol;
 use crate::service::watchlist_quotes::{Outcome, QuoteFailure, QuoteRequest};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
-pub(in crate::service) use markets::clear_catalog;
+use markets::clear_catalog;
 use markets::{CATALOG, download_pairs, matching_pairs};
 #[cfg(test)]
 use markets::{Pair, parse_pairs};
@@ -40,6 +40,10 @@ pub struct Bybit;
 pub const BYBIT: Bybit = Bybit;
 
 impl Venue for Bybit {
+    fn clear_catalog(&self) {
+        clear_catalog();
+    }
+
     fn candles(&self) -> &dyn MarketSource {
         self
     }

@@ -7,6 +7,7 @@ use super::engine::Outcome;
 use crate::model::watchlist::quote::SourceQuote;
 use crate::model::{DataSource, Timeframe};
 use crate::service::market::venue;
+use crate::service::net::http;
 use serde_json::Value;
 
 /// One market to price. `symbol` is the id the provider's quote call takes.
@@ -84,11 +85,22 @@ pub(in crate::service) fn get(
     url: &str,
     headers: &[(&str, &str)],
 ) -> Result<String, QuoteFailure> {
-    match crate::service::net::http::get_text(url, headers, crate::service::net::http::Retry::Never)
-    {
-        Ok(body) => Ok(body),
-        Err(crate::service::net::http::Error::Status(code)) => Err(classify_status(source, code)),
-        Err(error) => Err(QuoteFailure::Failed(format!("Network error: {error}"))),
+    http::get_text(url, headers, http::Retry::Never).map_err(|error| failure(source, error))
+}
+
+/// [`get`] for a provider whose public queries are POSTed as JSON.
+pub(in crate::service) fn post_json(
+    source: DataSource,
+    url: &str,
+    body: &str,
+) -> Result<String, QuoteFailure> {
+    http::post_json(url, body, http::Retry::Never).map_err(|error| failure(source, error))
+}
+
+fn failure(source: DataSource, error: http::Error) -> QuoteFailure {
+    match error {
+        http::Error::Status(code) => classify_status(source, code),
+        error => QuoteFailure::Failed(format!("Network error: {error}")),
     }
 }
 

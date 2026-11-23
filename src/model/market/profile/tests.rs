@@ -1,9 +1,10 @@
 use super::*;
+use crate::model::market::MarketKind;
 use std::collections::HashSet;
 
 /// How many variants `DataSource` has. Bumped with [`position`], which cannot compile without an
 /// arm for a new variant.
-const VARIANTS: usize = 13;
+const VARIANTS: usize = 14;
 
 /// Where `source` stands in [`DataSource::ALL`]. Exhaustive, so a new variant does not compile
 /// until it is placed here, and then the tests below make it appear in the list.
@@ -16,12 +17,13 @@ fn position(source: DataSource) -> usize {
         DataSource::Bybit => 4,
         DataSource::Gate => 5,
         DataSource::Mexc => 6,
-        DataSource::CoinGecko => 7,
-        DataSource::DexScreener => 8,
-        DataSource::Alpaca => 9,
-        DataSource::Polymarket => 10,
-        DataSource::Kalshi => 11,
-        DataSource::CoinMarketCap => 12,
+        DataSource::Hyperliquid => 7,
+        DataSource::CoinGecko => 8,
+        DataSource::DexScreener => 9,
+        DataSource::Alpaca => 10,
+        DataSource::Polymarket => 11,
+        DataSource::Kalshi => 12,
+        DataSource::CoinMarketCap => 13,
     }
 }
 
@@ -90,7 +92,7 @@ fn a_pair_style_that_needs_a_bare_asset_quote_names_one() {
         let profile = source.profile();
         assert_eq!(
             profile.home_quote.is_some(),
-            !matches!(profile.pair, PairStyle::None),
+            matches!(profile.pair, PairStyle::Concat(_) | PairStyle::Separated(_)),
             "{source:?}"
         );
     }
@@ -107,6 +109,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Bybit,
             DataSource::Gate,
             DataSource::Mexc,
+            DataSource::Hyperliquid,
         ]
     );
     assert_eq!(
@@ -117,6 +120,7 @@ fn the_streams_follow_the_lists_they_replaced() {
             DataSource::Kraken,
             DataSource::Bybit,
             DataSource::Gate,
+            DataSource::Hyperliquid,
         ]
     );
 }
@@ -124,7 +128,7 @@ fn the_streams_follow_the_lists_they_replaced() {
 #[test]
 fn the_picker_lists_markets_by_symbol_and_predictions_apart() {
     let markets: Vec<_> = DataSource::symbol_markets().collect();
-    assert_eq!(markets.len(), 10);
+    assert_eq!(markets.len(), 11);
     assert!(markets.iter().all(|source| !source.is_prediction_market()));
     assert!(!markets.contains(&DataSource::CoinMarketCap));
     assert_eq!(
@@ -146,10 +150,50 @@ fn quotes_are_polled_as_each_source_allows() {
     assert_eq!(timing(DataSource::Bybit), (5, 45, 2_000));
     assert_eq!(timing(DataSource::Gate), (5, 45, 2_500));
     assert_eq!(timing(DataSource::Mexc), (5, 45, 2_500));
+    assert_eq!(timing(DataSource::Hyperliquid), (10, 60, 2_000));
     assert_eq!(timing(DataSource::DexScreener), (10, 60, 30));
     assert_eq!(timing(DataSource::CoinGecko), (30, 120, 250));
     assert_eq!(timing(DataSource::Alpaca), (5, 45, 200));
     assert_eq!(timing(DataSource::Polymarket), (30, 120, 100));
     assert_eq!(timing(DataSource::Kalshi), (30, 120, 100));
     assert_eq!(timing(DataSource::CoinMarketCap), (0, 0, 100));
+}
+
+#[test]
+fn only_the_sources_whose_ids_say_nothing_title_a_chart_by_its_hit() {
+    let opaque: Vec<_> = DataSource::ALL
+        .into_iter()
+        .filter(|source| source.profile().opaque_ids)
+        .collect();
+    assert_eq!(opaque, [DataSource::Hyperliquid, DataSource::DexScreener]);
+}
+
+#[test]
+fn hyperliquid_lists_perpetuals_and_spot_by_its_own_case_sensitive_names() {
+    let profile = DataSource::Hyperliquid.profile();
+    assert_eq!(profile.kinds, [MarketKind::Perp, MarketKind::Spot]);
+    assert_eq!(profile.default_kind(), MarketKind::Perp);
+    assert_eq!(
+        (profile.slug, profile.display_name),
+        ("HYPERLIQUID", "Hyperliquid")
+    );
+    assert_eq!(profile.home_quote, None);
+    assert!(profile.streams.candles && profile.streams.quotes);
+    assert_eq!(
+        DataSource::from_watchlist_slug("hyperliquid"),
+        Some(DataSource::Hyperliquid)
+    );
+    // Its names are case-sensitive: they are asked and keyed as listed, however they are spelled.
+    for name in ["BTC", "kPEPE", "xyz:SP500", "PURR/USDC", "@107"] {
+        let instrument = crate::model::InstrumentId::new(DataSource::Hyperliquid, name);
+        assert_eq!(instrument.api_symbol(), name);
+        assert_eq!(instrument.key(), format!("HYPERLIQUID:{name}"));
+    }
+    // The `1w` and `1M` of Hyperliquid open off this app's grid, so they are folded, not native.
+    let natives = DataSource::Hyperliquid.natives();
+    assert!(!natives.contains(&Timeframe::WEEK_1) && !natives.contains(&Timeframe::MONTH_1));
+    assert!(DataSource::Hyperliquid.serves(Timeframe::WEEK_1));
+    assert!(DataSource::Hyperliquid.serves(Timeframe::YEAR_1));
+    // `2m` is not an interval of Hyperliquid either: it folds from 1m.
+    assert!(DataSource::Hyperliquid.serves(Timeframe::parse("2m").unwrap()));
 }

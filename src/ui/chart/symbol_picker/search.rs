@@ -470,6 +470,7 @@ mod tests {
             DataSource::Bybit,
             DataSource::Gate,
             DataSource::Mexc,
+            DataSource::Hyperliquid,
             DataSource::DexScreener,
             DataSource::CoinGecko,
         ] {

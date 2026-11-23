@@ -24,6 +24,10 @@ pub struct Alpaca;
 pub const ALPACA: Alpaca = Alpaca;
 
 impl Venue for Alpaca {
+    fn clear_catalog(&self) {
+        clear_catalog();
+    }
+
     fn candles(&self) -> &dyn MarketSource {
         self
     }
@@ -197,7 +201,7 @@ struct Asset {
 static CATALOG: Catalog<Asset> = Catalog::new("catalog_alpaca");
 
 /// Forgets the list held in memory (after the disk cache was cleared).
-pub(in crate::service) fn clear_catalog() {
+fn clear_catalog() {
     CATALOG.clear_memory();
 }
 

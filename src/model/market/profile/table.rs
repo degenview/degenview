@@ -3,7 +3,7 @@
 //! in [`ALL`].
 
 use super::{
-    CachePolicy, CachedSeries, Casing, ChangeBasis, Class, Concat, OlderHistory, PairStyle,
+    CachePolicy, CachedSeries, Casing, ChangeBasis, Class, Concat, Listed, OlderHistory, PairStyle,
     Profile, QuoteTiming, Separated, Series, Streams,
 };
 use crate::model::market::MarketKind;
@@ -12,7 +12,7 @@ use crate::model::market::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
 
 /// Every source, in the order lists of sources are searched and shown.
-pub const ALL: [DataSource; 13] = [
+pub const ALL: [DataSource; 14] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -20,6 +20,7 @@ pub const ALL: [DataSource; 13] = [
     DataSource::Bybit,
     DataSource::Gate,
     DataSource::Mexc,
+    DataSource::Hyperliquid,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -37,6 +38,7 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
         DataSource::Bybit => &BYBIT,
         DataSource::Gate => &GATE,
         DataSource::Mexc => &MEXC,
+        DataSource::Hyperliquid => &HYPERLIQUID,
         DataSource::CoinGecko => &COINGECKO,
         DataSource::DexScreener => &DEXSCREENER,
         DataSource::Alpaca => &ALPACA,
@@ -49,12 +51,19 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
 /// The kinds of market a source lists: spot, which is everything that is not a perpetual.
 const SPOT: &[MarketKind] = &[MarketKind::Spot];
 
+/// A venue with perpetuals and spot markets, perpetuals being what a bare id means.
+const PERP_AND_SPOT: &[MarketKind] = &[MarketKind::Perp, MarketKind::Spot];
+
 const fn minutes(count: u16) -> Timeframe {
     native(count, TimeUnit::Minute)
 }
 
 const fn hours(count: u16) -> Timeframe {
     native(count, TimeUnit::Hour)
+}
+
+const fn days(count: u16) -> Timeframe {
+    native(count, TimeUnit::Day)
 }
 
 /// A native length, checked when the list is built.
@@ -129,6 +138,7 @@ pub static BINANCE: Profile = Profile {
     slug: "BINANCE",
     mcp_id: "binance",
     class: Class::Exchange,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Candles,
     volume: true,
@@ -167,6 +177,7 @@ pub static COINBASE: Profile = Profile {
     slug: "COINBASE",
     mcp_id: "coinbase",
     class: Class::Exchange,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Candles,
     volume: true,
@@ -220,6 +231,7 @@ pub static OKX: Profile = Profile {
     slug: "OKX",
     mcp_id: "okx",
     class: Class::Exchange,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Candles,
     volume: true,
@@ -266,6 +278,7 @@ pub static KRAKEN: Profile = Profile {
     slug: "KRAKEN",
     mcp_id: "kraken",
     class: Class::Exchange,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Candles,
     volume: true,
@@ -317,6 +330,7 @@ pub static BYBIT: Profile = Profile {
     slug: "BYBIT",
     mcp_id: "bybit",
     class: Class::Exchange,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Candles,
     volume: true,
@@ -361,6 +375,7 @@ pub static GATE: Profile = Profile {
     slug: "GATEIO",
     mcp_id: "gateio",
     class: Class::Exchange,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Candles,
     volume: true,
@@ -408,6 +423,7 @@ pub static MEXC: Profile = Profile {
     slug: "MEXC",
     mcp_id: "mexc",
     class: Class::Exchange,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Candles,
     volume: true,
@@ -434,12 +450,77 @@ pub static MEXC: Profile = Profile {
     }),
 };
 
+/// Hyperliquid's candle intervals: 1, 3, 5, 15 and 30 minutes, 1, 2, 4, 8 and 12 hours, `1d` and
+/// `3d`. All are cut where this app cuts, checked against the API: minutes and hours from UTC
+/// midnight, days at midnight and a `3d` on a multiple of three days since 1970-01-01. Left out:
+/// its `1w` opens on a Thursday (weeks counted from 1970-01-01) and its `1M` is thirty days counted
+/// from 1970-01-01, not the calendar month, so weeks, months and years fold from days.
+const HYPERLIQUID_NATIVES: [Timeframe; 12] = [
+    minutes(1),
+    minutes(3),
+    minutes(5),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(2),
+    hours(4),
+    hours(8),
+    hours(12),
+    Timeframe::DAY_1,
+    days(3),
+];
+
+pub static HYPERLIQUID: Profile = Profile {
+    display_name: "Hyperliquid",
+    slug: "HYPERLIQUID",
+    mcp_id: "hyperliquid",
+    class: Class::Exchange,
+    // A spot pair Hyperliquid numbers is `@107`: the chart is titled by its tokens, `HYPE/USDC`.
+    opaque_ids: true,
+    kinds: PERP_AND_SPOT,
+    series: Series::Candles,
+    // Candle volume is in the base asset: contracts of a perpetual, coins of a spot pair.
+    volume: true,
+    // Names are case-sensitive (`BTC`, `kPEPE`, `xyz:SP500`) and shown as Hyperliquid writes them.
+    display: Casing::AsGiven,
+    id: Casing::AsGiven,
+    pair: PairStyle::Listed(Listed {
+        namespace: ':',
+        also_in_names: &[':', '/', '@', '-', '_', '.'],
+        noun: "markets",
+        examples: "BTC, xyz:SP500 or PURR/USDC",
+    }),
+    home_quote: None,
+    natives: &HYPERLIQUID_NATIVES,
+    // Only the newest ~5000 candles of an interval exist, whatever its length: a chart's first
+    // fetch leaves the rest for its first older page, and the next page is empty.
+    older_history: OlderHistory::Always,
+    streams: Streams {
+        candles: true,
+        quotes: true,
+    },
+    change: ChangeBasis::Rolling24h,
+    // One call answers every market of a dex (or all spot pairs). The limit is 1,200 weight a
+    // minute per IP and a candle request weighs about 20, so prices are asked every ten seconds.
+    quotes: QuoteTiming {
+        refresh_secs: 10,
+        max_age_secs: 60,
+        batch: 2_000,
+    },
+    // A request answers a window of candles, so a held series is refreshed by its last few.
+    cache: Some(CachePolicy {
+        fresh_secs: 0,
+        of: CachedSeries::Every,
+    }),
+};
+
 // CoinGecko builds its candles from prices, so it has no native lengths.
 pub static COINGECKO: Profile = Profile {
     display_name: "CoinGecko",
     slug: "COINGECKO",
     mcp_id: "coingecko",
     class: Class::Aggregator,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Samples,
     // Its OHLC endpoint has no volume column.
@@ -483,6 +564,7 @@ pub static DEXSCREENER: Profile = Profile {
     slug: "DEXSCREENER",
     mcp_id: "dexscreener",
     class: Class::Dex,
+    opaque_ids: true,
     kinds: SPOT,
     series: Series::Candles,
     volume: true,
@@ -533,6 +615,7 @@ pub static ALPACA: Profile = Profile {
     slug: "ALPACA",
     mcp_id: "alpaca",
     class: Class::Stock,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Candles,
     volume: true,
@@ -566,6 +649,7 @@ pub static POLYMARKET: Profile = Profile {
     slug: "POLYMARKET",
     mcp_id: "polymarket",
     class: Class::Prediction,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Line,
     volume: false,
@@ -589,6 +673,7 @@ pub static KALSHI: Profile = Profile {
     slug: "KALSHI",
     mcp_id: "kalshi",
     class: Class::Prediction,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Line,
     volume: false,
@@ -613,6 +698,7 @@ pub static COINMARKETCAP: Profile = Profile {
     slug: "CMC",
     mcp_id: "coinmarketcap",
     class: Class::Index,
+    opaque_ids: false,
     kinds: SPOT,
     series: Series::Line,
     volume: false,

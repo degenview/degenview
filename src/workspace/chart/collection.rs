@@ -243,15 +243,16 @@ impl ChartWorkspace {
     ) {
         let instrument = InstrumentId::new(result.source, &result.full_symbol);
         let outcome = self.add_chart_for(&instrument, ctx);
-        if result.source == DataSource::DexScreener
+        if result.source.profile().opaque_ids
+            && result.ticker() != result.full_symbol
             && let Some(chart) = self
                 .charts
                 .iter_mut()
                 .find(|chart| chart.id == outcome.chart_id)
         {
-            // DEXScreener fetches by pair address, but that opaque id should never become the
-            // card title. Keep the search result's BASE/QUOTE label alongside it.
-            chart.chart.set_title(Some(result.symbol.clone()));
+            // The id is an address or a number (DEXScreener, Hyperliquid's `@107`) and should
+            // never become the card title. Keep the search result's own label alongside it.
+            chart.chart.set_title(Some(result.ticker().to_owned()));
         }
         if result.source.is_prediction_market()
             && let Some(chart) = self
@@ -734,6 +735,29 @@ mod tests {
             workspace.persisted().charts[0].title.as_deref(),
             Some("MCADE/USDC")
         );
+    }
+
+    #[test]
+    fn a_numbered_spot_pair_is_titled_by_its_tokens_and_a_perpetual_by_its_name() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(9);
+        let spot =
+            SearchResult::new(DataSource::Hyperliquid, "HYPE/USDC", "@107").pair("HYPE", "USDC");
+        let mut perp = SearchResult::new(
+            DataSource::Hyperliquid,
+            "xyz:SP500 — S&P 500 (SPX)",
+            "xyz:SP500",
+        );
+        perp.kind = crate::model::market::MarketKind::Perp;
+
+        workspace.add_from_search(&spot, &ctx);
+        workspace.add_from_search(&perp, &ctx);
+
+        assert_eq!(workspace.charts[0].symbol, "@107");
+        assert_eq!(workspace.charts[0].display_title(), "HYPE/USDC");
+        assert_eq!(workspace.charts[1].symbol, "xyz:SP500");
+        assert_eq!(workspace.charts[1].display_title(), "xyz:SP500");
+        assert_eq!(workspace.persisted().charts[1].title, None);
     }
 
     #[test]

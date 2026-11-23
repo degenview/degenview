@@ -35,7 +35,6 @@ pub enum Keepalive {
     /// `{"method":"ping"}` and an answer that starts `{"channel":"pong"`; Lighter, Bitstamp). The
     /// answer is still no data, but it is all a quiet market can show, so it counts as hearing from
     /// the peer ([`Self::heard_is_alive`]).
-    #[cfg_attr(not(test), allow(dead_code))] // until a venue that needs it lands
     QuietText {
         ping: &'static str,
         pong: &'static str,

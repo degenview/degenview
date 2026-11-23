@@ -1,5 +1,6 @@
-//! Shared transport for idempotent market-data GETs. Provider parsing and rate limits
-//! remain at their call sites; this only bounds network work and classifies failures.
+//! Shared transport for idempotent market-data requests: GETs, and the JSON POSTs of providers whose
+//! public queries are POSTed (Hyperliquid's `/info`). Provider parsing and rate limits remain at
+//! their call sites; this only bounds network work and classifies failures.
 
 use super::agent::FollowingAgent;
 use std::sync::LazyLock;
@@ -17,38 +18,63 @@ static AGENT: LazyLock<FollowingAgent> = LazyLock::new(|| {
     })
 });
 
-/// Something that sends a GET: the shared agent, which follows redirects hop by hop under the
-/// proxy setting (`FollowingAgent::get_following`), or a plain agent.
-trait Get {
-    fn get_url(
+/// Something that sends a request: the shared agent, which follows redirects hop by hop under the
+/// proxy setting (`FollowingAgent::get_following`) for a GET, or a plain agent.
+trait Transport {
+    /// A GET, or a POST of `json` when it is given. A POST does not follow redirects.
+    fn request(
         &self,
         url: &str,
         headers: &[(&str, &str)],
+        json: Option<&str>,
     ) -> Result<Response<ureq::Body>, ureq::Error>;
 }
 
-impl Get for FollowingAgent {
-    fn get_url(
+impl Transport for FollowingAgent {
+    fn request(
         &self,
         url: &str,
         headers: &[(&str, &str)],
+        json: Option<&str>,
     ) -> Result<Response<ureq::Body>, ureq::Error> {
-        self.get_following(url, headers)
+        match json {
+            None => self.get_following(url, headers),
+            Some(json) => post_json_with(&self.get_for(url), url, headers, json),
+        }
     }
 }
 
-impl Get for ureq::Agent {
-    fn get_url(
+impl Transport for ureq::Agent {
+    fn request(
         &self,
         url: &str,
         headers: &[(&str, &str)],
+        json: Option<&str>,
     ) -> Result<Response<ureq::Body>, ureq::Error> {
-        let mut request = self.get(url);
-        for &(name, value) in headers {
-            request = request.header(name, value);
+        match json {
+            None => {
+                let mut request = self.get(url);
+                for &(name, value) in headers {
+                    request = request.header(name, value);
+                }
+                request.call()
+            }
+            Some(json) => post_json_with(self, url, headers, json),
         }
-        request.call()
     }
+}
+
+fn post_json_with(
+    agent: &ureq::Agent,
+    url: &str,
+    headers: &[(&str, &str)],
+    json: &str,
+) -> Result<Response<ureq::Body>, ureq::Error> {
+    let mut request = agent.post(url).header("content-type", "application/json");
+    for &(name, value) in headers {
+        request = request.header(name, value);
+    }
+    request.send(json)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,18 +85,89 @@ pub enum Retry {
     Transient,
 }
 
+/// What a request does besides what its [`Retry`] says.
+#[derive(Clone, Copy, Debug)]
+struct Policy {
+    retry: Retry,
+    /// Whether an error status is answered with the body the provider wrote ([`Error::Refused`]).
+    keep_refusals: bool,
+}
+
+impl From<Retry> for Policy {
+    fn from(retry: Retry) -> Self {
+        Self {
+            retry,
+            keep_refusals: false,
+        }
+    }
+}
+
+/// The most of a refusal's body that is kept: an error message, not a page.
+const REFUSAL_BODY_BYTES: u64 = 4 * 1024;
+
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Error {
     #[error("HTTP {0}")]
     Status(u16),
+    /// An error status with the body the provider wrote, from the requests that ask for it
+    /// ([`get_text_reading_refusals`], [`post_json_reading_refusals`]) because that body tells what
+    /// the status alone cannot (an unknown market is an HTTP 400 or 500 with an error code in it).
+    #[error("HTTP {status}")]
+    Refused { status: u16, body: String },
     #[error("response exceeds {0} bytes")]
     BodyTooLarge(u64),
     #[error("{0}")]
     Network(String),
 }
 
+impl Error {
+    /// The HTTP status of a refusal, whether or not its body was kept.
+    pub fn status(&self) -> Option<u16> {
+        match self {
+            Self::Status(status) | Self::Refused { status, .. } => Some(*status),
+            Self::BodyTooLarge(_) | Self::Network(_) => None,
+        }
+    }
+}
+
 pub fn get_text(url: &str, headers: &[(&str, &str)], retry: Retry) -> Result<String, Error> {
     get_text_with_limit(url, headers, retry, MAX_BODY_BYTES)
+}
+
+/// A POST of the JSON text `body`, answered with the response text. For the public queries of a
+/// provider that takes them as POSTs; the request is as safe to repeat as a GET, so `retry` applies
+/// as it does there.
+pub fn post_json(url: &str, body: &str, retry: Retry) -> Result<String, Error> {
+    post_json_with_policy(url, body, retry.into())
+}
+
+/// [`post_json`] whose error statuses are [`Error::Refused`], with the provider's body.
+pub fn post_json_reading_refusals(url: &str, body: &str, retry: Retry) -> Result<String, Error> {
+    post_json_with_policy(
+        url,
+        body,
+        Policy {
+            retry,
+            keep_refusals: true,
+        },
+    )
+}
+
+fn post_json_with_policy(url: &str, body: &str, policy: Policy) -> Result<String, Error> {
+    fetch(
+        &*AGENT,
+        url,
+        &[],
+        Some(body),
+        policy,
+        std::thread::sleep,
+        |response| {
+            response
+                .with_config()
+                .limit(MAX_BODY_BYTES)
+                .read_to_string()
+        },
+    )
 }
 
 pub fn head_status(url: &str) -> Result<u16, Error> {
@@ -113,14 +210,14 @@ fn jitter_seed() -> u32 {
 }
 
 fn get_with(
-    agent: &impl Get,
+    agent: &impl Transport,
     url: &str,
     headers: &[(&str, &str)],
     retry: Retry,
     max_body_bytes: u64,
     sleep: impl Fn(Duration),
 ) -> Result<String, Error> {
-    fetch(agent, url, headers, retry, sleep, |body| {
+    fetch(agent, url, headers, None, retry, sleep, |body| {
         body.with_config().limit(max_body_bytes).read_to_string()
     })
 }
@@ -131,25 +228,32 @@ pub fn get_bytes(url: &str, max_body_bytes: u64) -> Result<Vec<u8>, Error> {
         &*AGENT,
         url,
         &[],
+        None,
         Retry::Transient,
         std::thread::sleep,
         |body| body.with_config().limit(max_body_bytes).read_to_vec(),
     )
 }
 
-/// The request loop shared by every GET: retry classification and `Retry-After` live here, the
-/// caller only says how to read a successful body.
+/// The request loop shared by every GET and POST: retry classification and `Retry-After` live
+/// here, the caller only says how to read a successful body. `json` is the body of a POST.
 fn fetch<T>(
-    agent: &impl Get,
+    agent: &impl Transport,
     url: &str,
     headers: &[(&str, &str)],
-    retry: Retry,
+    json: Option<&str>,
+    policy: impl Into<Policy>,
     sleep: impl Fn(Duration),
     read: impl Fn(&mut ureq::Body) -> Result<T, ureq::Error>,
 ) -> Result<T, Error> {
-    let attempts = if retry == Retry::Transient { 2 } else { 1 };
+    let policy = policy.into();
+    let attempts = if policy.retry == Retry::Transient {
+        2
+    } else {
+        1
+    };
     for attempt in 0..attempts {
-        let (result, retry_after) = match agent.get_url(url, headers) {
+        let (result, retry_after) = match agent.request(url, headers, json) {
             Ok(mut response) => {
                 let status = response.status().as_u16();
                 if status >= 400 {
@@ -158,7 +262,18 @@ fn fetch<T>(
                         .get("retry-after")
                         .and_then(|value| value.to_str().ok())
                         .map(str::to_owned);
-                    (Err(Error::Status(status)), retry_after)
+                    let error = if policy.keep_refusals {
+                        let body = response
+                            .body_mut()
+                            .with_config()
+                            .limit(REFUSAL_BODY_BYTES)
+                            .read_to_string()
+                            .unwrap_or_default();
+                        Error::Refused { status, body }
+                    } else {
+                        Error::Status(status)
+                    };
+                    (Err(error), retry_after)
                 } else {
                     let body = read(response.body_mut()).map_err(|error| match error {
                         ureq::Error::BodyExceedsLimit(limit) => Error::BodyTooLarge(limit),
@@ -170,10 +285,11 @@ fn fetch<T>(
             Err(ureq::Error::StatusCode(code)) => (Err(Error::Status(code)), None),
             Err(error) => (Err(Error::Network(error.to_string())), None),
         };
-        let should_retry = matches!(
-            result,
-            Err(Error::Status(408 | 425 | 429 | 500..=599)) | Err(Error::Network(_))
-        );
+        let should_retry = match &result {
+            Err(Error::Network(_)) => true,
+            Err(error) => matches!(error.status(), Some(408 | 425 | 429 | 500..=599)),
+            Ok(_) => false,
+        };
         if attempt + 1 == attempts || !should_retry {
             return result;
         }
@@ -219,6 +335,70 @@ mod tests {
             get_with(&agent, &url, &[], Retry::Transient, MAX_BODY_BYTES, |_| {}).unwrap(),
             "ok"
         );
+        thread.join().unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn a_refusal_keeps_the_body_only_when_asked() {
+        let agent = ureq::Agent::new_with_config(
+            ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .build(),
+        );
+        let (url, _, thread) = serve(&[(500, "")]);
+        let kept = Policy {
+            retry: Retry::Never,
+            keep_refusals: true,
+        };
+        let read = |body: &mut ureq::Body| body.read_to_string();
+        assert_eq!(
+            fetch(&agent, &url, &[], None, kept, |_| {}, read),
+            Err(Error::Refused {
+                status: 500,
+                body: "error".to_owned()
+            })
+        );
+        thread.join().unwrap();
+        let (url, _, thread) = serve(&[(500, "")]);
+        assert_eq!(
+            fetch(&agent, &url, &[], None, Retry::Never, |_| {}, read),
+            Err(Error::Status(500))
+        );
+        thread.join().unwrap();
+        assert_eq!(
+            Error::Refused {
+                status: 429,
+                body: String::new()
+            }
+            .status(),
+            Some(429)
+        );
+        assert_eq!(Error::Network("down".to_owned()).status(), None);
+    }
+
+    #[test]
+    fn a_kept_refusal_is_retried_like_its_status() {
+        let (url, count, thread) = serve(&[(503, ""), (200, "")]);
+        let agent = ureq::Agent::new_with_config(
+            ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .build(),
+        );
+        let kept = Policy {
+            retry: Retry::Transient,
+            keep_refusals: true,
+        };
+        let answer = fetch(
+            &agent,
+            &url,
+            &[],
+            None,
+            kept,
+            |_| {},
+            |body| body.read_to_string(),
+        );
+        assert_eq!(answer, Ok("ok".to_owned()));
         thread.join().unwrap();
         assert_eq!(count.load(Ordering::SeqCst), 2);
     }
@@ -283,6 +463,7 @@ mod tests {
                 &agent,
                 &url,
                 &[],
+                None,
                 Retry::Never,
                 |_| {},
                 read(MAX_BODY_BYTES)
@@ -293,10 +474,40 @@ mod tests {
         thread.join().unwrap();
         let (url, _, thread) = serve(&[(200, "")]);
         assert!(matches!(
-            fetch(&agent, &url, &[], Retry::Never, |_| {}, read(1)),
+            fetch(&agent, &url, &[], None, Retry::Never, |_| {}, read(1)),
             Err(Error::BodyTooLarge(1))
         ));
         thread.join().unwrap();
+    }
+
+    #[test]
+    fn a_json_post_sends_its_body_with_its_content_type() {
+        const BODY: &str = r#"{"type":"meta"}"#;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0_u8; 1024];
+            while !request.ends_with(BODY.as_bytes()) {
+                let read = stream.read(&mut chunk).unwrap();
+                assert!(read > 0, "the request ended before its body");
+                request.extend_from_slice(&chunk[..read]);
+            }
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+            String::from_utf8(request).unwrap().to_lowercase()
+        });
+        let agent = ureq::Agent::new_with_defaults();
+        let read =
+            |body: &mut ureq::Body| body.with_config().limit(MAX_BODY_BYTES).read_to_string();
+        let answer = fetch(&agent, &url, &[], Some(BODY), Retry::Never, |_| {}, read).unwrap();
+        assert_eq!(answer, "ok");
+        let request = server.join().unwrap();
+        assert!(request.starts_with("post / http/1.1"), "{request}");
+        assert!(
+            request.contains("content-type: application/json"),
+            "{request}"
+        );
     }
 
     #[test]

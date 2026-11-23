@@ -448,7 +448,7 @@ impl Engine {
                 streams
                     .entry(instrument.source)
                     .or_default()
-                    .insert(instrument.api_symbol().to_uppercase(), key.clone());
+                    .insert(instrument.api_symbol(), key.clone());
                 self.stream_subscribed_at.entry(key.clone()).or_insert(now);
             }
         }
@@ -726,11 +726,14 @@ impl Engine {
         let mut latest: HashMap<String, WatchlistQuote> = HashMap::new();
         let mut heard: HashSet<DataSource> = HashSet::new();
         for tick in ticks {
-            let Some(key) = self
-                .stream_products
-                .get(&tick.source)
-                .and_then(|products| products.get(&tick.product_id.to_uppercase()))
-            else {
+            // A product is named as the venue takes it: upper case for most, but Hyperliquid's
+            // names are case-sensitive (`xyz:SP500`, `kPEPE`), so a tick is looked up as it came
+            // first and by its upper-case spelling after.
+            let Some(key) = self.stream_products.get(&tick.source).and_then(|products| {
+                products
+                    .get(&tick.product_id)
+                    .or_else(|| products.get(&tick.product_id.to_uppercase()))
+            }) else {
                 continue;
             };
             if let Some(reference) = tick.quote.previous_day_price {
@@ -1690,6 +1693,24 @@ mod tests {
         lock(&engine).update(1, Vec::new(), true, T0 + 10_000);
         lock(&engine).expire_leases(T0 + 10_000 + grace + 1);
         assert_eq!(lock(&engine).remembered_markets(), 0);
+    }
+
+    #[test]
+    fn a_case_sensitive_product_is_subscribed_and_matched_as_the_venue_names_it() {
+        let (engine, book, provider) = setup();
+        provider.price("xyz:SP500", 6_900.0);
+        let index = id(DataSource::Hyperliquid, "xyz:SP500");
+        let small = id(DataSource::Hyperliquid, "kPEPE");
+        lock(&engine).update(1, vec![index.clone(), small.clone()], true, T0);
+        assert_eq!(
+            lock(&engine).stream_products(DataSource::Hyperliquid),
+            vec!["kPEPE".to_owned(), "xyz:SP500".to_owned()]
+        );
+        let mut tick = tick("xyz:SP500", 6_950.0, Some(7_000.0));
+        tick.source = DataSource::Hyperliquid;
+        lock(&engine).receive_ticks(vec![tick], T0 + 1_000);
+        assert_eq!(book.get(&index).unwrap().last, Some(6_950.0));
+        assert!(book.get(&small).is_none());
     }
 
     #[test]
