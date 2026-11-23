@@ -597,6 +597,7 @@ mod tests {
     use crate::service::keychain::snapshot_secrets::SnapshotSecrets;
     use crate::service::snapshot::export::ExportError;
     use crate::store::SharedStore;
+    use crate::workspace::test_support::wait_for;
     use std::path::{Path, PathBuf};
 
     #[derive(Default)]
@@ -716,23 +717,17 @@ mod tests {
         }
 
         /// Runs frames until the snapshot finishes, and returns what the window was asked to do.
-        /// A snapshot takes about two seconds alone and the tests share one work queue, so a
-        /// loaded machine running them all at once needs far longer than that; a hung one waits a
-        /// minute and fails.
         fn finish(&mut self) -> Vec<egui::OutputCommand> {
             let mut commands = Vec::new();
-            for _ in 0..6_000 {
+            wait_for("the snapshot's end", || {
                 let mut out = self.ctx.run_ui(egui::RawInput::default(), |_| {
                     self.workspace.poll_snapshot(&self.ctx);
                 });
                 out.textures_delta.clear();
                 commands.extend(std::mem::take(&mut out.platform_output.commands));
-                if self.workspace.snapshot.running.is_none() {
-                    return commands;
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            panic!("the snapshot did not finish");
+                self.workspace.snapshot.running.is_none()
+            });
+            commands
         }
 
         fn notice(&self) -> Option<(String, bool)> {
@@ -1382,7 +1377,7 @@ mod tests {
                 .snapshot_png_for_mcp(&rig.ctx, rig.chart_id, scale)
                 .expect("the chart can be pictured");
             let png = receiver
-                .recv_timeout(Duration::from_secs(60))
+                .recv_timeout(crate::workspace::test_support::JOB_DEADLINE)
                 .expect("the worker answers")
                 .expect("a picture");
             (png, dimensions)
