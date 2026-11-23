@@ -258,6 +258,10 @@ impl SettingsHost {
                     // The page draws under the store's lock, so it is written through it.
                     let _ = self.tab_titles.set(Some(store), style);
                 }
+                SettingsAction::SetLanguage(preference) => {
+                    // Applied in memory even when the save fails, like the theme.
+                    let _ = crate::host::language::choose(store, preference);
+                }
                 SettingsAction::UpdateNotifications(settings) => {
                     out.push(SettingsHostAction::UpdateNotifications(settings));
                 }

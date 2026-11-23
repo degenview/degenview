@@ -12,6 +12,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Live trading, brokers, broker credentials, or Settings ▸ Brokers | [Live trading](docs/broker-trading.md) |
 | The symbol picker (⌘K, Add Chart and a watchlist's plus: markets, prediction markets, indices and portfolio cards), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
 | Any UI: a new or restyled window, sheet, panel, card, sidebar, icon, menu, button, link or dialog | [UI style](docs/agent-guides/ui-style.md) |
+| Any user-facing text, interface languages, `tr!`, dates and times, translation catalogs (`.po`), or the language setting | [Localization](docs/localization.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
 | The cursor menu (Cross, Dot, Arrow, Demonstration, Eraser), the crosshair's parts, the pointer shape over a plot, or the values tooltip on long press | [Chart cursors](docs/chart-cursors.md) |
 | The Screenshot Studio, Select portion, snapshot compositions or backgrounds, or the camera menu | [Chart snapshots](docs/snapshots.md) |
@@ -46,6 +47,13 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 
 For cross-cutting work, load all matching guides. They hold implementation constraints, not
 background; never skip one because the code looks self-explanatory.
+
+## Words go through `tr!`
+
+New or changed user-facing text is written with `tr!` / `tr_n!` / `tr_c!` (`crate::i18n`), never as a
+bare literal in a widget call, and never a sentence assembled from pieces. Existing literals move over
+directory by directory. Rules and the pseudo-locale for checking a screen:
+[Localization](docs/localization.md).
 
 ## Never blue
 
@@ -150,6 +158,7 @@ old output). Finished worktrees are where the disk goes.
 ## Deeper references
 
 - [Architecture](docs/architecture.md) — module map, data flow.
+- [Localization](docs/localization.md) — `tr!` macros, `.po` catalogs, the language setting, the pseudo-locale, adding a language, what is not done.
 - [Chart types](docs/chart-types.md) — construction rules, Pine semantics.
 - [Chart cursors](docs/chart-cursors.md) — the cursor modes and the capability table that decides what each shows.
 - [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, unverified items.

@@ -1,0 +1,143 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: DegenView\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/ui/settings/window.rs
+msgid "Appearance"
+msgstr ""
+
+#: src/ui/settings/window.rs
+msgid "Choose how DegenView looks across every window and chart."
+msgstr ""
+
+#: src/ui/theme/mod.rs
+msgid "Dark"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "Interface language"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "Language"
+msgstr ""
+
+#: src/model/tab/title.rs
+msgid "Layout name only"
+msgstr ""
+
+#: src/ui/theme/mod.rs
+msgid "Light"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "Restore default"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "Same as the system"
+msgstr ""
+
+#: src/model/tab/title.rs
+msgid "Symbol only"
+msgstr ""
+
+#: src/model/tab/title.rs
+msgid "Symbol, price and layout"
+msgstr ""
+
+#: src/ui/theme/mod.rs
+msgid "System"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "System follows your {computer}'s light or dark setting."
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "Tabs"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid ""
+"The language of menus, labels and messages. Market names, prices and Pine "
+"scripts stay as they are."
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "Theme"
+msgstr ""
+
+#: src/model/alert/feed.rs
+msgid "Today"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid ""
+"What a chart tab shows. The layout name and the price follow the tab's focused"
+" chart."
+msgstr ""
+
+#: src/model/alert/feed.rs
+msgid "Yesterday"
+msgstr ""
+
+#: src/ui/kit/time_text.rs
+msgid "in the future"
+msgstr ""
+
+#: src/ui/kit/time_text.rs
+msgid "now"
+msgstr ""
+
+#: src/ui/kit/time_text.rs
+msgid "{count} day ago"
+msgid_plural "{count} days ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs
+msgid "{count} hr. ago"
+msgid_plural "{count} hr. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs
+msgid "{count} min. ago"
+msgid_plural "{count} min. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs
+msgid "{count} mo. ago"
+msgid_plural "{count} mo. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs
+msgid "{count} sec. ago"
+msgid_plural "{count} sec. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs
+msgid "{count} wk. ago"
+msgid_plural "{count} wk. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/kit/time_text.rs
+msgid "{count} yr. ago"
+msgid_plural "{count} yr. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/settings/appearance.rs
+msgid "{style} tab title"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "{theme} theme"
+msgstr ""

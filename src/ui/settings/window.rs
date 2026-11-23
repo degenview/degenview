@@ -73,7 +73,7 @@ impl SettingsSection {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Appearance => "Appearance",
+            Self::Appearance => crate::i18n::tr!("Appearance"),
             Self::PineStudio => "Pine Studio",
             Self::Alpaca => "Alpaca",
             Self::Brokers => "Brokers",
@@ -140,6 +140,8 @@ pub enum SettingsAction {
     SetTheme(crate::ui::theme::AppTheme),
     /// A tab title style on the Appearance page was picked (or restored to the default).
     SetTabTitleStyle(crate::model::tab::title::TabTitleStyle),
+    /// A language on the Appearance page was picked.
+    SetLanguage(crate::i18n::Preference),
     /// A switch on the Notifications page changed: the whole new settings value.
     UpdateNotifications(AlertNotificationSettings),
     /// The paper-trading card on the Notifications page changed.
@@ -415,7 +417,7 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Choose how DegenView looks across every window and chart.",
+                crate::i18n::tr!("Choose how DegenView looks across every window and chart."),
                 |ui| {
                     if let Some(theme) =
                         crate::ui::settings::appearance::body(ui, crate::ui::theme::choice())
@@ -427,6 +429,11 @@ pub fn show(
                         crate::ui::settings::appearance::tabs(ui, input.tab_title_style)
                     {
                         actions.push(SettingsAction::SetTabTitleStyle(style));
+                    }
+                    if let Some(language) =
+                        crate::ui::settings::appearance::language(ui, crate::i18n::preference())
+                    {
+                        actions.push(SettingsAction::SetLanguage(language));
                     }
                 },
             );
@@ -663,26 +670,21 @@ pub(in crate::ui) fn page_shell(
 }
 
 /// `SheetHeader`, with the section's picture in place of an icon badge: the picture, the page
-/// title and a one-line description.
+/// title and its description, which wraps (a longer language takes more lines, and the header
+/// grows to fit them).
 pub(in crate::ui) fn page_header(ui: &mut egui::Ui, section: SettingsSection, subtitle: &str) {
-    let title = section.title();
-    let (row, _) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), crate::ui::settings::art::SIZE.y),
-        Sense::hover(),
-    );
-    let art = Rect::from_min_size(row.min, crate::ui::settings::art::SIZE);
-    crate::ui::settings::art::paint(ui, art, section);
-    let left = art.right() + 16.0;
-    let width = row.right() - left;
+    let art_size = crate::ui::settings::art::SIZE;
+    let left_gap = 16.0;
+    let width = ui.available_width() - art_size.x - left_gap;
     let title = kit::galley(
         ui,
-        title,
+        section.title(),
         kit::size::TITLE2 + 3.0,
         kit::SEMIBOLD,
         theme::text_primary(),
         width,
     );
-    let detail = kit::galley(
+    let detail = kit::paragraph(
         ui,
         subtitle,
         kit::size::SUBHEADLINE + 1.0,
@@ -690,7 +692,18 @@ pub(in crate::ui) fn page_header(ui: &mut egui::Ui, section: SettingsSection, su
         theme::text_secondary(),
         width,
     );
-    let top = row.center().y - (title.size().y + 2.0 + detail.size().y) / 2.0;
+    let text_height = title.size().y + 2.0 + detail.size().y;
+    let (row, _) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), art_size.y.max(text_height)),
+        Sense::hover(),
+    );
+    let art = Rect::from_min_size(
+        Pos2::new(row.min.x, row.center().y - art_size.y / 2.0),
+        art_size,
+    );
+    crate::ui::settings::art::paint(ui, art, section);
+    let left = art.right() + left_gap;
+    let top = row.center().y - text_height / 2.0;
     let title_height = title.size().y;
     ui.painter()
         .galley(Pos2::new(left, top), title, theme::text_primary());
@@ -1027,6 +1040,80 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The Appearance page with its language card in `locale`, drawn until it settles: the choice
+    /// the language card made (none, nothing is clicked), and the last frame.
+    fn draw_appearance_page(
+        screen: &mut crate::ui::render_tests::Screen,
+        locale: crate::i18n::Locale,
+    ) -> (Option<crate::i18n::Preference>, egui::FullOutput) {
+        use crate::i18n::{Preference, with_locale};
+        let mut chosen = None;
+        let mut last = None;
+        with_locale(locale, || {
+            for _ in 0..3 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let mut page = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
+                    page_shell(
+                        &mut page,
+                        SettingsSection::Appearance,
+                        crate::i18n::tr!(
+                            "Choose how DegenView looks across every window and chart."
+                        ),
+                        |ui| {
+                            crate::ui::settings::appearance::body(ui, theme::choice());
+                            ui.add_space(22.0);
+                            crate::ui::settings::appearance::tabs(
+                                ui,
+                                crate::model::tab::title::TabTitleStyle::Full,
+                            );
+                            chosen = crate::ui::settings::appearance::language(
+                                ui,
+                                Preference::Fixed(locale),
+                            );
+                        },
+                    );
+                }));
+            }
+        });
+        (chosen, last.expect("a frame"))
+    }
+
+    /// The Appearance page in the pseudo-locale, with its language card: every word of it is put
+    /// through `tr!`, so none shows without accents and brackets, and the longer text (40% more)
+    /// wraps or makes room, and is never cut.
+    #[test]
+    fn the_appearance_page_draws_in_the_pseudo_locale() {
+        use crate::i18n::{Locale, with_locale};
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        let _theme = crate::ui::theme::RestoreDefaultTheme;
+        // Taller than the window, so the language card at the foot of the page is in the picture.
+        let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, -320.0));
+        theme::apply(&screen.ctx, crate::ui::theme::AppTheme::Dark);
+        let (chosen, last) = draw_appearance_page(&mut screen, Locale::PSEUDO);
+        with_locale(Locale::PSEUDO, || {
+            assert!(SettingsSection::Appearance.title().starts_with('['));
+        });
+        // Nothing was clicked, and nothing was cut.
+        assert_eq!(chosen, None);
+        assert_eq!(Screen::truncated_text(&last), Vec::<String>::new());
+        if gallery_dir().is_some() {
+            screen.save("settings-appearance-pseudo", last);
+        }
+    }
+
+    /// The same page in English shows every word too: the check that finds a label cut in a longer
+    /// language also finds one cut in the language the interface is written in.
+    #[test]
+    fn the_appearance_page_shows_every_word_in_english() {
+        use crate::i18n::Locale;
+        use crate::ui::render_tests::Screen;
+        let _theme = crate::ui::theme::RestoreDefaultTheme;
+        let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, -320.0));
+        theme::apply(&screen.ctx, crate::ui::theme::AppTheme::Dark);
+        let (_, last) = draw_appearance_page(&mut screen, Locale::ENGLISH);
+        assert_eq!(Screen::truncated_text(&last), Vec::<String>::new());
     }
 
     #[test]

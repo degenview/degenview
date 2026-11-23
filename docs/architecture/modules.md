@@ -16,6 +16,7 @@ inventory.
 | `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
 | `graphics/` | Which wgpu backends the renderer starts with, per platform, and how a start that never drew a frame moves the next launch (and a start with no renderer, the same launch) to the next one: `ladder`, `record` (pure state), `persist` (`graphics.json`), `session` (one launch), `presentation` (frames that reached the screen); see [Releases and updates](../agent-guides/releases-updates.md#graphics-backend). A leaf: it imports only `paths`, `build_info`, `lock` and `crash_report` |
 | `format.rs`, `platform.rs`, `lock.rs`, `paths.rs`, `build_info.rs`, `clock.rs` | Leaf helpers every layer imports: number/price/date text and plurals, per-platform wording, locks that survive a poisoning panic, the data and cache folders, the build's version and commit, and the wall clock in milliseconds (`clock::now_ms`, the one copy). `layout_tests.rs` keeps them free of the app's other modules |
+| `i18n/` | Leaf: the interface language in use, `tr!` messages, their gettext `.po` catalogs, and dates in the language's own form via ICU4X ([Localization](../localization.md)); `host/language` chooses the language, `store/language.rs` saves it |
 
 Feature hosts in `host/` (one directory per domain, see `host/` layout below) bridge pure engines,
 persistence, workers, and UI. `host/alert/runtime.rs` is the alert loop shared by the GUI fallback and

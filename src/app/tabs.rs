@@ -316,6 +316,8 @@ pub(super) struct TabState {
     title_revision: u64,
     /// The broker host's revision they were last repainted for.
     broker_revision: u64,
+    /// The interface language's revision they were last repainted for.
+    language_revision: u64,
 }
 
 impl TabState {
@@ -351,6 +353,7 @@ impl TabState {
             quote_revision: 0,
             title_revision: 0,
             broker_revision: 0,
+            language_revision: 0,
         }
     }
 
@@ -526,15 +529,19 @@ impl TabState {
         // The same for a new title style from Settings or another window: each window repaints
         // on its own schedule, and one with nothing animating would show the old titles.
         // A broker's orders and balances change on their own threads; every window shows them.
+        // A new language is every word in every window.
         let revision = quote_book.revision();
         let style_revision = self.shared.titles.revision();
+        let language_revision = crate::i18n::revision();
         if revision != self.quote_revision
             || style_revision != self.title_revision
             || broker_revision != self.broker_revision
+            || language_revision != self.language_revision
         {
             self.quote_revision = revision;
             self.title_revision = style_revision;
             self.broker_revision = broker_revision;
+            self.language_revision = language_revision;
             self.repaint_windows(ctx);
         }
     }

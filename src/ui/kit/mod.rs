@@ -70,8 +70,8 @@ pub use pill::{
 };
 pub use tab_bar::{TabItem, tab_bar, tab_bar_regular, tab_bar_regular_width, tab_bar_slim};
 pub use text::{
-    BOLD, MEDIUM, REGULAR, SEMIBOLD, digits, galley, galley_on, galley_rows, galley_words,
-    paragraph, size, text,
+    BOLD, MEDIUM, REGULAR, SEMIBOLD, digits, galley, galley_fitted, galley_on, galley_rows,
+    galley_words, paragraph, size, text,
 };
 pub use ticker_icon::{
     cached_logo, chart_icon, chart_icon_with_label, monogram_on, monogram_with, round_image,
