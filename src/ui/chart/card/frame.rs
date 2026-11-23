@@ -399,7 +399,7 @@ impl ChartCard {
                 .map_or_else(String::new, |timeframe| format!("{} · ", timeframe.label()));
             subtitle.push_str(self.timeframe.map_or_else(
                 || data.source.display_name(),
-                |timeframe| data.source.chart_feed_label(timeframe),
+                |timeframe| data.source.chart_feed_label(data.symbol, timeframe),
             ));
             if decor.replay_active {
                 subtitle.push_str(" · Replay");

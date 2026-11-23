@@ -80,7 +80,10 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     fresh, a failure retried after 30 seconds and shown as nothing); Kalshi cannot rank its markets,
     so with it chosen only the topics show. Predictions are never kept as recents.
   - **Dashboards** (`dashboards.rs`) is a list, not a search: "Market indices" (the four CoinMarketCap
-    gauges, `model::market::cmc::CHART_TYPES`) and "Portfolio" (the four card kinds, `CardKind::ALL`, for the portfolio
+    gauges, `model::market::cmc::CHART_TYPES`, then the four crypto market-cap indices TOTAL, TOTAL2,
+    TOTAL3 and BTC.D, `GlobalIndex::ALL`, whose titles lead with the symbol and carry the unit:
+    "TOTAL Cap (USD bn)", "BTC.D Dominance (%)"; see
+    [Market data](agent-guides/market-data.md)) and "Portfolio" (the four card kinds, `CardKind::ALL`, for the portfolio
     the pull-down chooses). The box filters titles and descriptions. An index replaces or adds a chart
     like a market; a card only ever adds (`Output::AddCard`, a card cannot take a chart's place), and
     a check marks a card or index already on the tab (`Env::cards_on_tab`). Without a portfolio the
@@ -92,9 +95,12 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   query and the prefix's provider the venue filter, over whatever the pull-down says (the pull-down
   then shows that venue). `BINANCE:` alone lists the venue's recent or popular markets. The Watchlists
   and Predictions tabs read only a prefix they know (a prediction title can hold a colon), Dashboards
-  none. A prefix the open tab has no markets of (`BINANCE:` on Stocks) says so.
-  - **Never silent.** A prefix no provider serves (`KUCOIN:BTCUSDT`, BITGET, HKEX, SSE, futures venues,
-    CoinMarketCap's `CMC`) is a word of 2-12 letters or digits followed by a colon and a symbol: the
+  only an index venue's: `CMC:BTC.D` and `CMC:TOTAL2` filter the tiles by the symbol after the prefix
+  (the titles lead with it). A prefix the open tab has no markets of (`BINANCE:` on Stocks) says so;
+  for an index venue off the Dashboards tab it reads "CoinMarketCap's indices are on the Dashboards
+  tab".
+  - **Never silent.** A prefix no provider serves (`KUCOIN:BTCUSDT`, BITGET, HKEX, SSE, futures venues)
+    is a word of 2-12 letters or digits followed by a colon and a symbol: the
     symbol is searched on every venue of the tab (a venue picked in the pull-down does not narrow it,
     as the prefix overrides it) and listed under "KUCOIN isn't supported · matches from
     other venues", and with no match the card reads "KUCOIN isn't supported. Searched: Binance,

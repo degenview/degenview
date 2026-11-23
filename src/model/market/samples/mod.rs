@@ -4,6 +4,10 @@
 
 use crate::model::Timeframe;
 
+mod fold;
+
+pub use fold::fold_samples;
+
 const DAY_MS: i64 = 86_400_000;
 
 /// `(most days asked, spacing of the samples in milliseconds)`: a day or less comes every five
@@ -19,10 +23,16 @@ pub fn chart_days(timeframe: Timeframe, limit: u32) -> Option<i64> {
     let wanted = ((i64::from(limit) * length + DAY_MS - 1) / DAY_MS).max(1);
     TIERS
         .iter()
-        .filter(|(_, spacing)| length % spacing == 0)
+        .filter(|(_, spacing)| divides(timeframe, *spacing))
         .map(|(days, _)| *days)
         .max()
         .map(|deepest| wanted.min(deepest))
+}
+
+/// Whether samples `spacing_ms` apart are fine enough for candles of `timeframe`: the candle is a
+/// whole number of sample spacings, so no sample falls across two candles.
+pub fn divides(timeframe: Timeframe, spacing_ms: i64) -> bool {
+    timeframe.nominal_ms() % spacing_ms == 0
 }
 
 #[cfg(test)]

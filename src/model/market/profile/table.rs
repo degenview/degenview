@@ -992,7 +992,9 @@ pub static KALSHI: Profile = Profile {
     own_lane: false,
 };
 
-// CoinMarketCap's gauges are index lines, not markets: no candles, no quotes to poll.
+// CoinMarketCap's gauges and market-cap indices are index lines, not markets: no candles, no
+// quotes to poll. Its charts refresh slowly: the gauges move at most daily and the market-cap
+// history is a website API with no published allowance.
 pub static COINMARKETCAP: Profile = Profile {
     display_name: "CoinMarketCap",
     slug: "CMC",
@@ -1008,7 +1010,7 @@ pub static COINMARKETCAP: Profile = Profile {
     home_quote: None,
     natives: &[],
     older_history: OlderHistory::Never,
-    slow_refresh: false,
+    slow_refresh: true,
     streams: Streams {
         candles: false,
         quotes: false,
@@ -1020,7 +1022,7 @@ pub static COINMARKETCAP: Profile = Profile {
         batch: 100,
     },
     cache: None,
-    own_lane: false,
+    own_lane: true,
 };
 
 /// Bitfinex's candle periods: `1m`, `5m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `1D`, `1W`, `14D` and

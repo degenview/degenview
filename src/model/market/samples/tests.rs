@@ -35,3 +35,45 @@ fn a_length_no_sample_spacing_divides_is_unsupported() {
         assert_eq!(days(timeframe, 500), None, "{timeframe}");
     }
 }
+
+#[test]
+fn folds_prices_into_buckets() {
+    let prices = vec![
+        (1_700_000_000_000, 10.0),
+        (1_700_001_800_000, 12.0), // same hour bucket as above
+        (1_700_003_600_000, 8.0),  // next hour bucket
+    ];
+    let candles = fold_samples(&prices, Timeframe::HOUR_1);
+    assert_eq!(candles.len(), 2);
+    assert_eq!(candles[0].high, 12.0);
+    assert_eq!(candles[0].low, 10.0);
+    assert_eq!(candles[0].close, 12.0);
+    assert_eq!(candles[1].close, 8.0);
+    assert_eq!(candles[1].open, 12.0);
+    assert_eq!(candles[1].high, 12.0);
+    assert_eq!(candles[1].low, 8.0);
+}
+
+#[test]
+fn first_candle_opens_at_its_first_sample() {
+    let candles = fold_samples(&[(1_700_000_000_000, 10.0)], Timeframe::HOUR_1);
+    assert_eq!(candles[0].open, 10.0);
+    assert_eq!(candles[0].close, 10.0);
+}
+
+#[test]
+fn single_sample_buckets_get_a_body_and_a_colour() {
+    // One sample per hour, as `/market_chart` returns for 2–90 days.
+    let prices = vec![
+        (1_700_000_000_000, 10.0),
+        (1_700_003_600_000, 9.0),
+        (1_700_007_200_000, 11.0),
+    ];
+    let candles = fold_samples(&prices, Timeframe::HOUR_1);
+    assert_eq!(candles.len(), 3);
+    assert!(!candles[1].is_up());
+    assert_eq!((candles[1].open, candles[1].close), (10.0, 9.0));
+    assert_eq!((candles[1].high, candles[1].low), (10.0, 9.0));
+    assert!(candles[2].is_up());
+    assert_eq!((candles[2].open, candles[2].close), (9.0, 11.0));
+}
