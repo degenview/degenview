@@ -396,10 +396,7 @@ fn form(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
             Icon::Key,
             kit::ORANGE,
             &title,
-            Some(&tr!(
-                "Save it as the secret so it is kept {location} instead of in plain text.",
-                location = crate::platform::in_secret_store()
-            )),
+            Some(crate::platform::webhook_move_to_secret()),
             Some(tr!("Move to Secret")),
         ) {
             state.move_to_secret(credential.id);
@@ -794,10 +791,7 @@ fn secret_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
             ui.add_space(7.0);
             ui.add(
                 egui::Label::new(kit::text(
-                    tr!(
-                        "Kept {location} and inserted wherever you place it, in the URL or a header.",
-                        location = crate::platform::in_secret_store()
-                    ),
+                    crate::platform::webhook_secret_hint(),
                     size::CAPTION + 0.5,
                     REGULAR,
                     theme::text_secondary(),

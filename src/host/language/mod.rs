@@ -28,11 +28,14 @@ pub struct Follower {
 impl Follower {
     const EVERY: Duration = Duration::from_secs(2);
 
-    /// Puts the saved language in use, as `init` does, and starts following it.
+    /// Puts the saved language in use, as `init` does, and starts following it. The choice is read
+    /// once: the one applied is the one remembered, so a change saved a moment later is still seen
+    /// as a change by the next poll.
     pub fn start(store: &Store) -> Self {
-        init(store);
+        let saved = store.language_preference();
+        apply(saved);
         Self {
-            applied: store.language_preference(),
+            applied: saved,
             checked: Instant::now(),
         }
     }
@@ -114,10 +117,10 @@ mod tests {
     #[test]
     fn a_follower_sees_a_change_made_in_the_app_and_not_before_it_is_due() {
         let store = Store::open_in_memory().expect("store");
-        let mut follower = Follower {
-            applied: Preference::System,
-            checked: Instant::now(),
-        };
+        // System is the choice of a new store, and resolves to English whatever the machine.
+        let mut follower = Follower::start(&store);
+        assert_eq!(follower.applied, store.language_preference());
+        assert_eq!(follower.applied, Preference::System);
         let later = follower.checked + Follower::EVERY;
         let fixed = Preference::Fixed(Locale::PSEUDO);
 

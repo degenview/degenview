@@ -162,7 +162,7 @@ impl AiSettingsState {
         // Saving the provider and model says nothing; only a key has a result worth showing.
         if !self.key_input.trim().is_empty() {
             self.status = Some(match store.save(kind, &self.key_input) {
-                Ok(()) => StatusMessage::ok(crate::platform::saved_securely()),
+                Ok(()) => StatusMessage::saved_securely(),
                 Err(error) => StatusMessage::error(tr!(
                     "The key could not be saved for later ({error}). It works until you quit DegenView.",
                     error = error.0
@@ -370,7 +370,7 @@ pub fn body(
         // A failure with more to say is a card at the top; the rest is one line here.
         if let Some(status) = state.status.as_ref().filter(|status| !needs_card(status)) {
             ui.add_space(8.0);
-            status_message(ui, &status.text, status.is_error);
+            status_message(ui, &status.text(), status.is_error);
         }
     });
     if state.autosave.due(ui.ctx()) {

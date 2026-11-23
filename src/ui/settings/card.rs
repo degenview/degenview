@@ -5,6 +5,8 @@ use crate::service::llm::report::ErrorReport;
 use crate::ui::icons::Icon;
 use crate::ui::theme;
 use eframe::egui::{self, Align, CursorIcon, Layout, Sense, Ui, Vec2, vec2};
+use std::borrow::Cow;
+use std::sync::Arc;
 
 /// Width kept for a card's control when its text wraps.
 const CONTROL_RESERVE: f32 = 130.0;
@@ -242,41 +244,127 @@ mod tests {
             "{control:?} {whole:?}"
         );
     }
+
+    /// A language chosen after a key was saved reaches the line that said so; words written at the
+    /// event stay as they were.
+    #[test]
+    fn a_saved_line_is_written_in_the_language_of_the_moment_it_is_drawn() {
+        use crate::i18n::{Locale, with_locale};
+        let saved = StatusMessage::saved_securely();
+        let said = StatusMessage::ok("Keys removed.");
+        let english = saved.text().into_owned();
+        assert_eq!(english, crate::platform::saved_securely());
+
+        with_locale(Locale::PSEUDO, || {
+            assert_ne!(saved.text(), english, "kept the language it was saved in");
+            assert!(saved.text().starts_with('['), "not put through tr!");
+            assert_eq!(said.text(), "Keys removed.");
+        });
+        assert_eq!(saved.text(), english);
+        assert!(!saved.is_error);
+    }
+
+    #[test]
+    fn statuses_are_equal_when_they_read_the_same() {
+        assert_eq!(
+            StatusMessage::saved_securely(),
+            StatusMessage::ok(crate::platform::saved_securely())
+        );
+        assert_ne!(StatusMessage::ok("a"), StatusMessage::error("a"));
+        assert_ne!(StatusMessage::ok("a"), StatusMessage::ok("b"));
+    }
+}
+
+/// What a status line says. Words a person's action produced are written once (`Said`). A line that
+/// always says the same thing in the language in use is kept as how to write it (`Written`) and
+/// written when it is drawn, so a language chosen after the save reaches it: a `String` made at the
+/// save would keep the language of that moment.
+#[derive(Clone)]
+pub enum Words {
+    Said(String),
+    Written(Arc<dyn Fn() -> String + Send + Sync>),
+}
+
+impl Words {
+    /// The words as they read now.
+    fn now(&self) -> Cow<'_, str> {
+        match self {
+            Self::Said(text) => Cow::Borrowed(text),
+            Self::Written(write) => Cow::Owned(write()),
+        }
+    }
+}
+
+impl From<String> for Words {
+    fn from(text: String) -> Self {
+        Self::Said(text)
+    }
+}
+
+impl From<&str> for Words {
+    fn from(text: &str) -> Self {
+        Self::Said(text.to_owned())
+    }
+}
+
+/// Two are equal when they read the same now, however they were made.
+impl PartialEq for Words {
+    fn eq(&self, other: &Self) -> bool {
+        self.now() == other.now()
+    }
+}
+
+impl std::fmt::Debug for Words {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.now())
+    }
 }
 
 /// A status line's words and whether they report a failure.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StatusMessage {
     /// What the status says; for a provider's failure, its headline.
-    pub text: String,
+    words: Words,
     pub is_error: bool,
     /// A provider's failure with more to say than its headline (detail, request id).
     pub report: Option<ErrorReport>,
 }
 
 impl StatusMessage {
-    pub(crate) fn ok(text: impl Into<String>) -> Self {
+    pub(crate) fn ok(text: impl Into<Words>) -> Self {
         Self {
-            text: text.into(),
+            words: text.into(),
             is_error: false,
             report: None,
         }
     }
 
-    pub(crate) fn error(text: impl Into<String>) -> Self {
+    pub(crate) fn error(text: impl Into<Words>) -> Self {
         Self {
-            text: text.into(),
+            words: text.into(),
             is_error: true,
             report: None,
         }
     }
 
+    /// "Saved securely in Keychain." in the words of the language in use when it is drawn.
+    pub(crate) fn saved_securely() -> Self {
+        Self::ok(Words::Written(Arc::new(|| {
+            crate::platform::saved_securely().to_owned()
+        })))
+    }
+
     /// A provider's failure: the headline is the text, the rest is kept for a card.
     pub(crate) fn failure(report: ErrorReport) -> Self {
         Self {
-            text: report.headline.clone(),
+            words: report.headline.clone().into(),
             is_error: true,
             report: report.has_more().then_some(report),
         }
+    }
+
+    /// What the status says now.
+    pub fn text(&self) -> Cow<'_, str> {
+        self.words.now()
     }
 }

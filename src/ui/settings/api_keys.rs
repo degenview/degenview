@@ -84,7 +84,7 @@ impl AlpacaForm {
         self.status = Some(match store.save(&credentials) {
             Ok(()) => {
                 self.is_saved = true;
-                StatusMessage::ok(crate::platform::saved_securely())
+                StatusMessage::saved_securely()
             }
             Err(error) => StatusMessage::error(tr!("Could not save: {error}", error = error.0)),
         });
@@ -180,7 +180,7 @@ impl CmcForm {
             Ok(()) => {
                 self.configured = true;
                 self.api_key.clear();
-                StatusMessage::ok(crate::platform::saved_securely())
+                StatusMessage::saved_securely()
             }
             Err(error) => StatusMessage::error(tr!("Could not save: {error}", error = error.0)),
         });
@@ -325,7 +325,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
         });
         if let Some(status) = &form.status {
             ui.add_space(8.0);
-            status_message(ui, &status.text, status.is_error);
+            status_message(ui, &status.text(), status.is_error);
         }
     });
     // Both keys are needed, so nothing is saved until both are there.
@@ -404,7 +404,7 @@ pub fn coinmarketcap_body(
         });
         if let Some(status) = &form.status {
             ui.add_space(8.0);
-            status_message(ui, &status.text, status.is_error);
+            status_message(ui, &status.text(), status.is_error);
         }
     });
     if form.autosave.due(ui.ctx()) && form.can_save() {
@@ -448,10 +448,7 @@ mod tests {
         form.secret_key = "S1".into();
         assert!(form.can_save());
         form.save(&store);
-        assert_eq!(
-            form.status,
-            Some(StatusMessage::ok(crate::platform::saved_securely()))
-        );
+        assert_eq!(form.status, Some(StatusMessage::saved_securely()));
         assert_eq!(form.badge(), ("Keys saved", Tone::Good));
         assert_eq!(store.credentials().key_id, "PK1", "saved trimmed");
     }

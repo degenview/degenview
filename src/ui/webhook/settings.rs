@@ -99,10 +99,7 @@ impl WebhookTestState {
                 | WebhookDeliveryError::UnsupportedScheme
                 | WebhookDeliveryError::UnsupportedPort => tr!("Invalid address").to_owned(),
                 WebhookDeliveryError::SecretUnavailable => {
-                    tr!(
-                        "Secret not found {location}",
-                        location = crate::platform::in_secret_store()
-                    )
+                    crate::platform::webhook_secret_missing().to_owned()
                 }
                 WebhookDeliveryError::InvalidHeader => tr!("Invalid header").to_owned(),
                 WebhookDeliveryError::SecretInHost => tr!("Secret can't be in the host").to_owned(),
@@ -324,9 +321,14 @@ pub fn body(
         Icon::InfoCircle,
         theme::text_secondary(),
         tr!("How it works"),
-        Some(&tr!(
-            "Alerts send their final message as the request body. A secret is kept {location} and added to the URL or a header where you place it. Each alert triggers one attempt per webhook, with a 3 second limit and no retries, so a slow or failing server can never send the same message twice.",
-            location = crate::platform::in_secret_store()
+        // Whole sentences, one message each, joined with a space: the platform's is its own message.
+        Some(&format!(
+            "{} {} {}",
+            tr!("Alerts send their final message as the request body."),
+            crate::platform::webhook_secret_is_kept(),
+            tr!(
+                "Each alert triggers one attempt per webhook, with a 3 second limit and no retries, so a slow or failing server can never send the same message twice."
+            )
         )),
         None,
     );
@@ -454,10 +456,8 @@ fn address_line(ui: &mut egui::Ui, input: &WebhookSettingsInput, endpoint: &Webh
         )
         .on_hover_text(&endpoint.url);
         if (input.has_secret)(endpoint.id) {
-            icons::inline(ui, Icon::LockFill, 10.0, theme::text_secondary()).on_hover_text(tr!(
-                "Uses a secret kept {location}",
-                location = crate::platform::in_secret_store()
-            ));
+            icons::inline(ui, Icon::LockFill, 10.0, theme::text_secondary())
+                .on_hover_text(crate::platform::webhook_secret_in_use());
         }
         if !endpoint.headers.is_empty() {
             ui.label(kit::text(
@@ -658,7 +658,7 @@ mod tests {
             (
                 SecretUnavailable,
                 None,
-                &format!("Secret not found {}", crate::platform::in_secret_store()),
+                crate::platform::webhook_secret_missing(),
             ),
             (InvalidHeader, None, "Invalid header"),
             (SecretInHost, None, "Secret can't be in the host"),

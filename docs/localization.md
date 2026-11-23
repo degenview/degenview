@@ -54,11 +54,14 @@ Rules that need a person:
   lines, MCP tool descriptions, market and provider data, file formats, keys of saved data, and
   names the person gave (a layout, a watchlist, a script), including the example ones in a picture.
 - Wording that depends on the platform (`platform.rs`) is one whole message per platform
-  (`if cfg!(windows) { tr!(…) } else { tr!(…) }`), never a platform word put into a sentence.
-  `platform::computer()` and `file_manager()` still return a word ("Mac", "Finder"), translated with a
-  context, for `tr!("… {computer} …", computer = …)` and `"Show in {…}"`. A language that inflects
-  the word cannot use them; the fix is a whole message per platform in `platform.rs` and the caller
-  switched to it, as the credential hints are.
+  (`if cfg!(windows) { tr!(…) } else { tr!(…) }`), never a platform word put into a sentence: another
+  language writes the sentence its own way and inflects the word. A text that needs the platform's
+  name gets a function there that returns the whole sentence ("Secret not found in your Keychain",
+  "Show in Finder"). Where a longer text holds one, split it into sentences and join them with a space.
+- **A status line keeps no text.** A `StatusMessage` that says the same thing whatever happened, such
+  as `StatusMessage::saved_securely()`, is stored as how to write it and written when drawn, so a
+  language chosen after the save reaches it. `StatusMessage::ok`/`error` with text keep that text as
+  written at the event; use `Words::Written` for a fixed message that can outlive a language change.
 
 A widget's `egui::Id` must not be made from translated text: the id would change with the language.
 Make it from the enum variant or a fixed name. `kit::field` takes that name as `id_salt`, apart from the

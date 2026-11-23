@@ -321,7 +321,7 @@ fn list(
     open_id: Option<&str>,
     pass: &mut Pass,
 ) {
-    let show_in = format!("Show in {}", crate::platform::file_manager());
+    let show_in = crate::platform::show_in_file_manager();
     for (index, (group, rows)) in groups.iter().enumerate() {
         // Sections breathe: the gap above a header separates it from the rows it closes.
         if index > 0 {
@@ -337,7 +337,7 @@ fn list(
         for &index in rows {
             let script = &scripts[index];
             let selected = open_id == Some(script.id.as_str());
-            row(ui, group, script, selected, &show_in, pass);
+            row(ui, group, script, selected, show_in, pass);
         }
     }
 }

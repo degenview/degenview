@@ -110,7 +110,7 @@ pub fn body(
                 ui.add_space(10.0);
             }
             if let Some(status) = &state.status {
-                status_message(ui, &status.text, status.is_error);
+                status_message(ui, &status.text(), status.is_error);
             }
         },
     );
@@ -349,8 +349,8 @@ mod tests {
                 .forms
                 .get("self_hosted")
                 .and_then(|form| form.status.as_ref())
-                .map(|status| status.text.as_str()),
-            Some("Could not save it")
+                .map(|status| status.text().into_owned()),
+            Some("Could not save it".to_owned())
         );
         state.say_for("not-a-provider", Some(StatusMessage::error("x")));
     }

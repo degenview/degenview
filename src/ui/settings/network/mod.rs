@@ -242,7 +242,7 @@ pub fn body(
         status_message(ui, &problem.to_string(), true);
         ui.add_space(8.0);
     } else if let Some(status) = &state.status {
-        status_message(ui, &status.text, status.is_error);
+        status_message(ui, &status.text(), status.is_error);
         ui.add_space(8.0);
     }
     if state.autosave.due(ui.ctx()) {

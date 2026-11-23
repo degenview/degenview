@@ -410,7 +410,7 @@ fn body(
         actions_row(ui, provider, input, form, settings, present, actions);
     }
     for status in [&form.test_status, &form.status].into_iter().flatten() {
-        status_message(ui, &status.text, status.is_error);
+        status_message(ui, &status.text(), status.is_error);
     }
 }
 
