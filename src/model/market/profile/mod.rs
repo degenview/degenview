@@ -10,6 +10,7 @@ mod table;
 
 use super::source::DataSource;
 use crate::model::Timeframe;
+use crate::model::market::MarketKind;
 
 pub use table::{ALL, profile_of};
 
@@ -23,6 +24,9 @@ pub struct Profile {
     /// The provider's name as every MCP tool spells it.
     pub mcp_id: &'static str,
     pub class: Class,
+    /// How its markets are traded, the first being what an id means unless the venue says
+    /// otherwise (`service::market::venue::Venue::kind_of`). A venue with perpetuals and spot lists both.
+    pub kinds: &'static [MarketKind],
     pub series: Series,
     /// Whether the source reports per-candle turnover for the volume bars to draw.
     pub volume: bool,
@@ -43,6 +47,13 @@ pub struct Profile {
     pub quotes: QuoteTiming,
     /// How candles are cached; `None` where they are not held.
     pub cache: Option<CachePolicy>,
+}
+
+impl Profile {
+    /// What a market of this source is when the venue has no more to say: the first of its kinds.
+    pub fn default_kind(&self) -> MarketKind {
+        self.kinds.first().copied().unwrap_or_default()
+    }
 }
 
 /// What kind of market a source lists. Decides where the symbol picker offers it, whose artwork a

@@ -128,6 +128,7 @@ impl ChartWorkspace {
                             event: None,
                             base: None,
                             quote: None,
+                            kind: crate::model::market::MarketKind::Spot,
                         },
                         &ctx,
                     );

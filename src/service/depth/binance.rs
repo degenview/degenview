@@ -10,7 +10,7 @@ use crate::model::depth::{
 };
 use crate::model::taker_flow::Taker;
 use crate::service::net::http::{self, Retry};
-use crate::service::net::ws::{Keepalive, Session};
+use crate::service::net::ws::{Decode, Keepalive, Session};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -30,6 +30,7 @@ impl DepthVenue for Binance {
             subscribe: Vec::new(),
             // A thin market can be quiet for a long while: the ping says the socket is alive.
             max_data_silence: Duration::from_secs(600),
+            decode: Decode::None,
             keepalive: Keepalive::Frame,
         }
     }

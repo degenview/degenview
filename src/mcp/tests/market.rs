@@ -96,6 +96,7 @@ fn hit(source: DataSource, display: &str, full: &str) -> SearchResult {
         event: None,
         base: None,
         quote: None,
+        kind: crate::model::market::MarketKind::Spot,
     }
 }
 

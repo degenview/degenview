@@ -1,4 +1,5 @@
 use super::*;
+use crate::model::market::MarketKind;
 use crate::model::portfolio::card::CardKind;
 use crate::model::watchlist::quote::Freshness;
 use crate::service::EventInfo;
@@ -37,6 +38,13 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Pro
             "BTC — Grayscale Bitcoin Mini Trust",
             "BTC",
         )]),
+        (Binance, "perp") => Ok(vec![
+            SearchResult {
+                kind: MarketKind::Perp,
+                ..pair(Binance, "BTCUSDT", "BTC", "USDT")
+            },
+            pair(Binance, "ETHUSDT", "ETH", "USDT"),
+        ]),
         (Binance, "btcusdt") => Ok(vec![pair(Binance, "BTCUSDT", "BTC", "USDT")]),
         (Alpaca, "aapl") => Ok(vec![SearchResult::new(Alpaca, "AAPL — Apple Inc.", "AAPL")]),
         (Binance, "eth") => Ok(vec![
@@ -456,6 +464,21 @@ fn a_venue_narrows_the_list_to_one_exchange() {
     // A venue the next scope does not list is dropped with it.
     rig.picker.set_scope(Scope::Stocks);
     assert_eq!(rig.picker.venue, None);
+}
+
+#[test]
+fn only_a_perpetual_row_carries_the_perp_tag() {
+    let tags = |rig: &mut Rig| {
+        texts(rig)
+            .iter()
+            .filter(|text| text.as_str() == " · Perp")
+            .count()
+    };
+    let mut rig = Rig::new(1100.0, "perp");
+    assert_eq!(rig.names(), ["BTCUSDT", "ETHUSDT"]);
+    assert_eq!(tags(&mut rig), 1, "the perpetual alone is tagged");
+    let mut rig = Rig::new(1100.0, "btc");
+    assert_eq!(tags(&mut rig), 0, "spot rows carry no tag");
 }
 
 #[test]
@@ -1426,6 +1449,7 @@ fn gallery_of_the_symbol_picker() {
             &apple,
         ),
         ("symbol-picker-narrow", 640.0, "btc", Scope::All, &bitcoin),
+        ("symbol-picker-perp", 1100.0, "perp", Scope::All, &bitcoin),
         ("symbol-picker-notice", 1100.0, "eth", Scope::All, &bitcoin),
         (
             "symbol-picker-watchlists",
