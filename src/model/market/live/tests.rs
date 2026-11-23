@@ -101,7 +101,12 @@ fn five_minutes() -> Timeframe {
 }
 
 fn fold_into(fold: &mut LiveFold, candles: &mut Vec<Kline>, kline: Kline) -> Option<i64> {
-    fold.apply(five_minutes(), Timeframe::MINUTE_1, candles, kline)
+    fold.apply(
+        five_minutes(),
+        Stream::bars(Timeframe::MINUTE_1),
+        candles,
+        kline,
+    )
 }
 
 #[test]
@@ -168,7 +173,7 @@ fn a_twenty_two_minute_day_ends_in_a_shorter_bucket_that_midnight_cuts() {
     // 23:59 belongs to the 23:50 bucket, which closes at midnight.
     fold.apply(
         target,
-        Timeframe::MINUTE_1,
+        Stream::bars(Timeframe::MINUTE_1),
         &mut candles,
         bar(midnight - MINUTE, 10.0, 1.0),
     );
@@ -177,7 +182,7 @@ fn a_twenty_two_minute_day_ends_in_a_shorter_bucket_that_midnight_cuts() {
     // 00:00 starts a bucket of its own, not a continuation of it.
     fold.apply(
         target,
-        Timeframe::MINUTE_1,
+        Stream::bars(Timeframe::MINUTE_1),
         &mut candles,
         bar(midnight, 11.0, 1.0),
     );
@@ -238,7 +243,12 @@ fn a_new_timeframe_starts_a_new_bucket() {
     fold_into(&mut fold, &mut candles, bar(0, 10.0, 2.0));
     let ten = Timeframe::parse("10m").unwrap();
     let mut other = Vec::new();
-    fold.apply(ten, Timeframe::MINUTE_1, &mut other, bar(MINUTE, 11.0, 5.0));
+    fold.apply(
+        ten,
+        Stream::bars(Timeframe::MINUTE_1),
+        &mut other,
+        bar(MINUTE, 11.0, 5.0),
+    );
     assert_eq!(
         other[0].volume, 5.0,
         "nothing of the five-minute bucket carries over"
@@ -250,12 +260,12 @@ fn a_kline_of_the_timeframe_itself_replaces_the_candle() {
     let hour = Timeframe::HOUR_1;
     let (mut fold, mut candles) = (LiveFold::default(), vec![candle(1, 10.0)]);
     assert_eq!(
-        fold.apply(hour, hour, &mut candles, candle(1, 12.0)),
+        fold.apply(hour, Stream::bars(hour), &mut candles, candle(1, 12.0)),
         Some(1)
     );
     assert_eq!(candles, vec![candle(1, 12.0)]);
     assert_eq!(
-        fold.apply(hour, hour, &mut candles, candle(2, 13.0)),
+        fold.apply(hour, Stream::bars(hour), &mut candles, candle(2, 13.0)),
         Some(2)
     );
     assert_eq!(candles.len(), 2);

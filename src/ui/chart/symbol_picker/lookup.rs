@@ -249,6 +249,7 @@ mod tests {
                 "Deribit",
                 "HTX",
                 "Bitfinex",
+                "Bitstamp",
                 "DEXScreener",
                 "CoinGecko",
                 "Alpaca"

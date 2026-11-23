@@ -388,7 +388,7 @@ fn an_overlay_spelled_any_way_the_source_takes_streams_and_takes_the_bar_by_its_
     hub.apply_live(
         DataSource::Okx,
         Timeframe::HOUR_1,
-        Timeframe::HOUR_1,
+        Stream::bars(Timeframe::HOUR_1),
         "BTC-USDT",
         &candle(11 * HOUR, 5.0),
         now,
@@ -411,7 +411,7 @@ fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
     hub.apply_live(
         DataSource::Binance,
         Timeframe::HOUR_1,
-        Timeframe::HOUR_1,
+        Stream::bars(Timeframe::HOUR_1),
         "ETHUSDT",
         &candle(11 * HOUR, 5.0),
         now,
@@ -422,7 +422,7 @@ fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
     hub.apply_live(
         DataSource::Binance,
         Timeframe::HOUR_1,
-        Timeframe::HOUR_1,
+        Stream::bars(Timeframe::HOUR_1),
         "ethusdt",
         &candle(12 * HOUR, 6.0),
         now,
@@ -436,7 +436,7 @@ fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
     hub.apply_live(
         DataSource::Binance,
         Timeframe::HOUR_1,
-        Timeframe::HOUR_1,
+        Stream::bars(Timeframe::HOUR_1),
         "ETHUSDT",
         &candle(5 * HOUR, 9.0),
         now,
@@ -477,7 +477,7 @@ fn a_refresh_does_not_undo_a_live_candle_that_arrived_while_it_was_out() {
     hub.apply_live(
         DataSource::Binance,
         Timeframe::HOUR_1,
-        Timeframe::HOUR_1,
+        Stream::bars(Timeframe::HOUR_1),
         "ETHUSDT",
         &candle(11 * HOUR, 7.5),
         begun + Duration::from_secs(1),
@@ -497,7 +497,7 @@ fn a_refresh_updates_the_forming_bar_once_the_socket_went_quiet() {
     hub.apply_live(
         DataSource::Binance,
         Timeframe::HOUR_1,
-        Timeframe::HOUR_1,
+        Stream::bars(Timeframe::HOUR_1),
         "ETHUSDT",
         &candle(11 * HOUR, 7.5),
         begun - Duration::from_secs(3),
@@ -622,7 +622,7 @@ fn a_live_kline_of_a_finer_length_is_folded_into_each_holders_candles() {
     hub.apply_live(
         DataSource::Binance,
         two_hours,
-        Timeframe::HOUR_1,
+        Stream::bars(Timeframe::HOUR_1),
         "ETHUSDT",
         &live(12 * HOUR, 5.0, 1.0),
         when,
@@ -630,7 +630,7 @@ fn a_live_kline_of_a_finer_length_is_folded_into_each_holders_candles() {
     hub.apply_live(
         DataSource::Binance,
         two_hours,
-        Timeframe::HOUR_1,
+        Stream::bars(Timeframe::HOUR_1),
         "ETHUSDT",
         &live(12 * HOUR, 6.0, 2.0),
         when,
@@ -638,7 +638,7 @@ fn a_live_kline_of_a_finer_length_is_folded_into_each_holders_candles() {
     hub.apply_live(
         DataSource::Binance,
         two_hours,
-        Timeframe::HOUR_1,
+        Stream::bars(Timeframe::HOUR_1),
         "ETHUSDT",
         &live(13 * HOUR, 7.0, 4.0),
         when,

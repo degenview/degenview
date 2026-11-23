@@ -20,6 +20,7 @@ pub enum DataSource {
     Deribit,
     Htx,
     Bitfinex,
+    Bitstamp,
     CoinGecko,
     DexScreener,
     Alpaca,
