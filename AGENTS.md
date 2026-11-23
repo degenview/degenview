@@ -132,6 +132,13 @@ unit-test wall-clock, so it sits behind the `corpus` cargo feature, off by defau
 - `cargo test` — fast suite, corpus excluded.
 - `cargo test --features corpus` — full suite including the Pine corpus.
 
+Iterating on one change: the library is a single crate, so with incremental compilation off (the
+default here, for disk) every edit recompiles all of it: 5+ min on a loaded machine. In the one
+worktree you are iterating in, run `CARGO_INCREMENTAL=1 cargo test --lib <filter>`: the same edit
+rebuilt in about 2 min (measured on a loaded machine; the first build is slower). Use `cargo check`
+while you only need the compiler's answer, and trim the caches when done
+(`tools/clean-worktrees.sh --trim-incremental`).
+
 ## Worktrees and build space
 
 Each worktree builds into its own `target/` (5 GB fresh, growing every rebuild; cargo never deletes
