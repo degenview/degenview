@@ -473,6 +473,7 @@ mod tests {
             DataSource::Hyperliquid,
             DataSource::Aster,
             DataSource::Lighter,
+            DataSource::Deribit,
             DataSource::DexScreener,
             DataSource::CoinGecko,
         ] {

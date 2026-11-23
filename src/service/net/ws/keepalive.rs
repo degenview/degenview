@@ -57,7 +57,6 @@ pub enum Keepalive {
     /// JSON-RPC heartbeat (Deribit): after connecting the client asks for a heartbeat every
     /// `interval_secs` (`public/set_heartbeat`), the server sends `heartbeat` notifications, and
     /// one of type `test_request` is answered with `public/test`. The client sends nothing else.
-    #[cfg_attr(not(test), allow(dead_code))] // until a venue that needs it lands
     JsonRpcHeartbeat { interval_secs: u32 },
 }
 
