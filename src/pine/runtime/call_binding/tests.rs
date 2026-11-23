@@ -732,3 +732,125 @@ fn hoisted_scripts_run_the_same_both_ways() {
         same_both_ways(&format!("//@version=6\nindicator(\"T\")\n{source}\n"));
     }
 }
+
+// MARK: The builtins that are total survive hostile arguments
+
+/// Arguments that are likeliest to break a builtin that trusts its inputs: a missing value, zero and
+/// negative lengths, a huge one, a series, an empty string and one that is no timeframe or format.
+const HOSTILE: [&str; 7] = ["na", "0", "-1", "1000000", "close", "\"\"", "\"x\""];
+
+/// Every argument list of up to three `HOSTILE` values (the first of a list of three is a series or
+/// `na`, which is what a builtin of three arguments reads first).
+fn hostile_argument_lists() -> Vec<String> {
+    let mut lists = vec![String::new()];
+    lists.extend(HOSTILE.iter().map(|value| (*value).to_owned()));
+    for first in HOSTILE {
+        for second in HOSTILE {
+            lists.push(format!("{first}, {second}"));
+        }
+    }
+    for first in ["close", "na"] {
+        for second in HOSTILE {
+            for third in HOSTILE {
+                lists.push(format!("{first}, {second}, {third}"));
+            }
+        }
+    }
+    lists
+}
+
+/// Calls `name` with each of `hostile_argument_lists`, as an assignment (or a tuple, for what returns
+/// one), over a few bars. Returns how many calls compiled and the first run-time failure, if any.
+fn hostile_calls(name: &str) -> (usize, Option<String>) {
+    let data = bars(12, MINUTE);
+    let mut compiled = 0;
+    for list in hostile_argument_lists() {
+        for target in ["x", "[a, b]", "[a, b, c]"] {
+            let source = format!("//@version=6\nindicator(\"T\")\n{target} = {name}({list})\n");
+            let program = compiler::compile(&source, limits(), &NoLibraries);
+            if !program.is_valid() {
+                continue;
+            }
+            compiled += 1;
+            let mut session = Session::new(
+                program,
+                HashMap::new(),
+                limits(),
+                Some(0.01),
+                symbol(),
+                None,
+                None,
+            );
+            if let Err(RunError::Script(diagnostic)) = session.evaluate(&data) {
+                return (compiled, Some(format!("{source}=> {diagnostic:?}")));
+            }
+            break;
+        }
+    }
+    (compiled, None)
+}
+
+#[test]
+fn the_search_for_a_failing_builtin_finds_one() {
+    // Without this the test below could pass because it looks at nothing.
+    for name in [
+        "runtime.error",
+        "time",
+        "time_close",
+        "ta.pivot_point_levels",
+    ] {
+        assert!(hostile_calls(name).1.is_some(), "{name}");
+    }
+    assert!(hostile_calls("ta.sma").1.is_none());
+}
+
+#[test]
+fn every_builtin_that_is_total_survives_hostile_arguments() {
+    let names: Vec<&str> = crate::pine::compiler::registry::all_functions()
+        .iter()
+        .map(String::as_str)
+        .filter(|name| is_total(name))
+        .collect();
+    assert!(
+        names.len() > 30,
+        "the registry lists the builtins that are total: {}",
+        names.len()
+    );
+    let workers = std::thread::available_parallelism().map_or(2, usize::from);
+    let results: Vec<(&str, usize, Option<String>)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|worker| {
+                let names = &names;
+                scope.spawn(move || {
+                    names
+                        .iter()
+                        .skip(worker)
+                        .step_by(workers)
+                        .map(|name| {
+                            let (compiled, failure) = hostile_calls(name);
+                            (*name, compiled, failure)
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("a worker finished"))
+            .collect()
+    });
+    let failures: Vec<&str> = results
+        .iter()
+        .filter_map(|(_, _, failure)| failure.as_deref())
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+    let untested: Vec<&str> = results
+        .iter()
+        .filter(|(_, compiled, _)| *compiled == 0)
+        .map(|(name, ..)| *name)
+        .collect();
+    assert!(
+        untested.is_empty(),
+        "no call of these compiled, so nothing was checked: {untested:?}"
+    );
+}
