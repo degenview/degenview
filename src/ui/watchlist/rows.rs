@@ -52,20 +52,14 @@ pub fn icon_base_symbol(item: &WatchlistInstrument) -> String {
     let symbol = &item.instrument.symbol;
     let profile = item.instrument.source.profile();
     match (&profile.pair, profile.class) {
-        (PairStyle::Concat(_), _) => {
-            let upper = symbol.to_uppercase();
-            ["USDT", "USDC", "BUSD", "FDUSD", "USD"]
-                .iter()
-                .find_map(|quote| upper.strip_suffix(quote).filter(|base| !base.is_empty()))
-                .unwrap_or(&upper)
-                .to_owned()
+        (PairStyle::Concat(_) | PairStyle::Listed(_), _) => {
+            item.instrument.source.coin_asset(symbol)
         }
         (PairStyle::Separated(style), _) => symbol
             .split(style.separator)
             .next()
             .unwrap_or(symbol)
             .to_uppercase(),
-        (PairStyle::Listed(_), _) => item.instrument.source.base_asset(symbol),
         (PairStyle::None, Class::Aggregator | Class::Dex) => item
             .label
             .split('/')
@@ -671,6 +665,12 @@ mod tests {
                 "BTC",
             ),
             (item(DataSource::Alpaca, "aapl", "Apple", "AAPL"), "AAPL"),
+            (item(DataSource::Bitfinex, "BTCUSD", "BTCUSD", "BTC"), "BTC"),
+            (
+                item(DataSource::Bitfinex, "AVAX:USD", "AVAX:USD", "AVAX"),
+                "AVAX",
+            ),
+            (item(DataSource::Binance, "ETHBTC", "ETHBTC", "ETH"), "ETH"),
         ];
         for (item, expected) in cases {
             assert_eq!(icon_base_symbol(&item), expected, "{:?}", item.instrument);
@@ -678,6 +678,22 @@ mod tests {
         let mut market = item(DataSource::Polymarket, "123", "Q", "123");
         market.display_name = Some("Will it rain?".to_owned());
         assert_eq!(icon_base_symbol(&market), "Will it rain?");
+    }
+
+    #[test]
+    fn a_row_of_a_dollar_pair_after_one_letter_looks_up_the_coin_not_the_whole_pair() {
+        for source in [DataSource::Binance, DataSource::Bybit, DataSource::Mexc] {
+            assert_eq!(
+                icon_base_symbol(&item(source, "SUSDT", "SUSDT", "S")),
+                "S",
+                "{source:?}"
+            );
+        }
+        // A wrapped asset is not a one-letter coin over a quote.
+        assert_eq!(
+            icon_base_symbol(&item(DataSource::Binance, "WBTC", "WBTC", "WBTC")),
+            "WBTC"
+        );
     }
 
     #[test]

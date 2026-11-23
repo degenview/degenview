@@ -475,6 +475,7 @@ mod tests {
             DataSource::Lighter,
             DataSource::Deribit,
             DataSource::Htx,
+            DataSource::Bitfinex,
             DataSource::DexScreener,
             DataSource::CoinGecko,
         ] {

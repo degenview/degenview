@@ -194,7 +194,7 @@ pub fn clear_memory() {
 /// The symbol reduced to its base asset, used by the symbol-keyed steps of the chain.
 fn base_symbol(source: DataSource, symbol: &str) -> String {
     if source.profile().class == Class::Exchange {
-        source.base_asset(symbol).to_lowercase()
+        source.coin_asset(symbol).to_lowercase()
     } else {
         symbol.to_lowercase()
     }

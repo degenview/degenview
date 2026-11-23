@@ -248,6 +248,7 @@ mod tests {
                 "Lighter",
                 "Deribit",
                 "HTX",
+                "Bitfinex",
                 "DEXScreener",
                 "CoinGecko",
                 "Alpaca"
