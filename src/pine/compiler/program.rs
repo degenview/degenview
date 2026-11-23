@@ -227,6 +227,16 @@ pub struct VisualOutput {
 }
 
 impl VisualOutput {
+    /// Where the script draws (its own pane or the main chart, behind the candles or over them)
+    /// and nothing it drew: what stands in for its output while a run over other bars is going.
+    pub fn placement(&self) -> Self {
+        Self {
+            overlay: self.overlay,
+            behind_chart: self.behind_chart,
+            ..Self::default()
+        }
+    }
+
     /// Whether a script with its own pane asked (`force_overlay`) for some of its plots, markers,
     /// candles or drawings to be drawn on the main chart.
     pub fn has_forced_overlay(&self) -> bool {

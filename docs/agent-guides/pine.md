@@ -36,6 +36,13 @@
 - `request.footprint()` handles are stateless (footprint = bar index; `volume_row` = bar index +
   row); data in `Session::footprints`, outside `RuntimeState` so rollback does not copy it. Read
   [Pine volume footprints](../pine-footprint.md) before changing the algorithm: mostly inferred.
+- A chart run's output is of one series (`host::pine::chart::Series`: market and chart type from
+  `SymbolInfo`, the timeframe, a price-based chart's bar length). A restart for a new source, inputs
+  or colours keeps the last valid output up; a restart over another series keeps only its
+  placement (`VisualOutput::placement`), never what it drew, because that is drawn on other bars
+  (bar-index right-aligned, so old plots, candles and drawings would land on the new ones). A new
+  input the chart passes a run that changes what its bars are goes into `Series`, not into a
+  second check. The Studio preview sets its card's timeframe for the same reason.
 - Execution-model gaps: [the audit](../reviews/pine-execution-model-audit.md); read it before relying
   on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
   do not halt the script.

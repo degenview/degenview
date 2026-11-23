@@ -166,6 +166,7 @@ impl ChartCard {
         let chart = ChartFrame {
             bars,
             symbol: symbol_info,
+            timeframe: self.timeframe,
             bar_seconds,
             // What `chart.bg_color` and `chart.fg_color` read: the colours the chart is drawn on.
             theme: if theme::is_light() {

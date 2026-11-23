@@ -45,10 +45,36 @@ fn frame<'a>(bars: &'a [Kline], symbol: &'a SymbolInfo) -> ChartFrame<'a> {
     ChartFrame {
         bars,
         symbol,
+        timeframe: None,
         bar_seconds: None,
         theme: ChartTheme::DARK,
         visible_range: None,
     }
+}
+
+fn frame_in<'a>(bars: &'a [Kline], symbol: &'a SymbolInfo, timeframe: Timeframe) -> ChartFrame<'a> {
+    ChartFrame {
+        timeframe: Some(timeframe),
+        ..frame(bars, symbol)
+    }
+}
+
+/// Updates until the instance's output has drawn something, and returns it.
+fn wait_for_plots(
+    runs: &mut ChartRuns,
+    chart: &ChartFrame<'_>,
+    instances: &[PineInstance],
+) -> Arc<VisualOutput> {
+    let ctx = egui::Context::default();
+    for _ in 0..500 {
+        if let Some((output, ..)) = runs.update(&ctx, chart, instances).pop()
+            && !output.plots.is_empty()
+        {
+            return output;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("the script never drew");
 }
 
 /// Updates until the instance's run has a result.
@@ -179,4 +205,95 @@ fn a_restart_is_a_new_epoch_and_keeps_the_last_valid_output_up() {
         "the old output stays while the new run goes"
     );
     assert!(runs.logs(1).unwrap().epoch > epoch);
+}
+
+#[test]
+fn output_of_another_timeframe_is_never_shown_over_the_new_bars() {
+    let ctx = egui::Context::default();
+    let symbol = symbol();
+    let mut runs = ChartRuns::default();
+    let instances = vec![PineInstance::new(1, None, "Plain", PLAIN)];
+    let hours = hourly(30);
+    let drawn = wait_for_plots(
+        &mut runs,
+        &frame_in(&hours, &symbol, Timeframe::HOUR_1),
+        &instances,
+    );
+    assert_eq!(drawn.bar_count, 30);
+    assert!(runs.has_valid_output(1));
+
+    // The next frame is the new timeframe's first: what the hourly run drew is not of these bars.
+    let days = hourly(8);
+    let in_days = frame_in(&days, &symbol, Timeframe::DAY_1);
+    let shown = runs.update(&ctx, &in_days, &instances);
+    assert_eq!(shown.len(), 1, "the script keeps its place on the chart");
+    assert!(shown[0].0.plots.is_empty() && shown[0].0.bar_count == 0);
+    assert!(shown[0].0.overlay, "and where it draws");
+    assert!(!runs.has_valid_output(1));
+
+    let redrawn = wait_for_plots(&mut runs, &in_days, &instances);
+    assert_eq!(redrawn.bar_count, 8);
+}
+
+#[test]
+fn output_of_another_market_or_chart_type_is_never_shown_either() {
+    let ctx = egui::Context::default();
+    let bars = hourly(30);
+    let mut runs = ChartRuns::default();
+    let instances = vec![PineInstance::new(1, None, "Plain", PLAIN)];
+    let first = symbol();
+    wait_for_plots(
+        &mut runs,
+        &frame_in(&bars, &first, Timeframe::HOUR_1),
+        &instances,
+    );
+    let other_market = SymbolInfo {
+        ticker_id: "OKX:TEST".into(),
+        ..symbol()
+    };
+    let shown = runs.update(
+        &ctx,
+        &frame_in(&bars, &other_market, Timeframe::HOUR_1),
+        &instances,
+    );
+    assert!(shown[0].0.plots.is_empty());
+
+    wait_for_plots(
+        &mut runs,
+        &frame_in(&bars, &other_market, Timeframe::HOUR_1),
+        &instances,
+    );
+    let heikin_ashi = SymbolInfo {
+        chart: crate::model::ChartKind::HeikinAshi,
+        ..other_market
+    };
+    let shown = runs.update(
+        &ctx,
+        &frame_in(&bars, &heikin_ashi, Timeframe::HOUR_1),
+        &instances,
+    );
+    assert!(shown[0].0.plots.is_empty());
+}
+
+#[test]
+fn the_same_series_keeps_its_output_through_new_bars() {
+    let ctx = egui::Context::default();
+    let symbol = symbol();
+    let mut runs = ChartRuns::default();
+    let instances = vec![PineInstance::new(1, None, "Plain", PLAIN)];
+    let bars = hourly(30);
+    wait_for_plots(
+        &mut runs,
+        &frame_in(&bars, &symbol, Timeframe::HOUR_1),
+        &instances,
+    );
+    // A live tick or an older page changes the bars, not what they are: no flash.
+    let more = hourly(31);
+    let shown = runs.update(
+        &ctx,
+        &frame_in(&more, &symbol, Timeframe::HOUR_1),
+        &instances,
+    );
+    assert_eq!(shown[0].0.bar_count, 30);
+    assert!(runs.has_valid_output(1));
 }
