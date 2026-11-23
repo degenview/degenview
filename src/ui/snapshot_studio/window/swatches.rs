@@ -1,6 +1,7 @@
 //! The Background swatches: six discs, each painted from the same colour definitions the
 //! composer paints the backdrop with (`background::swatch`), so what is picked is what is made.
 
+use crate::i18n::tr;
 use crate::model::chart::snapshot::studio::Background;
 use crate::ui::snapshot_studio::compose::background::{self, SwatchLook};
 use crate::ui::theme;
@@ -29,8 +30,10 @@ pub(super) fn row(ui: &mut Ui, selected: Background) -> Option<Background> {
             .interact(cell, Id::new(("studio-background", index)), Sense::click())
             .on_hover_text(background.label())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
-        let response =
-            crate::ui::accessibility::label(response, format!("{} background", background.label()));
+        let response = crate::ui::accessibility::label(
+            response,
+            tr!("{name} background", name = background.label()),
+        );
         let painter = ui.painter();
         paint(
             painter,

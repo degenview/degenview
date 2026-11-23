@@ -58,8 +58,8 @@ pub use form::{
 pub use menu::{
     HEADING_INSET, MenuRow, context_popup, fitted_context_menu, fitted_context_menu_min,
     fitted_menu, fitted_menu_rows, menu_fill, menu_fit, menu_fit_rows, menu_frame, menu_heading,
-    menu_item, menu_item_marked, menu_item_with_shortcut, menu_picker, menu_picker_hinted,
-    menu_popup, menu_row, menu_scope, menu_separator, menu_submenu,
+    menu_item, menu_item_marked, menu_item_with_shortcut, menu_picker, menu_picker_fitted,
+    menu_picker_hinted, menu_popup, menu_row, menu_scope, menu_separator, menu_submenu,
 };
 pub(crate) use menu::{MENU_FRAME_MARGIN, MENU_MAX_HEIGHT, menu_width_for, menu_width_for_rows};
 pub use page::{empty_state, footer_bar, footer_bar_with, notice_card};

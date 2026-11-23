@@ -26,7 +26,7 @@ const MINOR: f64 = 0.05;
 const PIXELS_PER_UNIT: f64 = 120.0;
 /// Every this many ticks one is taller.
 const MAJOR_EVERY: i64 = 5;
-/// The room before the track for the label, and the room after it for the value.
+/// The room before the track for the label (at least), and the room after it for the value.
 const LABEL_WIDTH: f32 = 42.0;
 const READOUT_WIDTH: f32 = 46.0;
 const GAP: f32 = 8.0;
@@ -164,11 +164,13 @@ pub fn ruler(ui: &mut Ui, spec: &Ruler<'_>) -> RulerOutput {
         size::SUBHEADLINE + 0.5,
         REGULAR,
         theme::text_secondary(),
-        LABEL_WIDTH,
+        f32::INFINITY,
     );
-    let total = vec2(LABEL_WIDTH + GAP + TRACK.x + GAP + READOUT_WIDTH, TRACK.y);
+    // The label's own width, so a longer word in another language pushes the track along.
+    let label_width = label.size().x.ceil().max(LABEL_WIDTH);
+    let total = vec2(label_width + GAP + TRACK.x + GAP + READOUT_WIDTH, TRACK.y);
     let (row, _) = ui.allocate_exact_size(total, Sense::hover());
-    let track = Rect::from_min_size(pos2(row.left() + LABEL_WIDTH + GAP, row.top()), TRACK);
+    let track = Rect::from_min_size(pos2(row.left() + label_width + GAP, row.top()), TRACK);
     let sense = if spec.enabled {
         Sense::click_and_drag()
     } else {

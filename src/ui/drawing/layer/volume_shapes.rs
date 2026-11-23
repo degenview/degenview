@@ -10,6 +10,7 @@ use super::Projection;
 use super::shape::{
     Band, ColorBox, LabelLook, LabelPlace, PivotLabel, Screen, Styled, vertex_handles,
 };
+use crate::i18n::tr;
 use crate::model::chart::kind::{LineDash, Rgba};
 use crate::model::drawings::style::DrawingStyle;
 use crate::model::forecast;
@@ -158,9 +159,11 @@ fn vwap(
     });
     screen.handles = vertex_handles(&[at]);
     if series.is_empty() && first < bars.len() {
-        screen.labels.push(note(at, "No volume data"));
+        screen.labels.push(note(at, tr!("No volume data")));
     } else if before_the_loaded_bars(proj, anchor.time_ms) {
-        screen.labels.push(note(at, "From the loaded bars only"));
+        screen
+            .labels
+            .push(note(at, tr!("From the loaded bars only")));
     }
     Some(screen)
 }
@@ -218,7 +221,7 @@ fn profile(
     ) else {
         screen.labels.push(note(
             pos2(left.max(proj.plot.left()), proj.plot.top() + 20.0),
-            "No volume data",
+            tr!("No volume data"),
         ));
         return Some(screen);
     };
@@ -231,7 +234,7 @@ fn profile(
     if before_the_loaded_bars(proj, starts) {
         screen.labels.push(note(
             pos2(left.max(proj.plot.left()), proj.plot.top() + 20.0),
-            "From the loaded bars only",
+            tr!("From the loaded bars only"),
         ));
     }
     // The point of control and the edges of the value area, across the range.

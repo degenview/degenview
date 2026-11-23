@@ -4,6 +4,7 @@
 
 use super::edit::{self, Part};
 use super::{DrawingFrame, DrawingLayer, Projection};
+use crate::i18n::{tr, tr_c};
 use crate::model::chart::kind::LineDash;
 use crate::model::drawings::style::DrawingStyle;
 use crate::model::{Caps, Drawing, DrawingCommand, Geometry, Tool};
@@ -14,6 +15,8 @@ use eframe::egui::{
     self, Align2, Color32, Id, Order, Pos2, Rect, Stroke, Ui, color_picker::Alpha, pos2, vec2,
 };
 
+/// The least width of the right-click menu.
+const MENU_WIDTH: f32 = 220.0;
 /// A step past any stack: bring to front and send to back move by this much and are clamped.
 const TO_EXTREME: i32 = 1_000_000;
 /// Font sizes the toolbar's size menu offers for a text box.
@@ -229,9 +232,9 @@ impl DrawingLayer {
                                         26.0,
                                         theme::text_primary(),
                                         if drawing.text().is_empty() {
-                                            "Add text"
+                                            tr!("Add text")
                                         } else {
-                                            "Edit text"
+                                            tr!("Edit text")
                                         },
                                     )
                                     .clicked()
@@ -253,7 +256,7 @@ impl DrawingLayer {
                                         Icon::Bell,
                                         26.0,
                                         theme::text_primary(),
-                                        "Add alert at this price",
+                                        tr!("Add alert at this price"),
                                     )
                                     .clicked()
                                 {
@@ -264,7 +267,7 @@ impl DrawingLayer {
                                     Icon::Sliders,
                                     26.0,
                                     theme::text_primary(),
-                                    "Settings",
+                                    tr!("Settings"),
                                 )
                                 .clicked()
                                 {
@@ -276,7 +279,11 @@ impl DrawingLayer {
                             } else {
                                 Icon::LockOpen
                             };
-                            let lock_tip = if all_locked { "Unlock" } else { "Lock" };
+                            let lock_tip = if all_locked {
+                                tr!("Unlock")
+                            } else {
+                                tr!("Lock")
+                            };
                             let lock_color = if all_locked {
                                 kit::ACCENT
                             } else {
@@ -290,7 +297,7 @@ impl DrawingLayer {
                                 Icon::EyeSlash,
                                 26.0,
                                 theme::text_primary(),
-                                "Hide",
+                                tr!("Hide"),
                             )
                             .clicked()
                             {
@@ -301,13 +308,15 @@ impl DrawingLayer {
                                 Icon::CopyDoc,
                                 26.0,
                                 theme::text_primary(),
-                                "Duplicate",
+                                tr!("Duplicate"),
                             )
                             .clicked()
                             {
                                 action = Some(Action::Duplicate);
                             }
-                            if icons::button(ui, Icon::Trash, 26.0, kit::RED, "Delete").clicked() {
+                            if icons::button(ui, Icon::Trash, 26.0, kit::RED, tr!("Delete"))
+                                .clicked()
+                            {
                                 action = Some(Action::Delete);
                             }
                         });
@@ -341,28 +350,28 @@ impl DrawingLayer {
             };
         chip(
             ui,
-            "+ Row",
+            tr!("+ Row"),
             false,
             table.row_count() < crate::model::annotation::table::MAX_ROWS,
             TableOp::AddRow,
         );
         chip(
             ui,
-            "+ Column",
+            tr!("+ Column"),
             false,
             table.column_count() < crate::model::annotation::table::MAX_COLUMNS,
             TableOp::AddColumn,
         );
         chip(
             ui,
-            "− Row",
+            tr!("− Row"),
             false,
             has_cell && table.row_count() > 1,
             TableOp::DeleteRow,
         );
         chip(
             ui,
-            "− Column",
+            tr!("− Column"),
             false,
             has_cell && table.column_count() > 1,
             TableOp::DeleteColumn,
@@ -370,9 +379,9 @@ impl DrawingLayer {
         chip(
             ui,
             if table.screen.is_some() {
-                "Pinned to screen"
+                tr!("Pinned to screen")
             } else {
-                "Pin to screen"
+                tr!("Pin to screen")
             },
             table.screen.is_some(),
             true,
@@ -486,17 +495,23 @@ impl DrawingLayer {
             return;
         }
         let mut chosen: Option<Action> = None;
+        // The rows' widest, as the last frame drew them: a language with long words widens the
+        // menu, which never starts narrower than `MENU_WIDTH`.
+        let widest_id = Id::new("drawing-menu-widest-row");
+        let remembered = ctx.data(|data| data.get_temp::<f32>(widest_id));
+        let mut widest = 0.0;
         let area = egui::Area::new(Id::new("drawing-menu"))
             .order(Order::Foreground)
             .fixed_pos(state.at + vec2(4.0, 4.0))
             .constrain(true)
             .show(ctx, |ui| {
                 kit::menu_frame().show(ui, |ui| {
-                    ui.set_width(220.0);
+                    ui.set_width(MENU_WIDTH.max(remembered.unwrap_or(0.0)));
                     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                    chosen = self.menu_items(ui, state.target, &ids, frame);
+                    chosen = self.menu_items(ui, state.target, &ids, frame, &mut widest);
                 });
             });
+        ctx.data_mut(|data| data.insert_temp(widest_id, widest));
         let outside = pressed.is_some_and(|point| !area.response.rect.contains(point));
         if escape {
             frame.escape_consumed = true;
@@ -518,6 +533,7 @@ impl DrawingLayer {
         target: Target,
         ids: &[u64],
         frame: &DrawingFrame,
+        widest: &mut f32,
     ) -> Option<Action> {
         let mut chosen = None;
         let mut item = |ui: &mut Ui,
@@ -527,6 +543,8 @@ impl DrawingLayer {
                         enabled: bool,
                         destructive: bool,
                         action: Action| {
+            let row = kit::menu_width_for_rows(ui, &[(label, hint.as_deref())], 0.0);
+            *widest = widest.max(row - kit::MENU_FRAME_MARGIN);
             if kit::menu_item_with_shortcut(ui, icon, label, hint.as_deref(), enabled, destructive)
             {
                 chosen = Some(action);
@@ -556,7 +574,7 @@ impl DrawingLayer {
             item(
                 ui,
                 Icon::Sliders,
-                "Settings…",
+                tr!("Settings…"),
                 Some("↩".into()),
                 properties,
                 false,
@@ -566,7 +584,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::Bell,
-                    "Add alert at this price",
+                    tr!("Add alert at this price"),
                     None,
                     !drawing.locked(),
                     false,
@@ -581,7 +599,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::ImageTool,
-                    "Replace image…",
+                    tr!("Replace image…"),
                     None,
                     unlocked,
                     false,
@@ -590,7 +608,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::ImageTool,
-                    "Reset aspect ratio",
+                    tr!("Reset aspect ratio"),
                     None,
                     unlocked,
                     false,
@@ -599,7 +617,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::CopyDoc,
-                    "Copy image",
+                    tr!("Copy image"),
                     None,
                     true,
                     false,
@@ -615,7 +633,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::ArrowUpRightSquare,
-                    "Open link",
+                    tr!("Open link"),
                     None,
                     true,
                     false,
@@ -624,7 +642,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::CopyDoc,
-                    "Copy link",
+                    tr!("Copy link"),
                     None,
                     true,
                     false,
@@ -633,7 +651,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::Link,
-                    "Replace link…",
+                    tr!("Replace link…"),
                     None,
                     unlocked,
                     false,
@@ -642,7 +660,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::Cycle,
-                    "Fetch preview…",
+                    tr!("Fetch preview…"),
                     None,
                     unlocked,
                     false,
@@ -660,7 +678,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::Plus,
-                    "Add row",
+                    tr!("Add row"),
                     None,
                     unlocked && table.row_count() < crate::model::annotation::table::MAX_ROWS,
                     false,
@@ -669,7 +687,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::Plus,
-                    "Add column",
+                    tr!("Add column"),
                     None,
                     unlocked && table.column_count() < crate::model::annotation::table::MAX_COLUMNS,
                     false,
@@ -678,7 +696,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::Minus,
-                    "Delete row",
+                    tr!("Delete row"),
                     None,
                     unlocked && has_cell && table.row_count() > 1,
                     false,
@@ -687,7 +705,7 @@ impl DrawingLayer {
                 item(
                     ui,
                     Icon::Minus,
-                    "Delete column",
+                    tr!("Delete column"),
                     None,
                     unlocked && has_cell && table.column_count() > 1,
                     false,
@@ -697,9 +715,9 @@ impl DrawingLayer {
                     ui,
                     Icon::TableTool,
                     if table.screen.is_some() {
-                        "Pin to chart"
+                        tr!("Pin to chart")
                     } else {
-                        "Pin to screen"
+                        tr!("Pin to screen")
                     },
                     None,
                     unlocked,
@@ -713,9 +731,9 @@ impl DrawingLayer {
                     ui,
                     Icon::TextFormat,
                     if drawing.text().is_empty() {
-                        "Add text"
+                        tr!("Add text")
                     } else {
-                        "Edit text"
+                        tr!("Edit text")
                     },
                     None,
                     !drawing.locked(),
@@ -726,7 +744,7 @@ impl DrawingLayer {
             item(
                 ui,
                 Icon::CopyDoc,
-                "Copy",
+                tr!("Copy"),
                 Some(shortcut::COPY.label()),
                 true,
                 false,
@@ -735,7 +753,7 @@ impl DrawingLayer {
             item(
                 ui,
                 Icon::CopyDoc,
-                "Duplicate",
+                tr!("Duplicate"),
                 Some(shortcut::DUPLICATE_DRAWING.label()),
                 true,
                 false,
@@ -745,7 +763,7 @@ impl DrawingLayer {
             item(
                 ui,
                 Icon::CopyDoc,
-                "Copy style",
+                tr!("Copy style"),
                 None,
                 has_style,
                 false,
@@ -754,7 +772,7 @@ impl DrawingLayer {
             item(
                 ui,
                 Icon::Palette,
-                "Paste style",
+                tr!("Paste style"),
                 None,
                 can_paste,
                 false,
@@ -762,9 +780,9 @@ impl DrawingLayer {
             );
             kit::menu_separator(ui);
             let (lock_icon, lock_label) = if all_locked {
-                (Icon::LockOpen, "Unlock")
+                (Icon::LockOpen, tr!("Unlock"))
             } else {
-                (Icon::LockFill, "Lock")
+                (Icon::LockFill, tr!("Lock"))
             };
             item(
                 ui,
@@ -775,12 +793,20 @@ impl DrawingLayer {
                 false,
                 Action::ToggleLock,
             );
-            item(ui, Icon::EyeSlash, "Hide", None, true, false, Action::Hide);
+            item(
+                ui,
+                Icon::EyeSlash,
+                tr!("Hide"),
+                None,
+                true,
+                false,
+                Action::Hide,
+            );
             kit::menu_separator(ui);
             item(
                 ui,
                 Icon::BringForward,
-                "Bring forward",
+                tr!("Bring forward"),
                 None,
                 true,
                 false,
@@ -789,7 +815,7 @@ impl DrawingLayer {
             item(
                 ui,
                 Icon::SendBackward,
-                "Send backward",
+                tr!("Send backward"),
                 None,
                 true,
                 false,
@@ -798,7 +824,7 @@ impl DrawingLayer {
             item(
                 ui,
                 Icon::BringForward,
-                "Bring to front",
+                tr!("Bring to front"),
                 None,
                 true,
                 false,
@@ -807,7 +833,7 @@ impl DrawingLayer {
             item(
                 ui,
                 Icon::SendBackward,
-                "Send to back",
+                tr!("Send to back"),
                 None,
                 true,
                 false,
@@ -820,7 +846,7 @@ impl DrawingLayer {
                     item(
                         ui,
                         Icon::Plus,
-                        "Add vertex here",
+                        tr!("Add vertex here"),
                         None,
                         !drawing.locked() && part == Part::Body,
                         false,
@@ -833,7 +859,7 @@ impl DrawingLayer {
                     item(
                         ui,
                         Icon::Minus,
-                        "Remove vertex",
+                        tr!("Remove vertex"),
                         None,
                         !drawing.locked() && index.is_some() && count > minimum,
                         false,
@@ -845,7 +871,7 @@ impl DrawingLayer {
             item(
                 ui,
                 Icon::Trash,
-                "Delete",
+                tr!("Delete"),
                 Some("⌫".into()),
                 editable,
                 true,
@@ -1095,13 +1121,13 @@ fn image_controls(ui: &mut Ui, drawing: &Drawing) -> Option<ImageOp> {
     if let Some(index) = kit::menu_picker(ui, 62.0, &labels, current, true) {
         op = Some(ImageOp::Opacity(OPACITIES[index]));
     }
-    if kit::value_chip(ui, "Keep shape", image.keep_aspect).clicked() {
+    if kit::value_chip(ui, tr!("Keep shape"), image.keep_aspect).clicked() {
         op = Some(ImageOp::ToggleShapeLock);
     }
-    if kit::value_chip(ui, "Reset shape", false).clicked() {
+    if kit::value_chip(ui, tr!("Reset shape"), false).clicked() {
         op = Some(ImageOp::ResetShape);
     }
-    if kit::value_chip(ui, "Replace", false).clicked() {
+    if kit::value_chip(ui, tr!("Replace"), false).clicked() {
         op = Some(ImageOp::Replace);
     }
     divider(ui);
@@ -1113,12 +1139,12 @@ fn image_controls(ui: &mut Ui, drawing: &Drawing) -> Option<ImageOp> {
 pub(super) fn link_chips(drawing: &Drawing) -> Vec<(&'static str, super::LinkRequest)> {
     use super::LinkRequest;
     let mut chips = vec![
-        ("Open", LinkRequest::Open),
-        ("Copy link", LinkRequest::Copy),
-        ("Replace", LinkRequest::Replace),
+        (tr!("Open"), LinkRequest::Open),
+        (tr!("Copy link"), LinkRequest::Copy),
+        (tr!("Replace"), LinkRequest::Replace),
     ];
     if matches!(drawing.geometry(), Some(Geometry::Card { card, .. }) if card.meta.is_none()) {
-        chips.push(("Preview", LinkRequest::Fetch));
+        chips.push((tr!("Preview"), LinkRequest::Fetch));
     }
     chips
 }
@@ -1182,7 +1208,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         && let Some(picked) = kit::color_well(
             ui,
             vec2(24.0, 20.0),
-            "Line color",
+            tr!("Line color"),
             series::color(style.stroke.color),
             Alpha::OnlyBlend,
         )
@@ -1200,7 +1226,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         && let Some(picked) = kit::color_well(
             ui,
             vec2(24.0, 20.0),
-            "Fill color",
+            tr!("Fill color"),
             series::color(style.fill.color),
             Alpha::OnlyBlend,
         )
@@ -1212,7 +1238,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         && let Some(picked) = kit::color_well(
             ui,
             vec2(24.0, 20.0),
-            "Border color",
+            tr!("Border color"),
             series::color(style.border.color),
             Alpha::OnlyBlend,
         )
@@ -1227,7 +1253,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         && let Some(picked) = kit::color_well(
             ui,
             vec2(24.0, 20.0),
-            "Text color",
+            tr!("Text color"),
             series::color(style.text.color),
             Alpha::OnlyBlend,
         )
@@ -1248,10 +1274,10 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         if let Some(index) = kit::menu_picker(ui, 56.0, &labels, selected, true) {
             next.text.size = FONT_SIZES[index];
         }
-        if kit::value_chip(ui, "B", style.text.bold).clicked() {
+        if kit::value_chip(ui, tr_c!("bold button", "B"), style.text.bold).clicked() {
             next.text.bold = !style.text.bold;
         }
-        if kit::value_chip(ui, "I", style.text.italic).clicked() {
+        if kit::value_chip(ui, tr_c!("italic button", "I"), style.text.italic).clicked() {
             next.text.italic = !style.text.italic;
         }
     }
@@ -1299,23 +1325,23 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         if let Some(index) = kit::menu_picker(ui, 176.0, &labels, selected, true) {
             next.pattern.degree = Degree::ALL[index];
         }
-        if kit::value_chip(ui, "Labels", style.pattern.labels).clicked() {
+        if kit::value_chip(ui, tr!("Labels"), style.pattern.labels).clicked() {
             next.pattern.labels = !style.pattern.labels;
         }
     }
     if caps.has(Caps::PATTERN) {
-        if kit::value_chip(ui, "Names", style.pattern.labels).clicked() {
+        if kit::value_chip(ui, tr!("Names"), style.pattern.labels).clicked() {
             next.pattern.labels = !style.pattern.labels;
         }
-        if kit::value_chip(ui, "Ratios", style.pattern.ratios).clicked() {
+        if kit::value_chip(ui, tr!("Ratios"), style.pattern.ratios).clicked() {
             next.pattern.ratios = !style.pattern.ratios;
         }
     }
     if caps.has(Caps::POSITION) {
-        if kit::value_chip(ui, "Compact", style.position.compact).clicked() {
+        if kit::value_chip(ui, tr!("Compact"), style.position.compact).clicked() {
             next.position.compact = !style.position.compact;
         }
-        if kit::value_chip(ui, "Always stats", style.position.always_stats).clicked() {
+        if kit::value_chip(ui, tr!("Always stats"), style.position.always_stats).clicked() {
             next.position.always_stats = !style.position.always_stats;
         }
     }
@@ -1365,10 +1391,10 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         if let Some(index) = kit::menu_picker(ui, 112.0, &labels, selected, true) {
             edited.mode = BarsMode::ALL[index];
         }
-        if kit::value_chip(ui, "Mirrored", current.mirrored).clicked() {
+        if kit::value_chip(ui, tr!("Mirrored"), current.mirrored).clicked() {
             edited.mirrored = !current.mirrored;
         }
-        if kit::value_chip(ui, "Flipped", current.flipped).clicked() {
+        if kit::value_chip(ui, tr!("Flipped"), current.flipped).clicked() {
             edited.flipped = !current.flipped;
         }
         pattern = (edited != *current).then_some(edited);

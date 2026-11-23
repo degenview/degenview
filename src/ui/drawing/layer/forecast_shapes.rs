@@ -13,6 +13,7 @@ use super::shape::{
     with_heads,
 };
 use crate::format::group_thousands;
+use crate::i18n::tr;
 use crate::model::chart::kind::Rgba;
 use crate::model::drawings::style::{DrawingStyle, LineEnd};
 use crate::model::forecast;
@@ -291,17 +292,20 @@ fn position(
     let away = |y: f32| if y < at_entry.y { -1.0 } else { 1.0 };
     let mut tag =
         |y: f32, name: &str, distance: f64, percent: Option<f64>, balance: Option<f64>| {
-            let mut text = if options.compact {
+            let text = if options.compact {
                 offset_text(proj.format, distance, percent, None)
             } else {
-                format!(
-                    "{name}: {}",
-                    offset_text(proj.format, distance, percent, ticks(distance))
-                )
+                let offset = offset_text(proj.format, distance, percent, ticks(distance));
+                match balance {
+                    Some(balance) => tr!(
+                        "{name}: {offset}, Amount: {amount}",
+                        name = name,
+                        offset = offset,
+                        amount = money(balance)
+                    ),
+                    None => tr!("{name}: {offset}", name = name, offset = offset),
+                }
             };
-            if let Some(balance) = balance.filter(|_| !options.compact) {
-                text.push_str(&format!(", Amount: {}", money(balance)));
-            }
             let mut label = plate(
                 pos2(middle, y),
                 text,
@@ -315,14 +319,14 @@ fn position(
         };
     tag(
         at_target.y,
-        "Target",
+        tr!("Target"),
         stats.target_distance,
         stats.target_percent,
         stats.balance_at_target,
     );
     tag(
         at_stop.y,
-        "Stop",
+        tr!("Stop"),
         stats.stop_distance,
         stats.stop_percent,
         stats.balance_at_stop,
@@ -331,20 +335,20 @@ fn position(
     // The middle: what it is, how it stands, its size and its reward over its risk. A position is
     // a drawing, not an order, and says so.
     let name = match side {
-        Side::Long => "Long",
-        Side::Short => "Short",
+        Side::Long => tr!("Long"),
+        Side::Short => tr!("Short"),
     };
     let (standing, fill) = match outcome {
         Some(Outcome::Target { .. }) => (
             stats
                 .profit
-                .map(|profit| format!("Closed P&L: {}", signed_money(profit))),
+                .map(|profit| tr!("Closed P&L: {amount}", amount = signed_money(profit))),
             options.success,
         ),
         Some(Outcome::Stop { .. }) => (
             stats
                 .loss
-                .map(|loss| format!("Closed P&L: {}", signed_money(loss))),
+                .map(|loss| tr!("Closed P&L: {amount}", amount = signed_money(loss))),
             options.failure,
         ),
         Some(Outcome::Open { last }) => (
@@ -359,24 +363,28 @@ fn position(
                         &sizing(options),
                     )
                 })
-                .map(|open| format!("Open P&L: {}", signed_money(open))),
+                .map(|open| tr!("Open P&L: {amount}", amount = signed_money(open))),
             options.label,
         ),
         None => (None, options.label),
     };
-    let standing = standing.unwrap_or_else(|| "P&L: —".to_owned());
+    let standing = standing.unwrap_or_else(|| tr!("P&L: —").to_owned());
     let quantity = stats.quantity.map_or_else(
         || "—".to_owned(),
         |quantity| quantity_text(quantity, options.qty_precision),
     );
-    let mut lines = vec![format!("{name} (hypothetical)")];
+    let mut lines = vec![tr!("{name} (hypothetical)", name = name)];
     if options.compact {
         lines.push(standing);
     } else {
-        lines.push(format!("{standing}, Qty: {quantity}"));
-        lines.push(format!(
-            "Risk/Reward Ratio: {}",
-            stats
+        lines.push(tr!(
+            "{standing}, Qty: {quantity}",
+            standing = standing,
+            quantity = quantity
+        ));
+        lines.push(tr!(
+            "Risk/Reward Ratio: {ratio}",
+            ratio = stats
                 .risk_reward
                 .map_or_else(|| "—".to_owned(), |ratio| format!("{ratio:.2}"))
         ));
@@ -479,8 +487,8 @@ fn forecast(
     );
     if let Some(result) = result {
         let (text, fill) = match result {
-            ForecastResult::Success => ("Success", options.success),
-            ForecastResult::Failure => ("Failure", options.failure),
+            ForecastResult::Success => (tr!("Success"), options.success),
+            ForecastResult::Failure => (tr!("Failure"), options.failure),
         };
         screen.labels.push(plate(
             to,
@@ -789,7 +797,7 @@ fn measurement(
                 proj.times.index_of(b.time_ms),
             )
         {
-            lines.push(format!("Volume: {}", compact_number(volume)));
+            lines.push(tr!("Volume: {volume}", volume = compact_number(volume)));
         }
     }
     if !lines.is_empty() {

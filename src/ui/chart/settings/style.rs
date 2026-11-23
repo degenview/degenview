@@ -307,7 +307,7 @@ pub(in crate::ui) fn picker_row<T: Copy + PartialEq>(
         .position(|(option, _)| option == value)
         .unwrap_or(0);
     if let Some(index) = card::card(ui, icon, title, hint, |ui| {
-        kit::menu_picker(ui, 130.0, &labels, selected, true)
+        kit::menu_picker_fitted(ui, 130.0, &labels, selected, true)
     }) {
         *value = options[index].0;
     }
