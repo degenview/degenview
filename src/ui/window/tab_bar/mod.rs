@@ -45,10 +45,11 @@ const LINK_BUTTON_WIDTH: f32 = 30.0;
 /// The user guide. Linked from Settings ▸ About on every platform and, on macOS, from the Help
 /// menu.
 pub const DOCS_URL: &str = "https://docs.degenview.app";
-/// The project's GitHub organisation and the maintainer's Buy Me a Coffee page, linked from the
-/// strip's right end on every platform and, on macOS, from the Help menu too.
+/// The project's GitHub organisation and the website's support page (which has the Buy Me a Coffee
+/// link among other ways to help), linked from the strip's right end on every platform and, on
+/// macOS, from the Help menu too. Settings ▸ About reuses the same URL.
 pub const GITHUB_URL: &str = "https://github.com/degenview";
-pub const COFFEE_URL: &str = "https://buymeacoffee.com/nicoswd";
+pub const COFFEE_URL: &str = "https://degenview.app/support/";
 /// The hairline between two tabs at rest.
 const SEPARATOR_HEIGHT: f32 = 16.0;
 const TAB_GAP: f32 = 2.0;
