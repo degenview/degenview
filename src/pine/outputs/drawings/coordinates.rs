@@ -18,10 +18,25 @@ pub(super) fn x_index(
     bar_seconds: f64,
     state: &RuntimeState,
 ) -> RuntimeValue {
-    if anchored_to_time && let Some(millis) = value.int_value() {
-        return RuntimeValue::Int(bar_index_for_time(millis, bar, bar_seconds, state));
-    }
-    value
+    x_coordinate(&value, anchored_to_time, bar, bar_seconds, state).map_or(value, RuntimeValue::Int)
+}
+
+/// The bar index a horizontal-coordinate argument stands for: a whole number as given, or, when the
+/// drawing is anchored to time, the bar index of that time. `None` when it is not a whole number.
+/// Only a setter that writes an x coordinate calls this, so no other argument is read as a time.
+pub(super) fn x_coordinate(
+    value: &RuntimeValue,
+    anchored_to_time: bool,
+    bar: &Kline,
+    bar_seconds: f64,
+    state: &RuntimeState,
+) -> Option<i64> {
+    let whole = value.int_value()?;
+    Some(if anchored_to_time {
+        bar_index_for_time(whole, bar, bar_seconds, state)
+    } else {
+        whole
+    })
 }
 
 pub(super) fn is_time_anchored(bound: &HashMap<String, RuntimeValue>) -> bool {
