@@ -36,6 +36,7 @@ pub(crate) const NAMES: &[&str] = &[
     "ta.pivothigh",
     "ta.pivotlow",
     "ta.linreg",
+    "ta.macd",
     // `extra::FUNCTIONS`, but `ta.pivot_point_levels`.
     "ta.alma",
     "ta.cog",
