@@ -185,3 +185,24 @@ fn a_refresh_replaces_the_candles_when_nothing_is_loaded_or_on_its_way() {
     history.failed(Instant::now());
     assert!(!history.keeps_older());
 }
+
+#[test]
+fn a_chart_with_a_script_pages_back_until_it_holds_what_scripts_run_over() {
+    let history = OlderHistory::default();
+    let now = Instant::now();
+    assert!(short_for_scripts(true, 500));
+    assert!(short_for_scripts(true, SCRIPT_DEPTH - 1));
+    assert!(!short_for_scripts(true, SCRIPT_DEPTH));
+    assert!(
+        !short_for_scripts(false, 500),
+        "a chart with no script keeps to what is on screen"
+    );
+    // The page is asked for with the view nowhere near the oldest candle.
+    assert!(history.should_request(true, short_for_scripts(true, 500), 500, now));
+    // But never past what the chart may keep, from a provider with nothing older, or twice at once.
+    let mut paging = OlderHistory::default();
+    paging.started();
+    assert!(!paging.should_request(true, true, 500, now));
+    paging.arrived(0);
+    assert!(!paging.should_request(true, true, 500, now));
+}
