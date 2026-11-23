@@ -49,7 +49,7 @@ fn swatch_id(color: LinkColor) -> Id {
 }
 
 fn option_id(row: Row) -> Id {
-    Id::new(("tab-link-option", row.title()))
+    Id::new(("tab-link-option", row.key()))
 }
 
 #[test]

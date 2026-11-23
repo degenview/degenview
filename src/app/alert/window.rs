@@ -9,6 +9,7 @@ use crate::clock::now_ms;
 use crate::host::alert::AlertHost;
 use crate::host::pine::subscription::PineSubscriptionHost;
 use crate::host::settings::SettingsHost;
+use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::alert::pine::PineAlertState;
 use crate::model::alert::{
@@ -104,7 +105,7 @@ pub(super) struct AlertsWindowEnv {
 pub(super) fn sync_viewport(ctx: &egui::Context, env: AlertsWindowEnv) {
     let builder = crate::ui::window::chrome::branded(
         egui::ViewportBuilder::default()
-            .with_title("Alerts")
+            .with_title(tr!("Alerts"))
             .with_inner_size([880.0, 600.0])
             .with_min_inner_size([760.0, 480.0]),
     );

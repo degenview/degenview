@@ -3,6 +3,7 @@
 //! colour well and a width stepper. A row the user changed shows a revert button. Stateless: it
 //! reads the overrides and returns the next map when something changed.
 
+use crate::i18n::tr;
 use crate::pine::outputs::style_overrides::{StyleAttribute, StyleKind, StyleOverrides, StyleRow};
 use crate::pine_studio::inputs::{color_from_rgba, rgba_from_color};
 use crate::ui::icons::{self, Icon};
@@ -48,7 +49,9 @@ pub fn show(
             ui.add_space(4.0);
             ui.add(
                 egui::Label::new(kit::text(
-                    "Outputs without a color well take their color bar by bar from the script.",
+                    tr!(
+                        "Outputs without a color well take their color bar by bar from the script."
+                    ),
                     size::CAPTION + 0.5,
                     REGULAR,
                     theme::text_tertiary(),
@@ -165,7 +168,7 @@ fn row_view(
                     }
                 })
                 .response
-                .on_hover_text("Line width");
+                .on_hover_text(tr!("Line width"));
             },
         );
     }
@@ -183,7 +186,7 @@ fn row_view(
                     let picked = kit::color_well(
                         ui,
                         vec2(COLOR_COLUMN - 6.0, 22.0),
-                        &format!("{} color", row.title),
+                        &tr!("{output} color", output = row.title),
                         color_from_rgba(current),
                         egui::color_picker::Alpha::OnlyBlend,
                     );
@@ -203,9 +206,9 @@ fn row_view(
     }
 
     let eye_label = if hidden {
-        format!("Show {}", row.title)
+        tr!("Show {output}", output = row.title)
     } else {
-        format!("Hide {}", row.title)
+        tr!("Hide {output}", output = row.title)
     };
     place(
         ui,
@@ -226,7 +229,7 @@ fn row_view(
     );
 
     if style.has_changes(row) {
-        let label = format!("Revert {} to the script's style", row.title);
+        let label = tr!("Revert {output} to the script's style", output = row.title);
         place(
             ui,
             revert_slot,

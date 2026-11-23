@@ -102,7 +102,7 @@ fn the_tab_menu_ends_with_the_tab_linking_section() {
             .map(|response| response.rect)
     };
     let blue = swatch(LinkColor::Blue).expect("the section is in the menu");
-    let move_row = ctx.read_response(Id::new(("tab-link-option", "Symbol")));
+    let move_row = ctx.read_response(Id::new(("tab-link-option", "symbol")));
     assert!(move_row.is_some(), "the switches are there too");
     // It is the last thing in the menu, under the tab rows.
     assert!(blue.top() > on_tab.y + 150.0, "{blue:?}");
@@ -200,6 +200,119 @@ fn gallery_of_the_tab_menu() {
             screen.save(&format!("tab-menu-{state}-{name}"), last.expect("a frame"));
         }
     }
+}
+
+/// The strip and the open tab menu in the pseudo-locale: the longer words still fit their tabs
+/// and rows, and none was left out of `tr!`. Pictures are written with `DEGENVIEW_GALLERY_DIR` set.
+#[test]
+fn the_tab_strip_and_its_menu_draw_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, tr, with_locale};
+    use crate::model::tab::link::{LinkColor, LinkToggles};
+    use crate::ui::render_tests::{Screen, gallery_dir};
+    let _restore = theme::RestoreDefaultTheme;
+    let quotes = WatchlistQuoteBook::default();
+    let tabs = [
+        TabView {
+            id: 7,
+            title: "BTCUSDT".to_owned(),
+            icon: Icon::Plus,
+            chart: Some(TabChart {
+                source: crate::model::DataSource::Binance,
+                symbol: "BTCUSDT".to_owned(),
+                title: "BTC/USDT".to_owned(),
+                layout: None,
+                custom_title: None,
+            }),
+            timeframe: "1D".to_owned(),
+            link: Some(LinkColor::Orange),
+            linkable: true,
+            link_toggles: LinkToggles::default(),
+        },
+        TabView {
+            id: 8,
+            title: "Other".to_owned(),
+            icon: Icon::Plus,
+            chart: None,
+            timeframe: "1D".to_owned(),
+            link: None,
+            linkable: true,
+            link_toggles: LinkToggles::default(),
+        },
+    ];
+    let themes: &[(&str, theme::AppTheme)] = if gallery_dir().is_some() {
+        &[
+            ("dark", theme::AppTheme::Dark),
+            ("light", theme::AppTheme::Light),
+        ]
+    } else {
+        &[("dark", theme::AppTheme::Dark)]
+    };
+    with_locale(Locale::PSEUDO, || {
+        for (name, app_theme) in themes {
+            let mut screen = Screen::new(vec2(520.0, 760.0));
+            theme::apply(&screen.ctx, *app_theme);
+            let on_tab = pos2(tab_left(0, tab_width(2, 520.0)) + 100.0, 14.0);
+            let button = |pressed| egui::Event::PointerButton {
+                pos: on_tab,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            let run = |screen: &mut Screen, events: Vec<egui::Event>| {
+                screen.run(events, |ui| {
+                    TabBar {
+                        window: 1,
+                        tabs: &tabs,
+                        active: 7,
+                        drag: DragView::default(),
+                        other_windows: &[],
+                        quotes: &quotes,
+                        style: TabTitleStyle::default(),
+                        update: None,
+                    }
+                    .show(ui);
+                })
+            };
+            for _ in 0..3 {
+                run(&mut screen, Vec::new());
+            }
+            run(&mut screen, vec![egui::Event::PointerMoved(on_tab)]);
+            run(&mut screen, vec![button(true)]);
+            run(&mut screen, vec![button(false)]);
+            let mut last = None;
+            for _ in 0..5 {
+                last = Some(run(&mut screen, Vec::new()));
+            }
+            let frame = last.expect("a frame");
+            let texts = Screen::words(&frame);
+            // Whole, with their closing bracket: a row the menu cut would lose it.
+            // (The move-to-a-window row only shows when another window is open.)
+            for row in menu::menu_rows()
+                .into_iter()
+                .filter(|row| *row != tr!("Move Tab to Window"))
+            {
+                assert!(
+                    texts.iter().any(|text| text == row),
+                    "{name}: no {row:?} in {texts:?}"
+                );
+            }
+            let data = ["BTCUSDT", "Other", "1D", "BTC/USDT"];
+            assert_eq!(
+                Screen::untranslated(&texts, &data),
+                Vec::<&str>::new(),
+                "{name}: text that did not go through tr!"
+            );
+            // A tab's own title (the market's name) is data and shortens with the tab by design, as wide
+            // as a platform's font makes it; every word that is ours must be whole.
+            let cut: Vec<String> = Screen::truncated_text(&frame)
+                .into_iter()
+                .filter(|text| !data.contains(&text.as_str()))
+                .collect();
+            assert_eq!(cut, Vec::<String>::new(), "{name}: a label was cut");
+            screen.save(&format!("tab-menu-pseudo-{name}"), frame);
+            theme::apply(&screen.ctx, theme::AppTheme::Dark);
+        }
+    });
 }
 
 /// A tab that cannot be linked (the portfolio, Pine Studio) has no such section.

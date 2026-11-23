@@ -3,6 +3,7 @@
 //! drop targets, each with its own cue: an accent line where the chart would land, and a strip
 //! on the right that, held over for a moment, previews the new column.
 
+use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, SEMIBOLD, size};
 use crate::ui::theme;
@@ -204,7 +205,7 @@ pub fn new_column_placeholder(ui: &Ui, rect: Rect) {
     );
     let label = kit::galley(
         ui,
-        "New column",
+        tr!("New column"),
         size::HEADLINE,
         SEMIBOLD,
         kit::ACCENT,

@@ -2,6 +2,7 @@
 //! question before switching layouts, and the error alert. Pure views: the workspace owns the
 //! state and acts on what they report.
 
+use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::dialog;
 use crate::ui::kit::sheet;
@@ -24,24 +25,26 @@ pub enum NamePrompt {
 impl NamePrompt {
     fn title(self) -> &'static str {
         match self {
-            Self::Save { .. } => "Save Layout",
-            Self::Copy => "Make a Copy",
-            Self::Rename => "Rename Layout",
+            Self::Save { .. } => tr!("Save Layout"),
+            Self::Copy => tr!("Make a Copy"),
+            Self::Rename => tr!("Rename Layout"),
         }
     }
 
     fn message(self) -> &'static str {
         match self {
-            Self::Save { .. } => "Save the current charts, timeframe and layout under a name.",
-            Self::Copy => "The copy keeps what you see now and saves separately from the original.",
-            Self::Rename => "The name is also the tab title.",
+            Self::Save { .. } => tr!("Save the current charts, timeframe and layout under a name."),
+            Self::Copy => {
+                tr!("The copy keeps what you see now and saves separately from the original.")
+            }
+            Self::Rename => tr!("The name is also the tab title."),
         }
     }
 
     fn button(self) -> &'static str {
         match self {
-            Self::Rename => "Rename",
-            Self::Save { .. } | Self::Copy => "Save",
+            Self::Rename => tr!("Rename"),
+            Self::Save { .. } | Self::Copy => tr!("Save"),
         }
     }
 
@@ -100,7 +103,7 @@ pub fn show_name(
                         ui,
                         field_id,
                         name,
-                        "Layout name",
+                        tr!("Layout name"),
                         size::BODY,
                         REGULAR,
                         width,
@@ -126,7 +129,7 @@ pub fn show_name(
             if kit::sheet_button(ui, prompt.button(), true, can_confirm).clicked() {
                 outcome = Some(NameOutcome::Confirm(name.trim().to_owned()));
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                 outcome = Some(NameOutcome::Cancel);
             }
         });
@@ -145,15 +148,15 @@ pub fn show_name(
 /// "Save changes to “X”?" before another layout opens over unsaved edits: Don't Save on the left,
 /// Cancel and Save on the right; Return saves, Escape cancels.
 pub fn show_unsaved(ctx: &egui::Context, layout_name: &str) -> Option<UnsavedChoice> {
-    let title = format!("Save changes to “{layout_name}”?");
+    let title = tr!("Save changes to “{layout}”?", layout = layout_name);
     let mut spec = dialog::Dialog::new(
         Icon::TriangleFill,
         kit::ORANGE,
         &title,
-        "Your changes will be lost if you switch layouts without saving.",
-        "Save",
+        tr!("Your changes will be lost if you switch layouts without saving."),
+        tr!("Save"),
     );
-    spec.leading = Some("Don’t Save");
+    spec.leading = Some(tr!("Don’t Save"));
     dialog::show(ctx, Id::new("layout-unsaved"), &spec, |_| {}).map(|outcome| match outcome {
         dialog::Outcome::Accepted => UnsavedChoice::Save,
         dialog::Outcome::Dismissed => UnsavedChoice::Cancel,
@@ -164,7 +167,13 @@ pub fn show_unsaved(ctx: &egui::Context, layout_name: &str) -> Option<UnsavedCho
 /// A layout operation failed; true once the alert is dismissed (OK, Return, Escape, the close
 /// button or a click outside).
 pub fn show_error(ctx: &egui::Context, message: &str) -> bool {
-    let mut spec = dialog::Dialog::new(Icon::TriangleFill, kit::ORANGE, "Layout", message, "OK");
+    let mut spec = dialog::Dialog::new(
+        Icon::TriangleFill,
+        kit::ORANGE,
+        tr!("Layout"),
+        message,
+        tr!("OK"),
+    );
     spec.dismiss = "";
     dialog::show(ctx, Id::new("layout-error"), &spec, |_| {}).is_some()
 }

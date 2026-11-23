@@ -2,6 +2,7 @@
 //! About shares with it. Everything here draws an `UpdateView`; the host runs the update.
 
 use crate::host::update::{Phase, UpdateView};
+use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
 use eframe::egui::{
@@ -55,13 +56,18 @@ pub fn look(view: &UpdateView) -> Option<Look> {
             note,
             ..
         } => (
-            "Update".to_owned(),
+            tr!("Update").to_owned(),
             match (installable, note) {
-                (true, _) => {
-                    format!("DegenView {version} is available. Click to see what changed.")
-                }
-                (false, Some(note)) => format!("DegenView {version} is available. {note}"),
-                (false, None) => format!("DegenView {version} is available."),
+                (true, _) => tr!(
+                    "DegenView {version} is available. Click to see what changed.",
+                    version = version
+                ),
+                (false, Some(note)) => tr!(
+                    "DegenView {version} is available. {note}",
+                    version = version,
+                    note = note
+                ),
+                (false, None) => tr!("DegenView {version} is available.", version = version),
             },
             kit::ORANGE,
             Some(Icon::ArrowUp),
@@ -70,7 +76,7 @@ pub fn look(view: &UpdateView) -> Option<Look> {
             true,
         ),
         Phase::Installing(progress) => (
-            format!("Updating {}%", percent(progress.fraction)),
+            tr!("Updating {percent}%", percent = percent(progress.fraction)),
             progress.stage.label().to_owned(),
             kit::ORANGE,
             None,
@@ -79,8 +85,11 @@ pub fn look(view: &UpdateView) -> Option<Look> {
             false,
         ),
         Phase::Ready { version } => (
-            "Restart".to_owned(),
-            format!("DegenView {version} is ready. Restart to finish updating."),
+            tr!("Restart").to_owned(),
+            tr!(
+                "DegenView {version} is ready. Restart to finish updating.",
+                version = version
+            ),
             kit::ORANGE,
             Some(Icon::Cycle),
             true,
@@ -88,8 +97,8 @@ pub fn look(view: &UpdateView) -> Option<Look> {
             true,
         ),
         Phase::InstallFailed { message, .. } => (
-            "Update failed".to_owned(),
-            format!("{message} Click to try again."),
+            tr!("Update failed").to_owned(),
+            tr!("{message} Click to try again.", message = message),
             kit::RED,
             Some(Icon::Triangle),
             false,

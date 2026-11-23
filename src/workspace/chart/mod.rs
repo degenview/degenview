@@ -10,6 +10,7 @@ pub(in crate::workspace) mod symbol_picker;
 
 use super::PersistedChart;
 use crate::host::portfolio::card::CardRuntime;
+use crate::i18n::tr;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::drawings::market::MarketDrawings;
 use crate::model::market;
@@ -106,7 +107,7 @@ impl Fetched {
             .iter()
             .find(|(_, history)| !history.is_empty())
             .map(|(_, history)| history.clone())
-            .ok_or_else(|| ProviderError::other("No price history for these choices"))?;
+            .ok_or_else(|| ProviderError::other(tr!("No price history for these choices")))?;
         Ok(Self {
             candles,
             bars: Vec::new(),
@@ -452,7 +453,7 @@ impl Chart {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => return,
             Err(mpsc::TryRecvError::Disconnected) => {
-                Err(ProviderError::other("Older candles stopped loading"))
+                Err(ProviderError::other(tr!("Older candles stopped loading")))
             }
         };
         let current = request.source == self.source
@@ -479,9 +480,9 @@ impl Chart {
         let result = match receiver.try_recv() {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::other(
-                "Chart fetch stopped before returning data",
-            )),
+            Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::other(tr!(
+                "Chart fetch stopped before returning data"
+            ))),
         };
 
         self.loading = false;

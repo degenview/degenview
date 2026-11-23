@@ -3,6 +3,7 @@
 use super::{Chart, displayed_candles};
 use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::host::trading::TradingHub;
+use crate::i18n::tr;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
@@ -303,15 +304,17 @@ impl ChartWorkspace {
             self.removing_chart = None;
             return;
         };
-        let title = format!("Remove {}?", chart.display_title());
+        let title = tr!("Remove {chart}?", chart = chart.display_title());
         let result = crate::ui::kit::confirm(
             ctx,
             egui::Id::new("remove-chart"),
             &crate::ui::kit::Confirm {
                 icon: crate::ui::icons::Icon::Trash,
                 title: &title,
-                message: "The chart leaves this tab. You can add it again from the symbol search.",
-                destructive: "Remove",
+                message: tr!(
+                    "The chart leaves this tab. You can add it again from the symbol search."
+                ),
+                destructive: tr!("Remove"),
             },
         );
         if result == Some(crate::ui::kit::ConfirmOutcome::Confirmed) {

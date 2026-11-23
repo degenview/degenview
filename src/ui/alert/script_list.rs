@@ -3,6 +3,7 @@
 //! script-notification log the Rust app does not keep yet).
 
 use super::center::{self, AlertCenterAction};
+use crate::i18n::{tr, tr_n};
 use crate::model::DataSource;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::ui::icons::{self, Icon};
@@ -35,15 +36,15 @@ pub fn status_of(
     dataset: Option<(&str, &str)>,
 ) -> (&'static str, Tone) {
     match subscription.state {
-        PineAlertState::Paused => ("Paused", Tone::Neutral),
-        PineAlertState::ScriptChanged => ("Script changed — re-arm", Tone::Warning),
-        PineAlertState::ScriptDeleted => ("Script deleted", Tone::Bad),
+        PineAlertState::Paused => (tr!("Paused"), Tone::Neutral),
+        PineAlertState::ScriptChanged => (tr!("Script changed — re-arm"), Tone::Warning),
+        PineAlertState::ScriptDeleted => (tr!("Script deleted"), Tone::Bad),
         PineAlertState::Active => match dataset {
-            None => ("Chart not open", Tone::Neutral),
+            None => (tr!("Chart not open"), Tone::Neutral),
             Some((key, timeframe)) if subscription.watches(key, timeframe) => {
-                ("Active", Tone::Good)
+                (tr!("Active"), Tone::Good)
             }
-            Some(_) => ("Other symbol on chart", Tone::Warning),
+            Some(_) => (tr!("Other symbol on chart"), Tone::Warning),
         },
     }
 }
@@ -106,8 +107,12 @@ impl ScriptAlertRow {
         };
         match self.webhook_count {
             0 => base,
-            1 => format!("{base} · 1 webhook"),
-            n => format!("{base} · {n} webhooks"),
+            n => tr_n!(
+                n,
+                "{base} · {count} webhook",
+                "{base} · {count} webhooks",
+                base = base
+            ),
         }
     }
 }
@@ -145,22 +150,22 @@ pub fn view(
                 ui,
                 rect,
                 Icon::AngleBrackets,
-                "No Script Alerts",
-                "Apply a script with alert() calls, then create an alert from it.",
+                tr!("No Script Alerts"),
+                tr!("Apply a script with alert() calls, then create an alert from it."),
             );
         } else {
             kit::empty_state(
                 ui,
                 rect,
                 Icon::Magnifier,
-                &format!("No Results for “{query}”"),
-                "Check the spelling or try a new search.",
+                &tr!("No Results for “{query}”", query = query),
+                tr!("Check the spelling or try a new search."),
             );
         }
     } else {
         ui.allocate_ui(Vec2::new(ui.available_width(), body_height), |ui| {
             center::card_scroll(ui, body_height, |ui| {
-                center::day_header(ui, "Alerts", rows.len());
+                center::day_header(ui, tr!("Alerts"), rows.len());
                 for row in rows {
                     card(ui, row, actions);
                 }
@@ -170,11 +175,11 @@ pub fn view(
     if kit::footer_bar(
         ui,
         Icon::AngleBrackets,
-        "Script alerts are created from alert() calls in your scripts.",
+        tr!("Script alerts are created from alert() calls in your scripts."),
         Icon::AngleBrackets,
-        "Open Pine Studio",
+        tr!("Open Pine Studio"),
         true,
-        "Write and manage the scripts whose alert() calls appear here",
+        tr!("Write and manage the scripts whose alert() calls appear here"),
     ) {
         actions.push(AlertCenterAction::OpenPineStudio);
     }
@@ -182,29 +187,29 @@ pub fn view(
 
 fn menu(ui: &mut egui::Ui, row: &ScriptAlertRow, actions: &mut Vec<AlertCenterAction>) {
     if row.active {
-        if kit::menu_item(ui, Icon::PauseFill, "Pause", true, false) {
+        if kit::menu_item(ui, Icon::PauseFill, tr!("Pause"), true, false) {
             actions.push(AlertCenterAction::PauseScript(row.id));
             ui.close();
         }
     } else {
         let response =
-            ui.scope(|ui| kit::menu_item(ui, Icon::PlayFill, "Re-arm", row.can_rearm, false));
+            ui.scope(|ui| kit::menu_item(ui, Icon::PlayFill, tr!("Re-arm"), row.can_rearm, false));
         if !row.can_rearm {
             response
                 .response
-                .on_hover_text("Open its chart on the same market to re-arm it");
+                .on_hover_text(tr!("Open its chart on the same market to re-arm it"));
         }
         if response.inner {
             actions.push(AlertCenterAction::RearmScript(row.id));
             ui.close();
         }
     }
-    if kit::menu_item(ui, Icon::ArrowUpRightSquare, "Webhooks…", true, false) {
+    if kit::menu_item(ui, Icon::ArrowUpRightSquare, tr!("Webhooks…"), true, false) {
         actions.push(AlertCenterAction::EditScriptWebhooks(row.id));
         ui.close();
     }
     kit::menu_separator(ui);
-    if kit::menu_item(ui, Icon::Trash, "Delete", true, true) {
+    if kit::menu_item(ui, Icon::Trash, tr!("Delete"), true, true) {
         actions.push(AlertCenterAction::DeleteScript(row.id));
         ui.close();
     }
@@ -244,7 +249,7 @@ fn card(ui: &mut egui::Ui, row: &ScriptAlertRow, actions: &mut Vec<AlertCenterAc
         ui,
         more,
         Id::new(("script-alert-more", row.id)),
-        &SCRIPT_MENU,
+        &script_menu(),
         |ui| {
             menu(ui, row, actions);
         },
@@ -261,14 +266,21 @@ fn card(ui: &mut egui::Ui, row: &ScriptAlertRow, actions: &mut Vec<AlertCenterAc
         |_, _, _| 0.0,
     );
 
-    let rows = SCRIPT_MENU.map(|label| (label, None));
+    let rows = script_menu().map(|label| (label, None));
     kit::fitted_context_menu(ui, &response, &rows, |ui| {
         menu(ui, row, actions);
     });
 }
 
 /// Every row the script alert menu can show, for sizing it.
-const SCRIPT_MENU: [&str; 4] = ["Pause", "Re-arm", "Webhooks\u{2026}", "Delete"];
+fn script_menu() -> [&'static str; 4] {
+    [
+        tr!("Pause"),
+        tr!("Re-arm"),
+        tr!("Webhooks\u{2026}"),
+        tr!("Delete"),
+    ]
+}
 
 #[cfg(test)]
 mod tests {

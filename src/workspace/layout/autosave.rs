@@ -1,5 +1,6 @@
 //! Autosave: the debounce that writes a named layout once it has sat unchanged.
 
+use crate::i18n::tr;
 use crate::model::LayoutSnapshot;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
@@ -68,7 +69,7 @@ impl ChartWorkspace {
         match self.update_active_view(|view| view.autosave = enabled.then_some(true)) {
             Ok(()) => self.layout.autosave = AutosaveState::default(),
             Err(error) => {
-                self.layout.error = Some(format!("Couldn’t change Autosave: {error}"));
+                self.layout.error = Some(tr!("Couldn’t change Autosave: {error}", error = error));
             }
         }
     }

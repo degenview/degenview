@@ -8,6 +8,10 @@ msgstr ""
 msgid "% of account"
 msgstr ""
 
+#: src/ui/workspace/toolbar.rs
+msgid "(unsaved)"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 msgid "+ Column"
 msgstr ""
@@ -51,17 +55,35 @@ msgid ""
 "A drawing only: it never places an order, and what it says is hypothetical."
 msgstr ""
 
+#: src/ui/alert/editor.rs
+msgid "A fresh current price is required for percentage alerts."
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid ""
 "A made-up run between the two points: not a forecast, and never real candles."
+msgstr ""
+
+#: src/workspace/drawing/links.rs
+msgid "A preview is already being fetched."
 msgstr ""
 
 #: src/service/system/entitlements.rs
 msgid "A release build must not use iCloud's Development environment."
 msgstr ""
 
+#: src/workspace/trade/broker.rs
+msgid "A replay started, so the live order was closed unsent."
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "A second background, behind the other set of levels."
+msgstr ""
+
+#: src/ui/workspace/snapshot_menu.rs
+#: src/workspace/chart/snapshot/select.rs
+#: src/workspace/chart/snapshot/studio/mod.rs
+msgid "A snapshot is already being made."
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -90,8 +112,23 @@ msgstr ""
 msgid "Action"
 msgstr ""
 
+#: src/ui/alert/center.rs
+#: src/ui/alert/script_list.rs
+msgid "Active"
+msgstr ""
+
 #: src/ui/drawing/content/sheet.rs
 msgid "Add"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid ""
+"Add a Pine script that calls the log functions and its messages appear here."
+msgstr ""
+
+#: src/ui/alert/editor.rs
+#: src/ui/alert/pine_editor.rs
+msgid "Add a note (optional)"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -134,6 +171,14 @@ msgid ""
 "Add the address of your snapshot host in Settings ▸ Snapshots to share."
 msgstr ""
 
+#: src/ui/pine/logs_view/mod.rs
+msgid "Add the indicator to the chart."
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Add to favorites"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 msgid "Add vertex here"
 msgstr ""
@@ -142,8 +187,76 @@ msgstr ""
 msgid "Add your Alpaca API key in Settings to see stock quotes"
 msgstr ""
 
+#: src/ui/workspace/empty_state/tiles.rs
+msgid "Add {market} to this tab"
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid "Alert Webhooks"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Alert me when the price"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Alert {direction} {price}"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Alert {direction} {price} · paused"
+msgstr ""
+
+#: src/app/alert/window.rs
+#: src/ui/alert/center.rs
+#: src/ui/alert/script_list.rs
+msgid "Alerts"
+msgstr ""
+
+#: src/workspace/chart/context/mod.rs
+msgid "Alerts are not available during replay."
+msgstr ""
+
+#: src/workspace/chart/context/mod.rs
+msgid "Alerts are not available for this chart."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Alerts are only checked while DegenView is open."
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid "Alerts in this script"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Alerts keep being checked when DegenView is closed."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Alerts raised by your Pine scripts appear here."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid ""
+"Alerts still fire and are logged here, but macOS will not show them. Allow "
+"DegenView in System Settings."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Alerts unavailable: {error}"
+msgstr ""
+
 #: src/ui/drawing/properties/text.rs
 msgid "Alignment"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "All"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "All bars"
 msgstr ""
 
 #: src/ui/drawing/properties/visibility.rs
@@ -178,8 +291,16 @@ msgstr ""
 msgid "An API key has no spaces and is at most 128 plain characters."
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "An alert that fires once waits here until you re-enable it."
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "An estimate: {assets} could not be priced and is left out."
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "An identical alert already exists"
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -199,8 +320,24 @@ msgstr ""
 msgid "Appearance"
 msgstr ""
 
+#: src/ui/alert/pine_editor.rs
+msgid "Applied on {chart} · {timeframe}"
+msgstr ""
+
+#: src/workspace/chart/context/mod.rs
+msgid "Applied the template “{name}”."
+msgstr ""
+
 #: src/ui/drawing/properties/templates.rs
 msgid "Applied “{name}”"
+msgstr ""
+
+#: src/ui/pine/settings_popover.rs
+msgid "Apply"
+msgstr ""
+
+#: src/ui/alert/script_list.rs
+msgid "Apply a script with alert() calls, then create an alert from it."
 msgstr ""
 
 #: src/ui/drawing/properties/templates.rs
@@ -224,6 +361,18 @@ msgstr ""
 msgid "Automatic updates are not available on this platform."
 msgstr ""
 
+#: src/ui/workspace/toolbar.rs
+msgid "Autosave"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Autosave, off"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Autosave, on"
+msgstr ""
+
 #: src/trading/paper/stats.rs
 msgid "Available"
 msgstr ""
@@ -234,6 +383,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Average high-low"
+msgstr ""
+
+#: src/ui/pine/report.rs
+msgid "Avg trade"
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -258,6 +411,10 @@ msgstr ""
 msgid "Background"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Background agent active"
+msgstr ""
+
 #: src/trading/paper/stats.rs
 msgid "Balance"
 msgstr ""
@@ -268,6 +425,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Band {number}"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Bar {time}"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -349,12 +510,23 @@ msgstr ""
 msgid "C"
 msgstr ""
 
+#: src/ui/alert/pine_editor.rs
+msgid "Can't arm"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+#: src/ui/alert/pine_editor.rs
 #: src/ui/drawing/content/sheet.rs
 #: src/ui/drawing/properties/mod.rs
 #: src/ui/drawing/properties/templates.rs
 #: src/ui/drawing/properties/tests.rs
+#: src/ui/kit/dialog/mod.rs
+#: src/ui/kit/dialog/tests.rs
+#: src/ui/pine/settings_popover.rs
 #: src/ui/replay/bar.rs
 #: src/ui/replay/date_sheet.rs
+#: src/ui/window/update_sheet/mod.rs
+#: src/ui/workspace/layout_prompts.rs
 msgid "Cancel"
 msgstr ""
 
@@ -397,8 +569,39 @@ msgstr ""
 msgid "Changes show on the chart; OK keeps them"
 msgstr ""
 
+#: src/ui/window/tab_link_menu/mod.rs
+msgid ""
+"Changes you make (e.g. symbol) will be synced to other linked tabs with the "
+"same link color."
+msgstr ""
+
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Channel width"
+msgstr ""
+
+#: src/workspace/chart/mod.rs
+msgid "Chart fetch stopped before returning data"
+msgstr ""
+
+#: src/ui/alert/script_list.rs
+msgid "Chart not open"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Chart settings"
+msgstr ""
+
+#: src/ui/workspace/snapshot_menu.rs
+msgid "Chart snapshot"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Chart type: {chart_type}"
+msgstr ""
+
+#: src/ui/alert/center.rs
+#: src/ui/alert/script_list.rs
+msgid "Check the spelling or try a new search."
 msgstr ""
 
 #: src/service/update/install/mod.rs
@@ -413,12 +616,24 @@ msgstr ""
 msgid "Checking your saved key. Try again in a moment."
 msgstr ""
 
+#: src/ui/alert/pine_editor.rs
+msgid "Checking…"
+msgstr ""
+
 #: src/host/portfolio/import_flow.rs
 msgid "Choose a CoinMarketCap transactions export"
 msgstr ""
 
+#: src/workspace/trade/broker.rs
+msgid "Choose a broker in the trading panel first."
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Choose a new starting point"
+msgstr ""
+
+#: src/workspace/drawing/content.rs
+msgid "Choose a picture"
 msgstr ""
 
 #: src/ui/replay/bar.rs
@@ -437,8 +652,38 @@ msgstr ""
 msgid "Choose how DegenView looks across every window and chart."
 msgstr ""
 
+#: src/workspace/watchlist.rs
+msgid "Choose watchlist symbols"
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Choose where the replay starts"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tabs.rs
+msgid "Clear"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Clear History"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Clear all trigger history?"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Clear filters"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Clear logs"
+msgstr ""
+
+#: src/ui/kit/field.rs
+#: src/ui/kit/search_box.rs
+#: src/ui/pine/logs_view/mod.rs
+msgid "Clear search"
 msgstr ""
 
 #: src/ui/replay/bar.rs
@@ -453,16 +698,47 @@ msgstr ""
 msgid "Click a candle on a chart to start the replay there (Esc cancels)"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Click the bell on a chart to alert on a price."
+msgstr ""
+
+#: src/ui/kit/dialog/mod.rs
 #: src/ui/snapshot_studio/window/mod.rs
+#: src/ui/window/chrome.rs
 msgid "Close"
 msgstr ""
 
+#: src/ui/window/tab_bar/menu.rs
+msgid "Close Other Tabs"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Close Pine logs"
+msgstr ""
+
 #: src/ui/replay/bar.rs
+#: src/ui/workspace/toolbar.rs
 msgid "Close Replay"
+msgstr ""
+
+#: src/ui/window/tab_bar/menu.rs
+msgid "Close Tab"
+msgstr ""
+
+#: src/ui/window/tab_bar/menu.rs
+msgid "Close Tabs to the Right"
+msgstr ""
+
+#: src/ui/window/tab_bar/mod.rs
+msgid "Close {title}"
 msgstr ""
 
 #: src/ui/drawing/layer/forecast_shapes.rs
 msgid "Closed P&L: {amount}"
+msgstr ""
+
+#: src/ui/pine/report.rs
+msgid "Closed trades"
 msgstr ""
 
 #: src/trading/paper/backend.rs
@@ -474,9 +750,17 @@ msgstr ""
 msgid "Color"
 msgstr ""
 
+#: src/ui/kit/color_picker/mod.rs
+msgid "Color {hex}"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/drawing/properties/levels.rs
 msgid "Colors"
+msgstr ""
+
+#: src/ui/kit/color_picker/mod.rs
+msgid "Colors you pick appear here"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -489,6 +773,14 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Compact stats"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Compare or add symbol"
+msgstr ""
+
+#: src/ui/workspace/snapshot_menu.rs
+msgid "Configure Snapshots…"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -515,12 +807,43 @@ msgstr ""
 msgid "Coordinates"
 msgstr ""
 
+#: src/ui/kit/error_notice.rs
+#: src/ui/kit/markdown_view.rs
+msgid "Copied"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Copied from"
 msgstr ""
 
+#: src/workspace/drawing/content.rs
+msgid "Copied the image."
+msgstr ""
+
+#: src/workspace/drawing/links.rs
+msgid "Copied the link."
+msgstr ""
+
+#: src/workspace/chart/context/mod.rs
+msgid "Copied {count} drawing."
+msgid_plural "Copied {count} drawings."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/workspace/chart/context/mod.rs
+msgid "Copied {text}"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 msgid "Copy"
+msgstr ""
+
+#: src/ui/kit/markdown_view.rs
+msgid "Copy code"
+msgstr ""
+
+#: src/ui/kit/error_notice.rs
+msgid "Copy details"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -534,8 +857,16 @@ msgstr ""
 msgid "Copy link"
 msgstr ""
 
+#: src/ui/pine/logs_view/mod.rs
+msgid "Copy message"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 msgid "Copy style"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Copy with time"
 msgstr ""
 
 #: src/host/sync/mod.rs
@@ -714,8 +1045,89 @@ msgstr ""
 msgid "Couldn't find this pair's network"
 msgstr ""
 
+#: src/workspace/watchlist.rs
+msgid "Couldn’t Save"
+msgstr ""
+
+#: src/app/window.rs
+msgid "Couldn’t Save Open Tabs"
+msgstr ""
+
+#: src/workspace/layout/autosave.rs
+msgid "Couldn’t change Autosave: {error}"
+msgstr ""
+
+#: src/workspace/layout/mod.rs
+msgid "Couldn’t delete the layout: {error}"
+msgstr ""
+
+#: src/workspace/tab_link/mod.rs
+msgid "Couldn’t load {symbol}. This tab kept {previous}."
+msgstr ""
+
+#: src/workspace/layout/mod.rs
+msgid "Couldn’t rename the layout: {error}"
+msgstr ""
+
+#: src/workspace/layout/mod.rs
+msgid "Couldn’t save the layout: {error}"
+msgstr ""
+
+#: src/workspace/layout/mod.rs
+msgid "Couldn’t save “{layout}”: {error}"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Counterclockwise"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+#: src/ui/alert/pine_editor.rs
+msgid "Create Alert"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Create Price Alert"
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid "Create Script Alert"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Create price alert"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Crossed above"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Crossed below"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Crosses above"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Crosses below"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Currency"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Currency the alert is checked in"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Current price"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Cursors"
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -746,8 +1158,26 @@ msgstr ""
 msgid "Date and time"
 msgstr ""
 
+#: src/ui/kit/date_picker.rs
+msgid "Date and time, {label}"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Date range"
+msgstr ""
+
+#: src/ui/kit/timeframe_picker/grid.rs
+msgid "Days and up"
+msgstr ""
+
 #: src/ui/drawing/properties/levels.rs
 msgid "Decimal places of a ratio."
+msgstr ""
+
+#: src/app/window.rs
+msgid ""
+"DegenView couldn’t save which tabs are open, so they may not reopen after a "
+"restart. It keeps trying in the background."
 msgstr ""
 
 #: src/service/update/install/mod.rs
@@ -764,12 +1194,46 @@ msgstr ""
 msgid "DegenView mark"
 msgstr ""
 
+#: src/ui/window/update_indicator.rs
+msgid "DegenView {version} is available."
+msgstr ""
+
+#: src/ui/window/update_indicator.rs
+msgid "DegenView {version} is available. Click to see what changed."
+msgstr ""
+
+#: src/ui/window/update_indicator.rs
+msgid "DegenView {version} is available. {note}"
+msgstr ""
+
+#: src/app/window.rs
+msgid "DegenView {version} is ready. DegenView will close and reopen."
+msgstr ""
+
+#: src/ui/window/update_indicator.rs
+msgid "DegenView {version} is ready. Restart to finish updating."
+msgstr ""
+
 #: src/ui/drawing/properties/levels.rs
 msgid "Degree"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Delayed"
+msgstr ""
+
+#: src/ui/alert/center.rs
+#: src/ui/alert/script_list.rs
 #: src/ui/drawing/layer/menu.rs
 msgid "Delete"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Delete alert"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Delete alert at {price}"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -780,20 +1244,42 @@ msgstr ""
 msgid "Delete row"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Delete this alert?"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Delete this layout"
+msgstr ""
+
 #: src/ui/drawing/properties/templates.rs
 msgid "Deleted “{name}”"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Delete…"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
 msgid "Details"
 msgstr ""
 
+#: src/ui/pine/logs_view/mod.rs
+msgid "Disable logging"
+msgstr ""
+
+#: src/ui/alert/banner.rs
+#: src/ui/kit/error_notice.rs
 #: src/ui/replay/bar.rs
 msgid "Dismiss"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
 msgid "Distance"
+msgstr ""
+
+#: src/ui/workspace/layout_prompts.rs
+msgid "Don’t Save"
 msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
@@ -823,6 +1309,22 @@ msgstr ""
 
 #: src/service/update/install/app_bundle.rs
 msgid "Drag DegenView from the disk image to the Applications folder first."
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Drag across the bars on the chart (Esc cancels)"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Drag on the chart"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Drag to change the price · right-click for options"
+msgstr ""
+
+#: src/ui/workspace/portion_overlay.rs
+msgid "Drag to select an area · Esc to cancel"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -869,6 +1371,7 @@ msgstr ""
 msgid "Drop to add the picture"
 msgstr ""
 
+#: src/ui/alert/center.rs
 #: src/ui/drawing/layer/menu.rs
 msgid "Duplicate"
 msgstr ""
@@ -879,6 +1382,14 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Each row's height, in steps of the chart's last printed price place."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Edit"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Edit Price Alert"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -893,6 +1404,10 @@ msgstr ""
 msgid "Edit text"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Edit…"
+msgstr ""
+
 #: src/ui/drawing/properties/style.rs
 msgid "Emoji"
 msgstr ""
@@ -903,6 +1418,14 @@ msgstr ""
 
 #: src/ui/drawing/properties/style.rs
 msgid "Emoji pin"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Enable logging"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Enable logging."
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -944,7 +1467,20 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 #: src/trading/paper/stats.rs
+#: src/ui/pine/report.rs
 msgid "Equity"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Error"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Every time"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Every time an alert fires it is logged here."
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -961,6 +1497,10 @@ msgstr ""
 
 #: src/service/editor_theme/files.rs
 msgid "Export theme"
+msgstr ""
+
+#: src/workspace/watchlist.rs
+msgid "Export watchlist"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -984,8 +1524,20 @@ msgstr ""
 msgid "Failure"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Falls {percent}"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Far"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Favorite {name}"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tabs.rs
+msgid "Favorites"
 msgstr ""
 
 #: src/trading/edit/mod.rs
@@ -1008,6 +1560,18 @@ msgstr ""
 msgid "Fetch preview…"
 msgstr ""
 
+#: src/workspace/drawing/links.rs
+msgid "Fetched the preview."
+msgstr ""
+
+#: src/workspace/drawing/links.rs
+msgid "Fetching the preview…"
+msgstr ""
+
+#: src/workspace/watchlist.rs
+msgid "File Error"
+msgstr ""
+
 #: src/ui/drawing/properties/style.rs
 msgid "Fill"
 msgstr ""
@@ -1019,6 +1583,44 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Fill the bands"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Filter levels"
+msgstr ""
+
+#: src/ui/pine/report.rs
+msgid "Final equity"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Fired {time}"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Fired. Re-enable it to watch again."
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Fires at {price}"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Fires on each crossing, re-arming in between."
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid "Fires on live bars of {chart} · {timeframe}"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Fires once, then waits until you turn it back on."
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid ""
+"Fires only while this chart shows this symbol and timeframe and its live feed "
+"is running. Editing the script pauses the alert until you re-arm it."
 msgstr ""
 
 #: src/ui/replay/bar.rs
@@ -1035,6 +1637,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "First line"
+msgstr ""
+
+#: src/ui/window/update_sheet/mod.rs
+msgid "Fixed"
 msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
@@ -1055,6 +1661,10 @@ msgstr ""
 msgid "Font size"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Foreground evaluation only"
+msgstr ""
+
 #: src/ui/drawing/properties/templates.rs
 msgid "Forget my default"
 msgstr ""
@@ -1065,6 +1675,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Full circles"
+msgstr ""
+
+#: src/ui/window/update_sheet/mod.rs
+msgid "Full release notes"
 msgstr ""
 
 #: src/service/watchlist_quotes/provider.rs
@@ -1095,8 +1709,68 @@ msgstr ""
 msgid "Height"
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "Heikin Ashi"
+msgstr ""
+
+#: src/ui/kit/color_picker/mod.rs
+msgid "Hex color"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 msgid "Hide"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Hide Market Flow"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Hide Paper Trading"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Hide Paper Trading panel"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Hide Watchlists"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Hide all drawings"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Hide details"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Hide details · drag to change the price"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Hide details, {caption}"
+msgstr ""
+
+#: src/ui/workspace/favorites_bar.rs
+msgid "Hide favorites toolbar"
+msgstr ""
+
+#: src/ui/pine/style_view.rs
+msgid "Hide {output}"
+msgstr ""
+
+#: src/ui/kit/field.rs
+msgid "Hide {title}"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Historical Replay"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Historical Replay — add a market chart first"
 msgstr ""
 
 #: src/ui/replay/bar.rs
@@ -1107,6 +1781,10 @@ msgstr ""
 msgid "Historical replay, {state}"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "History"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Holdings"
 msgstr ""
@@ -1114,6 +1792,10 @@ msgstr ""
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/text.rs
 msgid "Horizontal"
+msgstr ""
+
+#: src/ui/kit/timeframe_picker/grid.rs
+msgid "Hours"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -1148,6 +1830,19 @@ msgstr ""
 msgid "How much the ranges and the path wander, in percent."
 msgstr ""
 
+#: src/ui/alert/editor.rs
+msgid "How often"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "How to work with logs"
+msgstr ""
+
+#: src/ui/kit/color_picker/inline.rs
+#: src/ui/kit/color_picker/mod.rs
+msgid "Hue"
+msgstr ""
+
 #: src/ui/drawing/properties/mod.rs
 msgid "Image"
 msgstr ""
@@ -1170,17 +1865,35 @@ msgid "Index charts have no market quote"
 msgstr ""
 
 #: src/ui/snapshot_studio/window/toolbar.rs
+#: src/ui/workspace/toolbar.rs
 msgid "Indicators"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Indicators: add one to the focused chart"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Indicators: this chart takes none"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Info"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/drawing/properties/levels.rs
 #: src/ui/drawing/properties/mod.rs
+#: src/ui/pine/settings_popover.rs
 msgid "Inputs"
 msgstr ""
 
 #: src/ui/settings/appearance.rs
 msgid "Interface language"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Interval"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -1191,9 +1904,41 @@ msgstr ""
 msgid "Italic"
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "Kagi"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Keep drawing"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Keep drawing: off (back to the crosshair)"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Keep drawing: on (stay on the tool)"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Keep linked charts aligned to the same point in time."
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Keep linked charts displaying the same date range."
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 #: src/ui/drawing/properties/content.rs
 msgid "Keep shape"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Keep the same chart interval across linked tabs."
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Keep the same symbol across linked tabs."
 msgstr ""
 
 #: src/service/snapshot/providers/imgbb.rs
@@ -1239,8 +1984,33 @@ msgstr ""
 msgid "Language"
 msgstr ""
 
+#: src/app/window.rs
+msgid "Later"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Latest"
+msgstr ""
+
+#: src/ui/workspace/layout_prompts.rs
+msgid "Layout"
+msgstr ""
+
+#: src/ui/workspace/layout_prompts.rs
+msgid "Layout name"
+msgstr ""
+
 #: src/model/tab/title.rs
 msgid "Layout name only"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Layout: {help}"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tabs.rs
+#: src/ui/workspace/toolbar.rs
+msgid "Layouts"
 msgstr ""
 
 #: src/ui/replay/bar.rs
@@ -1282,6 +2052,7 @@ msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
 #: src/ui/drawing/properties/mod.rs
+#: src/ui/pine/logs_view/mod.rs
 msgid "Levels"
 msgstr ""
 
@@ -1307,6 +2078,10 @@ msgstr ""
 msgid "Line"
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "Line Break"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 #: src/ui/drawing/properties/levels.rs
 #: src/ui/drawing/properties/style.rs
@@ -1319,16 +2094,57 @@ msgstr ""
 msgid "Line style"
 msgstr ""
 
+#: src/ui/pine/style_view.rs
+msgid "Line width"
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid "Line {line}"
+msgstr ""
+
 #: src/ui/drawing/properties/mod.rs
 msgid "Link"
 msgstr ""
 
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Link Color"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Link Tabs"
+msgstr ""
+
+#: src/ui/workspace/link_charts.rs
+msgid "Link charts"
+msgstr ""
+
+#: src/ui/workspace/link_charts.rs
+msgid "Link charts: position"
+msgstr ""
+
+#: src/ui/workspace/link_charts.rs
+msgid "Link charts: position and zoom"
+msgstr ""
+
+#: src/ui/workspace/link_charts.rs
+msgid "Link charts: zoom"
+msgstr ""
+
+#: src/ui/window/tab_bar/mod.rs
+msgid "Linked tab: {color} ({synced})"
+msgstr ""
+
+#: src/ui/alert/editor.rs
 #: src/ui/replay/bar.rs
 msgid "Live"
 msgstr ""
 
 #: src/ui/replay/date_sheet.rs
 msgid "Load a chart with data first."
+msgstr ""
+
+#: src/ui/kit/loading.rs
+msgid "Loading"
 msgstr ""
 
 #: src/ui/replay/bar.rs
@@ -1339,6 +2155,10 @@ msgstr ""
 msgid "Loading image…"
 msgstr ""
 
+#: src/ui/alert/pine_editor.rs
+msgid "Loading…"
+msgstr ""
+
 #: src/ui/replay/date_sheet.rs
 msgid "Local time"
 msgstr ""
@@ -1347,16 +2167,29 @@ msgstr ""
 msgid "Lock"
 msgstr ""
 
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Lock all drawings"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Logging is disabled"
+msgstr ""
+
 #: src/ui/replay/overlay.rs
 msgid "Logs"
 msgstr ""
 
 #: src/ui/drawing/layer/forecast_shapes.rs
+#: src/ui/pine/report.rs
 msgid "Long"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Look"
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid "Looking for its alert calls."
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -1375,6 +2208,18 @@ msgstr ""
 #: src/service/watchlist_quotes/provider.rs
 msgid ""
 "MEXC refused the request (HTTP 403): it is not available in every country"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Magnet"
+msgstr ""
+
+#: src/ui/workspace/layout_prompts.rs
+msgid "Make a Copy"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Make a copy"
 msgstr ""
 
 #: src/ui/drawing/properties/templates.rs
@@ -1402,6 +2247,26 @@ msgstr ""
 msgid "Market"
 msgstr ""
 
+#: src/ui/workspace/empty_state/tabs.rs
+msgid "Markets you open will show up here."
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Match case"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Match whole word"
+msgstr ""
+
+#: src/ui/pine/report.rs
+msgid "Max drawdown"
+msgstr ""
+
+#: src/ui/window/chrome.rs
+msgid "Maximize"
+msgstr ""
+
 #: src/ui/drawing/properties/style.rs
 msgid "Measurements printed beside the arrow."
 msgstr ""
@@ -1416,6 +2281,11 @@ msgstr ""
 
 #: src/ui/drawing/properties/style.rs
 msgid "Median color"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid ""
+"Messages the script writes in realtime are not kept while logging is off."
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -1434,6 +2304,14 @@ msgstr ""
 msgid "Middle point"
 msgstr ""
 
+#: src/ui/window/chrome.rs
+msgid "Minimize"
+msgstr ""
+
+#: src/ui/kit/timeframe_picker/grid.rs
+msgid "Minutes"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Mirrored"
@@ -1443,12 +2321,53 @@ msgstr ""
 msgid "Mode"
 msgstr ""
 
+#: src/ui/workspace/tool_sidebar.rs
+msgid "More Fibonacci and Gann tools"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "More actions"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "More brushes, arrows and shapes"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "More chart patterns, Elliott waves and cycles"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "More forecasting, volume and measurement tools"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "More lines, channels and pitchforks"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "More text and notes"
+msgstr ""
+
 #: src/service/update/install/app_bundle.rs
 msgid "Move DegenView to the Applications folder first."
 msgstr ""
 
+#: src/ui/window/tab_bar/menu.rs
+msgid "Move Tab to New Window"
+msgstr ""
+
+#: src/ui/window/tab_bar/menu.rs
+#: src/ui/window/tab_bar/tests.rs
+msgid "Move Tab to Window"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Move down"
+msgstr ""
+
+#: src/ui/workspace/favorites_bar.rs
+msgid "Move favorites toolbar"
 msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
@@ -1457,6 +2376,10 @@ msgstr ""
 
 #: src/ui/snapshot_studio/window/preview.rs
 msgid "Moving the picture is not available for several charts"
+msgstr ""
+
+#: src/workspace/layout/mod.rs
+msgid "My Chart"
 msgstr ""
 
 #: src/ui/drawing/properties/templates.rs
@@ -1479,8 +2402,24 @@ msgstr ""
 msgid "Near"
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "Net profit"
+msgstr ""
+
 #: src/service/watchlist_quotes/provider.rs
 msgid "Network error: {error}"
+msgstr ""
+
+#: src/ui/window/update_sheet/mod.rs
+msgid "New"
+msgstr ""
+
+#: src/ui/window/tab_bar/menu.rs
+msgid "New Tab"
+msgstr ""
+
+#: src/ui/workspace/grid_drop.rs
+msgid "New column"
 msgstr ""
 
 #: src/ui/drawing/properties/templates.rs
@@ -1491,6 +2430,10 @@ msgstr ""
 msgid "New run"
 msgstr ""
 
+#: src/ui/window/tab_bar/mod.rs
+msgid "New tab"
+msgstr ""
+
 #: src/ui/drawing/properties/templates.rs
 msgid "New {tool} drawings start with this style"
 msgstr ""
@@ -1499,16 +2442,70 @@ msgstr ""
 msgid "Next extreme"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "No Active Alerts"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "No Alerts"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "No Results"
+msgstr ""
+
+#: src/ui/alert/center.rs
+#: src/ui/alert/script_list.rs
+msgid "No Results for “{query}”"
+msgstr ""
+
+#: src/ui/alert/center.rs
+#: src/ui/alert/script_list.rs
+msgid "No Script Alerts"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "No Trigger History"
+msgstr ""
+
 #: src/ui/snapshot_studio/window/toolbar.rs
 msgid "No indicators on this chart"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "No matching messages"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "No message passes the level, date and search filters."
 msgstr ""
 
 #: src/ui/drawing/properties/content.rs
 msgid "No preview fetched. Choose Preview on the card's toolbar to ask for one."
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "No price alerts yet"
+msgstr ""
+
+#: src/workspace/chart/mod.rs
+msgid "No price history for these choices"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "No price yet"
+msgstr ""
+
 #: src/ui/drawing/properties/templates.rs
 msgid "No saved templates yet"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "No scripts on this chart"
+msgstr ""
+
+#: src/ui/window/update_sheet/mod.rs
+msgid "No summary of changes is available for this version."
 msgstr ""
 
 #: src/ui/snapshot_studio/window/toolbar.rs
@@ -1519,8 +2516,16 @@ msgstr ""
 msgid "No volume data"
 msgstr ""
 
+#: src/ui/pine/logs_view/mod.rs
+msgid "Not a regular expression this search can read."
+msgstr ""
+
 #: src/ui/snapshot_studio/window/footer.rs
 msgid "Not available for several charts"
+msgstr ""
+
+#: src/ui/workspace/link_charts.rs
+msgid "Not linked: {charts}. Price-based chart types have no shared time."
 msgstr ""
 
 #: src/service/update/check.rs
@@ -1531,16 +2536,46 @@ msgstr ""
 msgid "Not published by the release workflow, so it needs a manual download."
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Not watching here"
+msgstr ""
+
 #: src/trading/confirm.rs
 msgid "Note"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Nothing Paused"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Nothing Triggered"
 msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
 msgid "Nothing is contacted: the card shows what the link says."
 msgstr ""
 
+#: src/ui/alert/pine_editor.rs
+msgid "Nothing to arm yet."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Notifications are turned off"
+msgstr ""
+
+#: src/ui/kit/date_picker.rs
+msgid "Now"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Now {price}"
+msgstr ""
+
 #: src/ui/drawing/properties/mod.rs
 #: src/ui/drawing/properties/tests.rs
+#: src/ui/kit/confirm.rs
+#: src/ui/workspace/layout_prompts.rs
 msgid "OK"
 msgstr ""
 
@@ -1564,12 +2599,21 @@ msgstr ""
 msgid "Offset point"
 msgstr ""
 
+#: src/workspace/chart/mod.rs
+#: src/workspace/overlay/mod.rs
+msgid "Older candles stopped loading"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "On a logarithmic chart, space levels by the ratio of the prices."
 msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "On hold"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Once"
 msgstr ""
 
 #: src/trading/broker/commands.rs
@@ -1598,16 +2642,40 @@ msgstr ""
 msgid "Only when you ask, for the one link you chose"
 msgstr ""
 
+#: src/ui/kit/color_picker/mod.rs
+msgid "Opacity"
+msgstr ""
+
 #: src/ui/drawing/properties/content.rs
 msgid "Opacity (%)"
+msgstr ""
+
+#: src/ui/kit/color_picker/mod.rs
+msgid "Opacity percent"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
 msgid "Open"
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "Open P&L"
+msgstr ""
+
 #: src/ui/drawing/layer/forecast_shapes.rs
 msgid "Open P&L: {amount}"
+msgstr ""
+
+#: src/ui/alert/script_list.rs
+msgid "Open Pine Studio"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Open Settings"
+msgstr ""
+
+#: src/ui/alert/script_list.rs
+msgid "Open its chart on the same market to re-arm it"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -1617,6 +2685,14 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "Open orders"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tiles.rs
+msgid "Open watchlist"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tiles.rs
+msgid "Open {layout}"
 msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
@@ -1635,8 +2711,29 @@ msgstr ""
 msgid "Origin"
 msgstr ""
 
+#: src/ui/alert/script_list.rs
+msgid "Other symbol on chart"
+msgstr ""
+
+#: src/ui/pine/style_view.rs
+msgid ""
+"Outputs without a color well take their color bar by bar from the script."
+msgstr ""
+
 #: src/ui/drawing/layer/forecast_shapes.rs
 msgid "P&L: —"
+msgstr ""
+
+#: src/ui/workspace/link_charts.rs
+msgid "Panning one chart moves the others to the same point in time."
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Paper Trading"
+msgstr ""
+
+#: src/workspace/chart/context/mod.rs
+msgid "Paper orders are not available during replay."
 msgstr ""
 
 #: src/trading/paper/backend.rs
@@ -1645,6 +2742,10 @@ msgstr ""
 
 #: src/trading/paper/backend.rs
 msgid "Paper trading has no price for this chart."
+msgstr ""
+
+#: src/workspace/chart/context/mod.rs
+msgid "Paper trading is not available for this chart."
 msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
@@ -1663,6 +2764,14 @@ msgstr ""
 msgid "Paste the link of another post on X."
 msgstr ""
 
+#: src/workspace/chart/context/mod.rs
+msgid "Pasted {count} drawing."
+msgid_plural "Pasted {count} drawings."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/alert/center.rs
+#: src/ui/alert/script_list.rs
 #: src/ui/replay/bar.rs
 msgid "Pause"
 msgstr ""
@@ -1671,8 +2780,18 @@ msgstr ""
 msgid "Pause (Shift–Down Arrow)"
 msgstr ""
 
+#: src/ui/alert/center.rs
+#: src/ui/alert/script_list.rs
 #: src/ui/replay/bar.rs
 msgid "Paused"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Paused alerts wait here until you resume them."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Paused. It will not fire until resumed."
 msgstr ""
 
 #: src/host/paper/mod.rs
@@ -1729,6 +2848,10 @@ msgstr ""
 msgid "Pin to screen"
 msgstr ""
 
+#: src/ui/pine/logs_view/mod.rs
+msgid "Pine logs"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 msgid "Pinned to screen"
 msgstr ""
@@ -1765,6 +2888,10 @@ msgstr ""
 msgid "Playing"
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "Point & Figure"
+msgstr ""
+
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Point 1"
 msgstr ""
@@ -1793,6 +2920,10 @@ msgstr ""
 msgid "Point {number}"
 msgstr ""
 
+#: src/ui/workspace/toolbar.rs
+msgid "Portfolio Tracker"
+msgstr ""
+
 #: src/service/watchlist_quotes/engine.rs
 msgid "Portfolio cards have no market quote"
 msgstr ""
@@ -1817,6 +2948,12 @@ msgstr ""
 #: src/ui/drawing/content/card.rs
 msgid "Post {id}"
 msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Posts to {count} webhook"
+msgid_plural "Posts to {count} webhooks"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/trading/broker/backend.rs
 msgid "Practice orders on {broker}'s test environment. No real money."
@@ -1907,6 +3044,10 @@ msgstr ""
 msgid "Print values as percentages."
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "Profit factor"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Quantity precision"
 msgstr ""
@@ -1922,6 +3063,10 @@ msgstr ""
 #: src/ui/replay/bar.rs
 #: src/ui/replay/date_sheet.rs
 msgid "Random"
+msgstr ""
+
+#: src/ui/pine/report.rs
+msgid "Range"
 msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
@@ -1941,8 +3086,28 @@ msgstr ""
 msgid "Ratios"
 msgstr ""
 
+#: src/ui/alert/script_list.rs
+msgid "Re-arm"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Re-arming"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Re-enable"
+msgstr ""
+
 #: src/ui/drawing/content/sheet.rs
 msgid "Reading the picture…"
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid "Reading the script…"
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid "Ready"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -1953,28 +3118,94 @@ msgstr ""
 msgid "Realized P&L"
 msgstr ""
 
+#: src/ui/kit/color_picker/mod.rs
+#: src/ui/workspace/empty_state/tabs.rs
+msgid "Recent"
+msgstr ""
+
+#: src/ui/kit/color_picker/mod.rs
+msgid "Recent color {hex}"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Reconnecting ({reason}). New orders are paused."
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Redo ({shortcut})"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Reflect the pattern vertically."
 msgstr ""
 
+#: src/workspace/chart/collection.rs
+msgid "Remove"
+msgstr ""
+
+#: src/ui/kit/dialog/tests.rs
+#: src/workspace/chart/context/mod.rs
+#: src/workspace/drawing/mod.rs
+msgid "Remove All"
+msgstr ""
+
+#: src/workspace/drawing/mod.rs
+msgid "Remove all drawings?"
+msgstr ""
+
+#: src/ui/kit/dialog/tests.rs
+#: src/workspace/chart/context/mod.rs
+msgid "Remove all indicators?"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Remove every logged trigger, not just the ones matching the search"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tabs.rs
+msgid "Remove from Recent"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Remove from favorites"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Remove level"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Remove the bar range"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
 msgid "Remove vertex"
 msgstr ""
 
+#: src/workspace/chart/collection.rs
+msgid "Remove {chart}?"
+msgstr ""
+
 #: src/ui/drawing/properties/templates.rs
+#: src/ui/workspace/layout_prompts.rs
+#: src/ui/workspace/toolbar.rs
 msgid "Rename"
+msgstr ""
+
+#: src/ui/workspace/layout_prompts.rs
+msgid "Rename Layout"
+msgstr ""
+
+#: src/ui/window/tab_bar/menu.rs
+msgid "Rename Tab…"
 msgstr ""
 
 #: src/ui/drawing/properties/templates.rs
 msgid "Renamed to “{name}”"
+msgstr ""
+
+#: src/ui/pine/report.rs
+msgid "Renko"
 msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
@@ -2013,6 +3244,22 @@ msgid ""
 "chart bars."
 msgstr ""
 
+#: src/workspace/replay.rs
+msgid "Replay stopped: no {timeframe} history to replay."
+msgstr ""
+
+#: src/ui/kit/error_notice.rs
+msgid "Request ID {id}"
+msgstr ""
+
+#: src/ui/pine/settings_popover.rs
+msgid "Reset Style"
+msgstr ""
+
+#: src/ui/window/tab_bar/menu.rs
+msgid "Reset Tab Title"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 msgid "Reset aspect ratio"
 msgstr ""
@@ -2033,6 +3280,22 @@ msgstr ""
 msgid "Resizing keeps the picture's proportions."
 msgstr ""
 
+#: src/ui/window/update_indicator.rs
+msgid "Restart"
+msgstr ""
+
+#: src/app/window.rs
+msgid "Restart Now"
+msgstr ""
+
+#: src/app/window.rs
+msgid "Restart to finish updating?"
+msgstr ""
+
+#: src/ui/window/chrome.rs
+msgid "Restore"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Restore default"
 msgstr ""
@@ -2050,6 +3313,10 @@ msgstr ""
 msgid "Result"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Resume"
+msgstr ""
+
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Retracement A"
 msgstr ""
@@ -2062,8 +3329,16 @@ msgstr ""
 msgid "Return to live market"
 msgstr ""
 
+#: src/ui/window/tab_bar/rename.rs
+msgid "Return to save, Esc to cancel. Empty restores the default."
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Reverse"
+msgstr ""
+
+#: src/ui/pine/style_view.rs
+msgid "Revert {output} to the script's style"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -2084,6 +3359,14 @@ msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Right shoulder"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Right-click for options"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Rises {percent}"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -2110,6 +3393,10 @@ msgstr ""
 msgid "Rows layout"
 msgstr ""
 
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Ruler"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Run"
 msgstr ""
@@ -2122,6 +3409,12 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Run it on to the edge of the chart."
+msgstr ""
+
+#: src/ui/pine/report.rs
+msgid ""
+"Run on a {name} chart: orders filled at its constructed prices, not at prices "
+"the market traded at. Treat the results as indicative only."
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -2140,16 +3433,55 @@ msgstr ""
 msgid "Same as the system"
 msgstr ""
 
+#: src/workspace/overlay/mod.rs
+msgid "Same market as the chart"
+msgstr ""
+
+#: src/ui/kit/color_picker/inline.rs
+#: src/ui/kit/color_picker/mod.rs
+msgid "Saturation and brightness"
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
 #: src/ui/drawing/properties/templates.rs
+#: src/ui/workspace/layout_prompts.rs
 msgid "Save"
+msgstr ""
+
+#: src/ui/alert/editor.rs
+msgid "Save Changes"
+msgstr ""
+
+#: src/ui/workspace/layout_prompts.rs
+msgid "Save Layout"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tabs.rs
+msgid "Save a layout from the layout menu and it will show up here."
 msgstr ""
 
 #: src/ui/drawing/properties/templates.rs
 msgid "Save as template…"
 msgstr ""
 
+#: src/ui/workspace/layout_prompts.rs
+msgid "Save changes to “{layout}”?"
+msgstr ""
+
 #: src/service/snapshot/export.rs
 msgid "Save chart image"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Save layout"
+msgstr ""
+
+#: src/ui/workspace/layout_prompts.rs
+msgid "Save the current charts, timeframe and layout under a name."
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Save the layout first, then Autosave can keep it up to date."
 msgstr ""
 
 #: src/host/settings/mod.rs
@@ -2164,6 +3496,75 @@ msgstr ""
 msgid "Saved “{name}”"
 msgstr ""
 
+#: src/ui/alert/editor.rs
+msgid "Saving adds a second one that fires at the same time."
+msgstr ""
+
+#: src/ui/pine/settings_popover.rs
+msgid "Script"
+msgstr ""
+
+#: src/ui/alert/script_list.rs
+msgid "Script alerts are created from alert() calls in your scripts."
+msgstr ""
+
+#: src/ui/alert/script_list.rs
+msgid "Script changed — re-arm"
+msgstr ""
+
+#: src/ui/alert/script_list.rs
+msgid "Script deleted"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Scripts"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Scroll to bar"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Scroll to the latest message"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+#: src/ui/workspace/toolbar.rs
+msgid "Search"
+msgstr ""
+
+#: src/ui/workspace/empty_state/mod.rs
+msgid "Search a market, or pick up where you left off."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Search asset or name"
+msgstr ""
+
+#: src/ui/workspace/empty_state/mod.rs
+msgid "Search crypto, stocks and prediction markets."
+msgstr ""
+
+#: src/ui/workspace/empty_state/mod.rs
+msgid "Search crypto, stocks, prediction markets…"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Search logs"
+msgstr ""
+
+#: src/ui/workspace/empty_state/mod.rs
+msgid "Search markets"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Search symbol"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Search symbol ({shortcut})"
+msgstr ""
+
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Second arm"
 msgstr ""
@@ -2176,6 +3577,14 @@ msgstr ""
 msgid "Second wave X"
 msgstr ""
 
+#: src/ui/pine/logs_view/mod.rs
+msgid "See what your script does, bar by bar."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Seen late: the price crossed while DegenView was not watching."
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Select"
 msgstr ""
@@ -2186,6 +3595,10 @@ msgstr ""
 
 #: src/ui/replay/bar.rs
 msgid "Select bar on chart"
+msgstr ""
+
+#: src/ui/workspace/snapshot_menu.rs
+msgid "Select portion"
 msgstr ""
 
 #: src/host/portfolio/import_flow.rs
@@ -2206,7 +3619,13 @@ msgstr ""
 msgid "Send to back"
 msgstr ""
 
+#: src/ui/alert/editor.rs
+msgid "Set a level to create the alert."
+msgstr ""
+
+#: src/app/window.rs
 #: src/ui/drawing/layer/menu.rs
+#: src/ui/window/tab_bar/mod.rs
 msgid "Settings"
 msgstr ""
 
@@ -2223,6 +3642,7 @@ msgid "Shape"
 msgstr ""
 
 #: src/ui/drawing/layer/forecast_shapes.rs
+#: src/ui/pine/report.rs
 msgid "Short"
 msgstr ""
 
@@ -2235,12 +3655,48 @@ msgstr ""
 msgid "Show"
 msgstr ""
 
+#: src/ui/workspace/toolbar.rs
+msgid "Show Market Flow"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Show Paper Trading panel"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Show Watchlists"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Show all drawings"
+msgstr ""
+
 #: src/ui/drawing/properties/style.rs
 msgid "Show an emoji on the marker at the anchor."
 msgstr ""
 
+#: src/ui/alert/lines.rs
+msgid "Show details"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Show details · drag to change the price"
+msgstr ""
+
+#: src/ui/alert/lines.rs
+msgid "Show details, {caption}"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tiles.rs
+msgid "Show every favorite in the watchlist"
+msgstr ""
+
 #: src/ui/drawing/properties/visibility.rs
 msgid "Show on"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Show only messages written on bars you drag over on the chart"
 msgstr ""
 
 #: src/ui/drawing/properties/text.rs
@@ -2249,6 +3705,18 @@ msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Show the time range, the price range and their ratio."
+msgstr ""
+
+#: src/ui/pine/style_view.rs
+msgid "Show {output}"
+msgstr ""
+
+#: src/ui/kit/field.rs
+msgid "Show {title}"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Showing messages written on these bars"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -2285,6 +3753,10 @@ msgstr ""
 msgid "Source"
 msgstr ""
 
+#: src/ui/pine/logs_view/mod.rs
+msgid "Source code"
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Speed"
 msgstr ""
@@ -2305,6 +3777,10 @@ msgstr ""
 msgid "Standard deviations from the line, negative for below."
 msgstr ""
 
+#: src/ui/workspace/empty_state/tabs.rs
+msgid "Star a market in the watchlist and it will show up here."
+msgstr ""
+
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/style.rs
 #: src/ui/replay/bar.rs
@@ -2313,6 +3789,10 @@ msgstr ""
 
 #: src/ui/replay/date_sheet.rs
 msgid "Start Replay"
+msgstr ""
+
+#: src/ui/workspace/empty_state/mod.rs
+msgid "Start a new chart"
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -2373,6 +3853,10 @@ msgstr ""
 msgid "Stop"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Stop Watching on This Mac"
+msgstr ""
+
 #: src/ui/replay/overlay.rs
 msgid "Stop here"
 msgstr ""
@@ -2386,6 +3870,10 @@ msgstr ""
 msgid "Stop reached"
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "Strategy report"
+msgstr ""
+
 #: src/ui/snapshot_studio/window/mod.rs
 #: src/ui/snapshot_studio/window/tests.rs
 msgid "Studio"
@@ -2393,6 +3881,7 @@ msgstr ""
 
 #: src/ui/drawing/properties/mod.rs
 #: src/ui/drawing/properties/style.rs
+#: src/ui/pine/settings_popover.rs
 #: src/ui/snapshot_studio/window/toolbar.rs
 msgid "Style"
 msgstr ""
@@ -2400,6 +3889,18 @@ msgstr ""
 #: src/ui/drawing/layer/forecast_shapes.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Success"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tabs.rs
+msgid "Suggestions"
+msgstr ""
+
+#: src/ui/window/tab_bar/mod.rs
+msgid "Support this project by buying me a coffee"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Symbol"
 msgstr ""
 
 #: src/model/tab/title.rs
@@ -2410,6 +3911,26 @@ msgstr ""
 msgid "Symbol, price and layout"
 msgstr ""
 
+#: src/ui/workspace/toolbar.rs
+msgid "Symbol: {symbol}. Search for another"
+msgstr ""
+
+#: src/ui/workspace/link_charts.rs
+msgid "Sync horizontal position"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Sync this tab’s charts with other tabs."
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "Sync what"
+msgstr ""
+
+#: src/ui/workspace/link_charts.rs
+msgid "Sync zoom level"
+msgstr ""
+
 #: src/ui/theme/mod.rs
 msgid "System"
 msgstr ""
@@ -2418,8 +3939,20 @@ msgstr ""
 msgid "System follows your {computer}'s light or dark setting."
 msgstr ""
 
+#: src/ui/window/tab_bar/menu.rs
+msgid "Tab Title"
+msgstr ""
+
+#: src/ui/window/tab_bar/rename.rs
+msgid "Tab title"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Tabs"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Take a snapshot"
 msgstr ""
 
 #: src/ui/drawing/layer/forecast_shapes.rs
@@ -2428,8 +3961,16 @@ msgstr ""
 msgid "Target"
 msgstr ""
 
+#: src/ui/alert/editor.rs
+msgid "Target price"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Target reached"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Target {price}"
 msgstr ""
 
 #: src/ui/drawing/properties/templates.rs
@@ -2452,6 +3993,12 @@ msgstr ""
 msgid "Text color"
 msgstr ""
 
+#: src/workspace/pine/logs/mod.rs
+msgid ""
+"That bar is older than the candles this chart holds, so it went to the oldest "
+"bar."
+msgstr ""
+
 #: src/host/broker/mod.rs
 msgid "That broker is not available."
 msgstr ""
@@ -2460,8 +4007,16 @@ msgstr ""
 msgid "That file is empty."
 msgstr ""
 
+#: src/workspace/drawing/content.rs
+msgid "That image is not available to copy yet."
+msgstr ""
+
 #: src/trading/paper/backend.rs
 msgid "That is not a paper order."
+msgstr ""
+
+#: src/workspace/trade/broker.rs
+msgid "That order is no longer working."
 msgstr ""
 
 #: src/service/annotation/ingest.rs
@@ -2488,6 +4043,12 @@ msgstr ""
 msgid ""
 "The account changed since the order was set up. Nothing was sent. Check the "
 "order again."
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid ""
+"The alert's message is posted as is. Frequency and re-arming work exactly as "
+"they do for notifications."
 msgstr ""
 
 #: src/service/update/install/portable_binary.rs
@@ -2536,10 +4097,27 @@ msgstr ""
 msgid "The change as a percentage of the start."
 msgstr ""
 
+#: src/workspace/pine/logs/mod.rs
+msgid "The chart has no bars to scroll to."
+msgstr ""
+
+#: src/ui/kit/dialog/tests.rs
+#: src/workspace/chart/collection.rs
+msgid "The chart leaves this tab. You can add it again from the symbol search."
+msgstr ""
+
+#: src/workspace/drawing/links.rs
+msgid "The choice could not be saved."
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid ""
 "The connection changed since the order was set up. Nothing was sent. Check the"
 " order again."
+msgstr ""
+
+#: src/ui/workspace/layout_prompts.rs
+msgid "The copy keeps what you see now and saves separately from the original."
 msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
@@ -2602,6 +4180,10 @@ msgstr ""
 msgid "The drawing is kept when you switch to a timeframe it is not shown on."
 msgstr ""
 
+#: src/workspace/chart/context/mod.rs
+msgid "The exchange rate for this alert is not available yet."
+msgstr ""
+
 #: src/service/system/file_dialog.rs
 msgid "The file dialog failed: {message}"
 msgstr ""
@@ -2610,6 +4192,14 @@ msgstr ""
 msgid ""
 "The language of menus, labels and messages. Market names, prices and Pine "
 "scripts stay as they are."
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "The last autosave could not be written. Choose Save layout."
+msgstr ""
+
+#: src/workspace/drawing/content.rs
+msgid "The library is busy."
 msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
@@ -2626,6 +4216,14 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "The market's rules have not been read yet."
+msgstr ""
+
+#: src/ui/workspace/layout_prompts.rs
+msgid "The name is also the tab title."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "The notification could not be delivered."
 msgstr ""
 
 #: src/trading/edit/mod.rs
@@ -2654,6 +4252,14 @@ msgstr ""
 msgid ""
 "The password could not be saved for later ({error}). It works until you quit "
 "DegenView."
+msgstr ""
+
+#: src/workspace/drawing/content.rs
+msgid "The picture could not be read."
+msgstr ""
+
+#: src/workspace/drawing/content.rs
+msgid "The picture could not be saved: {error}"
 msgstr ""
 
 #: src/ui/drawing/properties/content.rs
@@ -2721,6 +4327,10 @@ msgstr ""
 
 #: src/service/watchlist_quotes/engine.rs
 msgid "The provider returned no quote"
+msgstr ""
+
+#: src/workspace/overlay/mod.rs
+msgid "The request stopped before it answered"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -2793,12 +4403,32 @@ msgid ""
 "tick data."
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "The {symbol} alert is removed. Its trigger history is kept."
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Theme"
 msgstr ""
 
+#: src/workspace/chart/context/mod.rs
+msgid "There are no copied drawings to paste."
+msgstr ""
+
+#: src/workspace/chart/snapshot/select.rs
+msgid "There is no chart to take a picture of yet."
+msgstr ""
+
 #: src/trading/paper/backend.rs
 msgid "There is no paper account yet."
+msgstr ""
+
+#: src/workspace/drawing/content.rs
+msgid "There is no picture on the clipboard."
+msgstr ""
+
+#: src/workspace/chart/context/mod.rs
+msgid "There is no price at that point."
 msgstr ""
 
 #: src/host/update/mod.rs
@@ -2812,6 +4442,12 @@ msgstr ""
 msgid "Thickness"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid ""
+"This alert came from another Mac and is switched off on this one, so it "
+"notifies from one Mac only. Choose Watch on This Mac to turn it on here too."
+msgstr ""
+
 #: src/service/update/code_signature.rs
 msgid "This app's Team ID is not valid."
 msgstr ""
@@ -2822,6 +4458,10 @@ msgstr ""
 
 #: src/service/system/entitlements.rs
 msgid "This build has an unrecognised iCloud environment."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "This can't be undone. Your alerts are kept."
 msgstr ""
 
 #: src/trading/edit/mod.rs
@@ -2862,6 +4502,19 @@ msgstr ""
 msgid "This release is missing its iCloud environment."
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "This rule type is not supported by this version."
+msgstr ""
+
+#: src/ui/pine/settings_popover.rs
+msgid "This script has no inputs or style options."
+msgstr ""
+
+#: src/workspace/pine/logs/mod.rs
+msgid ""
+"This script was not added from a saved script, so there is no source to open."
+msgstr ""
+
 #: src/host/snapshot/mod.rs
 msgid ""
 "This snapshot host is not in this version of DegenView. Choose another in "
@@ -2870,7 +4523,9 @@ msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/kit/date_picker.rs
 #: src/ui/replay/date_sheet.rs
+#: src/ui/window/tab_link_menu/mod.rs
 msgid "Time"
 msgstr ""
 
@@ -2888,6 +4543,14 @@ msgstr ""
 
 #: src/ui/drawing/properties/style.rs
 msgid "Time range"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Timeframe"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Timeframe: {timeframe}. Choose another"
 msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
@@ -2922,9 +4585,29 @@ msgstr ""
 msgid "Total (venue's estimate)"
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "Trades ({count})"
+msgstr ""
+
+#: src/ui/kit/color_picker/inline.rs
+msgid "Transparency"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 #: src/ui/drawing/properties/style.rs
 msgid "Trend line"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Triggered"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Triggers every time"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Triggers once"
 msgstr ""
 
 #: src/host/snapshot/mod.rs
@@ -2937,6 +4620,10 @@ msgstr ""
 
 #: src/trading/confirm.rs
 msgid "Type"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Undo ({shortcut})"
 msgstr ""
 
 #: src/service/watchlist_quotes/provider.rs
@@ -2975,8 +4662,29 @@ msgstr ""
 msgid "Unlock"
 msgstr ""
 
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Unlock all drawings"
+msgstr ""
+
+#: src/workspace/layout/mod.rs
+#: src/workspace/toolbar.rs
+msgid "Unnamed"
+msgstr ""
+
 #: src/service/update/install/mod.rs
 msgid "Unpacking and checking it…"
+msgstr ""
+
+#: src/ui/kit/timeframe_picker/unpin.rs
+msgid "Unpin"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Unsupported"
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid "Untitled script"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -2991,9 +4699,26 @@ msgstr ""
 msgid "Up volume"
 msgstr ""
 
+#: src/ui/window/update_indicator.rs
+#: src/ui/window/update_sheet/mod.rs
+msgid "Update"
+msgstr ""
+
+#: src/ui/window/update_indicator.rs
+msgid "Update failed"
+msgstr ""
+
+#: src/ui/window/update_sheet/mod.rs
+msgid "Update to DegenView {version}"
+msgstr ""
+
 #: src/service/update/install/app_bundle.rs
 #: src/service/update/install/portable_binary.rs
 msgid "Updated, but could not restart: {error}. Reopen DegenView."
+msgstr ""
+
+#: src/ui/window/update_indicator.rs
+msgid "Updating {percent}%"
 msgstr ""
 
 #: src/service/snapshot/providers/self_hosted.rs
@@ -3013,6 +4738,14 @@ msgstr ""
 msgid "Use one color"
 msgstr ""
 
+#: src/ui/pine/logs_view/mod.rs
+msgid "Use regular expression"
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Use the <log functions>."
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Value area high and low"
 msgstr ""
@@ -3025,6 +4758,10 @@ msgstr ""
 msgid "Value area volume"
 msgstr ""
 
+#: src/ui/workspace/cursor_menu.rs
+msgid "Values tooltip on long press"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Variance"
 msgstr ""
@@ -3032,6 +4769,26 @@ msgstr ""
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/text.rs
 msgid "Vertical"
+msgstr ""
+
+#: src/ui/workspace/link_charts.rs
+msgid "Vertical scales remain independent."
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "View Price Alerts"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "View Price Alerts, {count} new"
+msgstr ""
+
+#: src/ui/window/update_sheet/mod.rs
+msgid "View Release"
+msgstr ""
+
+#: src/ui/window/tab_bar/mod.rs
+msgid "View project on GitHub"
 msgstr ""
 
 #: src/ui/drawing/properties/mod.rs
@@ -3044,6 +4801,35 @@ msgstr ""
 
 #: src/ui/drawing/layer/forecast_shapes.rs
 msgid "Volume: {volume}"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Waiting for current market data."
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Waiting for data"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid ""
+"Waiting for the price to move back across the level before it can fire again."
+msgstr ""
+
+#: src/ui/pine/logs_view/mod.rs
+msgid "Warning"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Watch on This Mac"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "Watching the market."
+msgstr ""
+
+#: src/workspace/watchlist.rs
+msgid "Watchlist"
 msgstr ""
 
 #: src/ui/drawing/properties/levels.rs
@@ -3106,6 +4892,14 @@ msgstr ""
 msgid "Wave Z"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "Webhooks {delivered}/{total} delivered"
+msgstr ""
+
+#: src/ui/alert/script_list.rs
+msgid "Webhooks…"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid ""
 "What a chart tab shows. The layout name and the price follow the tab's focused"
@@ -3140,12 +4934,24 @@ msgstr ""
 msgid "Width point"
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "Win rate"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Worked from the volume of the bars the chart draws: no volume, no line."
 msgstr ""
 
 #: src/ui/drawing/properties/text.rs
 msgid "Wrap text"
+msgstr ""
+
+#: src/ui/alert/script_list.rs
+msgid "Write and manage the scripts whose alert() calls appear here"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "Write changes to this layout a moment after you make them."
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -3156,6 +4962,14 @@ msgstr ""
 msgid "Yesterday"
 msgstr ""
 
+#: src/ui/window/update_sheet/mod.rs
+msgid "You have {installed}."
+msgstr ""
+
+#: src/ui/workspace/layout_prompts.rs
+msgid "Your changes will be lost if you switch layouts without saving."
+msgstr ""
+
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Your saved access token is sent with it."
 msgstr ""
@@ -3164,8 +4978,24 @@ msgstr ""
 msgid "Zero takes it from the two anchors."
 msgstr ""
 
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Zoom in"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
+msgid "Zoom out"
+msgstr ""
+
+#: src/ui/workspace/link_charts.rs
+msgid "Zooming one chart adjusts the others."
+msgstr ""
+
 #: src/service/update/code_signature.rs
 msgid "checking the signature took too long"
+msgstr ""
+
+#: src/ui/kit/markdown_view.rs
+msgid "code"
 msgstr ""
 
 #: src/service/update/archive.rs
@@ -3186,6 +5016,10 @@ msgstr ""
 
 #: src/service/update/archive.rs
 msgid "it unpacks to more data than an update should"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "nothing synced"
 msgstr ""
 
 #: src/ui/kit/time_text.rs
@@ -3224,6 +5058,10 @@ msgstr ""
 msgid "{assets} · {unpriced} unpriced"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "{away}% away"
+msgstr ""
+
 #: src/ui/drawing/layer/gann_shapes.rs
 msgid "{bars} bars"
 msgstr ""
@@ -3231,6 +5069,30 @@ msgstr ""
 #: src/ui/drawing/render.rs
 msgid "{bars} · {duration}"
 msgstr ""
+
+#: src/ui/alert/script_list.rs
+msgid "{base} · {count} webhook"
+msgid_plural "{base} · {count} webhooks"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "{color} (click to unlink)"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgid "{color}, selected. Choose again to unlink"
+msgstr ""
+
+#: src/ui/alert/center.rs
+msgid "{count} active"
+msgstr ""
+
+#: src/ui/alert/pine_editor.rs
+msgid "{count} alert"
+msgid_plural "{count} alerts"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/trading/broker/backend.rs
 msgid "{count} asset"
@@ -3245,15 +5107,58 @@ msgid_plural "{count} bars"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/workspace/empty_state/tiles.rs
+msgid "{count} chart · {timeframe}"
+msgid_plural "{count} charts · {timeframe}"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/kit/time_text.rs
 msgid "{count} day ago"
 msgid_plural "{count} days ago"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/workspace/drawing/mod.rs
+msgid "{count} drawing will be removed from this chart. You can undo it."
+msgid_plural ""
+"{count} drawings will be removed from this chart. You can undo it."
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/kit/time_text.rs
 msgid "{count} hr. ago"
 msgid_plural "{count} hr. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/workspace/chart/context/mod.rs
+msgid ""
+"{count} indicator will be removed from this chart. Saved scripts are kept, and"
+" you can undo it."
+msgid_plural ""
+"{count} indicators will be removed from this chart. Saved scripts are kept, "
+"and you can undo it."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/workspace/chart/context/mod.rs
+msgid ""
+"{count} indicator, the compared symbol included, will be removed from this "
+"chart. Saved scripts are kept, and you can undo it."
+msgid_plural ""
+"{count} indicators, the compared symbol included, will be removed from this "
+"chart. Saved scripts are kept, and you can undo it."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/workspace/chart/context/mod.rs
+msgid ""
+"{count} indicator, the {compared} compared symbols included, will be removed "
+"from this chart. Saved scripts are kept, and you can undo it."
+msgid_plural ""
+"{count} indicators, the {compared} compared symbols included, will be removed "
+"from this chart. Saved scripts are kept, and you can undo it."
 msgstr[0] ""
 msgstr[1] ""
 
@@ -3269,11 +5174,21 @@ msgid_plural "{count} mo. ago"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/workspace/empty_state/tiles.rs
+msgid "{count} more favorite"
+msgid_plural "{count} more favorites"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/drawing/properties/coordinates.rs
 msgid "{count} more point: drag it on the chart."
 msgid_plural "{count} more points: drag them on the chart."
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/ui/alert/center.rs
+msgid "{count} paused"
+msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/drawing/properties/levels.rs
@@ -3287,6 +5202,22 @@ msgid "{count} sec. ago"
 msgid_plural "{count} sec. ago"
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/ui/kit/timeframe_picker/warning.rs
+msgid "{count} source can't chart {timeframe}"
+msgid_plural "{count} sources can't chart {timeframe}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/alert/center.rs
+msgid "{count} trigger logged. Clearing history keeps your alerts."
+msgid_plural "{count} triggers logged. Clearing history keeps your alerts."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/alert/center.rs
+msgid "{count} triggered"
+msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid ""
@@ -3322,6 +5253,10 @@ msgstr ""
 msgid "{days}d {hours}h"
 msgstr ""
 
+#: src/ui/pine/report.rs
+msgid "{entry} → {exit} · qty {quantity}"
+msgstr ""
+
 #: src/trading/edit/mod.rs
 msgid "{error} The order is being read again to see what happened."
 msgstr ""
@@ -3331,6 +5266,10 @@ msgid "{first} (and {count} more)"
 msgid_plural "{first} (and {count} more)"
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/ui/kit/timeframe_picker/warning.rs
+msgid "{first} and {second} can't chart {timeframe}"
+msgstr ""
 
 #: src/service/update/install/app_bundle.rs
 msgid "{folder} is not writable."
@@ -3352,12 +5291,44 @@ msgstr ""
 msgid "{from} to {to}"
 msgstr ""
 
+#: src/ui/pine/logs_view/mod.rs
+msgid "{from} – {to}"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tiles.rs
+msgid "{hidden} more"
+msgstr ""
+
 #: src/ui/drawing/render.rs
 msgid "{hours}h"
 msgstr ""
 
 #: src/ui/drawing/render.rs
 msgid "{hours}h {minutes}m"
+msgstr ""
+
+#: src/ui/kit/markdown_view.rs
+msgid "{label} …"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "{layout} — Autosave could not save; choose Save layout"
+msgstr ""
+
+#: src/ui/workspace/toolbar.rs
+msgid "{layout} — unsaved changes"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tiles.rs
+msgid "{layout}, {subtitle}"
+msgstr ""
+
+#: src/ui/workspace/empty_state/tiles.rs
+msgid "{market}, {subtitle}"
+msgstr ""
+
+#: src/ui/window/update_indicator.rs
+msgid "{message} Click to try again."
 msgstr ""
 
 #: src/ui/drawing/render.rs
@@ -3370,6 +5341,10 @@ msgstr ""
 
 #: src/ui/snapshot_studio/window/swatches.rs
 msgid "{name} background"
+msgstr ""
+
+#: src/workspace/layout/mod.rs
+msgid "{name} copy"
 msgstr ""
 
 #: src/host/snapshot/mod.rs
@@ -3396,6 +5371,10 @@ msgstr ""
 msgid "{name}: {offset}, Amount: {amount}"
 msgstr ""
 
+#: src/ui/pine/style_view.rs
+msgid "{output} color"
+msgstr ""
+
 #: src/service/system/file_dialog.rs
 msgid ""
 "{path} is {size} KB, which is too large to be what was asked for (the limit is"
@@ -3414,6 +5393,10 @@ msgstr ""
 msgid "{side} {size} {product} · {kind}"
 msgstr ""
 
+#: src/ui/kit/timeframe_picker/warning.rs
+msgid "{source} can't chart {timeframe}"
+msgstr ""
+
 #: src/ui/drawing/layer/forecast_shapes.rs
 msgid "{standing}, Qty: {quantity}"
 msgstr ""
@@ -3422,8 +5405,26 @@ msgstr ""
 msgid "{style} tab title"
 msgstr ""
 
+#: src/ui/alert/center.rs
+msgid "{symbol} alert: {condition} {target}, {status}"
+msgstr ""
+
+#: src/ui/alert/banner.rs
+msgid "{symbol} reached {price}"
+msgstr ""
+
+#: src/ui/shortcut.rs
+msgid "{text} ({shortcut})"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "{theme} theme"
+msgstr ""
+
+#: src/workspace/replay.rs
+msgid ""
+"{timeframe} history starts after the replay position, so the replay moved to "
+"its first bar."
 msgstr ""
 
 #: src/host/snapshot/mod.rs
@@ -3600,4 +5601,24 @@ msgstr ""
 #: src/trading/model.rs
 msgctxt "venue kind"
 msgid "Test"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgctxt "what a link syncs, in a list"
+msgid "date range"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgctxt "what a link syncs, in a list"
+msgid "interval"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgctxt "what a link syncs, in a list"
+msgid "symbol"
+msgstr ""
+
+#: src/ui/window/tab_link_menu/mod.rs
+msgctxt "what a link syncs, in a list"
+msgid "time"
 msgstr ""

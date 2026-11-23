@@ -3,6 +3,7 @@
 //! chips and the chart settings sheet's script rows both open it, pointing at themselves.
 
 use super::style_view;
+use crate::i18n::tr;
 use crate::model::pine::instance::PineInstance;
 use crate::pine::compiler;
 use crate::pine::compiler::program::InputSchema;
@@ -59,7 +60,7 @@ impl PineSettingsPopover {
         let program = compiler::compile(&instance.source, Limits::default(), &LibraryRegistry);
         let declared = program.declaration.title.trim();
         let title = if declared.is_empty() {
-            "Script".to_owned()
+            tr!("Script").to_owned()
         } else {
             declared.to_owned()
         };
@@ -113,13 +114,13 @@ impl PineSettingsPopover {
                     &[
                         kit::TabItem {
                             value: Page::Inputs,
-                            title: "Inputs",
+                            title: tr!("Inputs"),
                             icon: Icon::Sliders,
                             count: self.schema.inputs.len(),
                         },
                         kit::TabItem {
                             value: Page::Style,
-                            title: "Style",
+                            title: tr!("Style"),
                             icon: Icon::Palette,
                             count: self.rows.len(),
                         },
@@ -166,7 +167,7 @@ impl PineSettingsPopover {
     fn page_content(&mut self, ui: &mut Ui) {
         if !self.has_inputs() && !self.has_style() {
             ui.label(kit::text(
-                "This script has no inputs or style options.",
+                tr!("This script has no inputs or style options."),
                 kit::size::BODY,
                 kit::REGULAR,
                 theme::text_secondary(),
@@ -193,18 +194,18 @@ impl PineSettingsPopover {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             if self.page == Page::Style
-                && kit::push_button(ui, None, "Reset Style", !self.style.is_empty()).clicked()
+                && kit::push_button(ui, None, tr!("Reset Style"), !self.style.is_empty()).clicked()
             {
                 self.style.clear();
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if kit::sheet_button(ui, "Apply", true, true).clicked() {
+                if kit::sheet_button(ui, tr!("Apply"), true, true).clicked() {
                     outcome = Outcome::Apply {
                         inputs: self.inputs.clone(),
                         style: self.applied_style(),
                     };
                 }
-                if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                     outcome = Outcome::Cancel;
                 }
             });
