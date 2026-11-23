@@ -176,7 +176,10 @@ in bars, not pixels); a symbol or timeframe change resets it as before (`reset_v
 `model::market::history` holds the pure rules; `workspace::Chart::{request_older, receive_older}` own the
 request. When the view is within two screens of the oldest candle held (`ChartCard::near_oldest_bar`),
 or right after the first fetch (`OlderHistory::untouched`, so the first page is already there when
-the user scrolls), the chart asks `service::fetch_klines_range` for the 1,000 candles before it,
+the user scrolls), or while a script on the chart is visible and the chart holds fewer than
+`history::SCRIPT_DEPTH` candles (5,000, what TradingView's Basic plan runs a script over; a script
+keeps state over days, so over the first 500 candles it draws less than it does there), the chart
+asks `service::fetch_klines_range` for the 1,000 candles before it,
 through the work queue. One request is out at a time, a failure waits 15 s, an empty page marks the
 start of history, and a page for a market or timeframe the chart has left is dropped. A refresh
 keeps the older candles it did not bring (`history::with_older`) once a page has been loaded or
