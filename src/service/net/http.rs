@@ -134,6 +134,26 @@ pub fn get_text(url: &str, headers: &[(&str, &str)], retry: Retry) -> Result<Str
     get_text_with_limit(url, headers, retry, MAX_BODY_BYTES)
 }
 
+/// [`get_text`] whose error statuses are [`Error::Refused`], with the provider's body.
+pub fn get_text_reading_refusals(
+    url: &str,
+    headers: &[(&str, &str)],
+    retry: Retry,
+) -> Result<String, Error> {
+    fetch(
+        &*AGENT,
+        url,
+        headers,
+        None,
+        Policy {
+            retry,
+            keep_refusals: true,
+        },
+        std::thread::sleep,
+        |body| body.with_config().limit(MAX_BODY_BYTES).read_to_string(),
+    )
+}
+
 /// A POST of the JSON text `body`, answered with the response text. For the public queries of a
 /// provider that takes them as POSTs; the request is as safe to repeat as a GET, so `retry` applies
 /// as it does there.

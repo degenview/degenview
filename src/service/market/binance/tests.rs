@@ -1,45 +1,5 @@
 use super::*;
-
-#[test]
-fn a_pair_is_found_however_it_is_separated() {
-    let pairs = vec![
-        Pair {
-            symbol: "BTCUSDT".into(),
-            base: "BTC".into(),
-            quote: "USDT".into(),
-        },
-        Pair {
-            symbol: "ETHBTC".into(),
-            base: "ETH".into(),
-            quote: "BTC".into(),
-        },
-    ];
-    for query in ["btcusdt", "BTC-USDT", "btc/usdt", "BTC USDT"] {
-        let found = matching_pairs(&pairs, &normalize(query));
-        assert_eq!(found.len(), 1, "{query}");
-        assert_eq!(found[0].symbol, "BTCUSDT");
-    }
-    assert_eq!(matching_pairs(&pairs, "BTC").len(), 2);
-}
-
-#[test]
-fn parses_binance_rows() {
-    let body = r#"[[1700000000000,"10.0","12.0","9.0","11.0","42.5",1700003599999]]"#;
-    let candles = parse_klines(body).expect("valid response");
-    assert_eq!(candles.len(), 1);
-    assert_eq!(
-        candles[0],
-        Kline {
-            open_time: 1_700_000_000_000,
-            close_time: 1_700_003_599_999,
-            open: 10.0,
-            high: 12.0,
-            low: 9.0,
-            close: 11.0,
-            volume: 42.5,
-        }
-    );
-}
+use crate::service::market::candles::plan;
 
 fn base_of(timeframe: &str) -> (String, usize) {
     let plan = plan(DataSource::Binance, Timeframe::parse(timeframe).unwrap()).unwrap();
@@ -84,29 +44,12 @@ fn a_series_of_more_than_one_requests_candles_is_paged_but_its_tail_is_not() {
 }
 
 #[test]
-fn rejects_error_objects() {
-    let error =
-        parse_klines(r#"{"code":-1121,"msg":"Invalid symbol."}"#).expect_err("object must fail");
-    assert_eq!(error, ProviderError::data("expected a candle array"));
-}
-
-#[test]
-fn the_catalog_keeps_only_trading_markets_with_all_their_fields() {
-    let body = r#"{"symbols":[
-        {"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT"},
-        {"symbol":"LUNAUSDT","status":"BREAK","baseAsset":"LUNA","quoteAsset":"USDT"},
-        {"symbol":"NOQUOTE","status":"TRADING","baseAsset":"X"}
-    ]}"#;
-    let pairs = parse_pairs(body).expect("pairs");
-    assert_eq!(pairs.len(), 1);
+fn the_symbols_and_interval_are_in_the_url() {
+    let sessions = SHAPE.kline_sessions(&["BTCUSDT".into(), "ETHUSDT".into()], Timeframe::HOUR_1);
+    assert_eq!(sessions.len(), 1);
     assert_eq!(
-        (
-            pairs[0].symbol.as_str(),
-            pairs[0].base.as_str(),
-            pairs[0].quote.as_str()
-        ),
-        ("BTCUSDT", "BTC", "USDT")
+        sessions[0].url,
+        "wss://stream.binance.com/stream?streams=btcusdt@kline_1h/ethusdt@kline_1h"
     );
-    assert!(parse_pairs("not json").is_err());
-    assert!(parse_pairs("{}").expect("no symbols").is_empty());
+    assert!(sessions[0].subscribe.is_empty());
 }

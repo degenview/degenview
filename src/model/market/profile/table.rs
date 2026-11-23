@@ -12,7 +12,7 @@ use crate::model::market::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
 
 /// Every source, in the order lists of sources are searched and shown.
-pub const ALL: [DataSource; 14] = [
+pub const ALL: [DataSource; 15] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -21,6 +21,7 @@ pub const ALL: [DataSource; 14] = [
     DataSource::Gate,
     DataSource::Mexc,
     DataSource::Hyperliquid,
+    DataSource::Aster,
     DataSource::CoinGecko,
     DataSource::DexScreener,
     DataSource::Alpaca,
@@ -39,6 +40,7 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
         DataSource::Gate => &GATE,
         DataSource::Mexc => &MEXC,
         DataSource::Hyperliquid => &HYPERLIQUID,
+        DataSource::Aster => &ASTER,
         DataSource::CoinGecko => &COINGECKO,
         DataSource::DexScreener => &DEXSCREENER,
         DataSource::Alpaca => &ALPACA,
@@ -50,6 +52,9 @@ pub fn profile_of(source: DataSource) -> &'static Profile {
 
 /// The kinds of market a source lists: spot, which is everything that is not a perpetual.
 const SPOT: &[MarketKind] = &[MarketKind::Spot];
+
+/// A venue that lists perpetual contracts only.
+const PERP: &[MarketKind] = &[MarketKind::Perp];
 
 /// A venue with perpetuals and spot markets, perpetuals being what a bare id means.
 const PERP_AND_SPOT: &[MarketKind] = &[MarketKind::Perp, MarketKind::Spot];
@@ -91,6 +96,7 @@ const MEXC_QUOTES: [&str; 9] = [
 /// Binance-shaped pairs, as Binance and Bybit write them. A one-letter "base" is a bare wrapped asset
 /// (WBTC, WETH), not a pair.
 const BINANCE_PAIRS: Concat = Concat {
+    exceptions: &[],
     quotes: &BINANCE_QUOTES,
     one_letter_base_quotes: BINANCE_QUOTES.len(),
     wrapped_asset_guard: true,
@@ -113,10 +119,10 @@ const fn exchange_quotes(batch: usize) -> QuoteTiming {
     }
 }
 
-/// Binance's kline intervals. Its `3d` is left out: Binance counts those from a day of its own
-/// (not a multiple of three since 1970-01-01), so they would not match every other source's.
-/// Weeks start on Monday, as here.
-const BINANCE_NATIVES: [Timeframe; 14] = [
+/// The kline intervals of the Binance-shaped API, Binance's and Aster's. Its `3d` is left out: both
+/// count those from a day of their own (not a multiple of three since 1970-01-01), so they would
+/// not match every other source's. Weeks start on Monday and months on the first, as here.
+const BINANCE_SHAPED_NATIVES: [Timeframe; 14] = [
     minutes(1),
     minutes(3),
     minutes(5),
@@ -146,7 +152,7 @@ pub static BINANCE: Profile = Profile {
     id: Casing::AsGiven,
     pair: PairStyle::Concat(BINANCE_PAIRS),
     home_quote: Some("USDT"),
-    natives: &BINANCE_NATIVES,
+    natives: &BINANCE_SHAPED_NATIVES,
     older_history: OlderHistory::Always,
     streams: Streams {
         candles: true,
@@ -430,6 +436,7 @@ pub static MEXC: Profile = Profile {
     display: Casing::Upper,
     id: Casing::AsGiven,
     pair: PairStyle::Concat(Concat {
+        exceptions: &[],
         quotes: &MEXC_QUOTES,
         one_letter_base_quotes: 5,
         wrapped_asset_guard: false,
@@ -511,6 +518,53 @@ pub static HYPERLIQUID: Profile = Profile {
     cache: Some(CachePolicy {
         fresh_secs: 0,
         of: CachedSeries::Every,
+    }),
+};
+
+/// Quote assets Aster's perpetuals end in.
+const ASTER_QUOTES: [&str; 3] = ["USDT", "USDC", "USD1"];
+
+/// Its `BTCU` and `ETHU` are quoted in the stablecoin `U`. `U` is no quote of `ASTER_QUOTES`: any
+/// asset ending in `U` would read as one of them, and a bare `BTCU` would be asked as `BTCUUSDT`.
+const ASTER_EXCEPTIONS: [(&str, &str); 2] = [("BTC", "U"), ("ETH", "U")];
+
+pub static ASTER: Profile = Profile {
+    display_name: "Aster",
+    slug: "ASTER",
+    mcp_id: "aster",
+    class: Class::Exchange,
+    opaque_ids: false,
+    kinds: PERP,
+    series: Series::Candles,
+    // Candle volume is in the base asset: contracts of a perpetual, in coins.
+    volume: true,
+    display: Casing::Upper,
+    id: Casing::AsGiven,
+    pair: PairStyle::Concat(Concat {
+        exceptions: &ASTER_EXCEPTIONS,
+        quotes: &ASTER_QUOTES,
+        one_letter_base_quotes: ASTER_QUOTES.len(),
+        wrapped_asset_guard: false,
+        dropped: &['/', '-', '_', ' '],
+    }),
+    home_quote: Some("USDT"),
+    natives: &BINANCE_SHAPED_NATIVES,
+    older_history: OlderHistory::Always,
+    streams: Streams {
+        candles: true,
+        quotes: true,
+    },
+    change: ChangeBasis::Rolling24h,
+    // Its batch ticker is the whole list in one answer (230 KB, weight 40 of 2,400 a minute), so
+    // prices not on the socket (it takes 200 topics) are asked every ten seconds.
+    quotes: QuoteTiming {
+        refresh_secs: 10,
+        max_age_secs: 60,
+        batch: 1_000,
+    },
+    cache: Some(CachePolicy {
+        fresh_secs: 0,
+        of: CachedSeries::Folded,
     }),
 };
 
