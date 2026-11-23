@@ -10,9 +10,7 @@
 //! glyph is in the fonts the app always has. `{name}` values are left alone.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
-
-use crate::lock::lock;
+use std::sync::{Mutex, PoisonError};
 
 /// How much longer the text gets, as a share of its letters.
 const GROWTH: f32 = 0.4;
@@ -21,7 +19,8 @@ const GROWTH: f32 = 0.4;
 /// process, which keeps the answer `'static` like the key (the set of messages is finite).
 pub fn text(key: &'static str) -> &'static str {
     static CACHE: Mutex<Option<HashMap<&'static str, &'static str>>> = Mutex::new(None);
-    let mut cache = lock(&CACHE);
+    // A panic elsewhere while the cache was held leaves it valid: it only ever gains entries.
+    let mut cache = CACHE.lock().unwrap_or_else(PoisonError::into_inner);
     let cache = cache.get_or_insert_with(HashMap::new);
     cache
         .entry(key)

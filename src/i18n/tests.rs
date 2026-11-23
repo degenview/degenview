@@ -166,7 +166,8 @@ fn unique_messages(source: &[(String, Use)]) -> BTreeMap<(String, String), (&Use
 /// The `.pot` template: every message of the source, untranslated, with where it is written.
 fn template(source: &[(String, Use)]) -> String {
     let mut catalog = PoCatalog::new(CatalogMetadata::new());
-    catalog.metadata.project_id_version = format!("DegenView {}", env!("CARGO_PKG_VERSION"));
+    // No version: a release bump would make the template stale without a message changing.
+    catalog.metadata.project_id_version = "DegenView".to_owned();
     catalog.metadata.content_type = "text/plain; charset=UTF-8".to_owned();
     // English's forms: a translator's tool replaces them with the language's own.
     catalog.metadata.plural_rules.nplurals = 2;

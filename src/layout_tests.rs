@@ -136,6 +136,7 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
     ("build_info", EVERY_MODULE),
     ("clock", EVERY_MODULE),
     ("format", EVERY_MODULE),
+    ("i18n", EVERY_MODULE),
     ("lock", EVERY_MODULE),
     ("paths", EVERY_MODULE),
     // Chooses the renderer before anything else starts: it needs only the data directory, the build
@@ -189,6 +190,7 @@ const EVERY_MODULE: &[&str] = &[
     "format",
     "graphics",
     "host",
+    "i18n",
     "lock",
     "mcp",
     "model",

@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: DegenView 0.6.0-rc.33\n"
+"Project-Id-Version: DegenView\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
