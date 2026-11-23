@@ -567,22 +567,6 @@ fn gallery_of_the_new_pages() {
     }
 }
 
-/// Every word a frame writes.
-fn words(output: &egui::FullOutput) -> Vec<String> {
-    fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
-        match shape {
-            egui::Shape::Text(text) => out.push(text.galley.text().to_owned()),
-            egui::Shape::Vec(inner) => inner.iter().for_each(|shape| walk(shape, out)),
-            _ => {}
-        }
-    }
-    let mut out = Vec::new();
-    for clipped in &output.shapes {
-        walk(&clipped.shape, &mut out);
-    }
-    out
-}
-
 /// The dialog's pages in the pseudo-locale, in both themes: their words come through `tr!`, so
 /// none shows without brackets, and the longer text fits the sheet: no label is cut. With
 /// `DEGENVIEW_GALLERY_DIR` set the pictures are written out to look at.
@@ -632,7 +616,7 @@ fn the_dialog_draws_in_the_pseudo_locale() {
                     }));
                 }
                 let last = last.expect("a frame");
-                let shown = words(&last);
+                let shown = Screen::words(&last);
                 for word in expected.iter().chain(&[tr!("OK"), tr!("Cancel")]) {
                     assert!(word.starts_with('['), "{word} is not in the pseudo-locale");
                     assert!(

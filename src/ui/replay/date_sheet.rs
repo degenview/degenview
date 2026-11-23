@@ -493,22 +493,6 @@ mod tests {
         );
         screen.save("replay-date-sheet", last.unwrap());
     }
-    /// Every word a frame writes.
-    fn words(output: &egui::FullOutput) -> Vec<String> {
-        fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
-            match shape {
-                egui::Shape::Text(text) => out.push(text.galley.text().to_owned()),
-                egui::Shape::Vec(inner) => inner.iter().for_each(|shape| walk(shape, out)),
-                _ => {}
-            }
-        }
-        let mut out = Vec::new();
-        for clipped in &output.shapes {
-            walk(&clipped.shape, &mut out);
-        }
-        out
-    }
-
     /// The sheet in the pseudo-locale, in both themes: its words come through `tr!`, so none shows
     /// without brackets, and the longer text fits the sheet: no label is cut. The month heading is a date, which
     /// the formatter writes and the pseudo-locale leaves alone. With
@@ -535,7 +519,7 @@ mod tests {
                     }));
                 }
                 let last = last.expect("a frame");
-                let shown = words(&last);
+                let shown = Screen::words(&last);
                 for word in [
                     tr!("Start Replay"),
                     tr!("Start of data"),
