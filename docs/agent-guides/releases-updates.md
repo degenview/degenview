@@ -56,7 +56,7 @@ notes-step change must be on `main` first.
 
 Release builds restore **no build cache**: whatever could write one would end up signed in the next
 release. (`release-cache.yml` and its weekly glibc check are gone; `release.yml` runs that check on
-every Linux build.) Slower is intended. `ci.yml` and check workflows use `rust-cache` on PRs only.
+every Linux build.) Slower is intended. `ci.yml` and check workflows use `rust-cache`; `ci.yml` also runs on every push to `main`, the only run that saves the cache (`save-if`), and pull requests restore it, since a branch can read only its own caches and the default branch's.
 
 Flatpak: reusable `flatpak.yml`, called by `release.yml` as the `flatpak` job, which the `release`
 job needs (bundle exists before the immutable release publishes). Builds from source in the Flatpak

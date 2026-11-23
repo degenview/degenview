@@ -3,8 +3,16 @@ name: CI
 # Runs the test suite on every pull request, whatever branch it targets (stacked PRs target their
 # parent branch, not `main`). Mirrors `cargo test` from AGENTS.md; the release workflow builds, this
 # one only checks.
+#
+# It also runs on every push to `main`: a pull request restores the build cache saved by its base
+# branch's runs (GitHub scopes caches by branch; a branch reads its own and `main`'s, never another
+# pull request's), so without these runs nothing seeds it and each new pull request compiled the
+# whole dependency graph from nothing. Only `main` saves a cache (`save-if` below); pull requests
+# only restore it, so they cannot evict it from the repository's cache quota.
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,10 +23,11 @@ env:
   RUST_TOOLCHAIN: "1.100.0"
   CARGO_TERM_COLOR: always
 
-# A new push to a PR supersedes the run still going for its previous commit.
+# A new push to a PR supersedes the run still going for its previous commit. A run on `main` is
+# never cancelled: it is the one that seeds the cache.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -47,6 +56,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: ${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -64,10 +74,29 @@ jobs:
           DEGENVIEW_NO_KEYCHAIN: "1"
         run: cargo test --locked
 
-      # The iCloud bridge is Swift and macOS-only; this proves it still compiles and links for the
-      # runner's architecture, and that the background alert agent still does not link Swift.
+  # The iCloud bridge is Swift and macOS-only; this proves it still compiles and links for the
+  # runner's architecture, and that the background alert agent still does not link Swift. A job of
+  # its own, beside `test`, so the two builds run side by side instead of one after the other
+  # (the feature recompiles the library, so they share nothing but the dependencies).
+  icloud:
+    name: Build icloud macos
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: icloud-macos
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Build with iCloud Sync
-        if: runner.os == 'macOS'
         run: |
           cargo build --locked --features icloud
           ! otool -L target/debug/degenview-alert-agent | grep -q libswift
@@ -75,7 +104,7 @@ jobs:
 
   # Formatting and Clippy, warnings as errors, on both desktop platforms the full suite runs on:
   # code used only on one of them shows as dead on the other. `icloud` needs the Swift bridge and
-  # is left out; the test job builds it on macOS.
+  # is left out; the `icloud` job builds it on macOS.
   lint:
     name: Lint ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -105,6 +134,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: lint-${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -152,6 +182,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: ${{ matrix.key }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # `cargo test --lib` builds the library only as a test harness, where the updater's per-OS code
       # is compiled differently from the shipped binary; this is the build the release makes.
@@ -197,6 +228,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: ${{ matrix.key }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build the release executable
         shell: bash
