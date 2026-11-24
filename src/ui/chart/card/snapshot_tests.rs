@@ -1856,7 +1856,12 @@ fn gallery_of_a_script() {
         .filter_map(|line| line.split(',').next()?.trim().parse().ok())
         .take(2)
         .collect();
+    assert!(times.len() == 2, "the candles need at least two rows");
     let step = times[1] - times[0];
+    assert!(
+        step > 0 && step % 60_000 == 0,
+        "the candles must be a whole number of minutes apart, oldest first"
+    );
     let bars: Vec<Kline> = rows
         .lines()
         .filter_map(|line| {

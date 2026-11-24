@@ -102,13 +102,18 @@
   (font family, bold/italic) warned via `ignored_features`, never silently dropped.
 - Text sizes are measured on TradingView (a probe of every size, drawn there and here with
   `gallery_of_a_script`, `ui::chart::card::snapshot_tests`), in `ui::pine::geometry`, never inline.
-  Table text (`table_font_size`) is its named size in pixels: 8, 10, 14, 20, 36; a cell is 1.68
-  font sizes high and 0.58 wider than its text (`cell_padding`). Label and box text
-  (`label_font_size`) is 7, 9, 12, 18, 24, a bubble 2.1 font sizes high and 1.55 wider than its
-  text (`label_padding`, `label_pointer`): the same names are smaller on a label. A numeric size
-  (`Size::Points(n)`) is `n` for a table and `n * 12 / 14` for a label. A box's text is not
-  measured and reads the label scale. Measured heights match to a pixel at every size; widths
-  differ by a few percent because the font does.
+  Table and box text (`block_font_size`) is its named size in pixels: 8, 10, 14, 20, 36; a cell is
+  1.68 font sizes high and 0.58 wider than its text (`cell_padding`), a table sits 10 points from
+  the plot's edge. Label text (`label_font_size`) is 7, 9, 12, 18, 24, a bubble 2.1 font sizes high
+  and 1.55 wider than its text (`label_padding`, `label_pointer`): the same names are smaller on a
+  label. A numeric size (`Size::Points(n)`) is `n` for a table or box and `n * 12 / 14` for a label.
+  A `plotshape` label shape (`shape_label`) keeps its text at the normal label size; its bubble and
+  its tip's distance from the bar (11, 23, 38, 56, 75 points) grow with `size`. Measured heights
+  match to a pixel at every size; widths differ by a few percent because the font does.
+  A box's text is clipped to its top and bottom but runs past its sides, as on TradingView (a
+  `size.huge` `0123` is wider than a narrow box).
+  Unmeasured: the text a `plotshape` puts beside a non-label shape (reads the label scale) and the
+  size of `plotchar` glyphs (always 12 points).
 - Hover tooltips (`tooltip=`, `label.set_tooltip`, `table.cell_set_tooltip`):
   `hover_targets_in_order` gives drawn rectangles in paint order across scripts (behind-chart labels,
   other labels, then all tables; filled bubble includes pointer) and must keep sharing
