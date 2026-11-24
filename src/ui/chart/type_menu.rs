@@ -2,6 +2,7 @@
 //! box. It acts on the focused chart: it reports the pick and the workspace applies it to that
 //! chart alone.
 
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::model::chart::kind::{ChartGroup, ChartType};
 use crate::ui::icons::{self, Icon};
@@ -49,7 +50,7 @@ pub fn menu(
                 Icon::Magnifier,
                 &mut query,
                 false,
-                "Search chart types",
+                tr!("Search chart types"),
                 query_id.with("field"),
                 !seen,
             );
@@ -91,7 +92,7 @@ pub fn menu(
             }
             if !shown_any {
                 ui.label(
-                    egui::RichText::new("No matching chart type")
+                    egui::RichText::new(tr!("No matching chart type"))
                         .size(11.0)
                         .color(theme::text_tertiary()),
                 );

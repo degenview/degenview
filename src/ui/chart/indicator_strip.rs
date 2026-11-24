@@ -1,6 +1,7 @@
 //! Compact, Swift-style controls for the indicators applied to a chart.
 
 use super::card::ChartCard;
+use crate::i18n::{tr, tr_n};
 pub use crate::model::BuiltIn;
 use crate::model::overlay::{OverlayCommand, OverlayId};
 use crate::model::pine::bundled::BundledIndicator;
@@ -282,17 +283,17 @@ pub fn show(
             if items.len() > inline {
                 let overflow = &items[inline..];
                 let label = format!("+{}", overflow.len());
-                let tooltip = format!(
-                    "{} more indicator{}",
+                let tooltip = tr_n!(
                     overflow.len(),
-                    if overflow.len() == 1 { "" } else { "s" }
+                    "{count} more indicator",
+                    "{count} more indicators"
                 );
                 let pill = count_pill(ui, None, &label, &tooltip);
                 overflow_list(ui, &pill, overflow, config, chart_id, &mut action);
             }
         } else {
             let label = items.len().to_string();
-            let tooltip = format!("{} indicators", items.len());
+            let tooltip = tr!("{count} indicators", count = items.len());
             let pill = count_pill(ui, Some(Icon::ChartLine), &label, &tooltip);
             overflow_list(ui, &pill, &items, config, chart_id, &mut action);
         }
@@ -468,7 +469,7 @@ fn overflow_list(
             false,
             |ui| {
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                list_header(ui, "Indicators", items.len());
+                list_header(ui, tr!("Indicators"), items.len());
                 let mut picked = None;
                 let rows = |ui: &mut Ui, picked: &mut Option<Action>| {
                     let group_of = |item: &Item| match item.kind {
@@ -478,7 +479,7 @@ fn overflow_list(
                     let groups = (0..2)
                         .filter(|group| items.iter().any(|i| group_of(i) == *group))
                         .count();
-                    for (heading, wanted) in [("Built-in", 0), ("Scripts", 1)] {
+                    for (heading, wanted) in [(tr!("Built-in"), 0), (tr!("Scripts"), 1)] {
                         let group: Vec<&Item> =
                             items.iter().filter(|i| group_of(i) == wanted).collect();
                         if group.is_empty() {
@@ -597,15 +598,26 @@ fn list_row(
             &label,
         )
     };
-    if place(ui, 2, Icon::Xmark, format!("Remove {}", item.title), true).clicked() {
+    if place(
+        ui,
+        2,
+        Icon::Xmark,
+        tr!("Remove {title}", title = item.title),
+        true,
+    )
+    .clicked()
+    {
         *action = Some(remove_action(item));
     }
     for control in control_buttons(item).into_iter().rev() {
         let response = place(
             ui,
-            usize::from(control.label == "Settings"),
+            usize::from(matches!(
+                control.action,
+                Action::OpenIndicatorSettings | Action::ConfigureScript(..)
+            )),
             control.icon,
-            format!("{} {}", control.label, item.title),
+            (control.describe)(&item.title),
             false,
         );
         if response.clicked() {
@@ -655,18 +667,7 @@ fn list_row(
         );
     }
 
-    let body = crate::ui::accessibility::label(
-        body,
-        if item.has_settings() {
-            format!("{} settings", item.title)
-        } else {
-            format!(
-                "{}, {}",
-                item.title,
-                if item.visible { "shown" } else { "hidden" }
-            )
-        },
-    );
+    let body = crate::ui::accessibility::label(body, chip_description(item));
     if body.clicked() {
         match item.kind {
             Kind::BuiltIn(BuiltIn::Ema) => {}
@@ -727,20 +728,9 @@ fn chip(
     let name_response = ui
         .interact(name_rect, id.with("name"), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
-    let name_response = crate::ui::accessibility::label(
-        name_response,
-        if item.has_settings() {
-            format!("{} settings", item.title)
-        } else {
-            format!(
-                "{}, {}",
-                item.title,
-                if item.visible { "shown" } else { "hidden" }
-            )
-        },
-    );
+    let name_response = crate::ui::accessibility::label(name_response, chip_description(item));
     let name_response = if item.has_settings() {
-        name_response.on_hover_text(format!("Edit {}", item.title))
+        name_response.on_hover_text(tr!("Edit {title}", title = item.title))
     } else {
         name_response
     };
@@ -779,7 +769,7 @@ fn chip(
                 ),
                 Vec2::splat(CONTROL_SIZE),
             );
-            let label = format!("{} {}", button.label, item.title);
+            let label = (button.describe)(&item.title);
             let response = icon_button(
                 ui,
                 slot,
@@ -811,7 +801,7 @@ fn chip(
         Vec2::splat(CONTROL_SIZE),
     );
     let strength = if controls { 0.6 } else { 0.32 };
-    let label = format!("Remove {}", item.title);
+    let label = tr!("Remove {title}", title = item.title);
     if icon_button(
         ui,
         remove,
@@ -840,8 +830,20 @@ fn chip(
 
 struct Control {
     icon: Icon,
-    label: &'static str,
+    /// What the control does to the indicator titled so, for its tooltip and screen readers.
+    describe: fn(&str) -> String,
     action: Action,
+}
+
+/// What a chip says to a screen reader: its settings when it has some, else whether it is shown.
+fn chip_description(item: &Item) -> String {
+    if item.has_settings() {
+        tr!("{title} settings", title = item.title)
+    } else if item.visible {
+        tr!("{title}, shown", title = item.title)
+    } else {
+        tr!("{title}, hidden", title = item.title)
+    }
 }
 
 /// The eye and, where the indicator has settings, the settings control. Removing is the x.
@@ -852,18 +854,22 @@ fn control_buttons(item: &Item) -> Vec<Control> {
         } else {
             Icon::EyeSlash
         },
-        label: if item.visible { "Hide" } else { "Show" },
+        describe: if item.visible {
+            |title| tr!("Hide {title}", title = title)
+        } else {
+            |title| tr!("Show {title}", title = title)
+        },
         action: Action::ToggleVisible(item.kind),
     }];
     match item.kind {
         Kind::BuiltIn(BuiltIn::Ema) => buttons.push(Control {
             icon: Icon::Sliders,
-            label: "Settings",
+            describe: |title| tr!("Settings {title}", title = title),
             action: Action::OpenIndicatorSettings,
         }),
         Kind::Script(id) => buttons.push(Control {
             icon: Icon::Sliders,
-            label: "Settings",
+            describe: |title| tr!("Settings {title}", title = title),
             action: Action::ConfigureScript(id, Rect::NOTHING),
         }),
         Kind::BuiltIn(_) => {}
@@ -888,7 +894,7 @@ pub(crate) fn menu_heading(ui: &mut Ui, title: &str) {
 fn ema_menu(ui: &mut Ui, config: &IndicatorConfig, action: &mut Option<Action>) {
     ui.set_width(130.0);
     ui.spacing_mut().item_spacing.y = 0.0;
-    menu_heading(ui, "EMA period");
+    menu_heading(ui, tr!("EMA period"));
     for period in EMA_PERIODS {
         if kit::menu_item_marked(
             ui,
@@ -924,9 +930,9 @@ fn item_menu(
     ui.set_width(180.0);
     ui.spacing_mut().item_spacing.y = 0.0;
     let (icon, label) = if item.visible {
-        (Icon::EyeSlash, "Hide")
+        (Icon::EyeSlash, tr!("Hide"))
     } else {
-        (Icon::Eye, "Show")
+        (Icon::Eye, tr!("Show"))
     };
     if kit::menu_item(ui, icon, label, true, false) {
         *action = Some(Action::ToggleVisible(item.kind));
@@ -938,11 +944,11 @@ fn item_menu(
             ema_menu(ui, config, action);
         }
         Kind::Script(id) => {
-            if kit::menu_item(ui, Icon::Sliders, "Settings…", true, false) {
+            if kit::menu_item(ui, Icon::Sliders, tr!("Settings…"), true, false) {
                 *action = Some(Action::ConfigureScript(id, chip));
                 ui.close();
             }
-            if kit::menu_item(ui, Icon::DocText, "Pine logs", true, false) {
+            if kit::menu_item(ui, Icon::DocText, tr!("Pine logs"), true, false) {
                 *action = Some(Action::OpenPineLogs(id));
                 ui.close();
             }
@@ -950,7 +956,7 @@ fn item_menu(
         Kind::BuiltIn(_) => {}
     }
     kit::menu_separator(ui);
-    if kit::menu_item(ui, Icon::Trash, "Remove", true, true) {
+    if kit::menu_item(ui, Icon::Trash, tr!("Remove"), true, true) {
         *action = Some(remove_action(item));
         ui.close();
     }

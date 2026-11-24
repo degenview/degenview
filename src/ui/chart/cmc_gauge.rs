@@ -1,6 +1,7 @@
 //! The CoinMarketCap "Latest" charts: the Fear & Greed semicircle gauge and the Altcoin Season
 //! scale, drawn from the cached reading instead of a price series.
 
+use crate::i18n::tr;
 use crate::model::market::cmc;
 use crate::service::market::cmc::LatestReading;
 use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD};
@@ -29,15 +30,17 @@ pub fn paint(
 ) -> String {
     if symbol == cmc::ALTCOIN_LATEST {
         altcoin(ui, painter, rect, reading);
-        format!(
-            "CMC Altcoin Season Index, {} out of 100, {}.",
-            reading.value as i64, reading.classification
+        tr!(
+            "CMC Altcoin Season Index, {value} out of 100, {classification}.",
+            value = reading.value as i64,
+            classification = reading.classification
         )
     } else {
         fear_greed(ui, painter, rect, reading);
-        format!(
-            "CMC Crypto Fear and Greed Index, {} out of 100, {}.",
-            reading.value as i64, reading.classification
+        tr!(
+            "CMC Crypto Fear and Greed Index, {value} out of 100, {classification}.",
+            value = reading.value as i64,
+            classification = reading.classification
         )
     }
 }
@@ -81,20 +84,31 @@ const HERO_MIN_HEIGHT: f32 = 128.0;
 const SPARK_MIN_HEIGHT: f32 = 44.0;
 const SECTION_GAP: f32 = 10.0;
 
-/// The five CMC sentiment zones as (upper bound, color, name).
-const ZONES: [(f64, Color32, &str); 5] = [
-    (25.0, RED, "Extreme Fear"),
-    (45.0, ORANGE, "Fear"),
-    (55.0, YELLOW, "Neutral"),
-    (75.0, GREEN, "Greed"),
-    (100.0, MINT, "Extreme Greed"),
+/// The five CMC sentiment zones as (upper bound, color).
+const ZONES: [(f64, Color32); 5] = [
+    (25.0, RED),
+    (45.0, ORANGE),
+    (55.0, YELLOW),
+    (75.0, GREEN),
+    (100.0, MINT),
 ];
 
 fn zone_index(value: f64) -> usize {
     ZONES
         .iter()
-        .position(|(bound, _, _)| value < *bound)
+        .position(|(bound, _)| value < *bound)
         .unwrap_or(ZONES.len() - 1)
+}
+
+/// The name of the zone `value` falls in.
+fn zone_name(value: f64) -> &'static str {
+    match zone_index(value) {
+        0 => tr!("Extreme Fear"),
+        1 => tr!("Fear"),
+        2 => tr!("Neutral"),
+        3 => tr!("Greed"),
+        _ => tr!("Extreme Greed"),
+    }
 }
 
 fn zone_color(value: f64) -> Color32 {
@@ -190,7 +204,11 @@ fn hero(ui: &Ui, painter: &Painter, rect: Rect, reading: &LatestReading) {
         };
         kit::galley(
             ui,
-            &format!("{arrow} {:.0} vs yesterday", change.abs()),
+            &tr!(
+                "{arrow} {change} vs yesterday",
+                arrow = arrow,
+                change = format!("{:.0}", change.abs())
+            ),
             if compact { 10.0 } else { 11.0 },
             MEDIUM,
             color,
@@ -232,7 +250,7 @@ fn sentiment_gauge(ui: &Ui, painter: &Painter, rect: Rect, value: f64) {
     let thickness = (radius * 0.13).max(8.0);
     let active = zone_index(value);
     let mut lower = 0.0;
-    for (index, (upper, color, _)) in ZONES.iter().enumerate() {
+    for (index, (upper, color)) in ZONES.iter().enumerate() {
         let gap = 0.014;
         let start = PI + PI * (lower / 100.0) as f32 + gap;
         let end = PI + PI * (*upper / 100.0) as f32 - gap;
@@ -280,8 +298,8 @@ fn sentiment_gauge(ui: &Ui, painter: &Painter, rect: Rect, value: f64) {
     painter.circle_filled(bead, thickness * 0.5 - 0.5, kit::primary(1.0));
 
     for (text, x) in [
-        ("Extreme Fear", center.x - radius),
-        ("Extreme Greed", center.x + radius),
+        (tr!("Extreme Fear"), center.x - radius),
+        (tr!("Extreme Greed"), center.x + radius),
     ] {
         let galley = kit::galley(
             ui,
@@ -302,25 +320,29 @@ fn sentiment_gauge(ui: &Ui, painter: &Painter, rect: Rect, value: f64) {
 /// Yesterday / last week / last month readings and the 30-day range.
 fn stats(ui: &Ui, painter: &Painter, rect: Rect, reading: &LatestReading) {
     let mut cells: Vec<(&str, String, Color32, String)> = Vec::new();
-    for (title, days) in [("Yesterday", 1), ("Last Week", 7), ("Last Month", 30)] {
+    for (title, days) in [
+        (tr!("Yesterday"), 1),
+        (tr!("Last Week"), 7),
+        (tr!("Last Month"), 30),
+    ] {
         if let Some((_, value)) = reading.days_ago(days) {
             cells.push((
                 title,
                 format!("{value:.0}"),
                 zone_color(value),
-                ZONES[zone_index(value)].2.to_owned(),
+                zone_name(value).to_owned(),
             ));
         }
     }
     if let Some(((_, low), (_, high))) = reading.range(30) {
         cells.push((
-            "30D Range",
+            tr!("30D Range"),
             format!("{low:.0} – {high:.0}"),
             theme::text_primary(),
-            format!(
-                "{} → {}",
-                ZONES[zone_index(low)].2,
-                ZONES[zone_index(high)].2
+            tr!(
+                "{low} → {high}",
+                low = zone_name(low),
+                high = zone_name(high)
             ),
         ));
     }
@@ -382,7 +404,7 @@ fn sparkline(ui: &Ui, painter: &Painter, rect: Rect, history: &[(i64, f64)]) {
     painter.text(
         rect.min,
         Align2::LEFT_TOP,
-        format!("{}D HISTORY", history.len()),
+        tr!("{days}D HISTORY", days = history.len()),
         egui::FontId::proportional(9.0),
         theme::text_secondary(),
     );
@@ -438,11 +460,11 @@ fn sparkline(ui: &Ui, painter: &Painter, rect: Rect, history: &[(i64, f64)]) {
     );
     painter.circle_filled(at, 4.0, theme::surface());
     painter.circle_filled(at, 3.0, zone_color(value));
-    let text = format!(
-        "{} · {:.0} {}",
-        date_label(time),
-        value,
-        ZONES[zone_index(value)].2
+    let text = tr!(
+        "{date} · {value} {zone}",
+        date = date_label(time),
+        value = format!("{value:.0}"),
+        zone = zone_name(value)
     );
     let galley = kit::galley(ui, &text, 10.0, MEDIUM, kit::primary(1.0), 260.0);
     let size = galley.size() + vec2(12.0, 6.0);
@@ -530,16 +552,22 @@ fn altcoin(ui: &Ui, painter: &Painter, rect: Rect, reading: &LatestReading) {
     y += scale_height + spacing;
 
     let statistics = [
-        reading
-            .yearly_high
-            .as_ref()
-            .map(|(value, date)| ("Yearly High", (*value as i64).to_string(), short_date(date))),
-        reading
-            .yearly_low
-            .as_ref()
-            .map(|(value, date)| ("Yearly Low", (*value as i64).to_string(), short_date(date))),
+        reading.yearly_high.as_ref().map(|(value, date)| {
+            (
+                tr!("Yearly High"),
+                (*value as i64).to_string(),
+                short_date(date),
+            )
+        }),
+        reading.yearly_low.as_ref().map(|(value, date)| {
+            (
+                tr!("Yearly Low"),
+                (*value as i64).to_string(),
+                short_date(date),
+            )
+        }),
         Some((
-            "Altcoin Market Cap",
+            tr!("Altcoin Market Cap"),
             reading.altcoin_market_cap.map_or_else(
                 || "—".to_owned(),
                 |cap| format!("${}", crate::model::watchlist::quote::compact_number(cap)),
@@ -625,9 +653,9 @@ fn season_scale(ui: &Ui, painter: &Painter, rect: Rect, value: f64, compact: boo
     let label_y = bar.max.y + 3.0;
     let third = rect.width() / 3.0;
     for (text, align, x) in [
-        ("0  Bitcoin Season", Align2::LEFT_TOP, rect.min.x),
-        ("Neutral", Align2::CENTER_TOP, rect.center().x),
-        ("Altcoin Season  100", Align2::RIGHT_TOP, rect.max.x),
+        (tr!("0  Bitcoin Season"), Align2::LEFT_TOP, rect.min.x),
+        (tr!("Neutral"), Align2::CENTER_TOP, rect.center().x),
+        (tr!("Altcoin Season  100"), Align2::RIGHT_TOP, rect.max.x),
     ] {
         let galley = kit::galley(ui, text, size, REGULAR, theme::text_secondary(), third);
         let anchored = align.anchor_size(pos2(x, label_y), galley.size());
@@ -759,11 +787,11 @@ mod tests {
 
     #[test]
     fn zones_follow_the_cmc_bounds() {
-        assert_eq!(ZONES[zone_index(10.0)].2, "Extreme Fear");
-        assert_eq!(ZONES[zone_index(25.0)].2, "Fear");
-        assert_eq!(ZONES[zone_index(50.0)].2, "Neutral");
-        assert_eq!(ZONES[zone_index(60.0)].2, "Greed");
-        assert_eq!(ZONES[zone_index(100.0)].2, "Extreme Greed");
+        assert_eq!(zone_name(10.0), "Extreme Fear");
+        assert_eq!(zone_name(25.0), "Fear");
+        assert_eq!(zone_name(50.0), "Neutral");
+        assert_eq!(zone_name(60.0), "Greed");
+        assert_eq!(zone_name(100.0), "Extreme Greed");
     }
 
     #[test]

@@ -4,6 +4,7 @@
 
 use super::frame::FrameLayout;
 use super::*;
+use crate::i18n::tr;
 use crate::model::chart::sync::TimeAxis;
 use crate::ui::paper::chart_trading::{MarkerMenu, PaperOverlayAction};
 
@@ -382,10 +383,10 @@ impl ChartCard {
         let response = crate::ui::accessibility::label_as(
             response,
             egui::WidgetType::Panel,
-            format!(
-                "{} {} chart",
-                self.display_title(symbol, source),
-                source.display_name()
+            tr!(
+                "{title} {source} chart",
+                title = self.display_title(symbol, source),
+                source = source.display_name()
             ),
         );
         let rect = response.rect;

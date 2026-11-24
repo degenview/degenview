@@ -9,6 +9,7 @@
 
 use super::overlays::OverlayFrame;
 use super::*;
+use crate::i18n::tr;
 use crate::model::chart::canvas::PaneHeights;
 use crate::ui::pine::chart_render::{hover_targets_in_order, target_at};
 
@@ -394,15 +395,16 @@ impl ChartCard {
             .shows(decor.replay_active)
         {
             let title = self.display_title(data.symbol, data.source);
-            let mut subtitle = self
-                .timeframe
-                .map_or_else(String::new, |timeframe| format!("{} · ", timeframe.label()));
-            subtitle.push_str(self.timeframe.map_or_else(
-                || data.source.display_name(),
-                |timeframe| data.source.chart_feed_label(timeframe),
-            ));
+            let mut subtitle = match self.timeframe {
+                Some(timeframe) => tr!(
+                    "{timeframe} · {source}",
+                    timeframe = timeframe.label(),
+                    source = data.source.chart_feed_label(timeframe)
+                ),
+                None => data.source.display_name().to_owned(),
+            };
             if decor.replay_active {
-                subtitle.push_str(" · Replay");
+                subtitle = tr!("{subtitle} · Replay", subtitle = subtitle);
             }
             canvas::paint_watermark(&main_painter, plot, &title, &subtitle, style.watermark);
         }

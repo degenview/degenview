@@ -728,3 +728,97 @@ fn overlay_cost() {
         println!("{count:>8} {idle:>14.2} {ticking:>16.2} {megabytes:>14.1} {runs:>12}");
     }
 }
+
+/// A chart comparing two markets under a crosshair, in the pseudo-locale: the header's hints, the
+/// readout's labels, the compared-markets card and the chart's refresh
+/// warning. `DEGENVIEW_GALLERY_DIR=<dir>` writes the pictures.
+#[test]
+fn a_compared_chart_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::chart::painted_text;
+    use crate::ui::render_tests::{Screen, gallery_dir};
+
+    let _theme = crate::ui::theme::RestoreDefaultTheme;
+    for (theme_name, app_theme) in [
+        ("dark", crate::ui::theme::AppTheme::Dark),
+        ("light", crate::ui::theme::AppTheme::Light),
+    ] {
+        let mut chart = harness(&[
+            ("ETHUSDT", market(300, |n| 4_000.0 + n as f64)),
+            ("SOLUSDT", market(300, |n| 90.0 + n as f64 / 4.0)),
+        ]);
+        chart.replay_active = true;
+        chart.error = Some(ProviderError::other("down"));
+        chart.crosshair = Some(crosshair_at(&chart, 0.85));
+        let mut screen = Screen::new(SIZE);
+        crate::ui::theme::apply(&screen.ctx, app_theme);
+        let mut last = None;
+        with_locale(Locale::PSEUDO, || {
+            for _ in 0..4 {
+                let candles = chart.candles.clone();
+                let (card, indicators, crosshair, replay_active) = (
+                    &mut chart.card,
+                    &chart.indicators,
+                    chart.crosshair,
+                    chart.replay_active,
+                );
+                let error = chart.error.as_ref();
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let mut said = ChartCardAction::default();
+                    card.header(
+                        ui,
+                        "BTCUSDT",
+                        DataSource::Binance,
+                        indicators,
+                        &candles,
+                        replay_active,
+                        false,
+                        &[],
+                        &mut said,
+                        1,
+                    );
+                    let mut drawing = DrawingFrame::new(&[], crate::model::Tool::Cursor, None, 1)
+                        .with_view(Timeframe::HOUR_1, false);
+                    let mut replay = ReplayChartFrame {
+                        selecting: false,
+                        active: replay_active,
+                        picked_ms: None,
+                        picked_range: None,
+                    };
+                    card.body(
+                        ui,
+                        "BTCUSDT",
+                        &candles,
+                        false,
+                        error,
+                        PriceScaleMode::Regular,
+                        DataSource::Binance,
+                        indicators,
+                        crosshair.as_ref(),
+                        1,
+                        &mut drawing,
+                        &mut replay,
+                    );
+                }));
+            }
+        });
+        let last = last.take().expect("a frame");
+        let texts = painted_text::of(&last);
+        painted_text::assert_painted(&texts, "Replay");
+        // The wide card has room for the detailed wording, which ends with the error.
+        assert!(
+            texts
+                .iter()
+                .any(|text| text.starts_with("[Çöûļðñ'ţ ŕéfŕéšĥ") && text.contains("(down)")),
+            "the refresh warning: {texts:#?}"
+        );
+        assert!(
+            texts.iter().any(|text| text.starts_with("[Ö ~] ")),
+            "the readout's open label: {texts:#?}"
+        );
+        if gallery_dir().is_some() {
+            eprintln!("{:?}", painted_text::unbracketed(&texts));
+            screen.save(&format!("pseudo-compared-chart-{theme_name}"), last);
+        }
+    }
+}

@@ -19,6 +19,7 @@ pub mod watchlists;
 
 use super::picker_kit::recents::{self, RecentMarket};
 use super::picker_kit::widgets;
+use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::Portfolio;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::quote::WatchlistQuote;
@@ -542,7 +543,7 @@ impl SymbolPicker {
                 }
                 if self.portfolios.is_empty() {
                     rows.note = Some(
-                        "Portfolio views appear here once you create a portfolio in the Portfolio tab."
+                        tr!("Portfolio views appear here once you create a portfolio in the Portfolio tab.")
                             .to_owned(),
                     );
                 }
@@ -551,9 +552,9 @@ impl SymbolPicker {
             Scope::Predictions => {
                 let items = predictions::items(&self.events, self.ticked.as_ref());
                 let head = lookup.is_empty().then(|| {
-                    format!(
-                        "Trending on {}",
-                        predictions::TRENDING_PROVIDER.display_name()
+                    tr!(
+                        "Trending on {provider}",
+                        provider = predictions::TRENDING_PROVIDER.display_name()
                     )
                 });
                 return Rows::of_items(items, head.as_deref());
@@ -561,10 +562,12 @@ impl SymbolPicker {
             Scope::All | Scope::Stocks | Scope::Crypto => {}
         }
         if !lookup.is_empty() {
-            let head = lookup
-                .unsupported
-                .as_ref()
-                .map(|prefix| format!("{prefix} isn't supported · matches from other venues"));
+            let head = lookup.unsupported.as_ref().map(|prefix| {
+                tr!(
+                    "{prefix} isn't supported · matches from other venues",
+                    prefix = prefix
+                )
+            });
             return Rows::of(listing.results.clone(), head.as_deref());
         }
         let recent: Vec<SearchResult> = self
@@ -576,10 +579,10 @@ impl SymbolPicker {
         if recent.is_empty() {
             Rows::of(
                 search::popular().into_iter().filter(in_scope).collect(),
-                Some("Popular"),
+                Some(tr!("Popular")),
             )
         } else {
-            Rows::of(recent, Some("Recent"))
+            Rows::of(recent, Some(tr!("Recent")))
         }
     }
 
@@ -781,7 +784,7 @@ impl SymbolPicker {
         if self.mode == PickMode::Watchlist {
             self.added = Some(match &output {
                 Output::Watchlist(result) => pick_name(result),
-                Output::WatchlistCard(card) => card.kind.title().to_owned(),
+                Output::WatchlistCard(card) => card.kind.display_title().to_owned(),
                 _ => String::new(),
             });
         }
@@ -918,6 +921,16 @@ impl SymbolPicker {
             .collect();
         let fit = fit_tabs(&widths, full_filter, area.width() - 2.0 * PADDING);
 
+        // A language whose tabs do not fit even in the tightest row is cut where the pull-down
+        // starts, never drawn under it.
+        let tabs_right = full_filter.map_or(area.right(), |full| {
+            let filter = if fit.compact { FILTER_COMPACT } else { full };
+            area.right() - PADDING - filter - FILTER_GAP
+        });
+        let painter = ui.painter().with_clip_rect(Rect::from_min_max(
+            area.min,
+            pos2(tabs_right, area.bottom()),
+        ));
         let mut scope = None;
         let mut x = area.left() + PADDING;
         for tab in tabs {
@@ -939,7 +952,7 @@ impl SymbolPicker {
             let response = ui
                 .interact(
                     rect,
-                    Id::new(("symbol_picker_tab", tab.title())),
+                    Id::new(("symbol_picker_tab", tab as u8)),
                     Sense::click(),
                 )
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -949,7 +962,7 @@ impl SymbolPicker {
             } else {
                 theme::text_secondary()
             };
-            ui.painter().galley(
+            painter.galley(
                 pos2(
                     rect.center().x - label.size().x / 2.0,
                     rect.center().y - label.size().y / 2.0,
@@ -958,7 +971,7 @@ impl SymbolPicker {
                 color,
             );
             if active {
-                ui.painter().rect_filled(
+                painter.rect_filled(
                     Rect::from_min_max(
                         pos2(rect.left() + 8.0, rect.bottom() - 2.0),
                         pos2(rect.right() - 8.0, rect.bottom()),
@@ -979,7 +992,7 @@ impl SymbolPicker {
     /// What the search box asks for: a watchlist's picker names the list it adds to.
     fn placeholder(&self) -> String {
         if self.mode == PickMode::Watchlist && self.scope.searches() {
-            format!("Search to add to {}…", self.list_name)
+            tr!("Search to add to {list}…", list = self.list_name)
         } else {
             self.scope.placeholder().to_owned()
         }
@@ -993,7 +1006,7 @@ impl SymbolPicker {
                 return None;
             }
             let current = self.card_scope_in_use();
-            let mut entries = vec![(Filter::Portfolio(None), ALL_PORTFOLIOS.to_owned())];
+            let mut entries = vec![(Filter::Portfolio(None), tr!("All Portfolios").to_owned())];
             entries.extend(self.portfolios.iter().map(|portfolio| {
                 (
                     Filter::Portfolio(Some(portfolio.id)),
@@ -1003,11 +1016,14 @@ impl SymbolPicker {
             let label = entries
                 .iter()
                 .find(|(filter, _)| *filter == Filter::Portfolio(current))
-                .map_or_else(|| ALL_PORTFOLIOS.to_owned(), |(_, name)| name.clone());
+                .map_or_else(
+                    || tr!("All Portfolios").to_owned(),
+                    |(_, name)| name.clone(),
+                );
             return Some(FilterMenu {
                 label,
                 active: current.is_some(),
-                tip: "Filter by portfolio",
+                tip: tr!("Filter by portfolio"),
                 entries,
                 current: Filter::Portfolio(current),
             });
@@ -1018,7 +1034,7 @@ impl SymbolPicker {
         }
         // A venue typed as a prefix wins over the pull-down, so the pull-down says what is searched.
         let venue = self.lookup().venue;
-        let mut entries = vec![(Filter::Venue(None), "All venues".to_owned())];
+        let mut entries = vec![(Filter::Venue(None), tr!("All venues").to_owned())];
         entries.extend(
             venues
                 .iter()
@@ -1026,10 +1042,10 @@ impl SymbolPicker {
         );
         Some(FilterMenu {
             label: venue
-                .map_or("All venues", |venue| venue.display_name())
+                .map_or(tr!("All venues"), |venue| venue.display_name())
                 .to_owned(),
             active: venue.is_some(),
-            tip: "Filter by exchange",
+            tip: tr!("Filter by exchange"),
             entries,
             current: Filter::Venue(venue),
         })
@@ -1285,7 +1301,7 @@ impl SymbolPicker {
 
     /// The topic chips of the Predictions tab, above the trending events.
     fn topics(&mut self, ui: &mut Ui, rows: &Rows) {
-        section_heading(ui, "Popular topics");
+        section_heading(ui, tr!("Popular topics"));
         let width = ui.available_width() - 20.0;
         ui.horizontal(|ui| {
             ui.add_space(10.0);
@@ -1309,7 +1325,7 @@ impl SymbolPicker {
             } else if self.lookup().venue == Some(DataSource::Kalshi) {
                 note_line(
                     ui,
-                    "Kalshi cannot list its busiest markets. Search for one, or pick a topic.",
+                    tr!("Kalshi cannot list its busiest markets. Search for one, or pick a topic."),
                 );
             }
         }
@@ -1322,13 +1338,16 @@ impl SymbolPicker {
             Scope::Watchlists => {
                 let (title, detail) = if self.watchlists.is_empty() {
                     (
-                        "No watchlist markets yet",
-                        "Crypto and stocks you add to a watchlist show up here.".to_owned(),
+                        tr!("No watchlist markets yet"),
+                        tr!("Crypto and stocks you add to a watchlist show up here.").to_owned(),
                     )
                 } else {
                     (
-                        "No results",
-                        format!("Nothing in your watchlists matches “{query}”."),
+                        tr!("No results"),
+                        tr!(
+                            "Nothing in your watchlists matches “{query}”.",
+                            query = query
+                        ),
                     )
                 };
                 widgets::no_results(ui, title, &detail);
@@ -1337,8 +1356,11 @@ impl SymbolPicker {
             Scope::Dashboards => {
                 widgets::no_results(
                     ui,
-                    "No results",
-                    &format!("No index or portfolio view matches “{query}”."),
+                    tr!("No results"),
+                    &tr!(
+                        "No index or portfolio view matches “{query}”.",
+                        query = query
+                    ),
                 );
                 return;
             }
@@ -1347,18 +1369,18 @@ impl SymbolPicker {
         if let Some(venue) = lookup.outside(self.scope) {
             widgets::no_results(
                 ui,
-                "No results",
-                &format!(
-                    "{} has no markets under {}. Try another tab.",
-                    lookup::short_name(venue),
-                    self.scope.title()
+                tr!("No results"),
+                &tr!(
+                    "{venue} has no markets under {tab}. Try another tab.",
+                    venue = lookup::short_name(venue),
+                    tab = self.scope.title()
                 ),
             );
         } else if empty_query {
             widgets::no_results(
                 ui,
-                "Search stocks and crypto",
-                "Type a ticker, a company or a pair: BTC, AAPL, ETHUSDT.",
+                tr!("Search stocks and crypto"),
+                tr!("Type a ticker, a company or a pair: BTC, AAPL, ETHUSDT."),
             );
         } else if listing.searching {
             let rect = ui.available_rect_before_wrap();
@@ -1373,7 +1395,10 @@ impl SymbolPicker {
         {
             widgets::no_results(
                 ui,
-                &format!("{} could not be searched", source.display_name()),
+                &tr!(
+                    "{venue} could not be searched",
+                    venue = source.display_name()
+                ),
                 &error.to_string(),
             );
         } else {
@@ -1384,13 +1409,23 @@ impl SymbolPicker {
                 .collect::<Vec<_>>()
                 .join(", ");
             let detail = match &lookup.unsupported {
-                Some(prefix) => format!("{prefix} isn't supported. Searched: {searched}."),
-                None if self.scope == Scope::Predictions => format!(
-                    "No market matches “{query}”. Searched: {searched}. Try a topic like Bitcoin or the Fed."
+                Some(prefix) => tr!(
+                    "{prefix} isn't supported. Searched: {searched}.",
+                    prefix = prefix,
+                    searched = searched
                 ),
-                None => format!("Nothing matches “{query}”. Searched: {searched}."),
+                None if self.scope == Scope::Predictions => tr!(
+                    "No market matches “{query}”. Searched: {searched}. Try a topic like Bitcoin or the Fed.",
+                    query = query,
+                    searched = searched
+                ),
+                None => tr!(
+                    "Nothing matches “{query}”. Searched: {searched}.",
+                    query = query,
+                    searched = searched
+                ),
             };
-            widgets::no_results(ui, "No results", &detail);
+            widgets::no_results(ui, tr!("No results"), &detail);
         }
     }
 
@@ -1404,14 +1439,16 @@ impl SymbolPicker {
             .map(|(_, error)| error);
         match failure {
             Some(ProviderError::MissingKey) => {
-                Some(Notice::missing_key("Stocks need an Alpaca key"))
+                Some(Notice::missing_key(tr!("Stocks need an Alpaca key")))
             }
             Some(error) => Some(Notice {
-                title: "Stocks could not be searched",
+                title: tr!("Stocks could not be searched"),
                 detail: error.to_string(),
                 settings: false,
             }),
-            None if self.needs_alpaca => Some(Notice::missing_key("Set up Alpaca to open a stock")),
+            None if self.needs_alpaca => {
+                Some(Notice::missing_key(tr!("Set up Alpaca to open a stock")))
+            }
             None => None,
         }
     }
@@ -1421,7 +1458,7 @@ impl SymbolPicker {
     fn footer(&self, ui: &mut Ui, area: Rect, env: &Env) -> Option<(Pick, PickKind)> {
         let mut hit = None;
         let mut hints = vec![
-            Hint::new(&["↑", "↓"], "Navigate"),
+            Hint::new(&["↑", "↓"], tr!("Navigate")),
             Hint::new(&["↵"], self.return_hint(env)),
         ];
         let market = self.highlighted.as_ref().and_then(Item::market);
@@ -1429,13 +1466,13 @@ impl SymbolPicker {
             && env.replacing.is_some()
             && !matches!(self.highlighted, Some(Item::Event(_)))
         {
-            hints.push(Hint::new(&["⇧", "↵"], "Add as new chart"));
+            hints.push(Hint::new(&["⇧", "↵"], tr!("Add as new chart")));
         }
         if self.mode == PickMode::Chart && env.can_overlay && market.is_some_and(Self::comparable) {
-            hints.push(Hint::new(&["⌥", "↵"], "Compare"));
+            hints.push(Hint::new(&["⌥", "↵"], tr!("Compare")));
         }
-        hints.push(Hint::new(&["Tab"], "Switch tab"));
-        hints.push(Hint::new(&["Esc"], "Close"));
+        hints.push(Hint::new(&["Tab"], tr!("Switch tab")));
+        hints.push(Hint::new(&["Esc"], tr!("Close")));
 
         // What sits at the right edge: the button for ticked choices, else what was just added.
         let together = self
@@ -1468,7 +1505,7 @@ impl SymbolPicker {
         } else if let Some(added) = &self.added {
             let galley = kit::galley(
                 ui,
-                &format!("Added {added}"),
+                &tr!("Added {market}", market = added),
                 13.0,
                 REGULAR,
                 theme::text_secondary(),
@@ -1498,17 +1535,21 @@ impl SymbolPicker {
             row,
             hints,
             13.0,
-            &["Compare", "Add as new chart", "Switch tab", "Navigate"],
+            &[
+                tr!("Compare"),
+                tr!("Add as new chart"),
+                tr!("Switch tab"),
+                tr!("Navigate"),
+            ],
         );
         hit
     }
 
     /// What the footer's button for `count` ticked choices says.
     fn ticked_label(&self, count: usize) -> String {
-        let choices = if count == 1 { "choice" } else { "choices" };
         match self.mode {
-            PickMode::Watchlist => format!("Add {count} {choices}"),
-            _ => format!("Chart {count} {choices}"),
+            PickMode::Watchlist => tr_n!(count, "Add {count} choice", "Add {count} choices"),
+            _ => tr_n!(count, "Chart {count} choice", "Chart {count} choices"),
         }
     }
 
@@ -1519,17 +1560,21 @@ impl SymbolPicker {
             Some(market)
                 if self.held(env, &InstrumentId::new(market.source, &market.full_symbol)) =>
             {
-                format!("Already in {list}")
+                tr!("Already in {list}", list = list)
             }
-            Some(market) => format!("Add {} to {list}", market_label(market)),
-            None => format!("Add to {list}"),
+            Some(market) => tr!(
+                "Add {market} to {list}",
+                market = market_label(market),
+                list = list
+            ),
+            None => tr!("Add to {list}", list = list),
         };
         match &self.highlighted {
             Some(Item::Event(head)) => {
                 return if head.open {
-                    "Hide choices"
+                    tr!("Hide choices")
                 } else {
-                    "Show choices"
+                    tr!("Show choices")
                 }
                 .to_owned();
             }
@@ -1539,21 +1584,24 @@ impl SymbolPicker {
             })) => {
                 return match self.mode {
                     PickMode::Watchlist if self.held(env, &card.instrument_id()) => {
-                        format!("Already in {list}")
+                        tr!("Already in {list}", list = list)
                     }
                     PickMode::Watchlist => to_watchlist(None),
-                    _ => "Add card".to_owned(),
+                    _ => tr!("Add card").to_owned(),
                 };
             }
             _ => {}
         }
         match (self.mode, self.replacing(env)) {
             (PickMode::Compare, _) if env.replacing.is_some() => {
-                format!("Compare with {}", env.replacing.unwrap_or_default())
+                tr!(
+                    "Compare with {market}",
+                    market = env.replacing.unwrap_or_default()
+                )
             }
-            (PickMode::Compare, _) => "Compare".to_owned(),
-            (PickMode::Chart, Some(current)) => format!("Replace {current}"),
-            (PickMode::Chart | PickMode::Add, _) => "Add chart".to_owned(),
+            (PickMode::Compare, _) => tr!("Compare").to_owned(),
+            (PickMode::Chart, Some(current)) => tr!("Replace {market}", market = current),
+            (PickMode::Chart | PickMode::Add, _) => tr!("Add chart").to_owned(),
             (PickMode::Watchlist, _) => {
                 to_watchlist(self.highlighted.as_ref().and_then(Item::market))
             }
@@ -1606,9 +1654,6 @@ struct FilterMenu {
     entries: Vec<(Filter, String)>,
     current: Filter,
 }
-
-/// The pull-down's entry for every portfolio, spelled as a card names its scope.
-const ALL_PORTFOLIOS: &str = "All Portfolios";
 
 /// The room the pull-down takes when it is reduced to its icon and chevron.
 const FILTER_COMPACT: f32 = 48.0;
@@ -1711,7 +1756,7 @@ impl Notice {
     fn missing_key(title: &'static str) -> Self {
         Self {
             title,
-            detail: "Add your free Alpaca API keys in Settings to search and chart US stocks."
+            detail: tr!("Add your free Alpaca API keys in Settings to search and chart US stocks.")
                 .to_owned(),
             settings: true,
         }
@@ -1739,7 +1784,7 @@ fn show_notice(ui: &mut Ui, card: Rect, notice: &Notice) -> bool {
     if notice.settings {
         let button = Rect::from_center_size(pos2(right - 52.0, card.center().y), vec2(104.0, 30.0));
         let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(button));
-        pressed = widgets::sheet_button(&mut cell, "Open Settings", false, true).clicked();
+        pressed = widgets::sheet_button(&mut cell, tr!("Open Settings"), false, true).clicked();
         right = button.left() - 12.0;
     }
     let text_left = badge.right() + 12.0;

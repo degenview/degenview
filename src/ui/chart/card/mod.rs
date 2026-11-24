@@ -6,6 +6,7 @@
 
 use crate::format;
 use crate::host::pine::chart::{ChartFrame, ChartRuns, InstanceStatus, PineLogs, RunRevision};
+use crate::i18n::tr;
 use crate::model::chart;
 use crate::model::chart::canvas::{PaneSpec, Window};
 use crate::model::chart::kind::{ChartStyle, ChartType, DataClass};
@@ -170,14 +171,17 @@ fn truncated(label: &str, max: usize) -> String {
 /// What the warning pill says: rate limits get their own wording, `detailed` appends the error.
 fn refresh_warning_text(error: &ProviderError, source: DataSource, detailed: bool) -> String {
     if error.is_rate_limited() {
-        format!(
-            "{} rate limit reached · showing the last result",
-            source.display_name()
+        tr!(
+            "{source} rate limit reached · showing the last result",
+            source = source.display_name()
         )
     } else if detailed {
-        format!("Couldn't refresh · showing the last result ({error})")
+        tr!(
+            "Couldn't refresh · showing the last result ({error})",
+            error = error
+        )
     } else {
-        "Couldn't refresh · showing the last result".to_owned()
+        tr!("Couldn't refresh · showing the last result").to_owned()
     }
 }
 

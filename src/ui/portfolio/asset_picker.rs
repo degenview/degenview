@@ -9,7 +9,7 @@ use crate::service::{ProviderError, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::chart::picker_kit::recents::{self, RecentMarket};
 use crate::ui::chart::picker_kit::suggestions::{
-    self, CRYPTO_SUGGESTIONS, Chip, PREDICTION_TOPICS, STOCK_SUGGESTIONS,
+    self, CRYPTO_SUGGESTIONS, Chip, STOCK_SUGGESTIONS, prediction_topics,
 };
 use crate::ui::chart::picker_kit::{self, art, results, widgets};
 use crate::ui::icons::Icon;
@@ -489,10 +489,11 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
                     }
                 }
                 PickerTab::Predictions => {
-                    let items = PREDICTION_TOPICS.map(|(title, _, icon)| Chip::Symbol(title, icon));
+                    let items =
+                        prediction_topics().map(|(title, _, icon)| Chip::Symbol(title, icon));
                     if let Some(index) = suggestions::suggestion_grid(ui, "Popular topics", &items)
                     {
-                        search = Some(PREDICTION_TOPICS[index].1);
+                        search = Some(prediction_topics()[index].1);
                     }
                 }
             }

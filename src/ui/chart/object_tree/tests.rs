@@ -401,3 +401,67 @@ fn a_selected_drawing_is_drawn_selected() {
     rig.click(row.left_center() + vec2(60.0, 0.0));
     assert_eq!(rig.actions, [TreeAction::Select(Key::Drawing(8))]);
 }
+
+/// The tree in the pseudo-locale: its toolbar, search, section headings, an empty answer to a
+/// filter and the hint under the symbol alone. `DEGENVIEW_GALLERY_DIR=<dir>` writes the pictures.
+#[test]
+fn the_tree_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::chart::painted_text;
+    use crate::ui::render_tests::{Screen, gallery_dir};
+
+    let _theme = crate::ui::theme::RestoreDefaultTheme;
+    let symbol_only = vec![Row {
+        count: 1,
+        ..row(Key::Symbol, "BTCUSDT", Some(true), None)
+    }];
+    for (theme_name, app_theme) in [
+        ("dark", crate::ui::theme::AppTheme::Dark),
+        ("light", crate::ui::theme::AppTheme::Light),
+    ] {
+        for (name, rows, filter, wanted) in [
+            ("rows", rows(), "", "Object tree"),
+            (
+                "no-matches",
+                Vec::new(),
+                "zzz",
+                "Nothing on this chart matches the filter.",
+            ),
+            (
+                "symbol-only",
+                symbol_only.clone(),
+                "",
+                "Draw with the tools on the left or add an indicator, and it is listed here.",
+            ),
+        ] {
+            let mut screen = Screen::new(vec2(300.0, 420.0));
+            crate::ui::theme::apply(&screen.ctx, app_theme);
+            let mut state = TreeState {
+                filter: filter.to_owned(),
+                ..TreeState::default()
+            };
+            let mut last = None;
+            with_locale(Locale::PSEUDO, || {
+                for _ in 0..4 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        let full = ui.max_rect();
+                        ui.painter()
+                            .rect_filled(full, 0.0, crate::ui::theme::chrome());
+                        show(ui, &mut state, "BTCUSDT", &rows, &[]);
+                    }));
+                }
+            });
+            let last = last.take().expect("a frame");
+            let texts = painted_text::of(&last);
+            painted_text::assert_painted(&texts, wanted);
+            if name == "rows" {
+                painted_text::assert_painted(&texts, "INDICATORS");
+                painted_text::assert_painted(&texts, "DRAWINGS");
+            }
+            if gallery_dir().is_some() {
+                eprintln!("{name}: {:?}", painted_text::unbracketed(&texts));
+                screen.save(&format!("pseudo-object-tree-{name}-{theme_name}"), last);
+            }
+        }
+    }
+}
