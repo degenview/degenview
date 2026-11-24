@@ -11,8 +11,7 @@ pub mod subscription;
 use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::chart::synthetic::ticker;
-use crate::model::market::bucket;
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{DataSource, Kline};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::runtime::session::{RunError, Session};
@@ -36,19 +35,6 @@ type SecurityCache = HashMap<(SecurityKey, Option<ChartSpan>), (Vec<Kline>, i64)
 static SECURITY_CACHE: LazyLock<Mutex<SecurityCache>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// The candle sizes the intrabar series are built from: a series of `request.security_lower_tf`
-/// is folded from the coarsest of these that nests in its length (12 minutes from 1-minute
-/// candles, 4 hours from 1-hour ones, 15 seconds from 1-second ones).
-const INTRABAR_BASES: [Timeframe; 7] = [
-    Timeframe::DAY_1,
-    Timeframe::HOUR_1,
-    Timeframe::MINUTE_30,
-    Timeframe::MINUTE_15,
-    Timeframe::MINUTE_5,
-    Timeframe::MINUTE_1,
-    Timeframe::SECOND_1,
-];
-
 impl KlineSecurityDataProvider {
     fn cached(key: &(SecurityKey, Option<ChartSpan>)) -> Option<Vec<Kline>> {
         let cache = lock(&SECURITY_CACHE);
@@ -63,10 +49,12 @@ impl KlineSecurityDataProvider {
     /// The series of finer bars over the chart's whole span (or its `calc_bars_count` newest bars).
     fn intrabars(key: &SecurityKey, chart: ChartSpan) -> Option<Vec<Kline>> {
         let target = timeframe_of(key.interval)?;
-        let base = bucket::fold_base(target, &INTRABAR_BASES)?;
         let (plain, modifier) = ticker::split(&key.symbol);
         let (source, symbol) = resolve_symbol(plain)?;
-        let base_ms = base.nominal_ms();
+        // The candles the source itself has that `target` folds from, so a length it serves only
+        // by folding (30 s on Gate.io, from its 10 s) is asked for in a length it can answer.
+        let plan = source.plan(target)?;
+        let base_ms = plan.base().nominal_ms();
         let mut start = chart
             .start_ms
             .max(chart.end_ms - base_ms * MAX_INTRABAR_CANDLES as i64);
@@ -76,19 +64,14 @@ impl KlineSecurityDataProvider {
         let candles = crate::service::fetch_klines_range(
             source,
             &symbol,
-            base,
+            plan.base(),
             start,
             chart.end_ms,
             MAX_INTRABAR_CANDLES,
         )
         .ok()
         .filter(|candles| !candles.is_empty())?;
-        let candles = if base == target {
-            candles
-        } else {
-            bucket::fold(&candles, target, false)
-        };
-        Some(construct(modifier, candles))
+        Some(construct(modifier, plan.fold(candles, false)))
     }
 
     fn series(key: &SecurityKey, chart: Option<ChartSpan>) -> Option<Vec<Kline>> {

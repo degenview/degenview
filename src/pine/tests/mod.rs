@@ -4,6 +4,8 @@
 pub(in crate::pine) mod bench;
 #[cfg(test)]
 pub(in crate::pine) mod chart_type;
+#[cfg(test)]
+pub(in crate::pine) mod configured_timeframe;
 #[cfg(feature = "corpus")]
 pub(in crate::pine) mod corpus;
 #[cfg(test)]

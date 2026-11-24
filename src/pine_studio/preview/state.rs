@@ -246,6 +246,7 @@ impl PreviewState {
             } else {
                 crate::pine::compiler::program::ChartTheme::DARK
             },
+            timeframe_seconds: Some(crate::pine::time::bucket::seconds_of(self.timeframe)),
             label: format!("{} · {}", self.market.ticker, self.timeframe.label()),
         })
     }

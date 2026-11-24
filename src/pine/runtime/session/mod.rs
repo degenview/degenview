@@ -161,6 +161,10 @@ pub struct Session {
     /// The length of the chart's own bars when it cannot be read off their open times: a
     /// price-based chart's bars follow price, not time.
     pub fixed_bar_seconds: Option<f64>,
+    /// The length of the chart's timeframe, as the chart is set to it. Without it the length is
+    /// read off the last two bars' open times, which lies where a bucket is cut short (the last
+    /// one of a day, the first of a session after a gap).
+    pub configured_bar_seconds: Option<f64>,
     pub(crate) drawing_limits: drawings::DrawingLimits,
     supplied_mintick: Option<f64>,
     pub(crate) deadline_at: Option<Instant>,
@@ -211,13 +215,19 @@ impl From<Diagnostic> for RunError {
 }
 
 impl Session {
+    /// The chart's bar length when it is told rather than read off the bars: a price-based
+    /// chart's candle length, else the timeframe the chart is set to.
+    pub(crate) fn known_bar_seconds(&self) -> Option<f64> {
+        self.fixed_bar_seconds.or(self.configured_bar_seconds)
+    }
+
     pub fn reset(&mut self, inputs: Option<HashMap<String, InputValue>>) {
         if let Some(inputs) = inputs {
             self.inputs = inputs;
         }
         self.restart_state();
         self.logs.restart();
-        self.bar_seconds = self.fixed_bar_seconds.unwrap_or(0.0);
+        self.bar_seconds = self.known_bar_seconds().unwrap_or(0.0);
         self.last_bar_index = -1;
         self.last_bar_time = None;
         self.first_bar_time = None;

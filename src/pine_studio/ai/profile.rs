@@ -73,6 +73,7 @@ impl ProfileTool {
         config.inputs = feed.inputs.clone();
         config.visible_range = feed.visible_range;
         config.theme = Some(feed.theme);
+        config.timeframe_seconds = feed.timeframe_seconds;
         config.libraries = Box::new(LibraryRegistry);
         config.security_data = Some(Box::new(KlineSecurityDataProvider));
         let mut session = match ProfileSession::start(config, std::sync::Arc::new(|| {})) {
@@ -292,6 +293,7 @@ mod tests {
             inputs: HashMap::new(),
             visible_range: None,
             theme: ChartTheme::DARK,
+            timeframe_seconds: Some(60.0),
             label: "TEST \u{b7} 1m".to_owned(),
         }
     }

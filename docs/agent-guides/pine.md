@@ -139,6 +139,13 @@
   for alert subscriptions). `timeframe.main_period` uses `Session::chart_bar_seconds`, set by the
   security evaluator while `bar_seconds` is the requested timeframe's. `weekofyear`: Sunday–Saturday,
   week 1 holds January 1 (inferred; reference only says "week number of the year").
+- The chart's bar length (`timeframe.in_seconds()`, the window of a bar's intrabars) is told, not read off
+  the gap between bars: a bucket cut short by midnight (the last of a `59s` day lasts 24 s) or a
+  session's first bar after a night would give a length the chart does not have. The hosts pass the
+  timeframe the chart is set to (`ExecutionController::with_timeframe_seconds`, `time::bucket::seconds_of`,
+  Pine's 30-day month); a price-based chart's candle length (`with_bar_seconds`, which also turns the
+  footprint's intrabars off) comes first; only a caller that passes neither (tests) infers the length.
+  A chart bar's intrabars end at the bar's own close (`Session::chart_bar_end`), not at `open + length`.
 - `strategy.*` statistics: `strategy_builtins::statistic`, computed from the broker per read (trade
   lists) except equity extremes, kept by `Broker` as bars arrive (`EquityExtremes`, rolled back with
   state) and merged with the running bar. Losses negative in averages (`avg_losing_trade`), positive

@@ -86,6 +86,7 @@ pub fn chart(
     let source = preview.market.source;
     let loading = preview.loading && candles.is_empty();
     let error = preview.error.clone();
+    preview.card.set_timeframe(preview.timeframe);
     preview.card.body(
         &mut chart_ui,
         &symbol,

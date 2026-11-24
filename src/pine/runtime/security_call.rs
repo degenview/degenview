@@ -280,6 +280,19 @@ impl Session {
 }
 
 impl Session {
+    /// Where the chart bar opening at `bar.open_time` ends: its length on, but not past the bar's
+    /// own close. A bucket cut short (the last of a day when the timeframe does not divide it) is
+    /// shorter than the chart's length, and the next bar's candles are not its own. A price-based
+    /// chart's bars have no close of their own to cut at.
+    fn chart_bar_end(&self, bar: &Kline) -> i64 {
+        let by_length = bar.open_time + (self.bar_seconds * 1000.0).round() as i64;
+        if self.fixed_bar_seconds.is_none() && bar.close_time >= bar.open_time {
+            by_length.min(bar.close_time + 1)
+        } else {
+            by_length
+        }
+    }
+
     /// Reads the call's arguments; `expression` stays unevaluated. None when the symbol or timeframe
     /// cannot be served and the script passed `ignore_invalid_*`.
     /// Whether `symbol` names the series the chart itself runs on. On a price-based chart the
@@ -700,7 +713,7 @@ impl Session {
         }
         let mut fresh = false;
         if context.flags.is_confirmed {
-            let chart_close = bar.open_time + (self.bar_seconds * 1000.0).round() as i64;
+            let chart_close = self.chart_bar_end(&bar);
             while state.completed_candles < candles.len() {
                 let candle = &candles[state.completed_candles];
                 if time::bucket::end(candle.open_time, request.interval) > chart_close {
@@ -765,7 +778,7 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
-        let end = bar.open_time + (self.bar_seconds * 1000.0).round() as i64;
+        let end = self.chart_bar_end(&bar);
         let mut low = 0usize;
         let mut high = candles.len();
         while low < high {

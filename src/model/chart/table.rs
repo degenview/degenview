@@ -68,6 +68,9 @@ pub struct TableFeed {
     /// Whether the bars have an open, high and low of their own (a line chart's do not).
     pub ohlc: bool,
     pub volume: bool,
+    /// Whether the bars are shorter than a minute, so the Time column writes their seconds: two
+    /// bars of one minute must not read as one time.
+    pub seconds: bool,
     /// The bars the chart draws, oldest first.
     pub bars: Vec<Kline>,
     pub extras: Vec<Extra>,
@@ -129,6 +132,7 @@ impl TableFeed {
             return String::new();
         };
         match column {
+            Column::Time if self.seconds => format::timestamp_seconds(kline.open_time),
             Column::Time => format::timestamp(kline.open_time),
             Column::Open => price.format(kline.open),
             Column::High => price.format(kline.high),
@@ -188,6 +192,7 @@ mod tests {
             bars_label: "Candles".to_owned(),
             ohlc: true,
             volume: true,
+            seconds: false,
             bars: vec![
                 bar(0, 100.0, 101.0),
                 bar(60_000, 101.0, 99.5),
@@ -211,6 +216,18 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[test]
+    fn the_time_column_writes_seconds_for_bars_shorter_than_a_minute() {
+        let mut feed = feed();
+        feed.bars[1].open_time = 1_000;
+        let cell = |feed: &TableFeed, bar| feed.cell(bar, Column::Time, PriceFormat::default());
+        // A minute chart's cells read the minute: the two bars cannot be told apart by seconds.
+        assert_eq!(cell(&feed, 0), cell(&feed, 1));
+        feed.seconds = true;
+        assert_eq!(cell(&feed, 0), "1970-01-01 00:00:00");
+        assert_eq!(cell(&feed, 1), "1970-01-01 00:00:01");
     }
 
     #[test]

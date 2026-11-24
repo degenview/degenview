@@ -202,6 +202,7 @@ impl Session {
             chart_bar_seconds: None,
             alert_mode: false,
             fixed_bar_seconds: None,
+            configured_bar_seconds: None,
             drawing_limits,
             supplied_mintick,
             deadline_at: None,

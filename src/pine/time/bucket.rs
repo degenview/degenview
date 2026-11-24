@@ -32,6 +32,21 @@ pub fn timeframe_of(seconds: f64) -> Option<Timeframe> {
     Timeframe::new(u16::try_from(count).ok()?, unit).ok()
 }
 
+/// The length of `timeframe` in seconds as Pine states it, a month being 30 days (`3M` is 90 days
+/// and `1Y` 360): what `timeframe.in_seconds()` answers on a chart of that timeframe, and the
+/// inverse of [`timeframe_of`].
+pub fn seconds_of(timeframe: Timeframe) -> f64 {
+    let count = f64::from(timeframe.count());
+    match timeframe.unit() {
+        TimeUnit::Second => count,
+        TimeUnit::Minute => count * MINUTE as f64,
+        TimeUnit::Hour => count * 3_600.0,
+        TimeUnit::Day => count * DAY as f64,
+        TimeUnit::Week => count * 7.0 * DAY as f64,
+        TimeUnit::Month => count * 30.0 * DAY as f64,
+    }
+}
+
 /// Length of a bar that is no timeframe, in milliseconds.
 fn epoch_grid_ms(seconds: f64) -> i64 {
     ((seconds * 1_000.0).round() as i64).max(1)
@@ -91,6 +106,22 @@ mod tests {
         for (seconds, expected) in cases {
             assert_eq!(timeframe_of(seconds), expected, "{seconds}");
         }
+    }
+
+    #[test]
+    fn a_timeframes_length_is_the_one_timeframe_of_reads_back() {
+        let timeframes = Timeframe::PRESETS.into_iter().chain([
+            Timeframe::MONTH_3,
+            Timeframe::new(59, TimeUnit::Second).unwrap(),
+            Timeframe::new(22, TimeUnit::Minute).unwrap(),
+            Timeframe::new(2, TimeUnit::Day).unwrap(),
+        ]);
+        for timeframe in timeframes {
+            let seconds = seconds_of(timeframe);
+            assert_eq!(timeframe_of(seconds), Some(timeframe), "{timeframe}");
+        }
+        assert_eq!(seconds_of(Timeframe::MONTH_3), 7_776_000.0);
+        assert_eq!(seconds_of(Timeframe::YEAR_1), 31_104_000.0);
     }
 
     #[test]

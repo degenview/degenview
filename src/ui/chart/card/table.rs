@@ -114,6 +114,7 @@ impl ChartCard {
             bars_label: chart_type.label().to_owned(),
             ohlc: !line,
             volume: provides_volume,
+            seconds: self.shows_seconds(),
             bars: bars.to_vec(),
             extras,
         }));
