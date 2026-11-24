@@ -5,6 +5,7 @@ use eframe::egui::{
     pos2, vec2,
 };
 
+use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::theme;
@@ -132,7 +133,7 @@ pub fn flat_filter(ui: &mut Ui, id: Id, value: &mut String, hint: &str, width: f
             clear,
             id.with("clear"),
             Icon::XmarkCircleFill,
-            "Clear filter",
+            tr!("Clear filter"),
             true,
             true,
         )

@@ -3,6 +3,7 @@
 
 use super::library::prefs::{ChartPosition, DrawerTab};
 use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, ai, debug, editor, library};
+use crate::i18n::tr;
 use crate::model::editor_theme::ThemeSelection;
 use crate::model::pine::script::{ScriptId, ScriptType};
 use crate::pine::compiler;
@@ -206,7 +207,7 @@ impl PineStudio {
         };
         let Some(chart) = self.chart.clone() else {
             self.error = Some(
-                "Open a chart first: a script alert watches one chart's market and timeframe."
+                tr!("Open a chart first: a script alert watches one chart's market and timeframe.")
                     .to_owned(),
             );
             return;
@@ -220,14 +221,15 @@ impl PineStudio {
         let instance = match matching.as_slice() {
             [] => {
                 self.error = Some(
-                    "Add this script to the focused chart before creating an alert.".to_owned(),
+                    tr!("Add this script to the focused chart before creating an alert.")
+                        .to_owned(),
                 );
                 return;
             }
             [instance] => instance.clone(),
             _ => {
                 self.error = Some(
-                    "This script is applied more than once. Remove the duplicate instance or arm it from the chart instance you want to watch."
+                    tr!("This script is applied more than once. Remove the duplicate instance or arm it from the chart instance you want to watch.")
                         .to_owned(),
                 );
                 return;
@@ -270,7 +272,7 @@ impl PineStudio {
     /// Gives the script a new name; the message is what the Rename sheet says when it cannot.
     pub(crate) fn rename_script(&mut self, id: &str, name: &str) -> Result<(), String> {
         let Some(store) = self.script_store.as_mut() else {
-            return Err("The scripts folder isn't available.".to_owned());
+            return Err(tr!("The scripts folder isn't available.").to_owned());
         };
         store.rename(id, name).map_err(|error| error.to_string())?;
         self.refresh();
@@ -330,7 +332,7 @@ impl PineStudio {
 
     pub(crate) fn create_script(&mut self, name: &str) -> Result<(), String> {
         let Some(store) = self.script_store.as_mut() else {
-            return Err("The scripts folder isn't available.".to_owned());
+            return Err(tr!("The scripts folder isn't available.").to_owned());
         };
         match store.create(name, ScriptType::Indicator, None, false) {
             Ok(script) => {
@@ -350,10 +352,13 @@ impl PineStudio {
         };
         let default = format!("{}.pine", script.name);
         let id = id.to_owned();
+        let prompt = tr!("Export Script");
         self.export = Some(work_queue::SNAPSHOTS.start(Some(ctx), move || {
+            let escape = |text: &str| text.replace('\\', "\\\\").replace('"', "\\\"");
             let script = format!(
-                "POSIX path of (choose file name with prompt \"Export Script\" default name \"{}\")",
-                default.replace('\\', "\\\\").replace('"', "\\\"")
+                "POSIX path of (choose file name with prompt \"{}\" default name \"{}\")",
+                escape(prompt),
+                escape(&default)
             );
             let output = std::process::Command::new("osascript")
                 .args(["-e", &script])

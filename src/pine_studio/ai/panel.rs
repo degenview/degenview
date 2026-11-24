@@ -6,6 +6,7 @@ use super::models::{self, ModelList};
 use super::plan::Plan;
 use super::prompt::{self, Mode, Turn};
 use super::{Assistant, Entry, Notice, Proposal, ToolStep};
+use crate::i18n::{tr, tr_n};
 use crate::pine_studio::editor::diff_view;
 use crate::service::llm::ProviderKind;
 use crate::ui::icons::{self, Icon};
@@ -36,21 +37,25 @@ const MENU_TEXT_INSET: f32 = 14.0;
 const COPIED_FOR: Duration = Duration::from_millis(1400);
 
 /// Starting points for an empty conversation, for each mode.
-const ASK_EXAMPLES: [&str; 3] = [
-    "Explain what this script does",
-    "What could go wrong with this logic?",
-    "How would I add an alert to this?",
-];
-const PLAN_EXAMPLES: [&str; 3] = [
-    "Find what makes this script slow",
-    "Plan how to add a stop loss",
-    "Suggest how to simplify this script",
-];
-const EDIT_EXAMPLES: [&str; 3] = [
-    "Add an input for the length",
-    "Plot a marker when the signal crosses",
-    "Tidy up the names and add comments",
-];
+fn examples(mode: Mode) -> [&'static str; 3] {
+    match mode {
+        Mode::Ask => [
+            tr!("Explain what this script does"),
+            tr!("What could go wrong with this logic?"),
+            tr!("How would I add an alert to this?"),
+        ],
+        Mode::Plan => [
+            tr!("Find what makes this script slow"),
+            tr!("Plan how to add a stop loss"),
+            tr!("Suggest how to simplify this script"),
+        ],
+        Mode::Edit => [
+            tr!("Add an input for the length"),
+            tr!("Plot a marker when the signal crosses"),
+            tr!("Tidy up the names and add comments"),
+        ],
+    }
+}
 
 /// What the panel needs to know about the provider, worked out by the host.
 pub struct Setup {
@@ -100,9 +105,9 @@ pub enum PanelAction {
 /// The toolbar's assistant button: lit while its panel is open.
 pub fn panel_button<A, M>(panel_open: bool, on_click: A) -> bar::Button<A, M> {
     let tip = if panel_open {
-        "Hide the assistant"
+        tr!("Hide the assistant")
     } else {
-        "Ask an AI assistant to change this script"
+        tr!("Ask an AI assistant to change this script")
     };
     bar::Button::new("ai", tip)
         .icon(Icon::Sparkles)
@@ -150,7 +155,7 @@ fn header_bar(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
         ui.add_space(12.0);
         icons::inline(ui, Icon::Sparkles, 13.0, kit::ACCENT);
         ui.label(kit::text(
-            "Assistant",
+            tr!("Assistant"),
             kit::size::HEADLINE,
             kit::SEMIBOLD,
             theme::text_primary(),
@@ -170,7 +175,7 @@ fn header_bar(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
                 Icon::Xmark,
                 24.0,
                 theme::text_secondary(),
-                "Hide the assistant",
+                tr!("Hide the assistant"),
             )
             .clicked()
             {
@@ -178,8 +183,14 @@ fn header_bar(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
             }
             if !ai.turns.is_empty()
                 && !ai.is_running()
-                && icons::button(ui, Icon::Trash, 24.0, theme::text_secondary(), "Start over")
-                    .clicked()
+                && icons::button(
+                    ui,
+                    Icon::Trash,
+                    24.0,
+                    theme::text_secondary(),
+                    tr!("Start over"),
+                )
+                .clicked()
             {
                 actions.push(PanelAction::Clear);
             }
@@ -202,7 +213,7 @@ fn model_chip(ui: &mut Ui, label: &str) -> egui::Response {
     // Where the chip is, for the gallery to click it.
     ui.data_mut(|data| data.insert_temp(Id::new("ai-model-chip"), rect));
     let response = response
-        .on_hover_text("Choose the model")
+        .on_hover_text(tr!("Choose the model"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let painter = ui.painter();
     painter.rect_filled(
@@ -230,12 +241,12 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
     // However long a provider's error is, the menu is this wide and no wider.
     ui.set_max_width(MENU_WIDTH);
     let inner = MENU_WIDTH - 2.0 * MENU_INSET;
-    kit::menu_heading(ui, "Provider");
+    kit::menu_heading(ui, tr!("Provider"));
     for (kind, ready) in &setup.providers {
         let mut row = kit::MenuRow::new(kind.title());
         row.current = *kind == setup.current;
         row.reserve_icon = false;
-        row.shortcut = (!ready).then_some("needs a key");
+        row.shortcut = (!ready).then_some(tr!("needs a key"));
         if kit::menu_row(ui, row).clicked() {
             actions.push(if *ready {
                 PanelAction::SetProvider(*kind)
@@ -246,7 +257,7 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
         }
     }
     kit::menu_separator(ui);
-    kit::menu_heading(ui, "Model");
+    kit::menu_heading(ui, tr!("Model"));
     egui::Frame::new()
         .inner_margin(Margin::symmetric(MENU_INSET as i8, 4))
         .show(ui, |ui| {
@@ -254,7 +265,7 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
                 ui,
                 Id::new("ai-model-filter"),
                 &mut ai.model_filter,
-                "Filter, or type a model name",
+                tr!("Filter, or type a model name"),
                 inner,
             );
             let typed = ai.model_filter.trim().to_owned();
@@ -282,8 +293,9 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
             ui.horizontal(|ui| {
                 ui.add_space(MENU_TEXT_INSET);
                 ui.add(LoadingIndicator::new().size(12.0));
+                ui.add_space(6.0);
                 ui.label(kit::text(
-                    "  Loading models…",
+                    tr!("Loading models…"),
                     kit::size::SUBHEADLINE,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -297,7 +309,7 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
                 .inner_margin(Margin::symmetric(MENU_INSET as i8, 0))
                 .show(ui, |ui| {
                     ui.set_width(inner);
-                    let notice = ErrorNotice::new("models", &report).retry("Try again");
+                    let notice = ErrorNotice::new("models", &report).retry(tr!("Try again"));
                     if error_notice::show(ui, &notice) == Some(ErrorEvent::Retry) {
                         actions.push(PanelAction::LoadModels);
                     }
@@ -308,7 +320,7 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
             listed = ids.contains(&typed);
             let shown = models::matching(&ids, &ai.model_filter);
             if shown.is_empty() {
-                note(ui, "No model matches.", theme::text_tertiary());
+                note(ui, tr!("No model matches."), theme::text_tertiary());
             }
             egui::ScrollArea::vertical()
                 .max_height(240.0)
@@ -328,7 +340,7 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
     }
     // A name the provider's list does not show: a new model, or a compatible server's own.
     if !typed.is_empty() && !listed {
-        let label = format!("Use \"{typed}\"");
+        let label = tr!("Use \"{model}\"", model = typed);
         let mut row = kit::MenuRow::new(&label);
         row.reserve_icon = false;
         if kit::menu_row(ui, row).clicked() {
@@ -439,9 +451,9 @@ fn setup_card(ui: &mut Ui, problem: &str) -> bool {
             });
             ui.add(
                 egui::Label::new(kit::text(
-                    format!(
-                        "{} The script is sent to the provider you pick.",
-                        crate::platform::key_stays_stored()
+                    tr!(
+                        "{stored} The script is sent to the provider you pick.",
+                        stored = crate::platform::key_stays_stored()
                     ),
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
@@ -450,7 +462,7 @@ fn setup_card(ui: &mut Ui, problem: &str) -> bool {
                 .wrap(),
             );
             ui.add_space(4.0);
-            clicked = kit::sheet_button(ui, "Open Settings", true, true).clicked();
+            clicked = kit::sheet_button(ui, tr!("Open Settings"), true, true).clicked();
         });
     clicked
 }
@@ -459,18 +471,22 @@ fn empty_state(ui: &mut Ui, ai: &mut Assistant, script_name: &str) {
     ui.add_space(6.0);
     let (line, examples) = match ai.mode {
         Mode::Ask => (
-            format!("Ask about {script_name}. Nothing is edited in Ask mode."),
-            ASK_EXAMPLES,
+            tr!(
+                "Ask about {script}. Nothing is edited in Ask mode.",
+                script = script_name
+            ),
+            examples(Mode::Ask),
         ),
         Mode::Plan => (
-            format!(
-                "Say what you want from {script_name}. The assistant looks at it and measures it, then gives you a plan to approve. Nothing is edited in Plan mode."
+            tr!(
+                "Say what you want from {script}. The assistant looks at it and measures it, then gives you a plan to approve. Nothing is edited in Plan mode.",
+                script = script_name
             ),
-            PLAN_EXAMPLES,
+            examples(Mode::Plan),
         ),
         Mode::Edit => (
-            format!("Describe a change to {script_name}."),
-            EDIT_EXAMPLES,
+            tr!("Describe a change to {script}.", script = script_name),
+            examples(Mode::Edit),
         ),
     };
     ui.add(
@@ -546,7 +562,7 @@ fn user_message(ui: &mut Ui, text: &str, editable: bool) -> bool {
                 Icon::Pencil,
                 20.0,
                 theme::text_tertiary(),
-                "Edit and send again",
+                tr!("Edit and send again"),
             )
             .clicked()
         {
@@ -565,16 +581,24 @@ fn reply_actions(ui: &mut Ui, id: Id, text: &str) -> bool {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         let (icon, tip, color) = if just_copied {
-            (Icon::Check, "Copied", kit::GREEN)
+            (Icon::Check, tr!("Copied"), kit::GREEN)
         } else {
-            (Icon::CopyDoc, "Copy reply", theme::text_tertiary())
+            (Icon::CopyDoc, tr!("Copy reply"), theme::text_tertiary())
         };
         if icons::button(ui, icon, 22.0, color, tip).clicked() {
             ui.ctx().copy_text(text.to_owned());
             ui.data_mut(|data| data.insert_temp(copied_id, Instant::now()));
             ui.ctx().request_repaint_after(COPIED_FOR);
         }
-        if icons::button(ui, Icon::Repeat, 22.0, theme::text_tertiary(), "Ask again").clicked() {
+        if icons::button(
+            ui,
+            Icon::Repeat,
+            22.0,
+            theme::text_tertiary(),
+            tr!("Ask again"),
+        )
+        .clicked()
+        {
             again = true;
         }
     });
@@ -675,7 +699,7 @@ fn thinking(ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.add(LoadingIndicator::new().size(INDICATOR));
         ui.label(kit::text(
-            "Thinking…",
+            tr!("Thinking…"),
             kit::size::BODY,
             kit::REGULAR,
             theme::text_secondary(),
@@ -708,9 +732,12 @@ fn assistant_message(ui: &mut Ui, id: Id, text: &str, mode: Mode, done: bool) {
             if reply.complete || done {
                 icons::inline(ui, Icon::Code, 12.0, theme::text_secondary());
                 let lines = script.lines().count();
-                let noun = if lines == 1 { "line" } else { "lines" };
                 ui.label(kit::text(
-                    format!("Wrote a script · {lines} {noun}"),
+                    tr_n!(
+                        lines,
+                        "Wrote a script · {count} line",
+                        "Wrote a script · {count} lines"
+                    ),
                     kit::size::SUBHEADLINE,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -718,9 +745,10 @@ fn assistant_message(ui: &mut Ui, id: Id, text: &str, mode: Mode, done: bool) {
             } else {
                 ui.add(LoadingIndicator::new().size(INDICATOR));
                 ui.label(kit::text(
-                    format!(
-                        "Writing the script… {} lines so far",
-                        script.lines().count()
+                    tr_n!(
+                        script.lines().count(),
+                        "Writing the script… {count} line so far",
+                        "Writing the script… {count} lines so far"
                     ),
                     kit::size::SUBHEADLINE,
                     kit::REGULAR,
@@ -733,8 +761,8 @@ fn assistant_message(ui: &mut Ui, id: Id, text: &str, mode: Mode, done: bool) {
 
 fn implement_button(ui: &mut Ui) -> bool {
     ui.add_space(2.0);
-    kit::push_button(ui, Some(Icon::PlayFill), "Implement this plan", true)
-        .on_hover_text("Switches to Edit mode and asks for these changes.")
+    kit::push_button(ui, Some(Icon::PlayFill), tr!("Implement this plan"), true)
+        .on_hover_text(tr!("Switches to Edit mode and asks for these changes."))
         .clicked()
 }
 
@@ -744,7 +772,7 @@ fn notice_banner(ui: &mut Ui, notice: &Notice, can_retry: bool, actions: &mut Ve
         let report = notice.error_report();
         let mut card = ErrorNotice::new("panel", &report).dismissable();
         if can_retry {
-            card = card.retry("Try again");
+            card = card.retry(tr!("Try again"));
         }
         match error_notice::show(ui, &card) {
             Some(ErrorEvent::Retry) => actions.push(PanelAction::Send),
@@ -776,8 +804,14 @@ fn notice_banner(ui: &mut Ui, notice: &Notice, can_retry: bool, actions: &mut Ve
                     );
                 });
                 ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
-                    if icons::button(ui, Icon::Xmark, 18.0, theme::text_tertiary(), "Dismiss")
-                        .clicked()
+                    if icons::button(
+                        ui,
+                        Icon::Xmark,
+                        18.0,
+                        theme::text_tertiary(),
+                        tr!("Dismiss"),
+                    )
+                    .clicked()
                     {
                         actions.push(PanelAction::DismissNotice);
                     }
@@ -798,14 +832,14 @@ fn plan_card(ui: &mut Ui, plan: &Plan, actions: &mut Vec<PanelAction>) {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 ui.label(kit::text(
-                    "Plan ready",
+                    tr!("Plan ready"),
                     kit::size::BODY,
                     kit::SEMIBOLD,
                     theme::text_primary(),
                 ));
                 let steps = plan.steps.len();
                 ui.label(kit::text(
-                    format!("{steps} step{}", if steps == 1 { "" } else { "s" }),
+                    tr_n!(steps, "{count} step", "{count} steps"),
                     kit::size::SUBHEADLINE,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -813,7 +847,9 @@ fn plan_card(ui: &mut Ui, plan: &Plan, actions: &mut Vec<PanelAction>) {
             });
             ui.add(
                 egui::Label::new(kit::text(
-                    "Nothing has been changed. Approving switches to Edit and makes these changes as a proposal you review.",
+                    tr!(
+                        "Nothing has been changed. Approving switches to Edit and makes these changes as a proposal you review."
+                    ),
                     kit::size::SUBHEADLINE,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -823,16 +859,16 @@ fn plan_card(ui: &mut Ui, plan: &Plan, actions: &mut Vec<PanelAction>) {
             ui.add_space(2.0);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
-                if kit::sheet_button(ui, "Approve and implement", true, true).clicked() {
+                if kit::sheet_button(ui, tr!("Approve and implement"), true, true).clicked() {
                     actions.push(PanelAction::ApprovePlan);
                 }
-                if kit::sheet_button(ui, "Revise", false, true)
-                    .on_hover_text("Tell the assistant what to change in the plan")
+                if kit::sheet_button(ui, tr!("Revise"), false, true)
+                    .on_hover_text(tr!("Tell the assistant what to change in the plan"))
                     .clicked()
                 {
                     actions.push(PanelAction::RevisePlan);
                 }
-                if kit::sheet_button(ui, "Discard", false, true).clicked() {
+                if kit::sheet_button(ui, tr!("Discard"), false, true).clicked() {
                     actions.push(PanelAction::DiscardPlan);
                 }
             });
@@ -854,7 +890,7 @@ fn proposal_card(ui: &mut Ui, proposal: &Proposal, actions: &mut Vec<PanelAction
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 ui.label(kit::text(
-                    "Proposed change",
+                    tr!("Proposed change"),
                     kit::size::BODY,
                     kit::SEMIBOLD,
                     theme::text_primary(),
@@ -872,13 +908,8 @@ fn proposal_card(ui: &mut Ui, proposal: &Proposal, actions: &mut Vec<PanelAction
             }
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                let noun = if hunks.len() == 1 {
-                    "change"
-                } else {
-                    "changes"
-                };
                 ui.label(kit::text(
-                    format!("{} {noun}", hunks.len()),
+                    tr_n!(hunks.len(), "{count} change", "{count} changes"),
                     kit::size::SUBHEADLINE,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -923,7 +954,7 @@ fn proposal_card(ui: &mut Ui, proposal: &Proposal, actions: &mut Vec<PanelAction
             }
             if hunks.len() > 3 {
                 ui.label(kit::text(
-                    format!("and {} more", hunks.len() - 3),
+                    tr!("and {count} more", count = hunks.len() - 3),
                     kit::size::SUBHEADLINE,
                     kit::REGULAR,
                     theme::text_tertiary(),
@@ -932,21 +963,21 @@ fn proposal_card(ui: &mut Ui, proposal: &Proposal, actions: &mut Vec<PanelAction
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
-                if kit::sheet_button(ui, "Review changes", true, true).clicked() {
+                if kit::sheet_button(ui, tr!("Review changes"), true, true).clicked() {
                     actions.push(PanelAction::Review);
                 }
                 let label = if proposal.errors > 0 {
-                    "Apply anyway"
+                    tr!("Apply anyway")
                 } else {
-                    "Apply all"
+                    tr!("Apply all")
                 };
                 if kit::sheet_button(ui, label, false, true)
-                    .on_hover_text("Applies every change as one undo step")
+                    .on_hover_text(tr!("Applies every change as one undo step"))
                     .clicked()
                 {
                     actions.push(PanelAction::Accept);
                 }
-                if kit::sheet_button(ui, "Discard", false, true).clicked() {
+                if kit::sheet_button(ui, tr!("Discard"), false, true).clicked() {
                     actions.push(PanelAction::Discard);
                 }
             });
@@ -954,16 +985,26 @@ fn proposal_card(ui: &mut Ui, proposal: &Proposal, actions: &mut Vec<PanelAction
 }
 
 fn compile_summary(proposal: &Proposal) -> (String, Color32) {
-    let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
     if proposal.errors > 0 {
-        (plural(proposal.errors, "compile error"), kit::RED)
+        (
+            tr_n!(
+                proposal.errors,
+                "{count} compile error",
+                "{count} compile errors"
+            ),
+            kit::RED,
+        )
     } else if proposal.warnings > 0 {
         (
-            format!("Compiles · {}", plural(proposal.warnings, "warning")),
+            tr_n!(
+                proposal.warnings,
+                "Compiles · {count} warning",
+                "Compiles · {count} warnings"
+            ),
             Color32::from_rgb(255, 159, 10),
         )
     } else {
-        ("Compiles".to_owned(), kit::GREEN)
+        (tr!("Compiles").to_owned(), kit::GREEN)
     }
 }
 
@@ -1008,9 +1049,9 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                             .text_color(theme::text_primary())
                             .hint_text(kit::text(
                                 match ai.mode {
-                                    Mode::Ask => "Ask a question about the script",
-                                    Mode::Plan => "What should be planned?",
-                                    Mode::Edit => "Describe a change",
+                                    Mode::Ask => tr!("Ask a question about the script"),
+                                    Mode::Plan => tr!("What should be planned?"),
+                                    Mode::Edit => tr!("Describe a change"),
                                 },
                                 kit::size::BODY,
                                 kit::REGULAR,
@@ -1025,7 +1066,42 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                     }
                 });
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
+            // The send button first, at the right end; the mode switch and the chip take what is
+            // left of the row and are cut there, so a longer translation never draws over it.
+            let row = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), 28.0));
+            let mut right = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(row)
+                    .layout(Layout::right_to_left(Align::Center)),
+            );
+            {
+                let ui = &mut right;
+                    if ai.is_running() {
+                        if kit::sheet_button(ui, tr!("Stop"), false, true).clicked() {
+                            actions.push(PanelAction::Stop);
+                        }
+                    } else if ui
+                        .add_enabled_ui(can_send, |ui| {
+                            // Gray, like Stop and Discard; the dimming says there is nothing to send.
+                            kit::sheet_button(ui, tr!("Send"), false, true)
+                                .on_hover_text("Enter")
+                                .clicked()
+                        })
+                        .inner
+                    {
+                        actions.push(PanelAction::Send);
+                    }
+            }
+            let mut left_rect = row;
+            left_rect.max.x = (right.min_rect().left() - 8.0).max(row.min.x);
+            let mut left = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(left_rect)
+                    .layout(Layout::left_to_right(Align::Center)),
+            );
+            left.set_clip_rect(left_rect.intersect(ui.clip_rect()));
+            {
+                let ui = &mut left;
                 // The mode cannot change while a request runs or a change waits for an answer.
                 let locked = ai.is_running() || ai.proposal.is_some() || ai.plan.is_some();
                 let mut mode = ai.mode;
@@ -1043,9 +1119,9 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                 })
                 .response
                 .on_disabled_hover_text(if ai.plan.is_some() {
-                    "Approve, revise or discard the plan first."
+                    tr!("Approve, revise or discard the plan first.")
                 } else {
-                    "Answer or discard the proposed change first."
+                    tr!("Answer or discard the proposed change first.")
                 });
                 if mode != ai.mode {
                     actions.push(PanelAction::SetMode(mode));
@@ -1057,56 +1133,51 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                     let auto = ai.prefs.auto_apply;
                     let chip = ui
                         .add_enabled_ui(!ai.is_running(), |ui| {
-                            kit::value_chip(ui, if auto { "Auto" } else { "Manual" }, auto)
+                            kit::value_chip(ui, if auto { tr!("Auto") } else { tr!("Manual") }, auto)
                         })
                         .inner
                         .on_hover_text(if auto {
-                            "Auto: a change that compiles is applied when the assistant finishes, as one undo step. Click to review each change yourself."
+                            tr!(
+                                "Auto: a change that compiles is applied when the assistant finishes, as one undo step. Click to review each change yourself."
+                            )
                         } else {
-                            "Manual: you review and apply each change. Click to apply changes that compile automatically."
+                            tr!(
+                                "Manual: you review and apply each change. Click to apply changes that compile automatically."
+                            )
                         })
-                        .on_disabled_hover_text("Wait for the assistant to finish.");
+                        .on_disabled_hover_text(tr!("Wait for the assistant to finish."));
                     if chip.clicked() {
                         actions.push(PanelAction::SetAuto(!auto));
                     }
                 }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ai.is_running() {
-                        if kit::sheet_button(ui, "Stop", false, true).clicked() {
-                            actions.push(PanelAction::Stop);
-                        }
-                    } else if ui
-                        .add_enabled_ui(can_send, |ui| {
-                            // Gray, like Stop and Discard; the dimming says there is nothing to send.
-                            kit::sheet_button(ui, "Send", false, true)
-                                .on_hover_text("Enter")
-                                .clicked()
-                        })
-                        .inner
-                    {
-                        actions.push(PanelAction::Send);
-                    }
-                });
-            });
+            }
+            ui.allocate_rect(row, Sense::hover());
         });
     ui.add_space(4.0);
     ui.add(
         egui::Label::new(kit::text(
             // What leaves this Mac comes first: a narrow panel cuts the end of the line.
             match ai.mode {
-                Mode::Ask => format!(
-                    "Sent to {}  ·  Ask never edits  ·  {}",
-                    setup.provider, setup.context
+                Mode::Ask => tr!(
+                    "Sent to {provider}  ·  Ask never edits  ·  {context}",
+                    provider = setup.provider,
+                    context = setup.context
                 ),
-                Mode::Plan => format!(
-                    "Sent to {}  ·  Plan never edits  ·  {}",
-                    setup.provider, setup.context
+                Mode::Plan => tr!(
+                    "Sent to {provider}  ·  Plan never edits  ·  {context}",
+                    provider = setup.provider,
+                    context = setup.context
                 ),
-                Mode::Edit if ai.prefs.auto_apply => format!(
-                    "Sent to {}  ·  Auto-applies clean changes  ·  {}",
-                    setup.provider, setup.context
+                Mode::Edit if ai.prefs.auto_apply => tr!(
+                    "Sent to {provider}  ·  Auto-applies clean changes  ·  {context}",
+                    provider = setup.provider,
+                    context = setup.context
                 ),
-                Mode::Edit => format!("Sent to {}  ·  {}", setup.provider, setup.context),
+                Mode::Edit => tr!(
+                    "Sent to {provider}  ·  {context}",
+                    provider = setup.provider,
+                    context = setup.context
+                ),
             },
             kit::size::CAPTION + 0.5,
             kit::REGULAR,

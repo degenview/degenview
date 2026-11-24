@@ -5,8 +5,9 @@
 use super::figures::{BLOCK_GAP, Emphasis, Figure, grid};
 use super::plot::{self, Plot};
 use super::tab_chrome::{self as chrome, panel};
+use crate::i18n::{tr, tr_n};
 use crate::pine::strategy::StrategyReport;
-use crate::pine::strategy::monte_carlo::{MAX_TRADES, MonteCarlo, Spread, Unavailable};
+use crate::pine::strategy::monte_carlo::{MAX_TRADES, MIN_TRADES, MonteCarlo, Spread, Unavailable};
 use crate::ui::pine::report::{self, PineReportFormat};
 use crate::ui::{kit, theme};
 use eframe::egui::{Color32, Rect, Sense, Shape, Stroke, Ui, Vec2, pos2, vec2};
@@ -62,7 +63,7 @@ fn resampled(ui: &Ui, report: &StrategyReport) -> Result<Arc<MonteCarlo>, Unavai
 
 /// The card under the equity. With too few or too many closed trades it says why there is none.
 pub(super) fn simulation_card(ui: &mut Ui, report: &StrategyReport) {
-    chrome::caption(ui, "Simulation");
+    chrome::caption(ui, tr!("Simulation"));
     let result = match resampled(ui, report) {
         Ok(result) => result,
         Err(unavailable) => {
@@ -72,10 +73,10 @@ pub(super) fn simulation_card(ui: &mut Ui, report: &StrategyReport) {
     };
     panel(ui, |ui| {
         ui.label(kit::text(
-            format!(
-                "{} runs, each drawing {} of the closed trades at random, repeats allowed. Profits add up as money, so position sizing does not compound.",
-                PineReportFormat::count(result.runs),
-                result.trades
+            tr!(
+                "{runs} runs, each drawing {trades} of the closed trades at random, repeats allowed. Profits add up as money, so position sizing does not compound.",
+                runs = PineReportFormat::count(result.runs),
+                trades = result.trades
             ),
             kit::size::CAPTION,
             kit::REGULAR,
@@ -83,9 +84,15 @@ pub(super) fn simulation_card(ui: &mut Ui, report: &StrategyReport) {
         ));
         ui.add_space(BLOCK_GAP);
         let key = key_figures(&result);
-        grid(ui, &key, key.len(), Emphasis::Key);
+        grid(ui, "simulation-key", &key, key.len(), Emphasis::Key);
         ui.add_space(BLOCK_GAP);
-        grid(ui, &quiet_figures(&result), key.len(), Emphasis::Quiet);
+        grid(
+            ui,
+            "simulation-quiet",
+            &quiet_figures(&result),
+            key.len(),
+            Emphasis::Quiet,
+        );
         ui.add_space(BLOCK_GAP);
         chrome::rule(ui);
         ui.add_space(BLOCK_GAP);
@@ -101,18 +108,28 @@ pub(super) fn simulation_card(ui: &mut Ui, report: &StrategyReport) {
 /// What the card says when there is nothing to draw: why, and what the simulation does.
 fn unavailable_note(ui: &mut Ui, unavailable: Unavailable) {
     let what_it_does = match unavailable {
-        Unavailable::TooFew { .. } => {
-            "Draws the trades at random, repeats allowed, to show how far the result could move if the wins and losses had come out differently.".to_owned()
-        }
-        Unavailable::TooMany { have } => format!(
-            "The strategy has closed {}; the simulation takes up to {} so the tab stays quick.",
-            PineReportFormat::count(have),
-            PineReportFormat::count(MAX_TRADES)
+        Unavailable::TooFew { .. } => tr!(
+            "Draws the trades at random, repeats allowed, to show how far the result could move if the wins and losses had come out differently."
+        )
+        .to_owned(),
+        Unavailable::TooMany { have } => tr!(
+            "The strategy has closed {have}; the simulation takes up to {max} so the tab stays quick.",
+            have = PineReportFormat::count(have),
+            max = PineReportFormat::count(MAX_TRADES)
         ),
+    };
+    // Said here, not by the error's own `Display`: that is English.
+    let why = match unavailable {
+        Unavailable::TooFew { have } => tr!(
+            "Needs {min} closed trades, {have} so far",
+            min = MIN_TRADES,
+            have = have
+        ),
+        Unavailable::TooMany { .. } => tr!("Too many closed trades to reshuffle here").to_owned(),
     };
     panel(ui, |ui| {
         ui.label(kit::text(
-            unavailable.to_string(),
+            why,
             kit::size::CALLOUT,
             kit::MEDIUM,
             theme::text_secondary(),
@@ -139,11 +156,11 @@ fn key_figures(result: &MonteCarlo) -> [Figure; 4] {
     };
     let figure = |label, (value, color)| Figure::new(label, value, color);
     [
-        figure("Median result", ended(result.final_equity.median)),
-        figure("5th percentile", ended(result.final_equity.low)),
-        figure("95th percentile", ended(result.final_equity.high)),
+        figure(tr!("Median result"), ended(result.final_equity.median)),
+        figure(tr!("5th percentile"), ended(result.final_equity.low)),
+        figure(tr!("95th percentile"), ended(result.final_equity.high)),
         Figure::new(
-            "Chance of a loss",
+            tr!("Chance of a loss"),
             PineReportFormat::percent(result.loss_probability, false),
             theme::text_primary(),
         ),
@@ -155,12 +172,12 @@ fn quiet_figures(result: &MonteCarlo) -> [Figure; 2] {
     let drawdown = |fraction| PineReportFormat::percent(fraction, false);
     [
         Figure::new(
-            "Median drawdown",
+            tr!("Median drawdown"),
             drawdown(result.max_drawdown.median),
             theme::text_secondary(),
         ),
         Figure::new(
-            "Drawdown, worst 5%",
+            tr!("Drawdown, worst 5%"),
             drawdown(result.max_drawdown.high),
             theme::text_secondary(),
         ),
@@ -213,9 +230,13 @@ fn fan_chart(ui: &mut Ui, result: &MonteCarlo) {
             step,
             &[(spread.median, tone)],
             &[
-                format!("After {trades} trade{}", if trades == 1 { "" } else { "s" }),
-                format!("Median {}", axis(spread.median)),
-                format!("90% within {} to {}", axis(spread.low), axis(spread.high)),
+                tr_n!(trades, "After {count} trade", "After {count} trades"),
+                tr!("Median {value}", value = axis(spread.median)),
+                tr!(
+                    "90% within {low} to {high}",
+                    low = axis(spread.low),
+                    high = axis(spread.high)
+                ),
             ],
         );
     }
@@ -227,9 +248,9 @@ fn legend(ui: &mut Ui, tone: Color32) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(14.0, 4.0);
         let entries: [(&str, Key); 3] = [
-            ("Middle 90% of runs", Key::Band),
-            ("Median", Key::Line),
-            ("Initial capital", Key::Dashes),
+            (tr!("Middle 90% of runs"), Key::Band),
+            (tr!("Median"), Key::Line),
+            (tr!("Initial capital"), Key::Dashes),
         ];
         for (text, key) in entries {
             let words = kit::galley(

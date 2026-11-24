@@ -40,6 +40,16 @@ msgstr ""
 msgid "% of value"
 msgstr ""
 
+#: src/pine_studio/editor/signature_view.rs
+msgid "(+{count} overload)"
+msgid_plural "(+{count} overloads)"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/ai/mod.rs
+msgid "(No reply.)"
+msgstr ""
+
 #: src/ui/workspace/toolbar.rs
 msgid "(unsaved)"
 msgstr ""
@@ -115,12 +125,24 @@ msgstr ""
 msgid "30D Range"
 msgstr ""
 
+#: src/pine_studio/drawer/simulation.rs
+msgid "5th percentile"
+msgstr ""
+
 #: src/model/portfolio/statistics.rs
 msgid "7 days"
 msgstr ""
 
+#: src/pine_studio/drawer/simulation.rs
+msgid "90% within {low} to {high}"
+msgstr ""
+
 #: src/ui/chart/session_stats_view/result.rs
 msgid "95% interval"
+msgstr ""
+
+#: src/pine_studio/drawer/simulation.rs
+msgid "95th percentile"
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -244,6 +266,15 @@ msgstr ""
 msgid "A ledger of every trade"
 msgstr ""
 
+#: src/pine_studio/debug/host.rs
+#: src/pine_studio/profiler/host.rs
+msgid "A library exports functions; there is nothing to run."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "A library function: it is stepped over, not into."
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "A line between the gutter and the code. Fully transparent draws none."
 msgstr ""
@@ -257,6 +288,11 @@ msgstr ""
 msgid ""
 "A moving average that weights recent closes more. Choose its period from the "
 "chip on the chart (9, 20, 50, 100 or 200)."
+msgstr ""
+
+#: src/pine_studio/editor/symbols.rs
+msgid ""
+"A name is letters, digits and underscores, and does not start with a digit."
 msgstr ""
 
 #: src/ui/portfolio/sheets.rs
@@ -393,8 +429,18 @@ msgstr ""
 msgid "About this key"
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
+msgid ""
+"About {statement} per statement and {call} per function call, mostly inside "
+"the line measured; estimated, not subtracted"
+msgstr ""
+
 #: src/model/alert/draft/mod.rs
 msgid "Above"
+msgstr ""
+
+#: src/pine_studio/library/prefs.rs
+msgid "Above Code"
 msgstr ""
 
 #: src/model/paper/format.rs
@@ -459,6 +505,7 @@ msgstr ""
 msgid "Activity log cleared"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
 #: src/ui/chart/indicator_picker/mod.rs
 #: src/ui/drawing/content/sheet.rs
 #: src/ui/settings/mcp/permissions_sheet.rs
@@ -471,6 +518,23 @@ msgstr ""
 
 #: src/ui/portfolio/tab/mod.rs
 msgid "Add Asset"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/breakpoints.rs
+msgid "Add Breakpoint"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/breakpoints.rs
+msgid "Add Conditional Breakpoint…"
+msgstr ""
+
+#: src/pine_studio/library/empty_library.rs
+#: src/pine_studio/menu_bar/file.rs
+msgid "Add Example Scripts"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/breakpoints.rs
+msgid "Add Logpoint…"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/header.rs
@@ -554,6 +618,10 @@ msgstr ""
 msgid "Add an API key to trade"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Add an input for the length"
+msgstr ""
+
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Add another copy"
 msgstr ""
@@ -585,6 +653,10 @@ msgstr ""
 
 #: src/ui/chart/settings/indicators.rs
 msgid "Add context to the chart without changing its underlying data."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Add expression, e.g. close - open"
 msgstr ""
 
 #: src/ui/webhook/editor.rs
@@ -655,8 +727,20 @@ msgstr ""
 msgid "Add the secret value that {token} stands for."
 msgstr ""
 
+#: src/pine_studio/commands.rs
+msgid "Add this script to the focused chart before creating an alert."
+msgstr ""
+
+#: src/pine_studio/library/script_actions.rs
+msgid "Add to Chart"
+msgstr ""
+
 #: src/ui/portfolio/cards/mod.rs
 msgid "Add to Favorites"
+msgstr ""
+
+#: src/pine_studio/debug/panel/tree.rs
+msgid "Add to Watches"
 msgstr ""
 
 #: src/ui/chart/card/header.rs
@@ -703,8 +787,16 @@ msgstr ""
 msgid "Add your Alpaca API key in Settings to see stock quotes"
 msgstr ""
 
+#: src/pine_studio/preview/market_picker.rs
+msgid "Add your Alpaca API keys in Settings."
+msgstr ""
+
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Add your free Alpaca API keys in Settings to search and chart US stocks."
+msgstr ""
+
+#: src/pine_studio/ai/host.rs
+msgid "Add your {provider} API key to start"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
@@ -729,6 +821,14 @@ msgstr ""
 msgid "Add, keep open"
 msgstr ""
 
+#: src/pine_studio/editor/diff_view.rs
+msgid "Added line {line}"
+msgstr ""
+
+#: src/pine_studio/editor/diff_view.rs
+msgid "Added lines {first}–{last}"
+msgstr ""
+
 #: src/model/watchlist/text.rs
 msgid "Added {count} symbol"
 msgid_plural "Added {count} symbols"
@@ -746,6 +846,22 @@ msgstr ""
 #: src/ui/portfolio/transactions.rs
 msgid "Adjustment"
 msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "After line {line}: {count} line deleted since last save"
+msgid_plural "After line {line}: {count} lines deleted since last save"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/debug/mod.rs
+msgid "After the nth hit"
+msgstr ""
+
+#: src/pine_studio/drawer/simulation.rs
+msgid "After {count} trade"
+msgid_plural "After {count} trades"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/ui/settings/window.rs
 msgid "Agent not embedded"
@@ -780,6 +896,7 @@ msgid "Alert {direction} {price} · paused"
 msgstr ""
 
 #: src/app/alert/window.rs
+#: src/pine_studio/drawer/mod.rs
 #: src/ui/alert/center.rs
 #: src/ui/alert/script_list.rs
 msgid "Alerts"
@@ -917,6 +1034,10 @@ msgstr ""
 msgid "Allowed"
 msgstr ""
 
+#: src/pine_studio/preview/chart.rs
+msgid "Alpaca isn't set up"
+msgstr ""
+
 #: src/service/watchlist_quotes/provider.rs
 msgid "Alpaca refused your API key. Check it in Settings"
 msgstr ""
@@ -1000,6 +1121,10 @@ msgstr ""
 msgid "An identical alert already exists"
 msgstr ""
 
+#: src/pine_studio/drawer/intro.rs
+msgid "An indicator lists the alerts it raises."
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "An outline around matching brackets. Fully transparent draws none."
 msgstr ""
@@ -1028,6 +1153,10 @@ msgstr ""
 msgid "Another portfolio already has this name"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Answer or discard the proposed change first."
+msgstr ""
+
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Any"
 msgstr ""
@@ -1050,6 +1179,20 @@ msgstr ""
 msgid "Appearance"
 msgstr ""
 
+#: src/pine_studio/ai/host.rs
+msgid "Applied all changes. Undo brings the old script back."
+msgstr ""
+
+#: src/pine_studio/ai/host.rs
+msgid ""
+"Applied automatically · {count} change (+{added} −{removed}). Undo brings "
+"the old script back."
+msgid_plural ""
+"Applied automatically · {count} changes (+{added} −{removed}). Undo brings "
+"the old script back."
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/alert/pine_editor.rs
 msgid "Applied on {chart} · {timeframe}"
 msgstr ""
@@ -1064,6 +1207,25 @@ msgstr[1] ""
 msgid "Applied the template “{name}”."
 msgstr ""
 
+#: src/pine_studio/ai/host.rs
+msgid "Applied {selected} of {count} change. Undo brings the old script back."
+msgid_plural ""
+"Applied {selected} of {count} changes. Undo brings the old script back."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/preview/state.rs
+msgid "Applied {title} · {count} bar"
+msgid_plural "Applied {title} · {count} bars"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/preview/state.rs
+msgid "Applied {title} · {count} bar · live"
+msgid_plural "Applied {title} · {count} bars · live"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/drawing/properties/templates.rs
 msgid "Applied “{name}”"
 msgstr ""
@@ -1074,6 +1236,14 @@ msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Applied “{name}”."
+msgstr ""
+
+#: src/pine_studio/ai/host.rs
+msgid "Applied. Undo brings the old script back."
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Applies every change as one undo step"
 msgstr ""
 
 #: src/ui/paper/account_sheet.rs
@@ -1088,6 +1258,26 @@ msgstr ""
 
 #: src/ui/alert/script_list.rs
 msgid "Apply a script with alert() calls, then create an alert from it."
+msgstr ""
+
+#: src/pine_studio/drawer/intro.rs
+msgid "Apply a strategy to the preview chart."
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Apply all"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "Apply all {total}"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "Apply all {total} anyway"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Apply anyway"
 msgstr ""
 
 #: src/model/chart/template/mod.rs
@@ -1116,6 +1306,22 @@ msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Apply to this chart"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "Apply {selected} of {total}"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "Apply {selected} of {total} anyway"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Approve and implement"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Approve, revise or discard the plan first."
 msgstr ""
 
 #: src/model/mcp/activity.rs
@@ -1177,6 +1383,26 @@ msgstr ""
 msgid "As the script declares"
 msgstr ""
 
+#: src/pine_studio/ai/prompt.rs
+msgid "Ask"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Ask a question about the script"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Ask about {script}. Nothing is edited in Ask mode."
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Ask again"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Ask an AI assistant to change this script"
+msgstr ""
+
 #: src/ui/settings/brokers.rs
 msgid "Ask before cancelling a single order"
 msgstr ""
@@ -1222,6 +1448,11 @@ msgstr ""
 msgid "Assets you hold appear here."
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+#: src/pine_studio/menu_bar/view.rs
+msgid "Assistant"
+msgstr ""
+
 #: src/ui/portfolio/statistics/win_rate.rs
 msgid "At a loss"
 msgstr ""
@@ -1238,6 +1469,12 @@ msgid_plural "At most {count} headers"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "At the start: {count} line deleted since last save"
+msgid_plural "At the start: {count} lines deleted since last save"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/model/drawings/style.rs
 msgid "Atom"
 msgstr ""
@@ -1251,6 +1488,7 @@ msgid "Authorized"
 msgstr ""
 
 #: src/model/chart/replay.rs
+#: src/pine_studio/ai/panel.rs
 #: src/ui/chart/settings/appearance.rs
 msgid "Auto"
 msgstr ""
@@ -1261,6 +1499,12 @@ msgstr ""
 
 #: src/ui/portfolio/cmc_import.rs
 msgid "Auto-matched"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid ""
+"Auto: a change that compiles is applied when the assistant finishes, as one "
+"undo step. Click to review each change yourself."
 msgstr ""
 
 #: src/service/update/install/app_bundle.rs
@@ -1290,6 +1534,10 @@ msgstr ""
 msgid "Available funds as a share of equity"
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
+msgid "Average"
+msgstr ""
+
 #: src/ui/portfolio/asset_detail.rs
 msgid "Average Cost"
 msgstr ""
@@ -1306,6 +1554,7 @@ msgstr ""
 msgid "Avg Cost"
 msgstr ""
 
+#: src/pine_studio/drawer/figures.rs
 #: src/ui/pine/report.rs
 msgid "Avg trade"
 msgstr ""
@@ -1408,18 +1657,36 @@ msgstr ""
 msgid "Band {number}"
 msgstr ""
 
+#: src/pine_studio/debug/panel/mod.rs
+#: src/pine_studio/drawer/figures.rs
+msgid "Bar {bar}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Bar {index} is past the last bar"
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Bar {index} is past the last bar ({last})"
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "Bar {time}"
 msgstr ""
 
 #: src/model/chart/kind.rs
 #: src/model/pattern/bars.rs
+#: src/pine_studio/profiler/ui.rs
 #: src/ui/chart/card/crosshair.rs
 #: src/ui/chart/settings/style.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/drawing/properties/style.rs
 #: src/ui/replay/bar.rs
 msgid "Bars"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Bars and shares appear beside the code."
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
@@ -1497,6 +1764,10 @@ msgstr ""
 msgid ""
 "Below 0.001 the small number counts the zeros after the point: 0.0₅278 is "
 "0.00000278, whatever the decimal places."
+msgstr ""
+
+#: src/pine_studio/library/prefs.rs
+msgid "Below Code"
 msgstr ""
 
 #: src/ui/portfolio/overview/summary.rs
@@ -1610,6 +1881,10 @@ msgstr ""
 msgid "Brackets, parentheses, commas and dots."
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
+msgid "Branches taken"
+msgstr ""
+
 #: src/ui/drawing/properties/text.rs
 msgid "Break long lines to fit a box of the width below."
 msgstr ""
@@ -1620,6 +1895,18 @@ msgstr ""
 
 #: src/ui/portfolio/statistics/hero.rs
 msgid "Breakdown"
+msgstr ""
+
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Breakpoint"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/breakpoints.rs
+msgid "Breakpoint gutter: click a line to set a breakpoint"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Breakpoints"
 msgstr ""
 
 #: src/model/session_stats/mod.rs
@@ -1676,6 +1963,10 @@ msgstr ""
 
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Browse"
+msgstr ""
+
+#: src/pine_studio/library/picker.rs
+msgid "Browse community scripts on TradingView"
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -1839,12 +2130,28 @@ msgstr ""
 msgid "COMPARED SYMBOLS"
 msgstr ""
 
+#: src/pine_studio/editor/diff_view.rs
+msgid "CURRENT"
+msgstr ""
+
 #: src/ui/portfolio/tab/mod.rs
 msgid "Cached market value"
 msgstr ""
 
 #: src/ui/settings/storage.rs
 msgid "Calculating…"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Call Stack"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Called from"
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Calling {tool}"
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -1876,6 +2183,8 @@ msgstr ""
 msgid "Can't trade this market here"
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+#: src/pine_studio/sheets.rs
 #: src/ui/alert/editor.rs
 #: src/ui/alert/pine_editor.rs
 #: src/ui/broker/panel.rs
@@ -1972,6 +2281,10 @@ msgstr ""
 msgid "Cancel paper sell stop order at {price}"
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "Cancel profiling; what was measured so far is kept"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Cancel requested"
 msgstr ""
@@ -2033,6 +2346,10 @@ msgstr ""
 msgid "Cancelling"
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "Cancelling…"
+msgstr ""
+
 #: src/model/chart/kind.rs
 #: src/model/pattern/bars.rs
 #: src/ui/chart/card/crosshair.rs
@@ -2070,7 +2387,12 @@ msgstr ""
 msgid "Certificate"
 msgstr ""
 
+#: src/pine_studio/drawer/simulation.rs
+msgid "Chance of a loss"
+msgstr ""
+
 #: src/model/watchlist/mod.rs
+#: src/pine_studio/menu_bar/edit.rs
 msgid "Change"
 msgstr ""
 
@@ -2084,6 +2406,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Change in ticks"
+msgstr ""
+
+#: src/pine_studio/drawer/intro.rs
+msgid "Change it and the preview chart updates."
 msgstr ""
 
 #: src/ui/broker/panel.rs
@@ -2124,6 +2450,10 @@ msgstr ""
 msgid "Change what was recorded for this transaction."
 msgstr ""
 
+#: src/pine_studio/ai/review_view.rs
+msgid "Change {number} of {total}  ·  {title}"
+msgstr ""
+
 #: src/ui/settings/sync.rs
 msgid "Changed on two Macs"
 msgstr ""
@@ -2150,6 +2480,10 @@ msgid ""
 "Changed on two Macs at once. The other version is kept as a script with "
 "“conflict from” in its name. Delete the one you don't need in the Pine "
 "Studio."
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "Changes"
 msgstr ""
 
 #: src/model/watchlist/mod.rs
@@ -2343,6 +2677,14 @@ msgstr ""
 msgid "Choose a broker in the trading panel first."
 msgstr ""
 
+#: src/pine_studio/ai/host.rs
+msgid "Choose a model to start"
+msgstr ""
+
+#: src/pine_studio/sheets.rs
+msgid "Choose a new name for “{name}”."
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Choose a new starting point"
 msgstr ""
@@ -2390,6 +2732,14 @@ msgstr ""
 
 #: src/ui/portfolio/tab/mod.rs
 msgid "Choose the asset this transaction is for."
+msgstr ""
+
+#: src/pine_studio/bar.rs
+msgid "Choose the market to test on"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Choose the model"
 msgstr ""
 
 #: src/workspace/watchlist.rs
@@ -2461,6 +2811,7 @@ msgstr ""
 msgid "Clear conditions"
 msgstr ""
 
+#: src/pine_studio/debug/panel/widgets.rs
 #: src/ui/chart/object_tree/mod.rs
 #: src/ui/watchlist/sidebar/header.rs
 msgid "Clear filter"
@@ -2479,6 +2830,7 @@ msgstr ""
 msgid "Clear saved conversations"
 msgstr ""
 
+#: src/pine_studio/preview/market_picker.rs
 #: src/ui/kit/field.rs
 #: src/ui/kit/search_box.rs
 #: src/ui/pine/logs_view/mod.rs
@@ -2487,6 +2839,11 @@ msgstr ""
 
 #: src/ui/settings/storage.rs
 msgid "Clear the cache?"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Clear the console"
 msgstr ""
 
 #: src/ui/mcp/activity.rs
@@ -2527,6 +2884,28 @@ msgstr ""
 msgid "Click a candle on a chart to start the replay there (Esc cancels)"
 msgstr ""
 
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Click a candle on the preview chart to stop at its bar"
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Click a candle on the preview chart, or press Esc to cancel"
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Click a candle…"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid ""
+"Click a line number to stop there, or press the breakpoint key on the caret's "
+"line."
+msgstr ""
+
+#: src/pine_studio/drawer/intro.rs
+msgid "Click a row to go to its line."
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "Click the bell on a chart to alert on a price."
 msgstr ""
@@ -2556,8 +2935,14 @@ msgid ""
 " log still records every call."
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
+msgid "Clock resolution"
+msgstr ""
+
 #: src/model/chart/kind.rs
 #: src/model/chart/table.rs
+#: src/pine_studio/editor/diff_view.rs
+#: src/pine_studio/editor/find.rs
 #: src/ui/chart/indicator_picker/mod.rs
 #: src/ui/chart/symbol_picker/mod.rs
 #: src/ui/kit/dialog/mod.rs
@@ -2565,6 +2950,10 @@ msgstr ""
 #: src/ui/snapshot_studio/window/mod.rs
 #: src/ui/window/chrome.rs
 msgid "Close"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "Close (Esc)"
 msgstr ""
 
 #: src/ui/paper/header.rs
@@ -2633,6 +3022,10 @@ msgstr ""
 msgid "Close table view"
 msgstr ""
 
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Close the debugger panel"
+msgstr ""
+
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Close the order sheet"
 msgstr ""
@@ -2663,6 +3056,7 @@ msgstr ""
 msgid "Closed P&L: {amount}"
 msgstr ""
 
+#: src/pine_studio/drawer/figures.rs
 #: src/ui/pine/report.rs
 msgid "Closed trades"
 msgstr ""
@@ -2687,6 +3081,10 @@ msgstr ""
 
 #: src/model/drawings/style.rs
 msgid "Clover"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Code block: lines {first}–{last}"
 msgstr ""
 
 #: src/trading/paper/backend.rs
@@ -2785,6 +3183,11 @@ msgstr ""
 msgid "Committed to open orders"
 msgstr ""
 
+#: src/pine_studio/library/empty_library.rs
+#: src/pine_studio/library/picker.rs
+msgid "Community scripts"
+msgstr ""
+
 #: src/model/editor_theme/typography.rs
 #: src/ui/drawing/layer/menu.rs
 msgid "Compact"
@@ -2799,6 +3202,10 @@ msgstr ""
 #: src/ui/chart/symbol_picker/list.rs
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Compare"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Compare Changes"
 msgstr ""
 
 #: src/ui/chart/settings/compare.rs
@@ -2826,14 +3233,62 @@ msgstr ""
 msgid "Compared symbols"
 msgstr ""
 
+#: src/pine_studio/preview/state.rs
+msgid "Compile failed"
+msgstr ""
+
+#: src/pine_studio/preview/state.rs
+msgid "Compile failed — last valid output remains active"
+msgstr ""
+
+#: src/pine_studio/editor/status.rs
+msgid "Compile status of the code in the editor"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Compiled in"
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Compiled · {summary}"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+#: src/pine_studio/ai/review_view.rs
+msgid "Compiles"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+#: src/pine_studio/ai/review_view.rs
+msgid "Compiles · {count} warning"
+msgid_plural "Compiles · {count} warnings"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Compiling the draft"
+msgstr ""
+
 #: src/model/indicators/catalog.rs
 msgid ""
 "Computes a Supertrend with an ATR length of 10 and a multiplier of 3 and marks"
 " each bar where its direction flips, up or down."
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Condition"
+msgstr ""
+
 #: src/ui/workspace/snapshot_menu.rs
 msgid "Configure Snapshots…"
+msgstr ""
+
+#: src/pine_studio/menu_bar/themes.rs
+msgid "Configure Themes…"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Confirmed"
 msgstr ""
 
 #: src/ui/settings/brokers.rs
@@ -2911,10 +3366,15 @@ msgstr[1] ""
 msgid "Connects directly, whatever the system or the environment says."
 msgstr ""
 
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Console"
+msgstr ""
+
 #: src/model/drawings/tool.rs
 msgid "Content"
 msgstr ""
 
+#: src/pine_studio/debug/panel/toolbar.rs
 #: src/ui/portfolio/tab/mod.rs
 msgid "Continue"
 msgstr ""
@@ -2955,6 +3415,8 @@ msgstr ""
 msgid "Coordinates"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+#: src/pine_studio/drawer/mod.rs
 #: src/ui/chart/session_stats_view/mod.rs
 #: src/ui/kit/error_notice.rs
 #: src/ui/kit/markdown_view.rs
@@ -2986,6 +3448,8 @@ msgid "Copied {text}"
 msgstr ""
 
 #: src/native_bridge.rs
+#: src/pine_studio/editor/navigation.rs
+#: src/pine_studio/menu_bar/edit.rs
 #: src/ui/drawing/layer/menu.rs
 #: src/ui/settings/about.rs
 #: src/ui/settings/mcp/server.rs
@@ -3001,8 +3465,32 @@ msgstr ""
 msgid "Copy Credential"
 msgstr ""
 
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Copy Current"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Copy Current Lines"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Copy Expression"
+msgstr ""
+
 #: src/ui/settings/mcp/security.rs
 msgid "Copy Fingerprint"
+msgstr ""
+
+#: src/pine_studio/debug/panel/tree.rs
+msgid "Copy Name"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Copy Original"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Copy Original Lines"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/menus.rs
@@ -3011,6 +3499,15 @@ msgstr ""
 
 #: src/ui/watchlist/sidebar/menus.rs
 msgid "Copy Symbol"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+#: src/pine_studio/debug/panel/tree.rs
+msgid "Copy Value"
+msgstr ""
+
+#: src/pine_studio/drawer/mod.rs
+msgid "Copy all problems"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/header.rs
@@ -3051,6 +3548,7 @@ msgstr ""
 msgid "Copy link"
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
 #: src/ui/pine/logs_view/mod.rs
 msgid "Copy message"
 msgstr ""
@@ -3061,6 +3559,14 @@ msgstr ""
 
 #: src/model/chart/context/mod.rs
 msgid "Copy price {price}"
+msgstr ""
+
+#: src/pine_studio/drawer/mod.rs
+msgid "Copy problem"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Copy reply"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -3256,6 +3762,10 @@ msgstr ""
 msgid "Could not set up this Mac for iCloud Sync: {error}"
 msgstr ""
 
+#: src/pine_studio/ai/mod.rs
+msgid "Could not start the request."
+msgstr ""
+
 #: src/host/sync/mod.rs
 msgid "Could not switch to that Apple Account: {error}"
 msgstr ""
@@ -3350,6 +3860,7 @@ msgstr ""
 msgid "Counterclockwise"
 msgstr ""
 
+#: src/pine_studio/sheets.rs
 #: src/ui/watchlist/sidebar/mod.rs
 msgid "Create"
 msgstr ""
@@ -3359,6 +3870,7 @@ msgstr ""
 msgid "Create Account"
 msgstr ""
 
+#: src/pine_studio/library/script_actions.rs
 #: src/ui/alert/editor.rs
 #: src/ui/alert/pine_editor.rs
 msgid "Create Alert"
@@ -3397,8 +3909,16 @@ msgstr ""
 msgid "Create Theme"
 msgstr ""
 
+#: src/pine_studio/library/empty_library.rs
+msgid "Create Your First Script"
+msgstr ""
+
 #: src/ui/settings/api_keys.rs
 msgid "Create a free Alpaca account."
+msgstr ""
+
+#: src/pine_studio/library/picker.rs
+msgid "Create a new script"
 msgstr ""
 
 #: src/ui/paper/panel/mod.rs
@@ -3417,12 +3937,24 @@ msgstr ""
 msgid "Create a portfolio to start tracking investments."
 msgstr ""
 
+#: src/pine_studio/sheets.rs
+msgid "Create a script file in your library."
+msgstr ""
+
+#: src/pine_studio/library/empty_library.rs
+msgid "Create a script, or start from the examples."
+msgstr ""
+
 #: src/ui/watchlist/sidebar/mod.rs
 msgid "Create a watchlist from the menu above."
 msgstr ""
 
 #: src/ui/paper/header.rs
 msgid "Create one to practise trading with simulated money."
+msgstr ""
+
+#: src/pine_studio/library/empty_library.rs
+msgid "Create one with the button below, or start from the examples."
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -3487,6 +4019,7 @@ msgstr ""
 msgid "Crown"
 msgstr ""
 
+#: src/pine_studio/preview/market_picker.rs
 #: src/ui/chart/symbol_picker/search.rs
 #: src/ui/portfolio/asset_picker.rs
 msgid "Crypto"
@@ -3570,6 +4103,8 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: src/native_bridge.rs
+#: src/pine_studio/editor/navigation.rs
+#: src/pine_studio/menu_bar/edit.rs
 msgid "Cut"
 msgstr ""
 
@@ -3642,6 +4177,10 @@ msgstr ""
 msgid "Date & time"
 msgstr ""
 
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Date (UTC)"
+msgstr ""
+
 #: src/model/drawings/tool.rs
 msgid "Date and price range"
 msgstr ""
@@ -3675,12 +4214,20 @@ msgstr ""
 msgid "Days it happened"
 msgstr ""
 
+#: src/pine_studio/menu_bar/view.rs
+msgid "Debugger"
+msgstr ""
+
 #: src/ui/chart/settings/appearance.rs
 msgid "Decimal places"
 msgstr ""
 
 #: src/ui/drawing/properties/levels.rs
 msgid "Decimal places of a ratio."
+msgstr ""
+
+#: src/pine_studio/drawer/intro.rs
+msgid "Declare one in the script with input.int(), input.bool() and friends."
 msgstr ""
 
 #: src/model/mcp/activity.rs
@@ -3811,6 +4358,10 @@ msgstr ""
 msgid "Delete"
 msgstr ""
 
+#: src/pine_studio/sheets.rs
+msgid "Delete \"{name}\"?"
+msgstr ""
+
 #: src/ui/paper/header.rs
 msgid "Delete Account"
 msgstr ""
@@ -3825,6 +4376,10 @@ msgstr ""
 
 #: src/ui/portfolio/sheets.rs
 msgid "Delete Portfolio"
+msgstr ""
+
+#: src/pine_studio/sheets.rs
+msgid "Delete Script"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/menus.rs
@@ -3911,6 +4466,14 @@ msgstr ""
 msgid "Delete “{name}”?"
 msgstr ""
 
+#: src/pine_studio/editor/diff_view.rs
+msgid "Deleted after line {line}"
+msgstr ""
+
+#: src/pine_studio/editor/diff_view.rs
+msgid "Deleted at the start"
+msgstr ""
+
 #: src/ui/drawing/properties/templates.rs
 msgid "Deleted “{name}”"
 msgstr ""
@@ -3926,6 +4489,7 @@ msgid ""
 "again as needed."
 msgstr ""
 
+#: src/pine_studio/library/script_actions.rs
 #: src/ui/alert/center.rs
 #: src/ui/settings/pine_studio/mod.rs
 #: src/ui/settings/sync.rs
@@ -3971,10 +4535,18 @@ msgstr ""
 msgid "Descending"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Describe a change"
+msgstr ""
+
 #: src/ui/settings/window.rs
 msgid ""
 "Describe a change and an AI model edits your Pine script, using your own API "
 "key."
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Describe a change to {script}."
 msgstr ""
 
 #: src/ui/webhook/editor.rs
@@ -4014,12 +4586,33 @@ msgstr ""
 msgid "Disable"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+#: src/pine_studio/editor/gutter/breakpoints.rs
+msgid "Disable Breakpoint"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Disable all breakpoints"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Disable breakpoint"
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "Disable logging"
 msgstr ""
 
 #: src/ui/webhook/settings.rs
 msgid "Disabled: alerts skip this webhook"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Discard"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "Discard all"
 msgstr ""
 
 #: src/ui/settings/brokers.rs
@@ -4056,6 +4649,7 @@ msgstr ""
 msgid "Disjoint channel"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
 #: src/ui/alert/banner.rs
 #: src/ui/kit/error_notice.rs
 #: src/ui/paper/panel/mod.rs
@@ -4084,6 +4678,10 @@ msgstr ""
 msgid "Don't Sync"
 msgstr ""
 
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Don't stop at this bar"
+msgstr ""
+
 #: src/model/mcp/activity.rs
 #: src/ui/chart/indicator_picker/mod.rs
 #: src/ui/chart/settings/mod.rs
@@ -4097,6 +4695,7 @@ msgstr ""
 msgid "Done"
 msgstr ""
 
+#: src/pine_studio/library/unsaved.rs
 #: src/ui/workspace/layout_prompts.rs
 msgid "Don’t Save"
 msgstr ""
@@ -4232,6 +4831,14 @@ msgid ""
 "Draw with the tools on the left or add an indicator, and it is listed here."
 msgstr ""
 
+#: src/pine_studio/drawer/simulation.rs
+msgid "Drawdown, worst 5%"
+msgstr ""
+
+#: src/pine_studio/menu_bar/view.rs
+msgid "Drawer Tab"
+msgstr ""
+
 #: src/model/chart/object_tree.rs
 #: src/ui/chart/object_tree/mod.rs
 msgid "Drawing"
@@ -4275,6 +4882,12 @@ msgstr ""
 msgid "Draws the market's own open, high, low and close."
 msgstr ""
 
+#: src/pine_studio/drawer/simulation.rs
+msgid ""
+"Draws the trades at random, repeats allowed, to show how far the result could "
+"move if the wins and losses had come out differently."
+msgstr ""
+
 #: src/ui/settings/snapshots.rs
 msgid ""
 "Draws your paper-trading orders and positions on the picture, with their "
@@ -4298,6 +4911,7 @@ msgstr ""
 msgid "Drop to add the picture"
 msgstr ""
 
+#: src/pine_studio/library/script_actions.rs
 #: src/ui/alert/center.rs
 #: src/ui/drawing/layer/menu.rs
 #: src/ui/portfolio/asset_detail.rs
@@ -4308,6 +4922,14 @@ msgstr ""
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Duplicate & Customize"
+msgstr ""
+
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Duplicate Line Down"
+msgstr ""
+
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Duplicate Line Up"
 msgstr ""
 
 #: src/ui/portfolio/transaction_editor.rs
@@ -4366,24 +4988,45 @@ msgstr ""
 msgid "Each row's height, in steps of the chart's last printed price place."
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
+msgid ""
+"Each run is shorter than the clock can tell apart ({resolution}), so its share"
+" is an estimate."
+msgstr ""
+
 #: src/ui/settings/ai.rs
 msgid ""
 "Each script's conversation with the assistant is kept on this Mac so it is "
 "there after a restart. It is never synced."
 msgstr ""
 
+#: src/pine_studio/drawer/trades.rs
+msgid "Each trade is listed here once the strategy closes it."
+msgstr ""
+
 #: src/ui/mcp/activity.rs
 msgid "Earlier activity was deleted"
 msgstr ""
 
+#: src/pine_studio/ai/prompt.rs
+#: src/pine_studio/menu_bar/mod.rs
 #: src/ui/alert/center.rs
 #: src/ui/portfolio/asset_detail.rs
 #: src/ui/portfolio/transactions.rs
 msgid "Edit"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+#: src/pine_studio/editor/gutter/breakpoints.rs
+msgid "Edit Breakpoint…"
+msgstr ""
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Edit Current Theme"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Edit Expression"
 msgstr ""
 
 #: src/ui/alert/editor.rs
@@ -4408,6 +5051,22 @@ msgstr ""
 
 #: src/model/chart/context/mod.rs
 msgid "Edit alert…"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Edit and send again"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Edit breakpoint"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Edit expression"
+msgstr ""
+
+#: src/pine_studio/library/empty_library.rs
+msgid "Edit it; problems are flagged as you type."
 msgstr ""
 
 #: src/ui/broker/panel.rs
@@ -4440,6 +5099,18 @@ msgstr ""
 
 #: src/ui/chart/indicator_strip.rs
 msgid "Edit {title}"
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Edited line {line} · {summary}"
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Edited lines {first}–{last} · {summary}"
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Editing the script"
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -4510,8 +5181,21 @@ msgstr ""
 msgid "Enable"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+#: src/pine_studio/editor/gutter/breakpoints.rs
+msgid "Enable Breakpoint"
+msgstr ""
+
 #: src/ui/settings/mcp/server.rs
 msgid "Enable MCP Server"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Enable all breakpoints"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Enable breakpoint"
 msgstr ""
 
 #: src/ui/pine/logs_view/mod.rs
@@ -4571,6 +5255,10 @@ msgstr ""
 msgid "Ends"
 msgstr ""
 
+#: src/pine_studio/debug/mod.rs
+msgid "Enter a bar index, or a time like 2026-10-24 12:00 (UTC)."
+msgstr ""
+
 #: src/model/webhook/policy.rs
 msgid "Enter a full address, such as https://example.com/hook."
 msgstr ""
@@ -4581,6 +5269,14 @@ msgstr ""
 
 #: src/model/broker/ticket.rs
 msgid "Enter a limit price."
+msgstr ""
+
+#: src/model/pine/script_name.rs
+msgid "Enter a name for the script."
+msgstr ""
+
+#: src/pine_studio/editor/symbols.rs
+msgid "Enter a name."
 msgstr ""
 
 #: src/ui/watchlist/sidebar/mod.rs
@@ -4615,6 +5311,10 @@ msgstr ""
 msgid "Enter a time in force."
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Enter a whole number, 1 or more."
+msgstr ""
+
 #: src/ui/trade/order_sheet/status.rs
 msgid "Enter an amount."
 msgstr ""
@@ -4647,6 +5347,10 @@ msgstr ""
 msgid "Enter the server's host and port to start using it."
 msgstr ""
 
+#: src/pine_studio/ai/host.rs
+msgid "Enter your server's address to start"
+msgstr ""
+
 #: src/ui/settings/brokers.rs
 msgid "Entered ({count} character). Hidden."
 msgid_plural "Entered ({count} characters). Hidden."
@@ -4670,6 +5374,7 @@ msgstr ""
 msgid "Ephemeral"
 msgstr ""
 
+#: src/pine_studio/drawer/figures.rs
 #: src/trading/broker/backend.rs
 #: src/trading/paper/stats.rs
 #: src/ui/pine/report.rs
@@ -4683,6 +5388,10 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "Error underline"
+msgstr ""
+
+#: src/pine_studio/drawer/intro.rs
+msgid "Errors and warnings are listed here, errors first."
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -4699,10 +5408,19 @@ msgstr ""
 msgid "Euro"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Evaluate Pine expressions"
+msgstr ""
+
 #: src/ui/settings/window.rs
 msgid "Evaluate armed alerts and deliver them when their conditions are met."
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Evaluate…"
+msgstr ""
+
+#: src/pine_studio/preview/state.rs
 #: src/ui/chart/settings/scripts/rows.rs
 msgid "Evaluating…"
 msgstr ""
@@ -4727,6 +5445,10 @@ msgid ""
 " from. Reset Changes will bring them back until you press Done."
 msgstr ""
 
+#: src/pine_studio/debug/mod.rs
+msgid "Every nth hit"
+msgstr ""
+
 #: src/ui/portfolio/empty.rs
 msgid "Every position in one table"
 msgstr ""
@@ -4748,6 +5470,7 @@ msgid ""
 "Every selected webhook is turned off in Settings, so nothing will be sent."
 msgstr ""
 
+#: src/pine_studio/debug/mod.rs
 #: src/ui/alert/editor.rs
 msgid "Every time"
 msgstr ""
@@ -4786,6 +5509,11 @@ msgstr ""
 msgid "Exchange rate from {from} to {to} is unavailable."
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
+#: src/pine_studio/profiler/ui.rs
+msgid "Executions"
+msgstr ""
+
 #: src/ui/broker/panel.rs
 msgid "Executions of your orders are listed here."
 msgstr ""
@@ -4817,6 +5545,10 @@ msgstr ""
 msgid "Expires in {time}."
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Explain what this script does"
+msgstr ""
+
 #: src/model/indicators/catalog.rs
 msgid "Exponential moving average of the close."
 msgstr ""
@@ -4836,6 +5568,10 @@ msgstr ""
 
 #: src/ui/portfolio/tab/mod.rs
 msgid "Export Portfolio History…"
+msgstr ""
+
+#: src/pine_studio/commands.rs
+msgid "Export Script"
 msgstr ""
 
 #: src/ui/paper/header.rs
@@ -4871,9 +5607,14 @@ msgstr ""
 msgid "Exported “{file}”."
 msgstr ""
 
+#: src/pine_studio/library/script_actions.rs
 #: src/ui/paper/header.rs
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Export…"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Expression"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -4934,6 +5675,7 @@ msgstr ""
 msgid "Far"
 msgstr ""
 
+#: src/pine_studio/library/script_actions.rs
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Favorite"
 msgstr ""
@@ -4942,6 +5684,7 @@ msgstr ""
 msgid "Favorite {name}"
 msgstr ""
 
+#: src/pine_studio/library/picker.rs
 #: src/ui/chart/indicator_picker/sections.rs
 #: src/ui/workspace/empty_state/tabs.rs
 msgid "Favorites"
@@ -5007,6 +5750,10 @@ msgstr ""
 msgid "Fetching historical exchange rates…"
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
+msgid "Fetching other symbols for request.security(); in no time here"
+msgstr ""
+
 #: src/workspace/drawing/links.rs
 msgid "Fetching the preview…"
 msgstr ""
@@ -5051,6 +5798,14 @@ msgstr ""
 
 #: src/model/drawings/tool.rs
 msgid "Fibonacci"
+msgstr ""
+
+#: src/pine_studio/drawer/figures.rs
+msgid "Figures"
+msgstr ""
+
+#: src/pine_studio/menu_bar/mod.rs
+msgid "File"
 msgstr ""
 
 #: src/workspace/watchlist.rs
@@ -5158,18 +5913,64 @@ msgstr ""
 msgid "Filter this watchlist"
 msgstr ""
 
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Filter variables"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Filter your watchlists"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Filter, or type a model name"
+msgstr ""
+
+#: src/pine_studio/drawer/figures.rs
 #: src/ui/pine/report.rs
 msgid "Final equity"
+msgstr ""
+
+#: src/pine_studio/editor/find.rs
+msgid "Find"
+msgstr ""
+
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Find Next"
+msgstr ""
+
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Find Previous"
+msgstr ""
+
+#: src/pine_studio/editor/navigation.rs
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Find Usages"
+msgstr ""
+
+#: src/pine_studio/preview/market_picker.rs
+msgid "Find a symbol to run this script on."
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Find what makes a script slow"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Find what makes this script slow"
 msgstr ""
 
 #: src/ui/portfolio/cmc_import.rs
 msgid ""
 "Finding {currency} markets — Binance, then Coinbase, CoinGecko and "
 "DEXScreener…"
+msgstr ""
+
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Find…"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Finished — the script ran to the end of the bars"
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -5231,6 +6032,10 @@ msgstr ""
 
 #: src/ui/chart/settings/overlay.rs
 msgid "Fitted together with {owner}, so they can be read against each other."
+msgstr ""
+
+#: src/pine_studio/preview/chart.rs
+msgid "Fix the errors to update the chart — showing the last working version"
 msgstr ""
 
 #: src/ui/portfolio/import_preview.rs
@@ -5507,7 +6312,19 @@ msgid ""
 msgstr ""
 
 #: src/native_bridge.rs
+#: src/pine_studio/editor/navigation.rs
+#: src/pine_studio/menu_bar/edit.rs
 msgid "Go to Definition"
+msgstr ""
+
+#: src/pine_studio/drawer/mod.rs
+msgid "Go to line {line}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid ""
+"Goes to the Logs tab. {example} shows its value; {open} and {close} are "
+"braces."
 msgstr ""
 
 #: src/model/chart/canvas/mod.rs
@@ -5658,6 +6475,10 @@ msgstr ""
 msgid "Hide"
 msgstr ""
 
+#: src/pine_studio/menu_bar/view.rs
+msgid "Hide Drawer"
+msgstr ""
+
 #: src/ui/workspace/toolbar.rs
 msgid "Hide Market Flow"
 msgstr ""
@@ -5672,6 +6493,10 @@ msgstr ""
 
 #: src/ui/workspace/tool_sidebar.rs
 msgid "Hide Paper Trading panel"
+msgstr ""
+
+#: src/pine_studio/menu_bar/view.rs
+msgid "Hide Preview Chart"
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -5710,12 +6535,28 @@ msgstr ""
 msgid "Hide on the chart"
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
+msgid "Hide panel"
+msgstr ""
+
 #: src/ui/portfolio/tab/bar.rs
 msgid "Hide portfolio values"
 msgstr ""
 
 #: src/ui/chart/settings/compare.rs
 msgid "Hide settings"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Hide the assistant"
+msgstr ""
+
+#: src/pine_studio/debug/panel/toolbar.rs
+msgid "Hide the debugger"
+msgstr ""
+
+#: src/pine_studio/rail.rs
+msgid "Hide the preview chart"
 msgstr ""
 
 #: src/ui/trade/panel_header.rs
@@ -5771,6 +6612,10 @@ msgstr ""
 msgid "Highlighter"
 msgstr ""
 
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Historical"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/dashboards.rs
 msgid "Historical 0–100 index chart"
 msgstr ""
@@ -5781,6 +6626,10 @@ msgstr ""
 
 #: src/ui/workspace/toolbar.rs
 msgid "Historical Replay — add a market chart first"
+msgstr ""
+
+#: src/pine_studio/drawer/mod.rs
+msgid "Historical bar, never notifies · {frequency}"
 msgstr ""
 
 #: src/ui/portfolio/cmc_import.rs
@@ -5822,6 +6671,14 @@ msgstr ""
 
 #: src/ui/portfolio/cards/value_chart.rs
 msgid "History builds from transaction dates and market candles."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Hit count"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Hits are the times the condition held, counted across bars."
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -5868,6 +6725,22 @@ msgstr ""
 msgid "Hosts that connect directly"
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
+msgid "Hottest block"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Hottest function"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Hottest line"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Hottest lines"
+msgstr ""
+
 #: src/model/session_stats/mod.rs
 msgid "Hourly bars blur the open"
 msgstr ""
@@ -5888,6 +6761,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "How far from the VWAP, either side."
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "How it was measured"
 msgstr ""
 
 #: src/ui/webhook/settings.rs
@@ -5958,6 +6835,10 @@ msgstr ""
 msgid "How prices are written on the axis, the crosshair and the readouts."
 msgstr ""
 
+#: src/pine_studio/drawer/intro.rs
+msgid "How problems show up"
+msgstr ""
+
 #: src/model/portfolio/card.rs
 msgid "How the portfolio splits across assets"
 msgstr ""
@@ -5966,8 +6847,16 @@ msgstr ""
 msgid "How the price is drawn. Each type remembers its own settings."
 msgstr ""
 
+#: src/pine_studio/drawer/intro.rs
+msgid "How to read a report"
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "How to work with logs"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "How would I add an alert to this?"
 msgstr ""
 
 #: src/ui/portfolio/empty.rs
@@ -6004,6 +6893,10 @@ msgstr ""
 
 #: src/ui/settings/snapshots.rs
 msgid "Images are drawn again at the scale, not enlarged, so text stays sharp."
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Implement this plan"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/modals.rs
@@ -6112,6 +7005,14 @@ msgstr ""
 msgid "Income"
 msgstr ""
 
+#: src/pine_studio/ai/mod.rs
+msgid "Incomplete. {reason}"
+msgstr ""
+
+#: src/pine_studio/ai/mod.rs
+msgid "Incomplete: the request failed before it finished."
+msgstr ""
+
 #: src/ui/trade/fields.rs
 msgid "Increase"
 msgstr ""
@@ -6120,6 +7021,7 @@ msgstr ""
 msgid "Indent guides"
 msgstr ""
 
+#: src/pine_studio/debug/panel/bar_break.rs
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Index"
 msgstr ""
@@ -6134,6 +7036,7 @@ msgid "Indexed to 100"
 msgstr ""
 
 #: src/model/pine/script.rs
+#: src/pine_studio/drawer/mod.rs
 #: src/ui/chart/object_tree/mod.rs
 #: src/ui/chart/settings/scripts/rows.rs
 msgid "Indicator"
@@ -6144,6 +7047,7 @@ msgid "Indicator removed"
 msgstr ""
 
 #: src/model/chart/object_tree.rs
+#: src/pine_studio/library/picker.rs
 #: src/ui/chart/indicator_picker/mod.rs
 #: src/ui/chart/indicator_strip.rs
 #: src/ui/chart/settings/indicators.rs
@@ -6151,6 +7055,10 @@ msgstr ""
 #: src/ui/snapshot_studio/window/toolbar.rs
 #: src/ui/workspace/toolbar.rs
 msgid "Indicators"
+msgstr ""
+
+#: src/pine_studio/library/empty_library.rs
+msgid "Indicators and strategies in Pine Script."
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -6177,6 +7085,11 @@ msgstr ""
 msgid "Info line"
 msgstr ""
 
+#: src/pine_studio/drawer/simulation.rs
+msgid "Initial capital"
+msgstr ""
+
+#: src/pine_studio/drawer/mod.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/drawing/properties/levels.rs
 #: src/ui/drawing/properties/mod.rs
@@ -6232,8 +7145,24 @@ msgstr ""
 msgid "Invalid header"
 msgstr ""
 
+#: src/pine_studio/drawer/intro.rs
+msgid "It appears here as a control, grouped as you set."
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "It filled before the cancel arrived."
+msgstr ""
+
+#: src/pine_studio/ai/agent.rs
+msgid "It kept repeating the same step."
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "It runs the script on the preview chart's bars."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "It shows who called whom when the script is stopped."
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -6242,12 +7171,28 @@ msgid ""
 "history usually fixes it."
 msgstr ""
 
+#: src/pine_studio/ai/agent.rs
+msgid "It used all {steps} steps without finishing."
+msgstr ""
+
 #: src/ui/drawing/properties/text.rs
 msgid "Italic"
 msgstr ""
 
 #: src/model/watchlist/mod.rs
 msgid "Item Not Found"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Iterations"
+msgstr ""
+
+#: src/pine_studio/drawer/intro.rs
+msgid "Its figures, equity curve and every trade appear here."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Its line was deleted. Remove it, or set it again."
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
@@ -6312,6 +7257,10 @@ msgstr ""
 msgid "Keep linked charts displaying the same date range."
 msgstr ""
 
+#: src/pine_studio/library/disk_banner.rs
+msgid "Keep my version"
+msgstr ""
+
 #: src/ui/settings/sync.rs
 msgid "Keep on Other Macs"
 msgstr ""
@@ -6353,6 +7302,10 @@ msgstr ""
 
 #: src/model/chart/template/mod.rs
 msgid "Keeps this chart's type and how its bars are built."
+msgstr ""
+
+#: src/pine_studio/library/disk_banner.rs
+msgid "Keeps what you typed. Saving will overwrite the file."
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -6579,6 +7532,10 @@ msgstr ""
 msgid "Left neckline"
 msgstr ""
 
+#: src/pine_studio/library/prefs.rs
+msgid "Left of Code"
+msgstr ""
+
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Left shoulder"
 msgstr ""
@@ -6622,6 +7579,15 @@ msgstr ""
 #: src/ui/drawing/properties/tests.rs
 #: src/ui/paper/account_sheet.rs
 msgid "Leverage"
+msgstr ""
+
+#: src/pine_studio/library/picker.rs
+msgid "Libraries"
+msgstr ""
+
+#: src/pine_studio/preview/chart.rs
+#: src/pine_studio/preview/state.rs
+msgid "Libraries export functions — they don't draw on a chart."
 msgstr ""
 
 #: src/model/pine/script.rs
@@ -6724,6 +7690,10 @@ msgstr ""
 msgid "Line style"
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
+msgid "Line time"
+msgstr ""
+
 #: src/ui/chart/settings/appearance.rs
 msgid "Line up"
 msgstr ""
@@ -6737,8 +7707,15 @@ msgstr ""
 msgid "Line with Markers"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+#: src/pine_studio/editor/gutter/breakpoints.rs
+#: src/pine_studio/profiler/marks.rs
 #: src/ui/alert/pine_editor.rs
 msgid "Line {line}"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Line {line} modified — Click to compare"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/modals.rs
@@ -6747,6 +7724,18 @@ msgstr ""
 
 #: src/ui/portfolio/cmc_import.rs
 msgid "Line {line} · {token} · {fee} {currency}"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Line {line}, {time} of line time"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Line {line}: Added since last save"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Line {line}: Modified since last save"
 msgstr ""
 
 #: src/model/portfolio/csv.rs
@@ -6796,6 +7785,14 @@ msgstr ""
 msgid "Line {line}: unknown portfolio."
 msgstr ""
 
+#: src/pine_studio/debug/mod.rs
+msgid "Line {line}: {reason}"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Line {line}: {snippet}"
+msgstr ""
+
 #: src/model/drawings/tool.rs
 #: src/ui/chart/settings/canvas.rs
 msgid "Lines"
@@ -6803,6 +7800,22 @@ msgstr ""
 
 #: src/model/chart/kind.rs
 msgid "Lines & Areas"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Lines {first}–{last}"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Lines {first}–{last} modified — Click to compare"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Lines {first}–{last}: Added since last save"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Lines {first}–{last}: Modified since last save"
 msgstr ""
 
 #: src/ui/drawing/properties/mod.rs
@@ -6854,6 +7867,10 @@ msgstr ""
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Live Preview"
+msgstr ""
+
+#: src/pine_studio/drawer/mod.rs
+msgid "Live bar, notifies · {frequency}"
 msgstr ""
 
 #: src/ui/portfolio/empty.rs
@@ -6959,6 +7976,10 @@ msgstr ""
 msgid "Loading market value…"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Loading models…"
+msgstr ""
+
 #: src/ui/portfolio/overview/hero.rs
 msgid "Loading portfolio value…"
 msgstr ""
@@ -6975,6 +7996,7 @@ msgstr ""
 msgid "Loading “{name}”…"
 msgstr ""
 
+#: src/pine_studio/debug/panel/tree.rs
 #: src/ui/alert/pine_editor.rs
 #: src/ui/chart/settings/compare.rs
 msgid "Loading…"
@@ -7001,6 +8023,10 @@ msgstr ""
 msgid "Lock vertical cursor line by time"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Log a message instead of stopping"
+msgstr ""
+
 #: src/model/chart/price_scale.rs
 msgid "Logarithmic"
 msgstr ""
@@ -7025,6 +8051,7 @@ msgstr ""
 msgid "Logos and lookups saved on this computer so they appear instantly."
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
 #: src/ui/chart/card/logs_range.rs
 #: src/ui/replay/overlay.rs
 msgid "Logs"
@@ -7038,6 +8065,7 @@ msgstr ""
 msgid "Logs · {range}"
 msgstr ""
 
+#: src/pine_studio/drawer/trades.rs
 #: src/ui/drawing/layer/forecast_shapes.rs
 #: src/ui/pine/report.rs
 msgid "Long"
@@ -7178,9 +8206,16 @@ msgid "Manage templates…"
 msgstr ""
 
 #: src/model/watchlist/mod.rs
+#: src/pine_studio/ai/panel.rs
 #: src/ui/portfolio/transactions.rs
 #: src/ui/settings/network/mod.rs
 msgid "Manual"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid ""
+"Manual: you review and apply each change. Click to apply changes that compile "
+"automatically."
 msgstr ""
 
 #: src/ui/trade/order_sheet/form.rs
@@ -7305,6 +8340,7 @@ msgstr ""
 msgid "Max"
 msgstr ""
 
+#: src/pine_studio/drawer/figures.rs
 #: src/ui/pine/report.rs
 msgid "Max drawdown"
 msgstr ""
@@ -7338,12 +8374,25 @@ msgstr ""
 msgid "Measurers"
 msgstr ""
 
+#: src/pine_studio/drawer/simulation.rs
 #: src/ui/drawing/properties/style.rs
 msgid "Median"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
 msgid "Median color"
+msgstr ""
+
+#: src/pine_studio/drawer/simulation.rs
+msgid "Median drawdown"
+msgstr ""
+
+#: src/pine_studio/drawer/simulation.rs
+msgid "Median result"
+msgstr ""
+
+#: src/pine_studio/drawer/simulation.rs
+msgid "Median {value}"
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -7380,6 +8429,10 @@ msgstr ""
 
 #: src/model/drawings/style.rs
 msgid "Middle"
+msgstr ""
+
+#: src/pine_studio/drawer/simulation.rs
+msgid "Middle 90% of runs"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -7440,6 +8493,7 @@ msgstr ""
 msgid "Mode"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
 #: src/ui/settings/ai.rs
 msgid "Model"
 msgstr ""
@@ -7458,6 +8512,14 @@ msgstr ""
 
 #: src/model/drawings/tool.rs
 msgid "Modified Schiff pitchfork"
+msgstr ""
+
+#: src/pine_studio/editor/diff_view.rs
+msgid "Modified line {line}"
+msgstr ""
+
+#: src/pine_studio/editor/diff_view.rs
+msgid "Modified lines {first}–{last}"
 msgstr ""
 
 #: src/model/indicators/catalog.rs
@@ -7522,6 +8584,14 @@ msgstr ""
 
 #: src/ui/chart/settings/scripts/rows.rs
 msgid "Move Down"
+msgstr ""
+
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Move Line Down"
+msgstr ""
+
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Move Line Up"
 msgstr ""
 
 #: src/native_bridge.rs
@@ -7711,6 +8781,10 @@ msgstr ""
 msgid "Needs your attention"
 msgstr ""
 
+#: src/pine_studio/drawer/simulation.rs
+msgid "Needs {min} closed trades, {have} so far"
+msgstr ""
+
 #: src/ui/paper/tables.rs
 msgid "Net"
 msgstr ""
@@ -7719,8 +8793,13 @@ msgstr ""
 msgid "Net proceeds"
 msgstr ""
 
+#: src/pine_studio/drawer/figures.rs
 #: src/ui/pine/report.rs
 msgid "Net profit"
+msgstr ""
+
+#: src/pine_studio/drawer/figures.rs
+msgid "Net profit {net}, {ret}"
 msgstr ""
 
 #: src/ui/settings/window.rs
@@ -7768,7 +8847,13 @@ msgid "New Portfolio…"
 msgstr ""
 
 #: src/native_bridge.rs
+#: src/pine_studio/library/picker.rs
+#: src/pine_studio/sheets.rs
 msgid "New Script"
+msgstr ""
+
+#: src/pine_studio/menu_bar/file.rs
+msgid "New Script…"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/mod.rs
@@ -7838,8 +8923,20 @@ msgstr ""
 msgid "Newest first: click for oldest first"
 msgstr ""
 
+#: src/pine_studio/editor/diff_view.rs
+msgid "Next Change"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "Next change (↓ or J)"
+msgstr ""
+
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Next extreme"
+msgstr ""
+
+#: src/pine_studio/editor/find.rs
+msgid "Next match"
 msgstr ""
 
 #: src/ui/mcp/activity.rs
@@ -7963,8 +9060,24 @@ msgstr ""
 msgid "No balances"
 msgstr ""
 
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "No bar opens at or after {time}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "No bars on the chart yet"
+msgstr ""
+
 #: src/ui/chart/table_view.rs
 msgid "No bars to show yet"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "No breakpoints"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "No call stack"
 msgstr ""
 
 #: src/ui/settings/mcp/clients.rs
@@ -7973,6 +9086,10 @@ msgstr ""
 
 #: src/ui/paper/tables.rs
 msgid "No closed trades"
+msgstr ""
+
+#: src/pine_studio/drawer/trades.rs
+msgid "No closed trades yet"
 msgstr ""
 
 #: src/ui/settings/pine_studio/theme_editor/mod.rs
@@ -8061,6 +9178,10 @@ msgstr ""
 msgid "No limit"
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "No line took a measurable share of the time."
+msgstr ""
+
 #: src/ui/settings/mcp/security.rs
 msgid "No local network address found. Type the one to listen on"
 msgstr ""
@@ -8079,6 +9200,12 @@ msgid ""
 "Bitcoin or the Fed."
 msgstr ""
 
+#: src/pine_studio/preview/market_picker.rs
+msgid "No markets found"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+#: src/pine_studio/library/picker.rs
 #: src/ui/chart/object_tree/mod.rs
 msgid "No matches"
 msgstr ""
@@ -8091,8 +9218,16 @@ msgstr ""
 msgid "No matching messages"
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
+msgid "No message"
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "No message passes the level, date and search filters."
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "No model matches."
 msgstr ""
 
 #: src/ui/portfolio/asset_detail.rs
@@ -8155,6 +9290,11 @@ msgstr ""
 msgid "No priced holdings yet"
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
+#: src/pine_studio/editor/status.rs
+msgid "No problems"
+msgstr ""
+
 #: src/ui/settings/network/mod.rs
 msgid "No proxy server set"
 msgstr ""
@@ -8168,6 +9308,11 @@ msgstr ""
 msgid "No quotes for this market"
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
+msgid "No report"
+msgstr ""
+
+#: src/pine_studio/editor/find.rs
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "No results"
 msgstr ""
@@ -8180,6 +9325,18 @@ msgstr ""
 msgid "No saved templates yet"
 msgstr ""
 
+#: src/pine_studio/preview/state.rs
+msgid "No script applied"
+msgstr ""
+
+#: src/pine_studio/workspace.rs
+msgid "No script open"
+msgstr ""
+
+#: src/pine_studio/library/picker.rs
+msgid "No script's name or source contains that text."
+msgstr ""
+
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "No scripts match “{query}”"
 msgstr ""
@@ -8188,6 +9345,7 @@ msgstr ""
 msgid "No scripts on this chart"
 msgstr ""
 
+#: src/pine_studio/library/empty_library.rs
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "No scripts yet"
 msgstr ""
@@ -8198,6 +9356,10 @@ msgstr ""
 
 #: src/ui/portfolio/empty.rs
 msgid "No transactions yet."
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "No variables in scope"
 msgstr ""
 
 #: src/ui/snapshot_studio/window/toolbar.rs
@@ -8250,8 +9412,18 @@ msgstr ""
 msgid "Not a regular expression this search can read."
 msgstr ""
 
+#: src/pine_studio/inputs.rs
+msgid ""
+"Not a session. Write it as 0930-1600, with days after a colon "
+"(0930-1600:23456) or 24x7."
+msgstr ""
+
 #: src/ui/settings/brokers.rs
 msgid "Not allowed"
+msgstr ""
+
+#: src/pine_studio/ai/host.rs
+msgid "Not applied automatically: {reason}"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -8271,6 +9443,10 @@ msgstr ""
 msgid "Not available in this market."
 msgstr ""
 
+#: src/pine_studio/editor/status.rs
+msgid "Not compiled"
+msgstr ""
+
 #: src/ui/settings/api_keys.rs
 msgid "Not configured"
 msgstr ""
@@ -8278,6 +9454,16 @@ msgstr ""
 #: src/ui/settings/brokers.rs
 #: src/ui/trade/venue_pill.rs
 msgid "Not connected"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid ""
+"Not debugging — press ▶ to run to a breakpoint, or step to start at the "
+"first line"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Not in any line"
 msgstr ""
 
 #: src/ui/workspace/link_charts.rs
@@ -8290,6 +9476,14 @@ msgstr ""
 
 #: src/ui/chart/session_stats_view/result.rs
 msgid "Not on this timeframe"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Not part of the total"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Not profiled yet"
 msgstr ""
 
 #: src/service/update/check.rs
@@ -8353,6 +9547,12 @@ msgid ""
 "here."
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid ""
+"Nothing has been changed. Approving switches to Edit and makes these changes "
+"as a proposal you review."
+msgstr ""
+
 #: src/ui/portfolio/empty.rs
 msgid "Nothing held yet."
 msgstr ""
@@ -8401,8 +9601,20 @@ msgstr ""
 msgid "Nothing on this chart matches the filter."
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "Nothing profiled yet"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "Nothing selected"
+msgstr ""
+
 #: src/ui/alert/pine_editor.rs
 msgid "Nothing to arm yet."
+msgstr ""
+
+#: src/pine_studio/preview/chart.rs
+msgid "Nothing to chart"
 msgstr ""
 
 #: src/ui/chart/session_stats_view/result.rs
@@ -8415,12 +9627,20 @@ msgid ""
 "trade."
 msgstr ""
 
+#: src/pine_studio/drawer/intro.rs
+msgid "Nothing to fix in this script."
+msgstr ""
+
 #: src/ui/portfolio/import_preview.rs
 msgid "Nothing to import"
 msgstr ""
 
 #: src/ui/portfolio/import_preview.rs
 msgid "Nothing to import yet."
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Nothing to inspect"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -8501,6 +9721,7 @@ msgstr ""
 msgid "OHLC values"
 msgstr ""
 
+#: src/pine_studio/sheets.rs
 #: src/ui/drawing/properties/mod.rs
 #: src/ui/drawing/properties/tests.rs
 #: src/ui/kit/confirm.rs
@@ -8594,6 +9815,10 @@ msgstr ""
 #: src/trading/broker/backend.rs
 #: src/ui/broker/panel.rs
 msgid "On hold"
+msgstr ""
+
+#: src/pine_studio/debug/mod.rs
+msgid "On the hit number"
 msgstr ""
 
 #: src/ui/chart/settings/scripts/mod.rs
@@ -8717,6 +9942,7 @@ msgstr ""
 msgid "Open File…"
 msgstr ""
 
+#: src/pine_studio/drawer/figures.rs
 #: src/ui/pine/report.rs
 msgid "Open P&L"
 msgstr ""
@@ -8732,11 +9958,27 @@ msgstr ""
 msgid "Open Pine Studio"
 msgstr ""
 
+#: src/pine_studio/menu_bar/file.rs
+msgid "Open Script…"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+#: src/pine_studio/preview/chart.rs
+#: src/pine_studio/preview/market_picker.rs
 #: src/ui/alert/center.rs
 #: src/ui/broker/panel.rs
 #: src/ui/chart/symbol_picker/mod.rs
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Open Settings"
+msgstr ""
+
+#: src/pine_studio/workspace.rs
+msgid "Open a Script"
+msgstr ""
+
+#: src/pine_studio/commands.rs
+msgid ""
+"Open a chart first: a script alert watches one chart's market and timeframe."
 msgstr ""
 
 #: src/ui/chart/indicator_picker/mod.rs
@@ -8747,6 +9989,10 @@ msgstr ""
 msgid ""
 "Open a client to choose what it may do, whether it can be used from other "
 "machines, or to revoke it. Revoking cuts it off at once."
+msgstr ""
+
+#: src/pine_studio/bar.rs
+msgid "Open a script"
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
@@ -9032,6 +10278,30 @@ msgstr ""
 msgid "Partial fill"
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "Partial profile"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Partial: cancelled after {bars} bars."
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Partial: cancelled during bar {bars}."
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Partial: the script failed on bar {bars}: {message}"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Partial: the script ran out of time after {bars} bars."
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Partial: the script ran out of time during bar {bars}."
+msgstr ""
+
 #: src/ui/settings/network/mod.rs
 msgid "Password"
 msgstr ""
@@ -9042,6 +10312,8 @@ msgstr ""
 
 #: src/model/chart/context/mod.rs
 #: src/native_bridge.rs
+#: src/pine_studio/editor/navigation.rs
+#: src/pine_studio/menu_bar/edit.rs
 msgid "Paste"
 msgstr ""
 
@@ -9093,6 +10365,11 @@ msgstr ""
 msgid "Pause alert"
 msgstr ""
 
+#: src/pine_studio/debug/panel/toolbar.rs
+msgid "Pause at the next statement"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
 #: src/ui/alert/center.rs
 #: src/ui/alert/script_list.rs
 #: src/ui/replay/bar.rs
@@ -9103,8 +10380,32 @@ msgstr ""
 msgid "Paused alerts wait here until you resume them."
 msgstr ""
 
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Paused at line {line}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Paused at the start of bar {bar}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Paused by request"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Paused by request at line {line}"
+msgstr ""
+
 #: src/ui/webhook/picker.rs
 msgid "Paused in Settings"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Paused on a breakpoint"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Paused on a breakpoint at line {line}"
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -9126,6 +10427,14 @@ msgstr ""
 #: src/host/paper/mod.rs
 msgid ""
 "Paused: two Macs changed this account. Placing an order here takes it over."
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Pauses at the start of a bar, wherever the script is in it."
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Pausing…"
 msgstr ""
 
 #: src/model/drawings/style.rs
@@ -9224,6 +10533,10 @@ msgstr ""
 msgid "Pin to screen"
 msgstr ""
 
+#: src/pine_studio/library/empty_library.rs
+msgid "Pine Script documentation"
+msgstr ""
+
 #: src/native_bridge.rs
 #: src/ui/settings/window.rs
 msgid "Pine Studio"
@@ -9292,6 +10605,18 @@ msgstr ""
 msgid "Plain"
 msgstr ""
 
+#: src/pine_studio/ai/prompt.rs
+msgid "Plan"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Plan how to add a stop loss"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Plan ready"
+msgstr ""
+
 #: src/ui/drawing/properties/style.rs
 msgid "Plate"
 msgstr ""
@@ -9326,6 +10651,10 @@ msgstr ""
 
 #: src/ui/chart/card/values_tooltip.rs
 msgid "Plot"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Plot a marker when the signal crosses"
 msgstr ""
 
 #: src/model/chart/kind.rs
@@ -9534,12 +10863,32 @@ msgstr ""
 msgid "Preview"
 msgstr ""
 
+#: src/pine_studio/menu_bar/view.rs
+msgid "Preview Chart"
+msgstr ""
+
+#: src/pine_studio/library/empty_library.rs
+msgid "Preview it, then add it to any chart."
+msgstr ""
+
 #: src/ui/drawing/content/card.rs
 msgid "Preview not fetched"
 msgstr ""
 
 #: src/ui/snapshot_studio/window/preview.rs
 msgid "Preview. Drag to move the picture; arrow keys move it, Home resets."
+msgstr ""
+
+#: src/pine_studio/editor/diff_view.rs
+msgid "Previous Change"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "Previous change (↑ or K)"
+msgstr ""
+
+#: src/pine_studio/editor/find.rs
+msgid "Previous match"
 msgstr ""
 
 #: src/ui/mcp/activity.rs
@@ -9681,14 +11030,83 @@ msgstr ""
 msgid "Privacy"
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
+msgid "Problems"
+msgstr ""
+
+#: src/pine_studio/drawer/mod.rs
+msgid "Profile"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Profile again"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Profile failed"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Profile out of date"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Profile ready"
+msgstr ""
+
+#: src/pine_studio/ai/profile.rs
+msgid "Profiled the draft · {count} bar · {time}"
+msgid_plural "Profiled the draft · {count} bars · {time}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/ai/profile.rs
+msgid ""
+"Profiled the draft · {count} bar · {time} · hottest line {line} ({share})"
+msgid_plural ""
+"Profiled the draft · {count} bars · {time} · hottest line {line} ({share})"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/menu_bar/view.rs
+msgid "Profiler"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Profiler off"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Profiler overhead"
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Profiling the draft"
+msgstr ""
+
+#: src/pine_studio/profiler/mod.rs
+#: src/pine_studio/profiler/ui.rs
+msgid "Profiling…"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Profiling… {done} of {total} bars"
+msgstr ""
+
+#: src/pine_studio/drawer/figures.rs
 #: src/ui/pine/report.rs
 msgid "Profit factor"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Proposed change"
 msgstr ""
 
 #: src/ui/paper/header.rs
 msgid "Protective take-profit and stop-loss orders are canceled too."
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
 #: src/ui/settings/ai.rs
 msgid "Provider"
 msgstr ""
@@ -9832,10 +11250,24 @@ msgstr ""
 msgid "Read & write"
 msgstr ""
 
+#: src/pine_studio/ai/tools.rs
+msgid "Read lines {start}–{end}"
+msgstr ""
+
 #: src/ui/settings/mcp/mod.rs
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "Read only"
 msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Read the script"
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Read the script · {count} line"
+msgid_plural "Read the script · {count} lines"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/ui/settings/brokers.rs
 msgid "Read {name}'s instructions"
@@ -9843,6 +11275,14 @@ msgstr ""
 
 #: src/ui/broker/panel.rs
 msgid "Reading finished orders from the broker."
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Reading from line {start}"
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Reading lines {start}–{end}"
 msgstr ""
 
 #: src/ui/portfolio/cards/top_performers.rs
@@ -9855,6 +11295,10 @@ msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
 msgid "Reading the picture…"
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Reading the script"
 msgstr ""
 
 #: src/ui/alert/pine_editor.rs
@@ -9873,6 +11317,10 @@ msgstr ""
 
 #: src/ui/portfolio/import_preview.rs
 msgid "Ready to import"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Ready to profile"
 msgstr ""
 
 #: src/ui/trade/connect_list.rs
@@ -9894,6 +11342,11 @@ msgstr ""
 msgid "Realized P&L"
 msgstr ""
 
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Realtime"
+msgstr ""
+
+#: src/pine_studio/preview/market_picker.rs
 #: src/ui/chart/picker_kit/widgets.rs
 #: src/ui/chart/symbol_picker/mod.rs
 #: src/ui/kit/color_picker/mod.rs
@@ -9932,6 +11385,10 @@ msgstr ""
 #: src/model/tab/link/mod.rs
 #: src/model/watchlist/mod.rs
 msgid "Red"
+msgstr ""
+
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Redo"
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -9976,6 +11433,14 @@ msgstr ""
 msgid "Release candidates preview the next version and may be less stable."
 msgstr ""
 
+#: src/pine_studio/library/disk_banner.rs
+msgid "Reload from disk"
+msgstr ""
+
+#: src/pine_studio/open_script.rs
+msgid "Reloaded: the file changed outside the app."
+msgstr ""
+
 #: src/ui/portfolio/holdings.rs
 msgid "Remap Asset…"
 msgstr ""
@@ -10011,10 +11476,24 @@ msgstr ""
 msgid "Remove All"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Remove All Breakpoints"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+#: src/pine_studio/editor/gutter/breakpoints.rs
+msgid "Remove Breakpoint"
+msgstr ""
+
 #: src/ui/chart/card/header.rs
 #: src/ui/chart/settings/mod.rs
 #: src/ui/portfolio/cards/mod.rs
 msgid "Remove Chart"
+msgstr ""
+
+#: src/pine_studio/library/script_actions.rs
+msgid "Remove Favorite"
 msgstr ""
 
 #: src/ui/settings/ai.rs
@@ -10026,8 +11505,16 @@ msgstr ""
 msgid "Remove Keys"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Remove Watch"
+msgstr ""
+
 #: src/ui/chart/settings/compare.rs
 msgid "Remove all"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Remove all breakpoints"
 msgstr ""
 
 #: src/workspace/drawing/mod.rs
@@ -10041,6 +11528,10 @@ msgstr ""
 
 #: src/ui/chart/settings/compare.rs
 msgid "Remove all…"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Remove breakpoint"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -10126,6 +11617,10 @@ msgstr ""
 msgid "Remove vertex"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Remove watch"
+msgstr ""
+
 #: src/workspace/chart/collection.rs
 msgid "Remove {chart}?"
 msgstr ""
@@ -10164,6 +11659,7 @@ msgstr ""
 msgid "Removing the key…"
 msgstr ""
 
+#: src/pine_studio/sheets.rs
 #: src/ui/drawing/properties/templates.rs
 #: src/ui/settings/pine_studio/mod.rs
 #: src/ui/watchlist/sidebar/mod.rs
@@ -10176,6 +11672,10 @@ msgstr ""
 msgid "Rename Layout"
 msgstr ""
 
+#: src/pine_studio/sheets.rs
+msgid "Rename Script"
+msgstr ""
+
 #: src/ui/watchlist/sidebar/mod.rs
 msgid "Rename Section"
 msgstr ""
@@ -10185,6 +11685,8 @@ msgid "Rename Section…"
 msgstr ""
 
 #: src/native_bridge.rs
+#: src/pine_studio/editor/navigation.rs
+#: src/pine_studio/menu_bar/edit.rs
 msgid "Rename Symbol…"
 msgstr ""
 
@@ -10204,6 +11706,30 @@ msgstr ""
 msgid "Rename Watchlist…"
 msgstr ""
 
+#: src/pine_studio/editor/navigation.rs
+msgid "Rename enum {name}"
+msgstr ""
+
+#: src/pine_studio/editor/navigation.rs
+msgid "Rename function {name}"
+msgstr ""
+
+#: src/pine_studio/editor/navigation.rs
+msgid "Rename import alias {name}"
+msgstr ""
+
+#: src/pine_studio/editor/navigation.rs
+msgid "Rename loop variable {name}"
+msgstr ""
+
+#: src/pine_studio/editor/navigation.rs
+msgid "Rename method {name}"
+msgstr ""
+
+#: src/pine_studio/editor/navigation.rs
+msgid "Rename parameter {name}"
+msgstr ""
+
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Rename template"
 msgstr ""
@@ -10212,10 +11738,19 @@ msgstr ""
 msgid "Rename this theme"
 msgstr ""
 
+#: src/pine_studio/editor/navigation.rs
+msgid "Rename type {name}"
+msgstr ""
+
+#: src/pine_studio/editor/navigation.rs
+msgid "Rename variable {name}"
+msgstr ""
+
 #: src/ui/drawing/properties/templates.rs
 msgid "Renamed to “{name}”"
 msgstr ""
 
+#: src/pine_studio/library/script_actions.rs
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Rename…"
 msgstr ""
@@ -10294,12 +11829,20 @@ msgstr ""
 msgid "Replay stopped: no {timeframe} history to replay."
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
+msgid "Report"
+msgstr ""
+
 #: src/ui/portfolio/tab/bar.rs
 msgid "Reporting currency"
 msgstr ""
 
 #: src/ui/kit/error_notice.rs
 msgid "Request ID {id}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Request bar {bar}"
 msgstr ""
 
 #: src/ui/mcp/activity.rs
@@ -10406,6 +11949,10 @@ msgstr ""
 msgid "Reset this theme?"
 msgstr ""
 
+#: src/pine_studio/inputs.rs
+msgid "Reset to Defaults"
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 msgid "Reset to default"
 msgstr ""
@@ -10452,6 +11999,14 @@ msgstr ""
 msgid "Restart Now"
 msgstr ""
 
+#: src/pine_studio/debug/panel/toolbar.rs
+msgid "Restart on the current code"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Restart on the new code"
+msgstr ""
+
 #: src/ui/settings/about.rs
 msgid "Restart to Update"
 msgstr ""
@@ -10462,6 +12017,14 @@ msgstr ""
 
 #: src/ui/window/chrome.rs
 msgid "Restore"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Restore Deleted Lines"
+msgstr ""
+
+#: src/pine_studio/editor/diff_view.rs
+msgid "Restore Lines"
 msgstr ""
 
 #: src/ui/settings/appearance.rs
@@ -10482,6 +12045,10 @@ msgid "Restore {count} individually skipped transaction"
 msgid_plural "Restore {count} individually skipped transactions"
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/pine_studio/editor/diff_view.rs
+msgid "Restoring puts these lines back where they were deleted."
+msgstr ""
 
 #: src/trading/confirm.rs
 msgid "Rests; never takes"
@@ -10517,6 +12084,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Retracement C"
+msgstr ""
+
+#: src/pine_studio/preview/chart.rs
+msgid "Retry"
 msgstr ""
 
 #: src/ui/settings/window.rs
@@ -10563,16 +12134,43 @@ msgstr ""
 msgid "Reverse…"
 msgstr ""
 
+#: src/pine_studio/editor/diff_view.rs
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Revert Added Lines"
+msgstr ""
+
+#: src/pine_studio/editor/diff_view.rs
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Revert Change"
+msgstr ""
+
 #: src/ui/pine/style_view.rs
 msgid "Revert {output} to the script's style"
+msgstr ""
+
+#: src/pine_studio/editor/diff_view.rs
+msgid "Reverting removes these lines; the rest of the script is untouched."
+msgstr ""
+
+#: src/pine_studio/editor/diff_view.rs
+msgid "Reverting replaces the current lines with the saved ones."
 msgstr ""
 
 #: src/ui/broker/panel.rs
 msgid "Review change"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+#: src/pine_studio/ai/review_view.rs
+msgid "Review changes"
+msgstr ""
+
 #: src/ui/portfolio/import_preview.rs
 msgid "Review what will be added to your portfolio."
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Revise"
 msgstr ""
 
 #: src/ui/settings/mcp/permissions_sheet.rs
@@ -10594,6 +12192,16 @@ msgstr ""
 #: src/ui/portfolio/transactions.rs
 msgid "Reward"
 msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Rewriting the script"
+msgstr ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Rewrote the whole script ({count} line) · {summary}"
+msgid_plural "Rewrote the whole script ({count} lines) · {summary}"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/model/drawings/style.rs
 #: src/ui/chart/settings/canvas.rs
@@ -10697,8 +12305,24 @@ msgid ""
 "the market traded at. Treat the results as indicative only."
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "Run profile"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Run the pattern backwards in time."
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Run the profiler"
+msgstr ""
+
+#: src/pine_studio/profiler/mod.rs
+msgid "Run the profiler to see where the time goes."
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Running"
 msgstr ""
 
 #: src/ui/settings/window.rs
@@ -10711,6 +12335,22 @@ msgstr ""
 
 #: src/host/paper/mod.rs
 msgid "Running on {name}. Placing an order here takes it over."
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Runs the script once on the preview chart's bars and times every line."
+msgstr ""
+
+#: src/pine_studio/preview/state.rs
+msgid "Runtime failed"
+msgstr ""
+
+#: src/pine_studio/preview/state.rs
+msgid "Runtime failed — last valid output remains active"
+msgstr ""
+
+#: src/pine_studio/editor/diff_view.rs
+msgid "SAVED"
 msgstr ""
 
 #: src/ui/broker/chart_trading.rs
@@ -10740,11 +12380,17 @@ msgid "Saturation and brightness"
 msgstr ""
 
 #: src/native_bridge.rs
+#: src/pine_studio/library/unsaved.rs
+#: src/pine_studio/menu_bar/file.rs
 #: src/ui/alert/pine_editor.rs
 #: src/ui/chart/settings/templates/mod.rs
 #: src/ui/drawing/properties/templates.rs
 #: src/ui/workspace/layout_prompts.rs
 msgid "Save"
+msgstr ""
+
+#: src/pine_studio/library/unsaved.rs
+msgid "Save All"
 msgstr ""
 
 #: src/ui/alert/editor.rs
@@ -10769,8 +12415,18 @@ msgstr ""
 msgid "Save as template…"
 msgstr ""
 
+#: src/pine_studio/library/unsaved.rs
+msgid "Save changes to {count} script?"
+msgid_plural "Save changes to {count} scripts?"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/workspace/layout_prompts.rs
 msgid "Save changes to “{layout}”?"
+msgstr ""
+
+#: src/pine_studio/library/unsaved.rs
+msgid "Save changes to “{name}”?"
 msgstr ""
 
 #: src/service/snapshot/export.rs
@@ -10899,6 +12555,12 @@ msgstr ""
 msgid "Saving the key…"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid ""
+"Say what you want from {script}. The assistant looks at it and measures it, "
+"then gives you a plan to approve. Nothing is edited in Plan mode."
+msgstr ""
+
 #: src/ui/chart/card/overlay_card.rs
 #: src/ui/chart/settings/appearance.rs
 #: src/ui/chart/settings/overlay.rs
@@ -10950,10 +12612,31 @@ msgstr ""
 msgid "Script deleted"
 msgstr ""
 
+#: src/pine_studio/sheets.rs
+msgid "Script name"
+msgstr ""
+
+#: src/model/pine/script_name.rs
+msgid "Script names cannot contain control characters."
+msgstr ""
+
+#: src/model/pine/script_name.rs
+msgid "Script names cannot contain “{character}”."
+msgstr ""
+
+#: src/model/pine/script_name.rs
+msgid "Script names cannot start with a period."
+msgstr ""
+
+#: src/model/pine/script_name.rs
+msgid "Script names must be {limit} bytes or fewer."
+msgstr ""
+
 #: src/model/alert/pine.rs
 msgid "Script not loaded"
 msgstr ""
 
+#: src/pine_studio/bar.rs
 #: src/ui/alert/center.rs
 #: src/ui/chart/indicator_strip.rs
 #: src/ui/chart/settings/mod.rs
@@ -10986,6 +12669,10 @@ msgstr ""
 msgid "Search Failed"
 msgstr ""
 
+#: src/pine_studio/preview/market_picker.rs
+msgid "Search US stocks and ETFs, e.g. AAPL, Tesla"
+msgstr ""
+
 #: src/ui/workspace/empty_state/mod.rs
 msgid "Search a market, or pick up where you left off."
 msgstr ""
@@ -11011,6 +12698,10 @@ msgstr ""
 msgid "Search chart types"
 msgstr ""
 
+#: src/pine_studio/preview/market_picker.rs
+msgid "Search coins and tokens, e.g. BTC, ETH, PEPE"
+msgstr ""
+
 #: src/ui/settings/pine_studio/theme_editor/mod.rs
 msgid "Search colors"
 msgstr ""
@@ -11031,6 +12722,7 @@ msgstr ""
 msgid "Search logs"
 msgstr ""
 
+#: src/pine_studio/preview/market_picker.rs
 #: src/ui/chart/settings/compare.rs
 #: src/ui/workspace/empty_state/mod.rs
 msgid "Search markets"
@@ -11043,6 +12735,10 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "Search matches"
+msgstr ""
+
+#: src/pine_studio/library/picker.rs
+msgid "Search name or source"
 msgstr ""
 
 #: src/ui/chart/settings/scripts/mod.rs
@@ -11141,6 +12837,10 @@ msgstr ""
 msgid "Security"
 msgstr ""
 
+#: src/pine_studio/drawer/intro.rs
+msgid "See how a strategy would have traded."
+msgstr ""
+
 #: src/ui/chart/settings/compare.rs
 msgid ""
 "See how other markets move against {market} on the same chart and time axis. "
@@ -11151,6 +12851,10 @@ msgstr ""
 msgid "See what your script does, bar by bar."
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "See where its time goes, line by line."
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "Seen late: the price crossed while DegenView was not watching."
 msgstr ""
@@ -11159,12 +12863,20 @@ msgstr ""
 msgid "Select"
 msgstr ""
 
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Select All"
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Select Bar on Chart"
 msgstr ""
 
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Select an indicator"
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Select bar"
 msgstr ""
 
 #: src/ui/replay/bar.rs
@@ -11250,6 +12962,10 @@ msgstr ""
 msgid "Sell {symbol} limit"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Send"
+msgstr ""
+
 #: src/ui/settings/window.rs
 msgid ""
 "Send alert messages to external HTTP endpoints, such as a trading bot or a "
@@ -11326,6 +13042,22 @@ msgstr ""
 msgid ""
 "Sent by each Test button. Valid JSON goes out as application/json, anything "
 "else as text/plain."
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Sent to {provider}  ·  Ask never edits  ·  {context}"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Sent to {provider}  ·  Auto-applies clean changes  ·  {context}"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Sent to {provider}  ·  Plan never edits  ·  {context}"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Sent to {provider}  ·  {context}"
 msgstr ""
 
 #: src/ui/chart/indicator_picker/sections.rs
@@ -11430,6 +13162,7 @@ msgstr ""
 msgid "Sharing to {host}"
 msgstr ""
 
+#: src/pine_studio/drawer/trades.rs
 #: src/ui/drawing/layer/forecast_shapes.rs
 #: src/ui/pine/report.rs
 msgid "Short"
@@ -11465,9 +13198,21 @@ msgstr ""
 msgid "Show All"
 msgstr ""
 
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Show Changes"
+msgstr ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "Show Deleted Lines"
+msgstr ""
+
 #: src/ui/watchlist/sidebar/header.rs
 #: src/ui/watchlist/sidebar/menus.rs
 msgid "Show Details"
+msgstr ""
+
+#: src/pine_studio/menu_bar/view.rs
+msgid "Show Drawer"
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -11480,6 +13225,10 @@ msgstr ""
 
 #: src/ui/workspace/tool_sidebar.rs
 msgid "Show Paper Trading panel"
+msgstr ""
+
+#: src/pine_studio/menu_bar/view.rs
+msgid "Show Preview Chart"
 msgstr ""
 
 #: src/native_bridge.rs
@@ -11555,6 +13304,10 @@ msgstr ""
 msgid "Show in Paper panel"
 msgstr ""
 
+#: src/pine_studio/debug/panel/tree.rs
+msgid "Show more ({loaded} of {total} shown)"
+msgstr ""
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Show more themes"
 msgstr ""
@@ -11571,6 +13324,14 @@ msgstr ""
 msgid "Show only messages written on bars you drag over on the chart"
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
+msgid "Show panel"
+msgstr ""
+
+#: src/pine_studio/preview/chart.rs
+msgid "Show problems"
+msgstr ""
+
 #: src/ui/chart/settings/compare.rs
 msgid "Show settings"
 msgstr ""
@@ -11583,12 +13344,28 @@ msgstr ""
 msgid "Show the bars' highs and lows on the bricks."
 msgstr ""
 
+#: src/pine_studio/debug/panel/toolbar.rs
+msgid "Show the debugger: controls, breakpoints, variables, watches"
+msgstr ""
+
 #: src/ui/chart/settings/style.rs
 msgid "Show the high and low as wicks."
 msgstr ""
 
+#: src/pine_studio/rail.rs
+msgid "Show the preview chart"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Show the time range, the price range and their ratio."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Show this frame's variables and watches"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Show this line"
 msgstr ""
 
 #: src/ui/trade/panel_header.rs
@@ -11612,6 +13389,11 @@ msgstr ""
 msgid "Showing messages written on these bars"
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
+#: src/pine_studio/drawer/trades.rs
+msgid "Showing the latest {shown} of {total}"
+msgstr ""
+
 #: src/ui/mcp/activity.rs
 msgid "Showing the newest {shown} of {total}"
 msgstr ""
@@ -11622,6 +13404,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Shown when the market has any."
+msgstr ""
+
+#: src/pine_studio/library/disk_banner.rs
+msgid "Shows the file's text. Undo brings your changes back."
 msgstr ""
 
 #: src/ui/portfolio/overview/top_holdings.rs
@@ -11667,6 +13453,10 @@ msgstr ""
 
 #: src/ui/trade/connect_list.rs
 msgid "Simulated"
+msgstr ""
+
+#: src/pine_studio/drawer/simulation.rs
+msgid "Simulation"
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -11724,6 +13514,10 @@ msgstr[1] ""
 
 #: src/model/drawings/style.rs
 msgid "Skull"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Slowest"
 msgstr ""
 
 #: src/ui/chart/settings/appearance.rs
@@ -11883,6 +13677,10 @@ msgstr ""
 msgid "Start bar"
 msgstr ""
 
+#: src/pine_studio/debug/panel/toolbar.rs
+msgid "Start debugging"
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Start from a random bar, leaving room to play forward"
 msgstr ""
@@ -11911,12 +13709,24 @@ msgstr ""
 msgid "Start of move"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Start over"
+msgstr ""
+
 #: src/ui/paper/account_sheet.rs
 msgid "Start over with a fresh balance."
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "Start profiling"
+msgstr ""
+
 #: src/ui/paper/account_sheet.rs
 msgid "Starting balance"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Starting…"
 msgstr ""
 
 #: src/ui/chart/settings/overlay.rs
@@ -11968,6 +13778,22 @@ msgstr ""
 msgid "Step Line"
 msgstr ""
 
+#: src/pine_studio/debug/panel/toolbar.rs
+msgid "Step bar: run to the first statement of the next bar"
+msgstr ""
+
+#: src/pine_studio/debug/panel/toolbar.rs
+msgid "Step into a function call"
+msgstr ""
+
+#: src/pine_studio/debug/panel/toolbar.rs
+msgid "Step out: run until the function returns"
+msgstr ""
+
+#: src/pine_studio/debug/panel/toolbar.rs
+msgid "Step over: run this statement and stop at the next one"
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Step {number} of {count}"
 msgstr ""
@@ -11980,6 +13806,12 @@ msgstr ""
 msgid "Stock"
 msgstr ""
 
+#: src/pine_studio/preview/chart.rs
+msgid ""
+"Stock candles come from Alpaca. Add your keys in Settings to test on stocks."
+msgstr ""
+
+#: src/pine_studio/preview/market_picker.rs
 #: src/ui/chart/symbol_picker/search.rs
 #: src/ui/portfolio/asset_picker.rs
 msgid "Stocks"
@@ -11989,10 +13821,15 @@ msgstr ""
 msgid "Stocks could not be searched"
 msgstr ""
 
+#: src/pine_studio/preview/market_picker.rs
+msgid "Stocks need Alpaca market data"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Stocks need an Alpaca key"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
 #: src/ui/drawing/layer/forecast_shapes.rs
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -12003,12 +13840,20 @@ msgstr ""
 msgid "Stop Watching on This Mac"
 msgstr ""
 
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Stop at bar"
+msgstr ""
+
 #: src/ui/chart/settings/compare.rs
 msgid "Stop comparing all {count} markets?"
 msgstr ""
 
 #: src/ui/chart/settings/compare.rs
 msgid "Stop comparing this market?"
+msgstr ""
+
+#: src/pine_studio/debug/panel/toolbar.rs
+msgid "Stop debugging"
 msgstr ""
 
 #: src/ui/replay/overlay.rs
@@ -12029,8 +13874,57 @@ msgstr ""
 msgid "Stop reached"
 msgstr ""
 
+#: src/pine_studio/debug/mod.rs
+msgid "Stop the script at a breakpoint to evaluate expressions."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid ""
+"Stop the script, then type one: close[1], bar_index % 5 == 0, myArray.size()."
+msgstr ""
+
 #: src/model/broker/ticket.rs
 msgid "Stop-limit"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Stopped"
+msgstr ""
+
+#: src/pine_studio/ai/mod.rs
+msgid "Stopped before it finished."
+msgstr ""
+
+#: src/pine_studio/ai/mod.rs
+msgid "Stopped."
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Stopping…"
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "Stops at bar {index}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Stops every time the condition holds."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Stops on every hit after the {ordinal}."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Stops on every {ordinal} hit."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Stops on hit number {n} only."
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Stops only when this Pine expression is true."
 msgstr ""
 
 #: src/ui/settings/window.rs
@@ -12049,6 +13943,10 @@ msgstr ""
 msgid "Stored in your Mac's Keychain, never in a file."
 msgstr ""
 
+#: src/pine_studio/library/picker.rs
+msgid "Strategies"
+msgstr ""
+
 #: src/model/pine/script.rs
 #: src/ui/chart/settings/scripts/rows.rs
 msgid "Strategy"
@@ -12057,6 +13955,12 @@ msgstr ""
 #: src/ui/pine/report.rs
 msgid "Strategy report"
 msgstr ""
+
+#: src/pine_studio/drawer/mod.rs
+msgid "Strategy · {count} trade"
+msgid_plural "Strategy · {count} trades"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/ui/chart/settings/appearance.rs
 msgid "Stretches where the price falls."
@@ -12099,9 +14003,19 @@ msgstr ""
 msgid "Subminuette"
 msgstr ""
 
+#: src/pine_studio/ai/tools.rs
+msgid "Submitted the plan · {count} step"
+msgid_plural "Submitted the plan · {count} steps"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/drawing/layer/forecast_shapes.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Success"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Suggest how to simplify this script"
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -12149,6 +14063,10 @@ msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Switch tab"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Switches to Edit mode and asks for these changes."
 msgstr ""
 
 #: src/model/drawings/style.rs
@@ -12313,6 +14231,10 @@ msgstr ""
 msgid "Tell me when orders are placed, fill, cancel or are rejected"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Tell the assistant what to change in the plan"
+msgstr ""
+
 #: src/ui/drawing/properties/templates.rs
 #: src/ui/drawing/properties/tests.rs
 msgid "Template"
@@ -12374,6 +14296,10 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "Text that has no color of its own, and the editor's foreground."
+msgstr ""
+
+#: src/pine_studio/drawer/logs/mod.rs
+msgid "That bar is older than the candles the preview chart has loaded."
 msgstr ""
 
 #: src/workspace/pine/logs/mod.rs
@@ -12450,6 +14376,14 @@ msgstr ""
 msgid "That link is too long."
 msgstr ""
 
+#: src/pine_studio/editor/symbols.rs
+msgid "That name is a Pine constant."
+msgstr ""
+
+#: src/pine_studio/editor/symbols.rs
+msgid "That name would clash with another name in scope."
+msgstr ""
+
 #: src/workspace/trade/broker.rs
 msgid "That order is no longer working."
 msgstr ""
@@ -12468,6 +14402,10 @@ msgstr ""
 
 #: src/service/annotation/ingest.rs
 msgid "That picture is too large (over 8192 pixels a side)."
+msgstr ""
+
+#: src/pine_studio/open_script.rs
+msgid "That script is no longer in the Pine Studio."
 msgstr ""
 
 #: src/host/snapshot/mod.rs
@@ -12499,6 +14437,10 @@ msgstr ""
 
 #: src/model/editor_theme/codec/mod.rs
 msgid "That theme's name cannot be used: {why}"
+msgstr ""
+
+#: src/pine_studio/editor/symbols.rs
+msgid "That word is reserved."
 msgstr ""
 
 #: src/model/portfolio/csv.rs
@@ -12548,6 +14490,10 @@ msgstr ""
 msgid "The arrow's angle as drawn on screen."
 msgstr ""
 
+#: src/pine_studio/ai/mod.rs
+msgid "The assistant stopped unexpectedly."
+msgstr ""
+
 #: src/ui/chart/settings/appearance.rs
 msgid "The axis reads prices; equal price differences are equally tall."
 msgstr ""
@@ -12566,6 +14512,18 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "The band behind the line the caret is on."
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "The bar's index, 0 to {last}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "The bar's index: 0"
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "The bars are numbered 0 to {last}."
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -12611,6 +14569,10 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "The cancel was sent but the answer was lost. The order is being checked."
+msgstr ""
+
+#: src/pine_studio/preview/fetch.rs
+msgid "The candles could not be loaded."
 msgstr ""
 
 #: src/model/chart/snapshot/studio.rs
@@ -12800,6 +14762,11 @@ msgstr ""
 msgid "The exchange rate for this alert is not available yet."
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+msgid ""
+"The expression of a request.security() runs on its own bars, in its own state."
+msgstr ""
+
 #: src/service/system/file_dialog.rs
 msgid "The file dialog failed: {message}"
 msgstr ""
@@ -12877,6 +14844,10 @@ msgstr ""
 msgid "The library is busy."
 msgstr ""
 
+#: src/pine_studio/open_script.rs
+msgid "The library “{name}” is not in the Pine Studio."
+msgstr ""
+
 #: src/ui/chart/settings/canvas.rs
 msgid ""
 "The line between the price chart and a script's pane. It appears once a script"
@@ -12927,6 +14898,10 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "The match the find bar is on."
+msgstr ""
+
+#: src/pine_studio/ai/mod.rs
+msgid "The model list stopped unexpectedly."
 msgstr ""
 
 #: src/ui/settings/mcp/permissions_sheet.rs
@@ -13025,6 +15000,15 @@ msgstr ""
 msgid "The portfolio database is unavailable."
 msgstr ""
 
+#: src/pine_studio/drawer/logs/mod.rs
+msgid "The preview chart has no bars yet."
+msgstr ""
+
+#: src/pine_studio/debug/host.rs
+#: src/pine_studio/profiler/host.rs
+msgid "The preview chart has no bars yet. Wait for it to load."
+msgstr ""
+
 #: src/service/annotation/link_fetch.rs
 msgid "The preview could not be fetched. Check your connection."
 msgstr ""
@@ -13096,6 +15080,12 @@ msgstr ""
 msgid "The provider returned no quote"
 msgstr ""
 
+#: src/pine_studio/ai/mod.rs
+msgid ""
+"The reply hit the model's length limit, so the script is cut off. Ask for a "
+"smaller change."
+msgstr ""
+
 #: src/workspace/overlay/mod.rs
 msgid "The request stopped before it answered"
 msgstr ""
@@ -13120,8 +15110,56 @@ msgstr ""
 msgid "The scale of the move: it sets how the waves are written."
 msgstr ""
 
+#: src/pine_studio/ai/mod.rs
+msgid "The script already does this. Nothing to change."
+msgstr ""
+
+#: src/pine_studio/ai/host.rs
+msgid ""
+"The script changed while the assistant was writing. Ask again to base the "
+"change on the current text."
+msgstr ""
+
+#: src/pine_studio/profiler/mod.rs
+msgid "The script could not be profiled."
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "The script failed"
+msgstr ""
+
+#: src/pine_studio/profiler/mod.rs
+msgid "The script failed on bar {bar}: {message}"
+msgstr ""
+
+#: src/pine_studio/editor/status.rs
+msgid "The script failed when it ran: {message}"
+msgstr ""
+
+#: src/pine_studio/sheets.rs
+msgid "The script file will be moved to the Trash."
+msgstr ""
+
+#: src/pine_studio/debug/host.rs
+msgid "The script has errors. Fix them to debug it."
+msgstr ""
+
+#: src/pine_studio/profiler/host.rs
+msgid "The script has errors. Fix them to profile it."
+msgstr ""
+
 #: src/model/alert/pine.rs
 msgid "The script has no alert() or alertcondition() calls."
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid ""
+"The script was edited after this session began; it is still running the old "
+"text."
+msgstr ""
+
+#: src/pine_studio/commands.rs
+msgid "The scripts folder isn't available."
 msgstr ""
 
 #: src/ui/chart/symbol_picker/search.rs
@@ -13200,6 +15238,12 @@ msgstr ""
 msgid "The start is after the end, so nothing matches."
 msgstr ""
 
+#: src/pine_studio/drawer/simulation.rs
+msgid ""
+"The strategy has closed {have}; the simulation takes up to {max} so the tab "
+"stays quick."
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "The strip with the line numbers."
 msgstr ""
@@ -13273,6 +15317,7 @@ msgstr ""
 msgid "The {symbol} alert is removed. Its trigger history is kept."
 msgstr ""
 
+#: src/pine_studio/menu_bar/mod.rs
 #: src/ui/settings/appearance.rs
 msgid "Theme"
 msgstr ""
@@ -13370,6 +15415,10 @@ msgstr ""
 
 #: src/ui/chart/settings/style.rs
 msgid "Thin line"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Thinking…"
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -13552,6 +15601,20 @@ msgid ""
 "This permanently removes what DegenView synced to your private iCloud storage."
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid ""
+"This profile is of earlier inputs or data. Its lines still match the editor."
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "This profile is of earlier text. Its lines no longer match the editor."
+msgstr ""
+
+#: src/pine_studio/profiler/mod.rs
+msgid ""
+"This profile is of earlier text. Run it again to see where the time goes now."
+msgstr ""
+
 #: src/model/session_stats/mod.rs
 msgid "This question needs hourly bars; switch the timeframe to 1H."
 msgstr ""
@@ -13577,8 +15640,32 @@ msgstr ""
 msgid "This rule type is not supported by this version."
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "This script could not be profiled"
+msgstr ""
+
 #: src/ui/pine/settings_popover.rs
 msgid "This script has no inputs or style options."
+msgstr ""
+
+#: src/pine_studio/drawer/intro.rs
+msgid "This script has no inputs yet."
+msgstr ""
+
+#: src/pine_studio/commands.rs
+msgid ""
+"This script is applied more than once. Remove the duplicate instance or arm it"
+" from the chart instance you want to watch."
+msgstr ""
+
+#: src/pine_studio/ai/host.rs
+msgid "This script is too long to send to the assistant."
+msgstr ""
+
+#: src/pine_studio/open_script.rs
+msgid ""
+"This script was edited after that message was written, so the line may have "
+"moved."
 msgstr ""
 
 #: src/workspace/pine/logs/mod.rs
@@ -13588,6 +15675,11 @@ msgstr ""
 
 #: src/ui/trade/order_sheet/review.rs
 msgid "This sends a real order to {name}. Check every line."
+msgstr ""
+
+#: src/pine_studio/ai/mod.rs
+msgid ""
+"This server does not accept tools, so the assistant answered without them."
 msgstr ""
 
 #: src/host/snapshot/mod.rs
@@ -13642,7 +15734,13 @@ msgstr ""
 msgid "Ticks per row"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Tidy up the names and add comments"
+msgstr ""
+
 #: src/model/chart/table.rs
+#: src/pine_studio/debug/panel/bar_break.rs
+#: src/pine_studio/profiler/marks.rs
 #: src/ui/broker/panel.rs
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -13686,12 +15784,21 @@ msgstr ""
 msgid "Timed out"
 msgstr ""
 
+#: src/pine_studio/bar.rs
 #: src/ui/workspace/toolbar.rs
 msgid "Timeframe"
 msgstr ""
 
+#: src/pine_studio/bar.rs
+msgid "Timeframe: {description}. Choose another"
+msgstr ""
+
 #: src/ui/workspace/toolbar.rs
 msgid "Timeframe: {timeframe}. Choose another"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Times shorter than this are estimates"
 msgstr ""
 
 #: src/ui/chart/settings/appearance.rs
@@ -13715,8 +15822,16 @@ msgstr ""
 msgid "Today"
 msgstr ""
 
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Toggle Comment"
+msgstr ""
+
 #: src/model/watchlist/mod.rs
 msgid "Too Many Watchlists"
+msgstr ""
+
+#: src/pine_studio/drawer/simulation.rs
+msgid "Too many closed trades to reshuffle here"
 msgstr ""
 
 #: src/model/chart/snapshot/mod.rs
@@ -13795,6 +15910,10 @@ msgstr ""
 msgid "Total cost"
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "Total time"
+msgstr ""
+
 #: src/ui/portfolio/empty.rs
 msgid "Total value"
 msgstr ""
@@ -13815,10 +15934,12 @@ msgstr ""
 msgid "Traded volume under the candles."
 msgstr ""
 
+#: src/pine_studio/drawer/trades.rs
 #: src/ui/paper/tables.rs
 msgid "Trades"
 msgstr ""
 
+#: src/pine_studio/drawer/trades.rs
 #: src/ui/pine/report.rs
 msgid "Trades ({count})"
 msgstr ""
@@ -13952,9 +16073,19 @@ msgstr ""
 msgid "Try Again…"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+#: src/pine_studio/profiler/ui.rs
 #: src/ui/broker/panel.rs
 #: src/ui/trade/order_sheet/status.rs
 msgid "Try again"
+msgstr ""
+
+#: src/pine_studio/preview/market_picker.rs
+msgid "Try another symbol or name."
+msgstr ""
+
+#: src/pine_studio/drawer/intro.rs
+msgid "Tune a script without editing it"
 msgstr ""
 
 #: src/ui/chart/settings/scripts/rows.rs
@@ -13990,6 +16121,18 @@ msgstr ""
 msgid "Turn the other way round."
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "Turn the profiler off"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Turn the profiler on with the stopwatch."
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Turn the profiler on: see which lines of the script take the time"
+msgstr ""
+
 #: src/ui/chart/settings/scripts/rows.rs
 msgid "Turn {what} off — it keeps its settings"
 msgstr ""
@@ -14022,6 +16165,10 @@ msgstr ""
 #: src/ui/portfolio/transactions.rs
 #: src/ui/trade/tables.rs
 msgid "Type"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Type a message; until then the breakpoint stops as usual."
 msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
@@ -14065,6 +16212,14 @@ msgstr ""
 #: src/ui/portfolio/asset_detail.rs
 #: src/ui/settings/window.rs
 msgid "Unavailable"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Unconfirmed"
+msgstr ""
+
+#: src/pine_studio/menu_bar/edit.rs
+msgid "Undo"
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -14279,6 +16434,10 @@ msgstr ""
 msgid "Upper line"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Use \"{model}\""
+msgstr ""
+
 #: src/ui/portfolio/tab/import.rs
 #: src/ui/portfolio/tab/mod.rs
 msgid "Use Asset"
@@ -14489,8 +16648,17 @@ msgstr ""
 msgid "Values tooltip on long press"
 msgstr ""
 
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Variables"
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "Variables and identifiers"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid ""
+"Variables appear here when the script is stopped at a breakpoint or a step."
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -14524,6 +16692,10 @@ msgstr ""
 
 #: src/ui/workspace/link_charts.rs
 msgid "Vertical scales remain independent."
+msgstr ""
+
+#: src/pine_studio/menu_bar/mod.rs
+msgid "View"
 msgstr ""
 
 #: src/ui/portfolio/overview/top_holdings.rs
@@ -14628,6 +16800,10 @@ msgstr ""
 msgid "Volume: {volume}"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "Wait for the assistant to finish."
+msgstr ""
+
 #: src/ui/chart/session_stats_view/result.rs
 msgid "Waiting for bars"
 msgstr ""
@@ -14636,6 +16812,7 @@ msgstr ""
 msgid "Waiting for current market data."
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
 #: src/ui/alert/center.rs
 #: src/ui/settings/window.rs
 msgid "Waiting for data"
@@ -14645,6 +16822,14 @@ msgstr ""
 msgid "Waiting for the broker's connection. Orders are paused until it is back."
 msgstr ""
 
+#: src/pine_studio/profiler/ui.rs
+msgid "Waiting for the chart"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "Waiting for the chart…"
+msgstr ""
+
 #: src/ui/settings/sync.rs
 msgid "Waiting for the network"
 msgstr ""
@@ -14652,6 +16837,10 @@ msgstr ""
 #: src/ui/alert/center.rs
 msgid ""
 "Waiting for the price to move back across the level before it can fire again."
+msgstr ""
+
+#: src/pine_studio/profiler/host.rs
+msgid "Waiting for the script to compile."
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -14684,6 +16873,14 @@ msgstr ""
 
 #: src/ui/alert/center.rs
 msgid "Watch on This Mac"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "Watch this expression"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "Watches"
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -14844,12 +17041,20 @@ msgid ""
 "ids and results, never what a request contained."
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "What could go wrong with this logic?"
+msgstr ""
+
 #: src/ui/settings/network/mod.rs
 msgid "What goes through the proxy"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "What is lost if the stop is reached."
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "What should be planned?"
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -14905,6 +17110,14 @@ msgstr ""
 msgid "Where the median starts and ends."
 msgstr ""
 
+#: src/pine_studio/rail.rs
+msgid "Where the preview chart sits next to the code"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "Where the time goes"
+msgstr ""
+
 #: src/model/drawings/style.rs
 msgid "White flag"
 msgstr ""
@@ -14939,6 +17152,7 @@ msgstr ""
 msgid "Win Rate"
 msgstr ""
 
+#: src/pine_studio/drawer/figures.rs
 #: src/ui/pine/report.rs
 msgid "Win rate"
 msgstr ""
@@ -14976,13 +17190,37 @@ msgstr ""
 msgid "Write one in the Pine Studio and it shows up here."
 msgstr ""
 
+#: src/pine_studio/drawer/intro.rs
+msgid "Write or edit the script; it is checked as you type."
+msgstr ""
+
 #: src/model/chart/price_format.rs
 msgid "Write out the zeros"
+msgstr ""
+
+#: src/pine_studio/library/empty_library.rs
+msgid "Write your own scripts"
 msgstr ""
 
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "Write, edit and organise scripts"
 msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Writing the script… {count} line so far"
+msgid_plural "Writing the script… {count} lines so far"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/ai/tools.rs
+msgid "Writing up the plan"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "Wrote a script · {count} line"
+msgid_plural "Wrote a script · {count} lines"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "X"
@@ -15040,6 +17278,10 @@ msgstr ""
 msgid "You can keep at most {max} custom themes."
 msgstr ""
 
+#: src/pine_studio/library/disk_banner.rs
+msgid "You have unsaved changes too. Saving is on hold until you choose."
+msgstr ""
+
 #: src/model/broker/ticket.rs
 msgid "You have {available} {asset} available; this needs about {needed}."
 msgstr ""
@@ -15058,6 +17300,14 @@ msgstr ""
 
 #: src/ui/settings/about.rs
 msgid "You're on version {version}."
+msgstr ""
+
+#: src/pine_studio/library/unsaved.rs
+msgid "Your changes will be lost if you close this tab without saving."
+msgstr ""
+
+#: src/pine_studio/library/unsaved.rs
+msgid "Your changes will be lost if you quit DegenView without saving."
 msgstr ""
 
 #: src/ui/workspace/layout_prompts.rs
@@ -15133,12 +17383,27 @@ msgstr ""
 msgid "`{text}` is not an IP address"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+msgid "after {n}"
+msgstr ""
+
 #: src/model/portfolio/statistics.rs
 msgid "all time"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
 #: src/ui/broker/panel.rs
 msgid "and {count} more"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "and {count} more call site."
+msgid_plural "and {count} more call sites."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/library/unsaved.rs
+msgid "and {rest} more"
 msgstr ""
 
 #: src/ui/chart/session_stats_view/text.rs
@@ -15166,6 +17431,10 @@ msgid "chance of {symbol} · {count} choice"
 msgid_plural "chance of {symbol} · {count} choices"
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "chart bar {bar}"
+msgstr ""
 
 #: src/service/update/code_signature.rs
 msgid "checking the signature took too long"
@@ -15199,12 +17468,20 @@ msgstr ""
 msgid "e.g. Long-term holds"
 msgstr ""
 
+#: src/pine_studio/debug/panel/lists.rs
+msgid "e.g. bar_index > 100 and close > open"
+msgstr ""
+
 #: src/model/session_stats/mod.rs
 msgid "every day"
 msgstr ""
 
 #: src/model/alert/draft/mod.rs
 msgid "every time"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "every {n}"
 msgstr ""
 
 #: src/ui/settings/provider_card.rs
@@ -15229,6 +17506,10 @@ msgstr ""
 
 #: src/model/session_stats/mod.rs
 msgid "gap up"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "hit #{n}"
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -15301,12 +17582,42 @@ msgstr ""
 msgid "in the future"
 msgstr ""
 
+#: src/pine_studio/editor/navigation.rs
+msgid "in {context}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "in {frame}"
+msgstr ""
+
+#: src/pine_studio/ai/mod.rs
+msgid "it did not finish."
+msgstr ""
+
+#: src/pine_studio/ai/mod.rs
+msgid "it has {count} compile error."
+msgid_plural "it has {count} compile errors."
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/service/update/archive.rs
 msgid "it unpacks to more data than an update should"
 msgstr ""
 
 #: src/ui/settings/about.rs
 msgid "just now"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "last stop"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgid "line {line}"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "line {line}: {calls} calls, {time}"
 msgstr ""
 
 #: src/ui/settings/window.rs
@@ -15323,6 +17634,10 @@ msgstr ""
 
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "min"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "needs a key"
 msgstr ""
 
 #: src/ui/chart/card/overlay_card.rs
@@ -15409,6 +17724,10 @@ msgstr ""
 msgid "ta.sma, plot, input.int and the other functions Pine provides."
 msgstr ""
 
+#: src/pine_studio/ai/mod.rs
+msgid "the script changed while the assistant worked."
+msgstr ""
+
 #: src/ui/chart/card/crosshair.rs
 msgid "thick"
 msgstr ""
@@ -15465,6 +17784,10 @@ msgstr ""
 
 #: src/ui/chart/card/overlay_card.rs
 msgid "waiting to load"
+msgstr ""
+
+#: src/pine_studio/library/unsaved.rs
+msgid "whitespace only"
 msgstr ""
 
 #: src/ui/portfolio/statistics/win_rate.rs
@@ -15543,6 +17866,18 @@ msgstr[1] ""
 msgid "{caption} · Cached exchange rates"
 msgstr ""
 
+#: src/pine_studio/debug/panel/mod.rs
+msgid "{code} at line {line}: {message}"
+msgstr ""
+
+#: src/pine_studio/drawer/mod.rs
+msgid "{code}, line {line}: {message}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/mod.rs
+msgid "{code}: {message}"
+msgstr ""
+
 #: src/ui/window/tab_link_menu/mod.rs
 msgid "{color} (click to unlink)"
 msgstr ""
@@ -15571,6 +17906,7 @@ msgstr[1] ""
 msgid "{count} active"
 msgstr ""
 
+#: src/pine_studio/drawer/mod.rs
 #: src/ui/alert/pine_editor.rs
 #: src/ui/settings/sync.rs
 msgid "{count} alert"
@@ -15602,6 +17938,7 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: src/model/drawings/mod.rs
+#: src/pine_studio/drawer/trades.rs
 #: src/ui/chart/settings/scripts/mod.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/drawing/render.rs
@@ -15626,12 +17963,19 @@ msgid_plural "{count} bytes"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/pine_studio/editor/navigation.rs
+msgid "{count} call"
+msgid_plural "{count} calls"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/mcp/activity.rs
 msgid "{count} call refused within a minute"
 msgid_plural "{count} calls refused within a minute"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/pine_studio/ai/panel.rs
 #: src/ui/settings/sync.rs
 msgid "{count} change"
 msgid_plural "{count} changes"
@@ -15662,9 +18006,27 @@ msgid_plural "{count} closed trades"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "{count} compile error"
+msgid_plural "{count} compile errors"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "{count} compile error with this selection"
+msgid_plural "{count} compile errors with this selection"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/mcp/activity.rs
 msgid "{count} could not be read"
 msgid_plural "{count} could not be read"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/inputs.rs
+msgid "{count} day"
+msgid_plural "{count} days"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -15690,6 +18052,13 @@ msgstr[1] ""
 #: src/ui/paper/tables.rs
 msgid "{count} entry"
 msgid_plural "{count} entries"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/drawer/mod.rs
+#: src/pine_studio/editor/status.rs
+msgid "{count} error"
+msgid_plural "{count} errors"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -15742,6 +18111,16 @@ msgstr[1] ""
 #: src/ui/webhook/settings.rs
 msgid "{count} header"
 msgid_plural "{count} headers"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/drawer/mod.rs
+msgid "{count} historical"
+msgstr ""
+
+#: src/pine_studio/inputs.rs
+msgid "{count} hour"
+msgid_plural "{count} hours"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -15816,6 +18195,40 @@ msgid_plural "{count} layouts"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/pine_studio/ai/host.rs
+msgid "{count} line"
+msgid_plural "{count} lines"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/editor/status.rs
+msgid "{count} line added since the last save"
+msgid_plural "{count} lines added since the last save"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "{count} line added — Click to inspect"
+msgid_plural "{count} lines added — Click to inspect"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/editor/gutter/changes.rs
+msgid "{count} line deleted — Click to restore"
+msgid_plural "{count} lines deleted — Click to restore"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/editor/status.rs
+msgid "{count} line removed since the last save"
+msgid_plural "{count} lines removed since the last save"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/drawer/mod.rs
+msgid "{count} live"
+msgstr ""
+
 #: src/ui/chart/settings/compare.rs
 msgid "{count} market"
 msgid_plural "{count} markets"
@@ -15838,9 +18251,21 @@ msgid_plural "{count} min. ago"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/pine_studio/inputs.rs
+msgid "{count} minute"
+msgid_plural "{count} minutes"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/kit/time_text.rs
 msgid "{count} mo. ago"
 msgid_plural "{count} mo. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/inputs.rs
+msgid "{count} month"
+msgid_plural "{count} months"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -15943,6 +18368,7 @@ msgid_plural "{count} rows dropped while the app was busy"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/pine_studio/library/picker.rs
 #: src/ui/settings/sync.rs
 msgid "{count} script"
 msgid_plural "{count} scripts"
@@ -15992,6 +18418,12 @@ msgstr ""
 #: src/ui/kit/timeframe_picker/warning.rs
 msgid "{count} source can't chart {timeframe}"
 msgid_plural "{count} sources can't chart {timeframe}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/ai/panel.rs
+msgid "{count} step"
+msgid_plural "{count} steps"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -16051,6 +18483,8 @@ msgid_plural "{count} unreconciled data gaps"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/pine_studio/drawer/mod.rs
+#: src/pine_studio/editor/status.rs
 #: src/ui/portfolio/import_preview.rs
 msgid "{count} warning"
 msgid_plural "{count} warnings"
@@ -16060,6 +18494,12 @@ msgstr[1] ""
 #: src/ui/settings/sync.rs
 msgid "{count} watchlist"
 msgid_plural "{count} watchlists"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/inputs.rs
+msgid "{count} week"
+msgid_plural "{count} weeks"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -16121,6 +18561,10 @@ msgstr ""
 msgid "{currency} per order"
 msgstr ""
 
+#: src/pine_studio/editor/find.rs
+msgid "{current} of {count}"
+msgstr ""
+
 #: src/ui/chart/cmc_gauge.rs
 msgid "{date} · {value} {zone}"
 msgstr ""
@@ -16143,6 +18587,10 @@ msgstr ""
 
 #: src/ui/chart/settings/compare.rs
 msgid "{details} · Hidden"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+msgid "{done} of {total} bars"
 msgstr ""
 
 #: src/ui/pine/report.rs
@@ -16252,6 +18700,10 @@ msgstr ""
 msgid "{hours}h {minutes}m"
 msgstr ""
 
+#: src/pine_studio/profiler/marks.rs
+msgid "{iterations} (about {average} per entry)"
+msgstr ""
+
 #: src/ui/portfolio/transactions.rs
 msgid "{kind} {count}"
 msgstr ""
@@ -16312,9 +18764,14 @@ msgstr[1] ""
 msgid "{label}: no limit. Set one"
 msgstr ""
 
+#: src/pine_studio/drawer/figures.rs
 #: src/ui/chart/session_stats_view/parts.rs
 #: src/ui/watchlist/sidebar/detail.rs
 msgid "{label}: {value}"
+msgstr ""
+
+#: src/pine_studio/drawer/figures.rs
+msgid "{label}: {value}, {note}"
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -16361,6 +18818,10 @@ msgid_plural "{matching} of {count} entries"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/pine_studio/inputs.rs
+msgid "{max} or less"
+msgstr ""
+
 #: src/ui/portfolio/import_preview.rs
 msgid ""
 "{message}\n"
@@ -16390,6 +18851,14 @@ msgstr ""
 msgid "{minutes}m"
 msgstr ""
 
+#: src/pine_studio/inputs.rs
+msgid "{min} or more"
+msgstr ""
+
+#: src/pine_studio/inputs.rs
+msgid "{min} to {max}"
+msgstr ""
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "{min} to {max} points."
 msgstr ""
@@ -16397,6 +18866,10 @@ msgstr ""
 #: src/ui/mcp/activity.rs
 #: src/ui/webhook/settings.rs
 msgid "{ms} ms"
+msgstr ""
+
+#: src/pine_studio/drawer/logs/mod.rs
+msgid "{name} (debugger)"
 msgstr ""
 
 #: src/ui/settings/pine_studio/font_picker/mod.rs
@@ -16413,6 +18886,10 @@ msgstr ""
 
 #: src/ui/snapshot_studio/window/swatches.rs
 msgid "{name} background"
+msgstr ""
+
+#: src/pine_studio/library/disk_banner.rs
+msgid "{name} changed outside the app"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/header.rs
@@ -16462,6 +18939,14 @@ msgstr ""
 
 #: src/ui/chart/card/overlay_card.rs
 msgid "{name} · {source}"
+msgstr ""
+
+#: src/pine_studio/mod.rs
+msgid "{name} — Edited"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "{name}() · {calls} calls"
 msgstr ""
 
 #: src/ui/settings/brokers.rs
@@ -16560,6 +19045,10 @@ msgid ""
 "side — wide when volatile, tight when calm."
 msgstr ""
 
+#: src/pine_studio/editor/diff_view.rs
+msgid "{position} of {total}"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "{prefix} isn't supported · matches from other venues"
 msgstr ""
@@ -16584,6 +19073,12 @@ msgstr ""
 msgid "{rows} × {columns} table"
 msgstr ""
 
+#: src/pine_studio/drawer/simulation.rs
+msgid ""
+"{runs} runs, each drawing {trades} of the closed trades at random, repeats "
+"allowed. Profits add up as money, so position sizing does not compound."
+msgstr ""
+
 #: src/ui/portfolio/cards/value.rs
 msgid "{scope} · {count} asset"
 msgid_plural "{scope} · {count} assets"
@@ -16602,6 +19097,10 @@ msgstr ""
 msgid "{secs} s"
 msgstr ""
 
+#: src/pine_studio/ai/review_view.rs
+msgid "{selected} of {total} selected"
+msgstr ""
+
 #: src/ui/chart/session_stats_view/result.rs
 msgid "{sessions} sessions · {first} to {last}"
 msgstr ""
@@ -16612,6 +19111,16 @@ msgstr ""
 
 #: src/ui/chart/session_stats_view/text.rs
 msgid "{share} ({hits} of {days} days) · 95% CI {low} – {high}"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "{share} ({time} of {total})"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid ""
+"{share} of the total: setting bars up, committing them, orders, and part of "
+"the profiler's own bookkeeping"
 msgstr ""
 
 #: src/ui/chart/session_stats_view/parts.rs
@@ -16702,6 +19211,10 @@ msgstr ""
 msgid "{standing}, Qty: {quantity}"
 msgstr ""
 
+#: src/pine_studio/ai/panel.rs
+msgid "{stored} The script is sent to the provider you pick."
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "{style} tab title"
 msgstr ""
@@ -16778,6 +19291,14 @@ msgstr ""
 
 #: src/ui/chart/card/frame.rs
 msgid "{timeframe} · {source}"
+msgstr ""
+
+#: src/pine_studio/debug/panel/bar_break.rs
+msgid "{time} UTC"
+msgstr ""
+
+#: src/pine_studio/profiler/marks.rs
+msgid "{time} per execution"
 msgstr ""
 
 #: src/host/snapshot/mod.rs
@@ -16898,6 +19419,10 @@ msgstr ""
 msgid "{winners} in profit · {losers} at a loss"
 msgstr ""
 
+#: src/pine_studio/drawer/figures.rs
+msgid "{wins} of {total}"
+msgstr ""
+
 #: src/ui/replay/overlay.rs
 msgid "{words} · {time}"
 msgstr ""
@@ -16936,12 +19461,38 @@ msgstr ""
 msgid "“{name}” will be deleted. The editor goes back to following the app."
 msgstr ""
 
+#: src/pine_studio/editor/navigation.rs
+msgid "↑↓  navigate      ↵  open      esc  close"
+msgstr ""
+
+#: src/pine_studio/preview/market_picker.rs
+msgid "↑↓ Navigate    ↩ Select    esc Close"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "↑↓ move · space toggles"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 msgid "− Column"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
 msgid "− Row"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "⋯  {count} unchanged line  ·  click to show"
+msgid_plural "⋯  {count} unchanged lines  ·  click to show"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "✓ Accepted"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgid "✕ Rejected"
 msgstr ""
 
 #: src/model/chart/object_tree.rs
@@ -17014,9 +19565,64 @@ msgctxt "bold button"
 msgid "B"
 msgstr ""
 
+#: src/pine_studio/editor/completion.rs
+msgctxt "completion kind"
+msgid "built-in function"
+msgstr ""
+
+#: src/pine_studio/editor/completion.rs
+msgctxt "completion kind"
+msgid "built-in variable"
+msgstr ""
+
+#: src/pine_studio/editor/completion.rs
+msgctxt "completion kind"
+msgid "constant"
+msgstr ""
+
+#: src/pine_studio/editor/completion.rs
+msgctxt "completion kind"
+msgid "field"
+msgstr ""
+
+#: src/pine_studio/editor/completion.rs
+msgctxt "completion kind"
+msgid "keyword"
+msgstr ""
+
+#: src/pine_studio/editor/completion.rs
+msgctxt "completion kind"
+msgid "method"
+msgstr ""
+
+#: src/pine_studio/editor/completion.rs
+msgctxt "completion kind"
+msgid "namespace"
+msgstr ""
+
+#: src/pine_studio/editor/completion.rs
+msgctxt "completion kind"
+msgid "type"
+msgstr ""
+
+#: src/pine_studio/editor/completion.rs
+msgctxt "completion kind"
+msgid "your symbol"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgctxt "hit count field"
+msgid "n"
+msgstr ""
+
 #: src/model/indicators/mod.rs
 msgctxt "indicator chip"
 msgid "Vol"
+msgstr ""
+
+#: src/pine_studio/inputs.rs
+msgctxt "input timeframe"
+msgid "Chart"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -17027,6 +19633,11 @@ msgstr ""
 #: src/ui/paper/tables.rs
 msgctxt "journal entry"
 msgid "Entry"
+msgstr ""
+
+#: src/pine_studio/debug/panel/lists.rs
+msgctxt "logpoint tag"
+msgid "log"
 msgstr ""
 
 #: src/native_bridge.rs
@@ -17213,6 +19824,16 @@ msgstr ""
 #: src/ui/chart/card/crosshair.rs
 msgctxt "readout label: open"
 msgid "O"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgctxt "select changes"
+msgid "All"
+msgstr ""
+
+#: src/pine_studio/ai/review_view.rs
+msgctxt "select changes"
+msgid "None"
 msgstr ""
 
 #: src/ui/watchlist/rows.rs

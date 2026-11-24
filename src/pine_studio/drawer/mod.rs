@@ -15,6 +15,7 @@ pub(in crate::pine_studio) mod tabs_tests;
 mod trades;
 
 use super::library::prefs::DrawerTab;
+use crate::i18n::{tr, tr_n};
 use crate::model::alert::pine::frequency_name;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::runtime::state::AlertEvent;
@@ -41,11 +42,11 @@ impl DrawerTab {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Inputs => "Inputs",
-            Self::Report => "Report",
-            Self::Problems => "Problems",
-            Self::Logs => "Logs",
-            Self::Profile => "Profile",
+            Self::Inputs => tr!("Inputs"),
+            Self::Report => tr!("Report"),
+            Self::Problems => tr!("Problems"),
+            Self::Logs => tr!("Logs"),
+            Self::Profile => tr!("Profile"),
         }
     }
 
@@ -86,24 +87,57 @@ pub fn bar(
     bottom_bar::paint(ui, rect);
     let mut x = rect.min.x + 8.0;
     let font = FontId::proportional(10.0);
-    for candidate in DrawerTab::ALL {
-        let selected = open && candidate == tab;
-        let label = candidate.title();
-        let galley =
-            ui.painter()
-                .layout_no_wrap(label.to_owned(), font.clone(), Color32::PLACEHOLDER);
-        let badge = (candidate == DrawerTab::Problems && !problems.is_empty()).then(|| {
+    let badge_of = |candidate: DrawerTab| {
+        (candidate == DrawerTab::Problems && !problems.is_empty()).then(|| {
             let errors = problems
                 .iter()
                 .any(|d| d.severity == DiagnosticSeverity::Error);
             (problems.len().to_string(), errors)
-        });
-        let badge_width = badge
-            .as_ref()
-            .map_or(0.0, |(text, _)| text.len() as f32 * 6.0 + 15.0);
-        let width = 8.0 + 12.0 + 5.0 + galley.size().x + badge_width + 8.0;
+        })
+    };
+    let galleys: Vec<_> = DrawerTab::ALL
+        .iter()
+        .map(|candidate| {
+            ui.painter().layout_no_wrap(
+                candidate.title().to_owned(),
+                font.clone(),
+                Color32::PLACEHOLDER,
+            )
+        })
+        .collect();
+    let badge_width_of = |candidate: DrawerTab| {
+        badge_of(candidate).map_or(0.0, |(text, _)| text.len() as f32 * 6.0 + 15.0)
+    };
+    // The room for the tabs: up to the chevron. When their names do not all fit (a narrow window
+    // or a longer language), only the open tab keeps its name and the others are their icons.
+    let room = rect.max.x - 8.0 - 22.0 - 8.0 - x;
+    let named: f32 = DrawerTab::ALL
+        .iter()
+        .zip(&galleys)
+        .map(|(candidate, galley)| {
+            8.0 + 12.0 + 5.0 + galley.size().x + badge_width_of(*candidate) + 8.0 + 2.0
+        })
+        .sum();
+    let compact = named > room;
+    for (candidate, galley) in DrawerTab::ALL.into_iter().zip(galleys) {
+        let selected = open && candidate == tab;
+        let named = !compact || selected;
+        let label_width = if named { 5.0 + galley.size().x } else { 0.0 };
+        let badge = badge_of(candidate);
+        let badge_width = badge_width_of(candidate);
+        let width = 8.0 + 12.0 + label_width + badge_width + 8.0;
         let tab_rect = Rect::from_min_size(pos2(x, rect.center().y - 11.0), vec2(width, 22.0));
-        let response = ui.interact(tab_rect, Id::new(("drawer-tab", label)), Sense::click());
+        let response = ui.interact(
+            tab_rect,
+            Id::new(("drawer-tab", candidate as u8)),
+            Sense::click(),
+        );
+        // Without its name the tab says it on pointing, and to a screen reader.
+        let response = if named {
+            response
+        } else {
+            response.on_hover_text(candidate.title())
+        };
         if response.hovered() {
             ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
         }
@@ -127,18 +161,20 @@ pub fn bar(
             candidate.icon(),
             color,
         );
-        painter.galley(
-            pos2(
-                tab_rect.min.x + 8.0 + 12.0 + 5.0,
-                tab_rect.center().y - galley.size().y / 2.0,
-            ),
-            galley.clone(),
-            color,
-        );
+        if named {
+            painter.galley(
+                pos2(
+                    tab_rect.min.x + 8.0 + 12.0 + 5.0,
+                    tab_rect.center().y - galley.size().y / 2.0,
+                ),
+                galley.clone(),
+                color,
+            );
+        }
         if let Some((text, errors)) = badge {
             let badge_rect = Rect::from_min_size(
                 pos2(
-                    tab_rect.min.x + 8.0 + 12.0 + 5.0 + galley.size().x + 5.0,
+                    tab_rect.min.x + 8.0 + 12.0 + label_width + 5.0,
                     tab_rect.center().y - 7.5,
                 ),
                 vec2(text.len() as f32 * 6.0 + 10.0, 15.0),
@@ -174,7 +210,11 @@ pub fn bar(
     );
     let response = ui
         .interact(chevron, Id::new("drawer-chevron"), Sense::click())
-        .on_hover_text(if open { "Hide panel" } else { "Show panel" });
+        .on_hover_text(if open {
+            tr!("Hide panel")
+        } else {
+            tr!("Show panel")
+        });
     if response.hovered() {
         ui.painter().rect_filled(chevron, 5.0, theme::ink(14));
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
@@ -267,19 +307,15 @@ pub fn problems_summary(diagnostics: &[Diagnostic]) -> String {
         .count();
     let warnings = diagnostics.len() - errors;
     match (errors, warnings) {
-        (0, 0) => "No problems".to_owned(),
-        (errors, 0) => counted(errors, "error"),
-        (0, warnings) => counted(warnings, "warning"),
+        (0, 0) => tr!("No problems").to_owned(),
+        (errors, 0) => tr_n!(errors, "{count} error", "{count} errors"),
+        (0, warnings) => tr_n!(warnings, "{count} warning", "{count} warnings"),
         (errors, warnings) => format!(
             "{} \u{b7} {}",
-            counted(errors, "error"),
-            counted(warnings, "warning")
+            tr_n!(errors, "{count} error", "{count} errors"),
+            tr_n!(warnings, "{count} warning", "{count} warnings")
         ),
     }
-}
-
-fn counted(count: usize, noun: &str) -> String {
-    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
 }
 
 /// The Problems tab: a toolbar saying how many there are, with the button that copies them, and
@@ -307,9 +343,9 @@ pub fn problems(
         if copy {
             ui.add_space(6.0);
             let (icon, tip) = if just_copied {
-                (Icon::Check, "Copied")
+                (Icon::Check, tr!("Copied"))
             } else {
-                (Icon::CopyDoc, "Copy all problems")
+                (Icon::CopyDoc, tr!("Copy all problems"))
             };
             let color = theme::text_secondary();
             if icons::button(ui, icon, BUTTON, color, tip).clicked() && !just_copied {
@@ -348,13 +384,13 @@ fn problem_menu(ui: &Ui, response: &egui::Response, diagnostic: &Diagnostic) {
     kit::fitted_context_menu(
         ui,
         response,
-        &[("Copy problem", None), ("Copy message", None)],
+        &[(tr!("Copy problem"), None), (tr!("Copy message"), None)],
         |ui| {
-            if kit::menu_item(ui, Icon::CopyDoc, "Copy problem", true, false) {
+            if kit::menu_item(ui, Icon::CopyDoc, tr!("Copy problem"), true, false) {
                 ui.ctx().copy_text(problem_line(diagnostic));
                 ui.close();
             }
-            if kit::menu_item(ui, Icon::CopyDoc, "Copy message", true, false) {
+            if kit::menu_item(ui, Icon::CopyDoc, tr!("Copy message"), true, false) {
                 ui.ctx().copy_text(diagnostic.message.clone());
                 ui.close();
             }
@@ -382,10 +418,15 @@ fn problem_row(ui: &mut Ui, diagnostic: &Diagnostic) -> egui::Response {
     );
     crate::ui::accessibility::label(
         response,
-        format!("{}, line {line}: {}", diagnostic.code, diagnostic.message),
+        tr!(
+            "{code}, line {line}: {message}",
+            code = diagnostic.code,
+            line = line,
+            message = diagnostic.message
+        ),
     )
     .on_hover_cursor(CursorIcon::PointingHand)
-    .on_hover_text(format!("Go to line {line}"))
+    .on_hover_text(tr!("Go to line {line}", line = line))
 }
 
 /// What a card's row says: a status icon, an optional code in a capsule, the words, and a figure at
@@ -564,18 +605,19 @@ pub fn visible_alerts(alerts: &[AlertEvent]) -> Vec<&AlertEvent> {
 pub fn report_summary(strategy: Option<&StrategyReport>, alerts: usize) -> String {
     let mut parts = Vec::new();
     match strategy {
-        Some(report) => parts.push(format!(
-            "Strategy \u{b7} {}",
-            counted(report.trades.len(), "trade")
+        Some(report) => parts.push(tr_n!(
+            report.trades.len(),
+            "Strategy · {count} trade",
+            "Strategy · {count} trades"
         )),
-        None if alerts > 0 => parts.push("Indicator".to_owned()),
+        None if alerts > 0 => parts.push(tr!("Indicator").to_owned()),
         None => {}
     }
     if alerts > 0 {
-        parts.push(counted(alerts, "alert"));
+        parts.push(tr_n!(alerts, "{count} alert", "{count} alerts"));
     }
     if parts.is_empty() {
-        "No report".to_owned()
+        tr!("No report").to_owned()
     } else {
         parts.join(" \u{b7} ")
     }
@@ -652,18 +694,22 @@ fn alerts_card(ui: &mut Ui, alerts: &[AlertEvent]) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         ui.label(kit::text(
-            "Alerts",
+            tr!("Alerts"),
             kit::size::SUBHEADLINE,
             kit::SEMIBOLD,
             theme::text_secondary(),
         ));
         if live > 0 {
-            chrome::chip(ui, &format!("{live} live"), theme::syntax::variable());
+            chrome::chip(
+                ui,
+                &tr!("{count} live", count = live),
+                theme::syntax::variable(),
+            );
         }
         if historical > 0 {
             chrome::chip(
                 ui,
-                &format!("{historical} historical"),
+                &tr!("{count} historical", count = historical),
                 theme::text_secondary(),
             );
         }
@@ -680,7 +726,7 @@ fn alerts_card(ui: &mut Ui, alerts: &[AlertEvent]) {
                 (Icon::Clock, theme::text_secondary())
             };
             let (text, color) = if alert.message.is_empty() {
-                ("No message", theme::text_secondary())
+                (tr!("No message"), theme::text_secondary())
             } else {
                 (alert.message.as_str(), theme::text_primary())
             };
@@ -696,21 +742,17 @@ fn alerts_card(ui: &mut Ui, alerts: &[AlertEvent]) {
                     clickable: false,
                 },
             )
-            .on_hover_text(format!(
-                "{} \u{b7} {}",
-                if alert.is_realtime {
-                    "Live bar, notifies"
-                } else {
-                    "Historical bar, never notifies"
-                },
-                frequency_name(alert.frequency)
-            ));
+            .on_hover_text(alert_hover(alert));
         }
     });
     if alerts.len() > ALERT_LIMIT {
         chrome::footnote(
             ui,
-            &format!("Showing the latest {ALERT_LIMIT} of {}", alerts.len()),
+            &tr!(
+                "Showing the latest {shown} of {total}",
+                shown = ALERT_LIMIT,
+                total = alerts.len()
+            ),
         );
     }
 }
@@ -738,18 +780,22 @@ fn alerts_section(ui: &mut Ui, alerts: &[AlertEvent]) {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 icons::inline(ui, Icon::BellFill, 12.0, theme::SYSTEM_ACCENT);
                 ui.label(
-                    RichText::new("Alerts")
+                    RichText::new(tr!("Alerts"))
                         .size(10.0)
                         .variation("wght", crate::ui::kit::SEMIBOLD)
                         .color(theme::text_primary()),
                 );
                 if live > 0 {
-                    chrome::chip(ui, &format!("{live} live"), theme::syntax::variable());
+                    chrome::chip(
+                        ui,
+                        &tr!("{count} live", count = live),
+                        theme::syntax::variable(),
+                    );
                 }
                 if historical > 0 {
                     chrome::chip(
                         ui,
-                        &format!("{historical} historical"),
+                        &tr!("{count} historical", count = historical),
                         theme::text_secondary(),
                     );
                 }
@@ -767,9 +813,10 @@ fn alerts_section(ui: &mut Ui, alerts: &[AlertEvent]) {
                     });
                 if alerts.len() > ALERT_LIMIT {
                     ui.label(
-                        RichText::new(format!(
-                            "Showing the latest {ALERT_LIMIT} of {}",
-                            alerts.len()
+                        RichText::new(tr!(
+                            "Showing the latest {shown} of {total}",
+                            shown = ALERT_LIMIT,
+                            total = alerts.len()
                         ))
                         .size(9.0)
                         .color(theme::text_tertiary()),
@@ -777,6 +824,19 @@ fn alerts_section(ui: &mut Ui, alerts: &[AlertEvent]) {
                 }
             });
     });
+}
+
+/// What an alert's row says when pointed at: whether it notified, and how often it may fire.
+fn alert_hover(alert: &AlertEvent) -> String {
+    let frequency = frequency_name(alert.frequency);
+    if alert.is_realtime {
+        tr!("Live bar, notifies · {frequency}", frequency = frequency)
+    } else {
+        tr!(
+            "Historical bar, never notifies · {frequency}",
+            frequency = frequency
+        )
+    }
 }
 
 fn alert_row(ui: &mut Ui, alert: &AlertEvent) {
@@ -795,7 +855,7 @@ fn alert_row(ui: &mut Ui, alert: &AlertEvent) {
             tint,
         );
         let (text, color) = if alert.message.is_empty() {
-            ("No message", theme::text_secondary())
+            (tr!("No message"), theme::text_secondary())
         } else {
             (alert.message.as_str(), theme::text_primary())
         };
@@ -809,15 +869,7 @@ fn alert_row(ui: &mut Ui, alert: &AlertEvent) {
             );
         });
     });
-    row.response.on_hover_text(format!(
-        "{} · {}",
-        if alert.is_realtime {
-            "Live bar, notifies"
-        } else {
-            "Historical bar, never notifies"
-        },
-        frequency_name(alert.frequency)
-    ));
+    row.response.on_hover_text(alert_hover(alert));
 }
 
 #[cfg(test)]

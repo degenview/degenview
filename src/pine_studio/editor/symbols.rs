@@ -24,6 +24,7 @@
 //!   `array.new_float()`); a `type` records its fields the same way. That is enough for member
 //!   completion, and a name it cannot type is left untyped, never guessed.
 
+use crate::i18n::tr;
 use crate::pine::check::identifier_rules;
 use crate::pine::compiler::symbol_catalog;
 use crate::pine::syntax::lexer::Lexer;
@@ -48,19 +49,6 @@ pub enum Kind {
 impl Kind {
     fn callable(self) -> bool {
         matches!(self, Self::Function | Self::Method)
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Variable => "variable",
-            Self::Parameter => "parameter",
-            Self::LoopVariable => "loop variable",
-            Self::Function => "function",
-            Self::Method => "method",
-            Self::Type => "type",
-            Self::Enum => "enum",
-            Self::ImportAlias => "import alias",
-        }
     }
 }
 
@@ -138,7 +126,7 @@ impl RenameError {
     pub fn message(&self) -> String {
         match self {
             Self::Invalid(why) => why.clone(),
-            Self::Conflict => "That name would clash with another name in scope.".to_owned(),
+            Self::Conflict => tr!("That name would clash with another name in scope.").to_owned(),
         }
     }
 }
@@ -465,7 +453,7 @@ const RESERVED: [&str; 11] = [
 pub fn check_name(name: &str) -> Result<(), RenameError> {
     let invalid = |why: &str| Err(RenameError::Invalid(why.to_owned()));
     if name.is_empty() {
-        return invalid("Enter a name.");
+        return invalid(tr!("Enter a name."));
     }
     let lexed = Lexer::new(name).lex();
     let single = matches!(
@@ -478,18 +466,18 @@ pub fn check_name(name: &str) -> Result<(), RenameError> {
         .count()
         == 1;
     if !single || !lexed.diagnostics.is_empty() {
-        return invalid(
-            "A name is letters, digits and underscores, and does not start with a digit.",
-        );
+        return invalid(tr!(
+            "A name is letters, digits and underscores, and does not start with a digit."
+        ));
     }
     if RESERVED.contains(&name) {
-        return invalid("That word is reserved.");
+        return invalid(tr!("That word is reserved."));
     }
     if let Some(violation) = identifier_rules::violation(name) {
         return invalid(&violation.message);
     }
     if symbol_catalog::is_reserved_constant(name) {
-        return invalid("That name is a Pine constant.");
+        return invalid(tr!("That name is a Pine constant."));
     }
     Ok(())
 }

@@ -11,6 +11,7 @@
 
 use std::sync::Arc;
 
+use crate::i18n::{tr, tr_n};
 use crate::pine::compiler::normalize_line_endings;
 use crate::pine::profile::{Completeness, Interruption, LineStats, ProfileReport, RegionKind};
 
@@ -80,8 +81,8 @@ pub enum SummaryGroup {
 impl SummaryGroup {
     pub fn title(self) -> &'static str {
         match self {
-            Self::Hotspots => "Where the time goes",
-            Self::Measurement => "How it was measured",
+            Self::Hotspots => tr!("Where the time goes"),
+            Self::Measurement => tr!("How it was measured"),
         }
     }
 }
@@ -233,34 +234,38 @@ fn tooltip(report: &ProfileReport, line: &LineStats, total: u64) -> Tooltip {
     let stats = report.stats_of(line.region);
     let title = match line.block {
         Some((first, last)) if last > first => {
-            format!("Code block: lines {first}\u{2013}{last}")
+            tr!(
+                "Code block: lines {first}–{last}",
+                first = first,
+                last = last
+            )
         }
-        _ => format!("Line {}", line.line),
+        _ => tr!("Line {line}", line = line.line),
     };
     let mut rows: Vec<(&'static str, String)> = Vec::new();
     let of_total = |ns: u64| {
-        format!(
-            "{} ({} of {})",
-            percent(report.share(ns)),
-            duration(ns),
-            duration(total)
+        tr!(
+            "{share} ({time} of {total})",
+            share = percent(report.share(ns)),
+            time = duration(ns),
+            total = duration(total)
         )
     };
-    rows.push(("Time", of_total(line.time_ns)));
+    rows.push((tr!("Time"), of_total(line.time_ns)));
     if line.line_time_ns != line.time_ns {
-        rows.push(("Line time", of_total(line.line_time_ns)));
+        rows.push((tr!("Line time"), of_total(line.line_time_ns)));
     }
-    rows.push(("Executions", count(line.executions)));
+    rows.push((tr!("Executions"), count(line.executions)));
     if line.kind == RegionKind::Loop
         && let Some(iterations) = report.iterations(line.region)
         && stats.executions > 0
     {
         rows.push((
-            "Iterations",
-            format!(
-                "{} (about {} per entry)",
-                count(iterations),
-                average_count(iterations, stats.executions)
+            tr!("Iterations"),
+            tr!(
+                "{iterations} (about {average} per entry)",
+                iterations = count(iterations),
+                average = average_count(iterations, stats.executions)
             ),
         ));
     }
@@ -271,21 +276,24 @@ fn tooltip(report: &ProfileReport, line: &LineStats, total: u64) -> Tooltip {
             .map(|branch| branch.map_or_else(|| "–".to_owned(), count))
             .collect();
         if taken.len() > 1 {
-            rows.push(("Branches taken", taken.join(" · ")));
+            rows.push((tr!("Branches taken"), taken.join(" · ")));
         }
     }
     let mut notes = Vec::new();
     if line.executions > 0 {
         let average = stats_average(line);
         if average < report.summary.resolution_ns {
-            notes.push(format!(
-                "Each run is shorter than the clock can tell apart ({}), so its share is an estimate.",
-                duration(report.summary.resolution_ns)
+            notes.push(tr!(
+                "Each run is shorter than the clock can tell apart ({resolution}), so its share is an estimate.",
+                resolution = duration(report.summary.resolution_ns)
             ));
         } else {
-            rows.push(("Average", format!("{} per execution", duration(average))));
+            rows.push((
+                tr!("Average"),
+                tr!("{time} per execution", time = duration(average)),
+            ));
         }
-        rows.push(("Slowest", duration(line.slowest_ns)));
+        rows.push((tr!("Slowest"), duration(line.slowest_ns)));
     }
     if line.kind == RegionKind::Function {
         let sites = report.call_sites_of(line.region);
@@ -295,18 +303,20 @@ fn tooltip(report: &ProfileReport, line: &LineStats, total: u64) -> Tooltip {
                 .and_then(|index| table.get(index))
                 .map_or(0, |region| region.start.line);
             rows.push((
-                "Called from",
-                format!(
-                    "line {at}: {} calls, {}",
-                    count(site.calls),
-                    duration(site.inclusive_ns)
+                tr!("Called from"),
+                tr!(
+                    "line {line}: {calls} calls, {time}",
+                    line = at,
+                    calls = count(site.calls),
+                    time = duration(site.inclusive_ns)
                 ),
             ));
         }
         if sites.len() > CALL_SITES_SHOWN {
-            notes.push(format!(
-                "and {} more call sites.",
-                sites.len() - CALL_SITES_SHOWN
+            notes.push(tr_n!(
+                sites.len() - CALL_SITES_SHOWN,
+                "and {count} more call site.",
+                "and {count} more call sites."
             ));
         }
     }
@@ -345,8 +355,12 @@ fn summary(report: &ProfileReport, text: &str, compile_ns: u64) -> Vec<SummaryRo
     if let Some(line) = report.hottest_lines(1).first() {
         rows.push(row(
             hot,
-            "Hottest line",
-            Some(format!("Line {}: {}", line.line, snippet(text, line.line))),
+            tr!("Hottest line"),
+            Some(tr!(
+                "Line {line}: {snippet}",
+                line = line.line,
+                snippet = snippet(text, line.line)
+            )),
             percent(report.share(line.line_time_ns)),
             Some(line.line),
         ));
@@ -356,11 +370,11 @@ fn summary(report: &ProfileReport, text: &str, compile_ns: u64) -> Vec<SummaryRo
     {
         rows.push(row(
             hot,
-            "Hottest block",
-            Some(format!(
-                "Lines {}\u{2013}{}",
-                region.start.line,
-                region.end.line.max(region.start.line)
+            tr!("Hottest block"),
+            Some(tr!(
+                "Lines {first}–{last}",
+                first = region.start.line,
+                last = region.end.line.max(region.start.line)
             )),
             percent(report.share(stats.inclusive_ns)),
             Some(region.start.line),
@@ -371,11 +385,11 @@ fn summary(report: &ProfileReport, text: &str, compile_ns: u64) -> Vec<SummaryRo
     {
         rows.push(row(
             hot,
-            "Hottest function",
-            Some(format!(
-                "{}() \u{b7} {} calls",
-                region.name.as_deref().unwrap_or("?"),
-                count(stats.executions)
+            tr!("Hottest function"),
+            Some(tr!(
+                "{name}() · {calls} calls",
+                name = region.name.as_deref().unwrap_or("?"),
+                calls = count(stats.executions)
             )),
             percent(report.share(stats.inclusive_ns)),
             Some(region.start.line),
@@ -383,10 +397,10 @@ fn summary(report: &ProfileReport, text: &str, compile_ns: u64) -> Vec<SummaryRo
     }
     rows.push(row(
         measured,
-        "Not in any line",
-        Some(format!(
-            "{} of the total: setting bars up, committing them, orders, and part of the profiler's own bookkeeping",
-            percent(report.share(s.unattributed_ns()))
+        tr!("Not in any line"),
+        Some(tr!(
+            "{share} of the total: setting bars up, committing them, orders, and part of the profiler's own bookkeeping",
+            share = percent(report.share(s.unattributed_ns()))
         )),
         duration(s.unattributed_ns()),
         None,
@@ -394,34 +408,34 @@ fn summary(report: &ProfileReport, text: &str, compile_ns: u64) -> Vec<SummaryRo
     if s.waited_ns > 0 {
         rows.push(row(
             measured,
-            "Waiting for data",
-            Some("Fetching other symbols for request.security(); in no time here".to_owned()),
+            tr!("Waiting for data"),
+            Some(tr!("Fetching other symbols for request.security(); in no time here").to_owned()),
             duration(s.waited_ns),
             None,
         ));
     }
     rows.push(row(
         measured,
-        "Profiler overhead",
-        Some(format!(
-            "About {} per statement and {} per function call, mostly inside the line measured; estimated, not subtracted",
-            duration(s.pair_cost_ns),
-            duration(s.call_pair_cost_ns)
+        tr!("Profiler overhead"),
+        Some(tr!(
+            "About {statement} per statement and {call} per function call, mostly inside the line measured; estimated, not subtracted",
+            statement = duration(s.pair_cost_ns),
+            call = duration(s.call_pair_cost_ns)
         )),
         format!("\u{2248} {}", duration(s.overhead_ns)),
         None,
     ));
     rows.push(row(
         measured,
-        "Clock resolution",
-        Some("Times shorter than this are estimates".to_owned()),
+        tr!("Clock resolution"),
+        Some(tr!("Times shorter than this are estimates").to_owned()),
         duration(s.resolution_ns),
         None,
     ));
     rows.push(row(
         measured,
-        "Compiled in",
-        Some("Not part of the total".to_owned()),
+        tr!("Compiled in"),
+        Some(tr!("Not part of the total").to_owned()),
         duration(compile_ns),
         None,
     ));
@@ -443,20 +457,23 @@ fn caveat(report: &ProfileReport) -> Option<String> {
     };
     let bars = count(report.summary.bars);
     // The last counted bar may have been stopped part-way: it is in the figures, but not finished.
-    let reached = if report.summary.cut_bar {
-        format!("during bar {bars}")
-    } else {
-        format!("after {bars} bars")
-    };
+    let cut = report.summary.cut_bar;
     Some(match why {
-        Interruption::Cancelled => format!("Partial: cancelled {reached}."),
-        Interruption::TimedOut => format!("Partial: the script ran out of time {reached}."),
-        Interruption::Failed(error) => {
-            format!(
-                "Partial: the script failed on bar {bars}: {}",
-                error.message
-            )
-        }
+        Interruption::Cancelled if cut => tr!("Partial: cancelled during bar {bars}.", bars = bars),
+        Interruption::Cancelled => tr!("Partial: cancelled after {bars} bars.", bars = bars),
+        Interruption::TimedOut if cut => tr!(
+            "Partial: the script ran out of time during bar {bars}.",
+            bars = bars
+        ),
+        Interruption::TimedOut => tr!(
+            "Partial: the script ran out of time after {bars} bars.",
+            bars = bars
+        ),
+        Interruption::Failed(error) => tr!(
+            "Partial: the script failed on bar {bars}: {message}",
+            bars = bars,
+            message = error.message
+        ),
     })
 }
 
