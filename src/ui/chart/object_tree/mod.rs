@@ -9,7 +9,9 @@
 
 use crate::i18n::{tr, tr_n};
 use crate::model::BuiltIn;
-use crate::model::chart::object_tree::{IndicatorKey, Key, Row, Section};
+use crate::model::chart::object_tree::{
+    IndicatorKey, Key, Row, Section, draggable, drop_over, siblings,
+};
 use crate::ui::icons::{self, Icon};
 use crate::ui::workspace::tool_sidebar::tool_icon;
 use crate::ui::{accessibility, kit, theme};
@@ -30,6 +32,8 @@ pub struct TreeState {
     pub filter: String,
     /// The sections folded away. Not kept across sessions.
     pub collapsed: HashSet<Section>,
+    /// The row being carried to a new place in its stack.
+    pub dragging: Option<Key>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -44,6 +48,12 @@ pub enum TreeAction {
     Delete(Key),
     /// Move a drawing in the stack: positive toward the front.
     Reorder(u64, i32),
+    /// A row was dropped into another's place: `key` takes the place of `over`, both of the same
+    /// kind (a drawing, a compared market or a script).
+    Drop {
+        key: Key,
+        over: Key,
+    },
 }
 
 // MARK: Rows to show
@@ -94,20 +104,32 @@ pub fn show(
     }
     let list = visible(rows, &state.collapsed, filtering);
     let list_height = (list.len() as f32 * ROW_HEIGHT).min(ui.available_height());
-    egui::ScrollArea::vertical()
+    let area = egui::ScrollArea::vertical()
         .id_salt("object-tree-rows")
         .auto_shrink([false, true])
         .max_height(list_height)
         .show_rows(ui, ROW_HEIGHT, list.len(), |ui, range| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            if state.dragging.is_some() {
+                scroll_towards_pointer(ui);
+            }
             for row in &list[range] {
                 if let Key::Heading(section) = row.key {
                     heading(ui, row, section, state, filtering);
                 } else {
-                    row_ui(ui, row, selected, &mut actions);
+                    row_ui(ui, row, selected, state, filtering, &mut actions);
                 }
             }
         });
+    if let Some(key) = state.dragging {
+        let rows_area = RowsArea {
+            rect: area.inner_rect,
+            scrolled: area.state.offset.y,
+        };
+        if !carry(ui, &rows_area, rows, &list, key, &mut actions) {
+            state.dragging = None;
+        }
+    }
     if only_the_symbol(rows) && !filtering {
         hint(ui);
     }
@@ -362,6 +384,89 @@ fn heading(ui: &mut Ui, row: &Row, section: Section, state: &mut TreeState, filt
     }
 }
 
+// MARK: Reordering
+
+/// Where the rows are on screen: their viewport and how far the list is scrolled.
+struct RowsArea {
+    rect: Rect,
+    scrolled: f32,
+}
+
+/// How near the viewport's top or bottom a carried row scrolls the list, and how fast (points a
+/// second).
+const SCROLL_EDGE: f32 = 28.0;
+const SCROLL_SPEED: f32 = 480.0;
+/// How far beside the list a drop still counts; further out it is let go of, which cancels.
+const DROP_REACH: f32 = 12.0;
+
+/// Scrolls the list while a carried row is held near its top or bottom edge.
+fn scroll_towards_pointer(ui: &mut Ui) {
+    let Some(pointer) = ui.input(|input| input.pointer.latest_pos()) else {
+        return;
+    };
+    let view = ui.clip_rect();
+    let step = ui.input(|input| input.stable_dt) * SCROLL_SPEED;
+    let delta = if pointer.y < view.top() + SCROLL_EDGE {
+        step
+    } else if pointer.y > view.bottom() - SCROLL_EDGE {
+        -step
+    } else {
+        return;
+    };
+    ui.scroll_with_delta(vec2(0.0, delta));
+    ui.ctx().request_repaint();
+}
+
+/// Follows the carried row `key` while the button is down, with a line where it would land, and
+/// reports the drop when it is let go over the list. Returns whether the drag goes on.
+fn carry(
+    ui: &Ui,
+    area: &RowsArea,
+    rows: &[Row],
+    list: &[&Row],
+    key: Key,
+    actions: &mut Vec<TreeAction>,
+) -> bool {
+    let stack = siblings(rows, key);
+    let Some(first) = stack
+        .first()
+        .and_then(|top| list.iter().position(|row| row.key == *top))
+    else {
+        // The row went away, or was folded away, under the pointer.
+        return false;
+    };
+    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    let gap = ui
+        .input(|input| input.pointer.latest_pos())
+        .filter(|pointer| {
+            pointer.x >= area.rect.left() - DROP_REACH
+                && pointer.x <= area.rect.right() + DROP_REACH
+        })
+        .map(|pointer| {
+            // The line nearest the pointer among the stack's lines: 0 above its first row.
+            let line = (pointer.y - area.rect.top() + area.scrolled) / ROW_HEIGHT - first as f32;
+            line.round().clamp(0.0, stack.len() as f32) as usize
+        });
+    let landing = gap.and_then(|gap| drop_over(&stack, key, gap).map(|over| (gap, over)));
+    if let Some((gap, _)) = landing {
+        let y = area.rect.top() - area.scrolled + (first + gap) as f32 * ROW_HEIGHT;
+        ui.painter_at(area.rect).line_segment(
+            [
+                pos2(area.rect.left() + INSET, y),
+                pos2(area.rect.right() - INSET, y),
+            ],
+            egui::Stroke::new(2.0, theme::text_primary()),
+        );
+    }
+    if ui.input(|input| input.pointer.primary_down()) {
+        return true;
+    }
+    if let Some((_, over)) = landing {
+        actions.push(TreeAction::Drop { key, over });
+    }
+    false
+}
+
 /// The buttons a row can have, rightmost first.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Btn {
@@ -419,17 +524,30 @@ fn row_icon(row: &Row) -> Icon {
     }
 }
 
-fn row_ui(ui: &mut Ui, row: &Row, selected: &[u64], actions: &mut Vec<TreeAction>) {
+fn row_ui(
+    ui: &mut Ui,
+    row: &Row,
+    selected: &[u64],
+    state: &mut TreeState,
+    filtering: bool,
+    actions: &mut Vec<TreeAction>,
+) {
     let width = ui.available_width();
     let is_selected = matches!(row.key, Key::Drawing(id) if selected.contains(&id));
-    let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click_and_drag());
     #[cfg(test)]
     probe::record(row.key, rect);
+    // Rows move within their own stack, and not in a filtered list, where a row's neighbours are
+    // not the ones it would be placed among.
+    if response.drag_started_by(egui::PointerButton::Primary) && !filtering && draggable(row) {
+        state.dragging = Some(row.key);
+    }
+    let carried = state.dragging == Some(row.key);
     // Over the row by position, not by the row's own response: a button on top of the row takes
     // the pointer from it, and a row that stopped counting as hovered would drop its buttons the
-    // moment the pointer reached one.
-    let over = ui.rect_contains_pointer(rect);
-    let dimmed = row.shown == Some(false);
+    // moment the pointer reached one. While a row is carried none lights up or offers buttons.
+    let over = state.dragging.is_none() && ui.rect_contains_pointer(rect);
+    let dimmed = row.shown == Some(false) || carried;
     let pill = rect.shrink2(vec2(INSET, 1.0));
     if is_selected {
         ui.painter()

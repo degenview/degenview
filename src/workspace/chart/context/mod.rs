@@ -19,7 +19,7 @@ use crate::model::chart::context::{
 use crate::model::chart::object_tree::{IndicatorKey, Key as TreeKey};
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::chart::template::ApplyScope;
-use crate::model::overlay::OverlayCommand;
+use crate::model::overlay::{Move, OverlayCommand};
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
 use crate::model::session_stats;
 use crate::ui::ContextRequest;
@@ -1114,6 +1114,48 @@ impl ChartWorkspace {
             TreeAction::Reorder(id, step) => {
                 self.apply_drawing_commands(chart_id, vec![DrawingCommand::Reorder { id, step }]);
             }
+            TreeAction::Drop {
+                key: TreeKey::Drawing(id),
+                over: TreeKey::Drawing(over),
+            } => {
+                // By the neighbour's place in the stored list, not a count of rows: what the tree
+                // does not list (a ruler) may sit between them.
+                let place = |id: u64| {
+                    self.charts[index]
+                        .drawings
+                        .iter()
+                        .position(|candidate| candidate.stored_id() == id)
+                };
+                if let Some((from, to)) = place(id).zip(place(over)) {
+                    let step = i32::try_from(to as i64 - from as i64).unwrap_or(0);
+                    self.apply_drawing_commands(
+                        chart_id,
+                        vec![DrawingCommand::Reorder { id, step }],
+                    );
+                }
+            }
+            TreeAction::Drop {
+                key: TreeKey::Overlay(id),
+                over: TreeKey::Overlay(over),
+            } => {
+                if let Some(to) = self.charts[index].overlays.position(over) {
+                    self.apply_overlay_command(chart_id, OverlayCommand::Move(id, Move::To(to)));
+                }
+            }
+            TreeAction::Drop {
+                key: TreeKey::Indicator(IndicatorKey::Script(id)),
+                over: TreeKey::Indicator(IndicatorKey::Script(over)),
+            } => {
+                let scripts = self.charts[index].chart.pine_instances();
+                let place = |id: u64| scripts.iter().position(|script| script.id == id);
+                if let Some((from, to)) = place(id).zip(place(over))
+                    && from != to
+                {
+                    self.remember_indicators(chart_id);
+                    self.charts[index].chart.move_pine_instance(id, to);
+                }
+            }
+            TreeAction::Drop { .. } => {}
         }
     }
 

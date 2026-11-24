@@ -141,6 +141,8 @@ pub enum Move {
     Backward,
     ToFront,
     ToBack,
+    /// To this place in the order (0 is the back), or the front when it is past the end.
+    To(usize),
 }
 
 /// What an overlay's scale is being set to.
@@ -324,6 +326,7 @@ impl OverlayList {
             Move::Backward => from.saturating_sub(1),
             Move::ToFront => last,
             Move::ToBack => 0,
+            Move::To(index) => index.min(last),
         };
         if target == from {
             return false;
@@ -492,6 +495,14 @@ mod tests {
         assert!(!list.reorder(OverlayId(1), Move::ToFront));
         assert!(list.reorder(OverlayId(3), Move::ToFront));
         assert_eq!(order(&list), [2, 1, 3]);
+        assert!(list.reorder(OverlayId(3), Move::To(0)));
+        assert_eq!(order(&list), [3, 2, 1]);
+        assert!(
+            list.reorder(OverlayId(3), Move::To(99)),
+            "past the end is the front"
+        );
+        assert_eq!(order(&list), [2, 1, 3]);
+        assert!(!list.reorder(OverlayId(3), Move::To(2)));
         assert!(!list.reorder(OverlayId(99), Move::Forward));
     }
 

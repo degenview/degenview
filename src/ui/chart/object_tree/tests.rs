@@ -464,3 +464,174 @@ fn the_tree_draws_in_the_pseudo_locale() {
         }
     }
 }
+
+// MARK: Reordering
+
+impl Rig {
+    /// Presses on `from`, carries the pointer to `to` and lets go.
+    fn drag(&mut self, from: Pos2, to: Pos2) {
+        self.move_to(from);
+        let button = |pos, pressed| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        self.frame(vec![button(from, true)]);
+        for point in [from.lerp(to, 0.5), to] {
+            self.frame(vec![Event::PointerMoved(point)]);
+        }
+        self.frame(Vec::new());
+        self.frame(vec![button(to, false)]);
+        self.frame(Vec::new());
+    }
+
+    /// A point on a row that is clear of its buttons, `fraction` of the way down it.
+    fn on(&self, key: Key, fraction: f32) -> Pos2 {
+        let row = self.row(key);
+        pos2(row.left() + 60.0, row.top() + row.height() * fraction)
+    }
+
+    fn drops(&self) -> Vec<&TreeAction> {
+        self.actions
+            .iter()
+            .filter(|action| matches!(action, TreeAction::Drop { .. }))
+            .collect()
+    }
+}
+
+#[test]
+fn dragging_a_drawing_above_another_drops_it_into_that_ones_place() {
+    let mut rig = Rig::new();
+    let (from, to) = (rig.on(Key::Drawing(8), 0.5), rig.on(Key::Drawing(7), 0.2));
+    rig.drag(from, to);
+    assert_eq!(
+        rig.actions,
+        [TreeAction::Drop {
+            key: Key::Drawing(8),
+            over: Key::Drawing(7)
+        }]
+    );
+    assert_eq!(rig.state.dragging, None, "let go");
+}
+
+#[test]
+fn dragging_a_drawing_below_the_last_one_drops_it_into_the_last_place() {
+    let mut rig = Rig::new();
+    let (from, to) = (rig.on(Key::Drawing(7), 0.5), rig.on(Key::Drawing(8), 0.9));
+    rig.drag(from, to);
+    assert_eq!(
+        rig.actions,
+        [TreeAction::Drop {
+            key: Key::Drawing(7),
+            over: Key::Drawing(8)
+        }]
+    );
+}
+
+#[test]
+fn a_drop_back_where_the_row_was_is_nothing() {
+    let mut rig = Rig::new();
+    // Into the half of the neighbour that is nearer to the row itself: its own gap.
+    let (from, to) = (rig.on(Key::Drawing(7), 0.5), rig.on(Key::Drawing(8), 0.1));
+    rig.drag(from, to);
+    assert!(rig.drops().is_empty(), "{:?}", rig.actions);
+    assert_eq!(rig.state.dragging, None);
+}
+
+#[test]
+fn a_row_dragged_past_the_end_of_its_section_lands_at_its_end() {
+    let mut rig = Rig::new();
+    // Dragged on up to the toolbar, the heading and the script above its section.
+    let (from, to) = (
+        rig.on(Key::Drawing(8), 0.5),
+        rig.on(Key::Heading(Section::Indicators), 0.5),
+    );
+    rig.drag(from, to);
+    assert_eq!(
+        rig.actions,
+        [TreeAction::Drop {
+            key: Key::Drawing(8),
+            over: Key::Drawing(7)
+        }]
+    );
+}
+
+#[test]
+fn letting_go_beside_the_list_puts_the_row_back() {
+    let mut rig = Rig::new();
+    let from = rig.on(Key::Drawing(8), 0.5);
+    rig.drag(from, pos2(900.0, from.y - 40.0));
+    assert!(rig.actions.is_empty(), "{:?}", rig.actions);
+    assert_eq!(rig.state.dragging, None);
+}
+
+#[test]
+fn only_what_can_be_moved_can_be_picked_up() {
+    // A heading is not a row to move, and nothing moves in a filtered list.
+    for (key, filter) in [
+        (Key::Heading(Section::Drawings), ""),
+        (Key::Drawing(8), "line"),
+    ] {
+        let mut rig = Rig::new();
+        rig.state.filter = filter.to_owned();
+        let mut rig = rig.settled();
+        if !rig.drawn(key) {
+            continue;
+        }
+        let from = rig.on(key, 0.5);
+        rig.drag(from, pos2(from.x, from.y + 20.0));
+        assert!(
+            rig.drops().is_empty(),
+            "{key:?} {filter:?}: {:?}",
+            rig.actions
+        );
+        assert_eq!(rig.state.dragging, None, "{key:?} {filter:?}");
+    }
+    // A drawing from a newer version has no tool, so it stays where it is.
+    let mut rows = rows();
+    rows[3].tool = None;
+    let mut rig = Rig::with(rows);
+    let from = rig.on(Key::Drawing(7), 0.5);
+    rig.drag(from, rig.on(Key::Drawing(8), 0.9));
+    assert!(rig.drops().is_empty(), "{:?}", rig.actions);
+}
+
+#[test]
+fn a_drag_is_not_a_click_and_a_click_is_not_a_drag() {
+    let mut rig = Rig::new();
+    let (from, to) = (rig.on(Key::Drawing(8), 0.5), rig.on(Key::Drawing(7), 0.2));
+    rig.drag(from, to);
+    assert!(
+        !rig.actions
+            .iter()
+            .any(|action| matches!(action, TreeAction::Select(_))),
+        "{:?}",
+        rig.actions
+    );
+    let mut rig = Rig::new();
+    let point = rig.on(Key::Drawing(8), 0.5);
+    rig.click(point);
+    assert_eq!(rig.actions, [TreeAction::Select(Key::Drawing(8))]);
+    assert_eq!(rig.state.dragging, None);
+}
+
+#[test]
+fn nothing_happens_until_the_carried_row_is_let_go() {
+    let mut rig = Rig::new();
+    rig.move_to(rig.on(Key::Drawing(8), 0.5));
+    let from = rig.on(Key::Drawing(8), 0.5);
+    rig.frame(vec![Event::PointerButton {
+        pos: from,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    }]);
+    let to = rig.on(Key::Drawing(7), 0.2);
+    for point in [from.lerp(to, 0.5), to] {
+        rig.frame(vec![Event::PointerMoved(point)]);
+    }
+    rig.frame(Vec::new());
+    assert_eq!(rig.state.dragging, Some(Key::Drawing(8)));
+    assert!(rig.actions.is_empty(), "nothing happens until it is let go");
+}
