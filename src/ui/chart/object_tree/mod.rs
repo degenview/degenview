@@ -15,7 +15,7 @@ use crate::model::chart::object_tree::{
 use crate::ui::icons::{self, Icon};
 use crate::ui::workspace::tool_sidebar::tool_icon;
 use crate::ui::{accessibility, kit, theme};
-use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, pos2, vec2};
+use eframe::egui::{self, Align, Layout, Pos2, Rect, Sense, Ui, pos2, vec2};
 use std::collections::HashSet;
 
 const TOOLBAR_HEIGHT: f32 = 44.0;
@@ -393,10 +393,29 @@ fn heading(ui: &mut Ui, row: &Row, section: Section, state: &mut TreeState, filt
 
 // MARK: Reordering
 
-/// Where the rows are on screen: their viewport and how far the list is scrolled.
+/// Where the rows are on screen: their viewport and how far the list is scrolled. The one place
+/// that knows a row's place: the list is shown with no spacing, so `show_rows` lays row `n` at
+/// `n * ROW_HEIGHT`, and both the drop and its line are measured here.
 struct RowsArea {
     rect: Rect,
     scrolled: f32,
+}
+
+impl RowsArea {
+    /// Where the top of list row `index` is on screen; `index == len` is the bottom of the last.
+    fn row_top(&self, index: usize) -> f32 {
+        self.rect.top() - self.scrolled + index as f32 * ROW_HEIGHT
+    }
+
+    /// The row boundary nearest `pointer`, as an index into the list (0 is above the first row),
+    /// when the pointer is over the list: inside its viewport, or just beside it.
+    fn line_at(&self, pointer: Pos2) -> Option<usize> {
+        let over = pointer.x >= self.rect.left() - DROP_REACH
+            && pointer.x <= self.rect.right() + DROP_REACH
+            && pointer.y >= self.rect.top()
+            && pointer.y <= self.rect.bottom();
+        over.then(|| ((pointer.y - self.rect.top() + self.scrolled) / ROW_HEIGHT).round() as usize)
+    }
 }
 
 /// How near the viewport's top or bottom a carried row scrolls the list, and how fast (points a
@@ -405,10 +424,50 @@ const SCROLL_EDGE: f32 = 28.0;
 const SCROLL_SPEED: f32 = 480.0;
 /// How far beside the list a drop still counts; further out it is let go of, which cancels.
 const DROP_REACH: f32 = 12.0;
+/// How long, in seconds, a finger rests on a row to pick it up (a finger that moves is scrolling).
+const LONG_PRESS: f64 = 0.4;
+
+/// Where the pointer is for a carried row. A finger that has just lifted has no pointer position,
+/// but still has the place it lifted from.
+fn pointer_of(ui: &Ui) -> Option<Pos2> {
+    ui.input(|input| input.pointer.interact_pos())
+}
+
+/// Picks the row `key` up under a press that is on it. A mouse takes it as soon as it moves; a
+/// finger moving over a row is scrolling the list, so it scrolls and only a finger that rests on the
+/// row picks it up.
+fn grab(ui: &Ui, response: &egui::Response, key: Key, state: &mut TreeState) {
+    if state.dragging.is_some() {
+        return;
+    }
+    if !ui.input(|input| input.any_touches()) {
+        if response.drag_started_by(egui::PointerButton::Primary) {
+            state.dragging = Some(key);
+        }
+        return;
+    }
+    if response.dragged() {
+        // Under the finger, not eased towards it.
+        ui.scroll_with_delta_animation(response.drag_delta(), egui::style::ScrollAnimation::none());
+    } else if response.is_pointer_button_down_on() {
+        let held = ui.input(|input| {
+            input
+                .pointer
+                .press_start_time()
+                .map_or(0.0, |start| input.time - start)
+        });
+        if held >= LONG_PRESS {
+            state.dragging = Some(key);
+        } else {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs_f64(LONG_PRESS - held));
+        }
+    }
+}
 
 /// Scrolls the list while a carried row is held near its top or bottom edge.
 fn scroll_towards_pointer(ui: &mut Ui) {
-    let Some(pointer) = ui.input(|input| input.pointer.latest_pos()) else {
+    let Some(pointer) = pointer_of(ui) else {
         return;
     };
     let view = ui.clip_rect();
@@ -443,20 +502,14 @@ fn carry(
         return false;
     };
     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-    let gap = ui
-        .input(|input| input.pointer.latest_pos())
-        .filter(|pointer| {
-            pointer.x >= area.rect.left() - DROP_REACH
-                && pointer.x <= area.rect.right() + DROP_REACH
-        })
-        .map(|pointer| {
-            // The line nearest the pointer among the stack's lines: 0 above its first row.
-            let line = (pointer.y - area.rect.top() + area.scrolled) / ROW_HEIGHT - first as f32;
-            line.round().clamp(0.0, stack.len() as f32) as usize
-        });
+    // The line nearest the pointer among the stack's lines (0 above its first row): over another
+    // section of the list it is the stack's end, over anything outside the list there is none.
+    let gap = pointer_of(ui)
+        .and_then(|pointer| area.line_at(pointer))
+        .map(|line| line.saturating_sub(first).min(stack.len()));
     let landing = gap.and_then(|gap| drop_over(&stack, key, gap).map(|over| (gap, over)));
     if let Some((gap, _)) = landing {
-        let y = area.rect.top() - area.scrolled + (first + gap) as f32 * ROW_HEIGHT;
+        let y = area.row_top(first + gap);
         ui.painter_at(area.rect).line_segment(
             [
                 pos2(area.rect.left() + INSET, y),
@@ -541,13 +594,20 @@ fn row_ui(
 ) {
     let width = ui.available_width();
     let is_selected = matches!(row.key, Key::Drawing(id) if selected.contains(&id));
-    let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click_and_drag());
+    // Rows move within their own stack, and not in a filtered list, where a row's neighbours are
+    // not the ones it would be placed among. Only a row that can move senses a drag: on any other
+    // a finger's swipe goes on to scroll the list.
+    let movable = draggable(row) && !filtering;
+    let sense = if movable {
+        Sense::click_and_drag()
+    } else {
+        Sense::click()
+    };
+    let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), sense);
     #[cfg(test)]
     probe::record(row.key, rect);
-    // Rows move within their own stack, and not in a filtered list, where a row's neighbours are
-    // not the ones it would be placed among.
-    if response.drag_started_by(egui::PointerButton::Primary) && !filtering && draggable(row) {
-        state.dragging = Some(row.key);
+    if movable {
+        grab(ui, &response, row.key, state);
     }
     let carried = state.dragging == Some(row.key);
     // Over the row by position, not by the row's own response: a button on top of the row takes
@@ -677,7 +737,10 @@ fn row_ui(
     } else if response.clicked() {
         actions.push(TreeAction::Select(row.key));
     }
-    row_menu(&response, row, actions);
+    // A row held down to be carried is not asking for its menu, which a long touch would open.
+    if !carried {
+        row_menu(&response, row, actions);
+    }
 }
 
 fn row_menu(response: &egui::Response, row: &Row, actions: &mut Vec<TreeAction>) {

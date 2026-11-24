@@ -117,8 +117,12 @@ kind, and a drop past the end of the kind lands at its end. Drawings change thei
 (`DrawingCommand::Reorder`, counted in the stored list so rows the tree does not show are crossed),
 compared markets and scripts their draw order (`Move::To`, `move_pine_instance`, later is on top).
 Built-in indicators have a fixed order and the symbol and headings are not rows to move, a drawing
-from a newer version stays where it is, and nothing drags in a filtered list. Letting go beside
-the list cancels. The row menu's Bring forward and Send backward remain the way to reorder
+from a newer version stays where it is, and nothing drags in a filtered list. Letting go outside
+the list's viewport (over the filter field, beside it, or below a short list) cancels. On a touch
+screen a swipe over any row scrolls the list; a finger that rests on a movable row for 0.4 s picks it
+up instead (and the row's menu does not open while it is carried). Every position on screen comes
+from one geometry, `RowsArea`: the list is shown with no item spacing, so row `n` is at
+`n * ROW_HEIGHT` for `show_rows`, the drop and its line alike. The row menu's Bring forward and Send backward remain the way to reorder
 without a pointer, for drawings only.
 
 ## Pine logs

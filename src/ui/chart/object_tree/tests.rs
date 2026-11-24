@@ -1,7 +1,10 @@
 use super::*;
 use crate::model::Tool;
 use crate::model::chart::object_tree::IndicatorKey;
-use eframe::egui::{Event, Modifiers, PointerButton, Pos2, RawInput};
+use eframe::egui::{
+    Event, Modifiers, MouseWheelUnit, PointerButton, Pos2, RawInput, TouchDeviceId, TouchId,
+    TouchPhase,
+};
 
 fn row(key: Key, label: &str, shown: Option<bool>, locked: Option<bool>) -> Row {
     Row {
@@ -634,4 +637,220 @@ fn nothing_happens_until_the_carried_row_is_let_go() {
     rig.frame(Vec::new());
     assert_eq!(rig.state.dragging, Some(Key::Drawing(8)));
     assert!(rig.actions.is_empty(), "nothing happens until it is let go");
+}
+
+// MARK: Geometry, bounds and touch
+
+/// A drawings section of `count` trend lines, topmost first, long enough to scroll.
+fn many_drawings(count: u64) -> Vec<Row> {
+    let mut rows = vec![heading_row(Section::Drawings, count as usize)];
+    rows.extend((1..=count).rev().map(|id| Row {
+        tool: Some(Tool::TrendLine),
+        ..row(
+            Key::Drawing(id),
+            &format!("Trend line {id}"),
+            Some(true),
+            Some(false),
+        )
+    }));
+    rows
+}
+
+impl Rig {
+    /// Scrolls the list with the wheel, then lets the animation settle and forgets where rows were.
+    fn scroll(&mut self, points: f32) {
+        self.move_to(pos2(160.0, 300.0));
+        self.frame(vec![Event::MouseWheel {
+            unit: MouseWheelUnit::Point,
+            delta: vec2(0.0, -points),
+            phase: TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        }]);
+        for _ in 0..40 {
+            self.frame(Vec::new());
+        }
+        probe::clear();
+        self.frame(Vec::new());
+    }
+
+    /// The drawings drawn now, as ids, lowest in the list first.
+    fn visible_drawings(&self, count: u64) -> Vec<u64> {
+        (1..=count)
+            .filter(|id| self.drawn(Key::Drawing(*id)))
+            .collect()
+    }
+
+    /// One touch event, with the pointer events a touch screen's backend sends beside it.
+    fn touch(&mut self, phase: TouchPhase, pos: Pos2) {
+        let button = |pressed| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        let mut events = vec![Event::Touch {
+            device_id: TouchDeviceId(0),
+            id: TouchId(0),
+            phase,
+            pos,
+            force: None,
+        }];
+        match phase {
+            TouchPhase::Start => events.extend([Event::PointerMoved(pos), button(true)]),
+            TouchPhase::Move => events.push(Event::PointerMoved(pos)),
+            TouchPhase::End | TouchPhase::Cancel => {
+                events.extend([button(false), Event::PointerGone]);
+            }
+        }
+        self.frame(events);
+    }
+
+    /// A finger swipe from `from` to `to`, in small steps, then lifted.
+    fn swipe(&mut self, from: Pos2, to: Pos2) {
+        self.touch(TouchPhase::Start, from);
+        for step in 1..=10 {
+            self.touch(TouchPhase::Move, from.lerp(to, step as f32 / 10.0));
+        }
+        self.touch(TouchPhase::End, to);
+        self.frame(Vec::new());
+    }
+}
+
+#[test]
+fn a_scrolled_list_drops_on_the_row_under_the_pointer() {
+    let mut rig = Rig::with(many_drawings(40));
+    rig.scroll(600.0);
+    let visible = rig.visible_drawings(40);
+    assert!(
+        visible.len() > 8 && !visible.contains(&40),
+        "scrolled well down the list: {visible:?}"
+    );
+    // Rows near the middle of the viewport, away from the edges that scroll.
+    let middle = visible.len() / 2;
+    let (below, over, above) = (visible[middle - 2], visible[middle], visible[middle + 2]);
+    // A row lower in the list, let go on the upper half of `over`, takes `over`'s place...
+    rig.drag(
+        rig.on(Key::Drawing(below), 0.5),
+        rig.on(Key::Drawing(over), 0.2),
+    );
+    assert_eq!(
+        rig.actions,
+        [TreeAction::Drop {
+            key: Key::Drawing(below),
+            over: Key::Drawing(over)
+        }]
+    );
+    // ...and so does one higher in the list, let go on its lower half.
+    rig.actions.clear();
+    rig.drag(
+        rig.on(Key::Drawing(above), 0.5),
+        rig.on(Key::Drawing(over), 0.8),
+    );
+    assert_eq!(
+        rig.actions,
+        [TreeAction::Drop {
+            key: Key::Drawing(above),
+            over: Key::Drawing(over)
+        }]
+    );
+}
+
+#[test]
+fn letting_go_above_or_below_the_list_puts_the_row_back() {
+    let mut rig = Rig::new();
+    let from = rig.on(Key::Drawing(8), 0.5);
+    // Over the filter field, above the list.
+    let list_top = rig.row(Key::Heading(Section::Indicators)).top();
+    rig.drag(from, pos2(from.x, list_top - 20.0));
+    assert!(rig.drops().is_empty(), "above: {:?}", rig.actions);
+    assert_eq!(rig.state.dragging, None);
+    // Below a list that is shorter than the panel.
+    let bottom = rig.row(Key::Drawing(8)).bottom();
+    let from = rig.on(Key::Drawing(7), 0.5);
+    rig.drag(from, pos2(from.x, bottom + 80.0));
+    assert!(rig.drops().is_empty(), "below: {:?}", rig.actions);
+    assert_eq!(rig.state.dragging, None);
+}
+
+/// How far down the list is scrolled: how far the first drawing row has moved up.
+fn scrolled_by(rig: &Rig, was: f32) -> f32 {
+    was - rig.row(Key::Drawing(40)).top()
+}
+
+#[test]
+fn a_touch_swipe_scrolls_the_list_over_any_row() {
+    // A drawing that could be dragged, then rows that cannot: a built-in indicator, and a row of a
+    // filtered list. A finger moving over them is scrolling, and nothing is picked up.
+    let mut cases: Vec<(&str, Vec<Row>, &str, Key)> = Vec::new();
+    cases.push(("a drawing", many_drawings(40), "", Key::Drawing(39)));
+    let mut with_built_in = vec![
+        heading_row(Section::Indicators, 1),
+        row(
+            Key::Indicator(IndicatorKey::BuiltIn(crate::model::BuiltIn::Ema)),
+            "EMA 20",
+            Some(true),
+            None,
+        ),
+    ];
+    with_built_in.extend(many_drawings(40));
+    cases.push((
+        "a built-in indicator",
+        with_built_in,
+        "",
+        Key::Indicator(IndicatorKey::BuiltIn(crate::model::BuiltIn::Ema)),
+    ));
+    cases.push((
+        "a filtered row",
+        many_drawings(40),
+        "line",
+        Key::Drawing(39),
+    ));
+    for (name, rows, filter, key) in cases {
+        let mut rig = Rig::with(rows);
+        rig.state.filter = filter.to_owned();
+        let mut rig = rig.settled();
+        // The first touch tells egui it has a touch screen.
+        rig.touch(TouchPhase::Start, pos2(5.0, 5.0));
+        rig.touch(TouchPhase::End, pos2(5.0, 5.0));
+        let was = rig.row(Key::Drawing(40)).top();
+        let from = rig.on(key, 0.5);
+        rig.swipe(from, pos2(from.x, from.y - 120.0));
+        // Scrolling by a delta is animated: let it settle.
+        for _ in 0..40 {
+            rig.frame(Vec::new());
+        }
+        assert!(
+            scrolled_by(&rig, was) > 30.0,
+            "{name}: the list scrolled {}",
+            scrolled_by(&rig, was)
+        );
+        assert!(rig.drops().is_empty(), "{name}: {:?}", rig.actions);
+        assert_eq!(rig.state.dragging, None, "{name}");
+    }
+}
+
+#[test]
+fn a_touch_long_press_picks_a_row_up_and_letting_go_drops_it() {
+    let mut rig = Rig::new();
+    let (from, to) = (rig.on(Key::Drawing(8), 0.5), rig.on(Key::Drawing(7), 0.2));
+    rig.touch(TouchPhase::Start, from);
+    // Held still for about half a second.
+    for _ in 0..40 {
+        rig.frame(Vec::new());
+    }
+    assert_eq!(rig.state.dragging, Some(Key::Drawing(8)), "picked up");
+    for step in 1..=5 {
+        rig.touch(TouchPhase::Move, from.lerp(to, step as f32 / 5.0));
+    }
+    // A finger lifted has no pointer position left: the drop is where it was last.
+    rig.touch(TouchPhase::End, to);
+    rig.frame(Vec::new());
+    assert_eq!(
+        rig.actions,
+        [TreeAction::Drop {
+            key: Key::Drawing(8),
+            over: Key::Drawing(7)
+        }]
+    );
+    assert_eq!(rig.state.dragging, None);
 }
