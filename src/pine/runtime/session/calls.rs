@@ -66,7 +66,7 @@ impl Session {
         if crate::pine::runtime::call_binding::is_input_call(name) {
             return self.input_call(name, site, range, context);
         }
-        if let Some(value) = self.scalar_call(name, arguments, range, context)? {
+        if let Some(value) = self.scalar_call(name, arguments, site, range, context)? {
             return Ok(value);
         }
         if let Some(value) = self.collection_call(name, arguments, range, context)? {

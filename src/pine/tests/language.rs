@@ -3098,3 +3098,98 @@ fn array_functions_take_the_reference_parameter_names() {
     assert_eq!(value(&session, "size"), RuntimeValue::Int(5));
     assert!(value(&session, "cov").number().unwrap() < 0.0);
 }
+
+/// `timeframe.change` keeps the open time of the bar each call site last ran on (TradingView,
+/// probe R2): the bars here are a minute apart, so `"5"` opens a new bucket at bars 5, 10 and 15.
+fn changes_counted(body: &str) -> RuntimeValue {
+    let session = run(&format!("var int n = 0\n{body}"), 20);
+    value(&session, "n")
+}
+
+#[test]
+fn timeframe_change_is_false_on_the_first_run_of_a_call_site() {
+    assert_eq!(
+        changes_counted("n += timeframe.change(\"5\") ? 1 : 0"),
+        RuntimeValue::Int(3),
+        "bars 5, 10 and 15; bar 0 has no earlier call to compare with"
+    );
+}
+
+#[test]
+fn timeframe_change_in_a_branch_compares_with_the_last_bar_the_branch_ran_on() {
+    // The branch runs on bars 0, 3, 6, ...: bars 6, 12 and 15 open a bucket that its previous run
+    // was not in. Comparing with the chart's previous bar would only see bar 15.
+    assert_eq!(
+        changes_counted("if bar_index % 3 == 0\n    n += timeframe.change(\"5\") ? 1 : 0"),
+        RuntimeValue::Int(3)
+    );
+}
+
+#[test]
+fn timeframe_change_in_the_untaken_side_of_a_ternary_or_and_does_not_run() {
+    assert_eq!(
+        changes_counted("n += (bar_index % 3 == 0 ? timeframe.change(\"5\") : false) ? 1 : 0"),
+        RuntimeValue::Int(3)
+    );
+    assert_eq!(
+        changes_counted("n += (bar_index % 3 == 0 and timeframe.change(\"5\")) ? 1 : 0"),
+        RuntimeValue::Int(3)
+    );
+}
+
+#[test]
+fn timeframe_change_in_a_switch_arm_runs_only_when_the_arm_is_chosen() {
+    assert_eq!(
+        changes_counted(
+            "n += switch\n    bar_index % 3 == 0 => timeframe.change(\"5\") ? 1 : 0\n    => 0"
+        ),
+        RuntimeValue::Int(3)
+    );
+}
+
+#[test]
+fn the_two_sides_of_an_if_else_keep_their_own_previous_bar() {
+    let session = run(
+        "var int even = 0\nvar int odd = 0\n\
+         if bar_index % 2 == 0\n    even += timeframe.change(\"5\") ? 1 : 0\n\
+         else\n    odd += timeframe.change(\"5\") ? 1 : 0",
+        20,
+    );
+    // Even bars: 6, 10 and 16. Odd bars: 5, 11 and 15. A shared previous bar would see 5, 10, 15.
+    assert_eq!(value(&session, "even"), RuntimeValue::Int(3));
+    assert_eq!(value(&session, "odd"), RuntimeValue::Int(3));
+}
+
+#[test]
+fn two_call_sites_on_every_bar_do_not_share_their_previous_bar() {
+    let session = run(
+        "var int a = 0\nvar int b = 0\n\
+         a += timeframe.change(\"5\") ? 1 : 0\nb += timeframe.change(\"5\") ? 1 : 0",
+        20,
+    );
+    assert_eq!(value(&session, "a"), RuntimeValue::Int(3));
+    assert_eq!(value(&session, "b"), RuntimeValue::Int(3));
+}
+
+#[test]
+fn a_function_calling_timeframe_change_has_one_previous_bar_per_calling_site() {
+    let session = run(
+        "var int even = 0\nvar int odd = 0\n\
+         changed(tf) => timeframe.change(tf)\n\
+         if bar_index % 2 == 0\n    even += changed(\"5\") ? 1 : 0\n\
+         else\n    odd += changed(\"5\") ? 1 : 0",
+        20,
+    );
+    assert_eq!(value(&session, "even"), RuntimeValue::Int(3));
+    assert_eq!(value(&session, "odd"), RuntimeValue::Int(3));
+}
+
+#[test]
+fn a_timeframe_change_in_a_loop_compares_every_run_with_the_previous_bar() {
+    // TradingView, probe R2: 39 = 13 days x 3 iterations. The runs of one bar share the bar the
+    // site ran on before it, so every iteration of a bar that opens a bucket reads true.
+    assert_eq!(
+        changes_counted("for i = 0 to 2\n    n += timeframe.change(\"5\") ? 1 : 0"),
+        RuntimeValue::Int(9)
+    );
+}

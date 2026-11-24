@@ -2108,4 +2108,20 @@ mod tests {
         // On the second bar the four 15s intrabars sum to 1 + 2 + 3 + 4.
         assert_eq!(output.plots[0].values.last(), Some(&Some(10.0)));
     }
+
+    #[test]
+    fn timeframe_change_in_a_request_compares_with_the_request_sites_previous_bar() {
+        // TradingView (probe R2, M1 and M2): the call keeps the bar it last ran on inside the
+        // request too. It runs every third hour, so each run is compared with the one before:
+        // 4-hour buckets open at hours 6, 9, 12, 18, 21 (day one) and 24, 30, 33, 36, 42, 45.
+        let chart: Vec<Kline> = (0..48).map(|hour| bar(hour * 3_600_000, 1.0)).collect();
+        let output = run(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(ta.cum(request.security(syminfo.tickerid, \"60\", \
+             hour % 3 == 0 ? (timeframe.change(\"240\") ? 1.0 : 0.0) : 0.0)))",
+            TestProvider::default(),
+            &chart,
+        );
+        assert_eq!(output.plots[0].values.last(), Some(&Some(11.0)));
+    }
 }

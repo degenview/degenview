@@ -691,6 +691,10 @@ mod call_site_tests {
             "//@version=6\nindicator(\"T\")\nplot(ta.cum(timeframe.change(\"1D\") ? 1 : 0))\n",
             &HashMap::new(),
         );
-        assert_eq!(changes, Some(40.0), "every daily bar opens a new day");
+        assert_eq!(
+            changes,
+            Some(39.0),
+            "every daily bar opens a new day but the first, which has no earlier call to compare with"
+        );
     }
 }
