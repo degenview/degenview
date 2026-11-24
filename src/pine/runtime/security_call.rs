@@ -31,7 +31,6 @@ const SECURITY_NESTING_LIMIT: usize = 3;
 #[derive(Clone, Copy)]
 struct Step<'a> {
     bar: &'a Kline,
-    seconds: f64,
     confirmed: bool,
     chart: ChartBar,
     skipped_after: Option<usize>,
@@ -644,7 +643,6 @@ impl Session {
             request,
             &Step {
                 bar: &bar,
-                seconds,
                 confirmed: context.flags.is_confirmed,
                 chart: ChartBar::of(&bar, seconds, &context.flags, self.history_end),
                 skipped_after: None,
@@ -687,7 +685,6 @@ impl Session {
                 request,
                 &Step {
                     bar: &bar,
-                    seconds,
                     confirmed: true,
                     chart: ChartBar::replayed(&bar, seconds, self.history_end),
                     skipped_after: Some(skipped_after),
@@ -736,7 +733,6 @@ impl Session {
     ) -> Result<(RuntimeValue, bool), Diagnostic> {
         let Step {
             bar,
-            seconds,
             confirmed,
             chart,
             skipped_after,
@@ -765,7 +761,9 @@ impl Session {
         developing.push(bar.clone());
         let developing = fold_one(&developing, request.interval);
         let end = time::bucket::end(start, request.interval);
-        let closes_bucket = bar.open_time + (seconds * 1000.0).round() as i64 >= end;
+        // The chart bar closes the bucket when its own end reaches the bucket's: a monthly bar is
+        // not `open_time + 30 days` (a 31-day month would never close its quarter or year).
+        let closes_bucket = chart.end >= end;
 
         let result;
         if closes_bucket && confirmed {
@@ -1771,6 +1769,74 @@ mod tests {
         let hours = lch("240", 12);
         assert_eq!(hours[7], Some(0.0));
         assert_eq!(hours[11], Some(1.0));
+    }
+
+    /// `count` monthly chart bars from `first_year`-`first_month`, each opening on the 1st and closing on
+    /// the next 1st (so 28 to 31 days long, where the chart's length is the nominal 30 days).
+    fn monthly_chart(first_year: i64, first_month: i64, count: i64) -> Vec<Kline> {
+        let start = |index: i64| {
+            let month = first_month - 1 + index;
+            crate::pine::time::calendar::make(
+                first_year + month.div_euclid(12),
+                month.rem_euclid(12) + 1,
+                1,
+                0,
+                0,
+                0,
+                0,
+            )
+            .unwrap()
+        };
+        (0..count)
+            .map(|index| Kline {
+                open_time: start(index),
+                close_time: start(index + 1),
+                ..bar(0, 1.0 + index as f64)
+            })
+            .collect()
+    }
+
+    /// The first plot of `source` over `chart` as the app runs a monthly chart: one history load with
+    /// the chart's length fixed at Pine's 30-day month.
+    fn plotted_on_a_monthly_chart(source: &str, chart: &[Kline]) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(TestProvider::default())),
+            None,
+        );
+        session.fixed_bar_seconds = Some(2_592_000.0);
+        session.load_history(chart, false, None).expect("runs");
+        session.output().plots[0].values.clone()
+    }
+
+    #[test]
+    fn a_monthly_chart_completes_a_quarter_and_a_year_on_their_last_month() {
+        // TradingView (probe R5, BTCUSDT 1M): the 3M and 12M candles arrive on the chart bar that
+        // closes them. A 31-day month is longer than the chart's 30 days, so the bar's end, not its
+        // open plus 30 days, says it closes the bucket.
+        let quarter = plotted_on_a_monthly_chart(
+            "plot(request.security(syminfo.tickerid, \"3M\", bar_index))",
+            &monthly_chart(2023, 10, 6),
+        );
+        // Oct-Dec 2023 is candle 0, Jan-Mar 2024 candle 1: each is read from its last month on.
+        assert_eq!(quarter[1], None, "Nov: the quarter is still open");
+        assert_eq!(quarter[2], Some(0.0), "Dec closes Q4");
+        assert_eq!(quarter[4], Some(0.0), "Feb still reads Q4");
+        assert_eq!(quarter[5], Some(1.0), "Mar closes Q1");
+        let year = plotted_on_a_monthly_chart(
+            "plot(request.security(syminfo.tickerid, \"12M\", bar_index))",
+            &monthly_chart(2022, 1, 24),
+        );
+        assert_eq!(year[10], None, "Nov 2022: the year is still open");
+        assert_eq!(year[11], Some(0.0), "Dec 2022 closes 2022");
+        assert_eq!(year[22], Some(0.0), "Nov 2023 still reads 2022");
+        assert_eq!(year[23], Some(1.0), "Dec 2023 closes 2023");
     }
 
     #[test]

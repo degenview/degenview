@@ -258,6 +258,10 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   history's end, and one developing in real time, read false (TradingView probes A, B and R1).
   `timeframe.change` is false on the first bar of the series it runs on (the chart's,
   or the request's own candles, `series_bars`), TradingView-measured.
+  A chart bar completes a higher-timeframe candle when its own end (`ChartBar::end`, the end of its
+  bucket) reaches the candle's, never `open_time` plus the chart's length: a monthly chart is a
+  nominal 30 days, so a 31-day month would never close its quarter or year and the `"3M"` / `"12M"`
+  request would arrive one bar late (TradingView probe R5, BTCUSDT 1M).
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
 
