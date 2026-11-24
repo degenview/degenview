@@ -218,6 +218,7 @@ pub fn body(
                     .vertical(|ui| {
                         field(
                             ui,
+                            "network-no-proxy",
                             tr!("Hosts that connect directly"),
                             Some(tr!(
                                 "Separated by commas. A name also covers its subdomains; use 192.168.1.* for a block of addresses, or <local> for every name without a dot. Local addresses (localhost, 10.*, 192.168.*, 172.16-31.*, .local) never use the proxy."
@@ -287,6 +288,7 @@ fn manual_server(ui: &mut egui::Ui, state: &mut NetworkState) {
                 .vertical(|ui| {
                     field(
                         ui,
+                        "network-host",
                         tr!("Host"),
                         None,
                         "127.0.0.1",
@@ -297,7 +299,17 @@ fn manual_server(ui: &mut egui::Ui, state: &mut NetworkState) {
                 .inner;
             state.autosave.watch(&host, false);
             let port = ui
-                .vertical(|ui| field(ui, tr!("Port"), None, "7890", &mut state.port_text, false))
+                .vertical(|ui| {
+                    field(
+                        ui,
+                        "network-port",
+                        tr!("Port"),
+                        None,
+                        "7890",
+                        &mut state.port_text,
+                        false,
+                    )
+                })
                 .inner;
             state.autosave.watch(&port, false);
             if state.awaiting_server() {
@@ -323,6 +335,7 @@ fn sign_in(ui: &mut egui::Ui, state: &mut NetworkState) {
                     .vertical(|ui| {
                         field(
                             ui,
+                            "network-user",
                             tr!("User name"),
                             None,
                             "",
@@ -342,7 +355,15 @@ fn sign_in(ui: &mut egui::Ui, state: &mut NetworkState) {
                 };
                 let password = ui
                     .vertical(|ui| {
-                        field(ui, title, Some(hint), "", &mut state.password_input, true)
+                        field(
+                            ui,
+                            "network-password",
+                            title,
+                            Some(hint),
+                            "",
+                            &mut state.password_input,
+                            true,
+                        )
                     })
                     .inner;
                 state.autosave.watch(&password, true);

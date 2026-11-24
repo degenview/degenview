@@ -649,10 +649,17 @@ fn setup_body(
         let value = form.values.entry(credential.key.to_owned()).or_default();
         // Scoped: a field squeezes the spacing it is drawn in.
         ui.scope(|ui| match credential.kind {
-            FieldKind::Pem => secret_block(ui, credential.label, credential.hint, value),
+            FieldKind::Pem => secret_block(
+                ui,
+                secret_block_id(descriptor.id, credential.key),
+                credential.label,
+                credential.hint,
+                value,
+            ),
             _ => {
                 field(
                     ui,
+                    ("broker-credential", descriptor.id, credential.key),
                     credential.label,
                     None,
                     credential.hint,
@@ -980,8 +987,17 @@ pub(in crate::ui) fn gray_link(ui: &mut egui::Ui, label: &str, url: &str) {
 
 /// A multi-line secret (a PEM private key). Empty, it is a box to paste into; once something is
 /// entered it is hidden behind its length, with Show to check it and Clear to start over.
-fn secret_block(ui: &mut egui::Ui, title: &str, hint: &str, text: &mut String) {
-    let revealed_id = egui::Id::new(("broker-secret-revealed", title));
+/// The identity of a [`secret_block`]: kept under the broker and the credential, never under the
+/// words of its label, which change with the language.
+pub(in crate::ui) fn secret_block_id(
+    broker: impl std::hash::Hash + std::fmt::Debug,
+    key: &str,
+) -> egui::Id {
+    egui::Id::new("broker-secret").with(broker).with(key)
+}
+
+fn secret_block(ui: &mut egui::Ui, edit_id: egui::Id, title: &str, hint: &str, text: &mut String) {
+    let revealed_id = edit_id.with("revealed");
     let mut revealed: bool = ui.data(|data| data.get_temp(revealed_id)).unwrap_or(false);
     ui.label(kit::text(
         title,
@@ -997,7 +1013,6 @@ fn secret_block(ui: &mut egui::Ui, title: &str, hint: &str, text: &mut String) {
         .inner_margin(egui::Margin::symmetric(10, 8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            let edit_id = egui::Id::new(("broker-secret", title));
             // The box stays while it has focus: swapping it for the hidden summary after the
             // first typed character would drop the rest of what is being typed.
             if text.is_empty() || revealed || ui.memory(|memory| memory.has_focus(edit_id)) {

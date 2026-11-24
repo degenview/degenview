@@ -361,6 +361,7 @@ fn body(
             FieldKind::Text => {
                 let response = field(
                     ui,
+                    ("snapshot-field", descriptor.id, spec.key),
                     spec.title,
                     Some(spec.hint),
                     spec.placeholder,
@@ -380,6 +381,7 @@ fn body(
                 let hint = secret_hint(spec, state);
                 let response = field(
                     ui,
+                    ("snapshot-field", descriptor.id, spec.key),
                     spec.title,
                     Some(&hint),
                     spec.placeholder,

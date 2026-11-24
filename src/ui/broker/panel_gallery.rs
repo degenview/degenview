@@ -665,7 +665,7 @@ fn connecting_a_key_from_the_settings_page_never_stalls_a_frame() {
 fn typing_a_base64_secret_never_stalls_a_frame() {
     let rig = rig();
     let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
-    let label = broker.descriptor().credential_fields[1].label;
+    let credential = &broker.descriptor().credential_fields[1];
     let secret = "M".repeat(86) + "==";
     let mut state = brokers::BrokersState::default();
     state.open_for_test("coinbase");
@@ -683,7 +683,7 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
         slowest.set(slowest.get().max(start.elapsed()));
     };
     step(vec![], &mut state);
-    let id = egui::Id::new(("broker-secret", label));
+    let id = crate::ui::settings::brokers::secret_block_id(broker.descriptor().id, credential.key);
     // One by one, as a person types (focus is kept as long as the box stays).
     for (index, ch) in secret.chars().enumerate() {
         if index == 0 {

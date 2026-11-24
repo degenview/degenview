@@ -284,11 +284,20 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
     section(ui, tr!("API credentials"), None, |ui| {
         card(ui, |ui| {
             ui.vertical(|ui| {
-                let key_id = field(ui, tr!("API Key ID"), None, "PK…", &mut form.key_id, false);
+                let key_id = field(
+                    ui,
+                    "alpaca-key-id",
+                    tr!("API Key ID"),
+                    None,
+                    "PK…",
+                    &mut form.key_id,
+                    false,
+                );
                 form.autosave.watch(&key_id, false);
                 ui.add_space(12.0);
                 let secret = field(
                     ui,
+                    "alpaca-secret",
                     tr!("Secret Key"),
                     Some(crate::platform::credential_stored_hint()),
                     "",
@@ -364,7 +373,15 @@ pub fn coinmarketcap_body(
     section(ui, tr!("API access"), None, |ui| {
         card(ui, |ui| {
             ui.vertical(|ui| {
-                let key = field(ui, title, Some(hint), "", &mut form.api_key, true);
+                let key = field(
+                    ui,
+                    "cmc-key",
+                    title,
+                    Some(hint),
+                    "",
+                    &mut form.api_key,
+                    true,
+                );
                 form.autosave.watch(&key, true);
             });
             ui.horizontal(|ui| {

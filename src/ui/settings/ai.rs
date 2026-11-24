@@ -289,6 +289,7 @@ pub fn body(
                 .vertical(|ui| {
                     field(
                         ui,
+                        ("ai-model", kind),
                         tr!("Model"),
                         hint.as_deref(),
                         suggestion,
@@ -304,6 +305,7 @@ pub fn body(
                     .vertical(|ui| {
                         field(
                             ui,
+                            "ai-base-url",
                             tr!("Server Base URL"),
                             Some(tr!(
                                 "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a server on this Mac."
@@ -330,7 +332,17 @@ pub fn body(
     section(ui, tr!("API access"), None, |ui| {
         card(ui, |ui| {
             let key = ui
-                .vertical(|ui| field(ui, title, Some(hint), "", &mut state.key_input, true))
+                .vertical(|ui| {
+                    field(
+                        ui,
+                        ("ai-key", state.kind()),
+                        title,
+                        Some(hint),
+                        "",
+                        &mut state.key_input,
+                        true,
+                    )
+                })
                 .inner;
             state.autosave.watch(&key, true);
             ui.horizontal(|ui| {

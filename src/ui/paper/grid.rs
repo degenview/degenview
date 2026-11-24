@@ -151,6 +151,23 @@ pub fn tag_width(ui: &Ui, text: &str) -> f32 {
         + 2.0 * CELL_PAD
 }
 
+/// The width of a column that holds the tags `tags` (see [`tag`]): `min`, or what the widest tag needs
+/// in the language in use, whichever is more. A tag column is sized from its words, never from a
+/// number tuned to English.
+pub fn tags_width<'a>(ui: &Ui, min: f32, tags: impl IntoIterator<Item = &'a str>) -> f32 {
+    tags.into_iter()
+        .map(|tag| tag_width(ui, tag))
+        .fold(min, f32::max)
+}
+
+/// The same for a column of status badges (`kit::status_badge`).
+pub fn badges_width<'a>(ui: &Ui, min: f32, labels: impl IntoIterator<Item = &'a str>) -> f32 {
+    labels
+        .into_iter()
+        .map(|label| kit::status_badge_size(ui, label).x + 2.0 * CELL_PAD)
+        .fold(min, f32::max)
+}
+
 fn header(ui: &mut Ui, cols: &[Col], spans: &[(f32, f32)], width: f32, frame_top: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(width, HEADER_HEIGHT), Sense::hover());
     let painter = ui.painter();

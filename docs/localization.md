@@ -57,7 +57,13 @@ Rules that need a person:
   until then it stays English in every language.
 
 A widget's `egui::Id` must not be made from translated text: the id would change with the language.
-Make it from the enum variant or a fixed name.
+Make it from the enum variant or a fixed name. `kit::field` takes that name as `id_salt`, apart from the
+title it shows; focus and a revealed secret live under it.
+
+Widths are measured from the words, never tuned to English. A column that holds a tag or a status
+badge is sized with `grid::tags_width` / `grid::badges_width`; a button a row keeps room for, with
+`kit::push_button_width` / `sheet_button_width`; a row of parts that may not fit side by side flows
+them by their measured widths (the About footer, `footer_rows`).
 
 ### Dates and times
 

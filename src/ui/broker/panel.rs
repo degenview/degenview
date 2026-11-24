@@ -637,16 +637,7 @@ fn history_tab(
         }
         return;
     }
-    let cols: [Col; 8] = [
-        col(tr!("Time"), 90.0, 0.0, false),
-        col(tr!("Market"), 110.0, 1.2, false),
-        col(tr!("Side"), 64.0, 0.0, false),
-        col(tr!("Type"), 120.0, 1.0, false),
-        col(tr!("Price"), 110.0, 1.0, true),
-        col(tr!("Filled / Size"), 130.0, 1.0, true),
-        col(tr!("Status"), 110.0, 0.0, false),
-        col(tr!("Fees"), 90.0, 0.0, true),
-    ];
+    let cols = history_columns(ui, &state.history.items);
     let items = &state.history.items;
     grid::show(
         ui,
@@ -689,6 +680,39 @@ fn history_tab(
     }
 }
 
+/// The History table's columns. Side and Status hold a tag and a badge, so they are as wide as those
+/// words are in the language in use.
+fn history_columns(ui: &egui::Ui, items: &[OrderRow]) -> [Col; 8] {
+    [
+        col(tr!("Time"), 90.0, 0.0, false),
+        col(tr!("Market"), 110.0, 1.2, false),
+        col(tr!("Side"), tables::side_column_width(ui), 0.0, false),
+        col(tr!("Type"), 120.0, 1.0, false),
+        col(tr!("Price"), 110.0, 1.0, true),
+        col(tr!("Filled / Size"), 130.0, 1.0, true),
+        col(
+            tr!("Status"),
+            tables::status_column_width(ui, 110.0, items),
+            0.0,
+            false,
+        ),
+        col(tr!("Fees"), 90.0, 0.0, true),
+    ]
+}
+
+/// The Fills table's columns.
+fn fills_columns(ui: &egui::Ui) -> [Col; 7] {
+    [
+        col(tr!("Time"), 90.0, 0.0, false),
+        col(tr!("Market"), 110.0, 1.2, false),
+        col(tr!("Side"), tables::side_column_width(ui), 0.0, false),
+        col(tr!("Price"), 110.0, 1.0, true),
+        col(tr!("Size"), 120.0, 1.0, true),
+        col(tr!("Fee"), 100.0, 0.0, true),
+        col(tr!("Order"), 100.0, 1.0, false),
+    ]
+}
+
 fn fills_tab(
     ui: &mut egui::Ui,
     state: &mut BrokerPanelState,
@@ -708,15 +732,7 @@ fn fills_tab(
         );
         return;
     }
-    let cols: [Col; 7] = [
-        col(tr!("Time"), 90.0, 0.0, false),
-        col(tr!("Market"), 110.0, 1.2, false),
-        col(tr!("Side"), 64.0, 0.0, false),
-        col(tr!("Price"), 110.0, 1.0, true),
-        col(tr!("Size"), 120.0, 1.0, true),
-        col(tr!("Fee"), 100.0, 0.0, true),
-        col(tr!("Order"), 100.0, 1.0, false),
-    ];
+    let cols = fills_columns(ui);
     grid::show(ui, "broker-fills", &cols, all.len(), |ui, row, column| {
         let fill = all[row];
         let primary = theme::text_primary();
@@ -969,9 +985,17 @@ fn draw_form(ctx: &egui::Context, session: &mut EditSession, form: &EditForm) ->
             ));
             ui.add_space(16.0);
             let (price, size) = session.fields_mut();
-            kit::field(ui, form.price_title, None, "0", price, false);
+            kit::field(
+                ui,
+                "broker-edit-price",
+                form.price_title,
+                None,
+                "0",
+                price,
+                false,
+            );
             ui.add_space(12.0);
-            kit::field(ui, tr!("Size"), None, "0", size, false);
+            kit::field(ui, "broker-edit-size", tr!("Size"), None, "0", size, false);
             ui.add_space(8.0);
             let red = |ui: &mut egui::Ui, text: &str, weight| {
                 ui.label(kit::text(text, kit::size::CAPTION + 0.5, weight, kit::RED));
@@ -1064,5 +1088,45 @@ mod tests {
     #[test]
     fn ids_are_short() {
         assert_eq!(short_id("abcdefghijkl"), "abcdefgh");
+    }
+
+    /// The Side and Status columns of History and Fills hold a tag and a badge: in a language whose
+    /// words are longer they are as wide as the words, and in English they keep their old width.
+    #[test]
+    fn the_tag_and_badge_columns_hold_their_words_in_every_language() {
+        use crate::i18n::{Locale, with_locale};
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let widths = |locale: Locale| {
+                with_locale(locale, || {
+                    let mut row = tables::sample_row();
+                    row.status.label = crate::i18n::translate("order status", "Partly filled");
+                    let history = history_columns(ui, &[row]);
+                    let fills = fills_columns(ui);
+                    (history[2].min, history[6].min, fills[2].min)
+                })
+            };
+            assert_eq!(widths(Locale::ENGLISH), (64.0, 110.0, 64.0));
+            let (side, status, fills_side) = widths(Locale::PSEUDO);
+            let (sell, partly_filled) = with_locale(Locale::PSEUDO, || {
+                (
+                    grid::tag_width(ui, side_tag(Side::Sell)),
+                    grid::badges_width(
+                        ui,
+                        0.0,
+                        [crate::i18n::translate("order status", "Partly filled")],
+                    ),
+                )
+            });
+            assert!(
+                side >= sell && fills_side >= sell,
+                "SELL fits: {side} {fills_side} {sell}"
+            );
+            assert!(
+                status >= partly_filled,
+                "the badge fits: {status} {partly_filled}"
+            );
+        });
+        output.textures_delta.clear();
     }
 }
