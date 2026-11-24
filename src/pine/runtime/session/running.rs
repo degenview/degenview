@@ -53,10 +53,14 @@ impl Session {
         self.first_bar_time = bars.first().map(|bar| bar.open_time);
         let seconds = self.bar_seconds;
         self.history_end = bars.last().map(|bar| {
-            crate::pine::time::bucket::end(
+            let end = crate::pine::time::bucket::end(
                 crate::pine::time::bucket::start(bar.open_time, seconds),
                 seconds,
-            )
+            );
+            match self.now_ms {
+                Some(now) if precedes_live_bar => end.max(now),
+                _ => end,
+            }
         });
         self.bulk_replay = true;
         let mut failed_bar = 0;

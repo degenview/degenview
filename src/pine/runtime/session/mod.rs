@@ -132,7 +132,13 @@ pub struct Session {
     pub first_bar_time: Option<i64>,
     /// Where the history the chart was loaded with ends (`load_history`): the close of its last bar,
     /// the open of the live bar that may follow. None until a history is loaded.
+    ///
+    /// With a live bar after the history it is the moment of the load when `now_ms` is known, which
+    /// lies inside that bar: the series a request reads split into history and realtime there, not
+    /// where the chart's bars do.
     pub history_end: Option<i64>,
+    /// The wall-clock time of the run (the app's update), when known. Not reset with the history.
+    pub now_ms: Option<i64>,
     pub visible_range: Option<(i64, i64)>,
     pub last_committed_open_time: Option<i64>,
     pub once_per_bar_ledger: HashSet<usize>,

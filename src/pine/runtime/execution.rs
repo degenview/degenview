@@ -161,6 +161,7 @@ impl ExecutionController {
         now_ms: i64,
     ) -> ExecutionUpdate {
         self.session.logs.set_clock(now_ms);
+        self.session.now_ms = Some(now_ms);
         let live_bar_has_closed =
             self.live_open_time.is_some() && bars.last().is_some_and(|bar| is_closed(bar, now_ms));
         if self.bars == bars && self.visible_range == visible_range && !live_bar_has_closed {
