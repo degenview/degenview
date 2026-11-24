@@ -3111,6 +3111,35 @@ mod tests {
     }
 
     #[test]
+    fn a_finer_request_on_a_live_bar_reads_the_first_intrabar_with_lookahead_on_and_the_latest_without()
+     {
+        // TradingView, probe S3 (BTCUSDT 5m, a "1" request, 2026-11-24): on the live bar the request
+        // with lookahead_on returns the chart bar's FIRST 1m candle at every tick, both for a bar
+        // the script was loaded inside and for one that opened while it ran; without lookahead it
+        // follows the latest candle. (The Pine docs say a realtime bar returns the latest intrabar
+        // whatever the setting; the measurement does not.)
+        let hour = 3_600_000;
+        let minute = 60_000;
+        let source = |lookahead: &str| {
+            format!("plot(request.security(syminfo.tickerid, \"15\", close{lookahead}))")
+        };
+        let read = |lookahead: &str| {
+            loaded(
+                &source(lookahead),
+                finer_candles(900.0, 0, 4 * hour + 30 * minute),
+                &hourly_chart(0, 4),
+                3_600.0,
+                Some((bar(4 * hour, 1.0), 4 * hour + 40 * minute)),
+            )
+        };
+        // The candles' close is their open time: the live bar holds the 4:00, 4:15 and 4:30 ones.
+        let latest = read("");
+        assert_eq!(latest[0][4], Some((4 * hour + 30 * minute) as f64));
+        let first = read(", lookahead = barmerge.lookahead_on");
+        assert_eq!(first[0][4], Some((4 * hour) as f64));
+    }
+
+    #[test]
     fn the_last_candle_of_a_request_is_the_last_on_every_chart_bar_that_reads_it() {
         // TradingView, probes A, R3 and R4: a "D" request with lookahead_on reads the day still
         // forming with islast true on every chart bar of that day, not on the chart's last bar only.

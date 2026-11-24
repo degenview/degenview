@@ -286,6 +286,22 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   the bucket from where the bar opens (`serve_intrabars`): a stock's daily bar opens at 14:30 UTC and
   its 4h candles are cut at 12, 16 and 20 UTC, so the 12:00 candle that ends at 16:00 belongs to the
   day it ends in, not to the day before, and a 31-day month holds its last day (probes R2 and R5).
+  On a realtime chart bar the same `lookahead_on` still returns the chart bar's FIRST intrabar, for a
+  bar the script loaded inside and for one that opened while it ran, and `lookahead_off` the latest
+  (probe S3, BTCUSDT 5m, `"1"` request, 2026-11-24); the Pine docs say a realtime bar returns the
+  latest intrabar whatever the setting, TradingView does not.
+  The chart's last bar is read from the data, never estimated with a length: `Session::load_history`
+  takes the live bar's own open (`live_open`, from `ExecutionController::rebuild`), because
+  `last open + 30 days` put `last_bar_time` on March 31 on a monthly chart with a live April bar and
+  made the January-March candle the last one. The provider's range is `[start, end)` and covers up to
+  where the last bar closes, the later of its calendar end (`bucket::bar_end`) and its open plus the
+  chart's length (a stock's :30 hourly bar is off the UTC grid): cut at "October 1 + 30 days" the
+  provider never sent October 31. `time_close` of a month, quarter or year is the calendar's
+  (`bucket::close_time`; TradingView, BTCUSDT 1M: 31 days for October, 28 for February, the next bar
+  opens at the close); other bars keep open + length. `Session::security_series` lives for one run:
+  `reset` clears it, so a reloaded history asks the provider again. Not done: TradingView's
+  `timeframe.in_seconds("M")` is 2,628,003 (3M 7,884,009, 12M 31,536,036, probe T2), the engine's
+  month is 30 days (2,592,000); both sides of every comparison use the same nominal month.
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
 
